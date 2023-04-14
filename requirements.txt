@@ -1,0 +1,6 @@
+git+https://github.com/huggingface/transformers.git
+git+https://github.com/huggingface/peft.git
+attrdict
+fire
+PyYAML==6.0
+black
