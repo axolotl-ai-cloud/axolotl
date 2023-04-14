@@ -9,6 +9,10 @@ LLAMA_DEFAULT_BOS_TOKEN = "<s>"
 LLAMA_DEFAULT_UNK_TOKEN = "<unk>"
 
 
+class InvalidDataException(Exception):
+    pass
+
+
 class PromptTokenizingStrategy(abc.ABC):
     def __init__(
         self,
@@ -32,7 +36,7 @@ class AlpacaPromptTokenizingStrategy(PromptTokenizingStrategy):
         full_prompt = self._tokenize_full_prompt(prompt)
         tokenized_full_prompt = self._tokenize(full_prompt)
         if not self.train_on_inputs:
-            user_prompt = self.prompter.generate_prompt(
+            user_prompt = self.prompter.build_prompt(
                 prompt["instruction"], prompt["input"]
             )
             tokenized_user_prompt = self._tokenize(user_prompt, add_eos_token=False)
@@ -43,7 +47,7 @@ class AlpacaPromptTokenizingStrategy(PromptTokenizingStrategy):
         return tokenized_full_prompt
 
     def _tokenize_full_prompt(self, prompt):
-        return self.prompter.generate_prompt(
+        return self.prompter.build_prompt(
             prompt["instruction"],
             prompt["input"],
             prompt["output"],
@@ -71,7 +75,7 @@ class AlpacaPromptTokenizingStrategy(PromptTokenizingStrategy):
 
 class GPTeacherPromptTokenizingStrategy(AlpacaPromptTokenizingStrategy):
     def _tokenize_full_prompt(self, prompt):
-        return self.prompter.generate_prompt(
+        return self.prompter.build_prompt(
             prompt["instruction"],
             prompt["input"],
             prompt["response"],
@@ -80,4 +84,7 @@ class GPTeacherPromptTokenizingStrategy(AlpacaPromptTokenizingStrategy):
 
 class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
     def tokenize_prompt(self, prompt):
-        pass
+        try:
+            return self.prompter.build_prompt(prompt["conversations"], self.tokenizer)
+        except (KeyError, AssertionError) as e:
+            raise InvalidDataException(str(e))

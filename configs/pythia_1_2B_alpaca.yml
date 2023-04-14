@@ -3,35 +3,36 @@ model_type: GPTNeoXForCausalLM
 tokenizer_type: AutoTokenizer
 load_in_8bit: true
 datasets:
-  - path: ./data/alpaca_data_gpt4.jsonl
+  - path: data/alpaca_data_gpt4.jsonl
     type: alpaca
-  - path: ./data/vicuna_cleaned.jsonl
+  - path: data/vicuna_cleaned.jsonl
     type: sharegpt
-  - path: ./data/gpt4-instruct-similarity-0.6-dataset.jsonl
+  - path: data/gpt4-instruct-similarity-0.6-dataset.jsonl
     type: gpteacher
-  - path: ./data/roleplay-similarity_0.6-instruct-dataset.jsonl
+  - path: data/roleplay-similarity_0.6-instruct-dataset.jsonl
     type: gpteacher
 val_set_size: 0.05
 adapter: lora
 sequence_len: 2048
-lora_r: 16
+lora_r: 8
 lora_alpha: 32
 lora_dropout: 0.05
 lora_target_modules:
-  - q_proj
-  - v_proj
-wandb_project:
+  - query_key_value
+lora_fan_in_fan_out: true  # pythia/GPTNeoX lora specific
+wandb_project: pythia-1.4b-lora
 wandb_watch:
-wandb:run_name:
+wandb_run_name:
 wandb_log_model: checkpoint
 output_dir: ./lora-alpaca
-batch_size: 128
-micro_batch_size: 8
+batch_size: 32
+micro_batch_size: 4
 num_epochs: 5
 learning_rate: 0.0003
 train_on_inputs: false
+group_by_length: false
 bf16: True
-fp16: True
+tf32: True
 resume_from_checkpoint:
 local_rank:
 deepspeed:
