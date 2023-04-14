@@ -1,5 +1,6 @@
 import math
 import os
+import random
 import signal
 import sys
 from pathlib import Path
@@ -15,7 +16,7 @@ from peft import (
     LoraConfig,
     get_peft_model,
     prepare_model_for_int8_training,
-    get_peft_model_state_dict,
+    get_peft_model_state_dict, PeftModel,
 )
 from torch import nn
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -94,12 +95,16 @@ def load_model(base_model, model_type, tokenizer_type, cfg, adapter="lora"):
         bias="none",
         task_type="CAUSAL_LM",
     )
-    model = get_peft_model(model, lora_config)
+
+    if cfg.lora_model_dir:
+        model = PeftModel.from_pretrained(model, cfg.lora_model_dir, device_map = cfg.device_map, torch_dtype=torch.float16)
+    else:
+        model = get_peft_model(model, lora_config)
+
     if cfg.ddp:
         model.to(f"cuda:{cfg.local_rank}")
 
     # TODO resume_from_checkpoint handling
-
     model.print_trainable_parameters()
     return model, tokenizer, lora_config
 
@@ -152,6 +157,26 @@ def check_dataset_labels(dataset, tokenizer):
         print("\n\n\n")
 
 
+def do_inference(cfg, model, tokenizer):
+    instruction = "Tell me a joke about dromedaries."
+    input = ""
+    prompt = "Below is an instruction that describes a task, paired with an input that provides further context. Write a response that appropriately completes the request.\n\n### Instruction:\n{instruction}\n\n### Input:\n{input}\n\n### Response:\n".format(instruction=instruction, input=input)
+    batch = tokenizer(prompt, return_tensors="pt", add_special_tokens=False)
+    with torch.no_grad():
+        generated = model.generate(inputs=batch["input_ids"],
+                                   do_sample=True, use_cache=True,
+                                   repetition_penalty=1.1,
+                                   max_new_tokens=50,
+                                   temperature=0.9,
+                                   top_p=0.95,
+                                   top_k=40,
+                                   return_dict_in_generate=True,
+                                   output_attentions=False,
+                                   output_hidden_states=False,
+                                   output_scores=False)
+    print(tokenizer.decode(generated['sequences'].cpu().tolist()[0]))
+
+
 def choose_config(path: Path):
     yaml_files = [file for file in path.glob("*.yml")]
 
@@ -180,7 +205,7 @@ def train(
     config: Path = Path("configs/"),
     **kwargs,
 ):
-    if config.is_dir():
+    if Path(config).is_dir():
         config = choose_config(config)
 
     # load the config from the yaml file
@@ -214,41 +239,55 @@ def train(
     model, tokenizer, lora_config = load_model(
         cfg.base_model, cfg.model_type, cfg.tokenizer_type, cfg, adapter=cfg.adapter
     )
+
+    if "inference" in kwargs:
+        do_inference(cfg, model, tokenizer)
+        return
+
     datasets = []
-    for d in cfg.datasets:
-        ds: IterableDataset = load_dataset(
-            "json", data_files=d.path, streaming=True, split=None
+    if len(cfg.datasets) == 1 and cfg.datasets[0].type == "arrow":
+        dataset = load_dataset(cfg.datasets[0].path, split="train")
+    else:
+        for d in cfg.datasets:
+            ds: IterableDataset = load_dataset(
+                "json", data_files=d.path, streaming=True, split=None
+            )
+
+            if d.type == "alpaca":
+                ds_strategy = AlpacaPromptTokenizingStrategy(
+                    AlpacaPrompter(), tokenizer, cfg.train_on_inputs, cfg.sequence_len
+                )
+                ds_wrapper = TokenizedPromptDataset(ds_strategy, ds["train"])
+                datasets.append(ds_wrapper)
+            elif d.type == "gpteacher":
+                ds_strategy = GPTeacherPromptTokenizingStrategy(
+                    GPTeacherPrompter(), tokenizer, cfg.train_on_inputs, cfg.sequence_len
+                )
+                ds_wrapper = TokenizedPromptDataset(ds_strategy, ds["train"])
+                datasets.append(ds_wrapper)
+            elif d.type == "sharegpt":
+                ds_strategy = ShareGPTPromptTokenizingStrategy(
+                    ShareGPTPrompter(), tokenizer, cfg.train_on_inputs, cfg.sequence_len
+                )
+                ds_wrapper = TokenizedPromptDataset(ds_strategy, ds["train"])
+                datasets.append(ds_wrapper)
+        constant_len_dataset = ConstantLengthDataset(
+            tokenizer, datasets, seq_length=cfg.sequence_len
         )
-        if d.type == "alpaca":
-            ds_strategy = AlpacaPromptTokenizingStrategy(
-                AlpacaPrompter(), tokenizer, cfg.train_on_inputs, cfg.sequence_len
-            )
-            ds_wrapper = TokenizedPromptDataset(ds_strategy, ds["train"])
-            datasets.append(ds_wrapper)
-        elif d.type == "gpteacher":
-            ds_strategy = GPTeacherPromptTokenizingStrategy(
-                GPTeacherPrompter(), tokenizer, cfg.train_on_inputs, cfg.sequence_len
-            )
-            ds_wrapper = TokenizedPromptDataset(ds_strategy, ds["train"])
-            datasets.append(ds_wrapper)
-        elif d.type == "sharegpt":
-            ds_strategy = ShareGPTPromptTokenizingStrategy(
-                ShareGPTPrompter(), tokenizer, cfg.train_on_inputs, cfg.sequence_len
-            )
-            ds_wrapper = TokenizedPromptDataset(ds_strategy, ds["train"])
-            datasets.append(ds_wrapper)
-    constant_len_dataset = ConstantLengthDataset(
-        tokenizer, datasets, seq_length=cfg.sequence_len
-    )
-    constant_len_dataset = Dataset.from_list(
-        [_ for _ in constant_len_dataset]
-    ).train_test_split(test_size=cfg.val_set_size, shuffle=True, seed=42)
+        dataset = Dataset.from_list(
+            [_ for _ in constant_len_dataset]
+        ).train_test_split(test_size=cfg.val_set_size, shuffle=True, seed=42)
+        dataset.save_to_disk("data/last_run")
+        print(dataset)
 
-    print(constant_len_dataset)
-    train_dataset = constant_len_dataset["train"]
-    eval_dataset = constant_len_dataset["test"]
+    train_dataset = dataset["train"]
+    eval_dataset = dataset["test"]
 
-    # check_dataset_labels(eval_dataset, tokenizer)
+    if cfg.debug:
+        check_dataset_labels(
+            train_dataset.select([random.randrange(0, len(train_dataset) - 1)]),
+            tokenizer,
+        )
 
     total_num_steps = int(
         math.ceil(len(train_dataset) * cfg.num_epochs / cfg.batch_size)

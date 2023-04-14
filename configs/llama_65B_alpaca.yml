@@ -1,6 +1,6 @@
-base_model: EleutherAI/pythia-1.4b-deduped
-model_type: GPTNeoXForCausalLM
-tokenizer_type: AutoTokenizer
+base_model: decapoda-research/llama-65b-hf
+model_type: LlamaForCausalLM
+tokenizer_type: LlamaTokenizer
 load_in_8bit: true
 datasets:
   - path: data/alpaca_data_gpt4.jsonl
@@ -11,26 +11,26 @@ datasets:
     type: gpteacher
   - path: data/roleplay-similarity_0.6-instruct-dataset.jsonl
     type: gpteacher
-val_set_size: 0.05
+val_set_size: 0.04
 adapter: lora
 lora_model_dir:
 sequence_len: 2048
 lora_r: 8
-lora_alpha: 32
+lora_alpha: 16
 lora_dropout: 0.05
 lora_target_modules:
-  - query_key_value
-#  - xxx
+  - q_proj
+  - w_proj
 lora_fan_in_fan_out: true  # pythia/GPTNeoX lora specific
-wandb_project: pythia-1.4b-lora
+wandb_project: llama-65b-lora
 wandb_watch:
 wandb_run_name:
 wandb_log_model: checkpoint
-output_dir: ./lora-alpaca
-batch_size: 48
-micro_batch_size: 4
+output_dir: ./lora-llama-alpaca
+batch_size: 128
+micro_batch_size: 16
 num_epochs: 5
-learning_rate: 0.00001
+learning_rate: 0.00003
 train_on_inputs: false
 group_by_length: false
 bf16: True
