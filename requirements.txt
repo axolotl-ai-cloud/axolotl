@@ -4,3 +4,9 @@ attrdict
 fire
 PyYAML==6.0
 black
+bitsandbytes
+datasets
+accelerate
+sentencepiece
+wandb
+flash-attn

@@ -9,7 +9,7 @@ import fire
 import torch
 import transformers
 import yaml
-from attrdict import AttrDict
+from attrdict import AttrDefault
 from datasets import load_dataset, IterableDataset, Dataset
 from peft import (
     LoraConfig,
@@ -50,6 +50,11 @@ def setup_wandb_env_vars(cfg):
 def load_model(base_model, model_type, tokenizer_type, cfg, adapter="lora"):
     if adapter != "lora":
         raise NotImplementedError(f"{adapter} peft adapter not available")
+    if "llama" in base_model:
+        from axolotl.flash_attn import replace_llama_attn_with_flash_attn
+
+        replace_llama_attn_with_flash_attn()
+
     try:
         model = getattr(transformers, model_type).from_pretrained(
             base_model,
@@ -99,24 +104,104 @@ def load_model(base_model, model_type, tokenizer_type, cfg, adapter="lora"):
     return model, tokenizer, lora_config
 
 
+def choose_device(cfg):
+    def get_device():
+        if torch.cuda.is_available():
+            return "cuda"
+        else:
+            try:
+                if torch.backends.mps.is_available():
+                    return "mps"
+            except:
+                return "cpu"
+
+    cfg.device = get_device()
+    if cfg.device == "cuda":
+        cfg.device_map = {"": cfg.local_rank}
+    else:
+        cfg.device_map = {"": cfg.device}
+
+
+def check_dataset_labels(dataset, tokenizer):
+    from termcolor import colored
+
+    # the dataset is already shuffled, so let's just check the first 5 elements
+    for idx in range(5):
+        # Get the input_ids, labels, and attention_mask from the dataset
+        input_ids = dataset[idx]["input_ids"]
+        labels = dataset[idx]["labels"]
+        attention_mask = dataset[idx]["attention_mask"]
+
+        # You can compare the input_ids and labels element-wise
+        # Remember to ignore positions with IGNORE_TOKEN_ID (if you use it) or attention_mask equal to 0
+        colored_tokens = []
+        for i, (input_id, label_id, mask) in enumerate(
+            zip(input_ids, labels, attention_mask)
+        ):
+            decoded_input_token = tokenizer.decode(input_id)
+            # Choose the color based on whether the label has the ignore value or not
+            color = (
+                "red" if label_id == -100 else ("yellow" if label_id == 0 else "green")
+            )
+            colored_token = colored(decoded_input_token, color) + colored(
+                f"({label_id}, {mask})", "white"
+            )
+            colored_tokens.append(colored_token)
+
+        print(" ".join(colored_tokens))
+        print("\n\n\n")
+
+
+def choose_config(path: Path):
+    yaml_files = [file for file in path.glob("*.yml")]
+
+    if not yaml_files:
+        raise ValueError("No YAML config files found in the specified directory. Are you using a .yml extension?")
+
+    print("Choose a YAML file:")
+    for idx, file in enumerate(yaml_files):
+        print(f"{idx + 1}. {file}")
+
+    chosen_file = None
+    while chosen_file is None:
+        try:
+            choice = int(input("Enter the number of your choice: "))
+            if 1 <= choice <= len(yaml_files):
+                chosen_file = yaml_files[choice - 1]
+            else:
+                print("Invalid choice. Please choose a number from the list.")
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+
+    return chosen_file
+
+
 def train(
-    config: Path = Path("configs/pythia_1_2B_alpaca.yml"),
+    config: Path = Path("configs/"),
     **kwargs,
 ):
+    if config.is_dir():
+        config = choose_config(config)
+
     # load the config from the yaml file
     with open(config, "r") as f:
-        cfg: AttrDict = AttrDict(yaml.load(f, Loader=yaml.Loader))
+        cfg: AttrDefault = AttrDefault(lambda: None, yaml.load(f, Loader=yaml.Loader))
     # if there are any options passed in the cli, if it is something that seems valid from the yaml,
     # then overwrite the value
-    for k, v in enumerate(kwargs):
-        if k in cfg:
-            cfg.k = v
+    cfg_keys = dict(cfg).keys()
+    for k in kwargs:
+        if k in cfg_keys:
+            # handle booleans
+            if isinstance(cfg[k], bool):
+                cfg[k] = bool(kwargs[k])
+            else:
+                cfg[k] = kwargs[k]
 
     # setup some derived config / hyperparams
     cfg.gradient_accumulation_steps = cfg.batch_size // cfg.micro_batch_size
-    cfg.device_map = "auto"
     cfg.world_size = int(os.environ.get("WORLD_SIZE", 1))
     cfg.local_rank = int(os.environ.get("LOCAL_RANK", 0))
+    choose_device(cfg)
     cfg.ddp = cfg.world_size != 1
     if cfg.ddp:
         cfg.device_map = {"": int(os.environ.get("LOCAL_RANK", 0))}
@@ -162,6 +247,8 @@ def train(
     print(constant_len_dataset)
     train_dataset = constant_len_dataset["train"]
     eval_dataset = constant_len_dataset["test"]
+
+    # check_dataset_labels(eval_dataset, tokenizer)
 
     total_num_steps = int(
         math.ceil(len(train_dataset) * cfg.num_epochs / cfg.batch_size)
@@ -240,6 +327,7 @@ def train(
     if torch.__version__ >= "2" and sys.platform != "win32":
         model = torch.compile(model)
 
+    # In case we want to stop early with ctrl+c, this is a nice to have to save the pretrained model
     signal.signal(
         signal.SIGINT,
         lambda signal, frame: (model.save_pretrained(cfg.output_dir), exit(0)),

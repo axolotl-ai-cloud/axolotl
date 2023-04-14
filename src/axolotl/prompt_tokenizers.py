@@ -88,5 +88,5 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
     def tokenize_prompt(self, prompt):
         try:
             return self.prompter.build_prompt(prompt["conversations"], self.tokenizer)
-        except (KeyError, AssertionError) as e:
+        except (KeyError, AssertionError, IndexError) as e:
             raise InvalidDataException(str(e))
