@@ -20,13 +20,9 @@ class AlpacaPrompter:
         # returns the full prompt from instruction and optional input
         # if a label (=response, =output) is provided, it's also appended.
         if input:
-            res = self.prompt_input.format(
-                instruction=instruction, input=input
-            )
+            res = self.prompt_input.format(instruction=instruction, input=input)
         else:
-            res = self.prompt_no_input.format(
-                instruction=instruction
-            )
+            res = self.prompt_no_input.format(instruction=instruction)
         if output:
             res = f"{res}{output}"
         return res
@@ -41,6 +37,7 @@ class GPTeacherPrompter(AlpacaPrompter):
 
 class SeparatorStyle(Enum):
     """Different separator style."""
+
     SINGLE = auto()
     TWO = auto()
     DOLLY = auto()
@@ -50,6 +47,7 @@ class SeparatorStyle(Enum):
 @dataclasses.dataclass
 class Conversation:
     """A class that keeps all conversation history."""
+
     system: str
     roles: List[str]
     messages: List[List[str]]
@@ -85,7 +83,7 @@ class Conversation:
 
 conv_vicuna_v1_1 = Conversation(
     system="A chat between a curious user and an artificial intelligence assistant. "
-           "The assistant gives helpful, detailed, and polite answers to the user's questions.",
+    "The assistant gives helpful, detailed, and polite answers to the user's questions.",
     roles=["USER", "ASSISTANT"],
     messages=[],
     offset=0,
@@ -96,11 +94,7 @@ conv_vicuna_v1_1 = Conversation(
 
 
 class ShareGPTPrompter:
-    def build_prompt(
-        self,
-        source,
-        tokenizer
-    ):
+    def build_prompt(self, source, tokenizer):
         if len(source) < 2:
             # If there isn't a back and forth conversation, ignore it
             # also happens on the data splitting leaving empty conversations
@@ -111,7 +105,10 @@ class ShareGPTPrompter:
 
         try:
             # Apply prompt templates
-            if source[0]["from"] not in roles or roles[source[0]["from"]] != conv.roles[0]:
+            if (
+                source[0]["from"] not in roles
+                or roles[source[0]["from"]] != conv.roles[0]
+            ):
                 # Skip the first one if it is not from human
                 source = source[1:]
         except IndexError as e:
@@ -150,11 +147,19 @@ class ShareGPTPrompter:
             parts[0] += sep
             round_len = len(tokenizer(rou)["input_ids"])
             instruction_len = len(tokenizer(parts[0])["input_ids"]) - 2
-            target[cur_len:cur_len+instruction_len] = [IGNORE_TOKEN_ID] * instruction_len
+            target[cur_len : cur_len + instruction_len] = [
+                IGNORE_TOKEN_ID
+            ] * instruction_len
 
             cur_len += round_len
         target[cur_len:] = [IGNORE_TOKEN_ID] * (len(target) - cur_len)
-        attention_mask = [1 if x != tokenizer.pad_token_id else 0 for x in tokenized_result["input_ids"]]
+        attention_mask = [
+            1 if x != tokenizer.pad_token_id else 0
+            for x in tokenized_result["input_ids"]
+        ]
 
-        return dict(input_ids=tokenized_result["input_ids"], labels=target,
-                    attention_mask=attention_mask)
+        return dict(
+            input_ids=tokenized_result["input_ids"],
+            labels=target,
+            attention_mask=attention_mask,
+        )

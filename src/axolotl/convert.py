@@ -47,5 +47,3 @@ class JsonToJsonlConverter:
         # data = [r for r in data if r["conversations"]]  # vicuna cleaned has rows with empty conversations
         jsonl_content = self.jsonl_serializer.serialize(data)
         self.file_writer.write(jsonl_content)
-
-
