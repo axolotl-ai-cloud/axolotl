@@ -1,4 +1,4 @@
-base_model: decapoda-research/llama-65b-hf
+base_model: huggyllama/llama-7b
 model_type: LlamaForCausalLM
 tokenizer_type: LlamaTokenizer
 load_in_8bit: true
@@ -33,8 +33,8 @@ num_epochs: 5
 learning_rate: 0.00003
 train_on_inputs: false
 group_by_length: false
-bf16: True
-tf32: True
+bf16: true
+tf32: true
 resume_from_checkpoint:
 local_rank:
 deepspeed:
