@@ -258,7 +258,9 @@ def train(
     datasets = []
     if not isinstance(cfg.datasets, list) and isinstance(cfg.datasets, str):
         # assumption that we are loading a previously saved/cached dataset
+        print("Loading prepared dataset from disk...")
         dataset = load_from_disk(cfg.datasets)
+        print("Prepared dataset loaded from disk...")
     else:
         for d in cfg.datasets:
             ds: IterableDataset = load_dataset(
@@ -289,6 +291,7 @@ def train(
         dataset = Dataset.from_list(
             [_ for _ in constant_len_dataset]
         ).train_test_split(test_size=cfg.val_set_size, shuffle=True, seed=42)
+        print("Saving prepared dataset to disk...")
         dataset.save_to_disk("data/last_run")
 
     train_dataset = dataset["train"]

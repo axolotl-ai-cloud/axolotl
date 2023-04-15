@@ -1,5 +1,5 @@
-git+https://github.com/huggingface/transformers.git
 git+https://github.com/huggingface/peft.git
+git+https://github.com/huggingface/transformers.git
 attrdict
 fire
 PyYAML==6.0
@@ -12,4 +12,3 @@ wandb
 flash-attn
 deepspeed
 einops
-
