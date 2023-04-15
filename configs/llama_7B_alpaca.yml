@@ -1,4 +1,4 @@
-base_model: huggyllama/llama-65b
+base_model: huggyllama/llama-7b
 model_type: LlamaForCausalLM
 tokenizer_type: LlamaTokenizer
 load_in_8bit: true
@@ -23,7 +23,7 @@ lora_target_modules:
   - q_proj
   - w_proj
 lora_fan_in_fan_out: false
-wandb_project: llama-65b-lora
+wandb_project: llama-7b-lora
 wandb_watch:
 wandb_run_id:
 wandb_log_model: checkpoint
