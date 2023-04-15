@@ -23,7 +23,7 @@ lora_target_modules:
 lora_fan_in_fan_out: false
 wandb_project: pythia-1.4b-lora
 wandb_watch:
-wandb_run_name:
+wandb_run_id:
 wandb_log_model: checkpoint
 output_dir: ./lora-alpaca
 batch_size: 32
