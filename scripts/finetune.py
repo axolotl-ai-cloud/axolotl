@@ -173,6 +173,8 @@ def do_inference(cfg, model, tokenizer):
     input = ""
     prompt = "Below is an instruction that describes a task, paired with an input that provides further context. Write a response that appropriately completes the request.\n\n### Instruction:\n{instruction}\n\n### Input:\n{input}\n\n### Response:\n".format(instruction=instruction, input=input)
     batch = tokenizer(prompt, return_tensors="pt", add_special_tokens=False)
+
+    model.eval()
     with torch.no_grad():
         generated = model.generate(inputs=batch["input_ids"],
                                    do_sample=True, use_cache=True,
@@ -255,13 +257,12 @@ def train(
         do_inference(cfg, model, tokenizer)
         return
 
-    datasets = []
-    if not isinstance(cfg.datasets, list) and isinstance(cfg.datasets, str):
-        # assumption that we are loading a previously saved/cached dataset
+    if cfg.dataset_prepared_path and any(Path(cfg.dataset_prepared_path).glob("*")):
         print("Loading prepared dataset from disk...")
         dataset = load_from_disk(cfg.datasets)
         print("Prepared dataset loaded from disk...")
     else:
+        datasets = []
         for d in cfg.datasets:
             ds: IterableDataset = load_dataset(
                 "json", data_files=d.path, streaming=True, split=None
@@ -291,8 +292,12 @@ def train(
         dataset = Dataset.from_list(
             [_ for _ in constant_len_dataset]
         ).train_test_split(test_size=cfg.val_set_size, shuffle=True, seed=42)
+
         print("Saving prepared dataset to disk...")
-        dataset.save_to_disk("data/last_run")
+        if cfg.dataset_prepared_path:
+            dataset.save_to_disk(cfg.dataset_prepared_path)
+        else:
+            dataset.save_to_disk("data/last_run")
 
     train_dataset = dataset["train"]
     eval_dataset = dataset["test"]
