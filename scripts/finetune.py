@@ -306,6 +306,7 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
 
 def train(
     config: Path = Path("configs/"),
+    prepare_ds_only: bool = False,
     **kwargs,
 ):
     if Path(config).is_dir():
@@ -395,6 +396,10 @@ def train(
                 dataset.save_to_disk(cfg.dataset_prepared_path)
             else:
                 dataset.save_to_disk(DEFAULT_DATASET_PREPARED_PATH)
+
+        if prepare_ds_only:
+            logger.info("Finished preparing dataset. Exiting...")
+            return
 
     train_dataset = dataset["train"]
     eval_dataset = dataset["test"]
