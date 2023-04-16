@@ -30,4 +30,24 @@ shuf -n2000 data/vicuna_cleaned.jsonl > data/vicuna_cleaned.subset0.jsonl
 
 - Create a new or update the existing YAML config (config/pythia_1_2B_alpaca.yml)[config/pythia_1_2B_alpaca.yml]
 - Install python dependencies `pip3 install -r requirements.txt`
-- Train! `python3 scripts/finetune.py`, make sure to choose the correct YAML config file
+- Configure accelerate `accelerate launch` or update `~/.cache/huggingface/accelerate/default_config.yaml`
+
+```yaml
+compute_environment: LOCAL_MACHINE
+distributed_type: MULTI_GPU
+downcast_bf16: 'no'
+gpu_ids: all
+machine_rank: 0
+main_training_function: main
+mixed_precision: bf16
+num_machines: 1
+num_processes: 4
+rdzv_backend: static
+same_network: true
+tpu_env: []
+tpu_use_cluster: false
+tpu_use_sudo: false
+use_cpu: false
+```
+
+- Train! `accelerate launch scripts/finetune.py`, make sure to choose the correct YAML config file
