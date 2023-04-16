@@ -20,7 +20,13 @@ from peft import (
     PeftModel,
 )
 from torch import nn
-from transformers import AutoModelForCausalLM, AutoTokenizer, LlamaForCausalLM, LlamaTokenizer
+from transformers import (
+    AutoModelForCausalLM,
+    AutoTokenizer,
+    LlamaForCausalLM,
+    LlamaTokenizer,
+    EarlyStoppingCallback,
+)
 
 # add src to the pythonpath so we don't need to pip install this
 from transformers.trainer_pt_utils import get_parameter_names
@@ -54,11 +60,11 @@ def setup_wandb_env_vars(cfg):
             os.environ["WANDB_RUN_ID"] = cfg.wandb_run_id
 
 
-def load_model(base_model, model_type, tokenizer_type, cfg, adapter="lora"):
+def load_model(base_model, model_type, tokenizer_type, cfg, adapter="lora", inference: bool=False):
     if adapter != "lora":
         raise NotImplementedError(f"{adapter} peft adapter not available")
     if "llama" in base_model:
-        if cfg.device not in ["mps", "cpu"]:
+        if cfg.device not in ["mps", "cpu"] and inference is False:
             from axolotl.flash_attn import replace_llama_attn_with_flash_attn
             replace_llama_attn_with_flash_attn()
 
@@ -185,7 +191,7 @@ def do_inference(cfg, model, tokenizer):
         generated = model.generate(inputs=batch["input_ids"],
                                    do_sample=True, use_cache=True,
                                    repetition_penalty=1.1,
-                                   max_new_tokens=50,
+                                   max_new_tokens=100,
                                    temperature=0.9,
                                    top_p=0.95,
                                    top_k=40,
@@ -224,19 +230,15 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
     total_num_steps = int(
         math.ceil(len(train_dataset) * cfg.num_epochs / cfg.batch_size)
     )
+    warmup_steps = min(int(0.03 * total_num_steps), 100)
+    logging_steps = min(int(0.005 * total_num_steps), 10)
     save_steps = eval_steps = min(int(0.05 * total_num_steps), 200)
 
     training_arguments_kwargs = {}
-
-    if not cfg.deepspeed:
-        warmup_steps = min(int(0.03 * total_num_steps), 100)
-        logging_steps = min(int(0.005 * total_num_steps), 10)
-
-        training_arguments_kwargs["warmup_steps"] = warmup_steps
-        training_arguments_kwargs["logging_steps"] = logging_steps
-        training_arguments_kwargs["logging_steps"] = logging_steps
-        training_arguments_kwargs["bf16"] = cfg.bf16
-        training_arguments_kwargs["tf32"] = cfg.tf32
+    training_arguments_kwargs["bf16"] = cfg.bf16
+    training_arguments_kwargs["tf32"] = cfg.tf32
+    training_arguments_kwargs["warmup_steps"] = warmup_steps
+    training_arguments_kwargs["logging_steps"] = logging_steps
 
     training_args = transformers.TrainingArguments(
         per_device_train_batch_size=cfg.micro_batch_size,
@@ -258,37 +260,40 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
     )
 
     trainer_kwargs = {}
+    decay_parameters = get_parameter_names(model, [nn.LayerNorm])
+    decay_parameters = [name for name in decay_parameters if "bias" not in name]
+    optimizer_grouped_parameters = [
+        {
+            "params": [p for n, p in model.named_parameters() if n in decay_parameters],
+            "weight_decay": training_args.weight_decay,
+        },
+        {
+            "params": [
+                p for n, p in model.named_parameters() if n not in decay_parameters
+            ],
+            "weight_decay": 0.0,
+        },
+    ]
 
-    if not cfg.deepspeed:
-        decay_parameters = get_parameter_names(model, [nn.LayerNorm])
-        decay_parameters = [name for name in decay_parameters if "bias" not in name]
-        optimizer_grouped_parameters = [
-            {
-                "params": [p for n, p in model.named_parameters() if n in decay_parameters],
-                "weight_decay": training_args.weight_decay,
-            },
-            {
-                "params": [
-                    p for n, p in model.named_parameters() if n not in decay_parameters
-                ],
-                "weight_decay": 0.0,
-            },
-        ]
+    adam_bnb_optim = bnb.optim.Adam8bit(
+        optimizer_grouped_parameters,
+        betas=(training_args.adam_beta1, training_args.adam_beta2),
+        eps=training_args.adam_epsilon,
+        lr=training_args.learning_rate,
+    )
 
-        adam_bnb_optim = bnb.optim.Adam8bit(
-            optimizer_grouped_parameters,
-            betas=(training_args.adam_beta1, training_args.adam_beta2),
-            eps=training_args.adam_epsilon,
-            lr=training_args.learning_rate,
+    lr_scheduler = transformers.get_cosine_schedule_with_warmup(
+        adam_bnb_optim,
+        training_args.warmup_steps,
+        total_num_steps,
+    )
+    trainer_kwargs["optimizers"] = (adam_bnb_optim, lr_scheduler)
+
+    if cfg.early_stopping_patience:
+        early_stop_cb = EarlyStoppingCallback(
+            cfg.early_stopping_patience,
         )
-
-        lr_scheduler = transformers.get_cosine_schedule_with_warmup(
-            adam_bnb_optim,
-            training_args.warmup_steps,
-            total_num_steps,
-        )
-        trainer_kwargs["optimizers"] = (adam_bnb_optim, lr_scheduler)
-
+        trainer_kwargs["callbacks"] = [early_stop_cb]
 
     trainer = transformers.Trainer(
         model=model,
@@ -340,7 +345,7 @@ def train(
 
     # Load the model and tokenizer
     model, tokenizer, lora_config = load_model(
-        cfg.base_model, cfg.model_type, cfg.tokenizer_type, cfg, adapter=cfg.adapter
+        cfg.base_model, cfg.model_type, cfg.tokenizer_type, cfg, adapter=cfg.adapter, inference=("inference" in kwargs)
     )
 
     if "inference" in kwargs:
@@ -422,17 +427,19 @@ def train(
     lora_config.save_pretrained(cfg.output_dir)
 
     # In case we want to stop early with ctrl+c, this is a nice to have to save the pretrained model
-    signal.signal(
-        signal.SIGINT,
-        lambda signal, frame: (model.save_pretrained(cfg.output_dir), exit(0)),
-    )
+    if cfg.local_rank == 0:
+        signal.signal(
+            signal.SIGINT,
+            lambda signal, frame: (model.save_pretrained(cfg.output_dir), exit(0)),
+        )
 
     logging.info("Starting trainer...")
     trainer.train(resume_from_checkpoint=cfg.resume_from_checkpoint)
 
-    # TODO do we need this fix? https://huggingface.co/docs/accelerate/usage_guides/fsdp#saving-and-loading
-    logging.info(f"Training Completed!!! Saving pre-trained model to {cfg.output_dir}")
-    model.save_pretrained(cfg.output_dir)
+    if cfg.local_rank == 0:
+        # TODO do we need this fix? https://huggingface.co/docs/accelerate/usage_guides/fsdp#saving-and-loading
+        logging.info(f"Training Completed!!! Saving pre-trained model to {cfg.output_dir}")
+        model.save_pretrained(cfg.output_dir)
 
 
 if __name__ == "__main__":
