@@ -21,7 +21,7 @@ lora_alpha: 16
 lora_dropout: 0.05
 lora_target_modules:
   - q_proj
-  - w_proj
+  - v_proj
 lora_fan_in_fan_out: false
 wandb_project: llama-65b-lora
 wandb_watch:

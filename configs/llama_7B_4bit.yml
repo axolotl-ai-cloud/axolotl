@@ -1,41 +1,41 @@
-base_model: huggyllama/llama-7b
+base_model: decapoda-research/llama-7b-hf-int4
+base_model_config: decapoda-research/llama-7b-hf
 model_type: LlamaForCausalLM
 tokenizer_type: LlamaTokenizer
 load_in_8bit: true
 datasets:
-  - path: data/alpaca_data_gpt4.jsonl
+  - path: vicgalle/alpaca-gpt4
     type: alpaca
-  - path: data/vicuna_cleaned.jsonl
-    type: sharegpt
-  - path: data/gpt4-instruct-similarity-0.6-dataset.jsonl
-    type: gpteacher
-  - path: data/roleplay-similarity_0.6-instruct-dataset.jsonl
-    type: gpteacher
-dataset_prepared_path: last_run_prepared
+dataset_prepared_path: data/last_run_prepared
 val_set_size: 0.04
 adapter: lora
 lora_model_dir:
 sequence_len: 2048
+max_packed_sequence_len: 1024
 lora_r: 8
 lora_alpha: 16
 lora_dropout: 0.05
 lora_target_modules:
   - q_proj
   - v_proj
+#  - k_proj
+#  - o_proj
 lora_fan_in_fan_out: false
-wandb_project: llama-7b-lora
+wandb_project:
 wandb_watch:
 wandb_run_id:
 wandb_log_model: checkpoint
-output_dir: ./lora-llama-alpaca
-batch_size: 128
-micro_batch_size: 16
-num_epochs: 5
+output_dir: ./lora-test
+batch_size: 8
+micro_batch_size: 2
+num_epochs: 3
 learning_rate: 0.00003
 train_on_inputs: false
 group_by_length: false
 bf16: true
 tf32: true
-early_stopping_patience:
+gradient_checkpointing: false
+early_stopping_patience: 3
 resume_from_checkpoint:
 local_rank:
+load_4bit: true
