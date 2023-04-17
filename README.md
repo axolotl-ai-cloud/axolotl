@@ -29,8 +29,8 @@ shuf -n2000 data/vicuna_cleaned.jsonl > data/vicuna_cleaned.subset0.jsonl
 ```
 
 - Create a new or update the existing YAML config (config/pythia_1_2B_alpaca.yml)[config/pythia_1_2B_alpaca.yml]
-- Install python dependencies `pip3 install -r requirements.txt`
-- Configure accelerate `accelerate launch` or update `~/.cache/huggingface/accelerate/default_config.yaml`
+- Install python dependencies `pip3 install -e .[triton]` or `pip3 install -e .[cuda]`
+- Configure accelerate `accelerate config` or update `~/.cache/huggingface/accelerate/default_config.yaml`
 
 ```yaml
 compute_environment: LOCAL_MACHINE

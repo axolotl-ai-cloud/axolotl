@@ -11,7 +11,7 @@ datasets:
     type: gpteacher
   - path: data/roleplay-similarity_0.6-instruct-dataset.jsonl
     type: gpteacher
-dataset_prepared_path: data/last_run
+dataset_prepared_path: last_run_prepared
 val_set_size: 0.04
 adapter: lora
 lora_model_dir:

@@ -31,6 +31,7 @@ class TokenizedPromptDataset(IterableDataset):
                 pass
 
 
+# TODO this isn't the best since it can't interleave datasets
 class ConstantLengthDataset(IterableDataset):
     """
     Iterable dataset that returns constant length chunks of tokens from stream of text files.

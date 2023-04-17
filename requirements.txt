@@ -1,5 +1,4 @@
-git+https://github.com/huggingface/peft.git
-git+https://github.com/huggingface/transformers.git
+transformers @ git+https://github.com/huggingface/transformers.git
 attrdict
 fire
 PyYAML==6.0
