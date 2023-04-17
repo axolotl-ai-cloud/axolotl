@@ -1,3 +1,4 @@
+peft @ git+https://github.com/huggingface/peft.git
 transformers @ git+https://github.com/huggingface/transformers.git
 attrdict
 fire

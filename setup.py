@@ -1,9 +1,9 @@
-import sys
 from setuptools import setup, find_packages
 
 install_requires = []
 with open("./requirements.txt", "r") as requirements_file:
     # don't include peft yet until we check the int4
+    # need to manually install peft for now...
     reqs = [r.strip() for r in requirements_file.readlines() if "peft" not in r]
     reqs = [r for r in reqs if r[0] != "#"]
     for r in reqs:
@@ -17,14 +17,11 @@ setup(
     packages=find_packages(),
     install_requires=install_requires,
     extras_require={
-        None: [
-            "peft @ git+https://github.com/huggingface/peft.git",
-        ],
-        'int4_cuda': [
-            "alpaca_lora_4bit[cuda] @ git+https://github.com/winglian/alpaca_lora_4bit.git@setup_pip#egg=alpaca_lora_4bit[cuda]",
+        'int4': [
+            "alpaca_lora_4bit @ git+https://github.com/winglian/alpaca_lora_4bit.git@setup_pip",
         ],
         'int4_triton': [
-            "alpaca_lora_4bit[triton] @ git+https://github.com/winglian/alpaca_lora_4bit.git@setup_pip#egg=alpaca_lora_4bit[triton]",
+            "alpaca_lora_4bit[triton] @ git+https://github.com/winglian/alpaca_lora_4bit.git@setup_pip",
         ],
     },
 )

@@ -29,7 +29,8 @@ shuf -n2000 data/vicuna_cleaned.jsonl > data/vicuna_cleaned.subset0.jsonl
 ```
 
 - Create a new or update the existing YAML config (config/pythia_1_2B_alpaca.yml)[config/pythia_1_2B_alpaca.yml]
-- Install python dependencies `pip3 install -e .[triton]` or `pip3 install -e .[cuda]`
+- Install python dependencies `pip3 install -e .[int4_triton]` or `pip3 install -e .[int4]`
+- If not using `int4` or `int4_triton`, run `pip install "peft @ git+https://github.com/huggingface/peft.git"`
 - Configure accelerate `accelerate config` or update `~/.cache/huggingface/accelerate/default_config.yaml`
 
 ```yaml
