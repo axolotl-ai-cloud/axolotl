@@ -52,3 +52,4 @@ use_cpu: false
 ```
 
 - Train! `accelerate launch scripts/finetune.py`, make sure to choose the correct YAML config file
+- Alternatively you can pass in the config file like: `accelerate launch scripts/finetune.py configs/llama_7B_alpaca.yml`
