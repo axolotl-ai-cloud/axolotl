@@ -1,6 +1,15 @@
-~~# Axolotl
+# Axolotl
 
-#### You know you're going to axolotl questions
+#### Go ahead and axolotl questions
+
+## Support Matrix
+
+|          | fp16/fp32 | fp16/fp32 w/ lora | 4bit-quant | 4bit-quant w/flash attention | flash attention | xformers attention |
+|----------|:----------|:------------------|------------|------------------------------|-----------------|--------------------|
+| llama    | ✅         | ✅                 | ✅          | ✅                            | ✅               | ✅                  |
+| Pythia   | ✅         | ✅                 | ❌          | ❌                            | ❌               | ❓                  |
+| cerebras | ✅         | ✅                 | ❌          | ❌                            | ❌               | ❓                  |
+
 
 ## Getting Started
 
