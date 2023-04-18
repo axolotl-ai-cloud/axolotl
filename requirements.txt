@@ -12,3 +12,5 @@ wandb
 flash-attn
 deepspeed
 einops
+xformers
+

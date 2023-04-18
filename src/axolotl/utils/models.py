@@ -66,7 +66,10 @@ def load_model(
             from alpaca_lora_4bit.autograd_4bit import load_llama_model_4bit_low_ram
             from huggingface_hub import snapshot_download
 
-            cache_model_path = Path(snapshot_download(base_model))
+            snapshot_download_kwargs = {}
+            if cfg.base_model_ignore_patterns:
+                snapshot_download_kwargs["ignore_patterns"] = cfg.base_model_ignore_patterns
+            cache_model_path = Path(snapshot_download(base_model, ** snapshot_download_kwargs))
             files = (
                 list(cache_model_path.glob("*.pt"))
                 + list(cache_model_path.glob("*.safetensors"))

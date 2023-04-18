@@ -10,7 +10,7 @@ dataset_prepared_path: data/last_run_prepared
 val_set_size: 0.04
 adapter: lora
 lora_model_dir:
-sequence_len: 2048
+sequence_len: 1024
 max_packed_sequence_len: 1024
 lora_r: 8
 lora_alpha: 16
@@ -26,8 +26,8 @@ wandb_watch:
 wandb_run_id:
 wandb_log_model: checkpoint
 output_dir: ./lora-test
-batch_size: 8
-micro_batch_size: 2
+batch_size: 4
+micro_batch_size: 1
 num_epochs: 3
 warmup_steps: 100
 learning_rate: 0.00003

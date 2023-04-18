@@ -11,9 +11,9 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
     total_num_steps = int(
         math.ceil(len(train_dataset) * cfg.num_epochs / cfg.batch_size)
     )
-    warmup_steps = min(int(0.03 * total_num_steps), 100)
+    warmup_steps = cfg.warmup_steps if cfg.warmup_steps else min(int(0.03 * total_num_steps), 100)
     logging_steps = max(min(int(0.005 * total_num_steps), 10), 1)
-    save_steps = eval_steps = min(int(0.05 * total_num_steps), 200)
+    save_steps = eval_steps = cfg.save_steps if cfg.save_steps else min(int(0.05 * total_num_steps), 200)
 
     training_arguments_kwargs = {}
     if cfg.bf16 == "full":
@@ -45,24 +45,23 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
         **training_arguments_kwargs,
     )
 
-    decay_parameters = get_parameter_names(model, [nn.LayerNorm])
-    decay_parameters = [name for name in decay_parameters if "bias" not in name]
-    optimizer_grouped_parameters = [
-        {
-            "params": [p for n, p in model.named_parameters() if n in decay_parameters],
-            "weight_decay": training_args.weight_decay,
-        },
-        {
-            "params": [
-                p for n, p in model.named_parameters() if n not in decay_parameters
-            ],
-            "weight_decay": 0.0,
-        },
-    ]
-
     trainer_kwargs = {}
 
     if cfg.load_in_8bit and not cfg.load_4bit:
+        decay_parameters = get_parameter_names(model, [nn.LayerNorm])
+        decay_parameters = [name for name in decay_parameters if "bias" not in name]
+        optimizer_grouped_parameters = [
+            {
+                "params": [p for n, p in model.named_parameters() if n in decay_parameters],
+                "weight_decay": training_args.weight_decay,
+            },
+            {
+                "params": [
+                    p for n, p in model.named_parameters() if n not in decay_parameters
+                ],
+                "weight_decay": 0.0,
+            },
+        ]
         optimizer = bnb.optim.Adam8bit(
             optimizer_grouped_parameters,
             betas=(training_args.adam_beta1, training_args.adam_beta2),
