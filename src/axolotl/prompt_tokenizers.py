@@ -107,6 +107,15 @@ class GPTeacherPromptTokenizingStrategy(InstructionPromptTokenizingStrategy):
         )
 
 
+class NomicGPT4AllPromptTokenizingStrategy(InstructionPromptTokenizingStrategy):
+    def parse_instruction_fields(self, prompt) -> (str, str, str):
+        return (
+            prompt["prompt"],
+            "",
+            prompt["response"],
+        )
+
+
 class ReflectionPromptTokenizingStrategy(PromptTokenizingStrategy):
     def parse_instruction_fields(self, prompt) -> (str, str, str, str, str):
         raise NotImplementedError
@@ -167,6 +176,7 @@ class AlpacaReflectionPTStrategy(ReflectionPromptTokenizingStrategy):
             prompt["reflection"],
             prompt["corrected"],
         )
+
 
 class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
     def tokenize_prompt(self, prompt):
