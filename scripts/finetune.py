@@ -14,7 +14,6 @@ import transformers
 import yaml
 from attrdict import AttrDefault
 from datasets import load_dataset, IterableDataset, Dataset, load_from_disk
-from huggingface_hub.hf_api import DatasetInfo
 from torch import nn
 from transformers import (
     AutoModelForCausalLM,
@@ -169,7 +168,7 @@ def load_model(base_model, base_model_config, model_type, tokenizer_type, cfg, a
 
     if cfg.load_4bit:
         # Scales to half
-        print('Fitting 4bit scales and zeros to half')
+        logging.info('Fitting 4bit scales and zeros to half')
         for n, m in model.named_modules():
             if 'Autograd4bitQuantLinear' in str(type(m)) or 'Linear4bitLt' in str(type(m)):
                 if hasattr(m, "is_v1_model") and m.is_v1_model:

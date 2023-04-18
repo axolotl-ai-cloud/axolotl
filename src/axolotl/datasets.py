@@ -30,7 +30,6 @@ class TokenizedPromptDataset(IterableDataset):
             except InvalidDataException:
                 pass
 
-
 # TODO this isn't the best since it can't interleave datasets
 class ConstantLengthDataset(IterableDataset):
     """
@@ -40,7 +39,6 @@ class ConstantLengthDataset(IterableDataset):
             dataset (dataset.Dataset): Dataset with text files.
             seq_length (int): Length of token sequences to return.
     """
-
     def __init__(
         self,
         tokenizer,
@@ -51,6 +49,15 @@ class ConstantLengthDataset(IterableDataset):
         self.concat_token_id = tokenizer.eos_token_id
         self.datasets: List[IterableDataset] = datasets
         self.seq_length = seq_length
+
+        vocab_size = len(tokenizer.get_vocab())
+
+        if vocab_size <= torch.iinfo(torch.int16).max:
+            self.tokens_dtype = torch.int16
+        elif vocab_size <= torch.iinfo(torch.int32).max:
+            self.tokens_dtype = torch.int32
+        else:
+            self.tokens_dtype = torch.int64
 
     def __iter__(self):
         buffer = {"input_ids": [], "attention_mask": [], "labels": []}
@@ -105,11 +112,11 @@ class ConstantLengthDataset(IterableDataset):
                             attention_mask.append(1)
                             labels.append(self.concat_token_id)
 
-                        input_ids_with_concat = torch.tensor(input_ids, dtype=torch.long)
+                        input_ids_with_concat = torch.tensor(input_ids, dtype=self.tokens_dtype)
                         attention_mask_with_concat = torch.tensor(
-                            attention_mask, dtype=torch.long
+                            attention_mask, dtype=self.tokens_dtype
                         )
-                        labels_with_concat = torch.tensor(labels, dtype=torch.long)
+                        labels_with_concat = torch.tensor(labels, dtype=self.tokens_dtype)
 
                         buffer["input_ids"].append(input_ids_with_concat)
                         buffer["attention_mask"].append(attention_mask_with_concat)
