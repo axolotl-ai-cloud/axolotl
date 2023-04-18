@@ -37,7 +37,8 @@ class AlpacaPromptTokenizingStrategy(PromptTokenizingStrategy):
         tokenized_full_prompt = self._tokenize(full_prompt)
         if not self.train_on_inputs:
             user_prompt = self.prompter.build_prompt(
-                prompt["instruction"], prompt["input"]
+                prompt["instruction"],
+                prompt["input"] if "input" in prompt else "",
             )
             tokenized_user_prompt = self._tokenize(user_prompt, add_eos_token=False)
             user_prompt_len = len(tokenized_user_prompt["input_ids"])
@@ -51,7 +52,7 @@ class AlpacaPromptTokenizingStrategy(PromptTokenizingStrategy):
     def _tokenize_full_prompt(self, prompt):
         return self.prompter.build_prompt(
             prompt["instruction"],
-            prompt["input"],
+            prompt["input"] if "input" in prompt else "",
             prompt["output"],
         )
 

@@ -102,8 +102,8 @@ def load_model(base_model, base_model_config, model_type, tokenizer_type, cfg, a
                 base_model_config if base_model_config else base_model,
                 model_path,
                 device_map=cfg.device_map,
-                groupsize=-1,
-                is_v1_model=True,
+                groupsize=cfg.gptq_groupsize if cfg.gptq_groupsize else -1,
+                is_v1_model=cfg.gptq_model_v1 if cfg.gptq_model_v1 is not None else True,
             )
             load_in_8bit = False
         elif "llama" in base_model:
