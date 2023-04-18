@@ -36,7 +36,7 @@ class InstructionPromptTokenizingStrategy(PromptTokenizingStrategy):
         raise NotImplementedError
 
     def tokenize_prompt(self, prompt):
-        instruction, input, response = self.parse_instruction_fields
+        instruction, input, response = self.parse_instruction_fields(prompt)
         full_prompt = self._build_full_prompt(instruction, input, response)
         tokenized_full_prompt = self._tokenize(full_prompt)
         if not self.train_on_inputs:
