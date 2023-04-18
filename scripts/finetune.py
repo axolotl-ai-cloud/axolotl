@@ -85,7 +85,7 @@ def load_model(base_model, base_model_config, model_type, tokenizer_type, cfg, a
         raise e
 
     try:
-        if cfg.load_4bit and "llama" in base_model or "llama" in cfg.model_type.lower():
+        if cfg.load_4bit and ("llama" in base_model or "llama" in cfg.model_type.lower()):
             from alpaca_lora_4bit.autograd_4bit import load_llama_model_4bit_low_ram
             from huggingface_hub import snapshot_download
 
