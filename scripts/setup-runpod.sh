@@ -31,4 +31,4 @@ git clone https://github.com/winglian/axolotl.git
 cd axolotl
 pip install -e .[int4]
 mkdir -p ~/.cache/huggingface/accelerate/
-cp configs/accelerate/default_config.yml ~/.cache/huggingface/accelerate/default_config.yml
+cp configs/accelerate/default_config.yaml ~/.cache/huggingface/accelerate/default_config.yaml
