@@ -66,22 +66,25 @@ def load_model(
             from alpaca_lora_4bit.autograd_4bit import load_llama_model_4bit_low_ram
             from huggingface_hub import snapshot_download
 
-            snapshot_download_kwargs = {}
-            if cfg.base_model_ignore_patterns:
-                snapshot_download_kwargs["ignore_patterns"] = cfg.base_model_ignore_patterns
-            cache_model_path = Path(snapshot_download(base_model, ** snapshot_download_kwargs))
-            files = (
-                list(cache_model_path.glob("*.pt"))
-                + list(cache_model_path.glob("*.safetensors"))
-                + list(cache_model_path.glob("*.bin"))
-            )
-            if len(files) > 0:
-                model_path = str(files[0])
-            else:
-                logging.warning(
-                    "unable to find a cached model file, this will likely fail..."
+            try:
+                snapshot_download_kwargs = {}
+                if cfg.base_model_ignore_patterns:
+                    snapshot_download_kwargs["ignore_patterns"] = cfg.base_model_ignore_patterns
+                cache_model_path = Path(snapshot_download(base_model, ** snapshot_download_kwargs))
+                files = (
+                    list(cache_model_path.glob("*.pt"))
+                    + list(cache_model_path.glob("*.safetensors"))
+                    + list(cache_model_path.glob("*.bin"))
                 )
-                model_path = str(cache_model_path)
+                if len(files) > 0:
+                    model_path = str(files[0])
+                else:
+                    logging.warning(
+                        "unable to find a cached model file, this will likely fail..."
+                    )
+                    model_path = str(cache_model_path)
+            except:
+                model_path = cfg.base_model
             model, tokenizer = load_llama_model_4bit_low_ram(
                 base_model_config if base_model_config else base_model,
                 model_path,
