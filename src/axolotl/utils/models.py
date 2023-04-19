@@ -102,8 +102,15 @@ def load_model(
                 torch_dtype=torch_dtype,
                 device_map=cfg.device_map,
             )
-        else:
+        elif model_type:
             model = getattr(transformers, model_type).from_pretrained(
+                base_model,
+                load_in_8bit=cfg.load_in_8bit,
+                torch_dtype=torch_dtype,
+                device_map=cfg.device_map,
+            )
+        else:
+            model = AutoModelForCausalLM.from_pretrained(
                 base_model,
                 load_in_8bit=cfg.load_in_8bit,
                 torch_dtype=torch_dtype,
@@ -148,7 +155,7 @@ def load_model(
 
     model, lora_config = load_adapter(model, cfg, adapter)
 
-    if cfg.ddp:
+    if cfg.ddp and not load_in_8bit:
         model.to(f"cuda:{cfg.local_rank}")
 
     if cfg.load_4bit:

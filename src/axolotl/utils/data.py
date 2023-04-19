@@ -65,7 +65,7 @@ def load_prepare_datasets(tokenizer, cfg, default_dataset_prepared_path):
             elif ds_from_hub:
                 ds = load_dataset(d.path, streaming=True)
             else:
-                raise Exception("unhandled dataset load")
+                raise Exception(f"unhandled dataset load for {d.path}")
 
             if d.type == "alpaca":
                 ds_strategy = AlpacaPromptTokenizingStrategy(

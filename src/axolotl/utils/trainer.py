@@ -94,13 +94,22 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
         )
         trainer_kwargs["callbacks"] = [early_stop_cb]
 
+    data_collator_kwargs = {
+        "padding": True,
+    }
+    if cfg.collator_pad_to_longest:
+        data_collator_kwargs["padding"] = "longest"
+    else:
+        data_collator_kwargs["pad_to_multiple_of"] = 8
     trainer = transformers.Trainer(
         model=model,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
         args=training_args,
         data_collator=transformers.DataCollatorForSeq2Seq(
-            tokenizer, pad_to_multiple_of=8, return_tensors="pt", padding=True
+            tokenizer,
+            return_tensors="pt",
+            **data_collator_kwargs,
         ),
         **trainer_kwargs,
     )
