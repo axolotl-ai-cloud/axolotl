@@ -152,6 +152,7 @@ use_cpu: false
 - I recommend `huggingface:transformers-pytorch-deepspeed-latest-gpu` see https://hub.docker.com/r/huggingface/transformers-pytorch-deepspeed-latest-gpu/
 - Once you start your runpod, and SSH into it:
 ```shell
+export TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6+PTX"
 source <(curl -s https://raw.githubusercontent.com/winglian/axolotl/main/scripts/setup-runpod.sh)
 ```
 
