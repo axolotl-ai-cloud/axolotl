@@ -3,6 +3,7 @@ from hashlib import md5
 from pathlib import Path
 
 from datasets import load_from_disk, load_dataset, IterableDataset, Dataset
+from huggingface_hub import hf_hub_download
 
 from axolotl.datasets import TokenizedPromptDataset, ConstantLengthDataset
 from axolotl.prompt_tokenizers import (
@@ -50,6 +51,7 @@ def load_prepare_datasets(tokenizer, cfg, default_dataset_prepared_path):
         logging.info("Loading raw datasets...")
         datasets = []
         for d in cfg.datasets:
+            ds = None
             ds_from_hub = False
             try:
                 load_dataset(d.path, streaming=True)
@@ -63,9 +65,15 @@ def load_prepare_datasets(tokenizer, cfg, default_dataset_prepared_path):
                     "json", data_files=d.path, streaming=True, split=None
                 )
             elif ds_from_hub:
-                ds = load_dataset(d.path, streaming=True)
+                if d.data_files:
+                    ds = load_dataset(d.path, streaming=True, data_files=d.data_files)
+                else:
+                    ds = load_dataset(d.path, streaming=True)
             else:
-                raise Exception(f"unhandled dataset load for {d.path}")
+                fp = hf_hub_download(repo_id=d.path, repo_type="dataset", filename=d.data_files)
+                ds = load_dataset("json", data_files=fp, streaming=True, split=None)
+            if not ds:
+                raise Exception("unhandled dataset load")
 
             if d.type == "alpaca":
                 ds_strategy = AlpacaPromptTokenizingStrategy(
@@ -111,6 +119,8 @@ def load_prepare_datasets(tokenizer, cfg, default_dataset_prepared_path):
             seq_length=max_packed_sequence_len,
         )
         logging.info("merging, packing, shuffling, and splitting master dataset")
+        # TODO don't split dataset here, shuffle and save first, then split, that way we can
+        #  re-split when loading again
         dataset = Dataset.from_list([_ for _ in constant_len_dataset]).train_test_split(
             test_size=cfg.val_set_size, shuffle=True, seed=42
         )

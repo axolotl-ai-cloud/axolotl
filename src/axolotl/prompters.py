@@ -128,6 +128,10 @@ conv_vicuna_v1_1 = Conversation(
 
 class ShareGPTPrompter:
     def build_prompt(self, source, tokenizer):
+        # ignore the system prompt if provided
+        if source[0]["from"] == "system":
+            source.pop(0)
+
         if len(source) < 2:
             # If there isn't a back and forth conversation, ignore it
             # also happens on the data splitting leaving empty conversations

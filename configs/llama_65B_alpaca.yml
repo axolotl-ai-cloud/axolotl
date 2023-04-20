@@ -5,7 +5,8 @@ load_in_8bit: true
 datasets:
   - path: data/alpaca_data_gpt4.jsonl
     type: alpaca
-  - path: data/vicuna_cleaned.jsonl
+  - path: anon8231489123/ShareGPT_Vicuna_unfiltered
+    data_files: ShareGPT_V3_unfiltered_cleaned_split_no_imsorry.json
     type: sharegpt
   - path: data/gpt4-instruct-similarity-0.6-dataset.jsonl
     type: gpteacher
@@ -30,6 +31,8 @@ wandb_log_model: checkpoint
 output_dir: ./lora-llama-alpaca
 batch_size: 128
 micro_batch_size: 16
+warmup_steps: 1000
+save_steps:
 num_epochs: 5
 learning_rate: 0.00003
 train_on_inputs: false
