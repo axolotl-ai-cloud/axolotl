@@ -11,11 +11,10 @@
     "min_loss_scale": 1
   },
   "scheduler": {
-    "type": "WarmupLR",
+    "type": "OneCycle",
     "params": {
-      "warmup_min_lr": "auto",
-      "warmup_max_lr": "auto",
-      "warmup_num_steps": "auto"
+      "cycle_min_lr": 1e-7,
+      "cycle_max_lr": 1e-4
     }
   },
   "zero_optimization": {
@@ -25,7 +24,8 @@
     "allgather_bucket_size": 5e8,
     "contiguous_gradients": true,
     "reduce_bucket_size": "auto",
-    "reduce_scatter": true
+    "reduce_scatter": true,
+    "stage3_gather_16bit_weights_on_model_save": true
   },
   "gradient_accumulation_steps": "auto",
   "gradient_clipping": "auto",

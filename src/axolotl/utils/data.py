@@ -119,16 +119,15 @@ def load_prepare_datasets(tokenizer, cfg, default_dataset_prepared_path):
             seq_length=max_packed_sequence_len,
         )
         logging.info("merging, packing, shuffling, and splitting master dataset")
-        # TODO don't split dataset here, shuffle and save first, then split, that way we can
-        #  re-split when loading again
-        dataset = Dataset.from_list([_ for _ in constant_len_dataset]).train_test_split(
-            test_size=cfg.val_set_size, shuffle=True, seed=42
-        )
+        dataset = Dataset.from_list([_ for _ in constant_len_dataset]).shuffle(seed=42)
 
         if cfg.local_rank == 0:
             logging.info(f"Saving prepared dataset to disk... {prepared_ds_path}")
             dataset.save_to_disk(prepared_ds_path)
 
+    dataset = dataset.train_test_split(
+        test_size=cfg.val_set_size, shuffle=False
+    )
     train_dataset = dataset["train"]
     eval_dataset = dataset["test"]
 
