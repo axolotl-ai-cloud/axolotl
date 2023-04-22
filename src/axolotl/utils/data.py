@@ -2,7 +2,7 @@ import logging
 from hashlib import md5
 from pathlib import Path
 
-from datasets import load_from_disk, load_dataset, IterableDataset, Dataset
+from datasets import load_from_disk, load_dataset, IterableDataset, Dataset, concatenate_datasets
 from huggingface_hub import hf_hub_download
 
 from axolotl.datasets import TokenizedPromptDataset, ConstantLengthDataset
@@ -44,10 +44,11 @@ def load_prepare_datasets(tokenizer, cfg, default_dataset_prepared_path):
     )
 
     if any(prepared_ds_path.glob("*")):
-        logging.info("Loading prepared dataset from disk...")
+        logging.info(f"Loading prepared dataset from disk ay {prepared_ds_path}...")
         dataset = load_from_disk(str(prepared_ds_path))
         logging.info("Prepared dataset loaded from disk...")
     else:
+        logging.info(f"Unable to find prepared dataset in {prepared_ds_path}")
         logging.info("Loading raw datasets...")
         datasets = []
         for d in cfg.datasets:
@@ -113,17 +114,25 @@ def load_prepare_datasets(tokenizer, cfg, default_dataset_prepared_path):
                 datasets.append(ds_wrapper)
             else:
                 logging.error(f"unhandled prompt tokenization strategy: {d.type}")
-        constant_len_dataset = ConstantLengthDataset(
-            tokenizer,
-            datasets,
-            seq_length=max_packed_sequence_len,
-        )
-        logging.info("merging, packing, shuffling, and splitting master dataset")
-        dataset = Dataset.from_list([_ for _ in constant_len_dataset]).shuffle(seed=42)
+        logging.info("merging and shuffling master dataset")
 
+        dataset = concatenate_datasets(datasets).shuffle(seed=42)
         if cfg.local_rank == 0:
-            logging.info(f"Saving prepared dataset to disk... {prepared_ds_path}")
+            logging.info(f"Saving merged prepared dataset to disk... {prepared_ds_path}")
             dataset.save_to_disk(prepared_ds_path)
+
+        if cfg.max_packed_sequence_len is not None:
+            constant_len_dataset = ConstantLengthDataset(
+                tokenizer,
+                [dataset],
+                seq_length=max_packed_sequence_len,
+            )
+            logging.info("packing master dataset")
+            dataset = Dataset.from_list([_ for _ in constant_len_dataset])
+
+    if cfg.dataset_shard_num and cfg.dataset_shard_idx is not None:
+        logging.info(f"Using index #{cfg.dataset_shard_idx} of {cfg.dataset_shard_num} shards")
+        dataset = dataset.shard(num_shards=cfg.dataset_shard_num, index=cfg.dataset_shard_idx)
 
     dataset = dataset.train_test_split(
         test_size=cfg.val_set_size, shuffle=False

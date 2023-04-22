@@ -1,5 +1,9 @@
 import math
+import os
+from pathlib import Path
+
 import bitsandbytes as bnb
+import torch.cuda
 import transformers
 from torch import nn
 from torch.optim.lr_scheduler import OneCycleLR
@@ -12,7 +16,7 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
         math.ceil(len(train_dataset) * cfg.num_epochs / cfg.batch_size)
     )
     warmup_steps = cfg.warmup_steps if cfg.warmup_steps else min(int(0.03 * total_num_steps), 100)
-    logging_steps = max(min(int(0.005 * total_num_steps), 10), 1)
+    logging_steps = cfg.logging_steps if cfg.logging_steps else max(min(int(0.005 * total_num_steps), 10), 1)
     save_steps = eval_steps = cfg.save_steps if cfg.save_steps else min(int(0.05 * total_num_steps), 200)
 
     training_arguments_kwargs = {}
@@ -26,6 +30,15 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
     if cfg.gradient_checkpointing is not None:
         training_arguments_kwargs["gradient_checkpointing"] = cfg.gradient_checkpointing
 
+    # deepspeed
+    if os.environ.get("ACCELERATE_USE_DEEPSPEED") == "true" and torch.cuda.device_count() > 1:
+        if cfg.deepspeed:
+            training_arguments_kwargs["deepspeed"] = cfg.deepspeed
+        else:
+            # make a guess here
+            # TODO search Path("./") for one
+            training_arguments_kwargs["deepspeed"] = "./ds_config.json"
+
     training_args = transformers.TrainingArguments(
         per_device_train_batch_size=cfg.micro_batch_size,
         gradient_accumulation_steps=cfg.gradient_accumulation_steps,
@@ -37,7 +50,7 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
         save_steps=save_steps,
         output_dir=cfg.output_dir,
         save_total_limit=3,
-        load_best_model_at_end=True if cfg.val_set_size > 0 else False,
+        load_best_model_at_end=True if cfg.val_set_size > 0 and save_steps % eval_steps == 0 else False,
         ddp_find_unused_parameters=False if cfg.ddp else None,
         group_by_length=cfg.group_by_length,
         report_to="wandb" if cfg.use_wandb else None,
@@ -47,7 +60,7 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
 
     trainer_kwargs = {}
 
-    if cfg.load_in_8bit and not cfg.load_4bit:
+    if cfg.optimizer == "adam8bit" and not cfg.load_4bit and not "deepspeed" in training_arguments_kwargs:
         decay_parameters = get_parameter_names(model, [nn.LayerNorm])
         decay_parameters = [name for name in decay_parameters if "bias" not in name]
         optimizer_grouped_parameters = [

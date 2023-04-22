@@ -101,12 +101,19 @@ def load_model(
             )
             load_in_8bit = False
         elif is_llama_derived_model and "LlamaForCausalLM" in globals():
-            model = LlamaForCausalLM.from_pretrained(
-                base_model,
-                load_in_8bit=cfg.load_in_8bit,
-                torch_dtype=torch_dtype,
-                device_map=cfg.device_map,
-            )
+            if not cfg.load_in_8bit:
+                model = LlamaForCausalLM.from_pretrained(
+                    base_model,
+                    device_map=cfg.device_map,
+                )
+            else:
+                model = LlamaForCausalLM.from_pretrained(
+                    base_model,
+                    load_in_8bit=cfg.load_in_8bit,
+                    torch_dtype=torch_dtype,
+                    device_map=cfg.device_map,
+                )
+
         elif model_type:
             model = getattr(transformers, model_type).from_pretrained(
                 base_model,
