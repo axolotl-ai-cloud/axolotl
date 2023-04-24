@@ -12,6 +12,7 @@
 
 
 ## Getting Started
+- install python 3.9.  3.10 and above are not supported.
 
 - Point the config you are using to a huggingface hub dataset (see [configs/llama_7B_4bit.yml](https://github.com/winglian/axolotl/blob/main/configs/llama_7B_4bit.yml#L6-L8))
 
