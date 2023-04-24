@@ -31,7 +31,7 @@ def load_prepare_datasets(tokenizer, cfg, default_dataset_prepared_path):
     ds_hash = str(
         md5(
             (
-                str(max_packed_sequence_len)
+                str(cfg.sequence_len)
                 + "@"
                 + "|".join(sorted([f"{d.path}:{d.type}" for d in cfg.datasets]))
             ).encode("utf-8")
@@ -114,21 +114,24 @@ def load_prepare_datasets(tokenizer, cfg, default_dataset_prepared_path):
                 datasets.append(ds_wrapper)
             else:
                 logging.error(f"unhandled prompt tokenization strategy: {d.type}")
-        logging.info("merging and shuffling master dataset")
+        logging.info("tokenizing, merging, and shuffling master dataset")
 
-        dataset = concatenate_datasets(datasets).shuffle(seed=42)
+        samples = []
+        for d in datasets:
+            samples = samples + [i for i in d]
+        dataset = Dataset.from_list(samples).shuffle(seed=42)
         if cfg.local_rank == 0:
             logging.info(f"Saving merged prepared dataset to disk... {prepared_ds_path}")
             dataset.save_to_disk(prepared_ds_path)
 
-        if cfg.max_packed_sequence_len is not None:
-            constant_len_dataset = ConstantLengthDataset(
-                tokenizer,
-                [dataset],
-                seq_length=max_packed_sequence_len,
-            )
-            logging.info("packing master dataset")
-            dataset = Dataset.from_list([_ for _ in constant_len_dataset])
+    if cfg.max_packed_sequence_len is not None:
+        constant_len_dataset = ConstantLengthDataset(
+            tokenizer,
+            [dataset],
+            seq_length=max_packed_sequence_len,
+        )
+        logging.info(f"packing master dataset to len: {cfg.max_packed_sequence_len}")
+        dataset = Dataset.from_list([_ for _ in constant_len_dataset])
 
     if cfg.dataset_shard_num and cfg.dataset_shard_idx is not None:
         logging.info(f"Using index #{cfg.dataset_shard_idx} of {cfg.dataset_shard_num} shards")

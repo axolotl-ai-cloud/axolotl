@@ -161,6 +161,10 @@ def load_model(
         tokenizer.add_special_tokens({"pad_token": "[PAD]"})
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
+    if cfg.special_tokens:
+        for k, v in cfg.special_tokens.items():
+            setattr(tokenizer, k, v)
+
     if load_in_8bit and not cfg.load_4bit:
         logging.info("converting model w/ prepare_model_for_int8_training")
         model = prepare_model_for_int8_training(model)
