@@ -1,20 +1,14 @@
-base_model: huggyllama/llama-65b
+base_model: huggyllama/llama-13b
 model_type: LlamaForCausalLM
 tokenizer_type: LlamaTokenizer
 load_in_8bit: true
 datasets:
-  - path: data/alpaca_data_gpt4.jsonl
-    type: alpaca
   - path: anon8231489123/ShareGPT_Vicuna_unfiltered
     data_files: ShareGPT_V3_unfiltered_cleaned_split_no_imsorry.json
     type: sharegpt
-  - path: data/gpt4-instruct-similarity-0.6-dataset.jsonl
-    type: gpteacher
-  - path: data/roleplay-similarity_0.6-instruct-dataset.jsonl
-    type: gpteacher
 dataset_prepared_path: last_run_prepared
-val_set_size: 0.04
-adapter: lora
+val_set_size: 0.002
+adapter:
 lora_model_dir:
 sequence_len: 2048
 lora_r: 8
@@ -24,21 +18,22 @@ lora_target_modules:
   - q_proj
   - v_proj
 lora_fan_in_fan_out: false
-wandb_project: llama-65b-lora
+wandb_project:
 wandb_watch:
 wandb_run_id:
 wandb_log_model: checkpoint
-output_dir: ./lora-llama-alpaca
-batch_size: 128
-micro_batch_size: 16
+output_dir: ./llama-13b-sharegpt
+batch_size: 64
+micro_batch_size: 2
 warmup_steps: 1000
 save_steps:
+eval_steps:
 num_epochs: 5
 learning_rate: 0.00003
 train_on_inputs: false
 group_by_length: false
 bf16: true
 tf32: true
-early_stopping_patience:
+early_stopping_patience: 5
 resume_from_checkpoint:
 local_rank:

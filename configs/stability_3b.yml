@@ -1,0 +1,33 @@
+base_model: stabilityai/stablelm-base-alpha-3b
+load_in_8bit: true
+datasets:
+  - path: vicgalle/alpaca-gpt4
+    type: alpaca
+dataset_prepared_path: last_run_prepared
+val_set_size: 0.04
+adapter:
+lora_model_dir:
+sequence_len: 4096
+lora_r: 8
+lora_alpha: 16
+lora_dropout: 0.05
+lora_target_modules:
+  - q_proj
+  - v_proj
+lora_fan_in_fan_out: false
+wandb_project: stable-llama-3b
+wandb_watch:
+wandb_run_id:
+wandb_log_model: checkpoint
+output_dir: ./stable-llama-3b
+batch_size: 128
+micro_batch_size: 16
+num_epochs: 1
+learning_rate: 0.00003
+train_on_inputs: false
+group_by_length: false
+bf16: true
+tf32: true
+early_stopping_patience: 3
+resume_from_checkpoint:
+local_rank:

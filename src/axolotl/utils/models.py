@@ -7,11 +7,16 @@ import torch
 import transformers
 from transformers import (
     AutoModelForCausalLM,
-    LlamaForCausalLM,
-    LlamaTokenizer,
     AutoTokenizer,
     PreTrainedModel,
 )
+try:
+    from transformers import (
+        LlamaForCausalLM,
+        LlamaTokenizer,
+    )
+except:
+    logging.warning("This version of transformers does not support Llama. Consider upgrading.")
 
 from axolotl.prompt_tokenizers import LLAMA_DEFAULT_PAD_TOKEN
 
@@ -70,7 +75,7 @@ def load_model(
                 snapshot_download_kwargs = {}
                 if cfg.base_model_ignore_patterns:
                     snapshot_download_kwargs["ignore_patterns"] = cfg.base_model_ignore_patterns
-                cache_model_path = Path(snapshot_download(base_model, ** snapshot_download_kwargs))
+                cache_model_path = Path(snapshot_download(base_model, **snapshot_download_kwargs))
                 files = (
                     list(cache_model_path.glob("*.pt"))
                     + list(cache_model_path.glob("*.safetensors"))
@@ -95,15 +100,29 @@ def load_model(
                 else True,
             )
             load_in_8bit = False
-        elif is_llama_derived_model:
-            model = LlamaForCausalLM.from_pretrained(
+        elif is_llama_derived_model and "LlamaForCausalLM" in globals():
+            if not cfg.load_in_8bit:
+                model = LlamaForCausalLM.from_pretrained(
+                    base_model,
+                    device_map=cfg.device_map,
+                )
+            else:
+                model = LlamaForCausalLM.from_pretrained(
+                    base_model,
+                    load_in_8bit=cfg.load_in_8bit,
+                    torch_dtype=torch_dtype,
+                    device_map=cfg.device_map,
+                )
+
+        elif model_type:
+            model = getattr(transformers, model_type).from_pretrained(
                 base_model,
                 load_in_8bit=cfg.load_in_8bit,
                 torch_dtype=torch_dtype,
                 device_map=cfg.device_map,
             )
         else:
-            model = getattr(transformers, model_type).from_pretrained(
+            model = AutoModelForCausalLM.from_pretrained(
                 base_model,
                 load_in_8bit=cfg.load_in_8bit,
                 torch_dtype=torch_dtype,
@@ -123,7 +142,7 @@ def load_model(
 
     if not tokenizer:
         try:
-            if is_llama_derived_model:
+            if is_llama_derived_model and "LlamaTokenizer" in globals():
                 tokenizer = LlamaTokenizer.from_pretrained(model)
             else:
                 tokenizer = getattr(transformers, tokenizer_type).from_pretrained(model)
@@ -142,13 +161,17 @@ def load_model(
         tokenizer.add_special_tokens({"pad_token": "[PAD]"})
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
+    if cfg.special_tokens:
+        for k, v in cfg.special_tokens.items():
+            setattr(tokenizer, k, v)
+
     if load_in_8bit and not cfg.load_4bit:
         logging.info("converting model w/ prepare_model_for_int8_training")
         model = prepare_model_for_int8_training(model)
 
     model, lora_config = load_adapter(model, cfg, adapter)
 
-    if cfg.ddp:
+    if cfg.ddp and not load_in_8bit:
         model.to(f"cuda:{cfg.local_rank}")
 
     if cfg.load_4bit:
