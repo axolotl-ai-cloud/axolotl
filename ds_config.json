@@ -10,6 +10,15 @@
     "hysteresis": 2,
     "min_loss_scale": 1
   },
+  "optimizer": {
+    "type": "Adam",
+    "params": {
+      "lr": "auto",
+      "betas": "auto",
+      "eps": "auto",
+      "weight_decay": "auto"
+    }
+  },
   "scheduler": {
     "type": "OneCycle",
     "params": {
@@ -19,12 +28,22 @@
   },
   "zero_optimization": {
     "stage": 2,
+    "offload_optimizer": {
+      "device": "cpu",
+      "pin_memory": true
+    },
+    "offload_param": {
+      "device": "cpu",
+      "pin_memory": true
+    },
     "overlap_comm": true,
     "allgather_partitions": true,
     "allgather_bucket_size": 5e8,
     "contiguous_gradients": true,
     "reduce_bucket_size": "auto",
     "reduce_scatter": true,
+    "stage3_max_live_parameters": 0,
+    "stage3_max_reuse_distance": 0,
     "stage3_gather_16bit_weights_on_model_save": true
   },
   "gradient_accumulation_steps": "auto",
