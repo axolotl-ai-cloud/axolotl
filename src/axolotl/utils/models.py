@@ -53,7 +53,7 @@ def load_model(
         logging.info("patching with xformers attention")
         hijack_llama_attention()
 
-    torch_dtype = (torch.float16 if cfg.load_in_8bit or cfg.fp16 else torch.float32,)
+    torch_dtype = torch.float16 if cfg.load_in_8bit or cfg.fp16 or cfg.bf16 else torch.float32
     try:
         if cfg.load_4bit:
             from alpaca_lora_4bit.monkeypatch.peft_tuners_lora_monkey_patch import (
@@ -161,11 +161,11 @@ def load_model(
         tokenizer.add_special_tokens({"pad_token": "[PAD]"})
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-    if cfg.special_tokens:
-        for k, v in cfg.special_tokens.items():
-            setattr(tokenizer, k, v)
+    if cfg.tokens:
+        for k, v in cfg.tokens.items():
+            tokenizer.add_special_tokens({k: v})
 
-    if load_in_8bit and not cfg.load_4bit:
+    if load_in_8bit and cfg.load_4bit:
         logging.info("converting model w/ prepare_model_for_int8_training")
         model = prepare_model_for_int8_training(model)
 

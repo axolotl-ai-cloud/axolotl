@@ -127,7 +127,7 @@ conv_vicuna_v1_1 = Conversation(
 
 
 class ShareGPTPrompter:
-    def build_prompt(self, source, tokenizer):
+    def build_prompt(self, source, tokenizer, sequence_len=2048):
         # ignore the system prompt if provided
         if source[0]["from"] == "system":
             source.pop(0)
@@ -157,13 +157,14 @@ class ShareGPTPrompter:
             role = roles[sentence["from"]]
             assert role == conv.roles[j % 2]
             conv.append_message(role, sentence["value"])
+        # TODO, this concatenates everything, but doesn't seem to properly add the eos_token_id, as the eos_token gets split up
         conversation = conv.get_prompt()
 
         # Tokenize conversations
         tokenized_result = tokenizer(
             conversation,
             truncation=True,
-            max_length=2048,  # FIXME
+            max_length=sequence_len,  # FIXME
             padding=False,
             return_tensors=None,
         )
@@ -173,7 +174,9 @@ class ShareGPTPrompter:
         sep = conv.sep + conv.roles[1] + ": "
 
         rounds = conversation.split(conv.sep2)
+        rounds = [r + conv.sep2 for r in rounds]
         cur_len = 1
+        target[0] = IGNORE_TOKEN_ID  # mask out the bos
         for i, rou in enumerate(rounds):
             if rou == "":
                 break
@@ -182,19 +185,27 @@ class ShareGPTPrompter:
             if len(parts) != 2:
                 break
             parts[0] += sep
-            round_len = len(tokenizer(rou)["input_ids"])
-            instruction_len = len(tokenizer(parts[0])["input_ids"]) - 2
+            round_len = len(tokenizer(rou)["input_ids"]) - 1  # -1 ignores the bos_token generated for this
+            # we have to strip the initial part, any dangling whitespace creates an additional ghost token
+            instruction_len = len(tokenizer(parts[0].strip())["input_ids"]) - 1  # -1 ignores the bos_token generated for this
             target[cur_len : cur_len + instruction_len] = [
                 IGNORE_TOKEN_ID
             ] * instruction_len
 
             cur_len += round_len
-        target[cur_len:] = [IGNORE_TOKEN_ID] * (len(target) - cur_len)
+            if cur_len >= sequence_len:
+                break
+
+        # Fix: Truncate the target to have the same length as input_ids
+        target = target[:len(tokenized_result["input_ids"])]
+        # target[cur_len:] = [IGNORE_TOKEN_ID] * (len(target) - cur_len)
+
         attention_mask = [
             1 if x != tokenizer.pad_token_id else 0
             for x in tokenized_result["input_ids"]
         ]
 
+        # TODO truncate len to sequence_len
         return dict(
             input_ids=tokenized_result["input_ids"],
             labels=target,
