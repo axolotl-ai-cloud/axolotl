@@ -15,9 +15,9 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
     total_num_steps = int(
         math.ceil(len(train_dataset) * cfg.num_epochs / cfg.batch_size)
     )
-    warmup_steps = cfg.warmup_steps if cfg.warmup_steps else min(int(0.03 * total_num_steps), 100)
-    logging_steps = cfg.logging_steps if cfg.logging_steps else max(min(int(0.005 * total_num_steps), 10), 1)
-    save_steps = eval_steps = cfg.save_steps if cfg.save_steps else min(int(0.05 * total_num_steps), 200)
+    warmup_steps = cfg.warmup_steps if cfg.warmup_steps is not None else min(int(0.03 * total_num_steps), 100)
+    logging_steps = cfg.logging_steps if cfg.logging_steps is not None else max(min(int(0.005 * total_num_steps), 10), 1)
+    save_steps = eval_steps = cfg.save_steps if cfg.save_steps is not None else min(int(0.05 * total_num_steps), 200)
 
     training_arguments_kwargs = {}
     if cfg.bf16 == "full":
