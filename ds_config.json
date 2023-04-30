@@ -20,10 +20,12 @@
     }
   },
   "scheduler": {
-    "type": "OneCycle",
+    "type": "WarmupDecayLR",
     "params": {
-      "cycle_min_lr": 1e-7,
-      "cycle_max_lr": 1e-4
+      "warmup_min_lr": "auto",
+      "warmup_max_lr": "auto",
+      "warmup_num_steps": "auto",
+      "total_num_steps": "auto"
     }
   },
   "zero_optimization": {
