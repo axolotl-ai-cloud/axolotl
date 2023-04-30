@@ -179,6 +179,11 @@ def load_model(
                 m.scales = m.scales.half()
                 m.bias = m.bias.half()
 
+    if torch.cuda.device_count() > 1 and int(os.getenv("WORLD_SIZE", "1")) > 1:
+        model.is_parallelizable = True
+        model.model_parallel = True
+
+
     # TODO resume_from_checkpoint handling
     return model, tokenizer, lora_config
 

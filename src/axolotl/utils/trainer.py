@@ -1,5 +1,7 @@
+import importlib
 import math
 import os
+import sys
 from pathlib import Path
 
 import bitsandbytes as bnb
@@ -35,9 +37,9 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
         else:
             training_arguments_kwargs["gradient_checkpointing"] = cfg.gradient_checkpointing
     if cfg.fsdp:
-        training_arguments_kwargs["fsdp"] = cfg.fsdp.split(" ")
-        if cfg.fsdp_transformer_layer_cls_to_wrap:
-            training_arguments_kwargs["fsdp_transformer_layer_cls_to_wrap"] = cfg.fsdp_transformer_layer_cls_to_wrap
+        training_arguments_kwargs["fsdp"] = cfg.fsdp
+        if cfg.fsdp_config:
+            training_arguments_kwargs["fsdp_config"] = dict(cfg.fsdp_config)
 
 
     # deepspeed
@@ -73,6 +75,10 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
 
     trainer_kwargs = {}
 
+    if cfg.optimizer == "adamw_anyprecision":
+        if Path(cfg.torchdistx_path).exists():
+            sys.path.append(cfg.torchdistx_path)
+            torchdistx = importlib.import_module('torchdistx')
     if cfg.optimizer == "adam8bit" and not cfg.load_4bit and not "deepspeed" in training_arguments_kwargs:
         decay_parameters = get_parameter_names(model, [nn.LayerNorm])
         decay_parameters = [name for name in decay_parameters if "bias" not in name]
