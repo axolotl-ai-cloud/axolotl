@@ -146,8 +146,8 @@ def train(
         cfg.bf16 = False
 
     # Load the model and tokenizer
-    logging.info("loading model, tokenizer, and lora_config...")
-    model, tokenizer, lora_config = load_model(
+    logging.info("loading model, tokenizer, and peft_config...")
+    model, tokenizer, peft_config = load_model(
         cfg.base_model,
         cfg.base_model_config,
         cfg.model_type,
@@ -186,9 +186,9 @@ def train(
         model = torch.compile(model)
 
     # go ahead and presave, so we have the adapter config available to inspect
-    if lora_config:
+    if peft_config:
         logging.info(f"Pre-saving adapter config to {cfg.output_dir}")
-        lora_config.save_pretrained(cfg.output_dir)
+        peft_config.save_pretrained(cfg.output_dir)
 
     # In case we want to stop early with ctrl+c, this is a nice to have to save the pretrained model
     if cfg.local_rank == 0:

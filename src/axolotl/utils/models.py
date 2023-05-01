@@ -195,9 +195,39 @@ def load_adapter(model, cfg, adapter):
         return model, None
     if adapter == "lora":
         return load_lora(model, cfg)
-    # TODO support Llama-Adapter once merged into peft https://github.com/huggingface/peft/pulls
+    if adapter == "llama-adapter":
+        return load_llama_adapter(model, cfg)
 
     raise NotImplementedError(f"{adapter} peft adapter not available")
+
+
+def load_llama_adapter(model, cfg):
+    # type: (PreTrainedModel, AttrDefault) -> Tuple[PreTrainedModel, Optional[PeftConfig]]
+    from peft import (
+        AdaptionPromptConfig,
+        get_peft_model,
+        PeftModel,
+    )
+
+    peft_config = AdaptionPromptConfig(
+        adapter_layers=cfg.peft_adapter.layers,  # layers (L)
+        adapter_len=cfg.peft_adapter.len,  # prompt length (K)
+        task_type="CAUSAL_LM",
+    )
+
+    if cfg.peft_model_dir:
+        model = PeftModel.from_pretrained(
+            model,
+            cfg.lora_model_dir,
+            device_map=cfg.device_map,
+            torch_dtype=torch.float16,
+        )
+    else:
+        model = get_peft_model(model, peft_config)
+
+    model.print_trainable_parameters()
+
+    return model, peft_config
 
 
 def load_lora(model, cfg):
@@ -211,27 +241,26 @@ def load_lora(model, cfg):
 
     lora_config = None
 
-    if cfg.adapter == "lora":
-        lora_config = LoraConfig(
-            r=cfg.lora_r,
-            lora_alpha=cfg.lora_alpha,
-            target_modules=cfg.lora_target_modules,
-            lora_dropout=cfg.lora_dropout,
-            fan_in_fan_out=cfg.lora_fan_in_fan_out,
-            bias="none",
-            task_type="CAUSAL_LM",
+    lora_config = LoraConfig(
+        r=cfg.lora_r,
+        lora_alpha=cfg.lora_alpha,
+        target_modules=cfg.lora_target_modules,
+        lora_dropout=cfg.lora_dropout,
+        fan_in_fan_out=cfg.lora_fan_in_fan_out,
+        bias="none",
+        task_type="CAUSAL_LM",
+    )
+
+    if cfg.lora_model_dir:
+        model = PeftModel.from_pretrained(
+            model,
+            cfg.lora_model_dir,
+            device_map=cfg.device_map,
+            torch_dtype=torch.float16,
         )
+    else:
+        model = get_peft_model(model, lora_config)
 
-        if cfg.lora_model_dir:
-            model = PeftModel.from_pretrained(
-                model,
-                cfg.lora_model_dir,
-                device_map=cfg.device_map,
-                torch_dtype=torch.float16,
-            )
-        else:
-            model = get_peft_model(model, lora_config)
-
-        model.print_trainable_parameters()
+    model.print_trainable_parameters()
 
     return model, lora_config
