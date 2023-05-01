@@ -158,8 +158,8 @@ def load_model(
         for k, v in cfg.tokens.items():
             tokenizer.add_special_tokens({k: v})
 
-    if load_in_8bit and cfg.load_4bit:
-        logging.info("converting model w/ prepare_model_for_int8_training")
+    if cfg.adapter and load_in_8bit and not cfg.load_4bit:
+        logging.info("converting PEFT model w/ prepare_model_for_int8_training")
         model = prepare_model_for_int8_training(model)
 
     model, lora_config = load_adapter(model, cfg, adapter)
