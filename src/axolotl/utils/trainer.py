@@ -12,6 +12,8 @@ from torch.optim.lr_scheduler import OneCycleLR
 from transformers import EarlyStoppingCallback
 from transformers.trainer_pt_utils import get_parameter_names
 
+from axolotl.utils.schedulers import InterpolatingLogScheduler
+
 
 def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
     total_num_steps = int(
@@ -27,10 +29,15 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
         if cfg.logging_steps is not None
         else max(min(int(0.005 * total_num_steps), 10), 1)
     )
-    save_steps = eval_steps = (
+    save_steps = (
         cfg.save_steps
         if cfg.save_steps is not None
         else min(int(0.05 * total_num_steps), 200)
+    )
+    eval_steps = (
+        cfg.eval_steps
+        if cfg.eval_steps is not None and save_steps % cfg.eval_steps == 0
+        else save_steps
     )
 
     training_arguments_kwargs = {}
@@ -95,7 +102,7 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
         report_to="wandb" if cfg.use_wandb else None,
         run_name=cfg.wandb_run_id if cfg.use_wandb else None,
         optim=cfg.optimizer if cfg.optimizer else None,
-        lr_scheduler_type=cfg.lr_scheduler if cfg.lr_scheduler else None,
+        lr_scheduler_type=cfg.lr_scheduler if cfg.lr_scheduler not in ("one_cycle", "log_sweep") else "cosine",
         weight_decay=cfg.weight_decay if cfg.weight_decay else 0.0,
         **training_arguments_kwargs,
     )
@@ -147,7 +154,15 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
                 optimizer,
                 cfg.learning_rate,
                 total_steps=total_num_steps,
+                epochs=cfg.num_epochs,
                 **lr_scheduler_kwargs,
+            )
+        elif cfg.lr_scheduler == "log_sweep":
+            lr_scheduler = InterpolatingLogScheduler(
+                optimizer,
+                cfg.warmup_steps,
+                cfg.log_sweep_min_lr if cfg.log_sweep_min_lr else 1e-10,
+                cfg.log_sweep_max_lr if cfg.log_sweep_max_lr else 10,
             )
         else:
             lr_scheduler = transformers.get_cosine_schedule_with_warmup(

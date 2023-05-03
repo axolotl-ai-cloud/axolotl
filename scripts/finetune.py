@@ -1,5 +1,7 @@
+import importlib
 import logging
 import os
+import pathlib
 import random
 import signal
 import sys
@@ -44,18 +46,20 @@ def choose_device(cfg):
         cfg.device_map = {"": cfg.device}
 
 
-def do_inference(cfg, model, tokenizer):
+def do_inference(cfg, model, tokenizer, prompter="AlpacaPrompter"):
     tokenizer.add_special_tokens({"unk_token": "<unk>"})
     tokenizer.add_special_tokens({"bos_token": "<s>"})
     tokenizer.add_special_tokens({"eos_token": "</s>"})
 
-    from axolotl.prompters import ReflectAlpacaPrompter
+    prompter_module = getattr(importlib.import_module("axolotl.prompters"), prompter)
 
     while True:
-        instruction = str(input("Give me an instruction: "))
+        # support for multiline inputs
+        print("Give me an instruction (Ctrl + D to finish): ")
+        instruction = pathlib.Path("/proc/self/fd/0").read_text()
         if not instruction:
             return
-        prompt = ReflectAlpacaPrompter().build_prompt(instruction=instruction)
+        prompt = prompter_module().build_prompt(instruction=instruction)
         batch = tokenizer(prompt, return_tensors="pt", add_special_tokens=True)
 
         model.eval()
@@ -162,6 +166,10 @@ def train(
         do_inference(cfg, model, tokenizer)
         return
 
+    if "shard" in kwargs:
+        model.save_pretrained(cfg.output_dir)
+        return
+
     train_dataset, eval_dataset = load_prepare_datasets(
         tokenizer, cfg, DEFAULT_DATASET_PREPARED_PATH
     )
@@ -207,12 +215,11 @@ def train(
             logging.info(f"Using Auto-resume functionality to start with checkpoint at {resume_from_checkpoint}")
     trainer.train(resume_from_checkpoint=resume_from_checkpoint)
 
-    if cfg.local_rank == 0:
-        # TODO do we need this fix? https://huggingface.co/docs/accelerate/usage_guides/fsdp#saving-and-loading
-        logging.info(
-            f"Training Completed!!! Saving pre-trained model to {cfg.output_dir}"
-        )
-        model.save_pretrained(cfg.output_dir)
+    logging.info(
+        f"Training Completed!!! Saving pre-trained model to {cfg.output_dir}"
+    )
+    # TODO do we need this fix? https://huggingface.co/docs/accelerate/usage_guides/fsdp#saving-and-loading
+    trainer.save_model(cfg.output_dir)
 
 
 if __name__ == "__main__":
