@@ -86,6 +86,7 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
     training_args = transformers.TrainingArguments(
         per_device_train_batch_size=cfg.micro_batch_size,
         gradient_accumulation_steps=cfg.gradient_accumulation_steps,
+        eval_accumulation_steps=cfg.gradient_accumulation_steps,
         num_train_epochs=cfg.num_epochs,
         learning_rate=cfg.learning_rate,
         evaluation_strategy="steps" if cfg.val_set_size > 0 else "no",

@@ -19,16 +19,15 @@ class InterpolatingLogScheduler(LRScheduler):
         self.num_steps = num_steps
         self.min_lr = min_lr
         self.max_lr = max_lr
-        self.q = (max_lr / min_lr) ** (1 / num_steps - 1)
+        self.q = (max_lr / min_lr) ** (1 / (num_steps - 1))
         super().__init__(optimizer, last_epoch)
 
     def get_lr(self):
-        if self.last_epoch == 0:
-            lr = self.min_lr
+        if self.last_epoch <= 0:
+            lrs = [self.min_lr for base_lr in self.base_lrs]
         elif self.last_epoch < self.num_steps:
-            # FIXME, not perfect as we need to account for number of steps are in an epoch, etc
-            lr = self.min_lr * (self.q ** self.last_epoch)
+            lrs = [self.min_lr * (self.q ** (self.last_epoch - 1)) for base_lr in self.base_lrs]
         else:
-            lr = self.max_lr
+            lrs = [self.max_lr for base_lr in self.base_lrs]
 
-        return [lr for _ in self.base_lrs]
+        return lrs
