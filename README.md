@@ -85,6 +85,7 @@ output_dir: ./completed-model
 # training hyperparameters
 batch_size: 8
 micro_batch_size: 2
+eval_batch_size: 2
 num_epochs: 3
 warmup_steps: 100
 learning_rate: 0.00003
