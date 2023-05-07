@@ -97,7 +97,7 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
         output_dir=cfg.output_dir,
         save_total_limit=3,
         load_best_model_at_end=True
-        if cfg.val_set_size > 0 and save_steps % eval_steps == 0
+        if cfg.val_set_size > 0 and save_steps % eval_steps == 0 and cfg.load_in_8bit is not True
         else False,
         ddp_find_unused_parameters=False if cfg.ddp else None,
         group_by_length=cfg.group_by_length,
