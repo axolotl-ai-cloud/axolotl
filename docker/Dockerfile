@@ -4,7 +4,7 @@ FROM winglian/axolotl:$BASE_TAG
 ARG TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6+PTX"
 
 RUN apt-get update && \
-    apt-get install -y vim \
+    apt-get install -y vim
 
 WORKDIR /workspace
 
