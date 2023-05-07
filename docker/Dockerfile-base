@@ -63,3 +63,7 @@ COPY --from=flash-attn-builder /workspace/flash-attention/dist/flash_attn-*.whl 
 
 RUN pip3 install wheels/deepspeed-*.whl wheels/flash_attn-*.whl
 RUN git lfs install --skip-repo
+RUN pip3 install "peft @ git+https://github.com/huggingface/peft.git@main" \
+        "accelerate @ git+git+https://github.com/huggingface/accelerate.git@main" \
+        "transformers @ git+git+https://github.com/huggingface/transformers.git@main" && \
+    pip3 install awscli
