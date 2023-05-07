@@ -8,10 +8,9 @@ on:
 
 jobs:
   build-axolotl:
-    # We specify this so it doesn't run automatically in our other github org
-    # that we use to build the base on self-hosted GPU runners
-    if: github.repository_owner == 'winglian'
-    runs-on: ubuntu-latest
+    if: github.repository_owner == 'OpenAccess-AI-Collective'
+    # this job needs to be run on self-hosted GPU runners...
+    runs-on: self-hosted
     steps:
       - name: Checkout
         uses: actions/checkout@v3
