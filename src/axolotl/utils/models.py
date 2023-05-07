@@ -53,7 +53,7 @@ def load_model(
         logging.info("patching with xformers attention")
         hijack_llama_attention()
 
-    torch_dtype = (torch.float16 if cfg.load_in_8bit or cfg.fp16 else torch.float32,)
+    torch_dtype = torch.float16 if cfg.load_in_8bit or cfg.fp16 or cfg.bf16 else torch.float32
     try:
         if cfg.load_4bit:
             from alpaca_lora_4bit.monkeypatch.peft_tuners_lora_monkey_patch import (
@@ -101,30 +101,23 @@ def load_model(
             )
             load_in_8bit = False
         elif is_llama_derived_model and "LlamaForCausalLM" in globals():
-            if not cfg.load_in_8bit:
-                model = LlamaForCausalLM.from_pretrained(
-                    base_model,
-                    device_map=cfg.device_map,
-                )
-            else:
-                model = LlamaForCausalLM.from_pretrained(
-                    base_model,
-                    load_in_8bit=cfg.load_in_8bit,
-                    torch_dtype=torch_dtype,
-                    device_map=cfg.device_map,
-                )
-
+            model = LlamaForCausalLM.from_pretrained(
+                base_model,
+                load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
+                torch_dtype=torch_dtype,
+                device_map=cfg.device_map,
+            )
         elif model_type:
             model = getattr(transformers, model_type).from_pretrained(
                 base_model,
-                load_in_8bit=cfg.load_in_8bit,
+                load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
                 torch_dtype=torch_dtype,
                 device_map=cfg.device_map,
             )
         else:
             model = AutoModelForCausalLM.from_pretrained(
                 base_model,
-                load_in_8bit=cfg.load_in_8bit,
+                load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
                 torch_dtype=torch_dtype,
                 device_map=cfg.device_map,
             )
@@ -135,7 +128,7 @@ def load_model(
         logging.exception(e)
         model = AutoModelForCausalLM.from_pretrained(
             base_model,
-            load_in_8bit=cfg.load_in_8bit,
+            load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
             torch_dtype=torch_dtype,
             device_map=cfg.device_map,
         )
@@ -147,7 +140,7 @@ def load_model(
             else:
                 tokenizer = getattr(transformers, tokenizer_type).from_pretrained(model)
         except:
-            tokenizer = AutoTokenizer.from_pretrained(base_model)
+            tokenizer = AutoTokenizer.from_pretrained(base_model_config)
 
     logging.debug(f"EOS: {tokenizer.eos_token_id} / {tokenizer.eos_token}")
     logging.debug(f"BOS: {tokenizer.bos_token_id} / {tokenizer.bos_token}")
@@ -161,12 +154,12 @@ def load_model(
         tokenizer.add_special_tokens({"pad_token": "[PAD]"})
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-    if cfg.special_tokens:
-        for k, v in cfg.special_tokens.items():
-            setattr(tokenizer, k, v)
+    if cfg.tokens:
+        for k, v in cfg.tokens.items():
+            tokenizer.add_special_tokens({k: v})
 
-    if load_in_8bit and not cfg.load_4bit:
-        logging.info("converting model w/ prepare_model_for_int8_training")
+    if cfg.adapter and load_in_8bit and not cfg.load_4bit:
+        logging.info("converting PEFT model w/ prepare_model_for_int8_training")
         model = prepare_model_for_int8_training(model)
 
     model, lora_config = load_adapter(model, cfg, adapter)
@@ -186,6 +179,11 @@ def load_model(
                 m.scales = m.scales.half()
                 m.bias = m.bias.half()
 
+    if torch.cuda.device_count() > 1 and int(os.getenv("WORLD_SIZE", "1")) > 1:
+        model.is_parallelizable = True
+        model.model_parallel = True
+
+
     # TODO resume_from_checkpoint handling
     return model, tokenizer, lora_config
 
@@ -197,9 +195,39 @@ def load_adapter(model, cfg, adapter):
         return model, None
     if adapter == "lora":
         return load_lora(model, cfg)
-    # TODO support Llama-Adapter once merged into peft https://github.com/huggingface/peft/pulls
+    if adapter == "llama-adapter":
+        return load_llama_adapter(model, cfg)
 
     raise NotImplementedError(f"{adapter} peft adapter not available")
+
+
+def load_llama_adapter(model, cfg):
+    # type: (PreTrainedModel, AttrDefault) -> Tuple[PreTrainedModel, Optional[PeftConfig]]
+    from peft import (
+        AdaptionPromptConfig,
+        get_peft_model,
+        PeftModel,
+    )
+
+    peft_config = AdaptionPromptConfig(
+        adapter_layers=cfg.peft_adapter.layers,  # layers (L)
+        adapter_len=cfg.peft_adapter.len,  # prompt length (K)
+        task_type="CAUSAL_LM",
+    )
+
+    if cfg.peft_model_dir:
+        model = PeftModel.from_pretrained(
+            model,
+            cfg.lora_model_dir,
+            device_map=cfg.device_map,
+            torch_dtype=torch.float16,
+        )
+    else:
+        model = get_peft_model(model, peft_config)
+
+    model.print_trainable_parameters()
+
+    return model, peft_config
 
 
 def load_lora(model, cfg):
@@ -213,27 +241,26 @@ def load_lora(model, cfg):
 
     lora_config = None
 
-    if cfg.adapter == "lora":
-        lora_config = LoraConfig(
-            r=cfg.lora_r,
-            lora_alpha=cfg.lora_alpha,
-            target_modules=cfg.lora_target_modules,
-            lora_dropout=cfg.lora_dropout,
-            fan_in_fan_out=cfg.lora_fan_in_fan_out,
-            bias="none",
-            task_type="CAUSAL_LM",
+    lora_config = LoraConfig(
+        r=cfg.lora_r,
+        lora_alpha=cfg.lora_alpha,
+        target_modules=cfg.lora_target_modules,
+        lora_dropout=cfg.lora_dropout,
+        fan_in_fan_out=cfg.lora_fan_in_fan_out,
+        bias="none",
+        task_type="CAUSAL_LM",
+    )
+
+    if cfg.lora_model_dir:
+        model = PeftModel.from_pretrained(
+            model,
+            cfg.lora_model_dir,
+            device_map=cfg.device_map,
+            torch_dtype=torch.float16,
         )
+    else:
+        model = get_peft_model(model, lora_config)
 
-        if cfg.lora_model_dir:
-            model = PeftModel.from_pretrained(
-                model,
-                cfg.lora_model_dir,
-                device_map=cfg.device_map,
-                torch_dtype=torch.float16,
-            )
-        else:
-            model = get_peft_model(model, lora_config)
-
-        model.print_trainable_parameters()
+    model.print_trainable_parameters()
 
     return model, lora_config
