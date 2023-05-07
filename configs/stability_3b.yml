@@ -1,5 +1,6 @@
 base_model: stabilityai/stablelm-base-alpha-3b
-load_in_8bit: true
+base_model_config: stabilityai/stablelm-base-alpha-3b
+load_in_8bit: false
 datasets:
   - path: vicgalle/alpaca-gpt4
     type: alpaca
@@ -8,6 +9,7 @@ val_set_size: 0.04
 adapter:
 lora_model_dir:
 sequence_len: 4096
+max_packed_sequence_len: 4096
 lora_r: 8
 lora_alpha: 16
 lora_dropout: 0.05
@@ -15,19 +17,40 @@ lora_target_modules:
   - q_proj
   - v_proj
 lora_fan_in_fan_out: false
-wandb_project: stable-llama-3b
+wandb_project: stable-alpaca-3b
 wandb_watch:
 wandb_run_id:
 wandb_log_model: checkpoint
-output_dir: ./stable-llama-3b
-batch_size: 128
-micro_batch_size: 16
+output_dir: ./stable-alpaca-3b
+batch_size: 2
+micro_batch_size: 1
 num_epochs: 1
-learning_rate: 0.00003
+optimizer: adamw_bnb_8bit
+torchdistx_path:
+lr_scheduler: cosine
+learning_rate: 0.0000002
 train_on_inputs: false
 group_by_length: false
 bf16: true
 tf32: true
-early_stopping_patience: 3
+early_stopping_patience:
 resume_from_checkpoint:
 local_rank:
+logging_steps: 1
+xformers_attention: true
+flash_attention:
+gptq_groupsize:
+gptq_model_v1:
+warmup_steps: 100
+eval_steps: 50
+save_steps: 200
+debug:
+deepspeed:
+weight_decay: 0.01
+fsdp:
+fsdp_config:
+#special_tokens:
+#  pad_token: "[PAD]"
+#  bos_token: "<s>"
+#  eos_token: "</s>"
+#  unk_token: "<unk>"
