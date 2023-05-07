@@ -31,7 +31,7 @@ jobs:
         with:
           context: .
           build-args: |
-            BASE_TAG=dev
+            BASE_TAG=dev-base
           file: ./docker/Dockerfile
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.metadata.outputs.tags }}
