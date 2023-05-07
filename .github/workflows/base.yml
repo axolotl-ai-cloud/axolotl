@@ -3,11 +3,11 @@ name: ci-cd
 on:
   push:
     branches:
-      - "main"
-      - "dev"
+      - "main-base"
+      - "dev-base"
 
 jobs:
-  build-axolotl:
+  build-base:
     if: github.repository_owner == 'OpenAccess-AI-Collective'
     runs-on: self-hosted
     steps:
@@ -17,7 +17,7 @@ jobs:
         id: metadata
         uses: docker/metadata-action@v3
         with:
-          images: winglian/axolotl
+          images: winglian/axolotl-base
       - name: Login to Docker Hub
         uses: docker/login-action@v2
         with:
@@ -29,7 +29,7 @@ jobs:
         uses: docker/build-push-action@v4
         with:
           context: .
-          file: ./docker/Dockerfile
+          file: ./docker/Dockerfile-base
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.metadata.outputs.tags }}
           labels: ${{ steps.metadata.outputs.labels }}

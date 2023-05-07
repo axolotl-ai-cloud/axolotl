@@ -2,11 +2,14 @@ ARG CUDA_VERSION="11.8.0"
 ARG CUDNN_VERSION="8"
 ARG UBUNTU_VERSION="22.04"
 
-FROM nvidia/cuda:$CUDA_VERSION-cudnn$CUDNN_VERSION-devel-ubuntu$UBUNTU_VERSION
+FROM nvidia/cuda:$CUDA_VERSION-cudnn$CUDNN_VERSION-devel-ubuntu$UBUNTU_VERSION as base-builder
 
 ENV PATH="/root/miniconda3/bin:${PATH}"
 
 ARG PYTHON_VERSION="3.9"
+ARG PYTORCH="2.0.0"
+ARG CUDA="cu118"
+
 ENV PYTHON_VERSION=$PYTHON_VERSION
 
 RUN apt-get update
@@ -23,3 +26,32 @@ RUN conda create -n "py${PYTHON_VERSION}" python="${PYTHON_VERSION}"
 ENV PATH="/root/miniconda3/envs/py${PYTHON_VERSION}/bin:${PATH}"
 
 WORKDIR /workspace
+
+RUN python3 -m pip install --no-cache-dir -U torch==${PYTORCH} torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/$CUDA
+
+
+FROM base-builder AS flash-attn-builder
+
+WORKDIR /workspace
+
+ARG TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6+PTX"
+
+RUN git clone https://github.com/HazyResearch/flash-attention.git && \
+    cd flash-attention && \
+    python3 setup.py bdist_wheel
+
+FROM base-builder AS deepspeed-builder
+
+WORKDIR /workspace
+
+RUN git clone https://github.com/microsoft/DeepSpeed.git && \
+    cd DeepSpeed && \
+    MAX_CONCURRENCY=8 DS_BUILD_SPARSE_ATTN=0 DS_BUILD_OPS=1 python3 setup.py bdist_wheel
+
+FROM base-builder
+
+RUN mkdir /workspace/wheels
+COPY --from=deepspeed-builder /workspace/DeepSpeed/dist/deepspeed-*.whl wheels
+COPY --from=flash-attn-builder /workspace/flash-attention/dist/flash_attn-*.whl wheels
+
+RUN pip3 install.sh wheels/deepspeed-*.whl wheels/flash_attn-*.whl
