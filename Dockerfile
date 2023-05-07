@@ -1,6 +1,6 @@
 FROM huggingface/transformers-pytorch-deepspeed-latest-gpu:latest
 
-RUN export TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6+PTX"
+ARG TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6+PTX"
 RUN apt-get update && \
     apt-get install -y build-essential ninja-build vim git-lfs && \
     git lfs install --skip-repo && \
@@ -10,7 +10,6 @@ RUN apt-get update && \
     curl -L -O https://github.com/winglian/axolotl/raw/wheels/wheels/flash_attn-1.0.4-cp38-cp38-linux_x86_64.whl && \
     pip install deepspeed-0.9.2%2B7ddc3b01-cp38-cp38-linux_x86_64.whl && \
     pip install flash_attn-1.0.4-cp38-cp38-linux_x86_64.whl && \
-    pip install wheel && \
     pip install "peft @ git+https://github.com/huggingface/peft.git@main" --force-reinstall --no-dependencies
 
 WORKDIR /workspace
