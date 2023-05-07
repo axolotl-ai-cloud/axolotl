@@ -9,6 +9,7 @@ on:
 jobs:
   build-base:
     if: github.repository_owner == 'OpenAccess-AI-Collective'
+    # this job needs to be run on self-hosted GPU runners...
     runs-on: self-hosted
     steps:
       - name: Checkout
@@ -33,3 +34,5 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.metadata.outputs.tags }}
           labels: ${{ steps.metadata.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

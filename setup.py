@@ -23,5 +23,9 @@ setup(
         'int4_triton': [
             "alpaca_lora_4bit[triton] @ git+https://github.com/winglian/alpaca_lora_4bit.git@setup_pip",
         ],
+        'extras': [
+            'flash-attn',
+            'deepspeed',
+        ]
     },
 )

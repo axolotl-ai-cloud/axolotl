@@ -9,7 +9,5 @@ datasets
 accelerate
 sentencepiece
 wandb
-flash-attn
-deepspeed
 einops
 xformers

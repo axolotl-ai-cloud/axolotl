@@ -8,8 +8,10 @@ on:
 
 jobs:
   build-axolotl:
-    if: github.repository_owner == 'OpenAccess-AI-Collective'
-    runs-on: self-hosted
+    # We specify this so it doesn't run automatically in our other github org
+    # that we use to build the base on self-hosted GPU runners
+    if: github.repository_owner == 'winglian'
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -29,7 +31,11 @@ jobs:
         uses: docker/build-push-action@v4
         with:
           context: .
+          build-args: |
+            BASE_TAG=dev
           file: ./docker/Dockerfile
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.metadata.outputs.tags }}
           labels: ${{ steps.metadata.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
