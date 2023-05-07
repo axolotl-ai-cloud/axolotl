@@ -49,7 +49,7 @@ def choose_device(cfg):
 
 
 def get_multi_line_input() -> Optional[str]:
-    print("Give me an instruction (Ctrl + Z to finish): ")
+    print("Give me an instruction (Ctrl + D to finish): ")
     instruction = ""
     for line in sys.stdin:
         instruction += line
