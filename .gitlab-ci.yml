@@ -9,5 +9,6 @@ build:
     - /kaniko/executor
       --context "${CI_PROJECT_DIR}"
       --dockerfile "${CI_PROJECT_DIR}/Dockerfile"
+      --no-push
   rules:
     - if: $CI_COMMIT_SHA
