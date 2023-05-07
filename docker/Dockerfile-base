@@ -13,7 +13,7 @@ ARG CUDA="cu118"
 ENV PYTHON_VERSION=$PYTHON_VERSION
 
 RUN apt-get update
-RUN apt-get install -y wget && rm -rf /var/lib/apt/lists/*
+RUN apt-get install -y wget git build-essential ninja-build git-lfs && rm -rf /var/lib/apt/lists/*
 
 RUN wget \
     https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh \
