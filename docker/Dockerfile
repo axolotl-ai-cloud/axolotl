@@ -11,7 +11,6 @@ WORKDIR /workspace
 # The base image ships with `pydantic==1.8.2` which is not working
 RUN python3 -m pip install -U --no-cache-dir pydantic
 
-ARG REF=main
 RUN mkdir axolotl
 COPY . axolotl/
 RUN cd axolotl && \
