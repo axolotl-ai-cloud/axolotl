@@ -13,6 +13,7 @@ from transformers import EarlyStoppingCallback
 from transformers.trainer_pt_utils import get_parameter_names
 
 from axolotl.utils.schedulers import InterpolatingLogScheduler
+from axolotl.utils.callbacks import SavePeftModelCallback
 
 
 def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
@@ -188,6 +189,11 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
         data_collator_kwargs["padding"] = "longest"
     else:
         data_collator_kwargs["pad_to_multiple_of"] = 8
+
+    callbacks = []
+    if cfg.adapter == 'lora':
+        callbacks.append(SavePeftModelCallback)
+
     trainer = transformers.Trainer(
         model=model,
         train_dataset=train_dataset,
@@ -198,6 +204,7 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
             return_tensors="pt",
             **data_collator_kwargs,
         ),
+        callbacks=callbacks,
         **trainer_kwargs,
     )
 
