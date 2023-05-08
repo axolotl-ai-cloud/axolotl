@@ -4,7 +4,7 @@ FROM winglian/axolotl-base:$BASE_TAG
 ARG TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6+PTX"
 
 RUN apt-get update && \
-    apt-get install -y vim
+    apt-get install -y vim curl
 
 WORKDIR /workspace
 
@@ -16,3 +16,6 @@ RUN mkdir axolotl
 COPY . axolotl/
 RUN cd axolotl && \
     pip install -e .[int4]
+
+# helper for huggingface-login cli
+RUN git config --global credential.helper store

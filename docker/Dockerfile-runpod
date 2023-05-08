@@ -1,0 +1,11 @@
+ARG BASE_TAG=main
+FROM winglian/axolotl:$BASE_TAG
+
+RUN apt install --yes --no-install-recommends openssh-server tmux && \
+    mkdir -p ~/.ssh && \
+    chmod 700 ~/.ssh && \
+    echo -e "\n[[ -z \"\$TMUX\"  ]] && { tmux attach-session -t ssh_tmux || tmux new-session -s ssh_tmux; exit; }" >> ~/.bashrc && \
+    chmod +x /workdir/axolotl/scripts/runpod-entrypoint.sh
+
+ENTRYPOINT ["/workdir/axolotl/scripts/runpod-entrypoint.sh"]
+CMD ["sleep", "infinity"]
