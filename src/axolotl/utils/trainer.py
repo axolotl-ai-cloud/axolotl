@@ -204,6 +204,7 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
             return_tensors="pt",
             **data_collator_kwargs,
         ),
+        callbacks=callbacks,
         **trainer_kwargs,
     )
 
