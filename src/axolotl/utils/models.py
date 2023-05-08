@@ -113,6 +113,7 @@ def load_model(
                 load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
                 torch_dtype=torch_dtype,
                 device_map=cfg.device_map,
+                trust_remote_code=True if cfg.trust_remote_code is True else False,
             )
         else:
             model = AutoModelForCausalLM.from_pretrained(
@@ -120,6 +121,7 @@ def load_model(
                 load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
                 torch_dtype=torch_dtype,
                 device_map=cfg.device_map,
+                trust_remote_code=True if cfg.trust_remote_code is True else False,
             )
     except Exception as e:
         logging.error(
@@ -131,6 +133,7 @@ def load_model(
             load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
             torch_dtype=torch_dtype,
             device_map=cfg.device_map,
+            trust_remote_code=True if cfg.trust_remote_code is True else False,
         )
 
     if not tokenizer:
