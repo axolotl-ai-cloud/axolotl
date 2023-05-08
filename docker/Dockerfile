@@ -12,5 +12,6 @@ WORKDIR /workspace
 RUN python3 -m pip install -U --no-cache-dir pydantic
 
 ARG REF=main
-RUN git clone https://github.com/winglian/axolotl && cd axolotl && git checkout $REF && \
-    pip install -e .[int4]
+RUN mkdir axolotl
+COPY . axolotl/
+RUN pip install -e .[int4]
