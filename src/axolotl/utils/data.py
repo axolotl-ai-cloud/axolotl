@@ -11,13 +11,13 @@ from axolotl.prompt_tokenizers import (
     GPTeacherPromptTokenizingStrategy,
     OpenAssistantPromptTokenizingStrategy,
     AlpacaReflectionPTStrategy,
-    ShareGPTPromptTokenizingStrategy,
+    ShareGPTPromptTokenizingStrategy, JeopardyPromptTokenizingStrategy,
 )
 from axolotl.prompters import (
     AlpacaPrompter,
     GPTeacherPrompter,
     ReflectAlpacaPrompter,
-    ShareGPTPrompter,
+    ShareGPTPrompter, JeopardyPrompter,
 )
 
 
@@ -79,6 +79,12 @@ def load_prepare_datasets(tokenizer, cfg, default_dataset_prepared_path):
             if d.type == "alpaca":
                 ds_strategy = AlpacaPromptTokenizingStrategy(
                     AlpacaPrompter(), tokenizer, cfg.train_on_inputs, cfg.sequence_len
+                )
+                ds_wrapper = TokenizedPromptDataset(ds_strategy, ds["train"])
+                datasets.append(ds_wrapper)
+            if d.type == "jeopardy":
+                ds_strategy = JeopardyPromptTokenizingStrategy(
+                    JeopardyPrompter(), tokenizer, cfg.train_on_inputs, cfg.sequence_len
                 )
                 ds_wrapper = TokenizedPromptDataset(ds_strategy, ds["train"])
                 datasets.append(ds_wrapper)
