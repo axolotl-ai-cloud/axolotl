@@ -4,7 +4,7 @@ FROM winglian/axolotl:$BASE_TAG
 RUN apt install --yes --no-install-recommends openssh-server tmux && \
     mkdir -p ~/.ssh && \
     chmod 700 ~/.ssh && \
-    echo -e "\n[[ -z \"\$TMUX\"  ]] && { tmux attach-session -t ssh_tmux || tmux new-session -s ssh_tmux; exit; }" >> ~/.bashrc && \
+    printf "\n[[ -z \"\$TMUX\"  ]] && { tmux attach-session -t ssh_tmux || tmux new-session -s ssh_tmux; exit; }\n" >> ~/.bashrc && \
     chmod +x /workspace/axolotl/scripts/runpod-entrypoint.sh
 
 ENTRYPOINT ["/workspace/axolotl/scripts/runpod-entrypoint.sh"]
