@@ -11,13 +11,17 @@ from axolotl.prompt_tokenizers import (
     GPTeacherPromptTokenizingStrategy,
     OpenAssistantPromptTokenizingStrategy,
     AlpacaReflectionPTStrategy,
-    ShareGPTPromptTokenizingStrategy, JeopardyPromptTokenizingStrategy,
+    ShareGPTPromptTokenizingStrategy,
+    JeopardyPromptTokenizingStrategy,
+    CompletionPromptTokenizingStrategy,
 )
 from axolotl.prompters import (
     AlpacaPrompter,
     GPTeacherPrompter,
     ReflectAlpacaPrompter,
-    ShareGPTPrompter, JeopardyPrompter,
+    ShareGPTPrompter,
+    JeopardyPrompter,
+    CompletionPrompter,
 )
 
 
@@ -115,6 +119,15 @@ def load_prepare_datasets(tokenizer, cfg, default_dataset_prepared_path):
             elif d.type == "sharegpt":
                 ds_strategy = ShareGPTPromptTokenizingStrategy(
                     ShareGPTPrompter(), tokenizer, cfg.train_on_inputs, cfg.sequence_len
+                )
+                ds_wrapper = TokenizedPromptDataset(ds_strategy, ds["train"])
+                datasets.append(ds_wrapper)
+            elif d.type == "completion":
+                ds_strategy = CompletionPromptTokenizingStrategy(
+                    CompletionPrompter(),
+                    tokenizer,
+                    cfg.train_on_inputs,
+                    cfg.sequence_len,
                 )
                 ds_wrapper = TokenizedPromptDataset(ds_strategy, ds["train"])
                 datasets.append(ds_wrapper)
