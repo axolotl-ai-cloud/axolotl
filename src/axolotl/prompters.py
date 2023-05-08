@@ -38,9 +38,9 @@ class JeopardyPrompter(AlpacaPrompter):
 class CompletionPrompter(AlpacaPrompter):
     def build_prompt(
         self,
-        text: str
+        instruction: str
     ) -> str:
-        return text
+        return instruction
 
     def get_response(self, output: str) -> str:
         return output.strip()
