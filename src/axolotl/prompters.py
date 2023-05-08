@@ -35,6 +35,17 @@ class JeopardyPrompter(AlpacaPrompter):
     prompt_input = "Below is a Jeopardy clue paired with input providing the category of the clue. Write a concise response that best answers tbe clue given the category.\n\n### Instruction:\n{instruction}\n\n### Input:\n{input}\n\n### Response:\n"
 
 
+class CompletionPrompter(AlpacaPrompter):
+    def build_prompt(
+        self,
+        instruction: str
+    ) -> str:
+        return instruction
+
+    def get_response(self, output: str) -> str:
+        return output.strip()
+
+
 class GPTeacherPrompter(AlpacaPrompter):
     ...
 
