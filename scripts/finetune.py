@@ -230,6 +230,9 @@ def train(
     )
     # TODO do we need this fix? https://huggingface.co/docs/accelerate/usage_guides/fsdp#saving-and-loading
     trainer.save_model(cfg.output_dir)
+    
+    if cfg.adapter == 'lora':
+        trainer.save_pretrained(cfg.output_dir)
 
 
 if __name__ == "__main__":
