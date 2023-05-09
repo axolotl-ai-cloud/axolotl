@@ -229,11 +229,10 @@ def train(
         f"Training Completed!!! Saving pre-trained model to {cfg.output_dir}"
     )
     
-    if cfg.adapter == 'lora':
-        trainer.save_pretrained(cfg.output_dir)
-    else:
-        # TODO do we need this fix? https://huggingface.co/docs/accelerate/usage_guides/fsdp#saving-and-loading
-        trainer.save_model(cfg.output_dir)
+
+    # TODO do we need this fix? https://huggingface.co/docs/accelerate/usage_guides/fsdp#saving-and-loading
+    trainer.save_pretrained(cfg.output_dir)
+    # trainer.save_model(cfg.output_dir)  # TODO this may be needed for deepspeed to work? need to review another time
 
 
 if __name__ == "__main__":
