@@ -35,7 +35,8 @@ lr_scheduler: cosine
 learning_rate: 0.0000002
 train_on_inputs: false
 group_by_length: false
-bf16: true
+fp16: true
+bf16: false
 tf32: true
 early_stopping_patience:
 resume_from_checkpoint:
