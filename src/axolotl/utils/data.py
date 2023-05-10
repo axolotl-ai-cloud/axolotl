@@ -86,7 +86,7 @@ def load_prepare_datasets(tokenizer, cfg, default_dataset_prepared_path):
                 )
                 ds_wrapper = TokenizedPromptDataset(ds_strategy, ds["train"])
                 datasets.append(ds_wrapper)
-            if d.type == "jeopardy":
+            elif d.type == "jeopardy":
                 ds_strategy = JeopardyPromptTokenizingStrategy(
                     JeopardyPrompter(), tokenizer, cfg.train_on_inputs, cfg.sequence_len
                 )
