@@ -191,7 +191,9 @@ def train(
     if cfg.debug:
         logging.info("check_dataset_labels...")
         check_dataset_labels(
-            train_dataset.select([random.randrange(0, len(train_dataset) - 1) for i in range(5)]),
+            train_dataset.select(
+                [random.randrange(0, len(train_dataset) - 1) for i in range(5)]
+            ),
             tokenizer,
         )
 
@@ -218,17 +220,20 @@ def train(
     logging.info("Starting trainer...")
     resume_from_checkpoint = cfg.resume_from_checkpoint
     if cfg.resume_from_checkpoint is None and cfg.auto_resume_from_checkpoints:
-        possible_checkpoints = [str(cp) for cp in Path(cfg.output_dir).glob("checkpoint-*")]
+        possible_checkpoints = [
+            str(cp) for cp in Path(cfg.output_dir).glob("checkpoint-*")
+        ]
         if len(possible_checkpoints) > 0:
-            sorted_paths = sorted(possible_checkpoints, key=lambda path: int(path.split('-')[-1]))
+            sorted_paths = sorted(
+                possible_checkpoints, key=lambda path: int(path.split("-")[-1])
+            )
             resume_from_checkpoint = sorted_paths[-1]
-            logging.info(f"Using Auto-resume functionality to start with checkpoint at {resume_from_checkpoint}")
+            logging.info(
+                f"Using Auto-resume functionality to start with checkpoint at {resume_from_checkpoint}"
+            )
     trainer.train(resume_from_checkpoint=resume_from_checkpoint)
 
-    logging.info(
-        f"Training Completed!!! Saving pre-trained model to {cfg.output_dir}"
-    )
-    
+    logging.info(f"Training Completed!!! Saving pre-trained model to {cfg.output_dir}")
 
     # TODO do we need this fix? https://huggingface.co/docs/accelerate/usage_guides/fsdp#saving-and-loading
     trainer.save_pretrained(cfg.output_dir)

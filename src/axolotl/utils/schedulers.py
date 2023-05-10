@@ -26,7 +26,10 @@ class InterpolatingLogScheduler(LRScheduler):
         if self.last_epoch <= 0:
             lrs = [self.min_lr for base_lr in self.base_lrs]
         elif self.last_epoch < self.num_steps:
-            lrs = [self.min_lr * (self.q ** (self.last_epoch - 1)) for base_lr in self.base_lrs]
+            lrs = [
+                self.min_lr * (self.q ** (self.last_epoch - 1))
+                for base_lr in self.base_lrs
+            ]
         else:
             lrs = [self.max_lr for base_lr in self.base_lrs]
 

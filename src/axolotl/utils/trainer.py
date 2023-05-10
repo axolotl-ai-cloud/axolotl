@@ -78,7 +78,9 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
 
     training_args = transformers.TrainingArguments(
         per_device_train_batch_size=cfg.micro_batch_size,
-        per_device_eval_batch_size=cfg.eval_batch_size if cfg.eval_batch_size is not None else cfg.micro_batch_size,
+        per_device_eval_batch_size=cfg.eval_batch_size
+        if cfg.eval_batch_size is not None
+        else cfg.micro_batch_size,
         gradient_accumulation_steps=cfg.gradient_accumulation_steps,
         eval_accumulation_steps=cfg.gradient_accumulation_steps,
         num_train_epochs=cfg.num_epochs,
@@ -90,14 +92,19 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
         output_dir=cfg.output_dir,
         save_total_limit=3,
         load_best_model_at_end=True
-        if cfg.val_set_size > 0 and save_steps is not None and save_steps % eval_steps == 0 and cfg.load_in_8bit is not True
+        if cfg.val_set_size > 0
+        and save_steps is not None
+        and save_steps % eval_steps == 0
+        and cfg.load_in_8bit is not True
         else False,
         ddp_find_unused_parameters=False if cfg.ddp else None,
         group_by_length=cfg.group_by_length,
         report_to="wandb" if cfg.use_wandb else None,
         run_name=cfg.wandb_run_id if cfg.use_wandb else None,
         optim=cfg.optimizer if cfg.optimizer else "adamw_hf",
-        lr_scheduler_type=cfg.lr_scheduler if cfg.lr_scheduler and cfg.lr_scheduler not in ("one_cycle", "log_sweep") else "cosine",
+        lr_scheduler_type=cfg.lr_scheduler
+        if cfg.lr_scheduler and cfg.lr_scheduler not in ("one_cycle", "log_sweep")
+        else "cosine",
         weight_decay=cfg.weight_decay if cfg.weight_decay is not None else 0.0,
         **training_arguments_kwargs,
     )
@@ -184,7 +191,7 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
         data_collator_kwargs["pad_to_multiple_of"] = 8
 
     callbacks = []
-    if cfg.adapter == 'lora':
+    if cfg.adapter == "lora":
         callbacks.append(SavePeftModelCallback)
 
     trainer = transformers.Trainer(

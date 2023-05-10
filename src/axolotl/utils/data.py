@@ -2,7 +2,13 @@ import logging
 from hashlib import md5
 from pathlib import Path
 
-from datasets import load_from_disk, load_dataset, IterableDataset, Dataset, concatenate_datasets
+from datasets import (
+    load_from_disk,
+    load_dataset,
+    IterableDataset,
+    Dataset,
+    concatenate_datasets,
+)
 from huggingface_hub import hf_hub_download
 
 from axolotl.datasets import TokenizedPromptDataset, ConstantLengthDataset
@@ -75,7 +81,9 @@ def load_prepare_datasets(tokenizer, cfg, default_dataset_prepared_path):
                 else:
                     ds = load_dataset(d.path, streaming=True)
             else:
-                fp = hf_hub_download(repo_id=d.path, repo_type="dataset", filename=d.data_files)
+                fp = hf_hub_download(
+                    repo_id=d.path, repo_type="dataset", filename=d.data_files
+                )
                 ds = load_dataset("json", data_files=fp, streaming=True, split=None)
             if not ds:
                 raise Exception("unhandled dataset load")
@@ -140,7 +148,9 @@ def load_prepare_datasets(tokenizer, cfg, default_dataset_prepared_path):
             samples = samples + [i for i in d]
         dataset = Dataset.from_list(samples).shuffle(seed=42)
         if cfg.local_rank == 0:
-            logging.info(f"Saving merged prepared dataset to disk... {prepared_ds_path}")
+            logging.info(
+                f"Saving merged prepared dataset to disk... {prepared_ds_path}"
+            )
             dataset.save_to_disk(prepared_ds_path)
 
     if cfg.max_packed_sequence_len is not None:
@@ -153,12 +163,14 @@ def load_prepare_datasets(tokenizer, cfg, default_dataset_prepared_path):
         dataset = Dataset.from_list([_ for _ in constant_len_dataset])
 
     if cfg.dataset_shard_num and cfg.dataset_shard_idx is not None:
-        logging.info(f"Using index #{cfg.dataset_shard_idx} of {cfg.dataset_shard_num} shards")
-        dataset = dataset.shard(num_shards=cfg.dataset_shard_num, index=cfg.dataset_shard_idx)
+        logging.info(
+            f"Using index #{cfg.dataset_shard_idx} of {cfg.dataset_shard_num} shards"
+        )
+        dataset = dataset.shard(
+            num_shards=cfg.dataset_shard_num, index=cfg.dataset_shard_idx
+        )
 
-    dataset = dataset.train_test_split(
-        test_size=cfg.val_set_size, shuffle=False
-    )
+    dataset = dataset.train_test_split(test_size=cfg.val_set_size, shuffle=False)
     train_dataset = dataset["train"]
     eval_dataset = dataset["test"]
 
