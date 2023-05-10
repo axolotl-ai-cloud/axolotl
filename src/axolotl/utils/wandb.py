@@ -2,7 +2,9 @@ import os
 
 
 def setup_wandb_env_vars(cfg):
-    if cfg.wandb_project and len(cfg.wandb_project) > 0:
+    if cfg.wandb_mode and cfg.wandb_mode == "offline":
+        os.environ["WANDB_MODE"] = cfg.wandb_mode
+    elif cfg.wandb_project and len(cfg.wandb_project) > 0:
         os.environ["WANDB_PROJECT"] = cfg.wandb_project
         cfg.use_wandb = True
         if cfg.wandb_watch and len(cfg.wandb_watch) > 0:

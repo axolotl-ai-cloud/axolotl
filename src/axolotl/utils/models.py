@@ -8,7 +8,7 @@ import transformers
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
-    PreTrainedModel,
+    PreTrainedModel, AutoConfig,
 )
 try:
     from transformers import (
@@ -116,8 +116,14 @@ def load_model(
                 trust_remote_code=True if cfg.trust_remote_code is True else False,
             )
         else:
+            config = AutoConfig.from_pretrained(
+                base_model,
+                trust_remote_code=True if cfg.trust_remote_code is True else False,
+            )
+            config.attn_config['attn_impl'] = 'triton'
             model = AutoModelForCausalLM.from_pretrained(
                 base_model,
+                config=config,
                 load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
                 torch_dtype=torch_dtype,
                 device_map=cfg.device_map,
