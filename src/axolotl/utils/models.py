@@ -120,7 +120,6 @@ def load_model(
                 base_model,
                 trust_remote_code=True if cfg.trust_remote_code is True else False,
             )
-            config.attn_config['attn_impl'] = 'triton'
             model = AutoModelForCausalLM.from_pretrained(
                 base_model,
                 config=config,
