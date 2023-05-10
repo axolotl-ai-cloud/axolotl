@@ -10,22 +10,22 @@ with open("./requirements.txt", "r") as requirements_file:
         install_requires.append(r)
 
 setup(
-    name='axolotl',
-    version='0.1',
+    name="axolotl",
+    version="0.1",
     description="You know you're going to axolotl questions",
-    package_dir={'': 'src'},
+    package_dir={"": "src"},
     packages=find_packages(),
     install_requires=install_requires,
     extras_require={
-        'int4': [
+        "int4": [
             "alpaca_lora_4bit @ git+https://github.com/winglian/alpaca_lora_4bit.git@setup_pip",
         ],
-        'int4_triton': [
+        "int4_triton": [
             "alpaca_lora_4bit[triton] @ git+https://github.com/winglian/alpaca_lora_4bit.git@setup_pip",
         ],
-        'extras': [
-            'flash-attn',
-            'deepspeed',
-        ]
+        "extras": [
+            "flash-attn",
+            "deepspeed",
+        ],
     },
 )

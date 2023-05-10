@@ -31,6 +31,7 @@ class TokenizedPromptDataset(IterableDataset):
             except InvalidDataException:
                 pass
 
+
 # TODO this isn't the best since it can't interleave datasets
 class ConstantLengthDataset(IterableDataset):
     """
@@ -40,6 +41,7 @@ class ConstantLengthDataset(IterableDataset):
             dataset (dataset.Dataset): Dataset with text files.
             seq_length (int): Length of token sequences to return.
     """
+
     def __init__(
         self,
         tokenizer,
@@ -93,14 +95,19 @@ class ConstantLengthDataset(IterableDataset):
                             : self.seq_length
                         ]
                         labels = torch.cat(buffer["labels"], dim=-1)[: self.seq_length]
-                        if labels.size() == input_ids.size() and attention_mask.size() == input_ids.size():
+                        if (
+                            labels.size() == input_ids.size()
+                            and attention_mask.size() == input_ids.size()
+                        ):
                             yield {
                                 "input_ids": input_ids,
                                 "labels": labels,
                                 "attention_mask": attention_mask,
                             }
                         else:
-                            logging.warning("dropping batch due to tensor size mismatch")
+                            logging.warning(
+                                "dropping batch due to tensor size mismatch"
+                            )
                     buffer = {"input_ids": [], "attention_mask": [], "labels": []}
                     buffer_len = 0
 
@@ -116,11 +123,15 @@ class ConstantLengthDataset(IterableDataset):
                             attention_mask.append(1)
                             labels.append(self.concat_token_id)
 
-                        input_ids_with_concat = torch.tensor(input_ids, dtype=self.tokens_dtype)
+                        input_ids_with_concat = torch.tensor(
+                            input_ids, dtype=self.tokens_dtype
+                        )
                         attention_mask_with_concat = torch.tensor(
                             attention_mask, dtype=self.tokens_dtype
                         )
-                        labels_with_concat = torch.tensor(labels, dtype=self.tokens_dtype)
+                        labels_with_concat = torch.tensor(
+                            labels, dtype=self.tokens_dtype
+                        )
 
                         buffer["input_ids"].append(input_ids_with_concat)
                         buffer["attention_mask"].append(attention_mask_with_concat)
