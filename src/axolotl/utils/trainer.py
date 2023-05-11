@@ -175,12 +175,16 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
             )
         trainer_kwargs["optimizers"] = (optimizer, lr_scheduler)
 
+    callbacks = []
     # TODO on_save callback to sync checkpoints to GCP/AWS in background
     if cfg.early_stopping_patience:
         early_stop_cb = EarlyStoppingCallback(
             cfg.early_stopping_patience,
         )
-        trainer_kwargs["callbacks"] = [early_stop_cb]
+        callbacks.append(early_stop_cb)
+        
+    if cfg.local_rank == 0 and cfg.adapter == 'lora': # only save in rank 0
+        callbacks.append(SavePeftModelCallback)
 
     data_collator_kwargs = {
         "padding": True,
@@ -189,10 +193,6 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
         data_collator_kwargs["padding"] = "longest"
     else:
         data_collator_kwargs["pad_to_multiple_of"] = 8
-
-    callbacks = []
-    if cfg.adapter == "lora":
-        callbacks.append(SavePeftModelCallback)
 
     trainer = transformers.Trainer(
         model=model,
