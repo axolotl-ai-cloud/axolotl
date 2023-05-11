@@ -34,7 +34,7 @@ tf32: false
 early_stopping_patience:
 resume_from_checkpoint:
 local_rank:
-special_tokens:
+tokens:
   pad_token: "[PAD]"
   bos_token: "<s>"
   eos_token: "</s>"

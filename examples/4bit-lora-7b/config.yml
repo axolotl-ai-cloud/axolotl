@@ -55,7 +55,7 @@ deepspeed:
 weight_decay: 0.0001
 fsdp:
 fsdp_config:
-special_tokens:
+tokens:
   pad_token: "[PAD]"
   bos_token: "<s>"
   eos_token: "</s>"
