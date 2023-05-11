@@ -30,16 +30,8 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
         if cfg.logging_steps is not None
         else max(min(int(0.005 * total_num_steps), 10), 1)
     )
-    save_steps = (
-        cfg.save_steps
-        if cfg.save_steps is not None
-        else min(int(0.05 * total_num_steps), 200)
-    )
-    eval_steps = (
-        cfg.eval_steps
-        if cfg.eval_steps is not None and save_steps % cfg.eval_steps == 0
-        else save_steps
-    )
+    save_steps = cfg.save_steps
+    eval_steps = cfg.eval_steps
 
     training_arguments_kwargs = {}
     if cfg.bf16 == "full":
@@ -86,26 +78,33 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
 
     training_args = transformers.TrainingArguments(
         per_device_train_batch_size=cfg.micro_batch_size,
-        per_device_eval_batch_size=cfg.eval_batch_size if cfg.eval_batch_size is not None else cfg.micro_batch_size,
+        per_device_eval_batch_size=cfg.eval_batch_size
+        if cfg.eval_batch_size is not None
+        else cfg.micro_batch_size,
         gradient_accumulation_steps=cfg.gradient_accumulation_steps,
         eval_accumulation_steps=cfg.gradient_accumulation_steps,
         num_train_epochs=cfg.num_epochs,
         learning_rate=cfg.learning_rate,
         evaluation_strategy="steps" if cfg.val_set_size > 0 else "no",
-        save_strategy="steps",
+        save_strategy="steps" if save_steps else "epoch",
         eval_steps=eval_steps if cfg.val_set_size > 0 else None,
         save_steps=save_steps,
         output_dir=cfg.output_dir,
         save_total_limit=3,
         load_best_model_at_end=True
-        if cfg.val_set_size > 0 and save_steps % eval_steps == 0 and cfg.load_in_8bit is not True
+        if cfg.val_set_size > 0
+        and save_steps is not None
+        and save_steps % eval_steps == 0
+        and cfg.load_in_8bit is not True
         else False,
         ddp_find_unused_parameters=False if cfg.ddp else None,
         group_by_length=cfg.group_by_length,
         report_to="wandb" if cfg.use_wandb else None,
         run_name=cfg.wandb_run_id if cfg.use_wandb else None,
         optim=cfg.optimizer if cfg.optimizer else "adamw_hf",
-        lr_scheduler_type=cfg.lr_scheduler if cfg.lr_scheduler and cfg.lr_scheduler not in ("one_cycle", "log_sweep") else "cosine",
+        lr_scheduler_type=cfg.lr_scheduler
+        if cfg.lr_scheduler and cfg.lr_scheduler not in ("one_cycle", "log_sweep")
+        else "cosine",
         weight_decay=cfg.weight_decay if cfg.weight_decay is not None else 0.0,
         **training_arguments_kwargs,
     )
@@ -158,6 +157,7 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
                 cfg.learning_rate,
                 total_steps=total_num_steps,
                 epochs=cfg.num_epochs,
+                div_factor=10,
                 **lr_scheduler_kwargs,
             )
         elif cfg.lr_scheduler == "log_sweep":

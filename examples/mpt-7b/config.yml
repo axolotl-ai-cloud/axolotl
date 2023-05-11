@@ -1,7 +1,6 @@
 base_model: mosaicml/mpt-7b
 base_model_config: mosaicml/mpt-7b
-model_type: AutoModelForCausalLM
-tokenizer_type: GPTNeoXTokenizer
+tokenizer_type: AutoTokenizer
 trust_remote_code: true  # required for mpt as their model class is not merged into transformers yet
 load_in_8bit: false
 datasets:
@@ -25,7 +24,7 @@ wandb_watch:
 wandb_run_id:
 wandb_log_model: checkpoint
 output_dir: ./mpt-alpaca-7b
-batch_size: 4
+batch_size: 1
 micro_batch_size: 1
 num_epochs: 3
 optimizer: adamw_bnb_8bit
@@ -52,7 +51,7 @@ deepspeed:
 weight_decay: 0.0001
 fsdp:
 fsdp_config:
-special_tokens:
+tokens:
   pad_token: "<|padding|>"
   bos_token: "<|endoftext|>"
   eos_token: "<|endoftext|>"

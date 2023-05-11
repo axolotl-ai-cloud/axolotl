@@ -126,10 +126,8 @@ class NomicGPT4AllPromptTokenizingStrategy(InstructionPromptTokenizingStrategy):
 
 
 class CompletionPromptTokenizingStrategy(InstructionPromptTokenizingStrategy):
-    def parse_instruction_fields(self, prompt) -> (str):
-        return (
-            prompt["text"]
-        )
+    def parse_instruction_fields(self, prompt) -> str:
+        return prompt["text"]
 
     def tokenize_prompt(self, prompt):
         instruction = self.parse_instruction_fields(prompt)
@@ -139,9 +137,7 @@ class CompletionPromptTokenizingStrategy(InstructionPromptTokenizingStrategy):
         return tokenized_full_prompt
 
     def _build_full_prompt(self, instruction):
-        return self.prompter.build_prompt(
-            instruction
-        )
+        return self.prompter.build_prompt(instruction)
 
 
 class ReflectionPromptTokenizingStrategy(PromptTokenizingStrategy):
@@ -149,8 +145,16 @@ class ReflectionPromptTokenizingStrategy(PromptTokenizingStrategy):
         raise NotImplementedError
 
     def tokenize_prompt(self, prompt):
-        instruction, input, output, reflection, corrected = self.parse_instruction_fields(prompt)
-        full_prompt = self._build_full_prompt(instruction, input, output, reflection, corrected)
+        (
+            instruction,
+            input,
+            output,
+            reflection,
+            corrected,
+        ) = self.parse_instruction_fields(prompt)
+        full_prompt = self._build_full_prompt(
+            instruction, input, output, reflection, corrected
+        )
         tokenized_full_prompt = self._tokenize(full_prompt)
         if not self.train_on_inputs:
             user_prompt = self.prompter.build_prompt(
