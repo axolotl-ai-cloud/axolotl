@@ -213,7 +213,7 @@ def load_prepare_datasets(tokenizer, cfg, default_dataset_prepared_path):
         [
             d
             for d in dataset
-            if len(d["input_ids"]) > cfg.sequence_len
+            if len(d["input_ids"]) < cfg.sequence_len
                and len(d["input_ids"]) > 0
                and len(d["input_ids"]) == len(d["attention_mask"])
                and len(d["input_ids"]) == len(d["labels"])
