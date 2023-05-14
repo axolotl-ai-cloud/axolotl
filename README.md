@@ -155,7 +155,7 @@ use_cpu: false
 - Once you start your runpod, and SSH into it:
 ```shell
 export TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6+PTX"
-source <(curl -s https://raw.githubusercontent.com/winglian/axolotl/main/scripts/setup-runpod.sh)
+source <(curl -s https://raw.githubusercontent.com/OpenAccess-AI-Collective/axolotl/dev/scripts/setup-runpod.sh)
 ```
 
 - Once the setup script completes

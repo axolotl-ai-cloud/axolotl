@@ -29,14 +29,14 @@ fi
 # install flash-attn and deepspeed from pre-built wheels for this specific container b/c these take forever to install
 mkdir -p /workspace/wheels
 cd /workspace/wheels
-curl -L -O https://github.com/winglian/axolotl/raw/wheels/wheels/deepspeed-0.9.2%2B7ddc3b01-cp38-cp38-linux_x86_64.whl
-curl -L -O https://github.com/winglian/axolotl/raw/wheels/wheels/flash_attn-1.0.4-cp38-cp38-linux_x86_64.whl
+curl -L -O https://github.com/OpenAccess-AI-Collective/axolotl/raw/wheels/wheels/deepspeed-0.9.2%2B7ddc3b01-cp38-cp38-linux_x86_64.whl
+curl -L -O https://github.com/OpenAccess-AI-Collective/axolotl/raw/wheels/wheels/flash_attn-1.0.4-cp38-cp38-linux_x86_64.whl
 pip install deepspeed-0.9.2%2B7ddc3b01-cp38-cp38-linux_x86_64.whl
 pip install flash_attn-1.0.4-cp38-cp38-linux_x86_64.whl
 pip install "peft @ git+https://github.com/huggingface/peft.git@main" --force-reinstall --no-dependencies
 
 cd /workspace/
-git clone https://github.com/winglian/axolotl.git
+git clone https://github.com/OpenAccess-AI-Collective/axolotl.git
 cd axolotl
 pip install -e .[int4]
 mkdir -p ~/.cache/huggingface/accelerate/
