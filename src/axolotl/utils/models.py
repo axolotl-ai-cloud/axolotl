@@ -184,7 +184,8 @@ def load_model(
         for k, v in cfg.tokens.items():
             tokenizer.add_special_tokens({k: v})
 
-    model.resize_token_embeddings(len(tokenizer))
+    # this should only be needed if you are messing with new tokens in the vocab
+    # model.resize_token_embeddings(len(tokenizer))
 
     if cfg.adapter and load_in_8bit and not cfg.load_4bit:
         logging.info("converting PEFT model w/ prepare_model_for_int8_training")
@@ -207,7 +208,10 @@ def load_model(
                 m.scales = m.scales.half()
                 m.bias = m.bias.half()
 
-    if torch.cuda.device_count() > 1 and int(os.getenv("WORLD_SIZE", "1")) > 1:
+    if torch.cuda.device_count() > 1 and int(os.getenv("WORLD_SIZE", "1")) > 1 and cfg.load_4bit:
+        # llama is PROBABLY model parallelizable, but the default isn't that it is
+        # so let's only set it for the 4bit, see
+        # https://github.com/johnsmith0031/alpaca_lora_4bit/blob/08b3fca4a4a9e0d3945be1bab4529f100a428636/finetune.py#L130-L133
         model.is_parallelizable = True
         model.model_parallel = True
 
