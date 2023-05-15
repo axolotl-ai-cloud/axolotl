@@ -1,4 +1,5 @@
 import logging
+import math
 import os
 from pathlib import Path
 from typing import Optional, Tuple, TYPE_CHECKING
@@ -180,12 +181,14 @@ def load_model(
         tokenizer.add_special_tokens({"pad_token": "[PAD]"})
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-    if cfg.tokens:
-        for k, v in cfg.tokens.items():
+    if cfg.special_tokens:
+        for k, v in cfg.special_tokens.items():
             tokenizer.add_special_tokens({k: v})
+    if cfg.tokens:
+        tokenizer.add_tokens(cfg.tokens)
 
-    # this should only be needed if you are messing with new tokens in the vocab
-    # model.resize_token_embeddings(len(tokenizer))
+    embeddings_len = math.ceil(len(tokenizer) / 32) * 32
+    model.resize_token_embeddings(embeddings_len)
 
     if cfg.adapter and load_in_8bit and not cfg.load_4bit:
         logging.info("converting PEFT model w/ prepare_model_for_int8_training")
@@ -221,6 +224,7 @@ def load_model(
             requires_grad.append(f"{name}: {param.requires_grad}")
     if len(requires_grad) == 0:
         logging.warning("there are no parameters that require gradient updates")
+    model.config.use_cache = False
 
     # TODO resume_from_checkpoint handling
     return model, tokenizer, lora_config

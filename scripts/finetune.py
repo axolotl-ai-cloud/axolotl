@@ -1,7 +1,6 @@
 import importlib
 import logging
 import os
-import pathlib
 import random
 import signal
 import sys
@@ -10,7 +9,6 @@ from typing import Optional
 
 import fire
 import torch
-import transformers
 import yaml
 from attrdict import AttrDefault
 
@@ -236,7 +234,9 @@ def train(
     logging.info(f"Training Completed!!! Saving pre-trained model to {cfg.output_dir}")
 
     # TODO do we need this fix? https://huggingface.co/docs/accelerate/usage_guides/fsdp#saving-and-loading
-    model.save_pretrained(cfg.output_dir)
+    # only save on rank 0, otherwise it corrupts output on multi-GPU when multiple processes attempt to write the same file
+    if cfg.local_rank == 0:
+        model.save_pretrained(cfg.output_dir)
     # trainer.save_model(cfg.output_dir)  # TODO this may be needed for deepspeed to work? need to review another time
 
 
