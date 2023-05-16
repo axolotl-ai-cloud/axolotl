@@ -1,7 +1,7 @@
 import copy
 import dataclasses
 from enum import auto, Enum
-from typing import List, Tuple, Any, Union
+from typing import List, Tuple, Any, Union, Generator
 
 IGNORE_TOKEN_ID = -100
 
@@ -16,7 +16,7 @@ class AlpacaPrompter:
         instruction: str,
         input: Union[None, str] = None,
         output: Union[None, str] = None,
-    ) -> str:
+    ) -> Generator[str, None, None]:
         # returns the full prompt from instruction and optional input
         # if a label (=response, =output) is provided, it's also appended.
         if input:
@@ -25,7 +25,7 @@ class AlpacaPrompter:
             res = self.prompt_no_input.format(instruction=instruction)
         if output:
             res = f"{res}{output}"
-        return res
+        yield res
 
     def get_response(self, output: str) -> str:
         return output.split(self.response_split)[1].strip()
@@ -36,8 +36,8 @@ class JeopardyPrompter(AlpacaPrompter):
 
 
 class CompletionPrompter(AlpacaPrompter):
-    def build_prompt(self, instruction: str) -> str:
-        return instruction
+    def build_prompt(self, instruction: str, input=None, output=None) -> Generator[str, None, None]:
+        yield instruction
 
     def get_response(self, output: str) -> str:
         return output.strip()
@@ -64,7 +64,7 @@ class ReflectAlpacaPrompter:
         output: Union[None, str] = None,
         reflection: Union[None, str] = None,
         corrected: Union[None, str] = None,
-    ) -> str:
+    ) -> Generator[str, None, None]:
         # returns the full prompt from instruction and optional input
         # if a label (=response, =output) is provided, it's also appended.
         if input:
@@ -76,7 +76,7 @@ class ReflectAlpacaPrompter:
                 output=output, reflection=reflection, corrected=corrected
             )
             res = f"{res}{label}"
-        return res
+        yield res
 
     def get_response(self, output: str) -> str:
         return output.split(self.response_split)[1].strip()
@@ -103,15 +103,16 @@ class Conversation:
     sep: str = "###"
     sep2: str = None
 
-    def get_prompt(self):
+    def get_prompt(self) -> Generator[str, None, None]:
         seps = [self.sep, self.sep2]
-        ret = self.system + seps[0]
+        preamble = self.system + seps[0]
         for i, (role, message) in enumerate(self.messages):
             if message:
-                ret += role + ": " + message + seps[i % 2]
+                yield preamble + role + ": " + message + seps[i % 2]
             else:
-                ret += role + ":"
-        return ret
+                yield role + ":"
+            if i == 0:
+                preamble = ""
 
     def copy(self):
         return Conversation(
@@ -136,12 +137,12 @@ conv_vicuna_v1_1 = Conversation(
     offset=0,
     sep_style=SeparatorStyle.TWO,
     sep=" ",
-    sep2="</s>",
+    sep2=" ",
 )
 
 
 class ShareGPTPrompter:
-    def build_prompt(self, source, tokenizer, sequence_len=2048):
+    def build_prompt(self, source, tokenizer, sequence_len=2048) -> Generator[str, None, None]:
         # ignore the system prompt if provided
         if source[0]["from"] == "system":
             source.pop(0)
@@ -171,61 +172,6 @@ class ShareGPTPrompter:
             role = roles[sentence["from"]]
             assert role == conv.roles[j % 2]
             conv.append_message(role, sentence["value"])
-        # TODO, this concatenates everything, but doesn't seem to properly add the eos_token_id, as the eos_token gets split up
-        conversation = conv.get_prompt()
 
-        # Tokenize conversations
-        tokenized_result = tokenizer(
-            conversation,
-            truncation=True,
-            max_length=sequence_len,  # FIXME
-            padding=False,
-            return_tensors=None,
-        )
-        target = copy.deepcopy(tokenized_result["input_ids"])
-
-        # Mask targets
-        sep = conv.sep + conv.roles[1] + ": "
-
-        rounds = conversation.split(conv.sep2)
-        rounds = [r + conv.sep2 for r in rounds]
-        cur_len = 1
-        target[0] = IGNORE_TOKEN_ID  # mask out the bos
-        for i, rou in enumerate(rounds):
-            if rou == "":
-                break
-
-            parts = rou.split(sep)
-            if len(parts) != 2:
-                break
-            parts[0] += sep
-            round_len = (
-                len(tokenizer(rou)["input_ids"]) - 1
-            )  # -1 ignores the bos_token generated for this
-            # we have to strip the initial part, any dangling whitespace creates an additional ghost token
-            instruction_len = (
-                len(tokenizer(parts[0].strip())["input_ids"]) - 1
-            )  # -1 ignores the bos_token generated for this
-            target[cur_len : cur_len + instruction_len] = [
-                IGNORE_TOKEN_ID
-            ] * instruction_len
-
-            cur_len += round_len
-            if cur_len >= sequence_len:
-                break
-
-        # Fix: Truncate the target to have the same length as input_ids
-        target = target[: len(tokenized_result["input_ids"])]
-        # target[cur_len:] = [IGNORE_TOKEN_ID] * (len(target) - cur_len)
-
-        attention_mask = [
-            1 if x != tokenizer.pad_token_id else 0
-            for x in tokenized_result["input_ids"]
-        ]
-
-        # TODO truncate len to sequence_len
-        return dict(
-            input_ids=tokenized_result["input_ids"],
-            labels=target,
-            attention_mask=attention_mask,
-        )
+        for part in conv.get_prompt():
+            yield part
