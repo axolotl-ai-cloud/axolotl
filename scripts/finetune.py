@@ -182,10 +182,6 @@ def train(
         tokenizer, cfg, DEFAULT_DATASET_PREPARED_PATH
     )
 
-    if prepare_ds_only:
-        logging.info("Finished preparing dataset. Exiting...")
-        return
-
     if cfg.debug:
         logging.info("check_dataset_labels...")
         check_dataset_labels(
@@ -194,6 +190,10 @@ def train(
             ),
             tokenizer,
         )
+
+    if prepare_ds_only:
+        logging.info("Finished preparing dataset. Exiting...")
+        return
 
     trainer = setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer)
 
