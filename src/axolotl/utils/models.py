@@ -285,6 +285,7 @@ def load_lora(model, cfg):
         target_modules=cfg.lora_target_modules,
         lora_dropout=cfg.lora_dropout,
         fan_in_fan_out=cfg.lora_fan_in_fan_out,
+        modules_to_save=cfg.lora_modules_to_save if cfg.lora_modules_to_save else None,
         bias="none",
         task_type="CAUSAL_LM",
     )
