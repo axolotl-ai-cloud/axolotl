@@ -35,6 +35,10 @@ class JeopardyPrompter(AlpacaPrompter):
     prompt_input = "Below is a Jeopardy clue paired with input providing the category of the clue. Write a concise response that best answers tbe clue given the category.\n\n### Instruction:\n{instruction}\n\n### Input:\n{input}\n\n### Response:\n"
 
 
+class MultipleChoiceExplainPrompter(AlpacaPrompter):
+    prompt_input = "Choose the answer that best answers the question. Explain your reasoning.\n\n### Question:\n{instruction}\n\n### Choices:\n{input}\n\n### Response:\n"
+
+
 class CompletionPrompter(AlpacaPrompter):
     def build_prompt(self, instruction: str, input=None, output=None) -> Generator[str, None, None]:
         yield instruction

@@ -67,7 +67,7 @@ def do_inference(cfg, model, tokenizer, prompter="AlpacaPrompter"):
         instruction = get_multi_line_input()
         if not instruction:
             return
-        prompt = prompter_module().build_prompt(instruction=instruction)
+        prompt: str = next(prompter_module().build_prompt(instruction=instruction))
         batch = tokenizer(prompt, return_tensors="pt", add_special_tokens=True)
 
         model.eval()
