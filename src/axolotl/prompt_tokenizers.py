@@ -97,7 +97,7 @@ class AlpacaMultipleChoicePromptTokenizingStrategy(InstructionPromptTokenizingSt
         return (
             prompt["question"],
             "\n".join(f'- "{choice}"' for choice in prompt["choices"]),
-            prompt["explanation"],
+            prompt["solution"] if "solution" in prompt else prompt["explanation"],
         )
 
 
@@ -116,6 +116,15 @@ class OpenAssistantPromptTokenizingStrategy(InstructionPromptTokenizingStrategy)
             prompt["INSTRUCTION"],
             "",
             prompt["RESPONSE"],
+        )
+
+
+class SummarizeTLDRPromptTokenizingStrategy(InstructionPromptTokenizingStrategy):
+    def parse_instruction_fields(self, prompt) -> (str, str, str):
+        return (
+            prompt["article"],
+            "",
+            prompt["summary"],
         )
 
 

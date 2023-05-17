@@ -19,7 +19,9 @@ from axolotl.prompt_tokenizers import (
     AlpacaReflectionPTStrategy,
     ShareGPTPromptTokenizingStrategy,
     JeopardyPromptTokenizingStrategy,
-    CompletionPromptTokenizingStrategy, AlpacaMultipleChoicePromptTokenizingStrategy,
+    CompletionPromptTokenizingStrategy,
+    AlpacaMultipleChoicePromptTokenizingStrategy,
+    SummarizeTLDRPromptTokenizingStrategy,
 )
 from axolotl.prompters import (
     AlpacaPrompter,
@@ -27,7 +29,9 @@ from axolotl.prompters import (
     ReflectAlpacaPrompter,
     ShareGPTPrompter,
     JeopardyPrompter,
-    CompletionPrompter, MultipleChoiceExplainPrompter,
+    CompletionPrompter,
+    MultipleChoiceExplainPrompter,
+    SummarizeTLDRPrompter, MultipleChoiceConcisePrompter,
 )
 
 
@@ -91,6 +95,18 @@ def load_tokenized_prepared_datasets(tokenizer, cfg, default_dataset_prepared_pa
             elif d.type == "explainchoice":
                 ds_strategy = AlpacaMultipleChoicePromptTokenizingStrategy(
                     MultipleChoiceExplainPrompter(), tokenizer, cfg.train_on_inputs, cfg.sequence_len
+                )
+                ds_wrapper = TokenizedPromptDataset(ds_strategy, ds["train"])
+                datasets.append(ds_wrapper)
+            elif d.type == "concisechoice":
+                ds_strategy = AlpacaMultipleChoicePromptTokenizingStrategy(
+                    MultipleChoiceConcisePrompter(), tokenizer, cfg.train_on_inputs, cfg.sequence_len
+                )
+                ds_wrapper = TokenizedPromptDataset(ds_strategy, ds["train"])
+                datasets.append(ds_wrapper)
+            elif d.type == "summarizetldr":
+                ds_strategy = SummarizeTLDRPromptTokenizingStrategy(
+                    SummarizeTLDRPrompter(), tokenizer, cfg.train_on_inputs, cfg.sequence_len
                 )
                 ds_wrapper = TokenizedPromptDataset(ds_strategy, ds["train"])
                 datasets.append(ds_wrapper)

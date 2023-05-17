@@ -39,6 +39,14 @@ class MultipleChoiceExplainPrompter(AlpacaPrompter):
     prompt_input = "Choose the answer that best answers the question. Explain your reasoning.\n\n### Question:\n{instruction}\n\n### Choices:\n{input}\n\n### Response:\n"
 
 
+class MultipleChoiceConcisePrompter(AlpacaPrompter):
+    prompt_input = "Choose the answer that best answers the question. Be concise in your response.\n\nUSER: {instruction}\n{input}\nASSISTANT:\n"
+
+
+class SummarizeTLDRPrompter(AlpacaPrompter):
+    prompt_no_input = "USER: Summarize the following article as a TL;DR.\n{instruction}\nASSISTANT:"
+
+
 class CompletionPrompter(AlpacaPrompter):
     def build_prompt(self, instruction: str, input=None, output=None) -> Generator[str, None, None]:
         yield instruction
