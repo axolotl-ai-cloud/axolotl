@@ -163,11 +163,20 @@ def load_model(
     if not tokenizer:
         try:
             if is_llama_derived_model and "LlamaTokenizer" in globals():
-                tokenizer = LlamaTokenizer.from_pretrained(model)
+                tokenizer = LlamaTokenizer.from_pretrained(
+                    model,
+                    trust_remote_code=True if cfg.trust_remote_code is True else False,
+                )
             else:
-                tokenizer = getattr(transformers, tokenizer_type).from_pretrained(model)
+                tokenizer = getattr(transformers, tokenizer_type).from_pretrained(
+                    model,
+                    trust_remote_code=True if cfg.trust_remote_code is True else False,
+                )
         except:
-            tokenizer = AutoTokenizer.from_pretrained(base_model_config)
+            tokenizer = AutoTokenizer.from_pretrained(
+                base_model_config,
+                trust_remote_code=True if cfg.trust_remote_code is True else False,
+            )
 
     logging.debug(f"EOS: {tokenizer.eos_token_id} / {tokenizer.eos_token}")
     logging.debug(f"BOS: {tokenizer.bos_token_id} / {tokenizer.bos_token}")
