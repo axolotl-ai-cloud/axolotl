@@ -6,7 +6,7 @@ PyYAML==6.0
 black
 bitsandbytes==0.37.2
 datasets
-accelerate
+accelerate>=0.19.0
 sentencepiece
 wandb
 einops
