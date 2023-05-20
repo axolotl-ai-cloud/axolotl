@@ -126,6 +126,32 @@ def load_model(
                 torch_dtype=torch_dtype,
                 device_map=cfg.device_map,
             )
+        # elif model_type == "GPTNeoXForCausalLM" and cfg.flash_attention:
+        #     This is a WIP, still an issue with the backward pass
+        #     RuntimeError: grad can be implicitly created only for scalar outputs
+        #     TODO: try config.sequence_parallel = False
+        #     # https://github.com/HazyResearch/flash-attention/blob/40a25c8ee7465cf547b929cfa2937034e37bfce9/tests/models/test_gpt_neox.py#L12
+        #     # https://github.com/HazyResearch/flash-attention/tree/main/training#model-components
+        #     # add `**kwargs` to https://github.com/HazyResearch/flash-attention/blob/40a25c8ee7465cf547b929cfa2937034e37bfce9/flash_attn/models/gpt.py#L442
+        #     from flash_attn.utils.pretrained import state_dict_from_pretrained
+        #     from flash_attn.models.gpt import GPTLMHeadModel
+        #     from flash_attn.models.gpt_neox import remap_state_dict_hf_gpt_neox, gpt_neox_config_to_gpt2_config
+        #     from transformers import GPTNeoXConfig
+        #     config = gpt_neox_config_to_gpt2_config(GPTNeoXConfig.from_pretrained(base_model))
+        #     config.use_flash_attn = True
+        #     config.fused_bias_fc = True
+        #     config.fused_mlp = True  # GPT-NeoX-20B uses "gelu_fast"
+        #     config.activation_function = "gelu_fast"
+        #     config.fused_dropout_add_ln = True
+        #     # config.residual_in_fp32 = True
+        #
+        #     model: GPTLMHeadModel = GPTLMHeadModel.from_pretrained(
+        #         base_model,
+        #         config,
+        #         dtype=torch_dtype,
+        #         device=cfg.device,
+        #     )
+        #     model.train() # sets to train instead of eval mode
         elif model_type:
             model = getattr(transformers, model_type).from_pretrained(
                 base_model,
@@ -266,7 +292,7 @@ def load_llama_adapter(model, cfg):
         task_type="CAUSAL_LM",
     )
 
-    if cfg.peft_model_dir:
+    if cfg.lora_model_dir:
         model = PeftModel.from_pretrained(
             model,
             cfg.lora_model_dir,
@@ -307,7 +333,7 @@ def load_lora(model, cfg):
             model,
             cfg.lora_model_dir,
             device_map=cfg.device_map,
-            torch_dtype=torch.float16,
+            # torch_dtype=torch.float16,
         )
     else:
         model = get_peft_model(model, lora_config)

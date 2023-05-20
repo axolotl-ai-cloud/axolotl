@@ -1,6 +1,7 @@
 ARG CUDA_VERSION="11.8.0"
 ARG CUDNN_VERSION="8"
 ARG UBUNTU_VERSION="22.04"
+ARG MAX_JOBS=4
 
 FROM nvidia/cuda:$CUDA_VERSION-cudnn$CUDNN_VERSION-devel-ubuntu$UBUNTU_VERSION as base-builder
 
@@ -39,6 +40,14 @@ ARG TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6+PTX"
 
 RUN git clone https://github.com/HazyResearch/flash-attention.git && \
     cd flash-attention && \
+    python3 setup.py bdist_wheel && \
+    cd csrc/fused_dense_lib && \
+    python3 setup.py bdist_wheel && \
+    cd csrc/xentropy && \
+    python3 setup.py bdist_wheel && \
+    cd csrc/rotary && \
+    python3 setup.py bdist_wheel && \
+    cd csrc/layer_norm && \
     python3 setup.py bdist_wheel
 
 FROM base-builder AS deepspeed-builder
@@ -60,8 +69,12 @@ RUN cd apex && MAX_JOBS=1 python3 -m pip install --global-option="--cpp_ext" --g
 RUN mkdir /workspace/wheels
 COPY --from=deepspeed-builder /workspace/DeepSpeed/dist/deepspeed-*.whl wheels
 COPY --from=flash-attn-builder /workspace/flash-attention/dist/flash_attn-*.whl wheels
+COPY --from=flash-attn-builder /workspace/flash-attention/csrc/fused_dense_lib/dist/fused_dense_lib-*.whl wheels
+COPY --from=flash-attn-builder /workspace/flash-attention/csrc/xentropy/dist/xentropy-*.whl wheels
+COPY --from=flash-attn-builder /workspace/flash-attention/csrc/rotary/dist/rotary-*.whl wheels
+COPY --from=flash-attn-builder /workspace/flash-attention/csrc/layer_norm/dist/dropout_layer_norm-*.whl wheels
 
-RUN pip3 install wheels/deepspeed-*.whl wheels/flash_attn-*.whl
+RUN pip3 install wheels/deepspeed-*.whl wheels/flash_attn-*.whl wheels/fused_dense_lib-*.whl wheels/xeontropy-*.whl wheels/rotary-*.whl wheels/dropout_layer_norm-*.whl
 RUN git lfs install --skip-repo
 RUN pip3 install "peft @ git+https://github.com/huggingface/peft.git@main" \
         "accelerate @ git+https://github.com/huggingface/accelerate.git@main" \
