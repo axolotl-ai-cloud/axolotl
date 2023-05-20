@@ -112,6 +112,7 @@ def load_model(
                 base_model_config if base_model_config else base_model,
                 model_path,
                 device_map=cfg.device_map,
+                half=cfg.fp16,
                 groupsize=cfg.gptq_groupsize if cfg.gptq_groupsize else -1,
                 is_v1_model=cfg.gptq_model_v1
                 if cfg.gptq_model_v1 is not None
