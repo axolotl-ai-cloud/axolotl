@@ -125,6 +125,8 @@ datasets:
 # axolotl attempts to save the dataset as an arrow after packing the data together so
 # subsequent training attempts load faster, relative path
 dataset_prepared_path: data/last_run_prepared
+# push prepared dataset to hub
+push_dataset_to_hub: # repo path
 # How much of the dataset to set aside as evaluation. 1 = 100%, 0.50 = 50%, etc
 val_set_size: 0.04
 
@@ -206,12 +208,14 @@ auto_resume_from_checkpoints: false
 
 # don't mess with this, it's here for accelerate and torchrun
 local_rank:
-# add or change special tokens
 
+# add or change special tokens
 special_tokens:
   # bos_token: "<s>"
   # eos_token: "</s>"
   # unk_token: "<unk>"
+# add extra tokens
+tokens:
 
 # FSDP
 fsdp:
