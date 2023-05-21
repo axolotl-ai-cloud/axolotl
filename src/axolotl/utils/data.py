@@ -75,7 +75,7 @@ def load_tokenized_prepared_datasets(tokenizer, cfg, default_dataset_prepared_pa
             ds = None
             ds_from_hub = False
             try:
-                load_dataset(d.path, streaming=True)
+                load_dataset(d.path, streaming=True, use_auth_token=True)
                 ds_from_hub = True
             except FileNotFoundError:
                 pass
@@ -83,18 +83,18 @@ def load_tokenized_prepared_datasets(tokenizer, cfg, default_dataset_prepared_pa
             # prefer local dataset, even if hub exists
             if Path(d.path).exists():
                 ds: IterableDataset = load_dataset(
-                    "json", data_files=d.path, streaming=True, split=None
+                    "json", data_files=d.path, streaming=False, split=None
                 )
             elif ds_from_hub:
                 if d.data_files:
-                    ds = load_dataset(d.path, streaming=True, data_files=d.data_files)
+                    ds = load_dataset(d.path, streaming=False, data_files=d.data_files, use_auth_token=True)
                 else:
-                    ds = load_dataset(d.path, streaming=True)
+                    ds = load_dataset(d.path, streaming=False, use_auth_token=True)
             else:
                 fp = hf_hub_download(
                     repo_id=d.path, repo_type="dataset", filename=d.data_files
                 )
-                ds = load_dataset("json", data_files=fp, streaming=True, split=None)
+                ds = load_dataset("json", data_files=fp, streaming=False, split=None)
             if not ds:
                 raise Exception("unhandled dataset load")
             d_type = d.type

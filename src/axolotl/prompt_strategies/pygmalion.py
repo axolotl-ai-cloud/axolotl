@@ -41,9 +41,9 @@ class PygmalionPromptTokenizingStrategy(PromptTokenizingStrategy):
             elif role == "bot":
                 prefix = "<|model|>"
                 res = self._tokenize(prefix + " " + message.strip(), add_eos_token=True, strip_bos_token=True)
-                res["input_ids"] = [*self.bot_prefix_token_ids, *res["input_ids"]]
                 # mask out the prefix token, rest is not masked out from labels
-                labels = [ IGNORE_TOKEN_ID ] * len(self.bot_prefix_token_ids) + [*copy.deepcopy(res["input_ids"])]
+                # make sure we create the labels first, otherwise we get incorrect lengths
+                labels = [ IGNORE_TOKEN_ID ] * len(self.bot_prefix_token_ids) + [*copy.deepcopy(res["input_ids"])][len(self.bot_prefix_token_ids):]
             else:
                 logging.warning(f"unknown role in conversation: {role}")
                 res = defaultdict(lambda: [])
