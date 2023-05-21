@@ -24,7 +24,7 @@ Go ahead and axolotl questions!!
   ```
 
 - Conda/Pip venv
-  1. install python **3.9**
+  1. Install python **3.9**
 
   2. Install python dependencies with ONE of the following:
       - `pip3 install -e .[int4]` (recommended)
