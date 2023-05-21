@@ -20,8 +20,12 @@ Go ahead and axolotl questions!!
 
 - Docker 
   ```bash
-  docker pull winglian/axolotl
+  docker run --gpus '"all"' --rm -it winglian/axolotl:main
   ```
+  - `winglian/axolotl:dev`: dev branch
+  - `winglian/axolotl-runpod:main`: for runpod
+  - `--gpus '"device=0"'`: to select one gpu
+  - `-v $PWD:/workspace/axolotl`: to mount current path for dev
 
 - Conda/Pip venv
   1. Install python **3.9**
@@ -33,7 +37,7 @@ Go ahead and axolotl questions!!
 
 ### Dataset
 
-Have a dataset in one of the following format (JSONL recommended):
+Have dataset(s) in one of the following format (JSONL recommended):
 
 - `alpaca`: instruction; input(optional)
   ```json
@@ -64,7 +68,7 @@ Have a dataset in one of the following format (JSONL recommended):
   {"text": "..."}
   ```
 
-Optionally Download some datasets, see [data/README.md](data/README.md)
+Optionally, download some datasets, see [data/README.md](data/README.md)
 
 ### Config
 
