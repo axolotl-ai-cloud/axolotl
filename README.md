@@ -35,31 +35,31 @@ Go ahead and axolotl questions!!
 
 Have a dataset in one of the following format (JSONL recommended):
 
-- alpaca: instruction; input(optional)
+- `alpaca`: instruction; input(optional)
   ```json
   {"instruction": "...", "input": "...", "output": "..."}
   ```
-- jeopardy: question and answer
+- `jeopardy`: question and answer
   ```json
   {"question": "...", "category": "...", "answer": "..."}
   ```
-- oasst: instruction
+- `oasst`: instruction
   ```json
   {"INSTRUCTION": "...", "RESPONSE": "..."}
   ```
-- gpteacher: instruction; input(optional)
+- `gpteacher`: instruction; input(optional)
   ```json
   {"instruction": "...", "input": "...", "response": "..."}
   ```
-- reflection: instruction with reflect; input(optional)
+- `reflection`: instruction with reflect; input(optional)
   ```json
   {"instruction": "...", "input": "...", "output": "...", "reflection": "...", "corrected": "..."}
   ```
-- sharegpt: conversations
+- `sharegpt`: conversations
   ```json
   {"conversations": [{"from": "...", "value": "..."}]}
   ```
-- completion: raw corpus
+- `completion`: raw corpus
   ```json
   {"text": "..."}
   ```
