@@ -10,6 +10,7 @@ from datasets import (
     concatenate_datasets,
 )
 from huggingface_hub import hf_hub_download
+from transformers import PreTrainedTokenizerBase
 
 from axolotl.datasets import TokenizedPromptDataset, ConstantLengthDataset
 from axolotl.prompt_strategies import load
@@ -37,12 +38,14 @@ from axolotl.prompters import (
 
 
 def load_tokenized_prepared_datasets(tokenizer, cfg, default_dataset_prepared_path):
+    tokenizer_name = tokenizer.__class__.__name__
     ds_hash = str(
         md5(
             (
                 str(cfg.sequence_len)
                 + "@"
                 + "|".join(sorted([f"{d.path}:{d.type}" for d in cfg.datasets]))
+                + "|" + tokenizer_name
             ).encode("utf-8")
         ).hexdigest()
     )
@@ -192,7 +195,7 @@ def load_tokenized_prepared_datasets(tokenizer, cfg, default_dataset_prepared_pa
     return dataset
 
 
-def load_prepare_datasets(tokenizer, cfg, default_dataset_prepared_path):
+def load_prepare_datasets(tokenizer: PreTrainedTokenizerBase, cfg, default_dataset_prepared_path):
     max_packed_sequence_len = (
         cfg.max_packed_sequence_len if cfg.max_packed_sequence_len else cfg.sequence_len
     )
@@ -200,6 +203,7 @@ def load_prepare_datasets(tokenizer, cfg, default_dataset_prepared_path):
         max_packed_sequence_len, cfg.sequence_len
     )  # make sure we don't accidentally set it larger than sequence_len
 
+    tokenizer_name = tokenizer.__class__.__name__
     if cfg.max_packed_sequence_len is not None:
         # see if we can go ahead and load the stacked dataset
         seed = f"@{str(cfg.seed)}" if cfg.seed else ""
@@ -211,6 +215,7 @@ def load_prepare_datasets(tokenizer, cfg, default_dataset_prepared_path):
                     + str(max_packed_sequence_len)
                     + seed
                     + "|".join(sorted([f"{d.path}:{d.type}" for d in cfg.datasets]))
+                    + "|" + tokenizer_name
                 ).encode("utf-8")
             ).hexdigest()
         )
@@ -238,6 +243,11 @@ def load_prepare_datasets(tokenizer, cfg, default_dataset_prepared_path):
             )
             dataset = load_from_disk(str(prepared_ds_path))
             logging.info("Prepared packed dataset loaded from disk...")
+            if cfg.push_dataset_to_hub:
+                logging.info(
+                    f"Saving packed prepared dataset with push_to_hub... {cfg.push_dataset_to_hub}/{ds_hash}"
+                )
+                dataset.push_to_hub(f"{cfg.push_dataset_to_hub}/{ds_hash}", private=True)
         else:
             dataset = load_tokenized_prepared_datasets(
                 tokenizer, cfg, default_dataset_prepared_path
