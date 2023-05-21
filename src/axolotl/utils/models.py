@@ -220,7 +220,7 @@ def load_model(
         for k, v in cfg.special_tokens.items():
             tokenizer.add_special_tokens({k: v})
     if cfg.tokens:
-        tokenizer.add_tokens(cfg.tokens)
+        tokenizer.add_tokens(list(cfg.tokens))
 
     embeddings_len = math.ceil(len(tokenizer) / 32) * 32
     model.resize_token_embeddings(embeddings_len)

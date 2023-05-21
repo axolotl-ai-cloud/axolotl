@@ -12,6 +12,7 @@ from datasets import (
 from huggingface_hub import hf_hub_download
 
 from axolotl.datasets import TokenizedPromptDataset, ConstantLengthDataset
+from axolotl.prompt_strategies import load
 from axolotl.prompt_tokenizers import (
     AlpacaPromptTokenizingStrategy,
     GPTeacherPromptTokenizingStrategy,
@@ -94,10 +95,13 @@ def load_tokenized_prepared_datasets(tokenizer, cfg, default_dataset_prepared_pa
             if not ds:
                 raise Exception("unhandled dataset load")
             d_type = d.type
-            d_type_split = d.type.split(":")
+            d_type_split = d_type.split(":")
             d_base_type = d_type_split[0]
             d_prompt_style = d_type_split[1] if len(d_type_split) > 1 else None
-            if d_base_type == "alpaca":
+            if (ds_strategy := load(d.type, tokenizer, cfg)):
+                ds_wrapper = TokenizedPromptDataset(ds_strategy, ds["train"])
+                datasets.append(ds_wrapper)
+            elif d_base_type == "alpaca":
                 ds_strategy = AlpacaPromptTokenizingStrategy(
                     AlpacaPrompter(d_prompt_style), tokenizer, cfg.train_on_inputs, cfg.sequence_len
                 )

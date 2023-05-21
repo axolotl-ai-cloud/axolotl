@@ -38,14 +38,14 @@ class PromptTokenizingStrategy(abc.ABC):
     @functools.cache
     def _get_user_token(self):
         id_or_ids = self.tokenizer.convert_tokens_to_ids("<|USER|>")
-        if type(id_or_ids, (int,)):
+        if isinstance(id_or_ids, (int,)):
             return id_or_ids
         return False
 
     @functools.cache
     def _get_assistant_token(self):
         id_or_ids = self.tokenizer.convert_tokens_to_ids("<|ASSISTANT|>")
-        if type(id_or_ids, (int,)):
+        if isinstance(id_or_ids, (int,)):
             return id_or_ids
         return False
 
@@ -272,15 +272,16 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
                         # this is still the user query, we should
                         res = self._tokenize(part.strip(), add_eos_token=False, strip_bos_token=True)
                         if user_token:
-                            res = [user_token, *res]
+                            res["input_ids"] = [user_token, *res["input_ids"]]
                         # everything from this is masked out from the labels
                         labels = [ IGNORE_TOKEN_ID ] * len(res["input_ids"])
                     elif part[0] == "ASSISTANT:":
+                        # TODO label assistant token/tokens w/ IGNORE_TOKEN_ID
                         part = part[0] + part[1] if not assistant_token else part[1]
                         # this should be the assistent response, should end with an eos token
                         res = self._tokenize(part.strip(), add_eos_token=True, strip_bos_token=True)
                         if assistant_token:
-                            res = [assistant_token, *res]
+                            res["input_ids"] = [assistant_token, *res["input_ids"]]
                         # not masked out from labels
                         labels = copy.deepcopy(res["input_ids"])
                     else:
