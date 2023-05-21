@@ -165,7 +165,7 @@ wandb_watch:
 wandb_run_id:
 wandb_log_model: # 'checkpoint'
 
-# where to save the finsihed model to
+# where to save the finished model to
 output_dir: ./completed-model
 
 # training hyperparameters
