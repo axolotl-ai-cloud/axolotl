@@ -33,13 +33,32 @@ Go ahead and axolotl questions!!
 
 ### Dataset
 
-Have a dataset in one of the following format:
+Have a dataset in one of the following format (JSONL recommended):
 
-- alpaca: instruction
+- alpaca: instruction; input(optional)
   ```json
   {"instruction": "...", "input": "...", "output": "..."}
   ```
-- #TODO add others
+- jeopardy: question and answer
+  ```json
+  {"question": "...", "category": "...", "answer": "..."}
+  ```
+- oasst: instruction
+  ```json
+  {"INSTRUCTION": "...", "RESPONSE": "..."}
+  ```
+- gpteacher: instruction; input(optional)
+  ```json
+  {"instruction": "...", "input": "...", "response": "..."}
+  ```
+- reflection: instruction with reflect; input(optional)
+  ```json
+  {"instruction": "...", "input": "...", "output": "...", "reflection": "...", "corrected": "..."}
+  ```
+- sharegpt: conversations
+  ```json
+  {"conversations": [{"from": "...", "value": "..."}]}
+  ```
 - completion: raw corpus
   ```json
   {"text": "..."}
@@ -158,7 +177,7 @@ lora_target_modules:
 lora_modules_to_save:
 #  - embed_tokens
 #  - lm_head
-lora_out_dir: # TODO: explain
+lora_out_dir:
 lora_fan_in_fan_out: false
 
 # wandb configuration if you're using it
