@@ -55,6 +55,7 @@ See sample configs in [configs](configs) folder. It is recommended to duplicate 
   ```yaml
   base_model: ./llama-7b-hf # local or huggingface repo
   ```
+  Note: The code will load the right architecture.
 
 - dataset
   ```yaml
@@ -71,6 +72,7 @@ See sample configs in [configs](configs) folder. It is recommended to duplicate 
   fp16: true
   tf32: true
   ```
+  Note: Repo does not do 4-bit quantization.
 
 - lora
   ```yaml
