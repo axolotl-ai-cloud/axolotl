@@ -157,7 +157,7 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
                 cfg.learning_rate,
                 total_steps=total_num_steps,
                 epochs=cfg.num_epochs,
-                div_factor=10,
+                div_factor=cfg.lr_div_factor if cfg.lr_div_factor else 6,
                 **lr_scheduler_kwargs,
             )
         elif cfg.lr_scheduler == "log_sweep":
@@ -182,7 +182,7 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
             cfg.early_stopping_patience,
         )
         callbacks.append(early_stop_cb)
-        
+
     if cfg.local_rank == 0 and cfg.adapter == 'lora': # only save in rank 0
         callbacks.append(SavePeftModelCallback)
 
