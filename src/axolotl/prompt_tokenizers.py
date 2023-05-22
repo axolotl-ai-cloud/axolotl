@@ -1,5 +1,7 @@
 import abc
 import copy
+import functools
+import logging
 
 from transformers import PreTrainedTokenizer
 
@@ -33,6 +35,20 @@ class PromptTokenizingStrategy(abc.ABC):
     def tokenize_prompt(self, prompt):
         pass
 
+    @functools.cache
+    def _get_user_token(self):
+        id_or_ids = self.tokenizer.convert_tokens_to_ids("<|USER|>")
+        if isinstance(id_or_ids, (int,)):
+            return id_or_ids
+        return False
+
+    @functools.cache
+    def _get_assistant_token(self):
+        id_or_ids = self.tokenizer.convert_tokens_to_ids("<|ASSISTANT|>")
+        if isinstance(id_or_ids, (int,)):
+            return id_or_ids
+        return False
+
 
 class InstructionPromptTokenizingStrategy(PromptTokenizingStrategy):
     def parse_instruction_fields(self, prompt) -> (str, str, str):
@@ -63,7 +79,7 @@ class InstructionPromptTokenizingStrategy(PromptTokenizingStrategy):
             response,
         )))
 
-    def _tokenize(self, prompt, add_eos_token=True):
+    def _tokenize(self, prompt, add_eos_token=True, strip_bos_token=False):
         result = self.tokenizer(
             prompt,
             truncation=True,
@@ -78,6 +94,13 @@ class InstructionPromptTokenizingStrategy(PromptTokenizingStrategy):
         ):
             result["input_ids"].append(self.tokenizer.eos_token_id)
             result["attention_mask"].append(1)
+
+        if (
+            result["input_ids"][0] == self.tokenizer.bos_token_id
+            and strip_bos_token
+        ):
+            result["input_ids"] = result["input_ids"][1:]
+            result["attention_mask"] = result["attention_mask"][1:]
 
         result["labels"] = result["input_ids"].copy()
         return result
@@ -239,23 +262,35 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
             "labels": [],
         }
         current_len = 0
+        user_token = self._get_user_token()
+        assistant_token = self._get_assistant_token()
         try:
-            for i, part in enumerate(self.prompter.build_prompt(prompt["conversations"], self.tokenizer)):
-                if i == 0:
+            for i, part in enumerate(self.prompter.build_prompt(prompt["conversations"])):
+                if isinstance(part, tuple):
+                    if part[0] == "USER:":
+                        part = part[0] + part[1] if not user_token else part[1]
+                        # this is still the user query, we should
+                        res = self._tokenize(part.strip(), add_eos_token=False, strip_bos_token=True)
+                        if user_token:
+                            res["input_ids"] = [user_token, *res["input_ids"]]
+                        # everything from this is masked out from the labels
+                        labels = [ IGNORE_TOKEN_ID ] * len(res["input_ids"])
+                    elif part[0] == "ASSISTANT:":
+                        # TODO label assistant token/tokens w/ IGNORE_TOKEN_ID
+                        part = part[0] + part[1] if not assistant_token else part[1]
+                        # this should be the assistent response, should end with an eos token
+                        res = self._tokenize(part.strip(), add_eos_token=True, strip_bos_token=True)
+                        if assistant_token:
+                            res["input_ids"] = [assistant_token, *res["input_ids"]]
+                        # not masked out from labels
+                        labels = copy.deepcopy(res["input_ids"])
+                    else:
+                        logging.warning("unhandled role: " + part[0])
+                else:
                     # this is only ever the first part, should include the bos token and the user query
                     res = self._tokenize(part.strip(), add_eos_token=False, strip_bos_token=False)
                     # everything from this is masked out from the labels
                     labels = [ IGNORE_TOKEN_ID ] * len(res["input_ids"])
-                elif i % 2 == 0:
-                    # this is still the user query, we should
-                    res = self._tokenize(part.strip(), add_eos_token=False, strip_bos_token=True)
-                    # everything from this is masked out from the labels
-                    labels = [ IGNORE_TOKEN_ID ] * len(res["input_ids"])
-                else:
-                    # this should be the assistent response, should end with an eos token
-                    res = self._tokenize(part.strip(), add_eos_token=True, strip_bos_token=True)
-                    # not masked out from labels
-                    labels = copy.deepcopy(res["input_ids"])
                 input_ids = res["input_ids"]
                 input_len = len(input_ids)
                 result["input_ids"][current_len : current_len + input_len] = input_ids
