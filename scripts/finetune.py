@@ -171,7 +171,7 @@ def train(
     )
 
     if "merge_lora" in kwargs and cfg.adapter is not None:
-        print("running merge of LoRA with base model")
+        logging.info("running merge of LoRA with base model")
         model = model.merge_and_unload()
 
         if cfg.local_rank == 0:
