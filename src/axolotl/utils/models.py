@@ -293,6 +293,7 @@ def load_llama_adapter(model, cfg):
     )
 
     if cfg.lora_model_dir:
+        logging.info("Loading pretained LORA")
         model = PeftModel.from_pretrained(
             model,
             cfg.lora_model_dir,
