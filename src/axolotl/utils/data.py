@@ -230,7 +230,7 @@ def load_prepare_datasets(tokenizer: PreTrainedTokenizerBase, cfg, default_datas
         try:
             if cfg.push_dataset_to_hub:
                 logging.info(
-                    f"checkking for packed prepared dataset from hub... {cfg.push_dataset_to_hub}/{ds_hash}"
+                    f"Checking for packed prepared dataset from hub... {cfg.push_dataset_to_hub}/{ds_hash}"
                 )
                 dataset = load_dataset(f"{cfg.push_dataset_to_hub}/{ds_hash}", use_auth_token=True)
                 dataset = dataset["train"]
