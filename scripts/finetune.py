@@ -175,7 +175,7 @@ def train(
         model = model.merge_and_unload()
 
         if cfg.local_rank == 0:
-            print("saving merged model")
+            logging.info("saving merged model")
             model.save_pretrained(str(Path(cfg.output_dir) / "merged"))
         return
 
