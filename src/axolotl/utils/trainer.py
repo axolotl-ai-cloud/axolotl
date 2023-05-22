@@ -81,9 +81,6 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
         training_arguments_kwargs["fsdp"] = cfg.fsdp
         if cfg.fsdp_config:
             training_arguments_kwargs["fsdp_config"] = dict(cfg.fsdp_config)
-        # can't set optimizers directly on trainer when using fsdp, so set them here
-        if cfg.optimizer:
-            training_arguments_kwargs["optim"] = cfg.optimizer
 
     # deepspeed
     if (
