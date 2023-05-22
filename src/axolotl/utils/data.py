@@ -58,6 +58,7 @@ def load_tokenized_prepared_datasets(tokenizer, cfg, default_dataset_prepared_pa
     try:
         if cfg.push_dataset_to_hub:
             dataset = load_dataset(f"{cfg.push_dataset_to_hub}/{ds_hash}", use_auth_token=True)
+            dataset = dataset["train"]
     except:
         pass
 
@@ -232,6 +233,7 @@ def load_prepare_datasets(tokenizer: PreTrainedTokenizerBase, cfg, default_datas
                     f"checkking for packed prepared dataset from hub... {cfg.push_dataset_to_hub}/{ds_hash}"
                 )
                 dataset = load_dataset(f"{cfg.push_dataset_to_hub}/{ds_hash}", use_auth_token=True)
+                dataset = dataset["train"]
         except:
             pass
 
