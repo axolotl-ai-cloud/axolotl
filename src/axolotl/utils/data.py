@@ -7,7 +7,7 @@ from datasets import (
     load_dataset,
     IterableDataset,
     Dataset,
-    concatenate_datasets,
+    concatenate_datasets, DatasetDict,
 )
 from huggingface_hub import hf_hub_download
 from transformers import PreTrainedTokenizerBase
@@ -37,7 +37,7 @@ from axolotl.prompters import (
 )
 
 
-def load_tokenized_prepared_datasets(tokenizer, cfg, default_dataset_prepared_path):
+def load_tokenized_prepared_datasets(tokenizer, cfg, default_dataset_prepared_path) -> DatasetDict:
     tokenizer_name = tokenizer.__class__.__name__
     ds_hash = str(
         md5(
@@ -196,7 +196,7 @@ def load_tokenized_prepared_datasets(tokenizer, cfg, default_dataset_prepared_pa
     return dataset
 
 
-def load_prepare_datasets(tokenizer: PreTrainedTokenizerBase, cfg, default_dataset_prepared_path):
+def load_prepare_datasets(tokenizer: PreTrainedTokenizerBase, cfg, default_dataset_prepared_path) -> (Dataset, Dataset):
     max_packed_sequence_len = (
         cfg.max_packed_sequence_len if cfg.max_packed_sequence_len else cfg.sequence_len
     )
