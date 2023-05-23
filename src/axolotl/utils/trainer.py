@@ -23,7 +23,7 @@ class OneCycleLRSchedulerTrainer(Trainer):
         num_training_steps=num_training_steps
         pct_start = num_warmup_steps / num_training_steps
 
-        lr_scheduler = OneCycleLR(
+        self.lr_scheduler = OneCycleLR(
             optimizer,
             max_lr=self.args.learning_rate,
             total_steps=num_training_steps,
@@ -31,7 +31,7 @@ class OneCycleLRSchedulerTrainer(Trainer):
             div_factor=6,
         )
 
-        return lr_scheduler
+        return self.lr_scheduler
 
 
 def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
