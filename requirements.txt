@@ -1,6 +1,6 @@
 peft @ git+https://github.com/huggingface/peft.git
 transformers @ git+https://github.com/huggingface/transformers.git
-bitsandbytes @ git+https://github.com/TimDettmers/bitsandbytes.git
+bitsandbytes>=0.39.0
 attrdict
 fire
 PyYAML==6.0
