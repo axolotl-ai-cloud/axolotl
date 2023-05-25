@@ -1,12 +1,12 @@
 peft @ git+https://github.com/huggingface/peft.git
 transformers @ git+https://github.com/huggingface/transformers.git
+bitsandbytes>=0.39.0
 attrdict
 fire
 PyYAML==6.0
 black
-bitsandbytes==0.37.2
 datasets
-accelerate
+accelerate>=0.19.0
 sentencepiece
 wandb
 einops

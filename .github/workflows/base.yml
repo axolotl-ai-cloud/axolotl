@@ -11,6 +11,15 @@ jobs:
     if: github.repository_owner == 'OpenAccess-AI-Collective'
     # this job needs to be run on self-hosted GPU runners...
     runs-on: self-hosted
+    strategy:
+      matrix:
+        include:
+          - cuda: cu118
+            cuda_version: 11.8.0
+            pytorch: 2.0.0
+          - cuda: cu117
+            cuda_version: 11.7.0
+            pytorch: 1.13.1
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -32,7 +41,11 @@ jobs:
           context: .
           file: ./docker/Dockerfile-base
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.metadata.outputs.tags }}
+          tags: ${{ steps.metadata.outputs.tags }}-${{ matrix.cuda }}-${{ matrix.pytorch }}
           labels: ${{ steps.metadata.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          build-args: |
+            CUDA_VERSION=${{ matrix.cuda_version }}
+            CUDA=${{ matrix.cuda }}
+            PYTORCH_VERSION=${{ matrix.pytorch }}

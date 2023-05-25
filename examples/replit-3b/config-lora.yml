@@ -1,0 +1,55 @@
+base_model: replit/replit-code-v1-3b
+base_model_config: replit/replit-code-v1-3b
+trust_remote_code: true
+load_in_8bit: false
+datasets:
+  - path: vicgalle/alpaca-gpt4
+    type: alpaca
+dataset_prepared_path: last_run_prepared
+val_set_size: 0.05
+adapter: lora
+lora_model_dir:
+sequence_len: 2048
+max_packed_sequence_len:
+lora_r: 8
+lora_alpha: 16
+lora_dropout: 0.05
+lora_target_modules:
+  - Wqkv
+  - mlp_up
+  - mlp_down
+lora_fan_in_fan_out:
+wandb_project: lora-replit
+wandb_watch:
+wandb_run_id:
+wandb_log_model:
+output_dir: ./lora-replit
+batch_size: 8
+micro_batch_size: 1
+num_epochs: 3
+optimizer:
+torchdistx_path:
+lr_scheduler:
+learning_rate: 0.00001
+train_on_inputs: false
+group_by_length: false
+bf16: true
+tf32: true
+gradient_checkpointing:
+early_stopping_patience:
+resume_from_checkpoint:
+local_rank:
+logging_steps: 1
+xformers_attention:
+flash_attention:
+gptq_groupsize:
+gptq_model_v1:
+warmup_steps: 20
+eval_steps: 50
+save_steps:
+debug:
+deepspeed:
+weight_decay: 0
+fsdp:
+fsdp_config:
+#special_tokens:

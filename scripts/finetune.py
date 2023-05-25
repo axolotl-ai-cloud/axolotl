@@ -1,7 +1,6 @@
 import importlib
 import logging
 import os
-import pathlib
 import random
 import signal
 import sys
@@ -10,12 +9,12 @@ from typing import Optional
 
 import fire
 import torch
-import transformers
 import yaml
 from attrdict import AttrDefault
 
 # add src to the pythonpath so we don't need to pip install this
 from axolotl.utils.tokenization import check_dataset_labels
+from axolotl.utils.validation import validate_config
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 src_dir = os.path.join(project_root, "src")
@@ -33,7 +32,7 @@ DEFAULT_DATASET_PREPARED_PATH = "last_run_prepared"
 def choose_device(cfg):
     def get_device():
         if torch.cuda.is_available():
-            return "cuda"
+            return f"cuda:{cfg.local_rank}"
         else:
             try:
                 if torch.backends.mps.is_available():
@@ -69,7 +68,7 @@ def do_inference(cfg, model, tokenizer, prompter="AlpacaPrompter"):
         instruction = get_multi_line_input()
         if not instruction:
             return
-        prompt = prompter_module().build_prompt(instruction=instruction)
+        prompt: str = next(prompter_module().build_prompt(instruction=instruction))
         batch = tokenizer(prompt, return_tensors="pt", add_special_tokens=True)
 
         model.eval()
@@ -133,7 +132,8 @@ def train(
     # then overwrite the value
     cfg_keys = dict(cfg).keys()
     for k in kwargs:
-        if k in cfg_keys:
+        # if not strict, allow writing to cfg even if it's not in the yml already
+        if k in cfg_keys or cfg.strict is False:
             # handle booleans
             if isinstance(cfg[k], bool):
                 cfg[k] = bool(kwargs[k])
@@ -159,6 +159,8 @@ def train(
             cfg.fp16 = True
         cfg.bf16 = False
 
+    validate_config(cfg)
+
     # Load the model and tokenizer
     logging.info("loading model, tokenizer, and peft_config...")
     model, tokenizer, peft_config = load_model(
@@ -170,6 +172,15 @@ def train(
         adapter=cfg.adapter,
         inference=("inference" in kwargs),
     )
+
+    if "merge_lora" in kwargs and cfg.adapter is not None:
+        logging.info("running merge of LoRA with base model")
+        model = model.merge_and_unload()
+
+        if cfg.local_rank == 0:
+            logging.info("saving merged model")
+            model.save_pretrained(str(Path(cfg.output_dir) / "merged"))
+        return
 
     if "inference" in kwargs:
         logging.info("calling do_inference function")
@@ -184,10 +195,6 @@ def train(
         tokenizer, cfg, DEFAULT_DATASET_PREPARED_PATH
     )
 
-    if prepare_ds_only:
-        logging.info("Finished preparing dataset. Exiting...")
-        return
-
     if cfg.debug:
         logging.info("check_dataset_labels...")
         check_dataset_labels(
@@ -196,6 +203,10 @@ def train(
             ),
             tokenizer,
         )
+
+    if prepare_ds_only:
+        logging.info("Finished preparing dataset. Exiting...")
+        return
 
     trainer = setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer)
 
@@ -218,6 +229,8 @@ def train(
         )
 
     logging.info("Starting trainer...")
+    if cfg.group_by_length:
+        logging.info("hang tight... sorting dataset for group_by_length")
     resume_from_checkpoint = cfg.resume_from_checkpoint
     if cfg.resume_from_checkpoint is None and cfg.auto_resume_from_checkpoints:
         possible_checkpoints = [
@@ -236,7 +249,9 @@ def train(
     logging.info(f"Training Completed!!! Saving pre-trained model to {cfg.output_dir}")
 
     # TODO do we need this fix? https://huggingface.co/docs/accelerate/usage_guides/fsdp#saving-and-loading
-    model.save_pretrained(cfg.output_dir)
+    # only save on rank 0, otherwise it corrupts output on multi-GPU when multiple processes attempt to write the same file
+    if cfg.local_rank == 0:
+        model.save_pretrained(cfg.output_dir)
     # trainer.save_model(cfg.output_dir)  # TODO this may be needed for deepspeed to work? need to review another time
 
 

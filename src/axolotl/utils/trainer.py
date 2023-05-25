@@ -9,11 +9,31 @@ import torch.cuda
 import transformers
 from torch import nn
 from torch.optim.lr_scheduler import OneCycleLR
-from transformers import EarlyStoppingCallback
+from transformers import EarlyStoppingCallback, Trainer
 from transformers.trainer_pt_utils import get_parameter_names
 
 from axolotl.utils.schedulers import InterpolatingLogScheduler
 from axolotl.utils.callbacks import SavePeftModelCallback
+
+
+class OneCycleLRSchedulerTrainer(Trainer):
+    def create_scheduler(
+        self, num_training_steps: int, optimizer: torch.optim.Optimizer = None
+    ):
+        optimizer = self.optimizer if optimizer is None else optimizer
+        num_warmup_steps = self.args.get_warmup_steps(num_training_steps)
+        num_training_steps = num_training_steps
+        pct_start = num_warmup_steps / num_training_steps
+
+        self.lr_scheduler = OneCycleLR(
+            optimizer,
+            max_lr=self.args.learning_rate,
+            total_steps=num_training_steps,
+            pct_start=pct_start,
+            div_factor=6,
+        )
+
+        return self.lr_scheduler
 
 
 def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
@@ -38,6 +58,7 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
         training_arguments_kwargs["bf16_full_eval"] = True
     else:
         training_arguments_kwargs["bf16"] = cfg.bf16
+    training_arguments_kwargs["fp16"] = True if cfg.fp16 and not cfg.bf16 else False
     training_arguments_kwargs["tf32"] = cfg.tf32
     training_arguments_kwargs["warmup_steps"] = warmup_steps
     training_arguments_kwargs["logging_steps"] = logging_steps
@@ -119,6 +140,7 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
         cfg.optimizer == "adamw_bnb_8bit"
         and not cfg.load_4bit
         and not "deepspeed" in training_arguments_kwargs
+        and not cfg.fsdp
     ):
         decay_parameters = get_parameter_names(model, [nn.LayerNorm])
         decay_parameters = [name for name in decay_parameters if "bias" not in name]
@@ -157,7 +179,7 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
                 cfg.learning_rate,
                 total_steps=total_num_steps,
                 epochs=cfg.num_epochs,
-                div_factor=10,
+                div_factor=cfg.lr_div_factor if cfg.lr_div_factor else 6,
                 **lr_scheduler_kwargs,
             )
         elif cfg.lr_scheduler == "log_sweep":
@@ -182,8 +204,8 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
             cfg.early_stopping_patience,
         )
         callbacks.append(early_stop_cb)
-        
-    if cfg.local_rank == 0 and cfg.adapter == 'lora': # only save in rank 0
+
+    if cfg.local_rank == 0 and cfg.adapter == "lora":  # only save in rank 0
         callbacks.append(SavePeftModelCallback)
 
     data_collator_kwargs = {
@@ -194,7 +216,12 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
     else:
         data_collator_kwargs["pad_to_multiple_of"] = 8
 
-    trainer = transformers.Trainer(
+    trainer_cls = (
+        OneCycleLRSchedulerTrainer
+        if cfg.lr_scheduler == "one_cycle" and cfg.fsdp
+        else transformers.Trainer
+    )
+    trainer = trainer_cls(
         model=model,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
