@@ -134,7 +134,7 @@ See sample configs in [configs](configs) folder or [examples](examples) for quic
 
 - lora
   ```yaml
-  adapter: lora # blank for full finetune
+  adapter: lora # qlora or leave blank for full finetune
   lora_r: 8
   lora_alpha: 16
   lora_dropout: 0.05
@@ -185,6 +185,8 @@ datasets:
   # The type of prompt to use for training. [alpaca, sharegpt, gpteacher, oasst, reflection]
     type: alpaca
     data_files: # path to source data files
+    shards: # true if use subset data. make sure to set `shards` param also
+shards: # number of shards to split dataset into
 
 # axolotl attempts to save the dataset as an arrow after packing the data together so
 # subsequent training attempts load faster, relative path
@@ -201,7 +203,7 @@ sequence_len: 2048
 # inspired by StackLLaMA. see https://huggingface.co/blog/stackllama#supervised-fine-tuning
 max_packed_sequence_len: 1024
 
-# if you want to use lora, leave blank to train all parameters in original model
+# if you want to use 'lora' or 'qlora' or leave blank to train all parameters in original model
 adapter: lora
 # if you already have a lora model trained that you want to load, put that here
 # lora hyperparameters
@@ -293,6 +295,9 @@ torchdistx_path:
 
 # Debug mode
 debug:
+
+# Seed
+seed:
 ```
 
 </details>
