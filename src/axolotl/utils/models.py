@@ -124,6 +124,7 @@ def load_model(
                 base_model_config if base_model_config else base_model,
                 model_path,
                 device_map=cfg.device_map,
+                half=cfg.fp16,
                 groupsize=cfg.gptq_groupsize if cfg.gptq_groupsize else -1,
                 is_v1_model=cfg.gptq_model_v1
                 if cfg.gptq_model_v1 is not None
@@ -343,6 +344,7 @@ def load_lora(model, cfg):
         target_modules=cfg.lora_target_modules,
         lora_dropout=cfg.lora_dropout,
         fan_in_fan_out=cfg.lora_fan_in_fan_out,
+        modules_to_save=cfg.lora_modules_to_save if cfg.lora_modules_to_save else None,
         bias="none",
         task_type="CAUSAL_LM",
     )
