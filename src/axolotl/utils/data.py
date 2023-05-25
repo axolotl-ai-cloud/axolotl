@@ -62,7 +62,6 @@ def load_tokenized_prepared_datasets(
     dataset = None
     try:
         if cfg.push_dataset_to_hub:
-            use_auth_token = True
             dataset = load_dataset(
                 f"{cfg.push_dataset_to_hub}/{ds_hash}", use_auth_token=True
             )
@@ -100,7 +99,7 @@ def load_tokenized_prepared_datasets(
                         d.path,
                         streaming=False,
                         data_files=d.data_files,
-                        use_auth_token=use_auth_token,
+                        use_auth_token=True,
                     )
                 else:
                     ds = load_dataset(d.path, streaming=False, use_auth_token=True)
