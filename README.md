@@ -121,6 +121,7 @@ See sample configs in [configs](configs) folder or [examples](examples) for quic
   datasets:
     - path: vicgalle/alpaca-gpt4 # local or huggingface repo
       type: alpaca # format from earlier
+  sequence_len: 2048 # max token length / prompt
   ```
 
 - loading
@@ -333,7 +334,12 @@ Add below flag to train command above
 
 ## Common Errors 🧰
 
-- Cuda out of memory: Please reduce `micro_batch_size` and/or `eval_batch_size` 
+> Cuda out of memory
+
+Please reduce any below
+  - `micro_batch_size`
+  - `eval_batch_size`
+  - `sequence_len`
 
 ## Contributing 🤝
 
