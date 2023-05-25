@@ -363,9 +363,9 @@ def load_lora(model, cfg):
     )
 
     bits = None
-    if cfg.load_in_4bits:
+    if cfg.load_in_4bit:
         bits = 4
-    elif cfg.load_in_8bits:
+    elif cfg.load_in_8bit:
         bits = 8
     linear_names = find_all_linear_names(bits, model)
     logging.info(f"found linear modules: {repr(linear_names)}")
