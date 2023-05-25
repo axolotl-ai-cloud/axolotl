@@ -11,3 +11,4 @@ sentencepiece
 wandb
 einops
 xformers
+torch
