@@ -382,6 +382,10 @@ Please reduce any below
 
 Try set `fp16: true`
 
+## Need help? 🙋‍♂️
+  
+Join our [Discord server](https://discord.gg/HhrNrHJPRb) where we can help you
+
 ## Contributing 🤝
 
 Bugs? Please check for open issue else create a new [Issue](https://github.com/OpenAccess-AI-Collective/axolotl/issues/new).
