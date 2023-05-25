@@ -362,7 +362,11 @@ def load_lora(model, cfg):
         PeftModel,
     )
 
-    bits = 4 if cfg.load_in_4bits else 8 if cfg.load_in_8bits else None
+    bits = None
+    if cfg.cfg.load_in_4bits: 
+        bits = 4
+    elif cfg.cfg.load_in_8bits: 
+        bits = 8
     linear_names = find_all_linear_names(bits, model)
     logging.info(f"found linear modules: {repr(linear_names)}")
     lora_target_modules = cfg.lora_target_modules + linear_names
