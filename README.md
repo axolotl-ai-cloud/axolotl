@@ -135,11 +135,11 @@ See sample configs in [configs](configs) folder or [examples](examples) for quic
 
 - loading
   ```yaml
-  load_4bit: true
   load_in_8bit: true
-  bf16: true
+  load_in_8bit: true
+  bf16: true # require >=ampere
   fp16: true
-  tf32: true
+  tf32: true # require >=ampere
   ```
   Note: Repo does not do 4-bit quantization.
 
@@ -183,11 +183,11 @@ gptq_model_v1: false # v1 or v2
 load_in_8bit: true
 
 # Use CUDA bf16
-bf16: true # bool or 'full' for `bf16_full_eval`
+bf16: true # bool or 'full' for `bf16_full_eval`. require >=ampere
 # Use CUDA fp16
 fp16: true
 # Use CUDA tf32
-tf32: true
+tf32: true # require >=ampere
 
 # a list of one or more datasets to finetune the model with
 datasets:
@@ -286,7 +286,7 @@ weight_decay:
 # whether to use xformers attention patch https://github.com/facebookresearch/xformers:
 xformers_attention:
 # whether to use flash attention patch https://github.com/HazyResearch/flash-attention:
-flash_attention:
+flash_attention:  # require a100 for llama
 
 # resume from a specific checkpoint dir
 resume_from_checkpoint:
