@@ -226,6 +226,7 @@ lora_out_dir:
 lora_fan_in_fan_out: false
 
 # wandb configuration if you're using it
+wandb_mode:
 wandb_project:
 wandb_watch:
 wandb_run_id:
@@ -300,8 +301,11 @@ fsdp_config:
 # Deepspeed
 deepspeed:
 
-# TODO
+# Path to torch distx for optim 'adamw_anyprecision'
 torchdistx_path:
+
+# Set padding for data collator to 'longest'
+collator_pad_to_longest:
 
 # Debug mode
 debug:
