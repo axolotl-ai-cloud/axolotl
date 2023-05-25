@@ -37,7 +37,7 @@ accelerate config
 accelerate launch scripts/finetune.py examples/4bit-lora-7b/config.yml
 
 # inference
-accelerate launch scripts/finetune.py examples/4bit-lora-7b/config.yml --inference
+accelerate launch scripts/finetune.py examples/4bit-lora-7b/config.yml --inference --lora_model_dir="./llama-7b-lora-int4"
 ```
 
 ## Installation
