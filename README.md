@@ -194,7 +194,7 @@ datasets:
   # this can be either a hf dataset, or relative path
   - path: vicgalle/alpaca-gpt4
   # The type of prompt to use for training. [alpaca, sharegpt, gpteacher, oasst, reflection]
-    type: alpaca
+    type: alpaca # format OR format:prompt_style (chat/instruct)
     data_files: # path to source data files
     shards: # true if use subset data. make sure to set `shards` param also
 shards: # number of shards to split dataset into
