@@ -375,6 +375,10 @@ Please reduce any below
   - `eval_batch_size`
   - `sequence_len`
 
+> RuntimeError: expected scalar type Float but found Half
+
+Try set `fp16: true`
+
 ## Contributing 🤝
 
 Bugs? Please check for open issue else create a new [Issue](https://github.com/OpenAccess-AI-Collective/axolotl/issues/new).
