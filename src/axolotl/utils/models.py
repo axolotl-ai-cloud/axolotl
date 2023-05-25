@@ -137,7 +137,7 @@ def load_model(
             model = LlamaForCausalLM.from_pretrained(
                 base_model,
                 load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
-                load_in_4bit=cfg.load_in_4bit and cfg.adapter is not None,
+                load_in_4bit=cfg.load_4bit and cfg.adapter is not None,
                 torch_dtype=torch_dtype,
                 device_map=cfg.device_map,
                 **model_kwargs,
