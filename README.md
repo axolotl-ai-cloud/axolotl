@@ -1,10 +1,18 @@
 # Axolotl
 
-A centralized repo to train multiple architectures with different dataset types using a simple yaml file.
+<div align="center">
+  <img src="image/axolotl.png" alt="axolotl" width="160">
+  <div>
+    <p>
+      <b>One repo to finetune them all! </b>
+    </p>
+    <p>
+      Go ahead and axolotl questions!!
+    </p>
+  </div>
+</div>
 
-Go ahead and axolotl questions!!
-
-## Support Matrix
+## Axolotl supports
 
 |          | fp16/fp32 | fp16/fp32 w/ lora | 4bit-quant | 4bit-quant w/flash attention | flash attention | xformers attention |
 |----------|:----------|:------------------|------------|------------------------------|-----------------|--------------------|
@@ -14,7 +22,22 @@ Go ahead and axolotl questions!!
 | mpt      | ✅         | ❌                 | ❌          | ❌                            | ❌               | ❓                  |
 
 
-## Getting Started
+## Quick start
+
+**Requirements**: Python 3.9. 
+
+```bash
+git clone https://github.com/OpenAccess-AI-Collective/axolotl
+
+pip3 install -e .[int4]
+
+accelerate config
+accelerate launch scripts/finetune.py examples/4bit-lora-7b/config.yml
+```
+
+
+
+## Requirements and Installation
 
 ### Environment
 
@@ -38,6 +61,23 @@ Go ahead and axolotl questions!!
 ### Dataset
 
 Have dataset(s) in one of the following format (JSONL recommended):
+
+- `alpaca`: instruction; input(optional)
+  ```json
+  {"instruction": "...", "input": "...", "output": "..."}
+  ```
+- `sharegpt`: conversations
+  ```json
+  {"conversations": [{"from": "...", "value": "..."}]}
+  ```
+- `completion`: raw corpus
+  ```json
+  {"text": "..."}
+  ```
+
+<details>
+
+<summary>See all formats</summary>
 
 - `alpaca`: instruction; input(optional)
   ```json
@@ -68,11 +108,13 @@ Have dataset(s) in one of the following format (JSONL recommended):
   {"text": "..."}
   ```
 
+</details>
+
 Optionally, download some datasets, see [data/README.md](data/README.md)
 
 ### Config
 
-See sample configs in [configs](configs) folder. It is recommended to duplicate and modify to your needs. The most important options are:
+See sample configs in [configs](configs) folder or [examples](examples) for quick start. It is recommended to duplicate and modify to your needs. The most important options are:
 
 - model
   ```yaml
@@ -84,7 +126,7 @@ See sample configs in [configs](configs) folder. It is recommended to duplicate 
   ```yaml
   datasets:
     - path: vicgalle/alpaca-gpt4 # local or huggingface repo
-      type: alpaca # format from above
+      type: alpaca # format from earlier
   ```
 
 - loading
@@ -147,6 +189,8 @@ datasets:
   - path: vicgalle/alpaca-gpt4
   # The type of prompt to use for training. [alpaca, sharegpt, gpteacher, oasst, reflection]
     type: alpaca
+    data_files: # path to source data files
+
 # axolotl attempts to save the dataset as an arrow after packing the data together so
 # subsequent training attempts load faster, relative path
 dataset_prepared_path: data/last_run_prepared
@@ -260,7 +304,13 @@ debug:
 
 ### Accelerate
 
-Configure accelerate using `accelerate config` or update `~/.cache/huggingface/accelerate/default_config.yaml`
+Configure accelerate 
+
+```bash
+accelerate config
+
+# nano ~/.cache/huggingface/accelerate/default_config.yaml
+```
 
 ### Train
 
@@ -275,10 +325,10 @@ Add `--inference` flag to train command above
 
 If you are inferencing a pretrained LORA, pass 
 ```bash
---lora_model_dir path/to/lora
+--lora_model_dir ./completed-model
 ```
 
-### Merge LORA to base
+### Merge LORA to base (Dev branch 🔧 )
 
 Add `--merge_lora --lora_model_dir="path/to/lora"` flag to train command above
 
