@@ -14,6 +14,7 @@ from attrdict import AttrDefault
 
 # add src to the pythonpath so we don't need to pip install this
 from axolotl.utils.tokenization import check_dataset_labels
+from axolotl.utils.validation import validate_config
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 src_dir = os.path.join(project_root, "src")
@@ -157,6 +158,8 @@ def train(
         if cfg.bf16:
             cfg.fp16 = True
         cfg.bf16 = False
+
+    validate_config(cfg)
 
     # Load the model and tokenizer
     logging.info("loading model, tokenizer, and peft_config...")

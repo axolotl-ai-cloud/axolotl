@@ -204,21 +204,6 @@ def load_model(
             **model_kwargs,
         )
 
-    """### Post-processing on the model
-        Finally, we need to apply some post-processing on the 8-bit model to enable training, let's freeze all our layers, and cast the layer-norm in `float32` for stability. We also cast the output of the last layer in `float32` for the same reasons.
-    """
-    # if cfg.adapter == "qlora":
-    #     for param in model.parameters():
-    #         param.requires_grad = False  # freeze the model - train adapters later
-    #         if param.ndim == 1:
-    #             # cast the small parameters (e.g. layernorm) to fp32 for stability
-    #             param.data = param.data.to(torch.float32)
-    #     class CastOutputToFloat(nn.Linear):
-    #         def forward(self, x):
-    #             return super().forward(x).to(torch.float32)
-    #
-    #     model.lm_head = CastOutputToFloat(model.lm_head.in_features, model.lm_head.out_features, model.lm_head.bias)
-
     if not tokenizer:
         try:
             if is_llama_derived_model and "LlamaTokenizer" in globals():
