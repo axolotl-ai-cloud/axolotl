@@ -22,7 +22,7 @@
 | mpt      | ✅         | ❌                 | ❌          | ❌                            | ❌               | ❓                  |
 
 
-## Quick start
+## Quickstart ⚡
 
 **Requirements**: Python 3.9. 
 
@@ -32,12 +32,15 @@ git clone https://github.com/OpenAccess-AI-Collective/axolotl
 pip3 install -e .[int4]
 
 accelerate config
+
+# finetune
 accelerate launch scripts/finetune.py examples/4bit-lora-7b/config.yml
+
+# inference
+accelerate launch scripts/finetune.py examples/4bit-lora-7b/config.yml --inference
 ```
 
-
-
-## Requirements and Installation
+## Installation
 
 ### Environment
 
@@ -107,6 +110,8 @@ Have dataset(s) in one of the following format (JSONL recommended):
   ```json
   {"text": "..."}
   ```
+
+> Have some new format to propose? Check if it's already defined in [data.py](src/axolotl/utils/data.py) in `dev` branch!
 
 </details>
 
@@ -309,6 +314,7 @@ Configure accelerate
 ```bash
 accelerate config
 
+# Edit manually
 # nano ~/.cache/huggingface/accelerate/default_config.yaml
 ```
 
@@ -330,5 +336,18 @@ If you are inferencing a pretrained LORA, pass
 
 ### Merge LORA to base (Dev branch 🔧 )
 
-Add `--merge_lora --lora_model_dir="path/to/lora"` flag to train command above
+Add below flag to train command above
 
+```bash
+--merge_lora --lora_model_dir="./completed-model"
+```
+
+## Common Errors 🧰
+
+- Cuda out of memory: Please reduce `micro_batch_size` and/or `eval_batch_size` 
+
+## Contributing 🤝
+
+Bugs? Please check for open issue else create a new [Issue](https://github.com/OpenAccess-AI-Collective/axolotl/issues/new).
+
+PRs are **greatly welcome**!
