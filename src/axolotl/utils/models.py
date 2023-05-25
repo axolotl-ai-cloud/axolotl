@@ -6,11 +6,12 @@ from typing import Optional, Tuple, TYPE_CHECKING
 
 import torch
 import transformers
+from torch import nn
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
     PreTrainedModel,
-    AutoConfig,
+    AutoConfig, BitsAndBytesConfig,
 )
 
 try:
@@ -81,6 +82,16 @@ def load_model(
         logging.exception(e)
         raise e
 
+    model_kwargs = {}
+    if cfg.adapter == "qlora":
+        model_kwargs["quantization_config"] = BitsAndBytesConfig(
+            load_in_4bit=True,
+            llm_int8_threshold=6.0,
+            llm_int8_has_fp16_weight=False,
+            bnb_4bit_compute_dtype=torch.float16,
+            bnb_4bit_use_double_quant=True,
+            bnb_4bit_quant_type="nf4",
+        )
     try:
         if cfg.load_4bit and is_llama_derived_model:
             from alpaca_lora_4bit.autograd_4bit import load_llama_model_4bit_low_ram
@@ -123,8 +134,10 @@ def load_model(
             model = LlamaForCausalLM.from_pretrained(
                 base_model,
                 load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
+                load_in_4bit=cfg.load_in_4bit and cfg.adapter is not None,
                 torch_dtype=torch_dtype,
                 device_map=cfg.device_map,
+                **model_kwargs,
             )
         # elif model_type == "GPTNeoXForCausalLM" and cfg.flash_attention:
         #     This is a WIP, still an issue with the backward pass
@@ -156,9 +169,11 @@ def load_model(
             model = getattr(transformers, model_type).from_pretrained(
                 base_model,
                 load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
+                load_in_4bit=cfg.load_in_4bit and cfg.adapter is not None,
                 torch_dtype=torch_dtype,
                 device_map=cfg.device_map,
                 trust_remote_code=True if cfg.trust_remote_code is True else False,
+                **model_kwargs,
             )
         else:
             config = AutoConfig.from_pretrained(
@@ -169,9 +184,11 @@ def load_model(
                 base_model,
                 config=config,
                 load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
+                load_in_4bit=cfg.load_in_4bit and cfg.adapter is not None,
                 torch_dtype=torch_dtype,
                 device_map=cfg.device_map,
                 trust_remote_code=True if cfg.trust_remote_code is True else False,
+                **model_kwargs,
             )
     except Exception as e:
         logging.error(
@@ -184,6 +201,7 @@ def load_model(
             torch_dtype=torch_dtype,
             device_map=cfg.device_map,
             trust_remote_code=True if cfg.trust_remote_code is True else False,
+            **model_kwargs,
         )
 
     if not tokenizer:
@@ -225,7 +243,7 @@ def load_model(
     embeddings_len = math.ceil(len(tokenizer) / 32) * 32
     model.resize_token_embeddings(embeddings_len)
 
-    if cfg.adapter and load_in_8bit and not cfg.load_4bit:
+    if ((cfg.adapter == "lora" and load_in_8bit) or cfg.adapter == "qlora") and not cfg.load_4bit:
         logging.info("converting PEFT model w/ prepare_model_for_int8_training")
         model = prepare_model_for_int8_training(model)
 
@@ -270,7 +288,7 @@ def load_adapter(model, cfg, adapter):
 
     if adapter is None:
         return model, None
-    if adapter == "lora":
+    if adapter == "lora" or adapter == "qlora":
         return load_lora(model, cfg)
     if adapter == "llama-adapter":
         return load_llama_adapter(model, cfg)

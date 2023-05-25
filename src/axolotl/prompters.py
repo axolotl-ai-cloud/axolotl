@@ -11,6 +11,7 @@ class PromptStyle(Enum):
     instruct = "instruct"
     chat = "chat"
 
+
 class AlpacaPrompter:
     system_prompt = "Below is an instruction that describes a task, paired with an input that provides further context. Write a response that appropriately completes the request.\n\n"
     system_no_input_prompt = "Below is an instruction that describes a task. Write a response that appropriately completes the request.\n\n"
@@ -49,6 +50,10 @@ class AlpacaPrompter:
     def get_response(self, output: str) -> str:
         return output.split(self.response_split)[1].strip()
 
+
+class UnpromptedPrompter(AlpacaPrompter):
+    system_prompt = ""
+    system_no_input_prompt = ""
 
 class JeopardyPrompter(AlpacaPrompter):
     prompt_input = "Below is a Jeopardy clue paired with input providing the category of the clue. Write a concise response that best answers tbe clue given the category.\n\n### Instruction:\n{instruction}\n\n### Input:\n{input}\n\n### Response:\n"

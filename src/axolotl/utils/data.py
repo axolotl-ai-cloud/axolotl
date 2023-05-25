@@ -98,6 +98,11 @@ def load_tokenized_prepared_datasets(tokenizer, cfg, default_dataset_prepared_pa
                 ds = load_dataset("json", data_files=fp, streaming=False, split=None)
             if not ds:
                 raise Exception("unhandled dataset load")
+            # support for using a subset of the data
+            if d.shards:
+                ds = ds.shuffle(seed=42)["train"].shard(
+                    num_shards=cfg.shards, index=0
+                )
             d_type = d.type
             d_type_split = d_type.split(":")
             d_base_type = d_type_split[0]
