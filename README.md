@@ -324,7 +324,7 @@ If you are inferencing a pretrained LORA, pass
 --lora_model_dir ./completed-model
 ```
 
-### Merge LORA to base (Dev branch 🔧 )
+### Merge LORA to base
 
 Add below flag to train command above
 
