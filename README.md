@@ -104,6 +104,7 @@ Have dataset(s) in one of the following format (JSONL recommended):
 - `concisechoice`: question, choices, (solution OR explanation)
   ```json
   {"question": "...", "choices": ["..."], "solution": "...", "explanation": "..."}
+  ```
 - `summarizetldr`: article and summary
   ```json
   {"article": "...", "summary": "..."}
