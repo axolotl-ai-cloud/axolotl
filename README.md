@@ -97,6 +97,18 @@ Have dataset(s) in one of the following format (JSONL recommended):
   ```json
   {"instruction": "...", "input": "...", "output": "...", "reflection": "...", "corrected": "..."}
   ```
+- `explainchoice`: question, choices, (solution OR explanation)
+  ```json
+  {"question": "...", "choices": ["..."], "solution": "...", "explanation": "..."}
+  ```
+- `concisechoice`: question, choices, (solution OR explanation)
+  ```json
+  {"question": "...", "choices": ["..."], "solution": "...", "explanation": "..."}
+  ```
+- `summarizetldr`: article and summary
+  ```json
+  {"article": "...", "summary": "..."}
+  ```
 
 > Have some new format to propose? Check if it's already defined in [data.py](src/axolotl/utils/data.py) in `dev` branch!
 
@@ -124,17 +136,17 @@ See sample configs in [configs](configs) folder or [examples](examples) for quic
 
 - loading
   ```yaml
-  load_4bit: true
+  load_in_4bit: true
   load_in_8bit: true
-  bf16: true
+  bf16: true # require >=ampere
   fp16: true
-  tf32: true
+  tf32: true # require >=ampere
   ```
   Note: Repo does not do 4-bit quantization.
 
 - lora
   ```yaml
-  adapter: lora # blank for full finetune
+  adapter: lora # qlora or leave blank for full finetune
   lora_r: 8
   lora_alpha: 16
   lora_dropout: 0.05
@@ -163,28 +175,32 @@ tokenizer_type: AutoTokenizer
 # Trust remote code for untrusted source
 trust_remote_code:
 
-# whether you are training a 4-bit quantized model
+# whether you are training a 4-bit GPTQ quantized model
 load_4bit: true
 gptq_groupsize: 128 # group size
 gptq_model_v1: false # v1 or v2
 
 # this will attempt to quantize the model down to 8 bits and use adam 8 bit optimizer
 load_in_8bit: true
+# use bitsandbytes 4 bit
+load_in_4bit:
 
 # Use CUDA bf16
-bf16: true
+bf16: true # bool or 'full' for `bf16_full_eval`. require >=ampere
 # Use CUDA fp16
 fp16: true
 # Use CUDA tf32
-tf32: true
+tf32: true # require >=ampere
 
 # a list of one or more datasets to finetune the model with
 datasets:
   # this can be either a hf dataset, or relative path
   - path: vicgalle/alpaca-gpt4
   # The type of prompt to use for training. [alpaca, sharegpt, gpteacher, oasst, reflection]
-    type: alpaca
+    type: alpaca # format OR format:prompt_style (chat/instruct)
     data_files: # path to source data files
+    shards: # true if use subset data. make sure to set `shards` param also
+shards: # number of shards to split dataset into
 
 # axolotl attempts to save the dataset as an arrow after packing the data together so
 # subsequent training attempts load faster, relative path
@@ -201,7 +217,7 @@ sequence_len: 2048
 # inspired by StackLLaMA. see https://huggingface.co/blog/stackllama#supervised-fine-tuning
 max_packed_sequence_len: 1024
 
-# if you want to use lora, leave blank to train all parameters in original model
+# if you want to use 'lora' or 'qlora' or leave blank to train all parameters in original model
 adapter: lora
 # if you already have a lora model trained that you want to load, put that here
 # lora hyperparameters
@@ -224,6 +240,7 @@ lora_out_dir:
 lora_fan_in_fan_out: false
 
 # wandb configuration if you're using it
+wandb_mode:
 wandb_project:
 wandb_watch:
 wandb_run_id:
@@ -252,8 +269,18 @@ gradient_checkpointing: false
 # stop training after this many evaluation losses have increased in a row
 # https://huggingface.co/transformers/v4.2.2/_modules/transformers/trainer_callback.html#EarlyStoppingCallback
 early_stopping_patience: 3
-# specify a scheduler to use with the optimizer. only one_cycle is supported currently
-lr_scheduler:
+
+# specify a scheduler and kwargs to use with the optimizer
+lr_scheduler: # 'one_cycle' | 'log_sweep' | empty for cosine
+lr_scheduler_kwargs:
+
+# for one_cycle optim
+lr_div_factor: # learning rate div factor
+
+# for log_sweep optim
+log_sweep_min_lr:
+log_sweep_max_lr:
+
 # specify optimizer
 optimizer:
 # specify weight decay
@@ -262,7 +289,7 @@ weight_decay:
 # whether to use xformers attention patch https://github.com/facebookresearch/xformers:
 xformers_attention:
 # whether to use flash attention patch https://github.com/HazyResearch/flash-attention:
-flash_attention:
+flash_attention:  # require a100 for llama
 
 # resume from a specific checkpoint dir
 resume_from_checkpoint:
@@ -288,11 +315,17 @@ fsdp_config:
 # Deepspeed
 deepspeed:
 
-# TODO
+# Path to torch distx for optim 'adamw_anyprecision'
 torchdistx_path:
+
+# Set padding for data collator to 'longest'
+collator_pad_to_longest:
 
 # Debug mode
 debug:
+
+# Seed
+seed:
 ```
 
 </details>
@@ -317,12 +350,16 @@ accelerate launch scripts/finetune.py configs/your_config.yml
 
 ### Inference
 
-Add `--inference` flag to train command above
+Pass the appropriate flag to the train command:
 
-If you are inferencing a pretrained LORA, pass 
-```bash
---lora_model_dir ./completed-model
-```
+- Pretrained LORA:
+  ```bash
+  --inference --lora_model_dir ./completed-model
+  ```
+- Full weights finetune:
+  ```bash
+  --inference --base_model ./completed-model
+  ```
 
 ### Merge LORA to base
 
@@ -340,6 +377,10 @@ Please reduce any below
   - `micro_batch_size`
   - `eval_batch_size`
   - `sequence_len`
+
+> RuntimeError: expected scalar type Float but found Half
+
+Try set `fp16: true`
 
 ## Contributing 🤝
 
