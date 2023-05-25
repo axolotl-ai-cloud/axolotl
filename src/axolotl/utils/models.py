@@ -257,7 +257,7 @@ def load_model(
     if cfg.ddp and not load_in_8bit:
         model.to(f"cuda:{cfg.local_rank}")
 
-    if cfg.load_4bit:
+    if cfg.load_in_4bit:
         # Scales to half
         logging.info("Fitting 4bit scales and zeros to half")
         for n, m in model.named_modules():
@@ -363,7 +363,7 @@ def load_lora(model, cfg):
     )
 
     bits = None
-    if cfg.load_4bit:
+    if cfg.load_in_4bit:
         bits = 4
     elif cfg.load_in_8bit:
         bits = 8
