@@ -1,5 +1,5 @@
-base_model: huggyllama/llama-7b
-base_model_config: huggyllama/llama-7b
+base_model: openlm-research/open_llama_3b_600bt_preview
+base_model_config: openlm-research/open_llama_3b_600bt_preview
 model_type: LlamaForCausalLM
 tokenizer_type: LlamaTokenizer
 load_in_8bit: true
@@ -32,9 +32,9 @@ wandb_watch:
 wandb_run_id:
 wandb_log_model:
 output_dir: ./lora-out
-batch_size: 4
-micro_batch_size: 1
-num_epochs: 4
+batch_size: 16
+micro_batch_size: 4
+num_epochs: 3
 optimizer: adamw_bnb_8bit
 torchdistx_path:
 lr_scheduler: cosine
