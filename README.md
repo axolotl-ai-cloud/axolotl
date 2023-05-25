@@ -317,12 +317,16 @@ accelerate launch scripts/finetune.py configs/your_config.yml
 
 ### Inference
 
-Add `--inference` flag to train command above
+Pass the appropriate flag to the train command:
 
-If you are inferencing a pretrained LORA, pass 
-```bash
---lora_model_dir ./completed-model
-```
+- Pretrained LORA:
+  ```bash
+  --inference --lora_model_dir ./completed-model
+  ```
+- Full weights finetune:
+  ```bash
+  --inference --base_model ./completed-model
+  ```
 
 ### Merge LORA to base
 
