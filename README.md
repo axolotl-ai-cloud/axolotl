@@ -97,6 +97,17 @@ Have dataset(s) in one of the following format (JSONL recommended):
   ```json
   {"instruction": "...", "input": "...", "output": "...", "reflection": "...", "corrected": "..."}
   ```
+- `explainchoice`: question, choices, (solution OR explanation)
+  ```json
+  {"question": "...", "choices": ["..."], "solution": "...", "explanation": "..."}
+  ```
+- `concisechoice`: question, choices, (solution OR explanation)
+  ```json
+  {"question": "...", "choices": ["..."], "solution": "...", "explanation": "..."}
+- `summarizetldr`: article and summary
+  ```json
+  {"article": "...", "summary": "..."}
+  ```
 
 > Have some new format to propose? Check if it's already defined in [data.py](src/axolotl/utils/data.py) in `dev` branch!
 
