@@ -17,7 +17,7 @@ class AlpacaPrompter:
     system_no_input_prompt = "Below is an instruction that describes a task. Write a response that appropriately completes the request.\n\n"
     prompt_style = None
 
-    def __init__(self, prompt_style="instruct"):
+    def __init__(self, prompt_style=PromptStyle.instruct.value):
         self.prompt_style = prompt_style if prompt_style else PromptStyle.instruct.value
         self.match_prompt_style()
 
