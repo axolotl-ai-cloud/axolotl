@@ -172,7 +172,7 @@ gptq_model_v1: false # v1 or v2
 load_in_8bit: true
 
 # Use CUDA bf16
-bf16: true
+bf16: true # bool or 'full' for `bf16_full_eval`
 # Use CUDA fp16
 fp16: true
 # Use CUDA tf32
