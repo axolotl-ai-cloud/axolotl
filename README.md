@@ -254,8 +254,18 @@ gradient_checkpointing: false
 # stop training after this many evaluation losses have increased in a row
 # https://huggingface.co/transformers/v4.2.2/_modules/transformers/trainer_callback.html#EarlyStoppingCallback
 early_stopping_patience: 3
-# specify a scheduler to use with the optimizer. only one_cycle is supported currently
-lr_scheduler:
+
+# specify a scheduler and kwargs to use with the optimizer
+lr_scheduler: # 'one_cycle' | 'log_sweep' | empty for cosine
+lr_scheduler_kwargs:
+
+# for one_cycle optim
+lr_div_factor: # learning rate div factor
+
+# for log_sweep optim
+log_sweep_min_lr:
+log_sweep_max_lr:
+
 # specify optimizer
 optimizer:
 # specify weight decay
