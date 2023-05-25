@@ -363,13 +363,13 @@ def load_lora(model, cfg):
     )
 
     bits = None
-    if cfg.cfg.load_in_4bits:
+    if cfg.load_in_4bits:
         bits = 4
-    elif cfg.cfg.load_in_8bits:
+    elif cfg.load_in_8bits:
         bits = 8
     linear_names = find_all_linear_names(bits, model)
     logging.info(f"found linear modules: {repr(linear_names)}")
-    lora_target_modules = list(cfg.lora_target_modules) + linear_names
+    lora_target_modules = list(set(list(cfg.lora_target_modules) + linear_names))
 
     lora_config = LoraConfig(
         r=cfg.lora_r,
