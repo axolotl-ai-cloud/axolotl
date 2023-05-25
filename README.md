@@ -81,12 +81,8 @@ Have dataset(s) in one of the following format (JSONL recommended):
 
 <details>
 
-<summary>See all formats</summary>
+<summary>See other formats</summary>
 
-- `alpaca`: instruction; input(optional)
-  ```json
-  {"instruction": "...", "input": "...", "output": "..."}
-  ```
 - `jeopardy`: question and answer
   ```json
   {"question": "...", "category": "...", "answer": "..."}
@@ -102,14 +98,6 @@ Have dataset(s) in one of the following format (JSONL recommended):
 - `reflection`: instruction with reflect; input(optional)
   ```json
   {"instruction": "...", "input": "...", "output": "...", "reflection": "...", "corrected": "..."}
-  ```
-- `sharegpt`: conversations
-  ```json
-  {"conversations": [{"from": "...", "value": "..."}]}
-  ```
-- `completion`: raw corpus
-  ```json
-  {"text": "..."}
   ```
 
 > Have some new format to propose? Check if it's already defined in [data.py](src/axolotl/utils/data.py) in `dev` branch!
