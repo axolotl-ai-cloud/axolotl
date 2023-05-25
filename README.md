@@ -136,7 +136,7 @@ See sample configs in [configs](configs) folder or [examples](examples) for quic
 
 - loading
   ```yaml
-  load_in_8bit: true
+  load_in_4bit: true
   load_in_8bit: true
   bf16: true # require >=ampere
   fp16: true
@@ -175,13 +175,15 @@ tokenizer_type: AutoTokenizer
 # Trust remote code for untrusted source
 trust_remote_code:
 
-# whether you are training a 4-bit quantized model
+# whether you are training a 4-bit GPTQ quantized model
 load_4bit: true
 gptq_groupsize: 128 # group size
 gptq_model_v1: false # v1 or v2
 
 # this will attempt to quantize the model down to 8 bits and use adam 8 bit optimizer
 load_in_8bit: true
+# use bitsandbytes 4 bit
+load_in_4bit:
 
 # Use CUDA bf16
 bf16: true # bool or 'full' for `bf16_full_eval`. require >=ampere
