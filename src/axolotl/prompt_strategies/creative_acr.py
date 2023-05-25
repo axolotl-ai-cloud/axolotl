@@ -7,7 +7,9 @@ from axolotl.prompt_tokenizers import InstructionPromptTokenizingStrategy
 class CreativeAnsweringPromptTokenizingStrategy(InstructionPromptTokenizingStrategy):
     def parse_instruction_fields(self, prompt) -> (str, str, str):
         question = prompt["instruction"]
-        answer = prompt["revision"]  # don't use prompt[answer], that's data we don't want in the dataset
+        answer = prompt[
+            "revision"
+        ]  # don't use prompt[answer], that's data we don't want in the dataset
         return (
             question,
             "",
@@ -48,8 +50,12 @@ Answer: {answer}
 """
 
     def parse_instruction_fields(self, prompt) -> (str, str, str):
-        scores = yaml.dump(prompt["scores"], default_flow_style=False, Dumper=yaml.Dumper)
-        critiques = yaml.dump(prompt["critiques"], default_flow_style=False, Dumper=yaml.Dumper)
+        scores = yaml.dump(
+            prompt["scores"], default_flow_style=False, Dumper=yaml.Dumper
+        )
+        critiques = yaml.dump(
+            prompt["critiques"], default_flow_style=False, Dumper=yaml.Dumper
+        )
         evaluation = scores + critiques
         question = prompt["instruction"]
         answer = prompt["answer"]
@@ -76,13 +82,19 @@ Evaluation:
 """
 
     def parse_instruction_fields(self, prompt) -> (str, str, str):
-        scores = yaml.dump(prompt["scores"], default_flow_style=False, Dumper=yaml.Dumper)
-        critiques = yaml.dump(prompt["critiques"], default_flow_style=False, Dumper=yaml.Dumper)
+        scores = yaml.dump(
+            prompt["scores"], default_flow_style=False, Dumper=yaml.Dumper
+        )
+        critiques = yaml.dump(
+            prompt["critiques"], default_flow_style=False, Dumper=yaml.Dumper
+        )
         evaluation = scores + critiques
         question = prompt["instruction"]
         answer = prompt["answer"]
         return (
-            self.user_prompt.format(question=question, answer=answer, evaluation=evaluation),
+            self.user_prompt.format(
+                question=question, answer=answer, evaluation=evaluation
+            ),
             "",
             prompt["revision"],
         )

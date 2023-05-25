@@ -7,7 +7,8 @@ from datasets import (
     load_dataset,
     IterableDataset,
     Dataset,
-    concatenate_datasets, DatasetDict,
+    concatenate_datasets,
+    DatasetDict,
 )
 from huggingface_hub import hf_hub_download
 from transformers import PreTrainedTokenizerBase
@@ -33,11 +34,14 @@ from axolotl.prompters import (
     JeopardyPrompter,
     CompletionPrompter,
     MultipleChoiceExplainPrompter,
-    SummarizeTLDRPrompter, MultipleChoiceConcisePrompter,
+    SummarizeTLDRPrompter,
+    MultipleChoiceConcisePrompter,
 )
 
 
-def load_tokenized_prepared_datasets(tokenizer, cfg, default_dataset_prepared_path) -> DatasetDict:
+def load_tokenized_prepared_datasets(
+    tokenizer, cfg, default_dataset_prepared_path
+) -> DatasetDict:
     tokenizer_name = tokenizer.__class__.__name__
     ds_hash = str(
         md5(
@@ -45,7 +49,8 @@ def load_tokenized_prepared_datasets(tokenizer, cfg, default_dataset_prepared_pa
                 str(cfg.sequence_len)
                 + "@"
                 + "|".join(sorted([f"{d.path}:{d.type}" for d in cfg.datasets]))
-                + "|" + tokenizer_name
+                + "|"
+                + tokenizer_name
             ).encode("utf-8")
         ).hexdigest()
     )
@@ -57,7 +62,9 @@ def load_tokenized_prepared_datasets(tokenizer, cfg, default_dataset_prepared_pa
     dataset = None
     try:
         if cfg.push_dataset_to_hub:
-            dataset = load_dataset(f"{cfg.push_dataset_to_hub}/{ds_hash}", use_auth_token=True)
+            dataset = load_dataset(
+                f"{cfg.push_dataset_to_hub}/{ds_hash}", use_auth_token=True
+            )
             dataset = dataset["train"]
     except:
         pass
@@ -88,7 +95,12 @@ def load_tokenized_prepared_datasets(tokenizer, cfg, default_dataset_prepared_pa
                 )
             elif ds_from_hub:
                 if d.data_files:
-                    ds = load_dataset(d.path, streaming=False, data_files=d.data_files, use_auth_token=True)
+                    ds = load_dataset(
+                        d.path,
+                        streaming=False,
+                        data_files=d.data_files,
+                        use_auth_token=True,
+                    )
                 else:
                     ds = load_dataset(d.path, streaming=False, use_auth_token=True)
             else:
@@ -100,49 +112,65 @@ def load_tokenized_prepared_datasets(tokenizer, cfg, default_dataset_prepared_pa
                 raise Exception("unhandled dataset load")
             # support for using a subset of the data
             if d.shards:
-                ds = ds.shuffle(seed=42)["train"].shard(
-                    num_shards=cfg.shards, index=0
-                )
+                ds = ds.shuffle(seed=42)["train"].shard(num_shards=cfg.shards, index=0)
             d_type = d.type
             d_type_split = d_type.split(":")
             d_base_type = d_type_split[0]
             d_prompt_style = d_type_split[1] if len(d_type_split) > 1 else None
-            if (ds_strategy := load(d.type, tokenizer, cfg)):
+            if ds_strategy := load(d.type, tokenizer, cfg):
                 ds_wrapper = TokenizedPromptDataset(ds_strategy, ds["train"])
                 datasets.append(ds_wrapper)
             elif d_base_type == "alpaca":
                 ds_strategy = AlpacaPromptTokenizingStrategy(
-                    AlpacaPrompter(d_prompt_style), tokenizer, cfg.train_on_inputs, cfg.sequence_len
+                    AlpacaPrompter(d_prompt_style),
+                    tokenizer,
+                    cfg.train_on_inputs,
+                    cfg.sequence_len,
                 )
                 ds_wrapper = TokenizedPromptDataset(ds_strategy, ds["train"])
                 datasets.append(ds_wrapper)
             elif d_base_type == "explainchoice":
                 ds_strategy = AlpacaMultipleChoicePromptTokenizingStrategy(
-                    MultipleChoiceExplainPrompter(d_prompt_style), tokenizer, cfg.train_on_inputs, cfg.sequence_len
+                    MultipleChoiceExplainPrompter(d_prompt_style),
+                    tokenizer,
+                    cfg.train_on_inputs,
+                    cfg.sequence_len,
                 )
                 ds_wrapper = TokenizedPromptDataset(ds_strategy, ds["train"])
                 datasets.append(ds_wrapper)
             elif d_base_type == "concisechoice":
                 ds_strategy = AlpacaMultipleChoicePromptTokenizingStrategy(
-                    MultipleChoiceConcisePrompter(d_prompt_style), tokenizer, cfg.train_on_inputs, cfg.sequence_len
+                    MultipleChoiceConcisePrompter(d_prompt_style),
+                    tokenizer,
+                    cfg.train_on_inputs,
+                    cfg.sequence_len,
                 )
                 ds_wrapper = TokenizedPromptDataset(ds_strategy, ds["train"])
                 datasets.append(ds_wrapper)
             elif d_base_type == "summarizetldr":
                 ds_strategy = SummarizeTLDRPromptTokenizingStrategy(
-                    SummarizeTLDRPrompter(d_prompt_style), tokenizer, cfg.train_on_inputs, cfg.sequence_len
+                    SummarizeTLDRPrompter(d_prompt_style),
+                    tokenizer,
+                    cfg.train_on_inputs,
+                    cfg.sequence_len,
                 )
                 ds_wrapper = TokenizedPromptDataset(ds_strategy, ds["train"])
                 datasets.append(ds_wrapper)
             elif d_base_type == "jeopardy":
                 ds_strategy = JeopardyPromptTokenizingStrategy(
-                    JeopardyPrompter(d_prompt_style), tokenizer, cfg.train_on_inputs, cfg.sequence_len
+                    JeopardyPrompter(d_prompt_style),
+                    tokenizer,
+                    cfg.train_on_inputs,
+                    cfg.sequence_len,
                 )
                 ds_wrapper = TokenizedPromptDataset(ds_strategy, ds["train"])
                 datasets.append(ds_wrapper)
             elif d_base_type == "oasst":
                 ds_strategy = OpenAssistantPromptTokenizingStrategy(
-                    AlpacaPrompter(d_prompt_style), tokenizer, cfg.train_on_inputs, cfg.sequence_len
+                    AlpacaPrompter(d_prompt_style),
+                    tokenizer,
+                    cfg.train_on_inputs,
+                    cfg.sequence_len,
                 )
                 ds_wrapper = TokenizedPromptDataset(ds_strategy, ds["train"])
                 datasets.append(ds_wrapper)
@@ -166,7 +194,10 @@ def load_tokenized_prepared_datasets(tokenizer, cfg, default_dataset_prepared_pa
                 datasets.append(ds_wrapper)
             elif d_base_type == "sharegpt":
                 ds_strategy = ShareGPTPromptTokenizingStrategy(
-                    ShareGPTPrompter(d_prompt_style), tokenizer, cfg.train_on_inputs, cfg.sequence_len
+                    ShareGPTPrompter(d_prompt_style),
+                    tokenizer,
+                    cfg.train_on_inputs,
+                    cfg.sequence_len,
                 )
                 ds_wrapper = TokenizedPromptDataset(ds_strategy, ds["train"])
                 datasets.append(ds_wrapper)
@@ -196,12 +227,16 @@ def load_tokenized_prepared_datasets(tokenizer, cfg, default_dataset_prepared_pa
                 logging.info(
                     f"Saving merged prepared dataset with push_to_hub... {cfg.push_dataset_to_hub}/{ds_hash}"
                 )
-                dataset.push_to_hub(f"{cfg.push_dataset_to_hub}/{ds_hash}", private=True)
+                dataset.push_to_hub(
+                    f"{cfg.push_dataset_to_hub}/{ds_hash}", private=True
+                )
 
     return dataset
 
 
-def load_prepare_datasets(tokenizer: PreTrainedTokenizerBase, cfg, default_dataset_prepared_path) -> (Dataset, Dataset):
+def load_prepare_datasets(
+    tokenizer: PreTrainedTokenizerBase, cfg, default_dataset_prepared_path
+) -> (Dataset, Dataset):
     max_packed_sequence_len = (
         cfg.max_packed_sequence_len if cfg.max_packed_sequence_len else cfg.sequence_len
     )
@@ -221,7 +256,8 @@ def load_prepare_datasets(tokenizer: PreTrainedTokenizerBase, cfg, default_datas
                     + str(max_packed_sequence_len)
                     + seed
                     + "|".join(sorted([f"{d.path}:{d.type}" for d in cfg.datasets]))
-                    + "|" + tokenizer_name
+                    + "|"
+                    + tokenizer_name
                 ).encode("utf-8")
             ).hexdigest()
         )
@@ -237,7 +273,9 @@ def load_prepare_datasets(tokenizer: PreTrainedTokenizerBase, cfg, default_datas
                 logging.info(
                     f"Checking for packed prepared dataset from hub... {cfg.push_dataset_to_hub}/{ds_hash}"
                 )
-                dataset = load_dataset(f"{cfg.push_dataset_to_hub}/{ds_hash}", use_auth_token=True)
+                dataset = load_dataset(
+                    f"{cfg.push_dataset_to_hub}/{ds_hash}", use_auth_token=True
+                )
                 dataset = dataset["train"]
         except:
             pass
@@ -254,7 +292,9 @@ def load_prepare_datasets(tokenizer: PreTrainedTokenizerBase, cfg, default_datas
                 logging.info(
                     f"Saving packed prepared dataset with push_to_hub... {cfg.push_dataset_to_hub}/{ds_hash}"
                 )
-                dataset.push_to_hub(f"{cfg.push_dataset_to_hub}/{ds_hash}", private=True)
+                dataset.push_to_hub(
+                    f"{cfg.push_dataset_to_hub}/{ds_hash}", private=True
+                )
         else:
             dataset = load_tokenized_prepared_datasets(
                 tokenizer, cfg, default_dataset_prepared_path
@@ -279,9 +319,9 @@ def load_prepare_datasets(tokenizer: PreTrainedTokenizerBase, cfg, default_datas
                     d
                     for d in dataset
                     if len(d["input_ids"]) < cfg.sequence_len
-                       and len(d["input_ids"]) > 0
-                       and len(d["input_ids"]) == len(d["attention_mask"])
-                       and len(d["input_ids"]) == len(d["labels"])
+                    and len(d["input_ids"]) > 0
+                    and len(d["input_ids"]) == len(d["attention_mask"])
+                    and len(d["input_ids"]) == len(d["labels"])
                 ]
             )
 
@@ -294,7 +334,9 @@ def load_prepare_datasets(tokenizer: PreTrainedTokenizerBase, cfg, default_datas
                     logging.info(
                         f"Saving packed prepared dataset with push_to_hub... {cfg.push_dataset_to_hub}/{ds_hash}"
                     )
-                    dataset.push_to_hub(f"{cfg.push_dataset_to_hub}/{ds_hash}", private=True)
+                    dataset.push_to_hub(
+                        f"{cfg.push_dataset_to_hub}/{ds_hash}", private=True
+                    )
     else:
         dataset = load_tokenized_prepared_datasets(
             tokenizer, cfg, default_dataset_prepared_path

@@ -17,10 +17,12 @@ from axolotl.utils.callbacks import SavePeftModelCallback
 
 
 class OneCycleLRSchedulerTrainer(Trainer):
-    def create_scheduler(self, num_training_steps: int, optimizer: torch.optim.Optimizer = None):
-        optimizer=self.optimizer if optimizer is None else optimizer
-        num_warmup_steps=self.args.get_warmup_steps(num_training_steps)
-        num_training_steps=num_training_steps
+    def create_scheduler(
+        self, num_training_steps: int, optimizer: torch.optim.Optimizer = None
+    ):
+        optimizer = self.optimizer if optimizer is None else optimizer
+        num_warmup_steps = self.args.get_warmup_steps(num_training_steps)
+        num_training_steps = num_training_steps
         pct_start = num_warmup_steps / num_training_steps
 
         self.lr_scheduler = OneCycleLR(
@@ -203,7 +205,7 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
         )
         callbacks.append(early_stop_cb)
 
-    if cfg.local_rank == 0 and cfg.adapter == 'lora': # only save in rank 0
+    if cfg.local_rank == 0 and cfg.adapter == "lora":  # only save in rank 0
         callbacks.append(SavePeftModelCallback)
 
     data_collator_kwargs = {
@@ -214,7 +216,11 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
     else:
         data_collator_kwargs["pad_to_multiple_of"] = 8
 
-    trainer_cls = OneCycleLRSchedulerTrainer if cfg.lr_scheduler == "one_cycle" and cfg.fsdp else transformers.Trainer
+    trainer_cls = (
+        OneCycleLRSchedulerTrainer
+        if cfg.lr_scheduler == "one_cycle" and cfg.fsdp
+        else transformers.Trainer
+    )
     trainer = trainer_cls(
         model=model,
         train_dataset=train_dataset,

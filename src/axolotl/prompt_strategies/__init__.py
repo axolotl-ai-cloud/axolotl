@@ -1,5 +1,6 @@
 import importlib
 
+
 def load(strategy, tokenizer, cfg):
     try:
         load_fn = "load"

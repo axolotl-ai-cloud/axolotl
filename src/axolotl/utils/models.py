@@ -11,7 +11,8 @@ from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
     PreTrainedModel,
-    AutoConfig, BitsAndBytesConfig,
+    AutoConfig,
+    BitsAndBytesConfig,
 )
 
 try:
@@ -244,7 +245,9 @@ def load_model(
     embeddings_len = math.ceil(len(tokenizer) / 32) * 32
     model.resize_token_embeddings(embeddings_len)
 
-    if ((cfg.adapter == "lora" and load_in_8bit) or cfg.adapter == "qlora") and not cfg.load_4bit:
+    if (
+        (cfg.adapter == "lora" and load_in_8bit) or cfg.adapter == "qlora"
+    ) and not cfg.load_4bit:
         logging.info("converting PEFT model w/ prepare_model_for_int8_training")
         model = prepare_model_for_int8_training(model)
 
@@ -265,7 +268,11 @@ def load_model(
                 m.scales = m.scales.half()
                 m.bias = m.bias.half()
 
-    if torch.cuda.device_count() > 1 and int(os.getenv("WORLD_SIZE", "1")) > 1 and cfg.load_4bit:
+    if (
+        torch.cuda.device_count() > 1
+        and int(os.getenv("WORLD_SIZE", "1")) > 1
+        and cfg.load_4bit
+    ):
         # llama is PROBABLY model parallelizable, but the default isn't that it is
         # so let's only set it for the 4bit, see
         # https://github.com/johnsmith0031/alpaca_lora_4bit/blob/08b3fca4a4a9e0d3945be1bab4529f100a428636/finetune.py#L130-L133

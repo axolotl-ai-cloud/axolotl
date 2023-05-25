@@ -30,20 +30,34 @@ class PygmalionPromptTokenizingStrategy(PromptTokenizingStrategy):
                 # this should include a bos token, no eos token, strip trailing "\n<START>"
                 if message.endswith("\n<START>"):
                     message = message[:-8]
-                res = self._tokenize(prefix + "Persona: " + message.strip(), add_eos_token=False, strip_bos_token=False)
+                res = self._tokenize(
+                    prefix + "Persona: " + message.strip(),
+                    add_eos_token=False,
+                    strip_bos_token=False,
+                )
                 # everything from this is masked out from the labels
-                labels = [ IGNORE_TOKEN_ID ] * len(res["input_ids"])
+                labels = [IGNORE_TOKEN_ID] * len(res["input_ids"])
             elif role == "human":
                 prefix = "<|user|>"
-                res = self._tokenize(prefix + " " + message.strip(), add_eos_token=False, strip_bos_token=True)
+                res = self._tokenize(
+                    prefix + " " + message.strip(),
+                    add_eos_token=False,
+                    strip_bos_token=True,
+                )
                 # everything from this is masked out from the labels
-                labels = [ IGNORE_TOKEN_ID ] * len(res["input_ids"])
+                labels = [IGNORE_TOKEN_ID] * len(res["input_ids"])
             elif role == "bot":
                 prefix = "<|model|>"
-                res = self._tokenize(prefix + " " + message.strip(), add_eos_token=True, strip_bos_token=True)
+                res = self._tokenize(
+                    prefix + " " + message.strip(),
+                    add_eos_token=True,
+                    strip_bos_token=True,
+                )
                 # mask out the prefix token, rest is not masked out from labels
                 # make sure we create the labels first, otherwise we get incorrect lengths
-                labels = [ IGNORE_TOKEN_ID ] * len(self.bot_prefix_token_ids) + [*copy.deepcopy(res["input_ids"])][len(self.bot_prefix_token_ids):]
+                labels = [IGNORE_TOKEN_ID] * len(self.bot_prefix_token_ids) + [
+                    *copy.deepcopy(res["input_ids"])
+                ][len(self.bot_prefix_token_ids) :]
             else:
                 logging.warning(f"unknown role in conversation: {role}")
                 res = defaultdict(lambda: [])
@@ -51,8 +65,7 @@ class PygmalionPromptTokenizingStrategy(PromptTokenizingStrategy):
             input_len = len(input_ids)
             result["input_ids"][current_len : current_len + input_len] = input_ids
             result["attention_mask"][current_len : current_len + input_len] = [
-                1 if x != self.tokenizer.pad_token_id else 0
-                for x in input_ids
+                1 if x != self.tokenizer.pad_token_id else 0 for x in input_ids
             ]
             result["labels"][current_len : current_len + input_len] = labels
             current_len += input_len
@@ -74,10 +87,7 @@ class PygmalionPromptTokenizingStrategy(PromptTokenizingStrategy):
             result["input_ids"].append(self.tokenizer.eos_token_id)
             result["attention_mask"].append(1)
 
-        if (
-            result["input_ids"][0] == self.tokenizer.bos_token_id
-            and strip_bos_token
-        ):
+        if result["input_ids"][0] == self.tokenizer.bos_token_id and strip_bos_token:
             result["input_ids"] = result["input_ids"][1:]
             result["attention_mask"] = result["attention_mask"][1:]
 
