@@ -211,12 +211,12 @@ def load_model(
         try:
             if is_llama_derived_model and "LlamaTokenizer" in globals():
                 tokenizer = LlamaTokenizer.from_pretrained(
-                    model,
+                    base_model_config,
                     trust_remote_code=True if cfg.trust_remote_code is True else False,
                 )
             else:
                 tokenizer = getattr(transformers, tokenizer_type).from_pretrained(
-                    model,
+                    base_model_config,
                     trust_remote_code=True if cfg.trust_remote_code is True else False,
                 )
         except:
