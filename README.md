@@ -160,6 +160,8 @@ base_model_config: ./llama-7b-hf
 model_type: AutoModelForCausalLM
 # Corresponding tokenizer for the model AutoTokenizer is a good choice
 tokenizer_type: AutoTokenizer
+# Trust remote code for untrusted source
+trust_remote_code:
 
 # whether you are training a 4-bit quantized model
 load_4bit: true
