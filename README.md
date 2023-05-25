@@ -51,8 +51,6 @@ accelerate launch scripts/finetune.py examples/4bit-lora-7b/config.yml \
   ```
   - `winglian/axolotl:dev`: dev branch
   - `winglian/axolotl-runpod:main`: for runpod
-  - `--gpus '"device=0"'`: to select one gpu
-  - `-v $PWD:/workspace/axolotl`: to mount current path for dev
 
 - Conda/Pip venv
   1. Install python **3.9**
