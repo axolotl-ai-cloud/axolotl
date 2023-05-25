@@ -60,12 +60,11 @@ def load_tokenized_prepared_datasets(
         else Path(default_dataset_prepared_path) / ds_hash
     )
     dataset = None
-    use_auth_token = False
     try:
         if cfg.push_dataset_to_hub:
             use_auth_token = True
             dataset = load_dataset(
-                f"{cfg.push_dataset_to_hub}/{ds_hash}", use_auth_token=use_auth_token
+                f"{cfg.push_dataset_to_hub}/{ds_hash}", use_auth_token=True
             )
             dataset = dataset["train"]
     except:
@@ -85,7 +84,7 @@ def load_tokenized_prepared_datasets(
             ds = None
             ds_from_hub = False
             try:
-                load_dataset(d.path, streaming=True, use_auth_token=use_auth_token)
+                load_dataset(d.path, streaming=True, use_auth_token=True)
                 ds_from_hub = True
             except FileNotFoundError:
                 pass
@@ -104,7 +103,7 @@ def load_tokenized_prepared_datasets(
                         use_auth_token=use_auth_token,
                     )
                 else:
-                    ds = load_dataset(d.path, streaming=False, use_auth_token=use_auth_token)
+                    ds = load_dataset(d.path, streaming=False, use_auth_token=True)
             else:
                 fp = hf_hub_download(
                     repo_id=d.path, repo_type="dataset", filename=d.data_files
