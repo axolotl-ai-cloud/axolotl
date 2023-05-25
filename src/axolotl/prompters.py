@@ -18,7 +18,7 @@ class AlpacaPrompter:
     prompt_style = None
 
     def __init__(self, prompt_style="instruct"):
-        self.prompt_style = prompt_style
+        self.prompt_style = prompt_style if prompt_style else PromptStyle.instruct.value
         self.match_prompt_style()
 
     def match_prompt_style(self):
