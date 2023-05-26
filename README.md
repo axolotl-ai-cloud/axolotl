@@ -232,6 +232,7 @@ lora_target_modules:
 #  - gate_proj
 #  - down_proj
 #  - up_proj
+lora_target_linear: # if true, will target all linear layers
 lora_modules_to_save:
 #  - embed_tokens
 #  - lm_head
