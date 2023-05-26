@@ -384,6 +384,10 @@ Please reduce any below
 
 Try set `fp16: true`
 
+> NotImplementedError: No operator found for `memory_efficient_attention_forward` ...
+
+Try to turn off xformers.
+
 ## Need help? 🙋‍♂️
   
 Join our [Discord server](https://discord.gg/HhrNrHJPRb) where we can help you
