@@ -33,12 +33,12 @@ pip3 install -e .[int4]
 
 accelerate config
 
-# finetune
-accelerate launch scripts/finetune.py examples/4bit-lora-7b/config.yml
+# finetune lora
+accelerate launch scripts/finetune.py examples/lora-openllama-3b/config.yml
 
 # inference
-accelerate launch scripts/finetune.py examples/4bit-lora-7b/config.yml \
-    --inference --lora_model_dir="./llama-7b-lora-int4"
+accelerate launch scripts/finetune.py examples/lora-openllama-3b/config.yml \
+    --inference --lora_model_dir="./lora-out"
 ```
 
 ## Installation
@@ -199,8 +199,7 @@ datasets:
   # The type of prompt to use for training. [alpaca, sharegpt, gpteacher, oasst, reflection]
     type: alpaca # format OR format:prompt_style (chat/instruct)
     data_files: # path to source data files
-    shards: # true if use subset data. make sure to set `shards` param also
-shards: # number of shards to split dataset into
+    shards: # number of shards to split data into
 
 # axolotl attempts to save the dataset as an arrow after packing the data together so
 # subsequent training attempts load faster, relative path
@@ -326,6 +325,9 @@ debug:
 
 # Seed
 seed:
+
+# Allow overwrite yml config using from cli
+strict:
 ```
 
 </details>
@@ -381,6 +383,10 @@ Please reduce any below
 > RuntimeError: expected scalar type Float but found Half
 
 Try set `fp16: true`
+
+> NotImplementedError: No operator found for `memory_efficient_attention_forward` ...
+
+Try to turn off xformers.
 
 ## Need help? 🙋‍♂️
   
