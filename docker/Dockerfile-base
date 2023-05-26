@@ -70,8 +70,8 @@ RUN mkdir /workspace/wheels
 COPY --from=deepspeed-builder /workspace/DeepSpeed/dist/deepspeed-*.whl wheels
 COPY --from=flash-attn-builder /workspace/flash-attention/dist/flash_attn-*.whl wheels
 COPY --from=flash-attn-builder /workspace/flash-attention/csrc/fused_dense_lib/dist/fused_dense_lib-*.whl wheels
-COPY --from=flash-attn-builder /workspace/flash-attention/csrc/xentropy/dist/xentropy-*.whl wheels
-COPY --from=flash-attn-builder /workspace/flash-attention/csrc/rotary/dist/rotary-*.whl wheels
+COPY --from=flash-attn-builder /workspace/flash-attention/csrc/xentropy/dist/xentropy_cuda_lib-*.whl wheels
+COPY --from=flash-attn-builder /workspace/flash-attention/csrc/rotary/dist/rotary_emb-*.whl wheels
 COPY --from=flash-attn-builder /workspace/flash-attention/csrc/layer_norm/dist/dropout_layer_norm-*.whl wheels
 
 RUN pip3 install wheels/deepspeed-*.whl wheels/flash_attn-*.whl wheels/fused_dense_lib-*.whl wheels/xentropy-*.whl wheels/rotary-*.whl wheels/dropout_layer_norm-*.whl
