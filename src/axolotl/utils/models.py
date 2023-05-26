@@ -41,7 +41,7 @@ def load_tokenizer(
     if tokenizer_type:
         tokenizer = getattr(transformers, tokenizer_type).from_pretrained(
             base_model_config,
-            trust_remote_code=True if cfg.trust_remote_code is True else False,
+            trust_remote_code=cfg.trust_remote_code or False,
         )
     else:
         tokenizer = AutoTokenizer.from_pretrained(
