@@ -199,8 +199,7 @@ datasets:
   # The type of prompt to use for training. [alpaca, sharegpt, gpteacher, oasst, reflection]
     type: alpaca # format OR format:prompt_style (chat/instruct)
     data_files: # path to source data files
-    shards: # true if use subset data. make sure to set `shards` param also
-shards: # number of shards to split dataset into
+    shards: # number of shards to split data into
 
 # axolotl attempts to save the dataset as an arrow after packing the data together so
 # subsequent training attempts load faster, relative path
