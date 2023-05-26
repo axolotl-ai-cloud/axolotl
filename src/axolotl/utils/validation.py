@@ -12,8 +12,8 @@ def validate_config(cfg):
             assert cfg.load_in_8bit is False
             assert cfg.load_4bit is False
             assert cfg.load_in_4bit is True
-    if cfg.load_in_8bit and cfg.adapter == "lora":
-        logging.warning("we recommend setting `load_in_8bit: true`")
+    if not cfg.load_in_8bit and cfg.adapter == "lora":
+        logging.warning("We recommend setting `load_in_8bit: true` for LORA finetuning")
 
     # TODO
     # MPT 7b
