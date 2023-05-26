@@ -363,13 +363,7 @@ Pass the appropriate flag to the train command:
 
 ### Merge LORA to base
 
-Add below flag to train command above (and using LoRA)
-
-```bash
---merge_lora --lora_model_dir="./completed-model"
-```
-
-Add below flag to train command above (and using QLoRA)
+Add below flag to train command above
 
 ```bash
 --merge_lora --lora_model_dir="./completed-model" --load_in_8bit=False --load_in_4bit=False
