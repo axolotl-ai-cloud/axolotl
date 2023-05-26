@@ -33,12 +33,12 @@ pip3 install -e .[int4]
 
 accelerate config
 
-# finetune
-accelerate launch scripts/finetune.py examples/4bit-lora-7b/config.yml
+# finetune lora
+accelerate launch scripts/finetune.py examples/lora-openllama-3b/config.yml
 
 # inference
-accelerate launch scripts/finetune.py examples/4bit-lora-7b/config.yml \
-    --inference --lora_model_dir="./llama-7b-lora-int4"
+accelerate launch scripts/finetune.py examples/lora-openllama-3b/config.yml \
+    --inference --lora_model_dir="./lora-out"
 ```
 
 ## Installation
