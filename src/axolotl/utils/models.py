@@ -248,7 +248,7 @@ def load_model(
 
     if (
         (cfg.adapter == "lora" and load_in_8bit) or cfg.adapter == "qlora"
-    ) and not cfg.load_4bit:
+    ) and not cfg.load_4bit and (load_in_8bit or cfg.load_in_4bit):
         logging.info("converting PEFT model w/ prepare_model_for_int8_training")
         model = prepare_model_for_int8_training(model)
 
@@ -297,7 +297,7 @@ def load_adapter(model, cfg, adapter):
 
     if adapter is None:
         return model, None
-    if adapter == "lora" or adapter == "qlora":
+    if adapter in ["lora" , "qlora"]:
         return load_lora(model, cfg)
     if adapter == "llama-adapter":
         return load_llama_adapter(model, cfg)
