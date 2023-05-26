@@ -205,7 +205,7 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
         )
         callbacks.append(early_stop_cb)
 
-    if cfg.local_rank == 0 and cfg.adapter == "lora":  # only save in rank 0
+    if cfg.local_rank == 0 and cfg.adapter in ["lora", "qlora"]:  # only save in rank 0
         callbacks.append(SavePeftModelCallback)
 
     data_collator_kwargs = {

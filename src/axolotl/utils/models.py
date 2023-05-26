@@ -85,7 +85,7 @@ def load_model(
         raise e
 
     model_kwargs = {}
-    if cfg.adapter == "qlora":
+    if cfg.adapter == "qlora" and cfg.load_in_4bit:
         model_kwargs["quantization_config"] = BitsAndBytesConfig(
             load_in_4bit=True,
             llm_int8_threshold=6.0,
@@ -247,8 +247,10 @@ def load_model(
     model.resize_token_embeddings(embeddings_len)
 
     if (
-        (cfg.adapter == "lora" and load_in_8bit) or cfg.adapter == "qlora"
-    ) and not cfg.load_4bit:
+        ((cfg.adapter == "lora" and load_in_8bit) or cfg.adapter == "qlora")
+        and not cfg.load_4bit
+        and (load_in_8bit or cfg.load_in_4bit)
+    ):
         logging.info("converting PEFT model w/ prepare_model_for_int8_training")
         model = prepare_model_for_int8_training(model)
 
@@ -297,7 +299,7 @@ def load_adapter(model, cfg, adapter):
 
     if adapter is None:
         return model, None
-    if adapter == "lora" or adapter == "qlora":
+    if adapter in ["lora", "qlora"]:
         return load_lora(model, cfg)
     if adapter == "llama-adapter":
         return load_llama_adapter(model, cfg)

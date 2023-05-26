@@ -176,6 +176,7 @@ def train(
     if "merge_lora" in kwargs and cfg.adapter is not None:
         logging.info("running merge of LoRA with base model")
         model = model.merge_and_unload()
+        model.to(dtype=torch.float16)
 
         if cfg.local_rank == 0:
             logging.info("saving merged model")

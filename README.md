@@ -24,7 +24,7 @@
 
 ## Quickstart ⚡
 
-**Requirements**: Python 3.9. 
+**Requirements**: Python 3.9.
 
 ```bash
 git clone https://github.com/OpenAccess-AI-Collective/axolotl
@@ -45,7 +45,7 @@ accelerate launch scripts/finetune.py examples/lora-openllama-3b/config.yml \
 
 ### Environment
 
-- Docker 
+- Docker
   ```bash
   docker run --gpus '"all"' --rm -it winglian/axolotl:main
   ```
@@ -334,7 +334,7 @@ strict:
 
 ### Accelerate
 
-Configure accelerate 
+Configure accelerate
 
 ```bash
 accelerate config
@@ -368,7 +368,7 @@ Pass the appropriate flag to the train command:
 Add below flag to train command above
 
 ```bash
---merge_lora --lora_model_dir="./completed-model"
+--merge_lora --lora_model_dir="./completed-model" --load_in_8bit=False --load_in_4bit=False
 ```
 
 ## Common Errors 🧰
@@ -389,7 +389,7 @@ Try set `fp16: true`
 Try to turn off xformers.
 
 ## Need help? 🙋‍♂️
-  
+
 Join our [Discord server](https://discord.gg/HhrNrHJPRb) where we can help you
 
 ## Contributing 🤝
