@@ -46,7 +46,7 @@ def load_tokenizer(
     else:
         tokenizer = AutoTokenizer.from_pretrained(
             base_model_config,
-            trust_remote_code=True if cfg.trust_remote_code is True else False,
+            trust_remote_code=cfg.trust_remote_code or False,
         )
 
     logging.debug(f"EOS: {tokenizer.eos_token_id} / {tokenizer.eos_token}")
