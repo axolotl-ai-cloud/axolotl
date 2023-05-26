@@ -24,7 +24,7 @@
 
 ## Quickstart ⚡
 
-**Requirements**: Python 3.9. 
+**Requirements**: Python 3.9.
 
 ```bash
 git clone https://github.com/OpenAccess-AI-Collective/axolotl
@@ -45,7 +45,7 @@ accelerate launch scripts/finetune.py examples/4bit-lora-7b/config.yml \
 
 ### Environment
 
-- Docker 
+- Docker
   ```bash
   docker run --gpus '"all"' --rm -it winglian/axolotl:main
   ```
@@ -332,7 +332,7 @@ seed:
 
 ### Accelerate
 
-Configure accelerate 
+Configure accelerate
 
 ```bash
 accelerate config
@@ -363,10 +363,16 @@ Pass the appropriate flag to the train command:
 
 ### Merge LORA to base
 
-Add below flag to train command above
+Add below flag to train command above (and using LoRA)
 
 ```bash
 --merge_lora --lora_model_dir="./completed-model"
+```
+
+Add below flag to train command above (and using QLoRA)
+
+```bash
+--merge_lora --lora_model_dir="./completed-model" --load_in_8bit False --load_in_4bit False
 ```
 
 ## Common Errors 🧰
@@ -383,7 +389,7 @@ Please reduce any below
 Try set `fp16: true`
 
 ## Need help? 🙋‍♂️
-  
+
 Join our [Discord server](https://discord.gg/HhrNrHJPRb) where we can help you
 
 ## Contributing 🤝
