@@ -325,6 +325,9 @@ debug:
 
 # Seed
 seed:
+
+# Allow overwrite yml config using from cli
+strict:
 ```
 
 </details>
