@@ -10,7 +10,7 @@ from typing import Optional, List, Dict, Any, Union
 import fire
 import torch
 import yaml
-from attrdict import AttrDefault
+from addict import Dict
 
 # add src to the pythonpath so we don't need to pip install this
 from axolotl.utils.tokenization import check_dataset_labels
@@ -131,7 +131,7 @@ def train(
 
     # load the config from the yaml file
     with open(config, "r") as f:
-        cfg: AttrDefault = AttrDefault(lambda: None, yaml.load(f, Loader=yaml.Loader))
+        cfg: Dict = Dict(lambda: None, yaml.load(f, Loader=yaml.Loader))
     # if there are any options passed in the cli, if it is something that seems valid from the yaml,
     # then overwrite the value
     cfg_keys = dict(cfg).keys()
