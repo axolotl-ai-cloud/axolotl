@@ -48,6 +48,13 @@ def validate_config(cfg):
             "Require cfg.hf_use_auth_token to be True for push_dataset_to_hub"
         )
 
+    if cfg.flash_optimum is True:
+        if cfg.adapter:
+            logging.warning("BetterTransformers probably doesn't work with PEFT adapters")
+        if cfg.fp16 or cfg.bf16:
+            raise ValueError("AMP is not supported with BetterTransformer")
+        if cfg.float16 is not True:
+            logging.warning("You should probably set float16 to true")
     # TODO
     # MPT 7b
     # https://github.com/facebookresearch/bitsandbytes/issues/25
