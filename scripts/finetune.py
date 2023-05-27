@@ -6,6 +6,7 @@ import os
 import random
 import signal
 import sys
+from functools import partial
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
@@ -19,6 +20,8 @@ from axolotl.utils.dict import DictDefault
 from axolotl.utils.models import load_model, load_tokenizer
 
 # add src to the pythonpath so we don't need to pip install this
+from optimum.bettertransformer import BetterTransformer
+
 from axolotl.utils.tokenization import check_dataset_labels
 from axolotl.utils.trainer import setup_trainer
 from axolotl.utils.validation import validate_config
@@ -264,12 +267,14 @@ def train(
 
     # In case we want to stop early with ctrl+c, this is a nice to have to save the pretrained model
     if cfg.local_rank == 0:
+        def terminate_handler(signum, frame, model):
+            if cfg.flash_optimum:
+                model = BetterTransformer.reverse(model)
+            model.save_pretrained(cfg.output_dir)
+            sys.exit(0)
         signal.signal(
             signal.SIGINT,
-            lambda signal, frame: (
-                model.save_pretrained(cfg.output_dir),
-                sys.exit(0),
-            ),
+            lambda signum, frame: terminate_handler(signum, frame, model)
         )
 
     logging.info("Starting trainer...")
@@ -299,6 +304,8 @@ def train(
     # TODO do we need this fix? https://huggingface.co/docs/accelerate/usage_guides/fsdp#saving-and-loading
     # only save on rank 0, otherwise it corrupts output on multi-GPU when multiple processes attempt to write the same file
     if cfg.local_rank == 0:
+        if cfg.flash_optimum:
+            model = BetterTransformer.reverse(model)
         model.save_pretrained(cfg.output_dir)
 
     # trainer.save_model(cfg.output_dir)  # TODO this may be needed for deepspeed to work? need to review another time

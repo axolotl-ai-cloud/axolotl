@@ -1,24 +1,25 @@
 base_model: EleutherAI/gpt-neox-20b
+base_model_config: EleutherAI/gpt-neox-20b
 base_model_ignore_patterns: pytorch*  # prefer safetensors
 model_type: GPTNeoXForCausalLM
 tokenizer_type: AutoTokenizer
-load_in_8bit: true
+load_in_8bit: false
+load_in_4bit: true
+load_4bit: false
 datasets:
-  - path: nomic-ai/gpt4all-j-prompt-generations
+  - path: vicgalle/alpaca-gpt4
     type: alpaca
-    shards: 4
-    shards_index: 0
 dataset_prepared_path: last_run_prepared
 val_set_size: 0.05
-adapter: lora
+adapter:
 lora_model_dir:
 sequence_len: 2048
 max_packed_sequence_len: 2048
-lora_r: 8
+lora_r: 64
 lora_alpha: 32
-lora_dropout: 0.05
+lora_dropout: 0.0
 lora_target_modules:
-  - query_key_value
+lora_target_linear: true
 lora_fan_in_fan_out: true  # pythia/GPTNeoX lora specific
 wandb_project: gpt4all-neox-20b
 wandb_watch:
@@ -26,14 +27,19 @@ wandb_run_id:
 wandb_log_model:
 output_dir: ./gpt4all-neox-20b
 gradient_accumulation_steps: 1
-micro_batch_size: 4
+micro_batch_size: 2
 num_epochs: 5
 learning_rate: 0.00003
-lr_scheduler: one_cycle
+optimizer: paged_adamw_32bit
+lr_scheduler: cosine
 train_on_inputs: false
 group_by_length: false
-bf16: True
-tf32: True
+bf16: false
+fp16: false
+float16: true
+tf32: true
+flash_optimum: true
 early_stopping_patience:
 resume_from_checkpoint:
 local_rank:
+gradient_checkpointing: true
