@@ -86,7 +86,7 @@ class SummarizeTLDRPrompter(AlpacaPrompter):
     )
 
 
-class CompletionPrompter(AlpacaPrompter):
+class CompletionPrompter:
     def build_prompt(
         self, instruction: str, input=None, output=None
     ) -> Generator[str, None, None]:
