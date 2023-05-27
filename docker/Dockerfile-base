@@ -65,7 +65,7 @@ WORKDIR /workspace
 
 RUN git clone https://github.com/TimDettmers/bitsandbytes.git && \
     cd bitsandbytes && \
-    CUDA_VERSION=$CUDA_VERSION_BNB make cuda11x \
+    CUDA_VERSION=$CUDA_VERSION_BNB make cuda11x && \
     python setup.py bdist_wheel
 
 FROM base-builder
