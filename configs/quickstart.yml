@@ -40,6 +40,6 @@ early_stopping_patience: 3
 resume_from_checkpoint:
 auto_resume_from_checkpoints: true
 local_rank:
-load_4bit: true
+gptq: true
 xformers_attention: true
 flash_attention:

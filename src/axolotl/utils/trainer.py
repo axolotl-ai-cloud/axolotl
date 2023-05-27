@@ -63,7 +63,7 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
     training_arguments_kwargs["warmup_steps"] = warmup_steps
     training_arguments_kwargs["logging_steps"] = logging_steps
     if cfg.gradient_checkpointing is not None:
-        if cfg.load_4bit:
+        if cfg.gptq:
             from alpaca_lora_4bit.gradient_checkpointing import (
                 apply_gradient_checkpointing,
             )
@@ -138,7 +138,7 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
             importlib.import_module("torchdistx")
     if (
         cfg.optimizer == "adamw_bnb_8bit"
-        and not cfg.load_4bit
+        and not cfg.gptq
         and not "deepspeed" in training_arguments_kwargs
         and not cfg.fsdp
     ):

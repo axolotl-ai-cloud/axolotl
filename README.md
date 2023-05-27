@@ -177,7 +177,7 @@ tokenizer_type: AutoTokenizer
 trust_remote_code:
 
 # whether you are training a 4-bit GPTQ quantized model
-load_4bit: true
+gptq: true
 gptq_groupsize: 128 # group size
 gptq_model_v1: false # v1 or v2
 
