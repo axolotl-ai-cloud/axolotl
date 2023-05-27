@@ -17,9 +17,9 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install -r requirements-tests.txt
+          pip install -e .
+          pip install pytest
 
       - name: Run tests
         run: |
-          echo "PYTHONPATH=src/axolotl" >> $GITHUB_ENV
           pytest tests/
