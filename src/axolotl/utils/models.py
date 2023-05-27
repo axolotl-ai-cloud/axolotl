@@ -73,7 +73,7 @@ def load_model(
     else:
         torch_dtype = torch.float32
     try:
-        if cfg.load_4bit:
+        if cfg.gptq:
             from alpaca_lora_4bit.monkeypatch.peft_tuners_lora_monkey_patch import (
                 replace_peft_model_with_int4_lora_model,
             )
@@ -95,7 +95,7 @@ def load_model(
             bnb_4bit_quant_type="nf4",
         )
     try:
-        if cfg.load_4bit and is_llama_derived_model:
+        if cfg.gptq and is_llama_derived_model:
             from alpaca_lora_4bit.autograd_4bit import load_llama_model_4bit_low_ram
             from huggingface_hub import snapshot_download
 
@@ -248,7 +248,7 @@ def load_model(
 
     if (
         ((cfg.adapter == "lora" and load_in_8bit) or cfg.adapter == "qlora")
-        and not cfg.load_4bit
+        and not cfg.gptq
         and (load_in_8bit or cfg.load_in_4bit)
     ):
         logging.info("converting PEFT model w/ prepare_model_for_int8_training")
@@ -259,7 +259,7 @@ def load_model(
     if cfg.ddp and not load_in_8bit:
         model.to(f"cuda:{cfg.local_rank}")
 
-    if cfg.load_4bit:
+    if cfg.gptq:
         # Scales to half
         logging.info("Fitting 4bit scales and zeros to half")
         for n, m in model.named_modules():
@@ -274,7 +274,7 @@ def load_model(
     if (
         torch.cuda.device_count() > 1
         and int(os.getenv("WORLD_SIZE", "1")) > 1
-        and cfg.load_4bit
+        and cfg.gptq
     ):
         # llama is PROBABLY model parallelizable, but the default isn't that it is
         # so let's only set it for the 4bit, see
