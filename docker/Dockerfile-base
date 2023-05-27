@@ -1,4 +1,5 @@
 ARG CUDA_VERSION="11.8.0"
+ARG CUDA_VERSION_BNB="118"
 ARG CUDNN_VERSION="8"
 ARG UBUNTU_VERSION="22.04"
 ARG MAX_JOBS=4
@@ -58,6 +59,15 @@ RUN git clone https://github.com/microsoft/DeepSpeed.git && \
     cd DeepSpeed && \
     MAX_CONCURRENCY=8 DS_BUILD_SPARSE_ATTN=0 DS_BUILD_OPS=1 python3 setup.py bdist_wheel
 
+FROM base-builder AS bnb-builder
+
+WORKDIR /workspace
+
+RUN git clone https://github.com/TimDettmers/bitsandbytes.git && \
+    cd bitsandbytes && \
+    CUDA_VERSION=$CUDA_VERSION_BNB make cuda11x \
+    python setup.py bdist_wheel
+
 FROM base-builder
 
 # recompile apex
@@ -68,13 +78,14 @@ RUN cd apex && MAX_JOBS=1 python3 -m pip install --global-option="--cpp_ext" --g
 
 RUN mkdir /workspace/wheels
 COPY --from=deepspeed-builder /workspace/DeepSpeed/dist/deepspeed-*.whl wheels
+COPY --from=bnb-builder /workspace/bitsandbytes/dist/bitsandbytes-*.whl wheels
 COPY --from=flash-attn-builder /workspace/flash-attention/dist/flash_attn-*.whl wheels
 COPY --from=flash-attn-builder /workspace/flash-attention/csrc/fused_dense_lib/dist/fused_dense_lib-*.whl wheels
 COPY --from=flash-attn-builder /workspace/flash-attention/csrc/xentropy/dist/xentropy_cuda_lib-*.whl wheels
 COPY --from=flash-attn-builder /workspace/flash-attention/csrc/rotary/dist/rotary_emb-*.whl wheels
 COPY --from=flash-attn-builder /workspace/flash-attention/csrc/layer_norm/dist/dropout_layer_norm-*.whl wheels
 
-RUN pip3 install wheels/deepspeed-*.whl wheels/flash_attn-*.whl wheels/fused_dense_lib-*.whl wheels/xentropy_cuda_lib-*.whl wheels/rotary_emb-*.whl wheels/dropout_layer_norm-*.whl
+RUN pip3 install wheels/deepspeed-*.whl wheels/flash_attn-*.whl wheels/fused_dense_lib-*.whl wheels/xentropy_cuda_lib-*.whl wheels/rotary_emb-*.whl wheels/dropout_layer_norm-*.whl wheels/bitsandbytes-*.whl
 RUN git lfs install --skip-repo
 RUN pip3 install "peft @ git+https://github.com/huggingface/peft.git@main" \
         "accelerate @ git+https://github.com/huggingface/accelerate.git@main" \
