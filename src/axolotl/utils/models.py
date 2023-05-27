@@ -364,7 +364,7 @@ def load_lora(model, cfg):
         PeftModel,
     )
 
-    lora_target_modules = list(cfg.lora_target_modules)
+    lora_target_modules = list(cfg.lora_target_modules or [])
 
     if cfg.lora_target_linear:
         bits = None
