@@ -18,9 +18,9 @@ class AlpacaPrompter:
 
     def __init__(self, prompt_style=PromptStyle.instruct.value):
         self.prompt_style = prompt_style if prompt_style else PromptStyle.instruct.value
-        self.match_prompt_style()
+        self.__init_prompt_template()
 
-    def match_prompt_style(self):
+    def __init_prompt_template(self):
         if self.prompt_style == PromptStyle.instruct.value:
             self.prompt_input = (
                 self.__system_prompt
@@ -114,9 +114,9 @@ class ReflectAlpacaPrompter:
 
     def __init__(self, prompt_style=PromptStyle.instruct.value):
         self.prompt_style = prompt_style if prompt_style else PromptStyle.instruct.value
-        self.match_prompt_style()
+        self.__init_prompt_template()
 
-    def match_prompt_style(self):
+    def __init_prompt_template(self):
         if self.prompt_style == PromptStyle.instruct.value:
             self.prompt_input = (
                 self.__system_prompt
@@ -235,7 +235,7 @@ class ShareGPTPrompter:
                 f"unsupported prompt_style for ShareGPTPrompter({prompt_style})"
             )
 
-    # def match_prompt_style(self):
+    # def __init_prompt_template(self):
     #     if self.prompt_style == PromptStyle.chat.value:
     #         self.prompt_input = self.system_prompt + "USER: {instruction}\n{input}\nASSISTANT:"
     #         self.prompt_no_input = self.system_no_input_prompt + "USER: {instruction}\nASSISTANT:"
