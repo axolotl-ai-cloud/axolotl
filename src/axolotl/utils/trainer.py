@@ -8,6 +8,7 @@ import bitsandbytes as bnb
 import torch.cuda
 import transformers
 from torch import nn
+from warnings import warn
 from torch.optim.lr_scheduler import OneCycleLR
 from transformers import EarlyStoppingCallback, Trainer
 from transformers.trainer_pt_utils import get_parameter_names
@@ -200,10 +201,12 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
     callbacks = []
     # TODO on_save callback to sync checkpoints to GCP/AWS in background
     if cfg.early_stopping_patience:
-        early_stop_cb = EarlyStoppingCallback(
-            cfg.early_stopping_patience,
-        )
-        callbacks.append(early_stop_cb)
+        warn("Early stopping is momentarily disabled and will be reactivated soonly.")
+        # FIXME: produces AssertionError: EarlyStoppingCallback requires load_best_model_at_end = True
+        # early_stop_cb = EarlyStoppingCallback(
+        #     cfg.early_stopping_patience,
+        # )
+        # callbacks.append(early_stop_cb)
 
     if cfg.local_rank == 0 and cfg.adapter in ["lora", "qlora"]:  # only save in rank 0
         callbacks.append(SavePeftModelCallback)
