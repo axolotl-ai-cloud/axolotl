@@ -209,6 +209,10 @@ dataset_prepared_path: data/last_run_prepared
 push_dataset_to_hub: # repo path
 # How much of the dataset to set aside as evaluation. 1 = 100%, 0.50 = 50%, etc
 val_set_size: 0.04
+# Num shards for whole dataset
+dataset_shard_num:
+# Index of shard to use for whole dataset
+dataset_shard_idx:
 
 # the maximum length of an input to train with, this should typically be less than 2048
 # as most models have a token/context limit of 2048
