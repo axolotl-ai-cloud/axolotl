@@ -18,6 +18,9 @@ def validate_config(cfg):
 
     if not cfg.load_in_8bit and cfg.adapter == "lora":
         logging.warning("We recommend setting `load_in_8bit: true` for LORA finetuning")
+        
+    if cfg.trust_remote_code:
+        logging.warning("`trust_remote_code` is set to true. Please make sure that you reviewed the remote code/model.")
 
     # TODO
     # MPT 7b
