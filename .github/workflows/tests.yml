@@ -15,13 +15,13 @@ jobs:
         with:
           python-version: "3.9"
 
-      - name: Install pytest
-        run: |
-          pip install --upgrade pytest
-
       - name: Install dependencies
         run: |
           pip install -r requirements-tests.txt
+
+      - name: set pythonpath
+        run: |
+          echo "PYTHONPATH=src/axolotl" >> $GITHUB_ENV
 
       - name: Run tests
         run: |

@@ -1,3 +1,5 @@
+pytest
+# this is a stripped down version so it doesn't try to install some of the things like xformers or others that may require compilation
 peft @ git+https://github.com/huggingface/peft.git
 transformers @ git+https://github.com/huggingface/transformers.git
 bitsandbytes>=0.39.0
