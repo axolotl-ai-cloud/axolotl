@@ -19,10 +19,7 @@ jobs:
         run: |
           pip install -r requirements-tests.txt
 
-      - name: set pythonpath
-        run: |
-          echo "PYTHONPATH=src/axolotl" >> $GITHUB_ENV
-
       - name: Run tests
         run: |
+          echo "PYTHONPATH=src/axolotl" >> $GITHUB_ENV
           pytest tests/
