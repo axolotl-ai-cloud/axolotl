@@ -131,10 +131,10 @@ def train(
 
     # load the config from the yaml file
     with open(config, "r") as f:
-        cfg: Dict = Dict(lambda: None, yaml.load(f, Loader=yaml.Loader))
+        cfg: Dict = Dict(yaml.load(f, Loader=yaml.Loader))
     # if there are any options passed in the cli, if it is something that seems valid from the yaml,
     # then overwrite the value
-    cfg_keys = dict(cfg).keys()
+    cfg_keys = cfg.keys()
     for k in kwargs:
         # if not strict, allow writing to cfg even if it's not in the yml already
         if k in cfg_keys or cfg.strict is False:
