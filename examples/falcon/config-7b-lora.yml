@@ -3,7 +3,7 @@ base_model_config: tiiuae/falcon-7b
 trust_remote_code: true
 model_type: AutoModelForCausalLM
 tokenizer_type: AutoTokenizer
-load_in_8bit: false
+load_in_8bit: true
 load_in_4bit: false
 gptq: false
 strict: false
@@ -13,11 +13,11 @@ datasets:
     type: alpaca:chat
 dataset_prepared_path: last_run_prepared
 val_set_size: 0.01
-adapter:
+adapter: lora
 lora_model_dir:
 sequence_len: 2048
 max_packed_sequence_len:
-lora_r: 64
+lora_r: 16
 lora_alpha: 32
 lora_dropout: 0.0
 lora_target_modules:
