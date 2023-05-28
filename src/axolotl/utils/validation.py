@@ -37,6 +37,9 @@ def validate_config(cfg):
             "`trust_remote_code` is set to true. Please make sure that you reviewed the remote code/model."
         )
 
+    if cfg.push_dataset_to_hub and cfg.hf_use_auth_token is not True:
+        raise ValueError("Require cfg.hf_use_auth_token to be True for push_dataset_to_hub")
+
     # TODO
     # MPT 7b
     # https://github.com/facebookresearch/bitsandbytes/issues/25

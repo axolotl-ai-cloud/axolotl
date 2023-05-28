@@ -61,10 +61,11 @@ def load_tokenized_prepared_datasets(
         else Path(default_dataset_prepared_path) / ds_hash
     )
     dataset = None
+    use_auth_token = cfg.hf_use_auth_token
     try:
         if cfg.push_dataset_to_hub:
             dataset = load_dataset(
-                f"{cfg.push_dataset_to_hub}/{ds_hash}", use_auth_token=True
+                f"{cfg.push_dataset_to_hub}/{ds_hash}", use_auth_token=use_auth_token
             )
             dataset = dataset["train"]
     except:
@@ -84,7 +85,7 @@ def load_tokenized_prepared_datasets(
             ds: Union[Dataset, DatasetDict] = None
             ds_from_hub = False
             try:
-                load_dataset(d.path, streaming=True, use_auth_token=True)
+                load_dataset(d.path, streaming=True, use_auth_token=use_auth_token)
                 ds_from_hub = True
             except FileNotFoundError:
                 pass
@@ -100,10 +101,10 @@ def load_tokenized_prepared_datasets(
                         d.path,
                         streaming=False,
                         data_files=d.data_files,
-                        use_auth_token=True,
+                        use_auth_token=use_auth_token,
                     )
                 else:
-                    ds: Dataset = load_dataset(d.path, streaming=False, use_auth_token=True)
+                    ds: Dataset = load_dataset(d.path, streaming=False, use_auth_token=use_auth_token)
             else:
                 fp = hf_hub_download(
                     repo_id=d.path, repo_type="dataset", filename=d.data_files
@@ -274,13 +275,14 @@ def load_prepare_datasets(
         )
 
         dataset = None
+        use_auth_token = cfg.hf_use_auth_token
         try:
             if cfg.push_dataset_to_hub:
                 logging.info(
                     f"Checking for packed prepared dataset from hub... {cfg.push_dataset_to_hub}/{ds_hash}"
                 )
                 dataset = load_dataset(
-                    f"{cfg.push_dataset_to_hub}/{ds_hash}", use_auth_token=True
+                    f"{cfg.push_dataset_to_hub}/{ds_hash}", use_auth_token=use_auth_token
                 )
                 dataset = dataset["train"]
         except:
