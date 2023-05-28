@@ -28,9 +28,8 @@ class DictDefaultTest(unittest.TestCase):
         ), "DictDefault should return value for existing keys in list"
 
         assert (
-            "value_e" in cfg.key_d,
-            "DictDefault should support in operator for existing keys in list",
-        )
+            "value_e" in cfg.key_d
+        ), "DictDefault should support in operator for existing keys in list"
 
     def test_dict_or_operator(self):
         cfg = DictDefault(
