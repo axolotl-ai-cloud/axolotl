@@ -48,10 +48,10 @@ accelerate launch scripts/finetune.py examples/lora-openllama-3b/config.yml \
 
 - Docker
   ```bash
-  docker run --gpus '"all"' --rm -it winglian/axolotl:main
+  docker run --gpus '"all"' --rm -it OpenAccess-AI-Collective/axolotl:main
   ```
-  - `winglian/axolotl:dev`: dev branch
-  - `winglian/axolotl-runpod:main`: for runpod
+  - `OpenAccess-AI-Collective/axolotl:dev`: dev branch
+  - `OpenAccess-AI-Collective/axolotl-runpod:main`: for runpod
 
 - Conda/Pip venv
   1. Install python **3.9**
