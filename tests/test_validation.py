@@ -93,3 +93,29 @@ class ValidationTest(unittest.TestCase):
 
         with pytest.raises(ValueError, match=r".*4bit.*"):
             validate_config(cfg)
+
+    def test_hf_use_auth_token(self):
+        base_cfg = DictDefault(
+            {
+                "push_dataset_to_hub": None,
+                "hf_use_auth_token": None,
+            }
+        )
+
+        cfg = base_cfg | DictDefault(
+            {
+                "push_dataset_to_hub": "namespace/repo",
+            }
+        )
+
+        with pytest.raises(ValueError, match=r".*hf_use_auth_token.*"):
+            validate_config(cfg)
+
+        cfg = base_cfg | DictDefault(
+            {
+                "push_dataset_to_hub": "namespace/repo",
+                "hf_use_auth_token": True,
+            }
+        )
+        validate_config(cfg)
+

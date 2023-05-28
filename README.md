@@ -207,6 +207,9 @@ datasets:
 dataset_prepared_path: data/last_run_prepared
 # push prepared dataset to hub
 push_dataset_to_hub: # repo path
+# whether to use hf `use_auth_token` for loading datasets. Useful for fetching private datasets
+# required to be true when used in combination with `push_dataset_to_hub`
+hf_use_auth_token: # boolean
 # How much of the dataset to set aside as evaluation. 1 = 100%, 0.50 = 50%, etc
 val_set_size: 0.04
 # Num shards for whole dataset
