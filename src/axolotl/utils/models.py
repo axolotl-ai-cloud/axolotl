@@ -29,7 +29,7 @@ from axolotl.prompt_tokenizers import LLAMA_DEFAULT_PAD_TOKEN
 
 if TYPE_CHECKING:
     from peft import PeftModel, PeftConfig
-    from attrdict import AttrDefault
+    from axolotl.utils.dict import DictDefault
     from transformers import PreTrainedTokenizer
 
 
@@ -79,7 +79,7 @@ def load_model(
     adapter="lora",
     inference=False,
 ):
-    # type: (str, str, str, str, AttrDefault, Optional[str], bool) -> Tuple[PreTrainedModel, Optional[PeftConfig]]
+    # type: (str, str, str, str, DictDefault, Optional[str], bool) -> Tuple[PreTrainedModel, PreTrainedTokenizer, Optional[PeftConfig]]
 
     # TODO refactor as a kwarg
     load_in_8bit = cfg.load_in_8bit
@@ -294,7 +294,7 @@ def load_model(
 
 
 def load_adapter(model, cfg, adapter):
-    # type: (PreTrainedModel, AttrDefault, Optional[str]) -> Tuple[PreTrainedModel, Optional[PeftConfig]]
+    # type: (PreTrainedModel, DictDefault, Optional[str]) -> Tuple[PreTrainedModel, Optional[PeftConfig]]
 
     if adapter is None:
         return model, None
@@ -307,7 +307,7 @@ def load_adapter(model, cfg, adapter):
 
 
 def load_llama_adapter(model, cfg):
-    # type: (PreTrainedModel, AttrDefault) -> Tuple[PreTrainedModel, Optional[PeftConfig]]
+    # type: (PreTrainedModel, DictDefault) -> Tuple[PreTrainedModel, Optional[PeftConfig]]
     from peft import (
         AdaptionPromptConfig,
         get_peft_model,
@@ -355,7 +355,7 @@ def find_all_linear_names(bits, model):
 
 
 def load_lora(model, cfg):
-    # type: (PreTrainedModel, AttrDefault) -> Tuple[PreTrainedModel, Optional[PeftConfig]]
+    # type: (PreTrainedModel, DictDefault) -> Tuple[PreTrainedModel, Optional[PeftConfig]]
 
     from peft import (
         LoraConfig,

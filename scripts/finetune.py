@@ -10,11 +10,11 @@ from typing import Optional, List, Dict, Any, Union
 import fire
 import torch
 import yaml
-from attrdict import AttrDefault
 
 # add src to the pythonpath so we don't need to pip install this
 from axolotl.utils.tokenization import check_dataset_labels
 from axolotl.utils.validation import validate_config
+from axolotl.utils.dict import DictDefault
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 src_dir = os.path.join(project_root, "src")
@@ -131,10 +131,10 @@ def train(
 
     # load the config from the yaml file
     with open(config, "r") as f:
-        cfg: AttrDefault = AttrDefault(lambda: None, yaml.load(f, Loader=yaml.Loader))
+        cfg: DictDefault = DictDefault(yaml.load(f, Loader=yaml.Loader))
     # if there are any options passed in the cli, if it is something that seems valid from the yaml,
     # then overwrite the value
-    cfg_keys = dict(cfg).keys()
+    cfg_keys = cfg.keys()
     for k in kwargs:
         # if not strict, allow writing to cfg even if it's not in the yml already
         if k in cfg_keys or cfg.strict is False:
