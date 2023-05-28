@@ -10,11 +10,11 @@ from typing import Optional, List, Dict, Any, Union
 import fire
 import torch
 import yaml
-from addict import Dict
 
 # add src to the pythonpath so we don't need to pip install this
 from axolotl.utils.tokenization import check_dataset_labels
 from axolotl.utils.validation import validate_config
+from axolotl.utils.dict import DictDefault
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 src_dir = os.path.join(project_root, "src")
@@ -83,7 +83,7 @@ def do_inference(cfg, model, tokenizer, prompter="AlpacaPrompter"):
                 temperature=0.9,
                 top_p=0.95,
                 top_k=40,
-                return_dict_in_generate=True,
+                return_DictDefault_in_generate=True,
                 output_attentions=False,
                 output_hidden_states=False,
                 output_scores=False,
@@ -131,7 +131,7 @@ def train(
 
     # load the config from the yaml file
     with open(config, "r") as f:
-        cfg: Dict = Dict(yaml.load(f, Loader=yaml.Loader))
+        cfg: DictDefault = DictDefault(yaml.load(f, Loader=yaml.Loader))
     # if there are any options passed in the cli, if it is something that seems valid from the yaml,
     # then overwrite the value
     cfg_keys = cfg.keys()

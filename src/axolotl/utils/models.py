@@ -29,7 +29,7 @@ from axolotl.prompt_tokenizers import LLAMA_DEFAULT_PAD_TOKEN
 
 if TYPE_CHECKING:
     from peft import PeftModel, PeftConfig
-    from addict import Dict
+    from axolotl.utils.dict import DictDefault
     from transformers import PreTrainedTokenizer
 
 
@@ -79,7 +79,7 @@ def load_model(
     adapter="lora",
     inference=False,
 ):
-    # type: (str, str, str, str, Dict, Optional[str], bool) -> Tuple[PreTrainedModel, PreTrainedTokenizer, Optional[PeftConfig]]
+    # type: (str, str, str, str, DictDefault, Optional[str], bool) -> Tuple[PreTrainedModel, PreTrainedTokenizer, Optional[PeftConfig]]
 
     # TODO refactor as a kwarg
     load_in_8bit = cfg.load_in_8bit
@@ -184,9 +184,9 @@ def load_model(
         #     # https://github.com/HazyResearch/flash-attention/blob/40a25c8ee7465cf547b929cfa2937034e37bfce9/tests/models/test_gpt_neox.py#L12
         #     # https://github.com/HazyResearch/flash-attention/tree/main/training#model-components
         #     # add `**kwargs` to https://github.com/HazyResearch/flash-attention/blob/40a25c8ee7465cf547b929cfa2937034e37bfce9/flash_attn/models/gpt.py#L442
-        #     from flash_attn.utils.pretrained import state_dict_from_pretrained
+        #     from flash_attn.utils.pretrained import state_DictDefault_from_pretrained
         #     from flash_attn.models.gpt import GPTLMHeadModel
-        #     from flash_attn.models.gpt_neox import remap_state_dict_hf_gpt_neox, gpt_neox_config_to_gpt2_config
+        #     from flash_attn.models.gpt_neox import remap_state_DictDefault_hf_gpt_neox, gpt_neox_config_to_gpt2_config
         #     from transformers import GPTNeoXConfig
         #     config = gpt_neox_config_to_gpt2_config(GPTNeoXConfig.from_pretrained(base_model))
         #     config.use_flash_attn = True
@@ -294,7 +294,7 @@ def load_model(
 
 
 def load_adapter(model, cfg, adapter):
-    # type: (PreTrainedModel, Dict, Optional[str]) -> Tuple[PreTrainedModel, Optional[PeftConfig]]
+    # type: (PreTrainedModel, DictDefault, Optional[str]) -> Tuple[PreTrainedModel, Optional[PeftConfig]]
 
     if adapter is None:
         return model, None
@@ -307,7 +307,7 @@ def load_adapter(model, cfg, adapter):
 
 
 def load_llama_adapter(model, cfg):
-    # type: (PreTrainedModel, Dict) -> Tuple[PreTrainedModel, Optional[PeftConfig]]
+    # type: (PreTrainedModel, DictDefault) -> Tuple[PreTrainedModel, Optional[PeftConfig]]
     from peft import (
         AdaptionPromptConfig,
         get_peft_model,
@@ -355,7 +355,7 @@ def find_all_linear_names(bits, model):
 
 
 def load_lora(model, cfg):
-    # type: (PreTrainedModel, Dict) -> Tuple[PreTrainedModel, Optional[PeftConfig]]
+    # type: (PreTrainedModel, DictDefault) -> Tuple[PreTrainedModel, Optional[PeftConfig]]
 
     from peft import (
         LoraConfig,
