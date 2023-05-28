@@ -1,11 +1,14 @@
 name: PyTest
-on: 
+on:
   push:
   pull_request:
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python_version: ["3.9", "3.10"]
     timeout-minutes: 10
 
     steps:
@@ -15,7 +18,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
-          python-version: "3.9"
+          python-version: ${{ matrix.python_version }}
           cache: 'pip' # caching pip dependencies
 
       - name: Install dependencies
