@@ -76,6 +76,9 @@ RUN git clone https://github.com/NVIDIA/apex
 #  `MAX_JOBS=1` disables parallel building to avoid cpu memory OOM when building image on GitHub Action (standard) runners
 RUN cd apex && MAX_JOBS=1 python3 -m pip install --global-option="--cpp_ext" --global-option="--cuda_ext" --no-cache -v --disable-pip-version-check .
 
+RUN mkdir -p /workspace/builds
+COPY --from=bnb-builder /workspace/bitsandbytes /workspace/builds/bitsandbytes
+
 RUN mkdir -p /workspace/wheels/bitsandbytes
 COPY --from=deepspeed-builder /workspace/DeepSpeed/dist/deepspeed-*.whl wheels
 COPY --from=bnb-builder /workspace/bitsandbytes/dist/bitsandbytes-*.whl wheels
@@ -86,7 +89,8 @@ COPY --from=flash-attn-builder /workspace/flash-attention/csrc/xentropy/dist/xen
 COPY --from=flash-attn-builder /workspace/flash-attention/csrc/rotary/dist/rotary_emb-*.whl wheels
 COPY --from=flash-attn-builder /workspace/flash-attention/csrc/layer_norm/dist/dropout_layer_norm-*.whl wheels
 
-RUN pip3 install wheels/deepspeed-*.whl wheels/flash_attn-*.whl wheels/fused_dense_lib-*.whl wheels/xentropy_cuda_lib-*.whl wheels/rotary_emb-*.whl wheels/dropout_layer_norm-*.whl wheels/bitsandbytes-*.whl
+RUN pip3 install wheels/deepspeed-*.whl wheels/flash_attn-*.whl wheels/fused_dense_lib-*.whl wheels/xentropy_cuda_lib-*.whl wheels/rotary_emb-*.whl wheels/dropout_layer_norm-*.whl
+RUN cd /workspace/builds/bitsandbytes && python3 setup.py install
 RUN git lfs install --skip-repo
 RUN pip3 install "peft @ git+https://github.com/huggingface/peft.git@main" \
         "accelerate @ git+https://github.com/huggingface/accelerate.git@main" \
