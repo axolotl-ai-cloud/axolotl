@@ -5,7 +5,7 @@ import random
 import signal
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List, Dict, Any, Union
 
 import fire
 import torch
@@ -21,7 +21,7 @@ src_dir = os.path.join(project_root, "src")
 sys.path.insert(0, src_dir)
 
 from axolotl.utils.data import load_prepare_datasets
-from axolotl.utils.models import load_model
+from axolotl.utils.models import load_model, load_tokenizer
 from axolotl.utils.trainer import setup_trainer
 from axolotl.utils.wandb import setup_wandb_env_vars
 
@@ -117,6 +117,10 @@ def choose_config(path: Path):
     return chosen_file
 
 
+def check_not_in(list1: List[str], list2: Union[Dict[str, Any], List[str]]) -> bool:
+    return not any(el in list2 for el in list1)
+
+
 def train(
     config: Path = Path("configs/"),
     prepare_ds_only: bool = False,
@@ -161,13 +165,30 @@ def train(
 
     validate_config(cfg)
 
+    # load the tokenizer first
+    logging.info("loading tokenizer...")
+    tokenizer = load_tokenizer(
+        cfg.base_model_config,
+        cfg.tokenizer_type,
+        cfg
+    )
+
+    if check_not_in(["inference", "shard", "merge_lora"], kwargs):  # don't need to load dataset for these
+        train_dataset, eval_dataset = load_prepare_datasets(
+            tokenizer, cfg, DEFAULT_DATASET_PREPARED_PATH
+        )
+
+    if prepare_ds_only:
+        logging.info("Finished preparing dataset. Exiting...")
+        return
+
     # Load the model and tokenizer
-    logging.info("loading model, tokenizer, and peft_config...")
-    model, tokenizer, peft_config = load_model(
+    logging.info("loading model and peft_config...")
+    model, peft_config = load_model(
         cfg.base_model,
         cfg.base_model_config,
         cfg.model_type,
-        cfg.tokenizer_type,
+        tokenizer,
         cfg,
         adapter=cfg.adapter,
         inference=("inference" in kwargs),
@@ -192,10 +213,6 @@ def train(
         model.save_pretrained(cfg.output_dir)
         return
 
-    train_dataset, eval_dataset = load_prepare_datasets(
-        tokenizer, cfg, DEFAULT_DATASET_PREPARED_PATH
-    )
-
     if cfg.debug:
         logging.info("check_dataset_labels...")
         check_dataset_labels(
@@ -204,10 +221,6 @@ def train(
             ),
             tokenizer,
         )
-
-    if prepare_ds_only:
-        logging.info("Finished preparing dataset. Exiting...")
-        return
 
     trainer = setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer)
 
