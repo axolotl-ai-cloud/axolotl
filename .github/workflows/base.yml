@@ -16,11 +16,11 @@ jobs:
         include:
           - cuda: cu118
             cuda_version: 11.8.0
-            cuda_version_bnb: 118
+            cuda_version_bnb: "118"
             pytorch: 2.0.0
           - cuda: cu117
             cuda_version: 11.7.0
-            cuda_version_bnb: 117
+            cuda_version_bnb: "117"
             pytorch: 1.13.1
     steps:
       - name: Checkout
