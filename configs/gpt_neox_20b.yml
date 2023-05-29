@@ -23,7 +23,7 @@ lora_fan_in_fan_out: true  # pythia/GPTNeoX lora specific
 wandb_project: gpt4all-neox-20b
 wandb_watch:
 wandb_run_id:
-wandb_log_model: checkpoint
+wandb_log_model:
 output_dir: ./gpt4all-neox-20b
 batch_size: 48
 micro_batch_size: 4
