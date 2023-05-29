@@ -34,14 +34,16 @@ DEFAULT_DATASET_PREPARED_PATH = "last_run_prepared"
 
 def choose_device(cfg):
     def get_device():
-        if torch.cuda.is_available():
-            return f"cuda:{cfg.local_rank}"
-        else:
-            try:
-                if torch.backends.mps.is_available():
-                    return "mps"
-            except Exception:  # pylint: disable=broad-exception-caught
-                return "cpu"
+        try:
+            if torch.cuda.is_available():
+                return f"cuda:{cfg.local_rank}"
+
+            if torch.backends.mps.is_available():
+                return "mps"
+
+            raise SystemError("No CUDA/mps device found")
+        except Exception:  # pylint: disable=broad-exception-caught
+            return "cpu"
 
     cfg.device = get_device()
     if cfg.device == "cuda":
@@ -54,7 +56,7 @@ def get_multi_line_input() -> Optional[str]:
     print("Give me an instruction (Ctrl + D to finish): ")
     instruction = ""
     for line in sys.stdin:
-        instruction += line
+        instruction += line  # pylint: disable=consider-using-join
     # instruction = pathlib.Path("/proc/self/fd/0").read_text()
     return instruction
 
@@ -76,7 +78,7 @@ def do_inference(cfg, model, tokenizer, prompter="AlpacaPrompter"):
 
         model.eval()
         with torch.no_grad():
-            # gc = GenerationConfig()  # TODO swap out and use this # pylint: disable=fixme
+            # gc = GenerationConfig()  # TODO swap out and use this
             generated = model.generate(
                 inputs=batch["input_ids"].to(cfg.device),
                 do_sample=True,
@@ -95,7 +97,7 @@ def do_inference(cfg, model, tokenizer, prompter="AlpacaPrompter"):
 
 
 def choose_config(path: Path):
-    yaml_files = [file for file in path.glob("*.yml")]
+    yaml_files = list(path.glob("*.yml"))
 
     if not yaml_files:
         raise ValueError(
@@ -240,7 +242,7 @@ def train(
     if cfg.local_rank == 0:
         signal.signal(
             signal.SIGINT,
-            lambda signal, frame: (model.save_pretrained(cfg.output_dir), exit(0)),
+            lambda signal, frame: (model.save_pretrained(cfg.output_dir), sys.exit(0)),
         )
 
     logging.info("Starting trainer...")
@@ -263,13 +265,11 @@ def train(
 
     logging.info(f"Training Completed!!! Saving pre-trained model to {cfg.output_dir}")
 
-    # pylint: disable=fixme
     # TODO do we need this fix? https://huggingface.co/docs/accelerate/usage_guides/fsdp#saving-and-loading
     # only save on rank 0, otherwise it corrupts output on multi-GPU when multiple processes attempt to write the same file
     if cfg.local_rank == 0:
         model.save_pretrained(cfg.output_dir)
 
-    # pylint: disable=fixme
     # trainer.save_model(cfg.output_dir)  # TODO this may be needed for deepspeed to work? need to review another time
 
 
