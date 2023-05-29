@@ -62,6 +62,7 @@ RUN git clone https://github.com/microsoft/DeepSpeed.git && \
 FROM base-builder AS bnb-builder
 
 WORKDIR /workspace
+ENV CUDA_VERSION_BNB=$CUDA_VERSION_BNB
 
 RUN git clone https://github.com/TimDettmers/bitsandbytes.git && \
     cd bitsandbytes && \
@@ -69,6 +70,8 @@ RUN git clone https://github.com/TimDettmers/bitsandbytes.git && \
     python setup.py bdist_wheel
 
 FROM base-builder
+
+ENV CUDA_VERSION_BNB=$CUDA_VERSION_BNB
 
 # recompile apex
 RUN python3 -m pip uninstall -y apex
