@@ -6,7 +6,7 @@ from axolotl.prompters import AlpacaPrompter, PromptStyle
 
 def load(tokenizer, cfg):
     return AlpacaPromptTokenizingStrategy(
-        AlpacaPrompter(PromptStyle.INSTRUCT),
+        AlpacaPrompter(PromptStyle.INSTRUCT.value),
         tokenizer,
         cfg.train_on_inputs,
         cfg.sequence_len,
