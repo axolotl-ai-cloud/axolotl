@@ -26,15 +26,15 @@ wandb_watch:
 wandb_run_id:
 wandb_log_model:
 output_dir: ./qlora-out
-batch_size: 1
-micro_batch_size: 4 # Changed from 1 to 4
-num_epochs: 2 # Changed from 4 to 2
+batch_size: 4
+micro_batch_size: 4
+num_epochs: 2
 optimizer: paged_adamw_32bit
 torchdistx_path:
 lr_scheduler: cosine
 learning_rate: 0.0002
 train_on_inputs: false
-group_by_length: true # Changed from false to true
+group_by_length: true
 bf16: true
 fp16: false
 tf32: true
