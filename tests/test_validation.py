@@ -1,3 +1,5 @@
+"""Module for testing the validation module"""
+
 import unittest
 
 import pytest
@@ -7,6 +9,10 @@ from axolotl.utils.dict import DictDefault
 
 
 class ValidationTest(unittest.TestCase):
+    """
+    Test the validation module
+    """
+
     def test_load_4bit_deprecate(self):
         cfg = DictDefault(
             {
