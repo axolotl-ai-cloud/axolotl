@@ -9,4 +9,4 @@ generated-members=numpy.*, torch.*
 
 
 [pylint.messages_control]
-disable=W1203, C0116, C0301, E0401, R0912, R0914, R0915
+disable=W1203, C0116, C0301, E0401, R0912, R0914, R0915, R0913
