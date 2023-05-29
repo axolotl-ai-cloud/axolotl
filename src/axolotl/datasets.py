@@ -1,3 +1,5 @@
+"""Module containing Dataset functionality"""
+
 import logging
 from typing import List
 
@@ -14,7 +16,14 @@ from .prompt_tokenizers import PromptTokenizingStrategy, InvalidDataException
 
 
 class TokenizedPromptDataset(IterableDataset):
-    def __init__(
+    """
+    Iterable dataset that returns tokenized prompts from a stream of text files.
+        Args:
+            prompt_tokenizer (PromptTokenizingStrategy): The prompt tokenizing method for proccessing the data.
+            dataset (dataset.Dataset): Dataset with text files.
+    """
+
+    def __init__(  # pylint: disable=super-init-not-called
         self,
         prompt_tokenizer: PromptTokenizingStrategy,
         dataset: IterableDataset,
@@ -42,7 +51,7 @@ class ConstantLengthDataset(IterableDataset):
             seq_length (int): Length of token sequences to return.
     """
 
-    def __init__(
+    def __init__(  # pylint: disable=super-init-not-called
         self,
         tokenizer,
         datasets,
