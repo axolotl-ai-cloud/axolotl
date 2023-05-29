@@ -5,6 +5,7 @@ import math
 import os
 import sys
 from pathlib import Path
+from typing import Optional
 
 import bitsandbytes as bnb
 import torch.cuda
@@ -28,7 +29,7 @@ class OneCycleLRSchedulerTrainer(Trainer):
         self.lr_scheduler = None
 
     def create_scheduler(
-        self, num_training_steps: int, optimizer: torch.optim.Optimizer = None
+        self, num_training_steps: int, optimizer: Optional[torch.optim.Optimizer] = None
     ):
         optimizer = self.optimizer if optimizer is None else optimizer
         num_warmup_steps = self.args.get_warmup_steps(num_training_steps)

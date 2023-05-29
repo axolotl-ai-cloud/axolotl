@@ -3,7 +3,7 @@
 import logging
 from hashlib import md5
 from pathlib import Path
-from typing import Tuple, Union
+from typing import List, Tuple, Union
 
 from datasets import (
     load_from_disk,
@@ -95,40 +95,36 @@ def load_tokenized_prepared_datasets(
 
             # prefer local dataset, even if hub exists
             if Path(d.path).exists():
-                ds: Dataset = load_dataset(
+                ds = load_dataset(
                     "json", data_files=d.path, streaming=False, split=None
                 )
             elif ds_from_hub:
                 if d.data_files:
-                    ds: Dataset = load_dataset(
+                    ds = load_dataset(
                         d.path,
                         streaming=False,
                         data_files=d.data_files,
                         use_auth_token=use_auth_token,
                     )
                 else:
-                    ds: Dataset = load_dataset(
+                    ds = load_dataset(
                         d.path, streaming=False, use_auth_token=use_auth_token
                     )
             else:
                 fp = hf_hub_download(
                     repo_id=d.path, repo_type="dataset", filename=d.data_files
                 )
-                ds: Dataset = load_dataset(
-                    "json", data_files=fp, streaming=False, split=None
-                )
+                ds = load_dataset("json", data_files=fp, streaming=False, split=None)
             if not ds:
                 raise ValueError("unhandled dataset load")
             # support for using a subset of the data
             if d.shards:
                 if "train" in ds:
-                    ds: DatasetDict = ds.shuffle(seed=42)["train"].shard(
+                    ds = ds.shuffle(seed=42)["train"].shard(
                         num_shards=d.shards, index=0
                     )
                 else:
-                    ds: Dataset = ds.shuffle(seed=42).shard(
-                        num_shards=d.shards, index=0
-                    )
+                    ds = ds.shuffle(seed=42).shard(num_shards=d.shards, index=0)
             d_type = d.type
             d_type_split = d_type.split(":")
             d_base_type = d_type_split[0]
@@ -232,7 +228,7 @@ def load_tokenized_prepared_datasets(
                 logging.error(f"unhandled prompt tokenization strategy: {d.type}")
         logging.info("tokenizing, merging, and shuffling master dataset")
 
-        samples = []
+        samples: List[int] = []
         for d in datasets:
             samples = samples + list(d)
         dataset = Dataset.from_list(samples).shuffle(seed=42)

@@ -3,7 +3,7 @@
 import os
 import sys
 
-from typing import Optional
+from typing import Optional, Union
 from pathlib import Path
 
 import fire
@@ -35,6 +35,7 @@ def main(
     """
 
     file_reader = FileReader()
+    writer: Union[StdoutWriter, FileWriter]
     if to_stdout or output is None:
         writer = StdoutWriter()
     else:

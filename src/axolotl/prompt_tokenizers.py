@@ -226,20 +226,16 @@ class CompletionPromptTokenizingStrategy(InstructionPromptTokenizingStrategy):
     Tokenizing strategy for Completion prompts.
     """
 
-    def parse_instruction_fields(self, prompt) -> str:
-        return prompt["text"]
-
     def tokenize_prompt(self, prompt):
-        instruction = self.parse_instruction_fields(prompt)
-        full_prompt = self._build_full_prompt(instruction, None, None)
+        full_prompt = self._build_full_prompt(prompt["text"], None, None)
         tokenized_full_prompt = self._tokenize(full_prompt)
 
         return tokenized_full_prompt
 
     def _build_full_prompt(
         self, instruction, input, response
-    ):  # pylint: disable=unused-argument, redefined-builtin
-        return next(iter(self.prompter.build_prompt(instruction)))
+    ):  # pylint: disable=redefined-builtin
+        return next(iter(self.prompter.build_prompt(instruction, input, response)))
 
 
 class ReflectionPromptTokenizingStrategy(PromptTokenizingStrategy):
@@ -419,7 +415,7 @@ def tokenize_prompt_default() -> Tuple[Dict[str, List[int]], int]:
     Returns the default values for the tokenize prompt function
     """
 
-    result = {
+    result: Dict[str, List[int]] = {
         "input_ids": [],
         "attention_mask": [],
         "labels": [],

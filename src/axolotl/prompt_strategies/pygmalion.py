@@ -3,7 +3,7 @@
 import copy
 import logging
 from collections import defaultdict
-from typing import Generator
+from typing import Generator, List, Tuple
 
 from axolotl.prompt_tokenizers import (
     PromptTokenizingStrategy,
@@ -19,7 +19,7 @@ class PygmalionPromptTokenizingStrategy(PromptTokenizingStrategy):
     Tokenizing strategy for Pygmalion.
     """
 
-    bot_prefix_token_ids = []
+    bot_prefix_token_ids: List[int] = []
 
     def __init__(self, prompter, tokenizer, *args, **kwargs):
         super().__init__(prompter, tokenizer, *args, **kwargs)
@@ -88,7 +88,7 @@ class PygmalionPrompter:
 
     def build_prompt(
         self, source, *args, **kwargs  # pylint: disable=unused-argument
-    ) -> Generator[str, None, None]:
+    ) -> Generator[Tuple[str, str], None, None]:
         for msg in source:
             yield msg["role"], msg["value"]
 
