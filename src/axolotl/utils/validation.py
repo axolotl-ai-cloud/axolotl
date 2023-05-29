@@ -1,3 +1,5 @@
+"""Module for validating config files"""
+
 import logging
 
 
