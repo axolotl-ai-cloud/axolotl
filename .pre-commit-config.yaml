@@ -26,6 +26,5 @@ repos:
     - id: mypy
       additional_dependencies:
         [
-        'fire',
-        'types-PyYAML'
+            'types-PyYAML',
         ]
