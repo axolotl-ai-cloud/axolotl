@@ -107,7 +107,9 @@ def load_tokenized_prepared_datasets(
                         use_auth_token=use_auth_token,
                     )
                 else:
-                    ds: Dataset = load_dataset(d.path, streaming=False, use_auth_token=use_auth_token)
+                    ds: Dataset = load_dataset(
+                        d.path, streaming=False, use_auth_token=use_auth_token
+                    )
             else:
                 fp = hf_hub_download(
                     repo_id=d.path, repo_type="dataset", filename=d.data_files
@@ -293,7 +295,8 @@ def load_prepare_datasets(
                     f"Checking for packed prepared dataset from hub... {cfg.push_dataset_to_hub}/{ds_hash}"
                 )
                 dataset = load_dataset(
-                    f"{cfg.push_dataset_to_hub}/{ds_hash}", use_auth_token=use_auth_token
+                    f"{cfg.push_dataset_to_hub}/{ds_hash}",
+                    use_auth_token=use_auth_token,
                 )
                 dataset = dataset["train"]
         except Exception:  # pylint: disable=broad-except

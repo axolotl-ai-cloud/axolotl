@@ -117,4 +117,3 @@ class ValidationTest(unittest.TestCase):
             }
         )
         validate_config(cfg)
-

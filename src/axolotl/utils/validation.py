@@ -40,7 +40,9 @@ def validate_config(cfg):
         )
 
     if cfg.push_dataset_to_hub and cfg.hf_use_auth_token is not True:
-        raise ValueError("Require cfg.hf_use_auth_token to be True for push_dataset_to_hub")
+        raise ValueError(
+            "Require cfg.hf_use_auth_token to be True for push_dataset_to_hub"
+        )
 
     # TODO
     # MPT 7b
