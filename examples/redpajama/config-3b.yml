@@ -23,7 +23,7 @@ lora_fan_in_fan_out: false
 wandb_project: redpajama-alpaca-3b
 wandb_watch:
 wandb_run_id:
-wandb_log_model: checkpoint
+wandb_log_model:
 output_dir: ./redpajama-alpaca-3b
 batch_size: 4
 micro_batch_size: 1
