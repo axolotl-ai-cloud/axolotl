@@ -220,7 +220,7 @@ class SeparatorStyle(Enum):
     DOLLY = auto()
 
 
-# TODO clean this 💩 up  # pylint: disable=fixme
+# TODO clean this 💩 up
 @dataclasses.dataclass
 class Conversation:
     """A class that keeps all conversation history."""
