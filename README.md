@@ -411,6 +411,9 @@ PRs are **greatly welcome**!
 
 Please run below to setup env
 ```bash
-pip3 install -r requirements-dev.txt
+pip3 install -r requirements-dev.txt -r requirements-tests.txt
 pre-commit install
+
+# test
+pytest tests/
 ```
