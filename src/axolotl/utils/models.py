@@ -28,8 +28,6 @@ except ImportError:
         "This version of transformers does not support Llama. Consider upgrading."
     )
 
-from axolotl.prompt_tokenizers import LLAMA_DEFAULT_PAD_TOKEN
-
 if TYPE_CHECKING:
     from peft import PeftConfig  # noqa: F401
 
@@ -61,7 +59,7 @@ def load_tokenizer(
         "LlamaTokenizer",
         "LlamaTokenizerFast",
     ]:
-        tokenizer.pad_token = LLAMA_DEFAULT_PAD_TOKEN
+        tokenizer.pad_token = "[PAD]"
 
     if tokenizer.__class__.__name__ == "GPTNeoXTokenizerFast":
         tokenizer.add_special_tokens({"pad_token": "[PAD]"})
