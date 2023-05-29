@@ -1,7 +1,8 @@
+"""Callbacks for Trainer class"""
+
 import os
 
 from transformers import (
-    Seq2SeqTrainer,
     TrainerCallback,
     TrainingArguments,
     TrainerState,
@@ -10,7 +11,9 @@ from transformers import (
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR
 
 
-class SavePeftModelCallback(TrainerCallback):
+class SavePeftModelCallback(TrainerCallback):  # pylint: disable=too-few-public-methods
+    """Callback to save the PEFT adapter"""
+
     def on_save(
         self,
         args: TrainingArguments,
