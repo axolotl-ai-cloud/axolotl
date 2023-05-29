@@ -49,7 +49,7 @@ lora_fan_in_fan_out: false
 wandb_project:
 wandb_watch:
 wandb_run_id:
-wandb_log_model: checkpoint
+wandb_log_model:
 # where to save the finsihed model to
 output_dir: ./completed-model
 # training hyperparameters
