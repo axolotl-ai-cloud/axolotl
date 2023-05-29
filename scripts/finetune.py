@@ -178,6 +178,15 @@ def train(
             tokenizer, cfg, DEFAULT_DATASET_PREPARED_PATH
         )
 
+    if cfg.debug or "debug" in kwargs:
+        logging.info("check_dataset_labels...")
+        check_dataset_labels(
+            train_dataset.select(
+                [random.randrange(0, len(train_dataset) - 1) for i in range(5)]
+            ),
+            tokenizer,
+        )
+
     if prepare_ds_only:
         logging.info("Finished preparing dataset. Exiting...")
         return
@@ -212,15 +221,6 @@ def train(
     if "shard" in kwargs:
         model.save_pretrained(cfg.output_dir)
         return
-
-    if cfg.debug:
-        logging.info("check_dataset_labels...")
-        check_dataset_labels(
-            train_dataset.select(
-                [random.randrange(0, len(train_dataset) - 1) for i in range(5)]
-            ),
-            tokenizer,
-        )
 
     trainer = setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer)
 
