@@ -1,4 +1,4 @@
-"""Module containing data utilities for Axolotl"""
+"""Module containing data utilities"""
 
 import logging
 from hashlib import md5
