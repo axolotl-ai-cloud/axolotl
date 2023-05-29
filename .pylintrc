@@ -10,5 +10,5 @@ generated-members=numpy.*, torch.*
 
 [pylint.messages_control]
 disable=missing-function-docstring, line-too-long, import-error,
-    too-many-arguments, too-many-locals, too-many-statements, too-many-branches,
+    too-many-arguments, too-many-locals, too-many-statements, too-many-branches, too-few-public-methods,
     fixme, import-outside-toplevel, logging-fstring-interpolation,
