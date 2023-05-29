@@ -48,7 +48,9 @@ class DictDefaultTest(unittest.TestCase):
             }
         )
 
-        cfg = cfg | DictDefault({"key_a": {"key_b": "value_b"}, "key_f": "value_g"})
+        cfg = cfg | DictDefault(  # pylint: disable=unsupported-binary-operation
+            {"key_a": {"key_b": "value_b"}, "key_f": "value_g"}
+        )
 
         assert (
             cfg.key_a.key_b == "value_b"
