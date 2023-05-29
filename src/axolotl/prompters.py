@@ -187,7 +187,7 @@ class ReflectAlpacaPrompter:
             )
             self.response_split = "ASSISTANT:"
 
-    def build_prompt(  # pylint: disable=too-many-arguments
+    def build_prompt(
         self,
         instruction: str,
         input: Union[None, str] = None,  # pylint: disable=redefined-builtin
