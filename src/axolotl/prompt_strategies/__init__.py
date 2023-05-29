@@ -1,3 +1,5 @@
+"""Module to load prompt strategies."""
+
 import importlib
 
 
@@ -7,8 +9,8 @@ def load(strategy, tokenizer, cfg):
         if strategy.split(".")[-1].startswith("load_"):
             load_fn = strategy.split(".")[-1]
             strategy = ".".join(strategy.split(".")[:-1])
-        m = importlib.import_module(f".{strategy}", "axolotl.prompt_strategies")
-        fn = getattr(m, load_fn)
-        return fn(tokenizer, cfg)
-    except:
-        pass
+        mod = importlib.import_module(f".{strategy}", "axolotl.prompt_strategies")
+        func = getattr(mod, load_fn)
+        return func(tokenizer, cfg)
+    except Exception:  # pylint: disable=broad-exception-caught
+        return None
