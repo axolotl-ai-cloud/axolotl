@@ -26,7 +26,7 @@ lora_fan_in_fan_out: true  # pythia/GPTNeoX lora specific
 wandb_project: pythia-1.4b-lora
 wandb_watch:
 wandb_run_id:
-wandb_log_model: checkpoint
+wandb_log_model:
 output_dir: ./lora-alpaca
 batch_size: 48
 micro_batch_size: 4
