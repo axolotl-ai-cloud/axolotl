@@ -90,7 +90,7 @@ COPY --from=flash-attn-builder /workspace/flash-attention/csrc/rotary/dist/rotar
 COPY --from=flash-attn-builder /workspace/flash-attention/csrc/layer_norm/dist/dropout_layer_norm-*.whl wheels
 
 RUN pip3 install wheels/deepspeed-*.whl wheels/flash_attn-*.whl wheels/fused_dense_lib-*.whl wheels/xentropy_cuda_lib-*.whl wheels/rotary_emb-*.whl wheels/dropout_layer_norm-*.whl
-RUN cd /workspace/builds/bitsandbytes && python3 setup.py install
+RUN cd /workspace/builds/bitsandbytes && cp bitsandbytes/libbitsandbytes_cuda.so bitsandbytes/libbitsandbytes_cuda${CUDA_VERSION_BNB}.so && python3 setup.py install
 RUN git lfs install --skip-repo
 RUN pip3 install "peft @ git+https://github.com/huggingface/peft.git@main" \
         "accelerate @ git+https://github.com/huggingface/accelerate.git@main" \
