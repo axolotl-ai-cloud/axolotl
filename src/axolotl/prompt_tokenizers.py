@@ -4,7 +4,7 @@ import abc
 import copy
 import functools
 import logging
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Union
 
 from transformers import PreTrainedTokenizer
 
@@ -433,7 +433,7 @@ def parse_tokenized_to_result(
     current_len: int,
     res: Dict[str, List[int]],
     labels: list[int],
-    pad_token_id: int | None = None,
+    pad_token_id: Union[int, None] = None,
 ) -> Tuple[Dict[str, List[int]], int]:
     """
     Parses the tokenized prompt and append the tokenized input_ids, attention_mask and labels to the result
