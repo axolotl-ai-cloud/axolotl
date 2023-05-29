@@ -11,10 +11,10 @@ from transformers import PreTrainedTokenizer
 from axolotl.prompters import IGNORE_TOKEN_ID
 
 IGNORE_INDEX = -100
-LLAMA_DEFAULT_PAD_TOKEN = "[PAD]"
-LLAMA_DEFAULT_EOS_TOKEN = "</s>"
-LLAMA_DEFAULT_BOS_TOKEN = "<s>"
-LLAMA_DEFAULT_UNK_TOKEN = "<unk>"
+LLAMA_DEFAULT_PAD_TOKEN = "[PAD]"  # nosec
+LLAMA_DEFAULT_EOS_TOKEN = "</s>"  # nosec
+LLAMA_DEFAULT_BOS_TOKEN = "<s>"  # nosec
+LLAMA_DEFAULT_UNK_TOKEN = "<unk>"  # nosec
 
 
 class InvalidDataException(Exception):

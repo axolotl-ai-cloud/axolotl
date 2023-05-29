@@ -136,7 +136,7 @@ def train(
 
     # load the config from the yaml file
     with open(config, encoding="utf-8") as file:
-        cfg: DictDefault = DictDefault(yaml.load(file, Loader=yaml.Loader))
+        cfg: DictDefault = DictDefault(yaml.safe_load(file))
     # if there are any options passed in the cli, if it is something that seems valid from the yaml,
     # then overwrite the value
     cfg_keys = cfg.keys()
@@ -185,7 +185,7 @@ def train(
         logging.info("check_dataset_labels...")
         check_dataset_labels(
             train_dataset.select(
-                [random.randrange(0, len(train_dataset) - 1) for i in range(5)]
+                [random.randrange(0, len(train_dataset) - 1) for _ in range(5)]  # nosec
             ),
             tokenizer,
         )

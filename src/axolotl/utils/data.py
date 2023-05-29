@@ -40,7 +40,7 @@ def load_tokenized_prepared_datasets(
 ) -> DatasetDict:
     tokenizer_name = tokenizer.__class__.__name__
     ds_hash = str(
-        md5(
+        md5(  # nosec
             (
                 str(cfg.sequence_len)
                 + "@"
@@ -66,7 +66,7 @@ def load_tokenized_prepared_datasets(
                 use_auth_token=use_auth_token,
             )
             dataset = dataset["train"]
-    except Exception:  # pylint: disable=broad-except
+    except Exception:  # pylint: disable=broad-except # nosec
         pass
 
     if dataset:
@@ -272,7 +272,7 @@ def load_prepare_datasets(
         # see if we can go ahead and load the stacked dataset
         seed = f"@{str(cfg.seed)}" if cfg.seed else ""
         ds_hash = str(
-            md5(
+            md5(  # nosec
                 (
                     str(cfg.sequence_len)
                     + "@"
@@ -304,7 +304,7 @@ def load_prepare_datasets(
                     use_auth_token=use_auth_token,
                 )
                 dataset = dataset["train"]
-        except Exception:  # pylint: disable=broad-except
+        except Exception:  # pylint: disable=broad-except # nosec
             pass
 
         if dataset:
