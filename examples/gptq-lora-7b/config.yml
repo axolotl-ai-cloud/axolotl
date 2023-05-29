@@ -24,7 +24,7 @@ lora_fan_in_fan_out: false
 wandb_project: llama-7b-lora-int4
 wandb_watch:
 wandb_run_id:
-wandb_log_model: checkpoint
+wandb_log_model:
 output_dir: ./llama-7b-lora-int4
 batch_size: 1
 micro_batch_size: 1
