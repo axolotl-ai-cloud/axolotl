@@ -15,8 +15,8 @@ from torch.optim.lr_scheduler import OneCycleLR
 from transformers import EarlyStoppingCallback, Trainer
 from transformers.trainer_pt_utils import get_parameter_names
 
-from axolotl.utils.schedulers import InterpolatingLogScheduler
 from axolotl.utils.callbacks import SavePeftModelCallback
+from axolotl.utils.schedulers import InterpolatingLogScheduler
 
 
 class OneCycleLRSchedulerTrainer(Trainer):
@@ -29,7 +29,9 @@ class OneCycleLRSchedulerTrainer(Trainer):
         self.lr_scheduler = None
 
     def create_scheduler(
-        self, num_training_steps: int, optimizer: Optional[torch.optim.Optimizer] = None
+        self,
+        num_training_steps: int,
+        optimizer: Optional[torch.optim.Optimizer] = None,
     ):
         optimizer = self.optimizer if optimizer is None else optimizer
         num_warmup_steps = self.args.get_warmup_steps(num_training_steps)
@@ -216,7 +218,10 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
         )
         callbacks.append(early_stop_cb)
 
-    if cfg.local_rank == 0 and cfg.adapter in ["lora", "qlora"]:  # only save in rank 0
+    if cfg.local_rank == 0 and cfg.adapter in [
+        "lora",
+        "qlora",
+    ]:  # only save in rank 0
         callbacks.append(SavePeftModelCallback)
 
     data_collator_kwargs = {

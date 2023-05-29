@@ -5,23 +5,17 @@ import logging
 import math
 import os
 from pathlib import Path
-from typing import Optional, Tuple, TYPE_CHECKING  # noqa: F401
+from typing import TYPE_CHECKING, Optional, Tuple  # noqa: F401
 
 import bitsandbytes as bnb
 import torch
 import transformers
-from transformers import (  # noqa: F401
-    AutoModelForCausalLM,
-    AutoTokenizer,
-    PreTrainedModel,
-    AutoConfig,
-    BitsAndBytesConfig,
-)
+from transformers import AutoModelForCausalLM  # noqa: F401
+from transformers import PreTrainedModel  # noqa: F401
+from transformers import AutoConfig, AutoTokenizer, BitsAndBytesConfig
 
 try:
-    from transformers import (
-        LlamaForCausalLM,
-    )
+    from transformers import LlamaForCausalLM
 except ImportError:
     logging.warning(
         "This version of transformers does not support Llama. Consider upgrading."
@@ -31,8 +25,9 @@ from axolotl.prompt_tokenizers import LLAMA_DEFAULT_PAD_TOKEN
 
 if TYPE_CHECKING:
     from peft import PeftConfig  # noqa: F401
-    from axolotl.utils.dict import DictDefault  # noqa: F401
     from transformers import PreTrainedTokenizer  # noqa: F401
+
+    from axolotl.utils.dict import DictDefault  # noqa: F401
 
 
 def load_tokenizer(
@@ -56,7 +51,10 @@ def load_tokenizer(
     logging.debug(f"PAD: {tokenizer.pad_token_id} / {tokenizer.pad_token}")
     logging.debug(f"UNK: {tokenizer.unk_token_id} / {tokenizer.unk_token}")
 
-    if tokenizer.__class__.__name__ in ["LlamaTokenizer", "LlamaTokenizerFast"]:
+    if tokenizer.__class__.__name__ in [
+        "LlamaTokenizer",
+        "LlamaTokenizerFast",
+    ]:
         tokenizer.pad_token = LLAMA_DEFAULT_PAD_TOKEN
 
     if tokenizer.__class__.__name__ == "GPTNeoXTokenizerFast":
@@ -312,11 +310,7 @@ def load_adapter(model, cfg, adapter):
 
 def load_llama_adapter(model, cfg):
     # type: (PreTrainedModel, DictDefault) -> Tuple[PreTrainedModel, Optional[PeftConfig]]
-    from peft import (
-        AdaptionPromptConfig,
-        get_peft_model,
-        PeftModel,
-    )
+    from peft import AdaptionPromptConfig, PeftModel, get_peft_model
 
     peft_config = AdaptionPromptConfig(
         adapter_layers=cfg.peft_adapter.layers,  # layers (L)
@@ -361,11 +355,7 @@ def find_all_linear_names(bits, model):
 def load_lora(model, cfg):
     # type: (PreTrainedModel, DictDefault) -> Tuple[PreTrainedModel, Optional[PeftConfig]]
 
-    from peft import (
-        LoraConfig,
-        get_peft_model,
-        PeftModel,
-    )
+    from peft import LoraConfig, PeftModel, get_peft_model
 
     lora_target_modules = list(cfg.lora_target_modules or [])
 

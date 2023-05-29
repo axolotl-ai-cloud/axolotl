@@ -347,7 +347,9 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
                         part = part[0] + part[1] if not user_token else part[1]
                         # this is still the user query, we should
                         res = self._tokenize(
-                            part.strip(), add_eos_token=False, strip_bos_token=True
+                            part.strip(),
+                            add_eos_token=False,
+                            strip_bos_token=True,
                         )
                         if user_token:
                             res["input_ids"] = [user_token, *res["input_ids"]]
@@ -358,10 +360,15 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
                         part = part[0] + part[1] if not assistant_token else part[1]
                         # this should be the assistent response, should end with an eos token
                         res = self._tokenize(
-                            part.strip(), add_eos_token=True, strip_bos_token=True
+                            part.strip(),
+                            add_eos_token=True,
+                            strip_bos_token=True,
                         )
                         if assistant_token:
-                            res["input_ids"] = [assistant_token, *res["input_ids"]]
+                            res["input_ids"] = [
+                                assistant_token,
+                                *res["input_ids"],
+                            ]
                         # not masked out from labels
                         labels = copy.deepcopy(res["input_ids"])
                     else:

@@ -4,9 +4,9 @@ import os
 
 from transformers import (
     TrainerCallback,
-    TrainingArguments,
-    TrainerState,
     TrainerControl,
+    TrainerState,
+    TrainingArguments,
 )
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR
 
@@ -22,7 +22,8 @@ class SavePeftModelCallback(TrainerCallback):  # pylint: disable=too-few-public-
         **kwargs,
     ):
         checkpoint_folder = os.path.join(
-            args.output_dir, f"{PREFIX_CHECKPOINT_DIR}-{state.global_step}"
+            args.output_dir,
+            f"{PREFIX_CHECKPOINT_DIR}-{state.global_step}",
         )
 
         peft_model_path = os.path.join(checkpoint_folder, "adapter_model")

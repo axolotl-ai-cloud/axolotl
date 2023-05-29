@@ -1,6 +1,7 @@
 """Module containing the AlpacaQAPromptTokenizingStrategy class"""
 
 from typing import Tuple
+
 from axolotl.prompt_tokenizers import (
     AlpacaPromptTokenizingStrategy,
     InstructionPromptTokenizingStrategy,

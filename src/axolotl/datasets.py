@@ -5,8 +5,8 @@ from typing import List
 
 import torch
 from datasets import IterableDataset
-from .prompt_tokenizers import PromptTokenizingStrategy, InvalidDataException
 
+from .prompt_tokenizers import InvalidDataException, PromptTokenizingStrategy
 
 # We want this to be a wrapper for an existing dataset that we have loaded
 # lets use the concept of middlewares to wrap each dataset, for example
@@ -114,7 +114,11 @@ class ConstantLengthDataset(IterableDataset):
                             logging.warning(
                                 f"dropping batch due to tensor size mismatch input_ids: {input_ids.size()}, labels: {labels.size()}, attention_mask: {attention_mask.size()}"
                             )
-                    buffer = {"input_ids": [], "attention_mask": [], "labels": []}
+                    buffer = {
+                        "input_ids": [],
+                        "attention_mask": [],
+                        "labels": [],
+                    }
                     buffer_len = 0
 
                 if example:

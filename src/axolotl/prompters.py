@@ -2,8 +2,8 @@
 
 import dataclasses
 import logging
-from enum import auto, Enum
-from typing import List, Optional, Union, Generator
+from enum import Enum, auto
+from typing import Generator, List, Optional, Union
 
 IGNORE_TOKEN_ID = -100
 
@@ -203,7 +203,9 @@ class ReflectAlpacaPrompter:
             res = self.prompt_no_input.format(instruction=instruction)
         if output and reflection and corrected:
             label = self.agent_label.format(
-                output=output, reflection=reflection, corrected=corrected
+                output=output,
+                reflection=reflection,
+                corrected=corrected,
             )
             res = f"{res}{label}"
         yield res

@@ -1,6 +1,6 @@
 """setup.py for axolotl"""
 
-from setuptools import setup, find_packages
+from setuptools import find_packages, setup
 
 install_requires = []
 with open("./requirements.txt", encoding="utf-8") as requirements_file:

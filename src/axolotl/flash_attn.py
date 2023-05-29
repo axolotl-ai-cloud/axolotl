@@ -5,14 +5,11 @@
 from typing import Optional, Tuple
 
 import torch
-
 import transformers
-from transformers.models.llama.modeling_llama import apply_rotary_pos_emb
-
 from einops import rearrange
-
+from flash_attn.bert_padding import pad_input, unpad_input
 from flash_attn.flash_attn_interface import flash_attn_unpadded_qkvpacked_func
-from flash_attn.bert_padding import unpad_input, pad_input
+from transformers.models.llama.modeling_llama import apply_rotary_pos_emb
 
 
 def forward(
@@ -75,7 +72,11 @@ def forward(
         qkv = rearrange(qkv, "b s ... -> (b s) ...")
         max_s = q_len
         cu_q_lens = torch.arange(
-            0, (bsz + 1) * q_len, step=q_len, dtype=torch.int32, device=qkv.device
+            0,
+            (bsz + 1) * q_len,
+            step=q_len,
+            dtype=torch.int32,
+            device=qkv.device,
         )
         output = flash_attn_unpadded_qkvpacked_func(
             qkv, cu_q_lens, max_s, 0.0, softmax_scale=None, causal=True
@@ -88,25 +89,44 @@ def forward(
         x = rearrange(qkv, "b s three h d -> b s (three h d)")
         x_unpad, indices, cu_q_lens, max_s = unpad_input(x, key_padding_mask)
         x_unpad = rearrange(
-            x_unpad, "nnz (three h d) -> nnz three h d", three=3, h=nheads
+            x_unpad,
+            "nnz (three h d) -> nnz three h d",
+            three=3,
+            h=nheads,
         )
         output_unpad = flash_attn_unpadded_qkvpacked_func(
-            x_unpad, cu_q_lens, max_s, 0.0, softmax_scale=None, causal=True
+            x_unpad,
+            cu_q_lens,
+            max_s,
+            0.0,
+            softmax_scale=None,
+            causal=True,
         )
         output = rearrange(
             pad_input(
-                rearrange(output_unpad, "nnz h d -> nnz (h d)"), indices, bsz, q_len
+                rearrange(output_unpad, "nnz h d -> nnz (h d)"),
+                indices,
+                bsz,
+                q_len,
             ),
             "b s (h d) -> b s h d",
             h=nheads,
         )
-    return self.o_proj(rearrange(output, "b s h d -> b s (h d)")), None, None
+    return (
+        self.o_proj(rearrange(output, "b s h d -> b s (h d)")),
+        None,
+        None,
+    )
 
 
 # Disable the transformation of the attention mask in LlamaModel as the flash attention
 # requires the attention mask to be the same as the key_padding_mask
 def _prepare_decoder_attention_mask(
-    self, attention_mask, input_shape, inputs_embeds, past_key_values_length
+    self,
+    attention_mask,
+    input_shape,
+    inputs_embeds,
+    past_key_values_length,
 ):  # pylint: disable=unused-argument
     # [bsz, seq_len]
     return attention_mask

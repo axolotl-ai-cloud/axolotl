@@ -7,20 +7,20 @@ import random
 import signal
 import sys
 from pathlib import Path
-from typing import Optional, List, Dict, Any, Union
+from typing import Any, Dict, List, Optional, Union
 
 import fire
 import torch
 import yaml
 
+from axolotl.utils.data import load_prepare_datasets
+from axolotl.utils.dict import DictDefault
+from axolotl.utils.models import load_model, load_tokenizer
+
 # add src to the pythonpath so we don't need to pip install this
 from axolotl.utils.tokenization import check_dataset_labels
-from axolotl.utils.validation import validate_config
-from axolotl.utils.dict import DictDefault
-
-from axolotl.utils.data import load_prepare_datasets
-from axolotl.utils.models import load_model, load_tokenizer
 from axolotl.utils.trainer import setup_trainer
+from axolotl.utils.validation import validate_config
 from axolotl.utils.wandb import setup_wandb_env_vars
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -242,7 +242,10 @@ def train(
     if cfg.local_rank == 0:
         signal.signal(
             signal.SIGINT,
-            lambda signal, frame: (model.save_pretrained(cfg.output_dir), sys.exit(0)),
+            lambda signal, frame: (
+                model.save_pretrained(cfg.output_dir),
+                sys.exit(0),
+            ),
         )
 
     logging.info("Starting trainer...")
@@ -255,7 +258,8 @@ def train(
         ]
         if len(possible_checkpoints) > 0:
             sorted_paths = sorted(
-                possible_checkpoints, key=lambda path: int(path.split("-")[-1])
+                possible_checkpoints,
+                key=lambda path: int(path.split("-")[-1]),
             )
             resume_from_checkpoint = sorted_paths[-1]
             logging.info(

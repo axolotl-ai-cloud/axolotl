@@ -1,8 +1,9 @@
 """Module loading the CreativePromptTokenizingStrategy and similar classes"""
 
-from typing import Tuple, Union, Generator
+from typing import Generator, Tuple, Union
 
 import yaml
+
 from axolotl.prompt_tokenizers import InstructionPromptTokenizingStrategy
 
 
@@ -61,10 +62,14 @@ Answer: {answer}
 
     def parse_instruction_fields(self, prompt) -> Tuple[str, str, str]:
         scores = yaml.dump(
-            prompt["scores"], default_flow_style=False, Dumper=yaml.Dumper
+            prompt["scores"],
+            default_flow_style=False,
+            Dumper=yaml.Dumper,
         )
         critiques = yaml.dump(
-            prompt["critiques"], default_flow_style=False, Dumper=yaml.Dumper
+            prompt["critiques"],
+            default_flow_style=False,
+            Dumper=yaml.Dumper,
         )
         evaluation = scores + critiques
         question = prompt["instruction"]
@@ -97,10 +102,14 @@ Evaluation:
 
     def parse_instruction_fields(self, prompt) -> Tuple[str, str, str]:
         scores = yaml.dump(
-            prompt["scores"], default_flow_style=False, Dumper=yaml.Dumper
+            prompt["scores"],
+            default_flow_style=False,
+            Dumper=yaml.Dumper,
         )
         critiques = yaml.dump(
-            prompt["critiques"], default_flow_style=False, Dumper=yaml.Dumper
+            prompt["critiques"],
+            default_flow_style=False,
+            Dumper=yaml.Dumper,
         )
         evaluation = scores + critiques
         question = prompt["instruction"]
@@ -165,17 +174,26 @@ class CreativeRevisePrompter(CreativePrompterBase):
 
 def load_answer(tokenizer, cfg):
     return CreativeAnsweringPromptTokenizingStrategy(
-        CreativeAnswerPrompter(), tokenizer, cfg.train_on_inputs, cfg.sequence_len
+        CreativeAnswerPrompter(),
+        tokenizer,
+        cfg.train_on_inputs,
+        cfg.sequence_len,
     )
 
 
 def load_critique(tokenizer, cfg):
     return CreativeCritiquePromptTokenizingStrategy(
-        CreativeCritiquePrompter(), tokenizer, cfg.train_on_inputs, cfg.sequence_len
+        CreativeCritiquePrompter(),
+        tokenizer,
+        cfg.train_on_inputs,
+        cfg.sequence_len,
     )
 
 
 def load_revise(tokenizer, cfg):
     return CreativeRevisePromptTokenizingStrategy(
-        CreativeRevisePrompter(), tokenizer, cfg.train_on_inputs, cfg.sequence_len
+        CreativeRevisePrompter(),
+        tokenizer,
+        cfg.train_on_inputs,
+        cfg.sequence_len,
     )
