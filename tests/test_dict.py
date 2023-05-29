@@ -1,3 +1,6 @@
+"""Module for testing DictDefault class"""
+
+
 import unittest
 
 import pytest
@@ -6,6 +9,10 @@ from axolotl.utils.dict import DictDefault
 
 
 class DictDefaultTest(unittest.TestCase):
+    """
+    Test DictDefault class
+    """
+
     def test_dict_default(self):
         cfg = DictDefault(
             {
@@ -73,7 +80,7 @@ class DictDefaultTest(unittest.TestCase):
             AttributeError,
             match=r"'NoneType' object has no attribute 'another_random_key'",
         ):
-            cfg.random_key.another_random_key
+            cfg.random_key.another_random_key = "value"
 
     def test_dict_shorthand_assignment(self):
         """
