@@ -2,19 +2,26 @@ ARG BASE_TAG=main-base
 FROM winglian/axolotl-base:$BASE_TAG
 
 ARG TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6+PTX"
+ARG AXOLOTL_EXTRAS=""
 
 RUN apt-get update && \
     apt-get install -y vim curl
 
 WORKDIR /workspace
 
-# The base image ships with `pydantic==1.8.2` which is not working
-RUN python3 -m pip install -U --no-cache-dir pydantic
+RUN pip3 install --force-reinstall "peft @ git+https://github.com/huggingface/peft.git@main" \
+            "accelerate @ git+https://github.com/huggingface/accelerate.git@main" \
+            "transformers @ git+https://github.com/huggingface/transformers.git@main"
 
 RUN mkdir axolotl
 COPY . axolotl/
+# If AXOLOTL_EXTRAS is set, append it in brackets
 RUN cd axolotl && \
-    pip install -e .[int4]
+    if [ "$AXOLOTL_EXTRAS" != "" ] ; then \
+        pip install -e .[$AXOLOTL_EXTRAS]; \
+    else \
+        pip install -e .; \
+    fi
 
 # helper for huggingface-login cli
 RUN git config --global credential.helper store

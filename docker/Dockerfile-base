@@ -9,7 +9,7 @@ ENV PATH="/root/miniconda3/bin:${PATH}"
 
 ARG PYTHON_VERSION="3.9"
 ARG PYTORCH="2.0.0"
-ARG CUDA="cu118"
+ARG CUDA="118"
 
 ENV PYTHON_VERSION=$PYTHON_VERSION
 
@@ -29,7 +29,7 @@ ENV PATH="/root/miniconda3/envs/py${PYTHON_VERSION}/bin:${PATH}"
 WORKDIR /workspace
 
 RUN python3 -m pip install --upgrade pip && pip3 install packaging && \
-    python3 -m pip install --no-cache-dir -U torch==${PYTORCH} torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/$CUDA
+    python3 -m pip install --no-cache-dir -U torch==${PYTORCH} torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu$CUDA
 
 
 FROM base-builder AS flash-attn-builder
@@ -61,12 +61,12 @@ RUN git clone https://github.com/microsoft/DeepSpeed.git && \
 FROM base-builder AS bnb-builder
 
 WORKDIR /workspace
-ARG CUDA_VERSION_BNB="118"
-ENV CUDA_VERSION_BNB=$CUDA_VERSION_BNB
+ARG CUDA="118"
+ENV CUDA=$CUDA
 
 RUN git clone https://github.com/TimDettmers/bitsandbytes.git && \
     cd bitsandbytes && \
-    CUDA_VERSION=$CUDA_VERSION_BNB make cuda11x && \
+    CUDA_VERSION=$CUDA make cuda11x && \
     python setup.py bdist_wheel
 
 FROM base-builder
@@ -93,9 +93,6 @@ COPY --from=flash-attn-builder /workspace/flash-attention/csrc/layer_norm/dist/d
 RUN pip3 install wheels/deepspeed-*.whl wheels/flash_attn-*.whl wheels/fused_dense_lib-*.whl wheels/xentropy_cuda_lib-*.whl wheels/rotary_emb-*.whl wheels/dropout_layer_norm-*.whl
 RUN cd /workspace/builds/bitsandbytes && python3 setup.py install
 RUN git lfs install --skip-repo
-RUN pip3 install "peft @ git+https://github.com/huggingface/peft.git@main" \
-        "accelerate @ git+https://github.com/huggingface/accelerate.git@main" \
-        "transformers @ git+https://github.com/huggingface/transformers.git@main" && \
-    pip3 install awscli && \
+RUN pip3 install awscli && \
     # The base image ships with `pydantic==1.8.2` which is not working
     pip3 install -U --no-cache-dir pydantic
