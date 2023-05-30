@@ -1,35 +1,6 @@
 {
-  "bf16": {
-    "enabled": "auto"
-  },
-  "fp16": {
-    "enabled": "auto",
-    "loss_scale": 0,
-    "loss_scale_window": 1000,
-    "initial_scale_power": 16,
-    "hysteresis": 2,
-    "min_loss_scale": 1
-  },
-  "optimizer": {
-    "type": "Adam",
-    "params": {
-      "lr": "auto",
-      "betas": "auto",
-      "eps": "auto",
-      "weight_decay": "auto"
-    }
-  },
-  "scheduler": {
-    "type": "WarmupDecayLR",
-    "params": {
-      "warmup_min_lr": "auto",
-      "warmup_max_lr": "auto",
-      "warmup_num_steps": "auto",
-      "total_num_steps": "auto"
-    }
-  },
   "zero_optimization": {
-    "stage": 2,
+    "stage": 3,
     "offload_optimizer": {
       "device": "cpu",
       "pin_memory": true
@@ -39,20 +10,48 @@
       "pin_memory": true
     },
     "overlap_comm": true,
-    "allgather_partitions": true,
-    "allgather_bucket_size": 5e8,
     "contiguous_gradients": true,
+    "sub_group_size": 0,
     "reduce_bucket_size": "auto",
-    "reduce_scatter": true,
+    "stage3_prefetch_bucket_size": "auto",
+    "stage3_param_persistence_threshold": "auto",
     "stage3_max_live_parameters": 0,
     "stage3_max_reuse_distance": 0,
     "stage3_gather_16bit_weights_on_model_save": true
   },
-  "gradient_accumulation_steps": "auto",
-  "gradient_clipping": "auto",
-  "steps_per_print": 5,
+  "bf16": {
+    "enabled": "auto"
+  },
+  "fp16": {
+    "enabled": "auto",
+    "auto_cast": false,
+    "loss_scale": 0,
+    "initial_scale_power": 32,
+    "loss_scale_window": 1000,
+    "hysteresis": 2,
+    "min_loss_scale": 1
+  },
+  "optimizer": {
+    "type": "AdamW",
+    "params": {
+      "lr": "auto",
+      "betas": [
+        0.9,
+        0.999
+      ],
+      "eps": 1e-8,
+      "weight_decay": "auto"
+    }
+  },
+  "scheduler": {
+    "type": "OneCycle",
+    "params": {
+      "cycle_min_lr": 0.00001,
+      "cycle_max_lr": 0.00003,
+      "cycle_first_step_size": 120
+    }
+  },
   "train_batch_size": "auto",
   "train_micro_batch_size_per_gpu": "auto",
-  "wall_clock_breakdown": false,
-  "round_robin_gradients": true
+  "wall_clock_breakdown": false
 }

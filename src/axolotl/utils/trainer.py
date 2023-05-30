@@ -113,7 +113,8 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
         output_dir=cfg.output_dir,
         save_total_limit=3,
         load_best_model_at_end=True
-        if cfg.val_set_size > 0
+        if cfg.load_best_model_at_end is not False  # if explicitly set to False, it should be resort to False
+        and cfg.val_set_size > 0
         and save_steps is not None
         and save_steps % eval_steps == 0
         and cfg.load_in_8bit is not True
@@ -218,7 +219,7 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
 
     trainer_cls = (
         OneCycleLRSchedulerTrainer
-        if cfg.lr_scheduler == "one_cycle" and cfg.fsdp
+        if cfg.lr_scheduler == "one_cycle" and (cfg.fsdp or cfg.adapter == "qlora")
         else transformers.Trainer
     )
     trainer = trainer_cls(

@@ -1,6 +1,7 @@
 import json
 import logging
 import unittest
+from pathlib import Path
 
 from transformers import AutoTokenizer
 
@@ -22,10 +23,11 @@ class TestPromptTokenizationStrategies(unittest.TestCase):
         )
 
     def test_sharegpt_integration(self):
-        with open("./fixtures/conversation.json", "r") as fin:
+        print(Path(__file__).parent)
+        with open(Path(__file__).parent / "fixtures/conversation.json", "r") as fin:
             data = fin.read()
             conversation = json.loads(data)
-        with open("./fixtures/conversation.tokenized.json", "r") as fin:
+        with open(Path(__file__).parent / "fixtures/conversation.tokenized.json", "r") as fin:
             data = fin.read()
             tokenized_conversation = json.loads(data)
         prompter = ShareGPTPrompter("chat")
