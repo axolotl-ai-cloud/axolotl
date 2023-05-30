@@ -125,7 +125,8 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
         output_dir=cfg.output_dir,
         save_total_limit=3,
         load_best_model_at_end=(
-            cfg.val_set_size > 0
+            cfg.load_best_model_at_end is not False
+            and cfg.val_set_size > 0
             and save_steps
             and save_steps % eval_steps == 0
             and cfg.load_in_8bit is not True

@@ -129,6 +129,7 @@ def load_model(
             llm_int8_threshold=6.0,
             llm_int8_has_fp16_weight=False,
             bnb_4bit_compute_dtype=torch_dtype,
+            bnb_4bit_compute_dtype=torch_dtype,
             bnb_4bit_use_double_quant=True,
             bnb_4bit_quant_type="nf4",
         )
@@ -280,8 +281,8 @@ def load_model(
         # llama is PROBABLY model parallelizable, but the default isn't that it is
         # so let's only set it for the 4bit, see
         # https://github.com/johnsmith0031/alpaca_lora_4bit/blob/08b3fca4a4a9e0d3945be1bab4529f100a428636/finetune.py#L130-L133
-        setattr(model, 'is_parallelizable', True)
-        setattr(model, 'model_parallel', True)
+        setattr(model, "is_parallelizable", True)
+        setattr(model, "model_parallel", True)
 
     requires_grad = []
     for name, param in model.named_parameters(recurse=True):
