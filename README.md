@@ -57,9 +57,9 @@ accelerate launch scripts/finetune.py examples/lora-openllama-3b/config.yml \
   1. Install python **3.9**
 
   2. Install python dependencies with ONE of the following:
-      - `pip3 install -e .[gptq]` (recommended)
-      - `pip3 install -e .[int4_triton]`
-      - `pip3 install -e .`
+      - `pip3 install -e .` (recommended, supports qlora, no gptq/int4 support)
+      - `pip3 install -e .[gptq_triton]`
+      - `pip3 install -e .[gptq]`
 
 ### Dataset
 
