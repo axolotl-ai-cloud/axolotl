@@ -129,7 +129,6 @@ def load_model(
             llm_int8_threshold=6.0,
             llm_int8_has_fp16_weight=False,
             bnb_4bit_compute_dtype=torch_dtype,
-            bnb_4bit_compute_dtype=torch_dtype,
             bnb_4bit_use_double_quant=True,
             bnb_4bit_quant_type="nf4",
         )
