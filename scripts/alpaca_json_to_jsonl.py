@@ -1,24 +1,38 @@
+"""Module to convert json file to jsonl"""
+
 import os
 import sys
 from pathlib import Path
+from typing import Optional, Union
 
 import fire
-from typing import Optional
+
+from axolotl.convert import (
+    FileReader,
+    FileWriter,
+    JsonlSerializer,
+    JsonParser,
+    JsonToJsonlConverter,
+    StdoutWriter,
+)
 
 # add src to the pythonpath so we don't need to pip install this
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 src_dir = os.path.join(project_root, "src")
 sys.path.insert(0, src_dir)
 
-from axolotl.convert import *
-
 
 def main(
-    input: Path,
+    file: Path,
     output: Optional[Path] = None,
     to_stdout: Optional[bool] = False,
 ):
+    """
+    Convert a json file to jsonl
+    """
+
     file_reader = FileReader()
+    writer: Union[StdoutWriter, FileWriter]
     if to_stdout or output is None:
         writer = StdoutWriter()
     else:
@@ -28,7 +42,7 @@ def main(
 
     converter = JsonToJsonlConverter(file_reader, writer, json_parser, jsonl_serializer)
 
-    converter.convert(input, output)
+    converter.convert(file, output)
 
 
 if __name__ == "__main__":

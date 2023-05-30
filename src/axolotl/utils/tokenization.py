@@ -1,5 +1,9 @@
-from termcolor import colored
+"""Module for tokenization utilities"""
+
+
 import logging
+
+from termcolor import colored
 
 
 def check_dataset_labels(dataset, tokenizer):
@@ -17,7 +21,7 @@ def check_example_labels(example, tokenizer):
     # You can compare the input_ids and labels element-wise
     # Remember to ignore positions with IGNORE_TOKEN_ID (if you use it) or attention_mask equal to 0
     colored_tokens = []
-    for i, (input_id, label_id, mask) in enumerate(
+    for _, (input_id, label_id, mask) in enumerate(
         zip(input_ids, labels, attention_mask)
     ):
         decoded_input_token = tokenizer.decode(input_id)

@@ -1,42 +1,37 @@
+"""Module containing data utilities"""
+
 import logging
 from hashlib import md5
 from pathlib import Path
-from typing import Union
+from typing import List, Tuple, Union
 
-from datasets import (
-    load_from_disk,
-    load_dataset,
-    IterableDataset,
-    Dataset,
-    concatenate_datasets,
-    DatasetDict,
-)
+from datasets import Dataset, DatasetDict, load_dataset, load_from_disk
 from huggingface_hub import hf_hub_download
 from transformers import PreTrainedTokenizerBase
 
-from axolotl.datasets import TokenizedPromptDataset, ConstantLengthDataset
+from axolotl.datasets import ConstantLengthDataset, TokenizedPromptDataset
 from axolotl.prompt_strategies import load
 from axolotl.prompt_tokenizers import (
-    AlpacaPromptTokenizingStrategy,
-    GPTeacherPromptTokenizingStrategy,
-    OpenAssistantPromptTokenizingStrategy,
-    AlpacaReflectionPTStrategy,
-    ShareGPTPromptTokenizingStrategy,
-    JeopardyPromptTokenizingStrategy,
-    CompletionPromptTokenizingStrategy,
     AlpacaMultipleChoicePromptTokenizingStrategy,
+    AlpacaPromptTokenizingStrategy,
+    AlpacaReflectionPTStrategy,
+    CompletionPromptTokenizingStrategy,
+    GPTeacherPromptTokenizingStrategy,
+    JeopardyPromptTokenizingStrategy,
+    OpenAssistantPromptTokenizingStrategy,
+    ShareGPTPromptTokenizingStrategy,
     SummarizeTLDRPromptTokenizingStrategy,
 )
 from axolotl.prompters import (
     AlpacaPrompter,
+    CompletionPrompter,
     GPTeacherPrompter,
+    JeopardyPrompter,
+    MultipleChoiceConcisePrompter,
+    MultipleChoiceExplainPrompter,
     ReflectAlpacaPrompter,
     ShareGPTPrompter,
-    JeopardyPrompter,
-    CompletionPrompter,
-    MultipleChoiceExplainPrompter,
     SummarizeTLDRPrompter,
-    MultipleChoiceConcisePrompter,
 )
 
 
@@ -45,11 +40,13 @@ def load_tokenized_prepared_datasets(
 ) -> DatasetDict:
     tokenizer_name = tokenizer.__class__.__name__
     ds_hash = str(
-        md5(
+        md5(  # nosec
             (
                 str(cfg.sequence_len)
                 + "@"
-                + "|".join(sorted([f"{d.path}:{d.type}:{d.shards}" for d in cfg.datasets]))
+                + "|".join(
+                    sorted([f"{d.path}:{d.type}:{d.shards}" for d in cfg.datasets])
+                )
                 + "|"
                 + tokenizer_name
             ).encode("utf-8")
@@ -65,10 +62,11 @@ def load_tokenized_prepared_datasets(
     try:
         if cfg.push_dataset_to_hub:
             dataset = load_dataset(
-                f"{cfg.push_dataset_to_hub}/{ds_hash}", use_auth_token=use_auth_token
+                f"{cfg.push_dataset_to_hub}/{ds_hash}",
+                use_auth_token=use_auth_token,
             )
             dataset = dataset["train"]
-    except:
+    except Exception:  # pylint: disable=broad-except # nosec
         pass
 
     if dataset:
@@ -81,43 +79,59 @@ def load_tokenized_prepared_datasets(
         logging.info(f"Unable to find prepared dataset in {prepared_ds_path}")
         logging.info("Loading raw datasets...")
         datasets = []
+        # pylint: disable=invalid-name
         for d in cfg.datasets:
             ds: Union[Dataset, DatasetDict] = None
             ds_from_hub = False
             try:
-                load_dataset(d.path, streaming=True, use_auth_token=use_auth_token)
+                load_dataset(
+                    d.path,
+                    streaming=True,
+                    use_auth_token=use_auth_token,
+                )
                 ds_from_hub = True
             except FileNotFoundError:
                 pass
 
             # prefer local dataset, even if hub exists
             if Path(d.path).exists():
-                ds: Dataset = load_dataset(
-                    "json", data_files=d.path, streaming=False, split=None
+                ds = load_dataset(
+                    "json",
+                    data_files=d.path,
+                    streaming=False,
+                    split=None,
                 )
             elif ds_from_hub:
                 if d.data_files:
-                    ds: Dataset = load_dataset(
+                    ds = load_dataset(
                         d.path,
                         streaming=False,
                         data_files=d.data_files,
                         use_auth_token=use_auth_token,
                     )
                 else:
-                    ds: Dataset = load_dataset(d.path, streaming=False, use_auth_token=use_auth_token)
+                    ds = load_dataset(
+                        d.path,
+                        streaming=False,
+                        use_auth_token=use_auth_token,
+                    )
             else:
                 fp = hf_hub_download(
-                    repo_id=d.path, repo_type="dataset", filename=d.data_files
+                    repo_id=d.path,
+                    repo_type="dataset",
+                    filename=d.data_files,
                 )
-                ds: Dataset = load_dataset("json", data_files=fp, streaming=False, split=None)
+                ds = load_dataset("json", data_files=fp, streaming=False, split=None)
             if not ds:
-                raise Exception("unhandled dataset load")
+                raise ValueError("unhandled dataset load")
             # support for using a subset of the data
             if d.shards:
                 if "train" in ds:
-                    ds: DatasetDict = ds.shuffle(seed=42)["train"].shard(num_shards=d.shards, index=0)
+                    ds = ds.shuffle(seed=42)["train"].shard(
+                        num_shards=d.shards, index=0
+                    )
                 else:
-                    ds: Dataset = ds.shuffle(seed=42).shard(num_shards=d.shards, index=0)
+                    ds = ds.shuffle(seed=42).shard(num_shards=d.shards, index=0)
             d_type = d.type
             d_type_split = d_type.split(":")
             d_base_type = d_type_split[0]
@@ -221,9 +235,9 @@ def load_tokenized_prepared_datasets(
                 logging.error(f"unhandled prompt tokenization strategy: {d.type}")
         logging.info("tokenizing, merging, and shuffling master dataset")
 
-        samples = []
+        samples: List[int] = []
         for d in datasets:
-            samples = samples + [i for i in d]
+            samples = samples + list(d)
         dataset = Dataset.from_list(samples).shuffle(seed=42)
         if cfg.local_rank == 0:
             logging.info(
@@ -242,8 +256,10 @@ def load_tokenized_prepared_datasets(
 
 
 def load_prepare_datasets(
-    tokenizer: PreTrainedTokenizerBase, cfg, default_dataset_prepared_path
-) -> (Dataset, Dataset):
+    tokenizer: PreTrainedTokenizerBase,
+    cfg,
+    default_dataset_prepared_path,
+) -> Tuple[Dataset, Dataset]:
     max_packed_sequence_len = (
         cfg.max_packed_sequence_len if cfg.max_packed_sequence_len else cfg.sequence_len
     )
@@ -256,13 +272,15 @@ def load_prepare_datasets(
         # see if we can go ahead and load the stacked dataset
         seed = f"@{str(cfg.seed)}" if cfg.seed else ""
         ds_hash = str(
-            md5(
+            md5(  # nosec
                 (
                     str(cfg.sequence_len)
                     + "@"
                     + str(max_packed_sequence_len)
                     + seed
-                    + "|".join(sorted([f"{d.path}:{d.type}:{d.shards}" for d in cfg.datasets]))
+                    + "|".join(
+                        sorted([f"{d.path}:{d.type}:{d.shards}" for d in cfg.datasets])
+                    )
                     + "|"
                     + tokenizer_name
                 ).encode("utf-8")
@@ -282,10 +300,11 @@ def load_prepare_datasets(
                     f"Checking for packed prepared dataset from hub... {cfg.push_dataset_to_hub}/{ds_hash}"
                 )
                 dataset = load_dataset(
-                    f"{cfg.push_dataset_to_hub}/{ds_hash}", use_auth_token=use_auth_token
+                    f"{cfg.push_dataset_to_hub}/{ds_hash}",
+                    use_auth_token=use_auth_token,
                 )
                 dataset = dataset["train"]
-        except:
+        except Exception:  # pylint: disable=broad-except # nosec
             pass
 
         if dataset:
@@ -319,7 +338,7 @@ def load_prepare_datasets(
             logging.info(
                 f"packing master dataset to len: {cfg.max_packed_sequence_len}"
             )
-            dataset = Dataset.from_list([_ for _ in constant_len_dataset])
+            dataset = Dataset.from_list(list(constant_len_dataset))
 
             # filter out bad data
             dataset = Dataset.from_list(
@@ -343,7 +362,8 @@ def load_prepare_datasets(
                         f"Saving packed prepared dataset with push_to_hub... {cfg.push_dataset_to_hub}/{ds_hash}"
                     )
                     dataset.push_to_hub(
-                        f"{cfg.push_dataset_to_hub}/{ds_hash}", private=True
+                        f"{cfg.push_dataset_to_hub}/{ds_hash}",
+                        private=True,
                     )
     else:
         dataset = load_tokenized_prepared_datasets(
@@ -355,7 +375,8 @@ def load_prepare_datasets(
             f"Using index #{cfg.dataset_shard_idx} of {cfg.dataset_shard_num} shards"
         )
         dataset = dataset.shard(
-            num_shards=cfg.dataset_shard_num, index=cfg.dataset_shard_idx
+            num_shards=cfg.dataset_shard_num,
+            index=cfg.dataset_shard_idx,
         )
 
     dataset = dataset.train_test_split(test_size=cfg.val_set_size, shuffle=False)

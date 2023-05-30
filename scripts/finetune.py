@@ -1,3 +1,5 @@
+"""Prepare and train a model on a dataset. Can also infer from a model or merge lora"""
+
 import importlib
 import logging
 import os
@@ -5,25 +7,26 @@ import random
 import signal
 import sys
 from pathlib import Path
-from typing import Optional, List, Dict, Any, Union
+from typing import Any, Dict, List, Optional, Union
 
 import fire
 import torch
 import yaml
 
+from axolotl.utils.data import load_prepare_datasets
+from axolotl.utils.dict import DictDefault
+from axolotl.utils.models import load_model, load_tokenizer
+
 # add src to the pythonpath so we don't need to pip install this
 from axolotl.utils.tokenization import check_dataset_labels
+from axolotl.utils.trainer import setup_trainer
 from axolotl.utils.validation import validate_config
-from axolotl.utils.dict import DictDefault
+from axolotl.utils.wandb import setup_wandb_env_vars
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 src_dir = os.path.join(project_root, "src")
 sys.path.insert(0, src_dir)
 
-from axolotl.utils.data import load_prepare_datasets
-from axolotl.utils.models import load_model, load_tokenizer
-from axolotl.utils.trainer import setup_trainer
-from axolotl.utils.wandb import setup_wandb_env_vars
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 DEFAULT_DATASET_PREPARED_PATH = "last_run_prepared"
@@ -31,14 +34,16 @@ DEFAULT_DATASET_PREPARED_PATH = "last_run_prepared"
 
 def choose_device(cfg):
     def get_device():
-        if torch.cuda.is_available():
-            return f"cuda:{cfg.local_rank}"
-        else:
-            try:
-                if torch.backends.mps.is_available():
-                    return "mps"
-            except:
-                return "cpu"
+        try:
+            if torch.cuda.is_available():
+                return f"cuda:{cfg.local_rank}"
+
+            if torch.backends.mps.is_available():
+                return "mps"
+
+            raise SystemError("No CUDA/mps device found")
+        except Exception:  # pylint: disable=broad-exception-caught
+            return "cpu"
 
     cfg.device = get_device()
     if cfg.device == "cuda":
@@ -51,7 +56,7 @@ def get_multi_line_input() -> Optional[str]:
     print("Give me an instruction (Ctrl + D to finish): ")
     instruction = ""
     for line in sys.stdin:
-        instruction += line
+        instruction += line  # pylint: disable=consider-using-join
     # instruction = pathlib.Path("/proc/self/fd/0").read_text()
     return instruction
 
@@ -92,7 +97,7 @@ def do_inference(cfg, model, tokenizer, prompter="AlpacaPrompter"):
 
 
 def choose_config(path: Path):
-    yaml_files = [file for file in path.glob("*.yml")]
+    yaml_files = list(path.glob("*.yml"))
 
     if not yaml_files:
         raise ValueError(
@@ -130,12 +135,12 @@ def train(
         config = choose_config(config)
 
     # load the config from the yaml file
-    with open(config, "r") as f:
-        cfg: DictDefault = DictDefault(yaml.load(f, Loader=yaml.Loader))
+    with open(config, encoding="utf-8") as file:
+        cfg: DictDefault = DictDefault(yaml.safe_load(file))
     # if there are any options passed in the cli, if it is something that seems valid from the yaml,
     # then overwrite the value
     cfg_keys = cfg.keys()
-    for k in kwargs:
+    for k, _ in kwargs.items():
         # if not strict, allow writing to cfg even if it's not in the yml already
         if k in cfg_keys or cfg.strict is False:
             # handle booleans
@@ -167,13 +172,11 @@ def train(
 
     # load the tokenizer first
     logging.info("loading tokenizer...")
-    tokenizer = load_tokenizer(
-        cfg.base_model_config,
-        cfg.tokenizer_type,
-        cfg
-    )
+    tokenizer = load_tokenizer(cfg.base_model_config, cfg.tokenizer_type, cfg)
 
-    if check_not_in(["inference", "shard", "merge_lora"], kwargs):  # don't need to load dataset for these
+    if check_not_in(
+        ["inference", "shard", "merge_lora"], kwargs
+    ):  # don't need to load dataset for these
         train_dataset, eval_dataset = load_prepare_datasets(
             tokenizer, cfg, DEFAULT_DATASET_PREPARED_PATH
         )
@@ -182,7 +185,7 @@ def train(
         logging.info("check_dataset_labels...")
         check_dataset_labels(
             train_dataset.select(
-                [random.randrange(0, len(train_dataset) - 1) for i in range(5)]
+                [random.randrange(0, len(train_dataset) - 1) for _ in range(5)]  # nosec
             ),
             tokenizer,
         )
@@ -239,7 +242,10 @@ def train(
     if cfg.local_rank == 0:
         signal.signal(
             signal.SIGINT,
-            lambda signal, frame: (model.save_pretrained(cfg.output_dir), exit(0)),
+            lambda signal, frame: (
+                model.save_pretrained(cfg.output_dir),
+                sys.exit(0),
+            ),
         )
 
     logging.info("Starting trainer...")
@@ -252,7 +258,8 @@ def train(
         ]
         if len(possible_checkpoints) > 0:
             sorted_paths = sorted(
-                possible_checkpoints, key=lambda path: int(path.split("-")[-1])
+                possible_checkpoints,
+                key=lambda path: int(path.split("-")[-1]),
             )
             resume_from_checkpoint = sorted_paths[-1]
             logging.info(
@@ -266,6 +273,7 @@ def train(
     # only save on rank 0, otherwise it corrupts output on multi-GPU when multiple processes attempt to write the same file
     if cfg.local_rank == 0:
         model.save_pretrained(cfg.output_dir)
+
     # trainer.save_model(cfg.output_dir)  # TODO this may be needed for deepspeed to work? need to review another time
 
 

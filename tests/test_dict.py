@@ -1,3 +1,6 @@
+"""Module for testing DictDefault class"""
+
+
 import unittest
 
 import pytest
@@ -6,6 +9,10 @@ from axolotl.utils.dict import DictDefault
 
 
 class DictDefaultTest(unittest.TestCase):
+    """
+    Test DictDefault class
+    """
+
     def test_dict_default(self):
         cfg = DictDefault(
             {
@@ -41,7 +48,9 @@ class DictDefaultTest(unittest.TestCase):
             }
         )
 
-        cfg = cfg | DictDefault({"key_a": {"key_b": "value_b"}, "key_f": "value_g"})
+        cfg = cfg | DictDefault(  # pylint: disable=unsupported-binary-operation
+            {"key_a": {"key_b": "value_b"}, "key_f": "value_g"}
+        )
 
         assert (
             cfg.key_a.key_b == "value_b"
@@ -73,7 +82,7 @@ class DictDefaultTest(unittest.TestCase):
             AttributeError,
             match=r"'NoneType' object has no attribute 'another_random_key'",
         ):
-            cfg.random_key.another_random_key
+            cfg.random_key.another_random_key = "value"
 
     def test_dict_shorthand_assignment(self):
         """

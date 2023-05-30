@@ -1,12 +1,18 @@
+"""Module for testing the validation module"""
+
 import unittest
 
 import pytest
 
-from axolotl.utils.validation import validate_config
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.validation import validate_config
 
 
 class ValidationTest(unittest.TestCase):
+    """
+    Test the validation module
+    """
+
     def test_load_4bit_deprecate(self):
         cfg = DictDefault(
             {
@@ -24,7 +30,7 @@ class ValidationTest(unittest.TestCase):
             }
         )
 
-        cfg = base_cfg | DictDefault(
+        cfg = base_cfg | DictDefault(  # pylint: disable=unsupported-binary-operation
             {
                 "load_in_8bit": True,
             }
@@ -33,7 +39,7 @@ class ValidationTest(unittest.TestCase):
         with pytest.raises(ValueError, match=r".*8bit.*"):
             validate_config(cfg)
 
-        cfg = base_cfg | DictDefault(
+        cfg = base_cfg | DictDefault(  # pylint: disable=unsupported-binary-operation
             {
                 "gptq": True,
             }
@@ -42,7 +48,7 @@ class ValidationTest(unittest.TestCase):
         with pytest.raises(ValueError, match=r".*gptq.*"):
             validate_config(cfg)
 
-        cfg = base_cfg | DictDefault(
+        cfg = base_cfg | DictDefault(  # pylint: disable=unsupported-binary-operation
             {
                 "load_in_4bit": False,
             }
@@ -51,7 +57,7 @@ class ValidationTest(unittest.TestCase):
         with pytest.raises(ValueError, match=r".*4bit.*"):
             validate_config(cfg)
 
-        cfg = base_cfg | DictDefault(
+        cfg = base_cfg | DictDefault(  # pylint: disable=unsupported-binary-operation
             {
                 "load_in_4bit": True,
             }
@@ -67,7 +73,7 @@ class ValidationTest(unittest.TestCase):
             }
         )
 
-        cfg = base_cfg | DictDefault(
+        cfg = base_cfg | DictDefault(  # pylint: disable=unsupported-binary-operation
             {
                 "load_in_8bit": True,
             }
@@ -76,7 +82,7 @@ class ValidationTest(unittest.TestCase):
         with pytest.raises(ValueError, match=r".*8bit.*"):
             validate_config(cfg)
 
-        cfg = base_cfg | DictDefault(
+        cfg = base_cfg | DictDefault(  # pylint: disable=unsupported-binary-operation
             {
                 "gptq": True,
             }
@@ -85,7 +91,7 @@ class ValidationTest(unittest.TestCase):
         with pytest.raises(ValueError, match=r".*gptq.*"):
             validate_config(cfg)
 
-        cfg = base_cfg | DictDefault(
+        cfg = base_cfg | DictDefault(  # pylint: disable=unsupported-binary-operation
             {
                 "load_in_4bit": True,
             }
@@ -111,4 +117,3 @@ class ValidationTest(unittest.TestCase):
             }
         )
         validate_config(cfg)
-

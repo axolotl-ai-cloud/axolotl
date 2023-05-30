@@ -1,3 +1,5 @@
+"""Module for wandb utilities"""
+
 import os
 
 

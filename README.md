@@ -9,6 +9,8 @@
     <p>
       Go ahead and axolotl questions!!
     </p>
+    <img src="https://github.com/OpenAccess-AI-Collective/axolotl/actions/workflows/pre-commit.yml/badge.svg?branch=main" alt="pre-commit">
+    <img alt="PyTest Status" src="https://github.com/OpenAccess-AI-Collective/axolotl/actions/workflows/tests.yml/badge.svg?branch=main">
   </div>
 </div>
 
@@ -406,3 +408,12 @@ Join our [Discord server](https://discord.gg/HhrNrHJPRb) where we can help you
 Bugs? Please check for open issue else create a new [Issue](https://github.com/OpenAccess-AI-Collective/axolotl/issues/new).
 
 PRs are **greatly welcome**!
+
+Please run below to setup env
+```bash
+pip3 install -r requirements-dev.txt -r requirements-tests.txt
+pre-commit install
+
+# test
+pytest tests/
+```

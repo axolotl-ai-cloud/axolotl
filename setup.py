@@ -1,7 +1,9 @@
-from setuptools import setup, find_packages
+"""setup.py for axolotl"""
+
+from setuptools import find_packages, setup
 
 install_requires = []
-with open("./requirements.txt", "r") as requirements_file:
+with open("./requirements.txt", encoding="utf-8") as requirements_file:
     # don't include peft yet until we check the int4
     # need to manually install peft for now...
     reqs = [r.strip() for r in requirements_file.readlines() if "peft" not in r]

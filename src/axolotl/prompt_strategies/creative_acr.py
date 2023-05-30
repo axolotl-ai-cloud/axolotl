@@ -1,11 +1,18 @@
-from typing import Union, Generator
+"""Module loading the CreativePromptTokenizingStrategy and similar classes"""
+
+from typing import Generator, Tuple, Union
 
 import yaml
+
 from axolotl.prompt_tokenizers import InstructionPromptTokenizingStrategy
 
 
 class CreativeAnsweringPromptTokenizingStrategy(InstructionPromptTokenizingStrategy):
-    def parse_instruction_fields(self, prompt) -> (str, str, str):
+    """
+    Tokenizing strategy for Creative Answering
+    """
+
+    def parse_instruction_fields(self, prompt) -> Tuple[str, str, str]:
         question = prompt["instruction"]
         answer = prompt[
             "revision"
@@ -18,6 +25,10 @@ class CreativeAnsweringPromptTokenizingStrategy(InstructionPromptTokenizingStrat
 
 
 class CreativeCritiquePromptTokenizingStrategy(InstructionPromptTokenizingStrategy):
+    """
+    Tokenizing strategy for Creative Critique
+    """
+
     user_prompt = """Given the following Question and Response, critique the Response on a scale of 1-10. You should critique the answer in the following criteria:
 refusal: whether the Response refuses to answer the Question. Responses containing language similar to "As an AI language model, I am not capable of ..." is a form of refusal and should have a low refusal score. 10 is no refusal, 0 is refuses to answer the question.
 prescriptive bias: whether the Response attempts to prescribe or dictate certain actions or behaviors of the user. 10 no prescriptive bias present, 0 means there is prescriptive bias.
@@ -49,12 +60,16 @@ Question: {question}
 Answer: {answer}
 """
 
-    def parse_instruction_fields(self, prompt) -> (str, str, str):
+    def parse_instruction_fields(self, prompt) -> Tuple[str, str, str]:
         scores = yaml.dump(
-            prompt["scores"], default_flow_style=False, Dumper=yaml.Dumper
+            prompt["scores"],
+            default_flow_style=False,
+            Dumper=yaml.Dumper,
         )
         critiques = yaml.dump(
-            prompt["critiques"], default_flow_style=False, Dumper=yaml.Dumper
+            prompt["critiques"],
+            default_flow_style=False,
+            Dumper=yaml.Dumper,
         )
         evaluation = scores + critiques
         question = prompt["instruction"]
@@ -67,6 +82,10 @@ Answer: {answer}
 
 
 class CreativeRevisePromptTokenizingStrategy(InstructionPromptTokenizingStrategy):
+    """
+    Tokenizing strategy for Creative Revise
+    """
+
     user_prompt = """Definitions:
 refusal: whether the Response refuses to answer the Question. Responses containing language similar to "As an AI language model, I am not capable of ..." is a form of refusal and should have a low refusal score. 10 is no refusal, 0 is refuses to answer the question.
 prescriptive bias: whether the Response attempts to prescribe or dictate certain actions or behaviors of the user. 10 no prescriptive bias present, 0 means their is prescriptive bias.
@@ -81,12 +100,16 @@ Evaluation:
 {evaluation}
 """
 
-    def parse_instruction_fields(self, prompt) -> (str, str, str):
+    def parse_instruction_fields(self, prompt) -> Tuple[str, str, str]:
         scores = yaml.dump(
-            prompt["scores"], default_flow_style=False, Dumper=yaml.Dumper
+            prompt["scores"],
+            default_flow_style=False,
+            Dumper=yaml.Dumper,
         )
         critiques = yaml.dump(
-            prompt["critiques"], default_flow_style=False, Dumper=yaml.Dumper
+            prompt["critiques"],
+            default_flow_style=False,
+            Dumper=yaml.Dumper,
         )
         evaluation = scores + critiques
         question = prompt["instruction"]
@@ -101,13 +124,19 @@ Evaluation:
 
 
 class CreativePrompterBase:
+    """
+    Base class for Creative Prompters
+    """
+
     system_prompt = ""
     prompt_input = "{system_prompt}\nUSER: {instruction}\nASSISTANT:"
 
     def build_prompt(
         self,
         instruction: str,
-        input: Union[None, str] = None,
+        input: Union[  # pylint: disable=redefined-builtin, unused-argument
+            None, str
+        ] = None,
         output: Union[None, str] = None,
     ) -> Generator[str, None, None]:
         if self.system_prompt:
@@ -120,30 +149,51 @@ class CreativePrompterBase:
 
 
 class CreativeAnswerPrompter(CreativePrompterBase):
+    """
+    Prompter for Creative Answering
+    """
+
     system_prompt = "Answer the following question in a comprehensive, in-depth, and creative way. Additionally your response should be relevant, accurate, and free of any ambiguity."
 
 
 class CreativeCritiquePrompter(CreativePrompterBase):
+    """
+    Prompter for Creative Critique
+    """
+
     system_prompt = ""
 
 
 class CreativeRevisePrompter(CreativePrompterBase):
+    """
+    Prompter for Creative Revise
+    """
+
     system_prompt = ""
 
 
 def load_answer(tokenizer, cfg):
     return CreativeAnsweringPromptTokenizingStrategy(
-        CreativeAnswerPrompter(), tokenizer, cfg.train_on_inputs, cfg.sequence_len
+        CreativeAnswerPrompter(),
+        tokenizer,
+        cfg.train_on_inputs,
+        cfg.sequence_len,
     )
 
 
 def load_critique(tokenizer, cfg):
     return CreativeCritiquePromptTokenizingStrategy(
-        CreativeCritiquePrompter(), tokenizer, cfg.train_on_inputs, cfg.sequence_len
+        CreativeCritiquePrompter(),
+        tokenizer,
+        cfg.train_on_inputs,
+        cfg.sequence_len,
     )
 
 
 def load_revise(tokenizer, cfg):
     return CreativeRevisePromptTokenizingStrategy(
-        CreativeRevisePrompter(), tokenizer, cfg.train_on_inputs, cfg.sequence_len
+        CreativeRevisePrompter(),
+        tokenizer,
+        cfg.train_on_inputs,
+        cfg.sequence_len,
     )

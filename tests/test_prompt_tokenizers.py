@@ -1,3 +1,4 @@
+"""Module for testing prompt tokenizers."""
 import json
 import logging
 import unittest
@@ -12,6 +13,10 @@ logging.basicConfig(level="INFO")
 
 
 class TestPromptTokenizationStrategies(unittest.TestCase):
+    """
+    Test class for prompt tokenization strategies.
+    """
+
     def setUp(self) -> None:
         self.tokenizer = AutoTokenizer.from_pretrained("huggyllama/llama-7b")
         self.tokenizer.add_special_tokens(
@@ -24,10 +29,15 @@ class TestPromptTokenizationStrategies(unittest.TestCase):
 
     def test_sharegpt_integration(self):
         print(Path(__file__).parent)
-        with open(Path(__file__).parent / "fixtures/conversation.json", "r") as fin:
+        with open(
+            Path(__file__).parent / "fixtures/conversation.json", encoding="utf-8"
+        ) as fin:
             data = fin.read()
             conversation = json.loads(data)
-        with open(Path(__file__).parent / "fixtures/conversation.tokenized.json", "r") as fin:
+        with open(
+            Path(__file__).parent / "fixtures/conversation.tokenized.json",
+            encoding="utf-8",
+        ) as fin:
             data = fin.read()
             tokenized_conversation = json.loads(data)
         prompter = ShareGPTPrompter("chat")

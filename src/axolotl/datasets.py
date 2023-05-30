@@ -1,10 +1,12 @@
+"""Module containing Dataset functionality"""
+
 import logging
 from typing import List
 
 import torch
 from datasets import IterableDataset
-from .prompt_tokenizers import PromptTokenizingStrategy, InvalidDataException
 
+from .prompt_tokenizers import InvalidDataException, PromptTokenizingStrategy
 
 # We want this to be a wrapper for an existing dataset that we have loaded
 # lets use the concept of middlewares to wrap each dataset, for example
@@ -14,7 +16,14 @@ from .prompt_tokenizers import PromptTokenizingStrategy, InvalidDataException
 
 
 class TokenizedPromptDataset(IterableDataset):
-    def __init__(
+    """
+    Iterable dataset that returns tokenized prompts from a stream of text files.
+        Args:
+            prompt_tokenizer (PromptTokenizingStrategy): The prompt tokenizing method for proccessing the data.
+            dataset (dataset.Dataset): Dataset with text files.
+    """
+
+    def __init__(  # pylint: disable=super-init-not-called
         self,
         prompt_tokenizer: PromptTokenizingStrategy,
         dataset: IterableDataset,
@@ -42,7 +51,7 @@ class ConstantLengthDataset(IterableDataset):
             seq_length (int): Length of token sequences to return.
     """
 
-    def __init__(
+    def __init__(  # pylint: disable=super-init-not-called
         self,
         tokenizer,
         datasets,
@@ -82,10 +91,8 @@ class ConstantLengthDataset(IterableDataset):
                 else:
                     example_len = 0
 
-                if (
-                    not example_len
-                    or buffer_len + int(add_concat_token) + example_len
-                    > self.seq_length
+                if not example_len or (
+                    buffer_len + int(add_concat_token) + example_len > self.seq_length
                 ):
                     if buffer["input_ids"]:
                         input_ids = torch.cat(buffer["input_ids"], dim=-1)[
@@ -95,9 +102,8 @@ class ConstantLengthDataset(IterableDataset):
                             : self.seq_length
                         ]
                         labels = torch.cat(buffer["labels"], dim=-1)[: self.seq_length]
-                        if (
-                            labels.size() == input_ids.size()
-                            and attention_mask.size() == input_ids.size()
+                        if labels.size() == input_ids.size() and (
+                            attention_mask.size() == input_ids.size()
                         ):
                             yield {
                                 "input_ids": input_ids,
@@ -108,7 +114,11 @@ class ConstantLengthDataset(IterableDataset):
                             logging.warning(
                                 f"dropping batch due to tensor size mismatch input_ids: {input_ids.size()}, labels: {labels.size()}, attention_mask: {attention_mask.size()}"
                             )
-                    buffer = {"input_ids": [], "attention_mask": [], "labels": []}
+                    buffer = {
+                        "input_ids": [],
+                        "attention_mask": [],
+                        "labels": [],
+                    }
                     buffer_len = 0
 
                 if example:

@@ -1,0 +1,14 @@
+[MASTER]
+init-hook="from pylint.config import find_pylintrc; import os, sys; sys.path.append(os.path.dirname(find_pylintrc()))"
+
+[TYPECHECK]
+
+# List of members which are set dynamically and missed by Pylint inference
+# system, and so shouldn't trigger E1101 when accessed.
+generated-members=numpy.*, torch.*
+
+
+[pylint.messages_control]
+disable=missing-function-docstring, line-too-long, import-error,
+    too-many-arguments, too-many-locals, too-many-statements, too-many-branches, too-few-public-methods,
+    too-many-instance-attributes, fixme, import-outside-toplevel, logging-fstring-interpolation,

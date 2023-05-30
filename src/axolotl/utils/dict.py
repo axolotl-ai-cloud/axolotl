@@ -1,3 +1,5 @@
+"""Module containing the DictDefault class"""
+
 from addict import Dict
 
 
