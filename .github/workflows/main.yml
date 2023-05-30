@@ -16,9 +16,15 @@ jobs:
           - cuda: cu118
             cuda_version: 11.8.0
             pytorch: 2.0.0
+            axolotl_extras:
+          - cuda: cu118
+            cuda_version: 11.8.0
+            pytorch: 2.0.0
+            axolotl_extras: gptq
           - cuda: cu117
             cuda_version: 11.7.0
             pytorch: 1.13.1
+            axolotl_extras:
     runs-on: self-hosted
     steps:
       - name: Checkout
@@ -40,10 +46,10 @@ jobs:
         with:
           context: .
           build-args: |
-            BASE_TAG=${{ github.ref_name }}-base-${{ matrix.cuda }}-${{ matrix.pytorch }}
+            BASE_TAG=${{ github.ref_name }}-base-${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
           file: ./docker/Dockerfile
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.metadata.outputs.tags }}-${{ matrix.cuda }}-${{ matrix.pytorch }}
+          tags: ${{ steps.metadata.outputs.tags }}-${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
           labels: ${{ steps.metadata.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -57,9 +63,15 @@ jobs:
           - cuda: cu118
             cuda_version: 11.8.0
             pytorch: 2.0.0
+            axolotl_extras:
+          - cuda: cu118
+            cuda_version: 11.8.0
+            pytorch: 2.0.0
+            axolotl_extras: gptq
           - cuda: cu117
             cuda_version: 11.7.0
             pytorch: 1.13.1
+            axolotl_extras:
     runs-on: self-hosted
     steps:
       - name: Checkout
@@ -81,10 +93,10 @@ jobs:
         with:
           context: .
           build-args: |
-            BASE_TAG=${{ github.ref_name }}-${{ matrix.cuda }}-${{ matrix.pytorch }}
+            BASE_TAG=${{ github.ref_name }}-${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
           file: ./docker/Dockerfile-runpod
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.metadata.outputs.tags }}-${{ matrix.cuda }}-${{ matrix.pytorch }}
+          tags: ${{ steps.metadata.outputs.tags }}-${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
           labels: ${{ steps.metadata.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

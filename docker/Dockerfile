@@ -9,8 +9,9 @@ RUN apt-get update && \
 
 WORKDIR /workspace
 
-# The base image ships with `pydantic==1.8.2` which is not working
-RUN python3 -m pip install -U --no-cache-dir pydantic
+RUN pip3 install --force-reinstall "peft @ git+https://github.com/huggingface/peft.git@main" \
+            "accelerate @ git+https://github.com/huggingface/accelerate.git@main" \
+            "transformers @ git+https://github.com/huggingface/transformers.git@main"
 
 RUN mkdir axolotl
 COPY . axolotl/
