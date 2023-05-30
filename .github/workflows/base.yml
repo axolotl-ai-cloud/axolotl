@@ -16,12 +16,19 @@ jobs:
         include:
           - cuda: "118"
             cuda_version: 11.8.0
+            python_version: 3.9
+            axolotl_extras:
+          - cuda: "118"
+            cuda_version: 11.8.0
+            python_version: 3.10
             axolotl_extras:
           - cuda: "117"
             cuda_version: 11.7.0
+            python_version: 3.9
             pytorch: 1.13.1
             axolotl_extras:
           - cuda: "118"
+            python_version: 3.9
             cuda_version: 11.8.0
             pytorch: 2.0.0
             axolotl_extras: gptq
@@ -46,12 +53,13 @@ jobs:
           context: .
           file: ./docker/Dockerfile-base
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.metadata.outputs.tags }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
+          tags: ${{ steps.metadata.outputs.tags }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
           labels: ${{ steps.metadata.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
             CUDA_VERSION=${{ matrix.cuda_version }}
             CUDA=${{ matrix.cuda }}
+            PYTHON_VERSION=${{ matrix.python_version }}
             PYTORCH_VERSION=${{ matrix.pytorch }}
             AXOLOTL_EXTRAS=${{ matrix.axolotl_extras }}
