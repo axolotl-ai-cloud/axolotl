@@ -2,6 +2,7 @@ ARG BASE_TAG=main-base
 FROM winglian/axolotl-base:$BASE_TAG
 
 ARG TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6+PTX"
+ARG AXOLOTL_EXTRAS=""
 
 RUN apt-get update && \
     apt-get install -y vim curl
@@ -13,8 +14,13 @@ RUN python3 -m pip install -U --no-cache-dir pydantic
 
 RUN mkdir axolotl
 COPY . axolotl/
+# If AXOLOTL_EXTRAS is set, append it in brackets
 RUN cd axolotl && \
-    pip install -e .[int4]
+    if [ "$AXOLOTL_EXTRAS" != "" ] ; then \
+        pip install -e .[$AXOLOTL_EXTRAS]; \
+    else \
+        pip install -e .; \
+    fi
 
 # helper for huggingface-login cli
 RUN git config --global credential.helper store

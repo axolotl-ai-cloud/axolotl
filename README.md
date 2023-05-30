@@ -30,7 +30,7 @@
 ```bash
 git clone https://github.com/OpenAccess-AI-Collective/axolotl
 
-pip3 install -e .[int4]
+pip3 install -e .[gptq]
 
 accelerate config
 
@@ -57,7 +57,7 @@ accelerate launch scripts/finetune.py examples/lora-openllama-3b/config.yml \
   1. Install python **3.9**
 
   2. Install python dependencies with ONE of the following:
-      - `pip3 install -e .[int4]` (recommended)
+      - `pip3 install -e .[gptq]` (recommended)
       - `pip3 install -e .[int4_triton]`
       - `pip3 install -e .`
 

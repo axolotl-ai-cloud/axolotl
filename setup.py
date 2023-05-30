@@ -17,10 +17,10 @@ setup(
     packages=find_packages(),
     install_requires=install_requires,
     extras_require={
-        "int4": [
+        "gptq": [
             "alpaca_lora_4bit @ git+https://github.com/winglian/alpaca_lora_4bit.git@setup_pip",
         ],
-        "int4_triton": [
+        "gptq_triton": [
             "alpaca_lora_4bit[triton] @ git+https://github.com/winglian/alpaca_lora_4bit.git@setup_pip",
         ],
         "extras": [
