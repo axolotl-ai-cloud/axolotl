@@ -3,7 +3,7 @@
 import dataclasses
 import logging
 from enum import Enum, auto
-from typing import Generator, List, Optional, Union
+from typing import Generator, List, Optional, Tuple, Union
 
 IGNORE_TOKEN_ID = -100
 
@@ -235,16 +235,16 @@ class Conversation:
     sep: str = "###"
     sep2: Optional[str] = None
 
-    def get_prompt(self) -> Generator[str, None, None]:
+    def get_prompt(self) -> Generator[Tuple[str, str], None, None]:
         # seps = [self.sep, self.sep2]
         preamble = self.system + self.sep
-        yield preamble
+        yield ("SYSTEM:", preamble)
         for _, (role, message) in enumerate(self.messages):
             if message:
-                yield role + ":" + " " + message
+                yield (role + ":", " " + message)
             else:
                 logging.warning(f"role with empty message: {role}")
-                yield role + ":"
+                yield (role + ":", "")
 
     def copy(self):
         return Conversation(

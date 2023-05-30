@@ -371,15 +371,16 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
                             ]
                         # not masked out from labels
                         labels = copy.deepcopy(res["input_ids"])
+                    elif part[0] == "SYSTEM:":
+                        part = part[1]  # Ignore the system role from preamble
+                        # this is only ever the first part, should include the bos token and the user query
+                        res = self._tokenize(
+                            part.strip(), add_eos_token=False, strip_bos_token=False
+                        )
+                        # everything from this is masked out from the labels
+                        labels = [IGNORE_TOKEN_ID] * len(res["input_ids"])
                     else:
                         logging.warning(f"unhandled role: {part[0]}")
-                else:
-                    # this is only ever the first part, should include the bos token and the user query
-                    res = self._tokenize(
-                        part.strip(), add_eos_token=False, strip_bos_token=False
-                    )
-                    # everything from this is masked out from the labels
-                    labels = [IGNORE_TOKEN_ID] * len(res["input_ids"])
 
                 # pylint: disable=duplicate-code
                 result, current_len = parse_tokenized_to_result(
