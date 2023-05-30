@@ -2,7 +2,6 @@
 import json
 import logging
 import unittest
-
 from pathlib import Path
 
 from transformers import AutoTokenizer
