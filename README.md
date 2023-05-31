@@ -397,6 +397,7 @@ Add below flag to train command above
 Please reduce any below
   - `micro_batch_size`
   - `eval_batch_size`
+  - `gradient_accumulation_steps`
   - `sequence_len`
 
 > RuntimeError: expected scalar type Float but found Half
