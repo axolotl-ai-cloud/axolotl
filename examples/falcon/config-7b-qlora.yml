@@ -1,0 +1,68 @@
+base_model: tiiuae/falcon-7b
+base_model_config: tiiuae/falcon-7b
+trust_remote_code: true
+model_type: AutoModelForCausalLM
+tokenizer_type: AutoTokenizer
+load_in_8bit: false
+load_in_4bit: true
+gptq: false
+strict: false
+push_dataset_to_hub:
+datasets:
+  - path: QingyiSi/Alpaca-CoT
+    data_files:
+      - Chain-of-Thought/formatted_cot_data/gsm8k_train.json
+    type: "alpaca:chat"
+dataset_prepared_path: last_run_prepared
+val_set_size: 0.01
+adapter: qlora
+lora_model_dir:
+sequence_len: 2048
+max_packed_sequence_len: 2048
+lora_r: 64
+lora_alpha: 16
+lora_dropout: 0.05
+lora_target_modules:
+lora_target_linear: true
+lora_fan_in_fan_out:
+wandb_project: falcon-qlora
+wandb_watch:
+wandb_run_id:
+wandb_log_model:
+output_dir: ./qlora-out
+batch_size: 8
+micro_batch_size: 4
+num_epochs: 3
+optimizer: paged_adamw_32bit
+torchdistx_path:
+lr_scheduler: cosine
+learning_rate: 0.0002
+train_on_inputs: false
+group_by_length: false
+bf16: true
+fp16: false
+tf32: true
+gradient_checkpointing: true
+# stop training after this many evaluation losses have increased in a row
+# https://huggingface.co/transformers/v4.2.2/_modules/transformers/trainer_callback.html#EarlyStoppingCallback
+early_stopping_patience: 3
+resume_from_checkpoint:
+auto_resume_from_checkpoints: true
+local_rank:
+logging_steps: 1
+xformers_attention: false
+flash_attention:
+gptq_groupsize:
+gptq_model_v1:
+warmup_steps: 10
+eval_steps: 5
+save_steps: 10
+debug:
+deepspeed:
+weight_decay: 0.000001
+fsdp:
+fsdp_config:
+special_tokens:
+  pad_token: "<|endoftext|>"
+  bos_token: ">>ABSTRACT<<"
+  eos_token: "<|endoftext|>"
