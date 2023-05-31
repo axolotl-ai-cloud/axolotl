@@ -17,10 +17,12 @@ jobs:
           - cuda: "118"
             cuda_version: 11.8.0
             python_version: "3.9"
+            pytorch: 2.0.0
             axolotl_extras:
           - cuda: "118"
             cuda_version: 11.8.0
             python_version: "3.10"
+            pytorch: 2.0.0
             axolotl_extras:
           - cuda: "117"
             cuda_version: 11.7.0
@@ -28,8 +30,8 @@ jobs:
             pytorch: 1.13.1
             axolotl_extras:
           - cuda: "118"
-            python_version: "3.9"
             cuda_version: 11.8.0
+            python_version: "3.9"
             pytorch: 2.0.0
             axolotl_extras: gptq
     steps:
