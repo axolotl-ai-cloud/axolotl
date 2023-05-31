@@ -10,9 +10,14 @@ from typing import TYPE_CHECKING, Optional, Tuple  # noqa: F401
 import bitsandbytes as bnb
 import torch
 import transformers
-from transformers import AutoModelForCausalLM  # noqa: F401
 from transformers import PreTrainedModel  # noqa: F401
-from transformers import AutoConfig, AutoTokenizer, BitsAndBytesConfig
+from transformers import (  # noqa: F401
+    AutoConfig,
+    AutoModelForCausalLM,
+    AutoTokenizer,
+    BitsAndBytesConfig,
+    LlamaConfig,
+)
 
 try:
     from transformers import LlamaForCausalLM
@@ -25,24 +30,23 @@ from axolotl.prompt_tokenizers import LLAMA_DEFAULT_PAD_TOKEN
 
 if TYPE_CHECKING:
     from peft import PeftConfig  # noqa: F401
-    from transformers import PreTrainedTokenizer  # noqa: F401
 
     from axolotl.utils.dict import DictDefault  # noqa: F401
 
 
 def load_tokenizer(
-    base_model_config,
+    tokenizer_config,
     tokenizer_type,
     cfg,
 ):
     if tokenizer_type:
         tokenizer = getattr(transformers, tokenizer_type).from_pretrained(
-            base_model_config,
+            tokenizer_config,
             trust_remote_code=cfg.trust_remote_code or False,
         )
     else:
         tokenizer = AutoTokenizer.from_pretrained(
-            base_model_config,
+            tokenizer_config,
             trust_remote_code=cfg.trust_remote_code or False,
         )
 
@@ -172,8 +176,10 @@ def load_model(
             )
             load_in_8bit = False
         elif is_llama_derived_model and "LlamaForCausalLM" in globals():
+            config = LlamaConfig.from_pretrained(base_model_config)
             model = LlamaForCausalLM.from_pretrained(
                 base_model,
+                config=config,
                 load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
                 load_in_4bit=cfg.load_in_4bit and cfg.adapter is not None,
                 torch_dtype=torch_dtype,
