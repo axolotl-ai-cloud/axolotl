@@ -25,6 +25,7 @@ def forward(
 
     attention_mask: [bsz, q_len]
     """
+    # pylint: disable=duplicate-code
     bsz, q_len, _ = hidden_states.size()
 
     query_states = (

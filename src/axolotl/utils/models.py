@@ -101,12 +101,19 @@ def load_model(
             logging.info("patching with flash attention")
             replace_llama_attn_with_flash_attn()
     elif is_llama_derived_model and cfg.xformers_attention:
-        from alpaca_lora_4bit.monkeypatch.llama_attn_hijack_xformers import (
+        from axolotl.monkeypatch.llama_attn_hijack_xformers import (
             hijack_llama_attention,
         )
 
         logging.info("patching with xformers attention")
         hijack_llama_attention()
+    elif is_llama_derived_model and cfg.sdp_attention:
+        from axolotl.monkeypatch.llama_attn_hijack_xformers import (
+            hijack_llama_sdp_attention,
+        )
+
+        logging.info("patching with sdp attention")
+        hijack_llama_sdp_attention()
 
     if cfg.bf16:
         torch_dtype = torch.bfloat16
