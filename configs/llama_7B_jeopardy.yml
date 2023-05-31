@@ -24,7 +24,7 @@ wandb_watch:
 wandb_run_id:
 wandb_log_model:
 output_dir: ./jeopardy-bot-7b
-batch_size: 4
+gradient_accumulation_steps: 2
 micro_batch_size: 1
 num_epochs: 2
 optimizer: adamw_bnb_8bit

@@ -265,7 +265,7 @@ wandb_log_model: # 'checkpoint'
 output_dir: ./completed-model
 
 # training hyperparameters
-batch_size: 8
+gradient_accumulation_steps: 1
 micro_batch_size: 2
 eval_batch_size: 2
 num_epochs: 3

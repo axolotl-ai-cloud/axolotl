@@ -24,7 +24,7 @@ wandb_watch:
 wandb_run_id:
 wandb_log_model:
 output_dir: ./mpt-alpaca-7b
-batch_size: 1
+gradient_accumulation_steps: 1
 micro_batch_size: 1
 num_epochs: 3
 optimizer: adamw_bnb_8bit

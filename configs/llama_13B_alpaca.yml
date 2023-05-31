@@ -23,7 +23,7 @@ wandb_watch:
 wandb_run_id:
 wandb_log_model:
 output_dir: ./llama-13b-sharegpt
-batch_size: 64
+gradient_accumulation_steps: 1
 micro_batch_size: 2
 warmup_steps: 1000
 save_steps:

@@ -26,7 +26,7 @@ wandb_watch:
 wandb_run_id:
 wandb_log_model:
 output_dir: ./lora-alpaca
-batch_size: 32
+gradient_accumulation_steps: 1
 micro_batch_size: 4
 num_epochs: 5
 learning_rate: 0.0003

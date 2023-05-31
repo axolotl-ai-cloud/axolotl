@@ -53,7 +53,8 @@ wandb_log_model:
 # where to save the finsihed model to
 output_dir: ./completed-model
 # training hyperparameters
-batch_size: 8
+gradient_accumulation_steps: 1
+batch_size:
 micro_batch_size: 2
 num_epochs: 3
 warmup_steps: 100
