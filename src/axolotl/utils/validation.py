@@ -8,6 +8,12 @@ def validate_config(cfg):
         raise ValueError(
             "please set only one of gradient_accumulation_steps or batch_size"
         )
+    if cfg.batch_size:
+        logging.warning(
+            "%s\n%s",
+            "batch_size is not recommended. Please use gradient_accumulation_steps instead.",
+            "To calculate the equivalent gradient_accumulation_steps, divide batch_size / micro_batch_size / number of gpus.",
+        )
     if cfg.load_4bit:
         raise ValueError(
             "cfg.load_4bit parameter has been deprecated and replaced by cfg.gptq"
