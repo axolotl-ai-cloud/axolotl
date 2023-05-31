@@ -35,6 +35,7 @@ def xformers_forward(
     output_attentions: bool = False,
     use_cache: bool = False,
 ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
+    # pylint: disable=duplicate-code
     bsz, q_len, _ = hidden_states.size()
 
     query_states = (
@@ -143,6 +144,7 @@ def sdp_attention_forward(
     output_attentions: bool = False,
     use_cache: bool = False,
 ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
+    # pylint: disable=duplicate-code
     bsz, q_len, _ = hidden_states.size()
 
     query_states = (
