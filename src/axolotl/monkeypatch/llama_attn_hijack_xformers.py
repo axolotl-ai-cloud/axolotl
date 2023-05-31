@@ -18,7 +18,6 @@ except ImportError:
 
 def hijack_llama_attention():
     transformers.models.llama.modeling_llama.LlamaAttention.forward = xformers_forward
-    logging.info("Replaced attention with xformers_attention")
 
 
 def hijack_llama_sdp_attention():
