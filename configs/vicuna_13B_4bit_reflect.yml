@@ -30,7 +30,7 @@ wandb_watch:
 wandb_run_id:
 wandb_log_model:
 output_dir: ./lora-reflect
-batch_size: 8
+gradient_accumulation_steps: 1
 micro_batch_size: 2
 num_epochs: 3
 learning_rate: 0.00003

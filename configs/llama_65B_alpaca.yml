@@ -29,7 +29,7 @@ wandb_watch:
 wandb_run_id:
 wandb_log_model:
 output_dir: ./lora-llama-alpaca
-batch_size: 128
+gradient_accumulation_steps: 1
 micro_batch_size: 16
 warmup_steps: 1000
 save_steps:
