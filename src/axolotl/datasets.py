@@ -127,6 +127,11 @@ class ConstantLengthDataset(IterableDataset):
                         input_ids = example["input_ids"]
                         attention_mask = example["attention_mask"]
                         labels = example["labels"]
+                        if (
+                            buffer["input_ids"]
+                            and input_ids[0] == self.tokenizer.bos_token_id
+                        ):
+                            attention_mask[0] = 0
 
                         if add_concat_token:
                             input_ids.append(self.concat_token_id)

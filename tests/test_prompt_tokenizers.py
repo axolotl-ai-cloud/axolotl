@@ -18,6 +18,7 @@ class TestPromptTokenizationStrategies(unittest.TestCase):
     """
 
     def setUp(self) -> None:
+        # pylint: disable=duplicate-code
         self.tokenizer = AutoTokenizer.from_pretrained("huggyllama/llama-7b")
         self.tokenizer.add_special_tokens(
             {

@@ -1,0 +1,12 @@
+[
+  {
+    "instruction": "You will be given a series of words. Output these words in reverse order, with each word on its own line.",
+    "input": "Words: ['Hello', 'world'].",
+    "output": "['world', 'Hello']"
+  },
+  {
+    "instruction": "In this task, you're given a short description of an event. Your job is to order the steps involved in the event from first to last. Note that there may be multiple correct answers for each event.",
+    "input": "Description: A man walks into a bar and orders a drink. He pays for his drink and leaves the bar.",
+    "output": "1. The man walks into the bar.\n2. He orders a drink.\n3. He pays for his drink.\n4. He leaves the bar."
+  }
+]
