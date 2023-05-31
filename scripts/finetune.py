@@ -83,7 +83,7 @@ def do_inference(cfg, model, tokenizer, prompter="AlpacaPrompter"):
         with torch.no_grad():
             generation_config = GenerationConfig(
                 repetition_penalty=1.1,
-                max_new_tokens=100,
+                max_new_tokens=1024,
                 temperature=0.9,
                 top_p=0.95,
                 top_k=40,
