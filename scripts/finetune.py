@@ -149,8 +149,12 @@ def train(
             else:
                 cfg[k] = kwargs[k]
 
+    validate_config(cfg)
+
     # setup some derived config / hyperparams
-    cfg.gradient_accumulation_steps = cfg.batch_size // cfg.micro_batch_size
+    cfg.gradient_accumulation_steps = cfg.gradient_accumulation_steps or (
+        cfg.batch_size // cfg.micro_batch_size
+    )
     cfg.world_size = int(os.environ.get("WORLD_SIZE", 1))
     cfg.local_rank = int(os.environ.get("LOCAL_RANK", 0))
     choose_device(cfg)
@@ -167,8 +171,6 @@ def train(
         if cfg.bf16:
             cfg.fp16 = True
         cfg.bf16 = False
-
-    validate_config(cfg)
 
     # load the tokenizer first
     logging.info("loading tokenizer...")
