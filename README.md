@@ -300,6 +300,9 @@ weight_decay:
 xformers_attention:
 # whether to use flash attention patch https://github.com/HazyResearch/flash-attention:
 flash_attention:  # require a100 for llama
+# whether to use scaled-dot-product attention
+# https://pytorch.org/docs/stable/generated/torch.nn.functional.scaled_dot_product_attention.html
+sdp_attention:
 
 # resume from a specific checkpoint dir
 resume_from_checkpoint:
