@@ -25,7 +25,6 @@ def hijack_llama_sdp_attention():
     transformers.models.llama.modeling_llama.LlamaAttention.forward = (
         sdp_attention_forward
     )
-    logging.info("Replaced attention with sdp_attention")
 
 
 def xformers_forward(
