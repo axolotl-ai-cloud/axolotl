@@ -4,6 +4,10 @@ import logging
 
 
 def validate_config(cfg):
+    if cfg.gradient_accumulation_steps and cfg.batch_size:
+        raise ValueError(
+            "please set only one of gradient_accumulation_steps or batch_size"
+        )
     if cfg.load_4bit:
         raise ValueError(
             "cfg.load_4bit parameter has been deprecated and replaced by cfg.gptq"
