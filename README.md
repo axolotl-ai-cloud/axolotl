@@ -171,6 +171,9 @@ base_model_ignore_patterns:
 # if the base_model repo on hf hub doesn't include configuration .json files,
 # you can set that here, or leave this empty to default to base_model
 base_model_config: ./llama-7b-hf
+# Optional tokenizer configuration override in case you want to use a different tokenizer
+# than the one defined in the base model
+tokenizer_config:
 # If you want to specify the type of model to load, AutoModelForCausalLM is a good choice too
 model_type: AutoModelForCausalLM
 # Corresponding tokenizer for the model AutoTokenizer is a good choice

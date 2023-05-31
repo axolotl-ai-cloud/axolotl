@@ -30,7 +30,6 @@ from axolotl.prompt_tokenizers import LLAMA_DEFAULT_PAD_TOKEN
 
 if TYPE_CHECKING:
     from peft import PeftConfig  # noqa: F401
-    from transformers import PreTrainedTokenizer  # noqa: F401
 
     from axolotl.utils.dict import DictDefault  # noqa: F401
 
