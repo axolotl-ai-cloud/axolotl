@@ -411,6 +411,16 @@ Try to turn off xformers.
 
 Join our [Discord server](https://discord.gg/HhrNrHJPRb) where we can help you
 
+## Badge ❤🏷️
+
+Building something cool with Axolotl? Consider adding a badge to your model card.
+
+```markdown
+[<img src="https://raw.githubusercontent.com/OpenAccess-AI-Collective/axolotl/main/image/axolotl-badge-web.png" alt="Built with Axolotl" width="200" height="32"/>](https://github.com/OpenAccess-AI-Collective/axolotl)
+```
+
+[<img src="https://raw.githubusercontent.com/OpenAccess-AI-Collective/axolotl/main/image/axolotl-badge-web.png" alt="Built with Axolotl" width="200" height="32"/>](https://github.com/OpenAccess-AI-Collective/axolotl)
+
 ## Contributing 🤝
 
 Bugs? Please check for open issue else create a new [Issue](https://github.com/OpenAccess-AI-Collective/axolotl/issues/new).
