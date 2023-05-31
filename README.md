@@ -58,7 +58,7 @@ accelerate launch scripts/finetune.py examples/lora-openllama-3b/config.yml \
 - Conda/Pip venv
   1. Install python **3.9**
 
-  2. Install pytorch https://pytorch.org/get-started/locally/
+  2. Install pytorch stable https://pytorch.org/get-started/locally/
 
   3. Install python dependencies with ONE of the following:
       - `pip3 install -e .` (recommended, supports QLoRA, no gptq/int4 support)
