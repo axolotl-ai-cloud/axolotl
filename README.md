@@ -27,7 +27,7 @@
 
 ## Quickstart ⚡
 
-**Requirements**: Python 3.9.
+**Requirements**: Python 3.9 and Pytorch 2.0.
 
 ```bash
 git clone https://github.com/OpenAccess-AI-Collective/axolotl
@@ -58,7 +58,9 @@ accelerate launch scripts/finetune.py examples/lora-openllama-3b/config.yml \
 - Conda/Pip venv
   1. Install python **3.9**
 
-  2. Install python dependencies with ONE of the following:
+  2. Install pytorch https://pytorch.org/get-started/locally/
+
+  3. Install python dependencies with ONE of the following:
       - `pip3 install -e .` (recommended, supports QLoRA, no gptq/int4 support)
       - `pip3 install -e .[gptq]` (next best if you don't need QLoRA, but want to use gptq)
       - `pip3 install -e .[gptq_triton]`
