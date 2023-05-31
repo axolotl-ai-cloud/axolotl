@@ -16,19 +16,19 @@ jobs:
         include:
           - cuda: "118"
             cuda_version: 11.8.0
-            python_version: 3.9
+            python_version: "3.9"
             axolotl_extras:
           - cuda: "118"
             cuda_version: 11.8.0
-            python_version: 3.10
+            python_version: "3.10"
             axolotl_extras:
           - cuda: "117"
             cuda_version: 11.7.0
-            python_version: 3.9
+            python_version: "3.9"
             pytorch: 1.13.1
             axolotl_extras:
           - cuda: "118"
-            python_version: 3.9
+            python_version: "3.9"
             cuda_version: 11.8.0
             pytorch: 2.0.0
             axolotl_extras: gptq
