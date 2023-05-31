@@ -233,6 +233,7 @@ def load_tokenized_prepared_datasets(
                 datasets.append(ds_wrapper)
             else:
                 logging.error(f"unhandled prompt tokenization strategy: {d.type}")
+                raise ValueError(f"unhandled prompt tokenization strategy: {d.type}")
         logging.info("tokenizing, merging, and shuffling master dataset")
 
         samples: List[int] = []
