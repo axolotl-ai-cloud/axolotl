@@ -126,7 +126,9 @@ class ValidationTest(unittest.TestCase):
             }
         )
 
-        with pytest.raises(ValueError, match=r".*gradient_accumulation_steps or batch_size.*"):
+        with pytest.raises(
+            ValueError, match=r".*gradient_accumulation_steps or batch_size.*"
+        ):
             validate_config(cfg)
 
         cfg = DictDefault(
