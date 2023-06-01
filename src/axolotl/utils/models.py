@@ -10,8 +10,8 @@ from typing import TYPE_CHECKING, Optional, Tuple  # noqa: F401
 import bitsandbytes as bnb
 import torch
 import transformers
-from transformers import PreTrainedModel  # noqa: F401
 from optimum.bettertransformer import BetterTransformer
+from transformers import PreTrainedModel  # noqa: F401
 from transformers import (
     AutoConfig,
     AutoModelForCausalLM,
@@ -136,7 +136,7 @@ def load_model(
         logging.info("patching with xpos rope")
         replace_llama_rope_with_xpos_rope()
 
-    if cfg.bf16:
+    if cfg.bf16 or cfg.bfloat16:
         torch_dtype = torch.bfloat16
     elif cfg.load_in_8bit or cfg.fp16 or cfg.float16:
         torch_dtype = torch.float16

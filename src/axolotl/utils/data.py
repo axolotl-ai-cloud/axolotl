@@ -409,14 +409,16 @@ class PretrainingDatasetWrapper(IterableDataset):
         buffer = []
         for sample in load_dataset(
             self.dataset_path,
-            name="all",
-            split="train",
-            streaming=True,
-        ).shuffle(buffer_size=10000):
+        )["train"].shuffle():
             buffer += self.tokenizer(sample["text"])["input_ids"]
             buffer += [self.tokenizer.eos_token_id]
             while len(buffer) > self.max_tokens:
-                yield torch.tensor(buffer[: self.max_tokens])
+                input_ids = torch.tensor(buffer[: self.max_tokens])
+                yield {
+                    "input_ids": input_ids,
+                    "attention_mask": torch.ones(input_ids.size()),
+                    "labels": input_ids,
+                }
                 buffer = buffer[self.max_tokens :]
 
 
