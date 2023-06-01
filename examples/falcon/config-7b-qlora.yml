@@ -18,7 +18,7 @@ val_set_size: 0.01
 adapter: qlora
 lora_model_dir:
 sequence_len: 2048
-max_packed_sequence_len: 2048
+max_packed_sequence_len:
 lora_r: 64
 lora_alpha: 16
 lora_dropout: 0.05
@@ -30,8 +30,8 @@ wandb_watch:
 wandb_run_id:
 wandb_log_model:
 output_dir: ./qlora-out
-batch_size: 8
-micro_batch_size: 4
+micro_batch_size: 40
+gradient_accumulation_steps: 2
 num_epochs: 3
 optimizer: paged_adamw_32bit
 torchdistx_path:
@@ -50,7 +50,7 @@ resume_from_checkpoint:
 auto_resume_from_checkpoints: true
 local_rank:
 logging_steps: 1
-xformers_attention: false
+xformers_attention: true
 flash_attention:
 gptq_groupsize:
 gptq_model_v1:
