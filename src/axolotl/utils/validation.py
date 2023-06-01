@@ -66,9 +66,10 @@ def validate_config(cfg):
             )
         if cfg.fp16 or cfg.bf16:
             raise ValueError("AMP is not supported with BetterTransformer")
-        if cfg.float16 is not True:
+        if cfg.float16 is not True and cfg.bloat16 is not True:
             logging.warning(
-                "You should probably set float16 to true to load the model in float16 for BetterTransformers"
+                "You should probably set bfloat16 or float16 to true to "
+                "load the model in float16 for BetterTransformers"
             )
         if int(torch.__version__.split(".")[0]) < 2:
             logging.warning("torch>=2.0.0 required")
