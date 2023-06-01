@@ -388,9 +388,13 @@ def load_prepare_datasets(
             index=cfg.dataset_shard_idx,
         )
 
-    dataset = dataset.train_test_split(test_size=cfg.val_set_size, shuffle=False)
-    train_dataset = dataset["train"]
-    eval_dataset = dataset["test"]
+    if cfg.val_set_size:
+        dataset = dataset.train_test_split(test_size=cfg.val_set_size, shuffle=False)
+        train_dataset = dataset["train"]
+        eval_dataset = dataset["test"]
+    else:
+        train_dataset = dataset
+        eval_dataset = None
 
     return train_dataset, eval_dataset
 

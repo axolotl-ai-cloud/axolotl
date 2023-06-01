@@ -80,4 +80,11 @@ def validate_config(cfg):
     # TODO
     # MPT 7b
     # https://github.com/facebookresearch/bitsandbytes/issues/25
-    # no 8bit adamw w bf16
+    # no 8bit adaAmw w bf16
+
+    # GPT-NeoX
+    # evals broken when extending context len
+    # File "/root/miniconda3/envs/py3.9/lib/python3.9/site-packages/transformers/models/gpt_neox/modeling_gpt_neox.py", line 162, in forward                        attn_output, attn_weights = self._attn(query, key, value, attention_mask, head_mask)
+    # File "/root/miniconda3/envs/py3.9/lib/python3.9/site-packages/optimum/bettertransformer/models/attention.py", line 74, in gpt2_wrapped_scaled_dot_product
+    # attention_mask = causal_mask + attention_mask
+    # RuntimeError: The size of tensor a (2048) must match the size of tensor b (8132) at non-singleton dimension 3
