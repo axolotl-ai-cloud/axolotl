@@ -9,7 +9,7 @@ from transformers import (
     TrainerState,
     TrainingArguments,
 )
-from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR
+from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, IntervalStrategy
 
 
 class SavePeftModelCallback(TrainerCallback):  # pylint: disable=too-few-public-methods
@@ -36,21 +36,33 @@ class SavePeftModelCallback(TrainerCallback):  # pylint: disable=too-few-public-
 class SaveBetterTransformerModelCallback(
     TrainerCallback
 ):  # pylint: disable=too-few-public-methods
-    """Callback to save the BatterTransformer wrapped model"""
+    """Callback to save the BetterTransformer wrapped model"""
 
-    def on_save(
+    def on_step_end(
         self,
         args: TrainingArguments,
         state: TrainerState,
         control: TrainerControl,
         **kwargs,
     ):
-        checkpoint_folder = os.path.join(
-            args.output_dir,
-            f"{PREFIX_CHECKPOINT_DIR}-{state.global_step}",
-        )
+        # Save
+        if (
+            args.save_strategy == IntervalStrategy.STEPS
+            and args.save_steps > 0
+            and state.global_step % args.save_steps == 0
+        ):
+            control.should_save = True
 
-        model = BetterTransformer.reverse(kwargs["model"])
-        model.save_pretrained(checkpoint_folder)
+        if control.should_save:
+            checkpoint_folder = os.path.join(
+                args.output_dir,
+                f"{PREFIX_CHECKPOINT_DIR}-{state.global_step}",
+            )
 
+            model = BetterTransformer.reverse(kwargs["model"])
+            model.save_pretrained(checkpoint_folder)
+
+            # since we're saving here, we don't need the trainer loop to attempt to save too b/c
+            # the trainer will raise an exception since it can't save a BetterTransformer wrapped model
+            control.should_save = False
         return control
