@@ -61,6 +61,7 @@ class SaveBetterTransformerModelCallback(
 
             model = BetterTransformer.reverse(kwargs["model"])
             model.save_pretrained(checkpoint_folder)
+            # FIXME - need to cleanup old checkpoints
 
             # since we're saving here, we don't need the trainer loop to attempt to save too b/c
             # the trainer will raise an exception since it can't save a BetterTransformer wrapped model
