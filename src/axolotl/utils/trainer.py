@@ -15,7 +15,10 @@ from torch.optim.lr_scheduler import OneCycleLR
 from transformers import EarlyStoppingCallback, Trainer
 from transformers.trainer_pt_utils import get_parameter_names
 
-from axolotl.utils.callbacks import SavePeftModelCallback
+from axolotl.utils.callbacks import (
+    SaveBetterTransformerModelCallback,
+    SavePeftModelCallback,
+)
 from axolotl.utils.schedulers import InterpolatingLogScheduler
 
 
@@ -224,6 +227,9 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
         "qlora",
     ]:  # only save in rank 0
         callbacks.append(SavePeftModelCallback)
+
+    if hasattr(model, "use_bettertransformer") and model.use_bettertransformer is True:
+        callbacks.append(SaveBetterTransformerModelCallback)
 
     data_collator_kwargs = {
         "padding": True,
