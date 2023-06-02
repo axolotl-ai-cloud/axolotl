@@ -65,6 +65,51 @@ accelerate launch scripts/finetune.py examples/lora-openllama-3b/config.yml \
       - `pip3 install -e .[gptq]` (next best if you don't need QLoRA, but want to use gptq)
       - `pip3 install -e .[gptq_triton]`
 
+- LambdaLabs
+  <details>
+
+  <summary>Click to Expand</summary>
+
+  1. Install python
+  ```bash
+  sudo apt install python3.9
+
+  sudo update-alternatives --install /usr/bin/python python /usr/bin/python3.9 1
+  sudo update-alternatives --config python # pick 3.9 if given option
+  python -V # should be 3.9
+
+  ```
+
+  2. Install pip
+  ```bash
+  wget https://bootstrap.pypa.io/get-pip.py
+  python get-pip.py
+  ```
+
+  3. Install torch
+  ```bash
+  pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+  ```
+
+  4. Axolotl
+  ```bash
+  git clone https://github.com/OpenAccess-AI-Collective/axolotl
+  cd axolotl
+
+  pip3 install -e . # change depend on needs
+  pip3 install protobuf==3.20.3
+  pip3 install -U requests
+  pip3 install -U --ignore-installed psutil
+  pip3 install -U scipy
+  pip3 install git+https://github.com/huggingface/peft.git # not for gptq
+  ```
+
+  5. Set path
+  ```bash
+  export LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH
+  ```
+  </details>
+
 ### Dataset
 
 Have dataset(s) in one of the following format (JSONL recommended):
