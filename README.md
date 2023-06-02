@@ -114,6 +114,22 @@ Have dataset(s) in one of the following format (JSONL recommended):
   ```json
   {"article": "...", "summary": "..."}
   ```
+- `alpaca_chat.load_qa`: question and answer for alpaca chat
+  ```json
+  {"question": "...", "answer": "..."}
+  ```
+- `creative_acr.load_answer`: instruction and revision
+  ```json
+  {"instruction": "...", "revision": "..."}
+  ```
+- `creative_acr.load_critique`: critique
+  ```json
+  {"scores": "...", "critiques": "...", "instruction": "...", "answer": "..."}
+  ```
+- `creative_acr.load_revise`: critique and revise
+  ```json
+  {"scores": "...", "critiques": "...", "instruction": "...", "answer": "...", "revision": "..."}
+  ```
 - custom prompts structure:
   1. Add your method to a file in [prompt_strategies](src/axolotl/prompt_strategies). Please see other files as example.
   2. Use your custom file name as the dataset type.
