@@ -55,6 +55,12 @@ accelerate launch scripts/finetune.py examples/lora-openllama-3b/config.yml \
   - `winglian/axolotl:dev`: dev branch
   - `winglian/axolotl-runpod:main`: for runpod
 
+  Or run on the current files for development:
+
+  ```sh
+  docker compose up -d
+  ```
+
 - Conda/Pip venv
   1. Install python **3.9**
 
