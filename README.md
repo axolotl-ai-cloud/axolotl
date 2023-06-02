@@ -102,21 +102,12 @@ accelerate launch scripts/finetune.py examples/lora-openllama-3b/config.yml \
   pip3 install -U --ignore-installed psutil
   pip3 install -U scipy
   pip3 install git+https://github.com/huggingface/peft.git # not for gptq
-
-  accelerate config
   ```
 
   5. Set path
   ```bash
   export LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH
   ```
-
-  6. Finetune
-  ```bash
-  # copy yaml to configs directory
-  accelerate launch scripts/finetune.py path/to/config.yml
-  ```
-
   </details>
 
 ### Dataset
