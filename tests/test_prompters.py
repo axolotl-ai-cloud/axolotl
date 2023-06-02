@@ -2,7 +2,7 @@
 
 import unittest
 
-from axolotl.prompters import AlpacaPrompter, PromptStyle
+from rathe import AlpacaPromptFormatter, InstructPrompt
 
 
 class AlpacaPrompterTest(unittest.TestCase):
@@ -11,16 +11,19 @@ class AlpacaPrompterTest(unittest.TestCase):
     """
 
     def test_prompt_style_w_none(self):
-        prompter = AlpacaPrompter(prompt_style=None)
-        res = next(prompter.build_prompt("tell me a joke"))
+        formatter = AlpacaPromptFormatter()
+        res = formatter.format(
+            InstructPrompt("tell me a joke"), special_tokens={}
+        ).to_string()
         # just testing that it uses instruct style
         assert "### Instruction:" in res
 
     def test_prompt_style_w_instruct(self):
-        prompter = AlpacaPrompter(prompt_style=PromptStyle.INSTRUCT.value)
-        res = next(
-            prompter.build_prompt("tell me a joke about the following", "alpacas")
-        )
+        formatter = AlpacaPromptFormatter()
+        res = formatter.format(
+            InstructPrompt("tell me a joke about the following", input="alpacas"),
+            special_tokens={},
+        ).to_string()
         assert "Below is an instruction" in res
         assert "### Instruction:" in res
         assert "### Input:" in res
@@ -28,7 +31,9 @@ class AlpacaPrompterTest(unittest.TestCase):
         assert "### Response:" in res
         assert "USER:" not in res
         assert "ASSISTANT:" not in res
-        res = next(prompter.build_prompt("tell me a joke about the following"))
+        res = formatter.format(
+            InstructPrompt("tell me a joke about the following"), special_tokens={}
+        ).to_string()
         assert "Below is an instruction" in res
         assert "### Instruction:" in res
         assert "### Input:" not in res
@@ -37,10 +42,13 @@ class AlpacaPrompterTest(unittest.TestCase):
         assert "ASSISTANT:" not in res
 
     def test_prompt_style_w_chat(self):
-        prompter = AlpacaPrompter(prompt_style=PromptStyle.CHAT.value)
-        res = next(
-            prompter.build_prompt("tell me a joke about the following", "alpacas")
-        )
+        formatter = AlpacaPromptFormatter()
+        res = formatter.format(
+            InstructPrompt(
+                "tell me a joke about the following", input="alpacas"
+            ).as_chat(),
+            special_tokens={},
+        ).to_string()
         assert "Below is an instruction" in res
         assert "### Instruction:" not in res
         assert "### Input:" not in res
@@ -48,7 +56,10 @@ class AlpacaPrompterTest(unittest.TestCase):
         assert "### Response:" not in res
         assert "USER:" in res
         assert "ASSISTANT:" in res
-        res = next(prompter.build_prompt("tell me a joke about the following"))
+        res = formatter.format(
+            InstructPrompt("tell me a joke about the following").as_chat(),
+            special_tokens={},
+        ).to_string()
         assert "Below is an instruction" in res
         assert "### Instruction:" not in res
         assert "### Input:" not in res

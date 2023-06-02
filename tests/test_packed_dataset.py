@@ -7,8 +7,7 @@ from datasets import Dataset, load_dataset
 from transformers import AutoTokenizer
 
 from axolotl.datasets import ConstantLengthDataset, TokenizedPromptDataset
-from axolotl.prompt_tokenizers import AlpacaPromptTokenizingStrategy
-from axolotl.prompters import AlpacaPrompter
+from rathe import AlpacaPromptFormatter, GenericInstructParser
 
 
 class TestPacking(unittest.TestCase):
@@ -28,18 +27,16 @@ class TestPacking(unittest.TestCase):
         )
 
     def test_resets_attention(self):
-        prompter = AlpacaPrompter("chat")
-        strat = AlpacaPromptTokenizingStrategy(
-            prompter,
-            self.tokenizer,
-            False,
-            2048,
-        )
+        formatter = AlpacaPromptFormatter()
+        parser = GenericInstructParser.alpaca()
+
         dateset = load_dataset(
             "json",
             data_files=str(Path(__file__).parent / "fixtures/alpaca/alpaca.json"),
         )["train"]
-        dataset = Dataset.from_list(list(TokenizedPromptDataset(strat, dateset)))
+        dataset = Dataset.from_list(
+            list(TokenizedPromptDataset(parser, formatter, self.tokenizer, dateset))
+        )
 
         constant_len_dataset = ConstantLengthDataset(
             self.tokenizer,
