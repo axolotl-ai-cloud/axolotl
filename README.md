@@ -130,6 +130,10 @@ Have dataset(s) in one of the following format (JSONL recommended):
   ```json
   {"scores": "...", "critiques": "...", "instruction": "...", "answer": "...", "revision": "..."}
   ```
+- `pygmalion`: pygmalion
+  ```json
+  {"conversations": [{"role": "...", "value": "..."}]}
+  ```
 - custom prompts structure:
   1. Add your method to a file in [prompt_strategies](src/axolotl/prompt_strategies). Please see other files as example.
   2. Use your custom file name as the dataset type.
