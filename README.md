@@ -114,8 +114,9 @@ Have dataset(s) in one of the following format (JSONL recommended):
   ```json
   {"article": "...", "summary": "..."}
   ```
-
-> Have some new format to propose? Check if it's already defined in [data.py](src/axolotl/utils/data.py) in `dev` branch!
+- custom prompts structure:
+  1. Add your method to a file in [prompt_strategies](src/axolotl/prompt_strategies). Please see other files as example.
+  2. Use your custom file name as the dataset type.
 
 </details>
 
