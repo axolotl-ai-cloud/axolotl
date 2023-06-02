@@ -159,8 +159,29 @@ Have dataset(s) in one of the following format (JSONL recommended):
   ```json
   {"article": "...", "summary": "..."}
   ```
-
-> Have some new format to propose? Check if it's already defined in [data.py](src/axolotl/utils/data.py) in `dev` branch!
+- `alpaca_chat.load_qa`: question and answer for alpaca chat
+  ```json
+  {"question": "...", "answer": "..."}
+  ```
+- `creative_acr.load_answer`: instruction and revision
+  ```json
+  {"instruction": "...", "revision": "..."}
+  ```
+- `creative_acr.load_critique`: critique
+  ```json
+  {"scores": "...", "critiques": "...", "instruction": "...", "answer": "..."}
+  ```
+- `creative_acr.load_revise`: critique and revise
+  ```json
+  {"scores": "...", "critiques": "...", "instruction": "...", "answer": "...", "revision": "..."}
+  ```
+- `pygmalion`: pygmalion
+  ```json
+  {"conversations": [{"role": "...", "value": "..."}]}
+  ```
+- custom prompts structure:
+  1. Add your method to a file in [prompt_strategies](src/axolotl/prompt_strategies). Please see other files as example.
+  2. Use your custom file name as the dataset type.
 
 </details>
 
