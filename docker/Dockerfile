@@ -13,7 +13,7 @@ RUN pip3 install --force-reinstall "peft @ git+https://github.com/huggingface/pe
             "accelerate @ git+https://github.com/huggingface/accelerate.git@main" \
             "transformers @ git+https://github.com/huggingface/transformers.git@main"
 
-RUN git clone https://github.com/OpenAccess-AI-Collective/axolotl.git
+RUN git clone --depth=1 https://github.com/OpenAccess-AI-Collective/axolotl.git
 # If AXOLOTL_EXTRAS is set, append it in brackets
 RUN cd axolotl && \
     if [ "$AXOLOTL_EXTRAS" != "" ] ; then \
