@@ -50,10 +50,10 @@ accelerate launch scripts/finetune.py examples/lora-openllama-3b/config.yml \
 
 - Docker
   ```bash
-  docker run --gpus '"all"' --rm -it winglian/axolotl:main
+  docker run --gpus '"all"' --rm -it winglian/axolotl:main-py3.9-cu118-2.0.0
   ```
-  - `winglian/axolotl:dev`: dev branch
-  - `winglian/axolotl-runpod:main`: for runpod
+  - `winglian/axolotl-runpod:main-py3.9-cu118-2.0.0`: for runpod
+  - `winglian/axolotl:dev`: dev branch (not usually up to date)
 
   Or run on the current files for development:
 
