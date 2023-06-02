@@ -1,0 +1,20 @@
+# version: '3.8'
+services:
+  axolotl:
+    build:
+      context: .
+      dockerfile: ./docker/Dockerfile
+    volumes:
+      - .:/workspace/axolotl
+      - ~/.cache/huggingface/:/root/.cache/huggingface/
+    # set environment variables
+    environment:
+      - WANDB_API_KEY=${WANDB_API_KEY}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              # count: 1
+              capabilities: [gpu]
+    command: tail -f /dev/null
