@@ -1,9 +1,13 @@
+# 1b: tiiuae/falcon-rw-1b
+# 40b: tiiuae/falcon-40b
 base_model: tiiuae/falcon-7b
 base_model_config: tiiuae/falcon-7b
+# required by falcon custom model code: https://huggingface.co/tiiuae/falcon-7b/tree/main 
 trust_remote_code: true
 model_type: AutoModelForCausalLM
 tokenizer_type: AutoTokenizer
 load_in_8bit: false
+# enable 4bit for QLoRA
 load_in_4bit: true
 gptq: false
 strict: false
@@ -15,27 +19,47 @@ datasets:
     type: "alpaca:chat"
 dataset_prepared_path: last_run_prepared
 val_set_size: 0.01
+# enable QLoRA
 adapter: qlora
 lora_model_dir:
 sequence_len: 2048
 max_packed_sequence_len:
+
+# hyperparameters from QLoRA paper Appendix B.2
+# "We find hyperparameters to be largely robust across datasets"
 lora_r: 64
 lora_alpha: 16
+# 0.1 for models up to 13B
+# 0.05 for 33B and 65B models
 lora_dropout: 0.05
+# add LoRA modules on all linear layers of the base model
 lora_target_modules:
 lora_target_linear: true
 lora_fan_in_fan_out:
+
 wandb_project: falcon-qlora
 wandb_watch:
 wandb_run_id:
 wandb_log_model:
 output_dir: ./qlora-out
-micro_batch_size: 40
+
+# QLoRA paper Table 9
+# - 16 for 7b & 13b
+# - 32 for 33b, 64 for 64b
+# Max size tested on A6000
+# - 7b: 40
+# - 40b: 4
+# decrease if OOM, increase for max VRAM utilization
+micro_batch_size: 30
 gradient_accumulation_steps: 2
 num_epochs: 3
+# Optimizer for QLoRA
 optimizer: paged_adamw_32bit
 torchdistx_path:
 lr_scheduler: cosine
+# QLoRA paper Table 9
+# - 2e-4 for 7b & 13b
+# - 1e-4 for 33b & 64b
 learning_rate: 0.0002
 train_on_inputs: false
 group_by_length: false
