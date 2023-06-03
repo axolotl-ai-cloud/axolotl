@@ -50,7 +50,7 @@ output_dir: ./qlora-out
 # - 7b: 40
 # - 40b: 4
 # decrease if OOM, increase for max VRAM utilization
-micro_batch_size: 30
+micro_batch_size: 1
 gradient_accumulation_steps: 2
 num_epochs: 3
 # Optimizer for QLoRA
