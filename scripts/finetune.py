@@ -279,6 +279,9 @@ def train(
             logging.info(
                 f"Using Auto-resume functionality to start with checkpoint at {resume_from_checkpoint}"
             )
+
+    if not Path(cfg.output_dir).is_dir():
+        os.makedirs(cfg.output_dir, exist_ok=True)
     trainer.train(resume_from_checkpoint=resume_from_checkpoint)
 
     logging.info(f"Training Completed!!! Saving pre-trained model to {cfg.output_dir}")

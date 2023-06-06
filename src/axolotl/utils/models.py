@@ -234,6 +234,10 @@ def load_model(
                 base_model,
                 trust_remote_code=cfg.trust_remote_code or False,
             )
+            # Shouldn't be a problem most of the time. will obviously error if the model doesn't support this
+            # when training starts
+            if config.max_seq_len and cfg.sequence_len > config.max_seq_len:
+                config.max_seq_len = cfg.sequence_len
             model = AutoModelForCausalLM.from_pretrained(
                 base_model,
                 config=config,
