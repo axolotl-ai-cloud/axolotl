@@ -165,9 +165,29 @@ Have dataset(s) in one of the following format (JSONL recommended):
   ```json
   {"article": "...", "summary": "..."}
   ```
+- `alpaca_chat`: basic instruct for alpaca chat
+  ```json
+  {"instruction": "...", "input": "...", "response": "..."}
+  ```
 - `alpaca_chat.load_qa`: question and answer for alpaca chat
   ```json
   {"question": "...", "answer": "..."}
+  ```
+- `alpaca_chat.load_concise`: question and answer for alpaca chat, for concise answers
+  ```json
+  {"instruction": "...", "input": "...", "response": "..."}
+  ```
+- `alpaca_chat.load_camel_ai`: question and answer for alpaca chat, for load_camel_ai
+  ```json
+  {"message_1": "...", "message_2": "..."}
+  ```
+- `context_qa`: in context question answering from an article
+  ```json
+  {"article": "...", "question": "...", "answer": "..."}
+  ```
+- `context_qa.load_404`: in context question answering from an article, with default response for no answer from context
+  ```json
+  {"article": "...", "unanswerable_question": "..."}
   ```
 - `creative_acr.load_answer`: instruction and revision
   ```json
