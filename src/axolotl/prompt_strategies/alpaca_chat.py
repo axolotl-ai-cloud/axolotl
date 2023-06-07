@@ -49,7 +49,7 @@ class CamelAIPromptTokenizingStrategy(InstructionPromptTokenizingStrategy):
         return (
             prompt["message_1"],
             "",
-            prompt["message_1"],
+            prompt["message_2"],
         )
 
 
