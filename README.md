@@ -53,6 +53,7 @@ accelerate launch scripts/finetune.py examples/lora-openllama-3b/config.yml \
   docker run --gpus '"all"' --rm -it winglian/axolotl:main-py3.9-cu118-2.0.0
   ```
   - `winglian/axolotl-runpod:main-py3.9-cu118-2.0.0`: for runpod
+  - `winglian/axolotl-runpod:main-py3.9-cu118-2.0.0-gptq`: for gptq
   - `winglian/axolotl:dev`: dev branch (not usually up to date)
 
   Or run on the current files for development:
@@ -67,9 +68,19 @@ accelerate launch scripts/finetune.py examples/lora-openllama-3b/config.yml \
   2. Install pytorch stable https://pytorch.org/get-started/locally/
 
   3. Install python dependencies with ONE of the following:
-      - `pip3 install -e .` (recommended, supports QLoRA, no gptq/int4 support)
-      - `pip3 install -e .[gptq]` (next best if you don't need QLoRA, but want to use gptq)
-      - `pip3 install -e .[gptq_triton]`
+      - Recommended, supports QLoRA, NO gptq/int4 support
+        ```bash
+        pip3 install -U git+https://github.com/huggingface/peft.git
+        pip3 install -e .
+        ```
+      - gptq/int4 support, NO QLoRA
+        ```bash
+        pip3 install -e .[gptq]
+        ```
+      - same as above but not recommended
+        ```bash
+        pip3 install -e .[gptq_triton]
+        ```
 
 - LambdaLabs
   <details>
