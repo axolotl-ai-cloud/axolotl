@@ -165,3 +165,36 @@ class ValidationTest(unittest.TestCase):
         )
 
         validate_config(cfg)
+
+    def test_falcon_fsdp(self):
+        regex_exp = r".*FSDP is not supported for falcon models.*"
+
+        # Check for lower-case
+        cfg = DictDefault(
+            {
+                "base_model": "tiiuae/falcon-7b",
+                "fsdp": ["full_shard", "auto_wrap"],
+            }
+        )
+
+        with pytest.raises(ValueError, match=regex_exp):
+            validate_config(cfg)
+
+        # Check for upper-case
+        cfg = DictDefault(
+            {
+                "base_model": "Falcon-7b",
+                "fsdp": ["full_shard", "auto_wrap"],
+            }
+        )
+
+        with pytest.raises(ValueError, match=regex_exp):
+            validate_config(cfg)
+
+        cfg = DictDefault(
+            {
+                "base_model": "tiiuae/falcon-7b",
+            }
+        )
+
+        validate_config(cfg)
