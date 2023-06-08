@@ -217,13 +217,17 @@ Have dataset(s) in one of the following format (JSONL recommended):
   ```json
   {"conversations": [{"role": "...", "value": "..."}]}
   ```
-- custom prompts structure:
-  1. Add your method to a file in [prompt_strategies](src/axolotl/prompt_strategies). Please see other files as example.
-  2. Use your custom file name as the dataset type.
 
 </details>
 
+#### How to add custom prompts
+
+  1. Add your method to a file in [prompt_strategies](src/axolotl/prompt_strategies). Please see other files as example.
+  2. Use your custom file name as the dataset type.
+
 Optionally, download some datasets, see [data/README.md](data/README.md)
+
+
 
 ### Config
 
