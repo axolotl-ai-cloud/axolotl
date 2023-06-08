@@ -402,6 +402,7 @@ def load_lora(model, cfg):
         model = PeftModel.from_pretrained(
             model,
             cfg.lora_model_dir,
+            is_trainable=True,
             device_map=cfg.device_map,
             # torch_dtype=torch.float16,
         )
