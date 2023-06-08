@@ -33,6 +33,7 @@
 git clone https://github.com/OpenAccess-AI-Collective/axolotl
 
 pip3 install -e .
+pip3 install -U git+https://github.com/huggingface/peft.git
 
 accelerate config
 
@@ -70,8 +71,8 @@ accelerate launch scripts/finetune.py examples/lora-openllama-3b/config.yml \
   3. Install python dependencies with ONE of the following:
       - Recommended, supports QLoRA, NO gptq/int4 support
         ```bash
-        pip3 install -U git+https://github.com/huggingface/peft.git
         pip3 install -e .
+        pip3 install -U git+https://github.com/huggingface/peft.git
         ```
       - gptq/int4 support, NO QLoRA
         ```bash
