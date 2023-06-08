@@ -78,6 +78,13 @@ def load_tokenized_prepared_datasets(
     else:
         logging.info(f"Unable to find prepared dataset in {prepared_ds_path}")
         logging.info("Loading raw datasets...")
+
+        if cfg.seed:
+            seed = cfg.seed
+        else:
+            logging.info("No seed provided, using default seed of 42")
+            seed = 42
+
         datasets = []
         # pylint: disable=invalid-name
         for d in cfg.datasets:
@@ -127,11 +134,11 @@ def load_tokenized_prepared_datasets(
             # support for using a subset of the data
             if d.shards:
                 if "train" in ds:
-                    ds = ds.shuffle(seed=42)["train"].shard(
+                    ds = ds.shuffle(seed=seed)["train"].shard(
                         num_shards=d.shards, index=0
                     )
                 else:
-                    ds = ds.shuffle(seed=42).shard(num_shards=d.shards, index=0)
+                    ds = ds.shuffle(seed=seed).shard(num_shards=d.shards, index=0)
             d_type = d.type
             d_type_split = d_type.split(":")
             d_base_type = d_type_split[0]
@@ -239,7 +246,7 @@ def load_tokenized_prepared_datasets(
         samples: List[int] = []
         for d in datasets:
             samples = samples + list(d)
-        dataset = Dataset.from_list(samples).shuffle(seed=42)
+        dataset = Dataset.from_list(samples).shuffle(seed=seed)
         if cfg.local_rank == 0:
             logging.info(
                 f"Saving merged prepared dataset to disk... {prepared_ds_path}"
