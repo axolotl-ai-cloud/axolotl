@@ -54,6 +54,9 @@ def validate_config(cfg):
             "Require cfg.hf_use_auth_token to be True for push_dataset_to_hub"
         )
 
+    if "falcon" in cfg.base_model.lower() and cfg.fsdp:
+        raise ValueError("FSDP is not supported for falcon models")
+
     # TODO
     # MPT 7b
     # https://github.com/facebookresearch/bitsandbytes/issues/25
