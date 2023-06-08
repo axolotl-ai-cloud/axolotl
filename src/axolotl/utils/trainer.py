@@ -74,6 +74,10 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
     training_arguments_kwargs["tf32"] = cfg.tf32
     training_arguments_kwargs["warmup_steps"] = warmup_steps
     training_arguments_kwargs["logging_steps"] = logging_steps
+
+    if cfg.seed:
+        training_arguments_kwargs["seed"] = cfg.seed
+
     if cfg.gradient_checkpointing:
         if cfg.gptq:
             from alpaca_lora_4bit.gradient_checkpointing import (
