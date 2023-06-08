@@ -2,7 +2,7 @@
 # 40b: tiiuae/falcon-40b
 base_model: tiiuae/falcon-7b
 base_model_config: tiiuae/falcon-7b
-# required by falcon custom model code: https://huggingface.co/tiiuae/falcon-7b/tree/main 
+# required by falcon custom model code: https://huggingface.co/tiiuae/falcon-7b/tree/main
 trust_remote_code: true
 model_type: AutoModelForCausalLM
 tokenizer_type: AutoTokenizer
