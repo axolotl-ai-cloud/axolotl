@@ -15,3 +15,5 @@ def setup_wandb_env_vars(cfg):
             os.environ["WANDB_LOG_MODEL"] = cfg.wandb_log_model
         if cfg.wandb_run_id and len(cfg.wandb_run_id) > 0:
             os.environ["WANDB_RUN_ID"] = cfg.wandb_run_id
+    else:
+        os.environ["WANDB_DISABLED"] = "true"
