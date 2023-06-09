@@ -90,7 +90,8 @@ accelerate launch scripts/finetune.py examples/lora-openllama-3b/config.yml \
 
   1. Install python
   ```bash
-  sudo apt install python3.9
+  sudo apt update
+  sudo apt install -y python3.9
 
   sudo update-alternatives --install /usr/bin/python python /usr/bin/python3.9 1
   sudo update-alternatives --config python # pick 3.9 if given option
