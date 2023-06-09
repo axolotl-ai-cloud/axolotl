@@ -83,11 +83,11 @@ body:
       required: true
       
   - type: input
-    id: axolotl-version
+    id: axolotl-branch-commit
     attributes:
-      label: axolotl Version
-      description: Which axolotl version are you using?
-      placeholder: v0.2.x
+      label: axolotl branch-commit
+      description: On which branch/commit are you?
+      placeholder: main/4d6490b
     validations:
       required: true
 
