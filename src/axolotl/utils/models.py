@@ -20,7 +20,9 @@ from transformers import (  # noqa: F401
 )
 
 try:
-    from transformers import LlamaForCausalLM
+    from transformers import (  # pylint: disable=unused-import  # noqa: F401
+        LlamaForCausalLM,
+    )
 except ImportError:
     logging.warning(
         "This version of transformers does not support Llama. Consider upgrading."
@@ -83,37 +85,47 @@ def load_model(
     adapter="lora",
     inference=False,
 ):
-    # type: (str, str, str, str, DictDefault, Optional[str], bool) -> Tuple[PreTrainedModel, Optional[PeftConfig]]
+    # type: (str, str, str, AutoTokenizer, DictDefault, Optional[str], bool) -> Tuple[PreTrainedModel, Optional[PeftConfig]]
     """
     Load a model from a base model and a model type.
     """
 
     # TODO refactor as a kwarg
     load_in_8bit = cfg.load_in_8bit
-    is_llama_derived_model = "llama" in base_model or (
+    cfg.is_llama_derived_model = "llama" in base_model or (
         cfg.model_type and "llama" in cfg.model_type.lower()
     )
 
-    if is_llama_derived_model and cfg.flash_attention:
+    if cfg.is_llama_derived_model and cfg.flash_attention:
         if cfg.device not in ["mps", "cpu"] and inference is False:
             from axolotl.flash_attn import replace_llama_attn_with_flash_attn
 
             logging.info("patching with flash attention")
             replace_llama_attn_with_flash_attn()
-    elif is_llama_derived_model and cfg.xformers_attention:
+    elif cfg.is_llama_derived_model and cfg.xformers_attention:
         from axolotl.monkeypatch.llama_attn_hijack_xformers import (
             hijack_llama_attention,
         )
 
         logging.info("patching with xformers attention")
         hijack_llama_attention()
-    elif is_llama_derived_model and cfg.sdp_attention:
+    elif cfg.is_llama_derived_model and cfg.sdp_attention:
         from axolotl.monkeypatch.llama_attn_hijack_xformers import (
             hijack_llama_sdp_attention,
         )
 
         logging.info("patching with sdp attention")
         hijack_llama_sdp_attention()
+    elif cfg.is_llama_derived_model and cfg.landmark_attention:
+        from axolotl.monkeypatch.llama_landmark_attn import (  # pylint: disable=redefined-outer-name # noqa: F811
+            MEM_TOKEN,
+            LlamaForCausalLM,
+        )
+
+        logging.info("patching with landmark attention")
+
+        # TODO: Check if this would overwrite previous additional_special_tokens
+        tokenizer.add_special_tokens({"additional_special_tokens": [MEM_TOKEN]})
 
     if cfg.bf16:
         torch_dtype = torch.bfloat16
@@ -145,7 +157,7 @@ def load_model(
             bnb_4bit_quant_type="nf4",
         )
     try:
-        if cfg.gptq and is_llama_derived_model:
+        if cfg.gptq and cfg.is_llama_derived_model:
             from alpaca_lora_4bit.autograd_4bit import load_llama_model_4bit_low_ram
             from huggingface_hub import snapshot_download
 
@@ -183,7 +195,7 @@ def load_model(
                 else True,
             )
             load_in_8bit = False
-        elif is_llama_derived_model and "LlamaForCausalLM" in globals():
+        elif cfg.is_llama_derived_model and "LlamaForCausalLM" in globals():
             config = LlamaConfig.from_pretrained(base_model_config)
             model = LlamaForCausalLM.from_pretrained(
                 base_model,

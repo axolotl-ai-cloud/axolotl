@@ -1,6 +1,7 @@
 """Module containing the Trainer class and related functions"""
 
 import importlib
+import logging
 import math
 import os
 import sys
@@ -234,6 +235,23 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
         data_collator_kwargs["padding"] = "longest"
     else:
         data_collator_kwargs["pad_to_multiple_of"] = 8
+
+    if cfg.is_llama_derived_model and cfg.landmark_attention:
+        from functools import partial
+
+        from axolotl.monkeypatch.llama_landmark_attn import MEM_TOKEN, add_mem_tokens
+
+        mem_id = tokenizer.convert_tokens_to_ids(MEM_TOKEN)
+        model.set_mem_id(mem_id)
+
+        logging.info("Adding landmark attention tokens to dataset")
+
+        for dataset in [train_dataset, eval_dataset]:
+            dataset = dataset.map(
+                partial(add_mem_tokens, mem_freq=50, mem_id=mem_id),
+                batched=False,
+                num_proc=32,
+            )
 
     trainer_cls = (
         OneCycleLRSchedulerTrainer
