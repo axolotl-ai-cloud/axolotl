@@ -1593,3 +1593,12 @@ def add_mem_tokens(example, mem_freq, mem_id):
     ret.extend(x[prev_idx:])
     # drop attention_mask
     return {"input_ids": ret}
+
+
+def patch_llama_with_landmark_attn():
+    import transformers
+
+    transformers.models.llama.modeling_llama.LlamaForCausalLM = LlamaForCausalLM
+    transformers.models.llama.modeling_llama.LlamaModel = LlamaModel
+    transformers.models.llama.modeling_llama.LlamaAttention = LlamaAttention
+    transformers.models.llama.modeling_llama.LlamaDecoderLayer = LlamaDecoderLayer
