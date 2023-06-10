@@ -71,7 +71,11 @@ def do_inference(cfg, model, tokenizer, prompter="AlpacaPrompter"):
         if not (cfg.special_tokens and token in cfg.special_tokens):
             tokenizer.add_special_tokens({token: symbol})
 
-    prompter_module = getattr(importlib.import_module("axolotl.prompters"), prompter)
+    prompter_module = None
+    if prompter:
+        prompter_module = getattr(
+            importlib.import_module("axolotl.prompters"), prompter
+        )
 
     while True:
         print("=" * 80)
@@ -79,9 +83,12 @@ def do_inference(cfg, model, tokenizer, prompter="AlpacaPrompter"):
         instruction = get_multi_line_input()
         if not instruction:
             return
-        prompt: str = next(
-            prompter_module().build_prompt(instruction=instruction.strip("\n"))
-        )
+        if prompter_module:
+            prompt: str = next(
+                prompter_module().build_prompt(instruction=instruction.strip("\n"))
+            )
+        else:
+            prompt = instruction.strip()
         batch = tokenizer(prompt, return_tensors="pt", add_special_tokens=True)
         print("=" * 40)
         model.eval()
@@ -242,7 +249,13 @@ def train(
 
     if "inference" in kwargs:
         logging.info("calling do_inference function")
-        do_inference(cfg, model, tokenizer)
+        inf_kwargs: Dict[str, Any] = {}
+        if "prompter" in kwargs:
+            if kwargs["prompter"] == "None":
+                inf_kwargs["prompter"] = None
+            else:
+                inf_kwargs["prompter"] = kwargs["prompter"]
+        do_inference(cfg, model, tokenizer, **inf_kwargs)
         return
 
     if "shard" in kwargs:

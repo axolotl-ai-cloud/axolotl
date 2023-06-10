@@ -495,6 +495,11 @@ Pass the appropriate flag to the train command:
   ```bash
   --inference --base_model ./completed-model
   ```
+- Full weights finetune w/ a prompt from a text file:
+  ```bash
+  cat /tmp/prompt.txt | python scripts/finetune.py configs/your_config.yml \
+    --base_model ./completed-model --inference --prompter=None --load_in_8bit=True
+  ```
 
 ### Merge LORA to base
 
