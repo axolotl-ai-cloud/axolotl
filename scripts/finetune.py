@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional, Union
 
 import fire
 import torch
+import transformers
 import yaml
 from transformers import GenerationConfig, TextStreamer
 
@@ -63,6 +64,33 @@ def get_multi_line_input() -> Optional[str]:
     return instruction
 
 
+def smart_tokenizer_and_embedding_resize(
+    special_tokens_dict,
+    tokenizer: transformers.PreTrainedTokenizer,
+    model: transformers.PreTrainedModel,
+):
+    """Resize tokenizer and embedding.
+
+    Note: This is the unoptimized version that may make your embedding size not be divisible by 64.
+    """
+    num_new_tokens = tokenizer.add_special_tokens(special_tokens_dict)
+    model.resize_token_embeddings(len(tokenizer))
+
+    if num_new_tokens > 0:
+        input_embeddings = model.get_input_embeddings().weight.data
+        output_embeddings = model.get_output_embeddings().weight.data
+
+        input_embeddings_avg = input_embeddings[:-num_new_tokens].mean(
+            dim=0, keepdim=True
+        )
+        output_embeddings_avg = output_embeddings[:-num_new_tokens].mean(
+            dim=0, keepdim=True
+        )
+
+        input_embeddings[-num_new_tokens:] = input_embeddings_avg
+        output_embeddings[-num_new_tokens:] = output_embeddings_avg
+
+
 def do_inference(cfg, model, tokenizer, prompter="AlpacaPrompter"):
     default_tokens = {"unk_token": "<unk>", "bos_token": "<s>", "eos_token": "</s>"}
 
@@ -77,20 +105,23 @@ def do_inference(cfg, model, tokenizer, prompter="AlpacaPrompter"):
             importlib.import_module("axolotl.prompters"), prompter
         )
 
-    add_mem_tokens_partial = (
-        lambda x: x  # pylint: disable=unnecessary-lambda-assignment
-    )
     if cfg.landmark_attention:
         # pylint: disable=duplicate-code
-        from functools import partial
+        from axolotl.monkeypatch.llama_landmark_attn import MEM_TOKEN
 
-        from axolotl.monkeypatch.llama_landmark_attn import MEM_TOKEN, add_mem_tokens
+        special_tokens_dict = {}
+        special_tokens_dict["additional_special_tokens"] = [MEM_TOKEN]
+        smart_tokenizer_and_embedding_resize(
+            special_tokens_dict=special_tokens_dict,
+            tokenizer=tokenizer,
+            model=model,
+        )
 
         mem_id = tokenizer.convert_tokens_to_ids(MEM_TOKEN)
         model.set_mem_id(mem_id)
-
-        logging.info("Adding landmark attention tokens to dataset")
-        add_mem_tokens_partial = partial(add_mem_tokens, mem_freq=50, mem_id=mem_id)
+        model.set_mem_cache_args(
+            max_seq_len=255, mem_freq=50, top_k=5, max_cache_size=None
+        )
 
     while True:
         print("=" * 80)
@@ -105,9 +136,6 @@ def do_inference(cfg, model, tokenizer, prompter="AlpacaPrompter"):
         else:
             prompt = instruction.strip()
         batch = tokenizer(prompt, return_tensors="pt", add_special_tokens=True)
-        if cfg.landmark_attention:
-            batch = add_mem_tokens_partial(batch)
-            batch["input_ids"] = torch.stack(batch["input_ids"])
         print("=" * 40)
         model.eval()
         with torch.no_grad():
