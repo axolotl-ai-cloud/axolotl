@@ -410,6 +410,8 @@ optimizer:
 # specify weight decay
 weight_decay:
 
+# whether to bettertransformers
+flash_optimum:
 # whether to use xformers attention patch https://github.com/facebookresearch/xformers:
 xformers_attention:
 # whether to use flash attention patch https://github.com/HazyResearch/flash-attention:

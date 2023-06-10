@@ -77,6 +77,11 @@ def validate_config(cfg):
                 f"flash_optimum for BetterTransformers may not be used with {torch.__version__}"
             )
 
+    if cfg.pretraining_dataset and cfg.group_by_length:
+        logging.warning(
+            "You probably want to disable group_by_length as it will force a streamed dataset to download completely."
+        )
+
     # TODO
     # MPT 7b
     # https://github.com/facebookresearch/bitsandbytes/issues/25
