@@ -64,11 +64,7 @@ def get_multi_line_input() -> Optional[str]:
 
 
 def do_inference(cfg, model, tokenizer, prompter="AlpacaPrompter"):
-    default_tokens = {
-        "unk_token": "<unk>",
-        "bos_token": "<s>",
-        "eos_token": "</s>"
-    }
+    default_tokens = {"unk_token": "<unk>", "bos_token": "<s>", "eos_token": "</s>"}
 
     for token, symbol in default_tokens.items():
         # If the token isn't already specified in the config, add it
