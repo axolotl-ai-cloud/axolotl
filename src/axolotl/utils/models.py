@@ -127,6 +127,14 @@ def load_model(
         # TODO: Check if this would overwrite previous additional_special_tokens
         tokenizer.add_special_tokens({"additional_special_tokens": [MEM_TOKEN]})
 
+    if cfg.is_llama_derived_model and cfg.xpos_rope:
+        from axolotl.monkeypatch.xpos_rope_llama_monkey_patch import (
+            replace_llama_rope_with_xpos_rope,
+        )
+
+        logging.info("patching with xpos rope")
+        replace_llama_rope_with_xpos_rope()
+
     if cfg.bf16:
         torch_dtype = torch.bfloat16
     elif cfg.load_in_8bit or cfg.fp16:
