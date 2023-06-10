@@ -22,7 +22,7 @@
 | Pythia  | ✅         | ✅                 | ❓  | ❌          | ❌                            | ❌               | ❓                  |
 | cerebras | ✅         | ✅                 | ❓  | ❌          | ❌                            | ❌               | ❓                  |
 | mpt     | ✅         | ❌                 | ❓  | ❌          | ❌                            | ❌               | ❓                  |
-| falcon  | ✅         | ❌                 | ❌  | ❌          | ❌                            | ❌               | ❓                  |
+| falcon  | ✅         | ✅                 | ✅  | ❌          | ❌                            | ❌               | ❓                  |
 
 
 ## Quickstart ⚡
@@ -33,6 +33,7 @@
 git clone https://github.com/OpenAccess-AI-Collective/axolotl
 
 pip3 install -e .
+pip3 install -U git+https://github.com/huggingface/peft.git
 
 accelerate config
 
@@ -53,6 +54,7 @@ accelerate launch scripts/finetune.py examples/lora-openllama-3b/config.yml \
   docker run --gpus '"all"' --rm -it winglian/axolotl:main-py3.9-cu118-2.0.0
   ```
   - `winglian/axolotl-runpod:main-py3.9-cu118-2.0.0`: for runpod
+  - `winglian/axolotl-runpod:main-py3.9-cu118-2.0.0-gptq`: for gptq
   - `winglian/axolotl:dev`: dev branch (not usually up to date)
 
   Or run on the current files for development:
@@ -67,9 +69,19 @@ accelerate launch scripts/finetune.py examples/lora-openllama-3b/config.yml \
   2. Install pytorch stable https://pytorch.org/get-started/locally/
 
   3. Install python dependencies with ONE of the following:
-      - `pip3 install -e .` (recommended, supports QLoRA, no gptq/int4 support)
-      - `pip3 install -e .[gptq]` (next best if you don't need QLoRA, but want to use gptq)
-      - `pip3 install -e .[gptq_triton]`
+      - Recommended, supports QLoRA, NO gptq/int4 support
+        ```bash
+        pip3 install -e .
+        pip3 install -U git+https://github.com/huggingface/peft.git
+        ```
+      - gptq/int4 support, NO QLoRA
+        ```bash
+        pip3 install -e .[gptq]
+        ```
+      - same as above but not recommended
+        ```bash
+        pip3 install -e .[gptq_triton]
+        ```
 
 - LambdaLabs
   <details>
@@ -78,7 +90,8 @@ accelerate launch scripts/finetune.py examples/lora-openllama-3b/config.yml \
 
   1. Install python
   ```bash
-  sudo apt install python3.9
+  sudo apt update
+  sudo apt install -y python3.9
 
   sudo update-alternatives --install /usr/bin/python python /usr/bin/python3.9 1
   sudo update-alternatives --config python # pick 3.9 if given option
@@ -205,13 +218,17 @@ Have dataset(s) in one of the following format (JSONL recommended):
   ```json
   {"conversations": [{"role": "...", "value": "..."}]}
   ```
-- custom prompts structure:
-  1. Add your method to a file in [prompt_strategies](src/axolotl/prompt_strategies). Please see other files as example.
-  2. Use your custom file name as the dataset type.
 
 </details>
 
+#### How to add custom prompts
+
+  1. Add your method to a file in [prompt_strategies](src/axolotl/prompt_strategies). Please see other files as example.
+  2. Use your custom file name as the dataset type.
+
 Optionally, download some datasets, see [data/README.md](data/README.md)
+
+
 
 ### Config
 
@@ -370,7 +387,7 @@ train_on_inputs: false
 # don't use this, leads to wonky training (according to someone on the internet)
 group_by_length: false
 
-# does not work with current implementation of 4-bit LoRA
+# Whether to use gradient checkpointing https://huggingface.co/docs/transformers/v4.18.0/en/performance#gradient-checkpointing
 gradient_checkpointing: false
 
 # stop training after this many evaluation losses have increased in a row
@@ -400,6 +417,8 @@ flash_attention:  # require a100 for llama
 # whether to use scaled-dot-product attention
 # https://pytorch.org/docs/stable/generated/torch.nn.functional.scaled_dot_product_attention.html
 sdp_attention:
+# Landmark attention (only llama)
+landmark_attention:
 
 # resume from a specific checkpoint dir
 resume_from_checkpoint:

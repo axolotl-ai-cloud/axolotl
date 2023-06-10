@@ -1,6 +1,7 @@
 """Module containing the Trainer class and related functions"""
 
 import importlib
+import logging
 import math
 import os
 import sys
@@ -62,8 +63,6 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
         if cfg.logging_steps is not None
         else max(min(int(0.005 * total_num_steps), 10), 1)
     )
-    save_steps = cfg.save_steps
-    eval_steps = cfg.eval_steps
 
     training_arguments_kwargs = {}
     if cfg.bf16 == "full":
@@ -74,6 +73,10 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
     training_arguments_kwargs["tf32"] = cfg.tf32
     training_arguments_kwargs["warmup_steps"] = warmup_steps
     training_arguments_kwargs["logging_steps"] = logging_steps
+
+    if cfg.seed:
+        training_arguments_kwargs["seed"] = cfg.seed
+
     if cfg.gradient_checkpointing:
         if cfg.gptq:
             from alpaca_lora_4bit.gradient_checkpointing import (
@@ -119,16 +122,16 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
         num_train_epochs=cfg.num_epochs,
         learning_rate=cfg.learning_rate,
         evaluation_strategy="steps" if cfg.val_set_size > 0 else "no",
-        save_strategy="steps" if save_steps else "epoch",
-        eval_steps=eval_steps if cfg.val_set_size > 0 else None,
-        save_steps=save_steps,
+        save_strategy="steps" if cfg.save_steps else "epoch",
+        eval_steps=cfg.eval_steps if cfg.val_set_size > 0 else None,
+        save_steps=cfg.save_steps,
         output_dir=cfg.output_dir,
         save_total_limit=3,
         load_best_model_at_end=(
             cfg.load_best_model_at_end is not False
             and cfg.val_set_size > 0
-            and save_steps
-            and save_steps % eval_steps == 0
+            and cfg.save_steps
+            and cfg.save_steps % cfg.eval_steps == 0
             and cfg.load_in_8bit is not True
         )
         or False,
@@ -232,6 +235,23 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
         data_collator_kwargs["padding"] = "longest"
     else:
         data_collator_kwargs["pad_to_multiple_of"] = 8
+
+    if cfg.is_llama_derived_model and cfg.landmark_attention:
+        from functools import partial
+
+        from axolotl.monkeypatch.llama_landmark_attn import MEM_TOKEN, add_mem_tokens
+
+        mem_id = tokenizer.convert_tokens_to_ids(MEM_TOKEN)
+        model.set_mem_id(mem_id)
+
+        logging.info("Adding landmark attention tokens to dataset")
+
+        for dataset in [train_dataset, eval_dataset]:
+            dataset = dataset.map(
+                partial(add_mem_tokens, mem_freq=50, mem_id=mem_id),
+                batched=False,
+                num_proc=32,
+            )
 
     trainer_cls = (
         OneCycleLRSchedulerTrainer

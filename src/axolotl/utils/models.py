@@ -20,7 +20,9 @@ from transformers import (  # noqa: F401
 )
 
 try:
-    from transformers import LlamaForCausalLM
+    from transformers import (  # pylint: disable=unused-import  # noqa: F401
+        LlamaForCausalLM,
+    )
 except ImportError:
     logging.warning(
         "This version of transformers does not support Llama. Consider upgrading."
@@ -82,37 +84,47 @@ def load_model(
     cfg,
     adapter="lora"
 ):
-    # type: (str, str, str, str, DictDefault, Optional[str], bool) -> Tuple[PreTrainedModel, Optional[PeftConfig]]
+    # type: (str, str, str, AutoTokenizer, DictDefault, Optional[str], bool) -> Tuple[PreTrainedModel, Optional[PeftConfig]]
     """
     Load a model from a base model and a model type.
     """
 
     # TODO refactor as a kwarg
     load_in_8bit = cfg.load_in_8bit
-    is_llama_derived_model = "llama" in base_model or (
+    cfg.is_llama_derived_model = "llama" in base_model or (
         cfg.model_type and "llama" in cfg.model_type.lower()
     )
 
-    if is_llama_derived_model and cfg.flash_attention:
-        if cfg.device not in ["mps", "cpu"] and cfg.inference is False:
+    if cfg.is_llama_derived_model and cfg.flash_attention:
+        if cfg.device not in ["mps", "cpu"] and inference is False:
             from axolotl.flash_attn import replace_llama_attn_with_flash_attn
 
             logging.info("patching with flash attention")
             replace_llama_attn_with_flash_attn()
-    elif is_llama_derived_model and cfg.xformers_attention:
+    elif cfg.is_llama_derived_model and cfg.xformers_attention:
         from axolotl.monkeypatch.llama_attn_hijack_xformers import (
             hijack_llama_attention,
         )
 
         logging.info("patching with xformers attention")
         hijack_llama_attention()
-    elif is_llama_derived_model and cfg.sdp_attention:
+    elif cfg.is_llama_derived_model and cfg.sdp_attention:
         from axolotl.monkeypatch.llama_attn_hijack_xformers import (
             hijack_llama_sdp_attention,
         )
 
         logging.info("patching with sdp attention")
         hijack_llama_sdp_attention()
+    elif cfg.is_llama_derived_model and cfg.landmark_attention:
+        from axolotl.monkeypatch.llama_landmark_attn import (  # pylint: disable=redefined-outer-name # noqa: F811
+            MEM_TOKEN,
+            LlamaForCausalLM,
+        )
+
+        logging.info("patching with landmark attention")
+
+        # TODO: Check if this would overwrite previous additional_special_tokens
+        tokenizer.add_special_tokens({"additional_special_tokens": [MEM_TOKEN]})
 
     if cfg.bf16:
         torch_dtype = torch.bfloat16
@@ -127,10 +139,17 @@ def load_model(
             )
 
             replace_peft_model_with_int4_lora_model()
-        from peft import prepare_model_for_int8_training
     except Exception as err:
         logging.exception(err)
         raise err
+
+    try:
+        from peft import prepare_model_for_kbit_training
+    except ImportError:
+        # For backward compatibility
+        from peft import (
+            prepare_model_for_int8_training as prepare_model_for_kbit_training,
+        )
 
     model_kwargs = {}
     if cfg.adapter == "qlora" and cfg.load_in_4bit:
@@ -143,7 +162,7 @@ def load_model(
             bnb_4bit_quant_type="nf4",
         )
     try:
-        if cfg.gptq and is_llama_derived_model:
+        if cfg.gptq and cfg.is_llama_derived_model:
             from alpaca_lora_4bit.autograd_4bit import load_llama_model_4bit_low_ram
             from huggingface_hub import snapshot_download
 
@@ -181,7 +200,7 @@ def load_model(
                 else True,
             )
             load_in_8bit = False
-        elif is_llama_derived_model and "LlamaForCausalLM" in globals():
+        elif cfg.is_llama_derived_model and "LlamaForCausalLM" in globals():
             config = LlamaConfig.from_pretrained(base_model_config)
             model = LlamaForCausalLM.from_pretrained(
                 base_model,
@@ -235,8 +254,15 @@ def load_model(
             )
             # Shouldn't be a problem most of the time. will obviously error if the model doesn't support this
             # when training starts
-            if config.max_seq_len and cfg.sequence_len > config.max_seq_len:
+            if hasattr(config, "max_seq_len") and cfg.sequence_len > config.max_seq_len:
                 config.max_seq_len = cfg.sequence_len
+                logging.warning(f"increasing context length to {cfg.sequence_len}")
+            elif (
+                hasattr(config, "max_sequence_length")
+                and cfg.sequence_len > config.max_sequence_length
+            ):
+                config.max_sequence_length = cfg.sequence_len
+                logging.warning(f"increasing context length to {cfg.sequence_len}")
             model = AutoModelForCausalLM.from_pretrained(
                 base_model,
                 config=config,
@@ -268,8 +294,8 @@ def load_model(
         (cfg.adapter == "lora" and load_in_8bit)
         or (cfg.adapter == "qlora" and cfg.load_in_4bit)
     ):
-        logging.info("converting PEFT model w/ prepare_model_for_int8_training")
-        model = prepare_model_for_int8_training(model)
+        logging.info("converting PEFT model w/ prepare_model_for_kbit_training")
+        model = prepare_model_for_kbit_training(model)
 
     model, lora_config = load_adapter(model, cfg, adapter)
 
