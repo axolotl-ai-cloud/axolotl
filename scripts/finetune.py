@@ -105,7 +105,9 @@ def do_inference(cfg, model, tokenizer, prompter="AlpacaPrompter"):
         else:
             prompt = instruction.strip()
         batch = tokenizer(prompt, return_tensors="pt", add_special_tokens=True)
-        batch = add_mem_tokens_partial(batch)
+        if cfg.landmark_attention:
+            batch = add_mem_tokens_partial(batch)
+            batch["input_ids"] = torch.stack(batch["input_ids"])
         print("=" * 40)
         model.eval()
         with torch.no_grad():
