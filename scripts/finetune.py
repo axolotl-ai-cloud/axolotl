@@ -261,7 +261,6 @@ def train(
         model.save_pretrained(cfg.output_dir)
         return
 
-    model.train()
 
     trainer = setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer)
 
