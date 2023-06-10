@@ -1,6 +1,7 @@
 """Module containing the Trainer class and related functions"""
 
 import importlib
+import logging
 import math
 import os
 import sys
