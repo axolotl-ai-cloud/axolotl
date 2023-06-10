@@ -77,6 +77,20 @@ def do_inference(cfg, model, tokenizer, prompter="AlpacaPrompter"):
             importlib.import_module("axolotl.prompters"), prompter
         )
 
+    add_mem_tokens_partial = (
+        lambda x: x  # pylint: disable=unnecessary-lambda-assignment
+    )
+    if cfg.landmark_attention:
+        from functools import partial
+
+        from axolotl.monkeypatch.llama_landmark_attn import MEM_TOKEN, add_mem_tokens
+
+        mem_id = tokenizer.convert_tokens_to_ids(MEM_TOKEN)
+        model.set_mem_id(mem_id)
+
+        logging.info("Adding landmark attention tokens to dataset")
+        add_mem_tokens_partial = partial(add_mem_tokens, mem_freq=50, mem_id=mem_id)
+
     while True:
         print("=" * 80)
         # support for multiline inputs
@@ -90,6 +104,7 @@ def do_inference(cfg, model, tokenizer, prompter="AlpacaPrompter"):
         else:
             prompt = instruction.strip()
         batch = tokenizer(prompt, return_tensors="pt", add_special_tokens=True)
+        batch = add_mem_tokens_partial(batch)
         print("=" * 40)
         model.eval()
         with torch.no_grad():
