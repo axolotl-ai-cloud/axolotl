@@ -22,7 +22,7 @@ lora_dropout: 0.0
 lora_target_modules:
 lora_target_linear: true
 lora_fan_in_fan_out: true  # pythia/GPTNeoX lora specific
-wandb_project: pythia-12b
+wandb_project:
 wandb_watch:
 wandb_run_id:
 wandb_log_model:
@@ -45,5 +45,5 @@ resume_from_checkpoint:
 local_rank:
 gradient_checkpointing: true
 fsdp:
-fsdp_transformer_layer_cls_to_wrap:
+fsdp_config:
 collator_pad_to_longest: true

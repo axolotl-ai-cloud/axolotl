@@ -208,7 +208,10 @@ def train(
             )
         else:
             train_dataset = load_pretraining_dataset(
-                cfg.pretraining_dataset, tokenizer, max_tokens=cfg.sequence_len
+                cfg.pretraining_dataset,
+                tokenizer,
+                max_tokens=cfg.sequence_len,
+                seed=cfg.seed,
             )
             # https://discuss.huggingface.co/t/how-to-use-huggingface-trainer-streaming-datasets-without-wrapping-it-with-torchdatas-iterablewrapper/25230
             train_dataset = train_dataset.with_format("torch")

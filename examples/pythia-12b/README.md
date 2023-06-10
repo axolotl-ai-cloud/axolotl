@@ -1,4 +1,4 @@
-# Python 12B
+# Pythia 12B
 
 - Single-GPU A100 only (?)
 

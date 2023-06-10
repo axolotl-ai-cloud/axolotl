@@ -1,7 +1,6 @@
 """Module containing the Trainer class and related functions"""
 
 import importlib
-import logging
 import math
 import os
 import sys
@@ -232,7 +231,6 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
         callbacks.append(SavePeftModelCallback)
 
     if hasattr(model, "use_bettertransformer") and model.use_bettertransformer is True:
-        logging.info("Setting up SaveBetterTransformerModelCallback.")
         callbacks.append(SaveBetterTransformerModelCallback)
 
     data_collator_kwargs = {

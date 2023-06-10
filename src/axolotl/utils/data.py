@@ -505,10 +505,10 @@ def encode_pretraining(tokenizer, max_tokens, examples):
     return ret
 
 
-def load_pretraining_dataset(path, tokenizer, max_tokens=2048):
+def load_pretraining_dataset(path, tokenizer, max_tokens=2048, seed=42):
     encode = functools.partial(encode_pretraining, tokenizer, max_tokens)
     dataset = load_dataset(path, streaming=True, split="train")
-    dataset = dataset.shuffle(seed=42, buffer_size=10_000)
+    dataset = dataset.shuffle(seed=seed, buffer_size=10_000)
     # TODO dynamically figure out which columns/features to remove
     dataset = dataset.map(encode, batched=True, remove_columns=["text", "meta"])
     return dataset
