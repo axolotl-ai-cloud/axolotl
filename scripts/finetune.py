@@ -182,9 +182,6 @@ def train(
         if cfg.bf16:
             cfg.fp16 = True
         cfg.bf16 = False
-        
-    # Store inference mode into cfg when passed via args
-    cfg.inference = True if "inference" in kwargs else cfg.get("inference", False)
 
     # load the tokenizer first
     tokenizer_config = cfg.tokenizer_config or cfg.base_model_config
