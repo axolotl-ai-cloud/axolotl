@@ -81,6 +81,7 @@ def do_inference(cfg, model, tokenizer, prompter="AlpacaPrompter"):
         lambda x: x  # pylint: disable=unnecessary-lambda-assignment
     )
     if cfg.landmark_attention:
+        # pylint: disable=duplicate-code
         from functools import partial
 
         from axolotl.monkeypatch.llama_landmark_attn import MEM_TOKEN, add_mem_tokens

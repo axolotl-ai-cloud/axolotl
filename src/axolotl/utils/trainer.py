@@ -237,6 +237,7 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
         data_collator_kwargs["pad_to_multiple_of"] = 8
 
     if cfg.is_llama_derived_model and cfg.landmark_attention:
+        # pylint: disable=duplicate-code
         from functools import partial
 
         from axolotl.monkeypatch.llama_landmark_attn import MEM_TOKEN, add_mem_tokens
