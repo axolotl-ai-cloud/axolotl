@@ -77,14 +77,9 @@ def load_tokenizer(
 
 
 def load_model(
-    base_model,
-    base_model_config,
-    model_type,
-    tokenizer,
-    cfg,
-    adapter="lora"
+    base_model, base_model_config, model_type, tokenizer, cfg, adapter="lora"
 ):
-    # type: (str, str, str, AutoTokenizer, DictDefault, Optional[str], bool) -> Tuple[PreTrainedModel, Optional[PeftConfig]]
+    # type: (str, str, str, AutoTokenizer, DictDefault, Optional[str]) -> Tuple[PreTrainedModel, Optional[PeftConfig]]
     """
     Load a model from a base model and a model type.
     """
