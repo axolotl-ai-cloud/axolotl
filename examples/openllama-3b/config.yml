@@ -1,8 +1,8 @@
-base_model: openlm-research/open_llama_3b_600bt_preview
-base_model_config: openlm-research/open_llama_3b_600bt_preview
+base_model: openlm-research/open_llama_3b
+base_model_config: openlm-research/open_llama_3b
 model_type: LlamaForCausalLM
 tokenizer_type: LlamaTokenizer
-load_in_8bit: true
+load_in_8bit: false
 load_in_4bit: false
 strict: false
 push_dataset_to_hub:
@@ -11,21 +11,15 @@ datasets:
     type: alpaca
 dataset_prepared_path: last_run_prepared
 val_set_size: 0.02
-adapter: lora
+adapter:
 lora_model_dir:
 sequence_len: 256
 max_packed_sequence_len:
-lora_r: 8
-lora_alpha: 16
-lora_dropout: 0.0
+lora_r:
+lora_alpha:
+lora_dropout:
 lora_target_modules:
-  - gate_proj
-  - down_proj
-  - up_proj
-  - q_proj
-  - v_proj
-  - k_proj
-  - o_proj
+lora_target_linear:
 lora_fan_in_fan_out:
 wandb_project:
 wandb_watch:

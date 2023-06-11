@@ -1,7 +1,5 @@
-base_model: openlm-research/open_llama_3b_600bt_preview
-base_model_config: openlm-research/open_llama_3b_600bt_preview
-model_type: LlamaForCausalLM
-tokenizer_type: LlamaTokenizer
+base_model: EleutherAI/gpt-j-6b
+base_model_config: EleutherAI/gpt-j-6b
 load_in_8bit: false
 load_in_4bit: true
 strict: false
@@ -14,7 +12,7 @@ val_set_size: 0.01
 adapter: qlora
 lora_model_dir:
 sequence_len: 2048
-max_packed_sequence_len: 2048
+max_packed_sequence_len:
 lora_r: 8
 lora_alpha: 32
 lora_dropout: 0.05
@@ -26,13 +24,13 @@ wandb_watch:
 wandb_run_id:
 wandb_log_model:
 output_dir: ./qlora-out
-batch_size: 4
-micro_batch_size: 4
+gradient_accumulation_steps: 2
+micro_batch_size: 2
 num_epochs: 2
-optimizer: paged_adamw_32bit
+optimizer: paged_adamw_8bit
 torchdistx_path:
 lr_scheduler: cosine
-learning_rate: 0.0002
+learning_rate: 0.0001
 train_on_inputs: false
 group_by_length: true
 bf16: true
@@ -52,10 +50,8 @@ eval_steps: 20
 save_steps:
 debug:
 deepspeed:
-weight_decay: 0.0
+weight_decay: 0.1
 fsdp:
 fsdp_config:
 special_tokens:
-  bos_token: "<s>"
-  eos_token: "</s>"
-  unk_token: "<unk>"
+  pad_token: "<|endoftext|>"

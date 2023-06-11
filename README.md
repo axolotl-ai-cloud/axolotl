@@ -16,13 +16,14 @@
 
 ## Axolotl supports
 
-|         | fp16/fp32 | fp16/fp32 w/ lora | qlora | 4bit-quant | 4bit-quant w/flash attention | flash attention | xformers attention |
-|---------|:----------|:------------------|------|------------|------------------------------|-----------------|--------------------|
-| llama   | ✅         | ✅                 | ✅  | ✅          | ✅                            | ✅               | ✅                  |
-| Pythia  | ✅         | ✅                 | ❓  | ❌          | ❌                            | ❌               | ❓                  |
-| cerebras | ✅         | ✅                 | ❓  | ❌          | ❌                            | ❌               | ❓                  |
-| mpt     | ✅         | ❌                 | ❓  | ❌          | ❌                            | ❌               | ❓                  |
-| falcon  | ✅         | ✅                 | ✅  | ❌          | ❌                            | ❌               | ❓                  |
+|          | fp16/fp32 | lora | qlora | gptq | gptq w/ lora | gptq w/flash attn | flash attn | xformers attn |
+|----------|:----------|:-----|-------|------|:-------------|-------------------|------------|---------------|
+| llama    | ✅         | ✅    | ✅     | ✅    | ✅             | ✅                 | ✅          | ✅             |
+| Pythia   | ✅         | ✅    | ✅     | ❌    | ❓            | ❌                 | ❌          | ❓             |
+| cerebras | ✅         | ✅    | ✅     | ❌    | ❓            | ❌                 | ❌          | ✅             |
+| mpt      | ✅         | ❌    | ❓     | ❌    | ❓            | ❌                 | ❌          | ❓             |
+| falcon   | ✅         | ✅    | ✅     | ❌    | ❓            | ❌                 | ❌          | ✅             |
+| gpt-j    | ✅         | ✅    | ✅     | ❌    | ❓            | ❌                 | ❓          | ✅             |
 
 
 ## Quickstart ⚡
