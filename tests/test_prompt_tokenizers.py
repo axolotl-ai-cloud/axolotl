@@ -6,8 +6,8 @@ from pathlib import Path
 
 from transformers import AutoTokenizer
 
-from axolotl.prompt_tokenizers import ShareGPTPromptTokenizingStrategy
-from axolotl.prompters import ShareGPTPrompter
+from rathe import ChatPromptFormatter, ShareGPTParser, TokenizationOptions
+from rathe.pipeline import DataPipeline
 
 logging.basicConfig(level="INFO")
 
@@ -41,14 +41,15 @@ class TestPromptTokenizationStrategies(unittest.TestCase):
         ) as fin:
             data = fin.read()
             tokenized_conversation = json.loads(data)
-        prompter = ShareGPTPrompter("chat")
-        strat = ShareGPTPromptTokenizingStrategy(
-            prompter,
-            self.tokenizer,
-            False,
-            2048,
-        )
-        example = strat.tokenize_prompt(conversation)
+
+        parser = ShareGPTParser()
+        formatter = ChatPromptFormatter.vicuna()
+        formatter.system_prompt = 'A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user\'s questions. '
+        formatter.user_wrapper.suffix = ''
+        formatter.model_wrapper.suffix = '</s>'
+        pipeline = DataPipeline(parser, formatter, self.tokenizer)
+
+        example = pipeline(conversation)
         for fields in ["input_ids", "attention_mask", "labels"]:
             self.assertEqual(len(example[fields]), len(tokenized_conversation[fields]))
             self.assertEqual(example[fields], tokenized_conversation[fields])

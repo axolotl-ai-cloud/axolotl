@@ -6,8 +6,9 @@ from pathlib import Path
 from datasets import Dataset, load_dataset
 from transformers import AutoTokenizer
 
-from axolotl.datasets import ConstantLengthDataset, TokenizedPromptDataset
+from axolotl.datasets import ConstantLengthDataset
 from rathe import AlpacaPromptFormatter, GenericInstructParser
+from rathe.pipeline import DataPipeline
 
 
 class TestPacking(unittest.TestCase):
@@ -30,17 +31,15 @@ class TestPacking(unittest.TestCase):
         formatter = AlpacaPromptFormatter()
         parser = GenericInstructParser.alpaca()
 
-        dateset = load_dataset(
+        dataset = load_dataset(
             "json",
             data_files=str(Path(__file__).parent / "fixtures/alpaca/alpaca.json"),
         )["train"]
-        dataset = Dataset.from_list(
-            list(TokenizedPromptDataset(parser, formatter, self.tokenizer, dateset))
-        )
+        tokenized = dataset.map(DataPipeline(parser, formatter, self.tokenizer))
 
         constant_len_dataset = ConstantLengthDataset(
             self.tokenizer,
-            [dataset],
+            [tokenized],
             seq_length=2048,
         )
         packed_dataset = Dataset.from_list(list(constant_len_dataset))
