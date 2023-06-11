@@ -382,6 +382,8 @@ num_epochs: 3
 warmup_steps: 100
 learning_rate: 0.00003
 logging_steps:
+save_steps:
+eval_steps:
 
 # whether to mask out or include the human's prompt from the training labels
 train_on_inputs: false
