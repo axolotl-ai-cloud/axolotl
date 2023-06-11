@@ -16,25 +16,6 @@ from transformers import PreTrainedTokenizerBase
 # the collators later on to pad the datasets
 
 
-def TokenizedPromptDataset(
-    parser: AbstractPromptParser,
-    formatter: AbstractPromptFormatter,
-    tokenizer: PreTrainedTokenizerBase,
-    dataset: IterableDataset,
-) -> IterableDataset:
-    old_columns = dataset.column_names
-
-    def format_and_tokenize(row):
-        prompt = parser.parse(row)
-        formatted = formatter.format(prompt, tokenizer.special_tokens_map)
-        item = formatted.to_tokens(tokenizer)
-        for key in item:
-            item[key] = item[key].squeeze(0)
-        return item
-        
-    return dataset.map(format_and_tokenize, remove_columns=old_columns, num_proc=8)
-
-
 # TODO this isn't the best since it can't interleave datasets
 class ConstantLengthDataset(IterableDataset):
     """

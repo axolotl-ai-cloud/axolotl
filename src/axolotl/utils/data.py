@@ -15,8 +15,9 @@ from datasets import (
 from huggingface_hub import hf_hub_download
 from transformers import PreTrainedTokenizerBase
 
-from axolotl.datasets import TokenizedPromptDataset, ConstantLengthDataset
+from axolotl.datasets import ConstantLengthDataset
 from rathe import get_parser, get_formatter
+from rathe.pipeline import DataPipeline
 
 
 def load_tokenized_prepared_datasets(
@@ -61,13 +62,16 @@ def load_tokenized_prepared_datasets(
         logging.info("Prepared dataset loaded from disk...")
     else:
         logging.info(f"Unable to find prepared dataset in {prepared_ds_path}")
-        logging.info("Loading raw datasets...")
+        logging.info("Loading and tokenizing raw datasets...")
 
         if cfg.seed:
             seed = cfg.seed
         else:
             logging.info("No seed provided, using default seed of 42")
             seed = 42
+
+        prompt_format = cfg.prompt_format if cfg.prompt_format else "alpaca"
+        formatter = get_formatter(prompt_format)
 
         datasets = []
         # pylint: disable=invalid-name
@@ -112,24 +116,19 @@ def load_tokenized_prepared_datasets(
                 ds = load_dataset("json", data_files=fp, streaming=False, split=None)
             if not ds:
                 raise ValueError("unhandled dataset load")
-            
+
             if "train" in ds:
                 ds = ds["train"]
-                
+
             # support for using a subset of the data
             if d.shards:
-                ds: Dataset = ds.shuffle(seed=seed).shard(
-                    num_shards=d.shards, index=0
-                )
+                ds: Dataset = ds.shuffle(seed=seed).shard(num_shards=d.shards, index=0)
 
             parser = get_parser(d.type)
-            prompt_format = cfg.prompt_format if cfg.prompt_format else "alpaca"
-            formatter = get_formatter(prompt_format)
+            pipeline = DataPipeline(parser, formatter, tokenizer)
+            datasets.append(ds.map(pipeline))
 
-            ds_wrapper = TokenizedPromptDataset(parser, formatter, tokenizer, ds)
-            datasets.append(ds_wrapper)
-
-        logging.info("tokenizing, merging, and shuffling master dataset")
+        logging.info("merging and shuffling master dataset")
         dataset = concatenate_datasets(datasets).shuffle(seed=seed)
 
         if cfg.local_rank == 0:
