@@ -261,28 +261,33 @@ class Conversation:
         self.messages.append([role, message])
 
 
-conv_vicuna_v1_1 = Conversation(
-    system="A chat between a curious user and an artificial intelligence assistant. "
-    "The assistant gives helpful, detailed, and polite answers to the user's questions.",
-    roles=["USER", "ASSISTANT"],
-    messages=[],
-    offset=0,
-    sep_style=SeparatorStyle.TWO,
-    sep=" ",
-    sep2=" ",
-)
-
-
 class ShareGPTPrompter:  # pylint: disable=too-few-public-methods
     """
     A prompter that generates prompts for the ShareGPT
     """
 
-    def __init__(self, prompt_style=None):
+    def __init__(self, prompt_style=None, system_prompt=None):
         if prompt_style != PromptStyle.CHAT.value:
             raise ValueError(
                 f"unsupported prompt_style for ShareGPTPrompter({prompt_style})"
             )
+        system = (
+            system_prompt
+            if system_prompt
+            else (
+                "A chat between a curious user and an artificial intelligence assistant. "
+                "The assistant gives helpful, detailed, and polite answers to the user's questions."
+            )
+        )
+        self._conversation = Conversation(
+            system=system,
+            roles=["USER", "ASSISTANT"],
+            messages=[],
+            offset=0,
+            sep_style=SeparatorStyle.TWO,
+            sep=" ",
+            sep2=" ",
+        )
 
     # def match_prompt_style(self):
     #     if self.prompt_style == PromptStyle.chat.value:
@@ -300,7 +305,7 @@ class ShareGPTPrompter:  # pylint: disable=too-few-public-methods
             # also happens on the data splitting leaving empty conversations
             raise IndexError
 
-        conv = conv_vicuna_v1_1.copy()
+        conv = self._conversation.copy()
         roles = {"human": conv.roles[0], "gpt": conv.roles[1]}
 
         try:

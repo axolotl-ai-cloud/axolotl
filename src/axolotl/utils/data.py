@@ -239,8 +239,15 @@ def load_tokenized_prepared_datasets(
                 ds_wrapper = TokenizedPromptDataset(ds_strategy, ds)
                 datasets.append(ds_wrapper)
             else:
-                logging.error(f"unhandled prompt tokenization strategy: {d.type}")
-                raise ValueError(f"unhandled prompt tokenization strategy: {d.type}")
+                suffix = ""
+                if ":load_" in d.type:
+                    suffix = f" Did you mean {d.type.replace(':load_', '.load_')}?"
+                logging.error(
+                    f"unhandled prompt tokenization strategy: {d.type}. {suffix}"
+                )
+                raise ValueError(
+                    f"unhandled prompt tokenization strategy: {d.type} {suffix}"
+                )
         logging.info("tokenizing, merging, and shuffling master dataset")
 
         samples: List[int] = []

@@ -219,6 +219,14 @@ Have dataset(s) in one of the following format (JSONL recommended):
   ```json
   {"conversations": [{"role": "...", "value": "..."}]}
   ```
+- `sharegpt_simple.load_role`: conversations where `role` is used instead of `from`
+  ```json
+  {"conversations": [{"role": "...", "value": "..."}]}
+  ```
+- `sharegpt_jokes`: creates a chat where bot is asked to tell a joke, then explain why the joke is funny
+  ```json
+  {"conversations": [{"title": "...", "text": "...", "explanation": "..."}]}
+  ```
 
 </details>
 
@@ -530,7 +538,7 @@ Try set `fp16: true`
 
 Try to turn off xformers.
 
-## Need help? 🙋‍♂️
+## Need help? 🙋♂️
 
 Join our [Discord server](https://discord.gg/HhrNrHJPRb) where we can help you
 
