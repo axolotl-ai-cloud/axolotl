@@ -202,7 +202,7 @@ def load_model(
                 else True,
             )
             load_in_8bit = False
-        elif cfg.is_llama_derived_model and "LlamaForCausalLM" in globals():
+        elif cfg.is_llama_derived_model:
             try:
                 from transformers import LlamaForCausalLM
             except ImportError:
