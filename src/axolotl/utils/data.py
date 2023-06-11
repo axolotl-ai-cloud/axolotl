@@ -3,21 +3,21 @@
 import logging
 from hashlib import md5
 from pathlib import Path
-from typing import List, Tuple, Union
+from typing import Tuple, Union
 
 from datasets import (
     Dataset,
     DatasetDict,
+    concatenate_datasets,
     load_dataset,
     load_from_disk,
-    concatenate_datasets,
 )
 from huggingface_hub import hf_hub_download
+from rathe import get_formatter, get_parser
+from rathe.pipeline import DataPipeline
 from transformers import PreTrainedTokenizerBase
 
 from axolotl.datasets import ConstantLengthDataset
-from rathe import get_parser, get_formatter
-from rathe.pipeline import DataPipeline
 
 
 def load_tokenized_prepared_datasets(
@@ -90,7 +90,7 @@ def load_tokenized_prepared_datasets(
 
             # prefer local dataset, even if hub exists
             if Path(d.path).exists():
-                ds: Dataset = load_dataset(
+                ds = load_dataset(
                     d.path, data_files=d.data_files, streaming=False, split=None
                 )
             elif ds_from_hub:
@@ -122,10 +122,14 @@ def load_tokenized_prepared_datasets(
 
             # support for using a subset of the data
             if d.shards:
-                ds: Dataset = ds.shuffle(seed=seed).shard(num_shards=d.shards, index=0)
+                ds = ds.shuffle(seed=seed).shard(num_shards=d.shards, index=0)
 
             parser = get_parser(d.type)
-            pipeline = DataPipeline(parser, formatter, tokenizer)
+            ds_formatter = formatter
+            if d.prompt_style:
+                ds_formatter = get_formatter(d.prompt_format)
+            pipeline = DataPipeline(parser, ds_formatter, tokenizer)
+
             datasets.append(ds.map(pipeline))
 
         logging.info("merging and shuffling master dataset")

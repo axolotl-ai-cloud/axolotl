@@ -5,9 +5,6 @@ from typing import List
 
 import torch
 from datasets import IterableDataset
-from rathe import AbstractPromptParser, AbstractPromptFormatter
-
-from transformers import PreTrainedTokenizerBase
 
 # We want this to be a wrapper for an existing dataset that we have loaded
 # lets use the concept of middlewares to wrap each dataset, for example

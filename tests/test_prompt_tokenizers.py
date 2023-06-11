@@ -4,10 +4,9 @@ import logging
 import unittest
 from pathlib import Path
 
-from transformers import AutoTokenizer
-
-from rathe import ChatPromptFormatter, ShareGPTParser, TokenizationOptions
+from rathe import ChatPromptFormatter, ShareGPTParser
 from rathe.pipeline import DataPipeline
+from transformers import AutoTokenizer
 
 logging.basicConfig(level="INFO")
 
@@ -44,9 +43,9 @@ class TestPromptTokenizationStrategies(unittest.TestCase):
 
         parser = ShareGPTParser()
         formatter = ChatPromptFormatter.vicuna()
-        formatter.system_prompt = 'A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user\'s questions. '
-        formatter.user_wrapper.suffix = ''
-        formatter.model_wrapper.suffix = '</s>'
+        formatter.system_prompt = "A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions. "
+        formatter.user_wrapper.suffix = ""
+        formatter.model_wrapper.suffix = "</s>"
         pipeline = DataPipeline(parser, formatter, self.tokenizer)
 
         example = pipeline(conversation)

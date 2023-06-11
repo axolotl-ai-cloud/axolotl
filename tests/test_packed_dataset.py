@@ -4,11 +4,11 @@ import unittest
 from pathlib import Path
 
 from datasets import Dataset, load_dataset
+from rathe import AlpacaPromptFormatter, GenericInstructParser
+from rathe.pipeline import DataPipeline
 from transformers import AutoTokenizer
 
 from axolotl.datasets import ConstantLengthDataset
-from rathe import AlpacaPromptFormatter, GenericInstructParser
-from rathe.pipeline import DataPipeline
 
 
 class TestPacking(unittest.TestCase):

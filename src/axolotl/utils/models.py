@@ -59,7 +59,7 @@ def load_tokenizer(
         "LlamaTokenizer",
         "LlamaTokenizerFast",
     ]:
-        tokenizer.pad_token = "[PAD]"
+        tokenizer.pad_token = "[PAD]"  # nosec
 
     if tokenizer.__class__.__name__ == "GPTNeoXTokenizerFast":
         tokenizer.add_special_tokens({"pad_token": "[PAD]"})
