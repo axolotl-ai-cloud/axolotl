@@ -266,12 +266,12 @@ class ShareGPTPrompter:  # pylint: disable=too-few-public-methods
     A prompter that generates prompts for the ShareGPT
     """
 
-    def __init__(self, prompt_style=None, system_prompt=None):
+    def __init__(self, prompt_style=None, system_prompt: Optional[str] = None):
         if prompt_style != PromptStyle.CHAT.value:
             raise ValueError(
                 f"unsupported prompt_style for ShareGPTPrompter({prompt_style})"
             )
-        system = (
+        system: str = (
             system_prompt
             if system_prompt
             else (
