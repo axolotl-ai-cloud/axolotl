@@ -300,7 +300,10 @@ def load_model(
     embeddings_len = math.ceil(len(tokenizer) / 32) * 32
     model.resize_token_embeddings(embeddings_len)
 
-    if cfg.sequence_len >= model.config.max_position_embeddings:
+    if (
+        hasattr(model.config, "max_position_embeddings")
+        and cfg.sequence_len >= model.config.max_position_embeddings
+    ):
         logging.warning(
             f"increasing model.config.max_position_embeddings to {cfg.sequence_len}"
         )
