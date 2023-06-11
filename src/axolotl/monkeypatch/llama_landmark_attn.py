@@ -29,6 +29,7 @@ import torch
 import torch.utils.checkpoint
 from torch import nn
 from torch.nn import CrossEntropyLoss
+from transformers import LlamaTokenizer
 from transformers.modeling_outputs import (
     BaseModelOutputWithPast,
     CausalLMOutputWithPast,
@@ -1237,3 +1238,12 @@ def patch_llama_with_landmark_attn():
     transformers.models.llama.modeling_llama.LlamaAttention = LlamaAttention
     transformers.models.llama.modeling_llama.LlamaDecoderLayer = LlamaDecoderLayer
     transformers.models.llama.modeling_llama.apply_rotary_pos_emb = apply_rotary_pos_emb
+
+
+def set_model_mem_id(model: LlamaForCausalLM, tokenizer: LlamaTokenizer):
+    mem_id = tokenizer.convert_tokens_to_ids(MEM_TOKEN)
+    model.set_mem_id(mem_id)
+
+
+def get_mem_id(tokenizer: LlamaTokenizer):
+    return tokenizer.convert_tokens_to_ids(MEM_TOKEN)
