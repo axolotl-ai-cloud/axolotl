@@ -375,7 +375,6 @@ def load_llama_adapter(model, cfg):
         model = PeftModel.from_pretrained(
             model,
             cfg.lora_model_dir,
-            device_map=cfg.device_map,
             torch_dtype=torch.float16,
         )
     else:
@@ -437,8 +436,6 @@ def load_lora(model, cfg):
         model = PeftModel.from_pretrained(
             model,
             cfg.lora_model_dir,
-            device_map=cfg.device_map,
-            # torch_dtype=torch.float16,
         )
     else:
         model = get_peft_model(model, lora_config)
