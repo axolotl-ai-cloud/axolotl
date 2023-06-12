@@ -19,15 +19,6 @@ from transformers import (  # noqa: F401
     LlamaConfig,
 )
 
-try:
-    from transformers import (  # pylint: disable=unused-import  # noqa: F401
-        LlamaForCausalLM,
-    )
-except ImportError:
-    logging.warning(
-        "This version of transformers does not support Llama. Consider upgrading."
-    )
-
 from axolotl.prompt_tokenizers import LLAMA_DEFAULT_PAD_TOKEN
 
 if TYPE_CHECKING:
@@ -84,7 +75,6 @@ def load_model(
     Load a model from a base model and a model type.
     """
 
-    global LlamaForCausalLM  # pylint: disable=global-statement
     # TODO refactor as a kwarg
     load_in_8bit = cfg.load_in_8bit
     cfg.is_llama_derived_model = "llama" in base_model or (
@@ -112,14 +102,15 @@ def load_model(
         logging.info("patching with sdp attention")
         hijack_llama_sdp_attention()
     elif cfg.is_llama_derived_model and cfg.landmark_attention:
-        from axolotl.monkeypatch.llama_landmark_attn import (  # pylint: disable=redefined-outer-name # noqa: F811
+        from axolotl.monkeypatch.llama_landmark_attn import (
             MEM_TOKEN,
-            LlamaForCausalLM,
+            patch_llama_with_landmark_attn,
         )
 
         logging.info("patching with landmark attention")
+        patch_llama_with_landmark_attn()
 
-        # TODO: Check if this would overwrite previous additional_special_tokens
+        # Note: This might overwrite previous additional_special_tokens
         tokenizer.add_special_tokens({"additional_special_tokens": [MEM_TOKEN]})
 
     if cfg.is_llama_derived_model and cfg.xpos_rope:
@@ -204,7 +195,9 @@ def load_model(
                 else True,
             )
             load_in_8bit = False
-        elif cfg.is_llama_derived_model and "LlamaForCausalLM" in globals():
+        elif cfg.is_llama_derived_model:
+            from transformers import LlamaForCausalLM
+
             config = LlamaConfig.from_pretrained(base_model_config)
             model = LlamaForCausalLM.from_pretrained(
                 base_model,
