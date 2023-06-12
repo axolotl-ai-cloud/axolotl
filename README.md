@@ -500,16 +500,16 @@ Pass the appropriate flag to the train command:
 
 - Pretrained LORA:
   ```bash
-  --inference --lora_model_dir ./completed-model
+  --inference --lora_model_dir="./lora-output-dir"
   ```
 - Full weights finetune:
   ```bash
-  --inference --base_model ./completed-model
+  --inference --base_model="./completed-model"
   ```
 - Full weights finetune w/ a prompt from a text file:
   ```bash
   cat /tmp/prompt.txt | python scripts/finetune.py configs/your_config.yml \
-    --base_model ./completed-model --inference --prompter=None --load_in_8bit=True
+    --base_model="./completed-model" --inference --prompter=None --load_in_8bit=True
   ```
 
 ### Merge LORA to base
