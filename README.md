@@ -39,10 +39,10 @@ pip3 install -U git+https://github.com/huggingface/peft.git
 accelerate config
 
 # finetune lora
-accelerate launch scripts/finetune.py examples/lora-openllama-3b/config.yml
+accelerate launch scripts/finetune.py examples/openllama-3b/lora.yml
 
 # inference
-accelerate launch scripts/finetune.py examples/lora-openllama-3b/config.yml \
+accelerate launch scripts/finetune.py examples/openllama-3b/lora.yml \
     --inference --lora_model_dir="./lora-out"
 ```
 
