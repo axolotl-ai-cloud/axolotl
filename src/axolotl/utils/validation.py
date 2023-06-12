@@ -57,6 +57,11 @@ def validate_config(cfg):
     if (cfg.base_model and "falcon" in cfg.base_model.lower()) and cfg.fsdp:
         raise ValueError("FSDP is not supported for falcon models")
 
+    if (
+        cfg.base_model and "mpt" in cfg.base_model.lower()
+    ) and cfg.gradient_checkpointing:
+        raise ValueError("gradient_checkpointing is not supported for MPT models")
+
     # TODO
     # MPT 7b
     # https://github.com/facebookresearch/bitsandbytes/issues/25
