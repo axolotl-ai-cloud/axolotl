@@ -17,10 +17,42 @@ from transformers import EarlyStoppingCallback, Trainer
 from transformers.trainer_pt_utils import get_parameter_names
 
 from axolotl.utils.callbacks import SavePeftModelCallback
-from axolotl.utils.schedulers import InterpolatingLogScheduler
+from axolotl.utils.schedulers import (
+    InterpolatingLogScheduler,
+    get_cosine_schedule_with_quadratic_warmup,
+)
 
 
-class OneCycleLRSchedulerTrainer(Trainer):
+class AxolotlTrainer(Trainer):
+    """
+    Extend the base Trainer for axolotl helpers
+    """
+
+    def create_scheduler(
+        self, num_training_steps: int, optimizer: torch.optim.Optimizer = None
+    ):
+        """
+        Setup the scheduler. The optimizer of the trainer must have been set up either before this method is called or
+        passed as an argument.
+
+        Args:
+            num_training_steps (int): The number of training steps to do.
+        """
+
+        if self.lr_scheduler is None:  # pylint: disable=access-member-before-definition
+            """# type: ignore"""
+            if self.args.lr_scheduler_type == "cosine_with_quadratic":
+                self.lr_scheduler = get_cosine_schedule_with_quadratic_warmup(  # pylint: disable=attribute-defined-outside-init
+                    optimizer,
+                    num_warmup_steps=self.args.get_warmup_steps(num_training_steps),
+                    num_training_steps=num_training_steps,
+                )
+            else:
+                return super().create_scheduler(num_training_steps, optimizer)
+        return self.lr_scheduler
+
+
+class OneCycleLRSchedulerTrainer(AxolotlTrainer):
     """
     Trainer subclass that uses the OneCycleLR scheduler
     """
@@ -259,7 +291,7 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
     trainer_cls = (
         OneCycleLRSchedulerTrainer
         if cfg.lr_scheduler == "one_cycle" and (cfg.fsdp or cfg.adapter == "qlora")
-        else transformers.Trainer
+        else AxolotlTrainer
     )
     trainer = trainer_cls(
         model=model,
