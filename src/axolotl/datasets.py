@@ -33,12 +33,16 @@ class TokenizedPromptDataset(IterableDataset):
 
     def __iter__(self):
         iterator = iter(self.dataset)
+        count = 0
         # Loop through the entire dataset
         for example in iterator:
             try:
                 yield self.prompt_tokenizer.tokenize_prompt(example)
+                count += 1
             except InvalidDataException:
                 pass
+        if count == 0:
+            raise RuntimeError("Expected at least one datapoint in dataset.")
 
 
 # TODO this isn't the best since it can't interleave datasets
