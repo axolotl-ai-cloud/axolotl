@@ -1,42 +1,41 @@
-base_model: tiiuae/falcon-7b
-base_model_config: tiiuae/falcon-7b
-trust_remote_code: true
-model_type: AutoModelForCausalLM
-tokenizer_type: AutoTokenizer
-load_in_8bit: true
-load_in_4bit: false
-gptq: false
+base_model: cerebras/Cerebras-GPT-1.3B
+base_model_config: cerebras/Cerebras-GPT-1.3B
+load_in_8bit: false
+load_in_4bit: true
 strict: false
 push_dataset_to_hub:
 datasets:
   - path: teknium/GPT4-LLM-Cleaned
-    type: alpaca:chat
+    type: alpaca
 dataset_prepared_path: last_run_prepared
 val_set_size: 0.01
-adapter: lora
+adapter: qlora
 lora_model_dir:
 sequence_len: 2048
-max_packed_sequence_len:
+max_packed_sequence_len: 2048
 lora_r: 16
 lora_alpha: 32
-lora_dropout: 0.0
+lora_dropout: 0.05
 lora_target_modules:
-lora_target_linear: true
+  - c_fc
+  - c_attn
+  - c_proj
+lora_target_linear:
 lora_fan_in_fan_out:
 wandb_project:
 wandb_watch:
 wandb_run_id:
 wandb_log_model:
-output_dir: ./falcon-7b
-batch_size: 2
-micro_batch_size: 1
-num_epochs: 4
-optimizer: adamw_bnb_8bit
+output_dir: ./qlora-out
+batch_size: 4
+micro_batch_size: 4
+num_epochs: 2
+optimizer: paged_adamw_8bit
 torchdistx_path:
 lr_scheduler: cosine
-learning_rate: 0.00003
+learning_rate: 0.0002
 train_on_inputs: false
-group_by_length: false
+group_by_length: true
 bf16: true
 fp16: false
 tf32: true
@@ -49,15 +48,13 @@ xformers_attention: true
 flash_attention:
 gptq_groupsize:
 gptq_model_v1:
-warmup_steps: 40
-eval_steps: 5
-save_steps: 43
+warmup_steps: 10
+eval_steps: 20
+save_steps:
 debug:
 deepspeed:
-weight_decay: 0.0
+weight_decay: 0.1
 fsdp:
 fsdp_config:
 special_tokens:
   pad_token: "<|endoftext|>"
-  bos_token: ">>ABSTRACT<<"
-  eos_token: "<|endoftext|>"

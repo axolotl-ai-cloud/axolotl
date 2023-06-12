@@ -16,13 +16,14 @@
 
 ## Axolotl supports
 
-|         | fp16/fp32 | fp16/fp32 w/ lora | qlora | 4bit-quant | 4bit-quant w/flash attention | flash attention | xformers attention |
-|---------|:----------|:------------------|------|------------|------------------------------|-----------------|--------------------|
-| llama   | ✅         | ✅                 | ✅  | ✅          | ✅                            | ✅               | ✅                  |
-| Pythia  | ✅         | ✅                 | ❓  | ❌          | ❌                            | ❌               | ❓                  |
-| cerebras | ✅         | ✅                 | ❓  | ❌          | ❌                            | ❌               | ❓                  |
-| mpt     | ✅         | ❌                 | ❓  | ❌          | ❌                            | ❌               | ❓                  |
-| falcon  | ✅         | ✅                 | ✅  | ❌          | ❌                            | ❌               | ❓                  |
+|          | fp16/fp32 | lora | qlora | gptq | gptq w/ lora | gptq w/flash attn | flash attn | xformers attn |
+|----------|:----------|:-----|-------|------|:-------------|-------------------|------------|---------------|
+| llama    | ✅         | ✅    | ✅     | ✅    | ✅             | ✅                 | ✅          | ✅             |
+| Pythia   | ✅         | ✅    | ✅     | ❌    | ❓            | ❌                 | ❌          | ❓             |
+| cerebras | ✅         | ✅    | ✅     | ❌    | ❓            | ❌                 | ❌          | ✅             |
+| mpt      | ✅         | ❌    | ❓     | ❌    | ❓            | ❌                 | ❌          | ❓             |
+| falcon   | ✅         | ✅    | ✅     | ❌    | ❓            | ❌                 | ❌          | ✅             |
+| gpt-j    | ✅         | ✅    | ✅     | ❌    | ❓            | ❌                 | ❓          | ✅             |
 
 
 ## Quickstart ⚡
@@ -38,10 +39,10 @@ pip3 install -U git+https://github.com/huggingface/peft.git
 accelerate config
 
 # finetune lora
-accelerate launch scripts/finetune.py examples/lora-openllama-3b/config.yml
+accelerate launch scripts/finetune.py examples/openllama-3b/lora.yml
 
 # inference
-accelerate launch scripts/finetune.py examples/lora-openllama-3b/config.yml \
+accelerate launch scripts/finetune.py examples/openllama-3b/lora.yml \
     --inference --lora_model_dir="./lora-out"
 ```
 
@@ -218,6 +219,14 @@ Have dataset(s) in one of the following format (JSONL recommended):
   ```json
   {"conversations": [{"role": "...", "value": "..."}]}
   ```
+- `sharegpt_simple.load_role`: conversations where `role` is used instead of `from`
+  ```json
+  {"conversations": [{"role": "...", "value": "..."}]}
+  ```
+- `sharegpt_jokes`: creates a chat where bot is asked to tell a joke, then explain why the joke is funny
+  ```json
+  {"conversations": [{"title": "...", "text": "...", "explanation": "..."}]}
+  ```
 
 </details>
 
@@ -381,6 +390,8 @@ num_epochs: 3
 warmup_steps: 100
 learning_rate: 0.00003
 logging_steps:
+save_steps:
+eval_steps:
 
 # whether to mask out or include the human's prompt from the training labels
 train_on_inputs: false
@@ -497,6 +508,11 @@ Pass the appropriate flag to the train command:
   ```bash
   --inference --base_model ./completed-model
   ```
+- Full weights finetune w/ a prompt from a text file:
+  ```bash
+  cat /tmp/prompt.txt | python scripts/finetune.py configs/your_config.yml \
+    --base_model ./completed-model --inference --prompter=None --load_in_8bit=True
+  ```
 
 ### Merge LORA to base
 
@@ -524,7 +540,7 @@ Try set `fp16: true`
 
 Try to turn off xformers.
 
-## Need help? 🙋‍♂️
+## Need help? 🙋♂️
 
 Join our [Discord server](https://discord.gg/HhrNrHJPRb) where we can help you
 

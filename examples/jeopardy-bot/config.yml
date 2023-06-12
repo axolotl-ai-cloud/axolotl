@@ -1,0 +1,55 @@
+base_model: huggyllama/llama-7b
+base_model_config: huggyllama/llama-7b
+model_type: LlamaForCausalLM
+tokenizer_type: LlamaTokenizer
+load_in_8bit: false
+datasets:
+  - path: openaccess-ai-collective/jeopardy
+    type: jeopardy
+dataset_prepared_path: last_run_prepared
+val_set_size: 0.02
+adapter:
+lora_model_dir:
+sequence_len: 512
+max_packed_sequence_len:
+lora_r:
+lora_alpha:
+lora_dropout:
+lora_target_modules:
+lora_fan_in_fan_out: false
+wandb_project:
+wandb_watch:
+wandb_run_id:
+wandb_log_model:
+output_dir: ./jeopardy-bot-7b
+gradient_accumulation_steps: 1
+micro_batch_size: 1
+num_epochs: 3
+optimizer: adamw_bnb_8bit
+torchdistx_path:
+lr_scheduler: cosine
+learning_rate: 0.00003
+train_on_inputs: false
+group_by_length: false
+bf16: true
+tf32: true
+early_stopping_patience:
+resume_from_checkpoint:
+local_rank:
+logging_steps: 5
+xformers_attention: true
+flash_attention:
+gptq_groupsize:
+gptq_model_v1:
+warmup_steps: 20
+eval_steps: 110
+save_steps: 660
+debug:
+deepspeed:
+weight_decay: 0.1
+fsdp:
+fsdp_config:
+tokens:
+  bos_token: "<s>"
+  eos_token: "</s>"
+  unk_token: "<unk>"

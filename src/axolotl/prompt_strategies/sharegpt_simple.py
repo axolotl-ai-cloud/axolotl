@@ -13,6 +13,15 @@ def load(tokenizer, cfg):
     )
 
 
+def load_role(tokenizer, cfg):
+    return SimpleRoleShareGPTPromptTokenizingStrategy(
+        ShareGPTPrompter(PromptStyle.CHAT.value),
+        tokenizer,
+        cfg.train_on_inputs,
+        cfg.sequence_len,
+    )
+
+
 def load_guanaco(tokenizer, cfg):
     return GuanacoShareGPTPromptTokenizingStrategy(
         ShareGPTPrompter(PromptStyle.CHAT.value),
@@ -29,6 +38,18 @@ class SimpleShareGPTPromptTokenizingStrategy(ShareGPTPromptTokenizingStrategy):
 
     def get_conversation_thread(self, prompt):
         return prompt["conversations"]
+
+
+class SimpleRoleShareGPTPromptTokenizingStrategy(ShareGPTPromptTokenizingStrategy):
+    """
+    basic sharegpt strategy to grab conversations from the sample row, but uses role instead of from
+    """
+
+    def get_conversation_thread(self, prompt):
+        conversations = prompt["conversations"]
+        # remap role: prompter/assistant, text: ... => from: human/gpt, value: ...
+        turns = [{"from": t["role"], "value": t["value"]} for t in conversations]
+        return turns
 
 
 class GuanacoShareGPTPromptTokenizingStrategy(ShareGPTPromptTokenizingStrategy):

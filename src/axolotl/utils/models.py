@@ -20,15 +20,6 @@ from transformers import (
     LlamaConfig,
 )
 
-try:
-    from transformers import (  # pylint: disable=unused-import  # noqa: F401
-        LlamaForCausalLM,
-    )
-except ImportError:
-    logging.warning(
-        "This version of transformers does not support Llama. Consider upgrading."
-    )
-
 from axolotl.prompt_tokenizers import LLAMA_DEFAULT_PAD_TOKEN
 
 if TYPE_CHECKING:
@@ -78,15 +69,9 @@ def load_tokenizer(
 
 
 def load_model(
-    base_model,
-    base_model_config,
-    model_type,
-    tokenizer,
-    cfg,
-    adapter="lora",
-    inference=False,
+    base_model, base_model_config, model_type, tokenizer, cfg, adapter="lora"
 ):
-    # type: (str, str, str, AutoTokenizer, DictDefault, Optional[str], bool) -> Tuple[PreTrainedModel, Optional[PeftConfig]]
+    # type: (str, str, str, AutoTokenizer, DictDefault, Optional[str]) -> Tuple[PreTrainedModel, Optional[PeftConfig]]
     """
     Load a model from a base model and a model type.
     """
@@ -98,7 +83,7 @@ def load_model(
     )
 
     if cfg.is_llama_derived_model and cfg.flash_attention:
-        if cfg.device not in ["mps", "cpu"] and inference is False:
+        if cfg.device not in ["mps", "cpu"] and not cfg.inference:
             from axolotl.flash_attn import replace_llama_attn_with_flash_attn
 
             logging.info("patching with flash attention")
@@ -118,14 +103,15 @@ def load_model(
         logging.info("patching with sdp attention")
         hijack_llama_sdp_attention()
     elif cfg.is_llama_derived_model and cfg.landmark_attention:
-        from axolotl.monkeypatch.llama_landmark_attn import (  # pylint: disable=redefined-outer-name # noqa: F811
+        from axolotl.monkeypatch.llama_landmark_attn import (
             MEM_TOKEN,
-            LlamaForCausalLM,
+            patch_llama_with_landmark_attn,
         )
 
         logging.info("patching with landmark attention")
+        patch_llama_with_landmark_attn()
 
-        # TODO: Check if this would overwrite previous additional_special_tokens
+        # Note: This might overwrite previous additional_special_tokens
         tokenizer.add_special_tokens({"additional_special_tokens": [MEM_TOKEN]})
 
     if cfg.is_llama_derived_model and cfg.xpos_rope:
@@ -210,7 +196,9 @@ def load_model(
                 else True,
             )
             load_in_8bit = False
-        elif cfg.is_llama_derived_model and "LlamaForCausalLM" in globals():
+        elif cfg.is_llama_derived_model:
+            from transformers import LlamaForCausalLM
+
             config = LlamaConfig.from_pretrained(base_model_config)
             model = LlamaForCausalLM.from_pretrained(
                 base_model,
@@ -314,7 +302,9 @@ def load_model(
         or (cfg.adapter == "qlora" and cfg.load_in_4bit)
     ):
         logging.info("converting PEFT model w/ prepare_model_for_kbit_training")
-        model = prepare_model_for_kbit_training(model)
+        model = prepare_model_for_kbit_training(
+            model, use_gradient_checkpointing=cfg.gradient_checkpointing
+        )
 
     model, lora_config = load_adapter(model, cfg, adapter)
 
@@ -387,7 +377,6 @@ def load_llama_adapter(model, cfg):
         model = PeftModel.from_pretrained(
             model,
             cfg.lora_model_dir,
-            device_map=cfg.device_map,
             torch_dtype=torch.float16,
         )
     else:
@@ -449,8 +438,7 @@ def load_lora(model, cfg):
         model = PeftModel.from_pretrained(
             model,
             cfg.lora_model_dir,
-            device_map=cfg.device_map,
-            # torch_dtype=torch.float16,
+            is_trainable=not cfg.inference,
         )
     else:
         model = get_peft_model(model, lora_config)

@@ -199,6 +199,20 @@ class ValidationTest(unittest.TestCase):
 
         validate_config(cfg)
 
+    def test_mpt_gradient_checkpointing(self):
+        regex_exp = r".*gradient_checkpointing is not supported for MPT models*"
+
+        # Check for lower-case
+        cfg = DictDefault(
+            {
+                "base_model": "mosaicml/mpt-7b",
+                "gradient_checkpointing": True,
+            }
+        )
+
+        with pytest.raises(ValueError, match=regex_exp):
+            validate_config(cfg)
+
     def test_flash_optimum(self):
         cfg = DictDefault(
             {
