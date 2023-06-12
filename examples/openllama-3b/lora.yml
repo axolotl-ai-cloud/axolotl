@@ -49,7 +49,7 @@ early_stopping_patience:
 resume_from_checkpoint:
 local_rank:
 logging_steps: 1
-xformers_attention:
+xformers_attention: true
 flash_attention:
 gptq_groupsize:
 gptq_model_v1:

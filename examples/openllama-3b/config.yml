@@ -25,7 +25,7 @@ wandb_project:
 wandb_watch:
 wandb_run_id:
 wandb_log_model:
-output_dir: ./lora-out
+output_dir: ./openllama-out
 batch_size: 16
 micro_batch_size: 4
 num_epochs: 3
@@ -43,7 +43,7 @@ early_stopping_patience:
 resume_from_checkpoint:
 local_rank:
 logging_steps: 1
-xformers_attention:
+xformers_attention: true
 flash_attention:
 gptq_groupsize:
 gptq_model_v1:
