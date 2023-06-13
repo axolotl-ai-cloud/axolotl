@@ -552,6 +552,16 @@ Building something cool with Axolotl? Consider adding a badge to your model card
 
 [<img src="https://raw.githubusercontent.com/OpenAccess-AI-Collective/axolotl/main/image/axolotl-badge-web.png" alt="Built with Axolotl" width="200" height="32"/>](https://github.com/OpenAccess-AI-Collective/axolotl)
 
+## Community Showcase
+
+Open Access AI Collective
+- [Minotaur 13b](https://huggingface.co/openaccess-ai-collective/minotaur-13b)
+- [Manticore 13b](https://huggingface.co/openaccess-ai-collective/manticore-13b)
+- [Hippogriff 30b](https://huggingface.co/openaccess-ai-collective/hippogriff-30b-chat)
+
+PocketDoc Labs
+- [Dan's PersonalityEngine 13b LoRA](https://huggingface.co/PocketDoc/Dans-PersonalityEngine-13b-LoRA)
+
 ## Contributing 🤝
 
 Bugs? Please check for open issue else create a new [Issue](https://github.com/OpenAccess-AI-Collective/axolotl/issues/new).
