@@ -111,7 +111,7 @@ def do_inference(cfg, model, tokenizer, prompter: Optional[str]):
                 bos_token_id=tokenizer.bos_token_id,
                 eos_token_id=tokenizer.eos_token_id,
                 pad_token_id=tokenizer.pad_token_id,
-                do_sample=True,
+                do_sample=not cfg.landmark_attention,
                 use_cache=True,
                 return_dict_in_generate=True,
                 output_attentions=False,
