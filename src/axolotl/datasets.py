@@ -132,8 +132,12 @@ class ConstantLengthDataset(IterableDataset):
                         attention_mask = example["attention_mask"]
                         labels = example["labels"]
                         if (
-                            buffer["input_ids"]
-                            and input_ids[0] == self.tokenizer.bos_token_id
+                            (
+                                buffer["input_ids"]
+                                and input_ids[0] == self.tokenizer.bos_token_id
+                            )
+                            or self.tokenizer.bos_token_id
+                            == self.tokenizer.eos_token_id
                         ):
                             attention_mask[0] = 0
 
