@@ -12,13 +12,14 @@ from typing import Any, Dict, List, Optional, Union
 import fire
 import torch
 import yaml
-from transformers import GenerationConfig, TextStreamer
-
-from axolotl.utils.data import load_prepare_datasets
-from axolotl.utils.dict import DictDefault
-from axolotl.utils.models import load_model, load_tokenizer
 
 # add src to the pythonpath so we don't need to pip install this
+from optimum.bettertransformer import BetterTransformer
+from transformers import GenerationConfig, TextStreamer
+
+from axolotl.utils.data import load_prepare_datasets, load_pretraining_dataset
+from axolotl.utils.dict import DictDefault
+from axolotl.utils.models import load_model, load_tokenizer
 from axolotl.utils.tokenization import check_dataset_labels
 from axolotl.utils.trainer import setup_trainer
 from axolotl.utils.validation import validate_config
@@ -217,9 +218,20 @@ def train(
     if (
         check_not_in(["shard", "merge_lora"], kwargs) and not cfg.inference
     ):  # don't need to load dataset for these
-        train_dataset, eval_dataset = load_prepare_datasets(
-            tokenizer, cfg, DEFAULT_DATASET_PREPARED_PATH
-        )
+        if not cfg.pretraining_dataset:
+            train_dataset, eval_dataset = load_prepare_datasets(
+                tokenizer, cfg, DEFAULT_DATASET_PREPARED_PATH
+            )
+        else:
+            train_dataset = load_pretraining_dataset(
+                cfg.pretraining_dataset,
+                tokenizer,
+                max_tokens=cfg.sequence_len,
+                seed=cfg.seed,
+            )
+            # https://discuss.huggingface.co/t/how-to-use-huggingface-trainer-streaming-datasets-without-wrapping-it-with-torchdatas-iterablewrapper/25230
+            train_dataset = train_dataset.with_format("torch")
+            eval_dataset = None
 
     if cfg.debug or "debug" in kwargs:
         logging.info("check_dataset_labels...")
@@ -285,12 +297,15 @@ def train(
 
     # In case we want to stop early with ctrl+c, this is a nice to have to save the pretrained model
     if cfg.local_rank == 0:
+
+        def terminate_handler(_, __, model):
+            if cfg.flash_optimum:
+                model = BetterTransformer.reverse(model)
+            model.save_pretrained(cfg.output_dir)
+            sys.exit(0)
+
         signal.signal(
-            signal.SIGINT,
-            lambda signal, frame: (
-                model.save_pretrained(cfg.output_dir),
-                sys.exit(0),
-            ),
+            signal.SIGINT, lambda signum, frame: terminate_handler(signum, frame, model)
         )
 
     logging.info("Starting trainer...")
@@ -313,13 +328,21 @@ def train(
 
     if not Path(cfg.output_dir).is_dir():
         os.makedirs(cfg.output_dir, exist_ok=True)
-    trainer.train(resume_from_checkpoint=resume_from_checkpoint)
+    if cfg.flash_optimum:
+        with torch.backends.cuda.sdp_kernel(
+            enable_flash=True, enable_math=True, enable_mem_efficient=True
+        ):
+            trainer.train(resume_from_checkpoint=resume_from_checkpoint)
+    else:
+        trainer.train(resume_from_checkpoint=resume_from_checkpoint)
 
     logging.info(f"Training Completed!!! Saving pre-trained model to {cfg.output_dir}")
 
     # TODO do we need this fix? https://huggingface.co/docs/accelerate/usage_guides/fsdp#saving-and-loading
     # only save on rank 0, otherwise it corrupts output on multi-GPU when multiple processes attempt to write the same file
     if cfg.local_rank == 0:
+        if cfg.flash_optimum:
+            model = BetterTransformer.reverse(model)
         model.save_pretrained(cfg.output_dir)
 
     # trainer.save_model(cfg.output_dir)  # TODO this may be needed for deepspeed to work? need to review another time

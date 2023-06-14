@@ -10,8 +10,9 @@ from typing import TYPE_CHECKING, Optional, Tuple  # noqa: F401
 import bitsandbytes as bnb
 import torch
 import transformers
+from optimum.bettertransformer import BetterTransformer
 from transformers import PreTrainedModel  # noqa: F401
-from transformers import (  # noqa: F401
+from transformers import (
     AutoConfig,
     AutoModelForCausalLM,
     AutoTokenizer,
@@ -121,9 +122,9 @@ def load_model(
         logging.info("patching with xpos rope")
         replace_llama_rope_with_xpos_rope()
 
-    if cfg.bf16:
+    if cfg.bf16 or cfg.bfloat16:
         torch_dtype = torch.bfloat16
-    elif cfg.load_in_8bit or cfg.fp16:
+    elif cfg.load_in_8bit or cfg.fp16 or cfg.float16:
         torch_dtype = torch.float16
     else:
         torch_dtype = torch.float32
@@ -287,6 +288,15 @@ def load_model(
     embeddings_len = math.ceil(len(tokenizer) / 32) * 32
     model.resize_token_embeddings(embeddings_len)
 
+    if (
+        hasattr(model.config, "max_position_embeddings")
+        and cfg.sequence_len >= model.config.max_position_embeddings
+    ):
+        logging.warning(
+            f"increasing model.config.max_position_embeddings to {cfg.sequence_len}"
+        )
+        model.config.max_position_embeddings = cfg.sequence_len
+
     if not cfg.gptq and (
         (cfg.adapter == "lora" and load_in_8bit)
         or (cfg.adapter == "qlora" and cfg.load_in_4bit)
@@ -331,6 +341,9 @@ def load_model(
     if len(requires_grad) == 0:
         logging.warning("there are no parameters that require gradient updates")
     model.config.use_cache = False
+
+    if cfg.flash_optimum:
+        model = BetterTransformer.transform(model)
 
     # TODO resume_from_checkpoint handling
     return model, lora_config

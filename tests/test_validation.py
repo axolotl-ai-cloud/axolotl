@@ -212,3 +212,54 @@ class ValidationTest(unittest.TestCase):
 
         with pytest.raises(ValueError, match=regex_exp):
             validate_config(cfg)
+
+    def test_flash_optimum(self):
+        cfg = DictDefault(
+            {
+                "flash_optimum": True,
+                "adapter": "lora",
+            }
+        )
+
+        with self._caplog.at_level(logging.WARNING):
+            validate_config(cfg)
+            assert any(
+                "BetterTransformers probably doesn't work with PEFT adapters"
+                in record.message
+                for record in self._caplog.records
+            )
+
+        cfg = DictDefault(
+            {
+                "flash_optimum": True,
+            }
+        )
+
+        with self._caplog.at_level(logging.WARNING):
+            validate_config(cfg)
+            assert any(
+                "probably set bfloat16 or float16" in record.message
+                for record in self._caplog.records
+            )
+
+        cfg = DictDefault(
+            {
+                "flash_optimum": True,
+                "fp16": True,
+            }
+        )
+        regex_exp = r".*AMP is not supported.*"
+
+        with pytest.raises(ValueError, match=regex_exp):
+            validate_config(cfg)
+
+        cfg = DictDefault(
+            {
+                "flash_optimum": True,
+                "bf16": True,
+            }
+        )
+        regex_exp = r".*AMP is not supported.*"
+
+        with pytest.raises(ValueError, match=regex_exp):
+            validate_config(cfg)

@@ -2,6 +2,8 @@
 
 import logging
 
+import torch
+
 
 def validate_config(cfg):
     if cfg.gradient_accumulation_steps and cfg.batch_size:
@@ -62,7 +64,37 @@ def validate_config(cfg):
     ) and cfg.gradient_checkpointing:
         raise ValueError("gradient_checkpointing is not supported for MPT models")
 
+    if cfg.flash_optimum is True:
+        if cfg.adapter:
+            logging.warning(
+                "BetterTransformers probably doesn't work with PEFT adapters"
+            )
+        if cfg.fp16 or cfg.bf16:
+            raise ValueError("AMP is not supported with BetterTransformer")
+        if cfg.float16 is not True and cfg.bloat16 is not True:
+            logging.warning(
+                "You should probably set bfloat16 or float16 to true to "
+                "load the model in float16 for BetterTransformers"
+            )
+        if int(torch.__version__.split(".")[0]) < 2:
+            logging.warning("torch>=2.0.0 required")
+            raise ValueError(
+                f"flash_optimum for BetterTransformers may not be used with {torch.__version__}"
+            )
+
+    if cfg.pretraining_dataset and cfg.group_by_length:
+        logging.warning(
+            "You probably want to disable group_by_length as it will force a streamed dataset to download completely."
+        )
+
     # TODO
     # MPT 7b
     # https://github.com/facebookresearch/bitsandbytes/issues/25
-    # no 8bit adamw w bf16
+    # no 8bit adaAmw w bf16
+
+    # GPT-NeoX
+    # evals broken when extending context len
+    # File "/root/miniconda3/envs/py3.9/lib/python3.9/site-packages/transformers/models/gpt_neox/modeling_gpt_neox.py", line 162, in forward                        attn_output, attn_weights = self._attn(query, key, value, attention_mask, head_mask)
+    # File "/root/miniconda3/envs/py3.9/lib/python3.9/site-packages/optimum/bettertransformer/models/attention.py", line 74, in gpt2_wrapped_scaled_dot_product
+    # attention_mask = causal_mask + attention_mask
+    # RuntimeError: The size of tensor a (2048) must match the size of tensor b (8132) at non-singleton dimension 3
