@@ -138,7 +138,7 @@ Have dataset(s) in one of the following format (JSONL recommended):
   ```json
   {"instruction": "...", "input": "...", "output": "..."}
   ```
-- `sharegpt`: conversations
+- `sharegpt:chat`: conversations
   ```json
   {"conversations": [{"from": "...", "value": "..."}]}
   ```
