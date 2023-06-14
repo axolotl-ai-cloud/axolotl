@@ -18,7 +18,7 @@ class TestGpt2Packing(unittest.TestCase):
 
     def setUp(self) -> None:
         # pylint: disable=duplicate-code
-        self.tokenizer = AutoTokenizer.from_pretrained("bigcode/starcoderplus")
+        self.tokenizer = AutoTokenizer.from_pretrained("gpt2")
         self.tokenizer.add_special_tokens(
             {
                 "bos_token": "<|endoftext|>",
@@ -52,15 +52,10 @@ class TestGpt2Packing(unittest.TestCase):
         packed_dataset = Dataset.from_list(list(constant_len_dataset))
 
         example = packed_dataset[0]
-        from axolotl.utils.tokenization import check_example_labels
-
-        check_example_labels(example, self.tokenizer)
         # tokenizers where eos and bos tokens are the same, don't have a bos token
         next_eos_index = (
             example["input_ids"][1:].index(self.tokenizer.eos_token_id) + 1
         )  # add one since we sliced
-
-        print(example["input_ids"][next_eos_index + 1])
 
         assert example["input_ids"][next_eos_index] == self.tokenizer.eos_token_id
         assert example["attention_mask"][next_eos_index + 1] == 0
@@ -103,9 +98,6 @@ class TestLlamaPacking(unittest.TestCase):
         )
         packed_dataset = Dataset.from_list(list(constant_len_dataset))
         example = packed_dataset[0]
-        from axolotl.utils.tokenization import check_example_labels
-
-        check_example_labels(example, self.tokenizer)
         next_bos_index = (
             example["input_ids"][1:].index(self.tokenizer.bos_token_id) + 1
         )  # add one since we sliced
