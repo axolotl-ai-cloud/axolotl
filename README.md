@@ -422,6 +422,12 @@ log_sweep_max_lr:
 optimizer:
 # specify weight decay
 weight_decay:
+# adamw hyperparams
+adam_beta1:
+adam_beta2:
+adam_epsilon:
+# Gradient clipping max norm
+max_grad_norm:
 
 # whether to bettertransformers
 flash_optimum:
