@@ -263,3 +263,45 @@ class ValidationTest(unittest.TestCase):
 
         with pytest.raises(ValueError, match=regex_exp):
             validate_config(cfg)
+
+    def test_adamw_hyperparams(self):
+        cfg = DictDefault(
+            {
+                "optimizer": None,
+                "adamw_epsilon": 0.0001,
+            }
+        )
+
+        with self._caplog.at_level(logging.WARNING):
+            validate_config(cfg)
+            assert any(
+                "adamw hyperparameters found, but no adamw optimizer set"
+                in record.message
+                for record in self._caplog.records
+            )
+
+        cfg = DictDefault(
+            {
+                "optimizer": "adafactor",
+                "adamw_beta1": 0.0001,
+            }
+        )
+
+        with self._caplog.at_level(logging.WARNING):
+            validate_config(cfg)
+            assert any(
+                "adamw hyperparameters found, but no adamw optimizer set"
+                in record.message
+                for record in self._caplog.records
+            )
+
+        cfg = DictDefault(
+            {
+                "optimizer": "adamw_bnb_8bit",
+                "adamw_beta1": 0.0001,
+                "adamw_beta2": 0.0001,
+                "adamw_epsilon": 0.0001,
+            }
+        )
+
+        validate_config(cfg)
