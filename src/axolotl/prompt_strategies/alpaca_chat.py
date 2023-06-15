@@ -40,6 +40,18 @@ class AlpacaChatPrompter(AlpacaPrompter):
         self.match_prompt_style()
 
 
+class NoSystemPrompter(AlpacaPrompter):
+    """
+    Null Prompter with no system prompts
+    """
+
+    prompt_input = "{instruction} {input} "
+    prompt_no_input = "{instruction} "
+
+    def __init__(self):  # pylint: disable=super-init-not-called
+        pass
+
+
 class AlpacaQAPromptTokenizingStrategy(InstructionPromptTokenizingStrategy):
     """
     Tokenizing strategy for AlpacaQA
