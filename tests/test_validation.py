@@ -305,3 +305,11 @@ class ValidationTest(unittest.TestCase):
         )
 
         validate_config(cfg)
+
+        cfg = DictDefault(
+            {
+                "optimizer": "adafactor",
+            }
+        )
+
+        validate_config(cfg)
