@@ -61,6 +61,7 @@ class TestPromptTokenizationStrategies(unittest.TestCase):
         tests the interface between the user and assistant parts
         """
         prompter = NoSystemPrompter()
+        # pylint: disable=duplicate-code
         strat = AlpacaPromptTokenizingStrategy(
             prompter,
             self.tokenizer,
@@ -80,6 +81,7 @@ class TestPromptTokenizationStrategies(unittest.TestCase):
         """
         tests the interface between the user and assistant parts
         """
+        # pylint: disable=duplicate-code
         prompter = AlpacaPrompter()
         strat = AlpacaPromptTokenizingStrategy(
             prompter,
