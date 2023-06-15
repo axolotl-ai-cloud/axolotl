@@ -264,6 +264,8 @@ See sample configs in [configs](configs) folder or [examples](examples) for quic
   bf16: true # require >=ampere
   fp16: true
   tf32: true # require >=ampere
+  bfloat16: true # require >=ampere, use instead of bf16 when you don't want AMP (automatic mixed precision)
+  float16: true # use instead of fp16 when you don't want AMP
   ```
   Note: Repo does not do 4-bit quantization.
 
@@ -520,6 +522,12 @@ Add below flag to train command above
 
 ```bash
 --merge_lora --lora_model_dir="./completed-model" --load_in_8bit=False --load_in_4bit=False
+```
+
+If you run out of CUDA memory, you can try to merge in system RAM with
+
+```bash
+CUDA_VISIBLE_DEVICES="" python3 scripts/finetune.py ...
 ```
 
 ## Common Errors 🧰
