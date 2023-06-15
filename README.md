@@ -264,7 +264,7 @@ See sample configs in [configs](configs) folder or [examples](examples) for quic
   bf16: true # require >=ampere
   fp16: true
   tf32: true # require >=ampere
-  bfloat16: true # require >=ampere, use instead of bf16 when you don't want AMP
+  bfloat16: true # require >=ampere, use instead of bf16 when you don't want AMP (automatic mixed precision)
   float16: true # use instead of fp16 when you don't want AMP
   ```
   Note: Repo does not do 4-bit quantization.
