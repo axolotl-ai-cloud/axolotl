@@ -45,8 +45,10 @@ class NoSystemPrompter(AlpacaPrompter):
     Null Prompter with no system prompts
     """
 
-    prompt_input = "{instruction} {input} "
-    prompt_no_input = "{instruction} "
+    system_prompt = ""
+    system_no_input_prompt = ""
+    turn_format = "{instruction} {input} "
+    turn_no_input_format = "{instruction} "
 
     def __init__(self):  # pylint: disable=super-init-not-called
         pass
