@@ -2,11 +2,11 @@
 
 import unittest
 
+from axolotl.prompt_strategies.alpaca_w_system import SystemDataPrompter
 from axolotl.prompters import (
     AlpacaPrompter,
     MultipleChoiceExplainPrompter,
     PromptStyle,
-    SystemDataPrompter,
     UnpromptedPrompter,
 )
 

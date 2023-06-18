@@ -63,29 +63,6 @@ class AlpacaPrompter:
         yield res
 
 
-class SystemDataPrompter(AlpacaPrompter):
-    """
-    Alpaca Style Prompter that uses system prompts from the dataset
-    """
-
-    def build_prompt_w_system(
-        self,
-        system: str,
-        instruction: str,
-        input: Union[None, str] = None,  # pylint: disable=redefined-builtin
-        output: Union[None, str] = None,
-    ) -> Generator[str, None, None]:
-        # returns the full prompt from instruction and optional input
-        # if a label (=response, =output) is provided, it's also appended.
-        if input:
-            res = system + self.turn_format.format(instruction=instruction, input=input)
-        else:
-            res = system + self.turn_no_input_format.format(instruction=instruction)
-        if output:
-            res = f"{res}{output}"
-        yield res
-
-
 class UnpromptedPrompter(AlpacaPrompter):
     """
     Prompter for alpaca no system prompt
