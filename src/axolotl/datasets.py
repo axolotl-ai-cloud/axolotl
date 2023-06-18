@@ -126,6 +126,7 @@ class ConstantLengthDataset(IterableDataset):
                     buffer_len = 0
 
                 if example:
+                    # FIXME
                     # just going to drop data points that are too long
                     if len(example["input_ids"]) <= self.seq_length:
                         input_ids = example["input_ids"]
