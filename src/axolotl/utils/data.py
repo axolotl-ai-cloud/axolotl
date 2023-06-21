@@ -102,13 +102,26 @@ def load_tokenized_prepared_datasets(
                 pass
 
             # prefer local dataset, even if hub exists
-            if Path(d.path).exists():
-                ds = load_dataset(
-                    "json",
-                    data_files=d.path,
-                    streaming=False,
-                    split=None,
-                )
+            local_path = Path(d.path)
+            if local_path.exists():
+                if local_path.is_dir():
+                    ds = load_dataset(
+                        d.path,
+                        data_files=d.data_files,
+                        streaming=False,
+                        split=None,
+                    )
+                elif local_path.is_file():
+                    ds = load_dataset(
+                        "json",
+                        data_files=d.path,
+                        streaming=False,
+                        split=None,
+                    )
+                else:
+                    raise ValueError(
+                        "unhandled dataset load: local path exists, but is neither a directory or a file"
+                    )
             elif ds_from_hub:
                 if d.data_files:
                     ds = load_dataset(
