@@ -12,6 +12,7 @@ jobs:
     # this job needs to be run on self-hosted GPU runners...
     runs-on: self-hosted
     strategy:
+      fail-fast: false
       matrix:
         include:
           - cuda: "118"
