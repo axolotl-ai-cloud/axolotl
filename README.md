@@ -302,6 +302,8 @@ model_type: AutoModelForCausalLM
 tokenizer_type: AutoTokenizer
 # Trust remote code for untrusted source
 trust_remote_code:
+# use_fast option for tokenizer loading from_pretrained, default to True
+tokenizer_use_fast:
 
 # whether you are training a 4-bit GPTQ quantized model
 gptq: true
