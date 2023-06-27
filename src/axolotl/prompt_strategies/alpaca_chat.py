@@ -6,7 +6,7 @@ from axolotl.prompt_tokenizers import (
     AlpacaPromptTokenizingStrategy,
     InstructionPromptTokenizingStrategy,
 )
-from axolotl.prompters import AlpacaPrompter, PromptStyle
+from axolotl.prompters import AlpacaPrompter, PromptStyle, UnpromptedPrompter
 
 
 def load(tokenizer, cfg):
@@ -99,6 +99,15 @@ def load_qa(tokenizer, cfg):
 def load_camel_ai(tokenizer, cfg):
     return CamelAIPromptTokenizingStrategy(
         AlpacaChatPrompter(),
+        tokenizer,
+        cfg.train_on_inputs,
+        cfg.sequence_len,
+    )
+
+
+def load_no_prompt(tokenizer, cfg):
+    return AlpacaPromptTokenizingStrategy(
+        UnpromptedPrompter(PromptStyle.CHAT.value),
         tokenizer,
         cfg.train_on_inputs,
         cfg.sequence_len,
