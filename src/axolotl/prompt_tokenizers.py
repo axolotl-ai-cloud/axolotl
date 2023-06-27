@@ -87,7 +87,9 @@ class InstructionPromptTokenizingStrategy(PromptTokenizingStrategy):
     Tokenizing strategy for instruction-based prompts.
     """
 
-    def parse_instruction_fields(self, prompt) -> Tuple[str, str, str]:
+    def parse_instruction_fields(
+        self, prompt
+    ) -> Union[Tuple[str, str, str], Tuple[str, str, str, str]]:
         raise NotImplementedError
 
     def tokenize_prompt(self, prompt):
