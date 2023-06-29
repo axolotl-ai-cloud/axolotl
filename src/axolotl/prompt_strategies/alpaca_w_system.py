@@ -76,6 +76,19 @@ class SystemDataPrompter(AlpacaPrompter):
 
 
 def load(tokenizer, cfg):
+    return load_chat(tokenizer, cfg)
+
+
+def load_instruct(tokenizer, cfg):
+    return InstructionWSystemPromptTokenizingStrategy(
+        SystemDataPrompter(PromptStyle.INSTRUCT.value),
+        tokenizer,
+        cfg.train_on_inputs,
+        cfg.sequence_len,
+    )
+
+
+def load_chat(tokenizer, cfg):
     return InstructionWSystemPromptTokenizingStrategy(
         SystemDataPrompter(PromptStyle.CHAT.value),
         tokenizer,
