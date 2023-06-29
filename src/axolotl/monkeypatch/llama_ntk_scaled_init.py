@@ -16,7 +16,7 @@ def ntk_scaled_init(self, dim, max_position_embeddings=2048, base=10000, device=
     old_init(self, dim, max_position_embeddings, base, device)
 
 
-def replace_llama_rope_init_with_ntlk_scaled_init():
+def replace_llama_rope_init_with_ntk_scaled_init():
     transformers.models.llama.modeling_llama.LlamaRotaryEmbedding.__init__ = (
         ntk_scaled_init
     )

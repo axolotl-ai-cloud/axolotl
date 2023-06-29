@@ -446,7 +446,7 @@ landmark_attention:
 # llama only
 xpos_rope:
 # Non-linear interpolation scheme that adjusts the RoPE's base. See https://twitter.com/yampeleg/status/1674430869828956161
-ntlk_scaled:
+ntk_scaled:
 
 # resume from a specific checkpoint dir
 resume_from_checkpoint:
