@@ -440,7 +440,7 @@ def parse_tokenized_to_result(
     result: Dict[str, List[int]],
     current_len: int,
     res: Dict[str, List[int]],
-    labels: list[int],
+    labels: List[int],
     pad_token_id: Union[int, None] = None,
 ) -> Tuple[Dict[str, List[int]], int]:
     """
