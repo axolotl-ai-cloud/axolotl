@@ -119,6 +119,13 @@ def load_model(
 
         # Note: This might overwrite previous additional_special_tokens
         tokenizer.add_special_tokens({"additional_special_tokens": [MEM_TOKEN]})
+    elif cfg.is_llama_derived_model and cfg.ntlk_scaled:
+        from axolotl.monkeypatch.llama_ntlk_scaled_init import (
+            replace_llama_rope_init_with_ntlk_scaled_init,
+        )
+
+        logging.info("patching with ntlk scaled")
+        replace_llama_rope_init_with_ntlk_scaled_init()
 
     if cfg.is_llama_derived_model and cfg.xpos_rope:
         from axolotl.monkeypatch.xpos_rope_llama_monkey_patch import (
