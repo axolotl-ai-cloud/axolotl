@@ -336,6 +336,8 @@ datasets:
 dataset_prepared_path: data/last_run_prepared
 # push prepared dataset to hub
 push_dataset_to_hub: # repo path
+# push checkpoints to hub
+push_to_hub_model_id: # repo path
 # whether to use hf `use_auth_token` for loading datasets. Useful for fetching private datasets
 # required to be true when used in combination with `push_dataset_to_hub`
 hf_use_auth_token: # boolean
