@@ -195,6 +195,10 @@ Have dataset(s) in one of the following format (JSONL recommended):
   ```json
   {"message_1": "...", "message_2": "..."}
   ```
+- `alpaca_w_system.load_open_orca`: support for open orca datasets with included system prompts, instruct
+  ```json
+  {"system_prompt": "...", "question": "...", "response": "..."}
+  ```
 - `context_qa`: in context question answering from an article
   ```json
   {"article": "...", "question": "...", "answer": "..."}
