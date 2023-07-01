@@ -75,9 +75,32 @@ class SystemDataPrompter(AlpacaPrompter):
         yield res
 
 
+class OpenOrcaPromptTokenizingStrategy(InstructionWSystemPromptTokenizingStrategy):
+    """
+    Tokenizing strategy for OpenOrca datasets
+    """
+
+    def parse_instruction_fields(self, prompt) -> Tuple[str, str, str, str]:
+        return (
+            prompt["question"],
+            "",
+            prompt["response"],
+            prompt["system_prompt"],
+        )
+
+
 def load(tokenizer, cfg):
     return InstructionWSystemPromptTokenizingStrategy(
         SystemDataPrompter(PromptStyle.CHAT.value),
+        tokenizer,
+        cfg.train_on_inputs,
+        cfg.sequence_len,
+    )
+
+
+def load_open_orca(tokenizer, cfg):
+    return OpenOrcaPromptTokenizingStrategy(
+        SystemDataPrompter(PromptStyle.INSTRUCT.value),
         tokenizer,
         cfg.train_on_inputs,
         cfg.sequence_len,
