@@ -128,6 +128,7 @@ def load_model(
         replace_llama_with_condense(ratio=8)
 
         cfg.sequence_len = 16384
+        tokenizer.model_max_length = 16384
 
     if cfg.is_llama_derived_model and cfg.xpos_rope:
         from axolotl.monkeypatch.xpos_rope_llama_monkey_patch import (
