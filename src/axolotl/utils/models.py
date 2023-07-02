@@ -119,6 +119,15 @@ def load_model(
 
         # Note: This might overwrite previous additional_special_tokens
         tokenizer.add_special_tokens({"additional_special_tokens": [MEM_TOKEN]})
+    elif cfg.is_llama_derived_model and cfg.condense_rope:
+        from axolotl.monkeypatch.llama_condense_rope import replace_llama_with_condense
+
+        logging.info(
+            "patching condese rotary embeddings by factor of 8 and increasing sequence length to 16384"
+        )
+        replace_llama_with_condense(ratio=8)
+
+        cfg.sequence_len = 16384
 
     if cfg.is_llama_derived_model and cfg.xpos_rope:
         from axolotl.monkeypatch.xpos_rope_llama_monkey_patch import (
