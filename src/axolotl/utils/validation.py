@@ -92,6 +92,11 @@ def validate_config(cfg):
     ):
         logging.warning("adamw hyperparameters found, but no adamw optimizer set")
 
+    if cfg.push_to_hub_model_id:
+        raise ValueError(
+            "push_to_hub_model_id is deprecated. Please use hub_model_id instead."
+        )
+
     # TODO
     # MPT 7b
     # https://github.com/facebookresearch/bitsandbytes/issues/25

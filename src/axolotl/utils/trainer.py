@@ -124,8 +124,8 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
     if cfg.max_grad_norm:
         training_arguments_kwargs["max_grad_norm"] = cfg.max_grad_norm
 
-    if cfg.push_to_hub_model_id:
-        training_arguments_kwargs["push_to_hub_model_id"] = cfg.push_to_hub_model_id
+    if cfg.hub_model_id:
+        training_arguments_kwargs["hub_model_id"] = cfg.hub_model_id
         training_arguments_kwargs["push_to_hub"] = True
 
     training_args = transformers.TrainingArguments(
