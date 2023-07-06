@@ -133,6 +133,26 @@ class CompletionPrompter:
         yield instruction
 
 
+
+class VicunaPrompter:
+    system_prompt = "A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions.\n\nUSER: {instruction}\nASSISTANT: {output}\n"
+
+    def build_prompt(
+        self,
+        instruction: str,
+        input: None,  # pylint: disable=redefined-builtin
+        output: str,
+    ) -> Generator[str, None, None]:
+        # returns the full prompt from instruction and optional input
+        # if a label (=response, =output) is provided, it's also appended.
+        res = self.system_prompt.format(
+            instruction=instruction,
+            output=output,
+            )
+        yield res
+
+
+
 class GPTeacherPrompter(AlpacaPrompter):
     """
     Prompter for GPTeacher

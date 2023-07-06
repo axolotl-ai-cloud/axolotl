@@ -22,6 +22,7 @@ from axolotl.prompt_tokenizers import (
     OpenAssistantPromptTokenizingStrategy,
     ShareGPTPromptTokenizingStrategy,
     SummarizeTLDRPromptTokenizingStrategy,
+    VicunaPromptTokenizingStrategy,
 )
 from axolotl.prompters import (
     AlpacaPrompter,
@@ -33,6 +34,7 @@ from axolotl.prompters import (
     ReflectAlpacaPrompter,
     ShareGPTPrompter,
     SummarizeTLDRPrompter,
+    VicunaPrompter,
 )
 
 
@@ -246,6 +248,15 @@ def load_tokenized_prepared_datasets(
             elif d_base_type == "completion":
                 ds_strategy = CompletionPromptTokenizingStrategy(
                     CompletionPrompter(),
+                    tokenizer,
+                    cfg.train_on_inputs,
+                    cfg.sequence_len,
+                )
+                ds_wrapper = TokenizedPromptDataset(ds_strategy, ds)
+                datasets.append(ds_wrapper)
+            elif d_base_type == 'vicuna':
+                ds_strategy = VicunaPromptTokenizingStrategy(
+                    VicunaPrompter(),
                     tokenizer,
                     cfg.train_on_inputs,
                     cfg.sequence_len,

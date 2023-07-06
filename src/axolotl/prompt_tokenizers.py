@@ -242,6 +242,23 @@ class CompletionPromptTokenizingStrategy(InstructionPromptTokenizingStrategy):
         return next(iter(self.prompter.build_prompt(instruction, input, response)))
 
 
+class VicunaPromptTokenizingStrategy(InstructionPromptTokenizingStrategy):
+    """
+    Tokenizing strategy for Vicuna-1.1 prompts.
+    """
+
+    def tokenize_prompt(self, prompt):
+        full_prompt = self._build_full_prompt(prompt["instruction"], None, prompt["output"])
+        tokenized_full_prompt = self._tokenize(full_prompt)
+
+        return tokenized_full_prompt
+
+    def _build_full_prompt(
+        self, instruction, input, response
+    ):  # pylint: disable=redefined-builtin
+        return next(iter(self.prompter.build_prompt(instruction, input, response)))
+
+
 class ReflectionPromptTokenizingStrategy(PromptTokenizingStrategy):
     """
     Tokenizing strategy for Reflection prompts.
