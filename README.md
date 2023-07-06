@@ -237,7 +237,7 @@ Have dataset(s) in one of the following format (JSONL recommended):
 #### How to add custom prompts
 
   1. Add your method to a file in [prompt_strategies](src/axolotl/prompt_strategies). Please see other files as example.
-  2. Use your custom file name as the dataset type.
+  2. Use your custom file name as the dataset type `<prompt_strategies_file>.load_<load_fn>`.
 
 Optionally, download some datasets, see [data/README.md](data/README.md)
 
@@ -255,10 +255,18 @@ See sample configs in [configs](configs) folder or [examples](examples) for quic
 
 - dataset
   ```yaml
+  sequence_len: 2048 # max token length for prompt
+  
+  # huggingface repo 
   datasets:
-    - path: vicgalle/alpaca-gpt4 # local or huggingface repo
+    - path: vicgalle/alpaca-gpt4
       type: alpaca # format from earlier
-  sequence_len: 2048 # max token length / prompt
+
+  # local
+  datasets:
+    - path: json
+      data_files: data.jsonl # or json
+      type: alpaca # format from earlier
   ```
 
 - loading
@@ -328,10 +336,10 @@ tf32: true # require >=ampere
 
 # a list of one or more datasets to finetune the model with
 datasets:
-  # this can be either a hf dataset, or relative path
+  # hf dataset repo | "json" for local dataset, make sure to fill data_files
   - path: vicgalle/alpaca-gpt4
   # The type of prompt to use for training. [alpaca, sharegpt, gpteacher, oasst, reflection]
-    type: alpaca # format OR format:prompt_style (chat/instruct)
+    type: alpaca # format | format:<prompt_style> (chat/instruct) | <prompt_strategies>.load_<load_fn>
     data_files: # path to source data files
     shards: # number of shards to split data into
 
