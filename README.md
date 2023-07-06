@@ -256,8 +256,8 @@ See sample configs in [configs](configs) folder or [examples](examples) for quic
 - dataset
   ```yaml
   sequence_len: 2048 # max token length for prompt
-  
-  # huggingface repo 
+
+  # huggingface repo
   datasets:
     - path: vicgalle/alpaca-gpt4
       type: alpaca # format from earlier
