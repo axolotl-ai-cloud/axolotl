@@ -14,13 +14,13 @@ For a custom system message, the first "from" can be "system".
 """
 
 import logging
-from typing import List, Generator
-import dataclasses
+from typing import List, Generator, Sequence
+from dataclasses import dataclass, field
 from axolotl.prompters import IGNORE_TOKEN_ID
 from axolotl.prompt_tokenizers import PromptTokenizingStrategy
 
 
-@dataclasses.dataclass
+@dataclass
 class Vicuna_v_1_1_Conversation:
     """A class that manages prompt templates and keeps all conversation history.
     copied from https://github.com/lm-sys/FastChat/blob/main/fastchat/conversation.py"""
@@ -31,8 +31,8 @@ class Vicuna_v_1_1_Conversation:
         "A chat between a curious user and an artificial intelligence assistant. "
         "The assistant gives helpful, detailed, and polite answers to the user's questions."
     )
-    roles: List[str] = ["USER", "ASSISTANT"]
-    messages: List[List[str]] = []
+    roles: Sequence[str] = ("USER", "ASSISTANT")
+    messages: List[List[str]] = field(default_factory=list)
     offset: int = 0
     sep: str = " "
     sep2: str = "</s>"
