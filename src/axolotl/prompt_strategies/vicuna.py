@@ -6,7 +6,7 @@ Use dataset type: orcamini in conig.yml to use this prompt style.
 
 dataset should look like this:
 ```
-[{"from": "human", "value": "Who are you?"}, {"from": "gpt", "value": "I am Vicuna"},...]
+{'conversation':[{"from": "human", "value": "Who are you?"}, {"from": "gpt", "value": "I am Vicuna"},...]}
 ```
 in a jsonl file. The first message should be from the human, the second from gpt.
 For a custom system message, the first "from" can be "system".
@@ -126,6 +126,7 @@ class Vicuna_v1_1_Prompter:  # pylint: disable=too-few-public-methods
 
     def build_prompt(self, source) -> Generator[Vicuna_v_1_1_Conversation, None, None]:
         # see https://github.com/lm-sys/FastChat/blob/da0641e567cf93756b0978ab5a6b092e96f06240/fastchat/train/train.py#L78
+        source=source["conversation"] #fix data structure for datasets
 
         # if system prompt provided, use it
         if source[0]["from"] == "system":
