@@ -108,9 +108,9 @@ class VicunaTokenizingStrategy(PromptTokenizingStrategy):
                 )
 
         return dict(
-            input_ids=input_ids,
-            labels=target,
-            attention_mask=input_ids.ne(self.tokenizer.pad_token_id),
+            input_ids=input_ids.tolist(),
+            labels=target.tolist(),
+            attention_mask=input_ids.ne(self.tokenizer.pad_token_id).tolist(),
         )
 
 
