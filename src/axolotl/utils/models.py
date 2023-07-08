@@ -202,7 +202,7 @@ def load_model(
                 else True,
             )
             load_in_8bit = False
-        elif cfg.is_llama_derived_model:
+        elif cfg.is_llama_derived_model and not cfg.trust_remote_code:
             from transformers import LlamaForCausalLM
 
             config = LlamaConfig.from_pretrained(base_model_config)
