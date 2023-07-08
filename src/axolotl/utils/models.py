@@ -241,7 +241,7 @@ def load_model(
         #         device=cfg.device,
         #     )
         #     model.train() # sets to train instead of eval mode
-        elif model_type:
+        elif model_type and not cfg.trust_remote_code:
             model = getattr(transformers, model_type).from_pretrained(
                 base_model,
                 load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
