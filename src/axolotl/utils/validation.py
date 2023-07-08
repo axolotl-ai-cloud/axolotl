@@ -87,7 +87,7 @@ def validate_config(cfg):
             "You probably want to disable group_by_length as it will force a streamed dataset to download completely."
         )
 
-    if any([cfg.adamw_beta1, cfg.adamw_beta2, cfg.adamw_epsilon]) and (
+    if any([cfg.adam_beta1, cfg.adam_beta2, cfg.adam_epsilon]) and (
         not cfg.optimizer or "adamw" not in cfg.optimizer
     ):
         logging.warning("adamw hyperparameters found, but no adamw optimizer set")

@@ -268,7 +268,7 @@ class ValidationTest(unittest.TestCase):
         cfg = DictDefault(
             {
                 "optimizer": None,
-                "adamw_epsilon": 0.0001,
+                "adam_epsilon": 0.0001,
             }
         )
 
@@ -283,7 +283,7 @@ class ValidationTest(unittest.TestCase):
         cfg = DictDefault(
             {
                 "optimizer": "adafactor",
-                "adamw_beta1": 0.0001,
+                "adam_beta1": 0.0001,
             }
         )
 
@@ -298,9 +298,9 @@ class ValidationTest(unittest.TestCase):
         cfg = DictDefault(
             {
                 "optimizer": "adamw_bnb_8bit",
-                "adamw_beta1": 0.0001,
-                "adamw_beta2": 0.0001,
-                "adamw_epsilon": 0.0001,
+                "adam_beta1": 0.9,
+                "adam_beta2": 0.99,
+                "adam_epsilon": 0.0001,
             }
         )
 
