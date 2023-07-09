@@ -12,13 +12,14 @@ from typing import Any, Dict, List, Optional, Union
 import fire
 import torch
 import yaml
-from transformers import GenerationConfig, TextStreamer
-
-from axolotl.utils.data import load_prepare_datasets
-from axolotl.utils.dict import DictDefault
-from axolotl.utils.models import load_model, load_tokenizer
 
 # add src to the pythonpath so we don't need to pip install this
+from optimum.bettertransformer import BetterTransformer
+from transformers import GenerationConfig, TextStreamer
+
+from axolotl.utils.data import load_prepare_datasets, load_pretraining_dataset
+from axolotl.utils.dict import DictDefault
+from axolotl.utils.models import load_model, load_tokenizer
 from axolotl.utils.tokenization import check_dataset_labels
 from axolotl.utils.trainer import setup_trainer
 from axolotl.utils.validation import validate_config
@@ -63,7 +64,7 @@ def get_multi_line_input() -> Optional[str]:
     return instruction
 
 
-def do_inference(cfg, model, tokenizer, prompter="AlpacaPrompter"):
+def do_inference(cfg, model, tokenizer, prompter: Optional[str]):
     default_tokens = {"unk_token": "<unk>", "bos_token": "<s>", "eos_token": "</s>"}
 
     for token, symbol in default_tokens.items():
@@ -75,6 +76,14 @@ def do_inference(cfg, model, tokenizer, prompter="AlpacaPrompter"):
     if prompter:
         prompter_module = getattr(
             importlib.import_module("axolotl.prompters"), prompter
+        )
+
+    if cfg.landmark_attention:
+        from axolotl.monkeypatch.llama_landmark_attn import set_model_mem_id
+
+        set_model_mem_id(model, tokenizer)
+        model.set_mem_cache_args(
+            max_seq_len=255, mem_freq=50, top_k=5, max_cache_size=None
         )
 
     while True:
@@ -90,6 +99,7 @@ def do_inference(cfg, model, tokenizer, prompter="AlpacaPrompter"):
         else:
             prompt = instruction.strip()
         batch = tokenizer(prompt, return_tensors="pt", add_special_tokens=True)
+
         print("=" * 40)
         model.eval()
         with torch.no_grad():
@@ -165,7 +175,7 @@ def train(
     cfg_keys = cfg.keys()
     for k, _ in kwargs.items():
         # if not strict, allow writing to cfg even if it's not in the yml already
-        if k in cfg_keys or cfg.strict is False:
+        if k in cfg_keys or not cfg.strict:
             # handle booleans
             if isinstance(cfg[k], bool):
                 cfg[k] = bool(kwargs[k])
@@ -205,12 +215,23 @@ def train(
     logging.info(f"loading tokenizer... {tokenizer_config}")
     tokenizer = load_tokenizer(tokenizer_config, cfg.tokenizer_type, cfg)
 
-    if check_not_in(
-        ["inference", "shard", "merge_lora"], kwargs
+    if (
+        check_not_in(["shard", "merge_lora"], kwargs) and not cfg.inference
     ):  # don't need to load dataset for these
-        train_dataset, eval_dataset = load_prepare_datasets(
-            tokenizer, cfg, DEFAULT_DATASET_PREPARED_PATH
-        )
+        if not cfg.pretraining_dataset:
+            train_dataset, eval_dataset = load_prepare_datasets(
+                tokenizer, cfg, DEFAULT_DATASET_PREPARED_PATH
+            )
+        else:
+            train_dataset = load_pretraining_dataset(
+                cfg.pretraining_dataset,
+                tokenizer,
+                max_tokens=cfg.sequence_len,
+                seed=cfg.seed,
+            )
+            # https://discuss.huggingface.co/t/how-to-use-huggingface-trainer-streaming-datasets-without-wrapping-it-with-torchdatas-iterablewrapper/25230
+            train_dataset = train_dataset.with_format("torch")
+            eval_dataset = None
 
     if cfg.debug or "debug" in kwargs:
         logging.info("check_dataset_labels...")
@@ -234,7 +255,6 @@ def train(
         tokenizer,
         cfg,
         adapter=cfg.adapter,
-        inference=("inference" in kwargs),
     )
 
     if "merge_lora" in kwargs and cfg.adapter is not None:
@@ -247,15 +267,15 @@ def train(
             model.save_pretrained(str(Path(cfg.output_dir) / "merged"))
         return
 
-    if "inference" in kwargs:
+    if cfg.inference:
         logging.info("calling do_inference function")
-        inf_kwargs: Dict[str, Any] = {}
+        prompter: Optional[str] = "AlpacaPrompter"
         if "prompter" in kwargs:
             if kwargs["prompter"] == "None":
-                inf_kwargs["prompter"] = None
+                prompter = None
             else:
-                inf_kwargs["prompter"] = kwargs["prompter"]
-        do_inference(cfg, model, tokenizer, **inf_kwargs)
+                prompter = kwargs["prompter"]
+        do_inference(cfg, model, tokenizer, prompter=prompter)
         return
 
     if "shard" in kwargs:
@@ -277,12 +297,15 @@ def train(
 
     # In case we want to stop early with ctrl+c, this is a nice to have to save the pretrained model
     if cfg.local_rank == 0:
+
+        def terminate_handler(_, __, model):
+            if cfg.flash_optimum:
+                model = BetterTransformer.reverse(model)
+            model.save_pretrained(cfg.output_dir)
+            sys.exit(0)
+
         signal.signal(
-            signal.SIGINT,
-            lambda signal, frame: (
-                model.save_pretrained(cfg.output_dir),
-                sys.exit(0),
-            ),
+            signal.SIGINT, lambda signum, frame: terminate_handler(signum, frame, model)
         )
 
     logging.info("Starting trainer...")
@@ -305,13 +328,21 @@ def train(
 
     if not Path(cfg.output_dir).is_dir():
         os.makedirs(cfg.output_dir, exist_ok=True)
-    trainer.train(resume_from_checkpoint=resume_from_checkpoint)
+    if cfg.flash_optimum:
+        with torch.backends.cuda.sdp_kernel(
+            enable_flash=True, enable_math=True, enable_mem_efficient=True
+        ):
+            trainer.train(resume_from_checkpoint=resume_from_checkpoint)
+    else:
+        trainer.train(resume_from_checkpoint=resume_from_checkpoint)
 
     logging.info(f"Training Completed!!! Saving pre-trained model to {cfg.output_dir}")
 
     # TODO do we need this fix? https://huggingface.co/docs/accelerate/usage_guides/fsdp#saving-and-loading
     # only save on rank 0, otherwise it corrupts output on multi-GPU when multiple processes attempt to write the same file
     if cfg.local_rank == 0:
+        if cfg.flash_optimum:
+            model = BetterTransformer.reverse(model)
         model.save_pretrained(cfg.output_dir)
 
     # trainer.save_model(cfg.output_dir)  # TODO this may be needed for deepspeed to work? need to review another time

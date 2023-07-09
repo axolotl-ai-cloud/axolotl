@@ -11,6 +11,7 @@ sentencepiece
 wandb
 einops
 xformers
+optimum
 # qlora things
 bert-score==0.3.13
 evaluate==0.4.0

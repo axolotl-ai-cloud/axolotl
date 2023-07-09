@@ -1,37 +1,34 @@
-base_model: togethercomputer/RedPajama-INCITE-Chat-3B-v1
-base_model_config: togethercomputer/RedPajama-INCITE-Chat-3B-v1
-model_type: GPTNeoXForCausalLM
-tokenizer_type: AutoTokenizer
-trust_remote_code:
+base_model: huggyllama/llama-7b
+base_model_config: huggyllama/llama-7b
+model_type: LlamaForCausalLM
+tokenizer_type: LlamaTokenizer
 load_in_8bit: false
 datasets:
-  - path: vicgalle/alpaca-gpt4
-    type: alpaca
+  - path: openaccess-ai-collective/jeopardy
+    type: jeopardy
 dataset_prepared_path: last_run_prepared
 val_set_size: 0.02
 adapter:
 lora_model_dir:
-sequence_len: 2048
+sequence_len: 512
 max_packed_sequence_len:
-lora_r: 8
-lora_alpha: 16
-lora_dropout: 0.05
+lora_r:
+lora_alpha:
+lora_dropout:
 lora_target_modules:
-  - q_proj
-  - v_proj
 lora_fan_in_fan_out: false
-wandb_project: redpajama-alpaca-3b
+wandb_project:
 wandb_watch:
 wandb_run_id:
 wandb_log_model:
-output_dir: ./redpajama-alpaca-3b
-batch_size: 4
+output_dir: ./jeopardy-bot-7b
+gradient_accumulation_steps: 1
 micro_batch_size: 1
 num_epochs: 3
 optimizer: adamw_bnb_8bit
 torchdistx_path:
 lr_scheduler: cosine
-learning_rate: 0.0000002
+learning_rate: 0.00003
 train_on_inputs: false
 group_by_length: false
 bf16: true
@@ -40,7 +37,7 @@ early_stopping_patience:
 resume_from_checkpoint:
 local_rank:
 logging_steps: 5
-xformers_attention:
+xformers_attention: true
 flash_attention:
 gptq_groupsize:
 gptq_model_v1:
@@ -49,11 +46,10 @@ eval_steps: 110
 save_steps: 660
 debug:
 deepspeed:
-weight_decay: 0.0001
+weight_decay: 0.1
 fsdp:
 fsdp_config:
 tokens:
-  pad_token: "<|padding|>"
-  bos_token: "<|endoftext|>"
-  eos_token: "<|endoftext|>"
-  unk_token: "<|endoftext|>"
+  bos_token: "<s>"
+  eos_token: "</s>"
+  unk_token: "<unk>"

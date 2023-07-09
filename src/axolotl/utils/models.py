@@ -10,23 +10,16 @@ from typing import TYPE_CHECKING, Optional, Tuple  # noqa: F401
 import bitsandbytes as bnb
 import torch
 import transformers
-from transformers import PreTrainedModel  # noqa: F401
+from optimum.bettertransformer import BetterTransformer
 from transformers import (  # noqa: F401
     AutoConfig,
     AutoModelForCausalLM,
     AutoTokenizer,
     BitsAndBytesConfig,
     LlamaConfig,
+    PreTrainedModel,
+    PreTrainedTokenizerBase,
 )
-
-try:
-    from transformers import (  # pylint: disable=unused-import  # noqa: F401
-        LlamaForCausalLM,
-    )
-except ImportError:
-    logging.warning(
-        "This version of transformers does not support Llama. Consider upgrading."
-    )
 
 if TYPE_CHECKING:
     from peft import PeftConfig  # noqa: F401
@@ -39,15 +32,20 @@ def load_tokenizer(
     tokenizer_type,
     cfg,
 ):
+    use_fast = True  # this is the default
+    if cfg.tokenizer_use_fast is not None:
+        use_fast = cfg.tokenizer_use_fast
     if tokenizer_type:
         tokenizer = getattr(transformers, tokenizer_type).from_pretrained(
             tokenizer_config,
             trust_remote_code=cfg.trust_remote_code or False,
+            use_fast=use_fast,
         )
     else:
         tokenizer = AutoTokenizer.from_pretrained(
             tokenizer_config,
             trust_remote_code=cfg.trust_remote_code or False,
+            use_fast=use_fast,
         )
 
     logging.debug(f"EOS: {tokenizer.eos_token_id} / {tokenizer.eos_token}")
@@ -75,20 +73,13 @@ def load_tokenizer(
 
 
 def load_model(
-    base_model,
-    base_model_config,
-    model_type,
-    tokenizer,
-    cfg,
-    adapter="lora",
-    inference=False,
+    base_model, base_model_config, model_type, tokenizer, cfg, adapter="lora"
 ):
-    # type: (str, str, str, AutoTokenizer, DictDefault, Optional[str], bool) -> Tuple[PreTrainedModel, Optional[PeftConfig]]
+    # type: (str, str, str, PreTrainedTokenizerBase, DictDefault, Optional[str]) -> Tuple[PreTrainedModel, Optional[PeftConfig]]
     """
     Load a model from a base model and a model type.
     """
 
-    global LlamaForCausalLM  # pylint: disable=global-statement
     # TODO refactor as a kwarg
     load_in_8bit = cfg.load_in_8bit
     cfg.is_llama_derived_model = "llama" in base_model or (
@@ -96,7 +87,7 @@ def load_model(
     )
 
     if cfg.is_llama_derived_model and cfg.flash_attention:
-        if cfg.device not in ["mps", "cpu"] and inference is False:
+        if cfg.device not in ["mps", "cpu"] and not cfg.inference:
             from axolotl.flash_attn import replace_llama_attn_with_flash_attn
 
             logging.info("patching with flash attention")
@@ -116,14 +107,15 @@ def load_model(
         logging.info("patching with sdp attention")
         hijack_llama_sdp_attention()
     elif cfg.is_llama_derived_model and cfg.landmark_attention:
-        from axolotl.monkeypatch.llama_landmark_attn import (  # pylint: disable=redefined-outer-name # noqa: F811
+        from axolotl.monkeypatch.llama_landmark_attn import (
             MEM_TOKEN,
-            LlamaForCausalLM,
+            patch_llama_with_landmark_attn,
         )
 
         logging.info("patching with landmark attention")
+        patch_llama_with_landmark_attn()
 
-        # TODO: Check if this would overwrite previous additional_special_tokens
+        # Note: This might overwrite previous additional_special_tokens
         tokenizer.add_special_tokens({"additional_special_tokens": [MEM_TOKEN]})
 
     if cfg.is_llama_derived_model and cfg.xpos_rope:
@@ -134,9 +126,9 @@ def load_model(
         logging.info("patching with xpos rope")
         replace_llama_rope_with_xpos_rope()
 
-    if cfg.bf16:
+    if cfg.bf16 or cfg.bfloat16:
         torch_dtype = torch.bfloat16
-    elif cfg.load_in_8bit or cfg.fp16:
+    elif cfg.load_in_8bit or cfg.fp16 or cfg.float16:
         torch_dtype = torch.float16
     else:
         torch_dtype = torch.float32
@@ -208,7 +200,9 @@ def load_model(
                 else True,
             )
             load_in_8bit = False
-        elif cfg.is_llama_derived_model and "LlamaForCausalLM" in globals():
+        elif cfg.is_llama_derived_model and not cfg.trust_remote_code:
+            from transformers import LlamaForCausalLM
+
             config = LlamaConfig.from_pretrained(base_model_config)
             model = LlamaForCausalLM.from_pretrained(
                 base_model,
@@ -245,7 +239,7 @@ def load_model(
         #         device=cfg.device,
         #     )
         #     model.train() # sets to train instead of eval mode
-        elif model_type:
+        elif model_type and not cfg.trust_remote_code:
             model = getattr(transformers, model_type).from_pretrained(
                 base_model,
                 load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
@@ -262,11 +256,16 @@ def load_model(
             )
             # Shouldn't be a problem most of the time. will obviously error if the model doesn't support this
             # when training starts
-            if hasattr(config, "max_seq_len") and cfg.sequence_len > config.max_seq_len:
+            if (
+                hasattr(config, "max_seq_len")
+                and config.max_seq_len
+                and cfg.sequence_len > config.max_seq_len
+            ):
                 config.max_seq_len = cfg.sequence_len
                 logging.warning(f"increasing context length to {cfg.sequence_len}")
             elif (
                 hasattr(config, "max_sequence_length")
+                and config.max_sequence_length
                 and cfg.sequence_len > config.max_sequence_length
             ):
                 config.max_sequence_length = cfg.sequence_len
@@ -289,6 +288,7 @@ def load_model(
         model = AutoModelForCausalLM.from_pretrained(
             base_model,
             load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
+            load_in_4bit=cfg.load_in_4bit and cfg.adapter is not None,
             torch_dtype=torch_dtype,
             device_map=cfg.device_map,
             trust_remote_code=cfg.trust_remote_code or False,
@@ -298,12 +298,24 @@ def load_model(
     embeddings_len = math.ceil(len(tokenizer) / 32) * 32
     model.resize_token_embeddings(embeddings_len)
 
+    if (
+        hasattr(model.config, "max_position_embeddings")
+        and model.config.max_position_embeddings
+        and cfg.sequence_len >= model.config.max_position_embeddings
+    ):
+        logging.warning(
+            f"increasing model.config.max_position_embeddings to {cfg.sequence_len}"
+        )
+        model.config.max_position_embeddings = cfg.sequence_len
+
     if not cfg.gptq and (
         (cfg.adapter == "lora" and load_in_8bit)
         or (cfg.adapter == "qlora" and cfg.load_in_4bit)
     ):
         logging.info("converting PEFT model w/ prepare_model_for_kbit_training")
-        model = prepare_model_for_kbit_training(model)
+        model = prepare_model_for_kbit_training(
+            model, use_gradient_checkpointing=cfg.gradient_checkpointing
+        )
 
     model, lora_config = load_adapter(model, cfg, adapter)
 
@@ -341,6 +353,9 @@ def load_model(
         logging.warning("there are no parameters that require gradient updates")
     model.config.use_cache = False
 
+    if cfg.flash_optimum:
+        model = BetterTransformer.transform(model)
+
     # TODO resume_from_checkpoint handling
     return model, lora_config
 
@@ -373,7 +388,6 @@ def load_llama_adapter(model, cfg):
         model = PeftModel.from_pretrained(
             model,
             cfg.lora_model_dir,
-            device_map=cfg.device_map,
             torch_dtype=torch.float16,
         )
     else:
@@ -435,8 +449,7 @@ def load_lora(model, cfg):
         model = PeftModel.from_pretrained(
             model,
             cfg.lora_model_dir,
-            device_map=cfg.device_map,
-            # torch_dtype=torch.float16,
+            is_trainable=not cfg.inference,
         )
     else:
         model = get_peft_model(model, lora_config)

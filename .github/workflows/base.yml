@@ -12,6 +12,7 @@ jobs:
     # this job needs to be run on self-hosted GPU runners...
     runs-on: self-hosted
     strategy:
+      fail-fast: false
       matrix:
         include:
           - cuda: "118"
@@ -25,7 +26,7 @@ jobs:
             pytorch: 2.0.0
             axolotl_extras:
           - cuda: "117"
-            cuda_version: 11.7.0
+            cuda_version: 11.7.1
             python_version: "3.9"
             pytorch: 1.13.1
             axolotl_extras:

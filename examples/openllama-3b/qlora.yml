@@ -1,58 +1,61 @@
-base_model: huggyllama/llama-7b
-base_model_config: huggyllama/llama-7b
+base_model: openlm-research/open_llama_3b
+base_model_config: openlm-research/open_llama_3b
 model_type: LlamaForCausalLM
 tokenizer_type: LlamaTokenizer
 load_in_8bit: false
+load_in_4bit: true
+strict: false
+push_dataset_to_hub:
 datasets:
-  - path: openaccess-ai-collective/jeopardy
-    type: jeopardy
+  - path: teknium/GPT4-LLM-Cleaned
+    type: alpaca
 dataset_prepared_path: last_run_prepared
 val_set_size: 0.01
-adapter:
+adapter: qlora
 lora_model_dir:
 sequence_len: 2048
 max_packed_sequence_len: 2048
 lora_r: 8
-lora_alpha: 16
+lora_alpha: 32
 lora_dropout: 0.05
 lora_target_modules:
-  - q_proj
-  - v_proj
-lora_fan_in_fan_out: false
-wandb_project: jeopardy-bot-7b
+lora_target_linear: true
+lora_fan_in_fan_out:
+wandb_project:
 wandb_watch:
 wandb_run_id:
 wandb_log_model:
-output_dir: ./jeopardy-bot-7b
-gradient_accumulation_steps: 2
-micro_batch_size: 1
+output_dir: ./qlora-out
+batch_size: 4
+micro_batch_size: 4
 num_epochs: 2
-optimizer: adamw_bnb_8bit
+optimizer: paged_adamw_32bit
 torchdistx_path:
 lr_scheduler: cosine
-learning_rate: 0.0000002
+learning_rate: 0.0002
 train_on_inputs: false
-group_by_length: false
+group_by_length: true
 bf16: true
+fp16: false
 tf32: true
+gradient_checkpointing: true
 early_stopping_patience:
 resume_from_checkpoint:
 local_rank:
-logging_steps: 5
+logging_steps: 1
 xformers_attention: true
 flash_attention:
 gptq_groupsize:
 gptq_model_v1:
-warmup_steps: 20
-eval_steps: 110
-save_steps: 660
+warmup_steps: 10
+eval_steps: 20
+save_steps:
 debug:
 deepspeed:
-weight_decay: 0.0001
+weight_decay: 0.0
 fsdp:
 fsdp_config:
-tokens:
-  pad_token: "[PAD]"
+special_tokens:
   bos_token: "<s>"
   eos_token: "</s>"
   unk_token: "<unk>"

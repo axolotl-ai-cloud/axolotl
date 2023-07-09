@@ -34,3 +34,5 @@ def check_example_labels(example, tokenizer):
 
     logging.info(" ".join(colored_tokens))
     logging.info("\n\n\n")
+
+    return " ".join(colored_tokens)

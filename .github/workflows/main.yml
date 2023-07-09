@@ -11,6 +11,7 @@ jobs:
     if: github.repository_owner == 'OpenAccess-AI-Collective'
     # this job needs to be run on self-hosted GPU runners...
     strategy:
+      fail-fast: false
       matrix:
         include:
           - cuda: cu118
@@ -29,7 +30,7 @@ jobs:
             pytorch: 2.0.0
             axolotl_extras: gptq
           - cuda: cu117
-            cuda_version: 11.7.0
+            cuda_version: 11.7.1
             python_version: "3.9"
             pytorch: 1.13.1
             axolotl_extras:
@@ -84,7 +85,7 @@ jobs:
             pytorch: 2.0.0
             axolotl_extras: gptq
           - cuda: cu117
-            cuda_version: 11.7.0
+            cuda_version: 11.7.1
             python_version: "3.9"
             pytorch: 1.13.1
             axolotl_extras:

@@ -16,7 +16,10 @@ from torch.optim.lr_scheduler import OneCycleLR
 from transformers import EarlyStoppingCallback, Trainer
 from transformers.trainer_pt_utils import get_parameter_names
 
-from axolotl.utils.callbacks import SavePeftModelCallback
+from axolotl.utils.callbacks import (
+    SaveBetterTransformerModelCallback,
+    SavePeftModelCallback,
+)
 from axolotl.utils.schedulers import InterpolatingLogScheduler
 
 
@@ -111,6 +114,19 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
             # make a guess here
             # TODO search Path("./") for one
             training_arguments_kwargs["deepspeed"] = "./ds_config.json"
+
+    if cfg.adam_beta1:
+        training_arguments_kwargs["adam_beta1"] = cfg.adam_beta1
+    if cfg.adam_beta2:
+        training_arguments_kwargs["adam_beta2"] = cfg.adam_beta2
+    if cfg.adam_epsilon:
+        training_arguments_kwargs["adam_epsilon"] = cfg.adam_epsilon
+    if cfg.max_grad_norm:
+        training_arguments_kwargs["max_grad_norm"] = cfg.max_grad_norm
+
+    if cfg.hub_model_id:
+        training_arguments_kwargs["hub_model_id"] = cfg.hub_model_id
+        training_arguments_kwargs["push_to_hub"] = True
 
     training_args = transformers.TrainingArguments(
         per_device_train_batch_size=cfg.micro_batch_size,
@@ -228,6 +244,9 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
     ]:  # only save in rank 0
         callbacks.append(SavePeftModelCallback)
 
+    if hasattr(model, "use_bettertransformer") and model.use_bettertransformer is True:
+        callbacks.append(SaveBetterTransformerModelCallback)
+
     data_collator_kwargs = {
         "padding": True,
     }
@@ -239,16 +258,19 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
     if cfg.is_llama_derived_model and cfg.landmark_attention:
         from functools import partial
 
-        from axolotl.monkeypatch.llama_landmark_attn import MEM_TOKEN, add_mem_tokens
+        from axolotl.monkeypatch.llama_landmark_attn import (
+            add_mem_tokens,
+            get_mem_id,
+            set_model_mem_id,
+        )
 
-        mem_id = tokenizer.convert_tokens_to_ids(MEM_TOKEN)
-        model.set_mem_id(mem_id)
+        set_model_mem_id(model, tokenizer)
 
         logging.info("Adding landmark attention tokens to dataset")
 
         for dataset in [train_dataset, eval_dataset]:
             dataset = dataset.map(
-                partial(add_mem_tokens, mem_freq=50, mem_id=mem_id),
+                partial(add_mem_tokens, mem_freq=50, mem_id=get_mem_id(tokenizer)),
                 batched=False,
                 num_proc=32,
             )
