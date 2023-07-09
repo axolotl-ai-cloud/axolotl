@@ -14,7 +14,7 @@ from datasets import (
     load_from_disk,
 )
 from huggingface_hub import hf_hub_download
-from rathe import get_formatter, get_parser, TokenizationOptions
+from rathe import TokenizationOptions, get_formatter, get_parser
 from rathe.pipeline import DataPipeline
 from transformers import PreTrainedTokenizerBase
 
@@ -149,7 +149,12 @@ def load_tokenized_prepared_datasets(
             ds_formatter = formatter
             if d.prompt_style:
                 ds_formatter = get_formatter(d.prompt_format)
-            pipeline = DataPipeline(parser, ds_formatter, tokenizer, options=TokenizationOptions(eos_after_output=True))
+            pipeline = DataPipeline(
+                parser,
+                ds_formatter,
+                tokenizer,
+                options=TokenizationOptions(eos_after_output=True),
+            )
 
             datasets.append(ds.map(pipeline))
 
