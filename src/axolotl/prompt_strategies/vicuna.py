@@ -45,7 +45,7 @@ class Vicuna_v_1_1_Conversation:
             if (i == len(self.messages) - 1) and (role == self.roles[0]):
                 # last message is from user (due to length),
                 #  return prompt without it
-                pass
+                return ret
             elif message:
                 ret += role + ": " + message + seps[i % 2]
             else:
