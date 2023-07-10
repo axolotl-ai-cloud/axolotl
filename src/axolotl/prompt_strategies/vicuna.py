@@ -42,13 +42,14 @@ class Vicuna_v_1_1_Conversation:
         seps = [self.sep, self.sep2]
         ret = self.system + seps[0]
         for i, (role, message) in enumerate(self.messages):
-            if message:
+            if (i == len(self.messages) - 1) and (role == self.roles[0]):
+                # last message is from user (due to length),
+                #  return prompt without it
+                pass
+            elif message:
                 ret += role + ": " + message + seps[i % 2]
             else:
-                if (i == len(self.messages) - 1) and role == self.roles[0]:
-                    pass  # last message is empty and from user, return prompt without it
-                else:
-                    ret += role + ":"
+                ret += role + ":"
         return ret
 
     def append_message(self, role: str, message: str):
