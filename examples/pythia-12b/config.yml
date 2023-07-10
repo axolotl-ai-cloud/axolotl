@@ -1,0 +1,49 @@
+base_model: EleutherAI/pythia-12b-deduped
+base_model_config: EleutherAI/pythia-12b-deduped
+base_model_ignore_patterns: pytorch*  # prefer safetensors
+model_type: GPTNeoXForCausalLM
+tokenizer_type: AutoTokenizer
+load_in_8bit: false
+load_in_4bit: false
+gptq: false
+device_map: auto
+datasets:
+  - path: vicgalle/alpaca-gpt4
+    type: alpaca
+dataset_prepared_path: last_run_prepared
+val_set_size: 0.05
+adapter:
+lora_model_dir:
+sequence_len: 2048
+max_packed_sequence_len: 2048
+lora_r: 64
+lora_alpha: 32
+lora_dropout: 0.0
+lora_target_modules:
+lora_target_linear: true
+lora_fan_in_fan_out: true  # pythia/GPTNeoX lora specific
+wandb_project:
+wandb_watch:
+wandb_run_id:
+wandb_log_model:
+output_dir: ./pythia-12b
+gradient_accumulation_steps: 1
+micro_batch_size: 1
+num_epochs: 5
+learning_rate: 0.00003
+optimizer: adamw_bnb_8bit
+lr_scheduler: cosine
+train_on_inputs: false
+group_by_length: false
+bf16: false
+fp16: false
+float16: true
+tf32: true
+flash_optimum: true
+early_stopping_patience:
+resume_from_checkpoint:
+local_rank:
+gradient_checkpointing: true
+fsdp:
+fsdp_config:
+collator_pad_to_longest: true

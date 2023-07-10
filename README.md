@@ -138,7 +138,7 @@ Have dataset(s) in one of the following format (JSONL recommended):
   ```json
   {"instruction": "...", "input": "...", "output": "..."}
   ```
-- `sharegpt`: conversations
+- `sharegpt:chat`: conversations
   ```json
   {"conversations": [{"from": "...", "value": "..."}]}
   ```
@@ -195,6 +195,10 @@ Have dataset(s) in one of the following format (JSONL recommended):
   ```json
   {"message_1": "...", "message_2": "..."}
   ```
+- `alpaca_w_system.load_open_orca`: support for open orca datasets with included system prompts, instruct
+  ```json
+  {"system_prompt": "...", "question": "...", "response": "..."}
+  ```
 - `context_qa`: in context question answering from an article
   ```json
   {"article": "...", "question": "...", "answer": "..."}
@@ -233,7 +237,7 @@ Have dataset(s) in one of the following format (JSONL recommended):
 #### How to add custom prompts
 
   1. Add your method to a file in [prompt_strategies](src/axolotl/prompt_strategies). Please see other files as example.
-  2. Use your custom file name as the dataset type.
+  2. Use your custom file name as the dataset type `<prompt_strategies_file>.load_<load_fn>`.
 
 Optionally, download some datasets, see [data/README.md](data/README.md)
 
@@ -251,10 +255,18 @@ See sample configs in [configs](configs) folder or [examples](examples) for quic
 
 - dataset
   ```yaml
+  sequence_len: 2048 # max token length for prompt
+
+  # huggingface repo
   datasets:
-    - path: vicgalle/alpaca-gpt4 # local or huggingface repo
+    - path: vicgalle/alpaca-gpt4
       type: alpaca # format from earlier
-  sequence_len: 2048 # max token length / prompt
+
+  # local
+  datasets:
+    - path: json
+      data_files: data.jsonl # or json
+      type: alpaca # format from earlier
   ```
 
 - loading
@@ -264,6 +276,8 @@ See sample configs in [configs](configs) folder or [examples](examples) for quic
   bf16: true # require >=ampere
   fp16: true
   tf32: true # require >=ampere
+  bfloat16: true # require >=ampere, use instead of bf16 when you don't want AMP (automatic mixed precision)
+  float16: true # use instead of fp16 when you don't want AMP
   ```
   Note: Repo does not do 4-bit quantization.
 
@@ -300,6 +314,8 @@ model_type: AutoModelForCausalLM
 tokenizer_type: AutoTokenizer
 # Trust remote code for untrusted source
 trust_remote_code:
+# use_fast option for tokenizer loading from_pretrained, default to True
+tokenizer_use_fast:
 
 # whether you are training a 4-bit GPTQ quantized model
 gptq: true
@@ -320,10 +336,10 @@ tf32: true # require >=ampere
 
 # a list of one or more datasets to finetune the model with
 datasets:
-  # this can be either a hf dataset, or relative path
+  # hf dataset repo | "json" for local dataset, make sure to fill data_files
   - path: vicgalle/alpaca-gpt4
   # The type of prompt to use for training. [alpaca, sharegpt, gpteacher, oasst, reflection]
-    type: alpaca # format OR format:prompt_style (chat/instruct)
+    type: alpaca # format | format:<prompt_style> (chat/instruct) | <prompt_strategies>.load_<load_fn>
     data_files: # path to source data files
     shards: # number of shards to split data into
 
@@ -332,6 +348,8 @@ datasets:
 dataset_prepared_path: data/last_run_prepared
 # push prepared dataset to hub
 push_dataset_to_hub: # repo path
+# push checkpoints to hub
+hub_model_id: # repo path
 # whether to use hf `use_auth_token` for loading datasets. Useful for fetching private datasets
 # required to be true when used in combination with `push_dataset_to_hub`
 hf_use_auth_token: # boolean
@@ -420,7 +438,15 @@ log_sweep_max_lr:
 optimizer:
 # specify weight decay
 weight_decay:
+# adamw hyperparams
+adam_beta1:
+adam_beta2:
+adam_epsilon:
+# Gradient clipping max norm
+max_grad_norm:
 
+# whether to bettertransformers
+flash_optimum:
 # whether to use xformers attention patch https://github.com/facebookresearch/xformers:
 xformers_attention:
 # whether to use flash attention patch https://github.com/HazyResearch/flash-attention:
@@ -500,16 +526,16 @@ Pass the appropriate flag to the train command:
 
 - Pretrained LORA:
   ```bash
-  --inference --lora_model_dir ./completed-model
+  --inference --lora_model_dir="./lora-output-dir"
   ```
 - Full weights finetune:
   ```bash
-  --inference --base_model ./completed-model
+  --inference --base_model="./completed-model"
   ```
 - Full weights finetune w/ a prompt from a text file:
   ```bash
   cat /tmp/prompt.txt | python scripts/finetune.py configs/your_config.yml \
-    --base_model ./completed-model --inference --prompter=None --load_in_8bit=True
+    --base_model="./completed-model" --inference --prompter=None --load_in_8bit=True
   ```
 
 ### Merge LORA to base
@@ -518,6 +544,12 @@ Add below flag to train command above
 
 ```bash
 --merge_lora --lora_model_dir="./completed-model" --load_in_8bit=False --load_in_4bit=False
+```
+
+If you run out of CUDA memory, you can try to merge in system RAM with
+
+```bash
+CUDA_VISIBLE_DEVICES="" python3 scripts/finetune.py ...
 ```
 
 ## Common Errors 🧰
@@ -551,6 +583,16 @@ Building something cool with Axolotl? Consider adding a badge to your model card
 ```
 
 [<img src="https://raw.githubusercontent.com/OpenAccess-AI-Collective/axolotl/main/image/axolotl-badge-web.png" alt="Built with Axolotl" width="200" height="32"/>](https://github.com/OpenAccess-AI-Collective/axolotl)
+
+## Community Showcase
+
+Open Access AI Collective
+- [Minotaur 13b](https://huggingface.co/openaccess-ai-collective/minotaur-13b)
+- [Manticore 13b](https://huggingface.co/openaccess-ai-collective/manticore-13b)
+- [Hippogriff 30b](https://huggingface.co/openaccess-ai-collective/hippogriff-30b-chat)
+
+PocketDoc Labs
+- [Dan's PersonalityEngine 13b LoRA](https://huggingface.co/PocketDoc/Dans-PersonalityEngine-13b-LoRA)
 
 ## Contributing 🤝
 

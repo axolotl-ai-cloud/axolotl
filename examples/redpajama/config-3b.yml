@@ -1,7 +1,7 @@
 base_model: togethercomputer/RedPajama-INCITE-Chat-3B-v1
 base_model_config: togethercomputer/RedPajama-INCITE-Chat-3B-v1
 model_type: GPTNeoXForCausalLM
-tokenizer_type: GPTNeoXTokenizer
+tokenizer_type: AutoTokenizer
 trust_remote_code:
 load_in_8bit: false
 datasets:

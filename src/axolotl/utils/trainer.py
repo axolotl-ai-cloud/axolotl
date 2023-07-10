@@ -17,7 +17,10 @@ from torch.optim.lr_scheduler import OneCycleLR
 from transformers import EarlyStoppingCallback, Trainer, TrainingArguments
 from transformers.trainer_pt_utils import get_parameter_names
 
-from axolotl.utils.callbacks import SavePeftModelCallback
+from axolotl.utils.callbacks import (
+    SaveBetterTransformerModelCallback,
+    SavePeftModelCallback,
+)
 from axolotl.utils.schedulers import (
     InterpolatingLogScheduler,
     get_cosine_schedule_with_quadratic_warmup,
@@ -166,6 +169,19 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
             # TODO search Path("./") for one
             training_arguments_kwargs["deepspeed"] = "./ds_config.json"
 
+    if cfg.adam_beta1:
+        training_arguments_kwargs["adam_beta1"] = cfg.adam_beta1
+    if cfg.adam_beta2:
+        training_arguments_kwargs["adam_beta2"] = cfg.adam_beta2
+    if cfg.adam_epsilon:
+        training_arguments_kwargs["adam_epsilon"] = cfg.adam_epsilon
+    if cfg.max_grad_norm:
+        training_arguments_kwargs["max_grad_norm"] = cfg.max_grad_norm
+
+    if cfg.hub_model_id:
+        training_arguments_kwargs["hub_model_id"] = cfg.hub_model_id
+        training_arguments_kwargs["push_to_hub"] = True
+
     training_args = AxolotlTrainingArguments(
         per_device_train_batch_size=cfg.micro_batch_size,
         per_device_eval_batch_size=cfg.eval_batch_size
@@ -281,6 +297,9 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
         "qlora",
     ]:  # only save in rank 0
         callbacks.append(SavePeftModelCallback)
+
+    if hasattr(model, "use_bettertransformer") and model.use_bettertransformer is True:
+        callbacks.append(SaveBetterTransformerModelCallback)
 
     data_collator_kwargs = {
         "padding": True,

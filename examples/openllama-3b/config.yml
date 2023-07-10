@@ -26,17 +26,18 @@ wandb_watch:
 wandb_run_id:
 wandb_log_model:
 output_dir: ./openllama-out
-batch_size: 16
-micro_batch_size: 4
+gradient_accumulation_steps: 1
+micro_batch_size: 1
 num_epochs: 3
 optimizer: adamw_bnb_8bit
 torchdistx_path:
 lr_scheduler: cosine
-learning_rate: 0.0002
+learning_rate: 0.00001
 train_on_inputs: false
 group_by_length: false
+float16: true
 bf16: false
-fp16: true
+fp16: false
 tf32: false
 gradient_checkpointing: true
 early_stopping_patience:
@@ -52,7 +53,7 @@ eval_steps: 50
 save_steps:
 debug:
 deepspeed:
-weight_decay: 0.0
+weight_decay: 0.1
 fsdp:
 fsdp_config:
 special_tokens:

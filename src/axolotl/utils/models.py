@@ -10,13 +10,15 @@ from typing import TYPE_CHECKING, Optional, Tuple  # noqa: F401
 import bitsandbytes as bnb
 import torch
 import transformers
-from transformers import PreTrainedModel  # noqa: F401
+from optimum.bettertransformer import BetterTransformer
 from transformers import (  # noqa: F401
     AutoConfig,
     AutoModelForCausalLM,
     AutoTokenizer,
     BitsAndBytesConfig,
     LlamaConfig,
+    PreTrainedModel,
+    PreTrainedTokenizerBase,
 )
 
 from axolotl.prompt_tokenizers import LLAMA_DEFAULT_PAD_TOKEN
@@ -32,15 +34,20 @@ def load_tokenizer(
     tokenizer_type,
     cfg,
 ):
+    use_fast = True  # this is the default
+    if cfg.tokenizer_use_fast is not None:
+        use_fast = cfg.tokenizer_use_fast
     if tokenizer_type:
         tokenizer = getattr(transformers, tokenizer_type).from_pretrained(
             tokenizer_config,
             trust_remote_code=cfg.trust_remote_code or False,
+            use_fast=use_fast,
         )
     else:
         tokenizer = AutoTokenizer.from_pretrained(
             tokenizer_config,
             trust_remote_code=cfg.trust_remote_code or False,
+            use_fast=use_fast,
         )
 
     logging.debug(f"EOS: {tokenizer.eos_token_id} / {tokenizer.eos_token}")
@@ -70,7 +77,7 @@ def load_tokenizer(
 def load_model(
     base_model, base_model_config, model_type, tokenizer, cfg, adapter="lora"
 ):
-    # type: (str, str, str, AutoTokenizer, DictDefault, Optional[str]) -> Tuple[PreTrainedModel, Optional[PeftConfig]]
+    # type: (str, str, str, PreTrainedTokenizerBase, DictDefault, Optional[str]) -> Tuple[PreTrainedModel, Optional[PeftConfig]]
     """
     Load a model from a base model and a model type.
     """
@@ -121,9 +128,9 @@ def load_model(
         logging.info("patching with xpos rope")
         replace_llama_rope_with_xpos_rope()
 
-    if cfg.bf16:
+    if cfg.bf16 or cfg.bfloat16:
         torch_dtype = torch.bfloat16
-    elif cfg.load_in_8bit or cfg.fp16:
+    elif cfg.load_in_8bit or cfg.fp16 or cfg.float16:
         torch_dtype = torch.float16
     else:
         torch_dtype = torch.float32
@@ -195,7 +202,7 @@ def load_model(
                 else True,
             )
             load_in_8bit = False
-        elif cfg.is_llama_derived_model:
+        elif cfg.is_llama_derived_model and not cfg.trust_remote_code:
             from transformers import LlamaForCausalLM
 
             config = LlamaConfig.from_pretrained(base_model_config)
@@ -234,7 +241,7 @@ def load_model(
         #         device=cfg.device,
         #     )
         #     model.train() # sets to train instead of eval mode
-        elif model_type:
+        elif model_type and not cfg.trust_remote_code:
             model = getattr(transformers, model_type).from_pretrained(
                 base_model,
                 load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
@@ -251,11 +258,16 @@ def load_model(
             )
             # Shouldn't be a problem most of the time. will obviously error if the model doesn't support this
             # when training starts
-            if hasattr(config, "max_seq_len") and cfg.sequence_len > config.max_seq_len:
+            if (
+                hasattr(config, "max_seq_len")
+                and config.max_seq_len
+                and cfg.sequence_len > config.max_seq_len
+            ):
                 config.max_seq_len = cfg.sequence_len
                 logging.warning(f"increasing context length to {cfg.sequence_len}")
             elif (
                 hasattr(config, "max_sequence_length")
+                and config.max_sequence_length
                 and cfg.sequence_len > config.max_sequence_length
             ):
                 config.max_sequence_length = cfg.sequence_len
@@ -278,6 +290,7 @@ def load_model(
         model = AutoModelForCausalLM.from_pretrained(
             base_model,
             load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
+            load_in_4bit=cfg.load_in_4bit and cfg.adapter is not None,
             torch_dtype=torch_dtype,
             device_map=cfg.device_map,
             trust_remote_code=cfg.trust_remote_code or False,
@@ -286,6 +299,16 @@ def load_model(
 
     embeddings_len = math.ceil(len(tokenizer) / 32) * 32
     model.resize_token_embeddings(embeddings_len)
+
+    if (
+        hasattr(model.config, "max_position_embeddings")
+        and model.config.max_position_embeddings
+        and cfg.sequence_len >= model.config.max_position_embeddings
+    ):
+        logging.warning(
+            f"increasing model.config.max_position_embeddings to {cfg.sequence_len}"
+        )
+        model.config.max_position_embeddings = cfg.sequence_len
 
     if not cfg.gptq and (
         (cfg.adapter == "lora" and load_in_8bit)
@@ -331,6 +354,9 @@ def load_model(
     if len(requires_grad) == 0:
         logging.warning("there are no parameters that require gradient updates")
     model.config.use_cache = False
+
+    if cfg.flash_optimum:
+        model = BetterTransformer.transform(model)
 
     # TODO resume_from_checkpoint handling
     return model, lora_config

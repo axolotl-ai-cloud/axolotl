@@ -212,3 +212,104 @@ class ValidationTest(unittest.TestCase):
 
         with pytest.raises(ValueError, match=regex_exp):
             validate_config(cfg)
+
+    def test_flash_optimum(self):
+        cfg = DictDefault(
+            {
+                "flash_optimum": True,
+                "adapter": "lora",
+            }
+        )
+
+        with self._caplog.at_level(logging.WARNING):
+            validate_config(cfg)
+            assert any(
+                "BetterTransformers probably doesn't work with PEFT adapters"
+                in record.message
+                for record in self._caplog.records
+            )
+
+        cfg = DictDefault(
+            {
+                "flash_optimum": True,
+            }
+        )
+
+        with self._caplog.at_level(logging.WARNING):
+            validate_config(cfg)
+            assert any(
+                "probably set bfloat16 or float16" in record.message
+                for record in self._caplog.records
+            )
+
+        cfg = DictDefault(
+            {
+                "flash_optimum": True,
+                "fp16": True,
+            }
+        )
+        regex_exp = r".*AMP is not supported.*"
+
+        with pytest.raises(ValueError, match=regex_exp):
+            validate_config(cfg)
+
+        cfg = DictDefault(
+            {
+                "flash_optimum": True,
+                "bf16": True,
+            }
+        )
+        regex_exp = r".*AMP is not supported.*"
+
+        with pytest.raises(ValueError, match=regex_exp):
+            validate_config(cfg)
+
+    def test_adamw_hyperparams(self):
+        cfg = DictDefault(
+            {
+                "optimizer": None,
+                "adam_epsilon": 0.0001,
+            }
+        )
+
+        with self._caplog.at_level(logging.WARNING):
+            validate_config(cfg)
+            assert any(
+                "adamw hyperparameters found, but no adamw optimizer set"
+                in record.message
+                for record in self._caplog.records
+            )
+
+        cfg = DictDefault(
+            {
+                "optimizer": "adafactor",
+                "adam_beta1": 0.0001,
+            }
+        )
+
+        with self._caplog.at_level(logging.WARNING):
+            validate_config(cfg)
+            assert any(
+                "adamw hyperparameters found, but no adamw optimizer set"
+                in record.message
+                for record in self._caplog.records
+            )
+
+        cfg = DictDefault(
+            {
+                "optimizer": "adamw_bnb_8bit",
+                "adam_beta1": 0.9,
+                "adam_beta2": 0.99,
+                "adam_epsilon": 0.0001,
+            }
+        )
+
+        validate_config(cfg)
+
+        cfg = DictDefault(
+            {
+                "optimizer": "adafactor",
+            }
+        )
+
+        validate_config(cfg)

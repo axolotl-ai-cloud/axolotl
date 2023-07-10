@@ -6,7 +6,7 @@ from axolotl.prompt_tokenizers import (
     AlpacaPromptTokenizingStrategy,
     InstructionPromptTokenizingStrategy,
 )
-from axolotl.prompters import AlpacaPrompter, PromptStyle
+from axolotl.prompters import AlpacaPrompter, PromptStyle, UnpromptedPrompter
 
 
 def load(tokenizer, cfg):
@@ -20,11 +20,38 @@ def load(tokenizer, cfg):
 
 class AlpacaConcisePrompter(AlpacaPrompter):
     """
-    Alpaca Prompter extending the system prompt to ask for concise answers
+    Alpaca Prompter extending the system prompt to ask for concise chat-instruct answers
     """
 
-    system_prompt = "Below is an instruction that describes a task, paired with an input that provides further context. Write a response that concisely and appropriately completes the request.\n\n"
-    system_no_input_prompt = "Below is an instruction that describes a task. Write a response that appropriately and concisely completes the request.\n\n"
+    system_prompt = "Below is an instruction from a USER that describes a task, paired with an input that provides further context. The ASSISTANT writes a response that concisely and appropriately completes the request.\n\n"
+    system_no_input_prompt = "Below is an instruction from a USER that describes a task. The ASSISTANT writes a response that appropriately and concisely completes the request.\n\n"
+
+
+class AlpacaChatPrompter(AlpacaPrompter):
+    """
+    Alpaca Chat Prompter extending the system prompt to for chat-instruct answers
+    """
+
+    system_prompt = "Below is an instruction from a USER that describes a task, paired with an input that provides further context. The ASSISTANT writes a response that concisely and appropriately completes the request.\n\n"
+    system_no_input_prompt = "Below is an instruction from a USER that describes a task. The ASSISTANT writes a response that appropriately and concisely completes the request.\n\n"
+
+    def __init__(self):  # pylint: disable=super-init-not-called
+        self.prompt_style = PromptStyle.CHAT.value
+        self.match_prompt_style()
+
+
+class NoSystemPrompter(AlpacaPrompter):
+    """
+    Null Prompter with no system prompts
+    """
+
+    system_prompt = ""
+    system_no_input_prompt = ""
+    turn_format = "{instruction} {input} "
+    turn_no_input_format = "{instruction} "
+
+    def __init__(self):  # pylint: disable=super-init-not-called
+        pass
 
 
 class AlpacaQAPromptTokenizingStrategy(InstructionPromptTokenizingStrategy):
@@ -64,7 +91,7 @@ def load_concise(tokenizer, cfg):
 
 def load_qa(tokenizer, cfg):
     return AlpacaQAPromptTokenizingStrategy(
-        AlpacaPrompter(PromptStyle.CHAT.value),
+        AlpacaChatPrompter(),
         tokenizer,
         cfg.train_on_inputs,
         cfg.sequence_len,
@@ -73,7 +100,16 @@ def load_qa(tokenizer, cfg):
 
 def load_camel_ai(tokenizer, cfg):
     return CamelAIPromptTokenizingStrategy(
-        AlpacaPrompter(PromptStyle.CHAT.value),
+        AlpacaChatPrompter(),
+        tokenizer,
+        cfg.train_on_inputs,
+        cfg.sequence_len,
+    )
+
+
+def load_no_prompt(tokenizer, cfg):
+    return AlpacaPromptTokenizingStrategy(
+        UnpromptedPrompter(PromptStyle.CHAT.value),
         tokenizer,
         cfg.train_on_inputs,
         cfg.sequence_len,
