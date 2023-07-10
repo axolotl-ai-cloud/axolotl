@@ -45,7 +45,10 @@ class Vicuna_v_1_1_Conversation:
             if message:
                 ret += role + ": " + message + seps[i % 2]
             else:
-                ret += role + ":"
+                if (i == len(self.messages) - 1) and role == self.roles[0]:
+                    pass  # last message is empty and from user, return prompt without it
+                else:
+                    ret += role + ":"
         return ret
 
     def append_message(self, role: str, message: str):
@@ -70,7 +73,7 @@ class VicunaTokenizingStrategy(PromptTokenizingStrategy):
             padding="max_length",
             max_length=self.tokenizer.model_max_length,
             truncation=True,
-        ).input_ids
+        ).input_ids[0]
         target = input_ids.clone()
 
         # Mask targets. Only compute loss on the assistant outputs.
@@ -126,7 +129,7 @@ class Vicuna_v1_1_Prompter:  # pylint: disable=too-few-public-methods
 
     def build_prompt(self, source) -> Generator[Vicuna_v_1_1_Conversation, None, None]:
         # see https://github.com/lm-sys/FastChat/blob/da0641e567cf93756b0978ab5a6b092e96f06240/fastchat/train/train.py#L78
-        source=source["conversation"] #fix data structure for datasets
+        source = source["conversation"]  # fix data structure for datasets
 
         # if system prompt provided, use it
         if source[0]["from"] == "system":
