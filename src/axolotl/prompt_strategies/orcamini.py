@@ -9,13 +9,14 @@ this one specifies the system prompt with "### System:".
 
 Not suited/tested for multiple-turn conversations without further adjustments.
 """
-
+from typing import Generator, Union
 from axolotl.prompters import AlpacaPrompter
 from axolotl.prompt_strategies.alpaca_w_system import OpenOrcaPromptTokenizingStrategy
-from typing import Generator, Union
 
 
 class OrcaMiniPrompter(AlpacaPrompter):
+    """Adjusted Prompter for Orca Mini (v2) datasets"""
+
     def match_prompt_style(self):
         self.turn_no_input_format = (
             "### System:\n{system}\n\n### User:\n{instruction}\n\n### Response:\n"
