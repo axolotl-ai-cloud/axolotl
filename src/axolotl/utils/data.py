@@ -405,13 +405,14 @@ def load_prepare_datasets(
                         private=True,
                     )
     else:
-        dataset_train = load_tokenized_prepared_datasets(
+        # dataset_train = load_tokenized_prepared_datasets(
+        dataset = load_tokenized_prepared_datasets(
             "train", tokenizer, cfg, default_dataset_prepared_path
         )
-        dataset_test = load_tokenized_prepared_datasets(
-            "test", tokenizer, cfg, default_dataset_prepared_path
-        )
-        dataset = DatasetDict({"train": dataset_train, "test": dataset_test})
+        # dataset_test = load_tokenized_prepared_datasets(
+        #     "test", tokenizer, cfg, default_dataset_prepared_path
+        # )
+        # dataset = DatasetDict({"train": dataset_train, "test": dataset_test})
 
     if cfg.dataset_shard_num and cfg.dataset_shard_idx is not None:
         logging.info(
