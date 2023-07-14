@@ -182,6 +182,9 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
         training_arguments_kwargs["hub_model_id"] = cfg.hub_model_id
         training_arguments_kwargs["push_to_hub"] = True
 
+    if cfg.save_safetensors:
+        training_arguments_kwargs["save_safetensors"] = cfg.save_safetensors
+
     training_args = AxolotlTrainingArguments(
         per_device_train_batch_size=cfg.micro_batch_size,
         per_device_eval_batch_size=cfg.eval_batch_size
