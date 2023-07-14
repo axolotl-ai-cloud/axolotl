@@ -4,14 +4,15 @@ see also https://huggingface.co/psmathur/orca_mini_v2_7b for more information
 
 Use dataset type: orcamini in conig.yml to use this prompt style.
 
-Compared to the alpaca_w_system.open_orca dataset type, 
+Compared to the alpaca_w_system.open_orca dataset type,
 this one specifies the system prompt with "### System:".
 
 Not suited/tested for multiple-turn conversations without further adjustments.
 """
 from typing import Generator, Union
-from axolotl.prompters import AlpacaPrompter
+
 from axolotl.prompt_strategies.alpaca_w_system import OpenOrcaPromptTokenizingStrategy
+from axolotl.prompters import AlpacaPrompter
 
 
 class OrcaMiniPrompter(AlpacaPrompter):
@@ -26,7 +27,6 @@ class OrcaMiniPrompter(AlpacaPrompter):
         self,
         system: str,
         instruction: str,
-        input: Union[None, str] = None,  # pylint: disable=redefined-builtin
         output: Union[None, str] = None,
     ) -> Generator[str, None, None]:
         # returns the full prompt from instruction and optional input
