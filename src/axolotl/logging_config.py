@@ -6,7 +6,7 @@ DEFAULT_LOGGING_CONFIG: Dict[str, Any] = {
     "version": 1,
     "formatters": {
         "simple": {
-            "format": "[%(asctime)s] [%(levelname)s] [PID:%(process)d] [%(name)s.%(funcName)s:%(lineno)d] %(message)s",
+            "format": "[%(asctime)s] [%(levelname)s] [%(name)s.%(funcName)s:%(lineno)d] [PID:%(process)d] %(message)s",
         },
     },
     "filters": {},
