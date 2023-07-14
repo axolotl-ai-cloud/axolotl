@@ -14,14 +14,15 @@ For a custom system message, the first "from" can be "system".
 """
 
 import logging
-from typing import List, Generator, Sequence
 from dataclasses import dataclass, field
-from axolotl.prompters import IGNORE_TOKEN_ID
+from typing import Generator, List, Sequence
+
 from axolotl.prompt_tokenizers import PromptTokenizingStrategy
+from axolotl.prompters import IGNORE_TOKEN_ID
 
 
 @dataclass
-class Vicuna_v_1_1_Conversation:
+class VicunaConversation:
     """A class that manages prompt templates and keeps all conversation history.
     copied from https://github.com/lm-sys/FastChat/blob/main/fastchat/conversation.py"""
 
@@ -46,7 +47,7 @@ class Vicuna_v_1_1_Conversation:
                 # last message is from user (due to length),
                 #  return prompt without it
                 return ret
-            elif message:
+            if message:
                 ret += role + ": " + message + seps[i % 2]
             else:
                 ret += role + ":"
@@ -85,7 +86,7 @@ class VicunaTokenizingStrategy(PromptTokenizingStrategy):
         turns = conversation_str.split(conv.sep2)
         cur_len = 1
         target[:cur_len] = IGNORE_TOKEN_ID
-        for i, turn in enumerate(turns):
+        for turn in turns:
             if turn == "":
                 break
             turn_len = len(self.tokenizer(turn).input_ids)
@@ -111,14 +112,14 @@ class VicunaTokenizingStrategy(PromptTokenizingStrategy):
                     f" (ignored)"
                 )
 
-        return dict(
-            input_ids=input_ids.tolist(),
-            labels=target.tolist(),
-            attention_mask=input_ids.ne(self.tokenizer.pad_token_id).tolist(),
-        )
+        return {
+            "input_ids": input_ids.tolist(),
+            "labels": target.tolist(),
+            "attention_mask": input_ids.ne(self.tokenizer.pad_token_id).tolist(),
+        }
 
 
-class Vicuna_v1_1_Prompter:  # pylint: disable=too-few-public-methods
+class VicunaPrompter:  # pylint: disable=too-few-public-methods
     """
     A prompter that generates prompts for the ShareGPT
     """
@@ -128,7 +129,7 @@ class Vicuna_v1_1_Prompter:  # pylint: disable=too-few-public-methods
         "The assistant gives helpful, detailed, and polite answers to the user's questions."
     )
 
-    def build_prompt(self, source) -> Generator[Vicuna_v_1_1_Conversation, None, None]:
+    def build_prompt(self, source) -> Generator[VicunaConversation, None, None]:
         # see https://github.com/lm-sys/FastChat/blob/da0641e567cf93756b0978ab5a6b092e96f06240/fastchat/train/train.py#L78
         source = source["conversation"]  # fix data structure for datasets
 
@@ -139,7 +140,7 @@ class Vicuna_v1_1_Prompter:  # pylint: disable=too-few-public-methods
         else:
             system = self.system_prompt
 
-        conv = Vicuna_v_1_1_Conversation(system=system)
+        conv = VicunaConversation(system=system)
 
         if len(source) < 2:
             # If there isn't a back and forth conversation, ignore it
@@ -152,7 +153,7 @@ class Vicuna_v1_1_Prompter:  # pylint: disable=too-few-public-methods
             # Skip the first one if it is not from human
             source = source[1:]
 
-        conv.messages = []
+        conv.messages = []  # pylint: disable=R0801
         for j, sentence in enumerate(source):
             role = roles[sentence["from"]]
             assert role == conv.roles[j % 2]
@@ -162,7 +163,7 @@ class Vicuna_v1_1_Prompter:  # pylint: disable=too-few-public-methods
 
 def load(tokenizer, cfg) -> VicunaTokenizingStrategy:
     return VicunaTokenizingStrategy(
-        Vicuna_v1_1_Prompter(),
+        VicunaPrompter(),
         tokenizer,
         cfg.train_on_inputs,
         cfg.sequence_len,
