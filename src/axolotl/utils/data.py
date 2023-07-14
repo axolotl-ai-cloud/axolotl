@@ -94,6 +94,7 @@ def load_tokenized_prepared_datasets(
             try:
                 load_dataset(
                     d.path,
+                    name=d.name,
                     streaming=True,
                     use_auth_token=use_auth_token,
                 )
@@ -107,6 +108,7 @@ def load_tokenized_prepared_datasets(
                 if local_path.is_dir():
                     ds = load_dataset(
                         d.path,
+                        name=d.name,
                         data_files=d.data_files,
                         streaming=False,
                         split=None,
@@ -114,6 +116,7 @@ def load_tokenized_prepared_datasets(
                 elif local_path.is_file():
                     ds = load_dataset(
                         "json",
+                        name=d.name,
                         data_files=d.path,
                         streaming=False,
                         split=None,
@@ -123,26 +126,22 @@ def load_tokenized_prepared_datasets(
                         "unhandled dataset load: local path exists, but is neither a directory or a file"
                     )
             elif ds_from_hub:
-                if d.data_files:
-                    ds = load_dataset(
-                        d.path,
-                        streaming=False,
-                        data_files=d.data_files,
-                        use_auth_token=use_auth_token,
-                    )
-                else:
-                    ds = load_dataset(
-                        d.path,
-                        streaming=False,
-                        use_auth_token=use_auth_token,
-                    )
+                ds = load_dataset(
+                    d.path,
+                    name=d.name,
+                    streaming=False,
+                    data_files=d.data_files,
+                    use_auth_token=use_auth_token,
+                )
             else:
                 fp = hf_hub_download(
                     repo_id=d.path,
                     repo_type="dataset",
                     filename=d.data_files,
                 )
-                ds = load_dataset("json", data_files=fp, streaming=False, split=None)
+                ds = load_dataset(
+                    "json", name=d.name, data_files=fp, streaming=False, split=None
+                )
             if not ds:
                 raise ValueError("unhandled dataset load")
             # support for using a subset of the data
