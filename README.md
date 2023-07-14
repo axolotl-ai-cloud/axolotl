@@ -411,6 +411,9 @@ logging_steps:
 save_steps:
 eval_steps:
 
+# save model as safetensors (require safetensors package)
+save_safetensors:
+
 # whether to mask out or include the human's prompt from the training labels
 train_on_inputs: false
 # don't use this, leads to wonky training (according to someone on the internet)
