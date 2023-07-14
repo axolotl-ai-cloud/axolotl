@@ -52,8 +52,7 @@ from transformers.utils import (
     logging,
     replace_return_docstrings,
 )
-
-logger = logging.get_logger(__name__)
+LOG = logging.getLogger("axolotl")
 
 _CONFIG_FOR_DOC = "LlamaConfig"
 

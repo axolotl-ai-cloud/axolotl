@@ -4,6 +4,8 @@ import logging
 
 import torch
 
+LOG = logging.getLogger("axolotl")
+
 
 def validate_config(cfg):
     if cfg.gradient_accumulation_steps and cfg.batch_size:
@@ -11,7 +13,7 @@ def validate_config(cfg):
             "please set only one of gradient_accumulation_steps or batch_size"
         )
     if cfg.batch_size:
-        logging.warning(
+        LOG.warning(
             "%s\n%s",
             "batch_size is not recommended. Please use gradient_accumulation_steps instead.",
             "To calculate the equivalent gradient_accumulation_steps, divide batch_size / micro_batch_size / number of gpus.",
@@ -44,10 +46,10 @@ def validate_config(cfg):
                 raise ValueError("Require cfg.load_in_4bit to be True for qlora")
 
     if not cfg.load_in_8bit and cfg.adapter == "lora":
-        logging.warning("We recommend setting `load_in_8bit: true` for LORA finetuning")
+        LOG.warning("We recommend setting `load_in_8bit: true` for LORA finetuning")
 
     if cfg.trust_remote_code:
-        logging.warning(
+        LOG.warning(
             "`trust_remote_code` is set to true. Please make sure that you reviewed the remote code/model."
         )
 
@@ -66,31 +68,29 @@ def validate_config(cfg):
 
     if cfg.flash_optimum is True:
         if cfg.adapter:
-            logging.warning(
-                "BetterTransformers probably doesn't work with PEFT adapters"
-            )
+            LOG.warning("BetterTransformers probably doesn't work with PEFT adapters")
         if cfg.fp16 or cfg.bf16:
             raise ValueError("AMP is not supported with BetterTransformer")
         if cfg.float16 is not True and cfg.bloat16 is not True:
-            logging.warning(
+            LOG.warning(
                 "You should probably set bfloat16 or float16 to true to "
                 "load the model in float16 for BetterTransformers"
             )
         if int(torch.__version__.split(".")[0]) < 2:
-            logging.warning("torch>=2.0.0 required")
+            LOG.warning("torch>=2.0.0 required")
             raise ValueError(
                 f"flash_optimum for BetterTransformers may not be used with {torch.__version__}"
             )
 
     if cfg.pretraining_dataset and cfg.group_by_length:
-        logging.warning(
+        LOG.warning(
             "You probably want to disable group_by_length as it will force a streamed dataset to download completely."
         )
 
     if any([cfg.adam_beta1, cfg.adam_beta2, cfg.adam_epsilon]) and (
         not cfg.optimizer or "adamw" not in cfg.optimizer
     ):
-        logging.warning("adamw hyperparameters found, but no adamw optimizer set")
+        LOG.warning("adamw hyperparameters found, but no adamw optimizer set")
 
     if cfg.push_to_hub_model_id:
         raise ValueError(

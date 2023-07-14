@@ -23,6 +23,8 @@ from transformers import (  # noqa: F401
 
 from axolotl.prompt_tokenizers import LLAMA_DEFAULT_PAD_TOKEN
 
+LOG = logging.getLogger("axolotl")
+
 if TYPE_CHECKING:
     from peft import PeftConfig  # noqa: F401
 
@@ -50,10 +52,10 @@ def load_tokenizer(
             use_fast=use_fast,
         )
 
-    logging.debug(f"EOS: {tokenizer.eos_token_id} / {tokenizer.eos_token}")
-    logging.debug(f"BOS: {tokenizer.bos_token_id} / {tokenizer.bos_token}")
-    logging.debug(f"PAD: {tokenizer.pad_token_id} / {tokenizer.pad_token}")
-    logging.debug(f"UNK: {tokenizer.unk_token_id} / {tokenizer.unk_token}")
+    LOG.debug(f"EOS: {tokenizer.eos_token_id} / {tokenizer.eos_token}")
+    LOG.debug(f"BOS: {tokenizer.bos_token_id} / {tokenizer.bos_token}")
+    LOG.debug(f"PAD: {tokenizer.pad_token_id} / {tokenizer.pad_token}")
+    LOG.debug(f"UNK: {tokenizer.unk_token_id} / {tokenizer.unk_token}")
 
     if tokenizer.__class__.__name__ in [
         "LlamaTokenizer",
@@ -92,21 +94,21 @@ def load_model(
         if cfg.device not in ["mps", "cpu"] and not cfg.inference:
             from axolotl.flash_attn import replace_llama_attn_with_flash_attn
 
-            logging.info("patching with flash attention")
+            LOG.info("patching with flash attention")
             replace_llama_attn_with_flash_attn()
     elif cfg.is_llama_derived_model and cfg.xformers_attention:
         from axolotl.monkeypatch.llama_attn_hijack_xformers import (
             hijack_llama_attention,
         )
 
-        logging.info("patching with xformers attention")
+        LOG.info("patching with xformers attention")
         hijack_llama_attention()
     elif cfg.is_llama_derived_model and cfg.sdp_attention:
         from axolotl.monkeypatch.llama_attn_hijack_xformers import (
             hijack_llama_sdp_attention,
         )
 
-        logging.info("patching with sdp attention")
+        LOG.info("patching with sdp attention")
         hijack_llama_sdp_attention()
     elif cfg.is_llama_derived_model and cfg.landmark_attention:
         from axolotl.monkeypatch.llama_landmark_attn import (
@@ -114,7 +116,7 @@ def load_model(
             patch_llama_with_landmark_attn,
         )
 
-        logging.info("patching with landmark attention")
+        LOG.info("patching with landmark attention")
         patch_llama_with_landmark_attn()
 
         # Note: This might overwrite previous additional_special_tokens
@@ -125,7 +127,7 @@ def load_model(
             replace_llama_rope_with_xpos_rope,
         )
 
-        logging.info("patching with xpos rope")
+        LOG.info("patching with xpos rope")
         replace_llama_rope_with_xpos_rope()
 
     if cfg.bf16 or cfg.bfloat16:
@@ -142,7 +144,7 @@ def load_model(
 
             replace_peft_model_with_int4_lora_model()
     except Exception as err:
-        logging.exception(err)
+        LOG.exception(err)
         raise err
 
     try:
@@ -187,7 +189,7 @@ def load_model(
                 if len(files) > 0:
                     model_path = str(files[0])
                 else:
-                    logging.warning(
+                    LOG.warning(
                         "unable to find a cached model file, this will likely fail..."
                     )
                     model_path = str(cache_model_path)
@@ -266,14 +268,14 @@ def load_model(
                 and cfg.sequence_len > config.max_seq_len
             ):
                 config.max_seq_len = cfg.sequence_len
-                logging.warning(f"increasing context length to {cfg.sequence_len}")
+                LOG.warning(f"increasing context length to {cfg.sequence_len}")
             elif (
                 hasattr(config, "max_sequence_length")
                 and config.max_sequence_length
                 and cfg.sequence_len > config.max_sequence_length
             ):
                 config.max_sequence_length = cfg.sequence_len
-                logging.warning(f"increasing context length to {cfg.sequence_len}")
+                LOG.warning(f"increasing context length to {cfg.sequence_len}")
             model = AutoModelForCausalLM.from_pretrained(
                 base_model,
                 config=config,
@@ -285,10 +287,10 @@ def load_model(
                 **model_kwargs,
             )
     except Exception as err:  # pylint: disable=broad-exception-caught
-        logging.error(
+        LOG.error(
             "Exception raised attempting to load model, retrying with AutoModelForCausalLM"
         )
-        logging.exception(err)
+        LOG.exception(err)
         model = AutoModelForCausalLM.from_pretrained(
             base_model,
             load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
@@ -307,7 +309,7 @@ def load_model(
         and model.config.max_position_embeddings
         and cfg.sequence_len >= model.config.max_position_embeddings
     ):
-        logging.warning(
+        LOG.warning(
             f"increasing model.config.max_position_embeddings to {cfg.sequence_len}"
         )
         model.config.max_position_embeddings = cfg.sequence_len
@@ -316,7 +318,7 @@ def load_model(
         (cfg.adapter == "lora" and load_in_8bit)
         or (cfg.adapter == "qlora" and cfg.load_in_4bit)
     ):
-        logging.info("converting PEFT model w/ prepare_model_for_kbit_training")
+        LOG.info("converting PEFT model w/ prepare_model_for_kbit_training")
         model = prepare_model_for_kbit_training(
             model, use_gradient_checkpointing=cfg.gradient_checkpointing
         )
@@ -328,7 +330,7 @@ def load_model(
 
     if cfg.gptq:
         # Scales to half
-        logging.info("Fitting 4bit scales and zeros to half")
+        LOG.info("Fitting 4bit scales and zeros to half")
         for _, module in model.named_modules():
             if "Autograd4bitQuantLinear" in str(type(module)) or "Linear4bitLt" in str(
                 type(module)
@@ -354,7 +356,7 @@ def load_model(
         if param.requires_grad:
             requires_grad.append(f"{name}: {param.requires_grad}")
     if len(requires_grad) == 0:
-        logging.warning("there are no parameters that require gradient updates")
+        LOG.warning("there are no parameters that require gradient updates")
     model.config.use_cache = False
 
     if cfg.flash_optimum:
@@ -388,7 +390,7 @@ def load_llama_adapter(model, cfg):
     )
 
     if cfg.lora_model_dir:
-        logging.info("Loading pretained LORA")
+        LOG.info("Loading pretained LORA")
         model = PeftModel.from_pretrained(
             model,
             cfg.lora_model_dir,
@@ -435,7 +437,7 @@ def load_lora(model, cfg):
             bits = 8
 
         linear_names = find_all_linear_names(bits, model)
-        logging.info(f"found linear modules: {repr(linear_names)}")
+        LOG.info(f"found linear modules: {repr(linear_names)}")
         lora_target_modules = list(set(lora_target_modules + linear_names))
 
     lora_config = LoraConfig(

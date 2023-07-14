@@ -241,7 +241,7 @@ class Conversation:
             if message:
                 yield (role + ":", " " + message)
             else:
-                logging.warning(f"role with empty message: {role}")
+                LOG.warning(f"role with empty message: {role}")
                 yield (role + ":", "")
 
     def copy(self):

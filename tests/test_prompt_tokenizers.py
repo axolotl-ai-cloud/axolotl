@@ -16,8 +16,11 @@ from axolotl.prompt_tokenizers import (
     ShareGPTPromptTokenizingStrategy,
 )
 from axolotl.prompters import AlpacaPrompter, PromptStyle, ShareGPTPrompter
+from axolotl.logging_config import configure_logging
 
-logging.basicConfig(level="INFO")
+configure_logging()
+
+LOG = logging.getLogger("axolotl")
 
 
 class TestPromptTokenizationStrategies(unittest.TestCase):

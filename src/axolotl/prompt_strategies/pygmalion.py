@@ -64,7 +64,7 @@ class PygmalionPromptTokenizingStrategy(PromptTokenizingStrategy):
                     *copy.deepcopy(res["input_ids"])
                 ][len(self.bot_prefix_token_ids) :]
             else:
-                logging.warning(f"unknown role in conversation: {role}")
+                LOG.warning(f"unknown role in conversation: {role}")
                 res = defaultdict(lambda: [])
 
             # pylint: disable=duplicate-code
