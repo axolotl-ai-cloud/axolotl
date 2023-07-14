@@ -154,6 +154,8 @@ def load_model(
         )
 
     model_kwargs = {}
+    if cfg.model_revision:
+        model_kwargs["revision"] = cfg.model_revision
     if cfg.adapter == "qlora" and cfg.load_in_4bit:
         model_kwargs["quantization_config"] = BitsAndBytesConfig(
             load_in_4bit=True,
