@@ -17,6 +17,7 @@ import yaml
 from optimum.bettertransformer import BetterTransformer
 from transformers import GenerationConfig, TextStreamer
 
+from axolotl.logging_config import configure_logging
 from axolotl.utils.data import load_prepare_datasets, load_pretraining_dataset
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.models import load_model, load_tokenizer
@@ -24,7 +25,6 @@ from axolotl.utils.tokenization import check_dataset_labels
 from axolotl.utils.trainer import setup_trainer
 from axolotl.utils.validation import validate_config
 from axolotl.utils.wandb import setup_wandb_env_vars
-from axolotl.logging_config import configure_logging
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 src_dir = os.path.join(project_root, "src")

@@ -16,6 +16,7 @@ from .prompt_tokenizers import InvalidDataException, PromptTokenizingStrategy
 
 LOG = logging.getLogger("axolotl")
 
+
 class TokenizedPromptDataset(IterableDataset):
     """
     Iterable dataset that returns tokenized prompts from a stream of text files.

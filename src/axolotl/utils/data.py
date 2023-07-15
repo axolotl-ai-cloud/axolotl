@@ -258,9 +258,7 @@ def load_tokenized_prepared_datasets(
                 suffix = ""
                 if ":load_" in d.type:
                     suffix = f" Did you mean {d.type.replace(':load_', '.load_')}?"
-                LOG.error(
-                    f"unhandled prompt tokenization strategy: {d.type}. {suffix}"
-                )
+                LOG.error(f"unhandled prompt tokenization strategy: {d.type}. {suffix}")
                 raise ValueError(
                     f"unhandled prompt tokenization strategy: {d.type} {suffix}"
                 )
@@ -271,9 +269,7 @@ def load_tokenized_prepared_datasets(
             samples = samples + list(d)
         dataset = Dataset.from_list(samples).shuffle(seed=seed)
         if cfg.local_rank == 0:
-            LOG.info(
-                f"Saving merged prepared dataset to disk... {prepared_ds_path}"
-            )
+            LOG.info(f"Saving merged prepared dataset to disk... {prepared_ds_path}")
             dataset.save_to_disk(prepared_ds_path)
             if cfg.push_dataset_to_hub:
                 LOG.info(
@@ -366,9 +362,7 @@ def load_prepare_datasets(
                 [dataset],
                 seq_length=max_packed_sequence_len,
             )
-            LOG.info(
-                f"packing master dataset to len: {cfg.max_packed_sequence_len}"
-            )
+            LOG.info(f"packing master dataset to len: {cfg.max_packed_sequence_len}")
             dataset = Dataset.from_list(list(constant_len_dataset))
 
             # filter out bad data

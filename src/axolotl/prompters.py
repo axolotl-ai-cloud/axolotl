@@ -5,6 +5,7 @@ import logging
 from enum import Enum, auto
 from typing import Generator, List, Optional, Tuple, Union
 
+LOG = logging.getLogger("axolotl")
 IGNORE_TOKEN_ID = -100
 
 

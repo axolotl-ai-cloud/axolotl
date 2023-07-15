@@ -52,6 +52,7 @@ from transformers.utils import (
     logging,
     replace_return_docstrings,
 )
+
 LOG = logging.getLogger("axolotl")
 
 _CONFIG_FOR_DOC = "LlamaConfig"
@@ -861,7 +862,7 @@ class LlamaModel(LlamaPreTrainedModel):
 
         if self.gradient_checkpointing and self.training:
             if use_cache:
-                logger.warning_once(
+                LOG.warning_once(
                     "`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`..."
                 )
                 use_cache = False

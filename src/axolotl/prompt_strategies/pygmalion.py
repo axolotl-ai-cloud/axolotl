@@ -11,6 +11,8 @@ from axolotl.prompt_tokenizers import (
     tokenize_prompt_default,
 )
 
+LOG = logging.getLogger("axolotl")
+
 IGNORE_TOKEN_ID = -100
 
 

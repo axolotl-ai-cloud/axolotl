@@ -1,3 +1,6 @@
+"""Logging configuration settings"""
+
+import os
 import sys
 from logging.config import dictConfig
 from typing import Any, Dict
@@ -18,7 +21,7 @@ DEFAULT_LOGGING_CONFIG: Dict[str, Any] = {
             "stream": sys.stdout,
         },
     },
-    "root": {"handlers": ["console"], "level": "INFO"},
+    "root": {"handlers": ["console"], "level": os.getenv("LOG_LEVEL", "INFO")},
 }
 
 
