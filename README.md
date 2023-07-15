@@ -261,7 +261,7 @@ See sample configs in [configs](configs) folder or [examples](examples) for quic
   datasets:
     - path: vicgalle/alpaca-gpt4
       type: alpaca # format from earlier
-  
+
   # huggingface repo with specific configuration/subset
   datasets:
     - path: EleutherAI/pile
