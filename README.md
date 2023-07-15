@@ -350,6 +350,7 @@ datasets:
     type: alpaca # format | format:<prompt_style> (chat/instruct) | <prompt_strategies>.load_<load_fn>
     data_files: # path to source data files
     shards: # number of shards to split data into
+    name: # name of dataset configuration to load
 
 # axolotl attempts to save the dataset as an arrow after packing the data together so
 # subsequent training attempts load faster, relative path
