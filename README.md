@@ -36,8 +36,6 @@ git clone https://github.com/OpenAccess-AI-Collective/axolotl
 pip3 install -e .
 pip3 install -U git+https://github.com/huggingface/peft.git
 
-accelerate config
-
 # finetune lora
 accelerate launch scripts/finetune.py examples/openllama-3b/lora.yml
 
@@ -525,6 +523,21 @@ Run
 accelerate launch scripts/finetune.py configs/your_config.yml
 ```
 
+#### Multi-GPU Config
+
+- llama FSDP
+```yaml
+fsdp:
+  - full_shard
+  - auto_wrap
+fsdp_config:
+  fsdp_offload_params: true
+  fsdp_state_dict_type: FULL_STATE_DICT
+  fsdp_transformer_layer_cls_to_wrap: LlamaDecoderLayer
+```
+
+- llama Deepspeed: append `ACCELERATE_USE_DEEPSPEED=true` in front of finetune command
+
 ### Inference
 
 Pass the appropriate flag to the train command:
@@ -574,6 +587,10 @@ Try set `fp16: true`
 > NotImplementedError: No operator found for `memory_efficient_attention_forward` ...
 
 Try to turn off xformers.
+
+> Message about accelerate config missing
+
+It's safe to ignore it.
 
 ## Need help? 🙋♂️
 
