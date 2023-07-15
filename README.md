@@ -305,6 +305,8 @@ base_model_ignore_patterns:
 # if the base_model repo on hf hub doesn't include configuration .json files,
 # you can set that here, or leave this empty to default to base_model
 base_model_config: ./llama-7b-hf
+# you can specify to choose a specific model revision from huggingface hub
+model_revision:
 # Optional tokenizer configuration override in case you want to use a different tokenizer
 # than the one defined in the base model
 tokenizer_config:
@@ -410,6 +412,9 @@ learning_rate: 0.00003
 logging_steps:
 save_steps:
 eval_steps:
+
+# save model as safetensors (require safetensors package)
+save_safetensors:
 
 # whether to mask out or include the human's prompt from the training labels
 train_on_inputs: false
