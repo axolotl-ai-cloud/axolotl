@@ -80,11 +80,13 @@ class ConstantLengthDataset(IterableDataset):
         buffer = {"input_ids": [], "attention_mask": [], "labels": []}
         buffer_len = 0
         for dataset in self.datasets:
+            idx = 0
             iterator = iter(dataset)
             more_examples = True
             while more_examples:
                 try:
                     example = next(iterator)
+                    idx += 1
                 except StopIteration:
                     more_examples = False
                     example = None
@@ -125,6 +127,7 @@ class ConstantLengthDataset(IterableDataset):
                         "labels": [],
                     }
                     buffer_len = 0
+                    idx = 1
 
                 if example:
                     # FIXME
@@ -133,11 +136,6 @@ class ConstantLengthDataset(IterableDataset):
                         input_ids = example["input_ids"]
                         attention_mask = example["attention_mask"]
                         labels = example["labels"]
-                        if (
-                            buffer["input_ids"]
-                            and input_ids[0] == self.tokenizer.bos_token_id
-                        ):
-                            attention_mask[0] = 0
 
                         if add_concat_token:
                             input_ids.append(self.concat_token_id)
@@ -148,7 +146,7 @@ class ConstantLengthDataset(IterableDataset):
                             input_ids, dtype=self.tokens_dtype
                         )
                         attention_mask_with_concat = torch.tensor(
-                            attention_mask, dtype=self.tokens_dtype
+                            [idx * m for m in attention_mask], dtype=torch.int16
                         )
                         labels_with_concat = torch.tensor(
                             labels, dtype=self.tokens_dtype
