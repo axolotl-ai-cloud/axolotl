@@ -5,15 +5,17 @@ import logging
 import math
 import os
 import sys
-from dataclasses import field
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
 import bitsandbytes as bnb
+import numpy as np
 import torch.cuda
 import transformers
 from torch import nn
 from torch.optim.lr_scheduler import OneCycleLR
+from torch.utils.data import Dataset
 from transformers import EarlyStoppingCallback, Trainer, TrainingArguments
 from transformers.trainer_pt_utils import get_parameter_names
 
@@ -21,12 +23,91 @@ from axolotl.utils.callbacks import (
     SaveBetterTransformerModelCallback,
     SavePeftModelCallback,
 )
+from axolotl.utils.sampler import MultipackDistributedBatchSampler
 from axolotl.utils.schedulers import (
     InterpolatingLogScheduler,
     get_cosine_schedule_with_quadratic_warmup,
 )
 
+IGNORE_LABEL_ID = -100
 
+
+def _find_multiple(val1, val2):
+    return (-(val1 // -val2)) * val2
+
+
+def batch_to_tensor(batch, pad_id=0, dtype=torch.long, loss_dtype=torch.bfloat16):
+    # Pad an unused item to reach multiple of 64, for faster GEMM
+    pad_cur_len = sum(list(batch["length"]))
+    pad_len = _find_multiple(pad_cur_len, 64) - pad_cur_len
+
+    if pad_len > 0:
+        assert pad_len < 64
+
+        batch["input_ids"].append([pad_id] * pad_len)
+        batch["labels"].append([pad_id] * pad_len)
+        batch["attention_mask"].append([0] * pad_len)
+        batch["length"].append(pad_len)
+
+    # seqlen
+    batch_lengths = torch.tensor(list(batch["length"]), dtype=torch.int32, device="cpu")
+
+    max_seqlen = torch.max(batch_lengths)
+    cu_seqlens = torch.nn.functional.pad(
+        batch_lengths.cumsum(-1, dtype=torch.int32), (1, 0)
+    )
+
+    # nz elements
+    nz_num = cu_seqlens[-1]
+    nz_input_ids = torch.zeros((nz_num,), dtype=dtype, pin_memory=True, device="cpu")
+    nz_position_ids = torch.zeros((nz_num,), dtype=dtype, pin_memory=True, device="cpu")
+    nz_shifted_label_ids = torch.zeros(
+        (nz_num,), dtype=dtype, pin_memory=True, device="cpu"
+    )
+    nz_shifted_loss_weights = torch.zeros(
+        (nz_num,), dtype=loss_dtype, pin_memory=True, device="cpu"
+    )
+
+    index = 0
+    for token_list, length, labels_list in zip(
+        batch["input_ids"], batch["length"], batch["labels"]
+    ):
+        tokens = torch.tensor(token_list, dtype=dtype, device="cpu")
+        position_ids = torch.arange(length, dtype=dtype, device="cpu")
+
+        # Input IDs & shifted labels
+        # shifted_label_ids = torch.where(masks, tokens, IGNORE_LABEL_ID)
+        shifted_label_ids = labels_list
+        shifted_label_ids = torch.nn.functional.pad(
+            shifted_label_ids[1:], (0, 1), "constant", IGNORE_LABEL_ID
+        )
+
+        nz_input_ids[index : index + length] = tokens
+        nz_position_ids[index : index + length] = position_ids
+        nz_shifted_label_ids[index : index + length] = shifted_label_ids
+
+        # Loss weights
+        mask_count = sum(1 for label in labels_list[1:] if label != IGNORE_LABEL_ID)
+        loss_weight = (
+            1 / mask_count if mask_count > 0 else 0
+        )  # Avoid division by zero for paddings
+
+        nz_shifted_loss_weights[index : index + length] = loss_weight
+
+        index += length
+
+    # inputs
+    return {
+        "max_seqlen": max_seqlen,
+        "cu_seqlens": cu_seqlens,
+        "nz_input_ids": nz_input_ids,
+        "nz_position_ids": nz_position_ids,
+        "nz_shifted_label_ids": nz_shifted_label_ids,
+        "nz_shifted_loss_weights": nz_shifted_loss_weights,
+    }
+
+
+@dataclass
 class AxolotlTrainingArguments(TrainingArguments):
     """
     Extend the base TrainingArguments for axolotl helpers
@@ -35,6 +116,14 @@ class AxolotlTrainingArguments(TrainingArguments):
     lr_quadratic_warmup: bool = field(
         default=False,
         metadata={"help": "Use quadratic warmup for cosine scheduling."},
+    )
+    sample_packing: bool = field(
+        default=True,
+        metadata={"help": "Use sample packing for efficient training."},
+    )
+    max_seq_length: int = field(
+        default=2048,
+        metadata={"help": "The maximum sequence length the model can handle"},
     )
 
 
@@ -72,6 +161,26 @@ class AxolotlTrainer(Trainer):
             else:
                 return super().create_scheduler(num_training_steps, optimizer)
         return self.lr_scheduler
+
+    def _get_train_sampler(self) -> Optional[torch.utils.data.Sampler]:
+        lengths = np.array([len(sample["input_ids"]) for sample in self.train_dataset])
+        return MultipackDistributedBatchSampler(
+            batch_max_length=self.args.per_device_train_batch_size
+            * self.args.max_seq_length,
+            lengths=lengths,
+            seed=self.args.seed,
+        )
+
+    def _get_eval_sampler(
+        self, eval_dataset: Dataset
+    ) -> Optional[torch.utils.data.Sampler]:
+        lengths = np.array([len(sample["input_ids"]) for sample in eval_dataset])
+        return MultipackDistributedBatchSampler(
+            batch_max_length=self.args.per_device_eval_batch_size
+            * self.args.max_seq_length,
+            lengths=lengths,
+            seed=self.args.seed,
+        )
 
 
 class OneCycleLRSchedulerTrainer(AxolotlTrainer):
@@ -186,7 +295,8 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
     if cfg.save_safetensors:
         training_arguments_kwargs["save_safetensors"] = cfg.save_safetensors
 
-    training_args = AxolotlTrainingArguments(
+    training_args = AxolotlTrainingArguments(  # pylint: disable=unexpected-keyword-arg
+        max_steps=total_num_steps * cfg.num_epochs,
         per_device_train_batch_size=cfg.micro_batch_size,
         per_device_eval_batch_size=cfg.eval_batch_size
         if cfg.eval_batch_size is not None
