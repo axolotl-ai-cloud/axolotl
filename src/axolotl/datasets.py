@@ -14,6 +14,8 @@ from .prompt_tokenizers import InvalidDataException, PromptTokenizingStrategy
 # let's check to ensure we don't truncate an item in the middle, we'll use
 # the collators later on to pad the datasets
 
+LOG = logging.getLogger("axolotl")
+
 
 class TokenizedPromptDataset(IterableDataset):
     """
@@ -115,7 +117,7 @@ class ConstantLengthDataset(IterableDataset):
                                 "attention_mask": attention_mask,
                             }
                         else:
-                            logging.warning(
+                            LOG.warning(
                                 f"dropping batch due to tensor size mismatch input_ids: {input_ids.size()}, labels: {labels.size()}, attention_mask: {attention_mask.size()}"
                             )
                     buffer = {

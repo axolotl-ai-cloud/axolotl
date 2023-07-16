@@ -11,6 +11,8 @@ from axolotl.prompt_tokenizers import (
     tokenize_prompt_default,
 )
 
+LOG = logging.getLogger("axolotl")
+
 IGNORE_TOKEN_ID = -100
 
 
@@ -64,7 +66,7 @@ class PygmalionPromptTokenizingStrategy(PromptTokenizingStrategy):
                     *copy.deepcopy(res["input_ids"])
                 ][len(self.bot_prefix_token_ids) :]
             else:
-                logging.warning(f"unknown role in conversation: {role}")
+                LOG.warning(f"unknown role in conversation: {role}")
                 res = defaultdict(lambda: [])
 
             # pylint: disable=duplicate-code

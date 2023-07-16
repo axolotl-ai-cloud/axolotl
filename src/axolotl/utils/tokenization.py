@@ -5,6 +5,8 @@ import logging
 
 from termcolor import colored
 
+LOG = logging.getLogger("axolotl")
+
 
 def check_dataset_labels(dataset, tokenizer):
     # the dataset is already shuffled, so let's just check the first 5 elements
@@ -32,7 +34,7 @@ def check_example_labels(example, tokenizer):
         )
         colored_tokens.append(colored_token)
 
-    logging.info(" ".join(colored_tokens))
-    logging.info("\n\n\n")
+    LOG.info(" ".join(colored_tokens))
+    LOG.info("\n\n\n")
 
     return " ".join(colored_tokens)

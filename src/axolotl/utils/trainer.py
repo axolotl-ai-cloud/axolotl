@@ -26,6 +26,8 @@ from axolotl.utils.schedulers import (
     get_cosine_schedule_with_quadratic_warmup,
 )
 
+LOG = logging.getLogger("axolotl")
+
 
 class AxolotlTrainingArguments(TrainingArguments):
     """
@@ -324,7 +326,7 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
 
         set_model_mem_id(model, tokenizer)
 
-        logging.info("Adding landmark attention tokens to dataset")
+        LOG.info("Adding landmark attention tokens to dataset")
 
         for dataset in [train_dataset, eval_dataset]:
             dataset = dataset.map(

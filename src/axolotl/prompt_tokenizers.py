@@ -10,6 +10,8 @@ from transformers import PreTrainedTokenizer
 
 from axolotl.prompters import IGNORE_TOKEN_ID
 
+LOG = logging.getLogger("axolotl")
+
 IGNORE_INDEX = -100
 LLAMA_DEFAULT_PAD_TOKEN = "[PAD]"  # nosec
 LLAMA_DEFAULT_EOS_TOKEN = "</s>"  # nosec
@@ -384,7 +386,7 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
                         # everything from this is masked out from the labels
                         labels = [IGNORE_TOKEN_ID] * len(res["input_ids"])
                     else:
-                        logging.warning(f"unhandled role: {part[0]}")
+                        LOG.warning(f"unhandled role: {part[0]}")
 
                 # pylint: disable=duplicate-code
                 result, current_len = parse_tokenized_to_result(

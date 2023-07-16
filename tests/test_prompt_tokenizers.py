@@ -17,7 +17,7 @@ from axolotl.prompt_tokenizers import (
 )
 from axolotl.prompters import AlpacaPrompter, PromptStyle, ShareGPTPrompter
 
-logging.basicConfig(level="INFO")
+LOG = logging.getLogger("axolotl")
 
 
 class TestPromptTokenizationStrategies(unittest.TestCase):

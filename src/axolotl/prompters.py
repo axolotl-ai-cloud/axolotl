@@ -5,6 +5,7 @@ import logging
 from enum import Enum, auto
 from typing import Generator, List, Optional, Tuple, Union
 
+LOG = logging.getLogger("axolotl")
 IGNORE_TOKEN_ID = -100
 
 
@@ -241,7 +242,7 @@ class Conversation:
             if message:
                 yield (role + ":", " " + message)
             else:
-                logging.warning(f"role with empty message: {role}")
+                LOG.warning(f"role with empty message: {role}")
                 yield (role + ":", "")
 
     def copy(self):

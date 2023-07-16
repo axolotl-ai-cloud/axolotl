@@ -17,6 +17,7 @@ import yaml
 from optimum.bettertransformer import BetterTransformer
 from transformers import GenerationConfig, TextStreamer
 
+from axolotl.logging_config import configure_logging
 from axolotl.utils.data import load_prepare_datasets, load_pretraining_dataset
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.models import load_model, load_tokenizer
@@ -29,8 +30,10 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 src_dir = os.path.join(project_root, "src")
 sys.path.insert(0, src_dir)
 
+configure_logging()
+LOG = logging.getLogger("axolotl.scripts")
 
-logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
+
 DEFAULT_DATASET_PREPARED_PATH = "last_run_prepared"
 
 
@@ -212,7 +215,7 @@ def train(
 
     # load the tokenizer first
     tokenizer_config = cfg.tokenizer_config or cfg.base_model_config
-    logging.info(f"loading tokenizer... {tokenizer_config}")
+    LOG.info(f"loading tokenizer... {tokenizer_config}")
     tokenizer = load_tokenizer(tokenizer_config, cfg.tokenizer_type, cfg)
 
     if (
@@ -234,7 +237,7 @@ def train(
             eval_dataset = None
 
     if cfg.debug or "debug" in kwargs:
-        logging.info("check_dataset_labels...")
+        LOG.info("check_dataset_labels...")
         check_dataset_labels(
             train_dataset.select(
                 [random.randrange(0, len(train_dataset) - 1) for _ in range(5)]  # nosec
@@ -243,11 +246,11 @@ def train(
         )
 
     if prepare_ds_only:
-        logging.info("Finished preparing dataset. Exiting...")
+        LOG.info("Finished preparing dataset. Exiting...")
         return
 
     # Load the model and tokenizer
-    logging.info("loading model and peft_config...")
+    LOG.info("loading model and peft_config...")
     model, peft_config = load_model(
         cfg.base_model,
         cfg.base_model_config,
@@ -258,17 +261,17 @@ def train(
     )
 
     if "merge_lora" in kwargs and cfg.adapter is not None:
-        logging.info("running merge of LoRA with base model")
+        LOG.info("running merge of LoRA with base model")
         model = model.merge_and_unload()
         model.to(dtype=torch.float16)
 
         if cfg.local_rank == 0:
-            logging.info("saving merged model")
+            LOG.info("saving merged model")
             model.save_pretrained(str(Path(cfg.output_dir) / "merged"))
         return
 
     if cfg.inference:
-        logging.info("calling do_inference function")
+        LOG.info("calling do_inference function")
         prompter: Optional[str] = "AlpacaPrompter"
         if "prompter" in kwargs:
             if kwargs["prompter"] == "None":
@@ -287,12 +290,12 @@ def train(
     model.config.use_cache = False
 
     if torch.__version__ >= "2" and sys.platform != "win32":
-        logging.info("Compiling torch model")
+        LOG.info("Compiling torch model")
         model = torch.compile(model)
 
     # go ahead and presave, so we have the adapter config available to inspect
     if peft_config:
-        logging.info(f"Pre-saving adapter config to {cfg.output_dir}")
+        LOG.info(f"Pre-saving adapter config to {cfg.output_dir}")
         peft_config.save_pretrained(cfg.output_dir)
 
     # In case we want to stop early with ctrl+c, this is a nice to have to save the pretrained model
@@ -308,9 +311,9 @@ def train(
             signal.SIGINT, lambda signum, frame: terminate_handler(signum, frame, model)
         )
 
-    logging.info("Starting trainer...")
+    LOG.info("Starting trainer...")
     if cfg.group_by_length:
-        logging.info("hang tight... sorting dataset for group_by_length")
+        LOG.info("hang tight... sorting dataset for group_by_length")
     resume_from_checkpoint = cfg.resume_from_checkpoint
     if cfg.resume_from_checkpoint is None and cfg.auto_resume_from_checkpoints:
         possible_checkpoints = [
@@ -322,7 +325,7 @@ def train(
                 key=lambda path: int(path.split("-")[-1]),
             )
             resume_from_checkpoint = sorted_paths[-1]
-            logging.info(
+            LOG.info(
                 f"Using Auto-resume functionality to start with checkpoint at {resume_from_checkpoint}"
             )
 
@@ -336,7 +339,7 @@ def train(
     else:
         trainer.train(resume_from_checkpoint=resume_from_checkpoint)
 
-    logging.info(f"Training Completed!!! Saving pre-trained model to {cfg.output_dir}")
+    LOG.info(f"Training Completed!!! Saving pre-trained model to {cfg.output_dir}")
 
     # TODO do we need this fix? https://huggingface.co/docs/accelerate/usage_guides/fsdp#saving-and-loading
     # only save on rank 0, otherwise it corrupts output on multi-GPU when multiple processes attempt to write the same file

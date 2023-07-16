@@ -35,6 +35,8 @@ from axolotl.prompters import (
     SummarizeTLDRPrompter,
 )
 
+LOG = logging.getLogger("axolotl")
+
 
 def load_tokenized_prepared_datasets(
     tokenizer, cfg, default_dataset_prepared_path
@@ -73,17 +75,17 @@ def load_tokenized_prepared_datasets(
     if dataset:
         ...
     elif any(prepared_ds_path.glob("*")):
-        logging.info(f"Loading prepared dataset from disk at {prepared_ds_path}...")
+        LOG.info(f"Loading prepared dataset from disk at {prepared_ds_path}...")
         dataset = load_from_disk(str(prepared_ds_path))
-        logging.info("Prepared dataset loaded from disk...")
+        LOG.info("Prepared dataset loaded from disk...")
     else:
-        logging.info(f"Unable to find prepared dataset in {prepared_ds_path}")
-        logging.info("Loading raw datasets...")
+        LOG.info(f"Unable to find prepared dataset in {prepared_ds_path}")
+        LOG.info("Loading raw datasets...")
 
         if cfg.seed:
             seed = cfg.seed
         else:
-            logging.info("No seed provided, using default seed of 42")
+            LOG.info("No seed provided, using default seed of 42")
             seed = 42
 
         datasets = []
@@ -255,25 +257,21 @@ def load_tokenized_prepared_datasets(
                 suffix = ""
                 if ":load_" in d.type:
                     suffix = f" Did you mean {d.type.replace(':load_', '.load_')}?"
-                logging.error(
-                    f"unhandled prompt tokenization strategy: {d.type}. {suffix}"
-                )
+                LOG.error(f"unhandled prompt tokenization strategy: {d.type}. {suffix}")
                 raise ValueError(
                     f"unhandled prompt tokenization strategy: {d.type} {suffix}"
                 )
-        logging.info("tokenizing, merging, and shuffling master dataset")
+        LOG.info("tokenizing, merging, and shuffling master dataset")
 
         samples: List[int] = []
         for d in datasets:
             samples = samples + list(d)
         dataset = Dataset.from_list(samples).shuffle(seed=seed)
         if cfg.local_rank == 0:
-            logging.info(
-                f"Saving merged prepared dataset to disk... {prepared_ds_path}"
-            )
+            LOG.info(f"Saving merged prepared dataset to disk... {prepared_ds_path}")
             dataset.save_to_disk(prepared_ds_path)
             if cfg.push_dataset_to_hub:
-                logging.info(
+                LOG.info(
                     f"Saving merged prepared dataset with push_to_hub... {cfg.push_dataset_to_hub}/{ds_hash}"
                 )
                 dataset.push_to_hub(
@@ -324,7 +322,7 @@ def load_prepare_datasets(
         use_auth_token = cfg.hf_use_auth_token
         try:
             if cfg.push_dataset_to_hub:
-                logging.info(
+                LOG.info(
                     f"Checking for packed prepared dataset from hub... {cfg.push_dataset_to_hub}/{ds_hash}"
                 )
                 dataset = load_dataset(
@@ -338,13 +336,13 @@ def load_prepare_datasets(
         if dataset:
             ...
         elif any(prepared_ds_path.glob("*")):
-            logging.info(
+            LOG.info(
                 f"Loading prepared packed dataset from disk at {prepared_ds_path}..."
             )
             dataset = load_from_disk(str(prepared_ds_path))
-            logging.info("Prepared packed dataset loaded from disk...")
+            LOG.info("Prepared packed dataset loaded from disk...")
             if cfg.push_dataset_to_hub:
-                logging.info(
+                LOG.info(
                     f"Saving packed prepared dataset with push_to_hub... {cfg.push_dataset_to_hub}/{ds_hash}"
                 )
                 dataset.push_to_hub(
@@ -363,9 +361,7 @@ def load_prepare_datasets(
                 [dataset],
                 seq_length=max_packed_sequence_len,
             )
-            logging.info(
-                f"packing master dataset to len: {cfg.max_packed_sequence_len}"
-            )
+            LOG.info(f"packing master dataset to len: {cfg.max_packed_sequence_len}")
             dataset = Dataset.from_list(list(constant_len_dataset))
 
             # filter out bad data
@@ -381,12 +377,12 @@ def load_prepare_datasets(
             )
 
             if cfg.local_rank == 0:
-                logging.info(
+                LOG.info(
                     f"Saving packed prepared dataset to disk... {prepared_ds_path}"
                 )
                 dataset.save_to_disk(prepared_ds_path)
                 if cfg.push_dataset_to_hub:
-                    logging.info(
+                    LOG.info(
                         f"Saving packed prepared dataset with push_to_hub... {cfg.push_dataset_to_hub}/{ds_hash}"
                     )
                     dataset.push_to_hub(
@@ -399,7 +395,7 @@ def load_prepare_datasets(
         )
 
     if cfg.dataset_shard_num and cfg.dataset_shard_idx is not None:
-        logging.info(
+        LOG.info(
             f"Using index #{cfg.dataset_shard_idx} of {cfg.dataset_shard_num} shards"
         )
         dataset = dataset.shard(
@@ -520,7 +516,7 @@ def encode_pretraining(tokenizer, max_tokens, examples):
         "attention_mask": [seq.tolist() for seq in new_attention_mask],
     }
 
-    logging.debug(len(ret["input_ids"]))
+    LOG.debug(len(ret["input_ids"]))
     return ret
 
 
