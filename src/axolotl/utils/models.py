@@ -86,8 +86,10 @@ def load_model(
 
     # TODO refactor as a kwarg
     load_in_8bit = cfg.load_in_8bit
-    cfg.is_llama_derived_model = "llama" in base_model or (
-        cfg.model_type and "llama" in cfg.model_type.lower()
+    cfg.is_llama_derived_model = (
+        "llama" in base_model
+        or (cfg.model_type and "llama" in cfg.model_type.lower())
+        or cfg.is_llama_derived_model is True
     )
 
     if cfg.is_llama_derived_model and cfg.flash_attention:
@@ -131,6 +133,12 @@ def load_model(
 
         LOG.info("patching with xpos rope")
         replace_llama_rope_with_xpos_rope()
+
+    if cfg.is_llama_derived_model and cfg.max_packed_sequence_len:
+        from axolotl.monkeypatch.llama_expand_mask import hijack_expand_mask
+
+        LOG.info("patching _expand_mask")
+        hijack_expand_mask()
 
     if cfg.bf16 or cfg.bfloat16:
         torch_dtype = torch.bfloat16
