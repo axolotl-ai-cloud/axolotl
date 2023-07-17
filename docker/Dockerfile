@@ -23,7 +23,8 @@ RUN cd axolotl && \
     fi
 
 # fix so that git fetch/pull from remote works
-RUN git config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*" && \
+RUN cd axolotl && \
+    git config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*" && \
     git config --get remote.origin.fetch
 
 # helper for huggingface-login cli
