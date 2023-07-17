@@ -22,5 +22,9 @@ RUN cd axolotl && \
         pip install -e .; \
     fi
 
+# fix so that git fetch/pull from remote works
+RUN git config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*" && \
+    git config --get remote.origin.fetch
+
 # helper for huggingface-login cli
 RUN git config --global credential.helper store
