@@ -35,6 +35,7 @@ LOG = logging.getLogger("axolotl.scripts")
 
 
 DEFAULT_DATASET_PREPARED_PATH = "last_run_prepared"
+os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
 
 
 def choose_device(cfg):

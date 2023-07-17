@@ -22,6 +22,9 @@ DEFAULT_LOGGING_CONFIG: Dict[str, Any] = {
         },
     },
     "root": {"handlers": ["console"], "level": os.getenv("LOG_LEVEL", "INFO")},
+    "loggers": {
+        "axolotl": {"handlers": ["console"], "level": "DEBUG", "propagate": False},
+    },
 }
 
 
