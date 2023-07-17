@@ -136,11 +136,13 @@ def load_tokenized_prepared_datasets(
                     use_auth_token=use_auth_token,
                 )
             else:
-                fp = hf_hub_download(
-                    repo_id=d.path,
-                    repo_type="dataset",
-                    filename=d.data_files,
-                )
+                fp = []
+                for file in d.data_files:
+                    fp.append(hf_hub_download(
+                        repo_id=d.path,
+                        repo_type="dataset",
+                        filename=file,
+                    )
                 ds = load_dataset(
                     "json", name=d.name, data_files=fp, streaming=False, split=None
                 )
