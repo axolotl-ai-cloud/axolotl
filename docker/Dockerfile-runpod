@@ -1,6 +1,10 @@
 ARG BASE_TAG=main
 FROM winglian/axolotl:$BASE_TAG
 
+ENV HF_DATASETS_CACHE="/workspace/data/huggingface-cache/datasets"
+ENV HUGGINGFACE_HUB_CACHE="/workspace/data/huggingface-cache/hub"
+ENV TRANSFORMERS_CACHE="/workspace/data/huggingface-cache/hub"
+
 COPY scripts/runpod-entrypoint.sh /root/runpod-entrypoint.sh
 
 RUN apt install --yes --no-install-recommends openssh-server tmux && \
