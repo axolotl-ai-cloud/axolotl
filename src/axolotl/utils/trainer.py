@@ -21,6 +21,7 @@ from axolotl.utils.callbacks import (
     SaveBetterTransformerModelCallback,
     SavePeftModelCallback,
 )
+from axolotl.utils.collators import DataCollatorForSeq2Seq
 from axolotl.utils.schedulers import (
     InterpolatingLogScheduler,
     get_cosine_schedule_with_quadratic_warmup,
@@ -346,7 +347,7 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
         args=training_args,
-        data_collator=transformers.DataCollatorForSeq2Seq(
+        data_collator=DataCollatorForSeq2Seq(
             tokenizer,
             return_tensors="pt",
             **data_collator_kwargs,
