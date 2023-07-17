@@ -512,17 +512,6 @@ strict:
 
 </details>
 
-### Accelerate
-
-Configure accelerate
-
-```bash
-accelerate config
-
-# Edit manually
-# nano ~/.cache/huggingface/accelerate/default_config.yaml
-```
-
 ### Train
 
 Run
@@ -595,7 +584,7 @@ Try set `fp16: true`
 
 Try to turn off xformers.
 
-> Message about accelerate config missing
+> accelerate config missing
 
 It's safe to ignore it.
 
