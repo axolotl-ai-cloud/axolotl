@@ -455,7 +455,7 @@ def load_lora(model, cfg):
         model = PeftModel.from_pretrained(
             model,
             cfg.lora_model_dir,
-            is_trainable=not cfg.inference,
+            is_trainable=not cfg.inference or not cfg.batch_eval,
         )
     else:
         model = get_peft_model(model, lora_config)

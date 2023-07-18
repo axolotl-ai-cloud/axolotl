@@ -52,48 +52,42 @@ class BatchEval:
         self.tokenizer = tokenizer
         self.dataset = dataset
 
-    def _evaluate(self, dataloader: DataLoader, model: Union[PreTrainedModel,PeftModel]) -> (torch.Tensor, torch.Tensor):
-        """Evaluate model and return average loss and perplexity."""
-        model.eval()
-        total_loss = 0.0
-
-        distributed_dataloader = self.accelerator.prepare(dataloader)
-
-        
-        progress_bar = tqdm(distributed_dataloader, desc="Evaluating") if self.accelerator.is_local_main_process else distributed_dataloader
-        with torch.no_grad():
-            for i, batch in enumerate(progress_bar):
-                with self.accelerator.split_between_processes(batch) as batch:
-                    input_ids = batch['input_ids']
-                    attention_mask = batch['attention_mask']
-                    labels = batch['labels']
-                    outputs = model(input_ids, attention_mask=attention_mask, labels=labels)
-                    loss = outputs.loss
-                    loss_reduced = self.accelerator.gather(loss)
-                    if self.accelerator.is_local_main_process:
-                        total_loss += torch.mean(loss_reduced.clone())  # average loss across all devices for this batch
-
-        if self.accelerator.is_local_main_process:  # Only main process computes average loss and perplexity
-            avg_loss = total_loss / len(dataloader)  # average loss across all batches
-            perplexity = torch.exp(avg_loss)
-            return avg_loss, perplexity
-        else:
-            return None, None  # Non-main processes return None
-
 
     def run(self) -> Any:
         """Run batch evaluation and return average loss and perplexity."""
         derived_micro_batch_size = self.cfg.micro_batch_size if self.cfg.micro_batch_size is not None else 1
         dataloader = DataLoader(self.dataset, batch_size=derived_micro_batch_size, collate_fn=lambda batch: collate_fn(batch, self.accelerator, pad_value=self.tokenizer.pad_token_id, padding_direction=self.tokenizer.padding_side))
 
+        # Prepare model & dataset for distributed eval
         dataloader, model = self.accelerator.prepare(dataloader, self.model)
+        model.eval()
 
+        if self.accelerator.is_local_main_process:
+            LOG.info("Running batch evaluation on %i samples with derived_micro_batch_size of %i", len(self.dataset), derived_micro_batch_size)
         
+        total_loss = 0.0
 
-        LOG.info("Running batch evaluation on %i samples with derived_micro_batch_size of %i", len(self.dataset), derived_micro_batch_size)
-        avg_loss, perplexity = self._evaluate(dataloader=dataloader, model=model)
+        with torch.no_grad():
+            for batch in tqdm(dataloader, desc="Evaluating"):
+                with self.accelerator.split_between_processes(batch) as batch:
+                    input_ids = batch['input_ids']
+                    attention_mask = batch['attention_mask']
+                    labels = batch['labels']
+                    outputs = model(input_ids, attention_mask=attention_mask, labels=labels)
+                    loss_reduced = self.accelerator.gather(outputs.loss)
+                    if self.accelerator.is_local_main_process:
+                        total_loss += torch.mean(loss_reduced) / self.accelerator.num_processes
 
-        LOG.info(f"Batch evaluation completed. Average loss: {avg_loss}, Perplexity: {perplexity}")
+        # Only main process computes average loss and perplexity
+        if self.accelerator.is_local_main_process:
+            avg_loss = total_loss / len(dataloader)
+            perplexity = torch.exp(avg_loss)
+            LOG.info(f"Batch evaluation completed. Average loss: {avg_loss}, Perplexity: {perplexity}")
+  
+            return avg_loss, perplexity
+        
+        else:
+            return None, None  # Non-main processes return None
 
-        return avg_loss, perplexity
-
+    def validate() -> None:
+        ...
