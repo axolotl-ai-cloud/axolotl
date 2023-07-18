@@ -81,7 +81,6 @@ class ConstantLengthDataset(IterableDataset):
             "input_ids": [],
             "attention_mask": [],
             "labels": [],
-            "position_ids": [],
         }
         buffer_len = 0
         for dataset in self.datasets:
@@ -113,9 +112,6 @@ class ConstantLengthDataset(IterableDataset):
                         attention_mask = torch.cat(buffer["attention_mask"], dim=-1)[
                             : self.seq_length
                         ]
-                        position_ids = torch.cat(buffer["position_ids"], dim=-1)[
-                            : self.seq_length
-                        ]
                         labels = torch.cat(buffer["labels"], dim=-1)[: self.seq_length]
                         if labels.size() == input_ids.size() and (
                             attention_mask.size() == input_ids.size()
@@ -124,7 +120,6 @@ class ConstantLengthDataset(IterableDataset):
                                 "input_ids": input_ids,
                                 "labels": labels,
                                 "attention_mask": attention_mask,
-                                "position_ids": position_ids,
                             }
                         else:
                             LOG.warning(
@@ -134,7 +129,6 @@ class ConstantLengthDataset(IterableDataset):
                         "input_ids": [],
                         "attention_mask": [],
                         "labels": [],
-                        "position_ids": [],
                     }
                     buffer_len = 0
                     idx = 1
@@ -161,12 +155,8 @@ class ConstantLengthDataset(IterableDataset):
                         labels_with_concat = torch.tensor(
                             labels, dtype=self.tokens_dtype
                         )
-                        position_ids = torch.arange(
-                            len(input_ids), dtype=self.tokens_dtype
-                        )
 
                         buffer["input_ids"].append(input_ids_with_concat)
                         buffer["attention_mask"].append(attention_mask_with_concat)
                         buffer["labels"].append(labels_with_concat)
-                        buffer["position_ids"].append(position_ids)
                         buffer_len += len(input_ids)

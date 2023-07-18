@@ -1,5 +1,4 @@
 """Module containing the Trainer class and related functions"""
-
 import importlib
 import logging
 import math
@@ -7,13 +6,15 @@ import os
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
 
 import bitsandbytes as bnb
 import torch.cuda
 import transformers
+from datasets import Dataset
 from torch import nn
 from torch.optim.lr_scheduler import OneCycleLR
+from torch.utils.data import DataLoader, DistributedSampler
 from transformers import EarlyStoppingCallback, Trainer, TrainingArguments
 from transformers.trainer_pt_utils import get_parameter_names
 
@@ -21,7 +22,7 @@ from axolotl.utils.callbacks import (
     SaveBetterTransformerModelCallback,
     SavePeftModelCallback,
 )
-from axolotl.utils.collators import DataCollatorForSeq2Seq
+from axolotl.utils.dataloader import MultipackDistributedDataloader
 from axolotl.utils.schedulers import (
     InterpolatingLogScheduler,
     get_cosine_schedule_with_quadratic_warmup,
@@ -39,6 +40,14 @@ class AxolotlTrainingArguments(TrainingArguments):
     lr_quadratic_warmup: bool = field(
         default=False,
         metadata={"help": "Use quadratic warmup for cosine scheduling."},
+    )
+    sample_packing: bool = field(
+        default=False,
+        metadata={"help": "Use sample packing for efficient training."},
+    )
+    max_seq_length: int = field(
+        default=2048,
+        metadata={"help": "The maximum sequence length the model can handle"},
     )
 
 
@@ -77,6 +86,32 @@ class AxolotlTrainer(Trainer):
                 return super().create_scheduler(num_training_steps, optimizer)
         return self.lr_scheduler
 
+    def get_train_dataloader(self) -> Union[DataLoader, MultipackDistributedDataloader]:
+        if self.args.sample_packing:
+            train_sampler = self._get_train_sampler()
+            return MultipackDistributedDataloader(
+                self.train_dataset,
+                batch_size=self._train_batch_size,
+                seq_max_length=self.args.max_seq_length,
+                collate_fn=self.data_collator,
+                sampler=train_sampler,
+            )
+        return super().get_train_dataloader()
+
+    def get_eval_dataloader(
+        self, eval_dataset: Optional[Dataset] = None
+    ) -> Union[DataLoader, MultipackDistributedDataloader]:
+        if self.args.sample_packing:
+            eval_sampler = self._get_eval_sampler(eval_dataset)
+            return MultipackDistributedDataloader(
+                eval_dataset,
+                batch_size=self.args.per_device_eval_batch_size,
+                seq_max_length=self.args.max_seq_length,
+                collate_fn=self.data_collator,
+                sampler=eval_sampler,
+            )
+        return super().get_eval_dataloader(eval_dataset)
+
 
 class OneCycleLRSchedulerTrainer(AxolotlTrainer):
     """
@@ -108,9 +143,36 @@ class OneCycleLRSchedulerTrainer(AxolotlTrainer):
 
 
 def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
-    total_num_steps = int(
-        math.ceil(len(train_dataset) * cfg.num_epochs / cfg.batch_size)
-    )
+    if cfg.sample_packing:
+        sampler = DistributedSampler(
+            train_dataset,
+            num_replicas=1,
+            rank=0,
+            seed=cfg.seed,
+        )
+        data_loader = MultipackDistributedDataloader(
+            train_dataset,
+            batch_size=cfg.micro_batch_size,
+            seq_max_length=cfg.max_packed_sequence_len or cfg.sequence_len,
+            collate_fn=transformers.DataCollatorForSeq2Seq(
+                tokenizer,
+                return_tensors="pt",
+                padding="longest",
+            ),
+            sampler=sampler,
+        )
+        total_num_steps = int(
+            math.ceil(
+                len(data_loader)
+                * cfg.micro_batch_size
+                * cfg.num_epochs
+                / cfg.batch_size
+            )
+        )
+    else:
+        total_num_steps = int(
+            math.ceil(len(train_dataset) * cfg.num_epochs / cfg.batch_size)
+        )
     warmup_steps = (
         cfg.warmup_steps
         if cfg.warmup_steps is not None
@@ -191,6 +253,8 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
         training_arguments_kwargs["save_safetensors"] = cfg.save_safetensors
 
     training_args = AxolotlTrainingArguments(  # pylint: disable=unexpected-keyword-arg
+        max_steps=total_num_steps
+        * cfg.num_epochs,  # this is helpful in case we don't actually know total # of steps
         per_device_train_batch_size=cfg.micro_batch_size,
         per_device_eval_batch_size=cfg.eval_batch_size
         if cfg.eval_batch_size is not None
@@ -222,6 +286,7 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
         if cfg.lr_scheduler and cfg.lr_scheduler not in ("one_cycle", "log_sweep")
         else "cosine",
         weight_decay=cfg.weight_decay if cfg.weight_decay is not None else 0.0,
+        sample_packing=cfg.sample_packing if cfg.sample_packing else False,
         **training_arguments_kwargs,
     )
 
@@ -347,7 +412,7 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
         args=training_args,
-        data_collator=DataCollatorForSeq2Seq(
+        data_collator=transformers.DataCollatorForSeq2Seq(
             tokenizer,
             return_tensors="pt",
             **data_collator_kwargs,
