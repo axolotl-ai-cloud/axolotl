@@ -14,21 +14,23 @@ from accelerate import Accelerator
 from axolotl.utils.dict import DictDefault
 from datasets import IterableDataset
 from peft.peft_model import PeftModel
+import transformers
 from transformers.modeling_utils import PreTrainedModel
 from transformers.tokenization_utils import PreTrainedTokenizer
+from transformers import Trainer
 
 LOG = logging.getLogger("axolotl")
 
 
 def collate_fn(batch, accelerator: Accelerator, pad_value: int = 0, padding_direction: str = "left") -> Dict[str, torch.Tensor]:
     """Collate function for DataLoader."""
-    input_ids = [torch.tensor(item['input_ids']).to(accelerator.device) for item in batch]
-    labels = [torch.tensor(item['labels']).to(accelerator.device) for item in batch]
-    attention_masks = [torch.tensor(item['attention_mask']).to(accelerator.device) for item in batch]
+    input_ids = [torch.tensor(item['input_ids'])for item in batch]
+    labels = [torch.tensor(item['labels']) for item in batch]
+    attention_masks = [torch.tensor(item['attention_mask']) for item in batch]
 
-    padded_inputs = pad_sequence(input_ids, batch_first=True, padding_value=pad_value).to(accelerator.device)
-    padded_labels = pad_sequence(labels, batch_first=True, padding_value=-100).to(accelerator.device)
-    padded_attention_masks = pad_sequence(attention_masks, batch_first=True, padding_value=0).to(accelerator.device)
+    padded_inputs = pad_sequence(input_ids, batch_first=True, padding_value=pad_value)
+    padded_labels = pad_sequence(labels, batch_first=True, padding_value=-100)
+    padded_attention_masks = pad_sequence(attention_masks, batch_first=True, padding_value=0)
 
     if padding_direction.lower() == 'right':
         padded_inputs = padded_inputs.flip([1])
@@ -54,6 +56,9 @@ class BatchEval:
 
 
     def run(self) -> Any:
+
+        transformers.enable_full_determinism(seed=10)
+
         """Run batch evaluation and return average loss and perplexity."""
         derived_micro_batch_size = self.cfg.micro_batch_size if self.cfg.micro_batch_size is not None else 1
         dataloader = DataLoader(self.dataset, batch_size=derived_micro_batch_size, collate_fn=lambda batch: collate_fn(batch, self.accelerator, pad_value=self.tokenizer.pad_token_id, padding_direction=self.tokenizer.padding_side))
