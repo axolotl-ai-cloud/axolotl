@@ -2,15 +2,21 @@
 Prompt Strategy for finetuning Vicuna v1.1+ models
 see also https://huggingface.co/psmathur/orca_mini_v2_7b for more information
 
-Use dataset type: orcamini in conig.yml to use this prompt style.
+Use dataset type: "vicuna" in conig.yml to use this prompt style.
 
-dataset should look like this:
+E.g. in the config.yml:
+```
+datasets:
+  - path: vicuna_finetune_train.jsonl
+    type: vicuna
+```
+
+The dataset itself should look like this:
 ```
 {'conversation':[{"from": "human", "value": "Who are you?"}, {"from": "gpt", "value": "I am Vicuna"},...]}
 ```
 in a jsonl file. The first message should be from the human, the second from gpt.
-For a custom system message, the first "from" can be "system".
-
+For a custom system message, the first "from" can be "system" (followed by "human" and "gpt" turns).
 """
 
 import logging
