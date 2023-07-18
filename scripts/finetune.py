@@ -231,7 +231,7 @@ def train(
                 cfg.pretraining_dataset,
                 tokenizer,
                 max_tokens=cfg.sequence_len,
-                seed=cfg.seed,
+                seed=cfg.seed or 42,
             )
             # https://discuss.huggingface.co/t/how-to-use-huggingface-trainer-streaming-datasets-without-wrapping-it-with-torchdatas-iterablewrapper/25230
             train_dataset = train_dataset.with_format("torch")
