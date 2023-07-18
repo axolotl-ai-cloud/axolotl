@@ -195,7 +195,7 @@ class MultipackDistributedDataloader:
                     for feature, array in concatenated.items()
                 }
                 chunked_data.append(chunk)
-        yield self.collate_fn(chunked_data)
+            yield self.collate_fn(chunked_data)
 
     def __len__(self):
         batches, _ = self.generate_batches()
