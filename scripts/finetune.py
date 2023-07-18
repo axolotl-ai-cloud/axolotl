@@ -17,6 +17,7 @@ import yaml
 from optimum.bettertransformer import BetterTransformer
 from transformers import GenerationConfig, TextStreamer
 
+from axolotl.cli.batch_eval import BatchEval
 from axolotl.logging_config import configure_logging
 from axolotl.utils.data import load_prepare_datasets, load_pretraining_dataset
 from axolotl.utils.dict import DictDefault
@@ -25,8 +26,6 @@ from axolotl.utils.tokenization import check_dataset_labels
 from axolotl.utils.trainer import setup_trainer
 from axolotl.utils.validation import validate_config
 from axolotl.utils.wandb import setup_wandb_env_vars
-
-from axolotl.cli.batch_eval import BatchEval
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 src_dir = os.path.join(project_root, "src")
@@ -225,8 +224,15 @@ def train(
         check_not_in(["shard", "merge_lora"], kwargs) and not cfg.inference
     ):  # don't need to load dataset for these
         if not cfg.pretraining_dataset:
-            derived_default_dataset_prepared_path = cfg.dataset_prepared_path if cfg.dataset_prepared_path else DEFAULT_DATASET_PREPARED_PATH
-            LOG.debug("Using derived_default_dataset_prepared_path = %s", derived_default_dataset_prepared_path)
+            derived_default_dataset_prepared_path = (
+                cfg.dataset_prepared_path
+                if cfg.dataset_prepared_path
+                else DEFAULT_DATASET_PREPARED_PATH
+            )
+            LOG.debug(
+                "Using derived_default_dataset_prepared_path = %s",
+                derived_default_dataset_prepared_path,
+            )
             train_dataset, eval_dataset = load_prepare_datasets(
                 tokenizer, cfg, derived_default_dataset_prepared_path
             )
@@ -287,7 +293,10 @@ def train(
         return
 
     if cfg.batch_eval:
-        cli_handler = BatchEval(cfg=cfg, model=model, tokenizer=tokenizer, dataset=train_dataset)
+        cli_handler = BatchEval(
+            cfg=cfg, model=model, tokenizer=tokenizer, dataset=train_dataset
+        )
+        cli_handler.validate_and_warn()
         cli_handler.run()
         return
 

@@ -315,7 +315,7 @@ def load_prepare_datasets(
                 ).encode("utf-8")
             ).hexdigest()
         )
-        prepared_ds_path = Path(default_dataset_prepared_path) / ds_hash   
+        prepared_ds_path = Path(default_dataset_prepared_path) / ds_hash
 
         dataset = None
         use_auth_token = cfg.hf_use_auth_token
@@ -404,7 +404,7 @@ def load_prepare_datasets(
             index=cfg.dataset_shard_idx,
         )
 
-    # Insight - never split when performing a batch_eval. Also, a minor quirk in our configuration 
+    # Insight - never split when performing a batch_eval. Also, a minor quirk in our configuration
     # we are splitting validation data (from cfg.val_set_size) but HF calls it a "test" split.
     # Moreover, we are returning eval_dataset, leaving this alone but may there may be an oppertunity
     # to cleanup the terminilogy in the future.
