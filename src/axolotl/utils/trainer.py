@@ -22,6 +22,7 @@ from axolotl.utils.callbacks import (
     SaveBetterTransformerModelCallback,
     SavePeftModelCallback,
 )
+from axolotl.utils.collators import DataCollatorForSeq2Seq
 from axolotl.utils.dataloader import MultipackDistributedDataloader
 from axolotl.utils.schedulers import (
     InterpolatingLogScheduler,
@@ -89,6 +90,7 @@ class AxolotlTrainer(Trainer):
     def get_train_dataloader(self) -> Union[DataLoader, MultipackDistributedDataloader]:
         if self.args.sample_packing:
             train_sampler = self._get_train_sampler()
+
             return MultipackDistributedDataloader(
                 self.train_dataset,
                 batch_size=self._train_batch_size,
@@ -142,8 +144,15 @@ class OneCycleLRSchedulerTrainer(AxolotlTrainer):
         return self.lr_scheduler
 
 
+def add_position_ids(sample):
+    sample["position_ids"] = torch.arange(len(sample["input_ids"]))
+    return sample
+
+
 def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
     if cfg.sample_packing:
+        train_dataset = train_dataset.map(add_position_ids)
+        eval_dataset = eval_dataset.map(add_position_ids)
         sampler = DistributedSampler(
             train_dataset,
             num_replicas=1,
@@ -154,7 +163,7 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
             train_dataset,
             batch_size=cfg.micro_batch_size,
             seq_max_length=cfg.max_packed_sequence_len or cfg.sequence_len,
-            collate_fn=transformers.DataCollatorForSeq2Seq(
+            collate_fn=DataCollatorForSeq2Seq(
                 tokenizer,
                 return_tensors="pt",
                 padding="longest",
@@ -412,7 +421,7 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
         args=training_args,
-        data_collator=transformers.DataCollatorForSeq2Seq(
+        data_collator=DataCollatorForSeq2Seq(
             tokenizer,
             return_tensors="pt",
             **data_collator_kwargs,
