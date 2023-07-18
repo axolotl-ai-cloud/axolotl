@@ -26,6 +26,8 @@ from axolotl.utils.trainer import setup_trainer
 from axolotl.utils.validation import validate_config
 from axolotl.utils.wandb import setup_wandb_env_vars
 
+from axolotl.cli.batch_eval import BatchEval
+
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 src_dir = os.path.join(project_root, "src")
 sys.path.insert(0, src_dir)
@@ -222,8 +224,10 @@ def train(
         check_not_in(["shard", "merge_lora"], kwargs) and not cfg.inference
     ):  # don't need to load dataset for these
         if not cfg.pretraining_dataset:
+            derived_default_dataset_prepared_path = cfg.dataset_prepared_path if cfg.dataset_prepared_path else DEFAULT_DATASET_PREPARED_PATH
+            LOG.debug("Using derived_default_dataset_prepared_path = %s", derived_default_dataset_prepared_path)
             train_dataset, eval_dataset = load_prepare_datasets(
-                tokenizer, cfg, DEFAULT_DATASET_PREPARED_PATH
+                tokenizer, cfg, derived_default_dataset_prepared_path
             )
         else:
             train_dataset = load_pretraining_dataset(
@@ -280,6 +284,14 @@ def train(
                 prompter = kwargs["prompter"]
         do_inference(cfg, model, tokenizer, prompter=prompter)
         return
+
+    if cfg.batch_eval:
+        cli_handler = BatchEval(cfg=cfg, model=model, tokenizer=tokenizer, dataset=train_dataset)
+        cli_handler.run()
+        return
+
+    if cfg.batch_inference:
+        ...
 
     if "shard" in kwargs:
         model.save_pretrained(cfg.output_dir)

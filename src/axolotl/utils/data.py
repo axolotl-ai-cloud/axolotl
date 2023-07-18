@@ -55,20 +55,20 @@ def load_tokenized_prepared_datasets(
             ).encode("utf-8")
         ).hexdigest()
     )
-    prepared_ds_path = (
-        Path(cfg.dataset_prepared_path) / ds_hash
-        if cfg.dataset_prepared_path
-        else Path(default_dataset_prepared_path) / ds_hash
-    )
+    prepared_ds_path = Path(default_dataset_prepared_path) / ds_hash
     dataset = None
     use_auth_token = cfg.hf_use_auth_token
+
+    split_name = cfg.split_name if cfg.split_name else "train"
+    LOG.debug("Using split name: %s", split_name)
+
     try:
         if cfg.push_dataset_to_hub:
             dataset = load_dataset(
                 f"{cfg.push_dataset_to_hub}/{ds_hash}",
                 use_auth_token=use_auth_token,
             )
-            dataset = dataset["train"]
+            dataset = dataset[split_name]
     except Exception:  # pylint: disable=broad-except # nosec
         pass
 
@@ -122,7 +122,7 @@ def load_tokenized_prepared_datasets(
                     )
                 else:
                     raise ValueError(
-                        "unhandled dataset load: local path exists, but is neither a directory or a file"
+                        f"unhandled dataset load: {local_path} exists, but is neither a directory or a file"
                     )
             elif ds_from_hub:
                 if d.data_files:
@@ -149,8 +149,8 @@ def load_tokenized_prepared_datasets(
                 raise ValueError("unhandled dataset load")
             # support for using a subset of the data
             if d.shards:
-                if "train" in ds:
-                    ds = ds.shuffle(seed=seed)["train"].shard(
+                if split_name in ds:
+                    ds = ds.shuffle(seed=seed)[split_name].shard(
                         num_shards=d.shards, index=0
                     )
                 else:
@@ -159,8 +159,8 @@ def load_tokenized_prepared_datasets(
             d_type_split = d_type.split(":")
             d_base_type = d_type_split[0]
             d_prompt_style = d_type_split[1] if len(d_type_split) > 1 else None
-            if "train" in ds:
-                ds = ds["train"]
+            if split_name in ds:
+                ds = ds[split_name]
             if ds_strategy := load(d.type, tokenizer, cfg):
                 ds_wrapper = TokenizedPromptDataset(ds_strategy, ds)
                 datasets.append(ds_wrapper)
@@ -294,6 +294,9 @@ def load_prepare_datasets(
         max_packed_sequence_len, cfg.sequence_len
     )  # make sure we don't accidentally set it larger than sequence_len
 
+    split_name = cfg.split_name if cfg.split_name else "train"
+    LOG.debug("Using split name: %s", split_name)
+
     tokenizer_name = tokenizer.__class__.__name__
     if cfg.max_packed_sequence_len is not None:
         # see if we can go ahead and load the stacked dataset
@@ -313,11 +316,7 @@ def load_prepare_datasets(
                 ).encode("utf-8")
             ).hexdigest()
         )
-        prepared_ds_path = (
-            Path(cfg.dataset_prepared_path) / ds_hash
-            if cfg.dataset_prepared_path
-            else Path(default_dataset_prepared_path) / ds_hash
-        )
+        prepared_ds_path = Path(default_dataset_prepared_path) / ds_hash   
 
         dataset = None
         use_auth_token = cfg.hf_use_auth_token
@@ -330,7 +329,9 @@ def load_prepare_datasets(
                     f"{cfg.push_dataset_to_hub}/{ds_hash}",
                     use_auth_token=use_auth_token,
                 )
-                dataset = dataset["train"]
+                split_name = cfg.split_name if cfg.split_name else "train"
+                LOG.debug("Using split name: %s", split_name)
+                dataset = dataset[split_name]
         except Exception:  # pylint: disable=broad-except # nosec
             pass
 
@@ -404,7 +405,11 @@ def load_prepare_datasets(
             index=cfg.dataset_shard_idx,
         )
 
-    if cfg.val_set_size:
+    # Insight - never split when performing a batch_eval. Also, a minor quirk in our configuration 
+    # we are splitting validation data (from cfg.val_set_size) but HF calls it a "test" split.
+    # Moreover, we are returning eval_dataset, leaving this alone but may there may be an oppertunity
+    # to cleanup the terminilogy in the future.
+    if cfg.val_set_size and not cfg.batch_eval:
         dataset = dataset.train_test_split(test_size=cfg.val_set_size, shuffle=False)
         train_dataset = dataset["train"]
         eval_dataset = dataset["test"]
