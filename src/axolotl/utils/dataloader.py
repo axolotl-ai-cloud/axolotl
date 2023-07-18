@@ -1,10 +1,10 @@
 # pylint: skip-file
 
-from typing import Any, Callable, List
+from typing import Any, Callable, List, Union
 
 import numba
 import numpy as np
-from torch.utils.data import DistributedSampler
+from torch.utils.data import DistributedSampler, Sampler
 
 
 @numba.njit
@@ -108,7 +108,7 @@ class MultipackDistributedDataloader:
         collate_fn: Callable,
         seq_max_length: int = 2048,
         batch_size: int = 1,
-        sampler: DistributedSampler = None,
+        sampler: Union[Sampler, DistributedSampler] = None,
         seed: int = 0,
     ):
         # Dataset

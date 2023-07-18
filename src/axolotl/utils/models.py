@@ -138,7 +138,9 @@ def load_model(
         LOG.info("patching with xpos rope")
         replace_llama_rope_with_xpos_rope()
 
-    if cfg.is_llama_derived_model and cfg.max_packed_sequence_len:
+    if cfg.is_llama_derived_model and (
+        cfg.max_packed_sequence_len or cfg.sample_packing
+    ):
         from axolotl.monkeypatch.llama_expand_mask import hijack_expand_mask
 
         LOG.info("patching _expand_mask")
