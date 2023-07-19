@@ -109,7 +109,6 @@ class MultipackDistributedDataloader:
         seq_max_length: int = 2048,
         batch_size: int = 1,
         sampler: Union[Sampler, DistributedSampler] = None,
-        seed: int = 0,
     ):
         # Dataset
         self.dataset = dataset
@@ -127,18 +126,9 @@ class MultipackDistributedDataloader:
         self.num_replicas = 1
         self.rank = 0
 
-        # Seed
-        self.seed = seed
-
-        # Epoch
-        self.epoch = 0
-
         # statistics
         self.eff_total_used = 0
         self.eff_total_slots = 0
-
-    def set_epoch(self, epoch: int):
-        self.epoch = epoch
 
     def generate_batches(self, set_stats=False):
         if self.sampler:
