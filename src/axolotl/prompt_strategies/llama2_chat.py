@@ -38,7 +38,7 @@ class Llama2ChatConversation:
     name: str = "llama2"
     # The system prompt
     system: str = (
-        "<s>[INST] <<SYS>>\nYou are a helpful, respectful and honest assistant. Always answer as helpfully as possible, while being safe. "
+        "[INST] <<SYS>>\nYou are a helpful, respectful and honest assistant. Always answer as helpfully as possible, while being safe. "
         "Your answers should not include any harmful, unethical, racist, sexist, toxic, dangerous, or illegal content. "
         "Please ensure that your responses are socially unbiased and positive in nature.\n\n"
         "If a question does not make any sense, or is not factually coherent, explain why instead of answering something not correct. "
@@ -56,18 +56,15 @@ class Llama2ChatConversation:
         seps = [self.sep, self.sep2]
         ret = ""
         for i, (role, message) in enumerate(self.messages):
-            if message:
-                if (i == len(self.messages) - 1) and (role == self.roles[0]):
-                # last message is from assistant (due to length),
-                #  return prompt without it
-                    return ret
-                if i == 0:
-                    ret += self.system + message
-                else:
-                    ret += role + " " + message + seps[i % 2]
+            if (i == len(self.messages) - 1) and (role == self.roles[1]):
+            # last message is from assistant (due to length),
+            #  return prompt without it
+                return ret+self.roles[1]
+            if i == 0:
+                ret += self.system + message
             else:
-                ret += role
-        return ret
+                ret += role + " " + message + seps[i % 2]
+        return ret+self.roles[1]
 
     def append_message(self, role: str, message: str):
         """Append a new message."""
@@ -79,6 +76,11 @@ class LLama2ChatTokenizingStrategy(PromptTokenizingStrategy):
     Tokenizing strategy for ShareGPT prompts.
     adapted from https://github.com/lm-sys/FastChat/blob/main/fastchat/train/train.py
     """
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.sequence_len=4096
+        self.tokenizer.add_special_tokens({'pad_token': '<pad>'})
+        #https://huggingface.co/meta-llama/Llama-2-7b-chat-hf/blob/main/added_tokens.json
 
     def tokenize_prompt(self, prompt):
         conv = next(self.prompter.build_prompt(prompt))
@@ -89,7 +91,7 @@ class LLama2ChatTokenizingStrategy(PromptTokenizingStrategy):
             conversation_str,
             return_tensors="pt",
             padding="max_length",
-            max_length=self.tokenizer.model_max_length,
+            max_length=4096,
             truncation=True,
         ).input_ids[0]
         target = input_ids.clone()
@@ -134,14 +136,13 @@ class LLama2ChatTokenizingStrategy(PromptTokenizingStrategy):
             "attention_mask": input_ids.ne(self.tokenizer.pad_token_id).tolist(),
         }
 
-
 class Llama2ChatPrompter:  # pylint: disable=too-few-public-methods
     """
     A prompter that generates prompts for Llama2 models.
     """
 
     system_prompt =  (
-        "<s>[INST] <<SYS>>\nYou are a helpful, respectful and honest assistant. Always answer as helpfully as possible, while being safe. "
+        "[INST] <<SYS>>\nYou are a helpful, respectful and honest assistant. Always answer as helpfully as possible, while being safe. "
         "Your answers should not include any harmful, unethical, racist, sexist, toxic, dangerous, or illegal content. "
         "Please ensure that your responses are socially unbiased and positive in nature.\n\n"
         "If a question does not make any sense, or is not factually coherent, explain why instead of answering something not correct. "
@@ -154,7 +155,7 @@ class Llama2ChatPrompter:  # pylint: disable=too-few-public-methods
 
         # if system prompt provided, use it
         if source[0]["from"] == "system":
-            system = f"<s>[INST] <<SYS>>\n{source[0]['value']}\n<</SYS>>\n\n"
+            system = f"[INST] <<SYS>>\n{source[0]['value']}\n<</SYS>>\n\n"
             source = source[1:]
         else:
             system = self.system_prompt
