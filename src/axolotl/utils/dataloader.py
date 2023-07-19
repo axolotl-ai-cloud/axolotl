@@ -141,7 +141,10 @@ class MultipackDistributedDataloader:
         self.epoch = epoch
 
     def generate_batches(self, set_stats=False):
-        indices = [idx for idx in self.sampler]
+        if self.sampler:
+            indices = [idx for idx in self.sampler]
+        else:
+            indices = range(0, len(self.dataset))
 
         lengths = self.lengths[indices]
         lengths_cumsum = np.cumsum(lengths)
