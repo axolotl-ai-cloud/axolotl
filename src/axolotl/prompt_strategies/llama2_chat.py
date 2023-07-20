@@ -5,18 +5,18 @@ see also https://github.com/facebookresearch/llama/blob/6c7fe276574e78057f917549
 This implementation is based on the Vicuna PR and the fastchat repo, see also:
 https://github.com/lm-sys/FastChat/blob/cdd7730686cb1bf9ae2b768ee171bdf7d1ff04f3/fastchat/conversation.py#L847
 
-Use dataset type: "llama2" in conig.yml to use this prompt style.
+Use dataset type: "llama2_chat" in conig.yml to use this prompt style.
 
 E.g. in the config.yml:
 ```
 datasets:
   - path: llama_finetune_train.jsonl
-    type: llama2
+    type: llama2_chat
 ```
 
 The dataset itself should look like this:
 ```
-{'conversation':[{"from": "human", "value": "Who are you?"}, {"from": "gpt", "value": "I am Vicuna"},...]}
+{'conversations':[{"from": "human", "value": "Who are you?"}, {"from": "gpt", "value": "I am Vicuna"},...]}
 ```
 in a jsonl file. The first message should be from the human, the second from gpt.
 For a custom system message, the first "from" can be "system" (followed by alternating "human" and "gpt" turns).
@@ -132,6 +132,7 @@ class LLama2ChatTokenizingStrategy(PromptTokenizingStrategy):
                     f" (ignored)"
                 )
 
+        attention_mask = input_ids.ne(self.tokenizer.pad_token_id).tolist()
         input_ids = input_ids.tolist()
         target.tolist()
         # this is a fix for the tokenizer which tokenizes [ differently with eos tokens and
@@ -144,7 +145,7 @@ class LLama2ChatTokenizingStrategy(PromptTokenizingStrategy):
         return {
             "input_ids": input_ids,
             "labels": target,
-            "attention_mask": input_ids.ne(self.tokenizer.pad_token_id).tolist(),
+            "attention_mask": attention_mask,
         }
 
 
