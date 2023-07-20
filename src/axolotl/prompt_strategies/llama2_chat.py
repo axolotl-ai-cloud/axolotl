@@ -56,15 +56,15 @@ class Llama2ChatConversation:
         seps = [self.sep, self.sep2]
         ret = ""
         for i, (role, message) in enumerate(self.messages):
-            if (i == len(self.messages) - 1) and (role == self.roles[1]):
-                # last message is from assistant (due to length),
-                #  return prompt without it
-                return ret + self.roles[1]
+            if (i == len(self.messages) - 1) and (role == self.roles[0]):
+                # last message is from user (due to length),
+                #  return prompt without it for training
+                return ret
             if i == 0:
                 ret += self.system + message
             else:
                 ret += role + " " + message + seps[i % 2]
-        return ret + self.roles[1]
+        return ret
 
     def append_message(self, role: str, message: str):
         """Append a new message."""
@@ -120,7 +120,6 @@ class LLama2ChatTokenizingStrategy(PromptTokenizingStrategy):
             # Ignore the user instructions
             target[cur_len - 1 : cur_len + instruction_len] = IGNORE_TOKEN_ID
             cur_len += turn_len + 2  # due to length of role token
-        cur_len -= 3  # 1 at start and 2 for last turn, should now be equal total_len
 
         target[cur_len:] = IGNORE_TOKEN_ID
 
