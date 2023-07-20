@@ -163,7 +163,7 @@ class Llama2ChatPrompter:  # pylint: disable=too-few-public-methods
 
     def build_prompt(self, source) -> Generator[Llama2ChatConversation, None, None]:
         # see https://github.com/lm-sys/FastChat/blob/da0641e567cf93756b0978ab5a6b092e96f06240/fastchat/train/train.py#L78
-        source = source["conversation"]  # fix data structure for datasets
+        source = source["conversations"]  # fix data structure for datasets
 
         # if system prompt provided, use it
         if source[0]["from"] == "system":
