@@ -20,6 +20,8 @@ The dataset itself should look like this:
 ```
 in a jsonl file. The first message should be from the human, the second from gpt.
 For a custom system message, the first "from" can be "system" (followed by alternating "human" and "gpt" turns).
+
+Important: Don't use "special_tokens:" in your config.yml if you are not sure what you are doing!
 """
 
 import logging
