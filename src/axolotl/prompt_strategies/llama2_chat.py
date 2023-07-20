@@ -132,9 +132,18 @@ class LLama2ChatTokenizingStrategy(PromptTokenizingStrategy):
                     f" (ignored)"
                 )
 
+        input_ids = input_ids.tolist()
+        target.tolist()
+        # this is a fix for the tokenizer which tokenizes [ differently with eos tokens and
+        # follows the original llama implementation
+        for i in range(2, total_len - 2):
+            if input_ids[i] == 29961:
+                input_ids[i] = 518
+            if target[i] == 29961:
+                target[i] = 518
         return {
-            "input_ids": input_ids.tolist(),
-            "labels": target.tolist(),
+            "input_ids": input_ids,
+            "labels": target,
             "attention_mask": input_ids.ne(self.tokenizer.pad_token_id).tolist(),
         }
 
