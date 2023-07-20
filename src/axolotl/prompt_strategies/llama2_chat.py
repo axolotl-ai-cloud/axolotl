@@ -47,9 +47,9 @@ class Llama2ChatConversation:
     roles: Sequence[str] = ("[INST]", "[/INST]")
     messages: List[List[str]] = field(default_factory=list)
     offset: int = 0
-    sep=" "
-    sep2=" </s><s>"
-    stop_token_ids=[2]
+    sep = " "
+    sep2 = " </s><s>"
+    stop_token_ids = [2]
 
     def get_prompt(self) -> str:
         """Get the prompt for generation."""
@@ -57,14 +57,14 @@ class Llama2ChatConversation:
         ret = ""
         for i, (role, message) in enumerate(self.messages):
             if (i == len(self.messages) - 1) and (role == self.roles[1]):
-            # last message is from assistant (due to length),
-            #  return prompt without it
-                return ret+self.roles[1]
+                # last message is from assistant (due to length),
+                #  return prompt without it
+                return ret + self.roles[1]
             if i == 0:
                 ret += self.system + message
             else:
                 ret += role + " " + message + seps[i % 2]
-        return ret+self.roles[1]
+        return ret + self.roles[1]
 
     def append_message(self, role: str, message: str):
         """Append a new message."""
@@ -76,11 +76,12 @@ class LLama2ChatTokenizingStrategy(PromptTokenizingStrategy):
     Tokenizing strategy for ShareGPT prompts.
     adapted from https://github.com/lm-sys/FastChat/blob/main/fastchat/train/train.py
     """
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.sequence_len=4096
-        self.tokenizer.add_special_tokens({'pad_token': '<pad>'})
-        #https://huggingface.co/meta-llama/Llama-2-7b-chat-hf/blob/main/added_tokens.json
+        self.sequence_len = 4096
+        self.tokenizer.add_special_tokens({"pad_token": "<pad>"})
+        # https://huggingface.co/meta-llama/Llama-2-7b-chat-hf/blob/main/added_tokens.json
 
     def tokenize_prompt(self, prompt):
         conv = next(self.prompter.build_prompt(prompt))
@@ -91,13 +92,13 @@ class LLama2ChatTokenizingStrategy(PromptTokenizingStrategy):
             conversation_str,
             return_tensors="pt",
             padding="max_length",
-            max_length=4096,
+            max_length=self.sequence_len,
             truncation=True,
         ).input_ids[0]
         target = input_ids.clone()
 
         # Mask targets. Only compute loss on the assistant outputs.
-        sep = conv.sep + conv.roles[1]
+        sep = conv.roles[1]
 
         total_len = int(target.ne(self.tokenizer.pad_token_id).sum())
 
@@ -113,16 +114,17 @@ class LLama2ChatTokenizingStrategy(PromptTokenizingStrategy):
             if len(parts) != 2:
                 break
             parts[0] += sep
-            # "-2" is hardcoded for the LLaMA tokenizer to make the offset correct.
-            instruction_len = len(self.tokenizer(parts[0]).input_ids) - 2
+            # "-1" is hardcoded for the LLaMA tokenizer to make the offset correct.
+            instruction_len = len(self.tokenizer(parts[0]).input_ids) - 1
 
             # Ignore the user instructions
-            target[cur_len : cur_len + instruction_len] = IGNORE_TOKEN_ID
-            cur_len += turn_len
+            target[cur_len - 1 : cur_len + instruction_len] = IGNORE_TOKEN_ID
+            cur_len += turn_len + 2  # due to length of role token
+        cur_len -= 3  # 1 at start and 2 for last turn, should now be equal total_len
 
         target[cur_len:] = IGNORE_TOKEN_ID
 
-        if cur_len < self.tokenizer.model_max_length:
+        if cur_len < self.sequence_len:
             if cur_len != total_len:
                 target[:] = IGNORE_TOKEN_ID
                 logging.warning(
@@ -136,12 +138,13 @@ class LLama2ChatTokenizingStrategy(PromptTokenizingStrategy):
             "attention_mask": input_ids.ne(self.tokenizer.pad_token_id).tolist(),
         }
 
+
 class Llama2ChatPrompter:  # pylint: disable=too-few-public-methods
     """
     A prompter that generates prompts for Llama2 models.
     """
 
-    system_prompt =  (
+    system_prompt = (
         "[INST] <<SYS>>\nYou are a helpful, respectful and honest assistant. Always answer as helpfully as possible, while being safe. "
         "Your answers should not include any harmful, unethical, racist, sexist, toxic, dangerous, or illegal content. "
         "Please ensure that your responses are socially unbiased and positive in nature.\n\n"
