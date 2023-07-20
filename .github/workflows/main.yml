@@ -17,17 +17,17 @@ jobs:
           - cuda: cu118
             cuda_version: 11.8.0
             python_version: "3.9"
-            pytorch: 2.0.0
+            pytorch: 2.0.1
             axolotl_extras:
           - cuda: cu118
             cuda_version: 11.8.0
             python_version: "3.10"
-            pytorch: 2.0.0
+            pytorch: 2.0.1
             axolotl_extras:
           - cuda: cu118
             cuda_version: 11.8.0
             python_version: "3.9"
-            pytorch: 2.0.0
+            pytorch: 2.0.1
             axolotl_extras: gptq
           - cuda: cu117
             cuda_version: 11.7.1
@@ -72,17 +72,17 @@ jobs:
           - cuda: cu118
             cuda_version: 11.8.0
             python_version: "3.9"
-            pytorch: 2.0.0
+            pytorch: 2.0.1
             axolotl_extras:
           - cuda: cu118
             cuda_version: 11.8.0
             python_version: "3.10"
-            pytorch: 2.0.0
+            pytorch: 2.0.1
             axolotl_extras:
           - cuda: cu118
             cuda_version: 11.8.0
             python_version: "3.9"
-            pytorch: 2.0.0
+            pytorch: 2.0.1
             axolotl_extras: gptq
           - cuda: cu117
             cuda_version: 11.7.1
