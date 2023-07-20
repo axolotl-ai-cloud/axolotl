@@ -61,9 +61,9 @@ class Llama2ChatConversation:
                 #  return prompt without it for training
                 return ret
             if i == 0:
-                ret += self.system + message
+                ret += self.system + message.strip()
             else:
-                ret += role + " " + message + seps[i % 2]
+                ret += role + " " + message.strip() + seps[i % 2]
         return ret
 
     def append_message(self, role: str, message: str):
@@ -133,7 +133,7 @@ class LLama2ChatTokenizingStrategy(PromptTokenizingStrategy):
 
         attention_mask = input_ids.ne(self.tokenizer.pad_token_id).tolist()
         input_ids = input_ids.tolist()
-        target.tolist()
+        target = target.tolist()
         # this is a fix for the tokenizer which tokenizes [ differently with eos tokens and
         # follows the original llama implementation
         for i in range(2, total_len - 2):
@@ -189,7 +189,8 @@ class Llama2ChatPrompter:  # pylint: disable=too-few-public-methods
         for j, sentence in enumerate(source):
             role = roles[sentence["from"]]
             assert role == conv.roles[j % 2]
-            conv.append_message(role, sentence["value"])
+            if sentence["value"]:
+                conv.append_message(role, sentence["value"])
         yield conv
 
 
