@@ -110,7 +110,7 @@ class VicunaTokenizingStrategy(PromptTokenizingStrategy):
 
         target[cur_len:] = IGNORE_TOKEN_ID
 
-        if cur_len < self.tokenizer.model_max_length:
+        if cur_len < self.sequence_len:
             if cur_len != total_len:
                 target[:] = IGNORE_TOKEN_ID
                 logging.warning(
