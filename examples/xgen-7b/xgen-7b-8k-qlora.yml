@@ -1,0 +1,90 @@
+# An example finetuning Saleforce's XGen-7b model with 8k context using qlora
+# on Tim Dettmer's Guanaco dataset.
+base_model: Salesforce/xgen-7b-8k-base
+base_model_config: Salesforce/xgen-7b-8k-base
+trust_remote_code: true
+model_type: AutoModelForCausalLM
+tokenizer_type: AutoTokenizer
+load_in_8bit: false
+# enable 4bit for QLoRA
+load_in_4bit: true
+gptq: false
+strict: false
+push_dataset_to_hub:
+datasets:
+  - path: timdettmers/openassistant-guanaco
+    data_files:
+      - openassistant_best_replies_train.jsonl
+    type: "completion"
+dataset_prepared_path: last_run_prepared
+val_set_size: 0.01
+# enable QLoRA
+adapter: qlora
+lora_model_dir:
+sequence_len: 8192
+max_packed_sequence_len:
+
+# hyperparameters from QLoRA paper Appendix B.2
+# "We find hyperparameters to be largely robust across datasets"
+lora_r: 64
+lora_alpha: 16
+# 0.1 for models up to 13B
+# 0.05 for 33B and 65B models
+lora_dropout: 0.05
+# add LoRA modules on all linear layers of the base model
+lora_target_modules:
+lora_target_linear: true
+lora_fan_in_fan_out:
+
+wandb_project:
+wandb_watch:
+wandb_run_id:
+wandb_log_model:
+output_dir: ./qlora-out
+
+# QLoRA paper Table 9
+# - 16 for 7b & 13b
+# - 32 for 33b, 64 for 64b
+# Max size tested on A6000
+# - 7b: 40
+# - 40b: 4
+# decrease if OOM, increase for max VRAM utilization
+micro_batch_size: 1
+gradient_accumulation_steps: 1
+num_epochs: 3
+# Optimizer for QLoRA
+optimizer: paged_adamw_32bit
+torchdistx_path:
+lr_scheduler: cosine
+# QLoRA paper Table 9
+# - 2e-4 for 7b & 13b
+# - 1e-4 for 33b & 64b
+learning_rate: 0.00002
+train_on_inputs: false
+group_by_length: false
+bf16: true
+fp16: false
+tf32: false
+gradient_checkpointing: true
+# stop training after this many evaluation losses have increased in a row
+# https://huggingface.co/transformers/v4.2.2/_modules/transformers/trainer_callback.html#EarlyStoppingCallback
+early_stopping_patience: 3
+resume_from_checkpoint:
+auto_resume_from_checkpoints: true
+local_rank:
+logging_steps: 1
+xformers_attention: true
+flash_attention:
+gptq_groupsize:
+gptq_model_v1:
+warmup_steps: 10
+eval_steps: 50
+save_steps: 50
+debug:
+deepspeed:
+weight_decay: 0.0
+special_tokens:
+  eos_token: "<|endoftext|>"
+  bos_token: "<|endoftext|>"
+  unk_token: "<|endoftext|>"
+  pad_token: "<|endoftext|>"
