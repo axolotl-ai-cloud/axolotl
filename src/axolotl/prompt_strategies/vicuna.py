@@ -79,7 +79,7 @@ class VicunaTokenizingStrategy(PromptTokenizingStrategy):
             conversation_str,
             return_tensors="pt",
             padding="max_length",
-            max_length=self.tokenizer.model_max_length,
+            max_length=self.sequence_len,
             truncation=True,
         ).input_ids[0]
         target = input_ids.clone()
