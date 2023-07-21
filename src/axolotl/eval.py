@@ -21,9 +21,7 @@ from axolotl.utils.dict import DictDefault
 LOG = logging.getLogger("axolotl")
 
 
-def collate_fn(
-    batch, pad_value: int = 0, padding_direction: str = "left"
-) -> Dict[str, torch.Tensor]:
+def collate_fn(batch, pad_value: int = 0, padding_direction: str = "left") -> Dict[str, torch.Tensor]:
     """Collate function for DataLoader."""
     input_ids = [torch.tensor(item["input_ids"]) for item in batch]
     labels = [torch.tensor(item["labels"]) for item in batch]
@@ -31,9 +29,7 @@ def collate_fn(
 
     padded_inputs = pad_sequence(input_ids, batch_first=True, padding_value=pad_value)
     padded_labels = pad_sequence(labels, batch_first=True, padding_value=-100)
-    padded_attention_masks = pad_sequence(
-        attention_masks, batch_first=True, padding_value=0
-    )
+    padded_attention_masks = pad_sequence(attention_masks, batch_first=True, padding_value=0)
 
     if padding_direction.lower() == "right":
         padded_inputs = padded_inputs.flip([1])
@@ -72,12 +68,9 @@ class BatchEval:
         # TODO: Confirm loss/perplexity are being calculated properly
         # TODO: Do we need to do something with the scores aside from logging to stdout?
 
-        # TODO: "full determinisim" is broken for eval
-        transformers.enable_full_determinism(seed=10)
+        transformers.enable_full_determinism(seed=self.cfg.seed)
 
-        derived_micro_batch_size = (
-            self.cfg.micro_batch_size if self.cfg.micro_batch_size is not None else 1
-        )
+        derived_micro_batch_size = self.cfg.micro_batch_size if self.cfg.micro_batch_size is not None else 1
         dataloader = DataLoader(
             self.dataset,
             batch_size=derived_micro_batch_size,
@@ -107,22 +100,16 @@ class BatchEval:
                     input_ids = batch["input_ids"]
                     attention_mask = batch["attention_mask"]
                     labels = batch["labels"]
-                    outputs = model(
-                        input_ids, attention_mask=attention_mask, labels=labels
-                    )
+                    outputs = model(input_ids, attention_mask=attention_mask, labels=labels)
                     loss_reduced = self.accelerator.gather(outputs.loss)
                     if self.accelerator.is_local_main_process:
-                        total_loss += (
-                            torch.mean(loss_reduced) / self.accelerator.num_processes
-                        )
+                        total_loss += torch.mean(loss_reduced) / self.accelerator.num_processes
 
         # Only main process computes average loss and perplexity
         if self.accelerator.is_local_main_process:
             avg_loss = total_loss / len(dataloader)
             perplexity = torch.exp(avg_loss)
-            LOG.info(
-                f"Batch evaluation completed. Average loss: {avg_loss}, Perplexity: {perplexity}"
-            )
+            LOG.info(f"Batch evaluation completed. Average loss: {avg_loss}, Perplexity: {perplexity}")
 
     def validate_and_warn(self) -> None:
         # TODO: finish validation
