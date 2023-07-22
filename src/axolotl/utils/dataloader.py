@@ -99,6 +99,7 @@ def allocate(
 
 class MultipackDistributedDataloader:
     """Unpadded data loading using Multipack.
+    Adapted from https://github.com/imoneoi/openchat/blob/v3_fix_mle_loss/ochat/training_deepspeed/multipack_dataloader.py
     Approximate (at most ~1.22x) the optimal solution of the identical-machines scheduling problem, which is NP-hard.
     """
 
