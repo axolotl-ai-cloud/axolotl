@@ -20,21 +20,31 @@ jobs:
             python_version: "3.9"
             pytorch: 2.0.1
             axolotl_extras:
+            torch_cuda_arch_list: "7.0 7.5 8.0 8.6+PTX"
           - cuda: "118"
             cuda_version: 11.8.0
             python_version: "3.10"
             pytorch: 2.0.1
             axolotl_extras:
+            torch_cuda_arch_list: "7.0 7.5 8.0 8.6+PTX"
+          - cuda: "122"
+            cuda_version: 12.2.0
+            python_version: "3.10"
+            pytorch: 2.0.1
+            axolotl_extras:
+            torch_cuda_arch_list: "7.0 7.5 8.0 8.6 9.0+PTX"
           - cuda: "117"
             cuda_version: 11.7.1
             python_version: "3.9"
             pytorch: 1.13.1
             axolotl_extras:
+            torch_cuda_arch_list: "7.0 7.5 8.0 8.6+PTX"
           - cuda: "118"
             cuda_version: 11.8.0
             python_version: "3.9"
             pytorch: 2.0.1
             axolotl_extras: gptq
+            torch_cuda_arch_list: "7.0 7.5 8.0 8.6+PTX"
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -64,3 +74,4 @@ jobs:
             PYTHON_VERSION=${{ matrix.python_version }}
             PYTORCH_VERSION=${{ matrix.pytorch }}
             AXOLOTL_EXTRAS=${{ matrix.axolotl_extras }}
+            TORCH_CUDA_ARCH_LIST=${{ matrix.torch_cuda_arch_list }}
