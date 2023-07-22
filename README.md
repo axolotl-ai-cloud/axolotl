@@ -322,6 +322,9 @@ tokenizer_type: AutoTokenizer
 trust_remote_code:
 # use_fast option for tokenizer loading from_pretrained, default to True
 tokenizer_use_fast:
+# resize the model embeddings when new tokens are added to multiples of 32
+# this is reported to improve training speed on some models
+resize_token_embeddings_to_32x:
 
 # whether you are training a 4-bit GPTQ quantized model
 gptq: true
