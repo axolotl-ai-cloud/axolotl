@@ -375,7 +375,10 @@ dataset_shard_idx:
 sequence_len: 2048
 # max sequence length to concatenate training samples together up to
 # inspired by StackLLaMA. see https://huggingface.co/blog/stackllama#supervised-fine-tuning
+# soon to be DEPRECATED
 max_packed_sequence_len: 1024
+# use efficient multi-packing with block diagonal attention and per sequence position_ids
+sample_packing:
 
 # if you want to use 'lora' or 'qlora' or leave blank to train all parameters in original model
 adapter: lora
