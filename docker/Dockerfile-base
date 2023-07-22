@@ -36,7 +36,7 @@ FROM base-builder AS flash-attn-builder
 
 WORKDIR /workspace
 
-ARG TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6 9.0+PTX"
+ARG TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6+PTX"
 
 RUN git clone https://github.com/Dao-AILab/flash-attention.git && \
     cd flash-attention && \
@@ -53,7 +53,7 @@ RUN git clone https://github.com/Dao-AILab/flash-attention.git && \
 
 FROM base-builder AS deepspeed-builder
 
-ARG TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6 9.0+PTX"
+ARG TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6+PTX"
 
 WORKDIR /workspace
 
