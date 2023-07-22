@@ -4,11 +4,11 @@ This guide pertains to Axolotl configuration options when using the [click](http
 
 ## For Users
 
-This section documents concepts relevant for all users.
+This section documents concepts relevant to all users.
 
 ### Running
 
-Run the CLI as a Python module, note that axolotl must me installed in your environment:
+Run the CLI as a Python module, note that Axolotl must be installed in your environment:
 
 ```shell
 python -m axolotl --help
@@ -22,7 +22,7 @@ axolotl --help
 
 ### Enable CLI tab completion
 
-The Axolotl CLI has standard click-based tab compleiton and can be enabled via:
+The Axolotl CLI has standard click-based tab completion and can be enabled via:
 
 For bash:
 
@@ -40,7 +40,7 @@ Please see the [click shell completion](https://click.palletsprojects.com/en/8.1
 
 ### Passing multiple variables via the environment
 
-Sometime it is necessary to pass a list of options, for example the following configurations are all equivelant:
+Sometime it is necessary to pass a list of options, for example, the following configurations are all equivalent:
 
 ```shell
 DATASETS="/data/GPTeacher/Instruct,gpteacher /data/GPTeacher/Roleplay,gpteacher"
@@ -52,7 +52,7 @@ and
 --dataset=/data/GPTeacher/Instruct,gpteacher --dataset=/data/GPTeacher/Roleplay,gpteacher
 ```
 
-For completeness this is what the ``config.yaml`` setting would look like:
+For completeness, this is what the ``config.yaml`` setting would look like this:
 
 ```yaml
 ---
@@ -83,20 +83,20 @@ This is a guide for developers who need to make CLI (command line interface) or 
 
 ### Does Axolotl need a new option?
 
-Broadly, a new option may be needing when the *meaning* of an existing option doesn't match your use case. To illustrate, you would first need to understand the meaning of existing configuration options. This can be done by understanding the current options in ``tests/fixtures/default_config.yaml``  and possible looking at the online help for existing CLI options:
+Broadly, a new option may be needed when the *meaning* of an existing option doesn't match your use case. To illustrate, you would first need to understand the meaning of existing configuration options. This can be done by understanding the current options in ``tests/fixtures/default_config.`yaml`  and possibly looking at the online help for existing CLI options:
 
 ```shell
 axolotl system config --help
 ```
 
-For example, let's say you are adding a new command that calculates the perplexity score on one or more datasets. We need to specify both the model and datasets and you decide that the *meaning* of the existing options cover your use case. Now what about a configurable RNG seed?
+For example, let's say you are adding a new command that calculates the perplexity score on one or more datasets. We need to specify both the model and datasets and you decide that the *meaning* of the existing options covers your use case. Now what about a configurable RNG seed?
 
 * GOOD: Re-use the existing ``seed`` configuration option since the meaning is identical to your use case
 * BAD: Create a new option called ``generate_seed``; the meaning of the new option overlaps with the meaning of ``seed``
 
 ### Adding a new option
 
-All Axolotl configuration optionsmust be placed in ``axolotl/cli/options.py``. Implementing new configuration options will generally follow this process:
+All Axolotl configuration options must be placed in ``axolotl/cli/options.py``. Implementing new configuration options will generally follow this process:
 
 1. Determine if a new option is needed
 2. Update ``axolotl/tests/fixtures/default_config.yaml`` with the new default and documentation
@@ -171,7 +171,7 @@ Seed = 44
 The following conventions are enforced by the CLI unit tests in ``axolotl/tests/test_cli.py``:
 
 * All options must have help documentation with a length of at least 10, the best practice for this is to just use the decorator docstring so you don't end up writing it twice
-* The option must be present in ``axolotl/tests/fixtures/default_config.yaml``, this helps keep a "gold copy" of Axolotl configurations up to date as well as catching any copy/paste errors
+* The option must be present in ``axolotl/tests/fixtures/default_config.yaml``, this helps keep a "gold copy" of Axolotl configurations up to date as well as catch any copy/paste errors
 * Option names must be unique
 * Environment variables must be unique
 * Environment variables must have a ``AXOLOTL_`` prefix
@@ -261,4 +261,4 @@ def batch_eval():
     ...
 ```
 
-Click dynamically loads these every time the CLI is invoked and adding too many imports like ``torch`` will un-necessarily slow down the CLI responsiveness. Moreover this situation is complicated when CLI tab completion is enabled since this will often invoke the CLI several times.
+Click dynamically loads these every time the CLI is invoked and adding too many imports like `torch` will unnecessarily slow down the CLI responsiveness. Moreover, this situation is complicated when CLI tab completion is enabled since this will often invoke the CLI several times.
