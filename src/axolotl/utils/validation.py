@@ -8,6 +8,19 @@ LOG = logging.getLogger("axolotl")
 
 
 def validate_config(cfg):
+    if cfg.max_packed_sequence_len and cfg.sample_packing:
+        raise ValueError(
+            "please set only one of max_packed_sequence_len (deprecated soon) or sample_packing"
+        )
+    if cfg.max_packed_sequence_len:
+        LOG.warning(
+            str(
+                PendingDeprecationWarning(
+                    "max_packed_sequence_len will be deprecated in favor of sample_packing"
+                )
+            )
+        )
+
     if cfg.gradient_accumulation_steps and cfg.batch_size:
         raise ValueError(
             "please set only one of gradient_accumulation_steps or batch_size"
