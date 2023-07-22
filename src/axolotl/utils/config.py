@@ -1,21 +1,27 @@
 """Axolotl configuration utilities"""
 
+import logging
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Union
-import click
 
+import click
 import yaml
 
 import axolotl
+from axolotl.utils.data import load_prepare_datasets, load_pretraining_dataset
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.validation import validate_config
+
+LOG = logging.getLogger(__name__)
 
 
 def choose_config(path: Path) -> str:
     yaml_files = list(path.glob("*.ya?ml"))
 
     if not yaml_files:
-        raise ValueError("No YAML config files found in the specified directory. Are you using a .yml extension?")
+        raise ValueError(
+            "No YAML config files found in the specified directory. Are you using a .yml extension?"
+        )
 
     print("Choose a YAML file:")
     for idx, file in enumerate(yaml_files):
@@ -59,7 +65,9 @@ def load_config(config: Path) -> DictDefault:
     """
 
     config_path = Path(config)
-    derived_config_file = choose_config(config_path) if config_path.is_dir() else config_path
+    derived_config_file = (
+        choose_config(config_path) if config_path.is_dir() else str(config_path)
+    )
 
     with open(derived_config_file, encoding="utf-8") as config_fp:
         loaded_config = DictDefault(yaml.safe_load(config_fp))
@@ -70,7 +78,9 @@ def load_config(config: Path) -> DictDefault:
 
 
 def update_config(
-    overrides: Union[Dict[str, Any], DictDefault], allow_none: bool = False, validate: bool = True
+    overrides: Union[Dict[str, Any], DictDefault],
+    allow_none: bool = False,
+    validate: bool = True,
 ) -> None:
     """Updates the global configuration and optionally performs validation. The intended use
     case is for merging CLI options into the global configuration.
@@ -95,7 +105,11 @@ def update_config(
         raises an error, the error is propagated to the caller of 'update_config'.
         Defaults to True.
     """
-    updates = {key: value for key, value in overrides.items() if allow_none or value is not None}
+    updates = {
+        key: value
+        for key, value in overrides.items()
+        if allow_none or value is not None
+    }
     axolotl.cfg.update(**updates)
 
     if validate:
@@ -103,9 +117,9 @@ def update_config(
 
 
 def option_factory(
-    *args: str,
+    *args,
     override_kwargs: Optional[Dict[str, Any]] = None,
-    **kwargs: Dict[str, Any],
+    **kwargs,
 ) -> Callable:
     """Factory function to generate a decorator for Click options with proper defaults.
 
@@ -117,7 +131,7 @@ def option_factory(
     override_kwargs : Dict[str, Any], optional
         A dictionary of override parameters for the Click option, by default None.
 
-    **kwargs : Dict[str, Any]
+    **kwargs:
         Additional keyword arguments for the Click option.
 
     Returns
@@ -139,7 +153,7 @@ def option_factory(
         **(override_kwargs if override_kwargs is not None else {}),
     }
 
-    def decorator(func: Callable) -> Callable:
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         func = click.option(
             *args,
             **derived_kwargs,
@@ -147,8 +161,9 @@ def option_factory(
 
         return func
 
-    # For testing
-    decorator.click_params: DictDefault = DictDefault(
+    # Note that MyPy doesn't like dynamically adding parameters like this however it is a justified
+    # tradeoff to simplify testing and dynamic introspection of Axolotl CLI options
+    decorator.click_params = DictDefault(  # type: ignore[attr-defined]
         {
             "args": args,
             "kwargs": derived_kwargs,
@@ -179,3 +194,34 @@ def option_group_factory(options: List[Callable], **kwargs) -> Callable:
         return func
 
     return decorator
+
+
+def startup_load_dataset(cfg, tokenizer):
+    if not cfg.pretraining_dataset:
+        # Ideally the "last_run_prepared" default would be set in the configuration
+        # file, keeping the logic from finetune.py to maintain compatibility
+        derived_default_dataset_prepared_path = (
+            cfg.dataset_prepared_path
+            if cfg.dataset_prepared_path
+            else "last_run_prepared"
+        )
+        LOG.info(
+            "Loading dataset: %s",
+            derived_default_dataset_prepared_path,
+        )
+        train_dataset, eval_dataset = load_prepare_datasets(
+            tokenizer, cfg, derived_default_dataset_prepared_path
+        )
+    else:
+        LOG.info("Loading pretraining dataset")
+        train_dataset = load_pretraining_dataset(
+            cfg.pretraining_dataset,
+            tokenizer,
+            max_tokens=cfg.sequence_len,
+            seed=cfg.seed,
+        )
+        # https://discuss.huggingface.co/t/how-to-use-huggingface-trainer-streaming-datasets-without-wrapping-it-with-torchdatas-iterablewrapper/25230
+        train_dataset = train_dataset.with_format("torch")
+        eval_dataset = None
+
+    return train_dataset, eval_dataset

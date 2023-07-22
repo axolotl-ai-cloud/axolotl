@@ -1,7 +1,7 @@
 """Axolotl CLI option definitions"""
 
 from os.path import exists
-from typing import Any, Callable, Tuple, List, Dict, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import click
 
@@ -32,7 +32,9 @@ def dataset_option(**kwargs: Any) -> Callable:
     """
 
     # pylint: disable=unused-argument
-    def parse_dataset_callback(ctx: Any, param: Any, value: Tuple[str]) -> Optional[List[Dict]]:
+    def parse_dataset_callback(
+        ctx: Any, param: Any, value: Tuple[str]
+    ) -> Optional[List[Dict]]:
         # Each value is a tuple of strings like ("path1,type1", "path2,type2", ...)
         # This function splits each string by comma and verifies that the path exists.
         datasets = []

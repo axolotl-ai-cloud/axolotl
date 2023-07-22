@@ -3,8 +3,7 @@
 import inspect
 from typing import Callable
 
-import axolotl.cli.options as options
-
+from axolotl.cli import options
 from axolotl.utils.config import option_group_factory
 
 
@@ -30,7 +29,11 @@ def all_option_group(**kwargs) -> Callable:
     """
 
     all_members = sorted(inspect.getmembers(options))
-    callable_options = [member[1] for member in all_members if callable(member[1]) and member[0].endswith("_option")]
+    callable_options = [
+        member[1]
+        for member in all_members
+        if callable(member[1]) and member[0].endswith("_option")
+    ]
 
     return option_group_factory(
         options=callable_options,

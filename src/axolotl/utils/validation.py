@@ -4,7 +4,7 @@ import logging
 
 import torch
 
-LOG = logging.getLogger("axolotl")
+LOG = logging.getLogger(__name__)
 
 
 def validate_config(cfg):

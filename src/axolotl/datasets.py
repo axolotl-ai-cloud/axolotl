@@ -15,7 +15,7 @@ from .prompt_tokenizers import PromptTokenizingStrategy
 # let's check to ensure we don't truncate an item in the middle, we'll use
 # the collators later on to pad the datasets
 
-LOG = logging.getLogger("axolotl")
+LOG = logging.getLogger(__name__)
 
 
 class TokenizedPromptDataset(IterableDataset):

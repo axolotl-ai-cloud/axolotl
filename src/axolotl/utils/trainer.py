@@ -26,7 +26,7 @@ from axolotl.utils.schedulers import (
     get_cosine_schedule_with_quadratic_warmup,
 )
 
-LOG = logging.getLogger("axolotl")
+LOG = logging.getLogger(__name__)
 
 
 @dataclass

@@ -35,7 +35,7 @@ from axolotl.prompters import (
     SummarizeTLDRPrompter,
 )
 
-LOG = logging.getLogger("axolotl")
+LOG = logging.getLogger(__name__)
 
 
 def load_tokenized_prepared_datasets(

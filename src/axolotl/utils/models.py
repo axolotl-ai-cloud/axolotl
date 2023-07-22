@@ -23,7 +23,7 @@ from transformers import (  # noqa: F401
 
 from axolotl.prompt_tokenizers import LLAMA_DEFAULT_PAD_TOKEN
 
-LOG = logging.getLogger("axolotl")
+LOG = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from peft import PeftConfig  # noqa: F401

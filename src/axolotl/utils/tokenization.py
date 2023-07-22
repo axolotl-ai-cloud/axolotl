@@ -5,7 +5,7 @@ import logging
 
 from termcolor import colored
 
-LOG = logging.getLogger("axolotl")
+LOG = logging.getLogger(__name__)
 
 
 def check_dataset_labels(dataset, tokenizer):

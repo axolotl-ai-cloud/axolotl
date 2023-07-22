@@ -1,9 +1,9 @@
 """
 The Axolotl system module contains CLI tools relevant to debugging and system-level functions.
 """
-import logging
-from typing import Dict, Any
 import json
+import logging
+from typing import Any, Dict
 
 import click
 
@@ -11,7 +11,7 @@ from axolotl import cfg
 from axolotl.cli.option_groups import all_option_group
 from axolotl.utils.config import update_config
 
-LOG = logging.getLogger("axolotl")
+LOG = logging.getLogger(__name__)
 
 
 @click.group(name="system", help=__doc__)

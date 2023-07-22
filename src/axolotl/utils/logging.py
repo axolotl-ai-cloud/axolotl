@@ -25,7 +25,11 @@ def configure_logging(log_level: str):
             },
             "root": {"handlers": ["console"], "level": log_level},
             "loggers": {
-                "axolotl": {"handlers": ["console"], "level": log_level, "propagate": False},
+                "axolotl": {
+                    "handlers": ["console"],
+                    "level": log_level,
+                    "propagate": False,
+                },
             },
         }
     )

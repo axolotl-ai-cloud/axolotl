@@ -10,7 +10,7 @@ from transformers import PreTrainedTokenizer
 
 from axolotl.prompters import IGNORE_TOKEN_ID
 
-LOG = logging.getLogger("axolotl")
+LOG = logging.getLogger(__name__)
 
 IGNORE_INDEX = -100
 LLAMA_DEFAULT_PAD_TOKEN = "[PAD]"  # nosec

@@ -18,8 +18,7 @@ import yaml
 from optimum.bettertransformer import BetterTransformer
 from transformers import GenerationConfig, TextStreamer
 
-from axolotl.utils.config import choose_config
-from axolotl.utils.data import load_prepare_datasets, load_pretraining_dataset
+from axolotl.utils.config import choose_config, startup_load_dataset
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import configure_logging
 from axolotl.utils.models import load_model, load_tokenizer
@@ -206,29 +205,7 @@ def train(
     if (
         check_not_in(["shard", "merge_lora"], kwargs) and not cfg.inference
     ):  # don't need to load dataset for these
-        if not cfg.pretraining_dataset:
-            derived_default_dataset_prepared_path = (
-                cfg.dataset_prepared_path
-                if cfg.dataset_prepared_path
-                else DEFAULT_DATASET_PREPARED_PATH
-            )
-            LOG.debug(
-                "Using derived_default_dataset_prepared_path = %s",
-                derived_default_dataset_prepared_path,
-            )
-            train_dataset, eval_dataset = load_prepare_datasets(
-                tokenizer, cfg, derived_default_dataset_prepared_path
-            )
-        else:
-            train_dataset = load_pretraining_dataset(
-                cfg.pretraining_dataset,
-                tokenizer,
-                max_tokens=cfg.sequence_len,
-                seed=cfg.seed,
-            )
-            # https://discuss.huggingface.co/t/how-to-use-huggingface-trainer-streaming-datasets-without-wrapping-it-with-torchdatas-iterablewrapper/25230
-            train_dataset = train_dataset.with_format("torch")
-            eval_dataset = None
+        train_dataset, eval_dataset = startup_load_dataset(cfg, tokenizer)
 
     if cfg.debug or "debug" in kwargs:
         LOG.info("check_dataset_labels...")
@@ -279,15 +256,6 @@ def train(
                 prompter = kwargs["prompter"]
         do_inference(cfg, model, tokenizer, prompter=prompter)
         return
-
-    # if cfg.batch_eval:
-    #     cli_handler = BatchEval(cfg=cfg, model=model, tokenizer=tokenizer, dataset=train_dataset)
-    #     cli_handler.validate_and_warn()
-    #     cli_handler.run()
-    #     return
-
-    # if cfg.batch_inference:
-    #     ...
 
     if "shard" in kwargs:
         model.save_pretrained(cfg.output_dir)

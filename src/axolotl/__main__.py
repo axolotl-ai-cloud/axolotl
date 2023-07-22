@@ -1,7 +1,7 @@
 """Axolotl CLI entrypoint"""
-import threading
 import importlib
 import pkgutil
+import threading
 from pathlib import Path
 
 import click
@@ -9,7 +9,6 @@ import click
 import axolotl
 from axolotl.utils.config import load_config
 from axolotl.utils.logging import configure_logging
-
 
 threading.current_thread().name = "Main"
 
@@ -27,7 +26,9 @@ threading.current_thread().name = "Main"
 )
 @click.option(
     "--log-level",
-    type=click.Choice(["DEBUG", "INFO", "WARN", "WARNING", "ERROR"], case_sensitive=False),
+    type=click.Choice(
+        ["DEBUG", "INFO", "WARN", "WARNING", "ERROR"], case_sensitive=False
+    ),
     help="Sets the logging level",
     default="INFO",
     required=False,
@@ -43,16 +44,17 @@ def cli(config: str, log_level: str):
     configure_logging(log_level)
 
     # Need to do an update here so we can don't lose the refernce to the cfg "singleton"
-    loaded_cfg = load_config(config=config)
+    loaded_cfg = load_config(config=Path(config))
     axolotl.cfg.update(loaded_cfg)
-
 
 
 def main():
     """CLI Main entrypoint"""
 
     # Dynamically load all Click command groups under the axolotl.cli package
-    for module_info in pkgutil.walk_packages(axolotl.cli.__path__, axolotl.cli.__name__ + "."):
+    for module_info in pkgutil.walk_packages(
+        axolotl.cli.__path__, axolotl.cli.__name__ + "."
+    ):
         module = importlib.import_module(module_info.name)
         for item_name in dir(module):
             item = getattr(module, item_name)
@@ -61,7 +63,6 @@ def main():
 
     # pylint: disable=no-value-for-parameter
     cli(auto_envvar_prefix="AXOLOTL", prog_name="axolotl")
-
 
 
 if __name__ == "__main__":
