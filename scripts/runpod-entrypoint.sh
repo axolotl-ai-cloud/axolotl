@@ -2,7 +2,7 @@
 
 # Export specific ENV variables to /etc/rp_environment
 echo "Exporting environment variables..."
-printenv | grep -E '^RUNPOD_|^PATH=|^_=' | sed 's/^\(.*\)=\(.*\)$/export \1="\2"/' >> /etc/rp_environment
+printenv | grep -E '^BNB_|^CUDA_|^NCCL_|^NV|^RUNPOD_|^PATH=|^_=' | sed 's/^\(.*\)=\(.*\)$/export \1="\2"/' >> /etc/rp_environment
 echo 'source /etc/rp_environment' >> ~/.bashrc
 
 if [[ $PUBLIC_KEY ]]
