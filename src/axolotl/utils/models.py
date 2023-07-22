@@ -301,7 +301,11 @@ def load_model(
             **model_kwargs,
         )
 
-    embeddings_len = math.ceil(len(tokenizer) / 32) * 32
+    embeddings_len = (
+        math.ceil(len(tokenizer) / 32) * 32
+        if cfg.resize_token_embeddings_to_32x
+        else len(tokenizer)
+    )
     model.resize_token_embeddings(embeddings_len)
 
     if (
