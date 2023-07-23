@@ -64,10 +64,6 @@ class CLITest(unittest.TestCase):
                 ), f"Unable to parse option '{param_decl}' from {current_name}"
                 possible_config_names.append(matcher.group(1))
 
-            # assert any(
-            #     [config_name in default_config.keys() for config_name in possible_config_names]
-            # ), f"No parameters parsed from {current_name} ({possible_config_names}) were found in the default config file {default_config_path}"
-
             assert any(
                 config_name in default_config for config_name in possible_config_names
             ), f"No parameters parsed from {current_name} ({possible_config_names}) were found in the default config file {default_config_path}"

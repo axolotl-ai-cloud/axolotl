@@ -19,9 +19,6 @@ from axolotl.cli.options import (
     split_name_option,
     train_on_inputs_option,
 )
-from axolotl.eval import BatchEval
-from axolotl.utils.config import startup_load_dataset, update_config
-from axolotl.utils.models import load_model, load_tokenizer
 
 LOG = logging.getLogger(__name__)
 
@@ -44,6 +41,10 @@ def eval_group():
 @split_name_option()
 def batch(**kwargs: Dict[str, Any]):
     """Executes a batch evaluation operation"""
+
+    from axolotl.eval import BatchEval
+    from axolotl.utils.config import startup_load_dataset, update_config
+    from axolotl.utils.models import load_model, load_tokenizer
 
     # Override default configuration
     update_config(overrides=kwargs)
