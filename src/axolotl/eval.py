@@ -80,7 +80,8 @@ class BatchEval:
         # TODO: Lay rails for other validation metrics
         # TODO: Do we need to do something with the scores aside from logging to stdout?
 
-        transformers.enable_full_determinism(seed=self.cfg.seed)
+        if self.cfg.seed is not None:
+            transformers.enable_full_determinism(seed=self.cfg.seed)
 
         derived_micro_batch_size = (
             self.cfg.micro_batch_size if self.cfg.micro_batch_size is not None else 1

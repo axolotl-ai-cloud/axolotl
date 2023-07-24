@@ -228,25 +228,55 @@ def startup_load_dataset(cfg, tokenizer):
     return train_dataset, eval_dataset
 
 
-def is_integer(obj: Any) -> bool:
-    """Checks whether an object is an integer or an integer string.
+def parse_integer(obj: Any) -> int:
+    """Parses a string into a float with strong validation
 
     Parameters
     ----------
     obj : Any
-        The object to be checked for being an integer or an integer string.
+        The object to be checked for being an integer.
 
     Returns
     -------
-    bool
-        True if the object is an integer or an integer string, False otherwise.
+    int
+        The parsed int value
     """
 
     try:
         int_value = int(obj)
-        return int_value == float(obj)
+        if int_value != float(obj):
+            raise ValueError(f"{obj} is not an integer")
+
+        return int_value
+    except TypeError:
+        raise ValueError(f"Cannot parse {obj} to an integer")
+
+
+def parse_float(obj: Any) -> float:
+    """Parses a string into a float with strong validation
+
+    Parameters
+    ----------
+    obj : Any
+        The object to be checked for being a float.
+
+    Returns
+    -------
+    float
+        The parsed float value
+    """
+
+    try:
+        float_value = float(obj)
+        str_value = str(obj)
+        # check if the conversion to string and back to float remains the same
+        return float_value == float(str_value)
     except (ValueError, TypeError):
         return False
+
+
+def parse_bool(obj: Any) -> bool:
+    return bool(obj)
 
 
 @dataclass
@@ -255,15 +285,15 @@ class SubParamEntry:
 
     Attributes
     ----------
-    validation : Callable[[Any], bool]
-        A validation function for the sub-parameter. It takes any value and returns a boolean.
+    parser : Callable[[str], Union[int, float, bool, str]]
+        A parser function for the sub-parameter. It takes any value and returns a boolean.
     fail_msg : str
         The message to display when the validation for the sub-parameter fails.
     required : bool
         Indicates whether the sub-parameter is required. If True, an exception will be raised if it is not present.
     """
 
-    validation: Callable[[Any], bool]
+    parser: Callable[[str], Union[int, float, bool, str]]
     fail_msg: str
     required: bool
 
@@ -311,7 +341,7 @@ def parse_and_validate_sub_params(
             f"Unable to parse {param_name} spec '{unparsed_input}'. Sub-param values must be in this format: {','.join([f'{x}=VALUE' for x in sub_param_def.keys()])}"
         ) from ex
 
-    for parsed_key, parsed_value in parsed_dict.items():
+    for parsed_key, unparsed_value in parsed_dict.items():
         # Check if each parsed key is defined in sub_param_def.
         # If not, raise a BadParameter exception with an appropriate error message.
         if parsed_key not in sub_param_def:
@@ -321,9 +351,12 @@ def parse_and_validate_sub_params(
 
         # Check if each parsed value passes its validation function.
         # If not, raise a BadParameter exception with the corresponding fail message.
-        if not sub_param_def[parsed_key].validation(parsed_value):
+        try:
+            parsed_dict[parsed_key] = sub_param_def[parsed_key].parser(unparsed_value)
+
+        except:
             raise click.BadParameter(
-                sub_param_def[parsed_key].fail_msg.replace("%VALUE%", parsed_value, 1)
+                sub_param_def[parsed_key].fail_msg.replace("%VALUE%", unparsed_value, 1)
             )
 
     # Check if each required sub-parameter is present in parsed_dict.

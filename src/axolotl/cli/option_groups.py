@@ -18,6 +18,8 @@ def model_option_group(**kwargs) -> Callable:
             options.base_model_config_option,
             options.model_type_option,
             options.tokenizer_type_option,
+            options.adapter_option,
+            options.lora_model_dir_option,
         ],
         **kwargs,
     )

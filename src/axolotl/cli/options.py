@@ -7,7 +7,8 @@ import click
 
 from axolotl.utils.config import (
     SubParamEntry,
-    is_integer,
+    parse_float,
+    parse_integer,
     option_factory,
     parse_and_validate_sub_params,
 )
@@ -19,10 +20,16 @@ def seed_option(**kwargs: Any) -> Callable:
     Seed is used to control the determinism of operations in the axolotl.
     A value of -1 will randomly select a seed.
     """
+
+    # pylint: disable=unused-argument
+    def parse_seed_callback(ctx: Any, param: Any, seed_value: int) -> Optional[int]:
+        return seed_value if seed_value != -1 else None
+
     return option_factory(
         "--seed",
         envvar="AXOLOTL_SEED",
         type=click.types.INT,
+        callback=parse_seed_callback,
         help=seed_option.__doc__,
         override_kwargs=kwargs,
     )
@@ -40,27 +47,27 @@ def dataset_option(**kwargs: Any) -> Callable:
     # List of valid sub parameters for --dataset and simple validation
     sub_param_spec = {
         "path": SubParamEntry(
-            validation=exists,
+            parser=str,
             fail_msg="path validation failed for %VALUE%, the path must exist on the filesystem",
             required=False,
         ),
         "type": SubParamEntry(
-            validation=bool,
+            parser=str,
             fail_msg="type validation failed for '%VALUE%'",
             required=True,
         ),
         "data_files": SubParamEntry(
-            validation=exists,
+            parser=str,
             fail_msg="data_files validation failed for '%VALUE%'",
             required=False,
         ),
         "shards": SubParamEntry(
-            validation=is_integer,
+            parser=parse_integer,
             fail_msg="shards validation failed for '%VALUE%', an integer is required",
             required=False,
         ),
         "name": SubParamEntry(
-            validation=bool,
+            parser=str,
             fail_msg="name validation failed for '%VALUE%'",
             required=False,
         ),
@@ -220,5 +227,129 @@ def split_name_option(**kwargs: Any) -> Callable:
         envvar="AXOLOTL_SPLIT_NAME",
         type=click.types.STRING,
         help=split_name_option.__doc__,
+        override_kwargs=kwargs,
+    )
+
+
+def generation_config_option(**kwargs: Any) -> Callable:
+    """
+    Sets inferencing GenerationConfig options
+    """
+
+    sub_param_spec = {
+        "use_cache": SubParamEntry(
+            parser=bool,
+            fail_msg="type validation failed for '%VALUE%'",
+            required=True,
+        ),
+        "num_return_sequences": SubParamEntry(
+            parser=parse_integer,
+            fail_msg="num_return_sequences validation failed for '%VALUE%'",
+            required=True,
+        ),
+        "do_sample": SubParamEntry(
+            parser=bool,
+            fail_msg="do_sample validation failed for '%VALUE%'",
+            required=True,
+        ),
+        "num_beams": SubParamEntry(
+            parser=parse_integer,
+            fail_msg="num_beams validation failed for '%VALUE%'",
+            required=True,
+        ),
+        "temperature": SubParamEntry(
+            parser=parse_float,
+            fail_msg="temperature validation failed for '%VALUE%'",
+            required=True,
+        ),
+        "top_p": SubParamEntry(
+            parser=parse_float,
+            fail_msg="top_p validation failed for '%VALUE%'",
+            required=True,
+        ),
+        "top_k": SubParamEntry(
+            parser=parse_integer,
+            fail_msg="top_k validation failed for '%VALUE%'",
+            required=True,
+        ),
+        "typical_p": SubParamEntry(
+            parser=parse_float,
+            fail_msg="typical_p validation failed for '%VALUE%'",
+            required=True,
+        ),
+        "max_new_tokens": SubParamEntry(
+            parser=parse_integer,
+            fail_msg="max_new_tokens validation failed for '%VALUE%'",
+            required=True,
+        ),
+        "min_new_tokens": SubParamEntry(
+            parser=parse_integer,
+            fail_msg="min_new_tokens validation failed for '%VALUE%'",
+            required=True,
+        ),
+        "repetition_penalty": SubParamEntry(
+            parser=parse_float,
+            fail_msg="repetition_penalty validation failed for '%VALUE%'",
+            required=True,
+        ),
+        "prepend_bos": SubParamEntry(
+            parser=bool,
+            fail_msg="prepend_bos validation failed for '%VALUE%'",
+            required=True,
+        ),
+        "renormalize_logits": SubParamEntry(
+            parser=bool,
+            fail_msg="renormalize_logits validation failed for '%VALUE%'",
+            required=True,
+        ),
+    }
+
+    # pylint: disable=unused-argument
+    def parse_callback(ctx: Any, param: Any, value: str) -> Optional[DictDefault]:
+        return parse_and_validate_sub_params(
+            unparsed_input=value,
+            param_name="generation_config",
+            sub_param_def=sub_param_spec,
+        )
+
+    return option_factory(
+        "--generation_config",
+        envvar="AXOLOTL_GENERATION_CONFIG",
+        type=click.types.STRING,
+        callback=parse_callback,
+        help=generation_config_option.__doc__,
+        override_kwargs=kwargs,
+    )
+
+
+def output_dir_option(**kwargs: Any) -> Callable:
+    """Path that Axolotl will save output files to"""
+    return option_factory(
+        "--output_dir",
+        envvar="AXOLOTL_OUTPUT_DIR",
+        type=click.types.STRING,
+        help=output_dir_option.__doc__,
+        override_kwargs=kwargs,
+    )
+
+
+def adapter_option(**kwargs: Any) -> Callable:
+    """Adapter type"""
+    return option_factory(
+        "--adapter",
+        envvar="AXOLOTL_ADAPTER",
+        type=click.types.Choice(["lora", "qlora"]),
+        help=adapter_option.__doc__,
+        override_kwargs=kwargs,
+    )
+
+
+def lora_model_dir_option(**kwargs: Any) -> Callable:
+    """Directory to LoRA adapter"""
+    return option_factory(
+        "--lora_model_dir",
+        envvar="AXOLOTL_LORA_MODEL_DIR",
+        type=click.types.STRING,
+        help=lora_model_dir_option.__doc__,
         override_kwargs=kwargs,
     )
