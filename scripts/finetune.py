@@ -371,7 +371,13 @@ def train(
     elif cfg.local_rank == 0:
         if cfg.flash_optimum:
             model = BetterTransformer.reverse(model)
+
+        if cfg.adapter == "lora" and cfg.relora_steps:
+            model = model.merge_and_unload()
+
         model.save_pretrained(cfg.output_dir, safe_serialization=safe_serialization)
+
+    # trainer.save_model(cfg.output_dir)  # TODO this may be needed for deepspeed to work? need to review another time
 
 
 if __name__ == "__main__":
