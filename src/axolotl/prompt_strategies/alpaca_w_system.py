@@ -66,13 +66,32 @@ class SystemDataPrompter(AlpacaPrompter):
     ) -> Generator[str, None, None]:
         # returns the full prompt from instruction and optional input
         # if a label (=response, =output) is provided, it's also appended.
+        formatted_sys_prompt = f"### System:\n{system}\n\n" if system else ""
         if input:
-            res = system + self.turn_format.format(instruction=instruction, input=input)
+            res = formatted_sys_prompt + self.turn_format.format(
+                instruction=instruction, input=input
+            )
         else:
-            res = system + self.turn_no_input_format.format(instruction=instruction)
+            res = formatted_sys_prompt + self.turn_no_input_format.format(
+                instruction=instruction
+            )
         if output:
             res = f"{res}{output}"
         yield res
+
+
+class OpenOrcaSystemDataPrompter(SystemDataPrompter):
+    """
+    Alpaca Style Prompter that uses system prompts from the dataset, with OpenOrca prompts
+    """
+
+    def match_prompt_style(self):
+        if self.prompt_style == PromptStyle.INSTRUCT.value:
+            self.turn_format = "### User:\n{instruction}\n\n### Additional Context:\n{input}\n\n### Assistant:\n"
+            self.turn_no_input_format = "### User:\n{instruction}\n\n### Assistant:\n"
+        if self.prompt_style == PromptStyle.CHAT.value:
+            self.turn_format = "USER: {instruction}\n{input}\nASSISTANT:"
+            self.turn_no_input_format = "USER: {instruction}\nASSISTANT:"
 
 
 class OpenOrcaPromptTokenizingStrategy(InstructionWSystemPromptTokenizingStrategy):
@@ -113,7 +132,7 @@ def load_chat(tokenizer, cfg):
 
 def load_open_orca(tokenizer, cfg):
     return OpenOrcaPromptTokenizingStrategy(
-        SystemDataPrompter(PromptStyle.INSTRUCT.value),
+        OpenOrcaSystemDataPrompter(PromptStyle.INSTRUCT.value),
         tokenizer,
         cfg.train_on_inputs,
         cfg.sequence_len,
