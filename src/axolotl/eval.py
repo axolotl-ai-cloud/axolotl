@@ -63,6 +63,16 @@ class BatchEval:
         self.tokenizer = tokenizer
         self.dataset = dataset
 
+    def validate_and_warn(self) -> None:
+        # TODO: finish validation
+
+        if self.cfg.micro_batch_size is None:
+            raise ValueError("micro_batch_size is required for batch_eval")
+
+        if self.cfg.pretraining_dataset is not None:
+            self.cfg.pretraining_dataset = None
+            LOG.warning("batch_eval is forcing pretraining_dataset=None")
+
     def run(self) -> None:
         """Run batch evaluation and return average loss and perplexity."""
 
@@ -122,13 +132,3 @@ class BatchEval:
                 avg_loss,
                 perplexity,
             )
-
-    def validate_and_warn(self) -> None:
-        # TODO: finish validation
-
-        if self.cfg.micro_batch_size is None:
-            raise ValueError("micro_batch_size is required for batch_eval")
-
-        if self.cfg.pretraining_dataset is not None:
-            self.cfg.pretraining_dataset = None
-            LOG.warning("batch_eval is forcing pretraining_dataset=None")

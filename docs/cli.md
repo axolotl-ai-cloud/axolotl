@@ -36,6 +36,12 @@ You can also run via the launcher shell script, be sure the path to the ``axolot
 axolotl --help
 ```
 
+You can launch via ``accelerate`` as well:
+
+```shell
+accelerate launch --config_file=/path/to/accelerate.yaml -m axolotl inference batch
+```
+
 ### Enable CLI tab completion
 
 The Axolotl CLI has standard click-based tab completion and can be enabled via:

@@ -1,11 +1,17 @@
 """Axolotl CLI option definitions"""
 
 from os.path import exists
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, List, Optional, Tuple
 
 import click
 
-from axolotl.utils.config import option_factory
+from axolotl.utils.config import (
+    SubParamEntry,
+    is_integer,
+    option_factory,
+    parse_and_validate_sub_params,
+)
+from axolotl.utils.dict import DictDefault
 
 
 def seed_option(**kwargs: Any) -> Callable:
@@ -24,35 +30,56 @@ def seed_option(**kwargs: Any) -> Callable:
 
 def dataset_option(**kwargs: Any) -> Callable:
     """
-    Dataset to load, argument must be in format: path,type. Multiple datasets can be specified in a single command.
+    Dataset to load, multiple datasets can be specified in a single command.
 
     Example:\n
         --dataset=data/GPTeacher/Instruct,gpteacher
         --dataset=data/GPTeacher/Roleplay,gpteacher
     """
 
+    # List of valid sub parameters for --dataset and simple validation
+    sub_param_spec = {
+        "path": SubParamEntry(
+            validation=exists,
+            fail_msg="path validation failed for %VALUE%, the path must exist on the filesystem",
+            required=False,
+        ),
+        "type": SubParamEntry(
+            validation=bool,
+            fail_msg="type validation failed for '%VALUE%'",
+            required=True,
+        ),
+        "data_files": SubParamEntry(
+            validation=exists,
+            fail_msg="data_files validation failed for '%VALUE%'",
+            required=False,
+        ),
+        "shards": SubParamEntry(
+            validation=is_integer,
+            fail_msg="shards validation failed for '%VALUE%', an integer is required",
+            required=False,
+        ),
+        "name": SubParamEntry(
+            validation=bool,
+            fail_msg="name validation failed for '%VALUE%'",
+            required=False,
+        ),
+    }
+
     # pylint: disable=unused-argument
     def parse_dataset_callback(
-        ctx: Any, param: Any, value: Tuple[str]
-    ) -> Optional[List[Dict]]:
+        ctx: Any, param: Any, dataset_def_value: Tuple[str]
+    ) -> Optional[List[DictDefault]]:
         # Each value is a tuple of strings like ("path1,type1", "path2,type2", ...)
         # This function splits each string by comma and verifies that the path exists.
-        datasets = []
-        for item in value:
-            try:
-                path, type_ = item.split(",")
-            except ValueError:
-                # pylint: disable=raise-missing-from
-                raise click.BadParameter("Datasets need to be in format: path,type")
-
-            if not exists(path):
-                raise click.BadParameter(f"The dataset path {path} does not exist")
-
+        datasets: List[DictDefault] = []
+        for item in dataset_def_value:
             datasets.append(
-                {
-                    "path": path,
-                    "type": type_,
-                }
+                parse_and_validate_sub_params(
+                    unparsed_input=item,
+                    param_name="dataset",
+                    sub_param_def=sub_param_spec,
+                )
             )
 
         # Since non-None CLI get merged into our global options we need to return a None when no dataset
@@ -191,7 +218,7 @@ def split_name_option(**kwargs: Any) -> Callable:
     return option_factory(
         "--split_name",
         envvar="AXOLOTL_SPLIT_NAME",
-        type=click.types.INT,
+        type=click.types.STRING,
         help=split_name_option.__doc__,
         override_kwargs=kwargs,
     )

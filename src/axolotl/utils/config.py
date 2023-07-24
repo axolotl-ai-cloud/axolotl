@@ -1,6 +1,7 @@
 """Axolotl configuration utilities"""
 
 import logging
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Union
 
@@ -225,3 +226,113 @@ def startup_load_dataset(cfg, tokenizer):
         eval_dataset = None
 
     return train_dataset, eval_dataset
+
+
+def is_integer(obj: Any) -> bool:
+    """Checks whether an object is an integer or an integer string.
+
+    Parameters
+    ----------
+    obj : Any
+        The object to be checked for being an integer or an integer string.
+
+    Returns
+    -------
+    bool
+        True if the object is an integer or an integer string, False otherwise.
+    """
+
+    try:
+        int_value = int(obj)
+        return int_value == float(obj)
+    except (ValueError, TypeError):
+        return False
+
+
+@dataclass
+class SubParamEntry:
+    """A class representing a SubParamEntry, which is used to specify details about a CLI sub-parameter.
+
+    Attributes
+    ----------
+    validation : Callable[[Any], bool]
+        A validation function for the sub-parameter. It takes any value and returns a boolean.
+    fail_msg : str
+        The message to display when the validation for the sub-parameter fails.
+    required : bool
+        Indicates whether the sub-parameter is required. If True, an exception will be raised if it is not present.
+    """
+
+    validation: Callable[[Any], bool]
+    fail_msg: str
+    required: bool
+
+
+def parse_and_validate_sub_params(
+    unparsed_input: str, param_name: str, sub_param_def: Dict[str, SubParamEntry]
+) -> DictDefault:
+    """Parses a string of sub-parameters from a Click CLI command and validates them.
+
+    Parameters
+    ----------
+    unparsed_input : str
+        The input string containing the sub-parameters, formatted as "key=value" pairs separated by commas.
+    param_name : str
+        The name of the parameter that the sub-parameters belong to. This is used in error messages.
+    sub_param_def : Dict[str, SubParamEntry]
+        A dictionary that defines the expected sub-parameters. The keys are the names of the sub-parameters, and the
+        values are SubParamEntry objects that specify the validation function, fail message, and whether the sub-parameter
+        is required.
+
+    Returns
+    -------
+    DictDefault
+        A dictionary with the parsed and validated sub-parameters. The keys are the names of the sub-parameters, and the
+        values are the parsed values.
+
+    Raises
+    ------
+    click.BadParameter
+        Raised when a sub-parameter is not formatted correctly, is not recognized, fails validation, or is required but missing.
+    """
+    try:
+        # Split the input string by "," to separate the "key=value" pairs,
+        # then split each pair by "=" to get the key and value separately.
+        # Note: Leading and trailing commas are removed before splitting.
+        parsed_dict = DictDefault(
+            {
+                x.split("=")[0]: x.split("=")[1]
+                for x in unparsed_input.strip().strip(",").split(",")
+            }
+        )
+    except (ValueError, IndexError) as ex:
+        # If splitting fails, raise a BadParameter exception with an appropriate error message.
+        raise click.BadParameter(
+            f"Unable to parse {param_name} spec '{unparsed_input}'. Sub-param values must be in this format: {','.join([f'{x}=VALUE' for x in sub_param_def.keys()])}"
+        ) from ex
+
+    for parsed_key, parsed_value in parsed_dict.items():
+        # Check if each parsed key is defined in sub_param_def.
+        # If not, raise a BadParameter exception with an appropriate error message.
+        if parsed_key not in sub_param_def:
+            raise click.BadParameter(
+                f"Unknown {param_name} sub-parameter: '{parsed_key}' in {param_name} spec: '{unparsed_input}'"
+            )
+
+        # Check if each parsed value passes its validation function.
+        # If not, raise a BadParameter exception with the corresponding fail message.
+        if not sub_param_def[parsed_key].validation(parsed_value):
+            raise click.BadParameter(
+                sub_param_def[parsed_key].fail_msg.replace("%VALUE%", parsed_value, 1)
+            )
+
+    # Check if each required sub-parameter is present in parsed_dict.
+    # If not, raise a BadParameter exception with an appropriate error message.
+    for subparam_key in sub_param_def.keys():
+        if sub_param_def[subparam_key].required and subparam_key not in parsed_dict:
+            raise click.BadParameter(
+                f"The '{subparam_key}' sub-parameter is missing from {param_name} spec: '{unparsed_input}'"
+            )
+
+    # Return the parsed and validated sub-parameters.
+    return parsed_dict
