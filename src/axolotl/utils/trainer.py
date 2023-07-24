@@ -21,6 +21,7 @@ from torch.utils.data import DataLoader, DistributedSampler, RandomSampler
 from transformers import EarlyStoppingCallback, Trainer, TrainingArguments
 from transformers.trainer_pt_utils import get_parameter_names
 
+from axolotl.monkeypatch.relora import ReLoRACallback, ReLoRAScheduler
 from axolotl.utils.callbacks import (
     GPUStatsCallback,
     SaveBetterTransformerModelCallback,
@@ -556,6 +557,22 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
 
     callbacks = []
     callbacks.append(GPUStatsCallback(cfg))
+
+    if cfg.relora_steps:
+        assert cfg.adapter in (
+            "lora",
+            "qlora",
+        ), "Adapter must be lora or qlora to use ReLoRA"
+        relora_steps = int(cfg.relora_steps)
+        relora_warmup_steps = int(cfg.relora_warmup_steps)
+        callbacks.append(ReLoRACallback(cfg))
+
+        (optimizer, lr_scheduler) = trainer_kwargs["optimizers"]
+        trainer_kwargs["optimizers"] = (
+            optimizer,
+            ReLoRAScheduler(optimizer, lr_scheduler, relora_steps, relora_warmup_steps),
+        )
+
     # TODO on_save callback to sync checkpoints to GCP/AWS in background
     if cfg.early_stopping_patience:
         early_stop_cb = EarlyStoppingCallback(

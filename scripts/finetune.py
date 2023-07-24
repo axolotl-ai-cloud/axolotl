@@ -325,6 +325,10 @@ def train(
     elif cfg.local_rank == 0:
         if cfg.flash_optimum:
             model = BetterTransformer.reverse(model)
+
+        if cfg.adapter == "lora" and cfg.relora_steps:
+            model = model.merge_and_unload()
+
         model.save_pretrained(cfg.output_dir, safe_serialization=safe_serialization)
 
 

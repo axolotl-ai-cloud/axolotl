@@ -33,7 +33,9 @@ class SavePeftModelCallback(TrainerCallback):  # pylint: disable=too-few-public-
         )
 
         peft_model_path = os.path.join(checkpoint_folder, "adapter_model")
-        kwargs["model"].save_pretrained(peft_model_path)
+        kwargs["model"].save_pretrained(
+            peft_model_path, save_safetensors=args.save_safetensors
+        )
 
         return control
 
