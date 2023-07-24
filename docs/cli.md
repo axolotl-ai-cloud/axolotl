@@ -2,6 +2,22 @@
 
 This guide pertains to Axolotl configuration options when using the [click](https://click.palletsprojects.com/) CLI. This guide does not apply to standalone scripts in the ``scripts/`` directory.
 
+## Introducton & Background
+
+Today, Axolotl offers a wide range of functionalities that facilitate the finetuning of Large Language Models (LLMs). These include dataset preparation, creating and saving a merged (q)LoRA model, data sharding, interactive inferencing, and the finetuning process itself.
+
+A typical, albeit not comprehensive, lifecycle sequence for LLM finetuning might be:
+
+```text
+Dataset Preparation -> Finetuning -> Quantization & Export -> Validation & Benchmarking -> Inferencing
+```
+
+This updated command-line interface (CLI) and configuration significantly simplify the realization of such lifecycle chains, for both end users and developers:
+
+1. In accordance with the [12-factor app best practices](https://12factor.net/config), configuration values can now be overridden by CLI parameters and environment variables. This enables users to orchestrate multiple steps by setting common defaults in a ``config.yaml`` file and adjusting settings in the environment as necessary.
+2. Considering that not all configuration options are pertinent to all features—for instance, "evaluation" only necessitates a subset of "finetune" settings—this update establishes a framework that makes it easier for users to identify the settings used by each feature. Moreover, it provides online assistance for each setting (accessible via CLI --help). Additionally, the update ensures full backward compatibility with ``finetune.py``, and capitalizes on existing ``config.yaml`` settings are already integrated into Axolotl.
+3. Lastly, this update lays the foundation for a more effortless execution of Axolotl pipeline steps via external orchestration tools, such as [Apache Airflow](https://airflow.apache.org/).
+
 ## For Users
 
 This section documents concepts relevant to all users.
