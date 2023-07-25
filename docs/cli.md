@@ -284,3 +284,89 @@ def batch_eval():
 ```
 
 Click dynamically loads these every time the CLI is invoked and adding too many imports like `torch` will unnecessarily slow down the CLI responsiveness. Moreover, this situation is complicated when CLI tab completion is enabled since this will often invoke the CLI several times.
+
+## Using List / Multiple options
+
+Several configuration options such as ``lora_target_modules`` are represented as a list of values, consider this setting in ``tests/fixtures/default_config.yaml``:
+
+```yaml
+lora_target_modules:
+  - q_proj
+  - v_proj
+```
+
+By ``system config`` without any options, the default values will be used:
+
+
+```shell
+axolotl --config=tests/fixtures/default_config.yaml system config -f lora_target_modules
+{
+  "lora_target_modules": [
+    "q_proj",
+    "v_proj"
+  ]
+}
+```
+
+Moreover, you can override ``lora_target_models`` via the CLI:
+
+```python
+axolotl --config=tests/fixtures/default_config.yaml system config -f lora_target_modules --lora_target_module=k_proj --lora_target_module=gate_proj
+{
+  "lora_target_modules": [
+    "k_proj",
+    "gate_proj"
+  ]
+}
+```
+
+Or via the environment:
+
+```python
+AXOLOTL_LORA_TARGET_MODULES="down_proj up_proj" axolotl --config=tests/fixtures/default_config.yaml system config -f lora_target_modules
+{
+  "lora_target_modules": [
+    "down_proj",
+    "up_proj"
+  ]
+}
+```
+
+You can also unset the default ``lora_target_modules`` with an "empty" parameter:
+
+```shell
+axolotl --config=tests/fixtures/default_config.yaml system config -f lora_target_modules --lora_target_module=
+{
+  "lora_target_modules": []
+}
+```
+
+Note that at the moment the unset/empty parameter doesn't work via environment variables, this may be a shortcoming with Click however should be solvable if it poses a major issue:
+
+```shell
+AXOLOTL_LORA_TARGET_MODULES= axolotl --config=tests/fixtures/default_config.yaml system config -f lora_target_modules
+{
+  "lora_target_modules": [
+    "q_proj",
+    "v_proj"
+  ]
+}
+```
+
+To define a list-based option such as ``lora_target_modules`` that derives the defaults hierarchy properly the ``multiple_list_callback`` must be invoked via the option's ``callback`` parameter:
+
+```python
+def lora_target_modules_option(**kwargs: Any) -> Callable:
+    """The names of the modules to apply Lora to"""
+
+    return option_factory(
+        "--lora_target_module",
+        "lora_target_modules",
+        envvar="AXOLOTL_LORA_TARGET_MODULES",
+        type=click.types.UNPROCESSED,
+        callback=multiple_list_callback,
+        multiple=True,
+        help=lora_target_modules_option.__doc__,
+        override_kwargs=kwargs,
+    )
+```

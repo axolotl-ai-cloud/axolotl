@@ -21,7 +21,9 @@ from axolotl.cli.options import (
     split_name_option,
     train_on_inputs_option,
 )
+from axolotl.inference import JsonFilePostProcessor
 from axolotl.utils.data import load_tokenized_prepared_datasets
+from axolotl.utils.storage import gen_timestamp_file
 
 LOG = logging.getLogger(__name__)
 
@@ -77,7 +79,15 @@ def batch(**kwargs: Dict[str, Any]):
     )
 
     cli_handler = BatchInference(
-        cfg=cfg, model=model, tokenizer=tokenizer, dataset=dataset
+        cfg=cfg,
+        model=model,
+        tokenizer=tokenizer,
+        dataset=dataset,
+        post_processors=[
+            JsonFilePostProcessor(
+                cfg=cfg, filename=gen_timestamp_file(cfg.output_dir, suffix=".json")
+            )
+        ],
     )
     cli_handler.validate_and_warn()
     cli_handler.run()

@@ -4,9 +4,8 @@ This module defines the BatchInference class, and performs multi-GPU batch infer
 
 import json
 import logging
-from datetime import datetime
-from os.path import join
-from typing import Dict, List, Union
+from abc import ABC, abstractmethod
+from typing import List, Optional, TypedDict, Union
 
 import torch
 import transformers
@@ -24,6 +23,44 @@ from axolotl.utils.dict import DictDefault
 LOG = logging.getLogger(__name__)
 
 
+class InferenceResult(TypedDict):
+    """Inferencing result object"""
+
+    prompt: str
+    response: str
+
+
+class AbstractPostProcessor(ABC):
+    """Inferencing result post-processor"""
+
+    def __init__(
+        self,
+        cfg: DictDefault,
+    ) -> None:
+        super().__init__()
+        self.cfg = cfg
+
+    @abstractmethod
+    def trigger(self, results: List[InferenceResult]) -> None:
+        pass
+
+
+class JsonFilePostProcessor(AbstractPostProcessor):
+    """Saves inferencing results to the specified JSON file"""
+
+    def __init__(self, cfg: DictDefault, filename: str, encoding="utf-8") -> None:
+        super().__init__(cfg=cfg)
+
+        self.filename = filename
+        self.encoding = encoding
+
+    def trigger(self, results: List[InferenceResult]) -> None:
+        # Write to output file outside of the loop
+        LOG.info("Writing %i results to %s", len(results), self.filename)
+        with open(self.filename, "w", encoding=self.encoding) as output_fp:
+            json.dump(results, output_fp)
+
+
 class BatchInference:
     """Batch inferencing logic"""
 
@@ -33,12 +70,14 @@ class BatchInference:
         model: Union[PreTrainedModel, PeftModel],
         tokenizer: PreTrainedTokenizer,
         dataset: IterableDataset,
+        post_processors: Optional[List[AbstractPostProcessor]] = None,
     ) -> None:
         self.cfg = cfg
         self.accelerator = Accelerator()
         self.model = model
         self.tokenizer = tokenizer
         self.dataset = dataset
+        self.post_processors = post_processors
 
     def validate_and_warn(self) -> None:
         """Validate configuration settings for batch inference"""
@@ -47,11 +86,6 @@ class BatchInference:
         """Run batch evaluation and return average loss and perplexity."""
         if self.cfg.seed is not None:
             transformers.enable_full_determinism(seed=self.cfg.seed)
-
-        # Derive output filename
-        output_filename = join(
-            self.cfg.output_dir, f"{datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')}.json"
-        )
 
         # Parse user-provided generation configuration
         generation_config = GenerationConfig(
@@ -94,7 +128,7 @@ class BatchInference:
             )
 
         # Define the results list outside of the loop
-        results: List[Dict] = []
+        results: List[InferenceResult] = []
         input_ids_all = []
         output_all = []
 
@@ -128,6 +162,7 @@ class BatchInference:
                             "prompt": self.tokenizer.decode(
                                 entry, skip_special_tokens=True
                             ),
+                            # Trim prompt from the response
                             "response": self.tokenizer.decode(
                                 output[index][entry.shape[0] :],
                                 skip_special_tokens=True,
@@ -135,7 +170,7 @@ class BatchInference:
                         }
                     )
 
-            # Write to output file outside of the loop
-            LOG.info("Writing %i results to %s", len(results), output_filename)
-            with open(output_filename, "w", encoding="utf-8") as output_fp:
-                json.dump(results, output_fp)
+            # Invoke post-processors
+            if self.post_processors is not None:
+                for post_processor in self.post_processors:
+                    post_processor.trigger(results=results)

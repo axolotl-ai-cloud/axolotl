@@ -6,6 +6,7 @@ import click
 
 from axolotl.utils.config import (
     SubParamEntry,
+    multiple_list_callback,
     option_factory,
     parse_and_validate_sub_params,
     parse_float,
@@ -47,28 +48,19 @@ def dataset_option(**kwargs: Any) -> Callable:
     sub_param_spec = {
         "path": SubParamEntry(
             parser=str,
-            fail_msg="path validation failed for %VALUE%, the path must exist on the filesystem",
-            required=False,
         ),
         "type": SubParamEntry(
             parser=str,
-            fail_msg="type validation failed for '%VALUE%'",
             required=True,
         ),
         "data_files": SubParamEntry(
             parser=str,
-            fail_msg="data_files validation failed for '%VALUE%'",
-            required=False,
         ),
         "shards": SubParamEntry(
             parser=parse_integer,
-            fail_msg="shards validation failed for '%VALUE%', an integer is required",
-            required=False,
         ),
         "name": SubParamEntry(
             parser=str,
-            fail_msg="name validation failed for '%VALUE%'",
-            required=False,
         ),
     }
 
@@ -80,13 +72,13 @@ def dataset_option(**kwargs: Any) -> Callable:
         # This function splits each string by comma and verifies that the path exists.
         datasets: List[DictDefault] = []
         for item in dataset_def_value:
-            datasets.append(
-                parse_and_validate_sub_params(
-                    unparsed_input=item,
-                    param_name="dataset",
-                    sub_param_def=sub_param_spec,
-                )
+            parse_result = parse_and_validate_sub_params(
+                unparsed_input=item,
+                param_name="dataset",
+                sub_param_def=sub_param_spec,
             )
+            if parse_result is not None:
+                datasets.append(parse_result)
 
         # Since non-None CLI get merged into our global options we need to return a None when no dataset
         # options are detected. This way the CLI logic will use defaults from the yaml configuration file
@@ -156,7 +148,7 @@ def tokenizer_type_option(**kwargs: Any) -> Callable:
 def train_on_inputs_option(**kwargs: Any) -> Callable:
     """Controls whether to mask out or include the human's prompt from the training labels"""
     return option_factory(
-        "--train_on_inputs/--no-train_on_inputs",
+        "--train_on_inputs/--no_train_on_inputs",
         envvar="AXOLOTL_TRAIN_ON_INPUTS",
         type=click.types.BOOL,
         help=train_on_inputs_option.__doc__,
@@ -238,68 +230,107 @@ def generation_config_option(**kwargs: Any) -> Callable:
     sub_param_spec = {
         "use_cache": SubParamEntry(
             parser=bool,
-            fail_msg="type validation failed for '%VALUE%'",
-            required=True,
         ),
         "num_return_sequences": SubParamEntry(
             parser=parse_integer,
-            fail_msg="num_return_sequences validation failed for '%VALUE%'",
-            required=True,
         ),
         "do_sample": SubParamEntry(
             parser=bool,
-            fail_msg="do_sample validation failed for '%VALUE%'",
-            required=True,
         ),
         "num_beams": SubParamEntry(
             parser=parse_integer,
-            fail_msg="num_beams validation failed for '%VALUE%'",
-            required=True,
         ),
         "temperature": SubParamEntry(
             parser=parse_float,
-            fail_msg="temperature validation failed for '%VALUE%'",
-            required=True,
         ),
         "top_p": SubParamEntry(
             parser=parse_float,
-            fail_msg="top_p validation failed for '%VALUE%'",
-            required=True,
         ),
         "top_k": SubParamEntry(
             parser=parse_integer,
-            fail_msg="top_k validation failed for '%VALUE%'",
-            required=True,
         ),
-        "typical_p": SubParamEntry(
-            parser=parse_float,
-            fail_msg="typical_p validation failed for '%VALUE%'",
-            required=True,
-        ),
+        "typical_p": SubParamEntry(parser=parse_float),
         "max_new_tokens": SubParamEntry(
             parser=parse_integer,
-            fail_msg="max_new_tokens validation failed for '%VALUE%'",
-            required=True,
         ),
         "min_new_tokens": SubParamEntry(
             parser=parse_integer,
-            fail_msg="min_new_tokens validation failed for '%VALUE%'",
-            required=True,
         ),
         "repetition_penalty": SubParamEntry(
             parser=parse_float,
-            fail_msg="repetition_penalty validation failed for '%VALUE%'",
-            required=True,
         ),
         "prepend_bos": SubParamEntry(
             parser=bool,
-            fail_msg="prepend_bos validation failed for '%VALUE%'",
-            required=True,
         ),
         "renormalize_logits": SubParamEntry(
             parser=bool,
-            fail_msg="renormalize_logits validation failed for '%VALUE%'",
-            required=True,
+        ),
+        "early_stopping": SubParamEntry(
+            parser=bool,
+        ),
+        "max_time": SubParamEntry(
+            parser=parse_float,
+        ),
+        "num_beam_groups": SubParamEntry(
+            parser=parse_integer,
+        ),
+        "penalty_alpha": SubParamEntry(
+            parser=parse_float,
+        ),
+        "epsilon_cutoff": SubParamEntry(
+            parser=parse_float,
+        ),
+        "eta_cutoff": SubParamEntry(
+            parser=parse_float,
+        ),
+        "diversity_penalty": SubParamEntry(
+            parser=parse_float,
+        ),
+        "encoder_repetition_penalty": SubParamEntry(
+            parser=parse_float,
+        ),
+        "length_penalty": SubParamEntry(
+            parser=parse_float,
+        ),
+        "no_repeat_ngram_size": SubParamEntry(
+            parser=parse_integer,
+        ),
+        "forced_bos_token_id": SubParamEntry(
+            parser=parse_integer,
+        ),
+        "forced_eos_token_id": SubParamEntry(
+            parser=parse_integer,
+        ),
+        "remove_invalid_values": SubParamEntry(
+            parser=bool,
+        ),
+        "guidance_scale": SubParamEntry(
+            parser=parse_float,
+        ),
+        "output_attentions": SubParamEntry(
+            parser=bool,
+        ),
+        "output_hidden_states": SubParamEntry(
+            parser=bool,
+        ),
+        "output_scores": SubParamEntry(
+            parser=bool,
+        ),
+        "return_dict_in_generate": SubParamEntry(
+            parser=bool,
+        ),
+        "pad_token_id": SubParamEntry(parser=parse_integer),
+        "bos_token_id": SubParamEntry(
+            parser=parse_integer,
+        ),
+        "eos_token_id": SubParamEntry(
+            parser=parse_integer,
+        ),
+        "encoder_no_repeat_ngram_size": SubParamEntry(
+            parser=parse_integer,
+        ),
+        "decoder_start_token_id": SubParamEntry(
+            parser=parse_integer,
         ),
     }
 
@@ -350,5 +381,119 @@ def lora_model_dir_option(**kwargs: Any) -> Callable:
         envvar="AXOLOTL_LORA_MODEL_DIR",
         type=click.types.STRING,
         help=lora_model_dir_option.__doc__,
+        override_kwargs=kwargs,
+    )
+
+
+def lora_target_modules_option(**kwargs: Any) -> Callable:
+    """The names of the modules to apply Lora to"""
+
+    return option_factory(
+        "--lora_target_module",
+        "lora_target_modules",
+        envvar="AXOLOTL_LORA_TARGET_MODULES",
+        type=click.types.UNPROCESSED,
+        callback=multiple_list_callback,
+        multiple=True,
+        help=lora_target_modules_option.__doc__,
+        override_kwargs=kwargs,
+    )
+
+
+def base_model_ignore_patterns_option(**kwargs: Any) -> Callable:
+    """An ignore pattern if the model repo contains more than 1 model type (*.pt, etc)"""
+    return option_factory(
+        "--base_model_ignore_patterns",
+        envvar="AXOLOTL_BASE_MODEL_IGNORE_PATTERNS",
+        type=click.types.STRING,
+        help=base_model_ignore_patterns_option.__doc__,
+        override_kwargs=kwargs,
+    )
+
+
+def model_revision_option(**kwargs: Any) -> Callable:
+    """A specific model revision from huggingface hub"""
+    return option_factory(
+        "--model_revision",
+        envvar="AXOLOTL_MODEL_REVISION",
+        type=click.types.STRING,
+        help=model_revision_option.__doc__,
+        override_kwargs=kwargs,
+    )
+
+
+def tokenizer_config_option(**kwargs: Any) -> Callable:
+    """Overrides the model tokenizer configuration, must be a filesystem path"""
+    return option_factory(
+        "--tokenizer_config",
+        envvar="AXOLOTL_TOKENIZER_CONFIG",
+        type=click.types.STRING,
+        help=tokenizer_config_option.__doc__,
+        override_kwargs=kwargs,
+    )
+
+
+def trust_remote_code_option(**kwargs: Any) -> Callable:
+    """Trust remote code for untrusted source"""
+    return option_factory(
+        "--trust_remote_code/--no_trust_remote_code",
+        envvar="AXOLOTL_TRUST_REMOTE_CODE",
+        type=click.types.BOOL,
+        help=trust_remote_code_option.__doc__,
+        override_kwargs=kwargs,
+    )
+
+
+def tokenizer_use_fast_option(**kwargs: Any) -> Callable:
+    """Sets use_fast option for tokenizer loading from_pretrained"""
+    return option_factory(
+        "--tokenizer_use_fast/--no_tokenizer_use_fast",
+        envvar="AXOLOTL_TOKENIZER_USE_FAST",
+        type=click.types.BOOL,
+        help=trust_remote_code_option.__doc__,
+        override_kwargs=kwargs,
+    )
+
+
+def gptq_option(**kwargs: Any) -> Callable:
+    """Enable 4-bit GPTQ training"""
+    return option_factory(
+        "--gptq/--no_gptq",
+        envvar="AXOLOTL_GPTQ",
+        type=click.types.BOOL,
+        help=gptq_option.__doc__,
+        override_kwargs=kwargs,
+    )
+
+
+def gptq_groupsize_option(**kwargs: Any) -> Callable:
+    """GPTQ group size"""
+    return option_factory(
+        "--gptq_groupsize",
+        envvar="AXOLOTL_GPTQ_GROUPSIZE",
+        type=click.types.INT,
+        help=gptq_groupsize_option.__doc__,
+        override_kwargs=kwargs,
+    )
+
+
+def gptq_model_v1_option(**kwargs: Any) -> Callable:
+    """Use GPTQ v1"""
+    return option_factory(
+        "--gptq_model_v1/--no_gptq_model_v1",
+        envvar="AXOLOTL_GPTQ_MODEL_V1",
+        type=click.types.BOOL,
+        help=gptq_model_v1_option.__doc__,
+        override_kwargs=kwargs,
+    )
+
+
+def load_in_8bit_option(**kwargs: Any) -> Callable:
+    """Quantize the model down to 8 bits"""
+    return option_factory(
+        "--load_in_8bit/--no_load_in_8bit",
+        envvar="AXOLOTL_LOAD_IN_8BIT",
+        type=click.types.BOOL,
+        help=load_in_8bit_option.__doc__,
         override_kwargs=kwargs,
     )

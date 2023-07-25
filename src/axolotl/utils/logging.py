@@ -4,7 +4,7 @@ import sys
 from logging.config import dictConfig
 
 
-def configure_logging(log_level: str):
+def configure_logging(log_level: str = "DEBUG"):
     """Configure with default logging"""
     dictConfig(
         {

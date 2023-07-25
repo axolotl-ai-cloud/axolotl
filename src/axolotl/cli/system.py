@@ -3,7 +3,7 @@ The Axolotl system module contains CLI tools relevant to debugging and system-le
 """
 import json
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, Tuple
 
 import click
 
@@ -28,12 +28,30 @@ def system_group():
     show_envvar=False,
     allow_from_autoenv=False,
 )
+@click.option(
+    "--filter",
+    "-f",
+    "filter_strings",
+    type=click.types.STRING,
+    help="Output only JSON keys that match the provided filter expressions",
+    multiple=True,
+    show_envvar=False,
+    allow_from_autoenv=False,
+)
 @all_option_group()
-def config(pretty: bool, **kwargs: Dict[str, Any]):
-    """Applies override logic, performs validation, and outputs the derived configuration"""
+def config(pretty: bool, filter_strings: Tuple[str], **kwargs: Dict[str, Any]):
+    """Applies override logic, performs validation, and outputs the derived configuration. Useful for developing configuration overrides and unit testing."""
 
     # Override default configuration
     update_config(overrides=kwargs)
 
+    # Optionally apply json filter
+    if len(filter_strings) != 0:
+        derived_cfg = {
+            key: value for key, value in cfg.items() if key in filter_strings
+        }
+    else:
+        derived_cfg = cfg
+
     # Print effective config
-    click.echo(json.dumps(cfg, indent=2 if pretty else None, sort_keys=True))
+    click.echo(json.dumps(derived_cfg, indent=2 if pretty else None, sort_keys=True))

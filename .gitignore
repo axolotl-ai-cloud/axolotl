@@ -1,5 +1,6 @@
 **/axolotl.egg-info
 configs
+.testmondata
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

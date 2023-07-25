@@ -3,7 +3,7 @@
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union, cast
 
 import click
 import yaml
@@ -287,25 +287,30 @@ class SubParamEntry:
     ----------
     parser : Callable[[str], Union[int, float, bool, str]]
         A parser function for the sub-parameter. It takes any value and returns a boolean.
-    fail_msg : str
-        The message to display when the validation for the sub-parameter fails.
+    fail_msg : Optional[str]
+        The message to display when the validation / parsing for the sub-parameter fails.
     required : bool
         Indicates whether the sub-parameter is required. If True, an exception will be raised if it is not present.
     """
 
-    parser: Callable[[str], Union[int, float, bool, str]]
-    fail_msg: str
-    required: bool
+    parser: Callable[[str], Union[int, float, bool, str]] = str
+    fail_msg: Optional[str] = None
+    required: bool = False
 
 
 def parse_and_validate_sub_params(
-    unparsed_input: str, param_name: str, sub_param_def: Dict[str, SubParamEntry]
-) -> DictDefault:
+    unparsed_input: Optional[str],
+    param_name: str,
+    sub_param_def: Dict[str, SubParamEntry],
+) -> Optional[DictDefault]:
     """Parses a string of sub-parameters from a Click CLI command and validates them.
+
+    The intended use of this method is to parse a dictionary of sub options from the Axolotl
+    yaml (such as generation_config).
 
     Parameters
     ----------
-    unparsed_input : str
+    unparsed_input : Optional[str]
         The input string containing the sub-parameters, formatted as "key=value" pairs separated by commas.
     param_name : str
         The name of the parameter that the sub-parameters belong to. This is used in error messages.
@@ -316,7 +321,7 @@ def parse_and_validate_sub_params(
 
     Returns
     -------
-    DictDefault
+    Optional[DictDefault]
         A dictionary with the parsed and validated sub-parameters. The keys are the names of the sub-parameters, and the
         values are the parsed values.
 
@@ -325,6 +330,11 @@ def parse_and_validate_sub_params(
     click.BadParameter
         Raised when a sub-parameter is not formatted correctly, is not recognized, fails validation, or is required but missing.
     """
+
+    # Nothing to parse if option value was not provided
+    if unparsed_input is None:
+        return None
+
     try:
         # Split the input string by "," to separate the "key=value" pairs,
         # then split each pair by "=" to get the key and value separately.
@@ -335,7 +345,7 @@ def parse_and_validate_sub_params(
                 for x in unparsed_input.strip().strip(",").split(",")
             }
         )
-    except (ValueError, IndexError) as ex:
+    except Exception as ex:
         # If splitting fails, raise a BadParameter exception with an appropriate error message.
         raise click.BadParameter(
             f"Unable to parse {param_name} spec '{unparsed_input}'. Sub-param values must be in this format: {','.join([f'{x}=VALUE' for x in sub_param_def.keys()])}"
@@ -355,9 +365,15 @@ def parse_and_validate_sub_params(
             parsed_dict[parsed_key] = sub_param_def[parsed_key].parser(unparsed_value)
 
         except Exception as ex:
-            raise click.BadParameter(
-                sub_param_def[parsed_key].fail_msg.replace("%VALUE%", unparsed_value, 1)
-            ) from ex
+            # Insight - many parse failures will have the same message. This allows for much cleaner
+            # code in options.py
+            default_fail_msg = sub_param_def[parsed_key].fail_msg
+            if default_fail_msg is not None:
+                fail_msg = default_fail_msg.replace("%VALUE%", unparsed_value, 1)
+            else:
+                fail_msg = f"{parsed_key} parsing failed for '{unparsed_value}'"
+
+            raise click.BadParameter(fail_msg) from ex
 
     # Check if each required sub-parameter is present in parsed_dict.
     # If not, raise a BadParameter exception with an appropriate error message.
@@ -369,3 +385,23 @@ def parse_and_validate_sub_params(
 
     # Return the parsed and validated sub-parameters.
     return parsed_dict
+
+
+# pylint: disable=unused-argument
+def multiple_list_callback(
+    ctx: Any, param: Any, value: Tuple[str]
+) -> Optional[Tuple[str]]:
+    """Ensures that None is returned for lists where multiple==True, without
+    this callback the default yaml configuration value will always be overridden"""
+
+    if isinstance(value, (list, tuple)):
+        if len(value) == 0:
+            # No option provided, fall back to defaults
+            return None
+
+        if all((x == "" for x in value)):
+            # Option was provided but empty, interpret as "set to nothing" and overide default
+            return cast(Tuple[str], tuple())
+
+    # Remove blanks
+    return cast(Optional[Tuple[str]], tuple(x for x in value if x != ""))

@@ -20,6 +20,7 @@ threading.current_thread().name = "Main"
     help="Path to configuration file, if set to a directory axolotl will prompt for the config file",
     default=Path("configs/"),
     required=False,
+    envvar="AXOLOTL_CONFIG",
     allow_from_autoenv=True,
     show_envvar=True,
     show_default=True,
@@ -31,6 +32,7 @@ threading.current_thread().name = "Main"
     ),
     help="Sets the logging level",
     default="INFO",
+    envvar="LOG_LEVEL",
     required=False,
     allow_from_autoenv=True,
     show_envvar=True,
@@ -48,22 +50,18 @@ def cli(config: str, log_level: str):
     axolotl.cfg.update(loaded_cfg)
 
 
-def main():
-    """CLI Main entrypoint"""
-
-    # Dynamically load all Click command groups under the axolotl.cli package
-    for module_info in pkgutil.walk_packages(
-        axolotl.cli.__path__, axolotl.cli.__name__ + "."
-    ):
-        module = importlib.import_module(module_info.name)
-        for item_name in dir(module):
-            item = getattr(module, item_name)
-            if isinstance(item, click.core.Group):
-                cli.add_command(item)
-
-    # pylint: disable=no-value-for-parameter
-    cli(auto_envvar_prefix="AXOLOTL", prog_name="axolotl")
+# Dynamically load all Click command groups under the axolotl.cli package
+for module_info in pkgutil.walk_packages(
+    axolotl.cli.__path__, axolotl.cli.__name__ + "."
+):
+    module = importlib.import_module(module_info.name)
+    for item_name in dir(module):
+        item = getattr(module, item_name)
+        if isinstance(item, click.core.Group):
+            cli.add_command(item)
 
 
 if __name__ == "__main__":
-    main()
+    # By convention, we do not want to use auto envirnment variable names
+    # pylint: disable=no-value-for-parameter
+    cli(auto_envvar_prefix="CHANGEME", prog_name="axolotl")
