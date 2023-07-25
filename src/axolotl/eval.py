@@ -57,6 +57,7 @@ class BatchEval:
         tokenizer: PreTrainedTokenizer,
         dataset: IterableDataset,
     ) -> None:
+        # pylint: disable=R0801
         self.cfg = cfg
         self.accelerator = Accelerator()
         self.model = model
