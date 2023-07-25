@@ -559,10 +559,6 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
     callbacks.append(PrintGPUStatsCallback(cfg))
 
     if cfg.relora_steps:
-        assert cfg.adapter in (
-            "lora",
-            "qlora",
-        ), "Adapter must be lora or qlora to use ReLoRA"
         relora_steps = int(cfg.relora_steps)
         relora_warmup_steps = int(cfg.relora_warmup_steps)
         callbacks.append(ReLoRACallback(cfg))
