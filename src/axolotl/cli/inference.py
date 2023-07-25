@@ -9,11 +9,9 @@ import click
 from axolotl import cfg
 from axolotl.cli.option_groups import model_option_group
 from axolotl.cli.options import (
-    adapter_option,
     dataset_option,
     dataset_prepared_path_option,
     generation_config_option,
-    lora_model_dir_option,
     max_packed_sequence_len_option,
     micro_batch_size_option,
     output_dir_option,
@@ -24,7 +22,6 @@ from axolotl.cli.options import (
     train_on_inputs_option,
 )
 from axolotl.utils.data import load_tokenized_prepared_datasets
-
 
 LOG = logging.getLogger(__name__)
 
@@ -50,13 +47,14 @@ def inference_group():
 def batch(**kwargs: Dict[str, Any]):
     """Executes a batch evaluation operation"""
 
+    from axolotl.inference import BatchInference
     from axolotl.utils.config import update_config
     from axolotl.utils.models import load_model, load_tokenizer
-    from axolotl.inference import BatchInference
 
     # Override default configuration
     update_config(overrides=kwargs)
 
+    # pylint: disable=R0801
     # Load the tokenizer
     tokenizer_config = cfg.tokenizer_config or cfg.base_model_config
     LOG.info("Loading tokenizer: %s", tokenizer_config)

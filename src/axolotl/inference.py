@@ -2,11 +2,11 @@
 This module defines the BatchInference class, and performs multi-GPU batch inferencing
 """
 
-import logging
-from typing import Dict, List, Union
 import json
-from os.path import join
+import logging
 from datetime import datetime
+from os.path import join
+from typing import Dict, List, Union
 
 import torch
 import transformers
@@ -15,9 +15,9 @@ from datasets import IterableDataset
 from peft.peft_model import PeftModel
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+from transformers import GenerationConfig
 from transformers.modeling_utils import PreTrainedModel
 from transformers.tokenization_utils import PreTrainedTokenizer
-from transformers import GenerationConfig
 
 from axolotl.utils.dict import DictDefault
 
@@ -25,6 +25,8 @@ LOG = logging.getLogger(__name__)
 
 
 class BatchInference:
+    """Batch inferencing logic"""
+
     def __init__(
         self,
         cfg: DictDefault,
@@ -39,7 +41,7 @@ class BatchInference:
         self.dataset = dataset
 
     def validate_and_warn(self) -> None:
-        ...
+        """Validate configuration settings for batch inference"""
 
     def run(self) -> None:
         """Run batch evaluation and return average loss and perplexity."""
@@ -120,14 +122,14 @@ class BatchInference:
         if self.accelerator.is_local_main_process:
             # Decode and store results
             for input_ids, output in zip(input_ids_all, output_all):
-                for i in range(len(input_ids)):
+                for index, entry in enumerate(input_ids):
                     results.append(
                         {
                             "prompt": self.tokenizer.decode(
-                                input_ids[i], skip_special_tokens=True
+                                entry, skip_special_tokens=True
                             ),
                             "response": self.tokenizer.decode(
-                                output[i][input_ids[i].shape[0] :],
+                                output[index][entry.shape[0] :],
                                 skip_special_tokens=True,
                             ),
                         }
@@ -135,5 +137,5 @@ class BatchInference:
 
             # Write to output file outside of the loop
             LOG.info("Writing %i results to %s", len(results), output_filename)
-            with open(output_filename, "w") as output_fp:
+            with open(output_filename, "w", encoding="utf-8") as output_fp:
                 json.dump(results, output_fp)

@@ -1,16 +1,15 @@
 """Axolotl CLI option definitions"""
 
-from os.path import exists
 from typing import Any, Callable, List, Optional, Tuple
 
 import click
 
 from axolotl.utils.config import (
     SubParamEntry,
-    parse_float,
-    parse_integer,
     option_factory,
     parse_and_validate_sub_params,
+    parse_float,
+    parse_integer,
 )
 from axolotl.utils.dict import DictDefault
 

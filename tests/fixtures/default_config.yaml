@@ -209,3 +209,18 @@ seed:
 
 # Allow overwrite yml config using from cli
 strict:
+
+generation_config:
+  use_cache: true
+  num_return_sequences: 1
+  do_sample: true
+  num_beams: 1
+  temperature: 0.9
+  top_p: 0.95
+  top_k: 90
+  typical_p: 0.95
+  max_new_tokens: 2048
+  min_new_tokens: 100
+  repetition_penalty: 1.18
+  prepend_bos: false
+  renormalize_logits: false

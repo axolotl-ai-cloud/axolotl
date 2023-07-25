@@ -248,8 +248,8 @@ def parse_integer(obj: Any) -> int:
             raise ValueError(f"{obj} is not an integer")
 
         return int_value
-    except TypeError:
-        raise ValueError(f"Cannot parse {obj} to an integer")
+    except TypeError as ex:
+        raise ValueError(f"Cannot parse {obj} to an integer") from ex
 
 
 def parse_float(obj: Any) -> float:
@@ -354,10 +354,10 @@ def parse_and_validate_sub_params(
         try:
             parsed_dict[parsed_key] = sub_param_def[parsed_key].parser(unparsed_value)
 
-        except:
+        except Exception as ex:
             raise click.BadParameter(
                 sub_param_def[parsed_key].fail_msg.replace("%VALUE%", unparsed_value, 1)
-            )
+            ) from ex
 
     # Check if each required sub-parameter is present in parsed_dict.
     # If not, raise a BadParameter exception with an appropriate error message.
