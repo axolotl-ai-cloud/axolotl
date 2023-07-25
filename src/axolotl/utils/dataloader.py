@@ -193,11 +193,13 @@ class MultipackDistributedDataloader:
 
     def __len__(self):
         batches, _ = self.generate_batches()
-        return len(batches)
+        return (
+            len(batches) * 0.99
+        )  # shave off 1% for dealing with variance in packing and dataset length
 
     def num_batches(self):
         batches, _ = self.generate_batches()
-        return len(batches)
+        return len(batches) * 0.99
 
     def efficiency(self):
         return self.eff_total_used / self.eff_total_slots
