@@ -1,2 +1,1 @@
-peft @ git+https://github.com/huggingface/peft.git
 pytest

@@ -3,13 +3,12 @@ This module defines the BatchEval class, which handles batch evaluation of a mod
 """
 
 import logging
-from typing import Dict, Union
+from typing import Dict
 
 import torch
 import transformers
 from accelerate import Accelerator
 from datasets import IterableDataset
-from peft.peft_model import PeftModel
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -53,7 +52,7 @@ class BatchEval:
     def __init__(
         self,
         cfg: DictDefault,
-        model: Union[PreTrainedModel, PeftModel],
+        model: PreTrainedModel,
         tokenizer: PreTrainedTokenizer,
         dataset: IterableDataset,
     ) -> None:

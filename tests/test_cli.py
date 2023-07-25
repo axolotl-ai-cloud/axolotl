@@ -26,7 +26,9 @@ class CLITest(unittest.TestCase):
 
         self.default_config = load_config(self.default_config_path)
 
-        self.runner = CliRunner(env={"AXOLOTL_CONFIG": str(self.default_config_path)})
+        self.runner = CliRunner(
+            env={"AXOLOTL_CONFIG": str(self.default_config_path), "LOG_LEVEL": "DEBUG"}
+        )
         self.main_module = import_module("axolotl.__main__")
 
     def test_option_quality_and_style(self):
