@@ -5,13 +5,12 @@ This module defines the BatchInference class, and performs multi-GPU batch infer
 import json
 import logging
 from abc import ABC, abstractmethod
-from typing import List, Optional, TypedDict, Union
+from typing import List, Optional, TypedDict
 
 import torch
 import transformers
 from accelerate import Accelerator
 from datasets import IterableDataset
-from peft.peft_model import PeftModel
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from transformers import GenerationConfig
@@ -67,7 +66,7 @@ class BatchInference:
     def __init__(
         self,
         cfg: DictDefault,
-        model: Union[PreTrainedModel, PeftModel],
+        model: PreTrainedModel,
         tokenizer: PreTrainedTokenizer,
         dataset: IterableDataset,
         post_processors: Optional[List[AbstractPostProcessor]] = None,
