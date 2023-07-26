@@ -105,7 +105,7 @@ This is a guide for developers who need to make CLI (command line interface) or 
 
 ### Does Axolotl need a new option?
 
-Broadly, a new option may be needed when the *meaning* of an existing option doesn't match your use case. To illustrate, you would first need to understand the meaning of existing configuration options. This can be done by understanding the current options in ``tests/fixtures/default_config.`yaml`  and possibly looking at the online help for existing CLI options:
+Broadly, a new option may be needed when the *meaning* of an existing option doesn't match your use case. To illustrate, you would first need to understand the meaning of existing configuration options. This can be done by understanding the current options in ``tests/fixtures/default_config.yaml``  and possibly looking at the online help for existing CLI options:
 
 ```shell
 axolotl system config --help
