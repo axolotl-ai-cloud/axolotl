@@ -133,6 +133,77 @@ def do_inference(cfg, model, tokenizer, prompter: Optional[str]):
         print(tokenizer.decode(generated["sequences"].cpu().tolist()[0]))
 
 
+def do_inference_json(
+    cfg, model, tokenizer, prompter: Optional[str], pairs: List[Dict[str, str]]
+) -> List[Dict[str, str]]:
+    default_tokens = {"unk_token": "<unk>", "bos_token": "<s>", "eos_token": "</s>"}
+
+    for token, symbol in default_tokens.items():
+        # If the token isn't already specified in the config, add it
+        if not (cfg.special_tokens and token in cfg.special_tokens):
+            tokenizer.add_special_tokens({token: symbol})
+
+    prompter_module = None
+    if prompter:
+        prompter_module = getattr(
+            importlib.import_module("axolotl.prompters"), prompter
+        )
+
+    if cfg.landmark_attention:
+        from axolotl.monkeypatch.llama_landmark_attn import set_model_mem_id
+
+        set_model_mem_id(model, tokenizer)
+        model.set_mem_cache_args(
+            max_seq_len=255, mem_freq=50, top_k=5, max_cache_size=None
+        )
+
+    output_pairs = []
+    for item in pairs:
+        instruction = item.get("instruction", "")
+        input = item.get("input", "")
+        instruction = (instruction + " " + input).strip()
+
+        if prompter_module:
+            prompt: str = next(
+                prompter_module().build_prompt(instruction=instruction.strip("\n"))
+            )
+        else:
+            prompt = instruction.strip()
+        batch = tokenizer(prompt, return_tensors="pt", add_special_tokens=True)
+
+        model.eval()
+        with torch.no_grad():
+            generation_config = GenerationConfig(
+                repetition_penalty=1.1,
+                max_new_tokens=1024,
+                temperature=0.9,
+                top_p=0.95,
+                top_k=40,
+                bos_token_id=tokenizer.bos_token_id,
+                eos_token_id=tokenizer.eos_token_id,
+                pad_token_id=tokenizer.pad_token_id,
+                do_sample=True,
+                use_cache=True,
+                return_dict_in_generate=True,
+                output_attentions=False,
+                output_hidden_states=False,
+                output_scores=False,
+            )
+            streamer = TextStreamer(tokenizer)
+            generated = model.generate(
+                inputs=batch["input_ids"].to(cfg.device),
+                generation_config=generation_config,
+                streamer=streamer,
+            )
+        outputs = tokenizer.decode(generated["sequences"].cpu().tolist()[0])
+        splits = outputs.split("### Response:")
+        output = splits[-1].strip()
+        output = output.replace("<|endoftext|>", "")
+        item["output"] = output
+        output_pairs.append(item)
+    return output_pairs
+
+
 def choose_config(path: Path):
     yaml_files = list(path.glob("*.yml"))
 
@@ -280,6 +351,43 @@ def train(
             else:
                 prompter = kwargs["prompter"]
         do_inference(cfg, model, tokenizer, prompter=prompter)
+        return
+
+    if cfg.inference_json:
+        LOG.info("calling inference_json function")
+        import json
+
+        if isinstance(cfg.inference_json, dict):
+            pairs = cfg.inference_json
+        elif isinstance(cfg.inference_json, str):
+            filepath = os.path.abspath(os.path.expanduser(cfg.inference_json))
+            if os.path.isfile(filepath):
+                with open(filepath, "r") as f:
+                    raw_data = f.read()
+                    pairs = json.loads(raw_data)
+            else:
+                pairs = json.loads(cfg.inference_json)
+
+        if isinstance(pairs, dict):
+            pairs = [pairs]
+        item = pairs[0]
+        if "instruction" not in item and "input" not in item:
+            raise Exception(
+                f"no 'instruction' key or 'input' key. inference json should be in alpaca format"
+            )
+
+        prompter: Optional[str] = "AlpacaPrompter"
+        result = do_inference_json(
+            cfg, model, tokenizer, prompter=prompter, pairs=pairs
+        )
+        if cfg.inference_json_output:
+            output_filepath = os.path.abspath(
+                os.path.expanduser(cfg.inference_json_output)
+            )
+            with open(output_filepath, "w") as f:
+                f.write(json.dumps(result))
+        else:
+            print(json.dumps(result))
         return
 
     if "shard" in kwargs:
