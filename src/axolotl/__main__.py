@@ -3,12 +3,15 @@ import importlib
 import pkgutil
 import threading
 from pathlib import Path
+import logging
 
 import click
+from accelerate import Accelerator
 
 import axolotl
 from axolotl.utils.config import load_config
 from axolotl.utils.logging import configure_logging
+from axolotl.cli import CTX_ACCELERATOR, CTX_CFG
 
 threading.current_thread().name = "Main"
 
@@ -26,9 +29,9 @@ threading.current_thread().name = "Main"
     show_default=True,
 )
 @click.option(
-    "--log-level",
+    "--log_level",
     type=click.Choice(
-        ["DEBUG", "INFO", "WARN", "WARNING", "ERROR"], case_sensitive=False
+        ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], case_sensitive=False
     ),
     help="Sets the logging level",
     default="INFO",
@@ -38,16 +41,42 @@ threading.current_thread().name = "Main"
     show_envvar=True,
     show_default=True,
 )
+@click.option(
+    "--log_main_only/--no_log_main_only",
+    type=click.types.BOOL,
+    help="When set, only logging from the main thread; useful when there are multiple Accelerate processes producing too many log entries to stdout",
+    default=False,
+    envvar="LOG_MAIN_ONLY",
+    required=False,
+    allow_from_autoenv=True,
+    show_envvar=True,
+    show_default=True,
+)
 @click.version_option(prog_name="axolotl", version=axolotl.__version__)
-def cli(config: str, log_level: str):
+@click.pass_context
+def cli(ctx: click.core.Context, config: str, log_level: str, log_main_only: bool):
     "Axolotl CLI"
 
-    # Configure logging
-    configure_logging(log_level)
+    accelerator = Accelerator()
 
-    # Need to do an update here so we can don't lose the refernce to the cfg "singleton"
+    # Configure logging
+    if log_main_only and not accelerator.is_local_main_process:
+        logging.disable(logging.CRITICAL)
+    else:
+        configure_logging(log_level)
+
+    # To avoid weird behavior with multiple ways to initialize Accelerate, we will add the
+    # reverence to the CLick context.
+    ctx.meta[CTX_ACCELERATOR] = accelerator
+
+    # Need to do an update here so we can don't lose the reference to the cfg "singleton". Decided
+    # to keep cfg a singleton vs a Click context object to help maintain compatibility with
+    # non-Click scripts in Axolotl.
     loaded_cfg = load_config(config=Path(config))
     axolotl.cfg.update(loaded_cfg)
+
+    # For Click-aware applications, add cfg to the global context
+    ctx.meta[CTX_CFG] = axolotl.cfg
 
 
 # Dynamically load all Click command groups under the axolotl.cli package
@@ -62,6 +91,8 @@ for module_info in pkgutil.walk_packages(
 
 
 if __name__ == "__main__":
-    # By convention, we do not want to use auto envirnment variable names
+    # By convention, we do not want to use auto envirnment variable names, setting to
+    # CHANGEME will hopefully make it more obvious that developers need to set explicitly
+
     # pylint: disable=no-value-for-parameter
     cli(auto_envvar_prefix="CHANGEME", prog_name="axolotl")
