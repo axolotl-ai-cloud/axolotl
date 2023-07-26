@@ -189,9 +189,9 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
             total_num_steps = (
                 # match count to len est in dataloader
                 (
-                    0.99
-                    * math.ceil(
-                        total_num_tokens
+                    math.floor(
+                        0.99
+                        * total_num_tokens
                         / cfg.sample_packing_eff_est
                         / 2048
                         / cfg.batch_size
