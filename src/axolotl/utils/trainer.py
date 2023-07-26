@@ -187,11 +187,16 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
                 else sum(len(s["input_ids"]) for s in train_dataset)
             )
             total_num_steps = (
-                math.ceil(
-                    total_num_tokens
-                    / cfg.sample_packing_eff_est
-                    / 2048
-                    / cfg.batch_size
+                # match count to len est in dataloader
+                (
+                    0.99
+                    * math.ceil(
+                        total_num_tokens
+                        / cfg.sample_packing_eff_est
+                        / 2048
+                        / cfg.batch_size
+                    )
+                    - 1
                 )
                 * cfg.num_epochs
             )
@@ -210,6 +215,7 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
                     padding="longest",
                 ),
                 sampler=sampler,
+                packing_efficiency_estimate=cfg.sample_packing_eff_est,
             )
             data_loader_len = len(data_loader)
             LOG.info(f"data_loader_len: {data_loader_len}")
