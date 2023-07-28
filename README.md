@@ -106,7 +106,7 @@ accelerate launch scripts/finetune.py examples/openllama-3b/lora.yml \
 
   3. Install torch
   ```bash
-  pip3 install torch==2.0.1+cu118 --index-url https://download.pytorch.org/whl/cu118
+  pip3 install -U torch --index-url https://download.pytorch.org/whl/cu118
   ```
 
   4. Axolotl
