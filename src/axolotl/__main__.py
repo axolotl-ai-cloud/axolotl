@@ -21,6 +21,7 @@ LOG = logging.getLogger(__name__)
 @click.group()
 @click.option(
     "--config",
+    "-c",
     type=click.Path(exists=True, dir_okay=True, file_okay=True, readable=True),
     help="Path to configuration file, if set to a directory axolotl will prompt for the config file",
     default=Path("configs/"),
