@@ -497,3 +497,14 @@ def load_in_8bit_option(**kwargs: Any) -> Callable:
         help=load_in_8bit_option.__doc__,
         override_kwargs=kwargs,
     )
+
+
+def landmark_attention_option(**kwargs: Any) -> Callable:
+    """Enables landmark attention (only llama)"""
+    return option_factory(
+        "--landmark_attention/--no_landmark_attention",
+        envvar="AXOLOTL_LANDMARK_ATTENTION",
+        type=click.types.BOOL,
+        help=landmark_attention_option.__doc__,
+        override_kwargs=kwargs,
+    )

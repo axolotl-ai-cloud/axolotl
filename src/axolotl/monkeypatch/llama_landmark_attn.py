@@ -24,6 +24,7 @@ Taken from https://github.com/epfml/landmark-attention/blob/main/llama/llama_mem
 """
 import math
 from typing import List, Optional, Tuple, Union
+import logging
 
 import torch
 import torch.utils.checkpoint
@@ -49,11 +50,10 @@ from transformers.models.llama.modeling_llama import (
 from transformers.utils import (
     add_start_docstrings,
     add_start_docstrings_to_model_forward,
-    logging,
     replace_return_docstrings,
 )
 
-LOG = logging.getLogger("axolotl")
+LOG = logging.getLogger(__name__)
 
 _CONFIG_FOR_DOC = "LlamaConfig"
 

@@ -14,6 +14,7 @@ from axolotl.cli.options import (
     dataset_option,
     dataset_prepared_path_option,
     generation_config_option,
+    landmark_attention_option,
     max_packed_sequence_len_option,
     micro_batch_size_option,
     output_dir_option,
@@ -47,6 +48,7 @@ def inference_group():
 @split_name_option()
 @generation_config_option()
 @output_dir_option()
+@landmark_attention_option()
 def batch(**kwargs: Dict[str, Any]):
     """Executes a batch evaluation operation"""
 
@@ -78,6 +80,16 @@ def batch(**kwargs: Dict[str, Any]):
         cfg=cfg,
         adapter=cfg.adapter,
     )
+
+    if cfg.landmark_attention:
+        from axolotl.monkeypatch.llama_landmark_attn import set_model_mem_id
+
+        LOG.info("Enabling landmark attention")
+
+        set_model_mem_id(model, tokenizer)
+        model.set_mem_cache_args(
+            max_seq_len=255, mem_freq=50, top_k=5, max_cache_size=None
+        )
 
     cli_handler = BatchInference(
         cfg=cfg,

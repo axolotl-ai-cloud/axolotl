@@ -2,12 +2,18 @@
 
 import logging
 import sys
+import os
 from logging import _levelToName
 from logging.config import dictConfig
 
 
 def configure_logging(log_level: str = "DEBUG"):
     """Configure with default logging"""
+
+    # Set transformers log level,
+    # see: https://huggingface.co/docs/transformers/main_classes/logging
+    os.environ["TRANSFORMERS_VERBOSITY"] = log_level
+
     dictConfig(
         {
             "version": 1,
