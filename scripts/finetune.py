@@ -18,7 +18,7 @@ import yaml
 from optimum.bettertransformer import BetterTransformer
 from transformers import GenerationConfig, TextStreamer
 
-from axolotl.utils.config import choose_config, startup_load_dataset
+from axolotl.utils.config import startup_load_dataset
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import configure_logging
 from axolotl.utils.models import load_model, load_tokenizer
@@ -145,7 +145,9 @@ def train(
 ):
     config = Path(config) if isinstance(config, str) else config
     if Path(config).is_dir():
-        config = choose_config(config)
+        raise ValueError(
+            f"{config} is a directory, please specify a specific configuration file instead. See: https://github.com/OpenAccess-AI-Collective/axolotl/issues/165"
+        )
 
     # load the config from the yaml file
     with open(config, encoding="utf-8") as file:

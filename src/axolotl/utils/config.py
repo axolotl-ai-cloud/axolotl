@@ -16,32 +16,6 @@ from axolotl.utils.validation import validate_config
 LOG = logging.getLogger(__name__)
 
 
-def choose_config(path: Path) -> str:
-    yaml_files = list(path.glob("*.ya?ml"))
-
-    if not yaml_files:
-        raise ValueError(
-            "No YAML config files found in the specified directory. Are you using a .yml extension?"
-        )
-
-    print("Choose a YAML file:")
-    for idx, file in enumerate(yaml_files):
-        print(f"{idx + 1}. {file}")
-
-    chosen_file = None
-    while chosen_file is None:
-        try:
-            choice = int(input("Enter the number of your choice: "))
-            if 1 <= choice <= len(yaml_files):
-                chosen_file = yaml_files[choice - 1]
-            else:
-                print("Invalid choice. Please choose a number from the list.")
-        except ValueError:
-            print("Invalid input. Please enter a number.")
-
-    return Path(chosen_file)
-
-
 def load_config(config: Path) -> DictDefault:
     """Loads configuration from a file or a directory.
 
@@ -66,11 +40,8 @@ def load_config(config: Path) -> DictDefault:
     """
 
     config_path = Path(config)
-    derived_config_file = (
-        choose_config(config_path) if config_path.is_dir() else str(config_path)
-    )
 
-    with open(derived_config_file, encoding="utf-8") as config_fp:
+    with open(str(config_path), encoding="utf-8") as config_fp:
         loaded_config = DictDefault(yaml.safe_load(config_fp))
 
     validate_config(loaded_config)
