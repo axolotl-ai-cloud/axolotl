@@ -51,11 +51,10 @@ accelerate launch scripts/finetune.py examples/openllama-3b/lora.yml \
 
 - Docker
   ```bash
-  docker run --gpus '"all"' --rm -it winglian/axolotl:main-py3.9-cu118-2.0.0
+  docker run --gpus '"all"' --rm -it winglian/axolotl:main-py3.10-cu118-2.0.1
   ```
-  - `winglian/axolotl-runpod:main-py3.9-cu118-2.0.0`: for runpod
-  - `winglian/axolotl-runpod:main-py3.9-cu118-2.0.0-gptq`: for gptq
-  - `winglian/axolotl:dev`: dev branch (not usually up to date)
+  - `winglian/axolotl-runpod:main-py3.10-cu118-2.0.1`: for runpod
+  - `winglian/axolotl-runpod:main-py3.9-cu118-2.0.1-gptq`: for gptq
 
   Or run on the current files for development:
 
@@ -107,7 +106,7 @@ accelerate launch scripts/finetune.py examples/openllama-3b/lora.yml \
 
   3. Install torch
   ```bash
-  pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+  pip3 install -U torch --index-url https://download.pytorch.org/whl/cu118
   ```
 
   4. Axolotl
