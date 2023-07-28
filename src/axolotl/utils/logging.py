@@ -2,6 +2,7 @@
 
 import logging
 import sys
+from logging import _levelToName
 from logging.config import dictConfig
 
 
@@ -10,12 +11,12 @@ def configure_logging(log_level: str = "DEBUG"):
     dictConfig(
         {
             "version": 1,
+            "disable_existing_loggers": False,
             "formatters": {
                 "simple": {
                     "format": "[%(asctime)s] [%(levelname)s] [%(name)s.%(funcName)s:%(lineno)d] [PID:%(process)d] %(message)s",
                 },
             },
-            "filters": {},
             "handlers": {
                 "console": {
                     "class": "logging.StreamHandler",
@@ -24,7 +25,14 @@ def configure_logging(log_level: str = "DEBUG"):
                     "stream": sys.stdout,
                 },
             },
-            "root": {"handlers": ["console"], "level": log_level},
+            "loggers": {
+                "": {  # Root logger
+                    "level": log_level,
+                    "propagate": False,
+                    "filters": [],
+                    "handlers": ["console"],
+                }
+            },
         }
     )
 
@@ -32,8 +40,11 @@ def configure_logging(log_level: str = "DEBUG"):
 def print_loggers():
     """Function to print the current logging hierarchy"""
     loggers_dict = logging.Logger.manager.loggerDict
-    for logger_name, logger in loggers_dict.items():
+    for _, logger in {
+        "root": logging.Logger.manager.root,
+        **loggers_dict,
+    }.items():
         if isinstance(logger, logging.Logger):
             print(
-                f"Logger name: {logger_name}, Logger level: {logger.level}, Propagate: {logger.propagate}"
+                f"Logger: {logger.name} ({_levelToName[logger.level]}), Propagate: {logger.propagate}, Disabled: {logger.disabled}, Parent: {logger.parent.name if logger.parent is not None else ''}"
             )

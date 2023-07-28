@@ -1,12 +1,14 @@
 """
 This module is a CLI adapter to the Axolotl inferencing capabilities
 """
+import json
 import logging
 from typing import Any, Dict
 
 import click
 
 from axolotl import cfg
+from axolotl.cli import CTX_ACCELERATOR
 from axolotl.cli.option_groups import model_option_group
 from axolotl.cli.options import (
     dataset_option,
@@ -21,7 +23,6 @@ from axolotl.cli.options import (
     split_name_option,
     train_on_inputs_option,
 )
-from axolotl.inference import JsonFilePostProcessor
 from axolotl.utils.data import load_tokenized_prepared_datasets
 from axolotl.utils.storage import gen_timestamp_file
 
@@ -49,7 +50,7 @@ def inference_group():
 def batch(**kwargs: Dict[str, Any]):
     """Executes a batch evaluation operation"""
 
-    from axolotl.inference import BatchInference
+    from axolotl.inference import BatchInference, JsonFilePostProcessor
     from axolotl.utils.config import update_config
     from axolotl.utils.models import load_model, load_tokenizer
 
@@ -83,6 +84,7 @@ def batch(**kwargs: Dict[str, Any]):
         model=model,
         tokenizer=tokenizer,
         dataset=dataset,
+        accelerator=click.get_current_context().meta[CTX_ACCELERATOR],
         post_processors=[
             JsonFilePostProcessor(
                 cfg=cfg, filename=gen_timestamp_file(cfg.output_dir, suffix=".json")
@@ -90,4 +92,7 @@ def batch(**kwargs: Dict[str, Any]):
         ],
     )
     cli_handler.validate_and_warn()
-    cli_handler.run()
+    response = cli_handler.run()
+
+    # Output a single line of json as the response
+    click.echo(json.dumps(response))

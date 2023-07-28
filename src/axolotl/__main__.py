@@ -1,19 +1,21 @@
 """Axolotl CLI entrypoint"""
 import importlib
+import logging
 import pkgutil
 import threading
 from pathlib import Path
-import logging
 
 import click
 from accelerate import Accelerator
 
 import axolotl
+from axolotl.cli import CTX_ACCELERATOR, CTX_CFG
 from axolotl.utils.config import load_config
 from axolotl.utils.logging import configure_logging
-from axolotl.cli import CTX_ACCELERATOR, CTX_CFG
 
 threading.current_thread().name = "Main"
+
+LOG = logging.getLogger(__name__)
 
 
 @click.group()
