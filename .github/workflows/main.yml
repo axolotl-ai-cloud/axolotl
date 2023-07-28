@@ -29,11 +29,6 @@ jobs:
             python_version: "3.9"
             pytorch: 2.0.1
             axolotl_extras: gptq
-          - cuda: cu117
-            cuda_version: 11.7.1
-            python_version: "3.9"
-            pytorch: 1.13.1
-            axolotl_extras:
     runs-on: self-hosted
     steps:
       - name: Checkout
@@ -55,7 +50,7 @@ jobs:
         with:
           context: .
           build-args: |
-            BASE_TAG=${{ github.ref_name }}-base-py${{ matrix.python_version }}-${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
+            BASE_TAG=${{ github.ref_name }}-base-py${{ matrix.python_version }}-${{ matrix.cuda }}-${{ matrix.pytorch }}
           file: ./docker/Dockerfile
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.metadata.outputs.tags }}-py${{ matrix.python_version }}-${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
@@ -82,11 +77,6 @@ jobs:
             python_version: "3.9"
             pytorch: 2.0.1
             axolotl_extras: gptq
-          - cuda: 117
-            cuda_version: 11.7.1
-            python_version: "3.9"
-            pytorch: 1.13.1
-            axolotl_extras:
     runs-on: self-hosted
     steps:
       - name: Checkout

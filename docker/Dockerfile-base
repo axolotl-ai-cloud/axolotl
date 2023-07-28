@@ -8,7 +8,7 @@ FROM nvidia/cuda:$CUDA_VERSION-cudnn$CUDNN_VERSION-devel-ubuntu$UBUNTU_VERSION a
 ENV PATH="/root/miniconda3/bin:${PATH}"
 
 ARG PYTHON_VERSION="3.9"
-ARG PYTORCH="2.0.0"
+ARG PYTORCH_VERSION="2.0.1"
 ARG CUDA="118"
 
 ENV PYTHON_VERSION=$PYTHON_VERSION
@@ -29,18 +29,18 @@ ENV PATH="/root/miniconda3/envs/py${PYTHON_VERSION}/bin:${PATH}"
 WORKDIR /workspace
 
 RUN python3 -m pip install --upgrade pip && pip3 install packaging && \
-    python3 -m pip install --no-cache-dir -U torch==${PYTORCH} torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu$CUDA
+    python3 -m pip install --no-cache-dir -U torch==${PYTORCH_VERSION}+cu${CUDA} --extra-index-url https://download.pytorch.org/whl/cu$CUDA
 
 
 FROM base-builder AS flash-attn-builder
 
 WORKDIR /workspace
 
-ARG TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6+PTX"
+ARG TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6 9.0+PTX"
 
 RUN git clone https://github.com/Dao-AILab/flash-attention.git && \
     cd flash-attention && \
-    git checkout 9ee0ff1  && \
+    git checkout v2.0.1  && \
     python3 setup.py bdist_wheel && \
     cd csrc/fused_dense_lib && \
     python3 setup.py bdist_wheel && \
@@ -53,7 +53,7 @@ RUN git clone https://github.com/Dao-AILab/flash-attention.git && \
 
 FROM base-builder AS deepspeed-builder
 
-ARG TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6+PTX"
+ARG TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6 9.0+PTX"
 
 WORKDIR /workspace
 
@@ -73,6 +73,9 @@ RUN git clone https://github.com/TimDettmers/bitsandbytes.git && \
     python setup.py bdist_wheel
 
 FROM base-builder
+
+ARG TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6 9.0+PTX"
+ENV TORCH_CUDA_ARCH_LIST=$TORCH_CUDA_ARCH_LIST
 
 # recompile apex
 RUN python3 -m pip uninstall -y apex
