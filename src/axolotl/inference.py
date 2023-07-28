@@ -191,31 +191,6 @@ class BatchInference:
 
         LOG.info("Using generation configuration: %s", generation_config)
 
-        # def collate_fn(batch):
-        #     # batch_encode_plus doesn't support left padding which is needed for auto regressive models. I think
-        #     # this is OK since we are also passing the attention_mask to generate.
-        #     return self.tokenizer.batch_encode_plus(
-        #         [self.tokenizer.decode(item["input_ids"]) for item in batch],
-        #         padding="longest",
-        #         truncation=True,
-        #         max_length=self.cfg.sequence_len,
-        #         return_attention_mask=True,
-        #         return_tensors="pt",
-        #     )
-
-        # LOG.debug("Using micro_batch_size: %i", self.cfg.micro_batch_size)
-
-        # # Wrap with data loader
-        # dataloader = DataLoader(
-        #     self.dataset,
-        #     batch_size=self.cfg.micro_batch_size,
-        #     collate_fn=collate_fn,
-        #     shuffle=False,
-        # )
-
-        # Prepare model & dataset for distributed inferencing
-        # dataloader, model = self.accelerator.prepare(dataloader, self.model)
-        # dataloader = self.accelerator.prepare(dataloader)
         self.model.eval()
         self.model.to(self.accelerator.device)
 
@@ -240,69 +215,9 @@ class BatchInference:
 
         # Invoke post-processors
         if self.accelerator.is_local_main_process and self.post_processors is not None:
-            # Consolidate output files
-            # all_results: List[InferenceResult] = []
-            # for result_file in glob(f"{temp_dir}/*.json"):
-            #     with open(result_file, "r", encoding="utf-8") as result_fp:
-            #         all_results.extend(json.load(result_fp))
-
             # Invoke post-processor(s) on consolidated results
             for post_processor in self.post_processors:
                 post_processor.trigger(results=gathered_responses)
-
-            # # Create a temporary directory
-            # temp_dir = tempfile.mkdtemp()
-            # LOG.info("Saving inferencing results to temporary directory: %s", temp_dir)
-
-            # Determine the number of digits in the total number of batches, we need this
-            # later when writing temp files
-            # total_batches = len(dataloader)
-            # num_digits = len(str(total_batches))
-
-            # with torch.no_grad():
-            # for batch_index, batch in enumerate(tqdm(dataloader, desc="Inferencing")):
-            #     batch_results: List[InferenceResult] = []
-            #     LOG.debug(
-            #         "Processing batch on %s with shape: %s",
-            #         self.accelerator.device,
-            #         list(batch.data["input_ids"].shape),
-            #     )
-
-            # Gather this batch outputs and inputs back to the main process, since the main process will
-            # be executing processing on all results after inference all results should be consolidated
-            # on the local main process. This could possibly be improved via distributed storage such as S3, blobstore, etc.
-            # gathered_response_tokens = self.accelerator.gather(response_tokens)
-            # gathered_prompt_tokens = self.accelerator.gather(prompts)
-
-            # if self.accelerator.is_local_main_process:
-            # Decode and store results for this batch
-            # for batch_input_ids, batch_output in zip(
-            #     gathered_prompt_tokens, gathered_response_tokens
-            # ):
-            #     # TODO: Test with num_responses > 1
-            #     batch_results.append(
-            #         {
-            #             "prompt": self.tokenizer.decode(
-            #                 batch_input_ids, skip_special_tokens=True
-            #             ),
-            #             # Trim prompt from the response
-            #             "response": self.tokenizer.decode(
-            #                 batch_output[batch_input_ids.shape[0] :],
-            #                 skip_special_tokens=True,
-            #             ),
-            #         }
-            #     )
-
-            # # Write results for this batch to a JSON file in the temp directory
-            # temp_file = join(
-            #     temp_dir, f"batch_{batch_index:0{num_digits}d}.json"
-            # )
-            # LOG.info("Writing batch output to: %s", temp_file)
-            # with open(temp_file, "w") as output_fp:
-            #     json.dump(batch_results, output_fp)
-
-            # Wait for inferencing to complete before invoking post-processing logic
-            # self.accelerator.wait_for_everyone()
 
         run_time_sec = round(time.perf_counter() - start_time, 3)
 
