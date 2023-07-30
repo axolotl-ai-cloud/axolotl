@@ -344,7 +344,9 @@ def train(
 
     # TODO do we need this fix? https://huggingface.co/docs/accelerate/usage_guides/fsdp#saving-and-loading
     # only save on rank 0, otherwise it corrupts output on multi-GPU when multiple processes attempt to write the same file
-    if cfg.local_rank == 0:
+    if cfg.fsdp:
+        model.save_pretrained(cfg.output_dir)
+    elif cfg.local_rank == 0:
         if cfg.flash_optimum:
             model = BetterTransformer.reverse(model)
         model.save_pretrained(cfg.output_dir)
