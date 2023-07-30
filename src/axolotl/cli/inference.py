@@ -65,10 +65,13 @@ def batch(**kwargs: Dict[str, Any]):
     LOG.info("Loading tokenizer: %s", tokenizer_config)
     tokenizer = load_tokenizer(tokenizer_config, cfg.tokenizer_type, cfg)
 
+    accelerator = click.get_current_context().meta[CTX_ACCELERATOR]
+
     # Load dataset
-    dataset = load_tokenized_prepared_datasets(
-        tokenizer, cfg, cfg.dataset_prepared_path
-    )
+    if accelerator.main_process_first():
+        dataset = load_tokenized_prepared_datasets(
+            tokenizer, cfg, cfg.dataset_prepared_path
+        )
 
     # Load the model
     LOG.info("Loading model and peft_config: %s", cfg.base_model)
@@ -96,7 +99,7 @@ def batch(**kwargs: Dict[str, Any]):
         model=model,
         tokenizer=tokenizer,
         dataset=dataset,
-        accelerator=click.get_current_context().meta[CTX_ACCELERATOR],
+        accelerator=accelerator,
         post_processors=[
             JsonFilePostProcessor(
                 cfg=cfg, filename=gen_timestamp_file(cfg.output_dir, suffix=".json")

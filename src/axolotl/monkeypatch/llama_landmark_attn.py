@@ -22,9 +22,9 @@
 PyTorch LLaMA model.
 Taken from https://github.com/epfml/landmark-attention/blob/main/llama/llama_mem.py and modified.
 """
+import logging
 import math
 from typing import List, Optional, Tuple, Union
-import logging
 
 import torch
 import torch.utils.checkpoint

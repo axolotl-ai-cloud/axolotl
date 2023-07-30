@@ -1,8 +1,8 @@
 """Logging configuration settings"""
 
 import logging
-import sys
 import os
+import sys
 from logging import _levelToName
 from logging.config import dictConfig
 
