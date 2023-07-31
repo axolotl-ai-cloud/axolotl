@@ -182,9 +182,10 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
         train_dataset = train_dataset.filter(drop_long).map(
             add_position_ids, num_proc=os.cpu_count()
         )
-        eval_dataset = eval_dataset.filter(drop_long).map(
-            add_position_ids, num_proc=os.cpu_count()
-        )
+        if eval_dataset:
+            eval_dataset = eval_dataset.filter(drop_long).map(
+                add_position_ids, num_proc=os.cpu_count()
+            )
         if cfg.sample_packing_eff_est:
             total_num_tokens = (
                 cfg.total_num_tokens
