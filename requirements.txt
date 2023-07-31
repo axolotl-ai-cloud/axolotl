@@ -1,7 +1,7 @@
 peft @ git+https://github.com/huggingface/peft.git
 transformers @ git+https://github.com/huggingface/transformers.git
 bitsandbytes>=0.39.0
-accelerate==0.21.0
+accelerate @ git+https://github.com/huggingface/accelerate@2a289f6108e77a77a4efffb3f6316bc98538413b
 addict
 fire
 PyYAML==6.0
