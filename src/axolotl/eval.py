@@ -2,12 +2,12 @@
 This module defines the BatchEval class, which handles batch evaluation of a model.
 """
 
-import logging
 from typing import Dict
 
 import torch
 import transformers
 from accelerate import Accelerator
+from accelerate.logging import get_logger
 from datasets import IterableDataset
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader
@@ -17,7 +17,7 @@ from transformers.tokenization_utils import PreTrainedTokenizer
 
 from axolotl.utils.dict import DictDefault
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 
 def collate_fn(

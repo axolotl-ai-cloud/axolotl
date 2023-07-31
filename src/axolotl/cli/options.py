@@ -508,3 +508,18 @@ def landmark_attention_option(**kwargs: Any) -> Callable:
         help=landmark_attention_option.__doc__,
         override_kwargs=kwargs,
     )
+
+
+def truncate_features_option(**kwargs: Any) -> Callable:
+    """When loading a dataset, truncate the list of features. Useful for inferencing
+    when responses shoud be truncated from the source dataset"""
+
+    return option_factory(
+        "--truncate_features",
+        envvar="AXOLOTL_TRUNCATE_FEATURES",
+        type=click.types.UNPROCESSED,
+        callback=multiple_list_callback,
+        multiple=True,
+        help=truncate_features_option.__doc__,
+        override_kwargs=kwargs,
+    )

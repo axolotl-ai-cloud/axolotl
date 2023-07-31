@@ -15,8 +15,6 @@ from axolotl.utils.logging import configure_logging
 
 threading.current_thread().name = "Main"
 
-LOG = logging.getLogger(__name__)
-
 
 @click.group()
 @click.option(

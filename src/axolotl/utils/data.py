@@ -160,6 +160,19 @@ def load_tokenized_prepared_datasets(
             d_prompt_style = d_type_split[1] if len(d_type_split) > 1 else None
             if split_name in ds:
                 ds = ds[split_name]
+            if cfg.truncate_features:
+                # Truncate features will set all feature values to an empty string prior to processing via a
+                # prompter. This is useful for inferencing on a dataset that already contains responses as
+                # it isn't desirable for this to be encoded in the response.
+                # {feature: "" for feature in truncate_features}
+                LOG.info(
+                    "Truncating feature prior to processing prompting logic: %s",
+                    cfg.truncate_features,
+                )
+                ds = ds.map(
+                    lambda x: {feature: "" for feature in cfg.truncate_features}
+                )
+
             if ds_strategy := load(d.type, tokenizer, cfg):
                 ds_wrapper = TokenizedPromptDataset(ds_strategy, ds)
                 datasets.append(ds_wrapper)

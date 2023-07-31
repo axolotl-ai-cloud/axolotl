@@ -1,10 +1,11 @@
 """
 This module defines the BatchEval class, which handles batch evaluation of a model.
 """
-import logging
+
 from typing import Any, Dict
 
 import click
+from accelerate.logging import get_logger
 
 from axolotl import cfg
 from axolotl.cli.option_groups import model_option_group
@@ -20,7 +21,7 @@ from axolotl.cli.options import (
     train_on_inputs_option,
 )
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 
 @click.group(name="eval")

@@ -14,6 +14,10 @@ def configure_logging(log_level: str = "DEBUG"):
     # see: https://huggingface.co/docs/transformers/main_classes/logging
     os.environ["TRANSFORMERS_VERBOSITY"] = log_level
 
+    # Set accelerate log level,
+    # see: https://huggingface.co/docs/accelerate/package_reference/logging
+    os.environ["ACCELERATE_LOG_LEVEL"] = log_level
+
     dictConfig(
         {
             "version": 1,

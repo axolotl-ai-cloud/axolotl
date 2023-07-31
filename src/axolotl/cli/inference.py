@@ -2,10 +2,10 @@
 This module is a CLI adapter to the Axolotl inferencing capabilities
 """
 import json
-import logging
 from typing import Any, Dict
 
 import click
+from accelerate.logging import get_logger
 
 from axolotl import cfg
 from axolotl.cli import CTX_ACCELERATOR
@@ -16,18 +16,17 @@ from axolotl.cli.options import (
     generation_config_option,
     landmark_attention_option,
     max_packed_sequence_len_option,
-    micro_batch_size_option,
     output_dir_option,
     pretraining_dataset_option,
     seed_option,
     sequence_len_option,
     split_name_option,
     train_on_inputs_option,
+    truncate_features_option,
 )
 from axolotl.utils.data import load_tokenized_prepared_datasets
-from axolotl.utils.storage import gen_timestamp_file
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 
 @click.group(name="inference")
@@ -40,7 +39,6 @@ def inference_group():
 @dataset_option()
 @model_option_group()
 @train_on_inputs_option()
-@micro_batch_size_option()
 @pretraining_dataset_option()
 @dataset_prepared_path_option()
 @max_packed_sequence_len_option()
@@ -49,6 +47,7 @@ def inference_group():
 @generation_config_option()
 @output_dir_option()
 @landmark_attention_option()
+@truncate_features_option()
 def batch(**kwargs: Dict[str, Any]):
     """Executes a batch evaluation operation"""
 
@@ -58,6 +57,8 @@ def batch(**kwargs: Dict[str, Any]):
 
     # Override default configuration
     update_config(overrides=kwargs)
+
+    BatchInference.validate_and_warn(cfg=cfg)
 
     # pylint: disable=R0801
     # Load the tokenizer
@@ -95,18 +96,15 @@ def batch(**kwargs: Dict[str, Any]):
         )
 
     cli_handler = BatchInference(
-        cfg=cfg,
         model=model,
         tokenizer=tokenizer,
         dataset=dataset,
         accelerator=accelerator,
-        post_processors=[
-            JsonFilePostProcessor(
-                cfg=cfg, filename=gen_timestamp_file(cfg.output_dir, suffix=".json")
-            )
-        ],
+        seed=cfg.seed,
+        output_dir=cfg.output_dir,
+        generation_config=cfg.generation_config,
+        post_processors=[JsonFilePostProcessor(output_dir=cfg.output_dir)],
     )
-    cli_handler.validate_and_warn()
     response = cli_handler.run()
 
     # Output a single line of json as the response
