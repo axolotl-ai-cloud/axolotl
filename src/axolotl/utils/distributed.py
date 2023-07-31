@@ -1,9 +1,10 @@
 """This module contains utility methods related to distributed processing"""
 
 from datetime import datetime, timezone
+
+import torch
 from accelerate import Accelerator
 from accelerate.utils import broadcast
-import torch
 
 
 def format_ts(timestamp: datetime) -> str:

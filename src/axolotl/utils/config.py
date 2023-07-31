@@ -1,20 +1,19 @@
 """Axolotl configuration utilities"""
 
-
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union, cast
 
 import click
 import yaml
-from accelerate.logging import get_logger
 
 import axolotl
 from axolotl.utils.data import load_prepare_datasets, load_pretraining_dataset
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.validation import validate_config
 
-LOG = get_logger(__name__)
+LOG = logging.getLogger(__name__)
 
 
 def load_config(config: Path) -> DictDefault:

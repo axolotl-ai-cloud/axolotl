@@ -68,11 +68,11 @@ class JsonFilePostProcessor(AbstractPostProcessor):
 
     def trigger(self, run_id: str, result_paths: List[str]) -> None:
         # Write to output file outside of the loop
-        combined_results = []
+        combined_results: List[Dict] = []
         for result_file in result_paths:
             LOG.info("Consolidating result file: %s", result_file)
             with open(result_file, "r", encoding=self.encoding) as input_fp:
-                combined_results.append(json.load(input_fp))
+                combined_results.extend(json.load(input_fp))
 
         # Derive output filename
         output_path = join(self.output_dir, f"{run_id}.json")
@@ -248,7 +248,7 @@ class BatchInference:
         start_time = time.perf_counter()
 
         if self.seed is not None:
-            transformers.enable_full_determinism(seed=self.seed)
+            transformers.enable_full_determinism(seed=self.seed, warn_only=True)
 
         # Parse user-provided generation configuration
         generation_config = GenerationConfig(
@@ -288,7 +288,7 @@ class BatchInference:
                     str(self.output_dir),
                     f"{run_id}_{str(self.accelerator.device.type)}{str(self.accelerator.device.index)}.tmp.json",
                 )
-                LOG.info("Writing output to: %s")
+                LOG.info("Writing output to: %s", device_output_file)
                 with open(
                     device_output_file,
                     "w",
