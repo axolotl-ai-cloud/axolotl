@@ -23,6 +23,9 @@ tokenizer_use_fast:
 # List of features to truncate from source dataset
 truncate_features:
 
+# When set to true, batch inferencing will automatically strip leading/trailing whitespace from the response.
+strip_whitespace:
+
 # whether you are training a 4-bit GPTQ quantized model
 gptq: true
 gptq_groupsize: 128 # group size

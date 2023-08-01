@@ -8,6 +8,7 @@ import click
 from accelerate.logging import get_logger
 
 from axolotl import cfg
+from axolotl.cli import CTX_ACCELERATOR
 from axolotl.cli.option_groups import model_option_group
 from axolotl.cli.options import (
     dataset_option,
@@ -55,8 +56,11 @@ def batch(**kwargs: Dict[str, Any]):
     LOG.info("Loading tokenizer: %s", tokenizer_config)
     tokenizer = load_tokenizer(tokenizer_config, cfg.tokenizer_type, cfg)
 
+    accelerator = click.get_current_context().meta[CTX_ACCELERATOR]
+
     # Load dataset
-    dataset, _ = startup_load_dataset(cfg, tokenizer)
+    if accelerator.main_process_first():
+        dataset, _ = startup_load_dataset(cfg, tokenizer)
 
     # Load the model
     LOG.info("Loading model and peft_config: %s", cfg.base_model)

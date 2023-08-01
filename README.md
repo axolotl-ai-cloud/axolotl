@@ -554,6 +554,7 @@ Pass the appropriate flag to the train command:
   cat /tmp/prompt.txt | python scripts/finetune.py configs/your_config.yml \
     --base_model="./completed-model" --inference --prompter=None --load_in_8bit=True
   ```
+- For batch inferencing, see the [batch inference](doc/batch_inferencing.md) guide.
 
 ### Merge LORA to base
 

@@ -15,6 +15,8 @@ from axolotl.utils.logging import configure_logging
 
 threading.current_thread().name = "Main"
 
+LOG = logging.getLogger(__name__)
+
 
 @click.group()
 @click.option(
@@ -78,6 +80,9 @@ def cli(ctx: click.core.Context, config: str, log_level: str, log_main_only: boo
 
     # For Click-aware applications, add cfg to the global context
     ctx.meta[CTX_CFG] = axolotl.cfg
+
+    if axolotl.cfg.strict is not None:
+        LOG.warning("The 'strict' configuration options has been deprecated")
 
 
 # Dynamically load all Click command groups under the axolotl.cli package

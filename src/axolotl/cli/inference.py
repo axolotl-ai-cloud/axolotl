@@ -21,9 +21,11 @@ from axolotl.cli.options import (
     seed_option,
     sequence_len_option,
     split_name_option,
+    strip_whitespace_option,
     train_on_inputs_option,
     truncate_features_option,
 )
+from axolotl.inference import FileSystemCollector
 from axolotl.utils.data import load_tokenized_prepared_datasets
 
 LOG = get_logger(__name__)
@@ -48,6 +50,7 @@ def inference_group():
 @output_dir_option()
 @landmark_attention_option()
 @truncate_features_option()
+@strip_whitespace_option()
 def batch(**kwargs: Dict[str, Any]):
     """Executes a batch evaluation operation"""
 
@@ -55,37 +58,41 @@ def batch(**kwargs: Dict[str, Any]):
     from axolotl.utils.config import update_config
     from axolotl.utils.models import load_model, load_tokenizer
 
-    # Override default configuration
+    # Override singleton default configuration
     update_config(overrides=kwargs)
 
-    BatchInference.validate_and_warn(cfg=cfg)
+    # Validate configuration, apply defaults that will be used by the
+    # batch inferencing process
+    derived_cfg = BatchInference.validate_and_warn(cfg=cfg)
 
     # pylint: disable=R0801
     # Load the tokenizer
-    tokenizer_config = cfg.tokenizer_config or cfg.base_model_config
+    tokenizer_config = derived_cfg.tokenizer_config or derived_cfg.base_model_config
     LOG.info("Loading tokenizer: %s", tokenizer_config)
-    tokenizer = load_tokenizer(tokenizer_config, cfg.tokenizer_type, cfg)
+    tokenizer = load_tokenizer(
+        tokenizer_config, derived_cfg.tokenizer_type, derived_cfg
+    )
 
     accelerator = click.get_current_context().meta[CTX_ACCELERATOR]
 
     # Load dataset
     if accelerator.main_process_first():
         dataset = load_tokenized_prepared_datasets(
-            tokenizer, cfg, cfg.dataset_prepared_path
+            tokenizer, derived_cfg, derived_cfg.dataset_prepared_path
         )
 
     # Load the model
-    LOG.info("Loading model and peft_config: %s", cfg.base_model)
+    LOG.info("Loading model and peft_config: %s", derived_cfg.base_model)
     model, _ = load_model(
-        base_model=cfg.base_model,
-        base_model_config=cfg.base_model_config,
-        model_type=cfg.model_type,
+        base_model=derived_cfg.base_model,
+        base_model_config=derived_cfg.base_model_config,
+        model_type=derived_cfg.model_type,
         tokenizer=tokenizer,
-        cfg=cfg,
-        adapter=cfg.adapter,
+        cfg=derived_cfg,
+        adapter=derived_cfg.adapter,
     )
 
-    if cfg.landmark_attention:
+    if derived_cfg.landmark_attention:
         from axolotl.monkeypatch.llama_landmark_attn import set_model_mem_id
 
         LOG.info("Enabling landmark attention")
@@ -100,12 +107,22 @@ def batch(**kwargs: Dict[str, Any]):
         tokenizer=tokenizer,
         dataset=dataset,
         accelerator=accelerator,
-        seed=cfg.seed,
-        output_dir=cfg.output_dir,
-        generation_config=cfg.generation_config,
-        post_processors=[JsonFilePostProcessor(output_dir=cfg.output_dir)],
+        seed=derived_cfg.seed,
+        output_dir=derived_cfg.output_dir,
+        generation_config=derived_cfg.generation_config,
+        strip_whitespace=derived_cfg.strip_whitespace,
+        persistence_backend=FileSystemCollector(output_dir=derived_cfg.output_dir),
+        post_processors=[
+            JsonFilePostProcessor(
+                output_dir=derived_cfg.output_dir, accelerator=accelerator
+            )
+        ],
     )
     response = cli_handler.run()
 
     # Output a single line of json as the response
-    click.echo(json.dumps(response))
+    if accelerator.is_main_process:
+        click.echo(json.dumps(response))
+
+        if response["status"] != "SUCCESS":
+            click.get_current_context().exit(1)

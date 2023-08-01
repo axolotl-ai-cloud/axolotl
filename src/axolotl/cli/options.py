@@ -523,3 +523,14 @@ def truncate_features_option(**kwargs: Any) -> Callable:
         help=truncate_features_option.__doc__,
         override_kwargs=kwargs,
     )
+
+
+def strip_whitespace_option(**kwargs: Any) -> Callable:
+    """When set to true, batch inferencing will automatically strip leading/trailing whitespace from the response."""
+    return option_factory(
+        "--strip_whitespace/--no_strip_whitespace",
+        envvar="AXOLOTL_STRIP_WHITESPACE",
+        type=click.types.BOOL,
+        help=strip_whitespace_option.__doc__,
+        override_kwargs=kwargs,
+    )

@@ -12,7 +12,7 @@ def configure_logging(log_level: str = "DEBUG"):
 
     # Set transformers log level,
     # see: https://huggingface.co/docs/transformers/main_classes/logging
-    os.environ["TRANSFORMERS_VERBOSITY"] = log_level
+    os.environ["TRANSFORMERS_VERBOSITY"] = log_level.lower()
 
     # Set accelerate log level,
     # see: https://huggingface.co/docs/accelerate/package_reference/logging
