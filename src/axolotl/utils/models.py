@@ -147,13 +147,17 @@ def load_model(
         LOG.exception(err)
         raise err
 
-    try:
-        from peft import prepare_model_for_kbit_training
-    except ImportError:
-        # For backward compatibility
-        from peft import (
-            prepare_model_for_int8_training as prepare_model_for_kbit_training,
-        )
+    if not cfg.gptq and (
+        (cfg.adapter == "lora" and load_in_8bit)
+        or (cfg.adapter == "qlora" and cfg.load_in_4bit)
+    ):
+        try:
+            from peft import prepare_model_for_kbit_training
+        except ImportError:
+            # For backward compatibility
+            from peft import (
+                prepare_model_for_int8_training as prepare_model_for_kbit_training,
+            )
 
     model_kwargs = {}
     if cfg.model_revision:
