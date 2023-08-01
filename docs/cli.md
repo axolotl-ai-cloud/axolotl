@@ -62,7 +62,7 @@ Please see the [click shell completion](https://click.palletsprojects.com/en/8.1
 
 ### Passing multiple variables via the environment
 
-Sometime it is necessary to pass a list of options, for example, the following configurations are all equivalent:
+Sometimes it is necessary to pass a list of options, for example, the following configurations are all equivalent:
 
 ```shell
 DATASETS="/data/GPTeacher/Instruct,gpteacher /data/GPTeacher/Roleplay,gpteacher"
