@@ -8,7 +8,14 @@ import torch
 import transformers
 from einops import rearrange
 from flash_attn.bert_padding import pad_input, unpad_input
-from flash_attn.flash_attn_interface import flash_attn_varlen_qkvpacked_func
+
+try:
+    from flash_attn.flash_attn_interface import flash_attn_varlen_qkvpacked_func
+except ImportError:
+    from flash_attn.flash_attn_interface import (
+        flash_attn_unpadded_qkvpacked_func as flash_attn_varlen_qkvpacked_func,
+    )
+
 from transformers.models.llama.modeling_llama import apply_rotary_pos_emb
 
 
