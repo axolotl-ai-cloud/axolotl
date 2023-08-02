@@ -197,7 +197,7 @@ class MultipackDistributedDataloader:
             #     }
             #     chunked_data.append(chunk)
             # yield self.collate_fn(chunked_data)
-            yield self.collate_fn(concatenated)
+            yield self.collate_fn([concatenated])
             len_remaining -= 1
             if not len_remaining:
                 return
