@@ -128,7 +128,7 @@ class MultipackDistributedDataloader:
         batch_size: int = 1,
         sampler: Union[Sampler, DistributedSampler] = None,
         packing_efficiency_estimate: float = 1.0,
-        seq_len_multiple: int = 1,
+        sample_packing_seq_len_multiplier: int = 1,
     ):
         # Dataset
         self.dataset = dataset
@@ -136,10 +136,11 @@ class MultipackDistributedDataloader:
             [len(sample["input_ids"]) for sample in self.dataset]
         )
         assert isinstance(self.lengths, np.ndarray)
-        assert batch_size % seq_len_multiple == 0
+        assert batch_size % sample_packing_seq_len_multiplier == 0
+        assert batch_size >= sample_packing_seq_len_multiplier
         self.sampler = sampler
         self.batch_size = batch_size
-        self.seq_len_multiple = seq_len_multiple
+        self.sample_packing_seq_len_multiplier = sample_packing_seq_len_multiplier
         self.seq_max_length = seq_max_length
         self.batch_max_length = batch_size * seq_max_length
         self.collate_fn = collate_fn
@@ -166,7 +167,7 @@ class MultipackDistributedDataloader:
             lengths_cumsum=lengths_cumsum,
             rank=self.rank,
             # c=self.batch_max_length,
-            c=self.seq_max_length * self.seq_len_multiple,
+            c=self.seq_max_length * self.sample_packing_seq_len_multiplier,
             n=self.num_replicas,
         )
 
@@ -183,7 +184,9 @@ class MultipackDistributedDataloader:
         all_batches, _ = self.generate_batches(set_stats=True)
         features = self.dataset.features.keys()
         len_remaining = self._len_est()
-        for batches in chunk(all_batches, self.batch_size // self.seq_len_multiple):
+        for batches in chunk(
+            all_batches, self.batch_size // self.sample_packing_seq_len_multiplier
+        ):
             chunked_data = []
             attn_mask_cum_idx = 0
             for batch in batches:
