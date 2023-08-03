@@ -29,7 +29,7 @@
 
 ## Quickstart ⚡
 
-**Requirements**: Python 3.9 and Pytorch 2.0.
+**Requirements**: Python >=3.9 and Pytorch >=2.0.
 
 ```bash
 git clone https://github.com/OpenAccess-AI-Collective/axolotl
@@ -243,7 +243,7 @@ Optionally, download some datasets, see [data/README.md](data/README.md)
 
 ### Config
 
-See sample configs in [configs](configs) folder or [examples](examples) for quick start. It is recommended to duplicate and modify to your needs. The most important options are:
+See [examples](examples) for quick start. It is recommended to duplicate and modify to your needs. The most important options are:
 
 - model
   ```yaml
