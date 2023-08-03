@@ -53,26 +53,34 @@ def weighted_cross_entropy(
 
 @torch.jit.script
 def create_weighted_mask(labels: torch.Tensor):
-    mask = labels != -100
+    # Check if the tensor is 2D. If not, unsqueeze it to make it 2D
+    if len(labels.shape) == 1:
+        labels = labels.unsqueeze(0)
 
-    # Create a tensor to track group ids
-    group_ids = torch.zeros_like(labels).int()
-    curr_group_id = 0
+    weights = torch.zeros_like(labels).float()
+    for i in range(labels.shape[0]):
+        mask = labels[i] != -100
 
-    for i in range(1, len(labels)):
-        if mask[i] and not mask[i - 1]:  # switch from masked to unmasked label
-            curr_group_id += 1  # start new group
-        group_ids[i] = (
-            curr_group_id if mask[i] else 0
-        )  # assign group id if unmasked label
+        # Create a tensor to track group ids
+        group_ids = torch.zeros_like(labels[i]).int()
+        curr_group_id = 0
 
-    # Count only unmasked labels in each group
-    group_counts = torch.bincount(group_ids[mask])
+        for j in range(1, len(labels[i])):
+            if mask[j] and not mask[j - 1]:  # switch from masked to unmasked label
+                curr_group_id += 1  # start new group
+            group_ids[j] = (
+                curr_group_id if mask[j] else 0
+            )  # assign group id if unmasked label
 
-    mask_weights = torch.zeros_like(labels).float()
-    mask_weights[mask] = 1.0 / group_counts[group_ids[mask]]
+        # Count only unmasked labels in each group
+        group_counts = torch.bincount(group_ids[mask])
 
-    return mask_weights
+        mask_weights = torch.zeros_like(labels[i]).float()
+        mask_weights[mask] = 1.0 / group_counts[group_ids[mask]]
+
+        weights[i] = mask_weights
+
+    return weights.squeeze()  # squeeze the output to match the input dimension
 
 
 def trainer_weighted_loss(model_output, labels, shift_labels=True):
@@ -168,6 +176,7 @@ class AxolotlTrainer(Trainer):
                     collate_fn=self.data_collator,
                     sampler=train_sampler,
                     packing_efficiency_estimate=self.args.sample_packing_efficiency,
+                    seq_len_multiple=2,
                 )
             )
         return super().get_train_dataloader()
@@ -187,16 +196,18 @@ class AxolotlTrainer(Trainer):
                     seq_max_length=self.args.max_seq_length,
                     collate_fn=self.data_collator,
                     sampler=eval_sampler,
+                    packing_efficiency_estimate=self.args.sample_packing_efficiency,
+                    seq_len_multiple=2,
                 )
             )
         return super().get_eval_dataloader(eval_dataset)
 
     def compute_loss(self, model, inputs, return_outputs=False):
-        if self.args.sample_packing:
-            labels = inputs.pop("labels")
-            outputs = model(**inputs)
-            loss = trainer_weighted_loss(outputs, labels, shift_labels=True)
-            return (loss, outputs) if return_outputs else loss
+        # if self.args.sample_packing:
+        #     labels = inputs.pop("labels")
+        #     outputs = model(**inputs)
+        #     loss = trainer_weighted_loss(outputs, labels, shift_labels=True)
+        #     return (loss, outputs) if return_outputs else loss
         return super().compute_loss(model, inputs, return_outputs=return_outputs)
 
 
@@ -262,7 +273,7 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
                         * total_num_tokens
                         / cfg.sample_packing_eff_est
                         / 2048
-                        / cfg.batch_size
+                        // cfg.batch_size
                     )
                     - 1
                 )
@@ -284,6 +295,7 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
                 ),
                 sampler=sampler,
                 packing_efficiency_estimate=cfg.sample_packing_eff_est,
+                seq_len_multiple=2,
             )
             data_loader_len = len(data_loader)
             LOG.info(f"data_loader_len: {data_loader_len}")
