@@ -183,7 +183,7 @@ class MultipackDistributedDataloader:
         all_batches, _ = self.generate_batches(set_stats=True)
         features = self.dataset.features.keys()
         len_remaining = self._len_est()
-        for batches in chunk(all_batches, self.batch_size / self.seq_len_multiple):
+        for batches in chunk(all_batches, self.batch_size // self.seq_len_multiple):
             chunked_data = []
             attn_mask_cum_idx = 0
             for batch in batches:
