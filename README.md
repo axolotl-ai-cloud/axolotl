@@ -29,7 +29,7 @@
 
 ## Quickstart ⚡
 
-**Requirements**: Python 3.9 and Pytorch 2.0.
+**Requirements**: Python >=3.9 and Pytorch >=2.0.
 
 ```bash
 git clone https://github.com/OpenAccess-AI-Collective/axolotl
