@@ -128,6 +128,7 @@ class MultipackDistributedDataloader:
         batch_size: int = 1,
         sampler: Union[Sampler, DistributedSampler] = None,
         packing_efficiency_estimate: float = 1.0,
+        seq_len_multiple: int = 1,
     ):
         # Dataset
         self.dataset = dataset
@@ -135,9 +136,10 @@ class MultipackDistributedDataloader:
             [len(sample["input_ids"]) for sample in self.dataset]
         )
         assert isinstance(self.lengths, np.ndarray)
-
+        assert batch_size % seq_len_multiple == 0
         self.sampler = sampler
         self.batch_size = batch_size
+        self.seq_len_multiple = seq_len_multiple
         self.seq_max_length = seq_max_length
         self.batch_max_length = batch_size * seq_max_length
         self.collate_fn = collate_fn
@@ -148,7 +150,7 @@ class MultipackDistributedDataloader:
         # statistics
         self.eff_total_used = 0
         self.eff_total_slots = 0
-        self.packing_efficiency_estimate = packing_efficiency_estimate
+        self.packing_efficiency_estimate = packing_efficiency_estimate or 1.0
 
     def generate_batches(self, set_stats=False):
         if self.sampler:
@@ -164,7 +166,7 @@ class MultipackDistributedDataloader:
             lengths_cumsum=lengths_cumsum,
             rank=self.rank,
             # c=self.batch_max_length,
-            c=self.seq_max_length,
+            c=self.seq_max_length * self.seq_len_multiple,
             n=self.num_replicas,
         )
 
@@ -181,18 +183,20 @@ class MultipackDistributedDataloader:
         all_batches, _ = self.generate_batches(set_stats=True)
         features = self.dataset.features.keys()
         len_remaining = self._len_est()
-        for batches in chunk(all_batches, self.batch_size):
+        for batches in chunk(all_batches, self.batch_size / self.seq_len_multiple):
             chunked_data = []
+            attn_mask_cum_idx = 0
             for batch in batches:
                 concatenated = {}
                 batched_data = [self.dataset[batch_idx] for batch_idx in batch]
                 for feature in features:
                     if feature == "attention_mask":
                         arrays = [
-                            (idx + 1) * np.array(item[feature])
+                            (attn_mask_cum_idx + idx + 1) * np.array(item[feature])
                             for idx, item in enumerate(batched_data)
                             if feature in item
                         ]
+                        attn_mask_cum_idx += len(batched_data)
                         concatenated[feature] = np.concatenate(arrays)
                     else:
                         arrays = [
@@ -216,7 +220,7 @@ class MultipackDistributedDataloader:
                 #     }
                 #     chunked_data.append(chunk)
                 # yield self.collate_fn(chunked_data)
-            yield self.collate_fn([chunked_data])
+            yield self.collate_fn(chunked_data)
             len_remaining -= 1
             if not len_remaining:
                 return
