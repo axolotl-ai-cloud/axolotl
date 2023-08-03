@@ -92,7 +92,9 @@ def load_model(
 
     if cfg.is_llama_derived_model and cfg.flash_attention:
         if cfg.device not in ["mps", "cpu"] and not cfg.inference:
-            from axolotl.flash_attn import replace_llama_attn_with_flash_attn
+            from axolotl.monkeypatch.llama_attn_hijack_flash import (
+                replace_llama_attn_with_flash_attn,
+            )
 
             LOG.info("patching with flash attention")
             replace_llama_attn_with_flash_attn()
