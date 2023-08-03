@@ -243,7 +243,7 @@ Optionally, download some datasets, see [data/README.md](data/README.md)
 
 ### Config
 
-See sample configs in [configs](configs) folder or [examples](examples) for quick start. It is recommended to duplicate and modify to your needs. The most important options are:
+See [examples](examples) for quick start. It is recommended to duplicate and modify to your needs. The most important options are:
 
 - model
   ```yaml
