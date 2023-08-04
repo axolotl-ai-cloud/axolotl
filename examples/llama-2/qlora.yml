@@ -1,0 +1,67 @@
+base_model: meta-llama/Llama-2-7b-hf
+base_model_config: meta-llama/Llama-2-7b-hf
+model_type: LlamaForCausalLM
+tokenizer_type: LlamaTokenizer
+
+load_in_8bit: false
+load_in_4bit: true
+strict: false
+
+datasets:
+  - path: mhenrichsen/alpaca_2k_test
+    type: alpaca
+dataset_prepared_path: last_run_prepared
+val_set_size: 0.01
+output_dir: ./qlora-out
+
+adapter: qlora
+lora_model_dir:
+
+sequence_len: 4096
+max_packed_sequence_len: 4096
+lora_r: 32
+lora_alpha: 16
+lora_dropout: 0.05
+lora_target_modules:
+lora_target_linear: true
+lora_fan_in_fan_out:
+
+wandb_project:
+wandb_watch:
+wandb_run_id:
+wandb_log_model:
+
+gradient_accumulation_steps: 4
+micro_batch_size: 2
+num_epochs: 3
+optimizer: paged_adamw_32bit
+lr_scheduler: cosine
+learning_rate: 0.0002
+
+train_on_inputs: false
+group_by_length: true
+bf16: true
+fp16: false
+tf32: false
+
+gradient_checkpointing: true
+early_stopping_patience:
+resume_from_checkpoint:
+local_rank:
+logging_steps: 1
+xformers_attention: true
+flash_attention:
+
+warmup_steps: 10
+eval_steps: 20
+save_steps:
+debug:
+deepspeed:
+weight_decay: 0.0
+fsdp:
+fsdp_config:
+special_tokens:
+  bos_token: "<s>"
+  eos_token: "</s>"
+  unk_token: "<unk>"
+  pad_token: "<pad>"
