@@ -16,6 +16,7 @@ class PromptStyle(Enum):
 
     INSTRUCT = "instruct"
     CHAT = "chat"
+    CHATML = "chatml"
 
 
 class AlpacaPrompter:
@@ -25,6 +26,7 @@ class AlpacaPrompter:
 
     system_prompt = "Below is an instruction that describes a task, paired with an input that provides further context. Write a response that appropriately completes the request.\n\n"
     system_no_input_prompt = "Below is an instruction that describes a task. Write a response that appropriately completes the request.\n\n"
+    system_format: str
     turn_format: str
     turn_no_input_format: str
     prompt_style: Optional[PromptStyle] = None
@@ -39,9 +41,11 @@ class AlpacaPrompter:
             self.turn_no_input_format = (
                 "### Instruction:\n{instruction}\n\n### Response:\n"
             )
+            self.system_format = "### System:\n{system}\n\n"
         if self.prompt_style == PromptStyle.CHAT.value:
             self.turn_format = "USER: {instruction}\n{input}\nASSISTANT:"
             self.turn_no_input_format = "USER: {instruction}\nASSISTANT:"
+            self.system_format = "SYSTEM:{system}\n"
 
     def build_prompt(
         self,
