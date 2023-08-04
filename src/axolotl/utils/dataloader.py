@@ -154,6 +154,7 @@ class MultipackDistributedDataloader:
         self.packing_efficiency_estimate = packing_efficiency_estimate or 1.0
 
     def generate_batches(self, set_stats=False):
+        LOG.info("generating packed batches")
         if self.sampler:
             indices = [idx for idx in self.sampler]
         else:

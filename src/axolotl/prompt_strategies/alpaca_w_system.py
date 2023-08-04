@@ -102,7 +102,7 @@ class OpenOrcaSystemDataPrompter(SystemDataPrompter):
             self.turn_no_input_format = (
                 "<|im_start|>user\n{instruction}<|im_end|>\n<|im_start|>assistant\n"
             )
-            self.system_format = "<|im_start|>{system}<|im_end|>\n"
+            self.system_format = "<|im_start|>system\n{system}<|im_end|>\n"
 
 
 class OpenOrcaPromptTokenizingStrategy(InstructionWSystemPromptTokenizingStrategy):
