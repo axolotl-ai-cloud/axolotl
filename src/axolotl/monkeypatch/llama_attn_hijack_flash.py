@@ -38,6 +38,18 @@ def get_cu_seqlens(attn_mask):
     )
     # Calculate the sequence lengths
     seq_lengths = change_indices[1:] - change_indices[:-1]
+    # Calculate the length of the final sequence or padding
+    final_seq_length = attn_mask.shape[1] - change_indices[-1]
+    # Append the length of the final sequence or padding to seq_lengths
+    if final_seq_length.item():
+        seq_lengths = torch.cat(
+            [
+                seq_lengths,
+                torch.tensor(
+                    [final_seq_length.item()], dtype=torch.int32, device=device
+                ),
+            ]
+        )
     # Calculate the cumulative sequence lengths
     cu_seqlens = torch.cat(
         [torch.tensor([0], dtype=torch.int32, device=device), seq_lengths.cumsum(0)]

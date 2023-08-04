@@ -259,7 +259,7 @@ class MultipackDistributedDataloader:
             f"packing_efficiency_estimate: {self.packing_efficiency_estimate} "
             f"actual packing efficiency: {self.efficiency()}"
         )
-        return self._len_est()
+        return max(1, self._len_est())
 
     def efficiency(self):
         return self.eff_total_used / self.eff_total_slots

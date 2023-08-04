@@ -10,7 +10,8 @@ def _expand_mask(mask: torch.Tensor, dtype: torch.dtype, tgt_len: Optional[int] 
     """
     Expands attention_mask from `[bsz, seq_len]` to `[bsz, 1, tgt_seq_len, src_seq_len]`.
     This expansion handles packed sequences so that sequences share the same attention mask integer value
-    when they attend to each other within that sequence. This should result in a block diagonal mask
+    when they attend to each other within that sequence.
+    This expansion transforms the mask to lower triangular form to prevent future peeking.
     """
     bsz, src_len = mask.size()
     tgt_len = tgt_len if tgt_len is not None else src_len
@@ -29,9 +30,14 @@ def _expand_mask(mask: torch.Tensor, dtype: torch.dtype, tgt_len: Optional[int] 
     # we multiply by the binary mask so that 0's in the original mask are correctly excluded
     zero_one_mask = torch.eq(mask, mask.transpose(-1, -2)).int() * binary_mask
 
-    # Expand the mask to the correct dimensions for the current batch index
-    expanded_mask = zero_one_mask.expand(bsz, 1, tgt_len, src_len)
-    inverted_mask = 1.0 - expanded_mask
+    # Now let's create a lower triangular mask of ones that will zero out the upper triangular part
+    lower_triangular_ones = torch.tril(torch.ones((tgt_len, src_len), dtype=dtype)).to(
+        mask.device
+    )
+
+    # Use the lower triangular mask to zero out the upper triangular part of the zero_one_mask
+    masked_zero_one_mask = zero_one_mask * lower_triangular_ones
+    inverted_mask = 1.0 - masked_zero_one_mask
 
     return inverted_mask.masked_fill(
         inverted_mask.to(torch.bool), torch.finfo(dtype).min
