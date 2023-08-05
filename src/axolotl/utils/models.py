@@ -227,6 +227,7 @@ def load_model(
                 load_in_4bit=cfg.load_in_4bit and cfg.adapter is not None,
                 torch_dtype=torch_dtype,
                 device_map="auto" if cfg.world_size == 1 else cfg.device_map,
+                rope_scaling=cfg.rope_scaling,
                 **model_kwargs,
             )
         # elif model_type == "GPTNeoXForCausalLM" and cfg.flash_attention:
