@@ -46,6 +46,12 @@ class AlpacaPrompter:
             self.turn_format = "USER: {instruction}\n{input}\nASSISTANT:"
             self.turn_no_input_format = "USER: {instruction}\nASSISTANT:"
             self.system_format = "SYSTEM:{system}\n"
+        if self.prompt_style == PromptStyle.CHATML.value:
+            self.turn_format = "<|im_start|>user\n{instruction}\n{input}<|im_end|>\n<|im_start|>assistant\n"
+            self.turn_no_input_format = (
+                "<|im_start|>user\n{instruction}<|im_end|>\n<|im_start|>assistant\n"
+            )
+            self.system_format = "<|im_start|>system\n{system}<|im_end|>\n"
 
     def build_prompt(
         self,
