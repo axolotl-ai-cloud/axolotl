@@ -17,47 +17,7 @@ except ImportError:
 
 from transformers.models.llama.modeling_llama import apply_rotary_pos_emb
 
-
-def get_cu_seqlens(attn_mask):
-    device = attn_mask.device
-    # Exclude zeros to avoid adding their positions to the mask
-    t_non_zeros = attn_mask[attn_mask != 0]
-    # Find where the sequence number changes (including the first position)
-    seq_change = torch.cat(
-        [
-            torch.tensor([1], dtype=torch.int32, device=device),
-            t_non_zeros[1:] != t_non_zeros[:-1],
-        ]
-    )
-    # Get the indices where the sequence changes
-    change_indices = torch.cat(
-        [
-            (seq_change == 1).nonzero(as_tuple=True)[0],
-            torch.tensor([len(t_non_zeros)], dtype=torch.int32, device=device),
-        ]
-    )
-    # Calculate the sequence lengths
-    seq_lengths = change_indices[1:] - change_indices[:-1]
-    # Calculate the length of the final sequence or padding
-    final_seq_length = attn_mask.shape[1] - change_indices[-1]
-    # Append the length of the final sequence or padding to seq_lengths
-    if final_seq_length.item():
-        seq_lengths = torch.cat(
-            [
-                seq_lengths,
-                torch.tensor(
-                    [final_seq_length.item()], dtype=torch.int32, device=device
-                ),
-            ]
-        )
-    # Calculate the cumulative sequence lengths
-    cu_seqlens = torch.cat(
-        [torch.tensor([0], dtype=torch.int32, device=device), seq_lengths.cumsum(0)]
-    )
-
-    max_seq_len = (cu_seqlens[1:] - cu_seqlens[:-1]).max()
-
-    return cu_seqlens.to(dtype=torch.int32), max_seq_len
+from axolotl.monkeypatch.utils import get_cu_seqlens
 
 
 def forward(
