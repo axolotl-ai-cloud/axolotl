@@ -36,6 +36,7 @@ class AlpacaPrompter:
         self.match_prompt_style()
 
     def match_prompt_style(self):
+        # pylint: disable=duplicate-code
         if self.prompt_style == PromptStyle.INSTRUCT.value:
             self.turn_format = "### Instruction:\n{instruction}\n\n### Input:\n{input}\n\n### Response:\n"
             self.turn_no_input_format = (
