@@ -426,7 +426,8 @@ save_safetensors:
 
 # whether to mask out or include the human's prompt from the training labels
 train_on_inputs: false
-# don't use this, leads to wonky training (according to someone on the internet)
+# group similarly sized data to minimize padding
+# may be slower to start as it must download and sort the entire dataset
 group_by_length: false
 
 # Whether to use gradient checkpointing https://huggingface.co/docs/transformers/v4.18.0/en/performance#gradient-checkpointing
