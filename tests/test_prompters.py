@@ -70,7 +70,7 @@ class AlpacaPrompterTest(unittest.TestCase):
             )
         )
         assert "use cot" in res
-        assert res.startswith("### System:")
+        assert res.startswith("SYSTEM:")
         assert "### Instruction:" not in res
         assert "### Input:" not in res
         assert "alpacas" in res
