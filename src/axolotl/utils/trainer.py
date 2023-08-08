@@ -274,11 +274,11 @@ def disable_datasets_caching():
 def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
     if cfg.sample_packing:
         drop_long = partial(drop_long_seq, sequence_len=cfg.sequence_len)
-        train_dataset = train_dataset.filter(drop_long).map(
+        train_dataset = train_dataset.filter(drop_long, num_proc=os.cpu_count()).map(
             add_position_ids, num_proc=os.cpu_count()
         )
         if eval_dataset:
-            eval_dataset = eval_dataset.filter(drop_long).map(
+            eval_dataset = eval_dataset.filter(drop_long, num_proc=os.cpu_count()).map(
                 add_position_ids, num_proc=os.cpu_count()
             )
     return train_dataset, eval_dataset
