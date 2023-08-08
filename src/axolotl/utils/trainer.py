@@ -4,6 +4,7 @@ import logging
 import math
 import os
 import sys
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
@@ -12,10 +13,10 @@ from typing import Optional, Union
 import bitsandbytes as bnb
 import torch.cuda
 import transformers
-from datasets import Dataset
+from datasets import Dataset, set_caching_enabled
 from torch import nn
 from torch.optim.lr_scheduler import OneCycleLR
-from torch.utils.data import DataLoader, DistributedSampler, RandomSampler
+from torch.utils.data import DataLoader, RandomSampler
 from transformers import EarlyStoppingCallback, Trainer, TrainingArguments
 from transformers.trainer_pt_utils import get_parameter_names
 
@@ -158,20 +159,22 @@ class AxolotlTrainer(Trainer):
                 return super().create_scheduler(num_training_steps, optimizer)
         return self.lr_scheduler
 
-    def _get_train_sampler(self) -> Optional[torch.utils.data.Sampler]:
-        if self.args.world_size > 1 and self.args.sample_packing:
-            return DistributedSampler(
-                self.train_dataset,
-                num_replicas=self.args.world_size,
-                rank=self.args.process_index,
-                seed=self.args.seed,
-            )
-        return super()._get_train_sampler()
+    # def _get_train_sampler(self) -> Optional[torch.utils.data.Sampler]:
+    #     if self.args.world_size > 1 and self.args.sample_packing:
+    #         return DistributedSampler(
+    #             self.train_dataset,
+    #             num_replicas=self.args.world_size,
+    #             rank=self.args.process_index,
+    #             seed=self.args.seed,
+    #         )
+    #     return super()._get_train_sampler()
 
     def get_train_dataloader(self) -> Union[DataLoader, MultipackDistributedDataloader]:
         if self.args.sample_packing:
             train_sampler = self._get_train_sampler()
-
+            #  If set to True, the dataloader prepared is only iterated through on the
+            #  main process and then the batches are split and broadcast to each process
+            self.accelerator.dispatch_batches = True
             return self.accelerator.prepare(
                 MultipackDistributedDataloader(
                     self.train_dataset,
@@ -181,6 +184,7 @@ class AxolotlTrainer(Trainer):
                     sampler=train_sampler,
                     packing_efficiency_estimate=self.args.sample_packing_efficiency,
                     sample_packing_seq_len_multiplier=self.args.sample_packing_seq_len_multiplier,
+                    # device_count=int(os.environ.get("WORLD_SIZE", 1)),
                 )
             )
         return super().get_train_dataloader()
@@ -193,6 +197,9 @@ class AxolotlTrainer(Trainer):
                 eval_dataset if eval_dataset is not None else self.eval_dataset
             )
             eval_sampler = self._get_eval_sampler(eval_dataset)
+            #  If set to True, the datalaoder prepared is only iterated through on the
+            #  main process and then the batches are split and broadcast to each process
+            self.accelerator.dispatch_batches = True
             return self.accelerator.prepare(
                 MultipackDistributedDataloader(
                     eval_dataset,
@@ -202,6 +209,7 @@ class AxolotlTrainer(Trainer):
                     sampler=eval_sampler,
                     packing_efficiency_estimate=self.args.sample_packing_efficiency,
                     sample_packing_seq_len_multiplier=self.args.sample_packing_seq_len_multiplier,
+                    # device_count=int(os.environ.get("WORLD_SIZE", 1)),
                 )
             )
         return super().get_eval_dataloader(eval_dataset)
@@ -253,7 +261,16 @@ def drop_long_seq(sample, sequence_len=2048):
     return len(sample["input_ids"]) <= sequence_len
 
 
-def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
+@contextmanager
+def disable_datasets_caching():
+    try:
+        set_caching_enabled(False)
+        yield
+    finally:
+        set_caching_enabled(True)
+
+
+def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
     if cfg.sample_packing:
         drop_long = partial(drop_long_seq, sequence_len=cfg.sequence_len)
         train_dataset = train_dataset.filter(drop_long).map(
@@ -263,12 +280,22 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
             eval_dataset = eval_dataset.filter(drop_long).map(
                 add_position_ids, num_proc=os.cpu_count()
             )
+    return train_dataset, eval_dataset
+
+
+def calculate_total_num_steps(cfg, train_dataset, tokenizer):
+    if cfg.sample_packing:
+        # we have to drop anything longer then sequence len otherwise
+        # flash attention with position ids fails
+        total_num_tokens = (
+            cfg.total_num_tokens
+            if cfg.total_num_tokens
+            else sum(len(s["input_ids"]) for s in train_dataset)
+        )
+        if not cfg.total_num_tokens:
+            LOG.info(f"📝 UPDATE CONFIG WITH: `total_num_tokens: {total_num_tokens}`")
+
         if cfg.sample_packing_eff_est:
-            total_num_tokens = (
-                cfg.total_num_tokens
-                if cfg.total_num_tokens
-                else sum(len(s["input_ids"]) for s in train_dataset)
-            )
             total_num_steps = (
                 # match count to len est in dataloader
                 (
@@ -300,8 +327,10 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
                 sampler=sampler,
                 packing_efficiency_estimate=cfg.sample_packing_eff_est,
                 sample_packing_seq_len_multiplier=cfg.sample_packing_seq_len_multiplier,
+                device_count=int(os.environ.get("WORLD_SIZE", 1)),
             )
             data_loader_len = len(data_loader)
+            actual_eff = data_loader.efficiency()
             LOG.info(f"data_loader_len: {data_loader_len}")
             total_num_steps = int(
                 math.ceil(
@@ -311,10 +340,18 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
                     / cfg.batch_size
                 )
             )
+            LOG.info(
+                f"📝 UPDATE CONFIG WITH: `sample_packing_eff_est: {math.ceil(actual_eff * 100.0) / 100.0}`"
+            )
     else:
         total_num_steps = int(
             math.ceil(len(train_dataset) * cfg.num_epochs / cfg.batch_size)
         )
+    LOG.info(f"total_num_steps: {total_num_steps}")
+    return total_num_steps
+
+
+def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_steps):
     warmup_steps = (
         cfg.warmup_steps
         if cfg.warmup_steps is not None

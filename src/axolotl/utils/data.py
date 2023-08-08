@@ -109,13 +109,16 @@ def load_tokenized_prepared_datasets(
             local_path = Path(d.path)
             if local_path.exists():
                 if local_path.is_dir():
-                    ds = load_dataset(
-                        d.path,
-                        name=d.name,
-                        data_files=d.data_files,
-                        streaming=False,
-                        split=None,
-                    )
+                    try:
+                        ds = load_from_disk(d.path)
+                    except FileNotFoundError:
+                        ds = load_dataset(
+                            d.path,
+                            name=d.name,
+                            data_files=d.data_files,
+                            streaming=False,
+                            split=None,
+                        )
                 elif local_path.is_file():
                     ds = load_dataset(
                         "json",
