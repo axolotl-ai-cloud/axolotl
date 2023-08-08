@@ -427,7 +427,7 @@ def load_prepare_datasets(
             + "|"
             + "train"
             + "|"
-            + cfg.seed
+            + str(cfg.seed or 42)
         )
         to_hash_test = (
             dataset._fingerprint  # pylint: disable=protected-access
@@ -436,7 +436,7 @@ def load_prepare_datasets(
             + "|"
             + "test"
             + "|"
-            + cfg.seed
+            + str(cfg.seed or 42)
         )
         train_fingerprint = hashlib.md5(
             to_hash_train.encode(), usedforsecurity=False
@@ -449,7 +449,7 @@ def load_prepare_datasets(
             dataset = dataset.train_test_split(
                 test_size=cfg.val_set_size,
                 shuffle=False,
-                seed=cfg.seed,
+                seed=cfg.seed or 42,
                 train_new_fingerprint=train_fingerprint,
                 test_new_fingerprint=test_fingerprint,
             )
@@ -458,7 +458,7 @@ def load_prepare_datasets(
             dataset = dataset.train_test_split(
                 test_size=cfg.val_set_size,
                 shuffle=False,
-                seed=cfg.seed,
+                seed=cfg.seed or 42,
                 train_new_fingerprint=train_fingerprint,
                 test_new_fingerprint=test_fingerprint,
             )
