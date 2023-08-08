@@ -263,6 +263,15 @@ class MultipackDistributedDataloader:
     def __len__(self):
         # this doesn't return the actual length b/c with distributed samplers, not all dataloaders get
         # the same share of total tokens
+        # if not self.eff_total_used:
+        #     batches, _ = self.generate_batches(set_stats=True)
+        # LOG.info(
+        #     f"packing_efficiency_estimate: {self.packing_efficiency_estimate} "
+        #     f"actual packing efficiency: {self.efficiency()}"
+        # )
+        return max(1, self._len_est())
+
+    def len_w_stats(self):
         if not self.eff_total_used:
             batches, _ = self.generate_batches(set_stats=True)
         LOG.info(

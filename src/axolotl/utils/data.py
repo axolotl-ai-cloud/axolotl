@@ -1,5 +1,6 @@
 """Module containing data utilities"""
 import functools
+import hashlib
 import itertools
 import logging
 from hashlib import md5
@@ -7,6 +8,7 @@ from pathlib import Path
 from typing import List, Tuple, Union
 
 import torch
+from accelerate import Accelerator
 from datasets import Dataset, DatasetDict, load_dataset, load_from_disk
 from huggingface_hub import hf_hub_download
 from transformers import PreTrainedTokenizerBase
@@ -37,6 +39,7 @@ from axolotl.prompters import (
 )
 
 LOG = logging.getLogger("axolotl")
+accelerator = Accelerator()
 
 
 def load_tokenized_prepared_datasets(
@@ -416,7 +419,51 @@ def load_prepare_datasets(
         )
 
     if cfg.val_set_size:
-        dataset = dataset.train_test_split(test_size=cfg.val_set_size, shuffle=False)
+        # ensure we end up with the same fingerprint by doing rank0 first and being able to cache
+        to_hash_train = (
+            dataset._fingerprint  # pylint: disable=protected-access
+            + "|"
+            + str(cfg.val_set_size)
+            + "|"
+            + "train"
+            + "|"
+            + cfg.seed
+        )
+        to_hash_test = (
+            dataset._fingerprint  # pylint: disable=protected-access
+            + "|"
+            + str(cfg.val_set_size)
+            + "|"
+            + "test"
+            + "|"
+            + cfg.seed
+        )
+        train_fingerprint = hashlib.md5(
+            to_hash_train.encode(), usedforsecurity=False
+        ).hexdigest()
+        test_fingerprint = hashlib.md5(
+            to_hash_test.encode(), usedforsecurity=False
+        ).hexdigest()
+
+        if accelerator.is_local_main_process:
+            dataset = dataset.train_test_split(
+                test_size=cfg.val_set_size,
+                shuffle=False,
+                seed=cfg.seed,
+                train_new_fingerprint=train_fingerprint,
+                test_new_fingerprint=test_fingerprint,
+            )
+        accelerator.wait_for_everyone()
+        if not accelerator.is_local_main_process:
+            dataset = dataset.train_test_split(
+                test_size=cfg.val_set_size,
+                shuffle=False,
+                seed=cfg.seed,
+                train_new_fingerprint=train_fingerprint,
+                test_new_fingerprint=test_fingerprint,
+            )
+        accelerator.wait_for_everyone()
+
         train_dataset = dataset["train"]
         eval_dataset = dataset["test"]
     else:

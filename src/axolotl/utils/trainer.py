@@ -176,7 +176,7 @@ class AxolotlTrainer(Trainer):
             #  If set to True, the dataloader prepared is only iterated through on the
             #  main process and then the batches are split and broadcast to each process
             self.accelerator.dispatch_batches = True
-            return self.accelerator.prepare(
+            return self.accelerator.prepare_data_loader(
                 MultipackDistributedDataloader(
                     self.train_dataset,
                     batch_size=self._train_batch_size,
@@ -201,7 +201,7 @@ class AxolotlTrainer(Trainer):
             #  If set to True, the datalaoder prepared is only iterated through on the
             #  main process and then the batches are split and broadcast to each process
             self.accelerator.dispatch_batches = True
-            return self.accelerator.prepare(
+            return self.accelerator.prepare_data_loader(
                 MultipackDistributedDataloader(
                     eval_dataset,
                     batch_size=self.args.eval_batch_size,
@@ -306,6 +306,7 @@ def calculate_total_num_steps(cfg, train_dataset, tokenizer):
                         / cfg.sample_packing_eff_est
                         / 2048
                         // cfg.batch_size
+                        // int(os.environ.get("WORLD_SIZE", 1))
                     )
                     - 1
                 )
@@ -328,17 +329,16 @@ def calculate_total_num_steps(cfg, train_dataset, tokenizer):
                 sampler=sampler,
                 packing_efficiency_estimate=cfg.sample_packing_eff_est,
                 sample_packing_seq_len_multiplier=cfg.sample_packing_seq_len_multiplier,
-                device_count=int(os.environ.get("WORLD_SIZE", 1)),
             )
-            data_loader_len = len(data_loader)
+            data_loader_len = data_loader.len_w_stats()
             actual_eff = data_loader.efficiency()
             LOG.info(f"data_loader_len: {data_loader_len}")
             total_num_steps = int(
-                math.ceil(
+                math.floor(
                     data_loader_len
                     * cfg.micro_batch_size
                     * cfg.num_epochs
-                    / cfg.batch_size
+                    // cfg.batch_size
                 )
             )
             LOG.info(
