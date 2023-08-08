@@ -182,7 +182,7 @@ class AxolotlTrainer(Trainer):
                     sampler=train_sampler,
                     packing_efficiency_estimate=self.args.sample_packing_efficiency,
                     sample_packing_seq_len_multiplier=self.args.sample_packing_seq_len_multiplier,
-                    # device_count=int(os.environ.get("WORLD_SIZE", 1)),
+                    device_count=int(os.environ.get("WORLD_SIZE", 1)),
                 )
             )
         return super().get_train_dataloader()
@@ -204,7 +204,7 @@ class AxolotlTrainer(Trainer):
                     sampler=eval_sampler,
                     packing_efficiency_estimate=self.args.sample_packing_efficiency,
                     sample_packing_seq_len_multiplier=self.args.sample_packing_seq_len_multiplier,
-                    # device_count=int(os.environ.get("WORLD_SIZE", 1)),
+                    device_count=int(os.environ.get("WORLD_SIZE", 1)),
                 )
             )
         return super().get_eval_dataloader(eval_dataset)
@@ -300,7 +300,6 @@ def calculate_total_num_steps(cfg, train_dataset, tokenizer):
                         / cfg.sample_packing_eff_est
                         / 2048
                         // cfg.batch_size
-                        // int(os.environ.get("WORLD_SIZE", 1))
                     )
                     - 1
                 )
@@ -323,6 +322,7 @@ def calculate_total_num_steps(cfg, train_dataset, tokenizer):
                 sampler=sampler,
                 packing_efficiency_estimate=cfg.sample_packing_eff_est,
                 sample_packing_seq_len_multiplier=cfg.sample_packing_seq_len_multiplier,
+                device_count=int(os.environ.get("WORLD_SIZE", 1)),
             )
             data_loader_len = data_loader.len_w_stats()
             actual_eff = data_loader.efficiency()
