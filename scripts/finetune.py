@@ -13,9 +13,13 @@ import fire
 import torch
 import yaml
 
+import http.server
+import socketserver
+import urllib.parse
+
 # add src to the pythonpath so we don't need to pip install this
 from optimum.bettertransformer import BetterTransformer
-from transformers import GenerationConfig, TextStreamer
+from transformers import GenerationConfig, TextStreamer, TextDataset
 
 from axolotl.logging_config import configure_logging
 from axolotl.utils.data import load_prepare_datasets, load_pretraining_dataset
@@ -36,7 +40,6 @@ LOG = logging.getLogger("axolotl.scripts")
 
 DEFAULT_DATASET_PREPARED_PATH = "last_run_prepared"
 os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
-
 
 def choose_device(cfg):
     def get_device():
@@ -163,6 +166,82 @@ def check_not_in(list1: List[str], list2: Union[Dict[str, Any], List[str]]) -> b
     return not any(el in list2 for el in list1)
 
 
+class HttpHandler(http.server.BaseHTTPRequestHandler):
+    def __init__(self, *args, cfg=None, prompter=None, tokenizer=None, model=None, **kwargs):
+        self.cfg = cfg
+        self.prompter = prompter
+        self.tokenizer = tokenizer
+        self.model = model
+        super().__init__(*args, **kwargs)
+
+    def do_POST(self):
+        content_length = int(self.headers['Content-Length'])
+        post_data = self.rfile.read(content_length)
+        instruction = post_data.decode('utf-8')
+        
+        if not instruction:
+            response = ""
+        else:
+            default_tokens = {"unk_token": "<unk>", "bos_token": "<s>", "eos_token": "</s>"}
+        
+            for token, symbol in default_tokens.items():
+                # If the token isn't already specified in the config, add it
+                if not (self.cfg.special_tokens and token in self.cfg.special_tokens):
+                    self.tokenizer.add_special_tokens({token: symbol})
+        
+            prompter_module = None
+            if self.prompter:
+                prompter_module = getattr(
+                    importlib.import_module("axolotl.prompters"), self.prompter
+                )
+        
+            if self.cfg.landmark_attention:
+                from axolotl.monkeypatch.llama_landmark_attn import set_model_mem_id
+        
+                set_model_mem_id(self.model, self.tokenizer)
+                self.model.set_mem_cache_args(
+                    max_seq_len=255, mem_freq=50, top_k=5, max_cache_size=None
+                )
+
+            if prompter_module:
+                prompt: str = next(
+                    prompter_module().build_prompt(instruction=instruction.strip("\n"))
+                )
+            else:
+                prompt = instruction.strip()
+            batch = self.tokenizer(prompt, return_tensors="pt", add_special_tokens=True)
+
+            self.model.eval()
+            with torch.no_grad():
+                generation_config = GenerationConfig(
+                    repetition_penalty=1.1,
+                    max_new_tokens=1024,
+                    temperature=0.9,
+                    top_p=0.95,
+                    top_k=40,
+                    bos_token_id=self.tokenizer.bos_token_id,
+                    eos_token_id=self.tokenizer.eos_token_id,
+                    pad_token_id=self.tokenizer.pad_token_id,
+                    do_sample=True,
+                    use_cache=True,
+                    return_dict_in_generate=True,
+                    output_attentions=False,
+                    output_hidden_states=False,
+                    output_scores=False,
+                )
+                generated = self.model.generate(
+                    inputs=batch["input_ids"].to(self.cfg.device),
+                    generation_config=generation_config,
+                )
+            response = self.tokenizer.decode(generated["sequences"].cpu().tolist()[0])[len(prompt)+4:-4]
+            
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/plain')
+        self.send_header('Content-Length', str(len(response)))
+        self.end_headers()
+        self.wfile.write(response.encode('utf-8'))
+
+
 def train(
     config: Path = Path("configs/"),
     prepare_ds_only: bool = False,
@@ -279,7 +358,14 @@ def train(
                 prompter = None
             else:
                 prompter = kwargs["prompter"]
-        do_inference(cfg, model, tokenizer, prompter=prompter)
+
+        if cfg.server:
+            server_address = (cfg.server_addr, cfg.server_port)
+            httpd = socketserver.TCPServer(server_address, lambda *args, **kwargs: HttpHandler(*args, cfg=cfg, prompter=prompter, tokenizer=tokenizer, model=model, **kwargs))
+            print(f"Server running on port {cfg.server_port}")
+            httpd.serve_forever()
+        else:
+            do_inference(cfg, model, tokenizer, prompter=prompter)
         return
 
     if "shard" in kwargs:
