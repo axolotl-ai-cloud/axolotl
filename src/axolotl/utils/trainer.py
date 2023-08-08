@@ -300,6 +300,7 @@ def calculate_total_num_steps(cfg, train_dataset, tokenizer):
                         / cfg.sample_packing_eff_est
                         / 2048
                         // cfg.batch_size
+                        // int(os.environ.get("WORLD_SIZE", 1))
                     )
                     - 1
                 )

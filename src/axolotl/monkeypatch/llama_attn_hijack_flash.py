@@ -94,6 +94,7 @@ def forward(
     else:
         qkv = rearrange(qkv, "b s ... -> (b s) ...")
         cu_q_lens, max_s = get_cu_seqlens(key_padding_mask)
+        cu_q_lens = cu_q_lens.squeeze()
 
         output = flash_attn_varlen_qkvpacked_func(
             qkv, cu_q_lens, max_s, 0.0, softmax_scale=None, causal=True
