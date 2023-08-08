@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import List, Tuple, Union
 
 import torch
-from accelerate import Accelerator
 from datasets import Dataset, DatasetDict, load_dataset, load_from_disk
 from huggingface_hub import hf_hub_download
 from transformers import PreTrainedTokenizerBase
@@ -37,9 +36,9 @@ from axolotl.prompters import (
     ShareGPTPrompter,
     SummarizeTLDRPrompter,
 )
+from axolotl.utils.distributed import barrier, is_main_process
 
 LOG = logging.getLogger("axolotl")
-accelerator = Accelerator()
 
 
 def load_tokenized_prepared_datasets(
@@ -112,16 +111,14 @@ def load_tokenized_prepared_datasets(
             local_path = Path(d.path)
             if local_path.exists():
                 if local_path.is_dir():
-                    try:
-                        ds = load_from_disk(d.path)
-                    except FileNotFoundError:
-                        ds = load_dataset(
-                            d.path,
-                            name=d.name,
-                            data_files=d.data_files,
-                            streaming=False,
-                            split=None,
-                        )
+                    # TODO dirs with arrow or parquet files could be loaded with `load_from_disk`
+                    ds = load_dataset(
+                        d.path,
+                        name=d.name,
+                        data_files=d.data_files,
+                        streaming=False,
+                        split=None,
+                    )
                 elif local_path.is_file():
                     ds = load_dataset(
                         "json",
@@ -445,7 +442,7 @@ def load_prepare_datasets(
             to_hash_test.encode(), usedforsecurity=False
         ).hexdigest()
 
-        if accelerator.is_local_main_process:
+        if is_main_process():
             dataset = dataset.train_test_split(
                 test_size=cfg.val_set_size,
                 shuffle=False,
@@ -453,8 +450,8 @@ def load_prepare_datasets(
                 train_new_fingerprint=train_fingerprint,
                 test_new_fingerprint=test_fingerprint,
             )
-        accelerator.wait_for_everyone()
-        if not accelerator.is_local_main_process:
+        barrier()
+        if not is_main_process():
             dataset = dataset.train_test_split(
                 test_size=cfg.val_set_size,
                 shuffle=False,
@@ -462,7 +459,7 @@ def load_prepare_datasets(
                 train_new_fingerprint=train_fingerprint,
                 test_new_fingerprint=test_fingerprint,
             )
-        accelerator.wait_for_everyone()
+        barrier()
 
         train_dataset = dataset["train"]
         eval_dataset = dataset["test"]
