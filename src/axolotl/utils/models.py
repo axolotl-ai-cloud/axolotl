@@ -244,7 +244,6 @@ def load_model(
                 load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
                 load_in_4bit=cfg.load_in_4bit and cfg.adapter is not None,
                 torch_dtype=torch_dtype,
-                device_map="auto" if cfg.world_size == 1 else cfg.device_map,
                 **model_kwargs,
             )
         # elif model_type == "GPTNeoXForCausalLM" and cfg.flash_attention:
@@ -279,7 +278,6 @@ def load_model(
                 load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
                 load_in_4bit=cfg.load_in_4bit and cfg.adapter is not None,
                 torch_dtype=torch_dtype,
-                device_map=cfg.device_map,
                 trust_remote_code=cfg.trust_remote_code or False,
                 **model_kwargs,
             )
@@ -310,7 +308,6 @@ def load_model(
                 load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
                 load_in_4bit=cfg.load_in_4bit and cfg.adapter is not None,
                 torch_dtype=torch_dtype,
-                device_map=cfg.device_map,
                 trust_remote_code=cfg.trust_remote_code or False,
                 **model_kwargs,
             )
@@ -324,7 +321,6 @@ def load_model(
             load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
             load_in_4bit=cfg.load_in_4bit and cfg.adapter is not None,
             torch_dtype=torch_dtype,
-            device_map=cfg.device_map,
             trust_remote_code=cfg.trust_remote_code or False,
             **model_kwargs,
         )

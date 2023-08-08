@@ -2,7 +2,6 @@
 import itertools
 import logging
 import math
-import os
 from typing import Any, Callable, List, Union
 
 import numba
@@ -63,6 +62,14 @@ def ffd_with_result(a: np.ndarray, c: int, start_index: int):
 def allocate(
     lengths: np.ndarray, lengths_cumsum: np.ndarray, rank: int, c: int, n: int
 ):
+    """
+    :param lengths: array of lengths of each sample
+    :param lengths_cumsum: cumulative sum of consecutive lengths
+    :param rank: rank for this process
+    :param c: length of tokens per batch
+    :param n: number of ranks
+    :return:
+    """
     # Dynamic batch allocator, similar to Multifit
     # https://en.wikipedia.org/wiki/Multifit_algorithm
     # ~99.5% efficiency on OpenChat training set (12 * 2048 ctx len)
@@ -98,7 +105,7 @@ def allocate(
         result.append(batch[rank])
         # add total seqs for all ranks
         result_totseqs.append(tot_seqs)
-
+        # yield batch[rank], tot_seqs, s, len(result) * c * n
     return result, result_totseqs, s, len(result) * c * n
 
 
@@ -129,6 +136,7 @@ class MultipackDistributedDataloader:
         sampler: Union[Sampler, DistributedSampler] = None,
         packing_efficiency_estimate: float = 1.0,
         sample_packing_seq_len_multiplier: int = 1,
+        device_count: int = 1,
     ):
         # Dataset
         self.dataset = dataset
@@ -152,6 +160,7 @@ class MultipackDistributedDataloader:
         self.eff_total_used = 0
         self.eff_total_slots = 0
         self.packing_efficiency_estimate = packing_efficiency_estimate or 1.0
+        self.device_count = device_count
 
     def generate_batches(self, set_stats=False):
         LOG.info("generating packed batches")
@@ -233,7 +242,7 @@ class MultipackDistributedDataloader:
         indices = range(0, len(self.dataset))
         lengths = self.lengths[indices]
         lengths_sum = np.cumsum(lengths)[-1]
-        lengths_sum_per_device = lengths_sum // int(os.environ.get("WORLD_SIZE", 1))
+        lengths_sum_per_device = lengths_sum // self.device_count
         LOG.info(
             f"packing_efficiency_estimate: {self.packing_efficiency_estimate} "
             f"total_num_tokens per device: {lengths_sum_per_device}"
