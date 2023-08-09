@@ -22,6 +22,7 @@ from transformers import (  # noqa: F401
 )
 
 from axolotl.prompt_tokenizers import LLAMA_DEFAULT_PAD_TOKEN
+from axolotl.utils.bench import log_gpu_memory_usage
 
 LOG = logging.getLogger("axolotl")
 
@@ -324,6 +325,9 @@ def load_model(
         )
         model.config.max_position_embeddings = cfg.sequence_len
 
+    if model.device.type == "cuda":
+        log_gpu_memory_usage(LOG, "after model load", model.device)
+
     if not cfg.gptq and (
         (cfg.adapter == "lora" and load_in_8bit)
         or (cfg.adapter == "qlora" and cfg.load_in_4bit)
@@ -359,6 +363,9 @@ def load_model(
                     module.zeros = module.zeros.half()
                 module.scales = module.scales.half()
                 module.bias = module.bias.half()
+
+    if model.device.type == "cuda":
+        log_gpu_memory_usage(LOG, "after adapters", model.device)
 
     if (
         torch.cuda.device_count() > 1
