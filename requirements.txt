@@ -19,3 +19,4 @@ evaluate==0.4.0
 rouge-score==0.1.2
 scipy
 scikit-learn==1.2.2
+nvidia-ml-py3

@@ -1,5 +1,6 @@
 """Callbacks for Trainer class"""
 
+import logging
 import os
 
 from optimum.bettertransformer import BetterTransformer
@@ -10,6 +11,10 @@ from transformers import (
     TrainingArguments,
 )
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, IntervalStrategy
+
+from axolotl.utils.bench import log_gpu_memory_usage
+
+LOG = logging.getLogger("axolotl.callbacks")
 
 
 class SavePeftModelCallback(TrainerCallback):  # pylint: disable=too-few-public-methods
@@ -66,4 +71,26 @@ class SaveBetterTransformerModelCallback(
             # since we're saving here, we don't need the trainer loop to attempt to save too b/c
             # the trainer will raise an exception since it can't save a BetterTransformer wrapped model
             control.should_save = False
+        return control
+
+
+class PrintGPUStatsCallback(
+    TrainerCallback
+):  # pylint: disable=too-few-public-methods disable=unused-argument
+    """Callback to print GPU utilization"""
+
+    def __init__(self, cfg):
+        self.cfg = cfg
+        self.logged = False
+
+    def on_step_end(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs,
+    ):
+        if not self.logged:
+            log_gpu_memory_usage(LOG, "while training", self.cfg.device)
+            self.logged = True
         return control
