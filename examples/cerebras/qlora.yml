@@ -35,7 +35,7 @@ torchdistx_path:
 lr_scheduler: cosine
 learning_rate: 0.0002
 train_on_inputs: false
-group_by_length: true
+group_by_length: false
 bf16: true
 fp16: false
 tf32: true
