@@ -371,12 +371,6 @@ def train(
             model = BetterTransformer.reverse(model)
         model.save_pretrained(cfg.output_dir)
 
-    trainer.accelerator.wait_for_everyone()
-    if trainer.accelerator.is_main_process:
-        train_dataset.cleanup_cache_files()
-        if eval_dataset:
-            eval_dataset.cleanup_cache_files()
-
 
 if __name__ == "__main__":
     fire.Fire(train)
