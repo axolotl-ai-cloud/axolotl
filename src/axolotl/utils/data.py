@@ -377,6 +377,7 @@ def load_prepare_datasets(
             dataset = Dataset.from_list(list(constant_len_dataset))
 
             # filter out bad data
+            # TODO convert to dataset.filter(...)
             dataset = Dataset.from_list(
                 [
                     d
