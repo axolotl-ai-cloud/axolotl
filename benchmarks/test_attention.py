@@ -7,7 +7,6 @@ import torch
 from pytest_cases import parametrize_with_cases
 from tabulate import tabulate  # type: ignore
 
-from axolotl.utils.bench import gpu_memory_usage
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.models import load_model, load_tokenizer
@@ -127,7 +126,6 @@ def test_benchmark_attn(model_cfg, attn_cfg, results_bag):
     assert "llama" in cfg.base_model
     assert validate_config(cfg) is None
     normalize_config(cfg)
-    results_bag.vram_baseline = gpu_memory_usage()
     tokenizer_config = cfg.tokenizer_config or cfg.base_model_config
     tokenizer = load_tokenizer(tokenizer_config, cfg.tokenizer_type, cfg)
     model = load_model(cfg, tokenizer)
@@ -144,7 +142,6 @@ def test_bench_load_model(model_cfg, dtype_cfg, results_bag):
     assert "llama" in cfg.base_model
     assert validate_config(cfg) is None
     normalize_config(cfg)
-    results_bag.vram_baseline = gpu_memory_usage()
     tokenizer_config = cfg.tokenizer_config or cfg.base_model_config
     tokenizer = load_tokenizer(tokenizer_config, cfg.tokenizer_type, cfg)
     model = load_model(cfg, tokenizer)

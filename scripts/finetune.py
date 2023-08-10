@@ -18,7 +18,6 @@ from optimum.bettertransformer import BetterTransformer
 from transformers import GenerationConfig, TextStreamer
 
 from axolotl.logging_config import configure_logging
-from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.data import load_prepare_datasets, load_pretraining_dataset
 from axolotl.utils.dict import DictDefault
@@ -171,8 +170,6 @@ def train(
     normalize_config(cfg)
 
     setup_wandb_env_vars(cfg)
-
-    cfg.stats_bag.vram_baseline = log_gpu_memory_usage(LOG, "baseline", cfg.device)
 
     # load the tokenizer first
     tokenizer_config = cfg.tokenizer_config or cfg.base_model_config
