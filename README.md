@@ -630,4 +630,8 @@ pre-commit install
 
 # test
 pytest tests/
+
+# benchmark
+pip3 install -r requirements-bench.txt
+pytest -s benchmarks/
 ```
