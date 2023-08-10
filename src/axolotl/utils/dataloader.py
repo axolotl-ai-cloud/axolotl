@@ -261,9 +261,7 @@ class MultipackDistributedDataloader:
         batch_gen_thread.join()
 
     def _len_est(self):
-        indices = range(0, len(self.dataset))
-        lengths = self.lengths[indices]
-        lengths_sum = np.cumsum(lengths)[-1]
+        lengths_sum = np.sum(self.lengths)
         lengths_sum_per_device = lengths_sum // self.device_count
         LOG.info(
             f"packing_efficiency_estimate: {self.packing_efficiency_estimate} "
