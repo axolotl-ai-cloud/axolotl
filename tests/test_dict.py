@@ -72,6 +72,13 @@ class DictDefaultTest(unittest.TestCase):
 
         assert cfg.random_key is None, "DictDefault should return None for missing keys"
 
+    def test_dict_or(self):
+        cfg = DictDefault({}) | DictDefault({})
+
+        assert (
+            cfg.random_key is None
+        ), "DictDefault should return None for missing keys after | operation"
+
     def test_dict_nested_missingparentkey(self):
         """
         Due to subclassing Dict, DictDefault will error if we try to access a nested key whose parent key does not exist.
