@@ -168,7 +168,6 @@ def train(
 
     validate_config(cfg)
 
-    # setup some derived config / hyperparams
     normalize_config(cfg)
 
     setup_wandb_env_vars(cfg)

@@ -30,6 +30,7 @@ def choose_device(cfg):
 
 
 def normalize_config(cfg):
+    # setup some derived config / hyperparams
     cfg.gradient_accumulation_steps = cfg.gradient_accumulation_steps or (
         cfg.batch_size // cfg.micro_batch_size
     )
