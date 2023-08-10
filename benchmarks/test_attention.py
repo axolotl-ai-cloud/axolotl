@@ -20,10 +20,44 @@ class TestConfigs:  # pylint: disable=missing-class-docstring
                 "base_model_config": "meta-llama/Llama-2-7b-chat-hf",
                 "model_type": "LlamaForCausalLM",
                 "tokenizer_type": "LlamaTokenizer",
-                "sequence_len": 1024,
                 "gradient_accumulation_steps": 1,
                 "micro_batch_size": 1,
                 "pad_token": "<pad>",
+            }
+        )
+
+    def ctx_256(self):
+        return DictDefault(
+            {
+                "sequence_len": 256,
+            }
+        )
+
+    def ctx_512(self):
+        return DictDefault(
+            {
+                "sequence_len": 512,
+            }
+        )
+
+    def ctx_1k(self):
+        return DictDefault(
+            {
+                "sequence_len": 1024,
+            }
+        )
+
+    def ctx_2k(self):
+        return DictDefault(
+            {
+                "sequence_len": 2048,
+            }
+        )
+
+    def ctx_4k(self):
+        return DictDefault(
+            {
+                "sequence_len": 4096,
             }
         )
 
