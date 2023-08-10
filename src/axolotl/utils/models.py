@@ -368,10 +368,6 @@ def load_model(
                 module.scales = module.scales.half()
                 module.bias = module.bias.half()
 
-    if model.device.type == "cuda":
-        mem = log_gpu_memory_usage(LOG, "after adapters", model.device)
-        cfg.stats_bag.vram_adapter = mem - cfg.stats_bag.vram_model
-
     if (
         torch.cuda.device_count() > 1
         and int(os.getenv("WORLD_SIZE", "1")) > 1
@@ -393,6 +389,10 @@ def load_model(
 
     if cfg.flash_optimum:
         model = BetterTransformer.transform(model)
+
+    if model.device.type == "cuda":
+        mem = log_gpu_memory_usage(LOG, "after adapters", model.device)
+        cfg.stats_bag.vram_adapter = mem - cfg.stats_bag.vram_model
 
     # TODO resume_from_checkpoint handling
     return model, lora_config
