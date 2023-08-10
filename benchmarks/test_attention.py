@@ -1,6 +1,8 @@
 """Benchmarks for various attention mechanisms"""
 
 import gc
+import logging
+from pathlib import Path
 
 import pytest
 import torch
@@ -10,41 +12,77 @@ from tabulate import tabulate  # type: ignore
 
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.models import load_model, load_tokenizer
+from axolotl.utils.trainer import setup_trainer
+
+logs_dir = Path(__file__).parent / "logs"
 
 
 @pytest.fixture(autouse=True)
-def memory_cleanup():
-    yield
-    gc.collect()
-    torch.cuda.empty_cache()
+def configure_logging(request, caplog):
+    log_file = logs_dir / f"{request.node.name}.log"
+    request.config.pluginmanager.get_plugin("logging-plugin").set_log_path(log_file)
+    caplog.set_level(logging.DEBUG)
+
+
+@pytest.fixture(autouse=True)
+def memory_cleanup(results_bag):
+    try:
+        yield
+    finally:
+        gc.collect()
+        torch.cuda.empty_cache()
+        if "cfg" in results_bag:
+            for k, val in results_bag.cfg.stats_bag.items():
+                results_bag[k] = val
 
 
 @parametrize_with_cases("model_cfg", cases=TestConfigs, prefix="model_")
 @parametrize_with_cases("attn_cfg", cases=TestConfigs, prefix="attn_")
-def test_benchmark_attn(model_cfg, attn_cfg, results_bag):
+def _test_benchmark_attn(model_cfg, attn_cfg, results_bag):
     cfg = model_cfg | attn_cfg
+    cfg.output_dir = logs_dir
+    results_bag.cfg = cfg
     assert "llama" in cfg.base_model
     assert validate_config(cfg) is None
     normalize_config(cfg)
     tokenizer = load_tokenizer(cfg)
-    model = load_model(cfg, tokenizer)
-    for k, val in cfg.stats_bag.items():
-        results_bag[k] = val
+    model, _ = load_model(cfg, tokenizer)
     del tokenizer
     del model
 
 
 @parametrize_with_cases("model_cfg", cases=TestConfigs, prefix="model_")
 @parametrize_with_cases("dtype_cfg", cases=TestConfigs, prefix="dtype_")
-def test_load_model(model_cfg, dtype_cfg, results_bag):
+def _test_load_model(model_cfg, dtype_cfg, results_bag):
     cfg = model_cfg | dtype_cfg
+    cfg.output_dir = logs_dir
+    results_bag.cfg = cfg
     assert "llama" in cfg.base_model
     assert validate_config(cfg) is None
     normalize_config(cfg)
+    assert cfg.stats_bag.vram_baseline <= 0.750
     tokenizer = load_tokenizer(cfg)
-    model = load_model(cfg, tokenizer)
-    for k, val in cfg.stats_bag.items():
-        results_bag[k] = val
+    model, _ = load_model(cfg, tokenizer)
+    del tokenizer
+    del model
+
+
+@parametrize_with_cases("model_cfg", cases=TestConfigs, prefix="model_")
+@parametrize_with_cases(
+    "dtype_cfg", cases=TestConfigs, prefix="dtype_", has_tag="quick"
+)
+def test_trainer(model_cfg, dtype_cfg, results_bag):
+    cfg = model_cfg | dtype_cfg
+    cfg.output_dir = logs_dir
+    results_bag.cfg = cfg
+    assert "llama" in cfg.base_model
+    assert validate_config(cfg) is None
+    normalize_config(cfg)
+    assert cfg.stats_bag.vram_baseline <= 0.750
+    tokenizer = load_tokenizer(cfg)
+    model, _ = load_model(cfg, tokenizer)
+    trainer = setup_trainer(cfg, [], [], model, tokenizer)
+    del trainer
     del tokenizer
     del model
 
@@ -53,6 +91,7 @@ def test_synthesis(module_results_df):
     module_results_df.drop(
         [
             "status",
+            "cfg",
             "model_cfg",
             "attn_cfg",
             "dtype_cfg",

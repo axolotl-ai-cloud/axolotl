@@ -1,19 +1,34 @@
 """cfg cases for benchmarking"""
 
+from pytest_cases import case
+
 from axolotl.utils.dict import DictDefault
 
 
 class TestConfigs:  # pylint: disable=missing-class-docstring
     def model_llama2_7b(self):
+        return (
+            DictDefault(
+                {
+                    "base_model": "meta-llama/Llama-2-7b-chat-hf",
+                    "base_model_config": "meta-llama/Llama-2-7b-chat-hf",
+                    "model_type": "LlamaForCausalLM",
+                    "tokenizer_type": "LlamaTokenizer",
+                    "is_llama_derived_model": True,
+                    "pad_token": "<pad>",
+                }
+            )
+            | self.ctx_1k()
+            | self.train_simple()
+        )
+
+    def train_simple(self):
         return DictDefault(
             {
-                "base_model": "meta-llama/Llama-2-7b-chat-hf",
-                "base_model_config": "meta-llama/Llama-2-7b-chat-hf",
-                "model_type": "LlamaForCausalLM",
-                "tokenizer_type": "LlamaTokenizer",
+                "num_epochs": 1,
                 "gradient_accumulation_steps": 1,
                 "micro_batch_size": 1,
-                "pad_token": "<pad>",
+                "val_set_size": 0,
             }
         )
 
@@ -117,6 +132,7 @@ class TestConfigs:  # pylint: disable=missing-class-docstring
             }
         )
 
+    @case(tags="quick")
     def dtype_bf16(self):
         return DictDefault(
             {
@@ -124,6 +140,7 @@ class TestConfigs:  # pylint: disable=missing-class-docstring
             }
         )
 
+    @case(tags="quick")
     def dtype_4bit(self):
         return (
             DictDefault(
