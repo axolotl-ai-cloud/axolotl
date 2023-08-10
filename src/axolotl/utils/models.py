@@ -328,9 +328,8 @@ def load_model(
         model.config.max_position_embeddings = cfg.sequence_len
 
     if model.device.type == "cuda":
-        cfg.stats_bag.vram_model = log_gpu_memory_usage(
-            LOG, "after model load", model.device
-        )
+        mem = log_gpu_memory_usage(LOG, "after model load", model.device)
+        cfg.stats_bag.vram_model = mem - cfg.stats_bag.vram_baseline
 
     if not cfg.gptq and (
         (cfg.adapter == "lora" and load_in_8bit)
@@ -392,7 +391,9 @@ def load_model(
 
     if model.device.type == "cuda":
         mem = log_gpu_memory_usage(LOG, "after adapters", model.device)
-        cfg.stats_bag.vram_adapter = mem - cfg.stats_bag.vram_model
+        cfg.stats_bag.vram_adapter = (
+            mem - cfg.stats_bag.vram_model - cfg.stats_bag.vram_baseline
+        )
 
     # TODO resume_from_checkpoint handling
     return model, lora_config

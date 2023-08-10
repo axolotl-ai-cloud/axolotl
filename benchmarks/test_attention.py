@@ -13,7 +13,7 @@ from axolotl.utils.models import load_model, load_tokenizer
 
 
 class TestConfigs:  # pylint: disable=missing-class-docstring
-    def model_llama2(self):
+    def model_llama2_7b(self):
         return DictDefault(
             {
                 "base_model": "meta-llama/Llama-2-7b-chat-hf",
@@ -84,6 +84,14 @@ class TestConfigs:  # pylint: disable=missing-class-docstring
             }
         )
 
+    def dtype_tf32(self):
+        return DictDefault(
+            {
+                "fp32": True,
+                "tf32": True,
+            }
+        )
+
     def dtype_bf16(self):
         return DictDefault(
             {
@@ -137,7 +145,7 @@ def test_benchmark_attn(model_cfg, attn_cfg, results_bag):
 
 @parametrize_with_cases("model_cfg", cases=TestConfigs, prefix="model_")
 @parametrize_with_cases("dtype_cfg", cases=TestConfigs, prefix="dtype_")
-def test_bench_load_model(model_cfg, dtype_cfg, results_bag):
+def test_load_model(model_cfg, dtype_cfg, results_bag):
     cfg = model_cfg | dtype_cfg
     assert "llama" in cfg.base_model
     assert validate_config(cfg) is None
@@ -153,7 +161,15 @@ def test_bench_load_model(model_cfg, dtype_cfg, results_bag):
 
 def test_synthesis(module_results_df):
     module_results_df.drop(
-        ["status", "model_cfg", "attn_cfg", "dtype_cfg", "adapter_cfg", "pytest_obj"],
+        [
+            "status",
+            "model_cfg",
+            "attn_cfg",
+            "dtype_cfg",
+            "adapter_cfg",
+            "pytest_obj",
+            "vram_baseline",
+        ],
         axis=1,
         inplace=True,
         errors="ignore",
