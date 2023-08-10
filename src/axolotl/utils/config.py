@@ -50,9 +50,8 @@ def normalize_config(cfg):
         if cfg.bf16:
             cfg.fp16 = True
         cfg.bf16 = False
-
-    if cfg.tf32:
-        torch.backends.cuda.matmul.allow_tf32 = True
+    else:
+        torch.backends.cuda.matmul.allow_tf32 = cfg.tf32 or False
 
 
 def validate_config(cfg):
