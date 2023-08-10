@@ -26,8 +26,7 @@ def test_benchmark_attn(model_cfg, attn_cfg, results_bag):
     assert "llama" in cfg.base_model
     assert validate_config(cfg) is None
     normalize_config(cfg)
-    tokenizer_config = cfg.tokenizer_config or cfg.base_model_config
-    tokenizer = load_tokenizer(tokenizer_config, cfg.tokenizer_type, cfg)
+    tokenizer = load_tokenizer(cfg)
     model = load_model(cfg, tokenizer)
     for k, val in cfg.stats_bag.items():
         results_bag[k] = val
@@ -42,8 +41,7 @@ def test_load_model(model_cfg, dtype_cfg, results_bag):
     assert "llama" in cfg.base_model
     assert validate_config(cfg) is None
     normalize_config(cfg)
-    tokenizer_config = cfg.tokenizer_config or cfg.base_model_config
-    tokenizer = load_tokenizer(tokenizer_config, cfg.tokenizer_type, cfg)
+    tokenizer = load_tokenizer(cfg)
     model = load_model(cfg, tokenizer)
     for k, val in cfg.stats_bag.items():
         results_bag[k] = val

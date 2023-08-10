@@ -32,26 +32,21 @@ if TYPE_CHECKING:
     from axolotl.utils.dict import DictDefault  # noqa: F401
 
 
-def load_tokenizer(
-    tokenizer_config,
-    tokenizer_type,
-    cfg,
-):
+def load_tokenizer(cfg):
     use_fast = True  # this is the default
     if cfg.tokenizer_use_fast is not None:
         use_fast = cfg.tokenizer_use_fast
-    if tokenizer_type:
-        tokenizer = getattr(transformers, tokenizer_type).from_pretrained(
-            tokenizer_config,
-            trust_remote_code=cfg.trust_remote_code or False,
-            use_fast=use_fast,
-        )
-    else:
-        tokenizer = AutoTokenizer.from_pretrained(
-            tokenizer_config,
-            trust_remote_code=cfg.trust_remote_code or False,
-            use_fast=use_fast,
-        )
+
+    tokenizer_cls = AutoTokenizer
+    if cfg.tokenizer_type:
+        tokenizer_cls = getattr(transformers, cfg.tokenizer_type)
+
+    tokenizer_config = cfg.tokenizer_config or cfg.base_model_config
+    tokenizer = tokenizer_cls.from_pretrained(
+        tokenizer_config,
+        trust_remote_code=cfg.trust_remote_code or False,
+        use_fast=use_fast,
+    )
 
     LOG.debug(f"EOS: {tokenizer.eos_token_id} / {tokenizer.eos_token}")
     LOG.debug(f"BOS: {tokenizer.bos_token_id} / {tokenizer.bos_token}")
