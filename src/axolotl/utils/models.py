@@ -78,12 +78,15 @@ def load_tokenizer(
 
 
 def load_model(
-    base_model, base_model_config, model_type, tokenizer, cfg, adapter="lora"
-):
-    # type: (str, str, str, PreTrainedTokenizerBase, DictDefault, Optional[str]) -> Tuple[PreTrainedModel, Optional[PeftConfig]]
+    cfg, tokenizer
+):  # type: (DictDefault, PreTrainedTokenizerBase) -> Tuple[PreTrainedModel, Optional[PeftConfig]]
     """
-    Load a model from a base model and a model type.
+    Load a model for a given configuration and tokenizer.
     """
+    base_model = cfg.base_model
+    base_model_config = cfg.base_model_config
+    model_type = cfg.model_type
+    adapter = cfg.adapter
 
     # TODO refactor as a kwarg
     load_in_8bit = cfg.load_in_8bit
