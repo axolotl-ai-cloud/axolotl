@@ -8,9 +8,9 @@ from pytest_cases import parametrize_with_cases
 from tabulate import tabulate  # type: ignore
 
 from axolotl.utils.bench import gpu_memory_usage
+from axolotl.utils.config import validate_config
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.models import load_model, load_tokenizer
-from axolotl.utils.validation import validate_config
 
 
 class TestConfigs:  # pylint: disable=missing-class-docstring
