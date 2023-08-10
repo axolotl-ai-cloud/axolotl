@@ -45,27 +45,37 @@ class TestConfigs:  # pylint: disable=missing-class-docstring
             }
         )
 
+    def lora_params(self):
+        return DictDefault(
+            {
+                "lora_r": 8,
+                "lora_alpha": 16,
+                "lora_dropout": 0.0,
+                "lora_target_linear": True,
+            }
+        )
+
     def adapter_none(self):
         return DictDefault({})
 
     def adapter_lora(self):
-        return DictDefault(
-            {
-                "lora": True,
-                "lora_r": 8,
-                "lora_alpha": 16,
-                "lora_dropout": 0.0,
-            }
+        return (
+            DictDefault(
+                {
+                    "adapter": "lora",
+                }
+            )
+            | self.lora_params()
         )
 
     def adapter_qlora(self):
-        return DictDefault(
-            {
-                "qlora": True,
-                "lora_r": 8,
-                "lora_alpha": 16,
-                "lora_dropout": 0.0,
-            }
+        return (
+            DictDefault(
+                {
+                    "adapter": "qlora",
+                }
+            )
+            | self.lora_params()
         )
 
     def dtype_fp32(self):
@@ -129,7 +139,7 @@ def test_benchmark_attn(model_cfg, attn_cfg, results_bag):
 
 @parametrize_with_cases("model_cfg", cases=TestConfigs, prefix="model_")
 @parametrize_with_cases("dtype_cfg", cases=TestConfigs, prefix="dtype_")
-def test_benchmark_load_model(model_cfg, dtype_cfg, results_bag):
+def test_bench_load_model(model_cfg, dtype_cfg, results_bag):
     cfg = model_cfg | dtype_cfg
     assert "llama" in cfg.base_model
     assert validate_config(cfg) is None
@@ -146,7 +156,7 @@ def test_benchmark_load_model(model_cfg, dtype_cfg, results_bag):
 
 def test_synthesis(module_results_df):
     module_results_df.drop(
-        ["model_cfg", "attn_cfg", "dtype_cfg", "adapter_cfg", "pytest_obj"],
+        ["status", "model_cfg", "attn_cfg", "dtype_cfg", "adapter_cfg", "pytest_obj"],
         axis=1,
         inplace=True,
         errors="ignore",
