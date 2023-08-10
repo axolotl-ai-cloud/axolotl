@@ -172,6 +172,8 @@ def train(
 
     setup_wandb_env_vars(cfg)
 
+    log_gpu_memory_usage(LOG, "baseline", cfg.device)
+
     # load the tokenizer first
     tokenizer_config = cfg.tokenizer_config or cfg.base_model_config
     LOG.info(f"loading tokenizer... {tokenizer_config}")
@@ -207,8 +209,6 @@ def train(
     if prepare_ds_only:
         LOG.info("Finished preparing dataset. Exiting...")
         return
-
-    log_gpu_memory_usage(LOG, "baseline", cfg.device)
 
     # Load the model and tokenizer
     LOG.info("loading model and peft_config...")
