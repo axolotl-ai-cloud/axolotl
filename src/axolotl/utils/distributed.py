@@ -2,12 +2,23 @@
 utility helpers for distributed checks
 """
 import torch.distributed as dist
+from accelerate import Accelerator
+
+accelerate = None  # pylint: disable=invalid-name
+
+
+def load_accelerate():
+    global accelerate  # pylint: disable=global-statement
+    accelerate = Accelerator()
 
 
 def is_distributed():
     """
     Check if distributed training is initialized.
     """
+    global accelerate  # pylint: disable=global-statement
+    if not accelerate:
+        accelerate = Accelerator()
     return dist.is_available() and dist.is_initialized()
 
 

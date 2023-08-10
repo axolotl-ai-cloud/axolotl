@@ -17,7 +17,7 @@ except ImportError:
 
 from transformers.models.llama.modeling_llama import apply_rotary_pos_emb
 
-from axolotl.monkeypatch.utils import get_cu_seqlens
+from axolotl.monkeypatch.utils import get_cu_seqlens_from_pos_ids
 
 
 def forward(
@@ -93,7 +93,7 @@ def forward(
         output = rearrange(output, "(b s) ... -> b s ...", b=bsz)
     else:
         qkv = rearrange(qkv, "b s ... -> (b s) ...")
-        cu_q_lens, max_s = get_cu_seqlens(key_padding_mask)
+        cu_q_lens, max_s = get_cu_seqlens_from_pos_ids(position_ids)
         cu_q_lens = cu_q_lens.squeeze()
 
         output = flash_attn_varlen_qkvpacked_func(
