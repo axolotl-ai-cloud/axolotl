@@ -18,6 +18,6 @@ def gpu_memory_usage(device=0):
 
 
 def log_gpu_memory_usage(log, msg, device):
-    log.info(
-        f"GPU memory usage {msg}: {gpu_memory_usage(device):.03f} GB", stacklevel=2
-    )
+    usage = gpu_memory_usage(device)
+    log.info(f"GPU memory usage {msg}: {usage:.03f} GB", stacklevel=2)
+    return usage

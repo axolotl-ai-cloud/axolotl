@@ -59,6 +59,8 @@ def test_benchmark_attn(cfg, results_bag):
     tokenizer_config = cfg.tokenizer_config or cfg.base_model_config
     tokenizer = load_tokenizer(tokenizer_config, cfg.tokenizer_type, cfg)
     model = load_model(cfg, tokenizer)
+    for k, val in cfg.stats_bag.items():
+        results_bag[k] = val
     del tokenizer
     del model
 

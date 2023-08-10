@@ -172,7 +172,7 @@ def train(
 
     setup_wandb_env_vars(cfg)
 
-    log_gpu_memory_usage(LOG, "baseline", cfg.device)
+    cfg.stats_bag.vram_baseline = log_gpu_memory_usage(LOG, "baseline", cfg.device)
 
     # load the tokenizer first
     tokenizer_config = cfg.tokenizer_config or cfg.base_model_config

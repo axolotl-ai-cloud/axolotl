@@ -5,6 +5,8 @@ import os
 
 import torch
 
+from axolotl.utils.dict import DictDefault
+
 LOG = logging.getLogger("axolotl")
 
 
@@ -53,6 +55,9 @@ def normalize_config(cfg):
         cfg.bf16 = False
     else:
         torch.backends.cuda.matmul.allow_tf32 = cfg.tf32 or False
+
+    # create bench stats bag
+    cfg.stats_bag = DictDefault()
 
 
 def validate_config(cfg):

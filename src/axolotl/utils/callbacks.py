@@ -91,6 +91,8 @@ class PrintGPUStatsCallback(
         **kwargs,
     ):
         if not self.logged:
-            log_gpu_memory_usage(LOG, "while training", self.cfg.device)
+            self.cfg.stats_bag.vram_training = log_gpu_memory_usage(
+                LOG, "while training", self.cfg.device
+            )
             self.logged = True
         return control
