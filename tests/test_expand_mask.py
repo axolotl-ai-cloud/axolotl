@@ -36,7 +36,6 @@ class TestExpandMask(unittest.TestCase):
                 ],
             ]
         )
-        print(repr(_expand_mask(mask, dtype)))
         # Check that the output matches the expected output
         self.assertTrue(torch.allclose(_expand_mask(mask, dtype), expected_output))
 

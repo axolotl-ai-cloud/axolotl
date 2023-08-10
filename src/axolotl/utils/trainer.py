@@ -202,13 +202,14 @@ class AxolotlTrainer(Trainer):
                     collate_fn=self.data_collator,
                     sampler=eval_sampler,
                     packing_efficiency_estimate=self.args.sample_packing_efficiency,
-                    sample_packing_seq_len_multiplier=self.args.sample_packing_seq_len_multiplier,
+                    sample_packing_seq_len_multiplier=self.args.eval_batch_size,
                     device_count=int(os.environ.get("WORLD_SIZE", 1)),
                 )
             )
         return super().get_eval_dataloader(eval_dataset)
 
     def compute_loss(self, model, inputs, return_outputs=False):
+        # use one's weighted cross entropy loss calc
         # if self.args.sample_packing:
         #     labels = inputs.pop("labels")
         #     outputs = model(**inputs)
@@ -321,7 +322,7 @@ def calculate_total_num_steps(cfg, train_dataset, tokenizer):
                 ),
                 sampler=sampler,
                 packing_efficiency_estimate=cfg.sample_packing_eff_est,
-                sample_packing_seq_len_multiplier=cfg.sample_packing_seq_len_multiplier,
+                sample_packing_seq_len_multiplier=cfg.micro_batch_size,
                 device_count=int(os.environ.get("WORLD_SIZE", 1)),
             )
             data_loader_len = data_loader.len_w_stats()
@@ -466,7 +467,7 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
         else "cosine",
         weight_decay=cfg.weight_decay if cfg.weight_decay is not None else 0.0,
         sample_packing=cfg.sample_packing if cfg.sample_packing else False,
-        sample_packing_seq_len_multiplier=cfg.sample_packing_seq_len_multiplier or 1,
+        sample_packing_seq_len_multiplier=cfg.micro_batch_size or 1,
         **training_arguments_kwargs,
     )
 
