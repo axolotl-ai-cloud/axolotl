@@ -4,7 +4,7 @@ import pynvml
 import torch
 
 
-def gpu_memory_usage(device):
+def gpu_memory_usage(device=0):
     if isinstance(device, torch.device):
         device = device.index
     if isinstance(device, str) and device.startswith("cuda:"):
