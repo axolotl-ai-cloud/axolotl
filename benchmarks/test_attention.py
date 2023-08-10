@@ -8,7 +8,7 @@ from pytest_cases import parametrize_with_cases
 from tabulate import tabulate  # type: ignore
 
 from axolotl.utils.bench import gpu_memory_usage
-from axolotl.utils.config import validate_config
+from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.models import load_model, load_tokenizer
 
@@ -22,8 +22,8 @@ class TestConfigs:  # pylint: disable=missing-class-docstring
                 "model_type": "LlamaForCausalLM",
                 "tokenizer_type": "LlamaTokenizer",
                 "sequence_len": 1024,
-                "device_map": {"": 0},
-                "adapter": None,
+                "gradient_accumulation_steps": 1,
+                "micro_batch_size": 1,
                 "load_in_8bit": True,
             }
         )
@@ -54,6 +54,7 @@ def memory_cleanup():
 def test_benchmark_attn(cfg, results_bag):
     assert "llama" in cfg.base_model
     assert validate_config(cfg) is None
+    normalize_config(cfg)
     results_bag.vram_baseline = gpu_memory_usage()
     tokenizer_config = cfg.tokenizer_config or cfg.base_model_config
     tokenizer = load_tokenizer(tokenizer_config, cfg.tokenizer_type, cfg)
