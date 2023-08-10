@@ -14,7 +14,7 @@ from axolotl.utils.models import load_model, load_tokenizer
 
 
 class TestConfigs:  # pylint: disable=missing-class-docstring
-    def cfg_llama2(self):
+    def model_llama2(self):
         return DictDefault(
             {
                 "base_model": "meta-llama/Llama-2-7b-chat-hf",
@@ -24,19 +24,23 @@ class TestConfigs:  # pylint: disable=missing-class-docstring
                 "sequence_len": 1024,
                 "gradient_accumulation_steps": 1,
                 "micro_batch_size": 1,
+                "pad_token": "<pad>",
                 "load_in_8bit": True,
             }
         )
 
-    def cfg_llama2_xformers(self):
-        return self.cfg_llama2() | DictDefault(
+    def attn_base(self):
+        return DictDefault({})
+
+    def attn_xformers(self):
+        return DictDefault(
             {
                 "xformers_attention": True,
             }
         )
 
-    def cfg_llama2_flashattn(self):
-        return self.cfg_llama2() | DictDefault(
+    def attn_flash(self):
+        return DictDefault(
             {
                 "flash_attention": True,
             }
@@ -50,8 +54,10 @@ def memory_cleanup():
     torch.cuda.empty_cache()
 
 
-@parametrize_with_cases("cfg", cases=TestConfigs, prefix="cfg_")
-def test_benchmark_attn(cfg, results_bag):
+@parametrize_with_cases("model_cfg", cases=TestConfigs, prefix="model_")
+@parametrize_with_cases("attn_cfg", cases=TestConfigs, prefix="attn_")
+def test_benchmark_attn(model_cfg, attn_cfg, results_bag):
+    cfg = model_cfg | attn_cfg
     assert "llama" in cfg.base_model
     assert validate_config(cfg) is None
     normalize_config(cfg)
@@ -66,6 +72,8 @@ def test_benchmark_attn(cfg, results_bag):
 
 
 def test_synthesis(module_results_df):
-    module_results_df.drop(["cfg", "pytest_obj"], axis=1, inplace=True)
+    module_results_df.drop(
+        ["model_cfg", "attn_cfg", "pytest_obj"], axis=1, inplace=True
+    )
     print("")
     print(tabulate(module_results_df, headers="keys"))
