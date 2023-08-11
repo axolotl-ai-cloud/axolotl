@@ -12,7 +12,6 @@ from datasets import Dataset
 from pytest_cases import parametrize_with_cases
 from tabulate import tabulate  # type: ignore
 
-from axolotl.utils.bench import gpu_memory_usage
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.data import encode_pretraining
 from axolotl.utils.models import load_model, load_tokenizer
@@ -90,8 +89,6 @@ def test_trainer(model_cfg, dtype_cfg, results_bag):
     model, _ = load_model(cfg, tokenizer)
     trainer = setup_trainer(cfg, dataset.with_format("torch"), [], model, tokenizer)
     trainer.train()
-    cfg.stats_bag.vram_train = gpu_memory_usage() - cfg.stats_bag.vram_last
-    cfg.stats_bag.vram_end = gpu_memory_usage()
     del trainer
     del tokenizer
     del model
