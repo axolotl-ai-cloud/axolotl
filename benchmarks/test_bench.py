@@ -48,6 +48,8 @@ def write_json(fixture_store):
         for key, value in out.items():
             name = key.split("::")[1]
             with open(logs_dir / f"{name}.jsonl", "w", encoding="UTF-8") as file:
+                value = value.copy()
+                value["test_id"] = name
                 file.write(json.dumps(value) + "\n")
 
 
