@@ -5,7 +5,7 @@ from pytest_cases import case
 from axolotl.utils.dict import DictDefault
 
 
-class TestConfigs:  # pylint: disable=missing-class-docstring
+class TestConfigs:  # pylint: disable=missing-class-docstring disable=too-many-public-methods
     def model_llama2_7b(self):
         return (
             DictDefault(
@@ -33,12 +33,25 @@ class TestConfigs:  # pylint: disable=missing-class-docstring
                 "gradient_accumulation_steps": 1,
                 "micro_batch_size": 1,
                 "val_set_size": 0,
-                "optimizer": "adamw_torch",
                 "adam_beta2": 0.98,
                 "max_grad_norm": 1.0,
                 "learning_rate": 0.00005,
                 "lr_scheduler": "cosine",
                 "lr_quadratic_warmup": True,
+            }
+        )
+
+    def opt_adamw_bnb_8bit(self):
+        return DictDefault(
+            {
+                "optimizer": "adamw_bnb_8bit",
+            }
+        )
+
+    def opt_adamw_torch(self):
+        return DictDefault(
+            {
+                "optimizer": "adamw_torch",
             }
         )
 
@@ -84,6 +97,13 @@ class TestConfigs:  # pylint: disable=missing-class-docstring
         return DictDefault(
             {
                 "xformers_attention": True,
+            }
+        )
+
+    def attn_bettertransformer(self):
+        return DictDefault(
+            {
+                "flash_optimum": True,
             }
         )
 

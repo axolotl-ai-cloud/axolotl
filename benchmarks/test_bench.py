@@ -86,7 +86,13 @@ def get_tensors(gpu_only=True):
 
             if tensor.is_cuda or not gpu_only:
                 yield tensor
-        except (RuntimeError, ModuleNotFoundError, OSError, AssertionError):
+        except (
+            RuntimeError,
+            ModuleNotFoundError,
+            OSError,
+            AssertionError,
+            ImportError,
+        ):
             pass
 
 
@@ -155,8 +161,9 @@ def test_load_model(model_cfg, dtype_cfg, results_bag):
 
 @parametrize_with_cases("model_cfg", cases=TestConfigs, prefix="model_")
 @parametrize_with_cases("dtype_cfg", cases=TestConfigs, prefix="dtype_")
-def test_trainer(model_cfg, dtype_cfg, results_bag):
-    cfg = model_cfg | dtype_cfg
+@parametrize_with_cases("opt_cfg", cases=TestConfigs, prefix="opt_")
+def test_trainer(model_cfg, opt_cfg, dtype_cfg, results_bag):
+    cfg = model_cfg | opt_cfg | dtype_cfg
     cfg.output_dir = str(logs_dir.resolve())
     results_bag.cfg = cfg
     assert "llama" in cfg.base_model
