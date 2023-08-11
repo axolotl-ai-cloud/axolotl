@@ -96,7 +96,7 @@ axolotl inference batch --help
 
 * Currently, batch inferencing will only collect results on a single node. This would just require an implementation of ``AbstractPersistenceBackend`` with storage accessible to all nodes (such as a database or S3)
 * Likely, prompt distribution logic could be optimized more
-* Left padding of prompts is triggered when ``num_return_sequences`` > 1 and is best suited for causal language models 
+* Left padding of prompts is triggered when ``num_return_sequences`` > 1 and is best suited for causal language models
 
 
 ## Example Accelerate Configuration
