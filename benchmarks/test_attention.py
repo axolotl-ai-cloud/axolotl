@@ -12,6 +12,7 @@ from datasets import Dataset
 from pytest_cases import parametrize_with_cases
 from tabulate import tabulate  # type: ignore
 
+from axolotl.utils.bench import gpu_memory_usage
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.data import encode_pretraining
 from axolotl.utils.models import load_model, load_tokenizer
@@ -29,15 +30,49 @@ def configure_logging(request, caplog):
 
 
 @pytest.fixture(autouse=True)
-def memory_cleanup(results_bag):
+def copy_results(results_bag):
     try:
+        yield
+    finally:
+        if "cfg" in results_bag:
+            for k, val in results_bag.cfg.stats_bag.items():
+                results_bag[k] = val
+
+
+@pytest.fixture(autouse=True)
+def memory_cleanup():
+    try:
+        gc.collect()
+        torch.cuda.empty_cache()
         yield
     finally:
         gc.collect()
         torch.cuda.empty_cache()
-        if "cfg" in results_bag:
-            for k, val in results_bag.cfg.stats_bag.items():
-                results_bag[k] = val
+
+        if (mem := gpu_memory_usage()) > 3.0:
+            print("GPU memory usage still high!")
+            cnt = 0
+            for obj in get_tensors():
+                obj.detach()
+                obj.grad = None
+                obj.storage().resize_(0)
+                cnt += 1
+            print(f"  forcibly cleared {cnt} tensors using {mem} GB")
+            gc.collect()
+            torch.cuda.empty_cache()
+
+
+def get_tensors(gpu_only=True):
+    for obj in gc.get_objects():
+        if torch.is_tensor(obj):
+            tensor = obj
+        elif hasattr(obj, "data") and torch.is_tensor(obj.data):
+            tensor = obj.data
+        else:
+            continue
+
+        if tensor.is_cuda or not gpu_only:
+            yield tensor
 
 
 @parametrize_with_cases("model_cfg", cases=TestConfigs, prefix="model_")
@@ -59,11 +94,16 @@ def test_benchmark_attn(model_cfg, attn_cfg, results_bag):
         dataset = Dataset.from_list([{"text": "hello world"}])
         encode = functools.partial(encode_pretraining, tokenizer, cfg.sequence_len)
         dataset = dataset.map(encode, batched=True, remove_columns=["text"])
+
         trainer = setup_trainer(cfg, dataset.with_format("torch"), [], model, tokenizer)
         trainer.train()
 
     finally:
         if trainer is not None:
+            opt = trainer.optimizer
+            trainer.optimizer = None
+            opt.zero_grad()
+            del opt
             del trainer
         del tokenizer
         del model
@@ -107,6 +147,7 @@ def _test_trainer(model_cfg, dtype_cfg, results_bag):
         dataset = Dataset.from_list([{"text": "hello world"}])
         encode = functools.partial(encode_pretraining, tokenizer, cfg.sequence_len)
         dataset = dataset.map(encode, batched=True, remove_columns=["text"])
+
         trainer = setup_trainer(cfg, dataset.with_format("torch"), [], model, tokenizer)
         trainer.train()
     finally:
