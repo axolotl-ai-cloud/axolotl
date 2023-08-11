@@ -92,9 +92,7 @@ def get_tensors(gpu_only=True):
 
 @parametrize_with_cases("model_cfg", cases=TestConfigs, prefix="model_")
 @parametrize_with_cases("attn_cfg", cases=TestConfigs, prefix="attn_")
-@parametrize_with_cases(
-    "dtype_cfg", cases=TestConfigs, prefix="dtype_", glob="dtype_4bit"
-)
+@parametrize_with_cases("dtype_cfg", cases=TestConfigs, prefix="dtype_")
 def test_bench_attn(model_cfg, attn_cfg, dtype_cfg, results_bag):
     cfg = model_cfg | dtype_cfg | attn_cfg
     cfg.output_dir = str(logs_dir.resolve())
@@ -140,7 +138,7 @@ def test_bench_attn(model_cfg, attn_cfg, dtype_cfg, results_bag):
 
 @parametrize_with_cases("model_cfg", cases=TestConfigs, prefix="model_")
 @parametrize_with_cases("dtype_cfg", cases=TestConfigs, prefix="dtype_")
-def _test_load_model(model_cfg, dtype_cfg, results_bag):
+def test_load_model(model_cfg, dtype_cfg, results_bag):
     cfg = model_cfg | dtype_cfg
     cfg.output_dir = str(logs_dir.resolve())
     results_bag.cfg = cfg
@@ -156,10 +154,8 @@ def _test_load_model(model_cfg, dtype_cfg, results_bag):
 
 
 @parametrize_with_cases("model_cfg", cases=TestConfigs, prefix="model_")
-@parametrize_with_cases(
-    "dtype_cfg", cases=TestConfigs, prefix="dtype_", has_tag="quick"
-)
-def _test_trainer(model_cfg, dtype_cfg, results_bag):
+@parametrize_with_cases("dtype_cfg", cases=TestConfigs, prefix="dtype_")
+def test_trainer(model_cfg, dtype_cfg, results_bag):
     cfg = model_cfg | dtype_cfg
     cfg.output_dir = str(logs_dir.resolve())
     results_bag.cfg = cfg
