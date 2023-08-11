@@ -74,10 +74,10 @@ class SaveBetterTransformerModelCallback(
         return control
 
 
-class PrintGPUStatsCallback(
+class GPUStatsCallback(
     TrainerCallback
 ):  # pylint: disable=too-few-public-methods disable=unused-argument
-    """Callback to print GPU utilization"""
+    """Callback to track GPU utilization"""
 
     def __init__(self, cfg):
         self.cfg = cfg
