@@ -284,10 +284,11 @@ def calculate_total_num_steps(cfg, train_dataset, tokenizer):
     if cfg.sample_packing:
         # we have to drop anything longer then sequence len otherwise
         # flash attention with position ids fails
-        LOG.info("calculating total_num_tokens")
-        total_num_tokens = np.sum(train_dataset.data.column("input_ids").to_pandas().apply(lambda x: len(x)).values)
         if not cfg.total_num_tokens:
+            LOG.info("calculating total_num_tokens")
+            total_num_tokens = np.sum(train_dataset.data.column("input_ids").to_pandas().apply(lambda x: len(x)).values)
             LOG.info(f"📝 UPDATE CONFIG WITH: `total_num_tokens: {total_num_tokens}`")
+            cfg.total_num_tokens = total_num_tokens
 
         if cfg.sample_packing_eff_est:
             total_num_steps = (
@@ -295,7 +296,7 @@ def calculate_total_num_steps(cfg, train_dataset, tokenizer):
                 (
                     math.floor(
                         0.99
-                        * total_num_tokens
+                        * cfg.total_num_tokens
                         / cfg.sample_packing_eff_est
                         / cfg.sequence_len
                         // cfg.batch_size
@@ -306,7 +307,7 @@ def calculate_total_num_steps(cfg, train_dataset, tokenizer):
                 * cfg.num_epochs
             )
             LOG.info(
-                f"total_num_tokens: {total_num_tokens}, total_num_steps: {total_num_steps}"
+                f"total_num_tokens: {cfg.total_num_tokens}, total_num_steps: {total_num_steps}"
             )
         else:
             sampler = RandomSampler(train_dataset)
@@ -338,6 +339,7 @@ def calculate_total_num_steps(cfg, train_dataset, tokenizer):
             LOG.info(
                 f"📝 UPDATE CONFIG WITH: `sample_packing_eff_est: {math.ceil(actual_eff * 100.0) / 100.0}`"
             )
+            cfg.sample_packing_eff_est = math.ceil(actual_eff * 100.0) / 100.0
     else:
         total_num_steps = int(
             math.ceil(len(train_dataset) * cfg.num_epochs / cfg.batch_size)
