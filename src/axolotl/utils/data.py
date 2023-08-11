@@ -1,14 +1,19 @@
 """Module containing data utilities"""
 import functools
 import hashlib
-import itertools
 import logging
 from hashlib import md5
 from pathlib import Path
-from typing import List, Tuple, Union
+from typing import Tuple, Union
 
 import torch
-from datasets import Dataset, DatasetDict, concatenate_datasets, load_dataset, load_from_disk
+from datasets import (
+    Dataset,
+    DatasetDict,
+    concatenate_datasets,
+    load_dataset,
+    load_from_disk,
+)
 from huggingface_hub import hf_hub_download
 from transformers import PreTrainedTokenizerBase
 

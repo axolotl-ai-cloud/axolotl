@@ -153,7 +153,10 @@ class MultipackDistributedDataloader:
         # Dataset
         self.dataset = dataset
         self.lengths = (
-            dataset.data.column("position_ids").to_pandas().apply(lambda x: x[-1] + 1).values
+            dataset.data.column("position_ids")
+            .to_pandas()
+            .apply(lambda x: x[-1] + 1)
+            .values
         )
         assert isinstance(self.lengths, np.ndarray)
         assert batch_size % sample_packing_seq_len_multiplier == 0
