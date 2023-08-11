@@ -83,7 +83,7 @@ def get_tensors(gpu_only=True):
 @parametrize_with_cases(
     "dtype_cfg", cases=TestConfigs, prefix="dtype_", glob="dtype_4bit"
 )
-def test_benchmark_attn(model_cfg, attn_cfg, dtype_cfg, results_bag):
+def test_bench_attn(model_cfg, attn_cfg, dtype_cfg, results_bag):
     cfg = model_cfg | dtype_cfg | attn_cfg
     cfg.output_dir = logs_dir
     results_bag.cfg = cfg
