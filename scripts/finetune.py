@@ -18,6 +18,7 @@ import yaml
 from optimum.bettertransformer import BetterTransformer
 from transformers import GenerationConfig, TextStreamer
 
+from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.config import startup_load_dataset
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import configure_logging
@@ -227,16 +228,11 @@ def train(
         LOG.info("Finished preparing dataset. Exiting...")
         return
 
+    log_gpu_memory_usage(LOG, "baseline", cfg.device)
+
     # Load the model and tokenizer
     LOG.info("loading model and peft_config...")
-    model, peft_config = load_model(
-        cfg.base_model,
-        cfg.base_model_config,
-        cfg.model_type,
-        tokenizer,
-        cfg,
-        adapter=cfg.adapter,
-    )
+    model, peft_config = load_model(cfg, tokenizer)
 
     if "merge_lora" in kwargs and cfg.adapter is not None:
         LOG.info("running merge of LoRA with base model")

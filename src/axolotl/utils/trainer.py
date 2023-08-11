@@ -18,6 +18,7 @@ from transformers import EarlyStoppingCallback, Trainer, TrainingArguments
 from transformers.trainer_pt_utils import get_parameter_names
 
 from axolotl.utils.callbacks import (
+    PrintGPUStatsCallback,
     SaveBetterTransformerModelCallback,
     SavePeftModelCallback,
 )
@@ -292,6 +293,7 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
         trainer_kwargs["optimizers"] = (optimizer, lr_scheduler)
 
     callbacks = []
+    callbacks.append(PrintGPUStatsCallback(cfg))
     # TODO on_save callback to sync checkpoints to GCP/AWS in background
     if cfg.early_stopping_patience:
         early_stop_cb = EarlyStoppingCallback(

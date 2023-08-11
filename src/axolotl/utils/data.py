@@ -1,5 +1,6 @@
 """Module containing data utilities"""
 import functools
+import itertools
 import logging
 from hashlib import md5
 from pathlib import Path
@@ -277,8 +278,16 @@ def load_tokenized_prepared_datasets(
         LOG.info("tokenizing, merging, and shuffling master dataset")
 
         samples: List[int] = []
+        chunk_size = 1000
         for d in datasets:
-            samples = samples + list(d)
+            d_iter = iter(d)
+            while True:
+                chunk = list(itertools.islice(d_iter, chunk_size))
+                if not chunk:
+                    break
+                samples.extend(chunk)
+
+        LOG.info("shuffle")
         dataset = Dataset.from_list(samples).shuffle(seed=seed)
         if cfg.local_rank == 0:
             LOG.info(f"Saving merged prepared dataset to disk... {prepared_ds_path}")
@@ -383,7 +392,7 @@ def load_prepare_datasets(
                 [
                     d
                     for d in dataset
-                    if len(d["input_ids"]) < cfg.sequence_len
+                    if len(d["input_ids"]) <= cfg.sequence_len
                     and len(d["input_ids"]) > 0
                     and len(d["input_ids"]) == len(d["attention_mask"])
                     and len(d["input_ids"]) == len(d["labels"])

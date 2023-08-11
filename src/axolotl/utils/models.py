@@ -22,6 +22,7 @@ from transformers import (  # noqa: F401
 )
 
 from axolotl.prompt_tokenizers import LLAMA_DEFAULT_PAD_TOKEN
+from axolotl.utils.bench import log_gpu_memory_usage
 
 LOG = logging.getLogger(__name__)
 
@@ -77,12 +78,15 @@ def load_tokenizer(
 
 
 def load_model(
-    base_model, base_model_config, model_type, tokenizer, cfg, adapter="lora"
-):
-    # type: (str, str, str, PreTrainedTokenizerBase, DictDefault, Optional[str]) -> Tuple[PreTrainedModel, Optional[PeftConfig]]
+    cfg, tokenizer
+):  # type: (DictDefault, PreTrainedTokenizerBase) -> Tuple[PreTrainedModel, Optional[PeftConfig]]
     """
-    Load a model from a base model and a model type.
+    Load a model for a given configuration and tokenizer.
     """
+    base_model = cfg.base_model
+    base_model_config = cfg.base_model_config
+    model_type = cfg.model_type
+    adapter = cfg.adapter
 
     # TODO refactor as a kwarg
     load_in_8bit = cfg.load_in_8bit
@@ -92,7 +96,9 @@ def load_model(
 
     if cfg.is_llama_derived_model and cfg.flash_attention:
         if cfg.device not in ["mps", "cpu"] and not cfg.inference:
-            from axolotl.flash_attn import replace_llama_attn_with_flash_attn
+            from axolotl.monkeypatch.llama_attn_hijack_flash import (
+                replace_llama_attn_with_flash_attn,
+            )
 
             LOG.info("patching with flash attention")
             replace_llama_attn_with_flash_attn()
@@ -322,6 +328,9 @@ def load_model(
         )
         model.config.max_position_embeddings = cfg.sequence_len
 
+    if model.device.type == "cuda":
+        log_gpu_memory_usage(LOG, "after model load", model.device)
+
     if not cfg.gptq and (
         (cfg.adapter == "lora" and load_in_8bit)
         or (cfg.adapter == "qlora" and cfg.load_in_4bit)
@@ -330,6 +339,16 @@ def load_model(
         model = prepare_model_for_kbit_training(
             model, use_gradient_checkpointing=cfg.gradient_checkpointing
         )
+
+        # LlamaRMSNorm layers are in fp32 after kbit_training, so we need to
+        # convert them back to fp16/bf16 for flash-attn compatibility.
+        if cfg.flash_attention and cfg.is_llama_derived_model:
+            for name, module in model.named_modules():
+                if "norm" in name:
+                    module.to(torch_dtype)
+                if "lm_head" in name or "embed_tokens" in name:
+                    if hasattr(module, "weight"):
+                        module.to(torch_dtype)
 
     model, lora_config = load_adapter(model, cfg, adapter)
 
@@ -347,6 +366,9 @@ def load_model(
                     module.zeros = module.zeros.half()
                 module.scales = module.scales.half()
                 module.bias = module.bias.half()
+
+    if model.device.type == "cuda":
+        log_gpu_memory_usage(LOG, "after adapters", model.device)
 
     if (
         torch.cuda.device_count() > 1
@@ -379,6 +401,8 @@ def load_adapter(model, cfg, adapter):
 
     if adapter is None:
         return model, None
+    if hasattr(model, "enable_input_require_grads"):
+        model.enable_input_require_grads()
     if adapter in ["lora", "qlora"]:
         return load_lora(model, cfg)
     if adapter == "llama-adapter":
