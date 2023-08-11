@@ -12,7 +12,7 @@ from configs import TestConfigs
 from datasets import Dataset
 from pytest_cases import parametrize_with_cases
 
-from axolotl.utils.bench import gpu_memory_usage
+from axolotl.utils.bench import gpu_memory_usage, gpu_memory_usage_all
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.data import encode_pretraining
 from axolotl.utils.models import load_model, load_tokenizer
@@ -71,9 +71,12 @@ def memory_cleanup():
                 obj.grad = None
                 obj.storage().resize_(0)
                 cnt += 1
-            print(f"  forcibly cleared {cnt} tensors using {mem} GB")
             gc.collect()
             torch.cuda.empty_cache()
+            usage, cache, misc = gpu_memory_usage_all()
+            print(
+                f"  forcibly cleared {cnt} tensors: {mem:.03f}GB -> {usage:.03f}GB (+{cache:.03f}GB cache, +{misc:.03f}GB misc)"
+            )
 
 
 def get_tensors(gpu_only=True):
