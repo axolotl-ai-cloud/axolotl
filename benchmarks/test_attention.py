@@ -41,8 +41,8 @@ def memory_cleanup(results_bag):
 
 @parametrize_with_cases("model_cfg", cases=TestConfigs, prefix="model_")
 @parametrize_with_cases("attn_cfg", cases=TestConfigs, prefix="attn_")
-def _test_benchmark_attn(model_cfg, attn_cfg, results_bag):
-    cfg = model_cfg | attn_cfg
+def test_benchmark_attn(model_cfg, attn_cfg, results_bag):
+    cfg = model_cfg | TestConfigs().dtype_bf16() | attn_cfg
     cfg.output_dir = logs_dir
     results_bag.cfg = cfg
     assert "llama" in cfg.base_model
@@ -50,6 +50,14 @@ def _test_benchmark_attn(model_cfg, attn_cfg, results_bag):
     normalize_config(cfg)
     tokenizer = load_tokenizer(cfg)
     model, _ = load_model(cfg, tokenizer)
+
+    dataset = Dataset.from_list([{"text": "hello world"}])
+    encode = functools.partial(encode_pretraining, tokenizer, cfg.sequence_len)
+    dataset = dataset.map(encode, batched=True, remove_columns=["text"])
+    trainer = setup_trainer(cfg, dataset.with_format("torch"), [], model, tokenizer)
+    trainer.train()
+
+    del trainer
     del tokenizer
     del model
 
@@ -74,7 +82,7 @@ def _test_load_model(model_cfg, dtype_cfg, results_bag):
 @parametrize_with_cases(
     "dtype_cfg", cases=TestConfigs, prefix="dtype_", has_tag="quick"
 )
-def test_trainer(model_cfg, dtype_cfg, results_bag):
+def _test_trainer(model_cfg, dtype_cfg, results_bag):
     cfg = model_cfg | dtype_cfg
     cfg.output_dir = logs_dir
     results_bag.cfg = cfg
@@ -83,12 +91,14 @@ def test_trainer(model_cfg, dtype_cfg, results_bag):
     normalize_config(cfg)
     assert cfg.stats_bag.vram_baseline <= 3
     tokenizer = load_tokenizer(cfg)
+    model, _ = load_model(cfg, tokenizer)
+
     dataset = Dataset.from_list([{"text": "hello world"}])
     encode = functools.partial(encode_pretraining, tokenizer, cfg.sequence_len)
     dataset = dataset.map(encode, batched=True, remove_columns=["text"])
-    model, _ = load_model(cfg, tokenizer)
     trainer = setup_trainer(cfg, dataset.with_format("torch"), [], model, tokenizer)
     trainer.train()
+
     del trainer
     del tokenizer
     del model
