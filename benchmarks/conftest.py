@@ -6,6 +6,9 @@ from tabulate import tabulate  # type: ignore
 
 def pytest_sessionfinish(session):
     out = get_session_results_df(session)
+    if len(out) == 0:
+        return
+    out.rename(index=lambda s: s.split("::")[1], inplace=True)
     out.drop(
         [
             "status",
