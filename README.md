@@ -426,7 +426,9 @@ save_safetensors:
 
 # whether to mask out or include the human's prompt from the training labels
 train_on_inputs: false
-# don't use this, leads to wonky training (according to someone on the internet)
+# group similarly sized data to minimize padding
+# may be slower to start, as it must download and sort the entire dataset
+# note that training loss may have an oscillating pattern with this enabled
 group_by_length: false
 
 # Whether to use gradient checkpointing https://huggingface.co/docs/transformers/v4.18.0/en/performance#gradient-checkpointing
@@ -503,6 +505,9 @@ torchdistx_path:
 # Set padding for data collator to 'longest'
 collator_pad_to_longest:
 
+# Set to HF dataset for type: 'completion' for streaming instead of pre-tokenize
+pretraining_dataset:
+
 # Debug mode
 debug:
 
@@ -522,7 +527,14 @@ Run
 accelerate launch scripts/finetune.py configs/your_config.yml
 ```
 
-#### Multi-GPU Config
+#### Multi-GPU
+
+It is recommended to pre-tokenize dataset with the following before finetuning:
+```bash
+CUDA_VISIBLE_DEVICES="" accelerate ... --prepare_ds_only
+```
+
+##### Config
 
 - llama FSDP
 ```yaml
