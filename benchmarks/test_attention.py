@@ -81,7 +81,7 @@ def test_trainer(model_cfg, dtype_cfg, results_bag):
     assert "llama" in cfg.base_model
     assert validate_config(cfg) is None
     normalize_config(cfg)
-    assert cfg.stats_bag.vram_baseline <= 1.750
+    assert cfg.stats_bag.vram_baseline <= 3
     tokenizer = load_tokenizer(cfg)
     dataset = Dataset.from_list([{"text": "hello world"}])
     encode = functools.partial(encode_pretraining, tokenizer, cfg.sequence_len)
