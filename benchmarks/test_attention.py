@@ -2,6 +2,7 @@
 
 import functools
 import gc
+import json
 import logging
 from pathlib import Path
 
@@ -30,13 +31,19 @@ def configure_logging(request, caplog):
 
 
 @pytest.fixture(autouse=True)
-def copy_results(results_bag):
+def copy_results(request, results_bag):
     try:
         yield
     finally:
         if "cfg" in results_bag:
-            for k, val in results_bag.cfg.stats_bag.items():
+            cfg = results_bag.cfg
+            del results_bag.cfg
+            for k, val in cfg.stats_bag.items():
                 results_bag[k] = val
+            with open(
+                logs_dir / f"{request.node.name}.jsonl", "w", encoding="UTF-8"
+            ) as file:
+                file.write(json.dumps(results_bag) + "\n")
 
 
 @pytest.fixture(autouse=True)
