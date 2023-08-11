@@ -29,7 +29,8 @@ class TestConfigs:  # pylint: disable=missing-class-docstring disable=too-many-p
     def train_simple(self):
         return DictDefault(
             {
-                "num_epochs": 1,
+                "warmup_steps": 3,
+                "num_epochs": 3,
                 "gradient_accumulation_steps": 1,
                 "micro_batch_size": 1,
                 "val_set_size": 0,
