@@ -70,6 +70,27 @@ class TestConfigs:  # pylint: disable=missing-class-docstring disable=too-many-p
             }
         )
 
+    def opt_adamw_apex_fused(self):
+        return DictDefault(
+            {
+                "optimizer": "adamw_apex_fused",
+            }
+        )
+
+    def opt_lion_8bit(self):
+        return DictDefault(
+            {
+                "optimizer": "lion_8bit",
+            }
+        )
+
+    def opt_paged_lion_8bit(self):
+        return DictDefault(
+            {
+                "optimizer": "paged_lion_8bit",
+            }
+        )
+
     def ctx_128(self):
         return DictDefault(
             {
