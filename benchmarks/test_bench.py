@@ -109,7 +109,7 @@ def test_bench_attn(model_cfg, attn_cfg, dtype_cfg, results_bag):
     assert validate_config(cfg) is None
     normalize_config(cfg)
     setup_wandb_env_vars(cfg)
-    assert cfg.stats_bag.vram_baseline <= 3
+    assert cfg.stats_bag.vram_baseline <= 0.25
     try:
         trainer = None
         tokenizer = load_tokenizer(cfg)
@@ -154,7 +154,7 @@ def test_load_model(model_cfg, dtype_cfg, results_bag):
     assert validate_config(cfg) is None
     normalize_config(cfg)
     setup_wandb_env_vars(cfg)
-    assert cfg.stats_bag.vram_baseline <= 1.750
+    assert cfg.stats_bag.vram_baseline <= 0.25
     tokenizer = load_tokenizer(cfg)
     model, _ = load_model(cfg, tokenizer)
     del tokenizer
@@ -172,7 +172,7 @@ def test_trainer(model_cfg, opt_cfg, dtype_cfg, results_bag):
     assert validate_config(cfg) is None
     normalize_config(cfg)
     setup_wandb_env_vars(cfg)
-    assert cfg.stats_bag.vram_baseline <= 3
+    assert cfg.stats_bag.vram_baseline <= 0.25
     try:
         trainer = None
         tokenizer = load_tokenizer(cfg)
