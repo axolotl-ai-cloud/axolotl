@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Optional, Union
 
 import bitsandbytes as bnb
+import numpy as np
 import torch.cuda
 import transformers
 from datasets import Dataset, set_caching_enabled
@@ -283,11 +284,8 @@ def calculate_total_num_steps(cfg, train_dataset, tokenizer):
     if cfg.sample_packing:
         # we have to drop anything longer then sequence len otherwise
         # flash attention with position ids fails
-        total_num_tokens = (
-            cfg.total_num_tokens
-            if cfg.total_num_tokens
-            else sum(len(s["input_ids"]) for s in train_dataset)
-        )
+        LOG.info("calculating total_num_tokens")
+        total_num_tokens = np.sum(train_dataset.data.column("input_ids").to_pandas().apply(lambda x: len(x)).values)
         if not cfg.total_num_tokens:
             LOG.info(f"📝 UPDATE CONFIG WITH: `total_num_tokens: {total_num_tokens}`")
 
@@ -299,7 +297,7 @@ def calculate_total_num_steps(cfg, train_dataset, tokenizer):
                         0.99
                         * total_num_tokens
                         / cfg.sample_packing_eff_est
-                        / 2048
+                        / cfg.sequence_len
                         // cfg.batch_size
                         // int(os.environ.get("WORLD_SIZE", 1))
                     )
