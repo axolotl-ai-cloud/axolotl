@@ -219,7 +219,9 @@ def load_model(
         elif cfg.is_llama_derived_model and not cfg.trust_remote_code:
             from transformers import LlamaForCausalLM
 
-            config = LlamaConfig.from_pretrained(base_model_config)
+            config = LlamaConfig.from_pretrained(
+                base_model_config, rope_scaling=cfg.rope_scaling
+            )
             model = LlamaForCausalLM.from_pretrained(
                 base_model,
                 config=config,
@@ -227,7 +229,6 @@ def load_model(
                 load_in_4bit=cfg.load_in_4bit and cfg.adapter is not None,
                 torch_dtype=torch_dtype,
                 device_map="auto" if cfg.world_size == 1 else cfg.device_map,
-                rope_scaling=cfg.rope_scaling,
                 **model_kwargs,
             )
         # elif model_type == "GPTNeoXForCausalLM" and cfg.flash_attention:
