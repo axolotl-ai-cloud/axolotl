@@ -634,6 +634,6 @@ pytest tests/
 # benchmark
 pip3 install -r requirements-bench.txt
 pytest benchmarks/ --co
-pytest -s benchmarks/ -k 'bench_attn[4bit-flash'
+pytest -s benchmarks/ -k 'bench_attn and 4bit'
 cat benchmarks/logs/bench_attn*.jsonl
 ```
