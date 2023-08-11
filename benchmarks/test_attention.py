@@ -74,7 +74,7 @@ def get_tensors(gpu_only=True):
 
             if tensor.is_cuda or not gpu_only:
                 yield tensor
-        except (RuntimeError, ModuleNotFoundError, OSError):
+        except (RuntimeError, ModuleNotFoundError, OSError, AssertionError):
             pass
 
 
