@@ -17,6 +17,7 @@ def pytest_sessionfinish(session):
             "model_cfg",
             "attn_cfg",
             "dtype_cfg",
+            "opt_cfg",
             "adapter_cfg",
             "pytest_obj",
             "vram_baseline",
