@@ -505,6 +505,9 @@ torchdistx_path:
 # Set padding for data collator to 'longest'
 collator_pad_to_longest:
 
+# Set to HF dataset for type: 'completion' for streaming instead of pre-tokenize
+pretraining_dataset:
+
 # Debug mode
 debug:
 
