@@ -64,21 +64,27 @@ def memory_cleanup():
 
 def get_tensors(gpu_only=True):
     for obj in gc.get_objects():
-        if torch.is_tensor(obj):
-            tensor = obj
-        elif hasattr(obj, "data") and torch.is_tensor(obj.data):
-            tensor = obj.data
-        else:
-            continue
+        try:
+            if torch.is_tensor(obj):
+                tensor = obj
+            elif hasattr(obj, "data") and torch.is_tensor(obj.data):
+                tensor = obj.data
+            else:
+                continue
 
-        if tensor.is_cuda or not gpu_only:
-            yield tensor
+            if tensor.is_cuda or not gpu_only:
+                yield tensor
+        except (RuntimeError, ModuleNotFoundError, OSError):
+            pass
 
 
 @parametrize_with_cases("model_cfg", cases=TestConfigs, prefix="model_")
 @parametrize_with_cases("attn_cfg", cases=TestConfigs, prefix="attn_")
-def test_benchmark_attn(model_cfg, attn_cfg, results_bag):
-    cfg = model_cfg | TestConfigs().dtype_bf16() | attn_cfg
+@parametrize_with_cases(
+    "dtype_cfg", cases=TestConfigs, prefix="dtype_", glob="dtype_4bit"
+)
+def test_benchmark_attn(model_cfg, attn_cfg, dtype_cfg, results_bag):
+    cfg = model_cfg | dtype_cfg | attn_cfg
     cfg.output_dir = logs_dir
     results_bag.cfg = cfg
     assert "llama" in cfg.base_model
@@ -87,9 +93,9 @@ def test_benchmark_attn(model_cfg, attn_cfg, results_bag):
     setup_wandb_env_vars(cfg)
     assert cfg.stats_bag.vram_baseline <= 3
     try:
+        trainer = None
         tokenizer = load_tokenizer(cfg)
         model, _ = load_model(cfg, tokenizer)
-        trainer = None
 
         dataset = Dataset.from_list([{"text": "hello world"}])
         encode = functools.partial(encode_pretraining, tokenizer, cfg.sequence_len)
@@ -97,6 +103,10 @@ def test_benchmark_attn(model_cfg, attn_cfg, results_bag):
 
         trainer = setup_trainer(cfg, dataset.with_format("torch"), [], model, tokenizer)
         trainer.train()
+        for elem in trainer.state.log_history:
+            if "train_runtime" in elem:
+                for key, val in elem.items():
+                    results_bag[key] = val
 
     finally:
         if trainer is not None:
@@ -140,9 +150,9 @@ def _test_trainer(model_cfg, dtype_cfg, results_bag):
     setup_wandb_env_vars(cfg)
     assert cfg.stats_bag.vram_baseline <= 3
     try:
+        trainer = None
         tokenizer = load_tokenizer(cfg)
         model, _ = load_model(cfg, tokenizer)
-        trainer = None
 
         dataset = Dataset.from_list([{"text": "hello world"}])
         encode = functools.partial(encode_pretraining, tokenizer, cfg.sequence_len)
@@ -150,6 +160,11 @@ def _test_trainer(model_cfg, dtype_cfg, results_bag):
 
         trainer = setup_trainer(cfg, dataset.with_format("torch"), [], model, tokenizer)
         trainer.train()
+        for elem in trainer.state.log_history:
+            if "train_runtime" in elem:
+                for key, val in elem.items():
+                    results_bag[key] = val
+
     finally:
         if trainer is not None:
             del trainer

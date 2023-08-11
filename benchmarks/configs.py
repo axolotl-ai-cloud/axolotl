@@ -13,7 +13,6 @@ class TestConfigs:  # pylint: disable=missing-class-docstring
                     "base_model": "meta-llama/Llama-2-7b-chat-hf",
                     "base_model_config": "meta-llama/Llama-2-7b-chat-hf",
                     "model_type": "LlamaForCausalLM",
-                    "tokenizer_type": "LlamaTokenizer",
                     "is_llama_derived_model": True,
                     "pad_token": "<pad>",
                     "special_tokens": {
@@ -157,6 +156,7 @@ class TestConfigs:  # pylint: disable=missing-class-docstring
             DictDefault(
                 {
                     "load_in_4bit": True,
+                    "bf16": True,
                 }
             )
             | self.adapter_qlora()
@@ -167,6 +167,7 @@ class TestConfigs:  # pylint: disable=missing-class-docstring
             DictDefault(
                 {
                     "load_in_8bit": True,
+                    "bf16": True,
                 }
             )
             | self.adapter_lora()

@@ -4,6 +4,7 @@
 import logging
 import math
 import os
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional, Tuple  # noqa: F401
 
@@ -81,6 +82,7 @@ def load_model(
     base_model = cfg.base_model
     base_model_config = cfg.base_model_config
     model_type = cfg.model_type
+    start = time.time()
 
     # TODO refactor as a kwarg
     load_in_8bit = cfg.load_in_8bit
@@ -327,6 +329,9 @@ def load_model(
         cfg.stats_bag.vram_model = mem - cfg.stats_bag.vram_baseline
         cfg.stats_bag.vram_last = mem
 
+    cfg.stats_bag.time_model = time.time() - start
+    start = time.time()
+
     if not cfg.gptq and (
         (cfg.adapter == "lora" and load_in_8bit)
         or (cfg.adapter == "qlora" and cfg.load_in_4bit)
@@ -389,6 +394,9 @@ def load_model(
         mem = log_gpu_memory_usage(LOG, "after adapters", model.device)
         cfg.stats_bag.vram_adapter = mem - cfg.stats_bag.vram_last
         cfg.stats_bag.vram_last = mem
+
+    cfg.stats_bag.time_adapter = time.time() - start
+    start = time.time()
 
     # TODO resume_from_checkpoint handling
     return model, lora_config
