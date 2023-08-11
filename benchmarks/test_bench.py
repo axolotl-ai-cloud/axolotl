@@ -35,7 +35,9 @@ def copy_results(results_bag):
     try:
         yield
     finally:
-        if (cfg := results_bag.pop("cfg", None)) is not None:
+        if (
+            cfg := results_bag.pop("cfg", None)
+        ) is not None and cfg.stats_bag is not None:
             for key, val in cfg.stats_bag.items():
                 results_bag[key] = val
 
