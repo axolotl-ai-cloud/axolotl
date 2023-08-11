@@ -163,7 +163,7 @@ def test_load_model(model_cfg, dtype_cfg, results_bag):
 @parametrize_with_cases("dtype_cfg", cases=TestConfigs, prefix="dtype_")
 @parametrize_with_cases("opt_cfg", cases=TestConfigs, prefix="opt_")
 def test_trainer(model_cfg, opt_cfg, dtype_cfg, results_bag):
-    cfg = model_cfg | opt_cfg | dtype_cfg
+    cfg = model_cfg | opt_cfg | dtype_cfg | TestConfigs().attn_xformers()
     cfg.output_dir = str(logs_dir.resolve())
     results_bag.cfg = cfg
     assert "llama" in cfg.base_model
