@@ -200,7 +200,7 @@ def test_inference(model_cfg, ctx_cfg, dtype_cfg, attn_cfg, results_bag):
                 eos_token_id=tokenizer.eos_token_id,
                 pad_token_id=tokenizer.pad_token_id,
                 do_sample=True,
-                use_cache=True,
+                use_cache=False,
                 return_dict_in_generate=True,
                 output_attentions=False,
                 output_hidden_states=False,
