@@ -106,6 +106,12 @@ def test_benchmark_attn(model_cfg, attn_cfg, dtype_cfg, results_bag):
         for elem in trainer.state.log_history:
             if "train_runtime" in elem:
                 for key, val in elem.items():
+                    if key == "train_runtime":
+                        key = "time_train"
+                    elif key == "train_samples_per_second":
+                        ...
+                    else:
+                        continue
                     results_bag[key] = val
 
     finally:
@@ -163,6 +169,12 @@ def _test_trainer(model_cfg, dtype_cfg, results_bag):
         for elem in trainer.state.log_history:
             if "train_runtime" in elem:
                 for key, val in elem.items():
+                    if key == "train_runtime":
+                        key = "time_train"
+                    elif key == "train_samples_per_second":
+                        ...
+                    else:
+                        continue
                     results_bag[key] = val
 
     finally:
@@ -176,6 +188,7 @@ def test_synthesis(module_results_df):
     module_results_df.drop(
         [
             "status",
+            "duration_ms",
             "cfg",
             "model_cfg",
             "attn_cfg",
