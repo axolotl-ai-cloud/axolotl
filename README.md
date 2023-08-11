@@ -524,7 +524,14 @@ Run
 accelerate launch scripts/finetune.py configs/your_config.yml
 ```
 
-#### Multi-GPU Config
+#### Multi-GPU
+
+It is recommended to pre-tokenize dataset with the following before finetuning:
+```bash
+CUDA_VISIBLE_DEVICES="" accelerate ... --prepare_ds_only
+```
+
+##### Config
 
 - llama FSDP
 ```yaml
