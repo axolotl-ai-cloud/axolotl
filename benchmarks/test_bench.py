@@ -19,6 +19,7 @@ from axolotl.utils.models import load_model, load_tokenizer
 from axolotl.utils.trainer import setup_trainer
 from axolotl.utils.wandb import setup_wandb_env_vars
 
+LOG = logging.getLogger("axolotl.bench")
 logs_dir = Path(__file__).parent / "logs"
 
 
@@ -64,7 +65,7 @@ def memory_cleanup():
         torch.cuda.empty_cache()
 
         if (mem := gpu_memory_usage()) > 3.0:
-            print("GPU memory usage still high!")
+            LOG.warning("GPU memory usage still high!")
             cnt = 0
             for obj in get_tensors():
                 obj.detach()
@@ -74,7 +75,7 @@ def memory_cleanup():
             gc.collect()
             torch.cuda.empty_cache()
             usage, cache, misc = gpu_memory_usage_all()
-            print(
+            LOG.warning(
                 f"  forcibly cleared {cnt} tensors: {mem:.03f}GB -> {usage:.03f}GB (+{cache:.03f}GB cache, +{misc:.03f}GB misc)"
             )
 
