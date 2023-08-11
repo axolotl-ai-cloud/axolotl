@@ -152,8 +152,8 @@ class MultipackDistributedDataloader:
     ):
         # Dataset
         self.dataset = dataset
-        self.lengths: np.ndarray = np.array(
-            [len(sample["input_ids"]) for sample in self.dataset]
+        self.lengths = (
+            dataset.data.column("position_ids").to_pandas().apply(lambda x: x[-1] + 1).values
         )
         assert isinstance(self.lengths, np.ndarray)
         assert batch_size % sample_packing_seq_len_multiplier == 0
@@ -236,29 +236,13 @@ class MultipackDistributedDataloader:
                         ]
                         concatenated[feature] = np.concatenate(arrays)
                 chunked_data.append(concatenated)
-                # num_chunks = int(
-                #     np.ceil(len(next(iter(concatenated.values()))) / self.seq_max_length)
-                # )
-                # chunked_data = []
-                #
-                # for i in range(num_chunks):
-                #     chunk = {
-                #         feature: array[
-                #             i * self.seq_max_length : (i + 1) * self.seq_max_length
-                #         ]
-                #         for feature, array in concatenated.items()
-                #     }
-                #     chunked_data.append(chunk)
-                # yield self.collate_fn(chunked_data)
             yield self.collate_fn(chunked_data)
             len_remaining -= 1
             if not len_remaining:
                 return
 
     def _len_est(self):
-        indices = range(0, len(self.dataset))
-        lengths = self.lengths[indices]
-        lengths_sum = np.cumsum(lengths)[-1]
+        lengths_sum = np.sum(self.lengths)
         lengths_sum_per_device = lengths_sum // self.device_count
         LOG.info(
             f"packing_efficiency_estimate: {self.packing_efficiency_estimate} "
@@ -271,7 +255,7 @@ class MultipackDistributedDataloader:
                 0.99
                 * lengths_sum_per_device
                 / self.packing_efficiency_estimate
-                / self.seq_max_length
+                // self.seq_max_length
                 // self.batch_size
             )
             - 1
