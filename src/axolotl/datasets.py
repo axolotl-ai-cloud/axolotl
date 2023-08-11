@@ -5,7 +5,7 @@ import os
 from typing import List
 
 import torch
-from datasets import IterableDataset
+from datasets import Dataset
 
 from .prompt_tokenizers import PromptTokenizingStrategy
 
@@ -18,9 +18,9 @@ from .prompt_tokenizers import PromptTokenizingStrategy
 LOG = logging.getLogger("axolotl")
 
 
-class TokenizedPromptDataset(IterableDataset):
+class TokenizedPromptDataset(Dataset):
     """
-    Iterable dataset that returns tokenized prompts from a stream of text files.
+    Dataset that returns tokenized prompts from a stream of text files.
         Args:
             prompt_tokenizer (PromptTokenizingStrategy): The prompt tokenizing method for proccessing the data.
             dataset (dataset.Dataset): Dataset with text files.
@@ -30,27 +30,19 @@ class TokenizedPromptDataset(IterableDataset):
         self,
         prompt_tokenizer: PromptTokenizingStrategy,
         dataset: IterableDataset,
+        **kwargs,
     ):
         self.prompt_tokenizer = prompt_tokenizer
-        self.dataset = dataset
-        self.tokenized_dataset = self.process()
+        super().__init__(self.process(dataset).data, **kwargs)
 
-    def process(self):
-        features = self.dataset.features.keys()
+    def process(self, dataset):
+        features = dataset.features.keys()
         num_proc = os.cpu_count()
-        return self.dataset.map(
+        return dataset.map(
             self.prompt_tokenizer.tokenize_prompt,
             num_proc=num_proc,
             remove_columns=features,
         )
-
-    def __iter__(self):
-        return iter(
-            self.tokenized_dataset
-        )
-
-    def __len__(self):
-        return len(self.tokenized_dataset)
 
 
 # TODO this isn't the best since it can't interleave datasets

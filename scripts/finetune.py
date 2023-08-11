@@ -272,7 +272,7 @@ def train(
     log_gpu_memory_usage(LOG, "baseline", cfg.device)
 
     # Load the model and tokenizer
-    LOG.info("loading model and peft_config...")
+    LOG.info("loading model and (optionally) peft_config...")
     model, peft_config = load_model(cfg, tokenizer)
 
     safe_serialization = cfg.save_safetensors is True

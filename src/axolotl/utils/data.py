@@ -266,10 +266,11 @@ def load_tokenized_prepared_datasets(
                     f"unhandled prompt tokenization strategy: {d.type} {suffix}"
                 )
         LOG.info("merging datasets")
-        samples = concatenate_datasets(datasets)
+        dataset = concatenate_datasets(datasets)
 
-        LOG.info("shuffle")
-        dataset = Dataset.from_list(samples).shuffle(seed=seed)
+        if len(datasets) > 1:
+            LOG.info("shuffle merged datasets")
+            dataset = dataset.shuffle(seed=seed)
         if cfg.local_rank == 0:
             LOG.info(f"Saving merged prepared dataset to disk... {prepared_ds_path}")
             dataset.save_to_disk(prepared_ds_path)
