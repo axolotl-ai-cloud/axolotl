@@ -90,9 +90,10 @@ class GPUStatsCallback(
         control: TrainerControl,
         **kwargs,
     ):
-        if not self.logged:
-            mem = log_gpu_memory_usage(LOG, "while training", self.cfg.device)
+        if not self.logged and state.global_step > 1:
+            mem, cache, _ = log_gpu_memory_usage(LOG, "while training", self.cfg.device)
             self.cfg.stats_bag.vram_train = mem - self.cfg.stats_bag.vram_last
+            self.cfg.stats_bag.vram_train_cache = cache
             self.cfg.stats_bag.vram_last = mem
             self.logged = True
         return control

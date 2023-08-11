@@ -59,7 +59,9 @@ def normalize_config(cfg):
 
     # create bench stats bag
     cfg.stats_bag = DictDefault()
-    cfg.stats_bag.vram_baseline = log_gpu_memory_usage(LOG, "baseline", cfg.device)
+    cfg.stats_bag.vram_baseline, _, _ = log_gpu_memory_usage(
+        LOG, "baseline", cfg.device
+    )
 
 
 def validate_config(cfg):

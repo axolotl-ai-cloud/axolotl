@@ -325,7 +325,7 @@ def load_model(
         model.config.max_position_embeddings = cfg.sequence_len
 
     if model.device.type == "cuda":
-        mem = log_gpu_memory_usage(LOG, "after model load", model.device)
+        mem, _, _ = log_gpu_memory_usage(LOG, "after model load", model.device)
         cfg.stats_bag.vram_model = mem - cfg.stats_bag.vram_baseline
         cfg.stats_bag.vram_last = mem
 
@@ -391,7 +391,7 @@ def load_model(
         model = BetterTransformer.transform(model)
 
     if model.device.type == "cuda":
-        mem = log_gpu_memory_usage(LOG, "after adapters", model.device)
+        mem, _, _ = log_gpu_memory_usage(LOG, "after adapters", model.device)
         cfg.stats_bag.vram_adapter = mem - cfg.stats_bag.vram_last
         cfg.stats_bag.vram_last = mem
 
