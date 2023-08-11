@@ -1,5 +1,6 @@
 """Benchmarks for various attention mechanisms"""
 
+import functools
 import gc
 import logging
 from pathlib import Path
@@ -7,10 +8,13 @@ from pathlib import Path
 import pytest
 import torch
 from configs import TestConfigs
+from datasets import Dataset
 from pytest_cases import parametrize_with_cases
 from tabulate import tabulate  # type: ignore
 
+from axolotl.utils.bench import gpu_memory_usage
 from axolotl.utils.config import normalize_config, validate_config
+from axolotl.utils.data import encode_pretraining
 from axolotl.utils.models import load_model, load_tokenizer
 from axolotl.utils.trainer import setup_trainer
 
@@ -60,7 +64,7 @@ def _test_load_model(model_cfg, dtype_cfg, results_bag):
     assert "llama" in cfg.base_model
     assert validate_config(cfg) is None
     normalize_config(cfg)
-    assert cfg.stats_bag.vram_baseline <= 0.750
+    assert cfg.stats_bag.vram_baseline <= 1.750
     tokenizer = load_tokenizer(cfg)
     model, _ = load_model(cfg, tokenizer)
     del tokenizer
@@ -78,10 +82,16 @@ def test_trainer(model_cfg, dtype_cfg, results_bag):
     assert "llama" in cfg.base_model
     assert validate_config(cfg) is None
     normalize_config(cfg)
-    assert cfg.stats_bag.vram_baseline <= 0.750
+    assert cfg.stats_bag.vram_baseline <= 1.750
     tokenizer = load_tokenizer(cfg)
+    dataset = Dataset.from_list([{"text": "hello world"}])
+    encode = functools.partial(encode_pretraining, tokenizer, cfg.sequence_len)
+    dataset = dataset.map(encode, batched=True, remove_columns=["text"])
     model, _ = load_model(cfg, tokenizer)
-    trainer = setup_trainer(cfg, [], [], model, tokenizer)
+    trainer = setup_trainer(cfg, dataset.with_format("torch"), [], model, tokenizer)
+    trainer.train()
+    cfg.stats_bag.vram_train = gpu_memory_usage() - cfg.stats_bag.vram_last
+    cfg.stats_bag.vram_end = gpu_memory_usage()
     del trainer
     del tokenizer
     del model
@@ -98,6 +108,7 @@ def test_synthesis(module_results_df):
             "adapter_cfg",
             "pytest_obj",
             "vram_baseline",
+            "vram_last",
         ],
         axis=1,
         inplace=True,

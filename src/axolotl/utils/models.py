@@ -325,6 +325,7 @@ def load_model(
     if model.device.type == "cuda":
         mem = log_gpu_memory_usage(LOG, "after model load", model.device)
         cfg.stats_bag.vram_model = mem - cfg.stats_bag.vram_baseline
+        cfg.stats_bag.vram_last = mem
 
     if not cfg.gptq and (
         (cfg.adapter == "lora" and load_in_8bit)
@@ -386,9 +387,8 @@ def load_model(
 
     if model.device.type == "cuda":
         mem = log_gpu_memory_usage(LOG, "after adapters", model.device)
-        cfg.stats_bag.vram_adapter = (
-            mem - cfg.stats_bag.vram_model - cfg.stats_bag.vram_baseline
-        )
+        cfg.stats_bag.vram_adapter = mem - cfg.stats_bag.vram_last
+        cfg.stats_bag.vram_last = mem
 
     # TODO resume_from_checkpoint handling
     return model, lora_config

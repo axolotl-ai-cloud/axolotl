@@ -16,6 +16,11 @@ class TestConfigs:  # pylint: disable=missing-class-docstring
                     "tokenizer_type": "LlamaTokenizer",
                     "is_llama_derived_model": True,
                     "pad_token": "<pad>",
+                    "special_tokens": {
+                        "bos_token": "<s>",
+                        "eos_token": "</s>",
+                        "unk_token": "<unk>",
+                    },
                 }
             )
             | self.ctx_1k()
@@ -29,6 +34,12 @@ class TestConfigs:  # pylint: disable=missing-class-docstring
                 "gradient_accumulation_steps": 1,
                 "micro_batch_size": 1,
                 "val_set_size": 0,
+                "optimizer": "adamw_torch",
+                "adam_beta2": 0.98,
+                "max_grad_norm": 1.0,
+                "learning_rate": 0.00005,
+                "lr_scheduler": "cosine",
+                "lr_quadratic_warmup": True,
             }
         )
 
