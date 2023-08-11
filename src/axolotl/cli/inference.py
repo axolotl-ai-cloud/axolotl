@@ -84,12 +84,8 @@ def batch(**kwargs: Dict[str, Any]):
     # Load the model
     LOG.info("Loading model and peft_config: %s", derived_cfg.base_model)
     model, _ = load_model(
-        base_model=derived_cfg.base_model,
-        base_model_config=derived_cfg.base_model_config,
-        model_type=derived_cfg.model_type,
-        tokenizer=tokenizer,
         cfg=derived_cfg,
-        adapter=derived_cfg.adapter,
+        tokenizer=tokenizer,
     )
 
     if derived_cfg.landmark_attention:
