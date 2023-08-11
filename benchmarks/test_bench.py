@@ -4,6 +4,7 @@ import functools
 import gc
 import json
 import logging
+import time
 from pathlib import Path
 
 import pytest
@@ -11,8 +12,13 @@ import torch
 from configs import TestConfigs
 from datasets import Dataset
 from pytest_cases import parametrize_with_cases
+from transformers import GenerationConfig
 
-from axolotl.utils.bench import gpu_memory_usage, gpu_memory_usage_all
+from axolotl.utils.bench import (
+    gpu_memory_usage,
+    gpu_memory_usage_all,
+    log_gpu_memory_usage,
+)
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.data import encode_pretraining
 from axolotl.utils.models import load_model, load_tokenizer
@@ -159,6 +165,68 @@ def test_load_model(model_cfg, dtype_cfg, results_bag):
     model, _ = load_model(cfg, tokenizer)
     del tokenizer
     del model
+
+
+@parametrize_with_cases("model_cfg", cases=TestConfigs, prefix="model_")
+@parametrize_with_cases("dtype_cfg", cases=TestConfigs, prefix="dtype_")
+@parametrize_with_cases("ctx_cfg", cases=TestConfigs, prefix="ctx_")
+@parametrize_with_cases("attn_cfg", cases=TestConfigs, prefix="attn_")
+def test_inference(model_cfg, ctx_cfg, dtype_cfg, attn_cfg, results_bag):
+    cfg = model_cfg | ctx_cfg | dtype_cfg | attn_cfg
+    cfg.output_dir = str(logs_dir.resolve())
+    results_bag.cfg = cfg
+    assert "llama" in cfg.base_model
+    try:
+        validate_config(cfg)
+    except ValueError as ex:
+        pytest.skip(str(ex))
+        return
+    normalize_config(cfg)
+    setup_wandb_env_vars(cfg)
+    assert cfg.stats_bag.vram_baseline <= 0.25
+    try:
+        tokenizer = load_tokenizer(cfg)
+        model, _ = load_model(cfg, tokenizer)
+        batch = tokenizer("hello world", return_tensors="pt", add_special_tokens=True)
+        model.eval()
+        with torch.no_grad():
+            generation_config = GenerationConfig(
+                repetition_penalty=1.1,
+                max_new_tokens=cfg.sequence_len - len(batch["input_ids"]),
+                temperature=0.9,
+                top_p=0.95,
+                top_k=40,
+                bos_token_id=tokenizer.bos_token_id,
+                eos_token_id=tokenizer.eos_token_id,
+                pad_token_id=tokenizer.pad_token_id,
+                do_sample=True,
+                use_cache=True,
+                return_dict_in_generate=True,
+                output_attentions=False,
+                output_hidden_states=False,
+                output_scores=False,
+            )
+            start = time.time()
+            torch.cuda.empty_cache()
+            cfg.stats_bag.vram_last = gpu_memory_usage()
+            generated = model.generate(
+                inputs=batch["input_ids"].to(cfg.device),
+                generation_config=generation_config,
+                # streamer=TextStreamer(tokenizer),
+            )
+            mem, cache, _ = log_gpu_memory_usage(LOG, "after inference", model.device)
+            cfg.stats_bag.vram_generate = mem - cfg.stats_bag.vram_last
+            cfg.stats_bag.vram_last = mem
+            cfg.stats_bag.vram_generate_cache = cache
+            cfg.stats_bag.generate_time = time.time() - start
+            cfg.stats_bag.generate_tokens = generated["sequences"].shape[1]
+            cfg.stats_bag.generate_tps = (
+                cfg.stats_bag.generate_tokens / cfg.stats_bag.generate_time
+            )
+            # tokenizer.decode(generated["sequences"].cpu().tolist()[0])
+    finally:
+        del tokenizer
+        del model
 
 
 @parametrize_with_cases("model_cfg", cases=TestConfigs, prefix="model_")
