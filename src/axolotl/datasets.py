@@ -5,7 +5,7 @@ import os
 from typing import List
 
 import torch
-from datasets import Dataset
+from datasets import Dataset, IterableDataset
 
 from .prompt_tokenizers import PromptTokenizingStrategy
 
