@@ -353,7 +353,17 @@ def calculate_total_num_steps(cfg, train_dataset, tokenizer):
     return total_num_steps
 
 
+def setup_fsdp_envs(cfg):
+    os.environ["ACCELERATE_USE_FSDP"] = "true"
+    if cfg.fsdp_config.fsdp_sync_module_states:
+        os.environ["FSDP_SYNC_MODULE_STATES"] = "true"
+    if cfg.fsdp_config.fsdp_state_dict_type:
+        os.environ["FSDP_STATE_DICT_TYPE"] = cfg.fsdp_config.fsdp_state_dict_type
+
+
 def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_steps):
+    if cfg.fsdp:
+        setup_fsdp_envs(cfg)
     warmup_steps = (
         cfg.warmup_steps
         if cfg.warmup_steps is not None
