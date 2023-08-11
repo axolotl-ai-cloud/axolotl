@@ -88,14 +88,8 @@ def get_tensors(gpu_only=True):
 
             if tensor.is_cuda or not gpu_only:
                 yield tensor
-        except (
-            RuntimeError,
-            ModuleNotFoundError,
-            OSError,
-            AssertionError,
-            ImportError,
-        ):
-            pass
+        except Exception:  # nosec B112 pylint: disable=broad-exception-caught
+            continue
 
 
 @parametrize_with_cases("model_cfg", cases=TestConfigs, prefix="model_")
