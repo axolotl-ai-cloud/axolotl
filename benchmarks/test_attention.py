@@ -16,6 +16,7 @@ from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.data import encode_pretraining
 from axolotl.utils.models import load_model, load_tokenizer
 from axolotl.utils.trainer import setup_trainer
+from axolotl.utils.wandb import setup_wandb_env_vars
 
 logs_dir = Path(__file__).parent / "logs"
 
@@ -48,6 +49,7 @@ def test_benchmark_attn(model_cfg, attn_cfg, results_bag):
     assert "llama" in cfg.base_model
     assert validate_config(cfg) is None
     normalize_config(cfg)
+    setup_wandb_env_vars(cfg)
     tokenizer = load_tokenizer(cfg)
     model, _ = load_model(cfg, tokenizer)
 
@@ -71,6 +73,7 @@ def _test_load_model(model_cfg, dtype_cfg, results_bag):
     assert "llama" in cfg.base_model
     assert validate_config(cfg) is None
     normalize_config(cfg)
+    setup_wandb_env_vars(cfg)
     assert cfg.stats_bag.vram_baseline <= 1.750
     tokenizer = load_tokenizer(cfg)
     model, _ = load_model(cfg, tokenizer)
@@ -89,6 +92,7 @@ def _test_trainer(model_cfg, dtype_cfg, results_bag):
     assert "llama" in cfg.base_model
     assert validate_config(cfg) is None
     normalize_config(cfg)
+    setup_wandb_env_vars(cfg)
     assert cfg.stats_bag.vram_baseline <= 3
     tokenizer = load_tokenizer(cfg)
     model, _ = load_model(cfg, tokenizer)
