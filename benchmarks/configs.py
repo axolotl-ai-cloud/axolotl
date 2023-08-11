@@ -56,6 +56,20 @@ class TestConfigs:  # pylint: disable=missing-class-docstring disable=too-many-p
             }
         )
 
+    def opt_paged_adamw_8bit(self):
+        return DictDefault(
+            {
+                "optimizer": "paged_adamw_8bit",
+            }
+        )
+
+    def opt_paged_adamw_32bit(self):
+        return DictDefault(
+            {
+                "optimizer": "paged_adamw_32bit",
+            }
+        )
+
     def ctx_256(self):
         return DictDefault(
             {
