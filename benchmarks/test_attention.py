@@ -11,7 +11,6 @@ import torch
 from configs import TestConfigs
 from datasets import Dataset
 from pytest_cases import parametrize_with_cases
-from tabulate import tabulate  # type: ignore
 
 from axolotl.utils.bench import gpu_memory_usage
 from axolotl.utils.config import normalize_config, validate_config
@@ -31,19 +30,25 @@ def configure_logging(request, caplog):
 
 
 @pytest.fixture(autouse=True)
-def copy_results(request, results_bag):
+def copy_results(results_bag):
     try:
         yield
     finally:
-        if "cfg" in results_bag:
-            cfg = results_bag.cfg
-            del results_bag.cfg
-            for k, val in cfg.stats_bag.items():
-                results_bag[k] = val
-            with open(
-                logs_dir / f"{request.node.name}.jsonl", "w", encoding="UTF-8"
-            ) as file:
-                file.write(json.dumps(results_bag) + "\n")
+        if (cfg := results_bag.pop("cfg", None)) is not None:
+            for key, val in cfg.stats_bag.items():
+                results_bag[key] = val
+
+
+@pytest.fixture(scope="session", autouse=True)
+def write_json(fixture_store):
+    try:
+        yield
+    finally:
+        out = fixture_store["results_bag"]
+        for key, value in out.items():
+            name = key.split("::")[1]
+            with open(logs_dir / f"{name}.jsonl", "w", encoding="UTF-8") as file:
+                file.write(json.dumps(value) + "\n")
 
 
 @pytest.fixture(autouse=True)
@@ -92,7 +97,7 @@ def get_tensors(gpu_only=True):
 )
 def test_bench_attn(model_cfg, attn_cfg, dtype_cfg, results_bag):
     cfg = model_cfg | dtype_cfg | attn_cfg
-    cfg.output_dir = logs_dir
+    cfg.output_dir = str(logs_dir.resolve())
     results_bag.cfg = cfg
     assert "llama" in cfg.base_model
     assert validate_config(cfg) is None
@@ -112,6 +117,7 @@ def test_bench_attn(model_cfg, attn_cfg, dtype_cfg, results_bag):
         trainer.train()
         for elem in trainer.state.log_history:
             if "train_runtime" in elem:
+                cfg.stats_bag["train_result"] = elem
                 for key, val in elem.items():
                     if key == "train_runtime":
                         key = "time_train"
@@ -136,7 +142,7 @@ def test_bench_attn(model_cfg, attn_cfg, dtype_cfg, results_bag):
 @parametrize_with_cases("dtype_cfg", cases=TestConfigs, prefix="dtype_")
 def _test_load_model(model_cfg, dtype_cfg, results_bag):
     cfg = model_cfg | dtype_cfg
-    cfg.output_dir = logs_dir
+    cfg.output_dir = str(logs_dir.resolve())
     results_bag.cfg = cfg
     assert "llama" in cfg.base_model
     assert validate_config(cfg) is None
@@ -155,7 +161,7 @@ def _test_load_model(model_cfg, dtype_cfg, results_bag):
 )
 def _test_trainer(model_cfg, dtype_cfg, results_bag):
     cfg = model_cfg | dtype_cfg
-    cfg.output_dir = logs_dir
+    cfg.output_dir = str(logs_dir.resolve())
     results_bag.cfg = cfg
     assert "llama" in cfg.base_model
     assert validate_config(cfg) is None
@@ -175,6 +181,7 @@ def _test_trainer(model_cfg, dtype_cfg, results_bag):
         trainer.train()
         for elem in trainer.state.log_history:
             if "train_runtime" in elem:
+                cfg.stats_bag["train_result"] = elem
                 for key, val in elem.items():
                     if key == "train_runtime":
                         key = "time_train"
@@ -189,25 +196,3 @@ def _test_trainer(model_cfg, dtype_cfg, results_bag):
             del trainer
         del tokenizer
         del model
-
-
-def test_synthesis(module_results_df):
-    module_results_df.drop(
-        [
-            "status",
-            "duration_ms",
-            "cfg",
-            "model_cfg",
-            "attn_cfg",
-            "dtype_cfg",
-            "adapter_cfg",
-            "pytest_obj",
-            "vram_baseline",
-            "vram_last",
-        ],
-        axis=1,
-        inplace=True,
-        errors="ignore",
-    )
-    print("")
-    print(tabulate(module_results_df, headers="keys"))
