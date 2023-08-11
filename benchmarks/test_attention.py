@@ -50,6 +50,7 @@ def test_benchmark_attn(model_cfg, attn_cfg, results_bag):
     assert validate_config(cfg) is None
     normalize_config(cfg)
     setup_wandb_env_vars(cfg)
+    assert cfg.stats_bag.vram_baseline <= 3
     try:
         tokenizer = load_tokenizer(cfg)
         model, _ = load_model(cfg, tokenizer)
