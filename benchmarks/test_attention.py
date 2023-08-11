@@ -50,18 +50,22 @@ def test_benchmark_attn(model_cfg, attn_cfg, results_bag):
     assert validate_config(cfg) is None
     normalize_config(cfg)
     setup_wandb_env_vars(cfg)
-    tokenizer = load_tokenizer(cfg)
-    model, _ = load_model(cfg, tokenizer)
+    try:
+        tokenizer = load_tokenizer(cfg)
+        model, _ = load_model(cfg, tokenizer)
+        trainer = None
 
-    dataset = Dataset.from_list([{"text": "hello world"}])
-    encode = functools.partial(encode_pretraining, tokenizer, cfg.sequence_len)
-    dataset = dataset.map(encode, batched=True, remove_columns=["text"])
-    trainer = setup_trainer(cfg, dataset.with_format("torch"), [], model, tokenizer)
-    trainer.train()
+        dataset = Dataset.from_list([{"text": "hello world"}])
+        encode = functools.partial(encode_pretraining, tokenizer, cfg.sequence_len)
+        dataset = dataset.map(encode, batched=True, remove_columns=["text"])
+        trainer = setup_trainer(cfg, dataset.with_format("torch"), [], model, tokenizer)
+        trainer.train()
 
-    del trainer
-    del tokenizer
-    del model
+    finally:
+        if trainer is not None:
+            del trainer
+        del tokenizer
+        del model
 
 
 @parametrize_with_cases("model_cfg", cases=TestConfigs, prefix="model_")
@@ -94,18 +98,21 @@ def _test_trainer(model_cfg, dtype_cfg, results_bag):
     normalize_config(cfg)
     setup_wandb_env_vars(cfg)
     assert cfg.stats_bag.vram_baseline <= 3
-    tokenizer = load_tokenizer(cfg)
-    model, _ = load_model(cfg, tokenizer)
+    try:
+        tokenizer = load_tokenizer(cfg)
+        model, _ = load_model(cfg, tokenizer)
+        trainer = None
 
-    dataset = Dataset.from_list([{"text": "hello world"}])
-    encode = functools.partial(encode_pretraining, tokenizer, cfg.sequence_len)
-    dataset = dataset.map(encode, batched=True, remove_columns=["text"])
-    trainer = setup_trainer(cfg, dataset.with_format("torch"), [], model, tokenizer)
-    trainer.train()
-
-    del trainer
-    del tokenizer
-    del model
+        dataset = Dataset.from_list([{"text": "hello world"}])
+        encode = functools.partial(encode_pretraining, tokenizer, cfg.sequence_len)
+        dataset = dataset.map(encode, batched=True, remove_columns=["text"])
+        trainer = setup_trainer(cfg, dataset.with_format("torch"), [], model, tokenizer)
+        trainer.train()
+    finally:
+        if trainer is not None:
+            del trainer
+        del tokenizer
+        del model
 
 
 def test_synthesis(module_results_df):
