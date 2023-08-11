@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import List, Tuple, Union
 
 import torch
-from datasets import Dataset, DatasetDict, load_dataset, load_from_disk
+from datasets import Dataset, DatasetDict, concatenate_datasets, load_dataset, load_from_disk
 from huggingface_hub import hf_hub_download
 from transformers import PreTrainedTokenizerBase
 
@@ -265,17 +265,8 @@ def load_tokenized_prepared_datasets(
                 raise ValueError(
                     f"unhandled prompt tokenization strategy: {d.type} {suffix}"
                 )
-        LOG.info("tokenizing, merging, and shuffling master dataset")
-
-        samples: List[int] = []
-        chunk_size = 1000
-        for d in datasets:
-            d_iter = iter(d)
-            while True:
-                chunk = list(itertools.islice(d_iter, chunk_size))
-                if not chunk:
-                    break
-                samples.extend(chunk)
+        LOG.info("merging datasets")
+        samples = concatenate_datasets(datasets)
 
         LOG.info("shuffle")
         dataset = Dataset.from_list(samples).shuffle(seed=seed)

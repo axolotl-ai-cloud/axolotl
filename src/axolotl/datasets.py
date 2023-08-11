@@ -33,17 +33,24 @@ class TokenizedPromptDataset(IterableDataset):
     ):
         self.prompt_tokenizer = prompt_tokenizer
         self.dataset = dataset
+        self.tokenized_dataset = self.process()
 
-    def __iter__(self):
+    def process(self):
         features = self.dataset.features.keys()
         num_proc = os.cpu_count()
-        return iter(
-            self.dataset.map(
-                self.prompt_tokenizer.tokenize_prompt,
-                num_proc=num_proc,
-                remove_columns=features,
-            )
+        return self.dataset.map(
+            self.prompt_tokenizer.tokenize_prompt,
+            num_proc=num_proc,
+            remove_columns=features,
         )
+
+    def __iter__(self):
+        return iter(
+            self.tokenized_dataset
+        )
+
+    def __len__(self):
+        return len(self.tokenized_dataset)
 
 
 # TODO this isn't the best since it can't interleave datasets
