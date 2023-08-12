@@ -237,6 +237,7 @@ def load_model(
             model = LlamaForCausalLM.from_pretrained(
                 base_model,
                 config=config,
+                device_map=cfg.device_map,
                 load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
                 load_in_4bit=cfg.load_in_4bit and cfg.adapter is not None,
                 torch_dtype=torch_dtype,
@@ -271,6 +272,7 @@ def load_model(
         elif model_type and not cfg.trust_remote_code:
             model = getattr(transformers, model_type).from_pretrained(
                 base_model,
+                device_map=cfg.device_map,
                 load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
                 load_in_4bit=cfg.load_in_4bit and cfg.adapter is not None,
                 torch_dtype=torch_dtype,
@@ -301,6 +303,7 @@ def load_model(
             model = AutoModelForCausalLM.from_pretrained(
                 base_model,
                 config=config,
+                device_map=cfg.device_map,
                 load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
                 load_in_4bit=cfg.load_in_4bit and cfg.adapter is not None,
                 torch_dtype=torch_dtype,
@@ -314,6 +317,7 @@ def load_model(
         LOG.exception(err)
         model = AutoModelForCausalLM.from_pretrained(
             base_model,
+            device_map=cfg.device_map,
             load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
             load_in_4bit=cfg.load_in_4bit and cfg.adapter is not None,
             torch_dtype=torch_dtype,
