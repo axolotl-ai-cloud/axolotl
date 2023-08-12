@@ -169,10 +169,10 @@ def test_load_model(model_cfg, dtype_cfg, results_bag):
 
 @parametrize_with_cases("model_cfg", cases=TestConfigs, prefix="model_")
 @parametrize_with_cases("dtype_cfg", cases=TestConfigs, prefix="dtype_")
-@parametrize_with_cases("ctx_cfg", cases=TestConfigs, prefix="ctx_")
 @parametrize_with_cases("attn_cfg", cases=TestConfigs, prefix="attn_")
-def test_inference(model_cfg, ctx_cfg, dtype_cfg, attn_cfg, results_bag):
-    cfg = model_cfg | ctx_cfg | dtype_cfg | attn_cfg
+@parametrize_with_cases("ctx_len", cases=TestConfigs, prefix="ctx_")
+def test_inference(model_cfg, dtype_cfg, attn_cfg, ctx_len, results_bag):
+    cfg = model_cfg | dtype_cfg | attn_cfg
     cfg.output_dir = str(logs_dir.resolve())
     results_bag.cfg = cfg
     assert "llama" in cfg.base_model
@@ -187,12 +187,18 @@ def test_inference(model_cfg, ctx_cfg, dtype_cfg, attn_cfg, results_bag):
     try:
         tokenizer = load_tokenizer(cfg)
         model, _ = load_model(cfg, tokenizer)
-        batch = tokenizer("hello world", return_tensors="pt", add_special_tokens=True)
+        batch = tokenizer(
+            "hello world " * int(ctx_len / 2),
+            return_tensors="pt",
+            add_special_tokens=False,
+        )
+        cfg.stats_bag.prompt_tokens = batch["input_ids"].shape[1]
         model.eval()
         with torch.no_grad():
             generation_config = GenerationConfig(
                 repetition_penalty=1.1,
-                max_new_tokens=cfg.sequence_len - len(batch["input_ids"]),
+                min_new_tokens=128,
+                max_new_tokens=128,
                 temperature=0.9,
                 top_p=0.95,
                 top_k=40,
@@ -200,7 +206,7 @@ def test_inference(model_cfg, ctx_cfg, dtype_cfg, attn_cfg, results_bag):
                 eos_token_id=tokenizer.eos_token_id,
                 pad_token_id=tokenizer.pad_token_id,
                 do_sample=True,
-                use_cache=False,
+                use_cache=not cfg.flash_attention,
                 return_dict_in_generate=True,
                 output_attentions=False,
                 output_hidden_states=False,
@@ -208,18 +214,17 @@ def test_inference(model_cfg, ctx_cfg, dtype_cfg, attn_cfg, results_bag):
             )
             start = time.time()
             torch.cuda.empty_cache()
-            cfg.stats_bag.vram_last = gpu_memory_usage()
             generated = model.generate(
                 inputs=batch["input_ids"].to(cfg.device),
                 generation_config=generation_config,
                 # streamer=TextStreamer(tokenizer),
             )
-            mem, cache, _ = log_gpu_memory_usage(LOG, "after inference", model.device)
-            cfg.stats_bag.vram_generate = mem - cfg.stats_bag.vram_last
-            cfg.stats_bag.vram_last = mem
+            _, cache, _ = log_gpu_memory_usage(LOG, "after inference", model.device)
             cfg.stats_bag.vram_generate_cache = cache
             cfg.stats_bag.generate_time = time.time() - start
-            cfg.stats_bag.generate_tokens = generated["sequences"].shape[1]
+            cfg.stats_bag.generate_tokens = (
+                generated["sequences"].shape[1] - cfg.stats_bag.prompt_tokens
+            )
             cfg.stats_bag.generate_tps = (
                 cfg.stats_bag.generate_tokens / cfg.stats_bag.generate_time
             )

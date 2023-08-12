@@ -1,6 +1,6 @@
 """cfg cases for benchmarking"""
 
-from pytest_cases import case
+from pytest_cases import case, parametrize
 
 from axolotl.utils.dict import DictDefault
 
@@ -14,6 +14,7 @@ class TestConfigs:  # pylint: disable=missing-class-docstring disable=too-many-p
                     "base_model_config": "meta-llama/Llama-2-7b-chat-hf",
                     "model_type": "LlamaForCausalLM",
                     "is_llama_derived_model": True,
+                    "sequence_len": 4096,
                     "pad_token": "<pad>",
                     "special_tokens": {
                         "bos_token": "<s>",
@@ -22,7 +23,6 @@ class TestConfigs:  # pylint: disable=missing-class-docstring disable=too-many-p
                     },
                 }
             )
-            | self.ctx_1k()
             | self.train_simple()
         )
 
@@ -41,6 +41,10 @@ class TestConfigs:  # pylint: disable=missing-class-docstring disable=too-many-p
                 "lr_quadratic_warmup": True,
             }
         )
+
+    @parametrize(size=(128, 256, 512, 1024, 2048, 3072, 4096))
+    def ctx_prompt(self, size):
+        return min(4096 - 128, size)
 
     def opt_adamw_bnb_8bit(self):
         return DictDefault(
@@ -88,55 +92,6 @@ class TestConfigs:  # pylint: disable=missing-class-docstring disable=too-many-p
         return DictDefault(
             {
                 "optimizer": "paged_lion_8bit",
-            }
-        )
-
-    def ctx_128(self):
-        return DictDefault(
-            {
-                "sequence_len": 128,
-            }
-        )
-
-    def ctx_256(self):
-        return DictDefault(
-            {
-                "sequence_len": 256,
-            }
-        )
-
-    def ctx_512(self):
-        return DictDefault(
-            {
-                "sequence_len": 512,
-            }
-        )
-
-    def ctx_1k(self):
-        return DictDefault(
-            {
-                "sequence_len": 1024,
-            }
-        )
-
-    def ctx_2k(self):
-        return DictDefault(
-            {
-                "sequence_len": 2048,
-            }
-        )
-
-    def ctx_3k(self):
-        return DictDefault(
-            {
-                "sequence_len": 3072,
-            }
-        )
-
-    def ctx_4k(self):
-        return DictDefault(
-            {
-                "sequence_len": 4096,
             }
         )
 
