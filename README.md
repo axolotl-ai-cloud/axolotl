@@ -404,7 +404,7 @@ lora_fan_in_fan_out: false
 wandb_mode: # "offline" to save run metadata locally and not sync to the server, "disabled" to turn off wandb
 wandb_project: # your wandb project name
 wandb_entity: # a wandb Team name if using a Team
-wandb_watch: 
+wandb_watch:
 wandb_run_id: # set the name of your wandb run
 wandb_log_model: # "checkpoint" to log model to wandb Artifacts every `save_steps` or "end" to log only at the end of training
 
