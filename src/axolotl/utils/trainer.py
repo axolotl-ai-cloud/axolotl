@@ -286,7 +286,12 @@ def calculate_total_num_steps(cfg, train_dataset, tokenizer):
         # flash attention with position ids fails
         if not cfg.total_num_tokens:
             LOG.info("calculating total_num_tokens")
-            total_num_tokens = np.sum(train_dataset.data.column("input_ids").to_pandas().apply(lambda x: len(x)).values)
+            total_num_tokens = np.sum(
+                train_dataset.data.column("input_ids")
+                .to_pandas()
+                .apply(lambda x: len(x))
+                .values
+            )
             LOG.info(f"📝 UPDATE CONFIG WITH: `total_num_tokens: {total_num_tokens}`")
             cfg.total_num_tokens = total_num_tokens
 
