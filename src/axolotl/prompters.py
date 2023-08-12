@@ -260,6 +260,11 @@ class Conversation:
         self.messages.append([role, message])
 
 
+SHAREGPT_ASSERTION_FAILED_ROLE = (
+    "Role did not alternate between turns (gpt and human). Please check your data."
+)
+
+
 class ShareGPTPrompter:  # pylint: disable=too-few-public-methods
     """
     A prompter that generates prompts for the ShareGPT
@@ -316,7 +321,7 @@ class ShareGPTPrompter:  # pylint: disable=too-few-public-methods
         conv.messages = []
         for j, sentence in enumerate(source):
             role = roles[sentence["from"]]
-            assert role == conv.roles[j % 2]
+            assert role == conv.roles[j % 2], SHAREGPT_ASSERTION_FAILED_ROLE
             conv.append_message(role, sentence["value"])
 
         for part in conv.get_prompt():
