@@ -7,6 +7,7 @@ from typing import Optional, Tuple
 import torch
 import transformers
 from einops import rearrange
+from flash_attn.bert_padding import pad_input, unpad_input
 
 try:
     from flash_attn.flash_attn_interface import flash_attn_varlen_qkvpacked_func
@@ -91,7 +92,8 @@ def forward(
             qkv, cu_q_lens, max_s, 0.0, softmax_scale=None, causal=True
         )
         output = rearrange(output, "(b s) ... -> b s ...", b=bsz)
-    else:
+    elif position_ids.shape[0] == 1:
+        # special handling using sample packing
         qkv = rearrange(qkv, "b s ... -> (b s) ...")
         cu_q_lens, max_s = get_cu_seqlens_from_pos_ids(position_ids)
         cu_q_lens = cu_q_lens.squeeze()
@@ -100,6 +102,36 @@ def forward(
             qkv, cu_q_lens, max_s, 0.0, softmax_scale=None, causal=True
         )
         output = rearrange(output, "(b s) ... -> b s ...", b=bsz)
+    else:
+        nheads = qkv.shape[-2]
+
+        # pylint: disable=invalid-name
+        x = rearrange(qkv, "b s three h d -> b s (three h d)")
+        x_unpad, indices, cu_q_lens, max_s = unpad_input(x, key_padding_mask)
+        x_unpad = rearrange(
+            x_unpad,
+            "nnz (three h d) -> nnz three h d",
+            three=3,
+            h=nheads,
+        )
+        output_unpad = flash_attn_varlen_qkvpacked_func(
+            x_unpad,
+            cu_q_lens,
+            max_s,
+            0.0,
+            softmax_scale=None,
+            causal=True,
+        )
+        output = rearrange(
+            pad_input(
+                rearrange(output_unpad, "nnz h d -> nnz (h d)"),
+                indices,
+                bsz,
+                q_len,
+            ),
+            "b s (h d) -> b s h d",
+            h=nheads,
+        )
 
     return (
         self.o_proj(rearrange(output, "b s h d -> b s (h d)")),
