@@ -37,20 +37,26 @@ def load_tokenizer(
     tokenizer_type,
     cfg,
 ):
+    tokenizer_kwargs = {}
     use_fast = True  # this is the default
     if cfg.tokenizer_use_fast is not None:
         use_fast = cfg.tokenizer_use_fast
+    if cfg.tokenizer_legacy is not None:
+        # True is the default w/ https://github.com/huggingface/transformers/pull/25224
+        tokenizer_kwargs["legacy"] = cfg.tokenizer_legacy
     if tokenizer_type:
         tokenizer = getattr(transformers, tokenizer_type).from_pretrained(
             tokenizer_config,
             trust_remote_code=cfg.trust_remote_code or False,
             use_fast=use_fast,
+            **tokenizer_kwargs,
         )
     else:
         tokenizer = AutoTokenizer.from_pretrained(
             tokenizer_config,
             trust_remote_code=cfg.trust_remote_code or False,
             use_fast=use_fast,
+            **tokenizer_kwargs,
         )
 
     LOG.debug(f"EOS: {tokenizer.eos_token_id} / {tokenizer.eos_token}")
@@ -90,8 +96,10 @@ def load_model(
 
     # TODO refactor as a kwarg
     load_in_8bit = cfg.load_in_8bit
-    cfg.is_llama_derived_model = "llama" in base_model or (
-        cfg.model_type and "llama" in cfg.model_type.lower()
+    cfg.is_llama_derived_model = (
+        "llama" in base_model
+        or (cfg.model_type and "llama" in cfg.model_type.lower())
+        or cfg.is_llama_derived_model
     )
 
     if cfg.is_llama_derived_model and cfg.flash_attention:
@@ -135,6 +143,14 @@ def load_model(
 
         LOG.info("patching with xpos rope")
         replace_llama_rope_with_xpos_rope()
+
+    if cfg.is_llama_derived_model and (
+        cfg.max_packed_sequence_len or cfg.sample_packing
+    ):
+        from axolotl.monkeypatch.llama_expand_mask import hijack_expand_mask
+
+        LOG.info("patching _expand_mask")
+        hijack_expand_mask()
 
     if cfg.bf16 or cfg.bfloat16:
         torch_dtype = torch.bfloat16
@@ -228,7 +244,6 @@ def load_model(
                 load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
                 load_in_4bit=cfg.load_in_4bit and cfg.adapter is not None,
                 torch_dtype=torch_dtype,
-                device_map="auto" if cfg.world_size == 1 else cfg.device_map,
                 **model_kwargs,
             )
         # elif model_type == "GPTNeoXForCausalLM" and cfg.flash_attention:
@@ -263,7 +278,6 @@ def load_model(
                 load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
                 load_in_4bit=cfg.load_in_4bit and cfg.adapter is not None,
                 torch_dtype=torch_dtype,
-                device_map=cfg.device_map,
                 trust_remote_code=cfg.trust_remote_code or False,
                 **model_kwargs,
             )
@@ -294,7 +308,6 @@ def load_model(
                 load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
                 load_in_4bit=cfg.load_in_4bit and cfg.adapter is not None,
                 torch_dtype=torch_dtype,
-                device_map=cfg.device_map,
                 trust_remote_code=cfg.trust_remote_code or False,
                 **model_kwargs,
             )
@@ -308,7 +321,6 @@ def load_model(
             load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
             load_in_4bit=cfg.load_in_4bit and cfg.adapter is not None,
             torch_dtype=torch_dtype,
-            device_map=cfg.device_map,
             trust_remote_code=cfg.trust_remote_code or False,
             **model_kwargs,
         )

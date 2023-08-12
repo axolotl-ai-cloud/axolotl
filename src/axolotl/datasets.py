@@ -5,7 +5,7 @@ import os
 from typing import List
 
 import torch
-from datasets import IterableDataset
+from datasets import Dataset, IterableDataset
 
 from .prompt_tokenizers import PromptTokenizingStrategy
 
@@ -18,9 +18,9 @@ from .prompt_tokenizers import PromptTokenizingStrategy
 LOG = logging.getLogger("axolotl")
 
 
-class TokenizedPromptDataset(IterableDataset):
+class TokenizedPromptDataset(Dataset):
     """
-    Iterable dataset that returns tokenized prompts from a stream of text files.
+    Dataset that returns tokenized prompts from a stream of text files.
         Args:
             prompt_tokenizer (PromptTokenizingStrategy): The prompt tokenizing method for proccessing the data.
             dataset (dataset.Dataset): Dataset with text files.
@@ -30,19 +30,18 @@ class TokenizedPromptDataset(IterableDataset):
         self,
         prompt_tokenizer: PromptTokenizingStrategy,
         dataset: IterableDataset,
+        **kwargs,
     ):
         self.prompt_tokenizer = prompt_tokenizer
-        self.dataset = dataset
+        super().__init__(self.process(dataset).data, **kwargs)
 
-    def __iter__(self):
-        features = self.dataset.features.keys()
-        num_proc = os.cpu_count()
-        return iter(
-            self.dataset.map(
-                self.prompt_tokenizer.tokenize_prompt,
-                num_proc=num_proc,
-                remove_columns=features,
-            )
+    def process(self, dataset):
+        features = dataset.features.keys()
+        num_proc = min(64, os.cpu_count())
+        return dataset.map(
+            self.prompt_tokenizer.tokenize_prompt,
+            num_proc=num_proc,
+            remove_columns=features,
         )
 
 
@@ -77,14 +76,21 @@ class ConstantLengthDataset(IterableDataset):
             self.tokens_dtype = torch.int64
 
     def __iter__(self):
-        buffer = {"input_ids": [], "attention_mask": [], "labels": []}
+        buffer = {
+            "input_ids": [],
+            "attention_mask": [],
+            "labels": [],
+            "position_ids": [],
+        }
         buffer_len = 0
         for dataset in self.datasets:
+            idx = 0
             iterator = iter(dataset)
             more_examples = True
             while more_examples:
                 try:
                     example = next(iterator)
+                    idx += 1
                 except StopIteration:
                     more_examples = False
                     example = None
@@ -106,6 +112,9 @@ class ConstantLengthDataset(IterableDataset):
                         attention_mask = torch.cat(buffer["attention_mask"], dim=-1)[
                             : self.seq_length
                         ]
+                        position_ids = torch.cat(buffer["position_ids"], dim=-1)[
+                            : self.seq_length
+                        ]
                         labels = torch.cat(buffer["labels"], dim=-1)[: self.seq_length]
                         if labels.size() == input_ids.size() and (
                             attention_mask.size() == input_ids.size()
@@ -114,6 +123,7 @@ class ConstantLengthDataset(IterableDataset):
                                 "input_ids": input_ids,
                                 "labels": labels,
                                 "attention_mask": attention_mask,
+                                "position_ids": position_ids,
                             }
                         else:
                             LOG.warning(
@@ -123,8 +133,10 @@ class ConstantLengthDataset(IterableDataset):
                         "input_ids": [],
                         "attention_mask": [],
                         "labels": [],
+                        "position_ids": [],
                     }
                     buffer_len = 0
+                    idx = 1
 
                 if example:
                     # FIXME
@@ -133,11 +145,6 @@ class ConstantLengthDataset(IterableDataset):
                         input_ids = example["input_ids"]
                         attention_mask = example["attention_mask"]
                         labels = example["labels"]
-                        if (
-                            buffer["input_ids"]
-                            and input_ids[0] == self.tokenizer.bos_token_id
-                        ):
-                            attention_mask[0] = 0
 
                         if add_concat_token:
                             input_ids.append(self.concat_token_id)
@@ -148,13 +155,17 @@ class ConstantLengthDataset(IterableDataset):
                             input_ids, dtype=self.tokens_dtype
                         )
                         attention_mask_with_concat = torch.tensor(
-                            attention_mask, dtype=self.tokens_dtype
+                            [idx * m for m in attention_mask], dtype=torch.int16
                         )
                         labels_with_concat = torch.tensor(
                             labels, dtype=self.tokens_dtype
+                        )
+                        position_ids = torch.arange(
+                            len(input_ids), dtype=self.tokens_dtype
                         )
 
                         buffer["input_ids"].append(input_ids_with_concat)
                         buffer["attention_mask"].append(attention_mask_with_concat)
                         buffer["labels"].append(labels_with_concat)
+                        buffer["position_ids"].append(position_ids)
                         buffer_len += len(input_ids)

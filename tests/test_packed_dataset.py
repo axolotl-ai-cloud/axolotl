@@ -27,7 +27,7 @@ class TestPacking(unittest.TestCase):
             }
         )
 
-    def test_resets_attention(self):
+    def test_increments_attention(self):
         prompter = AlpacaPrompter("chat")
         strat = AlpacaPromptTokenizingStrategy(
             prompter,
@@ -55,10 +55,14 @@ class TestPacking(unittest.TestCase):
         # first example doesn't have mask reset
         assert example["input_ids"][0] == self.tokenizer.bos_token_id
         assert example["attention_mask"][0] == 1
+        assert example["position_ids"][0] == 0
+        assert example["position_ids"][1] == 1
 
         # but subsequent one does
         assert example["input_ids"][next_bos_index] == self.tokenizer.bos_token_id
-        assert example["attention_mask"][next_bos_index] == 0
+        assert example["attention_mask"][next_bos_index] == 2
+        assert example["position_ids"][next_bos_index] == 0
+        assert example["position_ids"][next_bos_index + 1] == 1
 
 
 if __name__ == "__main__":

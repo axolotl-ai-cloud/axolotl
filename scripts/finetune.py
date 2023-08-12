@@ -21,9 +21,14 @@ from axolotl.logging_config import configure_logging
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.data import load_prepare_datasets, load_pretraining_dataset
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.distributed import barrier, is_main_process
 from axolotl.utils.models import load_model, load_tokenizer
 from axolotl.utils.tokenization import check_dataset_labels
-from axolotl.utils.trainer import setup_trainer
+from axolotl.utils.trainer import (
+    calculate_total_num_steps,
+    process_datasets_for_packing,
+    setup_trainer,
+)
 from axolotl.utils.validation import validate_config
 from axolotl.utils.wandb import setup_wandb_env_vars
 
@@ -232,11 +237,24 @@ def train(
                 cfg.pretraining_dataset,
                 tokenizer,
                 max_tokens=cfg.sequence_len,
-                seed=cfg.seed,
+                seed=cfg.seed or 42,
             )
             # https://discuss.huggingface.co/t/how-to-use-huggingface-trainer-streaming-datasets-without-wrapping-it-with-torchdatas-iterablewrapper/25230
             train_dataset = train_dataset.with_format("torch")
             eval_dataset = None
+
+        if is_main_process():
+            # process on rank 0 first so it gets cached so other ranks load from cache
+            train_dataset, eval_dataset = process_datasets_for_packing(
+                cfg, train_dataset, eval_dataset
+            )
+        barrier()
+        if not is_main_process():
+            train_dataset, eval_dataset = process_datasets_for_packing(
+                cfg, train_dataset, eval_dataset
+            )
+        barrier()
+        total_num_steps = calculate_total_num_steps(cfg, train_dataset, tokenizer)
 
     if cfg.debug or "debug" in kwargs:
         LOG.info("check_dataset_labels...")
@@ -254,7 +272,7 @@ def train(
     log_gpu_memory_usage(LOG, "baseline", cfg.device)
 
     # Load the model and tokenizer
-    LOG.info("loading model and peft_config...")
+    LOG.info("loading model and (optionally) peft_config...")
     model, peft_config = load_model(cfg, tokenizer)
 
     safe_serialization = cfg.save_safetensors is True
@@ -288,7 +306,9 @@ def train(
         model.save_pretrained(cfg.output_dir, safe_serialization=safe_serialization)
         return
 
-    trainer = setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer)
+    trainer = setup_trainer(
+        cfg, train_dataset, eval_dataset, model, tokenizer, total_num_steps
+    )
 
     model.config.use_cache = False
 
@@ -347,13 +367,11 @@ def train(
     # TODO do we need this fix? https://huggingface.co/docs/accelerate/usage_guides/fsdp#saving-and-loading
     # only save on rank 0, otherwise it corrupts output on multi-GPU when multiple processes attempt to write the same file
     if cfg.fsdp:
-        model.save_pretrained(cfg.output_dir, safe_serialization=safe_serialization)
+        trainer.save_model(cfg.output_dir)
     elif cfg.local_rank == 0:
         if cfg.flash_optimum:
             model = BetterTransformer.reverse(model)
         model.save_pretrained(cfg.output_dir, safe_serialization=safe_serialization)
-
-    # trainer.save_model(cfg.output_dir)  # TODO this may be needed for deepspeed to work? need to review another time
 
 
 if __name__ == "__main__":

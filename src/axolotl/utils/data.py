@@ -1,13 +1,19 @@
 """Module containing data utilities"""
 import functools
-import itertools
+import hashlib
 import logging
 from hashlib import md5
 from pathlib import Path
-from typing import List, Tuple, Union
+from typing import Tuple, Union
 
 import torch
-from datasets import Dataset, DatasetDict, load_dataset, load_from_disk
+from datasets import (
+    Dataset,
+    DatasetDict,
+    concatenate_datasets,
+    load_dataset,
+    load_from_disk,
+)
 from huggingface_hub import hf_hub_download
 from transformers import PreTrainedTokenizerBase
 
@@ -35,6 +41,7 @@ from axolotl.prompters import (
     ShareGPTPrompter,
     SummarizeTLDRPrompter,
 )
+from axolotl.utils.distributed import barrier, is_main_process
 
 LOG = logging.getLogger("axolotl")
 
@@ -109,6 +116,7 @@ def load_tokenized_prepared_datasets(
             local_path = Path(d.path)
             if local_path.exists():
                 if local_path.is_dir():
+                    # TODO dirs with arrow or parquet files could be loaded with `load_from_disk`
                     ds = load_dataset(
                         d.path,
                         name=d.name,
@@ -262,20 +270,12 @@ def load_tokenized_prepared_datasets(
                 raise ValueError(
                     f"unhandled prompt tokenization strategy: {d.type} {suffix}"
                 )
-        LOG.info("tokenizing, merging, and shuffling master dataset")
+        LOG.info("merging datasets")
+        dataset = concatenate_datasets(datasets)
 
-        samples: List[int] = []
-        chunk_size = 1000
-        for d in datasets:
-            d_iter = iter(d)
-            while True:
-                chunk = list(itertools.islice(d_iter, chunk_size))
-                if not chunk:
-                    break
-                samples.extend(chunk)
-
-        LOG.info("shuffle")
-        dataset = Dataset.from_list(samples).shuffle(seed=seed)
+        if len(datasets) > 1:
+            LOG.info("shuffle merged datasets")
+            dataset = dataset.shuffle(seed=seed)
         if cfg.local_rank == 0:
             LOG.info(f"Saving merged prepared dataset to disk... {prepared_ds_path}")
             dataset.save_to_disk(prepared_ds_path)
@@ -374,6 +374,7 @@ def load_prepare_datasets(
             dataset = Dataset.from_list(list(constant_len_dataset))
 
             # filter out bad data
+            # TODO convert to dataset.filter(...)
             dataset = Dataset.from_list(
                 [
                     d
@@ -413,7 +414,51 @@ def load_prepare_datasets(
         )
 
     if cfg.val_set_size:
-        dataset = dataset.train_test_split(test_size=cfg.val_set_size, shuffle=False)
+        # ensure we end up with the same fingerprint by doing rank0 first and being able to cache
+        to_hash_train = (
+            dataset._fingerprint  # pylint: disable=protected-access
+            + "|"
+            + str(cfg.val_set_size)
+            + "|"
+            + "train"
+            + "|"
+            + str(cfg.seed or 42)
+        )
+        to_hash_test = (
+            dataset._fingerprint  # pylint: disable=protected-access
+            + "|"
+            + str(cfg.val_set_size)
+            + "|"
+            + "test"
+            + "|"
+            + str(cfg.seed or 42)
+        )
+        train_fingerprint = hashlib.md5(
+            to_hash_train.encode(), usedforsecurity=False
+        ).hexdigest()
+        test_fingerprint = hashlib.md5(
+            to_hash_test.encode(), usedforsecurity=False
+        ).hexdigest()
+
+        if is_main_process():
+            dataset = dataset.train_test_split(
+                test_size=cfg.val_set_size,
+                shuffle=False,
+                seed=cfg.seed or 42,
+                train_new_fingerprint=train_fingerprint,
+                test_new_fingerprint=test_fingerprint,
+            )
+        barrier()
+        if not is_main_process():
+            dataset = dataset.train_test_split(
+                test_size=cfg.val_set_size,
+                shuffle=False,
+                seed=cfg.seed or 42,
+                train_new_fingerprint=train_fingerprint,
+                test_new_fingerprint=test_fingerprint,
+            )
+        barrier()
+
         train_dataset = dataset["train"]
         eval_dataset = dataset["test"]
     else:

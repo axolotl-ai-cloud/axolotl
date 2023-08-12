@@ -8,6 +8,19 @@ LOG = logging.getLogger("axolotl")
 
 
 def validate_config(cfg):
+    if cfg.max_packed_sequence_len and cfg.sample_packing:
+        raise ValueError(
+            "please set only one of max_packed_sequence_len (deprecated soon) or sample_packing"
+        )
+    if cfg.max_packed_sequence_len:
+        LOG.warning(
+            str(
+                PendingDeprecationWarning(
+                    "max_packed_sequence_len will be deprecated in favor of sample_packing"
+                )
+            )
+        )
+
     if cfg.gradient_accumulation_steps and cfg.batch_size:
         raise ValueError(
             "please set only one of gradient_accumulation_steps or batch_size"
@@ -102,6 +115,17 @@ def validate_config(cfg):
             "model_revision is not supported for GPTQ models. "
             + "Please download the model from HuggingFace Hub manually for correct branch, "
             + "point to its path, and remove model_revision from the config."
+        )
+
+    if cfg.sample_packing and cfg.sdp_attention:
+        # incompatible due to bug w/ accelerate causing 0.0 loss when using llama2
+        raise ValueError(
+            "sample_packing not compatible with sdp_attention. Use flash_attention"
+        )
+
+    if cfg.sample_packing and cfg.xformers_attention:
+        raise ValueError(
+            "sample_packing not compatible with xformers_attention. Use flash_attention"
         )
 
     # TODO
