@@ -390,13 +390,11 @@ def load_model(
     if cfg.flash_optimum:
         model = BetterTransformer.transform(model)
 
-    if model.device.type == "cuda":
+    if cfg.adapter is not None:
         mem, _, _ = log_gpu_memory_usage(LOG, "after adapters", model.device)
         cfg.stats_bag.vram_adapter = mem - cfg.stats_bag.vram_last
         cfg.stats_bag.vram_last = mem
-
-    cfg.stats_bag.time_adapter = time.time() - start
-    start = time.time()
+        cfg.stats_bag.time_adapter = time.time() - start
 
     # TODO resume_from_checkpoint handling
     return model, lora_config
