@@ -215,7 +215,7 @@ def test_inference(model_cfg, dtype_cfg, attn_cfg, ctx_len, results_bag):
             start = time.time()
             torch.cuda.empty_cache()
             generated = model.generate(
-                inputs=batch["input_ids"].to(cfg.device),
+                inputs=batch["input_ids"].to(model.device),
                 generation_config=generation_config,
                 # streamer=TextStreamer(tokenizer),
             )
