@@ -289,7 +289,7 @@ def calculate_total_num_steps(cfg, train_dataset, tokenizer):
             total_num_tokens = np.sum(
                 train_dataset.data.column("input_ids")
                 .to_pandas()
-                .apply(lambda x: len(x))
+                .apply(lambda x: len(x))  # pylint: disable=unnecessary-lambda
                 .values
             )
             LOG.info(f"📝 UPDATE CONFIG WITH: `total_num_tokens: {total_num_tokens}`")
