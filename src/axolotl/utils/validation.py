@@ -97,6 +97,13 @@ def validate_config(cfg):
             "push_to_hub_model_id is deprecated. Please use hub_model_id instead."
         )
 
+    if cfg.gptq and cfg.model_revision:
+        raise ValueError(
+            "model_revision is not supported for GPTQ models. "
+            + "Please download the model from HuggingFace Hub manually for correct branch, "
+            + "point to its path, and remove model_revision from the config."
+        )
+
     # TODO
     # MPT 7b
     # https://github.com/facebookresearch/bitsandbytes/issues/25
