@@ -379,6 +379,10 @@ sequence_len: 2048
 max_packed_sequence_len: 1024
 # use efficient multi-packing with block diagonal attention and per sequence position_ids. Recommend set to 'true'
 sample_packing:
+# you can set these packing optimizations AFTER starting a training at least once.
+# The trainer will provide recommended values for these values.
+sample_packing_eff_est:
+total_num_tokens:
 
 # if you want to use 'lora' or 'qlora' or leave blank to train all parameters in original model
 adapter: lora
