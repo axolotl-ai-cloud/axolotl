@@ -8,8 +8,17 @@ import torch
 import transformers
 from einops import rearrange
 from flash_attn.bert_padding import pad_input, unpad_input
-from flash_attn.flash_attn_interface import flash_attn_varlen_qkvpacked_func
+
+try:
+    from flash_attn.flash_attn_interface import flash_attn_varlen_qkvpacked_func
+except ImportError:
+    from flash_attn.flash_attn_interface import (
+        flash_attn_unpadded_qkvpacked_func as flash_attn_varlen_qkvpacked_func,
+    )
+
 from transformers.models.llama.modeling_llama import apply_rotary_pos_emb
+
+from axolotl.monkeypatch.utils import get_cu_seqlens_from_pos_ids
 
 
 def forward(
@@ -83,6 +92,16 @@ def forward(
             qkv, cu_q_lens, max_s, 0.0, softmax_scale=None, causal=True
         )
         output = rearrange(output, "(b s) ... -> b s ...", b=bsz)
+    elif position_ids.shape[0] == 1:
+        # special handling using sample packing
+        qkv = rearrange(qkv, "b s ... -> (b s) ...")
+        cu_q_lens, max_s = get_cu_seqlens_from_pos_ids(position_ids)
+        cu_q_lens = cu_q_lens.squeeze()
+
+        output = flash_attn_varlen_qkvpacked_func(
+            qkv, cu_q_lens, max_s, 0.0, softmax_scale=None, causal=True
+        )
+        output = rearrange(output, "(b s) ... -> b s ...", b=bsz)
     else:
         nheads = qkv.shape[-2]
 
@@ -113,6 +132,7 @@ def forward(
             "b s (h d) -> b s h d",
             h=nheads,
         )
+
     return (
         self.o_proj(rearrange(output, "b s h d -> b s (h d)")),
         None,

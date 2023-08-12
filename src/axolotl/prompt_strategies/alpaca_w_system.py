@@ -66,7 +66,11 @@ class SystemDataPrompter(AlpacaPrompter):
     ) -> Generator[str, None, None]:
         # returns the full prompt from instruction and optional input
         # if a label (=response, =output) is provided, it's also appended.
-        formatted_sys_prompt = f"### System:\n{system}\n\n" if system else ""
+        formatted_sys_prompt = (
+            self.system_format.format(system=system)
+            if system and self.system_format
+            else ""
+        )
         if input:
             res = formatted_sys_prompt + self.turn_format.format(
                 instruction=instruction, input=input
@@ -86,12 +90,20 @@ class OpenOrcaSystemDataPrompter(SystemDataPrompter):
     """
 
     def match_prompt_style(self):
+        # pylint: disable=duplicate-code
         if self.prompt_style == PromptStyle.INSTRUCT.value:
             self.turn_format = "### User:\n{instruction}\n\n### Additional Context:\n{input}\n\n### Assistant:\n"
             self.turn_no_input_format = "### User:\n{instruction}\n\n### Assistant:\n"
         if self.prompt_style == PromptStyle.CHAT.value:
             self.turn_format = "USER: {instruction}\n{input}\nASSISTANT:"
             self.turn_no_input_format = "USER: {instruction}\nASSISTANT:"
+            self.system_format = "SYSTEM: {system}\n"
+        if self.prompt_style == PromptStyle.CHATML.value:
+            self.turn_format = "<|im_start|>user\n{instruction}\n{input}<|im_end|>\n<|im_start|>assistant\n"
+            self.turn_no_input_format = (
+                "<|im_start|>user\n{instruction}<|im_end|>\n<|im_start|>assistant\n"
+            )
+            self.system_format = "<|im_start|>system\n{system}<|im_end|>\n"
 
 
 class OpenOrcaPromptTokenizingStrategy(InstructionWSystemPromptTokenizingStrategy):
@@ -133,6 +145,15 @@ def load_chat(tokenizer, cfg):
 def load_open_orca(tokenizer, cfg):
     return OpenOrcaPromptTokenizingStrategy(
         OpenOrcaSystemDataPrompter(PromptStyle.INSTRUCT.value),
+        tokenizer,
+        cfg.train_on_inputs,
+        cfg.sequence_len,
+    )
+
+
+def load_open_orca_chatml(tokenizer, cfg):
+    return OpenOrcaPromptTokenizingStrategy(
+        OpenOrcaSystemDataPrompter(PromptStyle.CHATML.value),
         tokenizer,
         cfg.train_on_inputs,
         cfg.sequence_len,

@@ -128,6 +128,7 @@ def xformers_forward(
                 query_states,
                 key_states,
                 value_states,
+                # attn_bias=attention_mask,
                 attn_bias=xformers.ops.LowerTriangularMask(),
             )
         attn_weights = None
