@@ -18,7 +18,6 @@ adapter: qlora
 lora_model_dir:
 
 sequence_len: 4096
-max_packed_sequence_len: 4096
 sample_packing: true
 
 lora_r: 32
