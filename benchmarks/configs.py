@@ -126,6 +126,13 @@ class TestConfigs:  # pylint: disable=missing-class-docstring disable=too-many-p
             }
         )
 
+    def ctx_3k(self):
+        return DictDefault(
+            {
+                "sequence_len": 3072,
+            }
+        )
+
     def ctx_4k(self):
         return DictDefault(
             {
