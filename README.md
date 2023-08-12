@@ -554,11 +554,11 @@ fsdp_config:
 
 - wandb options
 ```yaml
-wandb_mode: 
-wandb_project: 
-wandb_entity: 
-wandb_watch: 
-wandb_run_id: 
+wandb_mode:
+wandb_project:
+wandb_entity:
+wandb_watch:
+wandb_run_id:
 wandb_log_model:
 ```
 
