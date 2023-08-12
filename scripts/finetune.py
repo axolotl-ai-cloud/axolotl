@@ -265,6 +265,7 @@ def train(
         if cfg.local_rank == 0:
             LOG.info("saving merged model")
             model.save_pretrained(str(Path(cfg.output_dir) / "merged"))
+            tokenizer.save_pretrained(str(Path(cfg.output_dir) / "merged"))
         return
 
     if cfg.inference:
