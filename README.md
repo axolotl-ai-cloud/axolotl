@@ -474,6 +474,10 @@ landmark_attention:
 # xpos RoPE see https://github.com/kaiokendev/cutoff-len-is-context-len/blob/main/util/xpos_rope_llama_monkey_patch.py
 # llama only
 xpos_rope:
+# RoPE Scaling https://github.com/huggingface/transformers/pull/24653
+rope_scaling:
+  type: # linear | dynamic
+  factor: # float
 
 # resume from a specific checkpoint dir
 resume_from_checkpoint:

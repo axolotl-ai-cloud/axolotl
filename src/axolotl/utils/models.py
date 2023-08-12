@@ -219,7 +219,9 @@ def load_model(
         elif cfg.is_llama_derived_model and not cfg.trust_remote_code:
             from transformers import LlamaForCausalLM
 
-            config = LlamaConfig.from_pretrained(base_model_config)
+            config = LlamaConfig.from_pretrained(
+                base_model_config, rope_scaling=cfg.rope_scaling
+            )
             model = LlamaForCausalLM.from_pretrained(
                 base_model,
                 config=config,
