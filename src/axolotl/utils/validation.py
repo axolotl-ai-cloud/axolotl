@@ -100,7 +100,8 @@ def validate_config(cfg):
     if cfg.gptq and cfg.model_revision:
         raise ValueError(
             "model_revision is not supported for GPTQ models. "
-            + "Please download the model from HuggingFace Hub manually for correct branch and point to its path."
+            + "Please download the model from HuggingFace Hub manually for correct branch, "
+            + "point to its path, and remove model_revision from the config."
         )
 
     # TODO
