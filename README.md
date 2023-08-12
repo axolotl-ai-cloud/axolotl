@@ -550,6 +550,18 @@ fsdp_config:
 
 - llama Deepspeed: append `ACCELERATE_USE_DEEPSPEED=true` in front of finetune command
 
+##### Weights & Biases Logging
+
+- wandb options
+```yaml
+wandb_mode: 
+wandb_project: 
+wandb_entity: 
+wandb_watch: 
+wandb_run_id: 
+wandb_log_model:
+```
+
 ### Inference
 
 Pass the appropriate flag to the train command:
