@@ -95,9 +95,9 @@ class OpenOrcaSystemDataPrompter(SystemDataPrompter):
             self.turn_format = "### User:\n{instruction}\n\n### Additional Context:\n{input}\n\n### Assistant:\n"
             self.turn_no_input_format = "### User:\n{instruction}\n\n### Assistant:\n"
         if self.prompt_style == PromptStyle.CHAT.value:
-            self.turn_format = "User: {instruction}\n{input}\nAssistant:"
-            self.turn_no_input_format = "User: {instruction}\nAssistant:"
-            self.system_format = "System: {system}\n"
+            self.turn_format = "USER: {instruction}\n{input}\nASSISTANT:"
+            self.turn_no_input_format = "USER: {instruction}\nASSISTANT:"
+            self.system_format = "SYSTEM: {system}\n"
         if self.prompt_style == PromptStyle.CHATML.value:
             self.turn_format = "<|im_start|>user\n{instruction}\n{input}<|im_end|>\n<|im_start|>assistant\n"
             self.turn_no_input_format = (

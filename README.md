@@ -375,9 +375,9 @@ dataset_shard_idx:
 sequence_len: 2048
 # max sequence length to concatenate training samples together up to
 # inspired by StackLLaMA. see https://huggingface.co/blog/stackllama#supervised-fine-tuning
-# soon to be DEPRECATED
+# FutureWarning: This will soon be DEPRECATED
 max_packed_sequence_len: 1024
-# use efficient multi-packing with block diagonal attention and per sequence position_ids
+# use efficient multi-packing with block diagonal attention and per sequence position_ids. Recommend set to 'true'
 sample_packing:
 
 # if you want to use 'lora' or 'qlora' or leave blank to train all parameters in original model
@@ -424,6 +424,7 @@ learning_rate: 0.00003
 logging_steps:
 save_steps:
 eval_steps:
+save_total_limit:
 
 # save model as safetensors (require safetensors package)
 save_safetensors:
@@ -537,7 +538,7 @@ accelerate launch scripts/finetune.py configs/your_config.yml
 
 #### Multi-GPU
 
-It is recommended to pre-tokenize dataset with the following before finetuning:
+You can optionally pre-tokenize dataset with the following before finetuning:
 ```bash
 CUDA_VISIBLE_DEVICES="" accelerate ... --prepare_ds_only
 ```

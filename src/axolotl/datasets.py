@@ -37,7 +37,7 @@ class TokenizedPromptDataset(Dataset):
 
     def process(self, dataset):
         features = dataset.features.keys()
-        num_proc = os.cpu_count()
+        num_proc = min(64, os.cpu_count())
         return dataset.map(
             self.prompt_tokenizer.tokenize_prompt,
             num_proc=num_proc,

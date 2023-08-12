@@ -483,7 +483,7 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
         else "cosine",
         weight_decay=cfg.weight_decay if cfg.weight_decay is not None else 0.0,
         sample_packing=cfg.sample_packing if cfg.sample_packing else False,
-        sample_packing_seq_len_multiplier=cfg.micro_batch_size or 1,
+        sample_packing_seq_len_multiplier=cfg.micro_batch_size,
         **training_arguments_kwargs,
     )
 

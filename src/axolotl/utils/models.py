@@ -99,7 +99,7 @@ def load_model(
     cfg.is_llama_derived_model = (
         "llama" in base_model
         or (cfg.model_type and "llama" in cfg.model_type.lower())
-        or cfg.is_llama_derived_model is True
+        or cfg.is_llama_derived_model
     )
 
     if cfg.is_llama_derived_model and cfg.flash_attention:
