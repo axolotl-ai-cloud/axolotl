@@ -401,11 +401,12 @@ lora_out_dir:
 lora_fan_in_fan_out: false
 
 # wandb configuration if you're using it
-wandb_mode:
-wandb_project:
+wandb_mode: # "offline" to save run metadata locally and not sync to the server, "disabled" to turn off wandb
+wandb_project: # your wandb project name
+wandb_entity: # a wandb Team name if using a Team
 wandb_watch:
-wandb_run_id:
-wandb_log_model: # 'checkpoint'
+wandb_run_id: # set the name of your wandb run
+wandb_log_model: # "checkpoint" to log model to wandb Artifacts every `save_steps` or "end" to log only at the end of training
 
 # where to save the finished model to
 output_dir: ./completed-model
@@ -474,6 +475,10 @@ landmark_attention:
 # xpos RoPE see https://github.com/kaiokendev/cutoff-len-is-context-len/blob/main/util/xpos_rope_llama_monkey_patch.py
 # llama only
 xpos_rope:
+# RoPE Scaling https://github.com/huggingface/transformers/pull/24653
+rope_scaling:
+  type: # linear | dynamic
+  factor: # float
 
 # resume from a specific checkpoint dir
 resume_from_checkpoint:
@@ -505,6 +510,9 @@ torchdistx_path:
 # Set padding for data collator to 'longest'
 collator_pad_to_longest:
 
+# Set to HF dataset for type: 'completion' for streaming instead of pre-tokenize
+pretraining_dataset:
+
 # Debug mode
 debug:
 
@@ -524,7 +532,14 @@ Run
 accelerate launch scripts/finetune.py configs/your_config.yml
 ```
 
-#### Multi-GPU Config
+#### Multi-GPU
+
+It is recommended to pre-tokenize dataset with the following before finetuning:
+```bash
+CUDA_VISIBLE_DEVICES="" accelerate ... --prepare_ds_only
+```
+
+##### Config
 
 - llama FSDP
 ```yaml
@@ -538,6 +553,18 @@ fsdp_config:
 ```
 
 - llama Deepspeed: append `ACCELERATE_USE_DEEPSPEED=true` in front of finetune command
+
+##### Weights & Biases Logging
+
+- wandb options
+```yaml
+wandb_mode:
+wandb_project:
+wandb_entity:
+wandb_watch:
+wandb_run_id:
+wandb_log_model:
+```
 
 ### Inference
 

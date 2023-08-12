@@ -210,6 +210,8 @@ def train(
     LOG.info("loading model and peft_config...")
     model, peft_config = load_model(cfg, tokenizer)
 
+    safe_serialization = cfg.save_safetensors is True
+
     if "merge_lora" in kwargs and cfg.adapter is not None:
         LOG.info("running merge of LoRA with base model")
         model = model.merge_and_unload()
@@ -217,7 +219,11 @@ def train(
 
         if cfg.local_rank == 0:
             LOG.info("saving merged model")
-            model.save_pretrained(str(Path(cfg.output_dir) / "merged"))
+            model.save_pretrained(
+                str(Path(cfg.output_dir) / "merged"),
+                safe_serialization=safe_serialization,
+            )
+            tokenizer.save_pretrained(str(Path(cfg.output_dir) / "merged"))
         return
 
     if cfg.inference:
@@ -232,7 +238,7 @@ def train(
         return
 
     if "shard" in kwargs:
-        model.save_pretrained(cfg.output_dir)
+        model.save_pretrained(cfg.output_dir, safe_serialization=safe_serialization)
         return
 
     trainer = setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer)
@@ -254,7 +260,7 @@ def train(
         def terminate_handler(_, __, model):
             if cfg.flash_optimum:
                 model = BetterTransformer.reverse(model)
-            model.save_pretrained(cfg.output_dir)
+            model.save_pretrained(cfg.output_dir, safe_serialization=safe_serialization)
             sys.exit(0)
 
         signal.signal(
@@ -294,11 +300,11 @@ def train(
     # TODO do we need this fix? https://huggingface.co/docs/accelerate/usage_guides/fsdp#saving-and-loading
     # only save on rank 0, otherwise it corrupts output on multi-GPU when multiple processes attempt to write the same file
     if cfg.fsdp:
-        model.save_pretrained(cfg.output_dir)
+        model.save_pretrained(cfg.output_dir, safe_serialization=safe_serialization)
     elif cfg.local_rank == 0:
         if cfg.flash_optimum:
             model = BetterTransformer.reverse(model)
-        model.save_pretrained(cfg.output_dir)
+        model.save_pretrained(cfg.output_dir, safe_serialization=safe_serialization)
 
     # trainer.save_model(cfg.output_dir)  # TODO this may be needed for deepspeed to work? need to review another time
 

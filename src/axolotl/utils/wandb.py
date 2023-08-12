@@ -9,6 +9,8 @@ def setup_wandb_env_vars(cfg):
     elif cfg.wandb_project and len(cfg.wandb_project) > 0:
         os.environ["WANDB_PROJECT"] = cfg.wandb_project
         cfg.use_wandb = True
+        if cfg.wandb_entity and len(cfg.wandb_entity) > 0:
+            os.environ["WANDB_ENTITY"] = cfg.wandb_entity
         if cfg.wandb_watch and len(cfg.wandb_watch) > 0:
             os.environ["WANDB_WATCH"] = cfg.wandb_watch
         if cfg.wandb_log_model and len(cfg.wandb_log_model) > 0:

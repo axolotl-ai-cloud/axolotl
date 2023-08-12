@@ -21,6 +21,7 @@ lora_target_modules:
   - v_proj
 lora_fan_in_fan_out: false
 wandb_project: redpajama-alpaca-3b
+wandb_entity:
 wandb_watch:
 wandb_run_id:
 wandb_log_model:
