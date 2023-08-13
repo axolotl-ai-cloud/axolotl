@@ -275,15 +275,20 @@ class ReLoRATrainer(AxolotlTrainer):
         optimizer = self.optimizer if optimizer is None else optimizer
         lr_scheduler = super().create_scheduler(num_training_steps, optimizer)
 
-        self.lr_scheduler = ReLoRAScheduler(
+        if self.args.relora_steps:
+            warmup_steps = (
+                self.args.relora_warmup_steps if self.args.relora_warmup_steps else 10
+            )
+            self.lr_scheduler = ReLoRAScheduler(
                 optimizer,
                 lr_scheduler,
                 self.args.relora_steps,
-                self.args.relora_warmup_steps,
-        )
+                warmup_steps,
+            )
+        else:
+            self.lr_scheduler = lr_scheduler
 
         return self.lr_scheduler
-
 
 
 def add_position_ids(sample):
@@ -597,8 +602,6 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
     callbacks.append(GPUStatsCallback(cfg))
 
     if cfg.relora_steps:
-        relora_steps = int(cfg.relora_steps)
-        relora_warmup_steps = int(cfg.relora_warmup_steps)
         callbacks.append(ReLoRACallback(cfg))
 
     # TODO on_save callback to sync checkpoints to GCP/AWS in background
@@ -648,7 +651,8 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
     trainer_cls = (
         OneCycleLRSchedulerTrainer
         if cfg.lr_scheduler == "one_cycle" and (cfg.fsdp or cfg.adapter == "qlora")
-        else ReLoRATrainer if cfg.relora_steps
+        else ReLoRATrainer
+        if cfg.relora_steps
         else AxolotlTrainer
     )
     trainer = trainer_cls(
