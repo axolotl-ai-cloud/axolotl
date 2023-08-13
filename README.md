@@ -136,7 +136,7 @@ Have dataset(s) in one of the following format (JSONL recommended):
   ```json
   {"instruction": "...", "input": "...", "output": "..."}
   ```
-- `sharegpt:chat`: conversations
+- `sharegpt:chat`: conversations where `from` is `human`/`gpt`
   ```json
   {"conversations": [{"from": "...", "value": "..."}]}
   ```
@@ -222,6 +222,10 @@ Have dataset(s) in one of the following format (JSONL recommended):
   {"conversations": [{"role": "...", "value": "..."}]}
   ```
 - `sharegpt_simple.load_role`: conversations where `role` is used instead of `from`
+  ```json
+  {"conversations": [{"role": "...", "value": "..."}]}
+  ```
+- `sharegpt_simple.load_guanaco`: conversations where `from` is `prompter`/`assistant` instead of default sharegpt
   ```json
   {"conversations": [{"role": "...", "value": "..."}]}
   ```
