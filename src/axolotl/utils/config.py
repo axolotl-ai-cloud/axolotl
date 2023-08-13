@@ -30,6 +30,12 @@ def choose_device(cfg):
         else:
             cfg.device_map = {"": cfg.device}
 
+    # in `accelerate launch`, we need to not pass through any device map and let
+    # accelerate figure out which parts of the model to put on which gpu
+    accelerate_vars = [var for var in os.environ if var.startswith("ACCELERATE_USE_")]
+    if accelerate_vars:
+        cfg.device_map = None
+
 
 def normalize_config(cfg):
     # setup some derived config / hyperparams
