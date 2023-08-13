@@ -11,6 +11,7 @@ import bitsandbytes as bnb
 import peft
 import safetensors.torch as st
 import torch
+from huggingface_hub import snapshot_download
 from torch.optim.lr_scheduler import LRScheduler
 from torch.optim.optimizer import Optimizer
 from transformers import (
@@ -45,6 +46,8 @@ class ReLoRACallback(TrainerCallback):
         self.cpu_offload = cfg.relora_cpu_offload
         self.quantised = cfg.load_in_4bit or cfg.load_in_8bit
         self.last_full_model = cfg.base_model
+        if not os.path.exists(self.last_full_model):
+            self.last_full_model = str(Path(snapshot_download(cfg.base_model)))
 
         assert os.path.exists(
             self.last_full_model

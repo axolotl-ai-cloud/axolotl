@@ -125,6 +125,14 @@ class AxolotlTrainingArguments(TrainingArguments):
         default=1,
         metadata={"help": "the multiplier for the max len for packed sequences"},
     )
+    relora_steps: Optional[int] = field(
+        default=None,
+        metadata={"help": "how often to reset for ReLoRA"},
+    )
+    relora_warmup_steps: Optional[int] = field(
+        default=None,
+        metadata={"help": "how many warmup steps to take after reset for ReLoRA"},
+    )
 
 
 class AxolotlTrainer(Trainer):
@@ -248,6 +256,34 @@ class OneCycleLRSchedulerTrainer(AxolotlTrainer):
         )
 
         return self.lr_scheduler
+
+
+class ReLoRATrainer(AxolotlTrainer):
+    """
+    Trainer subclass that uses the OneCycleLR scheduler
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.lr_scheduler = None
+
+    def create_scheduler(
+        self,
+        num_training_steps: int,
+        optimizer: Optional[torch.optim.Optimizer] = None,
+    ):
+        optimizer = self.optimizer if optimizer is None else optimizer
+        lr_scheduler = super().create_scheduler(num_training_steps, optimizer)
+
+        self.lr_scheduler = ReLoRAScheduler(
+                optimizer,
+                lr_scheduler,
+                self.args.relora_steps,
+                self.args.relora_warmup_steps,
+        )
+
+        return self.lr_scheduler
+
 
 
 def add_position_ids(sample):
@@ -485,6 +521,8 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
         weight_decay=cfg.weight_decay if cfg.weight_decay is not None else 0.0,
         sample_packing=cfg.sample_packing if cfg.sample_packing else False,
         sample_packing_seq_len_multiplier=cfg.micro_batch_size,
+        relora_steps=cfg.relora_steps,
+        relora_warmup_steps=cfg.relora_warmup_steps,
         **training_arguments_kwargs,
     )
 
@@ -563,12 +601,6 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
         relora_warmup_steps = int(cfg.relora_warmup_steps)
         callbacks.append(ReLoRACallback(cfg))
 
-        (optimizer, lr_scheduler) = trainer_kwargs["optimizers"]
-        trainer_kwargs["optimizers"] = (
-            optimizer,
-            ReLoRAScheduler(optimizer, lr_scheduler, relora_steps, relora_warmup_steps),
-        )
-
     # TODO on_save callback to sync checkpoints to GCP/AWS in background
     if cfg.early_stopping_patience:
         early_stop_cb = EarlyStoppingCallback(
@@ -616,6 +648,7 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
     trainer_cls = (
         OneCycleLRSchedulerTrainer
         if cfg.lr_scheduler == "one_cycle" and (cfg.fsdp or cfg.adapter == "qlora")
+        else ReLoRATrainer if cfg.relora_steps
         else AxolotlTrainer
     )
     trainer = trainer_cls(
