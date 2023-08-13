@@ -206,7 +206,7 @@ def test_inference(model_cfg, dtype_cfg, attn_cfg, ctx_len, results_bag):
                 eos_token_id=tokenizer.eos_token_id,
                 pad_token_id=tokenizer.pad_token_id,
                 do_sample=True,
-                use_cache=not cfg.flash_attention,
+                use_cache=True,
                 return_dict_in_generate=True,
                 output_attentions=False,
                 output_hidden_states=False,
@@ -228,7 +228,13 @@ def test_inference(model_cfg, dtype_cfg, attn_cfg, ctx_len, results_bag):
             cfg.stats_bag.generate_tps = (
                 cfg.stats_bag.generate_tokens / cfg.stats_bag.generate_time
             )
-            # tokenizer.decode(generated["sequences"].cpu().tolist()[0])
+            LOG.debug(
+                tokenizer.decode(
+                    generated["sequences"]
+                    .cpu()
+                    .tolist()[0][cfg.stats_bag.prompt_tokens :]
+                )
+            )
     finally:
         try:
             del tokenizer

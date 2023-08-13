@@ -16,9 +16,13 @@ from axolotl.monkeypatch.utils import get_cu_seqlens_from_pos_ids
 
 try:
     from flash_attn.flash_attn_interface import (  # pylint: disable=ungrouped-imports
+        flash_attn_varlen_kvpacked_func,
         flash_attn_varlen_qkvpacked_func,
     )
 except ImportError:
+    from flash_attn.flash_attn_interface import (
+        flash_attn_unpadded_kvpacked_func as flash_attn_varlen_kvpacked_func,
+    )
     from flash_attn.flash_attn_interface import (
         flash_attn_unpadded_qkvpacked_func as flash_attn_varlen_qkvpacked_func,
     )
@@ -135,69 +139,78 @@ def flashattn_forward(
     # flash-attn v2 start
     #
 
-    # transform the data into the format required by flash attention
-    qkv = torch.stack(
-        [query_states, key_states, value_states], dim=2
-    )  # [bsz, nh, 3, q_len, hd]
-    qkv = qkv.transpose(1, 3)  # [bsz, q_len, 3, nh, hd]
-    # We have disabled _prepare_decoder_attention_mask in LlamaModel
-    # the attention_mask should be the same as the key_padding_mask
-    key_padding_mask = attention_mask
+    if self.training:
+        # during training q,k,v always have same seqlen
+        assert key_states.shape == query_states.shape
+        is_causal = True
+    else:
+        # turn off FA causal mask after first inference autoregressive iteration
+        # only on first autoregressive step q,k,v have same seqlen
+        is_causal = key_states.shape == query_states.shape
 
-    if key_padding_mask is None:
-        qkv = rearrange(qkv, "b s ... -> (b s) ...")
-        max_s = q_len
-        cu_q_lens = torch.arange(
-            0,
-            (bsz + 1) * q_len,
-            step=q_len,
-            dtype=torch.int32,
-            device=qkv.device,
-        )
-        output = flash_attn_varlen_qkvpacked_func(
-            qkv, cu_q_lens, max_s, 0.0, softmax_scale=None, causal=True
-        )
-        output = rearrange(output, "(b s) ... -> b s ...", b=bsz)
-    elif attention_mask.shape[0] == 1:
+    if self.training and attention_mask.shape[0] == 1:
         # special handling using sample packing
+        qkv = torch.stack(
+            [query_states, key_states, value_states], dim=2
+        )  # [bsz, nh, 3, q_len, hd]
+        qkv = qkv.transpose(1, 3)  # [bsz, q_len, 3, nh, hd]
         qkv = rearrange(qkv, "b s ... -> (b s) ...")
         cu_q_lens, max_s = get_cu_seqlens_from_pos_ids(position_ids)
         cu_q_lens = cu_q_lens.squeeze()
 
         output = flash_attn_varlen_qkvpacked_func(
-            qkv, cu_q_lens, max_s, 0.0, softmax_scale=None, causal=True
+            qkv, cu_q_lens, max_s, 0.0, softmax_scale=None, causal=is_causal
         )
         output = rearrange(output, "(b s) ... -> b s ...", b=bsz)
-    else:
-        nheads = qkv.shape[-2]
-
-        # pylint: disable=invalid-name
-        x = rearrange(qkv, "b s three h d -> b s (three h d)")
-        x_unpad, indices, cu_q_lens, max_s = unpad_input(x, key_padding_mask)
-        x_unpad = rearrange(
-            x_unpad,
-            "nnz (three h d) -> nnz three h d",
-            three=3,
-            h=nheads,
+    elif query_states.shape == key_states.shape:
+        qkv_unpad, cu_seqlens_q, max_seqlen_q, _, output_pad_fn = generate_qkv(
+            query_states.transpose(1, 2),
+            key_states.transpose(1, 2),
+            value_states.transpose(1, 2),
+            qkvpacked=True,
+            # We have disabled _prepare_decoder_attention_mask in LlamaModel
+            # the attention_mask should be the same as the key_padding_mask
+            key_padding_mask=attention_mask,
         )
         output_unpad = flash_attn_varlen_qkvpacked_func(
-            x_unpad,
-            cu_q_lens,
-            max_s,
+            qkv_unpad,
+            cu_seqlens_q,
+            max_seqlen_q,
             0.0,
             softmax_scale=None,
-            causal=True,
+            causal=is_causal,
         )
-        output = rearrange(
-            pad_input(
-                rearrange(output_unpad, "nnz h d -> nnz (h d)"),
-                indices,
-                bsz,
-                q_len,
-            ),
-            "b s (h d) -> b s h d",
-            h=nheads,
+        output = output_pad_fn(output_unpad)
+    else:
+        (  # pylint: disable=unbalanced-tuple-unpacking
+            q_unpad,
+            kv_unpad,
+            cu_seqlens_q,
+            cu_seqlens_k,
+            max_seqlen_q,
+            max_seqlen_k,
+            _,
+            _,
+            output_pad_fn,
+        ) = generate_qkv(
+            query_states.transpose(1, 2),
+            key_states.transpose(1, 2),
+            value_states.transpose(1, 2),
+            kvpacked=True,
+            key_padding_mask=attention_mask,
         )
+        output_unpad = flash_attn_varlen_kvpacked_func(
+            q_unpad,
+            kv_unpad,
+            cu_seqlens_q,
+            cu_seqlens_k,
+            max_seqlen_q,
+            max_seqlen_k,
+            0.0,
+            softmax_scale=None,
+            causal=is_causal,
+        )
+        output = output_pad_fn(output_unpad)
 
     attn_output = output
     if attn_output.size() != (bsz, q_len, self.num_heads, self.head_dim):
@@ -224,3 +237,100 @@ def flashattn_forward(
         attn_output = self.o_proj(attn_output)
 
     return attn_output, None, past_key_value
+
+
+# based on https://github.com/Dao-AILab/flash-attention/blob/364a5b/tests/test_flash_attn.py#L38
+def generate_qkv(
+    q,
+    k,
+    v,
+    query_padding_mask=None,
+    key_padding_mask=None,
+    kvpacked=False,
+    qkvpacked=False,
+):  # pylint: disable=invalid-name
+    """
+    Arguments:
+        q: (batch_size, seqlen_q, nheads, d)
+        k: (batch_size, seqlen_k, nheads_k, d)
+        v: (batch_size, seqlen_k, nheads_k, d)
+        query_padding_mask: (batch_size, seqlen), bool
+        key_padding_mask: (batch_size, seqlen), bool
+    """
+    assert not (kvpacked and qkvpacked)
+    batch_size, seqlen_q, nheads, d = q.shape
+    _, seqlen_k, nheads_k, _ = k.shape
+    assert k.shape == (batch_size, seqlen_k, nheads_k, d)
+    assert v.shape == (batch_size, seqlen_k, nheads_k, d)
+
+    if query_padding_mask is not None:
+        q_unpad, indices_q, cu_seqlens_q, max_seqlen_q = unpad_input(
+            q, query_padding_mask
+        )
+
+        def output_pad_fn(output_unpad):
+            pad_input(output_unpad, indices_q, batch_size, seqlen_q)
+
+    else:
+        q_unpad = rearrange(q, "b s h d -> (b s) h d")
+        cu_seqlens_q = torch.arange(
+            0,
+            (batch_size + 1) * seqlen_q,
+            step=seqlen_q,
+            dtype=torch.int32,
+            device=q_unpad.device,
+        )
+        max_seqlen_q = seqlen_q
+
+        def output_pad_fn(output_unpad):
+            rearrange(output_unpad, "(b s) h d -> b s h d", b=batch_size)
+
+    if key_padding_mask is not None:
+        k_unpad, _, cu_seqlens_k, max_seqlen_k = unpad_input(k, key_padding_mask)
+        v_unpad, _, _, _ = unpad_input(v, key_padding_mask)
+    else:
+        k_unpad = rearrange(k, "b s h d -> (b s) h d")
+        v_unpad = rearrange(v, "b s h d -> (b s) h d")
+        cu_seqlens_k = torch.arange(
+            0,
+            (batch_size + 1) * seqlen_k,
+            step=seqlen_k,
+            dtype=torch.int32,
+            device=k_unpad.device,
+        )
+        max_seqlen_k = seqlen_k
+
+    if qkvpacked:
+        assert nheads == nheads_k
+        qkv_unpad = torch.stack([q_unpad, k_unpad, v_unpad], dim=1)
+        qkv = torch.stack([q, k, v], dim=2)
+        return (qkv_unpad, cu_seqlens_q, max_seqlen_q, qkv, output_pad_fn)
+
+    if kvpacked:
+        kv_unpad = torch.stack([k_unpad, v_unpad], dim=1)
+        kv = torch.stack([k, v], dim=2)
+        return (
+            q_unpad,
+            kv_unpad,
+            cu_seqlens_q,
+            cu_seqlens_k,
+            max_seqlen_q,
+            max_seqlen_k,
+            q,
+            kv,
+            output_pad_fn,
+        )
+
+    return (
+        q_unpad,
+        k_unpad,
+        v_unpad,
+        cu_seqlens_q,
+        cu_seqlens_k,
+        max_seqlen_q,
+        max_seqlen_k,
+        q,
+        k,
+        v,
+        output_pad_fn,
+    )
