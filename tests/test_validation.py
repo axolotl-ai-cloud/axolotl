@@ -6,8 +6,8 @@ from typing import Optional
 
 import pytest
 
+from axolotl.utils.config import validate_config
 from axolotl.utils.dict import DictDefault
-from axolotl.utils.validation import validate_config
 
 
 class ValidationTest(unittest.TestCase):
