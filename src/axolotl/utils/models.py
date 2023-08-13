@@ -112,9 +112,7 @@ def load_model(
         LOG.info("patching with xformers attention")
         hijack_llama_attention()
     elif cfg.is_llama_derived_model and cfg.sdp_attention:
-        from axolotl.monkeypatch.llama_attn_hijack_xformers import (
-            hijack_llama_sdp_attention,
-        )
+        from axolotl.monkeypatch.llama_attn_hijack_sdp import hijack_llama_sdp_attention
 
         LOG.info("patching with sdp attention")
         hijack_llama_sdp_attention()
