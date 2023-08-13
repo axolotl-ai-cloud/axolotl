@@ -307,6 +307,7 @@ def train(
 
     if not Path(cfg.output_dir).is_dir():
         os.makedirs(cfg.output_dir, exist_ok=True)
+    tokenizer.save_pretrained(cfg.output_dir)
     if cfg.flash_optimum:
         with torch.backends.cuda.sdp_kernel(
             enable_flash=True, enable_math=True, enable_mem_efficient=True
