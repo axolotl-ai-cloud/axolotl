@@ -5,6 +5,8 @@ import os
 
 import torch
 
+from axolotl.utils.bench import log_gpu_memory_usage
+
 LOG = logging.getLogger("axolotl")
 
 
@@ -53,6 +55,8 @@ def normalize_config(cfg):
         cfg.bf16 = False
     else:
         torch.backends.cuda.matmul.allow_tf32 = cfg.tf32 or False
+
+    log_gpu_memory_usage(LOG, "baseline", cfg.device)
 
 
 def validate_config(cfg):
