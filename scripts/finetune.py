@@ -18,7 +18,6 @@ from optimum.bettertransformer import BetterTransformer
 from transformers import GenerationConfig, TextStreamer
 
 from axolotl.logging_config import configure_logging
-from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.data import load_prepare_datasets, load_pretraining_dataset
 from axolotl.utils.dict import DictDefault
@@ -225,8 +224,6 @@ def train(
     if prepare_ds_only:
         LOG.info("Finished preparing dataset. Exiting...")
         return
-
-    log_gpu_memory_usage(LOG, "baseline", cfg.device)
 
     # Load the model and tokenizer
     LOG.info("loading model and (optionally) peft_config...")
