@@ -227,7 +227,7 @@ Have dataset(s) in one of the following format (JSONL recommended):
   ```
 - `sharegpt_simple.load_guanaco`: conversations where `from` is `prompter`/`assistant` instead of default sharegpt
   ```json
-  {"conversations": [{"role": "...", "value": "..."}]}
+  {"conversations": [{"from": "...", "value": "..."}]}
   ```
 - `sharegpt_jokes`: creates a chat where bot is asked to tell a joke, then explain why the joke is funny
   ```json
