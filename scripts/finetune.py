@@ -177,9 +177,8 @@ def train(
     setup_wandb_env_vars(cfg)
 
     # load the tokenizer first
-    tokenizer_config = cfg.tokenizer_config or cfg.base_model_config
-    LOG.info(f"loading tokenizer... {tokenizer_config}")
-    tokenizer = load_tokenizer(tokenizer_config, cfg.tokenizer_type, cfg)
+    LOG.info(f"loading tokenizer... {cfg.tokenizer_config or cfg.base_model_config}")
+    tokenizer = load_tokenizer(cfg)
 
     if (
         check_not_in(["shard", "merge_lora"], kwargs) and not cfg.inference
