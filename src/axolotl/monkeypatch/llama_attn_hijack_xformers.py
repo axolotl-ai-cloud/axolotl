@@ -104,7 +104,10 @@ def xformers_forward(
             "Output attentions is not supported for patched `LlamaAttention`, returning `None` instead."
         )
 
-    # xformers attention
+    #
+    # xformers-attn start
+    #
+
     query_states = query_states.transpose(1, 2)
     key_states = key_states.transpose(1, 2)
     value_states = value_states.transpose(1, 2)
@@ -126,7 +129,16 @@ def xformers_forward(
             attn_bias=xformers.ops.LowerTriangularMask(),
         )
 
+    if attn_output.size() != (bsz, q_len, self.num_heads, self.head_dim):
+        raise ValueError(
+            f"`attn_output` should be of size {(bsz, q_len, self.num_heads, self.head_dim)}, but is"
+            f" {attn_output.size()}"
+        )
     attn_output = attn_output.reshape(bsz, q_len, self.hidden_size)
+
+    #
+    # xformers-attn end
+    #
 
     if self.pretraining_tp > 1:
         attn_output = attn_output.split(self.hidden_size // self.pretraining_tp, dim=2)

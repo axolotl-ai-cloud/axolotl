@@ -131,8 +131,9 @@ def flashattn_forward(
             "Output attentions is not supported for patched `LlamaAttention`, returning `None` instead."
         )
 
-    # Flash attention codes from
-    # https://github.com/HazyResearch/flash-attention/blob/main/flash_attn/flash_attention.py
+    #
+    # flash-attn v2 start
+    #
 
     # transform the data into the format required by flash attention
     qkv = torch.stack(
@@ -198,7 +199,17 @@ def flashattn_forward(
             h=nheads,
         )
 
-    attn_output = rearrange(output, "b s h d -> b s (h d)")
+    attn_output = output
+    if attn_output.size() != (bsz, q_len, self.num_heads, self.head_dim):
+        raise ValueError(
+            f"`attn_output` should be of size {(bsz, q_len, self.num_heads, self.head_dim)}, but is"
+            f" {attn_output.size()}"
+        )
+    attn_output = rearrange(attn_output, "b s h d -> b s (h d)")
+
+    #
+    # flash-attn v2 end
+    #
 
     if self.pretraining_tp > 1:
         attn_output = attn_output.split(self.hidden_size // self.pretraining_tp, dim=2)

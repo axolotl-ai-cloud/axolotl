@@ -100,7 +100,10 @@ def sdp_attention_forward(
             "Output attentions is not supported for patched `LlamaAttention`, returning `None` instead."
         )
 
-    # SDP attention
+    #
+    # sdp-attn start
+    #
+
     with torch.backends.cuda.sdp_kernel():
         attn_output = torch.nn.functional.scaled_dot_product_attention(
             query_states,
@@ -117,6 +120,10 @@ def sdp_attention_forward(
         )
     attn_output = attn_output.transpose(1, 2)
     attn_output = attn_output.reshape(bsz, q_len, self.hidden_size)
+
+    #
+    # sdp-attn end
+    #
 
     if self.pretraining_tp > 1:
         attn_output = attn_output.split(self.hidden_size // self.pretraining_tp, dim=2)
