@@ -28,6 +28,9 @@ def gpu_memory_usage_smi(device=0):
 
 
 def log_gpu_memory_usage(log, msg, device):
+    if not torch.cuda.is_available():
+        return (0, 0, 0)
+
     usage, cache, misc = gpu_memory_usage_all(device)
     extras = []
     if cache > 0:
