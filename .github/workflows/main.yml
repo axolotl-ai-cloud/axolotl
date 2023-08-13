@@ -29,7 +29,7 @@ jobs:
             python_version: "3.9"
             pytorch: 2.0.1
             axolotl_extras: gptq
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -77,7 +77,7 @@ jobs:
             python_version: "3.9"
             pytorch: 2.0.1
             axolotl_extras: gptq
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - name: Checkout
         uses: actions/checkout@v3
