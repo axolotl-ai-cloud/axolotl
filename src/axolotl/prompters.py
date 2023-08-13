@@ -312,7 +312,9 @@ class ShareGPTPrompter:  # pylint: disable=too-few-public-methods
         if len(source) < 2:
             # If there isn't a back and forth conversation, ignore it
             # also happens on the data splitting leaving empty conversations
-            raise IndexError
+            raise IndexError(
+                f"A conversation entry has less than 2 messages :\n{source}"
+            )
 
         conv = self._conversation.copy()
         roles = {"human": conv.roles[0], "gpt": conv.roles[1]}
