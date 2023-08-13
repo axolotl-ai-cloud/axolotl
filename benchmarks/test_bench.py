@@ -230,8 +230,11 @@ def test_inference(model_cfg, dtype_cfg, attn_cfg, ctx_len, results_bag):
             )
             # tokenizer.decode(generated["sequences"].cpu().tolist()[0])
     finally:
-        del tokenizer
-        del model
+        try:
+            del tokenizer
+            del model
+        except UnboundLocalError:
+            pass
 
 
 @parametrize_with_cases("model_cfg", cases=TestConfigs, prefix="model_")
