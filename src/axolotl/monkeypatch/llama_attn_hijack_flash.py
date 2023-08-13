@@ -248,7 +248,7 @@ def generate_qkv(
     key_padding_mask=None,
     kvpacked=False,
     qkvpacked=False,
-):  # pylint: disable=invalid-name
+):  # pylint: disable=invalid-name,unnecessary-lambda-assignment
     """
     Arguments:
         q: (batch_size, seqlen_q, nheads, d)
@@ -268,8 +268,9 @@ def generate_qkv(
             q, query_padding_mask
         )
 
-        def output_pad_fn(output_unpad):
-            pad_input(output_unpad, indices_q, batch_size, seqlen_q)
+        output_pad_fn = lambda output_unpad: pad_input(  # noqa: E731
+            output_unpad, indices_q, batch_size, seqlen_q
+        )
 
     else:
         q_unpad = rearrange(q, "b s h d -> (b s) h d")
@@ -282,8 +283,9 @@ def generate_qkv(
         )
         max_seqlen_q = seqlen_q
 
-        def output_pad_fn(output_unpad):
-            rearrange(output_unpad, "(b s) h d -> b s h d", b=batch_size)
+        output_pad_fn = lambda output_unpad: rearrange(  # noqa: E731
+            output_unpad, "(b s) h d -> b s h d", b=batch_size
+        )
 
     if key_padding_mask is not None:
         k_unpad, _, cu_seqlens_k, max_seqlen_k = unpad_input(k, key_padding_mask)
