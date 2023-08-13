@@ -114,7 +114,7 @@ class ReLoRACallback(TrainerCallback):
                     shutil.move(path, checkpoint_folder)
                 self.last_full_model = checkpoint_folder
             else:
-                model.model.save_pretrained(checkpoint_folder, save_safetensors=True)
+                model.model.save_pretrained(checkpoint_folder, safe_serialization=True)
 
         return control
 
