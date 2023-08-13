@@ -105,7 +105,14 @@ class TestConfigs:  # pylint: disable=missing-class-docstring disable=too-many-p
             }
         )
 
-    def attn_bettertransformer(self):
+    def attn_sdp(self):
+        return DictDefault(
+            {
+                "sdp_attention": True,
+            }
+        )
+
+    def _attn_bettertransformer(self):
         return DictDefault(
             {
                 "flash_optimum": True,
