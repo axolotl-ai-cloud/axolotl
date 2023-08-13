@@ -59,16 +59,16 @@ def load_tokenizer(
             **tokenizer_kwargs,
         )
 
-    LOG.debug(f"EOS: {tokenizer.eos_token_id} / {tokenizer.eos_token}")
-    LOG.debug(f"BOS: {tokenizer.bos_token_id} / {tokenizer.bos_token}")
-    LOG.debug(f"PAD: {tokenizer.pad_token_id} / {tokenizer.pad_token}")
-    LOG.debug(f"UNK: {tokenizer.unk_token_id} / {tokenizer.unk_token}")
-
     if tokenizer.__class__.__name__ in [
         "LlamaTokenizer",
         "LlamaTokenizerFast",
     ]:
         tokenizer.pad_token = LLAMA_DEFAULT_PAD_TOKEN
+
+    LOG.debug(f"EOS: {tokenizer.eos_token_id} / {tokenizer.eos_token}")
+    LOG.debug(f"BOS: {tokenizer.bos_token_id} / {tokenizer.bos_token}")
+    LOG.debug(f"PAD: {tokenizer.pad_token_id} / {tokenizer.pad_token}")
+    LOG.debug(f"UNK: {tokenizer.unk_token_id} / {tokenizer.unk_token}")
 
     if tokenizer.__class__.__name__ == "GPTNeoXTokenizerFast":
         tokenizer.add_special_tokens({"pad_token": "[PAD]"})
