@@ -2,6 +2,7 @@ base_model: meta-llama/Llama-2-7b-hf
 base_model_config: meta-llama/Llama-2-7b-hf
 model_type: LlamaForCausalLM
 tokenizer_type: LlamaTokenizer
+is_llama_derived_model: true
 
 load_in_8bit: false
 load_in_4bit: true
