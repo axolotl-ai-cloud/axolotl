@@ -440,6 +440,9 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
         training_arguments_kwargs["push_to_hub"] = True
         training_arguments_kwargs["hub_private_repo"] = True
 
+        if cfg.hub_strategy:
+            training_arguments_kwargs["hub_strategy"] = cfg.hub_strategy
+
     if cfg.save_safetensors:
         training_arguments_kwargs["save_safetensors"] = cfg.save_safetensors
 

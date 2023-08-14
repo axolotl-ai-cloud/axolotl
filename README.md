@@ -364,6 +364,9 @@ dataset_prepared_path: data/last_run_prepared
 push_dataset_to_hub: # repo path
 # push checkpoints to hub
 hub_model_id: # repo path to push finetuned model
+# how to push checkpoints to hub
+# https://huggingface.co/docs/transformers/v4.31.0/en/main_classes/trainer#transformers.TrainingArguments.hub_strategy
+hub_strategy:
 # whether to use hf `use_auth_token` for loading datasets. Useful for fetching private datasets
 # required to be true when used in combination with `push_dataset_to_hub`
 hf_use_auth_token: # boolean
