@@ -440,6 +440,9 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
         training_arguments_kwargs["push_to_hub"] = True
         training_arguments_kwargs["hub_private_repo"] = True
 
+        if cfg.hub_strategy:
+            training_arguments_kwargs["hub_strategy"] = cfg.hub_strategy
+
     if cfg.save_safetensors:
         training_arguments_kwargs["save_safetensors"] = cfg.save_safetensors
 
@@ -448,8 +451,17 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
             "sample_packing_efficiency"
         ] = cfg.sample_packing_eff_est
 
+    if cfg.val_set_size == 0:
+        evaluation_strategy = "no"
+    elif cfg.eval_steps < 1:
+        # eval every epoch
+        evaluation_strategy = "epoch"
+    else:
+        # eval every eval_steps steps
+        evaluation_strategy = "steps"
+
     training_args = AxolotlTrainingArguments(  # pylint: disable=unexpected-keyword-arg
-        # max_steps=total_num_steps,  # this is helpful in case we don't actually know total # of steps
+        max_steps=total_num_steps if cfg.max_steps else -1,
         max_seq_length=cfg.sequence_len,
         per_device_train_batch_size=cfg.micro_batch_size,
         per_device_eval_batch_size=cfg.eval_batch_size
@@ -459,7 +471,7 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
         eval_accumulation_steps=cfg.gradient_accumulation_steps,
         num_train_epochs=cfg.num_epochs,
         learning_rate=cfg.learning_rate,
-        evaluation_strategy="steps" if cfg.val_set_size > 0 else "no",
+        evaluation_strategy=evaluation_strategy,
         save_strategy="steps" if cfg.save_steps else "epoch",
         eval_steps=cfg.eval_steps if cfg.val_set_size > 0 else None,
         save_steps=cfg.save_steps,
