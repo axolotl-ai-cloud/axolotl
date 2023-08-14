@@ -15,7 +15,7 @@ val_set_size: 0.01
 output_dir: ./lora-out
 
 sequence_len: 4096
-max_packed_sequence_len: 4096
+sample_packing: true
 
 adapter: lora
 lora_model_dir:
@@ -49,8 +49,8 @@ early_stopping_patience:
 resume_from_checkpoint:
 local_rank:
 logging_steps: 1
-xformers_attention: true
-flash_attention:
+xformers_attention:
+flash_attention: true
 
 warmup_steps: 10
 eval_steps: 20
@@ -64,4 +64,3 @@ special_tokens:
   bos_token: "<s>"
   eos_token: "</s>"
   unk_token: "<unk>"
-  pad_token: "<pad>"
