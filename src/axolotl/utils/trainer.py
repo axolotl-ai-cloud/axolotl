@@ -461,7 +461,7 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
         evaluation_strategy = "steps"
 
     training_args = AxolotlTrainingArguments(  # pylint: disable=unexpected-keyword-arg
-        # max_steps=total_num_steps,  # this is helpful in case we don't actually know total # of steps
+        max_steps=total_num_steps if cfg.max_steps else -1,
         max_seq_length=cfg.sequence_len,
         per_device_train_batch_size=cfg.micro_batch_size,
         per_device_eval_batch_size=cfg.eval_batch_size

@@ -209,7 +209,13 @@ def train(
                 cfg, train_dataset, eval_dataset
             )
         barrier()
-        total_num_steps = calculate_total_num_steps(cfg, train_dataset, tokenizer)
+        if cfg.max_steps:
+            total_num_steps = min(
+                calculate_total_num_steps(cfg, train_dataset, tokenizer), cfg.max_steps
+            )
+            LOG.info(f"Maximum number of steps set at {total_num_steps}")
+        else:
+            total_num_steps = calculate_total_num_steps(cfg, train_dataset, tokenizer)
 
     if cfg.debug or "debug" in kwargs:
         LOG.info("check_dataset_labels...")
