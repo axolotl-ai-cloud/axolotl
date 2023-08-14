@@ -12,6 +12,7 @@ import torch
 from configs import TestConfigs
 from datasets import Dataset
 from pytest_cases import parametrize_with_cases
+from pytorch_memlab import MemReporter
 from transformers import GenerationConfig
 
 from axolotl.utils.bench import (
@@ -30,7 +31,7 @@ logs_dir = Path(__file__).parent / "logs"
 
 
 @pytest.fixture(autouse=True)
-def configure_logging(request, caplog):
+def capture_logs(request, caplog):
     log_file = logs_dir / f"{request.node.name}.log"
     request.config.pluginmanager.get_plugin("logging-plugin").set_log_path(log_file)
     caplog.set_level(logging.DEBUG)
@@ -68,6 +69,9 @@ def memory_cleanup():
         gc.collect()
         torch.cuda.empty_cache()
         yield
+    except torch.cuda.OutOfMemoryError:
+        MemReporter().report()
+        raise
     finally:
         gc.collect()
         torch.cuda.empty_cache()

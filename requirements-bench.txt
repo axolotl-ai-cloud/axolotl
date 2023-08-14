@@ -1,3 +1,4 @@
+pytorch_memlab
 pytest-harvest
 pytest-cases
 #pytest-benchmark
