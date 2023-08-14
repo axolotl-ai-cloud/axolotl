@@ -435,7 +435,8 @@ learning_rate: 0.00003
 logging_steps:
 save_steps:
 eval_steps:
-save_total_limit:
+save_total_limit: # checkpoints saved at a time
+max_steps:
 
 # save model as safetensors (require safetensors package)
 save_safetensors:
