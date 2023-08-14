@@ -22,6 +22,7 @@ from axolotl.utils.bench import (
 )
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.data import encode_pretraining
+from axolotl.utils.dict import DictDefault
 from axolotl.utils.models import load_model, load_tokenizer
 from axolotl.utils.trainer import setup_trainer
 from axolotl.utils.wandb import setup_wandb_env_vars
@@ -106,52 +107,6 @@ def get_tensors(gpu_only=True):
                 yield tensor
         except Exception:  # nosec B112 pylint: disable=broad-exception-caught
             continue
-
-
-@parametrize_with_cases("model_cfg", cases=TestConfigs, prefix="model_")
-@parametrize_with_cases("attn_cfg", cases=TestConfigs, prefix="attn_")
-@parametrize_with_cases("dtype_cfg", cases=TestConfigs, prefix="dtype_")
-def test_bench_attn(model_cfg, attn_cfg, dtype_cfg, results_bag):
-    cfg = model_cfg | dtype_cfg | attn_cfg
-    cfg.output_dir = str(logs_dir.resolve())
-    results_bag.cfg = cfg
-    assert "llama" in cfg.base_model
-    assert validate_config(cfg) is None
-    normalize_config(cfg)
-    setup_wandb_env_vars(cfg)
-    assert cfg.stats_bag.vram_baseline <= 0.25
-    try:
-        trainer = None
-        tokenizer = load_tokenizer(cfg)
-        model, _ = load_model(cfg, tokenizer)
-
-        dataset = Dataset.from_list([{"text": "hello world"}])
-        encode = functools.partial(encode_pretraining, tokenizer, cfg.sequence_len)
-        dataset = dataset.map(encode, batched=True, remove_columns=["text"])
-
-        trainer = setup_trainer(cfg, dataset.with_format("torch"), [], model, tokenizer)
-        trainer.train()
-        for elem in trainer.state.log_history:
-            if "train_runtime" in elem:
-                cfg.stats_bag["train_result"] = elem
-                for key, val in elem.items():
-                    if key == "train_runtime":
-                        key = "time_train"
-                    elif key == "train_samples_per_second":
-                        ...
-                    else:
-                        continue
-                    results_bag[key] = val
-
-    finally:
-        if trainer is not None:
-            opt = trainer.optimizer
-            trainer.optimizer = None
-            opt.zero_grad()
-            del opt
-            del trainer
-        del tokenizer
-        del model
 
 
 @parametrize_with_cases("model_cfg", cases=TestConfigs, prefix="model_")
@@ -248,10 +203,21 @@ def test_inference(model_cfg, dtype_cfg, attn_cfg, ctx_len, results_bag):
 
 
 @parametrize_with_cases("model_cfg", cases=TestConfigs, prefix="model_")
+@parametrize_with_cases("attn_cfg", cases=TestConfigs, prefix="attn_")
 @parametrize_with_cases("dtype_cfg", cases=TestConfigs, prefix="dtype_")
-@parametrize_with_cases("opt_cfg", cases=TestConfigs, prefix="opt_")
-def test_trainer(model_cfg, opt_cfg, dtype_cfg, results_bag):
-    cfg = model_cfg | opt_cfg | dtype_cfg | TestConfigs().attn_xformers()
+@parametrize_with_cases("ctx_len", cases=TestConfigs, prefix="ctx_")
+# @parametrize_with_cases("opt_cfg", cases=TestConfigs, prefix="opt_")
+@parametrize_with_cases(
+    "opt_cfg", cases=TestConfigs, prefix="opt_", glob="opt_adamw_torch"
+)
+def test_trainer(model_cfg, attn_cfg, dtype_cfg, opt_cfg, ctx_len, results_bag):
+    cfg = (
+        model_cfg
+        | opt_cfg
+        | dtype_cfg
+        | attn_cfg
+        | DictDefault({"sequence_len": ctx_len})
+    )
     cfg.output_dir = str(logs_dir.resolve())
     results_bag.cfg = cfg
     assert "llama" in cfg.base_model
@@ -264,7 +230,7 @@ def test_trainer(model_cfg, opt_cfg, dtype_cfg, results_bag):
         tokenizer = load_tokenizer(cfg)
         model, _ = load_model(cfg, tokenizer)
 
-        dataset = Dataset.from_list([{"text": "hello world"}])
+        dataset = Dataset.from_list([{"text": "hello world " * int(ctx_len / 2)}])
         encode = functools.partial(encode_pretraining, tokenizer, cfg.sequence_len)
         dataset = dataset.map(encode, batched=True, remove_columns=["text"])
 
@@ -284,6 +250,10 @@ def test_trainer(model_cfg, opt_cfg, dtype_cfg, results_bag):
 
     finally:
         if trainer is not None:
+            opt = trainer.optimizer
+            trainer.optimizer = None
+            opt.zero_grad()
+            del opt
             del trainer
         del tokenizer
         del model

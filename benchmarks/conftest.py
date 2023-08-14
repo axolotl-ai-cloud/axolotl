@@ -25,6 +25,7 @@ def pytest_sessionfinish(session):
             "vram_last",
             "train_result",
             "test_inference_ctx_len_param",
+            "test_trainer_ctx_len_param",
             "prompt_param",
         ],
         axis=1,
