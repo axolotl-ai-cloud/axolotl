@@ -11,6 +11,7 @@ import bitsandbytes as bnb
 import torch
 import transformers
 from optimum.bettertransformer import BetterTransformer
+from peft.tuners.lora import LoraLayer
 from transformers import (  # noqa: F401
     AutoConfig,
     AutoModelForCausalLM,
