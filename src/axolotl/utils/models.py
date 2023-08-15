@@ -508,6 +508,17 @@ def load_lora(model, cfg):
     else:
         model = get_peft_model(model, lora_config)
 
+    for name, module in model.named_modules():
+        if isinstance(module, LoraLayer):
+            if cfg.bf16:
+                module = module.to(torch.bfloat16)
+        if 'norm' in name:
+            module = module.to(torch.float32)
+        if 'lm_head' in name or 'embed_tokens' in name:
+            if hasattr(module, 'weight'):
+                if cfg.bf16 and module.weight.dtype == torch.float32:
+                    module = module.to(torch.bfloat16)
+
     model.print_trainable_parameters()
 
     return model, lora_config
