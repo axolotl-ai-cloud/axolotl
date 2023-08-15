@@ -568,7 +568,7 @@ fsdp_config:
   fsdp_transformer_layer_cls_to_wrap: LlamaDecoderLayer
 ```
 
-- llama Deepspeed: append `ACCELERATE_USE_DEEPSPEED=true` in front of finetune command and set the following:
+- llama Deepspeed
 ```yaml
 deepspeed: # path to config
 ```
