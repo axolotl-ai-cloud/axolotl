@@ -146,12 +146,6 @@ def load_model(
         LOG.info("patching _expand_mask")
         hijack_expand_mask()
 
-    if cfg.bf16 or cfg.bfloat16:
-        torch_dtype = torch.bfloat16
-    elif cfg.load_in_8bit or cfg.fp16 or cfg.float16:
-        torch_dtype = torch.float16
-    else:
-        torch_dtype = torch.float32
     try:
         if cfg.gptq:
             from alpaca_lora_4bit.monkeypatch.peft_tuners_lora_monkey_patch import (
@@ -183,7 +177,7 @@ def load_model(
             load_in_4bit=True,
             llm_int8_threshold=6.0,
             llm_int8_has_fp16_weight=False,
-            bnb_4bit_compute_dtype=torch_dtype,
+            bnb_4bit_compute_dtype=cfg.torch_dtype,
             bnb_4bit_use_double_quant=True,
             bnb_4bit_quant_type="nf4",
         )
@@ -242,7 +236,7 @@ def load_model(
                 device_map=cfg.device_map,
                 load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
                 load_in_4bit=cfg.load_in_4bit and cfg.adapter is not None,
-                torch_dtype=torch_dtype,
+                torch_dtype=cfg.torch_dtype,
                 **model_kwargs,
             )
         # elif model_type == "GPTNeoXForCausalLM" and cfg.flash_attention:
@@ -277,7 +271,7 @@ def load_model(
                 device_map=cfg.device_map,
                 load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
                 load_in_4bit=cfg.load_in_4bit and cfg.adapter is not None,
-                torch_dtype=torch_dtype,
+                torch_dtype=cfg.torch_dtype,
                 trust_remote_code=cfg.trust_remote_code or False,
                 **model_kwargs,
             )
@@ -308,7 +302,7 @@ def load_model(
                 device_map=cfg.device_map,
                 load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
                 load_in_4bit=cfg.load_in_4bit and cfg.adapter is not None,
-                torch_dtype=torch_dtype,
+                torch_dtype=cfg.torch_dtype,
                 trust_remote_code=cfg.trust_remote_code or False,
                 **model_kwargs,
             )
@@ -322,7 +316,7 @@ def load_model(
             device_map=cfg.device_map,
             load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
             load_in_4bit=cfg.load_in_4bit and cfg.adapter is not None,
-            torch_dtype=torch_dtype,
+            torch_dtype=cfg.torch_dtype,
             trust_remote_code=cfg.trust_remote_code or False,
             **model_kwargs,
         )
@@ -502,19 +496,19 @@ def load_lora(model, cfg):
 
     for name, module in model.named_modules():
         if isinstance(module, LoraLayer):
-            module = module.to(torch_dtype)
+            module = module.to(cfg.torch_dtype)
         if "norm" in name:
             module = module.to(torch.float32)
         if "lm_head" in name or "embed_tokens" in name:
             if hasattr(module, 'weight'):
-                module = module.to(torch_dtype)
+                module = module.to(cfg.torch_dtype)
 
     # LlamaRMSNorm layers are in fp32 after kbit_training, so we need to
     # convert them back to fp16/bf16 for flash-attn compatibility.
     if cfg.flash_attention and cfg.is_llama_derived_model:
         for name, module in model.named_modules():
             if "norm" in name:
-                module = module.to(torch_dtype)
+                module = module.to(cfg.torch_dtype)
 
     model.print_trainable_parameters()
 
