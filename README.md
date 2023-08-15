@@ -572,7 +572,7 @@ fsdp_config:
 
 - llama Deepspeed
 ```yaml
-deepspeed: # path to config
+deepspeed: deepspeed/zero3.json
 ```
 
 ##### Weights & Biases Logging
