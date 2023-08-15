@@ -21,6 +21,7 @@ from axolotl.logging_config import configure_logging
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.data import prepare_dataset
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.distributed import is_main_process
 from axolotl.utils.models import load_model, load_tokenizer
 from axolotl.utils.tokenization import check_dataset_labels
 from axolotl.utils.trainer import setup_trainer
@@ -38,16 +39,16 @@ os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
 
 def print_axolotl_text_art():
     ascii_art = """
-                           dP            dP   dP 
-                           88            88   88 
-.d8888b. dP.  .dP .d8888b. 88 .d8888b. d8888P 88 
-88'  `88  `8bd8'  88'  `88 88 88'  `88   88   88 
-88.  .88  .d88b.  88.  .88 88 88.  .88   88   88 
-`88888P8 dP'  `dP `88888P' dP `88888P'   dP   dP 
+                           dP            dP   dP
+                           88            88   88
+.d8888b. dP.  .dP .d8888b. 88 .d8888b. d8888P 88
+88'  `88  `8bd8'  88'  `88 88 88'  `88   88   88
+88.  .88  .d88b.  88.  .88 88 88.  .88   88   88
+`88888P8 dP'  `dP `88888P' dP `88888P'   dP   dP
 """
 
-    if os.environ.get("LOCAL_RANK", "0") == 0:
-         print(ascii_art)
+    if is_main_process():
+        print(ascii_art)
 
 
 def get_multi_line_input() -> Optional[str]:
