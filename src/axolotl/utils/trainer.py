@@ -364,7 +364,7 @@ def setup_fsdp_envs(cfg):
 
 def model_init_factory(tokenizer, cfg):
     def model_init(tokenizer, cfg):
-        model, peft_config = load_model(cfg, tokenizer)
+        model, _ = load_model(cfg, tokenizer)
         model.config.use_cache = False
 
         if torch.__version__ >= "2" and sys.platform != "win32":
