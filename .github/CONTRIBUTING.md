@@ -21,9 +21,22 @@ All contributors are expected to adhere to our [Code of Conduct](CODE_OF_CONDUCT
 
 ## Getting Started
 
+Bugs? Please check for open issue else create a new [Issue](https://github.com/OpenAccess-AI-Collective/axolotl/issues/new).
+
+PRs are **greatly welcome**!
+
 1. Fork the repository and clone it to your local machine.
 2. Set up the development environment by following the instructions in the [README.md](https://github.com/OpenAccess-AI-Collective/axolotl/tree/main/README.md) file.
 3. Explore the codebase, run tests, and verify that everything works as expected.
+
+Please run below to setup env
+```bash
+pip3 install -r requirements-dev.txt -r requirements-tests.txt
+pre-commit install
+
+# test
+pytest tests/
+```
 
 ## How to Contribute
 
