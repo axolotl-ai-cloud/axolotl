@@ -370,7 +370,7 @@ hub_strategy:
 # whether to use hf `use_auth_token` for loading datasets. Useful for fetching private datasets
 # required to be true when used in combination with `push_dataset_to_hub`
 hf_use_auth_token: # boolean
-# How much of the dataset to set aside as evaluation. 1 = 100%, 0.50 = 50%, etc
+# How much of the dataset to set aside as evaluation. 1 = 100%, 0.50 = 50%, etc. 0 for no eval.
 val_set_size: 0.04
 # Num shards for whole dataset
 dataset_shard_num:
@@ -433,7 +433,7 @@ num_epochs: 3
 warmup_steps: 100
 learning_rate: 0.00003
 logging_steps:
-save_steps:
+save_steps: # leave empty to save at each epoch
 eval_steps:
 save_total_limit: # checkpoints saved at a time
 max_steps:
