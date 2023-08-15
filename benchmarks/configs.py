@@ -126,7 +126,7 @@ class TestConfigs:  # pylint: disable=missing-class-docstring disable=too-many-p
     def lora_params(self):
         return DictDefault(
             {
-                "lora_r": 8,
+                "lora_r": 32,
                 "lora_alpha": 16,
                 "lora_dropout": 0.0,
                 "lora_target_linear": True,

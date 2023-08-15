@@ -217,6 +217,7 @@ def test_trainer(model_cfg, attn_cfg, dtype_cfg, opt_cfg, ctx_len, results_bag):
         | dtype_cfg
         | attn_cfg
         | DictDefault({"sequence_len": ctx_len})
+        | DictDefault({"gradient_accumulation_steps": 4})
     )
     cfg.output_dir = str(logs_dir.resolve())
     results_bag.cfg = cfg
