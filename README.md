@@ -662,7 +662,9 @@ PocketDoc Labs
 
 ## Contributing 🤝
 
-Bugs? Please check for open issue else create a new [Issue](https://github.com/OpenAccess-AI-Collective/axolotl/issues/new).
+Please read the [contributing guide](./.github/CONTRIBUTING.md)
+
+Bugs? Please check the [open issues](https://github.com/OpenAccess-AI-Collective/axolotl/issues/bug) else create a new Issue.
 
 PRs are **greatly welcome**!
 
