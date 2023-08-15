@@ -186,16 +186,6 @@ def validate_config(cfg):
             "sample_packing not compatible with xformers_attention. Use flash_attention"
         )
 
-    if (
-        os.environ.get("ACCELERATE_USE_DEEPSPEED") == "true"
-        and torch.cuda.device_count() > 1
-    ):
-        if not cfg.deepspeed:
-            raise ValueError(
-                "You must set cfg.deepspeed to a deepspeed config file. "
-                + "A sample config file is available at deepspeed/zero3.json"
-            )
-
     # TODO
     # MPT 7b
     # https://github.com/facebookresearch/bitsandbytes/issues/25
