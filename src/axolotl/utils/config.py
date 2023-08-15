@@ -147,7 +147,7 @@ def validate_config(cfg):
                 "You should probably set bfloat16 or float16 to true to "
                 "load the model in float16 for BetterTransformers"
             )
-        if int(torch.__version__.split(".")[0]) < 2:
+        if int(torch.__version__.split(".", maxsplit=1)[0]) < 2:
             LOG.warning("torch>=2.0.0 required")
             raise ValueError(
                 f"flash_optimum for BetterTransformers may not be used with {torch.__version__}"
@@ -185,6 +185,16 @@ def validate_config(cfg):
         raise ValueError(
             "sample_packing not compatible with xformers_attention. Use flash_attention"
         )
+
+    if (
+        os.environ.get("ACCELERATE_USE_DEEPSPEED") == "true"
+        and torch.cuda.device_count() > 1
+    ):
+        if not cfg.deepspeed:
+            raise ValueError(
+                "You must set cfg.deepspeed to a deepspeed config file. "
+                + "A sample config file is available at deepspeed/zero3.json"
+            )
 
     # TODO
     # MPT 7b
