@@ -1,6 +1,8 @@
 """
 utility helpers for distributed checks
 """
+from contextlib import contextmanager
+
 import torch.distributed as dist
 from accelerate import Accelerator
 
@@ -39,3 +41,15 @@ def is_main_process():
     if not is_distributed():
         return True
     return dist.get_rank() == 0
+
+
+@contextmanager
+def zero_first(is_main):
+    """
+    runs the wrapped context so that rank 0 runs first before other ranks
+    """
+    if not is_main:  # other ranks wait first
+        barrier()
+    yield
+    if is_main:  # then rank 0 waits after it has run the context
+        barrier()
