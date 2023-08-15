@@ -28,6 +28,7 @@ from axolotl.utils.callbacks import (
 )
 from axolotl.utils.collators import DataCollatorForSeq2Seq
 from axolotl.utils.dataloader import MultipackDistributedDataloader
+from axolotl.utils.models import load_model
 from axolotl.utils.schedulers import (
     InterpolatingLogScheduler,
     get_cosine_schedule_with_quadratic_warmup,
@@ -361,6 +362,20 @@ def setup_fsdp_envs(cfg):
         os.environ["FSDP_STATE_DICT_TYPE"] = cfg.fsdp_config.fsdp_state_dict_type
 
 
+def model_init_factory(tokenizer, cfg):
+    def model_init(tokenizer, cfg):
+        model, peft_config = load_model(cfg, tokenizer)
+        model.config.use_cache = False
+
+        if torch.__version__ >= "2" and sys.platform != "win32":
+            LOG.info("Compiling torch model")
+            model = torch.compile(model)
+
+        return model
+
+    return partial(model_init, tokenizer, cfg)
+
+
 def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_steps):
     if cfg.fsdp:
         setup_fsdp_envs(cfg)
@@ -617,8 +632,10 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
         if cfg.lr_scheduler == "one_cycle" and (cfg.fsdp or cfg.adapter == "qlora")
         else AxolotlTrainer
     )
+
     trainer = trainer_cls(
-        model=model,
+        # model=model,
+        model_init=model_init_factory(tokenizer, cfg),
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
         args=training_args,
