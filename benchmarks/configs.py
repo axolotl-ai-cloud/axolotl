@@ -32,7 +32,7 @@ class TestConfigs:  # pylint: disable=missing-class-docstring disable=too-many-p
                 "warmup_steps": 3,
                 "num_epochs": 2,
                 "gradient_checkpointing": True,
-                "gradient_accumulation_steps": 4,
+                "gradient_accumulation_steps": 1,
                 "micro_batch_size": 1,
                 "val_set_size": 0,
                 "learning_rate": 0.00005,

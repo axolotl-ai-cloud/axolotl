@@ -21,7 +21,7 @@ from axolotl.utils.bench import (
     log_gpu_memory_usage,
 )
 from axolotl.utils.config import normalize_config, validate_config
-from axolotl.utils.data import encode_pretraining
+from axolotl.utils.data import encode_pretraining, prepare_dataset
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.models import load_model, load_tokenizer
 from axolotl.utils.trainer import setup_trainer
@@ -218,6 +218,8 @@ def test_trainer(model_cfg, attn_cfg, dtype_cfg, opt_cfg, ctx_len, results_bag):
         | attn_cfg
         | DictDefault({"sequence_len": ctx_len})
         | DictDefault({"gradient_accumulation_steps": 4})
+        | DictDefault({"datasets": [{"path": "LDJnr/Puffin", "type": "sharegpt:chat"}]})
+        | DictDefault({"max_steps": 12})
     )
     cfg.output_dir = str(logs_dir.resolve())
     results_bag.cfg = cfg
@@ -231,12 +233,16 @@ def test_trainer(model_cfg, attn_cfg, dtype_cfg, opt_cfg, ctx_len, results_bag):
         tokenizer = load_tokenizer(cfg)
         model, _ = load_model(cfg, tokenizer)
 
+        """
         data = [{"text": "hello world " * int(ctx_len / 2)} for _ in range(25)]
         dataset = Dataset.from_list(data)
         encode = functools.partial(encode_pretraining, tokenizer, cfg.sequence_len)
         dataset = dataset.map(encode, batched=True, remove_columns=["text"])
+        train_ds, eval_ds = dataset.with_format("torch"), []
+        """
+        train_ds, eval_ds, steps = prepare_dataset(cfg, tokenizer)
 
-        trainer = setup_trainer(cfg, dataset.with_format("torch"), [], model, tokenizer)
+        trainer = setup_trainer(cfg, train_ds, eval_ds, model, tokenizer, steps)
         trainer.train()
         for elem in trainer.state.log_history:
             if "train_runtime" in elem:
