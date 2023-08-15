@@ -33,7 +33,7 @@ Axolotl is a tool designed to streamline the fine-tuning of various AI models, o
   <img src="image/axolotl.png" alt="axolotl" width="160">
   <div>
     <p>
-      <b>Axolotl provides a unified repository for fine-tuning a variety of AI models with ease</b>
+      <b>Axolotl provides a unified repository for fine-tuning <br />a variety of AI models with ease</b>
     </p>
     <p>
       Go ahead and axolotl questions!!
