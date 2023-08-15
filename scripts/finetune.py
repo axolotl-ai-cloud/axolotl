@@ -46,7 +46,8 @@ def print_axolotl_text_art():
 `88888P8 dP'  `dP `88888P' dP `88888P'   dP   dP 
 """
 
-    print(ascii_art)
+    if os.environ.get("LOCAL_RANK", "0") == 0:
+         print(ascii_art)
 
 
 def get_multi_line_input() -> Optional[str]:
