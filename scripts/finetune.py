@@ -24,7 +24,11 @@ from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import barrier, is_main_process
 from axolotl.utils.models import load_model, load_tokenizer
 from axolotl.utils.tokenization import check_dataset_labels
-from axolotl.utils.trainer import process_datasets_for_packing, setup_trainer
+from axolotl.utils.trainer import (
+    calculate_total_num_steps,
+    process_datasets_for_packing,
+    setup_trainer,
+)
 from axolotl.utils.wandb import setup_wandb_env_vars
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -205,6 +209,13 @@ def train(
                 cfg, train_dataset, eval_dataset
             )
         barrier()
+        if cfg.max_steps:
+            total_num_steps = min(
+                calculate_total_num_steps(cfg, train_dataset, tokenizer), cfg.max_steps
+            )
+            LOG.info(f"Maximum number of steps set at {total_num_steps}")
+        else:
+            total_num_steps = calculate_total_num_steps(cfg, train_dataset, tokenizer)
 
     if cfg.debug or "debug" in kwargs:
         LOG.info("check_dataset_labels...")
@@ -254,7 +265,9 @@ def train(
         model.save_pretrained(cfg.output_dir, safe_serialization=safe_serialization)
         return
 
-    trainer = setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer)
+    trainer = setup_trainer(
+        cfg, train_dataset, eval_dataset, model, tokenizer, total_num_steps
+    )
 
     model.config.use_cache = False
 

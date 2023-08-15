@@ -361,15 +361,7 @@ def setup_fsdp_envs(cfg):
         os.environ["FSDP_STATE_DICT_TYPE"] = cfg.fsdp_config.fsdp_state_dict_type
 
 
-def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
-    if cfg.max_steps:
-        total_num_steps = min(
-            calculate_total_num_steps(cfg, train_dataset, tokenizer), cfg.max_steps
-        )
-        LOG.info(f"Maximum number of steps set at {total_num_steps}")
-    else:
-        total_num_steps = calculate_total_num_steps(cfg, train_dataset, tokenizer)
-
+def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_steps):
     if cfg.fsdp:
         setup_fsdp_envs(cfg)
     warmup_steps = (
