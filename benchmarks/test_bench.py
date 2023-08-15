@@ -231,9 +231,8 @@ def test_trainer(model_cfg, attn_cfg, dtype_cfg, opt_cfg, ctx_len, results_bag):
         tokenizer = load_tokenizer(cfg)
         model, _ = load_model(cfg, tokenizer)
 
-        dataset = Dataset.from_list(
-            [{"text": "hello world " * int(ctx_len / 2)} for _ in range(10)]
-        )
+        data = [{"text": "hello world " * int(ctx_len / 2)} for _ in range(25)]
+        dataset = Dataset.from_list(data)
         encode = functools.partial(encode_pretraining, tokenizer, cfg.sequence_len)
         dataset = dataset.map(encode, batched=True, remove_columns=["text"])
 
