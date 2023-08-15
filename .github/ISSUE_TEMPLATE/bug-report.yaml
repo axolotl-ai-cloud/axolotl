@@ -67,8 +67,6 @@ body:
       label: Which Operating Systems are you using?
       description: You may select more than one.
       options:
-        - label: Android
-        - label: iPhone/iPad
         - label: Linux
         - label: macOS
         - label: Windows
