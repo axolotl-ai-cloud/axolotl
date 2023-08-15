@@ -199,7 +199,7 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer):
         eval_accumulation_steps=cfg.gradient_accumulation_steps,
         num_train_epochs=cfg.num_epochs,
         learning_rate=cfg.learning_rate,
-        evaluation_strategy="no" if cfg.val_set_size == 0 else "epoch" if cfg.eval_steps < 1 else "steps",
+        evaluation_strategy="steps" if cfg.val_set_size > 0 else "no",
         save_strategy="steps" if cfg.save_steps else "epoch",
         eval_steps=cfg.eval_steps if cfg.val_set_size > 0 else None,
         save_steps=cfg.save_steps,
