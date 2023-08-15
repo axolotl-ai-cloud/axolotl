@@ -635,6 +635,10 @@ Please reduce any below
   - `gradient_accumulation_steps`
   - `sequence_len`
 
+> `failed (exitcode: -9)` usually means your system has run out of system memory.
+Similarly, you should consider reducing the same settings as when you run out of VRAM.
+Additionally, look into upgrading your system RAM which should be simpler than GPU upgrades.
+
 > RuntimeError: expected scalar type Float but found Half
 
 Try set `fp16: true`
