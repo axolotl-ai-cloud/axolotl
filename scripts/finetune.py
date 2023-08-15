@@ -33,8 +33,20 @@ sys.path.insert(0, src_dir)
 configure_logging()
 LOG = logging.getLogger("axolotl.scripts")
 
-
 os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
+
+
+def print_axolotl_text_art():
+    ascii_art = """
+                           dP            dP   dP 
+                           88            88   88 
+.d8888b. dP.  .dP .d8888b. 88 .d8888b. d8888P 88 
+88'  `88  `8bd8'  88'  `88 88 88'  `88   88   88 
+88.  .88  .d88b.  88.  .88 88 88.  .88   88   88 
+`88888P8 dP'  `dP `88888P' dP `88888P'   dP   dP 
+"""
+
+    print(ascii_art)
 
 
 def get_multi_line_input() -> Optional[str]:
@@ -146,6 +158,7 @@ def train(
     prepare_ds_only: bool = False,
     **kwargs,
 ):
+    print_axolotl_text_art()
     if Path(config).is_dir():
         config = choose_config(config)
 
