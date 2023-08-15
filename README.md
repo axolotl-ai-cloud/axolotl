@@ -519,7 +519,7 @@ tokens:
 fsdp:
 fsdp_config:
 
-# Deepspeed
+# Deepspeed config path
 deepspeed:
 
 # Path to torch distx for optim 'adamw_anyprecision'
@@ -570,7 +570,10 @@ fsdp_config:
   fsdp_transformer_layer_cls_to_wrap: LlamaDecoderLayer
 ```
 
-- llama Deepspeed: append `ACCELERATE_USE_DEEPSPEED=true` in front of finetune command
+- llama Deepspeed
+```yaml
+deepspeed: # path to config
+```
 
 ##### Weights & Biases Logging
 

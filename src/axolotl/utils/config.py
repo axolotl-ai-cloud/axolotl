@@ -147,7 +147,7 @@ def validate_config(cfg):
                 "You should probably set bfloat16 or float16 to true to "
                 "load the model in float16 for BetterTransformers"
             )
-        if int(torch.__version__.split(".")[0]) < 2:
+        if int(torch.__version__.split(".", maxsplit=1)[0]) < 2:
             LOG.warning("torch>=2.0.0 required")
             raise ValueError(
                 f"flash_optimum for BetterTransformers may not be used with {torch.__version__}"

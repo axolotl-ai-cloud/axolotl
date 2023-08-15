@@ -364,6 +364,9 @@ def setup_fsdp_envs(cfg):
 def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_steps):
     if cfg.fsdp:
         setup_fsdp_envs(cfg)
+    elif cfg.deepspeed:
+        os.environ["ACCELERATE_USE_DEEPSPEED"] = "true"
+
     warmup_steps = (
         cfg.warmup_steps
         if cfg.warmup_steps is not None
@@ -411,20 +414,12 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
         if cfg.fsdp_config:
             training_arguments_kwargs["fsdp_config"] = dict(cfg.fsdp_config)
 
+    # deepspeed
+    if cfg.deepspeed:
+        training_arguments_kwargs["deepspeed"] = cfg.deepspeed
+
     if cfg.lr_quadratic_warmup is not None:
         training_arguments_kwargs["lr_quadratic_warmup"] = cfg.lr_quadratic_warmup
-
-    # deepspeed
-    if (
-        os.environ.get("ACCELERATE_USE_DEEPSPEED") == "true"
-        and torch.cuda.device_count() > 1
-    ):
-        if cfg.deepspeed:
-            training_arguments_kwargs["deepspeed"] = cfg.deepspeed
-        else:
-            # make a guess here
-            # TODO search Path("./") for one
-            training_arguments_kwargs["deepspeed"] = "./ds_config.json"
 
     if cfg.adam_beta1:
         training_arguments_kwargs["adam_beta1"] = cfg.adam_beta1
