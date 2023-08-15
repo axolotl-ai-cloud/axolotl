@@ -81,7 +81,6 @@ class GPUStatsCallback(
 
     def __init__(self, cfg):
         self.cfg = cfg
-        self.logged = False
 
     def on_step_end(
         self,
@@ -90,10 +89,26 @@ class GPUStatsCallback(
         control: TrainerControl,
         **kwargs,
     ):
-        if not self.logged and state.global_step > 1:
+        should_log = (
+            state.global_step == 1
+            or (state.global_step in range(1, 100) and state.global_step % 10 == 0)
+            or (state.global_step > 100 and state.global_step % 100 == 0)
+        )
+        if should_log:
             mem, cache, _ = log_gpu_memory_usage(LOG, "while training", self.cfg.device)
-            self.cfg.stats_bag.vram_train = mem - self.cfg.stats_bag.vram_last
+            if state.global_step == 1:
+                self.cfg.stats_bag.vram_train = mem - self.cfg.stats_bag.vram_last
             self.cfg.stats_bag.vram_train_cache = cache
             self.cfg.stats_bag.vram_last = mem
-            self.logged = True
+        return control
+
+    def on_train_end(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs,
+    ):
+        _, cache, _ = log_gpu_memory_usage(LOG, "after training", self.cfg.device)
+        self.cfg.stats_bag.vram_train_cache = cache
         return control
