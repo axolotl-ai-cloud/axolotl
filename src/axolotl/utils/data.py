@@ -42,8 +42,43 @@ from axolotl.prompters import (
     SummarizeTLDRPrompter,
 )
 from axolotl.utils.distributed import is_main_process, zero_first
+from axolotl.utils.trainer import (
+    calculate_total_num_steps,
+    process_datasets_for_packing,
+)
 
 LOG = logging.getLogger("axolotl")
+DEFAULT_DATASET_PREPARED_PATH = "last_run_prepared"
+
+
+def prepare_dataset(cfg, tokenizer):
+    if not cfg.pretraining_dataset:
+        train_dataset, eval_dataset = load_prepare_datasets(
+            tokenizer, cfg, DEFAULT_DATASET_PREPARED_PATH
+        )
+    else:
+        train_dataset = load_pretraining_dataset(
+            cfg.pretraining_dataset,
+            tokenizer,
+            max_tokens=cfg.sequence_len,
+            seed=cfg.seed or 42,
+        )
+        # https://discuss.huggingface.co/t/how-to-use-huggingface-trainer-streaming-datasets-without-wrapping-it-with-torchdatas-iterablewrapper/25230
+        train_dataset = train_dataset.with_format("torch")
+        eval_dataset = None
+
+    with zero_first(is_main_process()):
+        train_dataset, eval_dataset = process_datasets_for_packing(
+            cfg, train_dataset, eval_dataset
+        )
+    if cfg.max_steps:
+        total_num_steps = min(
+            calculate_total_num_steps(cfg, train_dataset, tokenizer), cfg.max_steps
+        )
+        LOG.info(f"Maximum number of steps set at {total_num_steps}")
+    else:
+        total_num_steps = calculate_total_num_steps(cfg, train_dataset, tokenizer)
+    return train_dataset, eval_dataset, total_num_steps
 
 
 def load_tokenized_prepared_datasets(
