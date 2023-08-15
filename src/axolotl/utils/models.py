@@ -356,17 +356,9 @@ def load_model(
             model, use_gradient_checkpointing=cfg.gradient_checkpointing
         )
 
-        # LlamaRMSNorm layers are in fp32 after kbit_training, so we need to
-        # convert them back to fp16/bf16 for flash-attn compatibility.
-        if cfg.flash_attention and cfg.is_llama_derived_model:
-            for name, module in model.named_modules():
-                if "norm" in name:
-                    module.to(torch_dtype)
-                if "lm_head" in name or "embed_tokens" in name:
-                    if hasattr(module, "weight"):
-                        module.to(torch_dtype)
-
     model, lora_config = load_adapter(model, cfg, cfg.adapter)
+    
+
 
     if cfg.ddp and not load_in_8bit:
         model.to(f"cuda:{cfg.local_rank}")
@@ -510,14 +502,19 @@ def load_lora(model, cfg):
 
     for name, module in model.named_modules():
         if isinstance(module, LoraLayer):
-            if cfg.bf16:
-                module = module.to(torch.bfloat16)
-        if 'norm' in name:
+            module = module.to(torch_dtype)
+        if "norm" in name:
             module = module.to(torch.float32)
-        if 'lm_head' in name or 'embed_tokens' in name:
+        if "lm_head" in name or "embed_tokens" in name:
             if hasattr(module, 'weight'):
-                if cfg.bf16 and module.weight.dtype == torch.float32:
-                    module = module.to(torch.bfloat16)
+                module = module.to(torch_dtype)
+
+    # LlamaRMSNorm layers are in fp32 after kbit_training, so we need to
+    # convert them back to fp16/bf16 for flash-attn compatibility.
+    if cfg.flash_attention and cfg.is_llama_derived_model:
+        for name, module in model.named_modules():
+            if "norm" in name:
+                module = module.to(torch_dtype)
 
     model.print_trainable_parameters()
 
