@@ -434,6 +434,7 @@ eval_batch_size: 2
 num_epochs: 3
 warmup_steps: 100
 learning_rate: 0.00003
+lr_quadratic_warmup:
 logging_steps:
 save_steps: # leave empty to save at each epoch
 eval_steps:
