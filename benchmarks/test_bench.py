@@ -208,7 +208,7 @@ def test_inference(model_cfg, dtype_cfg, attn_cfg, ctx_len, results_bag):
 @parametrize_with_cases("ctx_len", cases=TestConfigs, prefix="ctx_")
 # @parametrize_with_cases("opt_cfg", cases=TestConfigs, prefix="opt_")
 @parametrize_with_cases(
-    "opt_cfg", cases=TestConfigs, prefix="opt_", glob="opt_adamw_torch"
+    "opt_cfg", cases=TestConfigs, prefix="opt_", glob="opt_adamw_bnb_8bit"
 )
 def test_trainer(model_cfg, attn_cfg, dtype_cfg, opt_cfg, ctx_len, results_bag):
     cfg = (
@@ -230,7 +230,9 @@ def test_trainer(model_cfg, attn_cfg, dtype_cfg, opt_cfg, ctx_len, results_bag):
         tokenizer = load_tokenizer(cfg)
         model, _ = load_model(cfg, tokenizer)
 
-        dataset = Dataset.from_list([{"text": "hello world " * int(ctx_len / 2)}])
+        dataset = Dataset.from_list(
+            [{"text": "hello world " * int(ctx_len / 2)} for _ in range(10)]
+        )
         encode = functools.partial(encode_pretraining, tokenizer, cfg.sequence_len)
         dataset = dataset.map(encode, batched=True, remove_columns=["text"])
 

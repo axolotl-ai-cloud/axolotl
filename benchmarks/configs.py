@@ -30,15 +30,12 @@ class TestConfigs:  # pylint: disable=missing-class-docstring disable=too-many-p
         return DictDefault(
             {
                 "warmup_steps": 3,
-                "num_epochs": 3,
+                "num_epochs": 1,
+                "gradient_checkpointing": True,
                 "gradient_accumulation_steps": 1,
                 "micro_batch_size": 1,
                 "val_set_size": 0,
-                "adam_beta2": 0.98,
-                "max_grad_norm": 1.0,
                 "learning_rate": 0.00005,
-                "lr_scheduler": "cosine",
-                "lr_quadratic_warmup": True,
             }
         )
 
