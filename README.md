@@ -2,6 +2,33 @@
 
 Axolotl is a tool designed to streamline the fine-tuning of various AI models, offering support for multiple configurations and architectures.
 
+<table>
+<tr>
+<td>
+
+## Table of Contents
+- [Introduction](#axolotl)
+- [Supported Features](#axolotl-supports)
+- [Quickstart](#quickstart-)
+- [Installation](#installation)
+  - [Docker Installation](#environment)
+  - [Conda/Pip venv Installation](#condapip-venv)
+  - [LambdaLabs Installation](#lambdalabs)
+- [Dataset](#dataset)
+  - [How to Add Custom Prompts](#how-to-add-custom-prompts)
+- [Config](#config)
+  - [Train](#train)
+  - [Inference](#inference)
+  - [Merge LORA to Base](#merge-lora-to-base)
+- [Common Errors](#common-errors-)
+- [Need Help?](#need-help-)
+- [Badge](#badge-)
+- [Community Showcase](#community-showcase)
+- [Contributing](#contributing-)
+
+</td>
+<td>
+
 <div align="center">
   <img src="image/axolotl.png" alt="axolotl" width="160">
   <div>
@@ -15,6 +42,10 @@ Axolotl is a tool designed to streamline the fine-tuning of various AI models, o
     <img alt="PyTest Status" src="https://github.com/OpenAccess-AI-Collective/axolotl/actions/workflows/tests.yml/badge.svg?branch=main">
   </div>
 </div>
+
+</td>
+</tr>
+</table>
 
 ## Axolotl supports
 
