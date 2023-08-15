@@ -483,8 +483,8 @@ max_grad_norm:
 flash_optimum:
 # whether to use xformers attention patch https://github.com/facebookresearch/xformers:
 xformers_attention:
-# whether to use flash attention patch https://github.com/HazyResearch/flash-attention:
-flash_attention:  # require a100 for llama
+# whether to use flash attention patch https://github.com/Dao-AILab/flash-attention:
+flash_attention:
 # whether to use scaled-dot-product attention
 # https://pytorch.org/docs/stable/generated/torch.nn.functional.scaled_dot_product_attention.html
 sdp_attention:
