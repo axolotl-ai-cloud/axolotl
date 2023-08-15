@@ -153,6 +153,16 @@ def validate_config(cfg):
         raise ValueError("FSDP is not supported for falcon models")
 
     if (
+        cfg.fsdp
+        and cfg.fsdp_config
+        and cfg.fsdp_config.fsdp_state_dict_type
+        and not cfg.fsdp_config.fsdp_sync_module_states
+    ):
+        LOG.warning(
+            "We recommend setting fsdp_config.fsdp_sync_module_states to `true`"
+        )
+
+    if (
         cfg.base_model and "mpt" in cfg.base_model.lower()
     ) and cfg.gradient_checkpointing:
         raise ValueError("gradient_checkpointing is not supported for MPT models")

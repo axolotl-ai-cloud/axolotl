@@ -471,6 +471,9 @@ def setup_fsdp_envs(cfg):
         os.environ[
             "FSDP_TRANSFORMER_CLS_TO_WRAP"
         ] = cfg.fsdp_config.fsdp_transformer_layer_cls_to_wrap
+    from axolotl.monkeypatch.fsdp import replace_fsdp_state_dict_type
+
+    replace_fsdp_state_dict_type()
 
 
 def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_steps):
