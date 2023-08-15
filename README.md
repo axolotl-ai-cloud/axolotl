@@ -1,10 +1,12 @@
 # Axolotl
 
+Axolotl is a tool designed to streamline the fine-tuning of various AI models, offering support for multiple configurations and architectures.
+
 <div align="center">
   <img src="image/axolotl.png" alt="axolotl" width="160">
   <div>
     <p>
-      <b>One repo to finetune them all! </b>
+      <b>Axolotl provides a unified repository for fine-tuning a variety of AI models with ease</b>
     </p>
     <p>
       Go ahead and axolotl questions!!
@@ -28,6 +30,8 @@
 
 
 ## Quickstart ⚡
+
+Get started with Axolotl in just a few steps! This quickstart guide will walk you through setting up and running a basic fine-tuning task.
 
 **Requirements**: Python >=3.9 and Pytorch >=2.0.
 
@@ -130,6 +134,7 @@ accelerate launch scripts/finetune.py examples/openllama-3b/lora.yml \
 
 ### Dataset
 
+Axolotl supports a variety of dataset formats. Below are some of the formats you can use.
 Have dataset(s) in one of the following format (JSONL recommended):
 
 - `alpaca`: instruction; input(optional)
@@ -622,7 +627,7 @@ CUDA_VISIBLE_DEVICES="" python3 scripts/finetune.py ...
 
 ## Common Errors 🧰
 
-> Cuda out of memory
+> If you encounter a 'Cuda out of memory' error, it means your GPU ran out of memory during the training process. Here's how to resolve it:
 
 Please reduce any below
   - `micro_batch_size`
@@ -657,6 +662,8 @@ Building something cool with Axolotl? Consider adding a badge to your model card
 [<img src="https://raw.githubusercontent.com/OpenAccess-AI-Collective/axolotl/main/image/axolotl-badge-web.png" alt="Built with Axolotl" width="200" height="32"/>](https://github.com/OpenAccess-AI-Collective/axolotl)
 
 ## Community Showcase
+
+Check out some of the projects and models that have been built using Axolotl! Have a model you'd like to add to our Community Showcase? Open a PR with your model.
 
 Open Access AI Collective
 - [Minotaur 13b](https://huggingface.co/openaccess-ai-collective/minotaur-13b)
