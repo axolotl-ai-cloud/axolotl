@@ -104,5 +104,5 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
              ${{ steps.metadata.outputs.tags }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
-             ${{ (matrix.is_latest) && format('{0}:latest', steps.metadata.outputs.image) || '' }}
+             ${{ (matrix.is_latest) && format('{0}:latest', steps.metadata.inputs.images[0]) || '' }}
           labels: ${{ steps.metadata.outputs.labels }}
