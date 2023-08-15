@@ -351,8 +351,6 @@ def load_model(
         )
 
     model, lora_config = load_adapter(model, cfg, cfg.adapter)
-    
-
 
     if cfg.ddp and not load_in_8bit:
         model.to(f"cuda:{cfg.local_rank}")
@@ -500,7 +498,7 @@ def load_lora(model, cfg):
         if "norm" in name:
             module = module.to(torch.float32)
         if "lm_head" in name or "embed_tokens" in name:
-            if hasattr(module, 'weight'):
+            if hasattr(module, "weight"):
                 module = module.to(cfg.torch_dtype)
 
     # LlamaRMSNorm layers are in fp32 after kbit_training, so we need to
