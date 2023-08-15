@@ -61,7 +61,7 @@ We welcome ideas for improvements and new features. To suggest an enhancement, o
 
 ### Code Style
 
-axolotl uses [{codestyle}]({URLofCodestyle}) as its code style guide. Please ensure that your code follows these guidelines. 
+axolotl uses [{codestyle}]({URLofCodestyle}) as its code style guide. Please ensure that your code follows these guidelines.
 
 ### Commit Messages
 
@@ -74,4 +74,3 @@ Write clear and concise commit messages that briefly describe the changes made i
 - [{codestyle}]({URLofCodestyle})
 
 Thank you once again for your interest in contributing to axolotl. We look forward to collaborating with you and creating an even better project together!
-

@@ -52,14 +52,14 @@ body:
         4. Observe the error.
     validations:
       required: true
-      
+
   - type: textarea
     id: possible-solution
     attributes:
       label: Possible solution
       description: |
-        Not obligatory, but please suggest a fix or reason for the bug, if you have an idea.  
-      
+        Not obligatory, but please suggest a fix or reason for the bug, if you have an idea.
+
 
   - type: checkboxes
     id: operating-systems
@@ -81,7 +81,7 @@ body:
       placeholder: 3.10 / please change accordingly
     validations:
       required: true
-      
+
   - type: input
     id: axolotl-branch-commit
     attributes:
@@ -105,4 +105,3 @@ body:
           required: true
         - label: 'I have provided enough information for the maintainers to reproduce and diagnose the issue.'
           required: true
-

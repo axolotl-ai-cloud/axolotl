@@ -21,8 +21,8 @@ body:
     attributes:
       label: What part(s) of the article would you like to see updated?
       description: |
-        - Give as much detail as you can to help us understand the change you want to see. 
-        - Why should the docs be changed? What use cases does it support? 
+        - Give as much detail as you can to help us understand the change you want to see.
+        - Why should the docs be changed? What use cases does it support?
         - What is the expected outcome?
     validations:
       required: true
