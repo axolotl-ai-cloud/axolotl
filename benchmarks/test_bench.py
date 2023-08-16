@@ -223,6 +223,7 @@ def test_trainer(
         | DictDefault({"gradient_accumulation_steps": 4})
         | DictDefault({"datasets": [{"path": "LDJnr/Puffin", "type": "sharegpt:chat"}]})
         | DictDefault({"max_steps": 12})
+        | DictDefault({"val_set_size": 0})
     )
     cfg.output_dir = str(logs_dir.resolve())
     results_bag.cfg = cfg
