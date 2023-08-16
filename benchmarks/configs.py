@@ -13,9 +13,7 @@ class TestConfigs:  # pylint: disable=missing-class-docstring disable=too-many-p
                     "base_model": "meta-llama/Llama-2-7b-chat-hf",
                     "base_model_config": "meta-llama/Llama-2-7b-chat-hf",
                     "model_type": "LlamaForCausalLM",
-                    "is_llama_derived_model": True,
                     "sequence_len": 4096,
-                    "pad_token": "<pad>",
                     "special_tokens": {
                         "bos_token": "<s>",
                         "eos_token": "</s>",

@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 import torch
+import yaml
 from configs import TestConfigs
 from datasets import Dataset
 from pytest_cases import parametrize_with_cases
@@ -210,13 +211,15 @@ def test_inference(model_cfg, dtype_cfg, attn_cfg, ctx_len, results_bag):
 @parametrize_with_cases(
     "opt_cfg", cases=TestConfigs, prefix="opt_", glob="opt_adamw_bnb_8bit"
 )
-def test_trainer(model_cfg, attn_cfg, dtype_cfg, opt_cfg, ctx_len, results_bag):
+def test_trainer(
+    model_cfg, attn_cfg, dtype_cfg, opt_cfg, ctx_len, request, results_bag
+):
     cfg = (
         model_cfg
         | opt_cfg
         | dtype_cfg
         | attn_cfg
-        | DictDefault({"sequence_len": ctx_len})
+        | DictDefault({"sequence_len": ctx_len, "max_packed_sequence_len": ctx_len})
         | DictDefault({"gradient_accumulation_steps": 4})
         | DictDefault({"datasets": [{"path": "LDJnr/Puffin", "type": "sharegpt:chat"}]})
         | DictDefault({"max_steps": 12})
@@ -225,6 +228,8 @@ def test_trainer(model_cfg, attn_cfg, dtype_cfg, opt_cfg, ctx_len, results_bag):
     results_bag.cfg = cfg
     assert "llama" in cfg.base_model
     assert validate_config(cfg) is None
+    with open(logs_dir / f"{request.node.name}.yml", "w", encoding="UTF-8") as file:
+        file.write(yaml.dump(cfg.to_dict(), default_flow_style=False))
     normalize_config(cfg)
     setup_wandb_env_vars(cfg)
     assert cfg.stats_bag.vram_baseline <= 0.25
