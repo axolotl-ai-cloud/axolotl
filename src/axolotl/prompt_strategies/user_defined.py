@@ -42,7 +42,7 @@ def load(tokenizer, cfg, ds_cfg: Optional[UserDefinedDatasetConfig] = None):
         raise ValueError("Missing dataset prompt configuration")
 
     system_prompt = ""
-    if ds_cfg.system_prompt and not ds_cfg.field_system:
+    if ds_cfg.system_prompt:
         system_prompt = ds_cfg.system_prompt
 
     def parse_instruction_fields(
