@@ -119,8 +119,15 @@ def validate_config(cfg):
     if not cfg.load_in_8bit and cfg.adapter == "lora":
         LOG.warning("We recommend setting `load_in_8bit: true` for LORA finetuning")
 
-    if cfg.relora_steps and cfg.adapter not in ("lora", "qlora"):
-        raise ValueError("cfg.adapter must be lora or qlora to use ReLoRA")
+    if cfg.relora_steps:
+        if cfg.adapter not in ("lora", "qlora"):
+            raise ValueError("cfg.adapter must be lora or qlora to use ReLoRA")
+
+        if cfg.fsdp:
+            raise ValueError("fsdp not supported with ReLoRA")
+
+        if cfg.deepspeed:
+            raise ValueError("deepspeed not supported with ReLoRA")
 
     if cfg.trust_remote_code:
         LOG.warning(
