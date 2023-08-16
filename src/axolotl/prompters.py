@@ -63,12 +63,16 @@ class AlpacaPrompter:
         # returns the full prompt from instruction and optional input
         # if a label (=response, =output) is provided, it's also appended.
         if input:
-            res = self.system_format.format(
-                system=self.system_prompt
+            res = (
+                self.system_format.format(system=self.system_prompt)
+                if self.system_prompt
+                else ""
             ) + self.turn_format.format(instruction=instruction, input=input)
         else:
-            res = self.system_format.format(
-                system=self.system_no_input_prompt
+            res = (
+                self.system_format.format(system=self.system_no_input_prompt)
+                if self.system_prompt
+                else ""
             ) + self.turn_no_input_format.format(instruction=instruction)
         if output:
             res = f"{res}{output}"
