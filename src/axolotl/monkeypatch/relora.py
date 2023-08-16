@@ -109,19 +109,20 @@ class ReLoRACallback(TrainerCallback):
             state.global_step >= self.relora_steps
             and state.global_step % self.relora_steps != 0
         ):
-            if self.quantised and self.last_full_model != checkpoint_folder:
-                # ensure the latest full parameter save is in the latest checkpoint
-                # folder, so that automatic pruning of checkpoints does not remove it
-                LOG.info(f"moving last full parameter save to {checkpoint_folder}")
-                chunks = glob.glob(
-                    f"{self.last_full_model}/model*.safetensors"
-                ) + glob.glob(f"{self.last_full_model}/model*.index.json")
-                for path in chunks:
-                    shutil.move(path, checkpoint_folder)
+            if self.quantised:
+                if self.last_full_model != checkpoint_folder:
+                    # ensure the latest full parameter save is in the latest checkpoint
+                    # folder, so that automatic pruning of checkpoints does not remove it
+                    LOG.info(f"moving last full parameter save to {checkpoint_folder}")
+                    chunks = glob.glob(
+                        f"{self.last_full_model}/model*.safetensors"
+                    ) + glob.glob(f"{self.last_full_model}/model*.index.json")
+                    for path in chunks:
+                        shutil.move(path, checkpoint_folder)
 
-                if len(os.listdir(self.last_full_model)) < 1:
-                    os.rmdir(self.last_full_model)
-                self.last_full_model = checkpoint_folder
+                    if len(os.listdir(self.last_full_model)) < 1:
+                        os.rmdir(self.last_full_model)
+                    self.last_full_model = checkpoint_folder
             else:
                 model.model.save_pretrained(checkpoint_folder, safe_serialization=True)
 
@@ -136,6 +137,29 @@ class ReLoRACallback(TrainerCallback):
         **_kwargs,
     ):
         logs["num_lora_restarts"] = self.num_lora_restarts
+        return control
+
+    def on_train_end(
+        self,
+        args: TrainingArguments,
+        _state: TrainerState,
+        control: TrainerControl,
+        model: peft.LoraModel,
+        **_kwargs,
+    ):
+        if self.quantised:
+            # perform final merge and save
+            with torch.no_grad():
+                merge_and_save(
+                    model,
+                    self.last_full_model,
+                    args.output_dir,
+                    reinit=False,
+                    quantized=self.quantised,
+                    actually_save=is_main_process(),
+                    cpu_offload=self.cpu_offload,
+                )
+        # no need to save if unquantised, as finetune.py will call merge_and_unload()
         return control
 
 
