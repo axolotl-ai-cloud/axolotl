@@ -32,7 +32,7 @@ body:
       label: Current behaviour
       description: |
         Tell us what happens instead of the expected behavior.
-        Adding of screenshots really helps.
+        Provide stacktrace and/or screenshots.
     validations:
       required: true
 
