@@ -1,10 +1,39 @@
 # Axolotl
 
+Axolotl is a tool designed to streamline the fine-tuning of various AI models, offering support for multiple configurations and architectures.
+
+<table>
+<tr>
+<td>
+
+## Table of Contents
+- [Introduction](#axolotl)
+- [Supported Features](#axolotl-supports)
+- [Quickstart](#quickstart-)
+- [Installation](#installation)
+  - [Docker Installation](#environment)
+  - [Conda/Pip venv Installation](#condapip-venv)
+  - [LambdaLabs Installation](#lambdalabs)
+- [Dataset](#dataset)
+  - [How to Add Custom Prompts](#how-to-add-custom-prompts)
+- [Config](#config)
+  - [Train](#train)
+  - [Inference](#inference)
+  - [Merge LORA to Base](#merge-lora-to-base)
+- [Common Errors](#common-errors-)
+- [Need Help?](#need-help-)
+- [Badge](#badge-)
+- [Community Showcase](#community-showcase)
+- [Contributing](#contributing-)
+
+</td>
+<td>
+
 <div align="center">
   <img src="image/axolotl.png" alt="axolotl" width="160">
   <div>
     <p>
-      <b>One repo to finetune them all! </b>
+      <b>Axolotl provides a unified repository for fine-tuning <br />a variety of AI models with ease</b>
     </p>
     <p>
       Go ahead and axolotl questions!!
@@ -14,20 +43,26 @@
   </div>
 </div>
 
+</td>
+</tr>
+</table>
+
 ## Axolotl supports
 
-|          | fp16/fp32 | lora | qlora | gptq | gptq w/ lora | gptq w/flash attn | flash attn | xformers attn |
-|----------|:----------|:-----|-------|------|:-------------|-------------------|------------|---------------|
-| llama    | ✅         | ✅    | ✅     | ✅    | ✅             | ✅                 | ✅          | ✅             |
-| Pythia   | ✅         | ✅    | ✅     | ❌    | ❓            | ❌                 | ❌          | ❓             |
-| cerebras | ✅         | ✅    | ✅     | ❌    | ❓            | ❌                 | ❌          | ✅             |
-| mpt      | ✅         | ❌    | ❓     | ❌    | ❓            | ❌                 | ❌          | ❓             |
-| falcon   | ✅         | ✅    | ✅     | ❌    | ❓            | ❌                 | ❌          | ✅             |
-| gpt-j    | ✅         | ✅    | ✅     | ❌    | ❓            | ❌                 | ❓          | ✅             |
-| XGen     | ✅         | ❓    | ✅     | ❓    | ❓            | ❓                 | ❓          | ✅
+|          | fp16/fp32 | lora | qlora | gptq | gptq w/flash attn | flash attn | xformers attn |
+|----------|:----------|:-----|-------|------|-------------------|------------|---------------|
+| llama    | ✅         | ✅    | ✅     | ✅             | ✅                 | ✅          | ✅             |
+| Pythia   | ✅         | ✅    | ✅     | ❌             | ❌                 | ❌          | ❓             |
+| cerebras | ✅         | ✅    | ✅     | ❌             | ❌                 | ❌          | ❓             |
+| mpt      | ✅         | ❌    | ❓     | ❌             | ❌                 | ❌          | ❓             |
+| falcon   | ✅         | ✅    | ✅     | ❌             | ❌                 | ❌          | ❓             |
+| gpt-j    | ✅         | ✅    | ✅     | ❌             | ❌                 | ❓          | ❓             |
+| XGen     | ✅         | ❓    | ✅     | ❓             | ❓                 | ❓          | ✅             |
 
 
 ## Quickstart ⚡
+
+Get started with Axolotl in just a few steps! This quickstart guide will walk you through setting up and running a basic fine-tuning task.
 
 **Requirements**: Python >=3.9 and Pytorch >=2.0.
 
@@ -130,6 +165,7 @@ accelerate launch scripts/finetune.py examples/openllama-3b/lora.yml \
 
 ### Dataset
 
+Axolotl supports a variety of dataset formats. Below are some of the formats you can use.
 Have dataset(s) in one of the following format (JSONL recommended):
 
 - `alpaca`: instruction; input(optional)
@@ -326,6 +362,8 @@ tokenizer_type: AutoTokenizer
 trust_remote_code:
 # use_fast option for tokenizer loading from_pretrained, default to True
 tokenizer_use_fast:
+# Whether to use the legacy tokenizer setting, defaults to True
+tokenizer_legacy:
 # resize the model embeddings when new tokens are added to multiples of 32
 # this is reported to improve training speed on some models
 resize_token_embeddings_to_32x:
@@ -364,10 +402,13 @@ dataset_prepared_path: data/last_run_prepared
 push_dataset_to_hub: # repo path
 # push checkpoints to hub
 hub_model_id: # repo path to push finetuned model
+# how to push checkpoints to hub
+# https://huggingface.co/docs/transformers/v4.31.0/en/main_classes/trainer#transformers.TrainingArguments.hub_strategy
+hub_strategy:
 # whether to use hf `use_auth_token` for loading datasets. Useful for fetching private datasets
 # required to be true when used in combination with `push_dataset_to_hub`
 hf_use_auth_token: # boolean
-# How much of the dataset to set aside as evaluation. 1 = 100%, 0.50 = 50%, etc
+# How much of the dataset to set aside as evaluation. 1 = 100%, 0.50 = 50%, etc. 0 for no eval.
 val_set_size: 0.04
 # Num shards for whole dataset
 dataset_shard_num:
@@ -429,10 +470,12 @@ eval_batch_size: 2
 num_epochs: 3
 warmup_steps: 100
 learning_rate: 0.00003
+lr_quadratic_warmup:
 logging_steps:
-save_steps:
+save_steps: # leave empty to save at each epoch
 eval_steps:
-save_total_limit:
+save_total_limit: # checkpoints saved at a time
+max_steps:
 
 # save model as safetensors (require safetensors package)
 save_safetensors:
@@ -477,8 +520,8 @@ max_grad_norm:
 flash_optimum:
 # whether to use xformers attention patch https://github.com/facebookresearch/xformers:
 xformers_attention:
-# whether to use flash attention patch https://github.com/HazyResearch/flash-attention:
-flash_attention:  # require a100 for llama
+# whether to use flash attention patch https://github.com/Dao-AILab/flash-attention:
+flash_attention:
 # whether to use scaled-dot-product attention
 # https://pytorch.org/docs/stable/generated/torch.nn.functional.scaled_dot_product_attention.html
 sdp_attention:
@@ -513,7 +556,7 @@ tokens:
 fsdp:
 fsdp_config:
 
-# Deepspeed
+# Deepspeed config path
 deepspeed:
 
 # Path to torch distx for optim 'adamw_anyprecision'
@@ -564,7 +607,10 @@ fsdp_config:
   fsdp_transformer_layer_cls_to_wrap: LlamaDecoderLayer
 ```
 
-- llama Deepspeed: append `ACCELERATE_USE_DEEPSPEED=true` in front of finetune command
+- llama Deepspeed
+```yaml
+deepspeed: deepspeed/zero3.json
+```
 
 ##### Weights & Biases Logging
 
@@ -612,13 +658,17 @@ CUDA_VISIBLE_DEVICES="" python3 scripts/finetune.py ...
 
 ## Common Errors 🧰
 
-> Cuda out of memory
+> If you encounter a 'Cuda out of memory' error, it means your GPU ran out of memory during the training process. Here's how to resolve it:
 
 Please reduce any below
   - `micro_batch_size`
   - `eval_batch_size`
   - `gradient_accumulation_steps`
   - `sequence_len`
+
+> `failed (exitcode: -9)` usually means your system has run out of system memory.
+Similarly, you should consider reducing the same settings as when you run out of VRAM.
+Additionally, look into upgrading your system RAM which should be simpler than GPU upgrades.
 
 > RuntimeError: expected scalar type Float but found Half
 
@@ -648,6 +698,8 @@ Building something cool with Axolotl? Consider adding a badge to your model card
 
 ## Community Showcase
 
+Check out some of the projects and models that have been built using Axolotl! Have a model you'd like to add to our Community Showcase? Open a PR with your model.
+
 Open Access AI Collective
 - [Minotaur 13b](https://huggingface.co/openaccess-ai-collective/minotaur-13b)
 - [Manticore 13b](https://huggingface.co/openaccess-ai-collective/manticore-13b)
@@ -658,7 +710,9 @@ PocketDoc Labs
 
 ## Contributing 🤝
 
-Bugs? Please check for open issue else create a new [Issue](https://github.com/OpenAccess-AI-Collective/axolotl/issues/new).
+Please read the [contributing guide](./.github/CONTRIBUTING.md)
+
+Bugs? Please check the [open issues](https://github.com/OpenAccess-AI-Collective/axolotl/issues/bug) else create a new Issue.
 
 PRs are **greatly welcome**!
 
