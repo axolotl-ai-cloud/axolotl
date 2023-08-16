@@ -364,6 +364,9 @@ def setup_fsdp_envs(cfg):
 def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_steps):
     if cfg.fsdp:
         setup_fsdp_envs(cfg)
+    elif cfg.deepspeed:
+        os.environ["ACCELERATE_USE_DEEPSPEED"] = "true"
+
     warmup_steps = (
         cfg.warmup_steps
         if cfg.warmup_steps is not None
@@ -411,20 +414,12 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
         if cfg.fsdp_config:
             training_arguments_kwargs["fsdp_config"] = dict(cfg.fsdp_config)
 
+    # deepspeed
+    if cfg.deepspeed:
+        training_arguments_kwargs["deepspeed"] = cfg.deepspeed
+
     if cfg.lr_quadratic_warmup is not None:
         training_arguments_kwargs["lr_quadratic_warmup"] = cfg.lr_quadratic_warmup
-
-    # deepspeed
-    if (
-        os.environ.get("ACCELERATE_USE_DEEPSPEED") == "true"
-        and torch.cuda.device_count() > 1
-    ):
-        if cfg.deepspeed:
-            training_arguments_kwargs["deepspeed"] = cfg.deepspeed
-        else:
-            # make a guess here
-            # TODO search Path("./") for one
-            training_arguments_kwargs["deepspeed"] = "./ds_config.json"
 
     if cfg.adam_beta1:
         training_arguments_kwargs["adam_beta1"] = cfg.adam_beta1
@@ -452,13 +447,13 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
         ] = cfg.sample_packing_eff_est
 
     if cfg.val_set_size == 0:
-        evaluation_strategy = "no"
-    elif cfg.eval_steps < 1:
-        # eval every epoch
-        evaluation_strategy = "epoch"
+        training_arguments_kwargs["evaluation_strategy"] = "no"
+    elif cfg.eval_steps:
+        training_arguments_kwargs["evaluation_strategy"] = "steps"
+        training_arguments_kwargs["eval_steps"] = cfg.eval_steps
     else:
-        # eval every eval_steps steps
-        evaluation_strategy = "steps"
+        # we have an eval set, but no steps defined, use epoch
+        training_arguments_kwargs["evaluation_strategy"] = "epoch"
 
     training_args = AxolotlTrainingArguments(  # pylint: disable=unexpected-keyword-arg
         max_steps=total_num_steps if cfg.max_steps else -1,
@@ -471,9 +466,7 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
         eval_accumulation_steps=cfg.gradient_accumulation_steps,
         num_train_epochs=cfg.num_epochs,
         learning_rate=cfg.learning_rate,
-        evaluation_strategy=evaluation_strategy,
         save_strategy="steps" if cfg.save_steps else "epoch",
-        eval_steps=cfg.eval_steps if cfg.val_set_size > 0 else None,
         save_steps=cfg.save_steps,
         output_dir=cfg.output_dir,
         save_total_limit=cfg.save_total_limit if cfg.save_total_limit else 4,
