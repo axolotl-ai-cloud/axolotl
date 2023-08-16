@@ -2,12 +2,33 @@
 User Defined prompts with configuration from the YML config
 """
 
-from typing import Tuple
+from dataclasses import dataclass
+from functools import partial
+from typing import Optional, Tuple
 
 from axolotl.prompt_strategies.alpaca_w_system import (
     InstructionWSystemPromptTokenizingStrategy,
     SystemDataPrompter,
 )
+
+
+@dataclass
+class UserDefinedDatasetConfig:
+    """
+    dataclass configuration representing a userdefined dataset type
+    """
+
+    system_prompt: str = ""
+    field_system: str = "system"
+    field_instruction: str = "instruction"
+    field_input: str = "input"
+    field_output: str = "output"
+    format: str = "{instruction} {input} "
+    no_input_format: str = "{instruction} "
+    system_format: str = "{system}"
+
+    def __getitem__(self, item):
+        return getattr(self, item)
 
 
 class UserDefinedPromptTokenizationStrategy(InstructionWSystemPromptTokenizingStrategy):
@@ -16,45 +37,44 @@ class UserDefinedPromptTokenizationStrategy(InstructionWSystemPromptTokenizingSt
     """
 
 
-class UserDefinedPrompter(SystemDataPrompter):
-    """
-    Prompter for user defined prompts
-    """
-
-
-def load(tokenizer, cfg, ds_cfg=None):
+def load(tokenizer, cfg, ds_cfg: Optional[UserDefinedDatasetConfig] = None):
     if not ds_cfg:
         raise ValueError("Missing dataset prompt configuration")
 
     system_prompt = ""
-    if ds_cfg["system_prompt"] and not ds_cfg["field_system"]:
-        system_prompt = ds_cfg["system_prompt"]
+    if ds_cfg.system_prompt and not ds_cfg.field_system:
+        system_prompt = ds_cfg.system_prompt
 
     def parse_instruction_fields(
-        self, prompt  # pylint: disable=unused-argument
+        field_instruction,
+        field_input,
+        field_output,
+        field_system,
+        system_prompt,
+        prompt,
     ) -> Tuple[str, str, str, str]:
         return (
-            prompt[ds_cfg["field_instruction"]],
-            prompt[ds_cfg["field_input"]]
-            if ds_cfg["field_input"] and ds_cfg["field_input"] in prompt
-            else "",
-            prompt[ds_cfg["field_output"]],
-            prompt[ds_cfg["field_system"]]
-            if ds_cfg["field_system"] and ds_cfg["field_system"] in prompt
-            else system_prompt,
+            prompt[field_instruction],
+            prompt[field_input] if field_input in prompt else "",
+            prompt[field_output] if field_output in prompt else "",
+            prompt[field_system] if field_system in prompt else system_prompt,
         )
 
-    def match_prompt_style(self):
-        self.turn_format = ds_cfg["format"]
-        self.turn_no_input_format = (
-            ds_cfg["no_input_format"]
-            if "no_input_format" in ds_cfg
-            else ds_cfg["format"]
-        )
-        self.system_format = ds_cfg["system_format"]
+    turn_format = ds_cfg.format
+    turn_no_input_format = ds_cfg.no_input_format
+    system_format = ds_cfg.system_format
+
+    class UserDefinedPrompter(SystemDataPrompter):
+        """
+        Prompter for user defined prompts
+        """
+
+        def match_prompt_style(self):
+            self.turn_format = turn_format
+            self.turn_no_input_format = turn_no_input_format
+            self.system_format = system_format
 
     prompter = UserDefinedPrompter()
-    prompter.match_prompt_style = match_prompt_style
 
     strat = UserDefinedPromptTokenizationStrategy(
         prompter,
@@ -63,5 +83,16 @@ def load(tokenizer, cfg, ds_cfg=None):
         cfg.sequence_len,
     )
 
-    strat.parse_instruction_fields = parse_instruction_fields
+    setattr(
+        strat,
+        "parse_instruction_fields",
+        partial(
+            parse_instruction_fields,
+            ds_cfg.field_instruction,
+            ds_cfg.field_input,
+            ds_cfg.field_output,
+            ds_cfg.field_system,
+            system_prompt,
+        ),
+    )
     return strat

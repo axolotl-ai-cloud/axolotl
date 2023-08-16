@@ -41,6 +41,7 @@ from axolotl.prompters import (
     ShareGPTPrompter,
     SummarizeTLDRPrompter,
 )
+from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import is_main_process, zero_first
 from axolotl.utils.trainer import (
     calculate_total_num_steps,
@@ -221,8 +222,8 @@ def load_tokenized_prepared_datasets(
             ):
                 # dataset is already tokenized, just drop it straight in
                 datasets.append(ds)
-            elif isinstance(d.type, object):
-                ds_strategy = load("user_defined", tokenizer, cfg, d.type)
+            elif isinstance(d.type, DictDefault):
+                ds_strategy = load("user_defined", tokenizer, cfg, d.type.to_dict())
                 ds_wrapper = TokenizedPromptDataset(ds_strategy, ds)
                 datasets.append(ds_wrapper)
             elif ds_strategy := load(d.type, tokenizer, cfg, d):
