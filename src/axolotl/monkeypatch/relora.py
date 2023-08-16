@@ -1,4 +1,4 @@
-# pylint: skip-file
+"""Implements the ReLoRA training procedure from https://arxiv.org/abs/2307.05695, minus the initial full fine-tune."""
 import glob
 import json
 import logging
@@ -23,6 +23,7 @@ from transformers import (
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR
 
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.distributed import is_main_process
 
 LOG = logging.getLogger("axolotl.relora")
 
@@ -34,13 +35,16 @@ def reset_optimizer(optimizer: torch.optim.Optimizer):
             for key in param_state:
                 if "qmap" in key:
                     continue
-                elif key == "step" and isinstance(param_state[key], int):
+
+                if key == "step" and isinstance(param_state[key], int):
                     param_state[key] = 0
                 else:
                     param_state[key] = torch.zeros_like(param_state[key])
 
 
 class ReLoRACallback(TrainerCallback):
+    """Callback to merge LoRA weights into the base model and save full-weight checkpoints"""
+
     def __init__(self, cfg: DictDefault):
         self.relora_steps = cfg.relora_steps
         self.cpu_offload = cfg.relora_cpu_offload
@@ -78,6 +82,8 @@ class ReLoRACallback(TrainerCallback):
                     checkpoint_folder,
                     reinit=True,
                     quantized=self.quantised,
+                    actually_save=is_main_process(),
+                    cpu_offload=self.cpu_offload,
                 )
                 reset_optimizer(optimizer)
 
@@ -93,7 +99,7 @@ class ReLoRACallback(TrainerCallback):
         state: TrainerState,
         control: TrainerControl,
         model: peft.LoraModel,
-        **kwargs,
+        **_kwargs,
     ):
         checkpoint_folder = os.path.join(
             args.output_dir,
@@ -112,9 +118,12 @@ class ReLoRACallback(TrainerCallback):
                 ) + glob.glob(f"{self.last_full_model}/model*.index.json")
                 for path in chunks:
                     shutil.move(path, checkpoint_folder)
+
+                if len(os.listdir(self.last_full_model)) < 1:
+                    os.rmdir(self.last_full_model)
                 self.last_full_model = checkpoint_folder
             else:
-                model.model.save_pretrained(checkpoint_folder, safe_serialization=True)
+                model.model.save_pretrained(checkpoint_folder, save_safetensors=True)
 
         return control
 
@@ -131,6 +140,8 @@ class ReLoRACallback(TrainerCallback):
 
 
 class ReLoRAScheduler(LRScheduler):
+    """Wraps another scheduler to apply per-lora-restart learning rate warmups."""
+
     def __init__(
         self,
         optimizer: Optimizer,
@@ -155,10 +166,10 @@ class ReLoRAScheduler(LRScheduler):
         else:
             cycle_t = min(1.0, (step % self.relora_steps) / self.warmup_steps)
             scale = cycle_t * (1 - self.min_lr_scale) + self.min_lr_scale
+
         if isinstance(original, Sequence):
             return [lr * scale for lr in original]
-        else:
-            return original * scale
+        return original * scale
 
 
 def sharded_paths(path: str, keys: List[str]) -> Dict[str, str]:
@@ -170,25 +181,25 @@ def sharded_paths(path: str, keys: List[str]) -> Dict[str, str]:
 
     index_path = str(Path(path) / f"{model_name}.index.json")
     if os.path.exists(index_path):
-        data = json.load(open(index_path, "r"))
+        with open(index_path, "r", encoding="utf-8") as file:
+            data = json.load(file)
         return data["weight_map"]
     return {key + ".weight": model_name for key in keys}
 
 
-def lora_delta_weight(layer: peft.tuners.lora.LoraLayer) -> torch.Tensor:
-    if isinstance(layer, peft.tuners.lora.Linear8bitLt) or isinstance(
-        layer, peft.tuners.lora.Linear4bit
-    ):
+def lora_delta_weight(layer: peft.tuners.lora.LoraLayer, device) -> torch.Tensor:
+    if isinstance(layer, (peft.tuners.lora.Linear8bitLt, peft.tuners.lora.Linear4bit)):
         adapter = layer.active_adapter
         return (
             peft.utils.transpose(
-                layer.lora_B[adapter].weight @ layer.lora_A[adapter].weight,
+                layer.lora_B[adapter].weight.detach().to(device)
+                @ layer.lora_A[adapter].weight.detach().to(device),
                 getattr(layer, "fan_in_fan_out", False),
             )
             * layer.scaling[adapter]
         )
-    else:
-        return layer.get_delta_weight()
+
+    return layer.get_delta_weight().to(device)
 
 
 def merge_and_save(
@@ -198,31 +209,37 @@ def merge_and_save(
     reinit: bool = False,
     quantized: bool = False,
     cpu_offload: bool = False,
+    actually_save: bool = True,
 ):
     key_list = [key for key, _ in model.model.named_modules() if "lora" not in key]
 
+    modules: Dict[str, peft.tuners.lora.LoraLayer] = {}
+
+    for key in key_list:
+        try:
+            # pylint: disable=protected-access
+            _parent, target, _target_name = peft.utils._get_submodules(model.model, key)
+        except AttributeError:
+            continue
+
+        if isinstance(target, peft.tuners.lora.LoraLayer):
+            modules[key] = target
+
     if not quantized:
-        for key in key_list:
-            try:
-                _parent, target, _target_name = peft.utils._get_submodules(
-                    model.model, key
-                )
-            except AttributeError:
-                continue
+        for key, target in modules.items():
+            update = target.get_delta_weight(target.active_adapter).detach()
+            target.weight.data += update
 
-            if isinstance(target, peft.tuners.lora.LoraLayer):
-                update = target.get_delta_weight(target.active_adapter).detach()
-                target.weight.data += update
-
-                if reinit:
-                    for adapter_name in target.lora_A:
-                        target.reset_lora_parameters(adapter_name)
-                    for adapter_name in target.lora_embedding_A:
-                        target.reset_lora_parameters(adapter_name)
+            if reinit:
+                for adapter_name in target.lora_A:
+                    target.reset_lora_parameters(adapter_name)
+                for adapter_name in target.lora_embedding_A:
+                    target.reset_lora_parameters(adapter_name)
         return
 
     os.makedirs(model_dst, exist_ok=True)
     shard_paths = sharded_paths(model_src, key_list)
+    out_shard_paths = {}
 
     unique_shards = list(set(shard_paths.values()))
     for shard_path in unique_shards:
@@ -234,72 +251,63 @@ def merge_and_save(
             if "state_dict" in in_tensors:
                 in_tensors = in_tensors["state_dict"]
 
-        for key in key_list:
+        for key, target in modules.items():
             if (key + ".weight") not in shard_paths or shard_paths[
                 key + ".weight"
             ] != shard_path:
                 continue
 
-            try:
-                _parent, target, _target_name = peft.utils._get_submodules(
-                    model.model, key
+            orig_weight = in_tensors[key + ".weight"]
+            old_dev = target.weight.device
+            math_dev = "cpu" if cpu_offload else old_dev
+
+            delta_weight = lora_delta_weight(target, math_dev)
+            new_weight = orig_weight.to(math_dev) + delta_weight
+            if actually_save:
+                out_tensors[key + ".weight"] = new_weight.cpu()
+            del delta_weight
+
+            if reinit:
+                for adapter_name in target.lora_A:
+                    target.reset_lora_parameters(adapter_name)
+                for adapter_name in target.lora_embedding_A:
+                    target.reset_lora_parameters(adapter_name)
+
+            if isinstance(target, peft.tuners.lora.Linear4bit):
+                target.weight.quant_state = None
+                target.weight.data = new_weight.cpu()
+                target.to(old_dev)
+            elif isinstance(target, peft.tuners.lora.Linear8bitLt):
+                target.weight = bnb.nn.Int8Params(new_weight, requires_grad=False).to(
+                    old_dev
                 )
-            except AttributeError:
-                continue
+            else:
+                target.weight.data = new_weight.to(old_dev)
 
-            if isinstance(target, peft.tuners.lora.LoraLayer):
-                orig_weight = in_tensors[key + ".weight"]
-                old_dev = target.weight.device
-                math_dev = "cpu" if cpu_offload else old_dev
-
-                update = lora_delta_weight(target).detach().to(math_dev)
-                new_weight = orig_weight.to(math_dev) + update
-                out_tensors[key + ".weight"] = new_weight
-
-                if reinit:
-                    for adapter_name in target.lora_A:
-                        target.reset_lora_parameters(adapter_name)
-                    for adapter_name in target.lora_embedding_A:
-                        target.reset_lora_parameters(adapter_name)
-
-                if isinstance(target, peft.tuners.lora.Linear4bit):
-                    target.weight = (
-                        bnb.nn.Params4bit(
-                            new_weight,
-                            requires_grad=False,
-                            compress_statistics=target.weight.compress_statistics,
-                            quant_type=target.weight.quant_type,
-                        )
-                        .cuda(None)
-                        .to(old_dev)
-                    )
-                elif isinstance(target, peft.tuners.lora.Linear8bitLt):
-                    target.weight = (
-                        bnb.nn.Int8Params(new_weight, requires_grad=False)
-                        .cuda(None)
-                        .to(old_dev)
-                    )
-                else:
-                    target.weight.data = new_weight.to(old_dev)
-
-        for key in in_tensors:
-            if key not in out_tensors:
-                out_tensors[key] = in_tensors[key]
+        if actually_save:
+            for key in in_tensors:
+                if key not in out_tensors:
+                    out_tensors[key] = in_tensors[key]
         del in_tensors
 
-        out_shard_name = shard_path
-        if out_shard_name.startswith("pytorch_model"):
-            out_shard_name = (
-                out_shard_name.replace("pytorch_model", "model").rstrip(".bin")
-                + ".safetensors"
-            )
+        if actually_save:
+            out_shard_name = shard_path
+            if out_shard_name.startswith("pytorch_model"):
+                out_shard_name = (
+                    out_shard_name.replace("pytorch_model", "model").rstrip(".bin")
+                    + ".safetensors"
+                )
+            out_shard_paths[key] = out_shard_name
 
-        shard_fn = str(Path(model_dst) / out_shard_name)
-        LOG.info(f"saving tensors to {shard_fn}")
-        st.save_file(out_tensors, shard_fn)
+            shard_fn = str(Path(model_dst) / out_shard_name)
+            LOG.info(f"saving tensors to {shard_fn}")
+            st.save_file(out_tensors, shard_fn)
+
         del out_tensors
         torch.cuda.empty_cache()
 
     if len(unique_shards) > 1:
-        with open(str(Path(model_dst, "model.safetensors.index.json")), "w") as fd:
-            json.dump({"metadata": {}, "weight_map": shard_paths}, fd)
+        with open(
+            str(Path(model_dst, "model.safetensors.index.json")), "w", encoding="utf-8"
+        ) as file:
+            json.dump({"metadata": {}, "weight_map": out_shard_paths}, file)
