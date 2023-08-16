@@ -274,6 +274,10 @@ def merge_and_save(
                     target.reset_lora_parameters(adapter_name)
 
             if isinstance(target, peft.tuners.lora.Linear4bit):
+                # This could be faster, but the quantization of Linear4bit weights occurs
+                # when the module is moved from cpu to gpu. Without meddling *too* deeply in
+                # PEFT's innards or maintaining a duplicate of that codepath, this is good
+                # enough for now.
                 target.weight.quant_state = None
                 target.weight.data = new_weight.cpu()
                 target.to(old_dev)
