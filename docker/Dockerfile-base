@@ -73,7 +73,7 @@ COPY --from=deepspeed-builder /workspace/DeepSpeed/dist/deepspeed-*.whl wheels
 COPY --from=bnb-builder /workspace/bitsandbytes/dist/bitsandbytes-*.whl wheels
 COPY --from=bnb-builder /workspace/bitsandbytes/bitsandbytes/libbitsandbytes*.so wheels/bitsandbytes
 
-RUN pip3 install wheels/deepspeed-*.whl wheels/fused_dense_lib-*.whl wheels/xentropy_cuda_lib-*.whl wheels/rotary_emb-*.whl wheels/dropout_layer_norm-*.whl
+RUN pip3 install wheels/deepspeed-*.whl
 RUN cd /workspace/builds/bitsandbytes && python3 setup.py install
 RUN git lfs install --skip-repo
 RUN pip3 install awscli && \
