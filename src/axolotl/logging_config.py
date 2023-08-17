@@ -1,20 +1,31 @@
+"""
+Common logging module for axolotl
+"""
+
 import os
 import sys
+from logging import Formatter
 from logging.config import dictConfig
 from typing import Any, Dict
-from logging import Formatter
+
 from colorama import Fore, init
 
+
 class ColorfulFormatter(Formatter):
+    """
+    Formatter to add coloring to log messages by log type
+    """
+
     COLORS = {
-        'WARNING': Fore.YELLOW,
-        'ERROR': Fore.RED,
-        'CRITICAL': Fore.RED + Fore.BOLD,
+        "WARNING": Fore.YELLOW,
+        "ERROR": Fore.RED,
+        "CRITICAL": Fore.RED + Fore.BOLD,
     }
 
     def format(self, record):
         log_message = super().format(record)
-        return self.COLORS.get(record.levelname, '') + log_message + Fore.RESET
+        return self.COLORS.get(record.levelname, "") + log_message + Fore.RESET
+
 
 DEFAULT_LOGGING_CONFIG: Dict[str, Any] = {
     "version": 1,
@@ -44,11 +55,16 @@ DEFAULT_LOGGING_CONFIG: Dict[str, Any] = {
     },
     "root": {"handlers": ["console"], "level": os.getenv("LOG_LEVEL", "INFO")},
     "loggers": {
-        "axolotl": {"handlers": ["color_console"], "level": "DEBUG", "propagate": False},
+        "axolotl": {
+            "handlers": ["color_console"],
+            "level": "DEBUG",
+            "propagate": False,
+        },
     },
 }
 
+
 def configure_logging():
     """Configure with default logging"""
-    init() # Initialize colorama
+    init()  # Initialize colorama
     dictConfig(DEFAULT_LOGGING_CONFIG)
