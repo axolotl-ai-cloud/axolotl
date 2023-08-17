@@ -164,20 +164,9 @@ def load_tokenized_prepared_datasets(
                     ds_type = "json"
                     if d.ds_type:
                         ds_type = d.ds_type
-                    elif d.data_files and (
-                        (
-                            isinstance(d.data_files, list)
-                            and ".parquet" in d.data_files[0]
-                        )
-                        or (
-                            isinstance(d.data_files, str) and ".parquet" in d.data_files
-                        )
-                    ):
+                    elif ".parquet" in d.path:
                         ds_type = "parquet"
-                    elif d.data_files and (
-                        (isinstance(d.data_files, list) and ".arrow" in d.data_files[0])
-                        or (isinstance(d.data_files, str) and ".arrow" in d.data_files)
-                    ):
+                    elif ".arrow" in d.path:
                         ds_type = "arrow"
                     ds = load_dataset(
                         ds_type,
