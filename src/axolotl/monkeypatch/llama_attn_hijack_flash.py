@@ -149,7 +149,7 @@ def flashattn_forward(
         # only on first autoregressive step q,k,v have same seqlen
         is_causal = past_key_value is not None
 
-    if self.training and attention_mask.shape[0] == 1:
+    if self.training and position_ids.shape[0] == 1:
         # special handling using sample packing
         qkv = torch.stack(
             [query_states, key_states, value_states], dim=2
