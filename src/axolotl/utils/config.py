@@ -129,9 +129,6 @@ def validate_config(cfg):
         if cfg.deepspeed:
             raise ValueError("deepspeed not supported with ReLoRA")
 
-        if cfg.resume_from_checkpoint or cfg.auto_resume_from_checkpoints:
-            raise ValueError("ReLoRA can not be restarted from checkpoint")
-
     if cfg.trust_remote_code:
         LOG.warning(
             "`trust_remote_code` is set to true. Please make sure that you reviewed the remote code/model."
