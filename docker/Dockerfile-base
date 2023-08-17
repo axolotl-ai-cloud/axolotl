@@ -30,7 +30,9 @@ WORKDIR /workspace
 
 RUN python3 -m pip install --upgrade pip && pip3 install packaging && \
     python3 -m pip install --no-cache-dir -U torch==${PYTORCH_VERSION}+cu${CUDA} --extra-index-url https://download.pytorch.org/whl/cu$CUDA \
+    python3 -m pip install --upgrade wheel \
     python3 -m pip install flash-attn==2.0.8 --no-build-isolation
+    
 
 
 FROM base-builder AS deepspeed-builder
