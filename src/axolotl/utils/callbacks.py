@@ -95,11 +95,26 @@ class GPUStatsCallback(
             or (state.global_step > 100 and state.global_step % 100 == 0)
         )
         if should_log:
-            mem, cache, _ = log_gpu_memory_usage(LOG, "while training", self.cfg.device)
+            mem, cache, _ = log_gpu_memory_usage(
+                LOG, f"while training (step={state.global_step})", self.cfg.device
+            )
             if state.global_step == 1:
                 self.cfg.stats_bag.vram_train = mem - self.cfg.stats_bag.vram_last
             self.cfg.stats_bag.vram_train_cache = cache
             self.cfg.stats_bag.vram_last = mem
+        return control
+
+    def on_epoch_end(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs,
+    ):
+        _, cache, _ = log_gpu_memory_usage(
+            LOG, f"after epoch {state.epoch}", self.cfg.device
+        )
+        self.cfg.stats_bag.vram_train_cache = cache
         return control
 
     def on_train_end(
@@ -109,6 +124,16 @@ class GPUStatsCallback(
         control: TrainerControl,
         **kwargs,
     ):
-        _, cache, _ = log_gpu_memory_usage(LOG, "after training", self.cfg.device)
-        self.cfg.stats_bag.vram_train_cache = cache
+        log_gpu_memory_usage(LOG, "after training", self.cfg.device)
+        return control
+
+    def on_evaluate(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs,
+    ):
+        _, cache, _ = log_gpu_memory_usage(LOG, "after eval", self.cfg.device)
+        self.cfg.stats_bag.vram_eval_cache = cache
         return control
