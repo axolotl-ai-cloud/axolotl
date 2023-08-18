@@ -379,6 +379,7 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
     )
 
     training_arguments_kwargs = {}
+    training_arguments_kwargs["skip_memory_metrics"] = False
     if cfg.bf16 == "full":
         training_arguments_kwargs["bf16_full_eval"] = True
     else:
