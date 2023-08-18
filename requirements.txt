@@ -6,7 +6,6 @@ addict
 fire
 PyYAML==6.0
 datasets
-accelerate>=0.19.0
 sentencepiece
 wandb
 einops
