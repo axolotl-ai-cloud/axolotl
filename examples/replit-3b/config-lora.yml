@@ -20,6 +20,7 @@ lora_target_modules:
   - mlp_down
 lora_fan_in_fan_out:
 wandb_project: lora-replit
+wandb_entity:
 wandb_watch:
 wandb_run_id:
 wandb_log_model:

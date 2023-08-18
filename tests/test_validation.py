@@ -6,6 +6,7 @@ from typing import Optional
 
 import pytest
 
+from axolotl.utils.config import validate_config
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import configure_logging
 from axolotl.utils.validation import validate_config
@@ -316,3 +317,27 @@ class ValidationTest(unittest.TestCase):
         )
 
         validate_config(cfg)
+
+    def test_packing(self):
+        cfg = DictDefault(
+            {
+                "max_packed_sequence_len": 2048,
+            }
+        )
+        with self._caplog.at_level(logging.WARNING):
+            validate_config(cfg)
+            assert any(
+                "max_packed_sequence_len will be deprecated in favor of sample_packing"
+                in record.message
+                for record in self._caplog.records
+            )
+
+        cfg = DictDefault(
+            {
+                "max_packed_sequence_len": 2048,
+                "sample_packing": True,
+            }
+        )
+        regex_exp = r".*set only one of max_packed_sequence_len \(deprecated soon\) or sample_packing.*"
+        with pytest.raises(ValueError, match=regex_exp):
+            validate_config(cfg)

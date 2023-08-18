@@ -10,3 +10,6 @@ class DictDefault(Dict):
 
     def __missing__(self, key):
         return None
+
+    def __or__(self, other):
+        return DictDefault(super().__or__(other))

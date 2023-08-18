@@ -16,6 +16,7 @@ class PromptStyle(Enum):
 
     INSTRUCT = "instruct"
     CHAT = "chat"
+    CHATML = "chatml"
 
 
 class AlpacaPrompter:
@@ -25,6 +26,7 @@ class AlpacaPrompter:
 
     system_prompt = "Below is an instruction that describes a task, paired with an input that provides further context. Write a response that appropriately completes the request.\n\n"
     system_no_input_prompt = "Below is an instruction that describes a task. Write a response that appropriately completes the request.\n\n"
+    system_format: str
     turn_format: str
     turn_no_input_format: str
     prompt_style: Optional[PromptStyle] = None
@@ -34,14 +36,23 @@ class AlpacaPrompter:
         self.match_prompt_style()
 
     def match_prompt_style(self):
+        # pylint: disable=duplicate-code
         if self.prompt_style == PromptStyle.INSTRUCT.value:
             self.turn_format = "### Instruction:\n{instruction}\n\n### Input:\n{input}\n\n### Response:\n"
             self.turn_no_input_format = (
                 "### Instruction:\n{instruction}\n\n### Response:\n"
             )
+            self.system_format = "### System:\n{system}\n\n"
         if self.prompt_style == PromptStyle.CHAT.value:
             self.turn_format = "USER: {instruction}\n{input}\nASSISTANT:"
             self.turn_no_input_format = "USER: {instruction}\nASSISTANT:"
+            self.system_format = "SYSTEM: {system}\n"
+        if self.prompt_style == PromptStyle.CHATML.value:
+            self.turn_format = "<|im_start|>user\n{instruction}\n{input}<|im_end|>\n<|im_start|>assistant\n"
+            self.turn_no_input_format = (
+                "<|im_start|>user\n{instruction}<|im_end|>\n<|im_start|>assistant\n"
+            )
+            self.system_format = "<|im_start|>system\n{system}<|im_end|>\n"
 
     def build_prompt(
         self,
@@ -260,6 +271,11 @@ class Conversation:
         self.messages.append([role, message])
 
 
+SHAREGPT_ASSERTION_FAILED_ROLE = (
+    "Role did not alternate between turns (gpt and human). Please check your data."
+)
+
+
 class ShareGPTPrompter:  # pylint: disable=too-few-public-methods
     """
     A prompter that generates prompts for the ShareGPT
@@ -296,7 +312,9 @@ class ShareGPTPrompter:  # pylint: disable=too-few-public-methods
         if len(source) < 2:
             # If there isn't a back and forth conversation, ignore it
             # also happens on the data splitting leaving empty conversations
-            raise IndexError
+            raise IndexError(
+                f"A conversation entry has less than 2 messages :\n{source}"
+            )
 
         conv = self._conversation.copy()
         roles = {"human": conv.roles[0], "gpt": conv.roles[1]}
@@ -316,7 +334,7 @@ class ShareGPTPrompter:  # pylint: disable=too-few-public-methods
         conv.messages = []
         for j, sentence in enumerate(source):
             role = roles[sentence["from"]]
-            assert role == conv.roles[j % 2]
+            assert role == conv.roles[j % 2], SHAREGPT_ASSERTION_FAILED_ROLE
             conv.append_message(role, sentence["value"])
 
         for part in conv.get_prompt():

@@ -18,14 +18,14 @@ import yaml
 from optimum.bettertransformer import BetterTransformer
 from transformers import GenerationConfig, TextStreamer
 
-from axolotl.utils.bench import log_gpu_memory_usage
-from axolotl.utils.config import startup_load_dataset
+from axolotl.logging_config import configure_logging
+from axolotl.utils.config import normalize_config, validate_config
+from axolotl.utils.data import prepare_dataset
 from axolotl.utils.dict import DictDefault
-from axolotl.utils.logging import configure_logging
+from axolotl.utils.distributed import is_main_process
 from axolotl.utils.models import load_model, load_tokenizer
 from axolotl.utils.tokenization import check_dataset_labels
 from axolotl.utils.trainer import setup_trainer
-from axolotl.utils.validation import validate_config
 from axolotl.utils.wandb import setup_wandb_env_vars
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -35,30 +35,21 @@ sys.path.insert(0, src_dir)
 configure_logging(log_level=os.getenv("LOG_LEVEL", "INFO"))
 LOG = logging.getLogger("axolotl.scripts")
 
-
-DEFAULT_DATASET_PREPARED_PATH = "last_run_prepared"
 os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
 
 
-def choose_device(cfg):
-    def get_device():
-        try:
-            if torch.cuda.is_available():
-                return f"cuda:{cfg.local_rank}"
+def print_axolotl_text_art():
+    ascii_art = """
+                           dP            dP   dP
+                           88            88   88
+.d8888b. dP.  .dP .d8888b. 88 .d8888b. d8888P 88
+88'  `88  `8bd8'  88'  `88 88 88'  `88   88   88
+88.  .88  .d88b.  88.  .88 88 88.  .88   88   88
+`88888P8 dP'  `dP `88888P' dP `88888P'   dP   dP
+"""
 
-            if torch.backends.mps.is_available():
-                return "mps"
-
-            raise SystemError("No CUDA/mps device found")
-        except Exception:  # pylint: disable=broad-exception-caught
-            return "cpu"
-
-    cfg.device = get_device()
-    if cfg.device_map != "auto":
-        if cfg.device.startswith("cuda"):
-            cfg.device_map = {"": cfg.local_rank}
-        else:
-            cfg.device_map = {"": cfg.device}
+    if is_main_process():
+        print(ascii_art)
 
 
 def get_multi_line_input() -> Optional[str]:
@@ -144,6 +135,7 @@ def train(
     prepare_ds_only: bool = False,
     **kwargs,
 ):
+    print_axolotl_text_art()
     config = Path(config) if isinstance(config, str) else config
     if Path(config).is_dir():
         raise ValueError(
@@ -174,31 +166,9 @@ def train(
 
     validate_config(cfg)
 
-    # setup some derived config / hyperparams
-    cfg.gradient_accumulation_steps = cfg.gradient_accumulation_steps or (
-        cfg.batch_size // cfg.micro_batch_size
-    )
-    cfg.batch_size = (
-        cfg.batch_size or cfg.micro_batch_size * cfg.gradient_accumulation_steps
-    )
-    cfg.world_size = int(os.environ.get("WORLD_SIZE", 1))
-    cfg.local_rank = int(os.environ.get("LOCAL_RANK", 0))
-    choose_device(cfg)
-    cfg.ddp = cfg.ddp if cfg.ddp is not None else cfg.world_size != 1
-    if cfg.ddp:
-        cfg.device_map = {"": int(os.environ.get("LOCAL_RANK", 0))}
-        cfg.batch_size = cfg.batch_size * cfg.world_size
+    normalize_config(cfg)
 
     setup_wandb_env_vars(cfg)
-    if cfg.device == "mps":
-        cfg.load_in_8bit = False
-        cfg.tf32 = False
-        if cfg.bf16:
-            cfg.fp16 = True
-        cfg.bf16 = False
-
-    if cfg.tf32:
-        torch.backends.cuda.matmul.allow_tf32 = True
 
     # load the tokenizer first
     tokenizer_config = cfg.tokenizer_config or cfg.base_model_config
@@ -208,7 +178,7 @@ def train(
     if (
         check_not_in(["shard", "merge_lora"], kwargs) and not cfg.inference
     ):  # don't need to load dataset for these
-        train_dataset, eval_dataset = startup_load_dataset(cfg, tokenizer)
+        train_dataset, eval_dataset, total_num_steps = prepare_dataset(cfg, tokenizer)
 
     if cfg.debug or "debug" in kwargs:
         LOG.info("check_dataset_labels...")
@@ -228,11 +198,11 @@ def train(
         LOG.info("Finished preparing dataset. Exiting...")
         return
 
-    log_gpu_memory_usage(LOG, "baseline", cfg.device)
-
     # Load the model and tokenizer
-    LOG.info("loading model and peft_config...")
+    LOG.info("loading model and (optionally) peft_config...")
     model, peft_config = load_model(cfg, tokenizer)
+
+    safe_serialization = cfg.save_safetensors is True
 
     if "merge_lora" in kwargs and cfg.adapter is not None:
         LOG.info("running merge of LoRA with base model")
@@ -241,7 +211,11 @@ def train(
 
         if cfg.local_rank == 0:
             LOG.info("saving merged model")
-            model.save_pretrained(str(Path(cfg.output_dir) / "merged"))
+            model.save_pretrained(
+                str(Path(cfg.output_dir) / "merged"),
+                safe_serialization=safe_serialization,
+            )
+            tokenizer.save_pretrained(str(Path(cfg.output_dir) / "merged"))
         return
 
     if cfg.inference:
@@ -256,10 +230,12 @@ def train(
         return
 
     if "shard" in kwargs:
-        model.save_pretrained(cfg.output_dir)
+        model.save_pretrained(cfg.output_dir, safe_serialization=safe_serialization)
         return
 
-    trainer = setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer)
+    trainer = setup_trainer(
+        cfg, train_dataset, eval_dataset, model, tokenizer, total_num_steps
+    )
 
     model.config.use_cache = False
 
@@ -278,7 +254,7 @@ def train(
         def terminate_handler(_, __, model):
             if cfg.flash_optimum:
                 model = BetterTransformer.reverse(model)
-            model.save_pretrained(cfg.output_dir)
+            model.save_pretrained(cfg.output_dir, safe_serialization=safe_serialization)
             sys.exit(0)
 
         signal.signal(
@@ -305,6 +281,7 @@ def train(
 
     if not Path(cfg.output_dir).is_dir():
         os.makedirs(cfg.output_dir, exist_ok=True)
+    tokenizer.save_pretrained(cfg.output_dir)
     if cfg.flash_optimum:
         with torch.backends.cuda.sdp_kernel(
             enable_flash=True, enable_math=True, enable_mem_efficient=True
@@ -318,13 +295,11 @@ def train(
     # TODO do we need this fix? https://huggingface.co/docs/accelerate/usage_guides/fsdp#saving-and-loading
     # only save on rank 0, otherwise it corrupts output on multi-GPU when multiple processes attempt to write the same file
     if cfg.fsdp:
-        model.save_pretrained(cfg.output_dir)
+        trainer.save_model(cfg.output_dir)
     elif cfg.local_rank == 0:
         if cfg.flash_optimum:
             model = BetterTransformer.reverse(model)
-        model.save_pretrained(cfg.output_dir)
-
-    # trainer.save_model(cfg.output_dir)  # TODO this may be needed for deepspeed to work? need to review another time
+        model.save_pretrained(cfg.output_dir, safe_serialization=safe_serialization)
 
 
 if __name__ == "__main__":

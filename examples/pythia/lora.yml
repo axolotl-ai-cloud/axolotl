@@ -17,6 +17,7 @@ lora_target_modules:
 lora_target_linear:
 lora_fan_in_fan_out: true  # pythia/GPTNeoX lora specific
 wandb_project:
+wandb_entity:
 wandb_watch:
 wandb_run_id:
 wandb_log_model:

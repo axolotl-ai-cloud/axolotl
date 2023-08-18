@@ -13,17 +13,22 @@ class TestTokenizers(unittest.TestCase):
     """
 
     def test_default_use_fast(self):
-        cfg = DictDefault({})
-        tokenizer = load_tokenizer("huggyllama/llama-7b", None, cfg)
+        cfg = DictDefault(
+            {
+                "tokenizer_config": "huggyllama/llama-7b",
+            }
+        )
+        tokenizer = load_tokenizer(cfg)
         assert "Fast" in tokenizer.__class__.__name__
 
     def test_dont_use_fast(self):
         cfg = DictDefault(
             {
+                "tokenizer_config": "huggyllama/llama-7b",
                 "tokenizer_use_fast": False,
             }
         )
-        tokenizer = load_tokenizer("huggyllama/llama-7b", None, cfg)
+        tokenizer = load_tokenizer(cfg)
         assert "Fast" not in tokenizer.__class__.__name__
 
 

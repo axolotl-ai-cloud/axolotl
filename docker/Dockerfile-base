@@ -40,7 +40,7 @@ ARG TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6 9.0+PTX"
 
 RUN git clone https://github.com/Dao-AILab/flash-attention.git && \
     cd flash-attention && \
-    git checkout v2.0.1  && \
+    git checkout v2.0.4  && \
     python3 setup.py bdist_wheel && \
     cd csrc/fused_dense_lib && \
     python3 setup.py bdist_wheel && \
