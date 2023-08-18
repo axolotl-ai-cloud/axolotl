@@ -1,8 +1,7 @@
 """
-Directly copied the code from https://raw.githubusercontent.com/oobabooga/text-generation-webui/main/modules/llama_attn_hijack.py and made some adjustments
+Patched LlamaAttention to use torch.nn.functional.scaled_dot_product_attention
 """
 
-import logging
 import warnings
 from typing import Optional, Tuple
 
@@ -11,17 +10,14 @@ import torch.nn.functional as F
 import transformers.models.llama.modeling_llama
 from transformers.models.llama.modeling_llama import apply_rotary_pos_emb, repeat_kv
 
-try:
-    import xformers.ops
-except ImportError:
-    logging.error("xformers not found! Please install it before trying to use it.")
+
+def hijack_llama_sdp_attention():
+    transformers.models.llama.modeling_llama.LlamaAttention.forward = (
+        sdp_attention_forward
+    )
 
 
-def hijack_llama_attention():
-    transformers.models.llama.modeling_llama.LlamaAttention.forward = xformers_forward
-
-
-def xformers_forward(
+def sdp_attention_forward(
     self,
     hidden_states: torch.Tensor,
     attention_mask: Optional[torch.Tensor] = None,
@@ -105,39 +101,28 @@ def xformers_forward(
         )
 
     #
-    # xformers-attn start
+    # sdp-attn start
     #
 
-    query_states = query_states.transpose(1, 2)
-    key_states = key_states.transpose(1, 2)
-    value_states = value_states.transpose(1, 2)
-
-    # This is a nasty hack. We know attention_mask in transformers is either LowerTriangular or all Zeros.
-    # We therefore check if one element in the upper triangular portion is zero. If it is, then the mask is all zeros.
-    if attention_mask is None or attention_mask[0, 0, 0, 1] == 0:
-        # input and output should be of form (bsz, q_len, num_heads, head_dim)
-        attn_output = xformers.ops.memory_efficient_attention(
-            query_states, key_states, value_states, attn_bias=None
-        )
-    else:
-        # input and output should be of form (bsz, q_len, num_heads, head_dim)
-        attn_output = xformers.ops.memory_efficient_attention(
+    with torch.backends.cuda.sdp_kernel():
+        attn_output = torch.nn.functional.scaled_dot_product_attention(
             query_states,
             key_states,
             value_states,
-            # attn_bias=attention_mask,
-            attn_bias=xformers.ops.LowerTriangularMask(),
+            attn_mask=attention_mask,
+            is_causal=False,
         )
 
-    if attn_output.size() != (bsz, q_len, self.num_heads, self.head_dim):
+    if attn_output.size() != (bsz, self.num_heads, q_len, self.head_dim):
         raise ValueError(
-            f"`attn_output` should be of size {(bsz, q_len, self.num_heads, self.head_dim)}, but is"
+            f"`attn_output` should be of size {(bsz, self.num_heads, q_len, self.head_dim)}, but is"
             f" {attn_output.size()}"
         )
+    attn_output = attn_output.transpose(1, 2)
     attn_output = attn_output.reshape(bsz, q_len, self.hidden_size)
 
     #
-    # xformers-attn end
+    # sdp-attn end
     #
 
     if self.pretraining_tp > 1:
