@@ -24,8 +24,6 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install packaging wheel
-          pip install --no-build-isolation flash-attn==2.0.8
           pip install -e .
           pip install -r requirements-tests.txt
 
