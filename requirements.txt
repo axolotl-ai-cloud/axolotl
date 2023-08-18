@@ -12,6 +12,7 @@ einops
 xformers
 optimum
 hf_transfer
+colorama
 numba
 numpy==1.24.4
 # qlora things
