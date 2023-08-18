@@ -105,7 +105,7 @@ def load_model(
             )
 
             LOG.info("patching with flash attention")
-            replace_llama_attn_with_flash_attn()
+            replace_llama_attn_with_flash_attn(packed=cfg.sample_packing)
     elif cfg.is_llama_derived_model and cfg.xformers_attention:
         from axolotl.monkeypatch.llama_attn_hijack_xformers import (
             hijack_llama_attention,
