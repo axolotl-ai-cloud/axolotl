@@ -129,6 +129,9 @@ def validate_config(cfg):
         if cfg.deepspeed:
             raise ValueError("deepspeed not supported with ReLoRA")
 
+        if cfg.lr_scheduler == "one_cycle":
+            raise ValueError("ReLoRA is not compatible with the one_cycle scheduler")
+
     if cfg.trust_remote_code:
         LOG.warning(
             "`trust_remote_code` is set to true. Please make sure that you reviewed the remote code/model."

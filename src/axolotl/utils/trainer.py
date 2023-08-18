@@ -653,13 +653,11 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
                 num_proc=32,
             )
 
-    trainer_cls = (
-        OneCycleLRSchedulerTrainer
-        if cfg.lr_scheduler == "one_cycle" and (cfg.fsdp or cfg.adapter == "qlora")
-        else ReLoRATrainer
-        if cfg.relora_steps
-        else AxolotlTrainer
-    )
+    trainer_cls = AxolotlTrainer
+    if cfg.lr_scheduler == "one_cycle" and (cfg.fsdp or cfg.adapter == "qlora"):
+        trainer_cls = OneCycleLRSchedulerTrainer
+    elif cfg.relora_steps:
+        trainer_cls = ReLoRATrainer
     trainer = trainer_cls(
         model=model,
         train_dataset=train_dataset,

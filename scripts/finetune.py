@@ -302,7 +302,11 @@ def train(
 
     LOG.info(f"Training Completed!!! Saving pre-trained model to {cfg.output_dir}")
 
-    if cfg.adapter == "lora" and cfg.relora_steps:
+    if (
+        cfg.relora_steps
+        and cfg.adapter == "lora"
+        and not (cfg.load_in_4bit or cfg.load_in_8bit)
+    ):
         model = model.merge_and_unload()
 
     # TODO do we need this fix? https://huggingface.co/docs/accelerate/usage_guides/fsdp#saving-and-loading
