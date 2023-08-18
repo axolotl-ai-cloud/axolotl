@@ -69,7 +69,7 @@ Get started with Axolotl in just a few steps! This quickstart guide will walk yo
 ```bash
 git clone https://github.com/OpenAccess-AI-Collective/axolotl
 
-pip3 install -e .
+pip3 install -e .[flash-attn]
 pip3 install -U git+https://github.com/huggingface/peft.git
 
 # finetune lora
