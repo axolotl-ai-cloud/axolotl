@@ -67,11 +67,10 @@ def configure_logging(log_level: str = os.getenv("LOG_LEVEL", "INFO")):
                     "stream": sys.stdout,
                 },
             },
-            "root": {"handlers": ["console"], "level": os.getenv("LOG_LEVEL", "INFO")},
             "loggers": {
-                "axolotl": {
+                "": {
                     "handlers": ["color_console"],
-                    "level": "DEBUG",
+                    "level": log_level,
                     "propagate": False,
                 },
             },
@@ -80,7 +79,7 @@ def configure_logging(log_level: str = os.getenv("LOG_LEVEL", "INFO")):
 
 
 def print_loggers():
-    """Function to print the current logging hierarchy"""
+    """Function to print the current logging hierarchy, helpful when debugging"""
     loggers_dict = logging.Logger.manager.loggerDict
     for _, logger in {
         "root": logging.Logger.manager.root,
