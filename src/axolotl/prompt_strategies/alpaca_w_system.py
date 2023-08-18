@@ -92,8 +92,9 @@ class OpenOrcaSystemDataPrompter(SystemDataPrompter):
     def match_prompt_style(self):
         # pylint: disable=duplicate-code
         if self.prompt_style == PromptStyle.INSTRUCT.value:
-            self.turn_format = "### User:\n{instruction}\n\n### Additional Context:\n{input}\n\n### Assistant:\n"
-            self.turn_no_input_format = "### User:\n{instruction}\n\n### Assistant:\n"
+            self.turn_format = "### Human:\n{instruction}\n### Additional Context:\n{input}\n### Assistant:\n"
+            self.turn_no_input_format = "### Human:\n{instruction}\n### Assistant:\n"
+            self.system_format = "### System:\n{system}\n"
         if self.prompt_style == PromptStyle.CHAT.value:
             self.turn_format = "USER: {instruction}\n{input}\nASSISTANT:"
             self.turn_no_input_format = "USER: {instruction}\nASSISTANT:"
