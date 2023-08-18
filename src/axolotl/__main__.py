@@ -10,8 +10,8 @@ from accelerate import Accelerator
 
 import axolotl
 from axolotl.cli import CTX_ACCELERATOR, CTX_CFG
+from axolotl.logging_config import configure_logging
 from axolotl.utils.config import load_config
-from axolotl.utils.logging import configure_logging
 
 threading.current_thread().name = "Main"
 

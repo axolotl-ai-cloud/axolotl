@@ -8,10 +8,6 @@ import pytest
 
 from axolotl.utils.config import validate_config
 from axolotl.utils.dict import DictDefault
-from axolotl.utils.logging import configure_logging
-from axolotl.utils.validation import validate_config
-
-configure_logging(log_level="DEBUG")
 
 
 class ValidationTest(unittest.TestCase):

@@ -69,9 +69,7 @@ def batch(**kwargs: Dict[str, Any]):
     # Load the tokenizer
     tokenizer_config = derived_cfg.tokenizer_config or derived_cfg.base_model_config
     LOG.info("Loading tokenizer: %s", tokenizer_config)
-    tokenizer = load_tokenizer(
-        tokenizer_config, derived_cfg.tokenizer_type, derived_cfg
-    )
+    tokenizer = load_tokenizer(derived_cfg)
 
     accelerator = click.get_current_context().meta[CTX_ACCELERATOR]
 

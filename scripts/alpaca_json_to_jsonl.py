@@ -15,9 +15,9 @@ from axolotl.convert import (
     JsonToJsonlConverter,
     StdoutWriter,
 )
-from axolotl.utils.logging import configure_logging
+from axolotl.logging_config import configure_logging
 
-configure_logging(log_level=os.getenv("LOG_LEVEL", "INFO"))
+configure_logging()
 
 # add src to the pythonpath so we don't need to pip install this
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))

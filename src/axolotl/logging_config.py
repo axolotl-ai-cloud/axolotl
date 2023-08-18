@@ -2,11 +2,11 @@
 Common logging module for axolotl
 """
 
+import logging
 import os
 import sys
-from logging import Formatter
+from logging import Formatter, _levelToName
 from logging.config import dictConfig
-from typing import Any, Dict
 
 from colorama import Fore, Style, init
 
@@ -27,44 +27,66 @@ class ColorfulFormatter(Formatter):
         return self.COLORS.get(record.levelname, "") + log_message + Fore.RESET
 
 
-DEFAULT_LOGGING_CONFIG: Dict[str, Any] = {
-    "version": 1,
-    "formatters": {
-        "simple": {
-            "format": "[%(asctime)s] [%(levelname)s] [%(name)s.%(funcName)s:%(lineno)d] [PID:%(process)d] %(message)s",
-        },
-        "colorful": {
-            "()": ColorfulFormatter,
-            "format": "[%(asctime)s] [%(levelname)s] [%(name)s.%(funcName)s:%(lineno)d] [PID:%(process)d] %(message)s",
-        },
-    },
-    "filters": {},
-    "handlers": {
-        "console": {
-            "class": "logging.StreamHandler",
-            "formatter": "simple",
-            "filters": [],
-            "stream": sys.stdout,
-        },
-        "color_console": {
-            "class": "logging.StreamHandler",
-            "formatter": "colorful",
-            "filters": [],
-            "stream": sys.stdout,
-        },
-    },
-    "root": {"handlers": ["console"], "level": os.getenv("LOG_LEVEL", "INFO")},
-    "loggers": {
-        "axolotl": {
-            "handlers": ["color_console"],
-            "level": "DEBUG",
-            "propagate": False,
-        },
-    },
-}
-
-
-def configure_logging():
+def configure_logging(log_level: str = os.getenv("LOG_LEVEL", "INFO")):
     """Configure with default logging"""
+
+    # Set transformers log level,
+    # see: https://huggingface.co/docs/transformers/main_classes/logging
+    os.environ["TRANSFORMERS_VERBOSITY"] = log_level.lower()
+
+    # Set accelerate log level,
+    # see: https://huggingface.co/docs/accelerate/package_reference/logging
+    os.environ["ACCELERATE_LOG_LEVEL"] = log_level
+
     init()  # Initialize colorama
-    dictConfig(DEFAULT_LOGGING_CONFIG)
+    dictConfig(
+        {
+            "version": 1,
+            "disable_existing_loggers": False,
+            "formatters": {
+                "simple": {
+                    "format": "[%(asctime)s] [%(levelname)s] [%(name)s.%(funcName)s:%(lineno)d] [PID:%(process)d] %(message)s",
+                },
+                "colorful": {
+                    "()": ColorfulFormatter,
+                    "format": "[%(asctime)s] [%(levelname)s] [%(name)s.%(funcName)s:%(lineno)d] [PID:%(process)d] %(message)s",
+                },
+            },
+            "filters": {},
+            "handlers": {
+                "console": {
+                    "class": "logging.StreamHandler",
+                    "formatter": "simple",
+                    "filters": [],
+                    "stream": sys.stdout,
+                },
+                "color_console": {
+                    "class": "logging.StreamHandler",
+                    "formatter": "colorful",
+                    "filters": [],
+                    "stream": sys.stdout,
+                },
+            },
+            "root": {"handlers": ["console"], "level": os.getenv("LOG_LEVEL", "INFO")},
+            "loggers": {
+                "axolotl": {
+                    "handlers": ["color_console"],
+                    "level": "DEBUG",
+                    "propagate": False,
+                },
+            },
+        }
+    )
+
+
+def print_loggers():
+    """Function to print the current logging hierarchy"""
+    loggers_dict = logging.Logger.manager.loggerDict
+    for _, logger in {
+        "root": logging.Logger.manager.root,
+        **loggers_dict,
+    }.items():
+        if isinstance(logger, logging.Logger):
+            print(
+                f"Logger: {logger.name} ({_levelToName[logger.level]}), Propagate: {logger.propagate}, Disabled: {logger.disabled}, Parent: {logger.parent.name if logger.parent is not None else ''}"
+            )

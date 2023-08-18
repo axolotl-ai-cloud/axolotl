@@ -173,7 +173,7 @@ def train(
     # load the tokenizer first
     tokenizer_config = cfg.tokenizer_config or cfg.base_model_config
     LOG.info("loading tokenizer... %s", tokenizer_config)
-    tokenizer = load_tokenizer(tokenizer_config, cfg.tokenizer_type, cfg)
+    tokenizer = load_tokenizer(cfg)
 
     if (
         check_not_in(["shard", "merge_lora"], kwargs) and not cfg.inference
