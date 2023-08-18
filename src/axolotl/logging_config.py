@@ -1,14 +1,40 @@
-"""Logging configuration settings"""
+"""
+Common logging module for axolotl
+"""
 
 import os
 import sys
+from logging import Formatter
 from logging.config import dictConfig
 from typing import Any, Dict
+
+from colorama import Fore, Style, init
+
+
+class ColorfulFormatter(Formatter):
+    """
+    Formatter to add coloring to log messages by log type
+    """
+
+    COLORS = {
+        "WARNING": Fore.YELLOW,
+        "ERROR": Fore.RED,
+        "CRITICAL": Fore.RED + Style.BRIGHT,
+    }
+
+    def format(self, record):
+        log_message = super().format(record)
+        return self.COLORS.get(record.levelname, "") + log_message + Fore.RESET
+
 
 DEFAULT_LOGGING_CONFIG: Dict[str, Any] = {
     "version": 1,
     "formatters": {
         "simple": {
+            "format": "[%(asctime)s] [%(levelname)s] [%(name)s.%(funcName)s:%(lineno)d] [PID:%(process)d] %(message)s",
+        },
+        "colorful": {
+            "()": ColorfulFormatter,
             "format": "[%(asctime)s] [%(levelname)s] [%(name)s.%(funcName)s:%(lineno)d] [PID:%(process)d] %(message)s",
         },
     },
@@ -20,14 +46,25 @@ DEFAULT_LOGGING_CONFIG: Dict[str, Any] = {
             "filters": [],
             "stream": sys.stdout,
         },
+        "color_console": {
+            "class": "logging.StreamHandler",
+            "formatter": "colorful",
+            "filters": [],
+            "stream": sys.stdout,
+        },
     },
     "root": {"handlers": ["console"], "level": os.getenv("LOG_LEVEL", "INFO")},
     "loggers": {
-        "axolotl": {"handlers": ["console"], "level": "DEBUG", "propagate": False},
+        "axolotl": {
+            "handlers": ["color_console"],
+            "level": "DEBUG",
+            "propagate": False,
+        },
     },
 }
 
 
 def configure_logging():
     """Configure with default logging"""
+    init()  # Initialize colorama
     dictConfig(DEFAULT_LOGGING_CONFIG)
