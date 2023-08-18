@@ -355,6 +355,8 @@ def calculate_total_num_steps(cfg, train_dataset, tokenizer):
 
 def setup_fsdp_envs(cfg):
     os.environ["ACCELERATE_USE_FSDP"] = "true"
+    if cfg.fsdp_config.fsdp_offload_params:
+        os.environ["FSDP_OFFLOAD_PARAMS"] = "true"
     if cfg.fsdp_config.fsdp_sync_module_states:
         os.environ["FSDP_SYNC_MODULE_STATES"] = "true"
     if cfg.fsdp_config.fsdp_state_dict_type:
