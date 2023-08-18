@@ -361,7 +361,7 @@ def merge_and_save(
 
             shard_fn = str(Path(model_dst) / out_shard_name)
             LOG.info(f"saving tensors to {shard_fn}")
-            st.save_file(out_tensors, shard_fn)
+            st.save_file(out_tensors, shard_fn, metadata={"format": "pt"})
 
         del in_tensors
         del out_tensors
