@@ -8,7 +8,7 @@ from logging import Formatter
 from logging.config import dictConfig
 from typing import Any, Dict
 
-from colorama import Fore, init
+from colorama import Fore, Style, init
 
 
 class ColorfulFormatter(Formatter):
@@ -19,7 +19,7 @@ class ColorfulFormatter(Formatter):
     COLORS = {
         "WARNING": Fore.YELLOW,
         "ERROR": Fore.RED,
-        "CRITICAL": Fore.RED + Fore.BOLD,
+        "CRITICAL": Fore.RED + Style.BRIGHT,
     }
 
     def format(self, record):
