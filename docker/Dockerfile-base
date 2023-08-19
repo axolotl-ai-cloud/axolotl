@@ -31,26 +31,6 @@ WORKDIR /workspace
 RUN python3 -m pip install --upgrade pip && pip3 install packaging && \
     python3 -m pip install --no-cache-dir -U torch==${PYTORCH_VERSION}+cu${CUDA} --extra-index-url https://download.pytorch.org/whl/cu$CUDA
 
-
-FROM base-builder AS flash-attn-builder
-
-WORKDIR /workspace
-
-ARG TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6 9.0+PTX"
-
-RUN git clone https://github.com/Dao-AILab/flash-attention.git && \
-    cd flash-attention && \
-    git checkout v2.0.4  && \
-    python3 setup.py bdist_wheel && \
-    cd csrc/fused_dense_lib && \
-    python3 setup.py bdist_wheel && \
-    cd ../xentropy && \
-    python3 setup.py bdist_wheel && \
-    cd ../rotary && \
-    python3 setup.py bdist_wheel && \
-    cd ../layer_norm && \
-    python3 setup.py bdist_wheel
-
 FROM base-builder AS deepspeed-builder
 
 ARG TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6 9.0+PTX"
@@ -90,13 +70,8 @@ RUN mkdir -p /workspace/wheels/bitsandbytes
 COPY --from=deepspeed-builder /workspace/DeepSpeed/dist/deepspeed-*.whl wheels
 COPY --from=bnb-builder /workspace/bitsandbytes/dist/bitsandbytes-*.whl wheels
 COPY --from=bnb-builder /workspace/bitsandbytes/bitsandbytes/libbitsandbytes*.so wheels/bitsandbytes
-COPY --from=flash-attn-builder /workspace/flash-attention/dist/flash_attn-*.whl wheels
-COPY --from=flash-attn-builder /workspace/flash-attention/csrc/fused_dense_lib/dist/fused_dense_lib-*.whl wheels
-COPY --from=flash-attn-builder /workspace/flash-attention/csrc/xentropy/dist/xentropy_cuda_lib-*.whl wheels
-COPY --from=flash-attn-builder /workspace/flash-attention/csrc/rotary/dist/rotary_emb-*.whl wheels
-COPY --from=flash-attn-builder /workspace/flash-attention/csrc/layer_norm/dist/dropout_layer_norm-*.whl wheels
 
-RUN pip3 install wheels/deepspeed-*.whl wheels/flash_attn-*.whl wheels/fused_dense_lib-*.whl wheels/xentropy_cuda_lib-*.whl wheels/rotary_emb-*.whl wheels/dropout_layer_norm-*.whl
+RUN pip3 install wheels/deepspeed-*.whl
 RUN cd /workspace/builds/bitsandbytes && python3 setup.py install
 RUN git lfs install --skip-repo
 RUN pip3 install awscli && \

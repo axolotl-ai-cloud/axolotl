@@ -69,7 +69,7 @@ Get started with Axolotl in just a few steps! This quickstart guide will walk yo
 ```bash
 git clone https://github.com/OpenAccess-AI-Collective/axolotl
 
-pip3 install -e .
+pip3 install -e .[flash-attn]
 pip3 install -U git+https://github.com/huggingface/peft.git
 
 # finetune lora
@@ -472,6 +472,7 @@ warmup_steps: 100
 learning_rate: 0.00003
 lr_quadratic_warmup:
 logging_steps:
+save_strategy: # set to `no` to skip checkpoint saves
 save_steps: # leave empty to save at each epoch
 eval_steps:
 save_total_limit: # checkpoints saved at a time
