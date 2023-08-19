@@ -432,6 +432,48 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
         result["labels"] = result["input_ids"].copy()
         return result
 
+class MetharmePromptTokenizingStrategy(PromptTokenizingStrategy):
+    """
+    Tokenizing strategy for the Metharme models
+    """
+    
+    def parse_instruction_fields(self, prompt) -> Tuple[str, str, str]:
+        return (
+            prompt["prompt"],
+            "",
+            prompt["generation"]
+        )
+
+    def _tokenize(self, prompt: str, add_eos_token: bool = True, strip_bos_token: bool = False, num_eos_tokens: int = 2):
+        result = self.tokenizer(
+            prompt,
+            truncation=True,
+            max_length=self.sequence_len,
+            padding=False,
+            return_tensors=None,
+        )
+        if len(result["input_ids"]) == 0:
+            LOG.warning("Tokenizer result is empty. You may want to audit your dataset")
+        # If there's already an EOS token there, subtract from the number added
+        if result["input_ids"][-1] == self.tokenizer.eos_token_id:
+            num_eos_tokens -= 1
+        
+        if num_eos_tokens > 0 and add_eos_token:
+            for _ in range(num_eos_tokens):
+                if (
+                    len(result["input_ids"]) > 0
+                    and len(result["input_ids"]) < self.sequence_len
+                ):
+                    result["input_ids"].append(self.tokenizer.eos_token_id)
+                    result["attention_mask"].append(1)
+
+        if result["input_ids"][0] == self.tokenizer.bos_token_id and strip_bos_token:
+            result["input_ids"] = result["input_ids"][1:]
+            result["attention_mask"] = result["attention_mask"][1:]
+
+        result["labels"] = result["input_ids"].copy()
+        return result
+
 
 def tokenize_prompt_default() -> Tuple[Dict[str, List[int]], int]:
     """
