@@ -132,7 +132,7 @@ class AxolotlTrainingArguments(TrainingArguments):
         default="eval", metadata={"help": "The MMLU split to run on"}
     )
     mmlu_dataset: Optional[str] = field(
-        default="mmlu-fs",
+        default="mmlu-zs",
         metadata={
             "help": "MMLU dataset to use: options are `mmlu-zs` for zero-shot or `mmlu-fs` for few shot."
         },
