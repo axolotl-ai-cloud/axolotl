@@ -1,6 +1,21 @@
 # Axolotl
 
-Axolotl is a tool designed to streamline the fine-tuning of various AI models, offering support for multiple configurations and architectures.
+Unleash the true potential of advanced language models and AI using Axolotl, the ultimate solution for effortlessly refining a wide range of AI models. Tailored to suit your specific requirements, Axolotl offers adaptable configurations encompassing popular models such as Llama, Pythia, and more. Supercharge your training journey through mixed precision and memory optimization, guaranteeing quicker outcomes without sacrificing quality. Seamlessly manage diverse data formats, simplifying the data preparation process. 
+
+With Axolotl, configuring model predictions is a breeze, allowing you to assess models during and after training. Join a dynamic community of AI enthusiasts, foster collaboration, and benefit from shared experiences. Embrace the efficiency of gradient checkpointing during training and seamlessly integrate with the Hugging Face Transformers ecosystem. Embrace the Axolotl advantage, and take your AI initiatives to unparalleled heights.
+
+<ul>
+  <li>Empower AI excellence with Axolotl's effortless fine-tuning.</li>
+  <li>Versatile configurations for Llama2, Llama, Pythia, and more.</li>
+  <li>Speed up training via precision and memory optimization.</li>
+  <li>Seamlessly handle diverse data formats with ease.</li>
+  <li>Simplify model prediction setup and evaluation.</li>
+  <li>Collaborate and learn from a vibrant AI community.</li>
+  <li>Integrate smoothly with Hugging Face Transformers.</li>
+  <li>Unlock AI's potential with Axolotl's prowess.</li>
+  <li>Boost training efficiency and outcome quality.</li>
+  <li>Test model inference via console effortlessly.</li>
+</ul>
 
 <table>
 <tr>
@@ -47,7 +62,45 @@ Axolotl is a tool designed to streamline the fine-tuning of various AI models, o
 </tr>
 </table>
 
+## Reference Graphic Cards
+
+Knowing your graphics card capability is crucial when referencing training with large language models (LLMs) and Axolotl. Graphics cards have varying floating-point abilities, impacting training speed, efficiency, and quality. By understanding your card's capabilities, you optimize fine-tuning strategies and hardware requirements for AI tasks.
+
+<table>
+  <tr>
+    <th>Graphics Card Model</th>
+    <th>Floating Point Capability</th>
+    <th>bf16 Support</th>
+    <th>fp16 Support</th>
+    <th>tf32 Support</th>
+  </tr>
+  <tr>
+    <td>NVIDIA GeForce RTX 2080</td>
+    <td>Yes</td>
+    <td>No</td>
+    <td>Yes</td>
+    <td>No</td>
+  </tr>
+  <tr>
+    <td>NVIDIA GeForce RTX 3080</td>
+    <td>Yes</td>
+    <td>Yes</td>
+    <td>Yes</td>
+    <td>Yes</td>
+  </tr>
+  <tr>
+    <td>NVIDIA GeForce RTX 4080 /4090 </td>
+    <td>Yes</td>
+    <td>Yes</td>
+    <td>Yes</td>
+    <td>Yes</td>
+  </tr>
+
+</table>
+
 ## Axolotl supports
+
+The following language models are currently supported for training, inference, etc...
 
 |          | fp16/fp32 | lora | qlora | gptq | gptq w/flash attn | flash attn | xformers attn |
 |----------|:----------|:-----|-------|------|-------------------|------------|---------------|
