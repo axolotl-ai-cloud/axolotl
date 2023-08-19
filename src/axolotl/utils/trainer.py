@@ -461,7 +461,7 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
         training_arguments_kwargs["save_strategy"] = cfg.save_strategy
     else:
         training_arguments_kwargs["save_strategy"] = (
-            "steps" if cfg.save_steps else "epoch",
+            "steps" if cfg.save_steps else "epoch"
         )
 
     training_args = AxolotlTrainingArguments(  # pylint: disable=unexpected-keyword-arg
