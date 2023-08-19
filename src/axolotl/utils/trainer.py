@@ -23,6 +23,7 @@ from axolotl.utils.callbacks import (
     GPUStatsCallback,
     SaveBetterTransformerModelCallback,
     SavePeftModelCallback,
+    mmlu_eval_callback_factory,
 )
 from axolotl.utils.collators import DataCollatorForSeq2Seq
 from axolotl.utils.dataloader import MultipackDistributedDataloader
@@ -126,6 +127,27 @@ class AxolotlTrainingArguments(TrainingArguments):
     relora_warmup_steps: Optional[int] = field(
         default=None,
         metadata={"help": "how many warmup steps to take after reset for ReLoRA"},
+    )
+    mmlu_split: Optional[str] = field(
+        default="eval", metadata={"help": "The MMLU split to run on"}
+    )
+    mmlu_dataset: Optional[str] = field(
+        default="mmlu-fs",
+        metadata={
+            "help": "MMLU dataset to use: options are `mmlu-zs` for zero-shot or `mmlu-fs` for few shot."
+        },
+    )
+    do_mmlu_eval: Optional[bool] = field(
+        default=False, metadata={"help": "Whether to run the MMLU evaluation."}
+    )
+    max_mmlu_samples: Optional[int] = field(
+        default=None,
+        metadata={
+            "help": "If set, only evaluates on `max_mmlu_samples` of the MMMLU dataset."
+        },
+    )
+    mmlu_source_max_len: int = field(
+        default=2048, metadata={"help": "Maximum source sequence length for mmlu."}
     )
 
 
@@ -517,6 +539,9 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
             "steps" if cfg.save_steps else "epoch"
         )
 
+    if cfg.do_mmlu_eval:
+        training_arguments_kwargs["do_mmlu_eval"] = cfg.do_mmlu_eval
+
     training_args = AxolotlTrainingArguments(  # pylint: disable=unexpected-keyword-arg
         max_steps=total_num_steps if cfg.max_steps else -1,
         max_seq_length=cfg.sequence_len,
@@ -630,5 +655,8 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
         callbacks=callbacks,
         **trainer_kwargs,
     )
+
+    if cfg.do_mmlu_eval:
+        trainer.add_callback(mmlu_eval_callback_factory(trainer, tokenizer))
 
     return trainer
