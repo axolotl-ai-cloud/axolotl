@@ -26,7 +26,6 @@ from axolotl.prompt_tokenizers import (
     CompletionPromptTokenizingStrategy,
     GPTeacherPromptTokenizingStrategy,
     JeopardyPromptTokenizingStrategy,
-    MetharmePromptTokenizingStrategy,
     OpenAssistantPromptTokenizingStrategy,
     ShareGPTPromptTokenizingStrategy,
     SummarizeTLDRPromptTokenizingStrategy,
@@ -298,13 +297,6 @@ def load_tokenized_prepared_datasets(
                 )
                 ds_wrapper = TokenizedPromptDataset(ds_strategy, ds)
                 datasets.append(ds_wrapper)
-            elif d_base_type == "metharme":
-                ds_strategy = MetharmePromptTokenizingStrategy(
-                    AlpacaPrompter(d_prompt_style),
-                    tokenizer,
-                    cfg.train_on_inputs,
-                    cfg.sequence_len,
-                )
             else:
                 suffix = ""
                 if ":load_" in d.type:
