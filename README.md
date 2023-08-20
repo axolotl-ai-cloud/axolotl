@@ -259,7 +259,7 @@ Have dataset(s) in one of the following format (JSONL recommended):
   ```
 - `metharme`: instruction, adds additional eos tokens
   ```json
-  {"conversations": [{"role": "...", "value": "..."}]}
+  {"prompt": "...", "generation": "..."}
   ```
 - `sharegpt_simple.load_role`: conversations where `role` is used instead of `from`
   ```json
