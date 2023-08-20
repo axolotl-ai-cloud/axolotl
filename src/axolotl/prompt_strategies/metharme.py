@@ -39,12 +39,9 @@ class MetharmePromptTokenizingStrategy(InstructionPromptTokenizingStrategy):
         if result["input_ids"][-1] == self.tokenizer.eos_token_id:
             num_eos_tokens -= 1
 
-        if num_eos_tokens > 0 and add_eos_token:
+        if (num_eos_tokens > 0 and add_eos_token and len(result["input_ids"]) > 0):
             for _ in range(num_eos_tokens):
-                if (
-                    len(result["input_ids"]) > 0
-                    and len(result["input_ids"]) < self.sequence_len
-                ):
+                if len(result["input_ids"]) < self.sequence_len:
                     result["input_ids"].append(self.tokenizer.eos_token_id)
                     result["attention_mask"].append(1)
 
