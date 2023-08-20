@@ -152,9 +152,7 @@ accelerate launch scripts/finetune.py examples/openllama-3b/lora.yml \
 
   pip3 install -e . # change depend on needs
   pip3 install protobuf==3.20.3
-  pip3 install -U requests
-  pip3 install -U --ignore-installed psutil
-  pip3 install -U scipy
+  pip3 install -U --ignore-installed requests Pillow psutil scipy
   pip3 install git+https://github.com/huggingface/peft.git # not for gptq
   ```
 
