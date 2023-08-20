@@ -300,8 +300,6 @@ Using file:
 - Do not pass a `type:`
 - Dataset must contain `input_ids`, `attention_mask`, `labels` in columns
 
-Optionally, checkout some datasets, see [data/README.md](data/README.md)
-
 
 ### Config
 
