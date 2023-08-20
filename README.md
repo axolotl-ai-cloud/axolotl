@@ -16,6 +16,7 @@ Axolotl is a tool designed to streamline the fine-tuning of various AI models, o
   - [LambdaLabs Installation](#lambdalabs)
 - [Dataset](#dataset)
   - [How to Add Custom Prompts](#how-to-add-custom-prompts)
+  - [How to Use Custom Pretokenized Dataset](#how-to-use-your-custom-pretokenized-dataset)
 - [Config](#config)
   - [Train](#train)
   - [Inference](#inference)
@@ -275,7 +276,7 @@ Have dataset(s) in one of the following format (JSONL recommended):
 
 #### How to add custom prompts
 
-Using yaml. Sample:
+Using yaml. Example:
 ```yaml
 datasets:
   - path: repo
@@ -293,6 +294,11 @@ datasets:
 Using file:
 1. Add your method to a file in [prompt_strategies](src/axolotl/prompt_strategies). Please see other files as example.
 2. Use your custom file name as the dataset type `<prompt_strategies_file>.load_<load_fn>`.
+
+#### How to use your custom pretokenized dataset
+
+- Do not pass a `type:`
+- Dataset must contain `input_ids`, `attention_mask`, `labels` in columns
 
 Optionally, checkout some datasets, see [data/README.md](data/README.md)
 
