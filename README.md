@@ -99,7 +99,7 @@ accelerate launch scripts/finetune.py examples/openllama-3b/lora.yml \
   ```
 
 - Conda/Pip venv
-  1. Install python **3.9**
+  1. Install python >=**3.9**
 
   2. Install pytorch stable https://pytorch.org/get-started/locally/
 
@@ -275,11 +275,26 @@ Have dataset(s) in one of the following format (JSONL recommended):
 
 #### How to add custom prompts
 
-  1. Add your method to a file in [prompt_strategies](src/axolotl/prompt_strategies). Please see other files as example.
-  2. Use your custom file name as the dataset type `<prompt_strategies_file>.load_<load_fn>`.
+Using yaml. Sample:
+```yaml
+datasets:
+  - path: repo
+    type:
+      system_prompt: ""
+      no_input_format: |-
+        User: {instruction}<|end_of_turn|>
+        Assistant:
+      format: |-
+        User: {instruction}
+        {input}<|end_of_turn|>
+        Assistant:
+```
 
-Optionally, download some datasets, see [data/README.md](data/README.md)
+Using file:
+1. Add your method to a file in [prompt_strategies](src/axolotl/prompt_strategies). Please see other files as example.
+2. Use your custom file name as the dataset type `<prompt_strategies_file>.load_<load_fn>`.
 
+Optionally, checkout some datasets, see [data/README.md](data/README.md)
 
 
 ### Config
@@ -309,9 +324,9 @@ See [examples](examples) for quick start. It is recommended to duplicate and mod
 
   # local
   datasets:
-    - path: json
-      data_files: data.jsonl # or json
-      type: alpaca # format from earlier
+    - path: data.jsonl # or json
+      ds_type: json # see other options below
+      type: alpaca
   ```
 
 - loading
@@ -396,6 +411,24 @@ datasets:
     data_files: # path to source data files
     shards: # number of shards to split data into
     name: # name of dataset configuration to load
+
+  # custom user prompt
+  - path: repo
+    type:
+      # the below are defaults. only set what's needed.
+      system_prompt: ""
+      field_system: system
+      field_instruction: instruction
+      field_output: input
+
+      # customizable to be single line or multi-line
+      system_format: "{system}"
+      # 'format' can include {input}
+      format: |-
+        User: {instruction} {input}
+        Assistant:
+      # 'no_input_format' cannot include {input}
+      no_input_format: "{instruction} "
 
 # axolotl attempts to save the dataset as an arrow after packing the data together so
 # subsequent training attempts load faster, relative path
