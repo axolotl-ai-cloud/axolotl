@@ -152,6 +152,8 @@ def mmlu_eval_callback_factory(trainer, tokenizer):
         def on_evaluate(
             self,
             args: AxolotlTrainingArguments,
+            state: TrainerState,  # pylint: disable=unused-argument
+            control: TrainerControl,  # pylint: disable=unused-argument
             **kwargs,  # pylint: disable=unused-argument
         ):
             data_loader = trainer.get_eval_dataloader(mmlu_dataset)
