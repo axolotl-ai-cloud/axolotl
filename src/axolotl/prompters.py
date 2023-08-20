@@ -26,7 +26,7 @@ class AlpacaPrompter:
 
     system_prompt = "Below is an instruction that describes a task, paired with an input that provides further context. Write a response that appropriately completes the request.\n\n"
     system_no_input_prompt = "Below is an instruction that describes a task. Write a response that appropriately completes the request.\n\n"
-    system_format: str
+    system_format: str = "{system}"
     turn_format: str
     turn_no_input_format: str
     prompt_style: Optional[PromptStyle] = None
@@ -63,13 +63,17 @@ class AlpacaPrompter:
         # returns the full prompt from instruction and optional input
         # if a label (=response, =output) is provided, it's also appended.
         if input:
-            res = self.system_prompt + self.turn_format.format(
-                instruction=instruction, input=input
-            )
+            res = (
+                self.system_format.format(system=self.system_prompt)
+                if self.system_prompt
+                else ""
+            ) + self.turn_format.format(instruction=instruction, input=input)
         else:
-            res = self.system_no_input_prompt + self.turn_no_input_format.format(
-                instruction=instruction
-            )
+            res = (
+                self.system_format.format(system=self.system_no_input_prompt)
+                if self.system_prompt
+                else ""
+            ) + self.turn_no_input_format.format(instruction=instruction)
         if output:
             res = f"{res}{output}"
         yield res
