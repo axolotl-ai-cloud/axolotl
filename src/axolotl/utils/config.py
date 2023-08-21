@@ -62,6 +62,13 @@ def normalize_config(cfg):
     else:
         torch.backends.cuda.matmul.allow_tf32 = cfg.tf32 or False
 
+    if cfg.bf16 or cfg.bfloat16:
+        cfg.torch_dtype = torch.bfloat16
+    elif cfg.load_in_8bit or cfg.fp16 or cfg.float16:
+        cfg.torch_dtype = torch.float16
+    else:
+        cfg.torch_dtype = torch.float32
+
     log_gpu_memory_usage(LOG, "baseline", cfg.device)
 
 
