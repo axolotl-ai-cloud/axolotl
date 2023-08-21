@@ -53,16 +53,3 @@ def zero_first(is_main):
     yield
     if is_main:  # then rank 0 waits after it has run the context
         barrier()
-
-
-@contextmanager
-def zero_only(is_main):
-    """
-    Context manager that ensures only the Rank 0 process executes the wrapped code.
-    Other processes will simply bypass the code inside the context.
-    All ranks will synchronize (wait) at the end before proceeding.
-    """
-    if is_main:
-        yield
-    # All ranks will wait here until Rank 0 completes the code block.
-    barrier()
