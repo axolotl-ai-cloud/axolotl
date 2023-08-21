@@ -184,7 +184,7 @@ class AxolotlTrainer(Trainer):
                 rank=self.args.process_index,
                 batch_size=self.args.per_device_eval_batch_size,
             )
-        return super()._get_eval_sampler()
+        return super()._get_eval_sampler(eval_dataset)
 
     def get_train_dataloader(self) -> Union[DataLoader, MultipackDistributedDataloader]:
         if self.args.sample_packing:
