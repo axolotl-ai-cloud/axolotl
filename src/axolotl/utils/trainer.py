@@ -147,7 +147,7 @@ class AxolotlTrainingArguments(TrainingArguments):
         },
     )
     bench_source_max_len: int = field(
-        default=2048, metadata={"help": "Maximum source sequence length for mmlu."}
+        default=2048, metadata={"help": "Maximum source sequence length for bench."}
     )
 
 
@@ -540,9 +540,9 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
         )
 
     if cfg.do_bench_eval:
-        training_arguments_kwargs["do_mmlu_eval"] = cfg.do_bench_eval
+        training_arguments_kwargs["do_bench_eval"] = cfg.do_bench_eval
         if cfg.bench_dataset:
-            training_arguments_kwargs["mmlu_dataset"] = cfg.bench_dataset
+            training_arguments_kwargs["bench_dataset"] = cfg.bench_dataset
 
     training_args = AxolotlTrainingArguments(  # pylint: disable=unexpected-keyword-arg
         max_steps=total_num_steps if cfg.max_steps else -1,
