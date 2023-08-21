@@ -169,7 +169,7 @@ def flashattn_forward(
         qkv = rearrange(qkv, "b s ... -> (b s) ...")
 
         output = flash_attn_varlen_qkvpacked_func(
-            qkv, cu_seqlens, max_seqlen, 0.0, softmax_scale=None, causal=is_causal
+            qkv, cu_seqlens, max_seqlen, 0.0, softmax_scale=None, causal=True
         )
         output = rearrange(output, "(b s) ... -> b s ...", b=bsz)
     elif query_states.shape == key_states.shape:

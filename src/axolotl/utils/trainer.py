@@ -14,12 +14,15 @@ import bitsandbytes as bnb
 import numpy as np
 import torch.cuda
 import transformers
-from datasets import set_caching_enabled
+from datasets import Dataset, set_caching_enabled
 from torch import nn
 from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import DataLoader, DistributedSampler, RandomSampler
 from transformers import EarlyStoppingCallback, Trainer, TrainingArguments
-from transformers.trainer_pt_utils import get_parameter_names
+from transformers.trainer_pt_utils import (
+    SequentialDistributedSampler,
+    get_parameter_names,
+)
 
 from axolotl.utils.callbacks import (
     GPUStatsCallback,
@@ -171,6 +174,18 @@ class AxolotlTrainer(Trainer):
             )
         return super()._get_train_sampler()
 
+    def _get_eval_sampler(
+        self, eval_dataset: Dataset
+    ) -> Optional[torch.utils.data.Sampler]:
+        if self.args.world_size > 1 and self.args.sample_packing:
+            return SequentialDistributedSampler(
+                eval_dataset,
+                num_replicas=self.args.world_size,
+                rank=self.args.process_index,
+                batch_size=self.args.per_device_eval_batch_size,
+            )
+        return super()._get_eval_sampler()
+
     def get_train_dataloader(self) -> Union[DataLoader, MultipackDistributedDataloader]:
         if self.args.sample_packing:
             train_sampler = self._get_train_sampler()
@@ -188,27 +203,28 @@ class AxolotlTrainer(Trainer):
             )
         return super().get_train_dataloader()
 
-    # def get_eval_dataloader(
-    #     self, eval_dataset: Optional[Dataset] = None
-    # ) -> Union[DataLoader, MultipackDistributedDataloader]:
-    #     if self.args.sample_packing:
-    #         eval_dataset = (
-    #             eval_dataset if eval_dataset is not None else self.eval_dataset
-    #         )
-    #         eval_sampler = self._get_eval_sampler(eval_dataset)
-    #         return self.accelerator.prepare(
-    #             MultipackDistributedDataloader(
-    #                 eval_dataset,
-    #                 batch_size=self.args.eval_batch_size,
-    #                 seq_max_length=self.args.max_seq_length,
-    #                 collate_fn=self.data_collator,
-    #                 sampler=eval_sampler,
-    #                 packing_efficiency_estimate=self.args.sample_packing_efficiency,
-    #                 sample_packing_seq_len_multiplier=self.args.eval_batch_size,
-    #                 device_count=int(os.environ.get("WORLD_SIZE", 1)),
-    #             )
-    #         )
-    #     return super().get_eval_dataloader(eval_dataset)
+    def get_eval_dataloader(
+        self, eval_dataset: Optional[Dataset] = None
+    ) -> Union[DataLoader, MultipackDistributedDataloader]:
+        if self.args.sample_packing:
+            eval_dataset = (
+                eval_dataset if eval_dataset is not None else self.eval_dataset
+            )
+
+            eval_sampler = self._get_eval_sampler(eval_dataset)
+            return self.accelerator.prepare(
+                MultipackDistributedDataloader(
+                    eval_dataset,
+                    batch_size=self.args.eval_batch_size,
+                    seq_max_length=self.args.max_seq_length,
+                    collate_fn=self.data_collator,
+                    sampler=eval_sampler,
+                    packing_efficiency_estimate=self.args.sample_packing_efficiency,
+                    sample_packing_seq_len_multiplier=self.args.eval_batch_size,
+                    device_count=int(os.environ.get("WORLD_SIZE", 1)),
+                )
+            )
+        return super().get_eval_dataloader(eval_dataset)
 
     def compute_loss(self, model, inputs, return_outputs=False):
         # use one's weighted cross entropy loss calc
