@@ -129,9 +129,11 @@ def bench_eval_callback_factory(trainer, tokenizer):
         def transform_subject(example):
             # Split on ':' and trim whitespace
             parts = example["subject"].split(":")
-            first_part = parts[0].strip().lower()  # Lowercase the first part
+            first_part = (
+                parts[0].strip().lower().replace("-", "_")
+            )  # Lowercase the first part
             second_part = (
-                parts[1].strip().replace("-", "_")
+                parts[1].strip().replace("-", "_") if len(parts) > 1 else "all"
             )  # Replace hyphens with underscores
 
             # Return the transformed values
