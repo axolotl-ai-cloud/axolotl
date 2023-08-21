@@ -541,6 +541,8 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
 
     if cfg.do_mmlu_eval:
         training_arguments_kwargs["do_mmlu_eval"] = cfg.do_mmlu_eval
+        if cfg.mmlu_dataset:
+            training_arguments_kwargs["mmlu_dataset"] = cfg.mmlu_dataset
 
     training_args = AxolotlTrainingArguments(  # pylint: disable=unexpected-keyword-arg
         max_steps=total_num_steps if cfg.max_steps else -1,
