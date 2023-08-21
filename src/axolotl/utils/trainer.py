@@ -23,7 +23,7 @@ from axolotl.utils.callbacks import (
     GPUStatsCallback,
     SaveBetterTransformerModelCallback,
     SavePeftModelCallback,
-    mmlu_eval_callback_factory,
+    bench_eval_callback_factory,
 )
 from axolotl.utils.collators import DataCollatorForSeq2Seq
 from axolotl.utils.dataloader import MultipackDistributedDataloader
@@ -128,25 +128,25 @@ class AxolotlTrainingArguments(TrainingArguments):
         default=None,
         metadata={"help": "how many warmup steps to take after reset for ReLoRA"},
     )
-    mmlu_split: Optional[str] = field(
-        default="eval", metadata={"help": "The MMLU split to run on"}
+    bench_split: Optional[str] = field(
+        default="eval", metadata={"help": "The benchmark split to run on"}
     )
-    mmlu_dataset: Optional[str] = field(
+    bench_dataset: Optional[str] = field(
         default="mmlu-zs",
         metadata={
-            "help": "MMLU dataset to use: options are `mmlu-zs` for zero-shot or `mmlu-fs` for few shot."
+            "help": "Benchmark dataset to use: options are `mmlu-zs`, `mmlu-fs`, `sampled`"
         },
     )
-    do_mmlu_eval: Optional[bool] = field(
-        default=False, metadata={"help": "Whether to run the MMLU evaluation."}
+    do_bench_eval: Optional[bool] = field(
+        default=False, metadata={"help": "Whether to run the Benchmark evaluation."}
     )
-    max_mmlu_samples: Optional[int] = field(
+    max_bench_samples: Optional[int] = field(
         default=None,
         metadata={
-            "help": "If set, only evaluates on `max_mmlu_samples` of the MMMLU dataset."
+            "help": "If set, only evaluates on `max_bench_samples` of the benchmark dataset."
         },
     )
-    mmlu_source_max_len: int = field(
+    bench_source_max_len: int = field(
         default=2048, metadata={"help": "Maximum source sequence length for mmlu."}
     )
 
@@ -539,10 +539,10 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
             "steps" if cfg.save_steps else "epoch"
         )
 
-    if cfg.do_mmlu_eval:
-        training_arguments_kwargs["do_mmlu_eval"] = cfg.do_mmlu_eval
-        if cfg.mmlu_dataset:
-            training_arguments_kwargs["mmlu_dataset"] = cfg.mmlu_dataset
+    if cfg.do_bench_eval:
+        training_arguments_kwargs["do_mmlu_eval"] = cfg.do_bench_eval
+        if cfg.bench_dataset:
+            training_arguments_kwargs["mmlu_dataset"] = cfg.bench_dataset
 
     training_args = AxolotlTrainingArguments(  # pylint: disable=unexpected-keyword-arg
         max_steps=total_num_steps if cfg.max_steps else -1,
@@ -658,7 +658,7 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
         **trainer_kwargs,
     )
 
-    if cfg.do_mmlu_eval:
-        trainer.add_callback(mmlu_eval_callback_factory(trainer, tokenizer))
+    if cfg.do_bench_eval:
+        trainer.add_callback(bench_eval_callback_factory(trainer, tokenizer))
 
     return trainer
