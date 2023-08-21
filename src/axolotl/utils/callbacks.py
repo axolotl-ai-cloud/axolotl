@@ -125,7 +125,7 @@ def mmlu_eval_callback_factory(trainer, tokenizer):
         mmlu_dataset = load_dataset(
             "pharaouk/dharma-1",
             data_files={
-                "eval": "pharaouk/dharma-1",
+                "eval": "dharma_eval.json",
             },
         )
         # mmlu_dataset = mmlu_dataset.remove_columns("subject")
