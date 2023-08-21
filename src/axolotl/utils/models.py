@@ -438,7 +438,7 @@ def load_llama_adapter(model, cfg):
     )
 
     if cfg.lora_model_dir:
-        LOG.info("Loading pretained LORA")
+        LOG.debug("Loading pretained PEFT - llama_adapter")
         model = PeftModel.from_pretrained(
             model,
             cfg.lora_model_dir,
@@ -500,6 +500,7 @@ def load_lora(model, cfg):
     )
 
     if cfg.lora_model_dir:
+        LOG.debug("Loading pretained PEFT - LoRA")
         model = PeftModel.from_pretrained(
             model,
             cfg.lora_model_dir,
