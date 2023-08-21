@@ -155,12 +155,10 @@ def flashattn_forward(
         # during training q,k,v always have same seqlen
         assert key_states.shape == query_states.shape
         is_causal = True
-    elif past_key_value is None:
-        is_causal = True
     else:
         # turn off FA causal mask after first inference autoregressive iteration
         # only on first autoregressive step q,k,v have same seqlen
-        is_causal = past_key_value is not None
+        is_causal = key_states.shape == query_states.shape
 
     if cu_seqlens is not None and max_seqlen is not None:
         # special handling using sample packing
