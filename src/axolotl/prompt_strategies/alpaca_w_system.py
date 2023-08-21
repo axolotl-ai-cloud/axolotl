@@ -57,6 +57,8 @@ class SystemDataPrompter(AlpacaPrompter):
     Alpaca Style Prompter that uses system prompts from the dataset
     """
 
+    system_format: str = "### System:\n{system}\n\n"
+
     def build_prompt_w_system(
         self,
         system: str,

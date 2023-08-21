@@ -158,7 +158,7 @@ def flashattn_forward(
     else:
         # turn off FA causal mask after first inference autoregressive iteration
         # only on first autoregressive step q,k,v have same seqlen
-        is_causal = past_key_value is not None
+        is_causal = key_states.shape == query_states.shape
 
     if cu_seqlens is not None and max_seqlen is not None:
         # special handling using sample packing
@@ -169,7 +169,7 @@ def flashattn_forward(
         qkv = rearrange(qkv, "b s ... -> (b s) ...")
 
         output = flash_attn_varlen_qkvpacked_func(
-            qkv, cu_seqlens, max_seqlen, 0.0, softmax_scale=None, causal=is_causal
+            qkv, cu_seqlens, max_seqlen, 0.0, softmax_scale=None, causal=True
         )
         output = rearrange(output, "(b s) ... -> b s ...", b=bsz)
     elif query_states.shape == key_states.shape:

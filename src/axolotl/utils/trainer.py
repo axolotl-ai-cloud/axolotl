@@ -19,7 +19,10 @@ from torch import nn
 from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import DataLoader, DistributedSampler, RandomSampler
 from transformers import EarlyStoppingCallback, Trainer, TrainingArguments
-from transformers.trainer_pt_utils import get_parameter_names
+from transformers.trainer_pt_utils import (
+    SequentialDistributedSampler,
+    get_parameter_names,
+)
 
 from axolotl.utils.callbacks import (
     GPUStatsCallback,
@@ -171,6 +174,18 @@ class AxolotlTrainer(Trainer):
             )
         return super()._get_train_sampler()
 
+    def _get_eval_sampler(
+        self, eval_dataset: Dataset
+    ) -> Optional[torch.utils.data.Sampler]:
+        if self.args.world_size > 1 and self.args.sample_packing:
+            return SequentialDistributedSampler(
+                eval_dataset,
+                num_replicas=self.args.world_size,
+                rank=self.args.process_index,
+                batch_size=self.args.per_device_eval_batch_size,
+            )
+        return super()._get_eval_sampler(eval_dataset)
+
     def get_train_dataloader(self) -> Union[DataLoader, MultipackDistributedDataloader]:
         if self.args.sample_packing:
             train_sampler = self._get_train_sampler()
@@ -195,6 +210,7 @@ class AxolotlTrainer(Trainer):
             eval_dataset = (
                 eval_dataset if eval_dataset is not None else self.eval_dataset
             )
+
             eval_sampler = self._get_eval_sampler(eval_dataset)
             return self.accelerator.prepare(
                 MultipackDistributedDataloader(
@@ -268,15 +284,15 @@ def disable_datasets_caching():
 
 
 def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
+    drop_long = partial(drop_long_seq, sequence_len=cfg.sequence_len)
+    train_dataset = train_dataset.filter(drop_long, num_proc=os.cpu_count())
+    if eval_dataset:
+        eval_dataset = eval_dataset.filter(drop_long, num_proc=os.cpu_count())
+
     if cfg.sample_packing:
-        drop_long = partial(drop_long_seq, sequence_len=cfg.sequence_len)
-        train_dataset = train_dataset.filter(drop_long, num_proc=os.cpu_count()).map(
-            add_position_ids, num_proc=os.cpu_count()
-        )
+        train_dataset = train_dataset.map(add_position_ids, num_proc=os.cpu_count())
         if eval_dataset:
-            eval_dataset = eval_dataset.filter(drop_long, num_proc=os.cpu_count()).map(
-                add_position_ids, num_proc=os.cpu_count()
-            )
+            eval_dataset = eval_dataset.map(add_position_ids, num_proc=os.cpu_count())
     return train_dataset, eval_dataset
 
 
@@ -355,10 +371,16 @@ def calculate_total_num_steps(cfg, train_dataset, tokenizer):
 
 def setup_fsdp_envs(cfg):
     os.environ["ACCELERATE_USE_FSDP"] = "true"
+    if cfg.fsdp_config.fsdp_offload_params:
+        os.environ["FSDP_OFFLOAD_PARAMS"] = "true"
     if cfg.fsdp_config.fsdp_sync_module_states:
         os.environ["FSDP_SYNC_MODULE_STATES"] = "true"
     if cfg.fsdp_config.fsdp_state_dict_type:
         os.environ["FSDP_STATE_DICT_TYPE"] = cfg.fsdp_config.fsdp_state_dict_type
+    if cfg.fsdp_config.fsdp_transformer_layer_cls_to_wrap:
+        os.environ[
+            "FSDP_TRANSFORMER_CLS_TO_WRAP"
+        ] = cfg.fsdp_config.fsdp_transformer_layer_cls_to_wrap
 
 
 def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_steps):
@@ -456,6 +478,13 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
         # we have an eval set, but no steps defined, use epoch
         training_arguments_kwargs["evaluation_strategy"] = "epoch"
 
+    if cfg.save_strategy:
+        training_arguments_kwargs["save_strategy"] = cfg.save_strategy
+    else:
+        training_arguments_kwargs["save_strategy"] = (
+            "steps" if cfg.save_steps else "epoch"
+        )
+
     training_args = AxolotlTrainingArguments(  # pylint: disable=unexpected-keyword-arg
         max_steps=total_num_steps if cfg.max_steps else -1,
         max_seq_length=cfg.sequence_len,
@@ -467,7 +496,6 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
         eval_accumulation_steps=cfg.gradient_accumulation_steps,
         num_train_epochs=cfg.num_epochs,
         learning_rate=cfg.learning_rate,
-        save_strategy="steps" if cfg.save_steps else "epoch",
         save_steps=cfg.save_steps,
         output_dir=cfg.output_dir,
         save_total_limit=cfg.save_total_limit if cfg.save_total_limit else 4,

@@ -41,6 +41,7 @@ from axolotl.prompters import (
     ShareGPTPrompter,
     SummarizeTLDRPrompter,
 )
+from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import is_main_process, zero_first
 from axolotl.utils.trainer import (
     calculate_total_num_steps,
@@ -160,8 +161,15 @@ def load_tokenized_prepared_datasets(
                         split=None,
                     )
                 elif local_path.is_file():
+                    ds_type = "json"
+                    if d.ds_type:
+                        ds_type = d.ds_type
+                    elif ".parquet" in d.path:
+                        ds_type = "parquet"
+                    elif ".arrow" in d.path:
+                        ds_type = "arrow"
                     ds = load_dataset(
-                        "json",
+                        ds_type,
                         name=d.name,
                         data_files=d.path,
                         streaming=False,
@@ -198,13 +206,27 @@ def load_tokenized_prepared_datasets(
                     )
                 else:
                     ds = ds.shuffle(seed=seed).shard(num_shards=d.shards, index=0)
+
+            d_base_type = d_prompt_style = None
             d_type = d.type
-            d_type_split = d_type.split(":")
-            d_base_type = d_type_split[0]
-            d_prompt_style = d_type_split[1] if len(d_type_split) > 1 else None
+            if isinstance(d_type, str):
+                d_type_split = d_type.split(":")
+                d_base_type = d_type_split[0]
+                d_prompt_style = d_type_split[1] if len(d_type_split) > 1 else None
             if "train" in ds:
                 ds = ds["train"]
-            if ds_strategy := load(d.type, tokenizer, cfg):
+            if (
+                "input_ids" in ds.features
+                and "attention_mask" in ds.features
+                and "labels" in ds.features
+            ):
+                # dataset is already tokenized, just drop it straight in
+                datasets.append(ds)
+            elif isinstance(d.type, DictDefault):
+                ds_strategy = load("user_defined", tokenizer, cfg, d.type.to_dict())
+                ds_wrapper = TokenizedPromptDataset(ds_strategy, ds)
+                datasets.append(ds_wrapper)
+            elif ds_strategy := load(d.type, tokenizer, cfg, d):
                 ds_wrapper = TokenizedPromptDataset(ds_strategy, ds)
                 datasets.append(ds_wrapper)
             elif d_base_type == "alpaca":

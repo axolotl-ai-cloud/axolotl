@@ -16,6 +16,7 @@ Axolotl is a tool designed to streamline the fine-tuning of various AI models, o
   - [LambdaLabs Installation](#lambdalabs)
 - [Dataset](#dataset)
   - [How to Add Custom Prompts](#how-to-add-custom-prompts)
+  - [How to Use Custom Pretokenized Dataset](#how-to-use-your-custom-pretokenized-dataset)
 - [Config](#config)
   - [Train](#train)
   - [Inference](#inference)
@@ -68,8 +69,9 @@ Get started with Axolotl in just a few steps! This quickstart guide will walk yo
 
 ```bash
 git clone https://github.com/OpenAccess-AI-Collective/axolotl
+cd axolotl
 
-pip3 install -e .
+pip3 install -e .[flash-attn]
 pip3 install -U git+https://github.com/huggingface/peft.git
 
 # finetune lora
@@ -98,7 +100,7 @@ accelerate launch scripts/finetune.py examples/openllama-3b/lora.yml \
   ```
 
 - Conda/Pip venv
-  1. Install python **3.9**
+  1. Install python >=**3.9**
 
   2. Install pytorch stable https://pytorch.org/get-started/locally/
 
@@ -151,9 +153,7 @@ accelerate launch scripts/finetune.py examples/openllama-3b/lora.yml \
 
   pip3 install -e . # change depend on needs
   pip3 install protobuf==3.20.3
-  pip3 install -U requests
-  pip3 install -U --ignore-installed psutil
-  pip3 install -U scipy
+  pip3 install -U --ignore-installed requests Pillow psutil scipy
   pip3 install git+https://github.com/huggingface/peft.git # not for gptq
   ```
 
@@ -274,11 +274,29 @@ Have dataset(s) in one of the following format (JSONL recommended):
 
 #### How to add custom prompts
 
-  1. Add your method to a file in [prompt_strategies](src/axolotl/prompt_strategies). Please see other files as example.
-  2. Use your custom file name as the dataset type `<prompt_strategies_file>.load_<load_fn>`.
+Using yaml. Example:
+```yaml
+datasets:
+  - path: repo
+    type:
+      system_prompt: ""
+      no_input_format: |-
+        User: {instruction}<|end_of_turn|>
+        Assistant:
+      format: |-
+        User: {instruction}
+        {input}<|end_of_turn|>
+        Assistant:
+```
 
-Optionally, download some datasets, see [data/README.md](data/README.md)
+Using file:
+1. Add your method to a file in [prompt_strategies](src/axolotl/prompt_strategies). Please see other files as example.
+2. Use your custom file name as the dataset type `<prompt_strategies_file>.load_<load_fn>`.
 
+#### How to use your custom pretokenized dataset
+
+- Do not pass a `type:`
+- Dataset must contain `input_ids`, `attention_mask`, `labels` in columns
 
 
 ### Config
@@ -308,9 +326,9 @@ See [examples](examples) for quick start. It is recommended to duplicate and mod
 
   # local
   datasets:
-    - path: json
-      data_files: data.jsonl # or json
-      type: alpaca # format from earlier
+    - path: data.jsonl # or json
+      ds_type: json # see other options below
+      type: alpaca
   ```
 
 - loading
@@ -391,9 +409,28 @@ datasets:
   - path: vicgalle/alpaca-gpt4
   # The type of prompt to use for training. [alpaca, sharegpt, gpteacher, oasst, reflection]
     type: alpaca # format | format:<prompt_style> (chat/instruct) | <prompt_strategies>.load_<load_fn>
+    ds_type: # Optional[str] (json|arrow|parquet) defines the datatype when path is a file
     data_files: # path to source data files
     shards: # number of shards to split data into
     name: # name of dataset configuration to load
+
+  # custom user prompt
+  - path: repo
+    type:
+      # the below are defaults. only set what's needed.
+      system_prompt: ""
+      field_system: system
+      field_instruction: instruction
+      field_output: input
+
+      # customizable to be single line or multi-line
+      system_format: "{system}"
+      # 'format' can include {input}
+      format: |-
+        User: {instruction} {input}
+        Assistant:
+      # 'no_input_format' cannot include {input}
+      no_input_format: "{instruction} "
 
 # axolotl attempts to save the dataset as an arrow after packing the data together so
 # subsequent training attempts load faster, relative path
@@ -472,6 +509,7 @@ warmup_steps: 100
 learning_rate: 0.00003
 lr_quadratic_warmup:
 logging_steps:
+save_strategy: # set to `no` to skip checkpoint saves
 save_steps: # leave empty to save at each epoch
 eval_steps:
 save_total_limit: # checkpoints saved at a time
@@ -666,7 +704,9 @@ Please reduce any below
   - `gradient_accumulation_steps`
   - `sequence_len`
 
-> `failed (exitcode: -9)` usually means your system has run out of system memory.
+> `failed (exitcode: -9)`
+
+Usually means your system has run out of system memory.
 Similarly, you should consider reducing the same settings as when you run out of VRAM.
 Additionally, look into upgrading your system RAM which should be simpler than GPU upgrades.
 
