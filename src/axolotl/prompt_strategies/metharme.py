@@ -3,9 +3,7 @@
 import logging
 from typing import Tuple
 
-from axolotl.prompt_tokenizers import (
-    InstructionPromptTokenizingStrategy,
-)
+from axolotl.prompt_tokenizers import InstructionPromptTokenizingStrategy
 from axolotl.prompters import AlpacaPrompter
 
 LOG = logging.getLogger("axolotl")
@@ -19,13 +17,15 @@ class MetharmePromptTokenizingStrategy(InstructionPromptTokenizingStrategy):
     """
 
     def parse_instruction_fields(self, prompt) -> Tuple[str, str, str]:
-        return (
-            prompt["prompt"],
-            "",
-            prompt["generation"]
-        )
+        return (prompt["prompt"], "", prompt["generation"])
 
-    def _tokenize(self, prompt: str, add_eos_token: bool = True, strip_bos_token: bool = False, num_eos_tokens: int = 3):
+    def _tokenize(
+        self,
+        prompt: str,
+        add_eos_token: bool = True,
+        strip_bos_token: bool = False,
+        num_eos_tokens: int = 3,
+    ):
         result = self.tokenizer(
             prompt,
             truncation=True,
@@ -39,7 +39,7 @@ class MetharmePromptTokenizingStrategy(InstructionPromptTokenizingStrategy):
         if result["input_ids"][-1] == self.tokenizer.eos_token_id:
             num_eos_tokens -= 1
 
-        if (num_eos_tokens > 0 and add_eos_token and len(result["input_ids"]) > 0):
+        if num_eos_tokens > 0 and add_eos_token and len(result["input_ids"]) > 0:
             for _ in range(num_eos_tokens):
                 if len(result["input_ids"]) < self.sequence_len:
                     result["input_ids"].append(self.tokenizer.eos_token_id)
