@@ -64,7 +64,7 @@ class MetharmePrompter(AlpacaPrompter):
     turn_format = "{instruction}"
     turn_no_input_format = "{instruction}"
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, **kwargs): # pylint: disable=super-init-not-called
         pass
 
 
