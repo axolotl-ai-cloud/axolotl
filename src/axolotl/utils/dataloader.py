@@ -249,7 +249,7 @@ class MultipackDistributedDataloader:
                 [
                     {
                         "input_ids": [0],
-                        "labels": [0],
+                        "labels": [-100],
                         "attention_mask": [True],
                         "position_ids": [0],
                     }
