@@ -626,7 +626,7 @@ strict:
 
 Run
 ```bash
-accelerate launch scripts/finetune.py configs/your_config.yml
+accelerate launch scripts/finetune.py your_config.yml
 ```
 
 #### Multi-GPU
