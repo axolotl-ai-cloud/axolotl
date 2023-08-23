@@ -159,6 +159,8 @@ def merge_lora(model, tokenizer, cfg):
     LOG.info("running merge of LoRA with base model")
     model = model.merge_and_unload()
     model.to(dtype=torch.float16)
+    if cfg.hub_model_id:
+        model.push_to_hub("hub_model_id")
 
     if cfg.local_rank == 0:
         LOG.info("saving merged model")
