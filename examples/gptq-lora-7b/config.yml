@@ -57,7 +57,7 @@ weight_decay: 0.0001
 fsdp:
 fsdp_config:
 tokens:
-  pad_token: "[PAD]"
+  pad_token: "<pad>"
   bos_token: "<s>"
   eos_token: "</s>"
   unk_token: "<unk>"

@@ -13,7 +13,7 @@ from axolotl.prompters import IGNORE_TOKEN_ID
 LOG = logging.getLogger("axolotl")
 
 IGNORE_INDEX = -100
-LLAMA_DEFAULT_PAD_TOKEN = "[PAD]"  # nosec
+LLAMA_DEFAULT_PAD_TOKEN = "<pad>"  # nosec
 LLAMA_DEFAULT_EOS_TOKEN = "</s>"  # nosec
 LLAMA_DEFAULT_BOS_TOKEN = "<s>"  # nosec
 LLAMA_DEFAULT_UNK_TOKEN = "<unk>"  # nosec

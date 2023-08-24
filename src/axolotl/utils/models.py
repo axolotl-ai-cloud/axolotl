@@ -22,7 +22,7 @@ from transformers import (  # noqa: F401
     PreTrainedTokenizerBase,
 )
 
-from axolotl.prompt_tokenizers import LLAMA_DEFAULT_PAD_TOKEN
+from axolotl.prompt_tokenizers import LLAMA_DEFAULT_EOS_TOKEN
 from axolotl.utils.bench import log_gpu_memory_usage
 
 LOG = logging.getLogger("axolotl")
@@ -59,7 +59,8 @@ def load_tokenizer(cfg):
         "LlamaTokenizer",
         "LlamaTokenizerFast",
     ]:
-        tokenizer.pad_token = LLAMA_DEFAULT_PAD_TOKEN
+        # set a pad_token, but use eos_token so we don't add a new token
+        tokenizer.pad_token = LLAMA_DEFAULT_EOS_TOKEN
 
     LOG.debug(f"EOS: {tokenizer.eos_token_id} / {tokenizer.eos_token}")
     LOG.debug(f"BOS: {tokenizer.bos_token_id} / {tokenizer.bos_token}")
