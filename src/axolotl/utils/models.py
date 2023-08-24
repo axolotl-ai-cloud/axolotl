@@ -4,23 +4,14 @@
 import logging
 import math
 import os
-<<<<<<< HEAD
-from pathlib import Path
 from typing import Optional, Tuple  # noqa: F401
-=======
 from typing import TYPE_CHECKING, Optional, Tuple  # noqa: F401
->>>>>>> 10d25df (auto gptq support)
 
 import bitsandbytes as bnb
 import torch
 import transformers
 from optimum.bettertransformer import BetterTransformer
-<<<<<<< HEAD
-from peft import PeftConfig
-=======
-from peft import prepare_model_for_kbit_training
-from peft.tuners.lora import LoraLayer
->>>>>>> 10d25df (auto gptq support)
+from peft import PeftConfig, prepare_model_for_kbit_training
 from transformers import (  # noqa: F401
     AutoConfig,
     AutoModelForCausalLM,
