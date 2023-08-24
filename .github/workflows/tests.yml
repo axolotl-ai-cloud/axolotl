@@ -24,6 +24,7 @@ jobs:
 
       - name: Install dependencies
         run: |
+          pip install torch==2.0.1 --extra-index-url https://download.pytorch.org/whl/cu118
           pip install -e .
           pip install -r requirements-tests.txt
 
