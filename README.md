@@ -493,6 +493,12 @@ lora_modules_to_save:
 lora_out_dir:
 lora_fan_in_fan_out: false
 
+# ReLoRA configuration
+# must use either 'lora' or 'qlora' adapter, and does not support fsdp or deepspeed
+relora_steps: # number of steps per ReLoRA restart
+relora_warmup_steps: # number of per-restart warmup steps
+relora_cpu_offload: # true to perform lora weight merges on cpu during restarts, for modest gpu memory savings
+
 # wandb configuration if you're using it
 wandb_mode: # "offline" to save run metadata locally and not sync to the server, "disabled" to turn off wandb
 wandb_project: # your wandb project name

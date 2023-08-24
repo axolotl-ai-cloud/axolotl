@@ -242,6 +242,21 @@ def train(
         model.save_pretrained(cfg.output_dir, safe_serialization=safe_serialization)
         return
 
+    if cfg.resume_from_checkpoint is None and cfg.auto_resume_from_checkpoints:
+        possible_checkpoints = [
+            str(cp) for cp in Path(cfg.output_dir).glob("checkpoint-*")
+        ]
+        if len(possible_checkpoints) > 0:
+            sorted_paths = sorted(
+                possible_checkpoints,
+                key=lambda path: int(path.split("-")[-1]),
+            )
+            cfg.resume_from_checkpoint = sorted_paths[-1]
+            LOG.info(
+                f"Using Auto-resume functionality to start with checkpoint at {cfg.resume_from_checkpoint}"
+            )
+    resume_from_checkpoint = cfg.resume_from_checkpoint
+
     trainer = setup_trainer(
         cfg, train_dataset, eval_dataset, model, tokenizer, total_num_steps
     )
@@ -273,20 +288,6 @@ def train(
     LOG.info("Starting trainer...")
     if cfg.group_by_length:
         LOG.info("hang tight... sorting dataset for group_by_length")
-    resume_from_checkpoint = cfg.resume_from_checkpoint
-    if cfg.resume_from_checkpoint is None and cfg.auto_resume_from_checkpoints:
-        possible_checkpoints = [
-            str(cp) for cp in Path(cfg.output_dir).glob("checkpoint-*")
-        ]
-        if len(possible_checkpoints) > 0:
-            sorted_paths = sorted(
-                possible_checkpoints,
-                key=lambda path: int(path.split("-")[-1]),
-            )
-            resume_from_checkpoint = sorted_paths[-1]
-            LOG.info(
-                f"Using Auto-resume functionality to start with checkpoint at {resume_from_checkpoint}"
-            )
 
     if not Path(cfg.output_dir).is_dir():
         os.makedirs(cfg.output_dir, exist_ok=True)
@@ -301,6 +302,13 @@ def train(
 
     LOG.info(f"Training Completed!!! Saving pre-trained model to {cfg.output_dir}")
 
+    if cfg.relora_steps:
+        if cfg.adapter == "lora" and not (cfg.load_in_4bit or cfg.load_in_8bit):
+            model = model.merge_and_unload()
+        else:
+            # final model weights have already been saved by `ReLoRACallback.on_train_end`
+            return
+
     # TODO do we need this fix? https://huggingface.co/docs/accelerate/usage_guides/fsdp#saving-and-loading
     # only save on rank 0, otherwise it corrupts output on multi-GPU when multiple processes attempt to write the same file
     if cfg.fsdp:
@@ -308,6 +316,7 @@ def train(
     elif cfg.local_rank == 0:
         if cfg.flash_optimum:
             model = BetterTransformer.reverse(model)
+
         model.save_pretrained(cfg.output_dir, safe_serialization=safe_serialization)
 
 
