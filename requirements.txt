@@ -1,3 +1,5 @@
+--extra-index-url https://huggingface.github.io/autogptq-index/whl/cu117/
+auto-gptq
 packaging
 peft @ git+https://github.com/huggingface/peft.git
 transformers @ git+https://github.com/huggingface/transformers.git
