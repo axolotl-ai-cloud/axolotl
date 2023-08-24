@@ -2,6 +2,7 @@
 
 import functools
 import gc
+import inspect
 import json
 import logging
 import time
@@ -84,7 +85,10 @@ def memory_cleanup():
             for obj in get_tensors():
                 obj.detach()
                 obj.grad = None
-                obj.storage().resize_(0)
+                try:
+                    obj.storage().resize_(0)
+                except RuntimeError:
+                    pass
                 cnt += 1
             gc.collect()
             torch.cuda.empty_cache()
@@ -219,11 +223,18 @@ def test_trainer(
         | opt_cfg
         | dtype_cfg
         | attn_cfg
-        | DictDefault({"sequence_len": ctx_len, "max_packed_sequence_len": ctx_len})
-        | DictDefault({"gradient_accumulation_steps": 4})
+        | DictDefault({"sequence_len": ctx_len})
+        #| DictDefault({"max_packed_sequence_len": ctx_len})
+        | DictDefault({"sample_packing": True, "sample_packing_eff_est": 0.77, "total_num_tokens": 2135445})
+        | DictDefault({"gradient_accumulation_steps": 1})
+        | DictDefault({"gradient_checkpointing": True})
         | DictDefault({"datasets": [{"path": "LDJnr/Puffin", "type": "sharegpt:chat"}]})
+        #| DictDefault({"pretraining_dataset": "togethercomputer/RedPajama-Data-1T-Sample"})
         | DictDefault({"max_steps": 12})
-        | DictDefault({"val_set_size": 0})
+        # | DictDefault({"val_set_size": 0})
+        | DictDefault({"eval_steps": 100})
+        | DictDefault({"val_set_size": 0.02})
+        # | DictDefault({"eval_steps": 1, "max_steps": 1})
     )
     cfg.output_dir = str(logs_dir.resolve())
     results_bag.cfg = cfg
@@ -237,7 +248,6 @@ def test_trainer(
     try:
         trainer = None
         tokenizer = load_tokenizer(cfg)
-        model, _ = load_model(cfg, tokenizer)
 
         """
         data = [{"text": "hello world " * int(ctx_len / 2)} for _ in range(25)]
@@ -248,7 +258,16 @@ def test_trainer(
         """
         train_ds, eval_ds, steps = prepare_dataset(cfg, tokenizer)
 
+        model, _ = load_model(cfg, tokenizer)
+        model.config.use_cache = False
         trainer = setup_trainer(cfg, train_ds, eval_ds, model, tokenizer, steps)
+        # torch.cuda.memory._record_memory_history(True,
+        #     trace_alloc_max_entries=1000000,
+        #     trace_alloc_record_context=True)
+        # import torch._dynamo
+        # torch._dynamo.config.suppress_errors = True
+        # if torch.__version__ >= "2" and sys.platform != "win32":
+        #     model = torch.compile(model)
         trainer.train()
         for elem in trainer.state.log_history:
             if "train_runtime" in elem:
@@ -267,7 +286,10 @@ def test_trainer(
             opt = trainer.optimizer
             trainer.optimizer = None
             opt.zero_grad()
-            del opt
-            del trainer
-        del tokenizer
-        del model
+            safe_del('opt', 'trainer')
+        safe_del('tokenizer', 'model')
+
+def safe_del(*names):
+    ns = inspect.currentframe().f_back
+    for name in names:
+        ns.f_locals.pop(name, None)

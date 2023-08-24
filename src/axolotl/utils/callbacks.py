@@ -11,7 +11,8 @@ from transformers import (
     TrainingArguments,
 )
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, IntervalStrategy
-
+from pickle import dump
+import torch
 from axolotl.utils.bench import log_gpu_memory_usage
 
 LOG = logging.getLogger("axolotl.callbacks")
@@ -115,6 +116,8 @@ class GPUStatsCallback(
             LOG, f"after epoch {state.epoch}", self.cfg.device
         )
         self.cfg.stats_bag.vram_train_cache = cache
+        # snapshot = torch.cuda.memory._snapshot()
+        # dump(snapshot, open('snapshot.pkl', 'wb'))
         return control
 
     def on_train_end(
