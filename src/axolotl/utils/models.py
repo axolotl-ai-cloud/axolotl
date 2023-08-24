@@ -58,7 +58,7 @@ def load_tokenizer(cfg):
     if tokenizer.__class__.__name__ in [
         "LlamaTokenizer",
         "LlamaTokenizerFast",
-    ]:
+    ] and not hasattr(tokenizer, "pad_token"):
         # set a pad_token, but use eos_token so we don't add a new token
         tokenizer.pad_token = LLAMA_DEFAULT_EOS_TOKEN
 
