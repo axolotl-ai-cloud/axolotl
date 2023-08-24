@@ -108,9 +108,7 @@ def validate_config(cfg):
             "To calculate the equivalent gradient_accumulation_steps, divide batch_size / micro_batch_size / number of gpus.",
         )
     if cfg.load_4bit:
-        raise ValueError(
-            "cfg.load_4bit parameter has been deprecated and replaced by cfg.gptq"
-        )
+        raise ValueError("cfg.load_4bit parameter has been deprecated")
 
     if cfg.adapter == "qlora":
         if cfg.merge_lora:

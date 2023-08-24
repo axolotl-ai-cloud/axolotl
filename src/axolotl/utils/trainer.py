@@ -514,23 +514,7 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
         training_arguments_kwargs["seed"] = cfg.seed
 
     if cfg.gradient_checkpointing:
-        if cfg.gptq:
-            from alpaca_lora_4bit.gradient_checkpointing import (
-                apply_gradient_checkpointing,
-            )
-
-            gradient_checkpointing_ratio = (
-                cfg.gradient_checkpointing_ratio
-                if cfg.gradient_checkpointing_ratio
-                else 1.0
-            )
-            apply_gradient_checkpointing(
-                model, checkpoint_ratio=gradient_checkpointing_ratio
-            )
-        else:
-            training_arguments_kwargs[
-                "gradient_checkpointing"
-            ] = cfg.gradient_checkpointing
+        training_arguments_kwargs["gradient_checkpointing"] = cfg.gradient_checkpointing
     if cfg.fsdp:
         training_arguments_kwargs["fsdp"] = cfg.fsdp
         if cfg.fsdp_config:
