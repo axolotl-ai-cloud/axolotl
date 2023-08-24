@@ -11,7 +11,6 @@ RUN apt-get update && \
 
 WORKDIR /workspace
 
-RUN pip3 install "peft @ git+https://github.com/huggingface/peft.git@main"
 RUN git clone --depth=1 https://github.com/OpenAccess-AI-Collective/axolotl.git
 # If AXOLOTL_EXTRAS is set, append it in brackets
 RUN cd axolotl && \
