@@ -54,9 +54,10 @@ DEFAULT_DATASET_PREPARED_PATH = "last_run_prepared"
 
 def prepare_dataset(cfg, tokenizer):
     if not cfg.pretraining_dataset:
-        train_dataset, eval_dataset = load_prepare_datasets(
-            tokenizer, cfg, DEFAULT_DATASET_PREPARED_PATH
-        )
+        with zero_first(is_main_process()):
+            train_dataset, eval_dataset = load_prepare_datasets(
+                tokenizer, cfg, DEFAULT_DATASET_PREPARED_PATH
+            )
     else:
         train_dataset = load_pretraining_dataset(
             cfg.pretraining_dataset,
