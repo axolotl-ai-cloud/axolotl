@@ -137,7 +137,7 @@ class AxolotlTrainingArguments(TrainingArguments):
         default="eval", metadata={"help": "The benchmark split to run on"}
     )
     bench_dataset: Optional[str] = field(
-        default="mmlu-zs",
+        default="sampled",
         metadata={
             "help": "Benchmark dataset to use: options are `mmlu-zs`, `mmlu-fs`, `sampled`"
         },
@@ -279,7 +279,8 @@ class AxolotlTrainer(Trainer):
             dataloader_params["sampler"] = self._get_bench_sampler(bench_dataset)
             dataloader_params["drop_last"] = self.args.dataloader_drop_last
 
-        return self.accelerator.prepare(DataLoader(bench_dataset, **dataloader_params))
+        return DataLoader(bench_dataset, **dataloader_params)
+        # return self.accelerator.prepare(DataLoader(bench_dataset, **dataloader_params))
 
     def compute_loss(self, model, inputs, return_outputs=False):
         # use one's weighted cross entropy loss calc
