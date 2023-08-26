@@ -217,9 +217,7 @@ def bench_eval_callback_factory(trainer, tokenizer):
             metrics: Dict[str, float],  # pylint: disable=unused-argument
             **kwargs,  # pylint: disable=unused-argument
         ):
-            data_loader = trainer.get_eval_dataloader(bench_dataset)
-            source_max_len = trainer.data_collator.max_length
-            trainer.data_collator.max_length = args.bench_source_max_len
+            data_loader = trainer.get_bench_dataloader(bench_dataset)
             trainer.model.eval()
             preds, refs = [], []
             loss_bench = 0
@@ -258,6 +256,5 @@ def bench_eval_callback_factory(trainer, tokenizer):
                     bench_scores.append(bench_score)
             results[f"bench_{bench_split}_accuracy"] = np.mean(bench_scores)
             trainer.log(results)
-            trainer.data_collator.max_length = source_max_len
 
     return BenchEvalCallback

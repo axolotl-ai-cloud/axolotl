@@ -14,7 +14,12 @@ import numpy as np
 import torch.cuda
 from datasets import Dataset, set_caching_enabled
 from torch.optim.lr_scheduler import OneCycleLR
-from torch.utils.data import DataLoader, DistributedSampler, RandomSampler
+from torch.utils.data import (
+    DataLoader,
+    DistributedSampler,
+    RandomSampler,
+    SequentialSampler,
+)
 from transformers import EarlyStoppingCallback, Trainer, TrainingArguments
 from transformers.trainer_pt_utils import SequentialDistributedSampler
 
@@ -158,6 +163,10 @@ class AxolotlTrainer(Trainer):
 
     args = None  # type: AxolotlTrainingArguments
 
+    def __init__(self, *args, bench_data_collator=None, **kwargs):
+        self.bench_data_collator = bench_data_collator
+        super().__init__(*args, **kwargs)
+
     def create_scheduler(
         self, num_training_steps: int, optimizer: torch.optim.Optimizer = None
     ):
@@ -247,6 +256,30 @@ class AxolotlTrainer(Trainer):
                 )
             )
         return super().get_eval_dataloader(eval_dataset)
+
+    def _get_bench_sampler(
+        self, bench_dataset: Dataset
+    ) -> Optional[torch.utils.data.Sampler]:
+        if self.args.world_size <= 1:
+            return SequentialSampler(bench_dataset)
+        return None
+
+    def get_bench_dataloader(
+        self,
+        bench_dataset: Dataset,
+    ) -> Union[DataLoader, MultipackDistributedDataloader]:
+        dataloader_params = {
+            "batch_size": self.args.eval_batch_size,
+            "collate_fn": self.bench_data_collator,
+            "num_workers": self.args.dataloader_num_workers,
+            "pin_memory": self.args.dataloader_pin_memory,
+        }
+
+        if not isinstance(bench_dataset, torch.utils.data.IterableDataset):
+            dataloader_params["sampler"] = self._get_bench_sampler(bench_dataset)
+            dataloader_params["drop_last"] = self.args.dataloader_drop_last
+
+        return self.accelerator.prepare(DataLoader(bench_dataset, **dataloader_params))
 
     def compute_loss(self, model, inputs, return_outputs=False):
         # use one's weighted cross entropy loss calc
@@ -650,6 +683,11 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
         eval_dataset=eval_dataset,
         args=training_args,
         data_collator=DataCollatorForSeq2Seq(
+            tokenizer,
+            return_tensors="pt",
+            **data_collator_kwargs,
+        ),
+        bench_data_collat0r=transformers.DataCollatorForSeq2Seq(
             tokenizer,
             return_tensors="pt",
             **data_collator_kwargs,
