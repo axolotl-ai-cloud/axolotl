@@ -4,9 +4,9 @@ bitsandbytes>=0.41.1
 accelerate @ git+https://github.com/huggingface/accelerate@2a289f6108e77a77a4efffb3f6316bc98538413b
 addict
 fire
-PyYAML==6.0
+PyYAML>=6.0
 datasets
-flash-attn==2.0.8
+flash-attn>=2.0.8
 sentencepiece
 wandb
 einops
@@ -15,7 +15,7 @@ optimum
 hf_transfer
 colorama
 numba
-numpy==1.24.4
+numpy>=1.24.4
 # qlora things
 bert-score==0.3.13
 evaluate==0.4.0
