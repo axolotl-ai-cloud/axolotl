@@ -368,7 +368,7 @@ def load_model(
 
     # LlamaRMSNorm layers are in fp32 after kbit_training or full finetune, so we need to
     # convert them back to fp16/bf16 for flash-attn compatibility.
-    if (fix_dtype or cfg.adapter == "" or cfg.adapter == None) and (
+    if (fix_dtype or cfg.adapter == "" or cfg.adapter is None) and (
         cfg.flash_attention and cfg.is_llama_derived_model
     ):
         for name, module in model.named_modules():
