@@ -217,7 +217,9 @@ def bench_eval_callback_factory(trainer, tokenizer):
             metrics: Dict[str, float],  # pylint: disable=unused-argument
             **kwargs,  # pylint: disable=unused-argument
         ):
-            data_loader = trainer.get_bench_dataloader(bench_dataset)
+            data_loader = trainer.get_bench_dataloader(
+                bench_dataset.remove_columns(["input", "subject", "output"])
+            )
             trainer.model.eval()
             preds, refs = [], []
             loss_bench = 0

@@ -687,7 +687,7 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
             return_tensors="pt",
             **data_collator_kwargs,
         ),
-        bench_data_collat0r=transformers.DataCollatorForSeq2Seq(
+        bench_data_collator=transformers.DataCollatorForSeq2Seq(
             tokenizer,
             return_tensors="pt",
             **data_collator_kwargs,
