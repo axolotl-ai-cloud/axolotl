@@ -131,7 +131,7 @@ class ReLoRACallback(TrainerCallback):
             and state.global_step % self.relora_steps != 0
         ):
             if self.quantized:
-                if self.last_full_model != checkpoint_folder:
+                if is_main_process() and self.last_full_model != checkpoint_folder:
                     # ensure the latest full parameter save is in the latest checkpoint
                     # folder, so that automatic pruning of checkpoints does not remove it
                     LOG.info(f"moving last full parameter save to {checkpoint_folder}")
