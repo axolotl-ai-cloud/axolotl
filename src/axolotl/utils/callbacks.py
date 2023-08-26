@@ -142,7 +142,7 @@ def bench_eval_callback_factory(trainer, tokenizer):
         bench_dataset = load_dataset(
             "pharaouk/dharma-1",
             data_files={
-                "eval": "dharma_eval.json",
+                "eval": "dharma_1_full.json",
             },
         )
         bench_dataset["eval"] = bench_dataset["eval"].map(transform_subject)
@@ -242,7 +242,7 @@ def bench_eval_callback_factory(trainer, tokenizer):
                 loss_bench += loss.item()
             # Extract results by subject.
             results = {"bench_loss": loss_bench / len(data_loader)}
-            bench_name = bench_dataset["name"]
+            bench_name = bench_dataset["subject"]
             bench_names: dict = {s: {"refs": [], "preds": []} for s in set(bench_name)}
             for s, p, r in zip(bench_name, preds, refs):  # pylint: disable=invalid-name
                 bench_names[s]["preds"].append(p)
