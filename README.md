@@ -521,7 +521,7 @@ lr_quadratic_warmup:
 logging_steps:
 save_strategy: # set to `no` to skip checkpoint saves
 save_steps: # leave empty to save at each epoch
-eval_steps:
+eval_steps: # leave empty to eval at each epoch
 save_total_limit: # checkpoints saved at a time
 max_steps:
 

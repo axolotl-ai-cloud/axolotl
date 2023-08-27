@@ -82,6 +82,8 @@ def do_inference(cfg, model, tokenizer, prompter: Optional[str]):
             max_seq_len=255, mem_freq=50, top_k=5, max_cache_size=None
         )
 
+    model = model.to(cfg.device)
+
     while True:
         print("=" * 80)
         # support for multiline inputs
