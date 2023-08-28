@@ -7,7 +7,6 @@ import random
 import signal
 import sys
 from dataclasses import dataclass, field
-from functools import partial
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
@@ -347,9 +346,15 @@ def load_cfg(config: Path = Path("examples/"), **kwargs):
     return cfg
 
 
-if __name__ == "__main__":
+def do_train(config: Path = Path("examples/"), **kwargs):
     print_axolotl_text_art()
+    parsed_cfg = load_cfg(config, **kwargs)
     parser = transformers.HfArgumentParser((TrainerCliArgs))
-    parsed_cli_args = parser.parse_args_into_dataclasses()
-    parsed_cfg = fire.Fire(load_cfg)
-    fire.Fire(partial(train, cfg=parsed_cfg, cli_args=parsed_cli_args))
+    parsed_cli_args, _ = parser.parse_args_into_dataclasses(
+        return_remaining_strings=True
+    )
+    train(cfg=parsed_cfg, cli_args=parsed_cli_args)
+
+
+if __name__ == "__main__":
+    fire.Fire(do_train)
