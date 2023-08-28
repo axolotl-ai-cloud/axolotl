@@ -138,9 +138,9 @@ class AxolotlTrainingArguments(TrainingArguments):
         default="eval", metadata={"help": "The benchmark split to run on"}
     )
     bench_dataset: Optional[str] = field(
-        default="sampled",
+        default="pharaouk/dharma-1/dharma_1_mini.json",
         metadata={
-            "help": "Benchmark dataset to use: options are `mmlu-zs`, `mmlu-fs`, `sampled`"
+            "help": "Benchmark dataset to use: options are `mmlu-zs`, `mmlu-fs`, or the full path to the dataset file"
         },
     )
     do_bench_eval: Optional[bool] = field(
