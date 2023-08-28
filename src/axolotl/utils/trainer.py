@@ -593,6 +593,8 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
         # A100 is best at 64, while others at 8. Let's use the larger so we don't have to check
         # https://docs.nvidia.com/deeplearning/performance/dl-performance-matrix-multiplication/index.html
         data_collator_kwargs["pad_to_multiple_of"] = 64
+    if cfg.pad_to_worst_case_seq_len:
+        data_collator_kwargs["pad_to_multiple_of"] = cfg.sequence_len
 
     if cfg.is_llama_derived_model and cfg.landmark_attention:
         from axolotl.monkeypatch.llama_landmark_attn import (
