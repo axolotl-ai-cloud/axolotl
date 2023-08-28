@@ -184,9 +184,9 @@ def train(
     LOG.info(f"loading tokenizer... {cfg.tokenizer_config or cfg.base_model_config}")
     tokenizer = load_tokenizer(cfg)
 
-    if (
-        cli_args.shard or cli_args.merge_lora
-    ) and not cli_args.inference:  # don't need to load dataset for these
+    if not (
+        cli_args.shard or cli_args.merge_lora or cli_args.inference
+    ):  # don't need to load dataset for these
         train_dataset, eval_dataset, total_num_steps = prepare_dataset(cfg, tokenizer)
 
     if cli_args.debug or cfg.debug:
