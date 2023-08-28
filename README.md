@@ -459,6 +459,9 @@ dataset_shard_idx:
 # the maximum length of an input to train with, this should typically be less than 2048
 # as most models have a token/context limit of 2048
 sequence_len: 2048
+# pad inputs so each step uses constant sized buffers
+# this will reduce memory fragmentation and may prevent OOMs, by re-using memory more efficiently
+pad_to_sequence_len:
 # max sequence length to concatenate training samples together up to
 # inspired by StackLLaMA. see https://huggingface.co/blog/stackllama#supervised-fine-tuning
 # FutureWarning: This will soon be DEPRECATED
