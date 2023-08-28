@@ -59,6 +59,7 @@ def load_tokenizer(cfg):
         in [
             "LlamaTokenizer",
             "LlamaTokenizerFast",
+            "CodeLlamaTokenizer",
         ]
         and hasattr(tokenizer, "pad_token")
         and not tokenizer.pad_token
