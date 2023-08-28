@@ -12,6 +12,7 @@ from typing import Optional, Union
 
 import numpy as np
 import torch.cuda
+import transformers
 from datasets import Dataset, set_caching_enabled
 from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import (
