@@ -328,6 +328,15 @@ See [examples](examples) for quick start. It is recommended to duplicate and mod
       name: enron_emails
       type: completion # format from earlier
 
+  # huggingface repo with multiple named configurations/subsets
+  datasets:
+    - path: bigcode/commitpackft
+      name:
+        - ruby
+        - python
+        - typescript
+      type: ... # unimplemented custom format
+
   # local
   datasets:
     - path: data.jsonl # or json
@@ -406,6 +415,10 @@ bf16: true # bool or 'full' for `bf16_full_eval`. require >=ampere
 fp16: true
 # Use CUDA tf32
 tf32: true # require >=ampere
+
+# No AMP (automatic mixed precision)
+bfloat16: true # require >=ampere
+float16: true
 
 # a list of one or more datasets to finetune the model with
 datasets:
