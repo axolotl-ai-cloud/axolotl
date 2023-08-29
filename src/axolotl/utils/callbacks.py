@@ -212,7 +212,7 @@ def bench_eval_callback_factory(trainer, tokenizer):
 
     with zero_first(is_main_process()):
         bench_dataset = bench_dataset.map(tokenize_evals)
-        bench_dataset = bench_dataset.filter(lambda x: x["labels"][-1] in abcd_idx)
+        bench_dataset = bench_dataset.filter(lambda x: x["labels"][-2] in abcd_idx)
 
     class BenchEvalCallback(TrainerCallback):
         """
@@ -248,7 +248,7 @@ def bench_eval_callback_factory(trainer, tokenizer):
                     preds.append(torch.argmax(logit_abcd).item())
                 labels = labels[labels != IGNORE_INDEX].view(-1, 2)[:, 0]
                 refs += [
-                    abcd_idx.index(label) if labels in abcd_idx else -1
+                    abcd_idx.index(label) if label in abcd_idx else -1
                     for label in labels.tolist()
                 ]
                 loss_bench += loss.item()
@@ -259,19 +259,24 @@ def bench_eval_callback_factory(trainer, tokenizer):
                 bench_names[s]["preds"].append(p)
                 bench_names[s]["refs"].append(r)
             barrier()
-            bench_loss = sum(
-                gather_scalar_from_all_ranks(lambda: loss_bench, get_world_size())
-            ) / sum(
-                gather_scalar_from_all_ranks(lambda: len(data_loader), get_world_size())
-            )
-            results = {"bench_loss": bench_loss}
-
             local_bench_names = bench_names
             gathered_bench_names: List[Dict] = [{} for _ in range(get_world_size())]
             # Gather results from all GPUs to GPU 0
-            dist.gather_object(local_bench_names, gathered_bench_names, dst=0)
 
-            if is_main_process():
+            loss_bench_ranks = gather_scalar_from_all_ranks(
+                lambda: loss_bench, get_world_size()
+            )
+            len_data_loader_ranks = gather_scalar_from_all_ranks(
+                lambda: len(data_loader), get_world_size()
+            )
+
+            if not is_main_process():
+                dist.gather_object(local_bench_names, dst=0)
+            else:
+                dist.gather_object(local_bench_names, gathered_bench_names, dst=0)
+                bench_loss = sum(loss_bench_ranks) / sum(len_data_loader_ranks)
+                results = {"bench_loss": bench_loss}
+
                 # Combine results from all GPUs
                 combined_bench_names: Dict[str, Dict[str, List]] = {}
                 for bench_name in gathered_bench_names:

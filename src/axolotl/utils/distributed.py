@@ -76,15 +76,12 @@ def gather_scalar_from_all_ranks(fn, world_size=1):  # pylint: disable=invalid-n
     value_scalar = fn()
     value_tensor = torch.tensor(value_scalar, device=dist.get_rank()).float()
 
-    # Placeholder tensor for gathering results
-    if is_main_process():
-        gathered_tensors = [torch.zeros_like(value_tensor) for _ in range(world_size)]
+    if not is_main_process():
+        dist.gather(value_tensor, dst=0)
     else:
-        gathered_tensors = None
+        gathered_tensors = [torch.zeros_like(value_tensor) for _ in range(world_size)]
+        dist.gather(value_tensor, gather_list=gathered_tensors, dst=0)
 
-    dist.gather(value_tensor, gather_list=gathered_tensors, dst=0)
-
-    if is_main_process():
         # Convert tensors back to their original type (int or float)
         gathered_values = []
         for tensor in gathered_tensors:
