@@ -358,7 +358,6 @@ def load_model(
             if hasattr(module, "weight"):
                 module.to(torch.float32)
 
-    needs_fa2_dtype = cfg.adapter or cfg.fsdp
     if not cfg.gptq and (
         (cfg.adapter == "lora" and load_in_8bit)
         or (cfg.adapter == "qlora" and cfg.load_in_4bit)
@@ -367,11 +366,10 @@ def load_model(
         model = prepare_model_for_kbit_training(
             model, use_gradient_checkpointing=cfg.gradient_checkpointing
         )
-        needs_fa2_dtype = True
 
     # LlamaRMSNorm layers are in fp32 after kbit_training or full finetune, so we need to
     # convert them back to fp16/bf16 for flash-attn compatibility.
-    if needs_fa2_dtype and (cfg.flash_attention and cfg.is_llama_derived_model):
+    if cfg.flash_attention and cfg.is_llama_derived_model:
         LOG.info("converting modules to %s for flash attention", cfg.torch_dtype)
         for name, module in model.named_modules():
             if "norm" in name:
