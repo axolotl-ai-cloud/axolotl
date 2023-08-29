@@ -24,3 +24,4 @@ rouge-score==0.1.2
 scipy
 scikit-learn==1.2.2
 pynvml
+art
