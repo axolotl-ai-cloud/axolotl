@@ -407,6 +407,10 @@ fp16: true
 # Use CUDA tf32
 tf32: true # require >=ampere
 
+# No AMP (automatic mixed precision)
+bfloat16: true # require >=ampere
+float16: true
+
 # a list of one or more datasets to finetune the model with
 datasets:
   # hf dataset repo | "json" for local dataset, make sure to fill data_files
