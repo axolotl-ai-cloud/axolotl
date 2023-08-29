@@ -12,7 +12,6 @@ import bitsandbytes as bnb
 import torch
 import transformers
 from optimum.bettertransformer import BetterTransformer
-from peft.tuners.lora import LoraLayer
 from transformers import (  # noqa: F401
     AutoConfig,
     AutoModelForCausalLM,
@@ -23,7 +22,7 @@ from transformers import (  # noqa: F401
     PreTrainedTokenizerBase,
 )
 
-from axolotl.prompt_tokenizers import LLAMA_DEFAULT_PAD_TOKEN
+from axolotl.prompt_tokenizers import LLAMA_DEFAULT_EOS_TOKEN
 from axolotl.utils.bench import log_gpu_memory_usage
 
 LOG = logging.getLogger("axolotl")
@@ -56,11 +55,18 @@ def load_tokenizer(cfg):
         **tokenizer_kwargs,
     )
 
-    if tokenizer.__class__.__name__ in [
-        "LlamaTokenizer",
-        "LlamaTokenizerFast",
-    ]:
-        tokenizer.pad_token = LLAMA_DEFAULT_PAD_TOKEN
+    if (
+        tokenizer.__class__.__name__
+        in [
+            "LlamaTokenizer",
+            "LlamaTokenizerFast",
+            "CodeLlamaTokenizer",
+        ]
+        and hasattr(tokenizer, "pad_token")
+        and not tokenizer.pad_token
+    ):
+        # set a pad_token, but use eos_token so we don't add a new token
+        tokenizer.pad_token = LLAMA_DEFAULT_EOS_TOKEN
 
     LOG.debug(f"EOS: {tokenizer.eos_token_id} / {tokenizer.eos_token}")
     LOG.debug(f"BOS: {tokenizer.bos_token_id} / {tokenizer.bos_token}")
@@ -349,6 +355,15 @@ def load_model(
     cfg.stats_bag.time_model = time.time() - start
     start = time.time()
 
+    # make sure these are fp32 per Ramesh et al. (2021)
+    for name, module in model.named_modules():
+        if "norm" in name:
+            module.to(torch.float32)
+        if "lm_head" in name or "embed_tokens" in name:
+            if hasattr(module, "weight"):
+                module.to(torch.float32)
+
+    needs_fa2_dtype = cfg.adapter or cfg.fsdp
     if not cfg.gptq and (
         (cfg.adapter == "lora" and load_in_8bit)
         or (cfg.adapter == "qlora" and cfg.load_in_4bit)
@@ -357,6 +372,18 @@ def load_model(
         model = prepare_model_for_kbit_training(
             model, use_gradient_checkpointing=cfg.gradient_checkpointing
         )
+        needs_fa2_dtype = True
+
+    # LlamaRMSNorm layers are in fp32 after kbit_training or full finetune, so we need to
+    # convert them back to fp16/bf16 for flash-attn compatibility.
+    if needs_fa2_dtype and (cfg.flash_attention and cfg.is_llama_derived_model):
+        LOG.info("converting modules to %s for flash attention", cfg.torch_dtype)
+        for name, module in model.named_modules():
+            if "norm" in name:
+                module.to(cfg.torch_dtype)
+            if "lm_head" in name or "embed_tokens" in name:
+                if hasattr(module, "weight"):
+                    module.to(cfg.torch_dtype)
 
     model, lora_config = load_adapter(model, cfg, cfg.adapter)
 
@@ -447,12 +474,8 @@ def load_llama_adapter(model, cfg):
     return model, peft_config
 
 
-def find_all_linear_names(bits, model):
-    cls = (
-        bnb.nn.Linear4bit
-        if bits == 4
-        else (bnb.nn.Linear8bitLt if bits == 8 else torch.nn.Linear)
-    )
+def find_all_linear_names(model):
+    cls = (bnb.nn.Linear4bit, bnb.nn.Linear8bitLt, torch.nn.Linear)
     lora_module_names = set()
     for name, module in model.named_modules():
         if isinstance(module, cls):
@@ -473,13 +496,7 @@ def load_lora(model, cfg):
     lora_target_modules = list(cfg.lora_target_modules or [])
 
     if cfg.lora_target_linear:
-        bits = None
-        if cfg.load_in_4bit:
-            bits = 4
-        elif cfg.load_in_8bit:
-            bits = 8
-
-        linear_names = find_all_linear_names(bits, model)
+        linear_names = find_all_linear_names(model)
         LOG.info(f"found linear modules: {repr(linear_names)}")
         lora_target_modules = list(set(lora_target_modules + linear_names))
 
@@ -503,22 +520,6 @@ def load_lora(model, cfg):
         )
     else:
         model = get_peft_model(model, lora_config)
-
-    for name, module in model.named_modules():
-        if isinstance(module, LoraLayer):
-            module = module.to(cfg.torch_dtype)
-        if "norm" in name:
-            module = module.to(torch.float32)
-        if "lm_head" in name or "embed_tokens" in name:
-            if hasattr(module, "weight"):
-                module = module.to(cfg.torch_dtype)
-
-    # LlamaRMSNorm layers are in fp32 after kbit_training, so we need to
-    # convert them back to fp16/bf16 for flash-attn compatibility.
-    if cfg.flash_attention and cfg.is_llama_derived_model:
-        for name, module in model.named_modules():
-            if "norm" in name:
-                module = module.to(cfg.torch_dtype)
 
     model.print_trainable_parameters()
 

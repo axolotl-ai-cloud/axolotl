@@ -2,7 +2,9 @@
 
 import logging
 import os
+from pickle import dump
 
+import torch
 from optimum.bettertransformer import BetterTransformer
 from transformers import (
     TrainerCallback,
@@ -11,8 +13,7 @@ from transformers import (
     TrainingArguments,
 )
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, IntervalStrategy
-from pickle import dump
-import torch
+
 from axolotl.utils.bench import log_gpu_memory_usage
 
 LOG = logging.getLogger("axolotl.callbacks")
@@ -34,7 +35,9 @@ class SavePeftModelCallback(TrainerCallback):  # pylint: disable=too-few-public-
         )
 
         peft_model_path = os.path.join(checkpoint_folder, "adapter_model")
-        kwargs["model"].save_pretrained(peft_model_path)
+        kwargs["model"].save_pretrained(
+            peft_model_path, save_safetensors=args.save_safetensors
+        )
 
         return control
 

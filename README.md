@@ -257,6 +257,10 @@ Have dataset(s) in one of the following format (JSONL recommended):
   ```json
   {"conversations": [{"role": "...", "value": "..."}]}
   ```
+- `metharme`: instruction, adds additional eos tokens
+  ```json
+  {"prompt": "...", "generation": "..."}
+  ```
 - `sharegpt_simple.load_role`: conversations where `role` is used instead of `from`
   ```json
   {"conversations": [{"role": "...", "value": "..."}]}
@@ -455,6 +459,9 @@ dataset_shard_idx:
 # the maximum length of an input to train with, this should typically be less than 2048
 # as most models have a token/context limit of 2048
 sequence_len: 2048
+# pad inputs so each step uses constant sized buffers
+# this will reduce memory fragmentation and may prevent OOMs, by re-using memory more efficiently
+pad_to_sequence_len:
 # max sequence length to concatenate training samples together up to
 # inspired by StackLLaMA. see https://huggingface.co/blog/stackllama#supervised-fine-tuning
 # FutureWarning: This will soon be DEPRECATED
@@ -489,6 +496,12 @@ lora_modules_to_save:
 lora_out_dir:
 lora_fan_in_fan_out: false
 
+# ReLoRA configuration
+# must use either 'lora' or 'qlora' adapter, and does not support fsdp or deepspeed
+relora_steps: # number of steps per ReLoRA restart
+relora_warmup_steps: # number of per-restart warmup steps
+relora_cpu_offload: # true to perform lora weight merges on cpu during restarts, for modest gpu memory savings
+
 # wandb configuration if you're using it
 wandb_mode: # "offline" to save run metadata locally and not sync to the server, "disabled" to turn off wandb
 wandb_project: # your wandb project name
@@ -511,7 +524,7 @@ lr_quadratic_warmup:
 logging_steps:
 save_strategy: # set to `no` to skip checkpoint saves
 save_steps: # leave empty to save at each epoch
-eval_steps:
+eval_steps: # leave empty to eval at each epoch
 save_total_limit: # checkpoints saved at a time
 max_steps:
 
@@ -600,9 +613,6 @@ deepspeed:
 # Path to torch distx for optim 'adamw_anyprecision'
 torchdistx_path:
 
-# Set padding for data collator to 'longest'
-collator_pad_to_longest:
-
 # Set to HF dataset for type: 'completion' for streaming instead of pre-tokenize
 pretraining_dataset:
 
@@ -622,7 +632,7 @@ strict:
 
 Run
 ```bash
-accelerate launch scripts/finetune.py configs/your_config.yml
+accelerate launch scripts/finetune.py your_config.yml
 ```
 
 #### Multi-GPU

@@ -47,4 +47,3 @@ local_rank:
 gradient_checkpointing: true
 fsdp:
 fsdp_config:
-collator_pad_to_longest: true

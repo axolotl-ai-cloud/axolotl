@@ -243,6 +243,18 @@ class MultipackDistributedDataloader:
             len_remaining -= 1
             if not len_remaining:
                 return
+        # yield a no-op for cases where we don't have any data left to pack
+        for i in range(0, len_remaining):
+            yield self.collate_fn(
+                [
+                    {
+                        "input_ids": [0],
+                        "labels": [-100],
+                        "attention_mask": [True],
+                        "position_ids": [0],
+                    }
+                ]
+            )
 
     def _len_est(self):
         lengths_sum = np.sum(self.lengths)

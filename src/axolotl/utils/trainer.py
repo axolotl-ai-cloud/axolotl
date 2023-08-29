@@ -10,20 +10,15 @@ from functools import partial
 from pathlib import Path
 from typing import Optional, Union
 
-import bitsandbytes as bnb
 import numpy as np
 import torch.cuda
-import transformers
 from datasets import Dataset, IterableDataset, set_caching_enabled
-from torch import nn
 from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import DataLoader, DistributedSampler, RandomSampler
 from transformers import EarlyStoppingCallback, Trainer, TrainingArguments
-from transformers.trainer_pt_utils import (
-    SequentialDistributedSampler,
-    get_parameter_names,
-)
+from transformers.trainer_pt_utils import SequentialDistributedSampler
 
+from axolotl.monkeypatch.relora import ReLoRACallback, ReLoRAScheduler
 from axolotl.utils.callbacks import (
     GPUStatsCallback,
     SaveBetterTransformerModelCallback,
@@ -31,10 +26,7 @@ from axolotl.utils.callbacks import (
 )
 from axolotl.utils.collators import DataCollatorForSeq2Seq
 from axolotl.utils.dataloader import MultipackDistributedDataloader
-from axolotl.utils.schedulers import (
-    InterpolatingLogScheduler,
-    get_cosine_schedule_with_quadratic_warmup,
-)
+from axolotl.utils.schedulers import get_cosine_schedule_with_quadratic_warmup
 
 LOG = logging.getLogger("axolotl")
 
@@ -126,6 +118,14 @@ class AxolotlTrainingArguments(TrainingArguments):
     sample_packing_seq_len_multiplier: int = field(
         default=1,
         metadata={"help": "the multiplier for the max len for packed sequences"},
+    )
+    relora_steps: Optional[int] = field(
+        default=None,
+        metadata={"help": "how often to reset for ReLoRA"},
+    )
+    relora_warmup_steps: Optional[int] = field(
+        default=None,
+        metadata={"help": "how many warmup steps to take after reset for ReLoRA"},
     )
 
 
@@ -261,6 +261,39 @@ class OneCycleLRSchedulerTrainer(AxolotlTrainer):
             pct_start=pct_start,
             div_factor=6,
         )
+
+        return self.lr_scheduler
+
+
+class ReLoRATrainer(AxolotlTrainer):
+    """
+    Trainer subclass that uses the OneCycleLR scheduler
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.lr_scheduler = None
+
+    def create_scheduler(
+        self,
+        num_training_steps: int,
+        optimizer: Optional[torch.optim.Optimizer] = None,
+    ):
+        optimizer = self.optimizer if optimizer is None else optimizer
+        lr_scheduler = super().create_scheduler(num_training_steps, optimizer)
+
+        if self.args.relora_steps:
+            warmup_steps = (
+                self.args.relora_warmup_steps if self.args.relora_warmup_steps else 10
+            )
+            self.lr_scheduler = ReLoRAScheduler(
+                optimizer,
+                lr_scheduler,
+                self.args.relora_steps,
+                warmup_steps,
+            )
+        else:
+            self.lr_scheduler = lr_scheduler
 
         return self.lr_scheduler
 
@@ -520,6 +553,8 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
         weight_decay=cfg.weight_decay if cfg.weight_decay is not None else 0.0,
         sample_packing=cfg.sample_packing if cfg.sample_packing else False,
         sample_packing_seq_len_multiplier=cfg.micro_batch_size,
+        relora_steps=cfg.relora_steps,
+        relora_warmup_steps=cfg.relora_warmup_steps,
         **training_arguments_kwargs,
     )
 
@@ -529,69 +564,13 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
         if Path(cfg.torchdistx_path).exists():
             sys.path.append(cfg.torchdistx_path)
             importlib.import_module("torchdistx")
-    if (
-        cfg.optimizer == "adamw_bnb_8bit"
-        and not cfg.gptq
-        and "deepspeed" not in training_arguments_kwargs
-        and not cfg.fsdp
-    ):
-        decay_parameters = get_parameter_names(model, [nn.LayerNorm])
-        decay_parameters = [name for name in decay_parameters if "bias" not in name]
-        optimizer_grouped_parameters = [
-            {
-                "params": [
-                    p
-                    for n, p in model.named_parameters()
-                    if (n in decay_parameters and p.requires_grad)
-                ],
-                "weight_decay": training_args.weight_decay,
-            },
-            {
-                "params": [
-                    p
-                    for n, p in model.named_parameters()
-                    if (n not in decay_parameters and p.requires_grad)
-                ],
-                "weight_decay": 0.0,
-            },
-        ]
-
-        optimizer = bnb.optim.Adam8bit(
-            optimizer_grouped_parameters,
-            betas=(training_args.adam_beta1, training_args.adam_beta2),
-            eps=training_args.adam_epsilon,
-            lr=training_args.learning_rate,
-        )
-
-        if cfg.lr_scheduler == "one_cycle":
-            lr_scheduler_kwargs = (
-                cfg.lr_scheduler_kwargs if cfg.lr_scheduler_kwargs else {}
-            )
-            lr_scheduler = OneCycleLR(
-                optimizer,
-                cfg.learning_rate,
-                total_steps=total_num_steps,
-                epochs=cfg.num_epochs,
-                div_factor=cfg.lr_div_factor if cfg.lr_div_factor else 6,
-                **lr_scheduler_kwargs,
-            )
-        elif cfg.lr_scheduler == "log_sweep":
-            lr_scheduler = InterpolatingLogScheduler(
-                optimizer,
-                cfg.warmup_steps,
-                cfg.log_sweep_min_lr if cfg.log_sweep_min_lr else 1e-10,
-                cfg.log_sweep_max_lr if cfg.log_sweep_max_lr else 10,
-            )
-        else:
-            lr_scheduler = transformers.get_cosine_schedule_with_warmup(
-                optimizer,
-                training_args.warmup_steps,
-                total_num_steps,
-            )
-        trainer_kwargs["optimizers"] = (optimizer, lr_scheduler)
 
     callbacks = []
     callbacks.append(GPUStatsCallback(cfg))
+
+    if cfg.relora_steps:
+        callbacks.append(ReLoRACallback(cfg))
+
     # TODO on_save callback to sync checkpoints to GCP/AWS in background
     if cfg.early_stopping_patience:
         early_stop_cb = EarlyStoppingCallback(
@@ -609,10 +588,12 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
         callbacks.append(SaveBetterTransformerModelCallback)
 
     data_collator_kwargs = {
-        "padding": True,
+        "padding": True,  # True/"longest" is the default
     }
-    if cfg.collator_pad_to_longest:
-        data_collator_kwargs["padding"] = "longest"
+    if cfg.pad_to_sequence_len:
+        data_collator_kwargs["pad_to_multiple_of"] = 64 * math.ceil(
+            cfg.sequence_len / 64
+        )
     else:
         # A100 is best at 64, while others at 8. Let's use the larger so we don't have to check
         # https://docs.nvidia.com/deeplearning/performance/dl-performance-matrix-multiplication/index.html
@@ -636,11 +617,11 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
                 num_proc=32,
             )
 
-    trainer_cls = (
-        OneCycleLRSchedulerTrainer
-        if cfg.lr_scheduler == "one_cycle" and (cfg.fsdp or cfg.adapter == "qlora")
-        else AxolotlTrainer
-    )
+    trainer_cls = AxolotlTrainer
+    if cfg.lr_scheduler == "one_cycle" and (cfg.fsdp or cfg.adapter == "qlora"):
+        trainer_cls = OneCycleLRSchedulerTrainer
+    elif cfg.relora_steps:
+        trainer_cls = ReLoRATrainer
     trainer = trainer_cls(
         model=model,
         train_dataset=train_dataset,

@@ -54,9 +54,10 @@ DEFAULT_DATASET_PREPARED_PATH = "last_run_prepared"
 
 def prepare_dataset(cfg, tokenizer):
     if not cfg.pretraining_dataset:
-        train_dataset, eval_dataset = load_prepare_datasets(
-            tokenizer, cfg, DEFAULT_DATASET_PREPARED_PATH
-        )
+        with zero_first(is_main_process()):
+            train_dataset, eval_dataset = load_prepare_datasets(
+                tokenizer, cfg, DEFAULT_DATASET_PREPARED_PATH
+            )
     else:
         train_dataset = load_pretraining_dataset(
             cfg.pretraining_dataset,
@@ -73,9 +74,10 @@ def prepare_dataset(cfg, tokenizer):
             cfg, train_dataset, eval_dataset
         )
     if cfg.max_steps:
-        total_num_steps = min(
-            calculate_total_num_steps(cfg, train_dataset, tokenizer), cfg.max_steps
-        ) or cfg.max_steps
+        total_num_steps = (
+            min(calculate_total_num_steps(cfg, train_dataset, tokenizer), cfg.max_steps)
+            or cfg.max_steps
+        )
         LOG.info(f"Maximum number of steps set at {total_num_steps}")
     else:
         total_num_steps = calculate_total_num_steps(cfg, train_dataset, tokenizer)
@@ -508,7 +510,9 @@ def load_prepare_datasets(
 
         train_dataset = dataset["train"]
         eval_dataset = dataset["test"]
-        LOG.info(f"split train/eval with {len(train_dataset)}/{len(eval_dataset)} samples")
+        LOG.info(
+            f"split train/eval with {len(train_dataset)}/{len(eval_dataset)} samples"
+        )
     else:
         train_dataset = dataset
         eval_dataset = None
