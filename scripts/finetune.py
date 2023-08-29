@@ -6,11 +6,13 @@ import os
 import random
 import signal
 import sys
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 import fire
 import torch
+import transformers
 import yaml
 
 # add src to the pythonpath so we don't need to pip install this
@@ -22,7 +24,7 @@ from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.data import prepare_dataset
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import is_main_process
-from axolotl.utils.models import load_model, load_tokenizer
+from axolotl.utils.models import load_model, load_model_config, load_tokenizer
 from axolotl.utils.tokenization import check_dataset_labels
 from axolotl.utils.trainer import setup_trainer
 from axolotl.utils.wandb import setup_wandb_env_vars
@@ -35,6 +37,20 @@ configure_logging()
 LOG = logging.getLogger("axolotl.scripts")
 
 os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
+
+
+@dataclass
+class TrainerCliArgs:
+    """
+    dataclass representing the various non-training arguments
+    """
+
+    debug: bool = field(default=False)
+    inference: bool = field(default=False)
+    merge_lora: bool = field(default=False)
+    prepare_ds_only: bool = field(default=False)
+    prompter: Optional[str] = field(default=None)
+    shard: bool = field(default=False)
 
 
 def print_axolotl_text_art():
@@ -61,6 +77,8 @@ def get_multi_line_input() -> Optional[str]:
 
 
 def do_inference(cfg, model, tokenizer, prompter: Optional[str]):
+    if prompter == "None":
+        prompter = None
     default_tokens = {"unk_token": "<unk>", "bos_token": "<s>", "eos_token": "</s>"}
 
     for token, symbol in default_tokens.items():
@@ -158,45 +176,20 @@ def check_not_in(list1: List[str], list2: Union[Dict[str, Any], List[str]]) -> b
 
 
 def train(
-    config: Path = Path("configs/"),
-    prepare_ds_only: bool = False,
-    **kwargs,
+    *,
+    cfg: DictDefault,
+    cli_args: TrainerCliArgs,
 ):
-    print_axolotl_text_art()
-    if Path(config).is_dir():
-        config = choose_config(config)
-
-    # load the config from the yaml file
-    with open(config, encoding="utf-8") as file:
-        cfg: DictDefault = DictDefault(yaml.safe_load(file))
-    # if there are any options passed in the cli, if it is something that seems valid from the yaml,
-    # then overwrite the value
-    cfg_keys = cfg.keys()
-    for k, _ in kwargs.items():
-        # if not strict, allow writing to cfg even if it's not in the yml already
-        if k in cfg_keys or not cfg.strict:
-            # handle booleans
-            if isinstance(cfg[k], bool):
-                cfg[k] = bool(kwargs[k])
-            else:
-                cfg[k] = kwargs[k]
-
-    validate_config(cfg)
-
-    normalize_config(cfg)
-
-    setup_wandb_env_vars(cfg)
-
     # load the tokenizer first
     LOG.info(f"loading tokenizer... {cfg.tokenizer_config or cfg.base_model_config}")
     tokenizer = load_tokenizer(cfg)
 
-    if (
-        check_not_in(["shard", "merge_lora"], kwargs) and not cfg.inference
+    if not (
+        cli_args.shard or cli_args.merge_lora or cli_args.inference
     ):  # don't need to load dataset for these
         train_dataset, eval_dataset, total_num_steps = prepare_dataset(cfg, tokenizer)
 
-    if cfg.debug or "debug" in kwargs:
+    if cli_args.debug or cfg.debug:
         LOG.info("check_dataset_labels...")
         check_dataset_labels(
             train_dataset.select(
@@ -205,17 +198,17 @@ def train(
             tokenizer,
         )
 
-    if prepare_ds_only:
+    if cli_args.prepare_ds_only:
         LOG.info("Finished preparing dataset. Exiting...")
         return
 
     # Load the model and tokenizer
     LOG.info("loading model and (optionally) peft_config...")
-    model, peft_config = load_model(cfg, tokenizer)
+    model, peft_config = load_model(cfg, tokenizer, inference=cli_args.inference)
 
     safe_serialization = cfg.save_safetensors is True
 
-    if "merge_lora" in kwargs and cfg.adapter is not None:
+    if cli_args.merge_lora and cfg.adapter is not None:
         LOG.info("running merge of LoRA with base model")
         model = model.merge_and_unload()
         model.to(dtype=torch.float16)
@@ -229,18 +222,13 @@ def train(
             tokenizer.save_pretrained(str(Path(cfg.output_dir) / "merged"))
         return
 
-    if cfg.inference:
-        LOG.info("calling do_inference function")
-        prompter: Optional[str] = "AlpacaPrompter"
-        if "prompter" in kwargs:
-            if kwargs["prompter"] == "None":
-                prompter = None
-            else:
-                prompter = kwargs["prompter"]
-        do_inference(cfg, model, tokenizer, prompter=prompter)
+    if cli_args.inference:
+        LOG.debug("Running inference on model")
+        do_inference(cfg, model, tokenizer, prompter=cli_args.prompter)
         return
 
-    if "shard" in kwargs:
+    if cli_args.shard:
+        LOG.debug("Re-saving model w/ sharding")
         model.save_pretrained(cfg.output_dir, safe_serialization=safe_serialization)
         return
 
@@ -322,5 +310,51 @@ def train(
         model.save_pretrained(cfg.output_dir, safe_serialization=safe_serialization)
 
 
+def load_cfg(config: Path = Path("examples/"), **kwargs):
+    if Path(config).is_dir():
+        config = choose_config(config)
+
+    # load the config from the yaml file
+    with open(config, encoding="utf-8") as file:
+        cfg: DictDefault = DictDefault(yaml.safe_load(file))
+    # if there are any options passed in the cli, if it is something that seems valid from the yaml,
+    # then overwrite the value
+    cfg_keys = cfg.keys()
+    for k, _ in kwargs.items():
+        # if not strict, allow writing to cfg even if it's not in the yml already
+        if k in cfg_keys or not cfg.strict:
+            # handle booleans
+            if isinstance(cfg[k], bool):
+                cfg[k] = bool(kwargs[k])
+            else:
+                cfg[k] = kwargs[k]
+
+    model_config = load_model_config(cfg)
+
+    # figure out if the model is llama
+    cfg.is_llama_derived_model = (
+        (hasattr(model_config, "model_type") and model_config.model_type == "llama")
+        or cfg.is_llama_derived_model
+        or "llama" in cfg.base_model
+        or (cfg.model_type and "llama" in cfg.model_type.lower())
+    )
+    validate_config(cfg)
+
+    normalize_config(cfg)
+
+    setup_wandb_env_vars(cfg)
+    return cfg
+
+
+def do_train(config: Path = Path("examples/"), **kwargs):
+    print_axolotl_text_art()
+    parsed_cfg = load_cfg(config, **kwargs)
+    parser = transformers.HfArgumentParser((TrainerCliArgs))
+    parsed_cli_args, _ = parser.parse_args_into_dataclasses(
+        return_remaining_strings=True
+    )
+    train(cfg=parsed_cfg, cli_args=parsed_cli_args)
+
+
 if __name__ == "__main__":
-    fire.Fire(train)
+    fire.Fire(do_train)
