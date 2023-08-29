@@ -153,6 +153,10 @@ def choose_config(path: Path):
             "No YAML config files found in the specified directory. Are you using a .yml extension?"
         )
 
+    if len(yaml_files) == 1:
+        print(f"Using default YAML file '{yaml_files[0]}'")
+        return yaml_files[0]
+
     print("Choose a YAML file:")
     for idx, file in enumerate(yaml_files):
         print(f"{idx + 1}. {file}")
