@@ -328,6 +328,15 @@ See [examples](examples) for quick start. It is recommended to duplicate and mod
       name: enron_emails
       type: completion # format from earlier
 
+  # huggingface repo with multiple named configurations/subsets
+  datasets:
+    - path: bigcode/commitpackft
+      name:
+        - ruby
+        - python
+        - typescript
+      type: ... # unimplemented custom format
+
   # local
   datasets:
     - path: data.jsonl # or json

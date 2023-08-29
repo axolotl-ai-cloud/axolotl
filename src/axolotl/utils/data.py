@@ -134,8 +134,17 @@ def load_tokenized_prepared_datasets(
             seed = 42
 
         datasets = []
+
+        def for_d_in_datasets(dataset_configs):
+            for dataset in dataset_configs:
+                if dataset.name and isinstance(dataset.name, list):
+                    for name in dataset.name:
+                        yield DictDefault({**dataset, "name": name})
+                else:
+                    yield dataset
+
         # pylint: disable=invalid-name
-        for d in cfg.datasets:
+        for d in for_d_in_datasets(cfg.datasets):
             ds: Union[Dataset, DatasetDict] = None
             ds_from_hub = False
             try:
