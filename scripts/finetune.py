@@ -16,6 +16,7 @@ import transformers
 import yaml
 
 # add src to the pythonpath so we don't need to pip install this
+from art import text2art
 from optimum.bettertransformer import BetterTransformer
 from transformers import GenerationConfig, TextStreamer
 
@@ -53,16 +54,12 @@ class TrainerCliArgs:
     shard: bool = field(default=False)
 
 
-def print_axolotl_text_art():
-    ascii_art = """
-                           dP            dP   dP
-                           88            88   88
-.d8888b. dP.  .dP .d8888b. 88 .d8888b. d8888P 88
-88'  `88  `8bd8'  88'  `88 88 88'  `88   88   88
-88.  .88  .d88b.  88.  .88 88 88.  .88   88   88
-`88888P8 dP'  `dP `88888P' dP `88888P'   dP   dP
-"""
-
+def print_axolotl_text_art(suffix=None):
+    font = "nancyj"
+    ascii_text = "  axolotl"
+    if suffix:
+        ascii_text += f"  x  {suffix}"
+    ascii_art = text2art(" axolotl", font=font)
     if is_main_process():
         print(ascii_art)
 
