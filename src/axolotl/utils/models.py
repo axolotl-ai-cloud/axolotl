@@ -5,7 +5,6 @@ import logging
 import math
 import os
 from typing import Optional, Tuple  # noqa: F401
-from typing import TYPE_CHECKING, Optional, Tuple  # noqa: F401
 
 import bitsandbytes as bnb
 import torch
