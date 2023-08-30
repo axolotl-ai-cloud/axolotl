@@ -275,7 +275,7 @@ def bench_eval_callback_factory(trainer, tokenizer):
             else:
                 dist.gather_object(local_bench_names, gathered_bench_names, dst=0)
                 bench_loss = sum(loss_bench_ranks) / sum(len_data_loader_ranks)
-                results = {"bench_loss": bench_loss}
+                results = {"eval_bench_loss": bench_loss}
 
                 # Combine results from all GPUs
                 combined_bench_names: Dict[str, Dict[str, List]] = {}
@@ -296,13 +296,13 @@ def bench_eval_callback_factory(trainer, tokenizer):
                     )["accuracy"]
                     if not pd.isna(bench_score):
                         results[
-                            f"bench_{bench_split}_accuracy_{bench_name}"
+                            f"eval_bench_{bench_split}_accuracy_{bench_name}"
                         ] = bench_score
                         bench_scores.append(bench_score)
                     else:
-                        results[f"bench_{bench_split}_accuracy_{bench_name}"] = 0.0
+                        results[f"eval_bench_{bench_split}_accuracy_{bench_name}"] = 0.0
                         bench_scores.append(0.0)
-                results[f"bench_{bench_split}_accuracy"] = np.mean(bench_scores)
+                results[f"eval_bench_{bench_split}_accuracy"] = np.mean(bench_scores)
                 trainer.log(results)
 
     return BenchEvalCallback
