@@ -361,7 +361,7 @@ def add_position_ids(sample):
 
 
 def drop_long_seq(sample, sequence_len=2048):
-    return len(sample["input_ids"]) <= sequence_len
+    return len(sample["input_ids"]) <= sequence_len and len(sample["input_ids"]) > 0
 
 
 @contextmanager
