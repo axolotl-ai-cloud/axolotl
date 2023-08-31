@@ -29,6 +29,7 @@ class TrainerCliArgs:
     prompter: Optional[str] = field(default=None)
     shard: bool = field(default=False)
 
+
 def load_model_and_tokenizer(
     *,
     cfg: DictDefault,
