@@ -247,9 +247,9 @@ def load_datasets(
         check_dataset_labels(
             train_dataset.select(
                 [
-                    random.randrange(0, len(train_dataset) - 1)
+                    random.randrange(0, len(train_dataset) - 1)  # nosec
                     for _ in range(cli_args.debug_num_examples)
-                ]  # nosec
+                ]
             ),
             tokenizer,
             num_examples=cli_args.debug_num_examples,
