@@ -623,7 +623,7 @@ fsdp_config:
 # Deepspeed config path
 deepspeed:
 
-# DDP Arguments
+# Advanced DDP Arguments
 ddp_timeout:
 ddp_bucket_cap_mb:
 ddp_broadcast_buffers:
