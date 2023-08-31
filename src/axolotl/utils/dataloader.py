@@ -3,11 +3,10 @@ import hashlib
 import itertools
 import logging
 import math
-from typing import Any, Callable, List, Union
+from typing import Any, Callable, List
 
 import numba
 import numpy as np
-from torch.utils.data import DistributedSampler, Sampler
 
 LOG = logging.getLogger("axolotl.utils.dataloader")
 
@@ -145,7 +144,6 @@ class MultipackDistributedDataloader:
         collate_fn: Callable,
         seq_max_length: int = 2048,
         batch_size: int = 1,
-        sampler: Union[Sampler, DistributedSampler] = None,
         packing_efficiency_estimate: float = 1.0,
         sample_packing_seq_len_multiplier: int = 1,
         num_replicas: int = 1,
@@ -162,7 +160,6 @@ class MultipackDistributedDataloader:
         assert isinstance(self.lengths, np.ndarray)
         assert batch_size % sample_packing_seq_len_multiplier == 0
         assert batch_size >= sample_packing_seq_len_multiplier
-        self.sampler = sampler
         self.batch_size = batch_size
         self.sample_packing_seq_len_multiplier = sample_packing_seq_len_multiplier
         self.seq_max_length = seq_max_length
@@ -179,11 +176,7 @@ class MultipackDistributedDataloader:
 
     def generate_batches(self, set_stats=False):
         LOG.info("generating packed batches")
-        if self.sampler:
-            indices = [idx for idx in self.sampler]
-        else:
-            indices = range(0, len(self.dataset))
-
+        indices = range(0, len(self.dataset))
         LOG.info(hash_indices(indices))
         lengths = self.lengths[indices]
         lengths_cumsum = np.cumsum(lengths)
@@ -207,10 +200,6 @@ class MultipackDistributedDataloader:
         return batches, totseqs
 
     def __iter__(self):
-        if hasattr(self.sampler, "set_epoch"):
-            new_epoch = self.sampler.epoch + 1
-            self.sampler.set_epoch(new_epoch)
-            LOG.info(f"calling sampler.set_epoch({new_epoch})")
         all_batches, _ = self.generate_batches(set_stats=True)
         features = self.dataset.features.keys()
         len_remaining = self._len_est()
