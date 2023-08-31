@@ -623,6 +623,11 @@ fsdp_config:
 # Deepspeed config path
 deepspeed:
 
+# Advanced DDP Arguments
+ddp_timeout:
+ddp_bucket_cap_mb:
+ddp_broadcast_buffers:
+
 # Path to torch distx for optim 'adamw_anyprecision'
 torchdistx_path:
 
