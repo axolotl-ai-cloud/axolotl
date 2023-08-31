@@ -190,32 +190,36 @@ class AxolotlTrainer(Trainer):
                 return super().create_scheduler(num_training_steps, optimizer)
         return self.lr_scheduler
 
-    def get_train_dataloader(self) -> MultipackDistributedDataloader:
-        return MultipackDistributedDataloader(
-            self.train_dataset,
-            batch_size=self._train_batch_size,
-            seq_max_length=self.args.max_seq_length,
-            collate_fn=self.data_collator,
-            packing_efficiency_estimate=self.args.sample_packing_efficiency,
-            sample_packing_seq_len_multiplier=self.args.sample_packing_seq_len_multiplier,
-            num_replicas=self.args.world_size,
-            rank=self.args.process_index,
-        )
+    def get_train_dataloader(self) -> Union[DataLoader, MultipackDistributedDataloader]:
+        if self.args.sample_packing:
+            return MultipackDistributedDataloader(
+                self.train_dataset,
+                batch_size=self._train_batch_size,
+                seq_max_length=self.args.max_seq_length,
+                collate_fn=self.data_collator,
+                packing_efficiency_estimate=self.args.sample_packing_efficiency,
+                sample_packing_seq_len_multiplier=self.args.sample_packing_seq_len_multiplier,
+                num_replicas=self.args.world_size,
+                rank=self.args.process_index,
+            )
+        return super().get_train_dataloader()
 
     def get_eval_dataloader(
         self, eval_dataset: Optional[Dataset] = None
     ) -> Union[DataLoader, MultipackDistributedDataloader]:
         eval_dataset = eval_dataset if eval_dataset is not None else self.eval_dataset
-        return MultipackDistributedDataloader(
-            eval_dataset,
-            batch_size=self.args.eval_batch_size,
-            seq_max_length=self.args.max_seq_length,
-            collate_fn=self.data_collator,
-            packing_efficiency_estimate=self.args.sample_packing_efficiency,
-            sample_packing_seq_len_multiplier=self.args.eval_batch_size,
-            num_replicas=self.args.world_size,
-            rank=self.args.process_index,
-        )
+        if self.args.sample_packing:
+            return MultipackDistributedDataloader(
+                eval_dataset,
+                batch_size=self.args.eval_batch_size,
+                seq_max_length=self.args.max_seq_length,
+                collate_fn=self.data_collator,
+                packing_efficiency_estimate=self.args.sample_packing_efficiency,
+                sample_packing_seq_len_multiplier=self.args.eval_batch_size,
+                num_replicas=self.args.world_size,
+                rank=self.args.process_index,
+            )
+        return super().get_eval_dataloader(eval_dataset)
 
     def _get_bench_sampler(
         self, bench_dataset: Dataset
