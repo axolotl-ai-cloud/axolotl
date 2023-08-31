@@ -21,6 +21,8 @@ class TrainerCliArgs:
     """
 
     debug: bool = field(default=False)
+    debug_text_only: bool = field(default=False)
+    debug_num_examples: int = field(default=5)
     inference: bool = field(default=False)
     merge_lora: bool = field(default=False)
     prepare_ds_only: bool = field(default=False)
