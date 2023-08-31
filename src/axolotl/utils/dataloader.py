@@ -185,8 +185,7 @@ class MultipackDistributedDataloader:
             lengths=lengths,
             lengths_cumsum=lengths_cumsum,
             rank=self.rank,
-            # c=self.batch_max_length,
-            c=self.seq_max_length * self.sample_packing_seq_len_multiplier,
+            c=self.batch_max_length,
             n=self.num_replicas,
         )
 
