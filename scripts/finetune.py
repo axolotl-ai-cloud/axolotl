@@ -246,9 +246,14 @@ def load_datasets(
         LOG.info("check_dataset_labels...")
         check_dataset_labels(
             train_dataset.select(
-                [random.randrange(0, len(train_dataset) - 1) for _ in range(cli_args.debug_num_examples)]  # nosec
+                [
+                    random.randrange(0, len(train_dataset) - 1)
+                    for _ in range(cli_args.debug_num_examples)
+                ]  # nosec
             ),
-            tokenizer, num_examples=cli_args.debug_num_examples, text_only=cli_args.debug_text_only
+            tokenizer,
+            num_examples=cli_args.debug_num_examples,
+            text_only=cli_args.debug_text_only,
         )
 
     return TrainDatasetMeta(
