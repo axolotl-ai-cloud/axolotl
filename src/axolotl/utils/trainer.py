@@ -579,6 +579,9 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
         if cfg.bench_dataset:
             training_arguments_kwargs["bench_dataset"] = cfg.bench_dataset
 
+    if torch.__version__ >= "2" and sys.platform != "win32":
+        training_arguments_kwargs["torch_compile"] = True
+
     training_args = AxolotlTrainingArguments(  # pylint: disable=unexpected-keyword-arg
         max_steps=total_num_steps if cfg.max_steps else -1,
         max_seq_length=cfg.sequence_len,
