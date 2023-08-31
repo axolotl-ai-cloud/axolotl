@@ -148,7 +148,8 @@ class MultipackDistributedDataloader:
         sampler: Union[Sampler, DistributedSampler] = None,
         packing_efficiency_estimate: float = 1.0,
         sample_packing_seq_len_multiplier: int = 1,
-        device_count: int = 1,
+        num_replicas: int = 1,
+        rank: int = 0,
     ):
         # Dataset
         self.dataset = dataset
@@ -168,14 +169,13 @@ class MultipackDistributedDataloader:
         self.batch_max_length = batch_size * seq_max_length
         self.collate_fn = collate_fn
 
-        self.num_replicas = 1
-        self.rank = 0
+        self.num_replicas = num_replicas
+        self.rank = rank
 
         # statistics
         self.eff_total_used = 0
         self.eff_total_slots = 0
         self.packing_efficiency_estimate = packing_efficiency_estimate or 1.0
-        self.device_count = device_count
 
     def generate_batches(self, set_stats=False):
         LOG.info("generating packed batches")
@@ -258,7 +258,7 @@ class MultipackDistributedDataloader:
 
     def _len_est(self):
         lengths_sum = np.sum(self.lengths)
-        lengths_sum_per_device = lengths_sum // self.device_count
+        lengths_sum_per_device = lengths_sum // self.num_replicas
         LOG.info(
             f"packing_efficiency_estimate: {self.packing_efficiency_estimate} "
             f"total_num_tokens per device: {lengths_sum_per_device}"

@@ -15,14 +15,8 @@ import torch.cuda
 import transformers
 from datasets import Dataset, set_caching_enabled
 from torch.optim.lr_scheduler import OneCycleLR
-from torch.utils.data import (
-    DataLoader,
-    DistributedSampler,
-    RandomSampler,
-    SequentialSampler,
-)
+from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from transformers import EarlyStoppingCallback, Trainer, TrainingArguments
-from transformers.trainer_pt_utils import SequentialDistributedSampler
 
 from axolotl.monkeypatch.relora import ReLoRACallback, ReLoRAScheduler
 from axolotl.utils.callbacks import (
@@ -196,42 +190,19 @@ class AxolotlTrainer(Trainer):
                 return super().create_scheduler(num_training_steps, optimizer)
         return self.lr_scheduler
 
-    def _get_train_sampler(self) -> Optional[torch.utils.data.Sampler]:
-        if self.args.world_size > 1 and self.args.sample_packing:
-            return DistributedSampler(
-                self.train_dataset,
-                num_replicas=self.args.world_size,
-                rank=self.args.process_index,
-                seed=self.args.seed,
-            )
-        return super()._get_train_sampler()
-
-    def _get_eval_sampler(
-        self, eval_dataset: Dataset
-    ) -> Optional[torch.utils.data.Sampler]:
-        if self.args.world_size > 1 and self.args.sample_packing:
-            return SequentialDistributedSampler(
-                eval_dataset,
-                num_replicas=self.args.world_size,
-                rank=self.args.process_index,
-                batch_size=self.args.per_device_eval_batch_size,
-            )
-        return super()._get_eval_sampler(eval_dataset)
-
     def get_train_dataloader(self) -> Union[DataLoader, MultipackDistributedDataloader]:
         if self.args.sample_packing:
             train_sampler = self._get_train_sampler()
-            return self.accelerator.prepare(
-                MultipackDistributedDataloader(
-                    self.train_dataset,
-                    batch_size=self._train_batch_size,
-                    seq_max_length=self.args.max_seq_length,
-                    collate_fn=self.data_collator,
-                    sampler=train_sampler,
-                    packing_efficiency_estimate=self.args.sample_packing_efficiency,
-                    sample_packing_seq_len_multiplier=self.args.sample_packing_seq_len_multiplier,
-                    device_count=int(os.environ.get("WORLD_SIZE", 1)),
-                )
+            return MultipackDistributedDataloader(
+                self.train_dataset,
+                batch_size=self._train_batch_size,
+                seq_max_length=self.args.max_seq_length,
+                collate_fn=self.data_collator,
+                sampler=train_sampler,
+                packing_efficiency_estimate=self.args.sample_packing_efficiency,
+                sample_packing_seq_len_multiplier=self.args.sample_packing_seq_len_multiplier,
+                num_replicas=self.args.world_size,
+                rank=self.args.process_index,
             )
         return super().get_train_dataloader()
 
@@ -244,17 +215,16 @@ class AxolotlTrainer(Trainer):
             )
 
             eval_sampler = self._get_eval_sampler(eval_dataset)
-            return self.accelerator.prepare(
-                MultipackDistributedDataloader(
-                    eval_dataset,
-                    batch_size=self.args.eval_batch_size,
-                    seq_max_length=self.args.max_seq_length,
-                    collate_fn=self.data_collator,
-                    sampler=eval_sampler,
-                    packing_efficiency_estimate=self.args.sample_packing_efficiency,
-                    sample_packing_seq_len_multiplier=self.args.eval_batch_size,
-                    device_count=int(os.environ.get("WORLD_SIZE", 1)),
-                )
+            return MultipackDistributedDataloader(
+                eval_dataset,
+                batch_size=self.args.eval_batch_size,
+                seq_max_length=self.args.max_seq_length,
+                collate_fn=self.data_collator,
+                sampler=eval_sampler,
+                packing_efficiency_estimate=self.args.sample_packing_efficiency,
+                sample_packing_seq_len_multiplier=self.args.eval_batch_size,
+                num_replicas=self.args.world_size,
+                rank=self.args.process_index,
             )
         return super().get_eval_dataloader(eval_dataset)
 
@@ -434,7 +404,7 @@ def calculate_total_num_steps(cfg, train_dataset, tokenizer):
                 sampler=sampler,
                 packing_efficiency_estimate=cfg.sample_packing_eff_est,
                 sample_packing_seq_len_multiplier=cfg.micro_batch_size,
-                device_count=int(os.environ.get("WORLD_SIZE", 1)),
+                num_replicas=int(os.environ.get("WORLD_SIZE", 1)),
             )
             data_loader_len = data_loader.len_w_stats()
             actual_eff = data_loader.efficiency()
