@@ -163,6 +163,8 @@ accelerate launch scripts/finetune.py examples/openllama-3b/lora.yml \
   ```
   </details>
 
+- Windows: Please use WSL or Docker!
+
 ### Dataset
 
 Axolotl supports a variety of dataset formats. Below are some of the formats you can use.
