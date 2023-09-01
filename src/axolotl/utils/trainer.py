@@ -33,6 +33,7 @@ from axolotl.utils.callbacks import (
 )
 from axolotl.utils.collators import DataCollatorForSeq2Seq
 from axolotl.utils.dataloader import MultipackDistributedDataloader
+from axolotl.utils.distributed import is_main_process, zero_first
 from axolotl.utils.schedulers import get_cosine_schedule_with_quadratic_warmup
 
 LOG = logging.getLogger("axolotl")
@@ -375,14 +376,17 @@ def disable_datasets_caching():
 
 def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
     drop_long = partial(drop_long_seq, sequence_len=cfg.sequence_len)
-    train_dataset = train_dataset.filter(drop_long, num_proc=os.cpu_count())
-    if eval_dataset:
-        eval_dataset = eval_dataset.filter(drop_long, num_proc=os.cpu_count())
-
-    if cfg.sample_packing:
-        train_dataset = train_dataset.map(add_position_ids, num_proc=os.cpu_count())
+    with zero_first(is_main_process()):
+        train_dataset = train_dataset.filter(drop_long, num_proc=os.cpu_count())
         if eval_dataset:
-            eval_dataset = eval_dataset.map(add_position_ids, num_proc=os.cpu_count())
+            eval_dataset = eval_dataset.filter(drop_long, num_proc=os.cpu_count())
+
+        if cfg.sample_packing:
+            train_dataset = train_dataset.map(add_position_ids, num_proc=os.cpu_count())
+            if eval_dataset:
+                eval_dataset = eval_dataset.map(
+                    add_position_ids, num_proc=os.cpu_count()
+                )
     return train_dataset, eval_dataset
 
 

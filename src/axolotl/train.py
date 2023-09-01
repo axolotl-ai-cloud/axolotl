@@ -88,6 +88,11 @@ def train(
     if peft_config:
         LOG.info(f"Pre-saving adapter config to {cfg.output_dir}")
         peft_config.save_pretrained(cfg.output_dir)
+    # additionally presave the tokenizer and model configs
+    if not Path(cfg.output_dir).is_dir():
+        os.makedirs(cfg.output_dir, exist_ok=True)
+    tokenizer.save_pretrained(str(Path(cfg.output_dir)))
+    model.config.save_pretrained(str(Path(cfg.output_dir)))
 
     # In case we want to stop early with ctrl+c, this is a nice to have to save the pretrained model
     if cfg.local_rank == 0:
@@ -106,9 +111,6 @@ def train(
     if cfg.group_by_length:
         LOG.info("hang tight... sorting dataset for group_by_length")
 
-    if not Path(cfg.output_dir).is_dir():
-        os.makedirs(cfg.output_dir, exist_ok=True)
-    tokenizer.save_pretrained(cfg.output_dir)
     if cfg.flash_optimum:
         with torch.backends.cuda.sdp_kernel(
             enable_flash=True, enable_math=True, enable_mem_efficient=True
