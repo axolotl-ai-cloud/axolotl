@@ -85,7 +85,11 @@ class PromptTokenizingStrategy(abc.ABC):
             result["input_ids"].append(self.tokenizer.eos_token_id)
             result["attention_mask"].append(1)
 
-        if result["input_ids"][0] == self.tokenizer.bos_token_id and strip_bos_token:
+        if (
+            len(result["input_ids"]) > 0
+            and result["input_ids"][0] == self.tokenizer.bos_token_id
+            and strip_bos_token
+        ):
             result["input_ids"] = result["input_ids"][1:]
             result["attention_mask"] = result["attention_mask"][1:]
 

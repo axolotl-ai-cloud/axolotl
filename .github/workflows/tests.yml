@@ -24,7 +24,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install -e .
+          pip install -e .[peft]
           pip install -r requirements-tests.txt
 
       - name: Run tests

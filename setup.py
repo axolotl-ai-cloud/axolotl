@@ -32,5 +32,8 @@ setup(
         "extras": [
             "deepspeed",
         ],
+        "peft": [
+            "peft @ git+https://github.com/huggingface/peft.git",
+        ],
     },
 )
