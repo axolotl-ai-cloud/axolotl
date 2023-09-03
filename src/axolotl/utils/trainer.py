@@ -30,6 +30,7 @@ from axolotl.utils.callbacks import (
     SaveBetterTransformerModelCallback,
     SavePeftModelCallback,
     bench_eval_callback_factory,
+    log_prediction_callback_factory,
 )
 from axolotl.utils.collators import DataCollatorForSeq2Seq
 from axolotl.utils.dataloader import MultipackDistributedDataloader
@@ -718,6 +719,9 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
         callbacks=callbacks,
         **trainer_kwargs,
     )
+
+    LogPredictionCallback = log_prediction_callback_factory(trainer, tokenizer)
+    trainer.add_callback(LogPredictionCallback(cfg))
 
     if cfg.do_bench_eval:
         trainer.add_callback(bench_eval_callback_factory(trainer, tokenizer))

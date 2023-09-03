@@ -15,6 +15,7 @@ from datasets import load_dataset
 from optimum.bettertransformer import BetterTransformer
 from tqdm import tqdm
 from transformers import (
+    Trainer,
     TrainerCallback,
     TrainerControl,
     TrainerState,
@@ -22,6 +23,7 @@ from transformers import (
 )
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, IntervalStrategy
 
+import wandb
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.distributed import (
     barrier,
@@ -313,3 +315,155 @@ def bench_eval_callback_factory(trainer, tokenizer):
                 trainer.log(results)
 
     return BenchEvalCallback
+
+
+def log_prediction_callback_factory(trainer: Trainer, tokenizer):
+    class LogPredictionCallback(TrainerCallback):
+        """Callback to log prediction values during each evaluation"""
+
+        def __init__(self, cfg):
+            self.cfg = cfg
+            self.logged = False
+
+        def on_evaluate(
+            self,
+            args: AxolotlTrainingArguments,
+            state: TrainerState,
+            control: TrainerControl,
+            # model,
+            # tokenizer,
+            eval_dataloader,
+            **kwargs,
+        ):
+            LOG.info("logging predictions")
+
+            # Initialize an empty wandb.Table
+            table = wandb.Table(columns=["Prediction", "Ground Truth"])
+
+            # Iterate over the evaluation data
+            # for batch in eval_dataloader:
+            #     inputs, labels = batch
+            #     predictions = model(inputs)
+
+            #     # Convert the predictions and labels to a readable format
+            #     predictions = tokenizer.decode(predictions)
+            #     labels = tokenizer.decode(labels)
+
+            #     # Add the data to the wandb.Table
+            #     table.add_data(predictions, labels)
+
+            # Generate fake data for the table
+            # for _ in range(10):
+            #     fake_prediction = "Fake Prediction " + str(_)
+            #     fake_ground_truth = "Fake Ground Truth " + str(_)
+            #     table.add_data(fake_prediction, fake_ground_truth)
+
+            print(dir(eval_dataloader))
+
+            # eval_loop = trainer.prediction_loop if trainer.args.use_legacy_prediction_loop else trainer.evaluation_loop
+            # output = eval_loop(
+            #     eval_dataloader,
+            #     description="Evaluation",
+            #     # No point gathering the predictions if there are no metrics, otherwise we defer to
+            #     # self.args.prediction_loss_only
+            #     # prediction_loss_only=True if trainer.compute_metrics is None else None,
+            #     prediction_loss_only=False,
+            #     # ignore_keys=ignore_keys,
+            #     # metric_key_prefix=metric_key_prefix,
+            # )
+
+            # print(type(output))
+            # print(dir(output))
+            # print(output.predictions)
+            # print(output.label_ids)
+            # print(output.metrics)
+
+            # # Extract the predictions and labels from the output
+            # predictions = output.predictions
+            # labels = output.label_ids
+            # # Convert the predictions and labels to a readable format
+            # predictions = [tokenizer.decode(p) for p in predictions]
+            # labels = [tokenizer.decode(l) for l in labels]
+
+            # # Add the data to the wandb.Table
+            # for prediction, label in zip(predictions, labels):
+            #     table.add_data(prediction, label)
+
+            trainer.model.eval()
+            # preds, refs = [], []
+            # loss_bench = 0
+            predictions = []
+            for batch in tqdm(eval_dataloader, total=len(eval_dataloader)):
+                (loss, logits, labels) = trainer.prediction_step(
+                    trainer.model,
+                    batch,
+                    prediction_loss_only=False,
+                )
+
+                print("logits", logits)
+                print("labels", labels)
+
+                pred_tokens = []
+                for i, logit in enumerate(logits):
+                    print(dir(logit))
+                    print(logit)
+                    print(logit.shape)
+                    # # Convert the logits to probabilities using softmax
+                    # probabilities = torch.softmax(logit, dim=-1)
+
+                    # # Get the predicted token id (the one with the highest probability)
+                    # predicted_token_id = torch.argmax(probabilities).item()
+
+                    # # Decode the predicted token id to get the plaintext
+                    # predicted_token = tokenizer.decode([predicted_token_id])
+
+                    # # Append the predicted token to the preds list
+                    # pred_tokens.append(predicted_token)
+
+                    # Convert the logits to probabilities using softmax
+                    probabilities = torch.softmax(logit, dim=-1)
+
+                    # Get the predicted token ids (the ones with the highest probability)
+                    predicted_token_ids = torch.argmax(probabilities, dim=-1)
+
+                    # Decode the predicted token ids to get the plaintext
+                    predicted_tokens = tokenizer.batch_decode(predicted_token_ids)
+
+                    # Append the predicted tokens to the preds list
+                    pred_tokens.extend(predicted_tokens)
+
+                # add prediction
+                # convert pred_tokens to a single string
+                pred_string = " ".join(pred_tokens)
+                predictions.append(pred_string)
+
+            #     # Convert the predictions and labels to a readable format
+            #     # predictions = [tokenizer.decode(p) for p in logits]
+            #     # labels = [tokenizer.decode(l) for l in labels]
+
+            #     # Add the data to the wandb.Table
+            #     for prediction, label in zip(predictions, labels):
+            #         table.add_data(prediction, label)
+
+            # using trainer.model generate prediction tokens for each input in eval_dataloader
+            # predictions = []
+            # for batch in eval_dataloader:
+            #     inputs, _ = batch
+            #     print(inputs)
+            #     with torch.no_grad():
+            #         outputs = trainer.model(inputs)
+            #     print(outputs)
+            #     next_pred = [tokenizer.decode(p) for p in outputs.logits.argmax(dim=-1).tolist()]
+            #     print(next_pred)
+            #     predictions.extend(next_pred)
+
+            # add the predictions to the table
+            for prediction in predictions:
+                table.add_data(prediction, "Ground Truth")
+
+            # Log the wandb.Table
+            wandb.log({"Predictions vs Ground Truth": table})
+
+            return control
+
+    return LogPredictionCallback
