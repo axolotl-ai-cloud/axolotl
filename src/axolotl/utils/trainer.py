@@ -580,6 +580,9 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
             training_arguments_kwargs["bench_dataset"] = cfg.bench_dataset
 
     if cfg.torch_compile:
+        import torch._dynamo  # pylint: disable=redefined-outer-name
+
+        torch._dynamo.config.suppress_errors = True  # pylint: disable=protected-access
         training_arguments_kwargs["torch_compile"] = cfg.torch_compile
         if cfg.torch_compile_backend:
             training_arguments_kwargs[
