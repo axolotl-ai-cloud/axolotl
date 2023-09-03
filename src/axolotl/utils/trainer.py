@@ -12,9 +12,15 @@ from typing import Optional, Union
 
 import numpy as np
 import torch.cuda
+import transformers
 from datasets import Dataset, IterableDataset, set_caching_enabled
 from torch.optim.lr_scheduler import OneCycleLR
-from torch.utils.data import DataLoader, DistributedSampler, RandomSampler
+from torch.utils.data import (
+    DataLoader,
+    DistributedSampler,
+    RandomSampler,
+    SequentialSampler,
+)
 from transformers import EarlyStoppingCallback, Trainer, TrainingArguments
 from transformers.trainer_pt_utils import SequentialDistributedSampler
 
@@ -23,6 +29,7 @@ from axolotl.utils.callbacks import (
     GPUStatsCallback,
     SaveBetterTransformerModelCallback,
     SavePeftModelCallback,
+    bench_eval_callback_factory,
 )
 from axolotl.utils.collators import DataCollatorForSeq2Seq
 from axolotl.utils.dataloader import MultipackDistributedDataloader
@@ -127,6 +134,27 @@ class AxolotlTrainingArguments(TrainingArguments):
         default=None,
         metadata={"help": "how many warmup steps to take after reset for ReLoRA"},
     )
+    bench_split: Optional[str] = field(
+        default="eval", metadata={"help": "The benchmark split to run on"}
+    )
+    bench_dataset: Optional[str] = field(
+        default="pharaouk/dharma-1/dharma_1_mini.json",
+        metadata={
+            "help": "Benchmark dataset to use: options are `mmlu-zs`, `mmlu-fs`, or the full path to the dataset file"
+        },
+    )
+    do_bench_eval: Optional[bool] = field(
+        default=False, metadata={"help": "Whether to run the Benchmark evaluation."}
+    )
+    max_bench_samples: Optional[int] = field(
+        default=None,
+        metadata={
+            "help": "If set, only evaluates on `max_bench_samples` of the benchmark dataset."
+        },
+    )
+    bench_source_max_len: int = field(
+        default=2048, metadata={"help": "Maximum source sequence length for bench."}
+    )
 
 
 class AxolotlTrainer(Trainer):
@@ -135,6 +163,10 @@ class AxolotlTrainer(Trainer):
     """
 
     args = None  # type: AxolotlTrainingArguments
+
+    def __init__(self, *args, bench_data_collator=None, **kwargs):
+        self.bench_data_collator = bench_data_collator
+        super().__init__(*args, **kwargs)
 
     def create_scheduler(
         self, num_training_steps: int, optimizer: torch.optim.Optimizer = None
@@ -226,6 +258,31 @@ class AxolotlTrainer(Trainer):
             )
         return super().get_eval_dataloader(eval_dataset)
 
+    def _get_bench_sampler(
+        self, bench_dataset: Dataset
+    ) -> Optional[torch.utils.data.Sampler]:
+        if self.args.world_size <= 1:
+            return SequentialSampler(bench_dataset)
+        return None
+
+    def get_bench_dataloader(
+        self,
+        bench_dataset: Dataset,
+    ) -> Union[DataLoader, MultipackDistributedDataloader]:
+        dataloader_params = {
+            "batch_size": self.args.eval_batch_size,
+            "collate_fn": self.bench_data_collator,
+            "num_workers": self.args.dataloader_num_workers,
+            "pin_memory": self.args.dataloader_pin_memory,
+        }
+
+        if not isinstance(bench_dataset, torch.utils.data.IterableDataset):
+            dataloader_params["sampler"] = self._get_bench_sampler(bench_dataset)
+            dataloader_params["drop_last"] = self.args.dataloader_drop_last
+
+        return DataLoader(bench_dataset, **dataloader_params)
+        # return self.accelerator.prepare(DataLoader(bench_dataset, **dataloader_params))
+
     def compute_loss(self, model, inputs, return_outputs=False):
         # use one's weighted cross entropy loss calc
         # if self.args.sample_packing:
@@ -304,7 +361,7 @@ def add_position_ids(sample):
 
 
 def drop_long_seq(sample, sequence_len=2048):
-    return len(sample["input_ids"]) <= sequence_len
+    return len(sample["input_ids"]) <= sequence_len and len(sample["input_ids"]) > 0
 
 
 @contextmanager
@@ -345,6 +402,16 @@ def calculate_total_num_steps(cfg, train_dataset, tokenizer):
             )
             LOG.info(f"📝 UPDATE CONFIG WITH: `total_num_tokens: {total_num_tokens}`")
             cfg.total_num_tokens = total_num_tokens
+
+        if not cfg.total_supervised_tokens:
+            total_supervised_tokens = (
+                train_dataset.data.column("labels")
+                .to_pandas()
+                .apply(lambda x: np.sum(np.array(x) != -100))
+                .sum()
+            )
+            LOG.info(f"`total_supervised_tokens: {total_supervised_tokens}`")
+            cfg.total_supervised_tokens = total_supervised_tokens
 
         if cfg.sample_packing_eff_est:
             total_num_steps = (
@@ -520,6 +587,20 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
             "steps" if cfg.save_steps else "epoch"
         )
 
+    if cfg.do_bench_eval:
+        training_arguments_kwargs["do_bench_eval"] = cfg.do_bench_eval
+        if cfg.bench_dataset:
+            training_arguments_kwargs["bench_dataset"] = cfg.bench_dataset
+
+    # DDP Config
+    if cfg.ddp_timeout:
+        training_arguments_kwargs["ddp_timeout"] = cfg.ddp_timeout
+    # see https://pytorch.org/docs/stable/generated/torch.nn.parallel.DistributedDataParallel.html
+    if cfg.ddp_bucket_cap_mb:
+        training_arguments_kwargs["ddp_bucket_cap_mb"] = cfg.ddp_bucket_cap_mb
+    if cfg.ddp_broadcast_buffers is not None:
+        training_arguments_kwargs["ddp_broadcast_buffers"] = cfg.ddp_broadcast_buffers
+
     training_args = AxolotlTrainingArguments(  # pylint: disable=unexpected-keyword-arg
         max_steps=total_num_steps if cfg.max_steps else -1,
         max_seq_length=cfg.sequence_len,
@@ -632,8 +713,16 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
             return_tensors="pt",
             **data_collator_kwargs,
         ),
+        bench_data_collator=transformers.DataCollatorForSeq2Seq(
+            tokenizer,
+            return_tensors="pt",
+            **data_collator_kwargs,
+        ),
         callbacks=callbacks,
         **trainer_kwargs,
     )
+
+    if cfg.do_bench_eval:
+        trainer.add_callback(bench_eval_callback_factory(trainer, tokenizer))
 
     return trainer
