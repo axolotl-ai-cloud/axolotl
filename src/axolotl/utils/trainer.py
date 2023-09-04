@@ -576,6 +576,10 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
         training_arguments_kwargs["do_bench_eval"] = cfg.do_bench_eval
         if cfg.bench_dataset:
             training_arguments_kwargs["bench_dataset"] = cfg.bench_dataset
+    if cfg.metric_for_best_model:
+        training_arguments_kwargs["metric_for_best_model"] = cfg.metric_for_best_model
+    if cfg.greater_is_better:
+        training_arguments_kwargs["greater_is_better"] = cfg.greater_is_better
 
     # DDP Config
     if cfg.ddp_timeout:
