@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.distributed as dist
+from accelerate.state import PartialState
 from datasets import load_dataset
 from optimum.bettertransformer import BetterTransformer
 from tqdm import tqdm
@@ -24,11 +25,9 @@ from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, IntervalStrategy
 
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.distributed import (
-    barrier,
     gather_scalar_from_all_ranks,
     get_world_size,
     is_main_process,
-    zero_first,
 )
 
 if TYPE_CHECKING:
@@ -36,6 +35,7 @@ if TYPE_CHECKING:
 
 LOG = logging.getLogger("axolotl.callbacks")
 IGNORE_INDEX = -100
+dist_state = PartialState()
 
 
 class SavePeftModelCallback(TrainerCallback):  # pylint: disable=too-few-public-methods
@@ -210,7 +210,7 @@ def bench_eval_callback_factory(trainer, tokenizer):
             "subject": example["subject"],
         }
 
-    with zero_first(is_main_process()):
+    with dist_state.main_process_first:
         bench_dataset = bench_dataset.map(tokenize_evals)
         bench_dataset = bench_dataset.filter(lambda x: x["labels"][-2] in abcd_idx)
 
@@ -258,7 +258,7 @@ def bench_eval_callback_factory(trainer, tokenizer):
             for s, p, r in zip(bench_name, preds, refs):  # pylint: disable=invalid-name
                 bench_names[s]["preds"].append(p)
                 bench_names[s]["refs"].append(r)
-            barrier()
+            dist_state.wait_for_everyone()
             local_bench_names = bench_names
             gathered_bench_names: List[Dict] = [{} for _ in range(get_world_size())]
             # Gather results from all GPUs to GPU 0

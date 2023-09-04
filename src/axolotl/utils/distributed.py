@@ -1,29 +1,27 @@
 """
 utility helpers for distributed checks
 """
-import os
-from contextlib import contextmanager
-
 import torch
 import torch.distributed as dist
-from accelerate import Accelerator
+from accelerate import DistributedType
+from accelerate.state import PartialState
+from accelerate.utils import wait_for_everyone
 
 accelerate = None  # pylint: disable=invalid-name
 
-
-def load_accelerate():
-    global accelerate  # pylint: disable=global-statement
-    accelerate = Accelerator()
+state = PartialState()
 
 
 def is_distributed():
     """
     Check if distributed training is initialized.
     """
-    global accelerate  # pylint: disable=global-statement
-    if not accelerate:
-        accelerate = Accelerator()
-    return dist.is_available() and dist.is_initialized()
+    return state.distributed_type in (
+        DistributedType.MULTI_GPU,
+        DistributedType.MULTI_CPU,
+        DistributedType.DEEPSPEED,
+        DistributedType.FSDP,
+    )
 
 
 def barrier():
@@ -31,34 +29,19 @@ def barrier():
     Acts as a barrier to wait for all processes. This ensures that all processes
     reach the barrier before proceeding further.
     """
-    if is_distributed():
-        dist.barrier()
+    wait_for_everyone()
 
 
-def is_main_process():
+def is_main_process() -> bool:
     """
     Check if the current process is the main process.
     If not in distributed mode, always return True.
     """
-    if not is_distributed():
-        return True
-    return dist.get_rank() == 0
+    return state.is_main_process
 
 
-def get_world_size():
-    return int(os.getenv("WORLD_SIZE", "1"))
-
-
-@contextmanager
-def zero_first(is_main):
-    """
-    runs the wrapped context so that rank 0 runs first before other ranks
-    """
-    if not is_main:  # other ranks wait first
-        barrier()
-    yield
-    if is_main:  # then rank 0 waits after it has run the context
-        barrier()
+def get_world_size() -> int:
+    return state.num_processes
 
 
 def gather_scalar_from_all_ranks(fn, world_size=1):  # pylint: disable=invalid-name
@@ -76,7 +59,7 @@ def gather_scalar_from_all_ranks(fn, world_size=1):  # pylint: disable=invalid-n
     value_scalar = fn()
     value_tensor = torch.tensor(value_scalar, device=dist.get_rank()).float()
 
-    if not is_main_process():
+    if not state.is_main_process:
         dist.gather(value_tensor, dst=0)
     else:
         gathered_tensors = [torch.zeros_like(value_tensor) for _ in range(world_size)]

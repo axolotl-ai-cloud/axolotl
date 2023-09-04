@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Tuple, Union
 
 import torch
+from accelerate.state import PartialState
 from datasets import (
     Dataset,
     DatasetDict,
@@ -42,7 +43,6 @@ from axolotl.prompters import (
     SummarizeTLDRPrompter,
 )
 from axolotl.utils.dict import DictDefault
-from axolotl.utils.distributed import is_main_process, zero_first
 from axolotl.utils.trainer import (
     calculate_total_num_steps,
     process_datasets_for_packing,
@@ -50,11 +50,12 @@ from axolotl.utils.trainer import (
 
 LOG = logging.getLogger("axolotl")
 DEFAULT_DATASET_PREPARED_PATH = "last_run_prepared"
+state = PartialState()
 
 
 def prepare_dataset(cfg, tokenizer):
     if not cfg.pretraining_dataset:
-        with zero_first(is_main_process()):
+        with state.main_process_first():
             train_dataset, eval_dataset = load_prepare_datasets(
                 tokenizer, cfg, DEFAULT_DATASET_PREPARED_PATH
             )
@@ -69,7 +70,7 @@ def prepare_dataset(cfg, tokenizer):
         train_dataset = train_dataset.with_format("torch")
         eval_dataset = None
 
-    with zero_first(is_main_process()):
+    with state.main_process_first():
         train_dataset, eval_dataset = process_datasets_for_packing(
             cfg, train_dataset, eval_dataset
         )
@@ -507,7 +508,7 @@ def load_prepare_datasets(
             to_hash_test.encode(), usedforsecurity=False
         ).hexdigest()
 
-        with zero_first(is_main_process()):
+        with state.main_process_first():
             dataset = dataset.train_test_split(
                 test_size=cfg.val_set_size,
                 shuffle=False,
