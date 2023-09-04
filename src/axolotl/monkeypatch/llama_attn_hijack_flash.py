@@ -74,7 +74,9 @@ def replace_llama_attn_with_flash_attn(packed: Optional[bool] = False):
 
         transformers.models.llama.modeling_llama.LlamaRMSNorm = LlamaRMSNorm
     except ImportError:
-        pass
+        LOG.info(
+            "optimized flash-attention RMSNorm not found (run `pip install git+https://github.com/Dao-AILab/flash-attention.git#egg=dropout_layer_norm&subdirectory=csrc/layer_norm`)"
+        )
 
 
 # Disable the transformation of the attention mask in LlamaModel as the flash attention
