@@ -74,6 +74,8 @@ def gather_scalar_from_all_ranks(fn, world_size=1):  # pylint: disable=invalid-n
     - A list of computed values from all ranks if on the gathering rank, otherwise None.
     """
     value_scalar = fn()
+    if not is_distributed():
+        return [value_scalar]
     value_tensor = torch.tensor(value_scalar, device=dist.get_rank()).float()
 
     if not is_main_process():
