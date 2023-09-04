@@ -7,6 +7,7 @@ import torch
 
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.models import load_model_config
 
 LOG = logging.getLogger("axolotl")
 
@@ -69,6 +70,16 @@ def normalize_config(cfg):
         cfg.torch_dtype = torch.float16
     else:
         cfg.torch_dtype = torch.float32
+
+    model_config = load_model_config(cfg)
+
+    # figure out if the model is llama
+    cfg.is_llama_derived_model = (
+        (hasattr(model_config, "model_type") and model_config.model_type == "llama")
+        or cfg.is_llama_derived_model
+        or "llama" in cfg.base_model
+        or (cfg.model_type and "llama" in cfg.model_type.lower())
+    )
 
     # create bench stats bag
     cfg.stats_bag = DictDefault()
