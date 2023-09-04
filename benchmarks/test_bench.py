@@ -224,6 +224,7 @@ def test_trainer(
         | dtype_cfg
         | attn_cfg
         | DictDefault({"sequence_len": ctx_len})
+        | DictDefault({"pad_to_sequence_len": True})
         #| DictDefault({"max_packed_sequence_len": ctx_len})
         | DictDefault({"sample_packing": True, "sample_packing_eff_est": 0.77, "total_num_tokens": 2135445})
         | DictDefault({"gradient_accumulation_steps": 1})
@@ -231,7 +232,6 @@ def test_trainer(
         | DictDefault({"datasets": [{"path": "LDJnr/Puffin", "type": "sharegpt:chat"}]})
         #| DictDefault({"pretraining_dataset": "togethercomputer/RedPajama-Data-1T-Sample"})
         | DictDefault({"max_steps": 12})
-        # | DictDefault({"val_set_size": 0})
         | DictDefault({"eval_steps": 100})
         | DictDefault({"val_set_size": 0.02})
         # | DictDefault({"eval_steps": 1, "max_steps": 1})
