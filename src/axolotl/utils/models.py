@@ -16,6 +16,7 @@ from transformers import (  # noqa: F401
     AutoModelForCausalLM,
     AutoTokenizer,
     BitsAndBytesConfig,
+    GPTQConfig,
     LlamaConfig,
     PreTrainedModel,
     PreTrainedTokenizerBase,
@@ -159,10 +160,12 @@ def load_model(
         model_kwargs["revision"] = cfg.model_revision
     if cfg.gptq:
         model_config = load_model_config(cfg)
-        if "quantization_config" not in model_config:
+        if hasattr(model_config, "quantization_config"):
             LOG.warning("model config does not contain quantization_config information")
         else:
-            model_kwargs["quantization_config"] = model_config["quantization_config"]
+            model_kwargs["quantization_config"] = GPTQConfig(
+                **model_config.quantization_config
+            )
     if cfg.adapter == "qlora" and cfg.load_in_4bit:
         model_kwargs["quantization_config"] = BitsAndBytesConfig(
             load_in_4bit=True,
