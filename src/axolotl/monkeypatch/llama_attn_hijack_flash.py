@@ -2,7 +2,9 @@
 
 # copied from https://github.com/lm-sys/FastChat/blob/main/fastchat/train/llama_flash_attn_monkey_patch.py
 
+import logging
 import warnings
+from functools import partial
 from typing import List, Optional, Tuple, Union
 
 import torch
@@ -33,6 +35,9 @@ except ImportError:
     )
 
 
+LOG = logging.getLogger("axolotl")
+
+
 def replace_llama_attn_with_flash_attn(packed: Optional[bool] = False):
     transformers.models.llama.modeling_llama.LlamaModel._prepare_decoder_attention_mask = (  # pylint: disable=protected-access
         _prepare_decoder_attention_mask
@@ -42,6 +47,35 @@ def replace_llama_attn_with_flash_attn(packed: Optional[bool] = False):
         transformers.models.llama.modeling_llama.LlamaDecoderLayer = LlamaDecoderLayer
         transformers.models.llama.modeling_llama.LlamaModel.forward = (
             llama_model_forward
+        )
+
+    try:
+        from flash_attn.losses.cross_entropy import CrossEntropyLoss
+
+        LOG.info("patching with flash_attn.losses.cross_entropy")
+        transformers.models.llama.modeling_llama.CrossEntropyLoss = partial(
+            CrossEntropyLoss, inplace_backward=True
+        )
+    except ImportError:
+        LOG.info(
+            "optimized flash-attention CrossEntropyLoss not found (run `pip install 'git+https://github.com/Dao-AILab/flash-attention.git#egg=xentropy_cuda_lib&subdirectory=csrc/xentropy'`)"
+        )
+
+    try:
+        from flash_attn.ops.rms_norm import RMSNorm
+
+        LOG.info("patching with flash_attn.ops.rms_norm")
+
+        class LlamaRMSNorm(RMSNorm):
+            """Patched LLamaRMSNorm"""
+
+            def __init__(self, hidden_size, eps=1e-6):
+                super().__init__(hidden_size, eps=eps)
+
+        transformers.models.llama.modeling_llama.LlamaRMSNorm = LlamaRMSNorm
+    except ImportError:
+        LOG.info(
+            "optimized flash-attention RMSNorm not found (run `pip install 'git+https://github.com/Dao-AILab/flash-attention.git#egg=dropout_layer_norm&subdirectory=csrc/layer_norm'`)"
         )
 
 
