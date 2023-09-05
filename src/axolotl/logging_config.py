@@ -23,6 +23,7 @@ class ColorfulFormatter(Formatter):
     }
 
     def format(self, record):
+        record.rank = int(os.getenv("LOCAL_RANK", "0"))
         log_message = super().format(record)
         return self.COLORS.get(record.levelname, "") + log_message + Fore.RESET
 
@@ -35,7 +36,7 @@ DEFAULT_LOGGING_CONFIG: Dict[str, Any] = {
         },
         "colorful": {
             "()": ColorfulFormatter,
-            "format": "[%(asctime)s] [%(levelname)s] [%(name)s.%(funcName)s:%(lineno)d] [PID:%(process)d] %(message)s",
+            "format": "[%(asctime)s] [%(levelname)s] [%(name)s.%(funcName)s:%(lineno)d] [PID:%(process)d] [RANK:%(rank)d] %(message)s",
         },
     },
     "filters": {},
