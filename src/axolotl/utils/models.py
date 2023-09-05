@@ -4,19 +4,19 @@
 import logging
 import math
 import os
-from pathlib import Path
 from typing import Optional, Tuple  # noqa: F401
 
 import bitsandbytes as bnb
 import torch
 import transformers
 from optimum.bettertransformer import BetterTransformer
-from peft import PeftConfig
+from peft import PeftConfig, prepare_model_for_kbit_training
 from transformers import (  # noqa: F401
     AutoConfig,
     AutoModelForCausalLM,
     AutoTokenizer,
     BitsAndBytesConfig,
+    GPTQConfig,
     LlamaConfig,
     PreTrainedModel,
     PreTrainedTokenizerBase,
@@ -155,32 +155,17 @@ def load_model(
         LOG.info("patching _expand_mask")
         hijack_expand_mask()
 
-    try:
-        if cfg.gptq:
-            from alpaca_lora_4bit.monkeypatch.peft_tuners_lora_monkey_patch import (
-                replace_peft_model_with_int4_lora_model,
-            )
-
-            replace_peft_model_with_int4_lora_model()
-    except Exception as err:
-        LOG.exception(err)
-        raise err
-
-    if not cfg.gptq and (
-        (cfg.adapter == "lora" and load_in_8bit)
-        or (cfg.adapter == "qlora" and cfg.load_in_4bit)
-    ):
-        try:
-            from peft import prepare_model_for_kbit_training
-        except ImportError:
-            # For backward compatibility
-            from peft import (
-                prepare_model_for_int8_training as prepare_model_for_kbit_training,
-            )
-
     model_kwargs = {}
     if cfg.model_revision:
         model_kwargs["revision"] = cfg.model_revision
+    if cfg.gptq:
+        model_config = load_model_config(cfg)
+        if hasattr(model_config, "quantization_config"):
+            LOG.warning("model config does not contain quantization_config information")
+        else:
+            model_kwargs["quantization_config"] = GPTQConfig(
+                **model_config.quantization_config
+            )
     if cfg.adapter == "qlora" and cfg.load_in_4bit:
         model_kwargs["quantization_config"] = BitsAndBytesConfig(
             load_in_4bit=True,
@@ -191,45 +176,7 @@ def load_model(
             bnb_4bit_quant_type="nf4",
         )
     try:
-        if cfg.gptq and cfg.is_llama_derived_model:
-            from alpaca_lora_4bit.autograd_4bit import load_llama_model_4bit_low_ram
-            from huggingface_hub import snapshot_download
-
-            try:
-                snapshot_download_kwargs = {}
-                if cfg.base_model_ignore_patterns:
-                    snapshot_download_kwargs[
-                        "ignore_patterns"
-                    ] = cfg.base_model_ignore_patterns
-                cache_model_path = Path(
-                    snapshot_download(base_model, **snapshot_download_kwargs)
-                )
-                files = (
-                    list(cache_model_path.glob("*.pt"))
-                    + list(cache_model_path.glob("*.safetensors"))
-                    + list(cache_model_path.glob("*.bin"))
-                )
-                if len(files) > 0:
-                    model_path = str(files[0])
-                else:
-                    LOG.warning(
-                        "unable to find a cached model file, this will likely fail..."
-                    )
-                    model_path = str(cache_model_path)
-            except Exception:  # pylint: disable=broad-exception-caught
-                model_path = cfg.base_model
-            model, _ = load_llama_model_4bit_low_ram(
-                base_model_config if base_model_config else base_model,
-                model_path,
-                device_map=cfg.device_map,
-                half=cfg.fp16,
-                groupsize=cfg.gptq_groupsize if cfg.gptq_groupsize else -1,
-                is_v1_model=cfg.gptq_model_v1
-                if cfg.gptq_model_v1 is not None
-                else True,
-            )
-            load_in_8bit = False
-        elif cfg.is_llama_derived_model and not cfg.trust_remote_code:
+        if cfg.is_llama_derived_model and not cfg.trust_remote_code and not cfg.gptq:
             from transformers import LlamaForCausalLM
 
             config_kwargs = {}
@@ -275,15 +222,24 @@ def load_model(
         #     )
         #     model.train() # sets to train instead of eval mode
         elif model_type and not cfg.trust_remote_code:
-            model = getattr(transformers, model_type).from_pretrained(
-                base_model,
-                device_map=cfg.device_map,
-                load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
-                load_in_4bit=cfg.load_in_4bit and cfg.adapter is not None,
-                torch_dtype=cfg.torch_dtype,
-                trust_remote_code=cfg.trust_remote_code or False,
-                **model_kwargs,
-            )
+            if cfg.gptq:
+                model = AutoModelForCausalLM.from_pretrained(
+                    base_model,
+                    device_map=cfg.device_map,
+                    torch_dtype=cfg.torch_dtype,
+                    trust_remote_code=cfg.trust_remote_code or False,
+                    **model_kwargs,
+                )
+            else:
+                model = getattr(transformers, model_type).from_pretrained(
+                    base_model,
+                    device_map=cfg.device_map,
+                    load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
+                    load_in_4bit=cfg.load_in_4bit and cfg.adapter is not None,
+                    torch_dtype=cfg.torch_dtype,
+                    trust_remote_code=cfg.trust_remote_code or False,
+                    **model_kwargs,
+                )
         else:
             config = AutoConfig.from_pretrained(
                 base_model,
@@ -359,11 +315,12 @@ def load_model(
                 module.to(torch.float32)
 
     needs_fa2_dtype = cfg.adapter or cfg.fsdp
-    if not cfg.gptq and (
-        (cfg.adapter == "lora" and load_in_8bit)
-        or (cfg.adapter == "qlora" and cfg.load_in_4bit)
+    if (cfg.adapter == "lora" and load_in_8bit) or (
+        cfg.adapter == "qlora" and cfg.load_in_4bit
     ):
         LOG.info("converting PEFT model w/ prepare_model_for_kbit_training")
+        if cfg.gradient_checkpointing:
+            model.gradient_checkpointing_enable()
         model = prepare_model_for_kbit_training(
             model, use_gradient_checkpointing=cfg.gradient_checkpointing
         )
@@ -385,22 +342,10 @@ def load_model(
     if cfg.ddp and not load_in_8bit:
         model.to(f"cuda:{cfg.local_rank}")
 
-    if cfg.gptq:
-        # Scales to half
-        LOG.info("Fitting 4bit scales and zeros to half")
-        for _, module in model.named_modules():
-            if "Autograd4bitQuantLinear" in str(type(module)) or "Linear4bitLt" in str(
-                type(module)
-            ):
-                if hasattr(module, "is_v1_model") and module.is_v1_model:
-                    module.zeros = module.zeros.half()
-                module.scales = module.scales.half()
-                module.bias = module.bias.half()
-
     if (
         torch.cuda.device_count() > 1
         and int(os.getenv("WORLD_SIZE", "1")) > 1
-        and (cfg.gptq or cfg.load_in_4bit)
+        and (cfg.load_in_4bit)
     ):
         # llama is PROBABLY model parallelizable, but the default isn't that it is
         # so let's only set it for the 4bit, see

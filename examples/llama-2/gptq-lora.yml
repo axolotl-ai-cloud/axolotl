@@ -1,0 +1,76 @@
+base_model: TheBloke/Llama-2-7B-GPTQ
+base_model_config: TheBloke/Llama-2-7B-GPTQ
+is_llama_derived_model: false
+gptq: true
+gptq_bits: 4
+model_type: AutoModelForCausalLM
+tokenizer_type: LlamaTokenizer
+tokenizer_use_fast: true
+tokenizer_legacy: true
+load_in_8bit: false
+load_in_4bit: false
+strict: false
+push_dataset_to_hub:
+hf_use_auth_token: true
+datasets:
+  - path: mhenrichsen/alpaca_2k_test
+    type: alpaca
+dataset_prepared_path: last_run_prepared
+val_set_size: 0.01
+adapter: lora
+lora_model_dir:
+sequence_len: 4096
+sample_packing:
+lora_r: 8
+lora_alpha: 32
+lora_dropout: 0.05
+lora_target_modules:
+  - k_proj
+  - o_proj
+  - q_proj
+  - v_proj
+lora_target_linear:
+lora_fan_in_fan_out:
+wandb_project:
+wandb_watch:
+wandb_run_id:
+wandb_log_model:
+output_dir: ./model-out
+gradient_accumulation_steps: 1
+micro_batch_size: 1
+num_epochs: 3
+optimizer: adamw_torch
+adam_beta2: 0.95
+adam_eps: 0.00001
+max_grad_norm: 1.0
+torchdistx_path:
+lr_scheduler: cosine
+lr_quadratic_warmup: true
+learning_rate: 0.000017
+train_on_inputs: false
+group_by_length: false
+bf16: false
+fp16: false
+float16: true
+tf32: true
+gradient_checkpointing: true
+early_stopping_patience:
+resume_from_checkpoint:
+local_rank:
+logging_steps: 1
+xformers_attention:
+flash_attention:
+sdp_attention:
+flash_optimum:
+gptq_groupsize:
+gptq_model_v1:
+warmup_steps: 100
+eval_steps:
+save_steps:
+debug:
+deepspeed:
+weight_decay: 0.1
+special_tokens:
+  bos_token: "<s>"
+  eos_token: "</s>"
+  unk_token: "<unk>"

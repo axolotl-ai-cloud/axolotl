@@ -2,15 +2,27 @@
 
 from setuptools import find_packages, setup
 
-install_requires = []
-with open("./requirements.txt", encoding="utf-8") as requirements_file:
-    # don't include peft yet until we check the int4
-    # need to manually install peft for now...
-    reqs = [r.strip() for r in requirements_file.readlines() if "peft" not in r]
-    reqs = [r for r in reqs if "flash-attn" not in r]
-    reqs = [r for r in reqs if r and r[0] != "#"]
-    for r in reqs:
-        install_requires.append(r)
+
+def parse_requirements():
+    _install_requires = []
+    _dependency_links = []
+    with open("./requirements.txt", encoding="utf-8") as requirements_file:
+        lines = [
+            r.strip() for r in requirements_file.readlines() if "auto-gptq" not in r
+        ]
+        for line in lines:
+            if line.startswith("--extra-index-url"):
+                # Handle custom index URLs
+                _, url = line.split()
+                _dependency_links.append(url)
+            elif "flash-attn" not in line and line and line[0] != "#":
+                # Handle standard packages
+                _install_requires.append(line)
+    return _install_requires, _dependency_links
+
+
+install_requires, dependency_links = parse_requirements()
+
 
 setup(
     name="axolotl",
@@ -19,21 +31,16 @@ setup(
     package_dir={"": "src"},
     packages=find_packages(),
     install_requires=install_requires,
+    dependency_links=dependency_links,
     extras_require={
         "gptq": [
-            "alpaca_lora_4bit @ git+https://github.com/winglian/alpaca_lora_4bit.git@setup_pip",
-        ],
-        "gptq_triton": [
-            "alpaca_lora_4bit[triton] @ git+https://github.com/winglian/alpaca_lora_4bit.git@setup_pip",
+            "auto-gptq",
         ],
         "flash-attn": [
             "flash-attn==2.0.8",
         ],
         "extras": [
             "deepspeed",
-        ],
-        "peft": [
-            "peft @ git+https://github.com/huggingface/peft.git",
         ],
     },
 )

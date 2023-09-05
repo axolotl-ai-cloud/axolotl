@@ -11,14 +11,13 @@ RUN apt-get update && \
 
 WORKDIR /workspace
 
-RUN pip3 install "peft @ git+https://github.com/huggingface/peft.git@main"
 RUN git clone --depth=1 https://github.com/OpenAccess-AI-Collective/axolotl.git
 # If AXOLOTL_EXTRAS is set, append it in brackets
 RUN cd axolotl && \
     if [ "$AXOLOTL_EXTRAS" != "" ] ; then \
-        pip install -e .[flash-attn,$AXOLOTL_EXTRAS]; \
+        pip install -e .[flash-attn,gptq,$AXOLOTL_EXTRAS]; \
     else \
-        pip install -e .[flash-attn]; \
+        pip install -e .[flash-attn,gptq]; \
     fi
 
 # fix so that git fetch/pull from remote works
