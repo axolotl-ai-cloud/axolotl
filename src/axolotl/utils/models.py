@@ -4,6 +4,7 @@
 import logging
 import math
 import os
+import time
 from pathlib import Path
 from typing import Optional, Tuple  # noqa: F401
 
@@ -101,6 +102,7 @@ def load_model(
     base_model = cfg.base_model
     base_model_config = cfg.base_model_config
     model_type = cfg.model_type
+    start = time.time()
 
     # TODO refactor as a kwarg
     load_in_8bit = cfg.load_in_8bit
@@ -348,7 +350,12 @@ def load_model(
         model.config.max_position_embeddings = cfg.sequence_len
 
     if model.device.type == "cuda":
-        log_gpu_memory_usage(LOG, "after model load", model.device)
+        mem, _, _ = log_gpu_memory_usage(LOG, "after model load", model.device)
+        cfg.stats_bag.vram_model = mem - cfg.stats_bag.vram_baseline
+        cfg.stats_bag.vram_last = mem
+
+    cfg.stats_bag.time_model = time.time() - start
+    start = time.time()
 
     # make sure these are fp32 per Ramesh et al. (2021)
     for name, module in model.named_modules():
@@ -420,7 +427,10 @@ def load_model(
         model = BetterTransformer.transform(model)
 
     if cfg.adapter is not None:
-        log_gpu_memory_usage(LOG, "after adapters", model.device)
+        mem, _, _ = log_gpu_memory_usage(LOG, "after adapters", model.device)
+        cfg.stats_bag.vram_adapter = mem - cfg.stats_bag.vram_last
+        cfg.stats_bag.vram_last = mem
+        cfg.stats_bag.time_adapter = time.time() - start
 
     # TODO resume_from_checkpoint handling
     return model, lora_config

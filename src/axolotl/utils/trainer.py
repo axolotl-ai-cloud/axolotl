@@ -13,7 +13,7 @@ from typing import Optional, Union
 import numpy as np
 import torch.cuda
 import transformers
-from datasets import Dataset, set_caching_enabled
+from datasets import Dataset, IterableDataset, set_caching_enabled
 from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import (
     DataLoader,
@@ -387,6 +387,8 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
 
 
 def calculate_total_num_steps(cfg, train_dataset, tokenizer):
+    if isinstance(train_dataset, IterableDataset):
+        return 0
     if cfg.sample_packing:
         # we have to drop anything longer then sequence len otherwise
         # flash attention with position ids fails
@@ -501,6 +503,7 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
     )
 
     training_arguments_kwargs = {}
+    training_arguments_kwargs["skip_memory_metrics"] = False
     if cfg.bf16 == "full":
         training_arguments_kwargs["bf16_full_eval"] = True
     else:

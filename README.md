@@ -793,4 +793,11 @@ pre-commit install
 
 # test
 pytest tests/
+
+# benchmark
+pip3 install -r requirements-bench.txt
+pytest benchmarks/ --co
+pytest benchmarks/ --log-cli-level INFO -sk 'test_trainer and 4bit and flash and 2048'
+pytest benchmarks/ --log-cli-level INFO -sk 'test_inference and bf16 and flash and 2048'
+cat benchmarks/logs/test_trainer*.jsonl
 ```

@@ -6,6 +6,7 @@ import os
 import torch
 
 from axolotl.utils.bench import log_gpu_memory_usage
+from axolotl.utils.dict import DictDefault
 from axolotl.utils.models import load_model_config
 
 LOG = logging.getLogger("axolotl")
@@ -80,7 +81,11 @@ def normalize_config(cfg):
         or (cfg.model_type and "llama" in cfg.model_type.lower())
     )
 
-    log_gpu_memory_usage(LOG, "baseline", cfg.device)
+    # create bench stats bag
+    cfg.stats_bag = DictDefault()
+    cfg.stats_bag.vram_baseline, _, _ = log_gpu_memory_usage(
+        LOG, "baseline", cfg.device
+    )
 
 
 def validate_config(cfg):

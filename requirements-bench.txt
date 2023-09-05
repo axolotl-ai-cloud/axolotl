@@ -1,0 +1,7 @@
+pytorch_memlab
+pytest-harvest
+pytest-cases
+#pytest-benchmark
+#pytest-profiling
+pytest-line-profiler
+tabulate
