@@ -309,10 +309,6 @@ class ShareGPTPrompter:  # pylint: disable=too-few-public-methods
         )
 
     def build_prompt(self, source) -> Generator[str, None, None]:
-        # ignore the system prompt if provided
-        if source[0]["from"] == "system":
-            source.pop(0)
-
         if len(source) < 2:
             # If there isn't a back and forth conversation, ignore it
             # also happens on the data splitting leaving empty conversations
@@ -321,6 +317,12 @@ class ShareGPTPrompter:  # pylint: disable=too-few-public-methods
             )
 
         conv = self._conversation.copy()
+
+        # Add the conversation system prompt if provided, otherwise use the default one
+        if source[0]["from"] == "system":
+            conv.system = source[0]["value"]
+            source.pop(0)
+
         roles = {"human": conv.roles[0], "gpt": conv.roles[1]}
 
         try:
