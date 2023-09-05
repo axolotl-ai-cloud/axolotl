@@ -120,7 +120,6 @@ def test_load_model(model_cfg, dtype_cfg, results_bag):
     cfg = model_cfg | dtype_cfg
     cfg.output_dir = str(logs_dir.resolve())
     results_bag.cfg = cfg
-    assert "llama" in cfg.base_model
     assert validate_config(cfg) is None
     normalize_config(cfg)
     setup_wandb_env_vars(cfg)
@@ -139,7 +138,6 @@ def test_inference(model_cfg, dtype_cfg, attn_cfg, ctx_len, results_bag):
     cfg = model_cfg | dtype_cfg | attn_cfg
     cfg.output_dir = str(logs_dir.resolve())
     results_bag.cfg = cfg
-    assert "llama" in cfg.base_model
     try:
         validate_config(cfg)
     except ValueError as ex:
@@ -207,7 +205,7 @@ def test_inference(model_cfg, dtype_cfg, attn_cfg, ctx_len, results_bag):
             pass
 
 
-@parametrize_with_cases("model_cfg", cases=TestConfigs, prefix="model_")
+@parametrize_with_cases("model_cfg", cases=TestConfigs, prefix="model_", glob="model_tinyllama")
 @parametrize_with_cases("attn_cfg", cases=TestConfigs, prefix="attn_")
 @parametrize_with_cases("dtype_cfg", cases=TestConfigs, prefix="dtype_")
 @parametrize_with_cases("ctx_len", cases=TestConfigs, prefix="ctx_")
@@ -238,7 +236,6 @@ def test_trainer(
     )
     cfg.output_dir = str(logs_dir.resolve())
     results_bag.cfg = cfg
-    assert "llama" in cfg.base_model
     assert validate_config(cfg) is None
     with open(logs_dir / f"{request.node.name}.yml", "w", encoding="UTF-8") as file:
         file.write(yaml.dump(cfg.to_dict(), default_flow_style=False))

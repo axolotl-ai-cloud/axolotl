@@ -6,6 +6,24 @@ from axolotl.utils.dict import DictDefault
 
 
 class TestConfigs:  # pylint: disable=missing-class-docstring disable=too-many-public-methods
+    def model_tinyllama(self):
+        return (
+            DictDefault(
+                {
+                    "base_model": "PY007/TinyLlama-1.1B-step-50K-105b",
+                    "base_model_config": "PY007/TinyLlama-1.1B-step-50K-105b",
+                    "model_type": "LlamaForCausalLM",
+                    "sequence_len": 4096,
+                    "special_tokens": {
+                        "bos_token": "<s>",
+                        "eos_token": "</s>",
+                        "unk_token": "<unk>",
+                    },
+                }
+            )
+            | self.train_simple()
+        )
+
     def model_llama2_7b(self):
         return (
             DictDefault(
