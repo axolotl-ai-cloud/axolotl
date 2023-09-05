@@ -720,8 +720,9 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
         **trainer_kwargs,
     )
 
-    LogPredictionCallback = log_prediction_callback_factory(trainer, tokenizer)
-    trainer.add_callback(LogPredictionCallback(cfg))
+    if cfg.use_wandb:
+        LogPredictionCallback = log_prediction_callback_factory(trainer, tokenizer)
+        trainer.add_callback(LogPredictionCallback(cfg))
 
     if cfg.do_bench_eval:
         trainer.add_callback(bench_eval_callback_factory(trainer, tokenizer))
