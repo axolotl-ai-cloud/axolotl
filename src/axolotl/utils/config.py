@@ -97,6 +97,11 @@ def validate_config(cfg):
             )
         )
 
+    if cfg.sample_packing and not cfg.pad_to_sequence_len:
+        LOG.warning(
+            "`pad_to_sequence_len: true` is recommended when using sample_packing"
+        )
+
     if cfg.gradient_accumulation_steps and cfg.batch_size:
         raise ValueError(
             "please set only one of gradient_accumulation_steps or batch_size"

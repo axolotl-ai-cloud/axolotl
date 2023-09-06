@@ -20,6 +20,7 @@ lora_model_dir:
 
 sequence_len: 100000
 sample_packing: true
+pad_to_sequence_len: true
 
 lora_r: 32
 lora_alpha: 16
