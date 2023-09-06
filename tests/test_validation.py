@@ -330,6 +330,20 @@ class ValidationTest(unittest.TestCase):
 
         cfg = DictDefault(
             {
+                "sample_packing": True,
+                "pad_to_sequence_len": None,
+            }
+        )
+        with self._caplog.at_level(logging.WARNING):
+            validate_config(cfg)
+            assert any(
+                "`pad_to_sequence_len: true` is recommended when using sample_packing"
+                in record.message
+                for record in self._caplog.records
+            )
+
+        cfg = DictDefault(
+            {
                 "max_packed_sequence_len": 2048,
                 "sample_packing": True,
             }
