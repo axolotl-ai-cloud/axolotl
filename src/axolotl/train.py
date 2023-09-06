@@ -82,7 +82,10 @@ def train(
 
     if torch.__version__ >= "2" and sys.platform != "win32":
         LOG.info("Compiling torch model")
-        model = torch.compile(model)
+        try:
+            model = torch.compile(model)
+        except RuntimeError as ex:
+            LOG.warning("An error was raised by PyTorch when performing compile operation. This warning can be ignored if model compilation is not required: '%s'", str(ex))
 
     # go ahead and presave, so we have the adapter config available to inspect
     if peft_config:
