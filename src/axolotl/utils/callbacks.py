@@ -20,6 +20,7 @@ from transformers import (
     TrainerControl,
     TrainerState,
     TrainingArguments,
+    GenerationConfig,
 )
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, IntervalStrategy
 
@@ -322,6 +323,8 @@ def bench_eval_callback_factory(trainer, tokenizer):
 
 
 def log_prediction_callback_factory(trainer: Trainer, tokenizer):
+    LOG.info("log_prediction_callback_factory")
+
     class LogPredictionCallback(TrainerCallback):
         """Callback to log prediction values during each evaluation"""
 
@@ -334,17 +337,16 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer):
             args: AxolotlTrainingArguments,
             state: TrainerState,
             control: TrainerControl,
-            # model,
+            model,
             # tokenizer,
             train_dataloader,
             eval_dataloader,
             **kwargs,
         ):
+            LOG.info("=" * 80)
             LOG.info("logging predictions")
 
-
             trainer.model.eval()
-
 
             def logits_to_tokens(logits) -> str:
                 probabilities = torch.softmax(logits, dim=-1)
@@ -456,17 +458,48 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer):
                         # Generate new prediction with trainer.model which is a transformer model
                         with torch.no_grad():
                             # new_prediction = trainer.model(batch['input_ids'][i].unsqueeze(0))
-                            new_prediction = trainer.model(prompt_token_ids.unsqueeze(0))
+                            # new_prediction = trainer.model(prompt_token_ids.unsqueeze(0))
+                            # new_prediction = trainer.model(prompt_token_ids.unsqueeze(0))
 
-                        # Convert the logits to probabilities using softmax
-                        new_probabilities = torch.softmax(new_prediction.logits, dim=-1)
-                        
-                        # Get the predicted token ids (the ones with the highest probability)
-                        new_predicted_token_ids = torch.argmax(new_probabilities, dim=-1)
-                        
-                        # Decode the predicted token ids to get the plaintext
-                        new_predicted_tokens = tokenizer.decode(new_predicted_token_ids[0])
-                        
+                            generation_config = GenerationConfig(
+                                repetition_penalty=1.1,
+                                # max_new_tokens=1024,
+                                # max_new_tokens=256,
+                                max_new_tokens=128,
+                                temperature=0.9,
+                                # top_p=0.95,
+                                # top_k=40,
+                                bos_token_id=tokenizer.bos_token_id,
+                                eos_token_id=tokenizer.eos_token_id,
+                                pad_token_id=tokenizer.pad_token_id,
+                                # do_sample=True,
+                                do_sample=False,
+                                use_cache=True,
+                                return_dict_in_generate=True,
+                                output_attentions=False,
+                                output_hidden_states=False,
+                                output_scores=False,
+                            )
+                            # streamer = TextStreamer(tokenizer)
+                            new_prediction = trainer.model.generate(
+                                # inputs=batch["input_ids"].to(cfg.device),
+                                inputs=prompt_token_ids.unsqueeze(0),
+                                generation_config=generation_config,
+                                # streamer=streamer,
+                            )
+
+                        # # Convert the logits to probabilities using softmax
+                        # new_probabilities = torch.softmax(new_prediction.logits, dim=-1)
+
+                        # # Get the predicted token ids (the ones with the highest probability)
+                        # new_predicted_token_ids = torch.argmax(new_probabilities, dim=-1)
+
+                        # # Decode the predicted token ids to get the plaintext
+                        # new_predicted_tokens = tokenizer.decode(new_predicted_token_ids[0])
+
+                        new_predicted_tokens = tokenizer.decode(new_prediction["sequences"].cpu().tolist()[0])
+
+
                         # print("=" * 80)
                         # print("Prompt:")
                         # print(prompt_text)

@@ -1,9 +1,10 @@
 # version: '3.8'
 services:
   axolotl:
-    build:
-      context: .
-      dockerfile: ./docker/Dockerfile
+    # build:
+    #   context: .
+    #   dockerfile: ./docker/Dockerfile
+    image: winglian/axolotl:main-py3.10-cu118-2.0.1
     volumes:
       - .:/workspace/axolotl
       - ~/.cache/huggingface/:/root/.cache/huggingface/
@@ -15,6 +16,6 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              # count: 1
+              count: 1
               capabilities: [gpu]
     command: tail -f /dev/null
