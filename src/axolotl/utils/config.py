@@ -24,10 +24,10 @@ def choose_device(cfg):
         except Exception:  # pylint: disable=broad-exception-caught
             return "cpu"
 
+    cfg.device = get_device()
     if cfg.world_size == 1:
         cfg.device_map = "auto"
     else:
-        cfg.device = get_device()
         if cfg.device.startswith("cuda"):
             cfg.device_map = {"": cfg.local_rank}
         else:
