@@ -20,6 +20,14 @@ To force NCCL to use NVLink, simply set this in the environment:
 export NCCL_P2P_LEVEL=NVL
 ```
 
+If NVLink is not available in your environment there are other options for ``NCCL_P2P_LEVEL`` in the table below:
+
+| NCCL_P2P_LEVEL | Description |
+| -------------- | ----------- |
+| PIX | P2P data transfers through no more than a single PCIe bridge. Faster data transfer rates vs to paths involving multiple bridges, but slower compared to direct GPU-to-GPU communication. |
+| PXB | P2P data transfers through multiple PCIe bridges but not going through the PCIe Host Bridge; this path involves a complex routing process, potentially incurring a moderate level of latency. |
+| PHB | P2P data transfers occur over the PCIe and through a PCIe Host Bridge, typically involving the CPU, which can facilitate direct memory access but might introduce additional latency compared to more direct paths (ex PIX, NVL) |
+
 To validate that acceptable data transfer speeds exist for your training job, running [NCCL Tests](https://github.com/NVIDIA/nccl-tests/blob/master/README.md) can help pinpoint bottlenecks, for example:
 
 ```shell
