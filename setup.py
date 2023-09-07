@@ -32,7 +32,7 @@ setup(
     dependency_links=dependency_links,
     extras_require={
         "flash-attn": [
-            "flash-attn==2.2.1",
+            "flash-attn>=2.2.1",
         ],
         "extras": [
             "deepspeed",
