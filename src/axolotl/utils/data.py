@@ -94,7 +94,7 @@ def load_tokenized_prepared_datasets(
 ) -> DatasetDict:
     tokenizer_name = tokenizer.__class__.__name__
     ds_hash = str(
-        hashlib.md5(  # nosec
+        md5(
             (
                 str(cfg.sequence_len)
                 + "@"
@@ -103,8 +103,8 @@ def load_tokenized_prepared_datasets(
                 )
                 + "|"
                 + tokenizer_name
-            ).encode("utf-8")
-        ).hexdigest()
+            )
+        )
     )
     prepared_ds_path = (
         Path(cfg.dataset_prepared_path) / ds_hash
@@ -380,7 +380,7 @@ def load_prepare_datasets(
         # see if we can go ahead and load the stacked dataset
         seed = f"@{str(cfg.seed)}" if cfg.seed else ""
         ds_hash = str(
-            hashlib.md5(  # nosec
+            md5(
                 (
                     str(cfg.sequence_len)
                     + "@"
@@ -391,8 +391,8 @@ def load_prepare_datasets(
                     )
                     + "|"
                     + tokenizer_name
-                ).encode("utf-8")
-            ).hexdigest()
+                )
+            )
         )
         prepared_ds_path = (
             Path(cfg.dataset_prepared_path) / ds_hash
