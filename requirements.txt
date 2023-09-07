@@ -12,7 +12,7 @@ evaluate
 fire
 PyYAML>=6.0
 datasets
-flash-attn>=2.0.8
+flash-attn>=2.2.1
 sentencepiece
 wandb
 einops

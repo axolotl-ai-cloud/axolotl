@@ -105,7 +105,7 @@ accelerate launch scripts/finetune.py examples/openllama-3b/lora.yml \
 
   3. Install axolotl along with python dependencies
         ```bash
-        pip3 install -e .
+        pip3 install -e .[flash-attn]
         ```
 
 - LambdaLabs

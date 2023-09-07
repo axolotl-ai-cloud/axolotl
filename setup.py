@@ -13,7 +13,7 @@ def parse_requirements():
                 # Handle custom index URLs
                 _, url = line.split()
                 _dependency_links.append(url)
-            elif line and line[0] != "#":
+            elif "flash-attn" not in line and line and line[0] != "#":
                 # Handle standard packages
                 _install_requires.append(line)
     return _install_requires, _dependency_links
@@ -31,6 +31,9 @@ setup(
     install_requires=install_requires,
     dependency_links=dependency_links,
     extras_require={
+        "flash-attn": [
+            "flash-attn==2.2.1",
+        ],
         "extras": [
             "deepspeed",
         ],
