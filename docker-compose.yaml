@@ -9,6 +9,11 @@ services:
       - ~/.cache/huggingface/:/root/.cache/huggingface/
     # set environment variables
     environment:
+      # Set environment variables
+      - GIT_AUTHOR_NAME=${GIT_AUTHOR_NAME}
+      - GIT_AUTHOR_EMAIL=${GIT_AUTHOR_EMAIL}
+      - GIT_COMMITTER_NAME=${GIT_COMMITTER_NAME}
+      - GIT_COMMITTER_EMAIL=${GIT_COMMITTER_EMAIL}
       - WANDB_API_KEY=${WANDB_API_KEY}
     deploy:
       resources:
