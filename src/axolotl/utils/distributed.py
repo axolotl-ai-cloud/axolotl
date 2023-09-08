@@ -2,6 +2,7 @@
 utility helpers for distributed checks
 """
 import os
+import pickle  # nosec
 from contextlib import contextmanager
 
 import torch
@@ -93,3 +94,30 @@ def gather_scalar_from_all_ranks(fn, world_size=1):  # pylint: disable=invalid-n
                 gathered_values.append(float(tensor.item()))
         return gathered_values
     return None
+
+
+def broadcast_dict(vals: dict):
+    if not is_distributed():
+        return vals
+
+    if is_main_process():
+        data_byte = pickle.dumps(vals)
+        data_tensor = torch.ByteTensor(list(data_byte)).to("cuda")
+        data_size = torch.IntTensor([len(data_byte)]).to("cuda")
+    else:
+        data_tensor = torch.empty([1024], dtype=torch.uint8, device="cuda")
+        data_size = torch.IntTensor([0]).to("cuda")
+
+    dist.broadcast(data_size, 0)
+    if not is_main_process():
+        # resize
+        data_tensor = data_tensor.new_empty([data_size.item()])
+
+    dist.broadcast(data_tensor, 0)
+
+    if not is_main_process():
+        data_list = data_tensor.cpu().tolist()
+        data_byte = bytes(data_list[: data_size.item()])
+        vals = pickle.loads(data_byte)  # nosec
+
+    return vals
