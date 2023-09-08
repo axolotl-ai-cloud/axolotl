@@ -752,6 +752,10 @@ Try to turn off xformers.
 
 It's safe to ignore it.
 
+> NCCL Timeouts during training
+
+See the [NCCL](docs/nccl.md) guide.
+
 ## Need help? 🙋♂️
 
 Join our [Discord server](https://discord.gg/HhrNrHJPRb) where we can help you
