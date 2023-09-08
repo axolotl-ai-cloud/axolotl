@@ -640,13 +640,6 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
     if cfg.relora_steps:
         callbacks.append(ReLoRACallback(cfg))
 
-    # TODO on_save callback to sync checkpoints to GCP/AWS in background
-    if cfg.early_stopping_patience:
-        early_stop_cb = EarlyStoppingCallback(
-            cfg.early_stopping_patience,
-        )
-        callbacks.append(early_stop_cb)
-
     if cfg.local_rank == 0 and cfg.adapter in [
         "lora",
         "qlora",
@@ -712,5 +705,12 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
 
     if cfg.do_bench_eval:
         trainer.add_callback(bench_eval_callback_factory(trainer, tokenizer))
+
+    # TODO on_save callback to sync checkpoints to GCP/AWS in background
+    if cfg.early_stopping_patience:
+        early_stop_cb = EarlyStoppingCallback(
+            cfg.early_stopping_patience,
+        )
+        trainer.add_callback(early_stop_cb)
 
     return trainer
