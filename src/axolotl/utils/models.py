@@ -340,6 +340,7 @@ def load_model(
                 base_model,
                 config=config,
                 trust_remote_code=cfg.trust_remote_code or False,
+                low_cpu_mem_usage=True,
             ).half()
             model = tp.tensor_parallel(model, sharded=False)
         else:
