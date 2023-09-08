@@ -314,6 +314,8 @@ def bench_eval_callback_factory(trainer, tokenizer):
                 results[f"{bench_split}_bench_total_accuracy"] = accuracy.compute(
                     references=bench_refs, predictions=bench_preds
                 )["accuracy"]
+                for key, val in results.items():
+                    metrics[key] = val
                 trainer.log(results)
 
     return BenchEvalCallback
