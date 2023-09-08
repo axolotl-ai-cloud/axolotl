@@ -15,9 +15,9 @@ RUN git clone --depth=1 https://github.com/OpenAccess-AI-Collective/axolotl.git
 # If AXOLOTL_EXTRAS is set, append it in brackets
 RUN cd axolotl && \
     if [ "$AXOLOTL_EXTRAS" != "" ] ; then \
-        pip install -e .[flash-attn,gptq,$AXOLOTL_EXTRAS]; \
+        pip install -e .[flash-attn,$AXOLOTL_EXTRAS]; \
     else \
-        pip install -e .[flash-attn,gptq]; \
+        pip install -e .[flash-attn]; \
     fi
 
 # fix so that git fetch/pull from remote works

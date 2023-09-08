@@ -24,8 +24,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install -e .
-          pip install -r requirements-tests.txt
+          pip3 install -e .
+          pip3 install -r requirements-tests.txt
 
       - name: Run tests
         run: |

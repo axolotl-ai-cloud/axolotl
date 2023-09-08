@@ -7,9 +7,7 @@ def parse_requirements():
     _install_requires = []
     _dependency_links = []
     with open("./requirements.txt", encoding="utf-8") as requirements_file:
-        lines = [
-            r.strip() for r in requirements_file.readlines() if "auto-gptq" not in r
-        ]
+        lines = [r.strip() for r in requirements_file.readlines()]
         for line in lines:
             if line.startswith("--extra-index-url"):
                 # Handle custom index URLs
@@ -33,11 +31,8 @@ setup(
     install_requires=install_requires,
     dependency_links=dependency_links,
     extras_require={
-        "gptq": [
-            "auto-gptq",
-        ],
         "flash-attn": [
-            "flash-attn==2.0.8",
+            "flash-attn>=2.2.1",
         ],
         "extras": [
             "deepspeed",
