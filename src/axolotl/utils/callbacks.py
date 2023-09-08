@@ -359,230 +359,75 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer):
                 # Initialize an empty wandb.Table
                 table = wandb.Table(columns=["id", "Prompt", "Correct Completion", "Predicted Completion 1", "Predicted Completion 2"])
 
-                # preds, refs = [], []
-                # loss_bench = 0
-                # predictions = []
-                id = 0
+                batch_index = 0
                 for batch in tqdm(table_dataloader, total=len(table_dataloader)):
-                # max_examples = 100
-                # for batch in tqdm(table_dataloader, total=min(max_examples, len(table_dataloader))):
+                    # For each batch I want prompt, completion, 2x predictions
 
-                    # batch.data['labels'].shape
-                    # torch.Size([2, 320])
-                    # values at front with -100 are supposed to be prompt tokens
-                    # values after are completion tokens
-
-                    # batch.data['input_ids'].shape
-                    # torch.Size([2, 320])
-                    
-                    # # Extract prompt and completion tokens from input_ids based on labels
-                    # prompt_token_ids = batch.data['input_ids'][batch.data['labels'] == IGNORE_INDEX]
-                    # completion_token_ids = batch.data['input_ids'][batch.data['labels'] != IGNORE_INDEX]
-
-                    # # prompt_texts = tokenizer.batch_decode(batch.data['input_ids'])
-                    # prompt_texts = tokenizer.batch_decode(prompt_token_ids)
-                    # completion_texts = tokenizer.batch_decode(completion_token_ids)
-
-                    (loss, logits, labels) = trainer.prediction_step(
+                    # (loss, logits, labels) = trainer.prediction_step(
+                    (batch_loss, batch_logits, batch_labels) = trainer.prediction_step(
                         trainer.model,
                         batch,
                         prediction_loss_only=False,
                     )
 
-                    # prompt_completion_pairs = zip(prompt_texts, logits)
+                    prompt_token_ids_list = []
+                    completion_texts = []
+                    prediction_texts = []
 
-                    # print("logits", logits)
-                    # print("labels", labels)
-
-                    # pred_tokens = []
-                    # for i, logit in enumerate(logits):
-                    for i, (input_ids, logit, labels_i) in enumerate(zip(batch['input_ids'], logits, labels)):
-                        # for i, (prompt_text, logit) in enumerate(prompt_completion_pairs):
-                        # print(dir(logit))
-                        # print(logit)
-                        # print(logit.shape)
-                        # # Convert the logits to probabilities using softmax
-                        # probabilities = torch.softmax(logit, dim=-1)
-
-                        # # Get the predicted token id (the one with the highest probability)
-                        # predicted_token_id = torch.argmax(probabilities).item()
-
-                        # # Decode the predicted token id to get the plaintext
-                        # predicted_token = tokenizer.decode([predicted_token_id])
-
-                        # # Append the predicted token to the preds list
-                        # pred_tokens.append(predicted_token)
-
-                        # # Convert the logits to probabilities using softmax
-                        # probabilities = torch.softmax(logit, dim=-1)
-
-                        # # Get the predicted token ids (the ones with the highest probability)
-                        # predicted_token_ids = torch.argmax(probabilities, dim=-1)
-
-                        # # Decode the predicted token ids to get the plaintext
-                        # predicted_tokens = tokenizer.batch_decode(predicted_token_ids)
-
-                        # 
-                        # label_non_zero_indices = (batch["labels"][i] != IGNORE_INDEX).nonzero().transpose(0, 1)[0] # FIXME: clean up?
-                        # labels[15].tolist()[-3:]
-
-                        # prompt_token_indices = (batch["labels"][i] == IGNORE_INDEX).nonzero().transpose(0, 1)[0] # FIXME: clean up?
-                        # completion_token_indices = (batch["labels"][i] != IGNORE_INDEX).nonzero().transpose(0, 1)[0] # FIXME: clean up?
-
-                        # prompt_token_indices = labels_i[labels_i == IGNORE_INDEX]
-
-                        # Prompt tokens are all tokens up to eos_token, the excluding pad_token
-                        # input_ids = batch['input_ids'][i]
-
-                        # prompt_token_ids = input_ids[0:]
-                        # examples = group_sublists_by(input_ids.tolist(), tokenizer.eos_token_id)
-                        # clean_examples = [example for example in examples if example == tokenizer.pad_token_id]
-
-                        # prompt_token_indices = (batch["labels"][i] == IGNORE_INDEX).nonzero().transpose(0, 1)[0] # FIXME: clean up?
-                        # completion_token_indices = (batch["labels"][i] != IGNORE_INDEX).nonzero().transpose(0, 1)[0] # FIXME: clean up?
-
-                        # print(tokenizer.decode(input_ids[1][(batch['labels'][1] == IGNORE_INDEX)]))
-                        tokens_without_loss = (labels_i == IGNORE_INDEX)
-                        tokens_with_loss = (labels_i != IGNORE_INDEX)
+                    # for input_ids in batch['input_ids']:
+                    # for batch_item_idx, (input_ids, labels) in enumerate(zip(batch['input_ids'], logits, labels)):
+                    for batch_item_idx, (input_ids, logits, labels) in enumerate(zip(batch['input_ids'], batch_logits, batch_labels)):
+                        tokens_without_loss = (labels == IGNORE_INDEX)
+                        tokens_with_loss = (labels != IGNORE_INDEX)
                         tokens_exclude_padding = (input_ids != tokenizer.pad_token_id)
-                        # prompt_token_includes = (labels_i == IGNORE_INDEX) & (input_ids[i] != tokenizer.pad_token_id)
+
                         prompt_token_includes = tokens_without_loss & tokens_exclude_padding
 
                         prompt_token_ids = input_ids[prompt_token_includes]
-                        # print(tokenizer.decode(prompt_token_ids))
+                        prompt_token_ids_list.append(prompt_token_ids)
 
-                        # Extract prompt and completion tokens from input_ids based on labels
-                        # prompt_token_ids = batch['input_ids'][batch['labels'] == IGNORE_INDEX]
-                        # completion_token_ids = batch['input_ids'][batch['labels'] != IGNORE_INDEX]
-
-                        # prompt_token_ids = batch['input_ids'][batch['labels'] == IGNORE_INDEX]
-                        # prompt_token_ids = batch['input_ids'][label_non_zero_indices]
-                        # prompt_token_ids = batch['input_ids'][i][label_non_zero_indices]
-                        # prompt_token_ids = batch['input_ids'][i]
-
-                        # prompt_token_ids = batch['input_ids'][i][prompt_token_indices]
-                        # completion_token_ids = batch['input_ids'][i][completion_token_indices]
-                        # completion_token_ids = batch['input_ids'][i][tokens_with_loss]
                         completion_token_ids = input_ids[tokens_with_loss]
-
-                        # prompt_texts = tokenizer.batch_decode(batch.data['input_ids'])
-                        # prompt_texts = tokenizer.batch_decode(prompt_token_ids)
-                        prompt_text = tokenizer.decode(prompt_token_ids)
                         completion_text = tokenizer.decode(completion_token_ids)
+                        completion_texts.append(completion_text)
 
-                        # completion_logit = logit[completion_token_indices]
-                        completion_logit = logit[tokens_with_loss]
-                        # predicted_tokens = logits_to_tokens(logit)
+                        completion_logit = logits[tokens_with_loss]
                         predicted_tokens = logits_to_tokens(completion_logit)
-
-                        # Append the predicted tokens to the preds list
-                        # pred_tokens.extend(predicted_tokens)
-                        # pred_string = " ".join(predicted_tokens) # FIXME: missing spaces
                         prediction_text = tokenizer.decode(predicted_tokens)
+                        prediction_texts.append(prediction_text)
 
-                        # generate new prediction with trainer.model which is a transformer model
-                        # Generate new prediction with trainer.model which is a transformer model
-                        with torch.no_grad():
-                            # new_prediction = trainer.model(batch['input_ids'][i].unsqueeze(0))
-                            # new_prediction = trainer.model(prompt_token_ids.unsqueeze(0))
-                            # new_prediction = trainer.model(prompt_token_ids.unsqueeze(0))
+                    prompt_texts = tokenizer.batch_decode(prompt_token_ids_list, skip_special_tokens=True)
 
-                            generation_config = GenerationConfig(
-                                repetition_penalty=1.1,
-                                # max_new_tokens=1024,
-                                # max_new_tokens=256,
-                                # max_new_tokens=128,
-                                # max_new_tokens=64,
-                                max_new_tokens=32,
-                                # temperature=0.9,
-                                # top_p=0.95,
-                                # top_k=40,
-                                bos_token_id=tokenizer.bos_token_id,
-                                eos_token_id=tokenizer.eos_token_id,
-                                pad_token_id=tokenizer.pad_token_id,
-                                # do_sample=True,
-                                do_sample=False,
-                                use_cache=True,
-                                return_dict_in_generate=True,
-                                output_attentions=False,
-                                output_hidden_states=False,
-                                output_scores=False,
-                            )
-                            # streamer = TextStreamer(tokenizer)
-                            new_prediction = trainer.model.generate(
-                                # inputs=batch["input_ids"].to(cfg.device),
-                                inputs=prompt_token_ids.unsqueeze(0),
-                                generation_config=generation_config,
-                                # streamer=streamer,
-                            )
+                    with torch.no_grad():
+                        generation_config = GenerationConfig(
+                            repetition_penalty=1.1,
+                            max_new_tokens=32,
+                            bos_token_id=tokenizer.bos_token_id,
+                            eos_token_id=tokenizer.eos_token_id,
+                            pad_token_id=tokenizer.pad_token_id,
+                            do_sample=False,
+                            use_cache=True,
+                            return_dict_in_generate=True,
+                            output_attentions=False,
+                            output_hidden_states=False,
+                            output_scores=False,
+                        )
 
-                        # # Convert the logits to probabilities using softmax
-                        # new_probabilities = torch.softmax(new_prediction.logits, dim=-1)
+                        encoding = tokenizer(prompt_texts, padding=True, return_tensors='pt').to(self.cfg.device)
+                        new_predictions = trainer.model.generate(**encoding, generation_config=generation_config)
 
-                        # # Get the predicted token ids (the ones with the highest probability)
-                        # new_predicted_token_ids = torch.argmax(new_probabilities, dim=-1)
+                    new_prediction_all_tokens = new_predictions["sequences"].cpu().tolist()
+                    new_prediction_without_prompt_tokens_list = []
+                    for prompt_token_ids, new_prediction_tokens in zip(prompt_token_ids_list, new_prediction_all_tokens):
+                        new_prediction_without_prompt_tokens = new_prediction_tokens[len(prompt_token_ids):]
+                        new_prediction_without_prompt_tokens_list.append(new_prediction_without_prompt_tokens)
 
-                        # # Decode the predicted token ids to get the plaintext
-                        # new_predicted_tokens = tokenizer.decode(new_predicted_token_ids[0])
+                    new_predicted_texts = tokenizer.batch_decode(new_prediction_without_prompt_tokens_list, skip_special_tokens=True)
 
-                        new_prediction_all_tokens = new_prediction["sequences"].cpu().tolist()[0]
-                        new_prediction_completion_only_tokens = new_prediction_all_tokens[len(prompt_token_ids):]
+                    for i, (prompt_text, completion_text, prediction_text, new_predicted_text) in enumerate(zip(prompt_texts, completion_texts, prediction_texts, new_predicted_texts)):
+                        table.add_data(i, prompt_text, completion_text, prediction_text, new_predicted_text)
 
-                        # new_predicted_tokens = tokenizer.decode(new_prediction["sequences"].cpu().tolist()[0])
-                        new_predicted_tokens = tokenizer.decode(new_prediction_completion_only_tokens)
+                    batch_index += 1
 
-                        # print("=" * 80)
-                        # print("Prompt:")
-                        # print(prompt_text)
-                        # print("=" * 80)
-                        # print("Expected Completion:")
-                        # print(completion_text)
-                        # print("=" * 80)
-                        # print("Predicted Completion:")
-                        # print(prediction_text)
-                        # print("=" * 80)
-
-                        table.add_data(id, prompt_text, completion_text, prediction_text, new_predicted_tokens)
-                        id += 1
-
-                    # add prediction
-                    # convert pred_tokens to a single string
-                    # pred_string = " ".join(pred_tokens)
-                    # predictions.append(pred_string)
-
-                    # table.add_data(prompt_text, pred_string, "Ground Truth")
-
-                #     # Convert the predictions and labels to a readable format
-                #     # predictions = [tokenizer.decode(p) for p in logits]
-                #     # labels = [tokenizer.decode(l) for l in labels]
-
-                #     # Add the data to the wandb.Table
-                #     for prediction, label in zip(predictions, labels):
-                #         table.add_data(prediction, label)
-
-                # using trainer.model generate prediction tokens for each input in eval_dataloader
-                # predictions = []
-                # for batch in eval_dataloader:
-                #     inputs, _ = batch
-                #     print(inputs)
-                #     with torch.no_grad():
-                #         outputs = trainer.model(inputs)
-                #     print(outputs)
-                #     next_pred = [tokenizer.decode(p) for p in outputs.logits.argmax(dim=-1).tolist()]
-                #     print(next_pred)
-                #     predictions.extend(next_pred)
-
-                # add the predictions to the table
-                # for prediction in predictions:
-                #     table.add_data(prediction, "Ground Truth")
-
-                # print table size
-                # print("Table size:", len(table.data))
-
-                # print first entry in table
-                # print("First entry in table:", table.data[0])
-
-                # Log the wandb.Table
                 wandb.run.log({ f"{name} - Predictions vs Ground Truth": table })
 
             # log_table_from_dataloader("Train", train_dataloader)
