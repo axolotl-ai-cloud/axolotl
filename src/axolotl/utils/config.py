@@ -225,7 +225,7 @@ def validate_config(cfg):
             raise ValueError(
                 "`early_stopping_patience` requires save_steps and eval_steps to be set. eval_steps should evenly divide save_steps."
             )
-        if not cfg.save_steps % cfg.eval_steps != 0:
+        if cfg.save_steps % cfg.eval_steps != 0:
             raise ValueError(
                 "`early_stopping_patience` requires that eval_steps should evenly divide save_steps."
             )
