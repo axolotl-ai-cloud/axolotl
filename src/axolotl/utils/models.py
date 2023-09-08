@@ -160,7 +160,7 @@ def load_model(
         model_kwargs["revision"] = cfg.model_revision
     if cfg.gptq:
         model_config = load_model_config(cfg)
-        if hasattr(model_config, "quantization_config"):
+        if not hasattr(model_config, "quantization_config"):
             LOG.warning("model config does not contain quantization_config information")
         else:
             model_kwargs["quantization_config"] = GPTQConfig(
