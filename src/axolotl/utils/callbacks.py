@@ -347,12 +347,23 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer):
             LOG.info("logging predictions")
 
             trainer.model.eval()
+            device = torch.device(self.cfg.device)
 
             def logits_to_tokens(logits) -> str:
                 probabilities = torch.softmax(logits, dim=-1)
                 # Get the predicted token ids (the ones with the highest probability)
                 predicted_token_ids = torch.argmax(probabilities, dim=-1)
                 return predicted_token_ids
+
+            def find_ranges(lst):
+                ranges = []
+                start = 0
+                for i in range(1, len(lst)):
+                    if lst[i] == 0:
+                        ranges.append((start, i-1))
+                        start = i
+                ranges.append((start, len(lst)-1))  # for the last range
+                return ranges
 
             def log_table_from_dataloader(name: str, table_dataloader):
 
@@ -364,38 +375,65 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer):
                     # For each batch I want prompt, completion, 2x predictions
 
                     # (loss, logits, labels) = trainer.prediction_step(
-                    (batch_loss, batch_logits, batch_labels) = trainer.prediction_step(
-                        trainer.model,
-                        batch,
-                        prediction_loss_only=False,
-                    )
+                    # (batch_loss, batch_logits, batch_labels) = trainer.prediction_step(
+                    #     trainer.model,
+                    #     batch,
+                    #     prediction_loss_only=False,
+                    # )
+
+                    batch_labels = batch['labels'].to(device)
+                    batch_input_ids = batch['input_ids'].to(device)
+
+                    if 'position_ids' in batch:
+                        batch_pos_ids = batch['position_ids'].tolist()
+                    else:
+                        batch_pos_ids = [None] * len(batch['input_ids'])
 
                     prompt_token_ids_list = []
-                    completion_texts = []
-                    prediction_texts = []
+                    completion_token_ids_list = []
+                    # completion_texts = []
+                    # prediction_texts = []
 
                     # for input_ids in batch['input_ids']:
                     # for batch_item_idx, (input_ids, labels) in enumerate(zip(batch['input_ids'], logits, labels)):
-                    for batch_item_idx, (input_ids, logits, labels) in enumerate(zip(batch['input_ids'], batch_logits, batch_labels)):
-                        tokens_without_loss = (labels == IGNORE_INDEX)
-                        tokens_with_loss = (labels != IGNORE_INDEX)
-                        tokens_exclude_padding = (input_ids != tokenizer.pad_token_id)
+                    # for batch_item_idx, (input_ids, logits, labels) in enumerate(zip(batch['input_ids'].to(device), batch_logits, batch_labels)):
+                    for batch_item_idx, (input_ids_all, labels_all, pos_ids) in enumerate(zip(batch_input_ids, batch_labels, batch_pos_ids)):
 
-                        prompt_token_includes = tokens_without_loss & tokens_exclude_padding
+                        if pos_ids is None:
+                            pos_ranges = [(0, len(input_ids_all)-1)]
+                        else:
+                            pos_ranges = find_ranges(pos_ids)
 
-                        prompt_token_ids = input_ids[prompt_token_includes]
-                        prompt_token_ids_list.append(prompt_token_ids)
+                        for pos_range in pos_ranges:
+                            start, end = pos_range
+                            if start == end:
+                                continue
 
-                        completion_token_ids = input_ids[tokens_with_loss]
-                        completion_text = tokenizer.decode(completion_token_ids)
-                        completion_texts.append(completion_text)
+                            input_ids = input_ids_all[start:end+1]
+                            labels = labels_all[start:end+1]
+                            # input_ids[start:end] = tokenizer.pad_token_id
 
-                        completion_logit = logits[tokens_with_loss]
-                        predicted_tokens = logits_to_tokens(completion_logit)
-                        prediction_text = tokenizer.decode(predicted_tokens)
-                        prediction_texts.append(prediction_text)
+                            tokens_without_loss = (labels == IGNORE_INDEX)
+                            tokens_with_loss = (labels != IGNORE_INDEX)
+                            tokens_exclude_padding = (input_ids != tokenizer.pad_token_id)
+
+                            prompt_token_includes = tokens_without_loss & tokens_exclude_padding
+
+                            prompt_token_ids = input_ids[prompt_token_includes]
+                            prompt_token_ids_list.append(prompt_token_ids)
+
+                            completion_token_ids = input_ids[tokens_with_loss]
+                            completion_token_ids_list.append(completion_token_ids)
+                            # completion_text = tokenizer.decode(completion_token_ids)
+                            # completion_texts.append(completion_text)
+
+                            # completion_logit = logits[tokens_with_loss]
+                            # predicted_tokens = logits_to_tokens(completion_logit)
+                            # prediction_text = tokenizer.decode(predicted_tokens)
+                            # prediction_texts.append(prediction_text)
 
                     prompt_texts = tokenizer.batch_decode(prompt_token_ids_list, skip_special_tokens=True)
+                    completion_texts = tokenizer.batch_decode(completion_token_ids_list, skip_special_tokens=True)
 
                     with torch.no_grad():
                         generation_config = GenerationConfig(
@@ -413,7 +451,7 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer):
                         )
 
                         encoding = tokenizer(prompt_texts, padding=True, return_tensors='pt').to(self.cfg.device)
-                        new_predictions = trainer.model.generate(**encoding, generation_config=generation_config)
+                        new_predictions = trainer.model.generate(**encoding, generation_config=generation_config) # FIXME: when sample_packing=True then error: "TypeError: varlen_fwd(): incompatible function arguments."
 
                     new_prediction_all_tokens = new_predictions["sequences"].cpu().tolist()
                     new_prediction_without_prompt_tokens_list = []
@@ -423,7 +461,9 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer):
 
                     new_predicted_texts = tokenizer.batch_decode(new_prediction_without_prompt_tokens_list, skip_special_tokens=True)
 
-                    for i, (prompt_text, completion_text, prediction_text, new_predicted_text) in enumerate(zip(prompt_texts, completion_texts, prediction_texts, new_predicted_texts)):
+                    # for i, (prompt_text, completion_text, prediction_text, new_predicted_text) in enumerate(zip(prompt_texts, completion_texts, prediction_texts, new_predicted_texts)):
+                    for i, (prompt_text, completion_text, new_predicted_text) in enumerate(zip(prompt_texts, completion_texts, new_predicted_texts)):
+                        prediction_text = ""
                         table.add_data(i, prompt_text, completion_text, prediction_text, new_predicted_text)
 
                     batch_index += 1
