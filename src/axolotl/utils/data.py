@@ -2,7 +2,6 @@
 import functools
 import hashlib
 import logging
-from hashlib import md5
 from pathlib import Path
 from typing import Tuple, Union
 
@@ -52,6 +51,13 @@ LOG = logging.getLogger("axolotl")
 DEFAULT_DATASET_PREPARED_PATH = "last_run_prepared"
 
 
+def md5(to_hash: str, encoding: str = "utf-8") -> str:
+    try:
+        return hashlib.md5(to_hash.encode(encoding), usedforsecurity=False).hexdigest()
+    except TypeError:
+        return hashlib.md5(to_hash.encode(encoding)).hexdigest()  # nosec
+
+
 def prepare_dataset(cfg, tokenizer):
     if not cfg.pretraining_dataset:
         with zero_first(is_main_process()):
@@ -88,7 +94,7 @@ def load_tokenized_prepared_datasets(
 ) -> DatasetDict:
     tokenizer_name = tokenizer.__class__.__name__
     ds_hash = str(
-        md5(  # nosec
+        md5(
             (
                 str(cfg.sequence_len)
                 + "@"
@@ -97,8 +103,8 @@ def load_tokenized_prepared_datasets(
                 )
                 + "|"
                 + tokenizer_name
-            ).encode("utf-8")
-        ).hexdigest()
+            )
+        )
     )
     prepared_ds_path = (
         Path(cfg.dataset_prepared_path) / ds_hash
@@ -374,7 +380,7 @@ def load_prepare_datasets(
         # see if we can go ahead and load the stacked dataset
         seed = f"@{str(cfg.seed)}" if cfg.seed else ""
         ds_hash = str(
-            md5(  # nosec
+            md5(
                 (
                     str(cfg.sequence_len)
                     + "@"
@@ -385,8 +391,8 @@ def load_prepare_datasets(
                     )
                     + "|"
                     + tokenizer_name
-                ).encode("utf-8")
-            ).hexdigest()
+                )
+            )
         )
         prepared_ds_path = (
             Path(cfg.dataset_prepared_path) / ds_hash
@@ -500,12 +506,8 @@ def load_prepare_datasets(
             + "|"
             + str(cfg.seed or 42)
         )
-        train_fingerprint = hashlib.md5(
-            to_hash_train.encode(), usedforsecurity=False
-        ).hexdigest()
-        test_fingerprint = hashlib.md5(
-            to_hash_test.encode(), usedforsecurity=False
-        ).hexdigest()
+        train_fingerprint = md5(to_hash_train)
+        test_fingerprint = md5(to_hash_test)
 
         with zero_first(is_main_process()):
             dataset = dataset.train_test_split(
