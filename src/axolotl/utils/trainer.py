@@ -605,11 +605,10 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
         output_dir=cfg.output_dir,
         save_total_limit=cfg.save_total_limit if cfg.save_total_limit else 4,
         load_best_model_at_end=(
-            cfg.load_best_model_at_end is not False
+            (cfg.load_best_model_at_end is not False or cfg.early_stopping_patience)
             and cfg.val_set_size > 0
             and cfg.save_steps
             and cfg.save_steps % cfg.eval_steps == 0
-            and cfg.load_in_8bit is not True
         )
         or False,
         ddp_find_unused_parameters=False if cfg.ddp else None,
