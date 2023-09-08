@@ -6,6 +6,7 @@ import logging
 import os
 from typing import TYPE_CHECKING, Dict, List
 
+import itertools
 import evaluate
 import numpy as np
 import pandas as pd
@@ -483,3 +484,14 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer):
             return control
 
     return LogPredictionCallback
+
+
+def group_sublists_by(lst: List[int], value: int) -> List[List[int]]:
+    """
+    Group sublists of lst by value
+    """
+    grouped = []
+    for key, group in itertools.groupby(lst, lambda x: x == value):
+        if key:
+            grouped.append(list(group))
+    return grouped

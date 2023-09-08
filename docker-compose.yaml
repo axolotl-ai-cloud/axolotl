@@ -11,6 +11,8 @@ services:
     # set environment variables
     environment:
       - WANDB_API_KEY=${WANDB_API_KEY}
+    ports:
+      - "5678:5678"
     deploy:
       resources:
         reservations:
