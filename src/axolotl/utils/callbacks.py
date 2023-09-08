@@ -396,7 +396,7 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer):
 
                     # pred_tokens = []
                     # for i, logit in enumerate(logits):
-                    for i, (logit, labels_i) in enumerate(zip(logits, labels)):
+                    for i, (input_ids, logit, labels_i) in enumerate(zip(batch['input_ids'], logits, labels)):
                         # for i, (prompt_text, logit) in enumerate(prompt_completion_pairs):
                         # print(dir(logit))
                         # print(logit)
@@ -424,9 +424,32 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer):
 
                         # 
                         # label_non_zero_indices = (batch["labels"][i] != IGNORE_INDEX).nonzero().transpose(0, 1)[0] # FIXME: clean up?
+                        # labels[15].tolist()[-3:]
 
-                        prompt_token_indices = (batch["labels"][i] == IGNORE_INDEX).nonzero().transpose(0, 1)[0] # FIXME: clean up?
-                        completion_token_indices = (batch["labels"][i] != IGNORE_INDEX).nonzero().transpose(0, 1)[0] # FIXME: clean up?
+                        # prompt_token_indices = (batch["labels"][i] == IGNORE_INDEX).nonzero().transpose(0, 1)[0] # FIXME: clean up?
+                        # completion_token_indices = (batch["labels"][i] != IGNORE_INDEX).nonzero().transpose(0, 1)[0] # FIXME: clean up?
+
+                        # prompt_token_indices = labels_i[labels_i == IGNORE_INDEX]
+
+                        # Prompt tokens are all tokens up to eos_token, the excluding pad_token
+                        # input_ids = batch['input_ids'][i]
+
+                        # prompt_token_ids = input_ids[0:]
+                        # examples = group_sublists_by(input_ids.tolist(), tokenizer.eos_token_id)
+                        # clean_examples = [example for example in examples if example == tokenizer.pad_token_id]
+
+                        # prompt_token_indices = (batch["labels"][i] == IGNORE_INDEX).nonzero().transpose(0, 1)[0] # FIXME: clean up?
+                        # completion_token_indices = (batch["labels"][i] != IGNORE_INDEX).nonzero().transpose(0, 1)[0] # FIXME: clean up?
+
+                        # print(tokenizer.decode(input_ids[1][(batch['labels'][1] == IGNORE_INDEX)]))
+                        tokens_without_loss = (labels_i == IGNORE_INDEX)
+                        tokens_with_loss = (labels_i != IGNORE_INDEX)
+                        tokens_exclude_padding = (input_ids != tokenizer.pad_token_id)
+                        # prompt_token_includes = (labels_i == IGNORE_INDEX) & (input_ids[i] != tokenizer.pad_token_id)
+                        prompt_token_includes = tokens_without_loss & tokens_exclude_padding
+
+                        prompt_token_ids = input_ids[prompt_token_includes]
+                        # print(tokenizer.decode(prompt_token_ids))
 
                         # Extract prompt and completion tokens from input_ids based on labels
                         # prompt_token_ids = batch['input_ids'][batch['labels'] == IGNORE_INDEX]
@@ -437,15 +460,18 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer):
                         # prompt_token_ids = batch['input_ids'][i][label_non_zero_indices]
                         # prompt_token_ids = batch['input_ids'][i]
 
-                        prompt_token_ids = batch['input_ids'][i][prompt_token_indices]
-                        completion_token_ids = batch['input_ids'][i][completion_token_indices]
+                        # prompt_token_ids = batch['input_ids'][i][prompt_token_indices]
+                        # completion_token_ids = batch['input_ids'][i][completion_token_indices]
+                        # completion_token_ids = batch['input_ids'][i][tokens_with_loss]
+                        completion_token_ids = input_ids[tokens_with_loss]
 
                         # prompt_texts = tokenizer.batch_decode(batch.data['input_ids'])
                         # prompt_texts = tokenizer.batch_decode(prompt_token_ids)
                         prompt_text = tokenizer.decode(prompt_token_ids)
                         completion_text = tokenizer.decode(completion_token_ids)
 
-                        completion_logit = logit[completion_token_indices]
+                        # completion_logit = logit[completion_token_indices]
+                        completion_logit = logit[tokens_with_loss]
                         # predicted_tokens = logits_to_tokens(logit)
                         predicted_tokens = logits_to_tokens(completion_logit)
 
@@ -465,8 +491,10 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer):
                                 repetition_penalty=1.1,
                                 # max_new_tokens=1024,
                                 # max_new_tokens=256,
-                                max_new_tokens=128,
-                                temperature=0.9,
+                                # max_new_tokens=128,
+                                # max_new_tokens=64,
+                                max_new_tokens=32,
+                                # temperature=0.9,
                                 # top_p=0.95,
                                 # top_k=40,
                                 bos_token_id=tokenizer.bos_token_id,
@@ -497,8 +525,11 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer):
                         # # Decode the predicted token ids to get the plaintext
                         # new_predicted_tokens = tokenizer.decode(new_predicted_token_ids[0])
 
-                        new_predicted_tokens = tokenizer.decode(new_prediction["sequences"].cpu().tolist()[0])
+                        new_prediction_all_tokens = new_prediction["sequences"].cpu().tolist()[0]
+                        new_prediction_completion_only_tokens = new_prediction_all_tokens[len(prompt_token_ids):]
 
+                        # new_predicted_tokens = tokenizer.decode(new_prediction["sequences"].cpu().tolist()[0])
+                        new_predicted_tokens = tokenizer.decode(new_prediction_completion_only_tokens)
 
                         # print("=" * 80)
                         # print("Prompt:")
