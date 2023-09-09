@@ -57,6 +57,30 @@ def get_multi_line_input() -> Optional[str]:
     # instruction = pathlib.Path("/proc/self/fd/0").read_text()
     return instruction
 
+def get_merged_out_dir(cfg: DictDefault):
+    return Path(cfg.output_dir) / "merged"
+
+def do_merge_lora_model_and_tokenizer(
+    *,
+    cfg: DictDefault,
+    model,
+    tokenizer,
+):
+    safe_serialization = cfg.save_safetensors is True
+
+    LOG.info("running merge of LoRA with base model")
+    model = model.merge_and_unload()
+    model.to(dtype=torch.float16)
+
+    merged_out_dir = str(get_merged_out_dir(cfg))
+
+    if cfg.local_rank == 0:
+        LOG.info("saving merged model")
+        model.save_pretrained(
+            merged_out_dir,
+            safe_serialization=safe_serialization,
+        )
+        tokenizer.save_pretrained(merged_out_dir)
 
 def do_merge_lora(
     *,
@@ -64,20 +88,7 @@ def do_merge_lora(
     cli_args: TrainerCliArgs,
 ):
     model, tokenizer = load_model_and_tokenizer(cfg=cfg, cli_args=cli_args)
-    safe_serialization = cfg.save_safetensors is True
-
-    LOG.info("running merge of LoRA with base model")
-    model = model.merge_and_unload()
-    model.to(dtype=torch.float16)
-
-    if cfg.local_rank == 0:
-        LOG.info("saving merged model")
-        model.save_pretrained(
-            str(Path(cfg.output_dir) / "merged"),
-            safe_serialization=safe_serialization,
-        )
-        tokenizer.save_pretrained(str(Path(cfg.output_dir) / "merged"))
-
+    do_merge_lora_model_and_tokenizer(cfg=cfg, model=model, tokenizer=tokenizer)
 
 def shard(
     *,

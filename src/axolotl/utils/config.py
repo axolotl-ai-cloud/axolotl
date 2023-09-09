@@ -82,6 +82,11 @@ def normalize_config(cfg):
 
     log_gpu_memory_usage(LOG, "baseline", cfg.device)
 
+    if os.environ.get("WANDB_PROJECT") and len(os.environ.get("WANDB_PROJECT", "")) > 0:
+        cfg.wandb_project = os.environ.get("WANDB_PROJECT")
+
+    if os.environ.get("HUB_MODEL_ID") and len(os.environ.get("HUB_MODEL_ID", "")) > 0:
+        cfg.hub_model_id = os.environ.get("HUB_MODEL_ID")
 
 def validate_config(cfg):
     if cfg.max_packed_sequence_len and cfg.sample_packing:
