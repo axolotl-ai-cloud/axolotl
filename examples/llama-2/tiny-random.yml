@@ -19,24 +19,27 @@ strict: false
 datasets:
   # - path: mhenrichsen/alpaca_2k_test
   #   type: alpaca
-  - path: teknium/GPT4-LLM-Cleaned
-    type: alpaca
-  # - path: Glavin001/startup-interviews
+  # - path: teknium/GPT4-LLM-Cleaned
   #   type: alpaca
+  - path: Glavin001/startup-interviews
+    type: alpaca
 dataset_prepared_path: last_run_prepared
 # val_set_size: 0.01
-val_set_size: 0.001
+val_set_size: 0.02
+# val_set_size: 0.05
+# val_set_size: 0.001
 # val_set_size: 0.1
 # output_dir: ./lora-out
 # output_dir: ./lora-2-out
-output_dir: ./lora-5-out
+output_dir: ./lora-6-out
 
 # sequence_len: 4096
-sequence_len: 2048
+# sequence_len: 2048
 # sequence_len: 256
 # sequence_len: 512
-# sample_packing: true
-sample_packing: false # FIXME: disabled until we can fix the bug in callbacks.py
+sequence_len: 1024
+sample_packing: true
+# sample_packing: false # FIXME: disabled until we can fix the bug in callbacks.py
 
 adapter: lora
 lora_model_dir:
@@ -60,8 +63,9 @@ micro_batch_size: 16
 # num_epochs: 3
 # num_epochs: 0.001
 # num_epochs: 0.01
-num_epochs: 1
+# num_epochs: 1
 # num_epochs: 5
+num_epochs: 10
 optimizer: adamw_bnb_8bit
 lr_scheduler: cosine
 learning_rate: 0.0002
@@ -81,9 +85,9 @@ xformers_attention:
 flash_attention: true
 
 warmup_steps: 10
-eval_steps: 10
+# eval_steps: 10
 # eval_steps: 20
-# eval_steps: 2
+eval_steps: 2
 # eval_steps: 1
 save_steps:
 debug:

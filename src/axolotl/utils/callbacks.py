@@ -438,8 +438,9 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer):
 
                     with torch.no_grad():
                         generation_config = GenerationConfig(
-                            repetition_penalty=1.1,
-                            max_new_tokens=32,
+                            # repetition_penalty=1.1,
+                            max_new_tokens=128,
+                            # max_new_tokens=32,
                             bos_token_id=tokenizer.bos_token_id,
                             eos_token_id=tokenizer.eos_token_id,
                             pad_token_id=tokenizer.pad_token_id,
