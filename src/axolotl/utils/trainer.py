@@ -556,21 +556,25 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
             "sample_packing_efficiency"
         ] = cfg.sample_packing_eff_est
 
-    if cfg.val_set_size == 0:
+    if cfg.eval_steps and cfg.evaluation_strategy:
+        training_arguments_kwargs["evaluation_strategy"] = cfg.evaluation_strategy
+        training_arguments_kwargs["eval_steps"] = cfg.eval_steps
+    elif cfg.val_set_size == 0:
         training_arguments_kwargs["evaluation_strategy"] = "no"
+    elif cfg.evaluation_strategy and cfg.evaluation_strategy == "epoch":
+        # steps isn't used for epochs
+        training_arguments_kwargs["evaluation_strategy"] = cfg.evaluation_strategy
     elif cfg.eval_steps:
         training_arguments_kwargs["evaluation_strategy"] = "steps"
         training_arguments_kwargs["eval_steps"] = cfg.eval_steps
-    else:
-        # we have an eval set, but no steps defined, use epoch
-        training_arguments_kwargs["evaluation_strategy"] = "epoch"
 
-    if cfg.save_strategy:
+    if cfg.save_steps:
+        training_arguments_kwargs["save_strategy"] = "steps"
+        training_arguments_kwargs["save_steps"] = cfg.eval_steps
+    elif cfg.save_strategy:
         training_arguments_kwargs["save_strategy"] = cfg.save_strategy
     else:
-        training_arguments_kwargs["save_strategy"] = (
-            "steps" if cfg.save_steps else "epoch"
-        )
+        training_arguments_kwargs["save_strategy"] = "epoch"
 
     if cfg.do_bench_eval:
         training_arguments_kwargs["do_bench_eval"] = cfg.do_bench_eval
