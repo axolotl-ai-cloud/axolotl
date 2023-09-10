@@ -557,23 +557,28 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
         ] = cfg.sample_packing_eff_est
 
     if cfg.eval_steps and cfg.evaluation_strategy:
+        # assume if the user set both, they know what they're doing
         training_arguments_kwargs["evaluation_strategy"] = cfg.evaluation_strategy
         training_arguments_kwargs["eval_steps"] = cfg.eval_steps
     elif cfg.val_set_size == 0:
+        # no eval set, so don't eval
         training_arguments_kwargs["evaluation_strategy"] = "no"
     elif cfg.evaluation_strategy and cfg.evaluation_strategy == "epoch":
-        # steps isn't used for epochs
+        # if explicitly set for epoch, just set, and eval steps don't matter
         training_arguments_kwargs["evaluation_strategy"] = cfg.evaluation_strategy
     elif cfg.eval_steps:
+        # steps isn't used w/ epochs
         training_arguments_kwargs["evaluation_strategy"] = "steps"
         training_arguments_kwargs["eval_steps"] = cfg.eval_steps
 
     if cfg.save_steps:
+        # save_steps implies save_strategy of steps
         training_arguments_kwargs["save_strategy"] = "steps"
-        training_arguments_kwargs["save_steps"] = cfg.eval_steps
+        training_arguments_kwargs["save_steps"] = cfg.save_steps
     elif cfg.save_strategy:
         training_arguments_kwargs["save_strategy"] = cfg.save_strategy
     else:
+        # default to saving each epoch if not defined
         training_arguments_kwargs["save_strategy"] = "epoch"
 
     if cfg.do_bench_eval:
