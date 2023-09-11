@@ -306,7 +306,7 @@ def do_cli(config: Path = Path("examples/"), **kwargs):
         # model, tokenizer = train(cfg=parsed_cfg, cli_args=parsed_cli_args, dataset_meta=dataset_meta)
         train(cfg=parsed_cfg, cli_args=parsed_cli_args, dataset_meta=dataset_meta)
         # tokenizer = None
-        should_quantize = True
+        should_quantize = False
 
         if should_quantize:
             # Merge model
