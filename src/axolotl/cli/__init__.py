@@ -8,9 +8,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
-import fire
 import torch
-import transformers
 import yaml
 
 # add src to the pythonpath so we don't need to pip install this
@@ -20,7 +18,7 @@ from transformers import GenerationConfig, TextStreamer
 
 from axolotl.common.cli import TrainerCliArgs, load_model_and_tokenizer
 from axolotl.logging_config import configure_logging
-from axolotl.train import TrainDatasetMeta, train
+from axolotl.train import TrainDatasetMeta
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.data import prepare_dataset
 from axolotl.utils.dict import DictDefault
@@ -78,17 +76,6 @@ def do_merge_lora(
             safe_serialization=safe_serialization,
         )
         tokenizer.save_pretrained(str(Path(cfg.output_dir) / "merged"))
-
-
-def shard(
-    *,
-    cfg: DictDefault,
-    cli_args: TrainerCliArgs,
-):
-    model, _ = load_model_and_tokenizer(cfg=cfg, cli_args=cli_args)
-    safe_serialization = cfg.save_safetensors is True
-    LOG.debug("Re-saving model w/ sharding")
-    model.save_pretrained(cfg.output_dir, safe_serialization=safe_serialization)
 
 
 def do_inference(
@@ -260,28 +247,3 @@ def check_accelerate_default_config():
         LOG.warning(
             f"accelerate config file found at {config_args.default_yaml_config_file}. This can lead to unexpected errors"
         )
-
-
-def do_cli(config: Path = Path("examples/"), **kwargs):
-    print_axolotl_text_art()
-    parsed_cfg = load_cfg(config, **kwargs)
-    check_accelerate_default_config()
-    parser = transformers.HfArgumentParser((TrainerCliArgs))
-    parsed_cli_args, _ = parser.parse_args_into_dataclasses(
-        return_remaining_strings=True
-    )
-    if parsed_cli_args.inference:
-        do_inference(cfg=parsed_cfg, cli_args=parsed_cli_args)
-    elif parsed_cli_args.merge_lora:
-        do_merge_lora(cfg=parsed_cfg, cli_args=parsed_cli_args)
-    elif parsed_cli_args.shard:
-        shard(cfg=parsed_cfg, cli_args=parsed_cli_args)
-    else:
-        dataset_meta = load_datasets(cfg=parsed_cfg, cli_args=parsed_cli_args)
-        if parsed_cli_args.prepare_ds_only:
-            return
-        train(cfg=parsed_cfg, cli_args=parsed_cli_args, dataset_meta=dataset_meta)
-
-
-if __name__ == "__main__":
-    fire.Fire(do_cli)
