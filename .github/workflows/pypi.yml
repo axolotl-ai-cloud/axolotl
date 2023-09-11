@@ -12,11 +12,9 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: pypi
-      url: https://pypi.org/p/axolotl-ai
+      url: https://pypi.org/p/axolotl
     permissions:
       id-token: write  # IMPORTANT: this permission is mandatory for trusted publishing
-    with:
-      verbose: true
     steps:
       # retrieve your distributions here
       - name: Publish package distributions to PyPI
