@@ -15,6 +15,31 @@ jobs:
     permissions:
       id-token: write  # IMPORTANT: this permission is mandatory for trusted publishing
     steps:
-      # retrieve your distributions here
+      - name: Check out repository code
+        uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: |
+          pip3 install wheel
+          pip3 install -e .
+          pip3 install -r requirements-tests.txt
+
+      - name: Extract tag name
+        id: tag
+        run: echo ::set-output name=TAG_NAME::$(echo $GITHUB_REF | cut -d / -f 3)
+
+      - name: Update version in setup.py
+        run: >-
+          sed -E 's/version=\"([\d\.]+)",/version="${{ steps.tag.outputs.TAG_NAME }}",/g' setup.py
+
+      - name: Build a binary wheel
+        run: >-
+          python setup.py sdist bdist_wheel
+
       - name: Publish package distributions to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
