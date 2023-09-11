@@ -25,6 +25,7 @@ class TrainerCliArgs:
     debug_num_examples: int = field(default=5)
     inference: bool = field(default=False)
     merge_lora: bool = field(default=False)
+    quantize: bool = field(default=False)
     prepare_ds_only: bool = field(default=False)
     prompter: Optional[str] = field(default=None)
     shard: bool = field(default=False)

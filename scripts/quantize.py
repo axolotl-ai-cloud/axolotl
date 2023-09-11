@@ -10,6 +10,7 @@ import random
 import time
 from pathlib import Path
 import logging
+import re
 
 import torch
 from datasets import load_dataset, Dataset
@@ -26,7 +27,32 @@ from finetune import load_cfg, get_merged_out_dir, do_merge_lora_model_and_token
 from axolotl.utils.quantize import load_merged_model, get_quantized_model, quantize_and_save, push_model, get_quantized_model_id, get_quantized_model_dir, get_examples_for_quantization
 
 configure_logging()
-LOG = logging.getLogger("axolotl")
+LOG = logging.getLogger("axolotl.quantize")
+
+import debugpy
+debugpy.listen(('0.0.0.0', 5678))
+debugpy.wait_for_client()
+debugpy.breakpoint()
+
+class ProgressExtractingHandler(logging.Handler):
+    def emit(self, record):
+        log_entry = self.format(record)
+        progress_info = self.extract_progress(log_entry)
+        if progress_info:
+            print(f"Progress: {progress_info}")
+
+    @staticmethod
+    def extract_progress(log_entry):
+# [2023-09-11 07:20:37,502] [INFO] [auto_gptq.modeling._base.quantize:364] [PID:3962] [RANK:0] Quantizing self_attn.k_proj in layer 4/32...
+        match = re.search(r'layer (\d+/\d+)', log_entry)
+        return match.group(1) if match else None
+        # [2023-09-11 07:27:52,208] [INFO] [auto_gptq.modeling._utils.pack_model:129] [PID:3962] [RANK:0] model.layers.15.self_attn.o_proj
+
+handler = ProgressExtractingHandler()
+# logging.getLogger('auto_gptq.modeling._base.quantize').addHandler(handler)
+logger = logging.getLogger('auto_gptq.modeling._base.quantize')
+logger.setLevel(logging.DEBUG)
+logger.addHandler(handler)
 
 # logging.basicConfig(
 #     format="%(asctime)s %(levelname)s [%(name)s] %(message)s", level=logging.DEBUG, datefmt="%Y-%m-%d %H:%M:%S"

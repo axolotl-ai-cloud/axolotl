@@ -703,7 +703,7 @@ Pass the appropriate flag to the train command:
 Add below flag to train command above
 
 ```bash
---merge_lora --lora_model_dir="./completed-model" --load_in_8bit=False --load_in_4bit=False
+--merge_lora --lora_model_dir="./completed-model"
 ```
 
 If you run out of CUDA memory, you can try to merge in system RAM with

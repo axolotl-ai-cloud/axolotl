@@ -1,5 +1,7 @@
 """Prepare and train a model on a dataset. Can also infer from a model or merge lora"""
 
+import gc
+
 import importlib
 import logging
 import os
@@ -90,7 +92,7 @@ def do_merge_lora(
 ):
     new_cfg = DictDefault({
         **cfg,
-        'lora_model_dir': cfg['output_dir'],
+        'lora_model_dir': cfg.get('lora_model_dir', cfg['output_dir']),
         'load_in_8bit': False,
         'load_in_4bit': False,
     })
@@ -285,11 +287,24 @@ def do_cli(config: Path = Path("examples/"), **kwargs):
         do_merge_lora(cfg=parsed_cfg, cli_args=parsed_cli_args)
     elif parsed_cli_args.shard:
         shard(cfg=parsed_cfg, cli_args=parsed_cli_args)
+    elif parsed_cli_args.quantize:
+        dataset_meta = load_datasets(cfg=parsed_cfg, cli_args=parsed_cli_args)
+
+        tokenizer = load_tokenizer(parsed_cfg)
+        # Load merged model with AutoGPTQ
+        merged_model = load_merged_model(parsed_cfg)
+
+        # Quantize & save
+        n_samples = 128
+        examples = get_examples_for_quantization(dataset_meta.train_dataset, n_samples)
+        quantize_and_save(parsed_cfg, merged_model, tokenizer, examples)
+
     else:
         dataset_meta = load_datasets(cfg=parsed_cfg, cli_args=parsed_cli_args)
         if parsed_cli_args.prepare_ds_only:
             return
-        model, tokenizer = train(cfg=parsed_cfg, cli_args=parsed_cli_args, dataset_meta=dataset_meta)
+        # model, tokenizer = train(cfg=parsed_cfg, cli_args=parsed_cli_args, dataset_meta=dataset_meta)
+        train(cfg=parsed_cfg, cli_args=parsed_cli_args, dataset_meta=dataset_meta)
         # tokenizer = None
         should_quantize = True
 
@@ -310,8 +325,24 @@ def do_cli(config: Path = Path("examples/"), **kwargs):
             # })
             # lora_model_dir="./completed-model" --load_in_8bit=False --load_in_4bit=False
             # do_merge_lora(cfg=new_cfg, cli_args=parsed_cli_args)
+
+            def log_gpu_memory():
+                print("GPU Memory:", torch.cuda.memory_allocated())
             
+            log_gpu_memory()
+            print(len(gc.get_referrers(model)))
+            print(sys.getrefcount(model))
+
             # TODO: release old model from GPU memory
+            print(gc.collect())
+            del model
+            # del tokenizer
+            print(gc.collect())
+            torch.cuda.empty_cache()
+            print(gc.collect())
+
+            log_gpu_memory()
+
             do_merge_lora(cfg=parsed_cfg, cli_args=parsed_cli_args)
 
             # Load merged model with AutoGPTQ

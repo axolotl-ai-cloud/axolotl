@@ -42,10 +42,9 @@ def load_merged_model(cfg: DictDefault):
     # Check if the merged model exists
     if not merged_out_dir.exists():
         # If not, merge the model
-        print("Merged model not found. Merging...")
-        # model, tokenizer = load_model(cfg, inference=True)
+        raise FileNotFoundError("Merged model not found. Please ensure the model has been merged.")
         # do_merge_lora_model_and_tokenizer(cfg=cfg, model=model, tokenizer=tokenizer)
-        raise NotImplementedError("Merging model is not implemented yet.")
+        # raise NotImplementedError("Merging model is not implemented yet.")
 
     # load un-quantized model, by default, the model will always be loaded into CPU memory
     model = AutoGPTQForCausalLM.from_pretrained(merged_out_dir, quantize_config)
@@ -114,7 +113,8 @@ def get_quantized_model_dir(cfg: DictDefault):
 # def get_quantized_model_dir(cfg: DictDefault, quantize_config):
     if not cfg.output_dir:
         raise ValueError("Missing output_dir in the configuration.")
-    return f"{cfg.output_dir.lstrip('./')}-GPTQ"
+    p = Path(cfg.output_dir) / "quantized"
+    return str(p).lstrip('./')
 
 def get_examples_for_quantization(dataset, n_samples):
     print("Loading dataset...")
