@@ -560,6 +560,30 @@ log_sweep_min_lr:
 log_sweep_max_lr:
 
 # specify optimizer
+# Valid values are driven by the Transformers OptimizerNames class, see:
+# https://github.com/huggingface/transformers/blob/95b374952dc27d8511541d6f5a4e22c9ec11fb24/src/transformers/training_args.py#L134
+#
+# Note that not all optimizers may be available in your environment, ex: 'adamw_anyprecision' is part of
+# torchdistx, 'adamw_bnb_8bit' is part of bnb.optim.Adam8bit, etc. When in doubt, it is recommended to start with the optimizer used
+# in the examples/ for your model and fine-tuning use case.
+#
+# Valid values for 'optimizer' include:
+# - adamw_hf
+# - adamw_torch
+# - adamw_torch_fused
+# - adamw_torch_xla
+# - adamw_apex_fused
+# - adafactor
+# - adamw_anyprecision
+# - sgd
+# - adagrad
+# - adamw_bnb_8bit
+# - lion_8bit
+# - lion_32bit
+# - paged_adamw_32bit
+# - paged_adamw_8bit
+# - paged_lion_32bit
+# - paged_lion_8bit
 optimizer:
 # specify weight decay
 weight_decay:
