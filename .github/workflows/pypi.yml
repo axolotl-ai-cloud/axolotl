@@ -35,7 +35,7 @@ jobs:
 
       - name: Update version in setup.py
         run: >-
-          sed -E 's/version=\"([\d\.]+)",/version="${{ steps.tag.outputs.TAG_NAME }}",/g' setup.py
+          sed -i -E 's/version="([0-9.]+)",/version="${{ steps.tag.outputs.TAG_NAME }}",/g' setup.py
 
       - name: Build a binary wheel
         run: >-
