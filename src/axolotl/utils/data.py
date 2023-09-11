@@ -529,10 +529,10 @@ def load_prepare_datasets(
 
 
 def encode_pretraining(
-    tokenizer: PreTrainedTokenizerBase, max_tokens: int, examples: Dict[str, List]
+    tokenizer: PreTrainedTokenizerBase, max_tokens: int, examples: List[str]
 ) -> Dict[str, List]:
     res = tokenizer(
-        examples["text"],
+        examples,
         truncation=True,
         max_length=max_tokens - 2,
         add_special_tokens=True,
