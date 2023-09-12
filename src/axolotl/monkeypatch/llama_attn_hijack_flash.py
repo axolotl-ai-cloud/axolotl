@@ -261,6 +261,8 @@ def flashattn_forward(
                 if attention_mask is not None
                 else None,
             )
+            if q_unpad.dtype != kv_unpad.dtype:
+                kv_unpad = kv_unpad.to(q_unpad.dtype)
             output_unpad = flash_attn_varlen_kvpacked_func(
                 q_unpad,
                 kv_unpad,
