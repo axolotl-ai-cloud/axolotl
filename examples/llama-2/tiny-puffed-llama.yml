@@ -1,5 +1,6 @@
-base_model: meta-llama/Llama-2-7b-hf
-base_model_config: meta-llama/Llama-2-7b-hf
+base_model: PY007/TinyLlama-1.1B-step-50K-105b
+base_model_config: PY007/TinyLlama-1.1B-step-50K-105b
+
 model_type: LlamaForCausalLM
 tokenizer_type: LlamaTokenizer
 is_llama_derived_model: true
@@ -9,15 +10,16 @@ load_in_4bit: false
 strict: false
 
 datasets:
-  - path: mhenrichsen/alpaca_2k_test
-    type: alpaca
+  # - path: mhenrichsen/alpaca_2k_test
+  #   type: alpaca
+  - path: LDJnr/Puffin
+    type: sharegpt:chat
 dataset_prepared_path: last_run_prepared
 val_set_size: 0.01
-output_dir: ./lora-out
+output_dir: ./lora-tiny-puffed-out
 
-sequence_len: 4096
+sequence_len: 2048
 sample_packing: true
-pad_to_sequence_len: true
 
 adapter: lora
 lora_model_dir:
@@ -27,15 +29,15 @@ lora_dropout: 0.05
 lora_target_linear: true
 lora_fan_in_fan_out:
 
-wandb_project: test-issue-490-7b-2
+wandb_project:
 wandb_entity:
 wandb_watch:
 wandb_run_id:
 wandb_log_model:
 
 gradient_accumulation_steps: 4
-micro_batch_size: 2
-num_epochs: 3
+micro_batch_size: 4
+num_epochs: 2
 optimizer: adamw_bnb_8bit
 lr_scheduler: cosine
 learning_rate: 0.0002
@@ -56,8 +58,7 @@ flash_attention: true
 
 warmup_steps: 10
 eval_steps: 20
-eval_table_size: 5
-eval_table_max_new_tokens: 128
+eval_table_size: 10
 save_steps:
 debug:
 deepspeed:

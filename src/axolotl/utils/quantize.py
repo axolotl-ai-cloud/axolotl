@@ -86,6 +86,9 @@ def quantize_and_save(cfg: DictDefault, model, tokenizer, examples_for_quant):
     tokenizer.save_pretrained(quantized_model_dir)
     print("Saved.")
 
+    # FIXME: Add fix to config.json
+    # "error": "handler: 'pad_token_id' \ntraceback: Traceback (most recent call last):\n  File \"/usr/local/lib/python3.10/dist-packages/runpod/serverless/modules/job.py\", line 141, in run_job_generator\n    for output_partial in job_output:\n  File \"/data/handler.py\", line 107, in inference\n    generator, default_settings = load_model()\n  File \"/data/handler.py\", line 45, in load_model\n    config = ExLlamaConfig(model_config_path)               # create config from config.json\n  File \"/data/exllama/model.py\", line 52, in __init__\n    self.pad_token_id = read_config[\"pad_token_id\"]\nKeyError: 'pad_token_id'\n"
+
     return model
 
 def push_model(cfg: DictDefault, model, tokenizer):
