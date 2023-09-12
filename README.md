@@ -71,6 +71,7 @@ Get started with Axolotl in just a few steps! This quickstart guide will walk yo
 git clone https://github.com/OpenAccess-AI-Collective/axolotl
 cd axolotl
 
+pip3 install packaging
 pip3 install -e .[flash-attn]
 pip3 install -U git+https://github.com/huggingface/peft.git
 
@@ -105,6 +106,7 @@ accelerate launch scripts/finetune.py examples/openllama-3b/lora.yml \
 
   3. Install axolotl along with python dependencies
         ```bash
+        pip3 install packaging
         pip3 install -e .[flash-attn]
         ```
 
@@ -140,7 +142,8 @@ accelerate launch scripts/finetune.py examples/openllama-3b/lora.yml \
   git clone https://github.com/OpenAccess-AI-Collective/axolotl
   cd axolotl
 
-  pip3 install -e .
+  pip3 install packaging
+  pip3 install -e .[flash-attn]
   pip3 install protobuf==3.20.3
   pip3 install -U --ignore-installed requests Pillow psutil scipy
   ```
