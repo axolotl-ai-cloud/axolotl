@@ -339,8 +339,32 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer):
             eval_dataloader,
             **kwargs,
         ):
+            eval_table_size = self.cfg.eval_table_size
+
+            if eval_table_size <= 0:
+                return control
+
             trainer.model.eval()
             device = torch.device(self.cfg.device)
+
+            generation_config = GenerationConfig(
+                max_new_tokens=self.cfg.eval_table_max_new_tokens,
+                bos_token_id=tokenizer.bos_token_id,
+                eos_token_id=tokenizer.eos_token_id,
+                pad_token_id=tokenizer.pad_token_id,
+                do_sample=False,
+                use_cache=True,
+                return_dict_in_generate=True,
+                output_attentions=False,
+                output_hidden_states=False,
+                output_scores=False,
+            )
+
+            def logits_to_tokens(logits) -> str:
+                probabilities = torch.softmax(logits, dim=-1)
+                # Get the predicted token ids (the ones with the highest probability)
+                predicted_token_ids = torch.argmax(probabilities, dim=-1)
+                return predicted_token_ids
 
             def find_ranges(lst):
                 ranges = []
@@ -359,13 +383,17 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer):
                         "id",
                         "Prompt",
                         "Correct Completion",
-                        "Predicted Completion",
+                        "Predicted Completion (model.generate)",
+                        "Predicted Completion (trainer.prediction_step)",
                     ]
                 )
                 row_index = 0
-                max_new_tokens = 128
 
-                for batch in tqdm(table_dataloader, total=len(table_dataloader)):
+                for batch in tqdm(table_dataloader):
+
+                    if row_index > eval_table_size:
+                        break
+
                     batch_labels = batch["labels"].to(device)
                     batch_input_ids = batch["input_ids"].to(device)
 
@@ -374,11 +402,18 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer):
                     else:
                         batch_pos_ids = [None] * len(batch["input_ids"])
 
+                    (_, batch_logits, _) = trainer.prediction_step(
+                        trainer.model,
+                        batch,
+                        prediction_loss_only=False,
+                    )
+
                     prompt_token_ids_list = []
+                    pred_step_token_ids_list = []
                     completion_token_ids_list = []
 
-                    for input_ids_all, labels_all, pos_ids in zip(
-                        batch_input_ids, batch_labels, batch_pos_ids
+                    for input_ids_all, labels_all, pos_ids, logits in zip(
+                        batch_input_ids, batch_labels, batch_pos_ids, batch_logits,
                     ):
                         if pos_ids is None:
                             pos_ranges = [(0, len(input_ids_all) - 1)]
@@ -396,7 +431,6 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer):
                             tokens_without_loss = labels == IGNORE_INDEX
                             tokens_with_loss = labels != IGNORE_INDEX
                             tokens_exclude_padding = input_ids != tokenizer.pad_token_id
-
                             prompt_token_includes = (
                                 tokens_without_loss & tokens_exclude_padding
                             )
@@ -407,27 +441,20 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer):
                             completion_token_ids = input_ids[tokens_with_loss]
                             completion_token_ids_list.append(completion_token_ids)
 
+                            pred_step_token_ids = logits_to_tokens(logits[start : end + 1])[tokens_with_loss]
+                            pred_step_token_ids_list.append(pred_step_token_ids)
+
                     prompt_texts = tokenizer.batch_decode(
                         prompt_token_ids_list, skip_special_tokens=True
                     )
                     completion_texts = tokenizer.batch_decode(
                         completion_token_ids_list, skip_special_tokens=True
                     )
+                    pred_step_texts = tokenizer.batch_decode(
+                        pred_step_token_ids_list, skip_special_tokens=True
+                    )
 
                     with torch.no_grad():
-                        generation_config = GenerationConfig(
-                            max_new_tokens=max_new_tokens,
-                            bos_token_id=tokenizer.bos_token_id,
-                            eos_token_id=tokenizer.eos_token_id,
-                            pad_token_id=tokenizer.pad_token_id,
-                            do_sample=False,
-                            use_cache=True,
-                            return_dict_in_generate=True,
-                            output_attentions=False,
-                            output_hidden_states=False,
-                            output_scores=False,
-                        )
-
                         prompt_encoding = tokenizer(
                             prompt_texts, padding=True, return_tensors="pt"
                         ).to(self.cfg.device)
@@ -451,17 +478,18 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer):
                         prediction_without_prompt_tokens_list, skip_special_tokens=True
                     )
 
-                    for prompt_text, completion_text, prediction_text in zip(
-                        prompt_texts, completion_texts, predicted_texts
+                    for prompt_text, completion_text, prediction_text, pred_step_text in zip(
+                        prompt_texts, completion_texts, predicted_texts, pred_step_texts
                     ):
                         table.add_data(
-                            row_index, prompt_text, completion_text, prediction_text
+                            row_index, prompt_text, completion_text, prediction_text, pred_step_text
                         )
                         row_index += 1
 
                 wandb.run.log({f"{name} - Predictions vs Ground Truth": table})
 
-            log_table_from_dataloader("Eval", eval_dataloader)
+            if is_main_process():
+                log_table_from_dataloader("Eval", eval_dataloader)
 
             return control
 

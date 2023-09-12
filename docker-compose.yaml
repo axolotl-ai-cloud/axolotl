@@ -1,23 +1,20 @@
 # version: '3.8'
 services:
   axolotl:
-    # build:
-    #   context: .
-    #   dockerfile: ./docker/Dockerfile
-    image: winglian/axolotl:main-py3.10-cu118-2.0.1
+    build:
+      context: .
+      dockerfile: ./docker/Dockerfile
     volumes:
       - .:/workspace/axolotl
       - ~/.cache/huggingface/:/root/.cache/huggingface/
     # set environment variables
     environment:
       - WANDB_API_KEY=${WANDB_API_KEY}
-    ports:
-      - "5678:5678"
     deploy:
       resources:
         reservations:
           devices:
             - driver: nvidia
-              count: 1
+              # count: 1
               capabilities: [gpu]
     command: tail -f /dev/null

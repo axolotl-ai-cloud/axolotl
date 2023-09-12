@@ -48,6 +48,8 @@ def normalize_config(cfg):
     )
     cfg.world_size = int(os.environ.get("WORLD_SIZE", 1))
     cfg.local_rank = int(os.environ.get("LOCAL_RANK", 0))
+    cfg.eval_table_size = cfg.eval_table_size or 0
+    cfg.eval_table_max_new_tokens = cfg.eval_table_max_new_tokens or 128
     choose_device(cfg)
     cfg.ddp = cfg.ddp if cfg.ddp is not None else cfg.world_size != 1
     if cfg.ddp:
