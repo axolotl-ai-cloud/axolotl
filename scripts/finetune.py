@@ -28,11 +28,6 @@ from axolotl.utils.models import load_tokenizer
 from axolotl.utils.tokenization import check_dataset_labels
 from axolotl.utils.wandb import setup_wandb_env_vars
 
-# import debugpy
-# debugpy.listen(('0.0.0.0', 5678))
-# debugpy.wait_for_client()
-# debugpy.breakpoint()
-
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 src_dir = os.path.join(project_root, "src")
 sys.path.insert(0, src_dir)
