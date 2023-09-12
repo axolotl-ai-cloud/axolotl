@@ -15,10 +15,10 @@ import logging
 # from datasets import load_dataset, Dataset
 # from transformers import AutoTokenizer, LlamaTokenizer, TextGenerationPipeline
 from auto_gptq import AutoGPTQForCausalLM, BaseQuantizeConfig
-from axolotl.prompters import AlpacaPrompter
-from axolotl.utils.models import load_model, load_tokenizer
-from axolotl.common.cli import TrainerCliArgs
-from axolotl.logging_config import configure_logging
+# from axolotl.prompters import AlpacaPrompter
+# from axolotl.utils.models import load_model, load_tokenizer
+# from axolotl.common.cli import TrainerCliArgs
+# from axolotl.logging_config import configure_logging
 from axolotl.utils.dict import DictDefault
 # from finetune import load_cfg, get_merged_out_dir, do_merge_lora_model_and_tokenizer
 
@@ -55,7 +55,11 @@ def load_merged_model(cfg: DictDefault):
 def get_quantized_model(cfg: DictDefault):
     print("Loading quantized model...")
     quantized_model_dir = get_quantized_model_dir(cfg)
-    model = AutoGPTQForCausalLM.from_quantized(quantized_model_dir, device="cuda:0", use_safetensors=True)
+    model = AutoGPTQForCausalLM.from_quantized(quantized_model_dir,
+                                               device="cuda:0",
+                                               use_safetensors=True,
+                                               inject_fused_attention=False, # WORKAROUND for https://github.com/PanQiWei/AutoGPTQ/issues/210
+                                            )
     print("Model loaded.")
     return model
 

@@ -29,7 +29,7 @@ from axolotl.utils.distributed import is_main_process
 from axolotl.utils.models import load_tokenizer
 from axolotl.utils.tokenization import check_dataset_labels
 from axolotl.utils.wandb import setup_wandb_env_vars
-from axolotl.utils.quantize import get_examples_for_quantization, load_merged_model, quantize_and_save
+from axolotl.utils.quantize import get_examples_for_quantization, load_merged_model, push_model, quantize_and_save
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 src_dir = os.path.join(project_root, "src")
@@ -155,6 +155,9 @@ def do_inference(
         batch = tokenizer(prompt, return_tensors="pt", add_special_tokens=True)
 
         print("=" * 40)
+        print(prompt)
+        print("=" * 20)
+
         model.eval()
         with torch.no_grad():
             generation_config = GenerationConfig(
@@ -298,7 +301,9 @@ def do_cli(config: Path = Path("examples/"), **kwargs):
         n_samples = 128
         examples = get_examples_for_quantization(dataset_meta.train_dataset, n_samples)
         quantize_and_save(parsed_cfg, merged_model, tokenizer, examples)
-
+    elif parsed_cli_args.push:
+        model, tokenizer = load_model_and_tokenizer(cfg=parsed_cfg, cli_args=parsed_cli_args)
+        push_model(cfg=parsed_cfg, model=model, tokenizer=tokenizer)
     else:
         dataset_meta = load_datasets(cfg=parsed_cfg, cli_args=parsed_cli_args)
         if parsed_cli_args.prepare_ds_only:
