@@ -534,6 +534,9 @@ eval_steps: # leave empty to eval at each epoch
 save_total_limit: # checkpoints saved at a time
 max_steps:
 
+eval_table_size: # approximate number of predictions sent to wandb depending on batch size. Enabled above 0. Default is 0
+eval_table_max_new_tokens: # total number of tokens generated for predictions sent to wandb. Default is 128
+
 # save model as safetensors (require safetensors package)
 save_safetensors:
 

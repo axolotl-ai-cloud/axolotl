@@ -296,10 +296,10 @@ def load_model(
     if (
         hasattr(model.config, "max_position_embeddings")
         and model.config.max_position_embeddings
-        and cfg.sequence_len >= model.config.max_position_embeddings
+        and cfg.sequence_len > model.config.max_position_embeddings
     ):
         LOG.warning(
-            f"increasing model.config.max_position_embeddings to {cfg.sequence_len}"
+            f"increasing model.config.max_position_embeddings from {model.config.max_position_embeddings} to {cfg.sequence_len}"
         )
         model.config.max_position_embeddings = cfg.sequence_len
 

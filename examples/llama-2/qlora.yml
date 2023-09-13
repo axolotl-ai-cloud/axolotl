@@ -58,6 +58,7 @@ flash_attention: true
 
 warmup_steps: 10
 eval_steps: 20
+eval_table_size: 5
 save_steps:
 debug:
 deepspeed:

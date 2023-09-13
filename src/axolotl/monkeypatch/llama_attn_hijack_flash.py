@@ -193,7 +193,7 @@ def flashattn_forward(
         # only on first autoregressive step q,k,v have same seqlen
         is_causal = key_states.shape == query_states.shape
 
-    if cu_seqlens is not None and max_seqlen is not None:
+    if cu_seqlens is not None and max_seqlen is not None and cu_seqlens.dim() == 1:
         # special handling using sample packing
         qkv = torch.stack(
             [query_states, key_states, value_states], dim=2
@@ -261,6 +261,8 @@ def flashattn_forward(
                 if attention_mask is not None
                 else None,
             )
+            if q_unpad.dtype != kv_unpad.dtype:
+                kv_unpad = kv_unpad.to(q_unpad.dtype)
             output_unpad = flash_attn_varlen_kvpacked_func(
                 q_unpad,
                 kv_unpad,
