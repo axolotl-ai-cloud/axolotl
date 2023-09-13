@@ -519,6 +519,10 @@ wandb_log_model: # "checkpoint" to log model to wandb Artifacts every `save_step
 # where to save the finished model to
 output_dir: ./completed-model
 
+# whether to use torch.compile and which backend to use
+torch_compile:  # bool
+torch_compile_backend:  # Optional[str]
+
 # training hyperparameters
 gradient_accumulation_steps: 1
 micro_batch_size: 2

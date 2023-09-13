@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Optional, Union
 
 import numpy as np
+import torch
 import torch.cuda
 import transformers
 from datasets import Dataset, set_caching_enabled
@@ -603,6 +604,21 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
         training_arguments_kwargs["metric_for_best_model"] = cfg.metric_for_best_model
     if cfg.greater_is_better:
         training_arguments_kwargs["greater_is_better"] = cfg.greater_is_better
+
+    if cfg.torch_compile:
+        if torch.__version__ < "2.1.0":  # pylint: disable=protected-access
+            LOG.warning("torch>=2.1.0 required for torch_compile to work properly")
+        else:
+            import torch._dynamo  # pylint: disable=redefined-outer-name
+
+            torch._dynamo.config.suppress_errors = (  # pylint: disable=protected-access
+                True
+            )
+            training_arguments_kwargs["torch_compile"] = cfg.torch_compile
+            if cfg.torch_compile_backend:
+                training_arguments_kwargs[
+                    "torch_compile_backend"
+                ] = cfg.torch_compile_backend
 
     # DDP Config
     if cfg.ddp_timeout:

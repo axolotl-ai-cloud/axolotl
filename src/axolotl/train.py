@@ -80,10 +80,6 @@ def train(
 
     model.config.use_cache = False
 
-    if torch.__version__ >= "2" and sys.platform != "win32":
-        LOG.info("Compiling torch model")
-        model = torch.compile(model)
-
     # go ahead and presave, so we have the adapter config available to inspect
     if peft_config:
         LOG.info(f"Pre-saving adapter config to {cfg.output_dir}")
