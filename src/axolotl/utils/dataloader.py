@@ -223,6 +223,8 @@ class MultipackDistributedDataloader:
                 concatenated = {}
                 batched_data = [self.dataset[batch_idx] for batch_idx in batch]
                 for feature in features:
+                    if feature == "length":
+                        continue
                     if feature == "attention_mask":
                         arrays = [
                             (attn_mask_cum_idx + idx + 1) * np.array(item[feature])
