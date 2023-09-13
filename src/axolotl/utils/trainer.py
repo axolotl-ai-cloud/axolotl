@@ -563,13 +563,16 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
     elif cfg.val_set_size == 0:
         # no eval set, so don't eval
         training_arguments_kwargs["evaluation_strategy"] = "no"
-    elif cfg.evaluation_strategy and cfg.evaluation_strategy == "epoch":
+    elif cfg.evaluation_strategy and cfg.evaluation_strategy in ["epoch", "no"]:
         # if explicitly set for epoch, just set, and eval steps don't matter
         training_arguments_kwargs["evaluation_strategy"] = cfg.evaluation_strategy
     elif cfg.eval_steps:
         # steps isn't used w/ epochs
         training_arguments_kwargs["evaluation_strategy"] = "steps"
         training_arguments_kwargs["eval_steps"] = cfg.eval_steps
+    else:
+        # we have an eval set, but no steps defined, default to use epoch
+        training_arguments_kwargs["evaluation_strategy"] = "epoch"
 
     if cfg.save_steps:
         # save_steps implies save_strategy of steps
