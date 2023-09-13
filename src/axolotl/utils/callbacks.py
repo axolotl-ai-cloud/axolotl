@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.distributed as dist
+import wandb
 from datasets import load_dataset
 from optimum.bettertransformer import BetterTransformer
 from tqdm import tqdm
@@ -24,7 +25,6 @@ from transformers import (
 )
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, IntervalStrategy
 
-import wandb
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.distributed import (
     barrier,
@@ -332,12 +332,12 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer):
 
         def on_evaluate(
             self,
-            args: AxolotlTrainingArguments,
+            args: AxolotlTrainingArguments,  # pylint: disable=unused-argument
             state: TrainerState,
             control: TrainerControl,
-            train_dataloader,
+            train_dataloader,  # pylint: disable=unused-argument
             eval_dataloader,
-            **kwargs,
+            **kwargs,  # pylint: disable=unused-argument
         ):
             eval_table_size = self.cfg.eval_table_size
 
@@ -347,6 +347,7 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer):
             trainer.model.eval()
             device = torch.device(self.cfg.device)
 
+            # pylint: disable=duplicate-code
             generation_config = GenerationConfig(
                 max_new_tokens=self.cfg.eval_table_max_new_tokens,
                 bos_token_id=tokenizer.bos_token_id,
@@ -390,7 +391,6 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer):
                 row_index = 0
 
                 for batch in tqdm(table_dataloader):
-
                     if row_index > eval_table_size:
                         break
 
@@ -413,7 +413,10 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer):
                     completion_token_ids_list = []
 
                     for input_ids_all, labels_all, pos_ids, logits in zip(
-                        batch_input_ids, batch_labels, batch_pos_ids, batch_logits,
+                        batch_input_ids,
+                        batch_labels,
+                        batch_pos_ids,
+                        batch_logits,
                     ):
                         if pos_ids is None:
                             pos_ranges = [(0, len(input_ids_all) - 1)]
@@ -441,7 +444,9 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer):
                             completion_token_ids = input_ids[tokens_with_loss]
                             completion_token_ids_list.append(completion_token_ids)
 
-                            pred_step_token_ids = logits_to_tokens(logits[start : end + 1])[tokens_with_loss]
+                            pred_step_token_ids = logits_to_tokens(
+                                logits[start : end + 1]
+                            )[tokens_with_loss]
                             pred_step_token_ids_list.append(pred_step_token_ids)
 
                     prompt_texts = tokenizer.batch_decode(
@@ -478,11 +483,20 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer):
                         prediction_without_prompt_tokens_list, skip_special_tokens=True
                     )
 
-                    for prompt_text, completion_text, prediction_text, pred_step_text in zip(
+                    for (
+                        prompt_text,
+                        completion_text,
+                        prediction_text,
+                        pred_step_text,
+                    ) in zip(
                         prompt_texts, completion_texts, predicted_texts, pred_step_texts
                     ):
                         table.add_data(
-                            row_index, prompt_text, completion_text, prediction_text, pred_step_text
+                            row_index,
+                            prompt_text,
+                            completion_text,
+                            prediction_text,
+                            pred_step_text,
                         )
                         row_index += 1
 
