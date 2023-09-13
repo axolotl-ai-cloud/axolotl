@@ -110,11 +110,11 @@ def load_model(
     # TODO refactor as a kwarg
     load_in_8bit = cfg.load_in_8bit
 
-    if hasattr(model_config, "model_type") and model_type.model_type == "btlm":
+    if hasattr(model_config, "model_type") and model_config.model_type == "btlm":
         if cfg.flash_attention:
             replace_btlm_attn_with_flash_attn()
 
-    if hasattr(model_config, "model_type") and model_type.model_type == "falcon":
+    if hasattr(model_config, "model_type") and model_config.model_type == "falcon":
         if cfg.flash_attention:
             replace_falcon_attn_with_flash_attn()
 
