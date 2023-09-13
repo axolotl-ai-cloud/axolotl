@@ -25,7 +25,9 @@ def choose_device(cfg):
             return "cpu"
 
     cfg.device = get_device()
-    if cfg.device_map != "auto":
+    if cfg.world_size == 1:
+        cfg.device_map = "auto"
+    else:
         if cfg.device.startswith("cuda"):
             cfg.device_map = {"": cfg.local_rank}
         else:
