@@ -1,5 +1,7 @@
 """Prepare and train a model on a dataset. Can also infer from a model or merge lora"""
 
+import gc
+
 import importlib
 import logging
 import os
@@ -27,6 +29,7 @@ from axolotl.utils.distributed import is_main_process
 from axolotl.utils.models import load_tokenizer
 from axolotl.utils.tokenization import check_dataset_labels
 from axolotl.utils.wandb import setup_wandb_env_vars
+from axolotl.utils.quantize import get_examples_for_quantization, load_merged_model, push_model, quantize_and_save
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 src_dir = os.path.join(project_root, "src")
@@ -57,27 +60,44 @@ def get_multi_line_input() -> Optional[str]:
     # instruction = pathlib.Path("/proc/self/fd/0").read_text()
     return instruction
 
+def get_merged_out_dir(cfg: DictDefault):
+    return Path(cfg.output_dir) / "merged"
 
-def do_merge_lora(
+def do_merge_lora_model_and_tokenizer(
     *,
     cfg: DictDefault,
-    cli_args: TrainerCliArgs,
+    model,
+    tokenizer,
 ):
-    model, tokenizer = load_model_and_tokenizer(cfg=cfg, cli_args=cli_args)
     safe_serialization = cfg.save_safetensors is True
 
     LOG.info("running merge of LoRA with base model")
     model = model.merge_and_unload()
     model.to(dtype=torch.float16)
 
+    merged_out_dir = str(get_merged_out_dir(cfg))
+
     if cfg.local_rank == 0:
         LOG.info("saving merged model")
         model.save_pretrained(
-            str(Path(cfg.output_dir) / "merged"),
+            merged_out_dir,
             safe_serialization=safe_serialization,
         )
-        tokenizer.save_pretrained(str(Path(cfg.output_dir) / "merged"))
+        tokenizer.save_pretrained(merged_out_dir)
 
+def do_merge_lora(
+    *,
+    cfg: DictDefault,
+    cli_args: TrainerCliArgs,
+):
+    new_cfg = DictDefault({
+        **cfg,
+        'lora_model_dir': cfg.get('lora_model_dir', cfg['output_dir']),
+        'load_in_8bit': False,
+        'load_in_4bit': False,
+    })
+    model, tokenizer = load_model_and_tokenizer(cfg=new_cfg, cli_args=cli_args)
+    do_merge_lora_model_and_tokenizer(cfg=new_cfg, model=model, tokenizer=tokenizer)
 
 def shard(
     *,
@@ -135,6 +155,9 @@ def do_inference(
         batch = tokenizer(prompt, return_tensors="pt", add_special_tokens=True)
 
         print("=" * 40)
+        print(prompt)
+        print("=" * 20)
+
         model.eval()
         with torch.no_grad():
             generation_config = GenerationConfig(
@@ -267,11 +290,74 @@ def do_cli(config: Path = Path("examples/"), **kwargs):
         do_merge_lora(cfg=parsed_cfg, cli_args=parsed_cli_args)
     elif parsed_cli_args.shard:
         shard(cfg=parsed_cfg, cli_args=parsed_cli_args)
+    elif parsed_cli_args.quantize:
+        dataset_meta = load_datasets(cfg=parsed_cfg, cli_args=parsed_cli_args)
+
+        tokenizer = load_tokenizer(parsed_cfg)
+        # Load merged model with AutoGPTQ
+        merged_model = load_merged_model(parsed_cfg)
+
+        # Quantize & save
+        n_samples = 128
+        examples = get_examples_for_quantization(dataset_meta.train_dataset, n_samples)
+        quantize_and_save(parsed_cfg, merged_model, tokenizer, examples)
+    elif parsed_cli_args.push:
+        model, tokenizer = load_model_and_tokenizer(cfg=parsed_cfg, cli_args=parsed_cli_args)
+        push_model(cfg=parsed_cfg, model=model, tokenizer=tokenizer)
     else:
         dataset_meta = load_datasets(cfg=parsed_cfg, cli_args=parsed_cli_args)
         if parsed_cli_args.prepare_ds_only:
             return
+        # model, tokenizer = train(cfg=parsed_cfg, cli_args=parsed_cli_args, dataset_meta=dataset_meta)
         train(cfg=parsed_cfg, cli_args=parsed_cli_args, dataset_meta=dataset_meta)
+        # tokenizer = None
+        should_quantize = False
+
+        if should_quantize:
+            # Merge model
+            # do_merge_lora(cfg=parsed_cfg, cli_args=parsed_cli_args)
+            # do_merge_lora_model_and_tokenizer(cfg=parsed_cfg, model=model, tokenizer=tokenizer)
+            # new_cfg = parsed_cfg.copy()
+            # new_cfg['lora_model_dir'] = new_cfg['output_dir']
+            # new_cfg['load_in_8bit'] = False
+            # new_cfg['load_in_4bit'] = False
+
+            # new_cfg = DictDefault({
+            #     **parsed_cfg,
+            #     'lora_model_dir': parsed_cfg['output_dir'],
+            #     'load_in_8bit': False,
+            #     'load_in_4bit': False,
+            # })
+            # lora_model_dir="./completed-model" --load_in_8bit=False --load_in_4bit=False
+            # do_merge_lora(cfg=new_cfg, cli_args=parsed_cli_args)
+
+            def log_gpu_memory():
+                print("GPU Memory:", torch.cuda.memory_allocated())
+            
+            log_gpu_memory()
+            print(len(gc.get_referrers(model)))
+            print(sys.getrefcount(model))
+
+            # TODO: release old model from GPU memory
+            print(gc.collect())
+            del model
+            # del tokenizer
+            print(gc.collect())
+            torch.cuda.empty_cache()
+            print(gc.collect())
+
+            log_gpu_memory()
+
+            do_merge_lora(cfg=parsed_cfg, cli_args=parsed_cli_args)
+
+            # Load merged model with AutoGPTQ
+            merged_model = load_merged_model(parsed_cfg)
+
+            # Quantize & save
+            n_samples = 128
+            examples = get_examples_for_quantization(dataset_meta.train_dataset, n_samples)
+            quantize_and_save(parsed_cfg, merged_model, tokenizer, examples)
+
 
 
 if __name__ == "__main__":

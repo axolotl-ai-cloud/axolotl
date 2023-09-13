@@ -61,6 +61,11 @@ DEFAULT_LOGGING_CONFIG: Dict[str, Any] = {
             "level": "DEBUG",
             "propagate": False,
         },
+        "auto_gptq": {
+            "handlers": ["color_console"],
+            "level": "DEBUG",
+            "propagate": False,
+        },
     },
 }
 

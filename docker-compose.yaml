@@ -1,9 +1,10 @@
 # version: '3.8'
 services:
   axolotl:
-    build:
-      context: .
-      dockerfile: ./docker/Dockerfile
+    # build:
+    #   context: .
+    #   dockerfile: ./docker/Dockerfile
+    image: winglian/axolotl:main-py3.10-cu118-2.0.1
     volumes:
       - .:/workspace/axolotl
       - ~/.cache/huggingface/:/root/.cache/huggingface/
@@ -15,6 +16,8 @@ services:
       - GIT_COMMITTER_NAME=${GIT_COMMITTER_NAME}
       - GIT_COMMITTER_EMAIL=${GIT_COMMITTER_EMAIL}
       - WANDB_API_KEY=${WANDB_API_KEY}
+    ports:
+      - "5678:5678"
     deploy:
       resources:
         reservations:
