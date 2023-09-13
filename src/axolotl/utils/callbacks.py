@@ -367,7 +367,7 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer):
                 output_scores=False,
             )
 
-            def logits_to_tokens(logits) -> str:
+            def logits_to_tokens(logits) -> torch.Tensor:
                 probabilities = torch.softmax(logits, dim=-1)
                 # Get the predicted token ids (the ones with the highest probability)
                 predicted_token_ids = torch.argmax(probabilities, dim=-1)
