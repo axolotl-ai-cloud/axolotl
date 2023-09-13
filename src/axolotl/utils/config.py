@@ -191,6 +191,10 @@ def validate_config(cfg):
         LOG.warning(
             "You probably want to disable group_by_length as it will force a streamed dataset to download completely."
         )
+    if cfg.pretraining_dataset and not cfg.max_steps:
+        raise ValueError(
+            "max_steps must be set when using iterable pretraining_dataset, Trainer can't infer length and schedule optimizer/learning rate without it!"
+        )
 
     if any([cfg.adam_beta1, cfg.adam_beta2, cfg.adam_epsilon]) and (
         not cfg.optimizer or "adamw" not in cfg.optimizer

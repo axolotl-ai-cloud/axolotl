@@ -3,7 +3,7 @@ import functools
 import hashlib
 import logging
 from pathlib import Path
-from typing import Tuple, Union
+from typing import Dict, List, Tuple, Union
 
 import torch
 from datasets import (
@@ -74,6 +74,7 @@ def prepare_dataset(cfg, tokenizer):
         # https://discuss.huggingface.co/t/how-to-use-huggingface-trainer-streaming-datasets-without-wrapping-it-with-torchdatas-iterablewrapper/25230
         train_dataset = train_dataset.with_format("torch")
         eval_dataset = None
+        return train_dataset, eval_dataset, cfg.max_steps
 
     with zero_first(is_main_process()):
         train_dataset, eval_dataset = process_datasets_for_packing(
@@ -527,9 +528,11 @@ def load_prepare_datasets(
     return train_dataset, eval_dataset
 
 
-def encode_pretraining(tokenizer, max_tokens, examples):
+def encode_pretraining(
+    tokenizer: PreTrainedTokenizerBase, max_tokens: int, examples: List[str]
+) -> Dict[str, List]:
     res = tokenizer(
-        examples["text"],
+        examples,
         truncation=True,
         max_length=max_tokens - 2,
         add_special_tokens=True,
@@ -637,6 +640,12 @@ def load_pretraining_dataset(path, tokenizer, max_tokens=2048, seed=42):
     encode = functools.partial(encode_pretraining, tokenizer, max_tokens)
     dataset = load_dataset(path, streaming=True, split="train")
     dataset = dataset.shuffle(seed=seed, buffer_size=10_000)
-    # TODO dynamically figure out which columns/features to remove
-    dataset = dataset.map(encode, batched=True, remove_columns=["text", "meta"])
+    dataset = dataset.map(
+        encode,
+        batched=True,
+        input_columns="text",
+        remove_columns=[
+            "text",
+        ],
+    )
     return dataset
