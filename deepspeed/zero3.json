@@ -36,7 +36,7 @@
     "params": {
       "lr": "auto",
       "betas": "auto",
-      "eps": 1e-8,
+      "eps": "auto",
       "weight_decay": "auto"
     }
   },
