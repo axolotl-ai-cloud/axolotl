@@ -1,10 +1,6 @@
 {
     "zero_optimization": {
-      "stage": 2,
-      "offload_optimizer": {
-        "device": "cpu"
-      },
-      "contiguous_gradients": true,
+      "stage": 1,
       "overlap_comm": true
     },
     "bf16": {
