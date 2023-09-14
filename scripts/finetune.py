@@ -25,7 +25,7 @@ def do_cli(config: Path = Path("examples/"), **kwargs):
     LOG.warning(
         str(
             PendingDeprecationWarning(
-                "scripts/finetune.py will me replaced with calling axolotl.cli.train"
+                "scripts/finetune.py will be replaced with calling axolotl.cli.train"
             )
         )
     )
