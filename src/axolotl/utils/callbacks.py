@@ -11,7 +11,6 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.distributed as dist
-import wandb
 from datasets import load_dataset
 from optimum.bettertransformer import BetterTransformer
 from tqdm import tqdm
@@ -25,6 +24,7 @@ from transformers import (
 )
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, IntervalStrategy
 
+import wandb
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.distributed import (
     barrier,
@@ -385,7 +385,7 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer):
                 return ranges
 
             def log_table_from_dataloader(name: str, table_dataloader):
-                table = wandb.Table(
+                table = wandb.Table(  # type: ignore[attr-defined]
                     columns=[
                         "id",
                         "Prompt",
@@ -506,7 +506,7 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer):
                         )
                         row_index += 1
 
-                wandb.run.log({f"{name} - Predictions vs Ground Truth": table})
+                wandb.run.log({f"{name} - Predictions vs Ground Truth": table})  # type: ignore[attr-defined]
 
             if is_main_process():
                 log_table_from_dataloader("Eval", eval_dataloader)
