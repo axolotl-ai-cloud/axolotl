@@ -644,8 +644,8 @@ def load_pretraining_dataset(path, tokenizer, max_tokens=2048, seed=42):
         encode,
         batched=True,
         input_columns="text",
-        remove_columns=[
-            "text",
-        ],
+        # remove all the existing columns after mapping since they end up having
+        # a different length than the encoded/tokenized column
+        remove_columns=dataset.features.keys(),
     )
     return dataset
