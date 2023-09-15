@@ -29,7 +29,7 @@ def choose_device(cfg):
         cfg.device_map = "auto"
     else:
         if cfg.device.startswith("cuda"):
-            cfg.device_map = {"": cfg.local_rank}
+            cfg.device_map = {"": torch.cuda.current_device()}
         else:
             cfg.device_map = {"": cfg.device}
 
