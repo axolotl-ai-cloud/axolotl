@@ -1,10 +1,26 @@
-name: PyTest
+name: Tests
 on:
+  # check on push/merge to main, PRs, and manual triggers
   push:
+    branches:
+      - "main"
   pull_request:
+  workflow_dispatch:
 
 jobs:
-  test:
+  pre-commit:
+    name: pre-commit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.9"
+          cache: 'pip' # caching pip dependencies
+      - uses: pre-commit/action@v3.0.0
+
+  pytest:
+    name: PyTest
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -30,3 +46,29 @@ jobs:
       - name: Run tests
         run: |
           pytest --ignore=tests/e2e/ tests/
+
+  e2e-test:
+    name: E2E Tests
+    runs-on: [self-hosted, gpu]
+    timeout-minutes: 20
+    needs: [pre-commit, pytest]
+
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+          cache: 'pip' # caching pip dependencies
+
+      - name: Install dependencies
+        run: |
+          pip3 install -e .
+          pip3 install flash-attn
+          pip3 install -r requirements-tests.txt
+
+      - name: Run e2e tests
+        run: |
+          pytest tests/e2e/
