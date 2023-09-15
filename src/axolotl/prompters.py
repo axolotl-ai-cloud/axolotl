@@ -289,5 +289,5 @@ class ShareGPTPrompter:  # pylint: disable=too-few-public-methods
             assert role == conv.roles[j % 2], SHAREGPT_ASSERTION_FAILED_ROLE
             conv.append_message(role, sentence["value"])
 
-        for part in conv.get_prompt():
+        for part in conv.get_turns():
             yield part
