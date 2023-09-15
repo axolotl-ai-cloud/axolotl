@@ -23,7 +23,7 @@ jobs:
             python_version: "3.10"
             pytorch: 2.0.1
             axolotl_extras:
-    runs-on: self-hosted
+    runs-on: [self-hosted, gpu, docker]
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -68,7 +68,7 @@ jobs:
             pytorch: 2.0.1
             axolotl_extras:
             is_latest: true
-    runs-on: self-hosted
+    runs-on: [self-hosted, gpu, docker]
     steps:
       - name: Checkout
         uses: actions/checkout@v3
