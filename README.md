@@ -76,11 +76,11 @@ pip3 install -e .[flash-attn]
 pip3 install -U git+https://github.com/huggingface/peft.git
 
 # finetune lora
-accelerate launch scripts/finetune.py examples/openllama-3b/lora.yml
+accelerate launch -m axolotl.cli.train examples/openllama-3b/lora.yml
 
 # inference
-accelerate launch scripts/finetune.py examples/openllama-3b/lora.yml \
-    --inference --lora_model_dir="./lora-out"
+accelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \
+    --lora_model_dir="./lora-out"
 ```
 
 ## Installation
@@ -674,14 +674,14 @@ strict:
 
 Run
 ```bash
-accelerate launch scripts/finetune.py your_config.yml
+accelerate launch -m axolotl.cli.train your_config.yml
 ```
 
 #### Multi-GPU
 
 You can optionally pre-tokenize dataset with the following before finetuning:
 ```bash
-CUDA_VISIBLE_DEVICES="" accelerate ... --prepare_ds_only
+CUDA_VISIBLE_DEVICES="" accelerate launch -m axolotl.cli.train your_config.yml --prepare_ds_only
 ```
 
 ##### Config
@@ -720,16 +720,16 @@ Pass the appropriate flag to the train command:
 
 - Pretrained LORA:
   ```bash
-  --inference --lora_model_dir="./lora-output-dir"
+  python -m axolotl.cli.inference examples/your_config.yml --lora_model_dir="./lora-output-dir"
   ```
 - Full weights finetune:
   ```bash
-  --inference --base_model="./completed-model"
+  python -m axolotl.cli.inference examples/your_config.yml --base_model="./completed-model"
   ```
 - Full weights finetune w/ a prompt from a text file:
   ```bash
-  cat /tmp/prompt.txt | python scripts/finetune.py configs/your_config.yml \
-    --base_model="./completed-model" --inference --prompter=None --load_in_8bit=True
+  cat /tmp/prompt.txt | python -m axolotl.cli.inference examples/your_config.yml \
+    --base_model="./completed-model" --prompter=None --load_in_8bit=True
   ```
 
 ### Merge LORA to base
@@ -737,13 +737,13 @@ Pass the appropriate flag to the train command:
 Add below flag to train command above
 
 ```bash
---merge_lora --lora_model_dir="./completed-model" --load_in_8bit=False --load_in_4bit=False
+python3 -m axolotl.cli.merge_lora examples/your_config.yml --lora_model_dir="./completed-model" --load_in_8bit=False --load_in_4bit=False
 ```
 
 If you run out of CUDA memory, you can try to merge in system RAM with
 
 ```bash
-CUDA_VISIBLE_DEVICES="" python3 scripts/finetune.py ...
+CUDA_VISIBLE_DEVICES="" python3 -m axolotl.cli.merge_lora ...
 ```
 
 ## Common Errors 🧰
