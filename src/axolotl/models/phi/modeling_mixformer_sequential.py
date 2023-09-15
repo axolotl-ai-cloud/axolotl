@@ -870,7 +870,7 @@ class MixFormerSequentialForCausalLM(MixFormerSequentialPreTrainedModel):
             # `block_cls` with `legacy` value is for backward compatibility
             # `path` key is for backward compatibility
             block = copy.deepcopy(block) or {"block_cls": "parallel"}
-            # block_cls = block.pop("path", None) or block.pop("block_cls", None)
+            block.pop("path", None) or block.pop("block_cls", None)
 
             block["block_idx"] = block_idx
             modules.append(ParallelBlock(config, **block))
