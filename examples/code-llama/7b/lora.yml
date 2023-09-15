@@ -15,7 +15,7 @@ dataset_prepared_path: last_run_prepared
 val_set_size: 0.01
 output_dir: ./lora-out
 
-sequence_len: 100000
+sequence_len: 4096
 sample_packing: true
 pad_to_sequence_len: true
 
