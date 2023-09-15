@@ -1,7 +1,7 @@
 """Module containing prompters"""
 
 import logging
-from enum import Enum, auto
+from enum import Enum
 from typing import Generator, Optional, Union
 
 from fastchat.conversation import Conversation, get_conv_template
@@ -213,14 +213,6 @@ class ReflectAlpacaPrompter:
             )
             res = f"{res}{label}"
         yield res
-
-
-class SeparatorStyle(Enum):
-    """Different separator style."""
-
-    SINGLE = auto()
-    TWO = auto()
-    DOLLY = auto()
 
 
 SHAREGPT_ASSERTION_FAILED_ROLE = (
