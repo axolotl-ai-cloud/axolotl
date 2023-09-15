@@ -291,7 +291,8 @@ def load_model(
         if cfg.resize_token_embeddings_to_32x
         else len(tokenizer)
     )
-    model.resize_token_embeddings(embeddings_len)
+    if model.get_input_embeddings().num_embeddings < embeddings_len:
+        model.resize_token_embeddings(embeddings_len)
 
     if (
         hasattr(model.config, "max_position_embeddings")
