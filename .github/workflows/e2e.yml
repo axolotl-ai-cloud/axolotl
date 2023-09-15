@@ -1,5 +1,9 @@
 name: E2E
 on:
+  # check on push/merge to main, PRs, and manual triggers
+  push:
+    branches:
+      - "main"
   pull_request:
   workflow_dispatch:
 
