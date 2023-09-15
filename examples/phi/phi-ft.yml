@@ -1,6 +1,6 @@
 base_model: microsoft/phi-1_5
 base_model_config: microsoft/phi-1_5
-model_type: AutoModelForCausalLM
+model_type: MixFormerSequentialForCausalLM
 tokenizer_type: AutoTokenizer
 is_llama_derived_model: false
 trust_remote_code: true
@@ -18,7 +18,7 @@ val_set_size: 0.05
 output_dir: ./phi-sft-out
 
 sequence_len: 2048
-sample_packing: false  # does not work with phi
+sample_packing: true
 pad_to_sequence_len:
 
 adapter:
@@ -35,10 +35,10 @@ wandb_watch:
 wandb_run_id:
 wandb_log_model:
 
-gradient_accumulation_steps: 2
+gradient_accumulation_steps: 1
 micro_batch_size: 1
 num_epochs: 4
-optimizer: adamw_bnb_8bit
+optimizer: adamw_torch
 adam_beta2: 0.95
 adam_epsilon: 0.00001
 max_grad_norm: 1.0
