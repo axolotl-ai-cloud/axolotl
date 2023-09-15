@@ -445,6 +445,9 @@ datasets:
       # 'no_input_format' cannot include {input}
       no_input_format: "{instruction} "
 
+      # for completions datsets, uses the provided field if not `text`
+      field:
+
 # axolotl attempts to save the dataset as an arrow after packing the data together so
 # subsequent training attempts load faster, relative path
 dataset_prepared_path: data/last_run_prepared
