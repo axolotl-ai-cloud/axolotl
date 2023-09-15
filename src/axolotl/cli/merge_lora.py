@@ -23,4 +23,5 @@ def do_cli(config: Path = Path("examples/"), **kwargs):
     do_merge_lora(cfg=parsed_cfg, cli_args=parsed_cli_args)
 
 
-fire.Fire(do_cli)
+if __name__ == "__main__":
+    fire.Fire(do_cli)
