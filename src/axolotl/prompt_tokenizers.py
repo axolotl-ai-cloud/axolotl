@@ -245,8 +245,31 @@ class CompletionPromptTokenizingStrategy(InstructionPromptTokenizingStrategy):
     Tokenizing strategy for Completion prompts.
     """
 
+    _field: str = "text"
+
+    @property
+    def field(self) -> str:
+        return self._field
+
+    @field.setter
+    def field(self, new_field: str):
+        self._field = new_field
+
+    def parse_instruction_fields(self, prompt) -> Tuple[str, str, str]:
+        return (
+            prompt[self.field],
+            "",
+            "",
+        )
+
     def tokenize_prompt(self, prompt):
-        full_prompt = self._build_full_prompt(prompt["text"], None, None)
+        (
+            instruction,
+            _,
+            _,
+        ) = self.parse_instruction_fields(prompt)
+
+        full_prompt = self._build_full_prompt(instruction, None, None)
         tokenized_full_prompt = self._tokenize(full_prompt)
 
         return tokenized_full_prompt
