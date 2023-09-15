@@ -1,7 +1,11 @@
 # Phi
 
-Due to some nuances with the phi code, please use deepspeed when training phi.
+Due to some nuances with the phi code, please use deepspeed when training phi for full finetune.
 
 ```shell
-accelerate launch scripts/finetune.py examples/phi/phi-ft.yml --deepspeed deepspeed/zero1.json
+accelerate launch -m axolotl.cli.train examples/phi/phi-ft.yml --deepspeed deepspeed/zero1.json
+
+# OR
+
+python -m axolotl.cli.train examples/phi/phi-qlora.yml
 ```
