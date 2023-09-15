@@ -51,14 +51,16 @@ Axolotl is a tool designed to streamline the fine-tuning of various AI models, o
 ## Axolotl supports
 
 |          | fp16/fp32 | lora | qlora | gptq | gptq w/flash attn | flash attn | xformers attn |
-|----------|:----------|:-----|-------|------|-------------------|------------|---------------|
-| llama    | ✅         | ✅    | ✅     | ✅             | ✅                 | ✅          | ✅             |
-| Pythia   | ✅         | ✅    | ✅     | ❌             | ❌                 | ❌          | ❓             |
-| cerebras | ✅         | ✅    | ✅     | ❌             | ❌                 | ❌          | ❓             |
-| mpt      | ✅         | ❌    | ❓     | ❌             | ❌                 | ❌          | ❓             |
-| falcon   | ✅         | ✅    | ✅     | ❌             | ❌                 | ❌          | ❓             |
-| gpt-j    | ✅         | ✅    | ✅     | ❌             | ❌                 | ❓          | ❓             |
-| XGen     | ✅         | ❓    | ✅     | ❓             | ❓                 | ❓          | ✅             |
+|----------|:----------|:-----|-------|------|-------------------|------------|--------------|
+| llama    | ✅         | ✅    | ✅     | ✅             | ✅                 | ✅          | ✅            |
+| Pythia   | ✅         | ✅    | ✅     | ❌             | ❌                 | ❌          | ❓            |
+| cerebras | ✅         | ✅    | ✅     | ❌             | ❌                 | ❌          | ❓            |
+| btlm     | ✅         | ✅    | ✅     | ❌             | ❌                 | ❌          | ❓            |
+| mpt      | ✅         | ❌    | ❓     | ❌             | ❌                 | ❌          | ❓            |
+| falcon   | ✅         | ✅    | ✅     | ❌             | ❌                 | ❌          | ❓            |
+| gpt-j    | ✅         | ✅    | ✅     | ❌             | ❌                 | ❓          | ❓            |
+| XGen     | ✅         | ❓    | ✅     | ❓             | ❓                 | ❓          | ✅            |
+| phi      | ✅         | ✅    | ✅     | ❓             | ❓                 | ❓          | ❓            |
 
 
 ## Quickstart ⚡
