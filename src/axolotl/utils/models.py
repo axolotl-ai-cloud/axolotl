@@ -158,7 +158,7 @@ def load_model(
 
     # special handling b/c remote MixFormers code doesn't have _no_split_modules set
     if (
-        "MixFormerSequentialConfig" in model_config.__class__
+        "MixFormerSequentialConfig" in model_config.__class__.__name__
         and cfg.model_type == "AutoModelForCausalLM"
     ):
         module_name = model_config.__class__.__module__.replace(
