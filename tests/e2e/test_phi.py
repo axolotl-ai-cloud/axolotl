@@ -17,30 +17,30 @@ LOG = logging.getLogger("axolotl.tests.e2e")
 os.environ["WANDB_DISABLED"] = "true"
 
 
-class TestLoraLlama(unittest.TestCase):
+class TestPhi(unittest.TestCase):
     """
     Test case for Llama models using LoRA
     """
 
-    def test_lora(self):
+    def test_ft(self):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "JackFram/llama-68m",
-                "base_model_config": "JackFram/llama-68m",
-                "tokenizer_type": "LlamaTokenizer",
-                "sequence_len": 1024,
+                "base_model": "microsoft/phi-1_5",
+                "base_model_config": "microsoft/phi-1_5",
+                "trust_remote_code": True,
+                "model_type": "MixFormerSequentialForCausalLM",
+                "tokenizer_type": "AutoTokenizer",
+                "sequence_len": 2048,
+                "sample_packing": False,
                 "load_in_8bit": True,
-                "adapter": "lora",
-                "lora_r": 32,
-                "lora_alpha": 64,
-                "lora_dropout": 0.05,
-                "lora_target_linear": True,
+                "adapter": None,
                 "val_set_size": 0.1,
                 "special_tokens": {
-                    "unk_token": "<unk>",
-                    "bos_token": "<s>",
-                    "eos_token": "</s>",
+                    "unk_token": "<|endoftext|>",
+                    "bos_token": "<|endoftext|>",
+                    "eos_token": "<|endoftext|>",
+                    "pad_token": "<|endoftext|>",
                 },
                 "datasets": [
                     {
@@ -48,8 +48,10 @@ class TestLoraLlama(unittest.TestCase):
                         "type": "alpaca",
                     },
                 ],
-                "num_epochs": 2,
-                "micro_batch_size": 8,
+                "dataset_shard_num": 10,
+                "dataset_shard_idx": 0,
+                "num_epochs": 1,
+                "micro_batch_size": 1,
                 "gradient_accumulation_steps": 1,
                 "output_dir": tempfile.mkdtemp(),
                 "learning_rate": 0.00001,
@@ -63,27 +65,25 @@ class TestLoraLlama(unittest.TestCase):
 
         train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
 
-    def test_lora_packing(self):
+    def test_ft_packed(self):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "JackFram/llama-68m",
-                "base_model_config": "JackFram/llama-68m",
-                "tokenizer_type": "LlamaTokenizer",
-                "sequence_len": 1024,
+                "base_model": "microsoft/phi-1_5",
+                "base_model_config": "microsoft/phi-1_5",
+                "trust_remote_code": True,
+                "model_type": "MixFormerSequentialForCausalLM",
+                "tokenizer_type": "AutoTokenizer",
+                "sequence_len": 2048,
                 "sample_packing": True,
-                "flash_attention": True,
                 "load_in_8bit": True,
-                "adapter": "lora",
-                "lora_r": 32,
-                "lora_alpha": 64,
-                "lora_dropout": 0.05,
-                "lora_target_linear": True,
+                "adapter": None,
                 "val_set_size": 0.1,
                 "special_tokens": {
-                    "unk_token": "<unk>",
-                    "bos_token": "<s>",
-                    "eos_token": "</s>",
+                    "unk_token": "<|endoftext|>",
+                    "bos_token": "<|endoftext|>",
+                    "eos_token": "<|endoftext|>",
+                    "pad_token": "<|endoftext|>",
                 },
                 "datasets": [
                     {
@@ -91,8 +91,10 @@ class TestLoraLlama(unittest.TestCase):
                         "type": "alpaca",
                     },
                 ],
-                "num_epochs": 2,
-                "micro_batch_size": 8,
+                "dataset_shard_num": 10,
+                "dataset_shard_idx": 0,
+                "num_epochs": 1,
+                "micro_batch_size": 1,
                 "gradient_accumulation_steps": 1,
                 "output_dir": tempfile.mkdtemp(),
                 "learning_rate": 0.00001,
