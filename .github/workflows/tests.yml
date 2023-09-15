@@ -49,7 +49,7 @@ jobs:
 
   e2e-test:
     name: E2E Tests
-    runs-on: [self-hosted, gpu, e2e]
+    runs-on: [self-hosted, gpu]
     timeout-minutes: 20
     needs: [pre-commit, pytest]
 
