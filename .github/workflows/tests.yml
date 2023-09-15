@@ -5,6 +5,7 @@ on:
 
 jobs:
   test:
+    name: PyTest
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
