@@ -322,6 +322,7 @@ See [examples](examples) for quick start. It is recommended to duplicate and mod
     - path: EleutherAI/pile
       name: enron_emails
       type: completion # format from earlier
+      field: text # Optional[str] default: text, field to use for completion data
 
   # huggingface repo with multiple named configurations/subsets
   datasets:
@@ -443,6 +444,9 @@ datasets:
         Assistant:
       # 'no_input_format' cannot include {input}
       no_input_format: "{instruction} "
+
+      # for completions datsets, uses the provided field if not `text`
+      field:
 
 # axolotl attempts to save the dataset as an arrow after packing the data together so
 # subsequent training attempts load faster, relative path
