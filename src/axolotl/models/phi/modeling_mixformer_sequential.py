@@ -915,11 +915,14 @@ class MixFormerSequentialForCausalLM(MixFormerSequentialPreTrainedModel):
                 input_ids, cu_seqlens=cu_seqlens, max_seqlen=max_seqlen
             )
         else:
-            hidden_layer = self.layers[0](
-                input_ids, cu_seqlens=cu_seqlens, max_seqlen=max_seqlen
-            )
+            hidden_layer = self.layers[0](input_ids)
             for module in self.layers[1:-1]:
-                hidden_layer = module(hidden_layer, past_cache=past_key_values)
+                hidden_layer = module(
+                    hidden_layer,
+                    past_cache=past_key_values,
+                    cu_seqlens=cu_seqlens,
+                    max_seqlen=max_seqlen,
+                )
             lm_logits = self.layers[-1](hidden_layer)
 
         loss = None
