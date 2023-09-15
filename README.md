@@ -322,6 +322,7 @@ See [examples](examples) for quick start. It is recommended to duplicate and mod
     - path: EleutherAI/pile
       name: enron_emails
       type: completion # format from earlier
+      field: text # Optional[str] default: text, field to use for completion data
 
   # huggingface repo with multiple named configurations/subsets
   datasets:
