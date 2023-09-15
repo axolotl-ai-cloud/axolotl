@@ -293,6 +293,8 @@ def load_model(
     )
     if model.get_input_embeddings().num_embeddings < embeddings_len:
         model.resize_token_embeddings(embeddings_len)
+    else:
+        model.tie_weights()
 
     if (
         hasattr(model.config, "max_position_embeddings")
