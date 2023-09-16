@@ -1,0 +1,90 @@
+base_model: cerebras/btlm-3b-8k-base
+base_model_config: cerebras/btlm-3b-8k-base
+model_type: AutoModelForCausalLM
+tokenizer_type: GPT2Tokenizer
+trust_remote_code: true
+tokenizer_use_fast: true
+tokenizer_legacy: true
+
+load_in_8bit: false
+load_in_4bit: false
+strict: false
+push_dataset_to_hub:
+hf_use_auth_token: true
+datasets:
+  - path: mhenrichsen/alpaca_2k_test
+    type: alpaca
+dataset_prepared_path: last_prepared_run
+val_set_size: 0.01
+
+adapter:
+lora_model_dir:
+sequence_len: 2048
+max_packed_sequence_len:
+sample_packing: false
+sample_packing_eff_est:
+sample_packing_seq_len_multiplier:
+total_num_tokens:
+
+lora_r:
+lora_alpha:
+lora_dropout:
+lora_target_modules:
+lora_target_linear:
+lora_fan_in_fan_out:
+
+wandb_project:
+wandb_entity:
+wandb_watch:
+wandb_run_id:
+wandb_log_model:
+
+output_dir: btlm-out
+gradient_accumulation_steps: 1
+micro_batch_size: 1
+num_epochs: 1
+optimizer: adamw_torch
+adam_beta2: 0.95
+adam_eps: 0.000000001
+max_grad_norm: 1.0
+
+torchdistx_path:
+lr_scheduler: cosine
+lr_quadratic_warmup: true
+learning_rate: 0.000085
+train_on_inputs: true
+group_by_length: false
+bf16: true
+fp16: false
+tf32: true
+
+gradient_checkpointing: false
+early_stopping_patience:
+resume_from_checkpoint:
+local_rank:
+logging_steps: 1
+
+xformers_attention:
+flash_attention: true
+sdp_attention:
+flash_optimum:
+
+gptq_groupsize:
+gptq_model_v1:
+
+warmup_steps: 32
+eval_steps:
+save_steps:
+save_total_limit:
+
+debug:
+deepspeed:
+weight_decay: 0.1
+special_tokens:
+  pad_token: "<|endoftext|>"
+fsdp:
+#  - full_shard
+#  - auto_wrap
+fsdp_config:
+#  fsdp_state_dict_type: FULL_STATE_DICT
+#  fsdp_transformer_layer_cls_to_wrap: BTLMBlock

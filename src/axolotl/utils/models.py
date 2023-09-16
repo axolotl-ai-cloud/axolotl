@@ -112,7 +112,7 @@ def load_model(
 
     if hasattr(model_config, "model_type") and model_config.model_type == "btlm":
         if cfg.flash_attention:
-            replace_btlm_attn_with_flash_attn()
+            replace_btlm_attn_with_flash_attn(cfg.base_model)
 
     if hasattr(model_config, "model_type") and model_config.model_type in [
         "falcon",
@@ -341,6 +341,9 @@ def load_model(
     for name, module in model.named_modules():
         if "norm" in name:
             module.to(torch.float32)
+        if model_config.model_type == "btlm":
+            # don't upcast lm_head for btlm
+            continue
         if "lm_head" in name or "embed_tokens" in name:
             if hasattr(module, "weight"):
                 module.to(torch.float32)
