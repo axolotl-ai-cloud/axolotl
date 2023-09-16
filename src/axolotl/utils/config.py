@@ -75,6 +75,7 @@ def normalize_config(cfg):
         cfg.torch_dtype = torch.float32
 
     model_config = load_model_config(cfg)
+    cfg.model_config_type = model_config.model_type
 
     # figure out if the model is llama
     cfg.is_llama_derived_model = (
@@ -237,6 +238,21 @@ def validate_config(cfg):
             raise ValueError(
                 "`early_stopping_patience` requires that eval_steps should evenly divide save_steps."
             )
+
+    if cfg.model_type == "MixFormerSequentialForCausalLM" and cfg.adapter is not None:
+        LOG.warning("Use AutoModelForCausalLM for phi/MixFormer models with qLoRA")
+
+    if cfg.model_config_type == "mixformer-sequential":
+        if cfg.sample_packing:
+            if cfg.adapter is not None:
+                LOG.warning(
+                    "phi/MixFormer models are not currently compatible with LoRA and sample_packing"
+                )
+            if cfg.model_type == "AutoModelForCausalLM":
+                raise ValueError(
+                    "`model_type: MixFormerSequentialForCausalLM` required for sample_packing"
+                )
+
     # TODO
     # MPT 7b
     # https://github.com/facebookresearch/bitsandbytes/issues/25
