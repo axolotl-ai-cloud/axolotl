@@ -403,10 +403,11 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
 
         if cfg.sample_packing:
             train_dataset = train_dataset.map(add_position_ids, num_proc=os.cpu_count())
-            if eval_dataset:
-                eval_dataset = eval_dataset.map(
-                    add_position_ids, num_proc=os.cpu_count()
-                )
+            if cfg.eval_sample_packing is not False:
+                if eval_dataset:
+                    eval_dataset = eval_dataset.map(
+                        add_position_ids, num_proc=os.cpu_count()
+                    )
     return train_dataset, eval_dataset
 
 
