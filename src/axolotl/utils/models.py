@@ -22,10 +22,6 @@ from transformers import (  # noqa: F401
     PreTrainedTokenizerBase,
 )
 
-from axolotl.monkeypatch.btlm_attn_hijack_flash import replace_btlm_attn_with_flash_attn
-from axolotl.monkeypatch.falcon_attn_hijack_flash import (
-    replace_falcon_attn_with_flash_attn,
-)
 from axolotl.prompt_tokenizers import LLAMA_DEFAULT_EOS_TOKEN
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.dict import DictDefault
@@ -112,6 +108,10 @@ def load_model(
 
     if hasattr(model_config, "model_type") and model_config.model_type == "btlm":
         if cfg.flash_attention:
+            from axolotl.monkeypatch.btlm_attn_hijack_flash import (
+                replace_btlm_attn_with_flash_attn,
+            )
+
             replace_btlm_attn_with_flash_attn(cfg.base_model)
 
     if hasattr(model_config, "model_type") and model_config.model_type in [
@@ -120,6 +120,10 @@ def load_model(
         "RefinedWeb",
     ]:
         if cfg.flash_attention:
+            from axolotl.monkeypatch.falcon_attn_hijack_flash import (
+                replace_falcon_attn_with_flash_attn,
+            )
+
             replace_falcon_attn_with_flash_attn()
 
     if cfg.is_llama_derived_model and cfg.flash_attention:
