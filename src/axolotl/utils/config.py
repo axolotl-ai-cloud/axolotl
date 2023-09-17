@@ -95,7 +95,7 @@ def validate_config(cfg):
     else:
         if cfg.bf16 or cfg.bfloat16:
             raise ValueError(
-                "bf16 requested, but not available on this GPU. Requires 30XX series or above."
+                "bf16 requested, but not available on this GPU. Requires Ampere series or above."
             )
     if cfg.max_packed_sequence_len and cfg.sample_packing:
         raise ValueError(
