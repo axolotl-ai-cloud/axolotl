@@ -121,3 +121,91 @@ def broadcast_dict(vals: dict):
         vals = pickle.loads(data_byte)  # nosec
 
     return vals
+
+
+def compute_and_broadcast(fn):  # pylint: disable=invalid-name
+    """
+    Compute a value using the function 'fn' only on the specified rank (default is 0).
+    The value is then broadcasted to all other ranks.
+
+    Args:
+    - fn (callable): A function that computes the value. This should not have any side effects.
+    - rank (int, optional): The rank that computes the value. Default is 0.
+
+    Returns:
+    - The computed value (int or float).
+    """
+    if is_main_process():
+        value_scalar = fn()
+        value_tensor = torch.tensor(value_scalar, device=dist.get_rank()).float()
+    else:
+        value_tensor = torch.tensor(0.0, device=dist.get_rank())  # Placeholder tensor
+
+    # Broadcast the tensor to all processes.
+    barrier()
+    dist.broadcast(value_tensor, src=0)
+
+    # Convert the tensor back to its original type (int or float)
+    if value_tensor == value_tensor.int():
+        return int(value_tensor.item())
+    return float(value_tensor.item())
+
+
+def gather_from_all_ranks(fn, world_size=1):  # pylint: disable=invalid-name
+    """
+    Run a callable 'fn' on all ranks and gather the results on the specified rank.
+
+    Args:
+    - fn (callable): A function that computes the value. This should not have any side effects.
+    - rank (int, optional): The rank that gathers the values. Default is 0.
+    - world_size (int, optional): Total number of processes in the current distributed setup.
+
+    Returns:
+    - A list of computed values from all ranks if on the gathering rank, otherwise None.
+    """
+    value_scalar = fn()
+    value_tensor = torch.tensor(value_scalar, device=dist.get_rank()).float()
+
+    # Placeholder tensor for gathering results
+    if is_main_process():
+        gathered_tensors = [torch.zeros_like(value_tensor) for _ in range(world_size)]
+    else:
+        gathered_tensors = None
+
+    dist.gather(value_tensor, gather_list=gathered_tensors, dst=0)
+
+    if is_main_process():
+        # Convert tensors back to their original type (int or float)
+        gathered_values = []
+        for tensor in gathered_tensors:
+            if tensor == tensor.int():
+                gathered_values.append(int(tensor.item()))
+            else:
+                gathered_values.append(float(tensor.item()))
+        return gathered_values
+    return None
+
+
+def reduce_and_broadcast(fn1, fn2):
+    """
+    Run a callable 'fn1' on all ranks, gather the results, reduce them using 'fn2',
+    and then broadcast the reduced result to all ranks.
+
+    Args:
+    - fn1 (callable): A function that computes the value on each rank.
+    - fn2 (callable): A reduction function that takes a list of values and returns a single value.
+    - world_size (int, optional): Total number of processes in the current distributed setup.
+
+    Returns:
+    - The reduced and broadcasted value.
+    """
+
+    # Gather values from all ranks using fn1
+    if not is_distributed():
+        return fn2([fn1()])
+
+    gathered_values = gather_from_all_ranks(fn1, world_size=dist.get_world_size())
+
+    # Use compute_and_broadcast to compute the reduced value on the main process
+    # and then broadcast it to all ranks
+    return compute_and_broadcast(lambda: fn2(gathered_values))
