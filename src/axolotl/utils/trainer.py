@@ -495,11 +495,13 @@ def calculate_total_num_steps(cfg, train_dataset, tokenizer):
                 LOG.info(f"sample_packing_eff_est across ranks: {repr(estimates)}")
                 return max(estimates)
 
-            sample_packing_eff_est = reduce_and_broadcast(
-                lambda: math.ceil(actual_eff * 100.0) / 100.0,
+            sample_packing_actual_eff_all = reduce_and_broadcast(
+                lambda: actual_eff,
                 calc_sample_packing_eff_est,
             )
-            sample_packing_eff_est = math.ceil(sample_packing_eff_est * 100.0) / 100.0
+            sample_packing_eff_est = (
+                math.ceil(sample_packing_actual_eff_all * 100.0) / 100.0
+            )
             LOG.info(
                 f"📝 UPDATE CONFIG WITH: `sample_packing_eff_est: {sample_packing_eff_est}`"
             )
