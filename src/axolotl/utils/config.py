@@ -4,7 +4,7 @@ import logging
 import os
 
 import torch
-from torch.cuda import is_bf16_supported
+from transformers.utils import is_torch_bf16_gpu_available
 
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.models import load_model_config
@@ -89,7 +89,7 @@ def normalize_config(cfg):
 
 
 def validate_config(cfg):
-    if is_bf16_supported():
+    if is_torch_bf16_gpu_available():
         if not cfg.bf16 and not cfg.bfloat16:
             LOG.info("bf16 support detected, but not enabled for this configuration.")
     else:
