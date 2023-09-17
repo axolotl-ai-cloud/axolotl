@@ -434,10 +434,10 @@ datasets:
   - path: vicgalle/alpaca-gpt4
   # The type of prompt to use for training. [alpaca, sharegpt, gpteacher, oasst, reflection]
     type: alpaca # format | format:<prompt_style> (chat/instruct) | <prompt_strategies>.load_<load_fn>
-    ds_type: # Optional[str] (json|arrow|parquet) defines the datatype when path is a file
-    data_files: # path to source data files
-    shards: # number of shards to split data into
-    name: # name of dataset configuration to load
+    ds_type: # Optional[str] (json|arrow|parquet|text|csv) defines the datatype when path is a file
+    data_files: # Optional[str] path to source data files
+    shards: # Optional[int] number of shards to split data into
+    name: # Optional[str] name of dataset configuration to load
 
   # custom user prompt
   - path: repo

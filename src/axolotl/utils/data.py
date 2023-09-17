@@ -183,6 +183,10 @@ def load_tokenized_prepared_datasets(
                         ds_type = "parquet"
                     elif ".arrow" in d.path:
                         ds_type = "arrow"
+                    elif ".csv" in d.path:
+                        ds_type = "csv"
+                    elif ".txt" in d.path:
+                        ds_type = "text"
                     ds = load_dataset(
                         ds_type,
                         name=d.name,
