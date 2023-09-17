@@ -8,11 +8,12 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
-from typing import Optional, Union
+from typing import List, Optional, Union
 
 import numpy as np
 import torch
 import torch.cuda
+import torch.distributed as dist
 import transformers
 from datasets import Dataset, set_caching_enabled
 from torch.optim.lr_scheduler import OneCycleLR
@@ -35,7 +36,12 @@ from axolotl.utils.callbacks import (
 )
 from axolotl.utils.collators import DataCollatorForSeq2Seq
 from axolotl.utils.dataloader import MultipackDistributedDataloader
-from axolotl.utils.distributed import is_main_process, zero_first
+from axolotl.utils.distributed import (
+    is_distributed,
+    is_main_process,
+    reduce_and_broadcast,
+    zero_first,
+)
 from axolotl.utils.schedulers import get_cosine_schedule_with_quadratic_warmup
 
 LOG = logging.getLogger("axolotl")
@@ -456,7 +462,16 @@ def calculate_total_num_steps(cfg, train_dataset, tokenizer):
                 f"total_num_tokens: {cfg.total_num_tokens}, total_num_steps: {total_num_steps}"
             )
         else:
-            sampler = RandomSampler(train_dataset)
+            if cfg.world_size > 1 and is_distributed():
+                sampler = DistributedSampler(
+                    train_dataset,
+                    num_replicas=cfg.world_size,
+                    rank=dist.get_rank(),
+                    seed=cfg.seed or 42,
+                )
+            else:
+                sampler = RandomSampler(train_dataset)
+
             data_loader = MultipackDistributedDataloader(
                 train_dataset,
                 batch_size=cfg.micro_batch_size,
@@ -474,18 +489,23 @@ def calculate_total_num_steps(cfg, train_dataset, tokenizer):
             data_loader_len = data_loader.len_w_stats()
             actual_eff = data_loader.efficiency()
             LOG.info(f"data_loader_len: {data_loader_len}")
-            total_num_steps = int(
-                math.floor(
-                    data_loader_len
-                    * cfg.micro_batch_size
-                    * cfg.num_epochs
-                    // cfg.batch_size
-                )
+            total_num_steps = int(math.floor(data_loader_len * cfg.num_epochs))
+
+            def calc_sample_packing_eff_est(estimates: List[float]):
+                LOG.info(f"sample_packing_eff_est across ranks: {repr(estimates)}")
+                return max(estimates)
+
+            sample_packing_actual_eff_all = reduce_and_broadcast(
+                lambda: actual_eff,
+                calc_sample_packing_eff_est,
+            )
+            sample_packing_eff_est = (
+                math.ceil(sample_packing_actual_eff_all * 100.0) / 100.0
             )
             LOG.info(
-                f"📝 UPDATE CONFIG WITH: `sample_packing_eff_est: {math.ceil(actual_eff * 100.0) / 100.0}`"
+                f"📝 UPDATE CONFIG WITH: `sample_packing_eff_est: {sample_packing_eff_est}`"
             )
-            cfg.sample_packing_eff_est = math.ceil(actual_eff * 100.0) / 100.0
+            cfg.sample_packing_eff_est = sample_packing_eff_est
     else:
         total_num_steps = int(
             math.ceil(len(train_dataset) * cfg.num_epochs / cfg.batch_size)
