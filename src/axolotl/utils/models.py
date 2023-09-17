@@ -100,9 +100,30 @@ def load_model(
     base_model = cfg.base_model
     base_model_config = cfg.base_model_config
     model_type = cfg.model_type
+    model_config = load_model_config(cfg)
 
     # TODO refactor as a kwarg
     load_in_8bit = cfg.load_in_8bit
+
+    if hasattr(model_config, "model_type") and model_config.model_type == "btlm":
+        if cfg.flash_attention:
+            from axolotl.monkeypatch.btlm_attn_hijack_flash import (
+                replace_btlm_attn_with_flash_attn,
+            )
+
+            replace_btlm_attn_with_flash_attn(cfg.base_model)
+
+    if hasattr(model_config, "model_type") and model_config.model_type in [
+        "falcon",
+        "RefinedWebModel",
+        "RefinedWeb",
+    ]:
+        if cfg.flash_attention:
+            from axolotl.monkeypatch.falcon_attn_hijack_flash import (
+                replace_falcon_attn_with_flash_attn,
+            )
+
+            replace_falcon_attn_with_flash_attn()
 
     if cfg.is_llama_derived_model and cfg.flash_attention:
         if cfg.device not in ["mps", "cpu"] and not inference:
@@ -338,6 +359,9 @@ def load_model(
     for name, module in model.named_modules():
         if "norm" in name:
             module.to(torch.float32)
+        if model_config.model_type == "btlm":
+            # don't upcast lm_head for btlm
+            continue
         if "lm_head" in name or "embed_tokens" in name:
             if hasattr(module, "weight"):
                 module.to(torch.float32)
