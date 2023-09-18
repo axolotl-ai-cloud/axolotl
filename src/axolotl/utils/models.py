@@ -407,8 +407,10 @@ def load_model(
                 module.to(torch.float32)
 
     needs_fa2_dtype = cfg.adapter or cfg.fsdp
-    if (cfg.adapter == "lora" and load_in_8bit) or (
-        cfg.adapter == "qlora" and cfg.load_in_4bit
+    if (
+        (cfg.adapter == "lora" and load_in_8bit)
+        or (cfg.adapter == "qlora" and cfg.load_in_4bit)
+        or (cfg.adapter == "ia3" and load_in_8bit)
     ):
         LOG.info("converting PEFT model w/ prepare_model_for_kbit_training")
         if cfg.gradient_checkpointing:
