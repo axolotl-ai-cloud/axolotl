@@ -429,7 +429,7 @@ def calculate_total_num_steps(cfg, train_dataset, tokenizer):
                 .apply(lambda x: len(x))  # pylint: disable=unnecessary-lambda
                 .values
             )
-            LOG.info(f"📝 UPDATE CONFIG WITH: `total_num_tokens: {total_num_tokens}`")
+            LOG.info(f"total_num_tokens: {total_num_tokens}")
             cfg.total_num_tokens = total_num_tokens
 
         if not cfg.total_supervised_tokens:
@@ -489,6 +489,8 @@ def calculate_total_num_steps(cfg, train_dataset, tokenizer):
             data_loader_len = data_loader.len_w_stats()
             actual_eff = data_loader.efficiency()
             LOG.info(f"data_loader_len: {data_loader_len}")
+            # FIXME: is there a bug here somewhere? the total num steps depends
+            # on the agreed on value for sample_packing_eff_est
             total_num_steps = int(math.floor(data_loader_len * cfg.num_epochs))
 
             def calc_sample_packing_eff_est(estimates: List[float]):
@@ -502,10 +504,8 @@ def calculate_total_num_steps(cfg, train_dataset, tokenizer):
             sample_packing_eff_est = (
                 math.ceil(sample_packing_actual_eff_all * 100.0) / 100.0
             )
-            LOG.info(
-                f"📝 UPDATE CONFIG WITH: `sample_packing_eff_est: {sample_packing_eff_est}`"
-            )
             cfg.sample_packing_eff_est = sample_packing_eff_est
+            LOG.info(f"sample_packing_eff_est: {cfg.sample_packing_eff_est}")
     else:
         total_num_steps = int(
             math.ceil(len(train_dataset) * cfg.num_epochs / cfg.batch_size)
