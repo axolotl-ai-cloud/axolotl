@@ -70,7 +70,7 @@ def do_merge_lora(
     model.to(dtype=torch.float16)
 
     if cfg.local_rank == 0:
-        LOG.info("saving merged model")
+        LOG.info(f"saving merged model to: {str(Path(cfg.output_dir) / 'merged')}")
         model.save_pretrained(
             str(Path(cfg.output_dir) / "merged"),
             safe_serialization=safe_serialization,
