@@ -1,0 +1,72 @@
+base_model: meta-llama/Llama-2-7b-hf
+base_model_config: meta-llama/Llama-2-7b-hf
+model_type: LlamaForCausalLM
+tokenizer_type: LlamaTokenizer
+is_llama_derived_model: true
+
+load_in_8bit: true
+load_in_4bit: false
+strict: false
+
+datasets:
+  - path: mhenrichsen/alpaca_2k_test
+    type: alpaca
+dataset_prepared_path: last_run_prepared
+val_set_size: 0.01
+output_dir: ./ia3-out
+
+sequence_len: 4096
+sample_packing: true
+pad_to_sequence_len: true
+
+adapter: ia3
+ia3_model_dir:
+ia3_target_modules:
+  - k_proj
+  - v_proj
+  - down_proj
+ia3_feedforward_modules:
+  - down_proj
+ia3_fan_in_fan_out: false
+
+wandb_project:
+wandb_entity:
+wandb_watch:
+wandb_run_id:
+wandb_log_model:
+
+gradient_accumulation_steps: 1
+micro_batch_size: 2
+num_epochs: 5
+optimizer: adamw_bnb_8bit
+lr_scheduler: cosine
+learning_rate: 0.0002
+
+train_on_inputs: false
+group_by_length: false
+bf16: true
+fp16: false
+tf32: false
+
+gradient_checkpointing: true
+early_stopping_patience:
+resume_from_checkpoint:
+local_rank:
+logging_steps: 1
+xformers_attention:
+flash_attention: true
+
+warmup_steps: 10
+eval_steps: 0.05
+eval_table_size:
+eval_table_max_new_tokens:
+save_steps:
+debug:
+deepspeed:
+weight_decay: 0.1
+fsdp:
+fsdp_config:
+special_tokens:
+  bos_token: "<s>"
+  eos_token: "</s>"
+  unk_token: "<unk>"

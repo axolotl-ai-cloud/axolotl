@@ -470,6 +470,8 @@ def load_adapter(model, cfg, adapter, inference=False):
         return model, None
     if hasattr(model, "enable_input_require_grads"):
         model.enable_input_require_grads()
+    if adapter in ["ia3"]:
+        return load_ia3(model, cfg, inference=inference)
     if adapter in ["lora", "qlora"]:
         return load_lora(model, cfg, inference=inference)
     if adapter == "llama-adapter":
@@ -557,3 +559,36 @@ def load_lora(model, cfg, inference=False):
     model.print_trainable_parameters()
 
     return model, lora_config
+
+
+def load_ia3(model, cfg, inference=False):
+    # type: (PreTrainedModel, DictDefault, bool) -> Tuple[PreTrainedModel, Optional[PeftConfig]]
+
+    from peft import IA3Config, PeftModel, get_peft_model
+
+    ia3_config_kwargs = {}
+    if cfg.ia3_init_ia3_weights is not None:
+        ia3_config_kwargs["init_ia3_weights"] = cfg.ia3_init_ia3_weights
+    if cfg.ia3_fan_in_fan_out is not None:
+        ia3_config_kwargs["fan_in_fan_out"] = cfg.ia3_fan_in_fan_out
+
+    ia3_config = IA3Config(
+        target_modules=cfg.ia3_target_modules,
+        feedforward_modules=cfg.ia3_feedforward_modules,
+        modules_to_save=cfg.ia3_modules_to_save,
+        **ia3_config_kwargs,
+    )
+
+    if cfg.ia3_model_dir:
+        LOG.debug("Loading pretained PEFT - IA3")
+        model = PeftModel.from_pretrained(
+            model,
+            cfg.ia3_model_dir,
+            is_trainable=(not inference),
+        )
+    else:
+        model = get_peft_model(model, ia3_config)
+
+    model.print_trainable_parameters()
+
+    return model, ia3_config
