@@ -431,7 +431,7 @@ def load_model(
                 if hasattr(module, "weight"):
                     module.to(cfg.torch_dtype)
 
-    model, lora_config = load_adapter(model, cfg, cfg.adapter)
+    model, peft_config = load_adapter(model, cfg, cfg.adapter)
 
     if cfg.ddp and not load_in_8bit:
         model.to(f"cuda:{cfg.local_rank}")
@@ -462,7 +462,7 @@ def load_model(
         log_gpu_memory_usage(LOG, "after adapters", model.device)
 
     # TODO resume_from_checkpoint handling
-    return model, lora_config
+    return model, peft_config
 
 
 def load_adapter(model, cfg, adapter, inference=False):
