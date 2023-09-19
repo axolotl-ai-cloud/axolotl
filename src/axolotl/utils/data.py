@@ -56,11 +56,11 @@ def md5(to_hash: str, encoding: str = "utf-8") -> str:
         return hashlib.md5(to_hash.encode(encoding)).hexdigest()  # nosec
 
 
-def prepare_dataset(cfg, tokenizer):
+def prepare_dataset(cfg, tokenizer, skip_cache=False):
     if not cfg.pretraining_dataset:
         with zero_first(is_main_process()):
             train_dataset, eval_dataset = load_prepare_datasets(
-                tokenizer, cfg, DEFAULT_DATASET_PREPARED_PATH
+                tokenizer, cfg, DEFAULT_DATASET_PREPARED_PATH, skip_cache=skip_cache
             )
     else:
         train_dataset = load_pretraining_dataset(
@@ -89,7 +89,7 @@ def prepare_dataset(cfg, tokenizer):
 
 
 def load_tokenized_prepared_datasets(
-    tokenizer, cfg, default_dataset_prepared_path
+    tokenizer, cfg, default_dataset_prepared_path, skip_cache=False
 ) -> DatasetDict:
     tokenizer_name = tokenizer.__class__.__name__
     ds_hash = str(
@@ -150,7 +150,7 @@ def load_tokenized_prepared_datasets(
 
         # pylint: disable=invalid-name
         for d in for_d_in_datasets(cfg.datasets):
-            ds: Union[Dataset, DatasetDict] = None
+            ds: Union[Dataset, DatasetDict]
             ds_from_hub = False
             try:
                 load_dataset(
@@ -234,6 +234,8 @@ def load_tokenized_prepared_datasets(
                 d_prompt_style = d_type_split[1] if len(d_type_split) > 1 else None
             if "train" in ds:
                 ds = ds["train"]
+            if skip_cache:
+                ds.cleanup_cache_files()
             if (
                 "input_ids" in ds.features
                 and "attention_mask" in ds.features
@@ -361,6 +363,7 @@ def load_prepare_datasets(
     tokenizer: PreTrainedTokenizerBase,
     cfg,
     default_dataset_prepared_path,
+    skip_cache=False,
 ) -> Tuple[Dataset, Dataset]:
     max_packed_sequence_len = (
         cfg.max_packed_sequence_len if cfg.max_packed_sequence_len else cfg.sequence_len
@@ -426,7 +429,7 @@ def load_prepare_datasets(
                 )
         else:
             dataset = load_tokenized_prepared_datasets(
-                tokenizer, cfg, default_dataset_prepared_path
+                tokenizer, cfg, default_dataset_prepared_path, skip_cache=skip_cache
             )
 
             if cfg.seed:
@@ -468,7 +471,7 @@ def load_prepare_datasets(
                     )
     else:
         dataset = load_tokenized_prepared_datasets(
-            tokenizer, cfg, default_dataset_prepared_path
+            tokenizer, cfg, default_dataset_prepared_path, skip_cache=skip_cache
         )
 
     if cfg.dataset_shard_num and cfg.dataset_shard_idx is not None:
