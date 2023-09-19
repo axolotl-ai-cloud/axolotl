@@ -472,7 +472,7 @@ def load_adapter(model, cfg, adapter, inference=False):
         return model, None
     if hasattr(model, "enable_input_require_grads"):
         model.enable_input_require_grads()
-    if adapter in ["ia3"]:
+    if adapter == "ia3":
         return load_ia3(model, cfg, inference=inference)
     if adapter in ["lora", "qlora"]:
         return load_lora(model, cfg, inference=inference)
