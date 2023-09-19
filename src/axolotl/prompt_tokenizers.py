@@ -66,11 +66,13 @@ class PromptTokenizingStrategy(abc.ABC):
             pass
         return False
 
-    def _tokenize(self, prompt: str, add_eos_token=True, strip_bos_token=False):
-        result: Union[Dict[str, List[Union[bool, int]]], BatchEncoding]
+    def _tokenize(
+        self, prompt: str, add_eos_token: bool = True, strip_bos_token: bool = False
+    ) -> BatchEncoding:
+        result: BatchEncoding
         if not prompt.strip():
             LOG.warning("Empty text requested for tokenization.")
-            result = {"input_ids": [], "attention_mask": []}
+            result = BatchEncoding(data={"input_ids": [], "attention_mask": []})
         else:
             result = self.tokenizer(
                 prompt,
