@@ -1,5 +1,5 @@
-base_model: openlm-research/open_llama_3b
-base_model_config: openlm-research/open_llama_3b
+base_model: openlm-research/open_llama_3b_v2
+base_model_config: openlm-research/open_llama_3b_v2
 model_type: LlamaForCausalLM
 tokenizer_type: LlamaTokenizer
 load_in_8bit: true
@@ -13,8 +13,8 @@ dataset_prepared_path: last_run_prepared
 val_set_size: 0.02
 adapter: lora
 lora_model_dir:
-sequence_len: 256
-max_packed_sequence_len:
+sequence_len: 1024
+sample_packing: true
 lora_r: 8
 lora_alpha: 16
 lora_dropout: 0.0
@@ -33,9 +33,9 @@ wandb_watch:
 wandb_run_id:
 wandb_log_model:
 output_dir: ./lora-out
-batch_size: 16
-micro_batch_size: 4
-num_epochs: 3
+gradient_accumulation_steps: 1
+micro_batch_size: 2
+num_epochs: 4
 optimizer: adamw_bnb_8bit
 torchdistx_path:
 lr_scheduler: cosine
@@ -50,16 +50,16 @@ early_stopping_patience:
 resume_from_checkpoint:
 local_rank:
 logging_steps: 1
-xformers_attention: true
-flash_attention:
+xformers_attention:
+flash_attention: true
 gptq_groupsize:
 gptq_model_v1:
-warmup_steps: 10
-eval_steps: 50
+warmup_steps: 20
+eval_steps: 0.05
 save_steps:
 debug:
 deepspeed:
-weight_decay: 0.0
+weight_decay: 0.1
 fsdp:
 fsdp_config:
 special_tokens:
