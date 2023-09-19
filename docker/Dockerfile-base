@@ -39,7 +39,7 @@ WORKDIR /workspace
 
 RUN git clone https://github.com/microsoft/DeepSpeed.git && \
     cd DeepSpeed && \
-    MAX_CONCURRENCY=8 DS_BUILD_SPARSE_ATTN=0 DS_BUILD_OPS=1 python3 setup.py bdist_wheel
+    MAX_CONCURRENCY=8 DS_BUILD_SPARSE_ATTN=0 DS_BUILD_OPS=1 DS_BUILD_EVOFORMER_ATTN=0 python3 setup.py bdist_wheel
 
 FROM base-builder AS bnb-builder
 
