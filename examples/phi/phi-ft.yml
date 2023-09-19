@@ -22,7 +22,7 @@ sample_packing: true
 pad_to_sequence_len:
 
 adapter:
-lora_model_dir:
+peft_model_dir:
 lora_r:
 lora_alpha:
 lora_dropout:

@@ -20,7 +20,7 @@ sample_packing: true
 pad_to_sequence_len: true
 
 adapter: ia3
-ia3_model_dir:
+peft_model_dir:
 ia3_target_modules:
   - k_proj
   - v_proj

@@ -406,23 +406,21 @@ def load_model(
             if hasattr(module, "weight"):
                 module.to(torch.float32)
 
-    needs_fa2_dtype = cfg.adapter or cfg.fsdp
-    if (
-        (cfg.adapter == "lora" and cfg.load_in_8bit)
-        or (cfg.adapter == "qlora" and cfg.load_in_4bit)
-        or (cfg.adapter == "ia3" and cfg.load_in_8bit)
-    ):
+    require_peft: bool = False
+    if cfg.adapter in ["lora", "qlora", "ia3"]:
+        require_peft = True
+
+    if require_peft:
         LOG.info("converting PEFT model w/ prepare_model_for_kbit_training")
         if cfg.gradient_checkpointing:
             model.gradient_checkpointing_enable()
         model = prepare_model_for_kbit_training(
             model, use_gradient_checkpointing=cfg.gradient_checkpointing
         )
-        needs_fa2_dtype = True
 
     # LlamaRMSNorm layers are in fp32 after kbit_training or full finetune, so we need to
     # convert them back to fp16/bf16 for flash-attn compatibility.
-    if needs_fa2_dtype or (cfg.flash_attention and cfg.is_llama_derived_model):
+    if require_peft or cfg.fsdp or (cfg.flash_attention and cfg.is_llama_derived_model):
         LOG.info("converting modules to %s for flash attention", cfg.torch_dtype)
         for name, module in model.named_modules():
             if "norm" in name:
@@ -492,11 +490,11 @@ def load_llama_adapter(model, cfg):
         task_type="CAUSAL_LM",
     )
 
-    if cfg.lora_model_dir:
+    if cfg.peft_model_dir or cfg.lora_model_dir:
         LOG.debug("Loading pretained PEFT - llama_adapter")
         model = PeftModel.from_pretrained(
             model,
-            cfg.lora_model_dir,
+            cfg.peft_model_dir or cfg.lora_model_dir,
             torch_dtype=torch.float16,
         )
     else:
@@ -548,11 +546,11 @@ def load_lora(model, cfg, inference=False):
         task_type="CAUSAL_LM",
     )
 
-    if cfg.lora_model_dir:
+    if cfg.peft_model_dir:
         LOG.debug("Loading pretained PEFT - LoRA")
         model = PeftModel.from_pretrained(
             model,
-            cfg.lora_model_dir,
+            cfg.peft_model_dir,
             is_trainable=(not inference),
         )
     else:
@@ -581,11 +579,11 @@ def load_ia3(model, cfg, inference=False):
         **ia3_config_kwargs,
     )
 
-    if cfg.ia3_model_dir:
+    if cfg.peft_model_dir:
         LOG.debug("Loading pretained PEFT - IA3")
         model = PeftModel.from_pretrained(
             model,
-            cfg.ia3_model_dir,
+            cfg.peft_model_dir,
             is_trainable=(not inference),
         )
     else:

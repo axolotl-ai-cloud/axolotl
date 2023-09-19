@@ -16,7 +16,7 @@ val_set_size: 0.01
 output_dir: ./qlora-out
 
 adapter: qlora
-lora_model_dir:
+peft_model_dir:
 
 sequence_len: 4096
 sample_packing: true

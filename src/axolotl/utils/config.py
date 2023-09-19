@@ -190,7 +190,10 @@ def validate_config(cfg):
                 raise ValueError("Require cfg.load_in_4bit to be True for qlora")
 
     if not cfg.load_in_8bit and cfg.adapter == "lora":
-        LOG.warning("We recommend setting `load_in_8bit: true` for LORA finetuning")
+        LOG.warning("We recommend setting `load_in_8bit: true` for LoRA finetuning")
+
+    if not cfg.load_in_8bit and cfg.adapter == "ia3":
+        LOG.warning("We recommend setting `load_in_8bit: true` for IA3 finetuning")
 
     if cfg.relora_steps:
         if cfg.adapter not in ("lora", "qlora"):

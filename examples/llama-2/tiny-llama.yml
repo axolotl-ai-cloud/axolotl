@@ -20,7 +20,7 @@ sequence_len: 4096
 sample_packing: true
 
 adapter: lora
-lora_model_dir:
+peft_model_dir:
 lora_r: 32
 lora_alpha: 16
 lora_dropout: 0.05

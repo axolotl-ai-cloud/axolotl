@@ -22,7 +22,7 @@ sample_packing: false  # not CURRENTLY compatible with LoRAs
 pad_to_sequence_len:
 
 adapter: qlora
-lora_model_dir:
+peft_model_dir:
 lora_r: 64
 lora_alpha: 32
 lora_dropout: 0.05
