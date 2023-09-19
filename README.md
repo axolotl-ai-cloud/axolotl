@@ -31,6 +31,7 @@ Features:
   - [How to Use Custom Pretokenized Dataset](#how-to-use-your-custom-pretokenized-dataset)
 - [Config](#config)
   - [Train](#train)
+  - [Training w/ Deepspeed](#training-with-deepspeed)
   - [Inference](#inference)
   - [Merge LORA to Base](#merge-lora-to-base)
 - [Common Errors](#common-errors-)
@@ -88,6 +89,8 @@ cd axolotl
 pip3 install packaging
 pip3 install -e .[flash-attn]
 pip3 install -U git+https://github.com/huggingface/peft.git
+# optionally install deepspeed
+pip3 install deepspeed
 
 # finetune lora
 accelerate launch -m axolotl.cli.train examples/openllama-3b/lora.yml
@@ -730,6 +733,21 @@ wandb_entity:
 wandb_watch:
 wandb_run_id:
 wandb_log_model:
+```
+
+### Training with Deepspeed
+
+Deepspeed is an optimization suite for multi-gpu systems allowing you to train much larger models than you
+might typically be able to fit into your GPU's VRAM. More information about the various optimization types
+for deepspeed is available at https://huggingface.co/docs/accelerate/main/en/usage_guides/deepspeed#what-is-integrated
+
+We provide several default deepspeed JSON configurations for ZeRO stage 1, 2, and 3.
+
+```shell
+# install deepspeed if you haven't already
+pip3 install deepspeed
+
+accelerate launch -m axolotl.cli.train examples/llama-2/config.py --deepspeed deepspeed/zero1.json
 ```
 
 ### Inference
