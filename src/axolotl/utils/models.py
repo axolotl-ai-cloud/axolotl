@@ -199,7 +199,9 @@ def load_model(
             LOG.warning("model config does not contain quantization_config information")
         else:
             if cfg.gptq_disable_exllama is not None:
-                model_config.disable_exllama = cfg.gptq_disable_exllama
+                model_config.quantization_config[
+                    "disable_exllama"
+                ] = cfg.gptq_disable_exllama
             model_kwargs["quantization_config"] = GPTQConfig(
                 **model_config.quantization_config
             )
