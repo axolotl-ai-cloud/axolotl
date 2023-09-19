@@ -562,6 +562,9 @@ lora_modules_to_save:
 # Make sure `lora_model_dir` points to this directory if you want to use the trained model.
 lora_out_dir:
 lora_fan_in_fan_out: false
+ia3_target_modules:  # target modules for IA3, for llama, k, v, and down projections
+ia3_feedforward_modules:  # ffn modules for IA3, for llama down projection
+ia3_fan_in_fan_out:
 
 # ReLoRA configuration
 # Must use either 'lora' or 'qlora' adapter, and does not support fsdp or deepspeed
