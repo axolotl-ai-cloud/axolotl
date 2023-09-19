@@ -175,8 +175,6 @@ def load_model(
         LOG.info("patching _expand_mask")
         hijack_expand_mask()
 
-    model_config = load_model_config(cfg)
-
     # special handling b/c remote MixFormers code doesn't have _no_split_modules set
     if (
         "MixFormerSequentialConfig" in model_config.__class__.__name__
