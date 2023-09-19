@@ -576,6 +576,7 @@ def load_ia3(model, cfg, inference=False):
         target_modules=cfg.ia3_target_modules,
         feedforward_modules=cfg.ia3_feedforward_modules,
         modules_to_save=cfg.ia3_modules_to_save,
+        task_type="CAUSAL_LM",
         **ia3_config_kwargs,
     )
 
