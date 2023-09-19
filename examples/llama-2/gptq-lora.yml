@@ -2,7 +2,7 @@ base_model: TheBloke/Llama-2-7B-GPTQ
 base_model_config: TheBloke/Llama-2-7B-GPTQ
 is_llama_derived_model: false
 gptq: true
-gptq_bits: 4
+gptq_disable_exllama: true
 model_type: AutoModelForCausalLM
 tokenizer_type: LlamaTokenizer
 tokenizer_use_fast: true
@@ -62,8 +62,6 @@ xformers_attention:
 flash_attention:
 sdp_attention:
 flash_optimum:
-gptq_groupsize:
-gptq_model_v1:
 warmup_steps: 100
 eval_steps:
 save_steps:
