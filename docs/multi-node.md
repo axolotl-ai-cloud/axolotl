@@ -34,5 +34,12 @@ fsdp_config:
   fsdp_transformer_layer_cls_to_wrap: LlamaDecoderLayer
 ```
 
-All you have to do now is make sure the port you set as `main_process_port` is open on the main machine (rank 0).
-Launch using accelerate as you would usually do and voila!
+## Machine configuration
+
+On each machine you need a copy of Axolotl, we suggest using the same commit to ensure compatibility.
+
+You will also need to have the same configuration file for your model on each machine.
+
+On the main machine only, make sure the port you set as `main_process_port` is open on the main machine (rank 0).
+
+All you have to do now is launch using accelerate as you would usually do on each machine and voila, the processes will start once you have launched accelerate on every machine.
