@@ -40,6 +40,6 @@ On each machine you need a copy of Axolotl, we suggest using the same commit to 
 
 You will also need to have the same configuration file for your model on each machine.
 
-On the main machine only, make sure the port you set as `main_process_port` is open on the main machine (rank 0).
+On the main machine only, make sure the port you set as `main_process_port` is open in TCP and reachable by other machines.
 
 All you have to do now is launch using accelerate as you would usually do on each machine and voila, the processes will start once you have launched accelerate on every machine.
