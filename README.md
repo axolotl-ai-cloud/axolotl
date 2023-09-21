@@ -87,10 +87,8 @@ git clone https://github.com/OpenAccess-AI-Collective/axolotl
 cd axolotl
 
 pip3 install packaging
-pip3 install -e .[flash-attn]
+pip3 install -e .[flash-attn,deepspeed]
 pip3 install -U git+https://github.com/huggingface/peft.git
-# optionally install deepspeed
-pip3 install deepspeed
 
 # finetune lora
 accelerate launch -m axolotl.cli.train examples/openllama-3b/lora.yml
@@ -124,7 +122,7 @@ accelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \
   3. Install axolotl along with python dependencies
         ```bash
         pip3 install packaging
-        pip3 install -e .[flash-attn]
+        pip3 install -e .[flash-attn,deepspeed]
         ```
 
 - LambdaLabs
@@ -160,7 +158,7 @@ accelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \
   cd axolotl
 
   pip3 install packaging
-  pip3 install -e .[flash-attn]
+  pip3 install -e .[flash-attn,deepspeed]
   pip3 install protobuf==3.20.3
   pip3 install -U --ignore-installed requests Pillow psutil scipy
   ```
@@ -718,11 +716,6 @@ fsdp_config:
   fsdp_transformer_layer_cls_to_wrap: LlamaDecoderLayer
 ```
 
-- llama Deepspeed
-```yaml
-deepspeed: deepspeed/zero3.json
-```
-
 ##### Weights & Biases Logging
 
 - wandb options
@@ -748,6 +741,12 @@ We provide several default deepspeed JSON configurations for ZeRO stage 1, 2, an
 pip3 install deepspeed
 
 accelerate launch -m axolotl.cli.train examples/llama-2/config.py --deepspeed deepspeed/zero1.json
+```
+
+or
+
+```yaml
+deepspeed: deepspeed/zero1.json
 ```
 
 ### Inference
