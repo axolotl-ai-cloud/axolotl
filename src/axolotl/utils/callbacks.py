@@ -11,7 +11,6 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.distributed as dist
-import wandb
 from datasets import load_dataset
 from optimum.bettertransformer import BetterTransformer
 from tqdm import tqdm
@@ -25,6 +24,7 @@ from transformers import (
 )
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, IntervalStrategy
 
+import wandb
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.distributed import (
     barrier,
@@ -63,6 +63,29 @@ class SavePeftModelCallback(TrainerCallback):  # pylint: disable=too-few-public-
             peft_model_path, save_safetensors=args.save_safetensors
         )
 
+        return control
+
+
+class EvalFirstStepCallback(
+    TrainerCallback
+):  # pylint: disable=too-few-public-methods disable=unused-argument
+    """
+    Callback to trigger evals on the first step
+    """
+
+    def on_step_end(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs,
+    ):
+        if (
+            args.evaluation_strategy == IntervalStrategy.STEPS
+            and args.eval_steps < 1.0
+            and state.global_step == 1
+        ):
+            control.should_evaluate = True
         return control
 
 
