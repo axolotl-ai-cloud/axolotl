@@ -4,7 +4,11 @@ on:
   push:
     branches:
       - "main"
+    paths:
+      - '**.py'
   pull_request:
+      paths:
+       - '**.py'
   workflow_dispatch:
 
 jobs:
