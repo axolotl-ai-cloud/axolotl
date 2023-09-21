@@ -57,6 +57,7 @@ class TestPhi(unittest.TestCase):
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_bnb_8bit",
                 "lr_scheduler": "cosine",
+                "bf16": True,
             }
         )
         normalize_config(cfg)
@@ -100,6 +101,7 @@ class TestPhi(unittest.TestCase):
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_bnb_8bit",
                 "lr_scheduler": "cosine",
+                "bf16": True,
             }
         )
         normalize_config(cfg)
