@@ -14,7 +14,7 @@ def check_cuda_device(default_value):
     :return:
     """
 
-    def actual_decorator(func):
+    def deco(func):
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
             device = kwargs.get("device", args[0] if args else None)
@@ -26,7 +26,7 @@ def check_cuda_device(default_value):
 
         return wrapper
 
-    return actual_decorator
+    return deco
 
 
 @check_cuda_device(0.0)
