@@ -30,4 +30,3 @@ scipy
 scikit-learn==1.2.2
 pynvml
 art
-wandb
