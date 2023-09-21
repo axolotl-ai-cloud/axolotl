@@ -39,7 +39,7 @@ def choose_device(cfg):
     accelerate_vars = [var for var in os.environ if var.startswith("ACCELERATE_USE_")]
     if accelerate_vars:
         cfg.device_map = None
-    
+
     # Override the device_map if the model we are trying to train is gptq-based"
     # Otherwise training will not work
     if cfg.gptq:
