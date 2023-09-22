@@ -28,6 +28,7 @@ from transformers.trainer_pt_utils import SequentialDistributedSampler
 
 from axolotl.monkeypatch.relora import ReLoRACallback, ReLoRAScheduler
 from axolotl.utils.callbacks import (
+    EvalFirstStepCallback,
     GPUStatsCallback,
     SaveBetterTransformerModelCallback,
     SavePeftModelCallback,
@@ -704,6 +705,7 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
 
     callbacks = []
     callbacks.append(GPUStatsCallback(cfg))
+    callbacks.append(EvalFirstStepCallback)
 
     if cfg.relora_steps:
         callbacks.append(ReLoRACallback(cfg))
