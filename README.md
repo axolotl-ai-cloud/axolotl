@@ -737,9 +737,6 @@ for deepspeed is available at https://huggingface.co/docs/accelerate/main/en/usa
 We provide several default deepspeed JSON configurations for ZeRO stage 1, 2, and 3.
 
 ```shell
-# install deepspeed if you haven't already
-pip3 install deepspeed
-
 accelerate launch -m axolotl.cli.train examples/llama-2/config.py --deepspeed deepspeed/zero1.json
 ```
 
