@@ -41,10 +41,15 @@ class PromptTokenizingStrategy(abc.ABC):
         self.tokenizer: PreTrainedTokenizer = tokenizer
         self.train_on_inputs = train_on_inputs
         self.sequence_len = sequence_len
+        self.max_length = sequence_len
 
     @abc.abstractmethod
     def tokenize_prompt(self, prompt):
         pass
+
+    @property
+    def supports_batched(self):
+        return False
 
     @functools.lru_cache(maxsize=128)
     def _get_user_token(self):
@@ -77,7 +82,7 @@ class PromptTokenizingStrategy(abc.ABC):
             result = self.tokenizer(
                 prompt,
                 truncation=True,
-                max_length=self.sequence_len,
+                max_length=self.max_length,
                 padding=False,
                 return_tensors=None,
             )
@@ -86,7 +91,7 @@ class PromptTokenizingStrategy(abc.ABC):
         if (
             len(result["input_ids"]) > 0
             and result["input_ids"][-1] != self.tokenizer.eos_token_id
-            and len(result["input_ids"]) < self.sequence_len
+            and len(result["input_ids"]) < self.max_length
             and add_eos_token
         ):
             result["input_ids"].append(self.tokenizer.eos_token_id)
@@ -245,46 +250,6 @@ class NomicGPT4AllPromptTokenizingStrategy(InstructionPromptTokenizingStrategy):
             "",
             prompt["response"],
         )
-
-
-class CompletionPromptTokenizingStrategy(InstructionPromptTokenizingStrategy):
-    """
-    Tokenizing strategy for Completion prompts.
-    """
-
-    _field: str = "text"
-
-    @property
-    def field(self) -> str:
-        return self._field
-
-    @field.setter
-    def field(self, new_field: str):
-        self._field = new_field
-
-    def parse_instruction_fields(self, prompt) -> Tuple[str, str, str]:
-        return (
-            prompt[self.field],
-            "",
-            "",
-        )
-
-    def tokenize_prompt(self, prompt):
-        (
-            instruction,
-            _,
-            _,
-        ) = self.parse_instruction_fields(prompt)
-
-        full_prompt = self._build_full_prompt(instruction, None, None)
-        tokenized_full_prompt = self._tokenize(full_prompt)
-
-        return tokenized_full_prompt
-
-    def _build_full_prompt(
-        self, instruction, input, response
-    ):  # pylint: disable=redefined-builtin
-        return next(iter(self.prompter.build_prompt(instruction, input, response)))
 
 
 class ReflectionPromptTokenizingStrategy(PromptTokenizingStrategy):

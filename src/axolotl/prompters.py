@@ -135,20 +135,6 @@ class SummarizeTLDRPrompter(AlpacaPrompter):
         self.turn_no_input_format = "USER: Summarize the following article as a TL;DR.\n{instruction}\nASSISTANT:"
 
 
-class CompletionPrompter:
-    """
-    Prompter for completion
-    """
-
-    def build_prompt(
-        self,
-        instruction: str,
-        input=None,  # pylint: disable=redefined-builtin, unused-argument
-        output=None,  # pylint: disable=unused-argument
-    ) -> Generator[str, None, None]:
-        yield instruction
-
-
 class GPTeacherPrompter(AlpacaPrompter):
     """
     Prompter for GPTeacher
