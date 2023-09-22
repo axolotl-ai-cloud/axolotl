@@ -31,7 +31,6 @@ from axolotl.utils.callbacks import (
     EvalFirstStepCallback,
     GPUStatsCallback,
     SaveBetterTransformerModelCallback,
-    SavePeftModelCallback,
     bench_eval_callback_factory,
     log_prediction_callback_factory,
 )
@@ -710,12 +709,6 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
 
     if cfg.relora_steps:
         callbacks.append(ReLoRACallback(cfg))
-
-    if cfg.local_rank == 0 and cfg.adapter in [
-        "lora",
-        "qlora",
-    ]:  # only save in rank 0
-        callbacks.append(SavePeftModelCallback)
 
     if hasattr(model, "use_bettertransformer") and model.use_bettertransformer is True:
         callbacks.append(SaveBetterTransformerModelCallback)
