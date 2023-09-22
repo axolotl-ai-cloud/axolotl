@@ -7,6 +7,7 @@ peft @ git+https://github.com/huggingface/peft.git
 transformers @ git+https://github.com/huggingface/transformers.git
 bitsandbytes>=0.41.1
 accelerate @ git+https://github.com/huggingface/accelerate
+deepspeed
 addict
 evaluate
 fire

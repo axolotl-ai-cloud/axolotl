@@ -45,9 +45,11 @@
     "params": {
       "warmup_min_lr": "auto",
       "warmup_max_lr": "auto",
-      "warmup_num_steps": "auto"
+      "warmup_num_steps": "auto",
+      "warmup_type": "linear"
     }
   },
+  "gradient_accumulation_steps": "auto",
   "train_batch_size": "auto",
   "train_micro_batch_size_per_gpu": "auto",
   "wall_clock_breakdown": false
