@@ -393,12 +393,12 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
             ):
                 if isinstance(part, tuple):
                     if part[0] == "USER:":
-                        part = part[0] + part[1] if not user_token else part[1]
+                        turn = part[0] + part[1] if not user_token else part[1]
                         # this is still the user query, we should
-                        if not part.strip():
-                            logging.warning(f"user turn has empty text: {prompt}")
+                        if not part[1].strip():
+                            LOG.warning(f"user turn has empty text: {prompt}")
                         res = self._tokenize(
-                            part.strip(),
+                            turn.strip(),
                             add_eos_token=False,
                             strip_bos_token=True,
                         )
@@ -408,12 +408,12 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
                         labels = [IGNORE_TOKEN_ID] * len(res["input_ids"])
                     elif part[0] == "ASSISTANT:":
                         # TODO label assistant token/tokens w/ IGNORE_TOKEN_ID
-                        part = part[0] + part[1] if not assistant_token else part[1]
+                        turn = part[0] + part[1] if not assistant_token else part[1]
                         # this should be the assistant response, should end with an eos token
-                        if not part.strip():
-                            logging.warning(f"assistant turn has empty text: {prompt}")
+                        if not part[1].strip():
+                            LOG.warning(f"assistant turn has empty text: {prompt}")
                         res = self._tokenize(
-                            part.strip(),
+                            turn.strip(),
                             add_eos_token=True,
                             strip_bos_token=True,
                         )
