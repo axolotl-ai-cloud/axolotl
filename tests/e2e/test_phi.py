@@ -31,9 +31,9 @@ class TestPhi(unittest.TestCase):
                 "trust_remote_code": True,
                 "model_type": "MixFormerSequentialForCausalLM",
                 "tokenizer_type": "AutoTokenizer",
-                "sequence_len": 2048,
+                "sequence_len": 512,
                 "sample_packing": False,
-                "load_in_8bit": True,
+                "load_in_8bit": False,
                 "adapter": None,
                 "val_set_size": 0.1,
                 "special_tokens": {
@@ -55,8 +55,9 @@ class TestPhi(unittest.TestCase):
                 "gradient_accumulation_steps": 1,
                 "output_dir": tempfile.mkdtemp(),
                 "learning_rate": 0.00001,
-                "optimizer": "adamw_torch",
+                "optimizer": "adamw_bnb_8bit",
                 "lr_scheduler": "cosine",
+                "bf16": True,
             }
         )
         normalize_config(cfg)
@@ -74,9 +75,9 @@ class TestPhi(unittest.TestCase):
                 "trust_remote_code": True,
                 "model_type": "MixFormerSequentialForCausalLM",
                 "tokenizer_type": "AutoTokenizer",
-                "sequence_len": 2048,
+                "sequence_len": 512,
                 "sample_packing": True,
-                "load_in_8bit": True,
+                "load_in_8bit": False,
                 "adapter": None,
                 "val_set_size": 0.1,
                 "special_tokens": {
@@ -98,8 +99,9 @@ class TestPhi(unittest.TestCase):
                 "gradient_accumulation_steps": 1,
                 "output_dir": tempfile.mkdtemp(),
                 "learning_rate": 0.00001,
-                "optimizer": "adamw_torch",
+                "optimizer": "adamw_bnb_8bit",
                 "lr_scheduler": "cosine",
+                "bf16": True,
             }
         )
         normalize_config(cfg)

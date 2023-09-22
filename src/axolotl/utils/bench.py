@@ -19,7 +19,11 @@ def check_cuda_device(default_value):
         def wrapper(*args, **kwargs):
             device = kwargs.get("device", args[0] if args else None)
 
-            if not torch.cuda.is_available() or device == "auto" or device == "cpu":
+            if (
+                not torch.cuda.is_available()
+                or device == "auto"
+                or torch.device(device).type == "cpu"
+            ):
                 return default_value
 
             return func(*args, **kwargs)

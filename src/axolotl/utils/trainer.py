@@ -676,6 +676,7 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
             (cfg.load_best_model_at_end is not False or cfg.early_stopping_patience)
             and cfg.val_set_size > 0
             and cfg.save_steps
+            and cfg.eval_steps
             and cfg.save_steps % cfg.eval_steps == 0
         )
         or False,
