@@ -493,6 +493,8 @@ pad_to_sequence_len:
 max_packed_sequence_len: 1024
 # use efficient multi-packing with block diagonal attention and per sequence position_ids. Recommend set to 'true'
 sample_packing:
+# set to 'false' if getting errors during eval with sample_packing on.
+eval_sample_packing:
 # you can set these packing optimizations AFTER starting a training at least once.
 # The trainer will provide recommended values for these values.
 sample_packing_eff_est:
