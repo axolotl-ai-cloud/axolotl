@@ -290,4 +290,6 @@ class ShareGPTPrompter:  # pylint: disable=too-few-public-methods
             conv.append_message(role, sentence["value"])
 
         for part in conv.get_turns():
+            if part[0] and not part[1]:
+                LOG.warning(f"role with empty message: {part[0]}")
             yield part
