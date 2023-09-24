@@ -94,7 +94,7 @@ def validate_config(cfg):
         if not cfg.bf16 and not cfg.bfloat16:
             LOG.info("bf16 support detected, but not enabled for this configuration.")
     else:
-        if cfg.bf16 or cfg.bfloat16:
+        if not cfg.merge_lora and (cfg.bf16 or cfg.bfloat16):
             raise ValueError(
                 "bf16 requested, but AMP is not supported on this GPU. Requires Ampere series or above."
             )
