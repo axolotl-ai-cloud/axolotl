@@ -114,18 +114,6 @@ def load_model(
 
             replace_btlm_attn_with_flash_attn(cfg.base_model)
 
-    if hasattr(model_config, "model_type") and model_config.model_type in [
-        "falcon",
-        "RefinedWebModel",
-        "RefinedWeb",
-    ]:
-        if cfg.flash_attention:
-            from axolotl.monkeypatch.falcon_attn_hijack_flash import (
-                replace_falcon_attn_with_flash_attn,
-            )
-
-            replace_falcon_attn_with_flash_attn()
-
     if cfg.is_llama_derived_model and cfg.flash_attention and cfg.sample_packing:
         if cfg.device not in ["mps", "cpu"] and not inference:
             from axolotl.monkeypatch.llama_attn_hijack_flash import (
