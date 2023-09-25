@@ -1,12 +1,16 @@
 """Module containing the SimpleShareGPTPromptTokenizingStrategy class"""
+from typing import Any, Dict, Optional
 
 from axolotl.prompt_tokenizers import ShareGPTPromptTokenizingStrategy
 from axolotl.prompters import ShareGPTPrompterV2
 
 
-def load(tokenizer, cfg):
+def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
+    conversation = (
+        ds_cfg["conversation"] if ds_cfg and "conversation" in ds_cfg else None
+    )
     return SimpleShareGPTPromptTokenizingStrategy(
-        ShareGPTPrompterV2(),
+        ShareGPTPrompterV2(conversation=conversation),
         tokenizer,
         cfg.train_on_inputs,
         cfg.sequence_len,
