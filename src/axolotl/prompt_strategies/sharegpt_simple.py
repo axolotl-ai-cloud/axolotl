@@ -1,12 +1,12 @@
 """Module containing the SimpleShareGPTPromptTokenizingStrategy class"""
 
 from axolotl.prompt_tokenizers import ShareGPTPromptTokenizingStrategy
-from axolotl.prompters import PromptStyle, ShareGPTPrompter
+from axolotl.prompters import ShareGPTPrompterV2
 
 
 def load(tokenizer, cfg):
     return SimpleShareGPTPromptTokenizingStrategy(
-        ShareGPTPrompter(PromptStyle.CHAT.value),
+        ShareGPTPrompterV2(),
         tokenizer,
         cfg.train_on_inputs,
         cfg.sequence_len,
@@ -15,7 +15,7 @@ def load(tokenizer, cfg):
 
 def load_role(tokenizer, cfg):
     return SimpleRoleShareGPTPromptTokenizingStrategy(
-        ShareGPTPrompter(PromptStyle.CHAT.value),
+        ShareGPTPrompterV2(),
         tokenizer,
         cfg.train_on_inputs,
         cfg.sequence_len,
@@ -24,7 +24,7 @@ def load_role(tokenizer, cfg):
 
 def load_guanaco(tokenizer, cfg):
     return GuanacoShareGPTPromptTokenizingStrategy(
-        ShareGPTPrompter(PromptStyle.CHAT.value),
+        ShareGPTPrompterV2(),
         tokenizer,
         cfg.train_on_inputs,
         cfg.sequence_len,

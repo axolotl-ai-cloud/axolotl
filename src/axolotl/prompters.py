@@ -227,22 +227,9 @@ class ShareGPTPrompter:  # pylint: disable=too-few-public-methods
 
     def __init__(
         self,
-        prompt_style=None,
-        system_prompt: Optional[str] = None,
+        prompt_style=None,  # pylint: disable=unused-argument
         conversation: Optional[Union[str, Conversation]] = None,
     ):
-        if prompt_style != PromptStyle.CHAT.value:
-            raise ValueError(
-                f"unsupported prompt_style for ShareGPTPrompter({prompt_style})"
-            )
-        system: str = (
-            system_prompt
-            if system_prompt is not None
-            else (
-                "A chat between a curious user and an artificial intelligence assistant. "
-                "The assistant gives helpful, detailed, and polite answers to the user's questions."
-            )
-        )
         if conversation:
             if isinstance(conversation, Conversation):
                 self._conversation = conversation
@@ -250,9 +237,6 @@ class ShareGPTPrompter:  # pylint: disable=too-few-public-methods
                 self._conversation = get_conv_template(conversation)
         else:
             self._conversation = get_conv_template("vicuna_v1.1")
-
-        if system:
-            self._conversation.system_message = system
 
     def build_prompt(self, source) -> Generator[str, None, None]:
         if len(source) < 2:
@@ -293,3 +277,15 @@ class ShareGPTPrompter:  # pylint: disable=too-few-public-methods
             if part[0] and not part[1]:
                 LOG.warning(f"role with empty message: {part[0]}")
             yield part
+
+
+class ShareGPTPrompterV2(ShareGPTPrompter):
+    """
+    A V2 prompter that generates prompts for the ShareGPT
+    """
+
+    def __init__(
+        self,
+        conversation: Optional[Union[str, Conversation]] = None,
+    ):
+        super().__init__(conversation=conversation)

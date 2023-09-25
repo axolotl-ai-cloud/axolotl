@@ -1,11 +1,11 @@
 """Module for Jokes prompts using sharegpt style """
 from axolotl.prompt_tokenizers import ShareGPTPromptTokenizingStrategy
-from axolotl.prompters import PromptStyle, ShareGPTPrompter
+from axolotl.prompters import ShareGPTPrompterV2
 
 
 def load(tokenizer, cfg):
     return SimpleJokesShareGPTPromptTokenizingStrategy(
-        ShareGPTPrompter(PromptStyle.CHAT.value),
+        ShareGPTPrompterV2(),
         tokenizer,
         cfg.train_on_inputs,
         cfg.sequence_len,

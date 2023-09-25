@@ -35,7 +35,7 @@ from axolotl.prompters import (
     MultipleChoiceConcisePrompter,
     MultipleChoiceExplainPrompter,
     ReflectAlpacaPrompter,
-    ShareGPTPrompter,
+    ShareGPTPrompterV2,
     SummarizeTLDRPrompter,
 )
 from axolotl.utils.dict import DictDefault
@@ -322,7 +322,7 @@ def load_tokenized_prepared_datasets(
                 datasets.append(ds_wrapper)
             elif d_base_type == "sharegpt":
                 ds_strategy = ShareGPTPromptTokenizingStrategy(
-                    ShareGPTPrompter(d_prompt_style),
+                    ShareGPTPrompterV2(d.conversation),
                     tokenizer,
                     cfg.train_on_inputs,
                     cfg.sequence_len,

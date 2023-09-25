@@ -21,7 +21,7 @@ from axolotl.prompt_tokenizers import (
     AlpacaPromptTokenizingStrategy,
     ShareGPTPromptTokenizingStrategy,
 )
-from axolotl.prompters import AlpacaPrompter, PromptStyle, ShareGPTPrompter
+from axolotl.prompters import AlpacaPrompter, PromptStyle, ShareGPTPrompterV2
 
 LOG = logging.getLogger("axolotl")
 
@@ -60,7 +60,7 @@ class TestPromptTokenizationStrategies(unittest.TestCase):
         ) as fin:
             data = fin.read()
             tokenized_conversation = json.loads(data)
-        prompter = ShareGPTPrompter("chat")
+        prompter = ShareGPTPrompterV2()
         strat = ShareGPTPromptTokenizingStrategy(
             prompter,
             self.tokenizer,
@@ -79,7 +79,7 @@ class TestPromptTokenizationStrategies(unittest.TestCase):
         ) as fin:
             data = fin.read()
             conversation = json.loads(data)
-        prompter = ShareGPTPrompter("chat")
+        prompter = ShareGPTPrompterV2()
         strat = ShareGPTPromptTokenizingStrategy(
             prompter,
             self.tokenizer,
