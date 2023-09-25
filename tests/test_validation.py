@@ -397,3 +397,53 @@ class ValidationTest(unittest.TestCase):
                 for record in self._caplog.records
             )
         assert cfg.datasets[0].type == "sharegpt:load_role"
+
+    def test_no_conflict_save_strategy(self):
+        cfg = DictDefault(
+            {
+                "save_strategy": "epoch",
+                "save_steps": 10,
+            }
+        )
+
+        with pytest.raises(
+            ValueError, match=r".*save_strategy and save_steps mismatch.*"
+        ):
+            validate_config(cfg)
+
+        cfg = DictDefault(
+            {
+                "save_strategy": "no",
+                "save_steps": 10,
+            }
+        )
+
+        with pytest.raises(
+            ValueError, match=r".*save_strategy and save_steps mismatch.*"
+        ):
+            validate_config(cfg)
+
+        cfg = DictDefault(
+            {
+                "save_strategy": "steps",
+                "save_steps": 10,
+            }
+        )
+
+        validate_config(cfg)
+
+        cfg = DictDefault(
+            {
+                "save_steps": 10,
+            }
+        )
+
+        validate_config(cfg)
+
+        cfg = DictDefault(
+            {
+                "save_strategy": "no",
+            }
+        )
+
+        validate_config(cfg)

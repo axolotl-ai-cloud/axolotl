@@ -296,6 +296,10 @@ def validate_config(cfg):
                 cfg.datasets[idx].type = cfg.datasets[idx].type.replace(
                     "sharegpt_simple", "sharegpt"
                 )
+    if cfg.save_strategy and cfg.save_steps and cfg.save_strategy != "steps":
+        raise ValueError(
+            "save_strategy and save_steps mismatch. Please set save_strategy to 'steps' or remove save_steps."
+        )
 
     # TODO
     # MPT 7b
