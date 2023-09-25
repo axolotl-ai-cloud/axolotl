@@ -250,7 +250,7 @@ class ShareGPTPrompter:  # pylint: disable=too-few-public-methods
 
         # Add the conversation system prompt if provided, otherwise use the default one
         if source[0]["from"] == "system":
-            conv.system = source[0]["value"]
+            conv.set_system_message(source[0]["value"])
             source.pop(0)
 
         roles = {"human": conv.roles[0], "gpt": conv.roles[1]}
