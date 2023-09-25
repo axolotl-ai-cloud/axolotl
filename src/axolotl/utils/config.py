@@ -90,7 +90,12 @@ def normalize_config(cfg):
     cfg.is_falcon_derived_model = (
         (
             hasattr(model_config, "model_type")
-            and model_config.model_type == "RefinedWebModel"
+            and model_config.model_type
+            in [
+                "falcon",
+                "RefinedWebModel",
+                "RefinedWeb",
+            ]
         )
         or cfg.is_falcon_derived_model
         or "falcon" in cfg.base_model
