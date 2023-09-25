@@ -447,3 +447,105 @@ class ValidationTest(unittest.TestCase):
         )
 
         validate_config(cfg)
+
+    def test_no_conflict_eval_strategy(self):
+        cfg = DictDefault(
+            {
+                "evaluation_strategy": "epoch",
+                "eval_steps": 10,
+            }
+        )
+
+        with pytest.raises(
+            ValueError, match=r".*evaluation_strategy and eval_steps mismatch.*"
+        ):
+            validate_config(cfg)
+
+        cfg = DictDefault(
+            {
+                "evaluation_strategy": "no",
+                "eval_steps": 10,
+            }
+        )
+
+        with pytest.raises(
+            ValueError, match=r".*evaluation_strategy and eval_steps mismatch.*"
+        ):
+            validate_config(cfg)
+
+        cfg = DictDefault(
+            {
+                "evaluation_strategy": "steps",
+                "eval_steps": 10,
+            }
+        )
+
+        validate_config(cfg)
+
+        cfg = DictDefault(
+            {
+                "eval_steps": 10,
+            }
+        )
+
+        validate_config(cfg)
+
+        cfg = DictDefault(
+            {
+                "evaluation_strategy": "no",
+            }
+        )
+
+        validate_config(cfg)
+
+        cfg = DictDefault(
+            {
+                "evaluation_strategy": "epoch",
+                "val_set_size": 0,
+            }
+        )
+
+        with pytest.raises(
+            ValueError,
+            match=r".*eval_steps and evaluation_strategy are not supported with val_set_size == 0.*",
+        ):
+            validate_config(cfg)
+
+        cfg = DictDefault(
+            {
+                "eval_steps": 10,
+                "val_set_size": 0,
+            }
+        )
+
+        with pytest.raises(
+            ValueError,
+            match=r".*eval_steps and evaluation_strategy are not supported with val_set_size == 0.*",
+        ):
+            validate_config(cfg)
+
+        cfg = DictDefault(
+            {
+                "val_set_size": 0,
+            }
+        )
+
+        validate_config(cfg)
+
+        cfg = DictDefault(
+            {
+                "eval_steps": 10,
+                "val_set_size": 0.01,
+            }
+        )
+
+        validate_config(cfg)
+
+        cfg = DictDefault(
+            {
+                "evaluation_strategy": "epoch",
+                "val_set_size": 0.01,
+            }
+        )
+
+        validate_config(cfg)
