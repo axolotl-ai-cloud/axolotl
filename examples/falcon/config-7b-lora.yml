@@ -3,6 +3,7 @@ base_model_config: tiiuae/falcon-7b
 trust_remote_code: true
 model_type: AutoModelForCausalLM
 tokenizer_type: AutoTokenizer
+is_falcon_derived_model: true
 load_in_8bit: true
 load_in_4bit: false
 gptq: false
