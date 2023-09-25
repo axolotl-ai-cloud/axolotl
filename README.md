@@ -408,6 +408,10 @@ tokenizer_legacy:
 # this is reported to improve training speed on some models
 resize_token_embeddings_to_32x:
 
+# used to identify if the model is falcon/llama based
+is_falcon_derived_model:
+is_llama_derived_model:
+
 # whether you are training a 4-bit GPTQ quantized model
 gptq: true
 gptq_groupsize: 128 # group size
