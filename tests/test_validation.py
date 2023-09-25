@@ -426,6 +426,14 @@ class ValidationTest(unittest.TestCase):
         cfg = DictDefault(
             {
                 "save_strategy": "steps",
+            }
+        )
+
+        validate_config(cfg)
+
+        cfg = DictDefault(
+            {
+                "save_strategy": "steps",
                 "save_steps": 10,
             }
         )
@@ -472,6 +480,14 @@ class ValidationTest(unittest.TestCase):
             ValueError, match=r".*evaluation_strategy and eval_steps mismatch.*"
         ):
             validate_config(cfg)
+
+        cfg = DictDefault(
+            {
+                "evaluation_strategy": "steps",
+            }
+        )
+
+        validate_config(cfg)
 
         cfg = DictDefault(
             {
