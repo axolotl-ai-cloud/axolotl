@@ -520,9 +520,6 @@ def llama_model_forward(
                     # None for past_key_value
                     return module(
                         *inputs,
-                        past_key_value,  # pylint: disable=(cell-var-from-loop)
-                        output_attentions,
-                        padding_mask=padding_mask,
                     )
 
                 return custom_forward
@@ -532,7 +529,10 @@ def llama_model_forward(
                 hidden_states,
                 attention_mask,
                 position_ids,
+                past_key_value,
+                output_attentions,
                 None,
+                padding_mask,
                 cu_seqlens,
                 max_seqlen,
             )
