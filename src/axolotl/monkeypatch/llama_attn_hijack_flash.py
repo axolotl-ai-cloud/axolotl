@@ -522,7 +522,7 @@ def llama_model_forward(
                         *inputs,
                         past_key_value,  # pylint: disable=(cell-var-from-loop)
                         output_attentions,
-                        attention_mask=attention_mask,
+                        padding_mask=padding_mask,
                     )
 
                 return custom_forward
