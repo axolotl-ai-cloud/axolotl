@@ -225,10 +225,15 @@ class ShareGPTPrompter:  # pylint: disable=too-few-public-methods
     A prompter that generates prompts for the ShareGPT
     """
 
+    role_key_human = "human"
+    role_key_model = "gpt"
+
     def __init__(
         self,
         prompt_style=None,  # pylint: disable=unused-argument
         conversation: Optional[Union[str, Conversation]] = None,
+        role_key_human: Optional[str] = None,
+        role_key_model: Optional[str] = None,
     ):
         if conversation:
             if isinstance(conversation, Conversation):
@@ -237,6 +242,10 @@ class ShareGPTPrompter:  # pylint: disable=too-few-public-methods
                 self._conversation = get_conv_template(conversation)
         else:
             self._conversation = get_conv_template("vicuna_v1.1")
+        if role_key_human:
+            self.role_key_human = role_key_human
+        if role_key_model:
+            self.role_key_model = role_key_model
 
     def build_prompt(self, source) -> Generator[str, None, None]:
         if len(source) < 2:
@@ -253,7 +262,7 @@ class ShareGPTPrompter:  # pylint: disable=too-few-public-methods
             conv.set_system_message(source[0]["value"])
             source.pop(0)
 
-        roles = {"human": conv.roles[0], "gpt": conv.roles[1]}
+        roles = {self.role_key_human: conv.roles[0], self.role_key_model: conv.roles[1]}
 
         try:
             # Apply prompt templates
@@ -287,5 +296,11 @@ class ShareGPTPrompterV2(ShareGPTPrompter):
     def __init__(
         self,
         conversation: Optional[Union[str, Conversation]] = None,
+        role_key_human: Optional[str] = None,
+        role_key_model: Optional[str] = None,
     ):
-        super().__init__(conversation=conversation)
+        super().__init__(
+            conversation=conversation,
+            role_key_human=role_key_human,
+            role_key_model=role_key_model,
+        )
