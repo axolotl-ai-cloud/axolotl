@@ -278,6 +278,25 @@ def validate_config(cfg):
                     "`model_type: MixFormerSequentialForCausalLM` required for sample_packing"
                 )
 
+    if cfg.datasets:
+        for idx, ds_cfg in enumerate(cfg.datasets):
+            if ds_cfg.type == "sharegpt:chat":
+                LOG.warning(
+                    PendingDeprecationWarning(
+                        "`type: sharegpt:chat` will soon be deprecated. simply use `type: sharegpt` instead."
+                    )
+                )
+                cfg.datasets[idx].type = "sharegpt"
+            if "sharegpt_simple" in ds_cfg.type:
+                LOG.warning(
+                    PendingDeprecationWarning(
+                        "`type: sharegpt_simple` will soon be deprecated. simply use `type: sharegpt` instead."
+                    )
+                )
+                cfg.datasets[idx].type = cfg.datasets[idx].type.replace(
+                    "sharegpt_simple", "sharegpt"
+                )
+
     # TODO
     # MPT 7b
     # https://github.com/facebookresearch/bitsandbytes/issues/25
