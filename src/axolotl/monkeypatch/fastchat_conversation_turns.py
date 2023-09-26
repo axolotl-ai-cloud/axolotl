@@ -85,9 +85,9 @@ def get_turns(  # pylint: disable=too-many-return-statements
     if self.sep_style == SeparatorStyle.LLAMA2:
         seps = [self.sep, self.sep2]
         if self.system_message:
-            yield "", system_prompt + self.messages[0] + " "
+            yield "", system_prompt
         else:
-            yield "", "[INST] " + self.messages[0] + " "
+            yield "", "[INST] "
         for i, (role, message) in enumerate(self.messages[1:]):
             if message:
                 yield role + " ", message + seps[i % 2]

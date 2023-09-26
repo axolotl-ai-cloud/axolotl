@@ -266,10 +266,7 @@ class ShareGPTPrompter:  # pylint: disable=too-few-public-methods
 
         try:
             # Apply prompt templates
-            if (
-                source[0]["from"] not in roles
-                or roles[source[0]["from"]] != conv.roles[0]
-            ):
+            if source[0]["from"] not in roles:
                 # Skip the first one if it is not from human
                 source = source[1:]
         except IndexError as err:
