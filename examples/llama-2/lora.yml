@@ -56,7 +56,7 @@ flash_attention: true
 
 warmup_steps: 10
 eval_steps: 20
-eval_table_size: 5
+eval_table_size:
 eval_table_max_new_tokens: 128
 save_steps:
 debug:
