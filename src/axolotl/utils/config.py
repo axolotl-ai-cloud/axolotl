@@ -86,6 +86,22 @@ def normalize_config(cfg):
         or (cfg.model_type and "llama" in cfg.model_type.lower())
     )
 
+    # figure out if the model is falcon
+    cfg.is_falcon_derived_model = (
+        (
+            hasattr(model_config, "model_type")
+            and model_config.model_type
+            in [
+                "falcon",
+                "RefinedWebModel",
+                "RefinedWeb",
+            ]
+        )
+        or cfg.is_falcon_derived_model
+        or "falcon" in cfg.base_model
+        or (cfg.model_type and "rwforcausallm" in cfg.model_type.lower())
+    )
+
     log_gpu_memory_usage(LOG, "baseline", cfg.device)
 
 
