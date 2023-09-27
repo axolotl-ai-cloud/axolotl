@@ -1,4 +1,5 @@
 """Flash attention monkey patch for mistral model"""
+# pylint: disable=duplicate-code
 
 import logging
 import math
