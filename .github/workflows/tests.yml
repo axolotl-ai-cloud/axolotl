@@ -44,7 +44,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip3 install -e .
+          pip3 install -U -e .
           pip3 install -r requirements-tests.txt
 
       - name: Run tests
@@ -69,8 +69,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip3 install -e .
-          pip3 install flash-attn
+          pip3 install -U -e .[flash-attn]
           pip3 install -r requirements-tests.txt
 
       - name: Run e2e tests
