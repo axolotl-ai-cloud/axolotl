@@ -22,6 +22,9 @@ from transformers import (  # noqa: F401
     PreTrainedTokenizerBase,
 )
 
+from axolotl.monkeypatch.mistral_attn_hijack_flash import (
+    replace_mistral_attn_with_flash_attn,
+)
 from axolotl.prompt_tokenizers import LLAMA_DEFAULT_EOS_TOKEN
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.dict import DictDefault
@@ -149,6 +152,10 @@ def load_model(
 
         # Note: This might overwrite previous additional_special_tokens
         tokenizer.add_special_tokens({"additional_special_tokens": [MEM_TOKEN]})
+
+    if cfg.is_mistral_derived_model and cfg.flash_attention:
+        LOG.info("patching with flash attention")
+        replace_mistral_attn_with_flash_attn(packed=cfg.sample_packing)
 
     if cfg.is_llama_derived_model and cfg.xpos_rope:
         from axolotl.monkeypatch.xpos_rope_llama_monkey_patch import (
