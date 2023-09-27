@@ -205,11 +205,26 @@ def load_tokenized_prepared_datasets(
                     use_auth_token=use_auth_token,
                 )
             else:
-                fp = hf_hub_download(
-                    repo_id=d.path,
-                    repo_type="dataset",
-                    filename=d.data_files,
-                )
+                if isinstance(d.data_files, str):
+                    fp = hf_hub_download(
+                        repo_id=d.path,
+                        repo_type="dataset",
+                        filename=d.data_files,
+                    )
+                elif isinstance(d.data_files, list):
+                    fp = []
+                    for file in d.data_files:
+                        fp.append(
+                            hf_hub_download(
+                                repo_id=d.path,
+                                repo_type="dataset",
+                                filename=file,
+                            )
+                        )
+                else:
+                    raise ValueError(
+                        "data_files must be either a string or list of strings"
+                    )
                 ds = load_dataset(
                     "json", name=d.name, data_files=fp, streaming=False, split=None
                 )
