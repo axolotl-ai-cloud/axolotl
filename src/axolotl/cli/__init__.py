@@ -14,6 +14,8 @@ import yaml
 # add src to the pythonpath so we don't need to pip install this
 from accelerate.commands.config import config_args
 from art import text2art
+from huggingface_hub import HfApi
+from huggingface_hub.utils import LocalTokenNotFoundError
 from transformers import GenerationConfig, TextStreamer
 
 from axolotl.common.cli import TrainerCliArgs, load_model_and_tokenizer
@@ -247,3 +249,16 @@ def check_accelerate_default_config():
         LOG.warning(
             f"accelerate config file found at {config_args.default_yaml_config_file}. This can lead to unexpected errors"
         )
+
+
+def check_user_token():
+    # Verify if token is valid
+    api = HfApi()
+    try:
+        user_info = api.whoami()
+        return bool(user_info)
+    except LocalTokenNotFoundError:
+        LOG.warning(
+            "Error verifying HuggingFace token. Remember to log in using `huggingface-cli login` and get your access token from https://huggingface.co/settings/tokens if you want to use gated models or datasets."
+        )
+        return False
