@@ -124,6 +124,11 @@ accelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \
         pip3 install packaging
         pip3 install -e '.[flash-attn,deepspeed]'
         ```
+  4. (Optional) Login to Huggingface to use gated models/datasets.
+        ```bash
+        huggingface-cli login
+        ```
+        Get the token at huggingface.co/settings/tokens
 
 - LambdaLabs
   <details>
