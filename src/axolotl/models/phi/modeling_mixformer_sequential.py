@@ -711,12 +711,8 @@ class ParallelBlock(nn.Module):
         self.resid_dropout = nn.Dropout(config.resid_pdrop)
         self.block_idx = block_idx
 
-        self.mixer = MHA(config=config, **mixer, layer_idx=block_idx)
-        mlp_cls = mlp.pop("mlp_cls")
-        if mlp_cls == "fused_mlp":
-            self.mlp = FusedMLP(config=config, **mlp)
-        else:
-            self.mlp = MLP(config=config, **mlp)
+        self.mixer = MHA(config, layer_idx=block_idx)
+        self.mlp = MLP(config)
 
     def forward(
         self,
