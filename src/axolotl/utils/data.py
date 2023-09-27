@@ -76,7 +76,7 @@ def prepare_dataset(cfg, tokenizer):
 
     with zero_first(is_main_process()):
         train_dataset, eval_dataset = process_datasets_for_packing(
-            cfg, train_dataset, eval_dataset
+            cfg, train_dataset, eval_dataset, tokenizer
         )
     if cfg.max_steps:
         total_num_steps = min(
