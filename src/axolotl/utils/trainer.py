@@ -416,7 +416,7 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset, tokenizer):
                     )
 
         # Phi doesn't want the attention_mask feature when training
-        if tokenizer.__class__.__name__ == "CodeGenTokenizerFast":
+        if "CodeGenTokenizer" in tokenizer.__class__.__name__:
             train_dataset = train_dataset.remove_columns("attention_mask")
             if eval_dataset:
                 eval_dataset = eval_dataset.remove_columns("attention_mask")
