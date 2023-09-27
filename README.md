@@ -180,7 +180,7 @@ Have dataset(s) in one of the following format (JSONL recommended):
   ```json
   {"instruction": "...", "input": "...", "output": "..."}
   ```
-- `sharegpt:chat`: conversations where `from` is `human`/`gpt`
+- `sharegpt`: conversations where `from` is `human`/`gpt`
   ```json
   {"conversations": [{"from": "...", "value": "..."}]}
   ```
@@ -269,11 +269,11 @@ Have dataset(s) in one of the following format (JSONL recommended):
   ```json
   {"prompt": "...", "generation": "..."}
   ```
-- `sharegpt_simple.load_role`: conversations where `role` is used instead of `from`
+- `sharegpt.load_role`: conversations where `role` is used instead of `from`
   ```json
   {"conversations": [{"role": "...", "value": "..."}]}
   ```
-- `sharegpt_simple.load_guanaco`: conversations where `from` is `prompter`/`assistant` instead of default sharegpt
+- `sharegpt.load_guanaco`: conversations where `from` is `prompter`/`assistant` instead of default sharegpt
   ```json
   {"conversations": [{"from": "...", "value": "..."}]}
   ```
@@ -443,6 +443,7 @@ datasets:
     data_files: # Optional[str] path to source data files
     shards: # Optional[int] number of shards to split data into
     name: # Optional[str] name of dataset configuration to load
+    conversation:  # Optional[str] fastchat conversation type, only used with type: sharegpt
 
   # custom user prompt
   - path: repo

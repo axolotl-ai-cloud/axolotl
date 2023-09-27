@@ -1,12 +1,35 @@
 """Module containing the SimpleShareGPTPromptTokenizingStrategy class"""
+from typing import Any, Dict, Optional
+
+from fastchat.conversation import Conversation, SeparatorStyle, register_conv_template
 
 from axolotl.prompt_tokenizers import ShareGPTPromptTokenizingStrategy
-from axolotl.prompters import PromptStyle, ShareGPTPrompter
+from axolotl.prompters import ShareGPTPrompterV2
+
+register_conv_template(
+    Conversation(
+        name="chatml",
+        system_template="<|im_start|>system\n{system_message}",
+        system_message="You are a helpful assistant.",
+        roles=["<|im_start|>user", "<|im_start|>assistant"],
+        sep_style=SeparatorStyle.CHATML,
+        sep="<|im_end|>\n",
+    )
+)
 
 
-def load(tokenizer, cfg):
+def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
+    conversation = (
+        ds_cfg["conversation"] if ds_cfg and "conversation" in ds_cfg else None
+    )
+    field_human = ds_cfg["field_human"] if ds_cfg and "field_human" in ds_cfg else None
+    field_model = ds_cfg["field_model"] if ds_cfg and "field_model" in ds_cfg else None
     return SimpleShareGPTPromptTokenizingStrategy(
-        ShareGPTPrompter(PromptStyle.CHAT.value),
+        ShareGPTPrompterV2(
+            conversation=conversation,
+            role_key_model=field_model,
+            role_key_human=field_human,
+        ),
         tokenizer,
         cfg.train_on_inputs,
         cfg.sequence_len,
@@ -15,7 +38,7 @@ def load(tokenizer, cfg):
 
 def load_role(tokenizer, cfg):
     return SimpleRoleShareGPTPromptTokenizingStrategy(
-        ShareGPTPrompter(PromptStyle.CHAT.value),
+        ShareGPTPrompterV2(),
         tokenizer,
         cfg.train_on_inputs,
         cfg.sequence_len,
@@ -24,7 +47,7 @@ def load_role(tokenizer, cfg):
 
 def load_guanaco(tokenizer, cfg):
     return GuanacoShareGPTPromptTokenizingStrategy(
-        ShareGPTPrompter(PromptStyle.CHAT.value),
+        ShareGPTPrompterV2(),
         tokenizer,
         cfg.train_on_inputs,
         cfg.sequence_len,

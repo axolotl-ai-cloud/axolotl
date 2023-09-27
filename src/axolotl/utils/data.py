@@ -25,7 +25,6 @@ from axolotl.prompt_tokenizers import (
     GPTeacherPromptTokenizingStrategy,
     JeopardyPromptTokenizingStrategy,
     OpenAssistantPromptTokenizingStrategy,
-    ShareGPTPromptTokenizingStrategy,
     SummarizeTLDRPromptTokenizingStrategy,
 )
 from axolotl.prompters import (
@@ -35,7 +34,6 @@ from axolotl.prompters import (
     MultipleChoiceConcisePrompter,
     MultipleChoiceExplainPrompter,
     ReflectAlpacaPrompter,
-    ShareGPTPrompter,
     SummarizeTLDRPrompter,
 )
 from axolotl.utils.dict import DictDefault
@@ -314,15 +312,6 @@ def load_tokenized_prepared_datasets(
             elif d_base_type == "reflection":
                 ds_strategy = AlpacaReflectionPTStrategy(
                     ReflectAlpacaPrompter(d_prompt_style),
-                    tokenizer,
-                    cfg.train_on_inputs,
-                    cfg.sequence_len,
-                )
-                ds_wrapper = TokenizedPromptDataset(ds_strategy, ds)
-                datasets.append(ds_wrapper)
-            elif d_base_type == "sharegpt":
-                ds_strategy = ShareGPTPromptTokenizingStrategy(
-                    ShareGPTPrompter(d_prompt_style),
                     tokenizer,
                     cfg.train_on_inputs,
                     cfg.sequence_len,

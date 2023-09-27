@@ -6,8 +6,12 @@ import functools
 import logging
 from typing import Dict, List, Tuple, Union
 
+from fastchat.conversation import Conversation
 from transformers import BatchEncoding, PreTrainedTokenizer
 
+from axolotl.monkeypatch.fastchat_conversation_turns import (
+    add_get_turns_to_conversation,
+)
 from axolotl.prompters import IGNORE_TOKEN_ID
 
 LOG = logging.getLogger("axolotl")
@@ -17,6 +21,8 @@ LLAMA_DEFAULT_PAD_TOKEN = "<pad>"  # nosec
 LLAMA_DEFAULT_EOS_TOKEN = "</s>"  # nosec
 LLAMA_DEFAULT_BOS_TOKEN = "<s>"  # nosec
 LLAMA_DEFAULT_UNK_TOKEN = "<unk>"  # nosec
+
+add_get_turns_to_conversation()
 
 
 class InvalidDataException(Exception):
@@ -352,18 +358,21 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
         result, current_len = tokenize_prompt_default()
         user_token = self._get_user_token()
         assistant_token = self._get_assistant_token()
+        conversation: Conversation = (
+            self.prompter._conversation  # pylint: disable=protected-access
+        )
         try:
             for _, part in enumerate(
                 self.prompter.build_prompt(self.get_conversation_thread(prompt))
             ):
                 if isinstance(part, tuple):
-                    if part[0] == "USER:":
+                    if conversation.roles[0] in part[0]:
                         turn = part[0] + part[1] if not user_token else part[1]
                         # this is still the user query, we should
                         if not part[1].strip():
                             LOG.warning(f"user turn has empty text: {prompt}")
                         res = self._tokenize(
-                            turn.strip(),
+                            turn,
                             add_eos_token=False,
                             strip_bos_token=True,
                         )
@@ -371,14 +380,14 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
                             res["input_ids"] = [user_token, *res["input_ids"]]
                         # everything from this is masked out from the labels
                         labels = [IGNORE_TOKEN_ID] * len(res["input_ids"])
-                    elif part[0] == "ASSISTANT:":
+                    elif conversation.roles[1] in part[0]:
                         # TODO label assistant token/tokens w/ IGNORE_TOKEN_ID
                         turn = part[0] + part[1] if not assistant_token else part[1]
                         # this should be the assistant response, should end with an eos token
                         if not part[1].strip():
                             LOG.warning(f"assistant turn has empty text: {prompt}")
                         res = self._tokenize(
-                            turn.strip(),
+                            turn,
                             add_eos_token=True,
                             strip_bos_token=True,
                         )
@@ -389,16 +398,17 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
                             ]
                         # not masked out from labels
                         labels = copy.deepcopy(res["input_ids"])
-                    elif part[0] == "SYSTEM:":
-                        part = part[1]  # Ignore the system role from preamble
+                    elif part[0] == "":
+                        turn = part[1]
                         # this is only ever the first part, should include the bos token and the user query
                         res = self._tokenize(
-                            part.strip(), add_eos_token=False, strip_bos_token=False
+                            turn, add_eos_token=False, strip_bos_token=False
                         )
                         # everything from this is masked out from the labels
                         labels = [IGNORE_TOKEN_ID] * len(res["input_ids"])
                     else:
                         LOG.warning(f"unhandled role: {part[0]}")
+                        continue
 
                 # pylint: disable=duplicate-code
                 result, current_len = parse_tokenized_to_result(
