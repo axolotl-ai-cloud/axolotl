@@ -414,6 +414,11 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
                     eval_dataset = eval_dataset.map(
                         add_position_ids, num_proc=os.cpu_count()
                     )
+
+        train_dataset = train_dataset.remove_columns("attention_mask")
+        if eval_dataset:
+            eval_dataset = eval_dataset.remove_columns("attention_mask")
+
     return train_dataset, eval_dataset
 
 
