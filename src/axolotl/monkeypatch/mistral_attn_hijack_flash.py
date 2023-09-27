@@ -55,6 +55,7 @@ def _prepare_decoder_attention_mask(
     input_shape,
     inputs_embeds,
     past_key_values_length,
+    sliding_window,
 ):  # pylint: disable=unused-argument
     # [bsz, seq_len]
     return attention_mask
