@@ -54,7 +54,7 @@ def replace_llama_attn_with_flash_attn(
         )
 
     # skip only if explicitly disabled
-    if cross_entropy is not False:
+    if cross_entropy:
         try:
             from flash_attn.losses.cross_entropy import CrossEntropyLoss
 
@@ -68,7 +68,7 @@ def replace_llama_attn_with_flash_attn(
             )
 
     # skip only if explicitly disabled
-    if rms_norm is not False:
+    if rms_norm:
         try:
             from flash_attn.ops.rms_norm import RMSNorm
 
