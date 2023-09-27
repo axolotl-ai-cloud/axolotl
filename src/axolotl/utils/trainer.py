@@ -397,7 +397,7 @@ def disable_datasets_caching():
         set_caching_enabled(True)
 
 
-def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
+def process_datasets_for_packing(cfg, train_dataset, eval_dataset, tokenizer):
     drop_long = partial(drop_long_seq, sequence_len=cfg.sequence_len)
     with zero_first(is_main_process()):
         train_dataset = train_dataset.filter(drop_long, num_proc=os.cpu_count())
@@ -414,6 +414,13 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
                     eval_dataset = eval_dataset.map(
                         add_position_ids, num_proc=os.cpu_count()
                     )
+
+        # Phi doesn't want the attention_mask feature when training
+        if "CodeGenTokenizer" in tokenizer.__class__.__name__:
+            train_dataset = train_dataset.remove_columns("attention_mask")
+            if eval_dataset:
+                eval_dataset = eval_dataset.remove_columns("attention_mask")
+
     return train_dataset, eval_dataset
 
 
