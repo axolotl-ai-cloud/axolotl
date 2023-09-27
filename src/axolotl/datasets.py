@@ -22,7 +22,7 @@ class TokenizedPromptDataset(Dataset):
     """
     Dataset that returns tokenized prompts from a stream of text files.
         Args:
-            prompt_tokenizer (PromptTokenizingStrategy): The prompt tokenizing method for proccessing the data.
+            prompt_tokenizer (PromptTokenizingStrategy): The prompt tokenizing method for processing the data.
             dataset (dataset.Dataset): Dataset with text files.
     """
 
@@ -55,7 +55,7 @@ class ConstantLengthDataset(IterableDataset):
     """
     Iterable dataset that returns constant length chunks of tokens from stream of text files.
         Args:
-            tokenizer (Tokenizer): The processor used for proccessing the data.
+            tokenizer (Tokenizer): The processor used for processing the data.
             dataset (dataset.Dataset): Dataset with text files.
             seq_length (int): Length of token sequences to return.
     """
