@@ -250,6 +250,10 @@ Have dataset(s) in one of the following format (JSONL recommended):
   ```json
   {"article": "...", "question": "...", "answer": "..."}
   ```
+- `context_qa.load_v2`: in context question answering (alternate)
+  ```json
+  {"context": "...", "question": "...", "answer": "..."}
+  ```
 - `context_qa.load_404`: in context question answering from an article, with default response for no answer from context
   ```json
   {"article": "...", "unanswerable_question": "..."}
@@ -356,6 +360,12 @@ See [examples](examples) for quick start. It is recommended to duplicate and mod
     - path: data.jsonl # or json
       ds_type: json # see other options below
       type: alpaca
+
+  # dataset with splits, but no train split
+  dataset:
+    - path: knowrohit07/know_sql
+      type: context_qa.load_v2
+      train_on_split: validation
   ```
 
 - loading
