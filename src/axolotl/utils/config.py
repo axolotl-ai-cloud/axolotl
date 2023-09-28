@@ -121,6 +121,18 @@ def normalize_config(cfg):
 
     log_gpu_memory_usage(LOG, "baseline", cfg.device)
 
+    if cfg.adapter is not None:
+        for key in list(cfg.keys()):
+            if key.startswith("lora_"):
+                new_key = key.replace("lora_", "peft_")
+                LOG.warning(
+                    PendingDeprecationWarning(
+                        f"{key} soon to be deprecated. please use {new_key}"
+                    )
+                )
+                cfg[new_key] = cfg[key]
+                del cfg[key]
+
 
 def validate_config(cfg):
     if is_torch_bf16_gpu_available():

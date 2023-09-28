@@ -490,11 +490,11 @@ def load_llama_adapter(model, cfg):
         task_type="CAUSAL_LM",
     )
 
-    if cfg.peft_model_dir or cfg.lora_model_dir:
+    if cfg.peft_model_dir:
         LOG.debug("Loading pretained PEFT - llama_adapter")
         model = PeftModel.from_pretrained(
             model,
-            cfg.peft_model_dir or cfg.lora_model_dir,
+            cfg.peft_model_dir,
             torch_dtype=torch.float16,
         )
     else:
@@ -507,7 +507,7 @@ def load_llama_adapter(model, cfg):
 
 def find_all_linear_names(model):
     cls = (bnb.nn.Linear4bit, bnb.nn.Linear8bitLt, torch.nn.Linear, QuantLinear)
-    lora_module_names = set()
+    peft_module_names = set()
     for name, module in model.named_modules():
         if (
             isinstance(module, cls)
@@ -515,12 +515,12 @@ def find_all_linear_names(model):
             and module.__class__.__name__ not in ("LlamaLinearScalingRotaryEmbedding",)
         ):
             names = name.split(".")
-            lora_module_names.add(names[0] if len(names) == 1 else names[-1])
+            peft_module_names.add(names[0] if len(names) == 1 else names[-1])
 
-    if "lm_head" in lora_module_names:  # needed for 16-bit
-        lora_module_names.remove("lm_head")
+    if "lm_head" in peft_module_names:  # needed for 16-bit
+        peft_module_names.remove("lm_head")
 
-    return list(lora_module_names)
+    return list(peft_module_names)
 
 
 def load_lora(model, cfg, inference=False):
@@ -528,20 +528,20 @@ def load_lora(model, cfg, inference=False):
 
     from peft import LoraConfig, PeftModel, get_peft_model
 
-    lora_target_modules = list(cfg.lora_target_modules or [])
+    peft_target_modules = list(cfg.peft_target_modules or [])
 
-    if cfg.lora_target_linear:
+    if cfg.peft_target_linear:
         linear_names = find_all_linear_names(model)
         LOG.info(f"found linear modules: {repr(linear_names)}")
-        lora_target_modules = list(set(lora_target_modules + linear_names))
+        peft_target_modules = list(set(peft_target_modules + linear_names))
 
-    lora_config = LoraConfig(
-        r=cfg.lora_r,
-        lora_alpha=cfg.lora_alpha,
-        target_modules=lora_target_modules,
-        lora_dropout=cfg.lora_dropout,
-        fan_in_fan_out=cfg.lora_fan_in_fan_out,
-        modules_to_save=cfg.lora_modules_to_save if cfg.lora_modules_to_save else None,
+    peft_config = LoraConfig(
+        r=cfg.peft_r,
+        lora_alpha=cfg.peft_alpha,
+        target_modules=peft_target_modules,
+        lora_dropout=cfg.peft_dropout,
+        fan_in_fan_out=cfg.peft_fan_in_fan_out,
+        modules_to_save=cfg.peft_modules_to_save if cfg.peft_modules_to_save else None,
         bias="none",
         task_type="CAUSAL_LM",
     )
@@ -554,11 +554,11 @@ def load_lora(model, cfg, inference=False):
             is_trainable=(not inference),
         )
     else:
-        model = get_peft_model(model, lora_config)
+        model = get_peft_model(model, peft_config)
 
     model.print_trainable_parameters()
 
-    return model, lora_config
+    return model, peft_config
 
 
 def load_ia3(model, cfg, inference=False):
@@ -566,18 +566,18 @@ def load_ia3(model, cfg, inference=False):
 
     from peft import IA3Config, PeftModel, get_peft_model
 
-    ia3_config_kwargs = {}
-    if cfg.ia3_init_ia3_weights is not None:
-        ia3_config_kwargs["init_ia3_weights"] = cfg.ia3_init_ia3_weights
-    if cfg.ia3_fan_in_fan_out is not None:
-        ia3_config_kwargs["fan_in_fan_out"] = cfg.ia3_fan_in_fan_out
+    peft_config_kwargs = {}
+    if cfg.peft_init_ia3_weights is not None:
+        peft_config_kwargs["init_ia3_weights"] = cfg.peft_init_ia3_weights
+    if cfg.peft_fan_in_fan_out is not None:
+        peft_config_kwargs["fan_in_fan_out"] = cfg.peft_fan_in_fan_out
 
-    ia3_config = IA3Config(
-        target_modules=cfg.ia3_target_modules,
-        feedforward_modules=cfg.ia3_feedforward_modules,
-        modules_to_save=cfg.ia3_modules_to_save,
+    peft_config = IA3Config(
+        target_modules=cfg.peft_target_modules,
+        feedforward_modules=cfg.peft_feedforward_modules,
+        modules_to_save=cfg.peft_modules_to_save,
         task_type="CAUSAL_LM",
-        **ia3_config_kwargs,
+        **peft_config_kwargs,
     )
 
     if cfg.peft_model_dir:
@@ -588,8 +588,8 @@ def load_ia3(model, cfg, inference=False):
             is_trainable=(not inference),
         )
     else:
-        model = get_peft_model(model, ia3_config)
+        model = get_peft_model(model, peft_config)
 
     model.print_trainable_parameters()
 
-    return model, ia3_config
+    return model, peft_config

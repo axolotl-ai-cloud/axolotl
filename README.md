@@ -384,10 +384,10 @@ See [examples](examples) for quick start. It is recommended to duplicate and mod
 - lora
   ```yaml
   adapter: lora # qlora or leave blank for full finetune
-  lora_r: 8
-  lora_alpha: 16
-  lora_dropout: 0.05
-  lora_target_modules:
+  peft_r: 8
+  peft_alpha: 16
+  peft_dropout: 0.05
+  peft_target_modules:
     - q_proj
     - v_proj
   ```
@@ -536,10 +536,10 @@ peft_model_dir:
 # LoRA hyperparameters
 # For more details about the following options, see:
 # https://www.anyscale.com/blog/fine-tuning-llms-lora-or-full-parameter-an-in-depth-analysis-with-llama-2
-lora_r: 8
-lora_alpha: 16
-lora_dropout: 0.05
-lora_target_modules:
+peft_r: 8
+peft_alpha: 16
+peft_dropout: 0.05
+peft_target_modules:
   - q_proj
   - v_proj
 #  - k_proj
@@ -547,13 +547,13 @@ lora_target_modules:
 #  - gate_proj
 #  - down_proj
 #  - up_proj
-lora_target_linear: # If true, will target all linear layers
+peft_target_linear: # if true, will target all linear layers
 
 # If you added new tokens to the tokenizer, you may need to save some LoRA modules because they need to know the new tokens.
 # For LLaMA and Mistral, you need to save `embed_tokens` and `lm_head`. It may vary for other models.
 # `embed_tokens` converts tokens to embeddings, and `lm_head` converts embeddings to token probabilities.
 # https://github.com/huggingface/peft/issues/334#issuecomment-1561727994
-lora_modules_to_save:
+peft_modules_to_save:
 #  - embed_tokens
 #  - lm_head
 
@@ -561,10 +561,8 @@ lora_modules_to_save:
 # If you merge the adapter to the base model, a subdirectory `merged` will be created under this directory.
 # Make sure `lora_model_dir` points to this directory if you want to use the trained model.
 lora_out_dir:
-lora_fan_in_fan_out: false
-ia3_target_modules:  # target modules for IA3, for llama, k, v, and down projections
-ia3_feedforward_modules:  # ffn modules for IA3, for llama down projection
-ia3_fan_in_fan_out:
+peft_fan_in_fan_out: false
+peft_feedforward_modules:  # ffn modules for IA3, for llama down projection
 
 # ReLoRA configuration
 # Must use either 'lora' or 'qlora' adapter, and does not support fsdp or deepspeed

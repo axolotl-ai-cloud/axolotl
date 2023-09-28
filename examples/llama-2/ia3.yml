@@ -21,13 +21,13 @@ pad_to_sequence_len: true
 
 adapter: ia3
 peft_model_dir:
-ia3_target_modules:
+peft_target_modules:
   - k_proj
   - v_proj
   - down_proj
-ia3_feedforward_modules:
+peft_feedforward_modules:
   - down_proj
-ia3_fan_in_fan_out: false
+peft_fan_in_fan_out: false
 
 wandb_project:
 wandb_entity:
