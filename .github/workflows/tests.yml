@@ -69,6 +69,7 @@ jobs:
 
       - name: Install dependencies
         run: |
+          pip3 uninstall -y transformers accelerate
           pip3 install -U -e .[flash-attn]
           pip3 install -r requirements-tests.txt
 
