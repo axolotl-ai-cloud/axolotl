@@ -293,6 +293,8 @@ def validate_config(cfg):
 
     if cfg.datasets:
         for idx, ds_cfg in enumerate(cfg.datasets):
+            if not ds_cfg.type:
+                continue
             if ds_cfg.type == "sharegpt:chat":
                 LOG.warning(
                     PendingDeprecationWarning(
