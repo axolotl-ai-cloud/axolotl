@@ -8,6 +8,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from transformers.utils import is_torch_bf16_gpu_available
+
 from axolotl.cli import load_datasets
 from axolotl.common.cli import TrainerCliArgs
 from axolotl.train import train
@@ -30,6 +32,7 @@ class TestMistral(unittest.TestCase):
             {
                 "base_model": "openaccess-ai-collective/tiny-mistral",
                 "base_model_config": "openaccess-ai-collective/tiny-mistral",
+                "flash_attention": True,
                 "sequence_len": 1024,
                 "load_in_8bit": True,
                 "adapter": "lora",
@@ -75,6 +78,7 @@ class TestMistral(unittest.TestCase):
             {
                 "base_model": "openaccess-ai-collective/tiny-mistral",
                 "base_model_config": "openaccess-ai-collective/tiny-mistral",
+                "flash_attention": True,
                 "sample_packing": True,
                 "sequence_len": 1024,
                 "load_in_8bit": True,
@@ -121,6 +125,7 @@ class TestMistral(unittest.TestCase):
             {
                 "base_model": "openaccess-ai-collective/tiny-mistral",
                 "base_model_config": "openaccess-ai-collective/tiny-mistral",
+                "flash_attention": True,
                 "sequence_len": 1024,
                 "val_set_size": 0.1,
                 "special_tokens": {
@@ -146,6 +151,10 @@ class TestMistral(unittest.TestCase):
                 "eval_steps": 10,
             }
         )
+        if is_torch_bf16_gpu_available():
+            cfg.bf16 = True
+        else:
+            cfg.fp16 = True
         normalize_config(cfg)
         cli_args = TrainerCliArgs()
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
@@ -160,6 +169,7 @@ class TestMistral(unittest.TestCase):
             {
                 "base_model": "openaccess-ai-collective/tiny-mistral",
                 "base_model_config": "openaccess-ai-collective/tiny-mistral",
+                "flash_attention": True,
                 "sample_packing": True,
                 "sequence_len": 1024,
                 "val_set_size": 0.1,
@@ -186,6 +196,10 @@ class TestMistral(unittest.TestCase):
                 "eval_steps": 10,
             }
         )
+        if is_torch_bf16_gpu_available():
+            cfg.bf16 = True
+        else:
+            cfg.fp16 = True
         normalize_config(cfg)
         cli_args = TrainerCliArgs()
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
