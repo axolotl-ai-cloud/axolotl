@@ -400,19 +400,25 @@ def disable_datasets_caching():
 def process_datasets_for_packing(cfg, train_dataset, eval_dataset, tokenizer):
     drop_long = partial(drop_long_seq, sequence_len=cfg.sequence_len)
     with zero_first(is_main_process()):
-        train_dataset = train_dataset.filter(drop_long, num_proc=os.cpu_count())
+        train_dataset = train_dataset.filter(drop_long, num_proc=cfg.dataset_processes)
         if eval_dataset:
-            eval_dataset = eval_dataset.filter(drop_long, num_proc=os.cpu_count())
+            eval_dataset = eval_dataset.filter(
+                drop_long, num_proc=cfg.dataset_processes
+            )
 
         if cfg.group_by_length:
-            train_dataset = train_dataset.map(add_length, num_proc=os.cpu_count())
+            train_dataset = train_dataset.map(
+                add_length, num_proc=cfg.dataset_processes
+            )
 
         if cfg.sample_packing:
-            train_dataset = train_dataset.map(add_position_ids, num_proc=os.cpu_count())
+            train_dataset = train_dataset.map(
+                add_position_ids, num_proc=cfg.dataset_processes
+            )
             if cfg.eval_sample_packing is not False:
                 if eval_dataset:
                     eval_dataset = eval_dataset.map(
-                        add_position_ids, num_proc=os.cpu_count()
+                        add_position_ids, num_proc=cfg.dataset_processes
                     )
 
         # Phi doesn't want the attention_mask feature when training

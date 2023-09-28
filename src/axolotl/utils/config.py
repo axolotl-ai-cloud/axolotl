@@ -75,6 +75,8 @@ def normalize_config(cfg):
     else:
         cfg.torch_dtype = torch.float32
 
+    cfg.dataset_processes = cfg.dataset_processes or os.cpu_count()
+
     model_config = load_model_config(cfg)
     cfg.model_config_type = model_config.model_type
 
