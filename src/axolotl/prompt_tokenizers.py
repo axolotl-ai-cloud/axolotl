@@ -81,7 +81,7 @@ class PromptTokenizingStrategy(abc.ABC):
         self, prompt: str, add_eos_token: bool = True, strip_bos_token: bool = False
     ) -> BatchEncoding:
         result: BatchEncoding
-        if not prompt.strip():
+        if not prompt:
             LOG.warning("Empty text requested for tokenization.")
             result = BatchEncoding(data={"input_ids": [], "attention_mask": []})
         else:
