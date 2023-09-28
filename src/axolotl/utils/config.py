@@ -296,6 +296,24 @@ def validate_config(cfg):
                 cfg.datasets[idx].type = cfg.datasets[idx].type.replace(
                     "sharegpt_simple", "sharegpt"
                 )
+    if cfg.save_strategy and cfg.save_steps and cfg.save_strategy != "steps":
+        raise ValueError(
+            "save_strategy and save_steps mismatch. Please set save_strategy to 'steps' or remove save_steps."
+        )
+
+    if (
+        cfg.evaluation_strategy
+        and cfg.eval_steps
+        and cfg.evaluation_strategy != "steps"
+    ):
+        raise ValueError(
+            "evaluation_strategy and eval_steps mismatch. Please set evaluation_strategy to 'steps' or remove eval_steps."
+        )
+
+    if cfg.val_set_size == 0 and (cfg.eval_steps or cfg.evaluation_strategy):
+        raise ValueError(
+            "eval_steps and evaluation_strategy are not supported with val_set_size == 0"
+        )
 
     # TODO
     # MPT 7b
