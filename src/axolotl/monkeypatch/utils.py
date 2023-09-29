@@ -2,6 +2,7 @@
 Shared utils for the monkeypatches
 """
 import torch
+from torch import nn
 
 
 def get_cu_seqlens(attn_mask):
@@ -101,3 +102,20 @@ def get_cu_seqlens_from_pos_ids(position_ids):
         max_seq_lens.append(max_seq_len)
 
     return torch.stack(results).to(dtype=torch.int32), torch.stack(max_seq_lens)
+
+
+class GaussianDropout(nn.Module):
+    """
+    Module to apply Gaussian Dropout
+    """
+
+    def __init__(self, p=0.5):  # pylint: disable=invalid-name
+        super().__init__()
+        if p <= 0 or p >= 1:
+            raise ValueError("p value should accomplish 0 < p < 1")
+        self.p = p  # pylint: disable=invalid-name
+
+    def forward(self, inputs):
+        stddev = (self.p / (1.0 - self.p)) ** 0.5
+        epsilon = torch.randn_like(inputs) * stddev
+        return inputs * epsilon
