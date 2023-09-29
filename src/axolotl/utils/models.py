@@ -386,6 +386,10 @@ def load_model(
             **model_kwargs,
         )
 
+    if cfg.model_config:
+        for key, val in cfg.model_config.items():
+            model.config[key] = val
+
     embeddings_len = (
         math.ceil(len(tokenizer) / 32) * 32
         if cfg.resize_token_embeddings_to_32x

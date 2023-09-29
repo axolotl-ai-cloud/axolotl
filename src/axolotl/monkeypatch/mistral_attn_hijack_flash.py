@@ -13,6 +13,8 @@ from flash_attn.flash_attn_interface import (  # pylint: disable=ungrouped-impor
     flash_attn_varlen_kvpacked_func,
     flash_attn_varlen_qkvpacked_func,
 )
+from torch import nn
+from transformers import MistralConfig
 from transformers.modeling_outputs import BaseModelOutputWithPast
 from transformers.models.mistral.modeling_mistral import (
     MistralAttention as OriginalMistralAttention,
@@ -25,6 +27,23 @@ from transformers.models.mistral.modeling_mistral import apply_rotary_pos_emb, r
 from axolotl.monkeypatch.utils import get_cu_seqlens_from_pos_ids
 
 LOG = logging.getLogger("axolotl.monkeypatch.mistral")
+
+
+class GaussianDropout(nn.Module):
+    """
+    Module to apply Gaussian Dropout
+    """
+
+    def __init__(self, p=0.5):  # pylint: disable=invalid-name
+        super().__init__()
+        if p <= 0 or p >= 1:
+            raise ValueError("p value should accomplish 0 < p < 1")
+        self.p = p  # pylint: disable=invalid-name
+
+    def forward(self, inputs):
+        stddev = (self.p / (1.0 - self.p)) ** 0.5
+        epsilon = torch.randn_like(inputs) * stddev
+        return inputs * epsilon
 
 
 def replace_mistral_attn_with_flash_attn(
@@ -578,6 +597,12 @@ class MistralDecoderLayer(OriginalMistralDecoderLayer):
     patched version of MistralDecoderLayer to pass through the precalculated cu_seqlens
     """
 
+    def __init__(self, config: MistralConfig):
+        super().__init__(config)
+        self.dropout_p = config.dropout_p if hasattr(config, "dropout_p") else None
+        if self.dropout_p:
+            self.dropout = GaussianDropout(p=self.dropout_p)
+
     def forward(
         self,
         hidden_states: torch.Tensor,
@@ -627,6 +652,8 @@ class MistralDecoderLayer(OriginalMistralDecoderLayer):
         residual = hidden_states
         hidden_states = self.post_attention_layernorm(hidden_states)
         hidden_states = self.mlp(hidden_states)
+        if self.training and self.dropout_p:
+            hidden_states = self.mlp_dropout(hidden_states)
         hidden_states = residual + hidden_states
 
         outputs = (hidden_states,)
