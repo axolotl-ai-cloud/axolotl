@@ -17,7 +17,6 @@ from transformers import (  # noqa: F401
     AutoTokenizer,
     BitsAndBytesConfig,
     GPTQConfig,
-    LlamaConfig,
     PreTrainedModel,
     PreTrainedTokenizerBase,
 )
@@ -110,7 +109,6 @@ def load_model(
     Load a model for a given configuration and tokenizer.
     """
     base_model = cfg.base_model
-    base_model_config = cfg.base_model_config
     model_type = cfg.model_type
     model_config = load_model_config(cfg)
 
@@ -254,20 +252,20 @@ def load_model(
         ):
             model_kwargs["use_flash_attention_2"] = True
 
+    if cfg.model_config:
+        for key, val in cfg.model_config.items():
+            setattr(model_config, key, val)
+
+    if cfg.rope_scaling:
+        setattr(model_config, "rope_scaling", cfg.rope_scaling)
+
     try:
         if cfg.is_llama_derived_model and not cfg.trust_remote_code and not cfg.gptq:
             from transformers import LlamaForCausalLM
 
-            config_kwargs = {}
-            if cfg.rope_scaling:
-                config_kwargs["rope_scaling"] = cfg.rope_scaling
-            config = LlamaConfig.from_pretrained(
-                base_model_config,
-                **config_kwargs,
-            )
             model = LlamaForCausalLM.from_pretrained(
                 base_model,
-                config=config,
+                config=model_config,
                 load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
                 load_in_4bit=cfg.load_in_4bit and cfg.adapter is not None,
                 **model_kwargs,
@@ -317,6 +315,7 @@ def load_model(
 
             model = MixFormerSequentialForCausalLM.from_pretrained(
                 base_model,
+                config=model_config,
                 load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
                 load_in_4bit=cfg.load_in_4bit and cfg.adapter is not None,
                 **model_kwargs,
@@ -325,49 +324,49 @@ def load_model(
             if cfg.gptq:
                 model = AutoModelForCausalLM.from_pretrained(
                     base_model,
+                    config=model_config,
+                    torch_dtype=cfg.torch_dtype,
                     trust_remote_code=cfg.trust_remote_code or False,
                     **model_kwargs,
                 )
             else:
                 model = getattr(transformers, model_type).from_pretrained(
                     base_model,
+                    config=model_config,
                     load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
                     load_in_4bit=cfg.load_in_4bit and cfg.adapter is not None,
                     trust_remote_code=cfg.trust_remote_code or False,
                     **model_kwargs,
                 )
         else:
-            config = AutoConfig.from_pretrained(
-                base_model,
-                trust_remote_code=cfg.trust_remote_code or False,
-            )
             # Shouldn't be a problem most of the time. will obviously error if the model doesn't support this
             # when training starts
             if (
-                hasattr(config, "max_seq_len")
-                and config.max_seq_len
-                and cfg.sequence_len > config.max_seq_len
+                hasattr(model_config, "max_seq_len")
+                and model_config.max_seq_len
+                and cfg.sequence_len > model_config.max_seq_len
             ):
-                config.max_seq_len = cfg.sequence_len
+                model_config.max_seq_len = cfg.sequence_len
                 LOG.warning(f"increasing context length to {cfg.sequence_len}")
             elif (
-                hasattr(config, "max_sequence_length")
-                and config.max_sequence_length
-                and cfg.sequence_len > config.max_sequence_length
+                hasattr(model_config, "max_sequence_length")
+                and model_config.max_sequence_length
+                and cfg.sequence_len > model_config.max_sequence_length
             ):
-                config.max_sequence_length = cfg.sequence_len
+                model_config.max_sequence_length = cfg.sequence_len
                 LOG.warning(f"increasing context length to {cfg.sequence_len}")
             if cfg.gptq:
                 model = AutoModelForCausalLM.from_pretrained(
                     base_model,
-                    config=config,
+                    config=model_config,
+                    torch_dtype=cfg.torch_dtype,
                     trust_remote_code=cfg.trust_remote_code or False,
                     **model_kwargs,
                 )
             else:
                 model = AutoModelForCausalLM.from_pretrained(
                     base_model,
-                    config=config,
+                    config=model_config,
                     load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
                     load_in_4bit=cfg.load_in_4bit and cfg.adapter is not None,
                     trust_remote_code=cfg.trust_remote_code or False,
@@ -380,15 +379,12 @@ def load_model(
         LOG.exception(err)
         model = AutoModelForCausalLM.from_pretrained(
             base_model,
+            config=model_config,
             load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
             load_in_4bit=cfg.load_in_4bit and cfg.adapter is not None,
             trust_remote_code=cfg.trust_remote_code or False,
             **model_kwargs,
         )
-
-    if cfg.model_config:
-        for key, val in cfg.model_config.items():
-            setattr(model.config, key, val)
 
     embeddings_len = (
         math.ceil(len(tokenizer) / 32) * 32
