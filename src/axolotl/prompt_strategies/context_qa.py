@@ -24,6 +24,15 @@ def load(tokenizer, cfg):
     )
 
 
+def load_v2(tokenizer, cfg):
+    return ContextQaV2PromptTokenizingStrategy(
+        ContextV2Prompter(),
+        tokenizer,
+        cfg.train_on_inputs,
+        cfg.sequence_len,
+    )
+
+
 class AlpacaContextPrompter(AlpacaPrompter):
     """
     Customized system prompted for concise QA
@@ -48,6 +57,38 @@ class AlpacaContextPromptTokenizingStrategy(InstructionPromptTokenizingStrategy)
             "",
             prompt["answer"],
         )
+
+
+class ContextQaV2PromptTokenizingStrategy(InstructionPromptTokenizingStrategy):
+    """
+    Tokenization Strategy to combine in-context article with a question and answer
+    """
+
+    def parse_instruction_fields(self, prompt) -> Tuple[str, str, str]:
+        return (
+            "Context: "
+            + prompt["context"]
+            + "\nQuestion: "
+            + prompt["question"]
+            + "\n",
+            "",
+            "Answer: " + prompt["answer"],
+        )
+
+
+class ContextV2Prompter(AlpacaPrompter):
+    """
+    Customized system prompted for concise QA
+    """
+
+    system_prompt = ""
+    system_no_input_prompt = ""
+
+    def match_prompt_style(self):
+        # pylint: disable=duplicate-code
+        self.turn_format = "{instruction}\n{input}"
+        self.turn_no_input_format = "{instruction}"
+        self.system_format = "{system}"
 
 
 class AlpacaMissingInfoContextPromptTokenizingStrategy(

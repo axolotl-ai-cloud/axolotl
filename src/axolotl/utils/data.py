@@ -247,6 +247,16 @@ def load_tokenized_prepared_datasets(
                 d_prompt_style = d_type_split[1] if len(d_type_split) > 1 else None
             if "train" in ds:
                 ds = ds["train"]
+            elif (
+                isinstance(ds, DatasetDict)
+                and d.train_on_split
+                and d.train_on_split in ds
+            ):
+                ds = ds[d.train_on_split]
+            elif isinstance(ds, DatasetDict):
+                raise ValueError(
+                    f"no train split found for dataset {d.path}, you may specify a split with 'train_on_split: `"
+                )
             if (
                 "input_ids" in ds.features
                 and "attention_mask" in ds.features
