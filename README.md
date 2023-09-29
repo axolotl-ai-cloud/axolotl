@@ -317,7 +317,7 @@ Using file:
 #### How to use your custom pretokenized dataset
 
 - Do not pass a `type:`
-- Dataset must contain `input_ids`, `attention_mask`, `labels` in columns
+- Columns in Dataset must be exactly `input_ids`, `attention_mask`, `labels`
 
 
 ### Config
