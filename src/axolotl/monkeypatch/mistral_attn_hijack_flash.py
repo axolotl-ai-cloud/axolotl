@@ -635,7 +635,7 @@ class MistralDecoderLayer(OriginalMistralDecoderLayer):
         hidden_states = self.post_attention_layernorm(hidden_states)
         hidden_states = self.mlp(hidden_states)
         if self.training and self.dropout_p:
-            hidden_states = self.mlp_dropout(hidden_states)
+            hidden_states = self.dropout(hidden_states)
         hidden_states = residual + hidden_states
 
         outputs = (hidden_states,)
