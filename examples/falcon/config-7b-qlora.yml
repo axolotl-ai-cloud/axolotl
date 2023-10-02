@@ -18,7 +18,7 @@ datasets:
     data_files:
       - Chain-of-Thought/formatted_cot_data/gsm8k_train.json
     type: "alpaca:chat"
-dataset_prepared_path: last_run_prepared
+dataset_prepared_path:
 val_set_size: 0.01
 # enable QLoRA
 adapter: qlora

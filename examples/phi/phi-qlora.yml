@@ -13,7 +13,7 @@ datasets:
   - path: garage-bAInd/Open-Platypus
     type: alpaca
 
-dataset_prepared_path: last_run_prepared
+dataset_prepared_path:
 val_set_size: 0.05
 output_dir: ./phi-sft-out
 

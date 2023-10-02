@@ -51,7 +51,7 @@ def print_axolotl_text_art(suffix=None):
 
 
 def get_multi_line_input() -> Optional[str]:
-    print("Give me an instruction (Ctrl + D to finish): ")
+    print("Give me an instruction (Ctrl + D to submit): ")
     instruction = ""
     for line in sys.stdin:
         instruction += line  # pylint: disable=consider-using-join
