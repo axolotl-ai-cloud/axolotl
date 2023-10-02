@@ -9,7 +9,6 @@ bitsandbytes>=0.41.1
 accelerate @ git+https://github.com/huggingface/accelerate@80da9cfb09bb3cc9f1b385cb55d6b90d025a5fd9
 deepspeed
 addict
-evaluate
 fire
 PyYAML>=6.0
 datasets
