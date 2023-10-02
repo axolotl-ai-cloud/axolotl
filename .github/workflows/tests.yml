@@ -6,9 +6,11 @@ on:
       - "main"
     paths:
       - '**.py'
+      - 'requirements.txt'
   pull_request:
       paths:
        - '**.py'
+       - 'requirements.txt'
   workflow_dispatch:
 
 jobs:
