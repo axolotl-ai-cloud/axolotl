@@ -571,7 +571,7 @@ torch_compile_backend:  # Optional[str]
 # training hyperparameters
 gradient_accumulation_steps: 1
 micro_batch_size: 2
-eval_batch_size: 2
+eval_batch_size:
 num_epochs: 3
 warmup_steps: 100
 learning_rate: 0.00003
