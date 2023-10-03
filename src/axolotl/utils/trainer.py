@@ -668,9 +668,7 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
         max_steps=total_num_steps if cfg.max_steps else -1,
         max_seq_length=cfg.sequence_len,
         per_device_train_batch_size=cfg.micro_batch_size,
-        per_device_eval_batch_size=cfg.eval_batch_size
-        if cfg.eval_batch_size is not None
-        else cfg.micro_batch_size,
+        per_device_eval_batch_size=cfg.eval_batch_size,
         gradient_accumulation_steps=cfg.gradient_accumulation_steps,
         eval_accumulation_steps=cfg.gradient_accumulation_steps,
         num_train_epochs=cfg.num_epochs,

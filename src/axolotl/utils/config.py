@@ -49,6 +49,8 @@ def normalize_config(cfg):
     cfg.batch_size = (
         cfg.batch_size or cfg.micro_batch_size * cfg.gradient_accumulation_steps
     )
+    if cfg.eval_batch_size is None:
+        cfg.eval_batch_size = cfg.micro_batch_size
     cfg.world_size = int(os.environ.get("WORLD_SIZE", 1))
     cfg.local_rank = int(os.environ.get("LOCAL_RANK", 0))
     cfg.eval_table_size = cfg.eval_table_size or 0
@@ -157,6 +159,11 @@ def validate_config(cfg):
             "batch_size is not recommended. Please use gradient_accumulation_steps instead.",
             "To calculate the equivalent gradient_accumulation_steps, divide batch_size / micro_batch_size / number of gpus.",
         )
+    if cfg.eval_batch_size != cfg.micro_batch_size:
+        LOG.warning(
+            "eval_batch_size != micro_batch_size. This can lead to VRAM instability."
+        )
+
     if cfg.load_4bit:
         raise ValueError("cfg.load_4bit parameter has been deprecated")
 
