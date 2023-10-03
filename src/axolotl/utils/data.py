@@ -122,7 +122,7 @@ def load_tokenized_prepared_datasets(
 
     if dataset:
         ...
-    elif any(prepared_ds_path.glob("*")):
+    elif cfg.dataset_prepared_path and any(prepared_ds_path.glob("*")):
         LOG.info(f"Loading prepared dataset from disk at {prepared_ds_path}...")
         dataset = load_from_disk(str(prepared_ds_path))
         LOG.info("Prepared dataset loaded from disk...")
@@ -357,7 +357,7 @@ def load_tokenized_prepared_datasets(
         if len(datasets) > 1:
             LOG.info("shuffle merged datasets")
             dataset = dataset.shuffle(seed=seed)
-        if cfg.local_rank == 0:
+        if cfg.local_rank == 0 and cfg.dataset_prepared_path:
             LOG.info(f"Saving merged prepared dataset to disk... {prepared_ds_path}")
             dataset.save_to_disk(prepared_ds_path)
             if cfg.push_dataset_to_hub:
@@ -425,7 +425,7 @@ def load_prepare_datasets(
 
         if dataset:
             ...
-        elif any(prepared_ds_path.glob("*")):
+        elif cfg.dataset_prepared_path and any(prepared_ds_path.glob("*")):
             LOG.info(
                 f"Loading prepared packed dataset from disk at {prepared_ds_path}..."
             )
