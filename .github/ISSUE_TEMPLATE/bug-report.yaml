@@ -41,6 +41,7 @@ body:
     attributes:
       label: Steps to reproduce
       description: |
+        Please attach the config yaml!
         Which exact steps can a developer take to reproduce the issue?
         The more detail you provide, the easier it will be to narrow down and fix the bug.
         Please paste in tasks and/or queries **as text, not screenshots**.
