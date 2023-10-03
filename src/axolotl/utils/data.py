@@ -96,7 +96,7 @@ def load_tokenized_prepared_datasets(
                 str(cfg.sequence_len)
                 + "@"
                 + "|".join(
-                    sorted([f"{d.path}:{d.type}:{d.shards}" for d in cfg.datasets])
+                    sorted([f"{d.path}:{d.type}:{d.shards}:{d.overlap_len}" for d in cfg.datasets])
                 )
                 + "|"
                 + tokenizer_name
@@ -395,7 +395,7 @@ def load_prepare_datasets(
                     + str(max_packed_sequence_len)
                     + seed
                     + "|".join(
-                        sorted([f"{d.path}:{d.type}:{d.shards}" for d in cfg.datasets])
+                        sorted([f"{d.path}:{d.type}:{d.shards}:{d.overlap_len}" for d in cfg.datasets])
                     )
                     + "|"
                     + tokenizer_name

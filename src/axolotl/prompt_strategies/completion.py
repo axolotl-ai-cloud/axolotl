@@ -18,6 +18,7 @@ class CompletionPromptTokenizingStrategy(InstructionPromptTokenizingStrategy):
         super().__init__(*args, **kwargs)
         if max_length is not None:
             self.max_length = max_length
+        self.overlap_len = 0
 
     @property
     def supports_batched(self):
@@ -51,9 +52,11 @@ class CompletionPromptTokenizingStrategy(InstructionPromptTokenizingStrategy):
 
             full_prompt = self._build_full_prompt(instruction, None, None)
             tokenized_full_prompt = self._tokenize(full_prompt)
+            steps = self.sequence_len - self.overlap_len
+            if steps < 1: raise ValueError("Sequence length must be greater than overlap length")
 
             for key, val in tokenized_full_prompt.items():
-                for i in range(0, len(val), self.sequence_len):
+                for i in range(0, len(val), steps):
                     res[key].append(val[i : i + self.sequence_len])
 
         return dict(res)
@@ -86,7 +89,10 @@ def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
         cfg.sequence_len,
         max_length=cfg.sequence_len * 64,
     )
-    if ds_cfg and "field" in ds_cfg:
-        strat.field = ds_cfg["field"]
+    if ds_cfg:
+        if "field" in ds_cfg:
+            strat.field = ds_cfg["field"]
+        if "overlap_len" in ds_cfg:
+            strat.overlap_len = ds_cfg["overlap_len"]
 
     return strat
