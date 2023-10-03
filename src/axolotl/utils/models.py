@@ -149,7 +149,7 @@ def load_model(
         # Note: This might overwrite previous additional_special_tokens
         tokenizer.add_special_tokens({"additional_special_tokens": [MEM_TOKEN]})
 
-    if cfg.is_mistral_derived_model and cfg.flash_attention:
+    if cfg.is_mistral_derived_model and cfg.flash_attention and cfg.sample_packing:
         from axolotl.monkeypatch.mistral_attn_hijack_flash import (
             replace_mistral_attn_with_flash_attn,
         )
