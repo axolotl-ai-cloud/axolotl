@@ -12,7 +12,7 @@ addict
 fire
 PyYAML>=6.0
 datasets
-flash-attn>=2.2.1
+flash-attn>=2.3.0
 sentencepiece
 wandb
 einops
