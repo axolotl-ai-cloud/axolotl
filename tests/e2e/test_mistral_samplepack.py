@@ -25,7 +25,7 @@ class TestMistral(unittest.TestCase):
     Test case for Llama models using LoRA
     """
 
-    def test_lora(self):
+    def test_lora_packing(self):
         # pylint: disable=duplicate-code
         output_dir = tempfile.mkdtemp()
         cfg = DictDefault(
@@ -33,6 +33,7 @@ class TestMistral(unittest.TestCase):
                 "base_model": "openaccess-ai-collective/tiny-mistral",
                 "base_model_config": "openaccess-ai-collective/tiny-mistral",
                 "flash_attention": True,
+                "sample_packing": True,
                 "sequence_len": 1024,
                 "load_in_8bit": True,
                 "adapter": "lora",
@@ -71,7 +72,7 @@ class TestMistral(unittest.TestCase):
         train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
         assert (Path(output_dir) / "adapter_model.bin").exists()
 
-    def test_ft(self):
+    def test_ft_packing(self):
         # pylint: disable=duplicate-code
         output_dir = tempfile.mkdtemp()
         cfg = DictDefault(
@@ -79,6 +80,7 @@ class TestMistral(unittest.TestCase):
                 "base_model": "openaccess-ai-collective/tiny-mistral",
                 "base_model_config": "openaccess-ai-collective/tiny-mistral",
                 "flash_attention": True,
+                "sample_packing": True,
                 "sequence_len": 1024,
                 "val_set_size": 0.1,
                 "special_tokens": {
