@@ -4,7 +4,7 @@ torch==2.0.1
 auto-gptq
 packaging
 peft @ git+https://github.com/huggingface/peft.git
-transformers @ git+https://github.com/huggingface/transformers.git@5e11d72d4d0939138fbabfebe9a69d2061519547
+transformers @ git+https://github.com/huggingface/transformers.git@bd6205919aad4d3a2300a39a98a642f1cc3a5348
 bitsandbytes>=0.41.1
 accelerate @ git+https://github.com/huggingface/accelerate@80da9cfb09bb3cc9f1b385cb55d6b90d025a5fd9
 deepspeed
