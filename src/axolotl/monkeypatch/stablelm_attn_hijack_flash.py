@@ -18,12 +18,13 @@
 # https://github.com/huggingface/transformers/blob/main/src/transformers/models/gpt_neox/modeling_gpt_neox.py
 """ PyTorch StableLM Epoch model. """
 import importlib
-from typing import Optional, Tuple, Union
 import math
+from typing import Optional, Tuple, Union
 
 import torch
 import torch.utils.checkpoint
 from accelerate import init_empty_weights
+from flash_attn.flash_attn_interface import flash_attn_func
 from torch import nn
 from torch.nn import CrossEntropyLoss
 from transformers import AutoConfig, AutoModelForCausalLM, PretrainedConfig
@@ -33,7 +34,6 @@ from transformers.modeling_outputs import (
 )
 from transformers.modeling_utils import PreTrainedModel
 from transformers.utils import logging
-from flash_attn.flash_attn_interface import flash_attn_func
 
 logger = logging.get_logger(__name__)
 
@@ -78,7 +78,9 @@ def repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
     batch, num_key_value_heads, slen, head_dim = hidden_states.shape
     if n_rep == 1:
         return hidden_states
-    hidden_states = hidden_states[:, :, None, :, :].expand(batch, num_key_value_heads, n_rep, slen, head_dim)
+    hidden_states = hidden_states[:, :, None, :, :].expand(
+        batch, num_key_value_heads, n_rep, slen, head_dim
+    )
     return hidden_states.reshape(batch, num_key_value_heads * n_rep, slen, head_dim)
 
 
@@ -97,9 +99,15 @@ def flashattn_attn(
     key_states = self.k_proj(hidden_states)
     value_states = self.v_proj(hidden_states)
 
-    query_states = query_states.view(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
-    key_states = key_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
-    value_states = value_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
+    query_states = query_states.view(
+        bsz, q_len, self.num_heads, self.head_dim
+    ).transpose(1, 2)
+    key_states = key_states.view(
+        bsz, q_len, self.num_key_value_heads, self.head_dim
+    ).transpose(1, 2)
+    value_states = value_states.view(
+        bsz, q_len, self.num_key_value_heads, self.head_dim
+    ).transpose(1, 2)
 
     query_rot = query_states[..., : self.rotary_ndims]
     query_pass = query_states[..., self.rotary_ndims :]
@@ -110,7 +118,9 @@ def flashattn_attn(
     if past_key_value is not None:
         kv_seq_len += past_key_value[0].shape[-2]
     cos, sin = self.rotary_emb(value_states, seq_len=kv_seq_len)
-    query_states, key_states = apply_rotary_pos_emb(query_rot, key_rot, cos, sin, position_ids)
+    query_states, key_states = apply_rotary_pos_emb(
+        query_rot, key_rot, cos, sin, position_ids
+    )
 
     # [batch_size, num_heads, seq_len, head_dim]
     query_states = torch.cat((query_states, query_pass), dim=-1)
@@ -140,7 +150,7 @@ def flashattn_attn(
         value_states,
         dropout_p=0.0,  # Assuming you have this attribute
         softmax_scale=softmax_scale,  # Set this if you have specific scaling in mind
-        causal=not self.is_cross_attention,  # Assuming you have this attribute
+        causal=True,  # Assuming you have this attribute
         return_attn_probs=False,  # Set this based on your needs
     )
     #
@@ -165,4 +175,3 @@ def flashattn_attn(
     attn_output = self.o_proj(attn_output)
 
     return attn_output, None, past_key_value
-
