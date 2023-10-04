@@ -53,7 +53,8 @@ class CompletionPromptTokenizingStrategy(InstructionPromptTokenizingStrategy):
             full_prompt = self._build_full_prompt(instruction, None, None)
             tokenized_full_prompt = self._tokenize(full_prompt)
             steps = self.sequence_len - self.overlap_len
-            if steps < 1: raise ValueError("Sequence length must be greater than overlap length")
+            if steps < 1:
+                raise ValueError("Sequence length must be greater than overlap length")
 
             for key, val in tokenized_full_prompt.items():
                 for i in range(0, len(val), steps):
