@@ -26,18 +26,11 @@ import torch.utils.checkpoint
 from accelerate import init_empty_weights
 from einops import rearrange
 from flash_attn.flash_attn_interface import (  # pylint: disable=ungrouped-imports
-    flash_attn_kvpacked_func,
-    flash_attn_varlen_kvpacked_func,
     flash_attn_varlen_qkvpacked_func,
 )
 from torch import nn
-from torch.nn import CrossEntropyLoss
-from transformers import AutoConfig, AutoModelForCausalLM, PretrainedConfig
-from transformers.modeling_outputs import (
-    BaseModelOutputWithPast,
-    CausalLMOutputWithPast,
-)
-from transformers.modeling_utils import PreTrainedModel
+from transformers import AutoConfig, AutoModelForCausalLM
+from transformers.modeling_outputs import BaseModelOutputWithPast
 from transformers.utils import logging
 
 from axolotl.monkeypatch.utils import get_cu_seqlens_from_pos_ids
@@ -62,18 +55,20 @@ def replace_stablelm_attn_with_flash_attn(model_name="stabilityai/stablelm-3b-4e
         stablelm_model_forward
     )
     modeling_stablelm.DecoderLayer.forward = (  # pylint: disable=protected-access
-        decodeer_layer_forward
+        decoder_layer_forward
     )
 
 
 def rotate_half(x: torch.Tensor):
     """Rotates half the hidden dims of the input."""
+    # pylint: disable=invalid-name
     x1, x2 = torch.chunk(x, 2, dim=-1)
     return torch.cat((-x2, x1), dim=-1)
 
 
 def apply_rotary_pos_emb(q, k, cos, sin, position_ids):
     # The first two dimensions of cos and sin are always 1, so we can `squeeze` them.
+    # pylint: disable=invalid-name
     cos = cos.squeeze(1).squeeze(0)  # [seq_len, dim]
     sin = sin.squeeze(1).squeeze(0)  # [seq_len, dim]
     cos = cos[position_ids].unsqueeze(1)  # [batch_size, 1, seq_len, dim]
@@ -103,7 +98,7 @@ def flashattn_attn(
     attention_mask: torch.FloatTensor,
     position_ids: torch.LongTensor,
     past_key_value: Optional[Tuple[torch.Tensor]] = None,
-    output_attentions: Optional[bool] = False,
+    output_attentions: Optional[bool] = False,  # pylint: disable=unused-argument
     use_cache: Optional[bool] = False,
     cu_seqlens: Optional[torch.Tensor] = None,
     max_seqlen: Optional[torch.Tensor] = None,
@@ -207,7 +202,7 @@ def flashattn_attn(
     return attn_output, None, past_key_value
 
 
-def decodeer_layer_forward(
+def decoder_layer_forward(
     self,
     hidden_states: Optional[torch.FloatTensor],
     attention_mask: Optional[torch.FloatTensor] = None,
@@ -220,6 +215,7 @@ def decodeer_layer_forward(
 ) -> Union[
     Tuple[torch.Tensor], Optional[Tuple[torch.Tensor, Tuple[torch.FloatTensor, ...]]]
 ]:
+    # pylint: disable=duplicate-code
     residual = hidden_states
 
     hidden_states = self.input_layernorm(hidden_states)
@@ -266,6 +262,7 @@ def stablelm_model_forward(
     output_hidden_states: Optional[bool] = None,
     return_dict: Optional[bool] = None,
 ) -> Union[Tuple, BaseModelOutputWithPast]:
+    # pylint: disable=duplicate-code
     output_attentions = (
         output_attentions
         if output_attentions is not None
@@ -287,7 +284,7 @@ def stablelm_model_forward(
         raise ValueError(
             "You cannot specify both decoder_input_ids and decoder_inputs_embeds at the same time"
         )
-    elif input_ids is not None:
+    if input_ids is not None:
         batch_size, seq_length = input_ids.shape
     elif inputs_embeds is not None:
         batch_size, seq_length, _ = inputs_embeds.shape
@@ -328,11 +325,13 @@ def stablelm_model_forward(
             dtype=torch.bool,
             device=inputs_embeds.device,
         )
-    attention_mask = self._prepare_decoder_attention_mask(
-        attention_mask,
-        (batch_size, seq_length),
-        inputs_embeds,
-        past_key_values_length,
+    attention_mask = (
+        self._prepare_decoder_attention_mask(  # pylint: disable=protected-access
+            attention_mask,
+            (batch_size, seq_length),
+            inputs_embeds,
+            past_key_values_length,
+        )
     )
 
     hidden_states = inputs_embeds
