@@ -80,6 +80,12 @@ def load_tokenizer(cfg):
         tokenizer.add_special_tokens({"pad_token": "[PAD]"})
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
+    if (
+        tokenizer.__class__.__name__ == "LlamaTokenizer"
+        and cfg.is_mistral_derived_model
+    ):
+        tokenizer.padding_side = "left"
+
     if cfg.special_tokens:
         for k, val in cfg.special_tokens.items():
             tokenizer.add_special_tokens({k: val})
