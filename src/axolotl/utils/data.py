@@ -114,7 +114,7 @@ def load_tokenized_prepared_datasets(
         if cfg.push_dataset_to_hub:
             dataset = load_dataset(
                 f"{cfg.push_dataset_to_hub}/{ds_hash}",
-                use_auth_token=use_auth_token,
+                token=use_auth_token,
             )
             dataset = dataset["train"]
     except Exception:  # pylint: disable=broad-except # nosec
@@ -155,7 +155,7 @@ def load_tokenized_prepared_datasets(
                     d.path,
                     name=d.name,
                     streaming=True,
-                    use_auth_token=use_auth_token,
+                    token=use_auth_token,
                 )
                 ds_from_hub = True
             except FileNotFoundError:
@@ -202,7 +202,7 @@ def load_tokenized_prepared_datasets(
                     name=d.name,
                     streaming=False,
                     data_files=d.data_files,
-                    use_auth_token=use_auth_token,
+                    token=use_auth_token,
                 )
             else:
                 if isinstance(d.data_files, str):
@@ -417,7 +417,7 @@ def load_prepare_datasets(
                 )
                 dataset = load_dataset(
                     f"{cfg.push_dataset_to_hub}/{ds_hash}",
-                    use_auth_token=use_auth_token,
+                    token=use_auth_token,
                 )
                 dataset = dataset["train"]
         except Exception:  # pylint: disable=broad-except # nosec
