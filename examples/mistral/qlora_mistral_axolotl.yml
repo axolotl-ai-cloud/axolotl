@@ -1,0 +1,79 @@
+base_model: mistralai/Mistral-7B-v0.1
+base_model_config: mistralai/Mistral-7B-v0.1
+model_type: MistralForCausalLM
+tokenizer_type: LlamaTokenizer
+is_mistral_derived_model: true
+
+load_in_8bit: false
+load_in_4bit: true
+strict: false
+
+datasets:
+  - path: mhenrichsen/alpaca_2k_test
+    type: alpaca
+dataset_prepared_path: last_run_prepared
+val_set_size: 0.01
+output_dir: ./qlora-out
+
+adapter: qlora
+lora_model_dir:
+
+sequence_len: 8192
+sample_packing: True
+pad_to_sequence_len: True
+
+lora_r: 32
+lora_alpha: 16
+lora_dropout: 0.05
+lora_target_linear: true
+lora_fan_in_fan_out:
+lora_target_modules:
+  - gate_proj
+  - down_proj
+  - up_proj
+  - q_proj
+  - v_proj
+  - k_proj
+  - o_proj
+
+wandb_project: 
+wandb_entity: 
+wandb_watch:
+wandb_run_id: 
+wandb_log_model:
+
+gradient_accumulation_steps: 4
+micro_batch_size: 4
+num_epochs: 1
+optimizer: adamw_bnb_8bit
+lr_scheduler: cosine
+learning_rate: 0.0002
+
+train_on_inputs: false
+group_by_length: false
+bf16: true
+fp16: false
+tf32: false
+
+gradient_checkpointing: true
+early_stopping_patience:
+resume_from_checkpoint:
+local_rank:
+logging_steps: 1
+xformers_attention:
+flash_attention: true
+
+warmup_steps: 10
+eval_steps: 20
+eval_table_size: 5
+eval_table_max_new_tokens: 128
+save_steps:
+debug:
+deepspeed:
+weight_decay: 0.0
+fsdp:
+fsdp_config:
+special_tokens:
+  bos_token: "<s>"
+  eos_token: "</s>"
+  unk_token: "<unk>"
