@@ -11,6 +11,7 @@ from optimum.bettertransformer import BetterTransformer
 from peft import PeftConfig, prepare_model_for_kbit_training
 from peft.tuners.lora import QuantLinear
 from transformers import (  # noqa: F401
+    AddedToken,
     AutoConfig,
     AutoModelForCausalLM,
     AutoTokenizer,
@@ -82,9 +83,16 @@ def load_tokenizer(cfg):
 
     if cfg.special_tokens:
         for k, val in cfg.special_tokens.items():
-            tokenizer.add_special_tokens({k: val})
+            tokenizer.add_special_tokens(
+                {k: AddedToken(val, rstrip=False, lstrip=False, normalized=False)}
+            )
     if cfg.tokens:
-        tokenizer.add_tokens(list(cfg.tokens))
+        tokenizer.add_tokens(
+            [
+                AddedToken(token, rstrip=False, lstrip=False, normalized=False)
+                for token in cfg.tokens
+            ]
+        )
 
     return tokenizer
 
