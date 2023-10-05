@@ -124,6 +124,17 @@ def load_model(
 
             replace_btlm_attn_with_flash_attn(cfg.base_model)
 
+    if (
+        hasattr(model_config, "model_type")
+        and model_config.model_type == "stablelm_epoch"
+    ):
+        if cfg.flash_attention and cfg.sample_packing:
+            from axolotl.monkeypatch.stablelm_attn_hijack_flash import (
+                replace_stablelm_attn_with_flash_attn,
+            )
+
+            replace_stablelm_attn_with_flash_attn(cfg.base_model)
+
     if cfg.is_llama_derived_model and cfg.flash_attention and cfg.sample_packing:
         if cfg.device not in ["mps", "cpu"] and not inference:
             from axolotl.monkeypatch.llama_attn_hijack_flash import (
