@@ -12,17 +12,18 @@ RUN apt-get update && \
 WORKDIR /workspace
 
 RUN git clone --depth=1 https://github.com/OpenAccess-AI-Collective/axolotl.git
+
+WORKDIR /workspace/axolotl
+
 # If AXOLOTL_EXTRAS is set, append it in brackets
-RUN cd axolotl && \
-    if [ "$AXOLOTL_EXTRAS" != "" ] ; then \
+RUN if [ "$AXOLOTL_EXTRAS" != "" ] ; then \
         pip install -e .[flash-attn,$AXOLOTL_EXTRAS]; \
     else \
         pip install -e .[flash-attn]; \
     fi
 
 # fix so that git fetch/pull from remote works
-RUN cd axolotl && \
-    git config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*" && \
+RUN git config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*" && \
     git config --get remote.origin.fetch
 
 # helper for huggingface-login cli
