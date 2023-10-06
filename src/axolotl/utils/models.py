@@ -382,7 +382,7 @@ def load_model(
         if model_config.model_type == "btlm":
             # don't upcast lm_head for btlm
             continue
-        if "lm_head" in name or "embed_tokens" in name:
+        if any(x in name for x in ["lm_head", "embed_tokens", "wte", "wpe"]):
             if hasattr(module, "weight"):
                 module.to(torch.float32)
 

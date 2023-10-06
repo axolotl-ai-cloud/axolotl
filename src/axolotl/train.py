@@ -58,7 +58,9 @@ def train(
 
     safe_serialization = cfg.save_safetensors is True
 
-    if cfg.resume_from_checkpoint is None and cfg.auto_resume_from_checkpoints:
+    if (
+        cfg.resume_from_checkpoint is None and cfg.auto_resume_from_checkpoints
+    ) or cfg.resume_from_checkpoint is True:
         possible_checkpoints = [
             str(cp) for cp in Path(cfg.output_dir).glob("checkpoint-*")
         ]
@@ -71,7 +73,9 @@ def train(
             LOG.info(
                 f"Using Auto-resume functionality to start with checkpoint at {cfg.resume_from_checkpoint}"
             )
-    resume_from_checkpoint = cfg.resume_from_checkpoint
+    resume_from_checkpoint = (
+        cfg.resume_from_checkpoint if cfg.resume_from_checkpoint is not True else None
+    )
 
     trainer = setup_trainer(
         cfg, train_dataset, eval_dataset, model, tokenizer, total_num_steps

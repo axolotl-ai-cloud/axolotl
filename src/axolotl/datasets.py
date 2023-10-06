@@ -5,7 +5,7 @@ import os
 from typing import List
 
 import torch
-from datasets import Dataset, IterableDataset
+from datasets import Dataset, IterableDataset, Sequence, Value
 
 from .prompt_tokenizers import PromptTokenizingStrategy
 
@@ -42,11 +42,15 @@ class TokenizedPromptDataset(Dataset):
         if self.prompt_tokenizer.supports_batched:
             map_kwargs["batched"] = True
             map_kwargs["batch_size"] = 100
-        return dataset.map(
-            self.prompt_tokenizer.tokenize_prompt,
-            num_proc=num_proc,
-            remove_columns=features,
-            **map_kwargs,
+        return (
+            dataset.map(
+                self.prompt_tokenizer.tokenize_prompt,
+                num_proc=num_proc,
+                remove_columns=features,
+                **map_kwargs,
+            )
+            .cast_column("input_ids", Sequence(feature=Value(dtype="int32", id=None)))
+            .cast_column("labels", Sequence(feature=Value(dtype="int32", id=None)))
         )
 
 
