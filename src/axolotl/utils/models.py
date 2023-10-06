@@ -45,6 +45,8 @@ def load_tokenizer(cfg):
     if cfg.tokenizer_legacy is not None:
         # True is the default w/ https://github.com/huggingface/transformers/pull/25224
         tokenizer_kwargs["legacy"] = cfg.tokenizer_legacy
+    if cfg.tokenizer_padding_side is not None:
+        tokenizer_kwargs["padding_side"] = cfg.tokenizer_padding_side
 
     tokenizer_cls = AutoTokenizer
     if cfg.tokenizer_type:

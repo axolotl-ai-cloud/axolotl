@@ -422,6 +422,8 @@ tokenizer_legacy:
 # resize the model embeddings when new tokens are added to multiples of 32
 # this is reported to improve training speed on some models
 resize_token_embeddings_to_32x:
+# Whether to use left or right padding, defaults to right
+tokenizer_padding_side: right
 
 # used to identify which the model is based on
 is_falcon_derived_model:

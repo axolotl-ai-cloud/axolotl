@@ -1,6 +1,7 @@
 """
 Basic completion text
 """
+import logging
 from collections import defaultdict
 from typing import Any, Dict, Generator, Optional, Tuple
 
@@ -14,10 +15,11 @@ class CompletionPromptTokenizingStrategy(InstructionPromptTokenizingStrategy):
 
     _field: str = "text"
 
-    def __init__(self, *args, max_length=None, **kwargs):
+    def __init__(self, *args, max_length=None, align_samples=False, **kwargs):
         super().__init__(*args, **kwargs)
         if max_length is not None:
             self.max_length = max_length
+        self.align_samples = align_samples
 
     @property
     def supports_batched(self):
@@ -52,9 +54,24 @@ class CompletionPromptTokenizingStrategy(InstructionPromptTokenizingStrategy):
             full_prompt = self._build_full_prompt(instruction, None, None)
             tokenized_full_prompt = self._tokenize(full_prompt)
 
-            for key, val in tokenized_full_prompt.items():
-                for i in range(0, len(val), self.sequence_len):
-                    res[key].append(val[i : i + self.sequence_len])
+            # The case of a completion task given a smaller initial text blurb is common,
+            # e.g. when tasked to write the starting point of a text, whereas a completion
+            # task given the last few tokens of a text (followed by padding) is not.
+            # Ideally, we want to align each text so that it begins with (as necessary)
+            # right-padded tokens in the first sample, with no more padding required.
+            if self.align_samples:
+                for key, val in tokenized_full_prompt.items():
+                    misaligned = len(val) % self.sequence_len
+                    if misaligned > 0:
+                        res[key].append(val[0:misaligned])
+                        # TODO: we may want a minimum length for the misaligned (starting) sample
+                        # as a single token is not a useful sample
+                    for i in range(misaligned, len(val), self.sequence_len):
+                        res[key].append(val[i : i + self.sequence_len])
+            else:
+                for key, val in tokenized_full_prompt.items():
+                    for i in range(0, len(val), self.sequence_len):
+                        res[key].append(val[i : i + self.sequence_len])
 
         return dict(res)
 
@@ -79,12 +96,18 @@ class CompletionPrompter:
 
 
 def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
+    if tokenizer.padding_side != "left":
+        logging.warning(
+            f"warning: tokenizer padding side is {tokenizer.padding_side}; use 'left' padding to enable completion alignment"
+        )
+
     strat = CompletionPromptTokenizingStrategy(
         CompletionPrompter(),
         tokenizer,
         cfg.train_on_inputs,
         cfg.sequence_len,
         max_length=cfg.sequence_len * 64,
+        align_samples=tokenizer.padding_side == "left",
     )
     if ds_cfg and "field" in ds_cfg:
         strat.field = ds_cfg["field"]
