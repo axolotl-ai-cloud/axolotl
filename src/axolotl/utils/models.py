@@ -81,7 +81,8 @@ def load_tokenizer(cfg):
         tokenizer.add_special_tokens({"pad_token": "[PAD]"})
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-    if cfg.is_mistral_derived_model:
+    # Mistral's official FA implementation requires left padding
+    if cfg.is_mistral_derived_model and cfg.flash_attention and not cfg.sample_packing:
         tokenizer.padding_side = "left"
 
     if cfg.special_tokens:
