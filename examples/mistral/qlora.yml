@@ -36,10 +36,10 @@ lora_target_modules:
   - k_proj
   - o_proj
 
-wandb_project: 
-wandb_entity: 
+wandb_project:
+wandb_entity:
 wandb_watch:
-wandb_run_id: 
+wandb_run_id:
 wandb_log_model:
 
 gradient_accumulation_steps: 4
