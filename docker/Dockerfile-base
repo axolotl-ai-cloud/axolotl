@@ -57,11 +57,6 @@ FROM base-builder
 ARG TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6 9.0+PTX"
 ENV TORCH_CUDA_ARCH_LIST=$TORCH_CUDA_ARCH_LIST
 
-# recompile apex
-RUN python3 -m pip uninstall -y apex
-RUN git clone https://github.com/NVIDIA/apex
-RUN cd apex && python3 -m pip install -v --disable-pip-version-check --no-cache-dir --no-build-isolation --config-settings "--build-option=--cpp_ext" --config-settings "--build-option=--cuda_ext" ./
-
 RUN mkdir -p /workspace/builds
 COPY --from=bnb-builder /workspace/bitsandbytes /workspace/builds/bitsandbytes
 
