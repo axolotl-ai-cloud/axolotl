@@ -735,7 +735,7 @@ strict:
 
 <details>
 <summary> Understanding of batch size and gradient accumulation steps </summary>
-
+<br/>
 Gradient accumulation means accumulating gradients over several mini-batches and updating the model weights afterward. When the samples in each batch are diverse, this technique doesn't significantly impact learning.
 
 This method allows for effective training with larger effective batch sizes without needing proportionally larger memory. Here's why:
@@ -769,8 +769,6 @@ Total gradient for w1 = e1 + e2 + e3 + e4 + e5 + e6 + e7 + e8 + e9 + e10 + e11 +
 Weight update for w1:
 w1_new = w1_old - learning rate x (Total gradient for w1 / 18)
 ```
-
----
 
 **Example 2:**
 Micro batch size: 2
