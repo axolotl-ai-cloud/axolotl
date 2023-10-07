@@ -19,26 +19,28 @@ Features:
 <td>
 
 ## Table of Contents
-- [Introduction](#axolotl)
-- [Supported Features](#axolotl-supports)
-- [Quickstart](#quickstart-)
-- [Installation](#installation)
-  - [Docker Installation](#environment)
-  - [Conda/Pip venv Installation](#condapip-venv)
-  - [LambdaLabs Installation](#lambdalabs)
-- [Dataset](#dataset)
-  - [How to Add Custom Prompts](#how-to-add-custom-prompts)
-  - [How to Use Custom Pretokenized Dataset](#how-to-use-your-custom-pretokenized-dataset)
-- [Config](#config)
-  - [Train](#train)
-  - [Training w/ Deepspeed](#training-with-deepspeed)
-  - [Inference](#inference)
-  - [Merge LORA to Base](#merge-lora-to-base)
-- [Common Errors](#common-errors-)
-- [Need Help?](#need-help-)
-- [Badge](#badge-)
-- [Community Showcase](#community-showcase)
-- [Contributing](#contributing-)
+- [Axolotl](#axolotl)
+  - [Table of Contents](#table-of-contents)
+  - [Axolotl supports](#axolotl-supports)
+  - [Quickstart ⚡](#quickstart-)
+  - [Installation](#installation)
+    - [Environment](#environment)
+    - [Dataset](#dataset)
+      - [How to add custom prompts](#how-to-add-custom-prompts)
+      - [How to use your custom pretokenized dataset](#how-to-use-your-custom-pretokenized-dataset)
+    - [Config](#config)
+    - [Train](#train)
+      - [Multi-GPU](#multi-gpu)
+        - [Config](#config-1)
+        - [Weights \& Biases Logging](#weights--biases-logging)
+    - [Training with Deepspeed](#training-with-deepspeed)
+    - [Inference](#inference)
+    - [Merge LORA to base](#merge-lora-to-base)
+  - [Common Errors 🧰](#common-errors-)
+  - [Need help? 🙋♂️](#need-help-️)
+  - [Badge ❤🏷️](#badge-️)
+  - [Community Showcase](#community-showcase)
+  - [Contributing 🤝](#contributing-)
 
 </td>
 <td>
@@ -576,9 +578,9 @@ torch_compile_backend:  # Optional[str]
 
 # Training hyperparameters
 
-# With this much, backpropagation will be skipped and the gradients will be accumulated and applied in the later step.
+# If greater than 1, backpropagation will be skipped and the gradients will be accumulated for the given number of steps.
 gradient_accumulation_steps: 1
-# The number of samples to accumulate gradients for, before performing a backward/update pass.
+# The number of samples to include in each batch. This is the number of samples sent to each GPU.
 micro_batch_size: 2
 eval_batch_size:
 num_epochs: 3
@@ -729,6 +731,68 @@ seed:
 strict:
 ```
 
+</details>
+
+<details>
+<summary> Understanding of batch size and gradient accumulation steps </summary>
+**Understanding of Batch Size and Gradient Accumulation Steps**
+
+Gradient accumulation means accumulating gradients over several mini-batches and updating the model weights afterward. When the samples in each batch are diverse, this technique doesn't significantly impact learning.
+
+This method allows for effective training with larger effective batch sizes without needing proportionally larger memory. Here's why:
+
+1. **Memory Consumption with Batch Size**: The primary reason increasing the batch size impacts memory is due to the storage requirements for intermediate activations. When you forward propagate a batch through a network, you have to store the activations at each layer for each sample in the batch, because these activations are used during backpropagation to compute gradients. Therefore, larger batches mean more activations, leading to greater GPU memory consumption.
+
+2. **Gradient Accumulation**: With gradient accumulation, you're effectively simulating a larger batch size by accumulating gradients over several smaller batches (or micro-batches). However, at any given time, you're only forward and backward propagating a micro-batch. This means you only store activations for the micro-batch, not the full accumulated batch. As a result, you can simulate the effect of a larger batch size without the memory cost of storing activations for a large batch.
+
+**Example 1:**
+Micro batch size: 3
+Gradient accumulation steps: 2
+Number of GPUs: 3
+Total batch size = 3 * 2 * 3 = 18
+
+```
+| GPU 1          | GPU 2          | GPU 3          |
+|----------------|----------------|----------------|
+| S1, S2, S3     | S4, S5, S6     | S7, S8, S9     |
+| e1, e2, e3     | e4, e5, e6     | e7, e8, e9     |
+|----------------|----------------|----------------|
+| → (accumulate) | → (accumulate) | → (accumulate) |
+|----------------|----------------|----------------|
+| S10, S11, S12  | S13, S14, S15  | S16, S17, S18  |
+| e10, e11, e12  | e13, e14, e15  | e16, e17, e18  |
+|----------------|----------------|----------------|
+| → (apply)      | → (apply)      | → (apply)      |
+```
+
+Accumulated gradient for the weight \( w1 \) after the second iteration (considering all GPUs):
+\[ \text{Total gradient for } w1 = e1 + e2 + e3 + e4 + e5 + e6 + e7 + e8 + e9 + e10 + e11 + e12 + e13 + e14 + e15 + e16 + e17 + e18 \]
+
+Weight update for \( w1 \):
+\[ w1_{new} = w1_{old} - \text{learning rate} \times \frac{\text{Total gradient for } w1}{18} \]
+
+---
+
+**Example 2:**
+Micro batch size: 2
+Gradient accumulation steps: 1
+Number of GPUs: 3
+Total batch size = 2 * 1 * 3 = 6
+
+```
+| GPU 1     | GPU 2     | GPU 3     |
+|-----------|-----------|-----------|
+| S1, S2    | S3, S4    | S5, S6    |
+| e1, e2    | e3, e4    | e5, e6    |
+|-----------|-----------|-----------|
+| → (apply) | → (apply) | → (apply) |
+```
+
+Accumulated gradient for the weight \( w1 \) (considering all GPUs):
+\[ \text{Total gradient for } w1 = e1 + e2 + e3 + e4 + e5 + e6 \]
+
+Weight update for \( w1 \):
+\[ w1_{new} = w1_{old} - \text{learning rate} \times \frac{\text{Total gradient for } w1}{6} \]
 </details>
 
 ### Train
