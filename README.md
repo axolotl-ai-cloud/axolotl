@@ -735,7 +735,6 @@ strict:
 
 <details>
 <summary> Understanding of batch size and gradient accumulation steps </summary>
-**Understanding of Batch Size and Gradient Accumulation Steps**
 
 Gradient accumulation means accumulating gradients over several mini-batches and updating the model weights afterward. When the samples in each batch are diverse, this technique doesn't significantly impact learning.
 
@@ -763,13 +762,13 @@ Total batch size = 3 * 2 * 3 = 18
 | e10, e11, e12  | e13, e14, e15  | e16, e17, e18  |
 |----------------|----------------|----------------|
 | → (apply)      | → (apply)      | → (apply)      |
+
+Accumulated gradient for the weight w1 after the second iteration (considering all GPUs):
+Total gradient for w1 = e1 + e2 + e3 + e4 + e5 + e6 + e7 + e8 + e9 + e10 + e11 + e12 + e13 + e14 + e15 + e16 + e17 + e18
+
+Weight update for w1:
+w1_new = w1_old - learning rate x (Total gradient for w1 / 18)
 ```
-
-Accumulated gradient for the weight \( w1 \) after the second iteration (considering all GPUs):
-\[ \text{Total gradient for } w1 = e1 + e2 + e3 + e4 + e5 + e6 + e7 + e8 + e9 + e10 + e11 + e12 + e13 + e14 + e15 + e16 + e17 + e18 \]
-
-Weight update for \( w1 \):
-\[ w1_{new} = w1_{old} - \text{learning rate} \times \frac{\text{Total gradient for } w1}{18} \]
 
 ---
 
@@ -786,13 +785,14 @@ Total batch size = 2 * 1 * 3 = 6
 | e1, e2    | e3, e4    | e5, e6    |
 |-----------|-----------|-----------|
 | → (apply) | → (apply) | → (apply) |
+
+Accumulated gradient for the weight w1 (considering all GPUs):
+Total gradient for w1 = e1 + e2 + e3 + e4 + e5 + e6
+
+Weight update for w1:
+w1_new = w1_old - learning rate × (Total gradient for w1 / 6)
 ```
 
-Accumulated gradient for the weight \( w1 \) (considering all GPUs):
-\[ \text{Total gradient for } w1 = e1 + e2 + e3 + e4 + e5 + e6 \]
-
-Weight update for \( w1 \):
-\[ w1_{new} = w1_{old} - \text{learning rate} \times \frac{\text{Total gradient for } w1}{6} \]
 </details>
 
 ### Train
