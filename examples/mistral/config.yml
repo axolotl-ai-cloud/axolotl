@@ -16,8 +16,8 @@ val_set_size: 0.01
 output_dir: ./out
 
 sequence_len: 8192
-sample_packing:
-pad_to_sequence_len:
+sample_packing: true
+pad_to_sequence_len: true
 
 wandb_project:
 wandb_entity:
@@ -30,7 +30,7 @@ micro_batch_size: 2
 num_epochs: 3
 optimizer: adamw_bnb_8bit
 lr_scheduler: cosine
-learning_rate: 0.0002
+learning_rate: 0.000005
 
 train_on_inputs: false
 group_by_length: false
@@ -59,4 +59,5 @@ fsdp_config:
 special_tokens:
   bos_token: "<s>"
   eos_token: "</s>"
+
   unk_token: "<unk>"
