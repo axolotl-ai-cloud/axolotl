@@ -23,9 +23,10 @@ Features:
 - [Supported Features](#axolotl-supports)
 - [Quickstart](#quickstart-)
 - [Installation](#installation)
-  - [Docker Installation](#environment)
-  - [Conda/Pip venv Installation](#condapip-venv)
-  - [LambdaLabs Installation](#lambdalabs)
+  - [Docker](#docker)
+  - [Conda/Pip venv](#condapip-venv)
+  - [LambdaLabs](#lambdalabs)
+  - [Windows](#windows)
 - [Dataset](#dataset)
   - [How to Add Custom Prompts](#how-to-add-custom-prompts)
   - [How to Use Custom Pretokenized Dataset](#how-to-use-your-custom-pretokenized-dataset)
@@ -50,7 +51,7 @@ Features:
       <b>Axolotl provides a unified repository for fine-tuning <br />a variety of AI models with ease</b>
     </p>
     <p>
-      Go ahead and axolotl questions!!
+      Go ahead and Axolotl questions!!
     </p>
     <img src="https://github.com/OpenAccess-AI-Collective/axolotl/actions/workflows/pre-commit.yml/badge.svg?branch=main" alt="pre-commit">
     <img alt="PyTest Status" src="https://github.com/OpenAccess-AI-Collective/axolotl/actions/workflows/tests.yml/badge.svg?branch=main">
@@ -102,7 +103,7 @@ accelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \
 
 ### Environment
 
-- Docker
+#### Docker
   ```bash
   docker run --gpus '"all"' --rm -it winglian/axolotl:main-py3.10-cu118-2.0.1
   ```
@@ -114,12 +115,12 @@ accelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \
   docker compose up -d
   ```
 
-- Conda/Pip venv
+#### Conda/Pip venv
   1. Install python >=**3.9**
 
   2. Install pytorch stable https://pytorch.org/get-started/locally/
 
-  3. Install axolotl along with python dependencies
+  3. Install Axolotl along with python dependencies
         ```bash
         pip3 install packaging
         pip3 install -e '.[flash-attn,deepspeed]'
@@ -130,7 +131,7 @@ accelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \
         ```
         Get the token at huggingface.co/settings/tokens
 
-- LambdaLabs
+#### LambdaLabs
   <details>
 
   <summary>Click to Expand</summary>
@@ -174,7 +175,8 @@ accelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \
   ```
   </details>
 
-- Windows: Please use WSL or Docker!
+#### Windows
+Please use WSL or Docker!
 
 ### Dataset
 
@@ -396,15 +398,15 @@ See [examples](examples) for quick start. It is recommended to duplicate and mod
 <summary>All yaml options</summary>
 
 ```yaml
-# this is the huggingface model that contains *.pt, *.safetensors, or *.bin files
-# this can also be a relative path to a model on disk
+# This is the huggingface model that contains *.pt, *.safetensors, or *.bin files
+# This can also be a relative path to a model on disk
 base_model: ./llama-7b-hf
-# you can specify an ignore pattern if the model repo contains more than 1 model type (*.pt, etc)
+# You can specify an ignore pattern if the model repo contains more than 1 model type (*.pt, etc)
 base_model_ignore_patterns:
-# if the base_model repo on hf hub doesn't include configuration .json files,
-# you can set that here, or leave this empty to default to base_model
+# If the base_model repo on hf hub doesn't include configuration .json files,
+# You can set that here, or leave this empty to default to base_model
 base_model_config: ./llama-7b-hf
-# you can specify to choose a specific model revision from huggingface hub
+# You can specify to choose a specific model revision from huggingface hub
 model_revision:
 # Optional tokenizer configuration override in case you want to use a different tokenizer
 # than the one defined in the base model
@@ -419,23 +421,24 @@ trust_remote_code:
 tokenizer_use_fast:
 # Whether to use the legacy tokenizer setting, defaults to True
 tokenizer_legacy:
-# resize the model embeddings when new tokens are added to multiples of 32
-# this is reported to improve training speed on some models
+# Resize the model embeddings when new tokens are added to multiples of 32
+# This is reported to improve training speed on some models
 resize_token_embeddings_to_32x:
 
-# used to identify which the model is based on
+# Used to identify which the model is based on
 is_falcon_derived_model:
 is_llama_derived_model:
+# Please note that if you set this to true, `padding_side` will be set to "left" by default
 is_mistral_derived_model:
 
-# whether you are training a 4-bit GPTQ quantized model
+# Whether you are training a 4-bit GPTQ quantized model
 gptq: true
 gptq_groupsize: 128 # group size
 gptq_model_v1: false # v1 or v2
 
-# this will attempt to quantize the model down to 8 bits and use adam 8 bit optimizer
+# This will attempt to quantize the model down to 8 bits and use adam 8 bit optimizer
 load_in_8bit: true
-# use bitsandbytes 4 bit
+# Use bitsandbytes 4 bit
 load_in_4bit:
 
 # Use CUDA bf16
@@ -449,9 +452,9 @@ tf32: true # require >=ampere
 bfloat16: true # require >=ampere
 float16: true
 
-# a list of one or more datasets to finetune the model with
+# A list of one or more datasets to finetune the model with
 datasets:
-  # hf dataset repo | "json" for local dataset, make sure to fill data_files
+  # HuggingFace dataset repo | "json" for local dataset, make sure to fill data_files
   - path: vicgalle/alpaca-gpt4
   # The type of prompt to use for training. [alpaca, sharegpt, gpteacher, oasst, reflection]
     type: alpaca # format | format:<prompt_style> (chat/instruct) | <prompt_strategies>.load_<load_fn>
@@ -461,16 +464,16 @@ datasets:
     name: # Optional[str] name of dataset configuration to load
     conversation:  # Optional[str] fastchat conversation type, only used with type: sharegpt
 
-  # custom user prompt
+  # Custom user prompt
   - path: repo
     type:
-      # the below are defaults. only set what's needed.
+      # The below are defaults. only set what's needed.
       system_prompt: ""
       field_system: system
       field_instruction: instruction
       field_output: input
 
-      # customizable to be single line or multi-line
+      # Customizable to be single line or multi-line
       system_format: "{system}"
       # 'format' can include {input}
       format: |-
@@ -479,13 +482,13 @@ datasets:
       # 'no_input_format' cannot include {input}
       no_input_format: "{instruction} "
 
-      # for completions datsets, uses the provided field if not `text`
+      # For completions datsets, uses the provided field if not `text`
       field:
 
-# axolotl attempts to save the dataset as an arrow after packing the data together so
+# Axolotl attempts to save the dataset as an arrow after packing the data together so
 # subsequent training attempts load faster, relative path
 dataset_prepared_path: data/last_run_prepared
-# push prepared dataset to hub
+# Push prepared dataset to hub
 push_dataset_to_hub: # repo path
 # The maximum number of processes to use while preprocessing your input dataset. This defaults to `os.cpu_count()`
 # if not set.
@@ -495,8 +498,8 @@ hub_model_id: # repo path to push finetuned model
 # how to push checkpoints to hub
 # https://huggingface.co/docs/transformers/v4.31.0/en/main_classes/trainer#transformers.TrainingArguments.hub_strategy
 hub_strategy:
-# whether to use hf `use_auth_token` for loading datasets. Useful for fetching private datasets
-# required to be true when used in combination with `push_dataset_to_hub`
+# Whether to use hf `use_auth_token` for loading datasets. Useful for fetching private datasets
+# Required to be true when used in combination with `push_dataset_to_hub`
 hf_use_auth_token: # boolean
 # How much of the dataset to set aside as evaluation. 1 = 100%, 0.50 = 50%, etc. 0 for no eval.
 val_set_size: 0.04
@@ -505,30 +508,34 @@ dataset_shard_num:
 # Index of shard to use for whole dataset
 dataset_shard_idx:
 
-# the maximum length of an input to train with, this should typically be less than 2048
+# The maximum length of an input to train with, this should typically be less than 2048
 # as most models have a token/context limit of 2048
 sequence_len: 2048
-# pad inputs so each step uses constant sized buffers
-# this will reduce memory fragmentation and may prevent OOMs, by re-using memory more efficiently
+# Pad inputs so each step uses constant sized buffers
+# This will reduce memory fragmentation and may prevent OOMs, by re-using memory more efficiently
 pad_to_sequence_len:
-# max sequence length to concatenate training samples together up to
-# inspired by StackLLaMA. see https://huggingface.co/blog/stackllama#supervised-fine-tuning
+# Max sequence length to concatenate training samples together up to
+# Inspired by StackLLaMA. see https://huggingface.co/blog/stackllama#supervised-fine-tuning
 # FutureWarning: This will soon be DEPRECATED
 max_packed_sequence_len: 1024
-# use efficient multi-packing with block diagonal attention and per sequence position_ids. Recommend set to 'true'
+# Use efficient multi-packing with block diagonal attention and per sequence position_ids. Recommend set to 'true'
 sample_packing:
-# set to 'false' if getting errors during eval with sample_packing on.
+# Set to 'false' if getting errors during eval with sample_packing on.
 eval_sample_packing:
-# you can set these packing optimizations AFTER starting a training at least once.
+# You can set these packing optimizations AFTER starting a training at least once.
 # The trainer will provide recommended values for these values.
 sample_packing_eff_est:
 total_num_tokens:
 
-# if you want to use 'lora' or 'qlora' or leave blank to train all parameters in original model
+# If you want to use 'lora' or 'qlora' or leave blank to train all parameters in original model
 adapter: lora
-# if you already have a lora model trained that you want to load, put that here
-# lora hyperparameters
+# If you already have a lora model trained that you want to load, put that here.
+# This means after training, if you want to test the model, you should set this to the value of `lora_out_dir`.
 lora_model_dir:
+
+# LoRA hyperparameters
+# For more details about the following options, see:
+# https://www.anyscale.com/blog/fine-tuning-llms-lora-or-full-parameter-an-in-depth-analysis-with-llama-2
 lora_r: 8
 lora_alpha: 16
 lora_dropout: 0.05
@@ -540,36 +547,48 @@ lora_target_modules:
 #  - gate_proj
 #  - down_proj
 #  - up_proj
-lora_target_linear: # if true, will target all linear layers
+lora_target_linear: # If true, will target all linear layers
+
+# If you added new tokens to the tokenizer, you may need to save some LoRA modules because they need to know the new tokens.
+# For LLaMA and Mistral, you need to save `embed_tokens` and `lm_head`. It may vary for other models.
+# `embed_tokens` converts tokens to embeddings, and `lm_head` converts embeddings to token probabilities.
+# https://github.com/huggingface/peft/issues/334#issuecomment-1561727994
 lora_modules_to_save:
 #  - embed_tokens
 #  - lm_head
+
+# Once you complete training, the model will be saved to the following directory.
+# If you merge the adapter to the base model, a subdirectory `merged` will be created under this directory.
+# Make sure `lora_model_dir` points to this directory if you want to use the trained model.
 lora_out_dir:
 lora_fan_in_fan_out: false
 
 # ReLoRA configuration
-# must use either 'lora' or 'qlora' adapter, and does not support fsdp or deepspeed
-relora_steps: # number of steps per ReLoRA restart
-relora_warmup_steps: # number of per-restart warmup steps
-relora_cpu_offload: # true to perform lora weight merges on cpu during restarts, for modest gpu memory savings
+# Must use either 'lora' or 'qlora' adapter, and does not support fsdp or deepspeed
+relora_steps: # Number of steps per ReLoRA restart
+relora_warmup_steps: # Number of per-restart warmup steps
+relora_cpu_offload: # True to perform lora weight merges on cpu during restarts, for modest gpu memory savings
 
 # wandb configuration if you're using it
 wandb_mode: # "offline" to save run metadata locally and not sync to the server, "disabled" to turn off wandb
-wandb_project: # your wandb project name
-wandb_entity: # a wandb Team name if using a Team
+wandb_project: # Your wandb project name
+wandb_entity: # A wandb Team name if using a Team
 wandb_watch:
-wandb_run_id: # set the name of your wandb run
+wandb_run_id: # Set the name of your wandb run
 wandb_log_model: # "checkpoint" to log model to wandb Artifacts every `save_steps` or "end" to log only at the end of training
 
-# where to save the finished model to
+# Where to save the full-finetuned model to
 output_dir: ./completed-model
 
-# whether to use torch.compile and which backend to use
+# Whether to use torch.compile and which backend to use
 torch_compile:  # bool
 torch_compile_backend:  # Optional[str]
 
-# training hyperparameters
+# Training hyperparameters
+
+# If greater than 1, backpropagation will be skipped and the gradients will be accumulated for the given number of steps.
 gradient_accumulation_steps: 1
+# The number of samples to include in each batch. This is the number of samples sent to each GPU.
 micro_batch_size: 2
 eval_batch_size:
 num_epochs: 3
@@ -577,44 +596,47 @@ warmup_steps: 100
 learning_rate: 0.00003
 lr_quadratic_warmup:
 logging_steps:
-save_strategy: # set to `no` to skip checkpoint saves
-save_steps: # leave empty to save at each epoch
-eval_steps: # leave empty to eval at each epoch
-save_total_limit: # checkpoints saved at a time
+save_strategy: # Set to `no` to skip checkpoint saves
+save_steps: # Leave empty to save at each epoch
+eval_steps: # Leave empty to eval at each epoch
+save_total_limit: # Checkpoints saved at a time
+# Maximum number of iterations to train for. It precedes num_epochs which means that
+# if both are set, num_epochs will not be guaranteed.
+# e.g., when 1 epoch is 1000 steps => `num_epochs: 2` and `max_steps: 100` will train for 100 steps
 max_steps:
 
-eval_table_size: # approximate number of predictions sent to wandb depending on batch size. Enabled above 0. Default is 0
-eval_table_max_new_tokens: # total number of tokens generated for predictions sent to wandb. Default is 128
+eval_table_size: # Approximate number of predictions sent to wandb depending on batch size. Enabled above 0. Default is 0
+eval_table_max_new_tokens: # Total number of tokens generated for predictions sent to wandb. Default is 128
 
-# save model as safetensors (require safetensors package)
+# Save model as safetensors (require safetensors package)
 save_safetensors:
 
-# whether to mask out or include the human's prompt from the training labels
+# Whether to mask out or include the human's prompt from the training labels
 train_on_inputs: false
-# group similarly sized data to minimize padding
-# may be slower to start, as it must download and sort the entire dataset
-# note that training loss may have an oscillating pattern with this enabled
+# Group similarly sized data to minimize padding.
+# May be slower to start, as it must download and sort the entire dataset.
+# Note that training loss may have an oscillating pattern with this enabled.
 group_by_length: false
 
 # Whether to use gradient checkpointing https://huggingface.co/docs/transformers/v4.18.0/en/performance#gradient-checkpointing
 gradient_checkpointing: false
 
-# stop training after this many evaluation losses have increased in a row
+# Stop training after this many evaluation losses have increased in a row
 # https://huggingface.co/transformers/v4.2.2/_modules/transformers/trainer_callback.html#EarlyStoppingCallback
 early_stopping_patience: 3
 
-# specify a scheduler and kwargs to use with the optimizer
+# Specify a scheduler and kwargs to use with the optimizer
 lr_scheduler: # 'one_cycle' | 'log_sweep' | empty for cosine
 lr_scheduler_kwargs:
 
-# for one_cycle optim
-lr_div_factor: # learning rate div factor
+# For one_cycle optim
+lr_div_factor: # Learning rate div factor
 
-# for log_sweep optim
+# For log_sweep optim
 log_sweep_min_lr:
 log_sweep_max_lr:
 
-# specify optimizer
+# Specify optimizer
 # Valid values are driven by the Transformers OptimizerNames class, see:
 # https://github.com/huggingface/transformers/blob/95b374952dc27d8511541d6f5a4e22c9ec11fb24/src/transformers/training_args.py#L134
 #
@@ -640,7 +662,7 @@ log_sweep_max_lr:
 # - paged_lion_32bit
 # - paged_lion_8bit
 optimizer:
-# specify weight decay
+# Specify weight decay
 weight_decay:
 # adamw hyperparams
 adam_beta1:
@@ -649,49 +671,51 @@ adam_epsilon:
 # Gradient clipping max norm
 max_grad_norm:
 
-# whether to bettertransformers
+# Whether to bettertransformers
 flash_optimum:
-# whether to use xformers attention patch https://github.com/facebookresearch/xformers:
+# Whether to use xformers attention patch https://github.com/facebookresearch/xformers:
 xformers_attention:
-# whether to use flash attention patch https://github.com/Dao-AILab/flash-attention:
+# Whether to use flash attention patch https://github.com/Dao-AILab/flash-attention:
 flash_attention:
 flash_attn_cross_entropy:  # Whether to use flash-attention cross entropy implementation - advanced use only
 flash_attn_rms_norm:  # Whether to use flash-attention rms norm implementation - advanced use only
-# whether to use scaled-dot-product attention
+# Whether to use scaled-dot-product attention
 # https://pytorch.org/docs/stable/generated/torch.nn.functional.scaled_dot_product_attention.html
 sdp_attention:
 # Landmark attention (only llama)
 landmark_attention:
 # xpos RoPE see https://github.com/kaiokendev/cutoff-len-is-context-len/blob/main/util/xpos_rope_llama_monkey_patch.py
-# llama only
+# LLaMA only
 xpos_rope:
 # RoPE Scaling https://github.com/huggingface/transformers/pull/24653
 rope_scaling:
   type: # linear | dynamic
   factor: # float
 
-# resume from a specific checkpoint dir
+# Resume from a specific checkpoint dir
 resume_from_checkpoint:
-# if resume_from_checkpoint isn't set and you simply want it to start where it left off
-# be careful with this being turned on between different models
+# If resume_from_checkpoint isn't set and you simply want it to start where it left off.
+# Be careful with this being turned on between different models.
 auto_resume_from_checkpoints: false
 
-# don't mess with this, it's here for accelerate and torchrun
+# Don't mess with this, it's here for accelerate and torchrun
 local_rank:
 
-# add or change special tokens
+# Add or change special tokens.
+# If you add tokens here, you don't need to add them to the `tokens` list.
 special_tokens:
   # bos_token: "<s>"
   # eos_token: "</s>"
   # unk_token: "<unk>"
-# add extra tokens
+
+# Add extra tokens.
 tokens:
 
 # FSDP
 fsdp:
 fsdp_config:
 
-# Deepspeed config path
+# Deepspeed config path. e.g., deepspeed/zero3.json
 deepspeed:
 
 # Advanced DDP Arguments
@@ -713,6 +737,66 @@ seed:
 
 # Allow overwrite yml config using from cli
 strict:
+```
+
+</details>
+
+<details>
+<summary> Understanding of batch size and gradient accumulation steps </summary>
+<br/>
+Gradient accumulation means accumulating gradients over several mini-batches and updating the model weights afterward. When the samples in each batch are diverse, this technique doesn't significantly impact learning.
+
+This method allows for effective training with larger effective batch sizes without needing proportionally larger memory. Here's why:
+
+1. **Memory Consumption with Batch Size**: The primary reason increasing the batch size impacts memory is due to the storage requirements for intermediate activations. When you forward propagate a batch through a network, you have to store the activations at each layer for each sample in the batch, because these activations are used during backpropagation to compute gradients. Therefore, larger batches mean more activations, leading to greater GPU memory consumption.
+
+2. **Gradient Accumulation**: With gradient accumulation, you're effectively simulating a larger batch size by accumulating gradients over several smaller batches (or micro-batches). However, at any given time, you're only forward and backward propagating a micro-batch. This means you only store activations for the micro-batch, not the full accumulated batch. As a result, you can simulate the effect of a larger batch size without the memory cost of storing activations for a large batch.
+
+**Example 1:**
+Micro batch size: 3
+Gradient accumulation steps: 2
+Number of GPUs: 3
+Total batch size = 3 * 2 * 3 = 18
+
+```
+| GPU 1          | GPU 2          | GPU 3          |
+|----------------|----------------|----------------|
+| S1, S2, S3     | S4, S5, S6     | S7, S8, S9     |
+| e1, e2, e3     | e4, e5, e6     | e7, e8, e9     |
+|----------------|----------------|----------------|
+| → (accumulate) | → (accumulate) | → (accumulate) |
+|----------------|----------------|----------------|
+| S10, S11, S12  | S13, S14, S15  | S16, S17, S18  |
+| e10, e11, e12  | e13, e14, e15  | e16, e17, e18  |
+|----------------|----------------|----------------|
+| → (apply)      | → (apply)      | → (apply)      |
+
+Accumulated gradient for the weight w1 after the second iteration (considering all GPUs):
+Total gradient for w1 = e1 + e2 + e3 + e4 + e5 + e6 + e7 + e8 + e9 + e10 + e11 + e12 + e13 + e14 + e15 + e16 + e17 + e18
+
+Weight update for w1:
+w1_new = w1_old - learning rate x (Total gradient for w1 / 18)
+```
+
+**Example 2:**
+Micro batch size: 2
+Gradient accumulation steps: 1
+Number of GPUs: 3
+Total batch size = 2 * 1 * 3 = 6
+
+```
+| GPU 1     | GPU 2     | GPU 3     |
+|-----------|-----------|-----------|
+| S1, S2    | S3, S4    | S5, S6    |
+| e1, e2    | e3, e4    | e5, e6    |
+|-----------|-----------|-----------|
+| → (apply) | → (apply) | → (apply) |
+
+Accumulated gradient for the weight w1 (considering all GPUs):
+Total gradient for w1 = e1 + e2 + e3 + e4 + e5 + e6
+
+Weight update for w1:
+w1_new = w1_old - learning rate × (Total gradient for w1 / 6)
 ```
 
 </details>
