@@ -22,22 +22,22 @@ Features:
 - [Introduction](#axolotl)
 - [Supported Features](#axolotl-supports)
 - [Quickstart](#quickstart-)
-- [Installation](#installation)
+  - [Installation](#installation)
   - [Docker Installation](#environment)
   - [Conda/Pip venv Installation](#condapip-venv)
   - [LambdaLabs Installation](#lambdalabs)
-- [Dataset](#dataset)
+    - [Dataset](#dataset)
   - [How to Add Custom Prompts](#how-to-add-custom-prompts)
   - [How to Use Custom Pretokenized Dataset](#how-to-use-your-custom-pretokenized-dataset)
-- [Config](#config)
-  - [Train](#train)
+    - [Config](#config)
+    - [Train](#train)
   - [Training w/ Deepspeed](#training-with-deepspeed)
-  - [Inference](#inference)
+    - [Inference](#inference)
   - [Merge LORA to Base](#merge-lora-to-base)
 - [Common Errors](#common-errors-)
 - [Need Help?](#need-help-)
 - [Badge](#badge-)
-- [Community Showcase](#community-showcase)
+  - [Community Showcase](#community-showcase)
 - [Contributing](#contributing-)
 
 </td>
@@ -50,7 +50,7 @@ Features:
       <b>Axolotl provides a unified repository for fine-tuning <br />a variety of AI models with ease</b>
     </p>
     <p>
-      Go ahead and axolotl questions!!
+      Go ahead and Axolotl questions!!
     </p>
     <img src="https://github.com/OpenAccess-AI-Collective/axolotl/actions/workflows/pre-commit.yml/badge.svg?branch=main" alt="pre-commit">
     <img alt="PyTest Status" src="https://github.com/OpenAccess-AI-Collective/axolotl/actions/workflows/tests.yml/badge.svg?branch=main">
@@ -119,7 +119,7 @@ accelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \
 
   2. Install pytorch stable https://pytorch.org/get-started/locally/
 
-  3. Install axolotl along with python dependencies
+  3. Install Axolotl along with python dependencies
         ```bash
         pip3 install packaging
         pip3 install -e '.[flash-attn,deepspeed]'
@@ -423,7 +423,7 @@ tokenizer_legacy:
 # This is reported to improve training speed on some models
 resize_token_embeddings_to_32x:
 
-# Ysed to identify which the model is based on
+# Used to identify which the model is based on
 is_falcon_derived_model:
 is_llama_derived_model:
 # Please note that if you set this to true, `padding_side` will be set to "left" by default
@@ -462,16 +462,16 @@ datasets:
     name: # Optional[str] name of dataset configuration to load
     conversation:  # Optional[str] fastchat conversation type, only used with type: sharegpt
 
-  # custom user prompt
+  # Custom user prompt
   - path: repo
     type:
-      # the below are defaults. only set what's needed.
+      # The below are defaults. only set what's needed.
       system_prompt: ""
       field_system: system
       field_instruction: instruction
       field_output: input
 
-      # customizable to be single line or multi-line
+      # Customizable to be single line or multi-line
       system_format: "{system}"
       # 'format' can include {input}
       format: |-
@@ -480,10 +480,10 @@ datasets:
       # 'no_input_format' cannot include {input}
       no_input_format: "{instruction} "
 
-      # for completions datsets, uses the provided field if not `text`
+      # For completions datsets, uses the provided field if not `text`
       field:
 
-# axolotl attempts to save the dataset as an arrow after packing the data together so
+# Axolotl attempts to save the dataset as an arrow after packing the data together so
 # subsequent training attempts load faster, relative path
 dataset_prepared_path: data/last_run_prepared
 # Push prepared dataset to hub
@@ -510,27 +510,30 @@ dataset_shard_idx:
 # as most models have a token/context limit of 2048
 sequence_len: 2048
 # Pad inputs so each step uses constant sized buffers
-# this will reduce memory fragmentation and may prevent OOMs, by re-using memory more efficiently
+# This will reduce memory fragmentation and may prevent OOMs, by re-using memory more efficiently
 pad_to_sequence_len:
 # Max sequence length to concatenate training samples together up to
-# inspired by StackLLaMA. see https://huggingface.co/blog/stackllama#supervised-fine-tuning
+# Inspired by StackLLaMA. see https://huggingface.co/blog/stackllama#supervised-fine-tuning
 # FutureWarning: This will soon be DEPRECATED
 max_packed_sequence_len: 1024
 # Use efficient multi-packing with block diagonal attention and per sequence position_ids. Recommend set to 'true'
 sample_packing:
-# set to 'false' if getting errors during eval with sample_packing on.
+# Set to 'false' if getting errors during eval with sample_packing on.
 eval_sample_packing:
-# you can set these packing optimizations AFTER starting a training at least once.
+# You can set these packing optimizations AFTER starting a training at least once.
 # The trainer will provide recommended values for these values.
 sample_packing_eff_est:
 total_num_tokens:
 
 # If you want to use 'lora' or 'qlora' or leave blank to train all parameters in original model
 adapter: lora
-# If you already have a lora model trained that you want to load, put that here
-# lora hyperparameters.
+# If you already have a lora model trained that you want to load, put that here.
 # This means after training, if you want to test the model, you should set this to the value of `lora_out_dir`.
 lora_model_dir:
+
+# LoRA hyperparameters
+# For more details about the following options, see:
+# https://www.anyscale.com/blog/fine-tuning-llms-lora-or-full-parameter-an-in-depth-analysis-with-llama-2
 lora_r: 8
 lora_alpha: 16
 lora_dropout: 0.05
@@ -542,7 +545,7 @@ lora_target_modules:
 #  - gate_proj
 #  - down_proj
 #  - up_proj
-lora_target_linear: # if true, will target all linear layers
+lora_target_linear: # If true, will target all linear layers
 lora_modules_to_save:
 #  - embed_tokens
 #  - lm_head
@@ -586,26 +589,26 @@ warmup_steps: 100
 learning_rate: 0.00003
 lr_quadratic_warmup:
 logging_steps:
-save_strategy: # set to `no` to skip checkpoint saves
-save_steps: # leave empty to save at each epoch
-eval_steps: # leave empty to eval at each epoch
-save_total_limit: # checkpoints saved at a time
+save_strategy: # Set to `no` to skip checkpoint saves
+save_steps: # Leave empty to save at each epoch
+eval_steps: # Leave empty to eval at each epoch
+save_total_limit: # Checkpoints saved at a time
 # Maximum number of iterations to train for. It precedes num_epochs which means that
-# if both are set, num_epochs will not be guaranteed.
+# If both are set, num_epochs will not be guaranteed.
 # e.g., when 1 epoch is 1000 steps => `num_epochs: 2` and `max_steps: 100` will train for 100 steps
 max_steps:
 
-eval_table_size: # approximate number of predictions sent to wandb depending on batch size. Enabled above 0. Default is 0
-eval_table_max_new_tokens: # total number of tokens generated for predictions sent to wandb. Default is 128
+eval_table_size: # Approximate number of predictions sent to wandb depending on batch size. Enabled above 0. Default is 0
+eval_table_max_new_tokens: # Total number of tokens generated for predictions sent to wandb. Default is 128
 
-# save model as safetensors (require safetensors package)
+# Save model as safetensors (require safetensors package)
 save_safetensors:
 
 # Whether to mask out or include the human's prompt from the training labels
 train_on_inputs: false
-# group similarly sized data to minimize padding
-# may be slower to start, as it must download and sort the entire dataset
-# note that training loss may have an oscillating pattern with this enabled
+# Group similarly sized data to minimize padding.
+# May be slower to start, as it must download and sort the entire dataset.
+# Note that training loss may have an oscillating pattern with this enabled.
 group_by_length: false
 
 # Whether to use gradient checkpointing https://huggingface.co/docs/transformers/v4.18.0/en/performance#gradient-checkpointing
@@ -620,13 +623,13 @@ lr_scheduler: # 'one_cycle' | 'log_sweep' | empty for cosine
 lr_scheduler_kwargs:
 
 # For one_cycle optim
-lr_div_factor: # learning rate div factor
+lr_div_factor: # Learning rate div factor
 
 # For log_sweep optim
 log_sweep_min_lr:
 log_sweep_max_lr:
 
-# specify optimizer
+# Specify optimizer
 # Valid values are driven by the Transformers OptimizerNames class, see:
 # https://github.com/huggingface/transformers/blob/95b374952dc27d8511541d6f5a4e22c9ec11fb24/src/transformers/training_args.py#L134
 #
@@ -652,7 +655,7 @@ log_sweep_max_lr:
 # - paged_lion_32bit
 # - paged_lion_8bit
 optimizer:
-# specify weight decay
+# Specify weight decay
 weight_decay:
 # adamw hyperparams
 adam_beta1:
@@ -661,34 +664,34 @@ adam_epsilon:
 # Gradient clipping max norm
 max_grad_norm:
 
-# whether to bettertransformers
+# Whether to bettertransformers
 flash_optimum:
-# whether to use xformers attention patch https://github.com/facebookresearch/xformers:
+# Whether to use xformers attention patch https://github.com/facebookresearch/xformers:
 xformers_attention:
-# whether to use flash attention patch https://github.com/Dao-AILab/flash-attention:
+# Whether to use flash attention patch https://github.com/Dao-AILab/flash-attention:
 flash_attention:
 flash_attn_cross_entropy:  # Whether to use flash-attention cross entropy implementation - advanced use only
 flash_attn_rms_norm:  # Whether to use flash-attention rms norm implementation - advanced use only
-# whether to use scaled-dot-product attention
+# Whether to use scaled-dot-product attention
 # https://pytorch.org/docs/stable/generated/torch.nn.functional.scaled_dot_product_attention.html
 sdp_attention:
 # Landmark attention (only llama)
 landmark_attention:
 # xpos RoPE see https://github.com/kaiokendev/cutoff-len-is-context-len/blob/main/util/xpos_rope_llama_monkey_patch.py
-# llama only
+# LLaMA only
 xpos_rope:
 # RoPE Scaling https://github.com/huggingface/transformers/pull/24653
 rope_scaling:
   type: # linear | dynamic
   factor: # float
 
-# resume from a specific checkpoint dir
+# Resume from a specific checkpoint dir
 resume_from_checkpoint:
-# if resume_from_checkpoint isn't set and you simply want it to start where it left off
-# be careful with this being turned on between different models
+# If resume_from_checkpoint isn't set and you simply want it to start where it left off.
+# Be careful with this being turned on between different models.
 auto_resume_from_checkpoints: false
 
-# don't mess with this, it's here for accelerate and torchrun
+# Don't mess with this, it's here for accelerate and torchrun
 local_rank:
 
 # Add or change special tokens.
