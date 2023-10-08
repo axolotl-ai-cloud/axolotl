@@ -22,22 +22,23 @@ Features:
 - [Introduction](#axolotl)
 - [Supported Features](#axolotl-supports)
 - [Quickstart](#quickstart-)
-  - [Installation](#installation)
-  - [Docker Installation](#environment)
-  - [Conda/Pip venv Installation](#condapip-venv)
-  - [LambdaLabs Installation](#lambdalabs)
-    - [Dataset](#dataset)
+- [Installation](#installation)
+  - [Docker](#docker)
+  - [Conda/Pip venv](#condapip-venv)
+  - [LambdaLabs](#lambdalabs)
+  - [Windows](#windows)
+- [Dataset](#dataset)
   - [How to Add Custom Prompts](#how-to-add-custom-prompts)
   - [How to Use Custom Pretokenized Dataset](#how-to-use-your-custom-pretokenized-dataset)
-    - [Config](#config)
-    - [Train](#train)
+- [Config](#config)
+  - [Train](#train)
   - [Training w/ Deepspeed](#training-with-deepspeed)
-    - [Inference](#inference)
+  - [Inference](#inference)
   - [Merge LORA to Base](#merge-lora-to-base)
 - [Common Errors](#common-errors-)
 - [Need Help?](#need-help-)
 - [Badge](#badge-)
-  - [Community Showcase](#community-showcase)
+- [Community Showcase](#community-showcase)
 - [Contributing](#contributing-)
 
 </td>
@@ -102,7 +103,7 @@ accelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \
 
 ### Environment
 
-- Docker
+#### Docker
   ```bash
   docker run --gpus '"all"' --rm -it winglian/axolotl:main-py3.10-cu118-2.0.1
   ```
@@ -114,7 +115,7 @@ accelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \
   docker compose up -d
   ```
 
-- Conda/Pip venv
+#### Conda/Pip venv
   1. Install python >=**3.9**
 
   2. Install pytorch stable https://pytorch.org/get-started/locally/
@@ -130,7 +131,7 @@ accelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \
         ```
         Get the token at huggingface.co/settings/tokens
 
-- LambdaLabs
+#### LambdaLabs
   <details>
 
   <summary>Click to Expand</summary>
@@ -174,7 +175,8 @@ accelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \
   ```
   </details>
 
-- Windows: Please use WSL or Docker!
+#### Windows
+Please use WSL or Docker!
 
 ### Dataset
 
