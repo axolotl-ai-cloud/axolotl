@@ -548,6 +548,11 @@ lora_target_modules:
 #  - down_proj
 #  - up_proj
 lora_target_linear: # If true, will target all linear layers
+
+# If you added new tokens to the tokenizer, you may need to save some LoRA modules because they need to know the new tokens.
+# For LLaMA and Mistral, you need to save `embed_tokens` and `lm_head`. It may vary for other models.
+# `embed_tokens` converts tokens to embeddings, and `lm_head` converts embeddings to token probabilities.
+# https://github.com/huggingface/peft/issues/334#issuecomment-1561727994
 lora_modules_to_save:
 #  - embed_tokens
 #  - lm_head
@@ -596,7 +601,7 @@ save_steps: # Leave empty to save at each epoch
 eval_steps: # Leave empty to eval at each epoch
 save_total_limit: # Checkpoints saved at a time
 # Maximum number of iterations to train for. It precedes num_epochs which means that
-# If both are set, num_epochs will not be guaranteed.
+# if both are set, num_epochs will not be guaranteed.
 # e.g., when 1 epoch is 1000 steps => `num_epochs: 2` and `max_steps: 100` will train for 100 steps
 max_steps:
 
