@@ -27,6 +27,8 @@ class TrainerCliArgs:
     merge_lora: bool = field(default=False)
     prepare_ds_only: bool = field(default=False)
     prompter: Optional[str] = field(default=None)
+    prompt_file: Optional[str] = field(default=None)
+    generation_cfg: Optional[str] = field(default=None)
     shard: bool = field(default=False)
 
 
