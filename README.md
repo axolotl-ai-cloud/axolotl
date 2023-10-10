@@ -469,12 +469,13 @@ datasets:
     type:
       # The below are defaults. only set what's needed.
       system_prompt: ""
+      system_format: "{system}"
       field_system: system
       field_instruction: instruction
-      field_output: input
+      field_input: input
+      field_output: output
 
       # Customizable to be single line or multi-line
-      system_format: "{system}"
       # 'format' can include {input}
       format: |-
         User: {instruction} {input}
@@ -482,7 +483,7 @@ datasets:
       # 'no_input_format' cannot include {input}
       no_input_format: "{instruction} "
 
-      # For completions datsets, uses the provided field if not `text`
+      # For `completion` datsets only, uses the provided field instead of `text` column
       field:
 
 # Axolotl attempts to save the dataset as an arrow after packing the data together so
