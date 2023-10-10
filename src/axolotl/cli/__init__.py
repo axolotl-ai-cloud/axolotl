@@ -88,7 +88,7 @@ def do_inference(
 ):
     
     # Support for several multiline prompts from JSON file
-    nPrompt = 0
+    idx_prompt = 0
     prompts = {}
     if cli_args.prompt_file:
         with open(cli_args.prompt_file, 'r', encoding='utf-8') as file:
@@ -122,9 +122,9 @@ def do_inference(
     while True:
         print("=" * 80)
         if prompts:
-            if nPrompt < len(prompts):
-                instruction = prompts[nPrompt]
-                nPrompt += 1
+            if idx_prompt < len(prompts):
+                instruction = prompts[idx_prompt]
+                idx_prompt += 1
             else:
                 return
         else:
