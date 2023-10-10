@@ -876,6 +876,10 @@ Pass the appropriate flag to the train command:
     --base_model="./completed-model" --prompter=None --load_in_8bit=True
   ```
 
+Please use `--sample_packing False` if you have it on and receive the error similar to below:
+
+> RuntimeError: stack expects each tensor to be equal size, but got [1, 32, 1, 128] at entry 0 and [1, 32, 8, 128] at entry 1
+
 ### Merge LORA to base
 
 Add below flag to train command above
