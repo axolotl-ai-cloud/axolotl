@@ -28,8 +28,8 @@ num_epochs: 3
 learning_rate: 0.00001
 train_on_inputs: false
 group_by_length: false
-bf16: True
-tf32: True
+bf16: true
+tf32: true
 early_stopping_patience:
 resume_from_checkpoint:
 local_rank:
