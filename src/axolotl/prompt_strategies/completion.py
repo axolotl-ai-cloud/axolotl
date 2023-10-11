@@ -53,8 +53,8 @@ class CompletionPromptTokenizingStrategy(InstructionPromptTokenizingStrategy):
             tokenized_full_prompt = self._tokenize(full_prompt)
 
             for key, val in tokenized_full_prompt.items():
-                for i in range(0, len(val), self.max_length):
-                    res[key].append(val[i : i + self.max_length])
+                for i in range(0, len(val), self.sequence_len):
+                    res[key].append(val[i : i + self.sequence_len])
 
         return dict(res)
 

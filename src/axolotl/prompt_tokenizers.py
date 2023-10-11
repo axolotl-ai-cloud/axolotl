@@ -45,6 +45,9 @@ class PromptTokenizingStrategy(abc.ABC):
         self.prompter = prompter
         self.tokenizer: PreTrainedTokenizer = tokenizer
         self.train_on_inputs = train_on_inputs
+        # sequence_len and max_length can be different for CompletionPromptTokenizingStrategy.
+        # TODO: Document how they are different.
+        self.sequence_len = sequence_len
         self.max_length = sequence_len
 
     @abc.abstractmethod
@@ -290,13 +293,13 @@ class ReflectionPromptTokenizingStrategy(PromptTokenizingStrategy):
         result = self.tokenizer(
             prompt,
             truncation=True,
-            max_length=self.max_length,
+            max_length=self.sequence_len,
             padding=False,
             return_tensors=None,
         )
         if (
             result["input_ids"][-1] != self.tokenizer.eos_token_id
-            and len(result["input_ids"]) < self.max_length
+            and len(result["input_ids"]) < self.sequence_len
             and add_eos_token
         ):
             result["input_ids"].append(self.tokenizer.eos_token_id)
