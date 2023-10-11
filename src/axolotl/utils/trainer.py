@@ -777,7 +777,7 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
         trainer.add_callback(LogPredictionCallback(cfg))
 
     if cfg.use_wandb:
-        trainer.add_callback(SaveAxolotlConfigtoWandBCallback(cfg))
+        trainer.add_callback(SaveAxolotlConfigtoWandBCallback(cfg.axolotl_config_path))
 
     if cfg.do_bench_eval:
         trainer.add_callback(bench_eval_callback_factory(trainer, tokenizer))

@@ -519,8 +519,8 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer):
 class SaveAxolotlConfigtoWandBCallback(TrainerCallback):
     """Callback to save axolotl config to wandb"""
 
-    def __init__(self, cfg):
-        self.cfg = cfg
+    def __init__(self, axolotl_config_path):
+        self.axolotl_config_path = axolotl_config_path
 
     def on_train_begin(
         self,
@@ -532,7 +532,7 @@ class SaveAxolotlConfigtoWandBCallback(TrainerCallback):
         if is_main_process():
             try:
                 artifact = wandb.Artifact(name="axolotl-config", type="config")
-                artifact.add_file(local_path=self.cfg.axolotl_config_path)
+                artifact.add_file(local_path=self.axolotl_config_path)
                 wandb.run.log_artifact(artifact)
                 LOG.info("Axolotl config has been saved to WandB as an artifact.")
             except (FileNotFoundError, ConnectionError) as err:
