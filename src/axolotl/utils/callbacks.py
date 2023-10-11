@@ -530,7 +530,11 @@ class SaveAxolotlConfigtoWandBCallback(TrainerCallback):
         **kwargs,  # pylint: disable=unused-argument
     ):
         if is_main_process():
-            artifact = wandb.Artifact(name="axolotl-config", type="config")
-            artifact.add_file(local_path=self.cfg.axolotl_config_path)
-            wandb.run.log_artifact(artifact)
+            try:
+                artifact = wandb.Artifact(name="axolotl-config", type="config")
+                artifact.add_file(local_path=self.cfg.axolotl_config_path)
+                wandb.run.log_artifact(artifact)
+                LOG.info("Axolotl config has been saved to WandB as an artifact.")
+            except (FileNotFoundError, ConnectionError) as err:
+                LOG.warning(f"Error while saving Axolotl config to WandB: {err}")
         return control
