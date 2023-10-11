@@ -30,6 +30,7 @@ from axolotl.monkeypatch.relora import ReLoRACallback, ReLoRAScheduler
 from axolotl.utils.callbacks import (
     EvalFirstStepCallback,
     GPUStatsCallback,
+    SaveAxolotlConfigtoWandBCallback,
     SaveBetterTransformerModelCallback,
     bench_eval_callback_factory,
     log_prediction_callback_factory,
@@ -774,6 +775,9 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
     if cfg.use_wandb and cfg.eval_table_size > 0:
         LogPredictionCallback = log_prediction_callback_factory(trainer, tokenizer)
         trainer.add_callback(LogPredictionCallback(cfg))
+
+    if cfg.use_wandb:
+        trainer.add_callback(SaveAxolotlConfigtoWandBCallback(cfg.axolotl_config_path))
 
     if cfg.do_bench_eval:
         trainer.add_callback(bench_eval_callback_factory(trainer, tokenizer))

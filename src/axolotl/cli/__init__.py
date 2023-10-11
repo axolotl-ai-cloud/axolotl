@@ -194,6 +194,7 @@ def load_cfg(config: Path = Path("examples/"), **kwargs):
     # load the config from the yaml file
     with open(config, encoding="utf-8") as file:
         cfg: DictDefault = DictDefault(yaml.safe_load(file))
+    cfg.axolotl_config_path = config
     # if there are any options passed in the cli, if it is something that seems valid from the yaml,
     # then overwrite the value
     cfg_keys = cfg.keys()
