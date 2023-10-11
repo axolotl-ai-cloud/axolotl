@@ -698,7 +698,6 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
         sample_packing_seq_len_multiplier=cfg.micro_batch_size,
         relora_steps=cfg.relora_steps,
         relora_warmup_steps=cfg.relora_warmup_steps,
-        axolotl_config_path=cfg.axolotl_config_path,
         **training_arguments_kwargs,
     )
 
