@@ -24,7 +24,7 @@ def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
     )
     field_human = ds_cfg["field_human"] if ds_cfg and "field_human" in ds_cfg else None
     field_model = ds_cfg["field_model"] if ds_cfg and "field_model" in ds_cfg else None
-    return SimpleShareGPTPromptTokenizingStrategy(
+    strat = ShareGPTPromptTokenizingStrategy(
         ShareGPTPrompterV2(
             conversation=conversation,
             role_key_model=field_model,
@@ -34,6 +34,9 @@ def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
         cfg.train_on_inputs,
         cfg.sequence_len,
     )
+    if ds_cfg and ds_cfg["skip"]:
+        strat.skip_invalid = True
+    return strat
 
 
 def load_role(tokenizer, cfg):
@@ -54,13 +57,38 @@ def load_guanaco(tokenizer, cfg):
     )
 
 
-class SimpleShareGPTPromptTokenizingStrategy(ShareGPTPromptTokenizingStrategy):
+def load_nous(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
+    conversation = (
+        ds_cfg["conversation"] if ds_cfg and "conversation" in ds_cfg else None
+    )
+    field_human = ds_cfg["field_human"] if ds_cfg and "field_human" in ds_cfg else None
+    field_model = ds_cfg["field_model"] if ds_cfg and "field_model" in ds_cfg else None
+    return NousShareGPTPromptTokenizingStrategy(
+        ShareGPTPrompterV2(
+            conversation=conversation,
+            role_key_model=field_model,
+            role_key_human=field_human,
+        ),
+        tokenizer,
+        cfg.train_on_inputs,
+        cfg.sequence_len,
+    )
+
+
+class NousShareGPTPromptTokenizingStrategy(ShareGPTPromptTokenizingStrategy):
     """
-    basic sharegpt strategy to grab conversations from the sample row
+    basic sharegpt strategy used by nous/ldj for input/output keyed data
     """
 
-    def get_conversation_thread(self, prompt):
-        return prompt["conversations"]
+    def get_conversation_thread(self):
+        return "conversation"
+
+    def map_conversation_thread(self, conversation):
+        turns = []
+        for turn in conversation:
+            turns.append({"from": "human", "value": turn["input"]})
+            turns.append({"from": "gpt", "value": turn["output"]})
+        return turns
 
 
 class SimpleRoleShareGPTPromptTokenizingStrategy(ShareGPTPromptTokenizingStrategy):
@@ -68,10 +96,11 @@ class SimpleRoleShareGPTPromptTokenizingStrategy(ShareGPTPromptTokenizingStrateg
     basic sharegpt strategy to grab conversations from the sample row, but uses role instead of from
     """
 
-    def get_conversation_thread(self, prompt):
-        conversations = prompt["conversations"]
+    def map_conversation_thread(self, conversation):
         # remap role: prompter/assistant, text: ... => from: human/gpt, value: ...
-        turns = [{"from": t["role"], "value": t["value"]} for t in conversations]
+        turns = [
+            {"from": turn["role"], "value": turn["value"]} for turn in conversation
+        ]
         return turns
 
 
@@ -80,11 +109,11 @@ class GuanacoShareGPTPromptTokenizingStrategy(ShareGPTPromptTokenizingStrategy):
     sharegpt strategy that remaps oasst data to sharegpt format
     """
 
-    def get_conversation_thread(self, prompt):
-        conversations = prompt["conversations"]
+    def map_conversation_thread(self, conversation):
         # remap role: prompter/assistant, text: ... => from: human/gpt, value: ...
         role_map = {"prompter": "human", "assistant": "gpt"}
         turns = [
-            {"from": role_map[t["role"]], "value": t["text"]} for t in conversations
+            {"from": role_map[turn["role"]], "value": turn["text"]}
+            for turn in conversation
         ]
         return turns

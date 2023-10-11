@@ -158,21 +158,23 @@ def load_tokenized_prepared_datasets(
                     token=use_auth_token,
                 )
                 ds_from_hub = True
-            except FileNotFoundError:
+            except (FileNotFoundError, ValueError):
                 pass
 
             # prefer local dataset, even if hub exists
             local_path = Path(d.path)
             if local_path.exists():
                 if local_path.is_dir():
-                    # TODO dirs with arrow or parquet files could be loaded with `load_from_disk`
-                    ds = load_dataset(
-                        d.path,
-                        name=d.name,
-                        data_files=d.data_files,
-                        streaming=False,
-                        split=None,
-                    )
+                    if not d.type:
+                        ds = load_from_disk(d.path)
+                    else:
+                        ds = load_dataset(
+                            d.path,
+                            name=d.name,
+                            data_files=d.data_files,
+                            streaming=False,
+                            split=None,
+                        )
                 elif local_path.is_file():
                     ds_type = "json"
                     if d.ds_type:

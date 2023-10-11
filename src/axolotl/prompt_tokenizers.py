@@ -4,6 +4,7 @@ import abc
 import copy
 import functools
 import logging
+from collections import defaultdict
 from typing import Dict, List, Tuple, Union
 
 from fastchat.conversation import Conversation
@@ -351,76 +352,109 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
     Tokenizing strategy for ShareGPT prompts.
     """
 
-    def get_conversation_thread(self, prompt):
-        return prompt["conversations"]
+    _skip_invalid = False
+
+    @property
+    def supports_batched(self):
+        return True
+
+    @property
+    def skip_invalid(self):
+        return self._skip_invalid
+
+    @skip_invalid.setter
+    def skip_invalid(self, value):
+        self._skip_invalid = value
+
+    def get_conversation_thread(self):
+        return "conversations"
+
+    def map_conversation_thread(self, conversation):
+        return conversation
 
     def tokenize_prompt(self, prompt):
-        result, current_len = tokenize_prompt_default()
-        user_token = self._get_user_token()
-        assistant_token = self._get_assistant_token()
-        conversation: Conversation = (
-            self.prompter._conversation  # pylint: disable=protected-access
-        )
-        try:
-            for _, part in enumerate(
-                self.prompter.build_prompt(self.get_conversation_thread(prompt))
-            ):
-                if isinstance(part, tuple):
-                    if conversation.roles[0] in part[0]:
-                        turn = part[0] + part[1] if not user_token else part[1]
-                        # this is still the user query, we should
-                        if not part[1].strip():
-                            LOG.warning(f"user turn has empty text: {prompt}")
-                        res = self._tokenize(
-                            turn,
-                            add_eos_token=False,
-                            strip_bos_token=True,
-                        )
-                        if user_token:
-                            res["input_ids"] = [user_token, *res["input_ids"]]
-                        # everything from this is masked out from the labels
-                        labels = [IGNORE_TOKEN_ID] * len(res["input_ids"])
-                    elif conversation.roles[1] in part[0]:
-                        # TODO label assistant token/tokens w/ IGNORE_TOKEN_ID
-                        turn = part[0] + part[1] if not assistant_token else part[1]
-                        # this should be the assistant response, should end with an eos token
-                        if not part[1].strip():
-                            LOG.warning(f"assistant turn has empty text: {prompt}")
-                        res = self._tokenize(
-                            turn,
-                            add_eos_token=True,
-                            strip_bos_token=True,
-                        )
-                        if assistant_token:
-                            res["input_ids"] = [
-                                assistant_token,
-                                *res["input_ids"],
-                            ]
-                        # not masked out from labels
-                        labels = copy.deepcopy(res["input_ids"])
-                    elif part[0] == "":
-                        turn = part[1]
-                        # this is only ever the first part, should include the bos token and the user query
-                        res = self._tokenize(
-                            turn, add_eos_token=False, strip_bos_token=False
-                        )
-                        # everything from this is masked out from the labels
-                        labels = [IGNORE_TOKEN_ID] * len(res["input_ids"])
-                    else:
-                        LOG.warning(f"unhandled role: {part[0]}")
-                        continue
+        tokenized_res = defaultdict(lambda: [])
+        conv_field = self.get_conversation_thread()
+        for prmpt in prompt[conv_field]:
+            result, current_len = tokenize_prompt_default()
+            user_token = self._get_user_token()
+            assistant_token = self._get_assistant_token()
+            conversation: Conversation = (
+                self.prompter._conversation  # pylint: disable=protected-access
+            )
+            try:
+                for _, part in enumerate(
+                    self.prompter.build_prompt(self.map_conversation_thread(prmpt))
+                ):
+                    if isinstance(part, tuple):
+                        if conversation.roles[0] in part[0]:
+                            turn = part[0] + part[1] if not user_token else part[1]
+                            # this is still the user query, we should
+                            if not part[1].strip():
+                                err_msg = f"user turn has empty text: {prmpt}"
+                                if self.skip_invalid:
+                                    raise ValueError(err_msg)
+                                LOG.warning(err_msg)
+                            res = self._tokenize(
+                                turn,
+                                add_eos_token=False,
+                                strip_bos_token=True,
+                            )
+                            if user_token:
+                                res["input_ids"] = [user_token, *res["input_ids"]]
+                            # everything from this is masked out from the labels
+                            labels = [IGNORE_TOKEN_ID] * len(res["input_ids"])
+                        elif conversation.roles[1] in part[0]:
+                            # TODO label assistant token/tokens w/ IGNORE_TOKEN_ID
+                            turn = part[0] + part[1] if not assistant_token else part[1]
+                            # this should be the assistant response, should end with an eos token
+                            if not part[1].strip():
+                                err_msg = f"assistant turn has empty text: {prmpt}"
+                                if self.skip_invalid:
+                                    raise ValueError(err_msg)
+                                LOG.warning(err_msg)
+                            res = self._tokenize(
+                                turn,
+                                add_eos_token=True,
+                                strip_bos_token=True,
+                            )
+                            if assistant_token:
+                                res["input_ids"] = [
+                                    assistant_token,
+                                    *res["input_ids"],
+                                ]
+                            # not masked out from labels
+                            labels = copy.deepcopy(res["input_ids"])
+                        elif part[0] == "":
+                            turn = part[1]
+                            # this is only ever the first part, should include the bos token and the user query
+                            res = self._tokenize(
+                                turn, add_eos_token=False, strip_bos_token=False
+                            )
+                            # everything from this is masked out from the labels
+                            labels = [IGNORE_TOKEN_ID] * len(res["input_ids"])
+                        else:
+                            err_msg = f"unhandled role: {part[0]}"
+                            if self.skip_invalid:
+                                raise ValueError(err_msg)
+                            LOG.warning(err_msg)
+                            continue
 
-                # pylint: disable=duplicate-code
-                result, current_len = parse_tokenized_to_result(
-                    result,
-                    current_len,
-                    res,
-                    labels,
-                    pad_token_id=self.tokenizer.pad_token_id,
-                )
-            return result
-        except (KeyError, AssertionError, IndexError) as err:
-            raise InvalidDataException(str(err)) from err
+                    # pylint: disable=duplicate-code
+                    result, current_len = parse_tokenized_to_result(
+                        result,
+                        current_len,
+                        res,
+                        labels,
+                        pad_token_id=self.tokenizer.pad_token_id,
+                    )
+                for key, val in sorted(result.items(), key=lambda x: x[0]):
+                    tokenized_res[key].append(val)
+            except (KeyError, AssertionError, IndexError) as err:
+                raise InvalidDataException(str(err)) from err
+            except ValueError as err:
+                LOG.warning("skipping prompt: %s", str(err))
+        return tokenized_res
 
     def _tokenize(self, prompt, add_eos_token=True, strip_bos_token=False):
         if not prompt.strip():
