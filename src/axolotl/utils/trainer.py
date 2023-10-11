@@ -31,6 +31,7 @@ from axolotl.utils.callbacks import (
     EvalFirstStepCallback,
     GPUStatsCallback,
     SaveBetterTransformerModelCallback,
+    SaveAxolotlConfigtoWandBCallback,
     bench_eval_callback_factory,
     log_prediction_callback_factory,
 )
@@ -697,6 +698,7 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
         sample_packing_seq_len_multiplier=cfg.micro_batch_size,
         relora_steps=cfg.relora_steps,
         relora_warmup_steps=cfg.relora_warmup_steps,
+        axolotl_config_path=cfg.axolotl_config_path,
         **training_arguments_kwargs,
     )
 
@@ -774,6 +776,9 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
     if cfg.use_wandb and cfg.eval_table_size > 0:
         LogPredictionCallback = log_prediction_callback_factory(trainer, tokenizer)
         trainer.add_callback(LogPredictionCallback(cfg))
+
+    if cfg.use_wandb:
+        trainer.add_callback(SaveAxolotlConfigtoWandBCallback(cfg))
 
     if cfg.do_bench_eval:
         trainer.add_callback(bench_eval_callback_factory(trainer, tokenizer))
