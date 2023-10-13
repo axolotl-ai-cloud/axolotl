@@ -672,6 +672,11 @@ adam_epsilon:
 # Gradient clipping max norm
 max_grad_norm:
 
+# Augmentation techniques
+# NEFT https://arxiv.org/abs/2310.05914, set this to a number (paper default is 5) to add noise to embeddings
+# currently only supported on Llama and Mistral
+noisy_embedding_alpha:
+
 # Whether to bettertransformers
 flash_optimum:
 # Whether to use xformers attention patch https://github.com/facebookresearch/xformers:
