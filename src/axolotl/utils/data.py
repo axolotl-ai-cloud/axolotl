@@ -16,6 +16,7 @@ from datasets import (
 from huggingface_hub import hf_hub_download
 from transformers import PreTrainedTokenizerBase
 
+from axolotl.common.const import DEFAULT_DATASET_PREPARED_PATH
 from axolotl.datasets import ConstantLengthDataset, TokenizedPromptDataset
 from axolotl.prompt_strategies import load
 from axolotl.prompt_tokenizers import (
@@ -44,7 +45,6 @@ from axolotl.utils.trainer import (
 )
 
 LOG = logging.getLogger("axolotl")
-DEFAULT_DATASET_PREPARED_PATH = "last_run_prepared"
 
 
 def md5(to_hash: str, encoding: str = "utf-8") -> str:
@@ -357,7 +357,7 @@ def load_tokenized_prepared_datasets(
         if len(datasets) > 1:
             LOG.info("shuffle merged datasets")
             dataset = dataset.shuffle(seed=seed)
-        if cfg.local_rank == 0 and cfg.dataset_prepared_path:
+        if cfg.local_rank == 0:
             LOG.info(f"Saving merged prepared dataset to disk... {prepared_ds_path}")
             dataset.save_to_disk(prepared_ds_path)
             if cfg.push_dataset_to_hub:
