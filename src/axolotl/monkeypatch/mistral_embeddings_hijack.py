@@ -1,3 +1,7 @@
+"""
+patch to add noisy embeddings per https://arxiv.org/abs/2310.05914
+"""
+
 import torch
 import transformers.models.mistral.modeling_mistral
 from transformers.utils import logging
@@ -6,6 +10,7 @@ logger = logging.get_logger(__name__)
 
 
 def replace_mistral_embeddings_with_uniform_distribution(noise_alpha=5):
+    # pylint: disable=duplicate-code
     def noised_embed(orig_embed, noise_alpha, model):
         def new_func(input_ids):
             # during training, we add noise to the embedding
