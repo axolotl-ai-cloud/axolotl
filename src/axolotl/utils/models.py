@@ -147,6 +147,7 @@ def load_model(
                 packed=cfg.sample_packing,
                 cross_entropy=cfg.flash_attn_cross_entropy,
                 rms_norm=cfg.flash_attn_rms_norm,
+                noisy_embeddings_alpha=cfg.noisy_embeddings_alpha,
             )
     elif cfg.is_llama_derived_model and cfg.xformers_attention:
         from axolotl.monkeypatch.llama_attn_hijack_xformers import (
@@ -180,16 +181,16 @@ def load_model(
         LOG.info("patching with flash attention")
         replace_mistral_attn_with_flash_attn(packed=cfg.sample_packing)
 
-    if cfg.is_llama_derived_model and cfg.noisy_embedding_alpha:
-        from axolotl.monkeypatch.llama_embeddings_hijack import (
-            replace_llama_embeddings_with_uniform_distribution,
-        )
-
-        LOG.info("patching with noisy embeddings")
-        replace_llama_embeddings_with_uniform_distribution(
-            noise_alpha=cfg.noisy_embedding_alpha
-        )
-
+    # if cfg.is_llama_derived_model and cfg.noisy_embedding_alpha:
+    #     from axolotl.monkeypatch.llama_embeddings_hijack import (
+    #         replace_llama_embeddings_with_uniform_distribution,
+    #     )
+    #
+    #     LOG.info("patching with noisy embeddings")
+    #     replace_llama_embeddings_with_uniform_distribution(
+    #         noise_alpha=cfg.noisy_embedding_alpha
+    #     )
+    #
     if cfg.is_mistral_derived_model and cfg.noisy_embedding_alpha:
         from axolotl.monkeypatch.mistral_embeddings_hijack import (
             replace_mistral_embeddings_with_uniform_distribution,
