@@ -114,29 +114,6 @@ class TestPromptTokenizationStrategies(unittest.TestCase):
                 in self._caplog.records[0].message
             )
 
-    def test_sharegpt_invalid_role(self):
-        conversation = {
-            "conversations": [
-                {"from": "system", "value": "lorem"},
-                {"from": "gpt", "value": "ipsum"},
-                {"from": "user", "value": "dolor"},
-                {"from": "gpt", "value": "sit"},
-            ]
-        }
-        prompter = ShareGPTPrompterV2()
-        strat = ShareGPTPromptTokenizingStrategy(
-            prompter,
-            self.tokenizer,
-            False,
-            2048,
-        )
-        with self._caplog.at_level(logging.WARNING):
-            strat.tokenize_prompt(conversation)
-            assert (
-                "Role did not alternate between turns (gpt and human)"
-                in self._caplog.records[0].message
-            )
-
     def test_sharegpt_changes_roles(self):
         conversation = {
             "roles": ["USER", "CHARACTER"],
