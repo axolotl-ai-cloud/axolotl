@@ -180,6 +180,26 @@ def load_model(
         LOG.info("patching with flash attention")
         replace_mistral_attn_with_flash_attn(packed=cfg.sample_packing)
 
+    if cfg.is_llama_derived_model and cfg.noisy_embedding_alpha:
+        from axolotl.monkeypatch.llama_embeddings_hijack import (
+            replace_llama_embeddings_with_uniform_distribution,
+        )
+
+        LOG.info("patching with noisy embeddings")
+        replace_llama_embeddings_with_uniform_distribution(
+            noise_alpha=cfg.noisy_embedding_alpha
+        )
+
+    if cfg.is_mistral_derived_model and cfg.noisy_embedding_alpha:
+        from axolotl.monkeypatch.mistral_embeddings_hijack import (
+            replace_mistral_embeddings_with_uniform_distribution,
+        )
+
+        LOG.info("patching with noisy embeddings")
+        replace_mistral_embeddings_with_uniform_distribution(
+            noise_alpha=cfg.noisy_embedding_alpha
+        )
+
     if cfg.is_llama_derived_model and cfg.xpos_rope:
         from axolotl.monkeypatch.xpos_rope_llama_monkey_patch import (
             replace_llama_rope_with_xpos_rope,
