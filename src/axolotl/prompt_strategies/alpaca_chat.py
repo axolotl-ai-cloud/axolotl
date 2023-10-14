@@ -1,6 +1,6 @@
-"""Module containing the AlpacaQAPromptTokenizingStrategy class"""
+"""Module for Alpaca prompt strategy classes"""
 
-from typing import Tuple
+from typing import Any, Dict, Optional, Tuple
 
 from axolotl.prompt_tokenizers import (
     AlpacaPromptTokenizingStrategy,
@@ -9,9 +9,13 @@ from axolotl.prompt_tokenizers import (
 from axolotl.prompters import AlpacaPrompter, PromptStyle, UnpromptedPrompter
 
 
-def load(tokenizer, cfg):
+def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
+    prompt_style = PromptStyle.CHAT.value
+    if ds_cfg and "conversation" in ds_cfg:
+        prompt_style = ds_cfg["conversation"]
+
     return AlpacaPromptTokenizingStrategy(
-        AlpacaPrompter(PromptStyle.CHAT.value),
+        AlpacaPrompter(prompt_style),
         tokenizer,
         cfg.train_on_inputs,
         cfg.sequence_len,
