@@ -297,7 +297,13 @@ Have dataset(s) in one of the following format (JSONL recommended):
 
 #### How to add custom prompts
 
-If you want an input/output type of format, you can define a custom prompt in your YAML:
+For a dataset that is preprocessed for instruction purposes:
+
+```json
+{"instruction": "...", "output": "..."}
+```
+
+You can use this example in your YAML config:
 
 ```yaml
 datasets:
@@ -305,19 +311,8 @@ datasets:
     type:
       system_prompt: ""
       field_system: system
-      field_instruction: instruction
-      field_output: output
-      format: "### Instruction: \n{instruction}\n### Output: \n"
-      no_input_format: "### Instruction: \n{instruction}\n### Output: \n"
-```
-
-When you print this, it corresponds to the following. Notice the empty newline where generation output starts from:
-
-```
-### Instruction:
-{instruction}
-### Output:
-
+      format: "[INST] {instruction} [/INST]"
+      no_input_format: "[INST] {instruction} [/INST]"
 ```
 
 #### How to use your custom pretokenized dataset
