@@ -80,8 +80,15 @@ def _prepare_decoder_attention_mask(
     sliding_window,
 ):  # pylint: disable=unused-argument
     # [bsz, seq_len]
+    output_mask = None
     sliding_window_mask = None
-    if input_shape[-1] > 1:
+    
+    # NOTE: attention mask and sliding masks are only broadcastable in certain scenarios.
+    # Without attention_mask.shape[0] == 1, error will trigger after eval loss but only when wandb is enabled.
+    if attention_mask is not None and attention_mask.shape[0] != 1:
+        LOG.info("skipping sliding window mask, not broadcastable with attention mask")
+    
+    if input_shape[-1] > 1 and attention_mask is not None and attention_mask.shape[0] == 1:
         sliding_window_mask = _make_sliding_window_causal_mask(
             input_shape,
             inputs_embeds.dtype,
@@ -89,9 +96,11 @@ def _prepare_decoder_attention_mask(
             past_key_values_length=past_key_values_length,
             sliding_window=sliding_window,
         )
-    
-    return attention_mask if sliding_window_mask is None else attention_mask + sliding_window_mask
 
+    if attention_mask is not None and sliding_window_mask is not None:
+        output_mask = attention_mask + sliding_window_mask
+    
+    return output_mask
 
 def flashattn_forward(
     self: OriginalMistralAttention,
