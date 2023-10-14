@@ -297,24 +297,23 @@ Have dataset(s) in one of the following format (JSONL recommended):
 
 #### How to add custom prompts
 
-Using yaml. Example:
+For a dataset that is preprocessed for instruction purposes:
+
+```json
+{"instruction": "...", "output": "..."}
+```
+
+You can use this example in your YAML config:
+
 ```yaml
 datasets:
   - path: repo
     type:
       system_prompt: ""
-      no_input_format: |-
-        User: {instruction}<|end_of_turn|>
-        Assistant:
-      format: |-
-        User: {instruction}
-        {input}<|end_of_turn|>
-        Assistant:
+      field_system: system
+      format: "[INST] {instruction} [/INST]"
+      no_input_format: "[INST] {instruction} [/INST]"
 ```
-
-Using file:
-1. Add your method to a file in [prompt_strategies](src/axolotl/prompt_strategies). Please see other files as example.
-2. Use your custom file name as the dataset type `<prompt_strategies_file>.load_<load_fn>`.
 
 #### How to use your custom pretokenized dataset
 
