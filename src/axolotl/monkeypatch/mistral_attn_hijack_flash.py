@@ -15,8 +15,10 @@ from flash_attn.flash_attn_interface import (  # pylint: disable=ungrouped-impor
 )
 from transformers.modeling_outputs import BaseModelOutputWithPast
 from transformers.models.mistral.modeling_mistral import (
+    MistralAttention as OriginalMistralAttention,
+)
+from transformers.models.mistral.modeling_mistral import (
     MistralDecoderLayer as OriginalMistralDecoderLayer,
-    MistralAttention as OriginalMistralAttention
 )
 from transformers.models.mistral.modeling_mistral import apply_rotary_pos_emb, repeat_kv
 
@@ -42,6 +44,7 @@ def replace_mistral_attn_with_flash_attn(
             mistral_model_forward
         )
 
+
 def _make_sliding_window_causal_mask(
     input_ids_shape: torch.Size,
     dtype: torch.dtype,
@@ -66,8 +69,19 @@ def _make_sliding_window_causal_mask(
     mask = torch.log(mask).to(dtype)
 
     if past_key_values_length > 0:
-        mask = torch.cat([torch.zeros(tgt_len, past_key_values_length, dtype=dtype, device=device), mask], dim=-1)
-    return mask[None, None, :, :].expand(bsz, 1, tgt_len, tgt_len + past_key_values_length)
+        mask = torch.cat(
+            [
+                torch.zeros(
+                    tgt_len, past_key_values_length, dtype=dtype, device=device
+                ),
+                mask,
+            ],
+            dim=-1,
+        )
+    return mask[None, None, :, :].expand(
+        bsz, 1, tgt_len, tgt_len + past_key_values_length
+    )
+
 
 # Disable the transformation of the attention mask in LlamaModel as the flash attention
 # requires the attention mask to be the same as the key_padding_mask
@@ -82,13 +96,17 @@ def _prepare_decoder_attention_mask(
     # [bsz, seq_len]
     output_mask = None
     sliding_window_mask = None
-    
+
     # NOTE: attention mask and sliding masks are only broadcastable in certain scenarios.
     # Without attention_mask.shape[0] == 1, error will trigger after eval loss but only when wandb is enabled.
     if attention_mask is not None and attention_mask.shape[0] != 1:
         LOG.info("skipping sliding window mask, not broadcastable with attention mask")
-    
-    if input_shape[-1] > 1 and attention_mask is not None and attention_mask.shape[0] == 1:
+
+    if (
+        input_shape[-1] > 1
+        and attention_mask is not None
+        and attention_mask.shape[0] == 1
+    ):
         sliding_window_mask = _make_sliding_window_causal_mask(
             input_shape,
             inputs_embeds.dtype,
@@ -99,8 +117,9 @@ def _prepare_decoder_attention_mask(
 
     if attention_mask is not None and sliding_window_mask is not None:
         output_mask = attention_mask + sliding_window_mask
-    
+
     return output_mask
+
 
 def flashattn_forward(
     self: OriginalMistralAttention,
@@ -149,7 +168,10 @@ def flashattn_forward(
 
     if past_key_value is not None:
         # Activate slicing cache only if the config has a value `sliding_windows` attribute
-        if hasattr(self.config, "sliding_window") and kv_seq_len > self.config.sliding_window:
+        if (
+            hasattr(self.config, "sliding_window")
+            and kv_seq_len > self.config.sliding_window
+        ):
             slicing_tokens = kv_seq_len - self.config.sliding_window
 
             past_key = past_key_value[0]
@@ -165,7 +187,7 @@ def flashattn_forward(
                 )
 
             past_key_value = (past_key, past_value)
-        
+
         key_states = torch.cat([past_key_value[0], key_states], dim=2)
         value_states = torch.cat([past_key_value[1], value_states], dim=2)
 
@@ -193,7 +215,13 @@ def flashattn_forward(
         qkv = rearrange(qkv, "b s ... -> (b s) ...")
 
         output = flash_attn_varlen_qkvpacked_func(
-            qkv, cu_seqlens, max_seqlen, 0.0, softmax_scale=None, causal=True, window_size=window_size
+            qkv,
+            cu_seqlens,
+            max_seqlen,
+            0.0,
+            softmax_scale=None,
+            causal=True,
+            window_size=window_size,
         )
         output = rearrange(output, "(b s) ... -> b s ...", b=bsz)
     elif query_states.shape == key_states.shape:
@@ -219,7 +247,7 @@ def flashattn_forward(
             0.0,
             softmax_scale=None,
             causal=is_causal,
-            window_size=window_size
+            window_size=window_size,
         )
         output = output_pad_fn(output_unpad)
     else:
@@ -231,7 +259,7 @@ def flashattn_forward(
                 query_states,
                 torch.stack([key_states, value_states], 2),
                 causal=is_causal,
-                window_size=window_size
+                window_size=window_size,
             )
         else:
             (  # pylint: disable=unbalanced-tuple-unpacking
@@ -266,7 +294,7 @@ def flashattn_forward(
                 0.0,
                 softmax_scale=None,
                 causal=is_causal,
-                window_size=window_size
+                window_size=window_size,
             )
             output = output_pad_fn(output_unpad)
 
