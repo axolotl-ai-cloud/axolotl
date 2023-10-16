@@ -94,19 +94,12 @@ def _prepare_decoder_attention_mask(
     sliding_window,
 ):  # pylint: disable=unused-argument
     # [bsz, seq_len]
-    output_mask = None
-    sliding_window_mask = None
+    if attention_mask is None:
+        return attention_mask
 
     # NOTE: attention mask and sliding masks are only broadcastable in certain scenarios.
     # Without attention_mask.shape[0] == 1, error will trigger after eval loss but only when wandb is enabled.
-    if attention_mask is not None and attention_mask.shape[0] != 1:
-        LOG.info("skipping sliding window mask, not broadcastable with attention mask")
-
-    if (
-        input_shape[-1] > 1
-        and attention_mask is not None
-        and attention_mask.shape[0] == 1
-    ):
+    if attention_mask.shape[0] == 1:
         sliding_window_mask = _make_sliding_window_causal_mask(
             input_shape,
             inputs_embeds.dtype,
@@ -114,11 +107,11 @@ def _prepare_decoder_attention_mask(
             past_key_values_length=past_key_values_length,
             sliding_window=sliding_window,
         )
+        attention_mask = attention_mask + sliding_window_mask
+    else:
+        LOG.info("skipping sliding window mask, not broadcastable with attention mask")
 
-    if attention_mask is not None and sliding_window_mask is not None:
-        output_mask = attention_mask + sliding_window_mask
-
-    return output_mask
+    return attention_mask
 
 
 def flashattn_forward(
@@ -161,10 +154,10 @@ def flashattn_forward(
         and kv_seq_len > self.config.sliding_window
     )
 
-    if use_sliding_windows:
-        window_size = (self.config.sliding_window, self.config.sliding_window)
-    else:
-        window_size = (-1, -1)
+    # if use_sliding_windows:
+    #     window_size = (self.config.sliding_window, self.config.sliding_window)
+    # else:
+    window_size = (-1, -1)
 
     if past_key_value is not None:
         # Activate slicing cache only if the config has a value `sliding_windows` attribute
@@ -186,10 +179,11 @@ def flashattn_forward(
                     f" {past_key.shape}"
                 )
 
-            past_key_value = (past_key, past_value)
+            past_key_value = (past_key, past_value) if use_cache else None
 
-        key_states = torch.cat([past_key_value[0], key_states], dim=2)
-        value_states = torch.cat([past_key_value[1], value_states], dim=2)
+        if past_key_value is not None:
+            key_states = torch.cat([past_key_value[0], key_states], dim=2)
+            value_states = torch.cat([past_key_value[1], value_states], dim=2)
 
     past_key_value = (key_states, value_states) if use_cache else None
 
