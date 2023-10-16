@@ -154,10 +154,10 @@ def flashattn_forward(
         and kv_seq_len > self.config.sliding_window
     )
 
-    # if use_sliding_windows:
-    #     window_size = (self.config.sliding_window, self.config.sliding_window)
-    # else:
-    window_size = (-1, -1)
+    if use_sliding_windows:
+        window_size = (self.config.sliding_window, self.config.sliding_window)
+    else:
+        window_size = (-1, -1)
 
     if past_key_value is not None:
         # Activate slicing cache only if the config has a value `sliding_windows` attribute
