@@ -101,10 +101,9 @@ def _prepare_decoder_attention_mask(
     # Without attention_mask.shape[0] == 1, error will trigger after eval loss but only when wandb is enabled.
     if input_shape[-1] > 1 and attention_mask.shape[0] == 1:
         sliding_window_mask = _make_sliding_window_causal_mask(
-            input_shape[0],
-            input_shape[1],
-            input_shape,
-            inputs_embeds.dtype,
+            bsz=input_shape[0],
+            tgt_len=input_shape[1],
+            dtype=inputs_embeds.dtype,
             device=inputs_embeds.device,
             past_key_values_length=past_key_values_length,
             sliding_window=sliding_window,
