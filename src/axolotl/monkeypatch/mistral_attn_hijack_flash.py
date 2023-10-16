@@ -45,8 +45,10 @@ def replace_mistral_attn_with_flash_attn(
         )
 
 
+@torch.jit.script
 def _make_sliding_window_causal_mask(
-    input_ids_shape: torch.Size,
+    bsz: int,
+    tgt_len: int,
     dtype: torch.dtype,
     device: torch.device,
     past_key_values_length: int = 0,
@@ -55,8 +57,6 @@ def _make_sliding_window_causal_mask(
     """
     Make causal mask used for sliding window attention
     """
-    bsz, tgt_len = input_ids_shape
-
     tensor = torch.full(
         (tgt_len, tgt_len),
         fill_value=1,
@@ -101,6 +101,8 @@ def _prepare_decoder_attention_mask(
     # Without attention_mask.shape[0] == 1, error will trigger after eval loss but only when wandb is enabled.
     if input_shape[-1] > 1 and attention_mask.shape[0] == 1:
         sliding_window_mask = _make_sliding_window_causal_mask(
+            input_shape[0],
+            input_shape[1],
             input_shape,
             inputs_embeds.dtype,
             device=inputs_embeds.device,
