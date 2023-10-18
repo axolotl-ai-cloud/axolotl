@@ -158,7 +158,7 @@ def load_tokenized_prepared_datasets(
                     token=use_auth_token,
                 )
                 ds_from_hub = True
-            except FileNotFoundError:
+            except (FileNotFoundError, ConnectionError):
                 pass
 
             # prefer local dataset, even if hub exists
