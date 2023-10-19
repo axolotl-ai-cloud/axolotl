@@ -144,7 +144,6 @@ def load_model(
 
             LOG.info("patching with flash attention for sample packing")
             replace_llama_attn_with_flash_attn(
-                sequence_len=cfg.sequence_len,
                 packed=cfg.sample_packing,
                 cross_entropy=cfg.flash_attn_cross_entropy,
                 rms_norm=cfg.flash_attn_rms_norm,

@@ -20,11 +20,6 @@ from transformers.models.llama.modeling_llama import apply_rotary_pos_emb, repea
 
 from axolotl.monkeypatch.utils import get_cu_seqlens_from_pos_ids
 
-RMSNORM_SEQ_LENS = [
-    256, 512, 768, 1024, 1280, 1536, 2048, 
-    2560, 3072, 4096, 5120, 6144, 7168, 8192
-]
-
 try:
     from flash_attn.flash_attn_interface import (  # pylint: disable=ungrouped-imports
         flash_attn_kvpacked_func,
@@ -80,7 +75,6 @@ def replace_llama_mlp_with_swiglu(model):
             set_module_name(model, name, mlp)
 
 def replace_llama_attn_with_flash_attn(
-    sequence_len: int,
     packed: Optional[bool] = False,
     cross_entropy: Optional[bool] = False,
     rms_norm: Optional[bool] = False,
@@ -111,10 +105,6 @@ def replace_llama_attn_with_flash_attn(
 
     # skip only if explicitly disabled
     if rms_norm:
-        if sequence_len not in RMSNORM_SEQ_LENS:
-            LOG.info(f"Max sequence len of {sequence_len} not supported, must be one of {str(RMSNORM_SEQ_LENS)}")
-            return
-
         try:
             from flash_attn.ops.rms_norm import RMSNorm
 
