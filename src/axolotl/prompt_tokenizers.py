@@ -355,7 +355,6 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
             for _, part in enumerate(
                 self.prompter.build_prompt(self.get_conversation_thread(prompt))
             ):
-
                 if not isinstance(part, tuple):
                     LOG.warning(f"expected tuple, got {part}")
                     continue
@@ -405,9 +404,7 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
                     # not masked out from labels
                     labels = copy.deepcopy(res["input_ids"])
                     len_role = len(role_res["input_ids"])
-                    labels[:len_role] = [IGNORE_TOKEN_ID] * min(
-                        len_role, len(labels)
-                    )
+                    labels[:len_role] = [IGNORE_TOKEN_ID] * min(len_role, len(labels))
                 elif role == "":
                     turn = content
                     # this is only ever the first part, should include the bos token and the user query
