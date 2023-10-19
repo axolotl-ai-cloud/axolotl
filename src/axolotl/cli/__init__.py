@@ -7,7 +7,9 @@ import random
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
-
+import json
+import time
+import requests
 import torch
 import yaml
 
@@ -79,7 +81,6 @@ def do_merge_lora(
         )
         tokenizer.save_pretrained(str(Path(cfg.output_dir) / "merged"))
 
-
 def do_inference(
     *,
     cfg: DictDefault,
@@ -110,12 +111,27 @@ def do_inference(
 
     model = model.to(cfg.device)
 
+    # the url of where we ask for new jobs
+    # as soon as we have finished the current job, we will ask for another one
+    # if this fails - it means there are no jobs so wait 1 second then ask again
+    getJobURL = os.environ.get("GET_JOB_URL", None)
+
+    if getJobURL is None:
+        sys.exit("GET_JOB_URL is not set")
+
     while True:
-        print("=" * 80)
+        response = requests.get(getJobURL)
+        if response.status_code != 200:
+              time.sleep(1)
+              continue
+        
+        job = json.loads(response.content)
+        
+        instruction: str = "[INST]what is an orange?[/INST]"
         # support for multiline inputs
-        instruction = get_multi_line_input()
-        if not instruction:
-            return
+        # instruction = get_multi_line_input()
+        # if not instruction:
+        #     return
         if prompter_module:
             prompt: str = next(
                 prompter_module().build_prompt(instruction=instruction.strip("\n"))
@@ -125,7 +141,9 @@ def do_inference(
         batch = tokenizer(prompt, return_tensors="pt", add_special_tokens=True)
 
         print("=" * 40)
+        print("about to eval")
         model.eval()
+        print("have done eval")
         with torch.no_grad():
             generation_config = GenerationConfig(
                 repetition_penalty=1.1,
@@ -151,8 +169,7 @@ def do_inference(
             )
         print("=" * 40)
         print(tokenizer.decode(generated["sequences"].cpu().tolist()[0]))
-
-
+      
 def choose_config(path: Path):
     yaml_files = list(path.glob("*.yml"))
 
