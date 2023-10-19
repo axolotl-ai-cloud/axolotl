@@ -10,9 +10,9 @@ from typing import Optional
 
 import torch
 import transformers.modelcard
-from transformers.deepspeed import is_deepspeed_zero3_enabled
 from datasets import Dataset
 from optimum.bettertransformer import BetterTransformer
+from transformers.deepspeed import is_deepspeed_zero3_enabled
 
 from axolotl.common.cli import TrainerCliArgs
 from axolotl.logging_config import configure_logging
