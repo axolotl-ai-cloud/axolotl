@@ -5,6 +5,7 @@ import logging
 import os
 import random
 import sys
+import io
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 import json
@@ -12,6 +13,7 @@ import time
 import requests
 import torch
 import yaml
+from contextlib import contextmanager
 
 # add src to the pythonpath so we don't need to pip install this
 from accelerate.commands.config import config_args
@@ -81,11 +83,47 @@ def do_merge_lora(
         )
         tokenizer.save_pretrained(str(Path(cfg.output_dir) / "merged"))
 
+@contextmanager
+def redirect_stdout_to_function(func, buffer_size=1024, sessionid=""):
+    class BufferedBytesStream(io.BytesIO):
+        def __init__(self, buffer_size):
+            super().__init__()
+            self.buffer_size = buffer_size
+            self.buffer = bytearray()
+        
+        def write(self, b):
+            self.buffer.extend(b)
+            while len(self.buffer) >= self.buffer_size:
+                chunk, self.buffer = self.buffer[:self.buffer_size], self.buffer[self.buffer_size:]
+                func(chunk, sessionid)
+
+    original_stdout = sys.stdout
+    sys.stdout = BufferedBytesStream(buffer_size)
+    
+    try:
+        yield
+    finally:
+        # Flush remaining bytes in buffer, if any
+        if len(sys.stdout.buffer) > 0:
+            func(sys.stdout.buffer)
+        sys.stdout = original_stdout
+
+def capture_model_output_chunk(b, sessionid):
+    print(f"Received bytes: {b}, size: {len(b)}, session: {sessionid}")
+        
 def do_inference(
     *,
     cfg: DictDefault,
     cli_args: TrainerCliArgs,
 ):
+    # the url of where we ask for new jobs
+    # as soon as we have finished the current job, we will ask for another one
+    # if this fails - it means there are no jobs so wait 1 second then ask again
+    getJobURL = os.environ.get("HELIX_GET_JOB_URL", None)
+
+    if getJobURL is None:
+        sys.exit("HELIX_GET_JOB_URL is not set")
+
     model, tokenizer = load_model_and_tokenizer(cfg=cfg, cli_args=cli_args)
     prompter = cli_args.prompter
     default_tokens = {"unk_token": "<unk>", "bos_token": "<s>", "eos_token": "</s>"}
@@ -111,23 +149,31 @@ def do_inference(
 
     model = model.to(cfg.device)
 
-    # the url of where we ask for new jobs
-    # as soon as we have finished the current job, we will ask for another one
-    # if this fails - it means there are no jobs so wait 1 second then ask again
-    getJobURL = os.environ.get("GET_JOB_URL", None)
-
-    if getJobURL is None:
-        sys.exit("GET_JOB_URL is not set")
-
     while True:
         response = requests.get(getJobURL)
         if response.status_code != 200:
               time.sleep(0.1)
               continue
         
-        job = json.loads(response.content)
+        # print out the response content to stdout
+        print("--------------------------------------------------\n")
+        print("--------------------------------------------------\n")
+        print("--------------------------------------------------\n")
+        print("--------------------------------------------------\n")
+        print("--------------------------------------------------\n")
+        print("--------------------------------------------------\n")
+        print("--------------------------------------------------\n")
+        print(response.content)
+        print("--------------------------------------------------\n")
+        print("--------------------------------------------------\n")
+        print("--------------------------------------------------\n")
+        print("--------------------------------------------------\n")
+        print("--------------------------------------------------\n")
+        print("--------------------------------------------------\n")
         
-        instruction: str = "[INST]what is an orange?[/INST]"
+        task = json.loads(response.content)
+        
+        instruction: str = task["prompt"]
         # support for multiline inputs
         # instruction = get_multi_line_input()
         # if not instruction:
@@ -139,11 +185,8 @@ def do_inference(
         else:
             prompt = instruction.strip()
         batch = tokenizer(prompt, return_tensors="pt", add_special_tokens=True)
-
-        print("=" * 40)
-        print("about to eval")
         model.eval()
-        print("have done eval")
+
         with torch.no_grad():
             generation_config = GenerationConfig(
                 repetition_penalty=1.1,
@@ -162,13 +205,14 @@ def do_inference(
                 output_scores=False,
             )
             streamer = TextStreamer(tokenizer)
-            generated = model.generate(
-                inputs=batch["input_ids"].to(cfg.device),
-                generation_config=generation_config,
-                streamer=streamer,
-            )
-        print("=" * 40)
-        print(tokenizer.decode(generated["sequences"].cpu().tolist()[0]))
+            with redirect_stdout_to_function(capture_model_output_chunk, buffer_size=20, sessionid=task["session_id"]):
+                generated = model.generate(
+                    inputs=batch["input_ids"].to(cfg.device),
+                    generation_config=generation_config,
+                    streamer=streamer,
+                )
+                print("=" * 40)
+                print(tokenizer.decode(generated["sequences"].cpu().tolist()[0]))
       
 def choose_config(path: Path):
     yaml_files = list(path.glob("*.yml"))
