@@ -144,6 +144,7 @@ def load_model(
 
             LOG.info("patching with flash attention for sample packing")
             replace_llama_attn_with_flash_attn(
+                sequence_len=cfg.sequence_len,
                 packed=cfg.sample_packing,
                 cross_entropy=cfg.flash_attn_cross_entropy,
                 rms_norm=cfg.flash_attn_rms_norm,
@@ -272,6 +273,12 @@ def load_model(
                 load_in_4bit=cfg.load_in_4bit and cfg.adapter is not None,
                 **model_kwargs,
             )
+
+            LOG.info("patching with SwiGLU")
+            from axolotl.monkeypatch.llama_attn_hijack_flash import (
+                replace_llama_mlp_with_swiglu,
+            )
+            replace_llama_mlp_with_swiglu(model)
         # elif model_type == "GPTNeoXForCausalLM" and cfg.flash_attention:
         #     This is a WIP, still an issue with the backward pass
         #     RuntimeError: grad can be implicitly created only for scalar outputs

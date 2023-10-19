@@ -1,5 +1,6 @@
 """Prepare and train a model on a dataset. Can also infer from a model or merge lora"""
 
+import time
 import logging
 import os
 import signal
@@ -42,7 +43,7 @@ def train(
     *,
     cfg: DictDefault,
     cli_args: TrainerCliArgs,
-    dataset_meta: TrainDatasetMeta,
+    dataset_meta: TrainDatasetMeta
 ):
     # load the tokenizer first
     LOG.info(f"loading tokenizer... {cfg.tokenizer_config or cfg.base_model_config}")
@@ -109,6 +110,7 @@ def train(
     if cfg.group_by_length:
         LOG.info("hang tight... sorting dataset for group_by_length")
 
+    t_start = time.time()
     if cfg.flash_optimum:
         with torch.backends.cuda.sdp_kernel(
             enable_flash=True, enable_math=True, enable_mem_efficient=True
@@ -116,7 +118,9 @@ def train(
             trainer.train(resume_from_checkpoint=resume_from_checkpoint)
     else:
         trainer.train(resume_from_checkpoint=resume_from_checkpoint)
+    t_elapsed = time.time() - t_start
 
+    LOG.info(f"Time per step: {t_elapsed/cfg['max_steps']:.2f} seconds")
     LOG.info(f"Training Completed!!! Saving pre-trained model to {cfg.output_dir}")
 
     if trainer.is_fsdp_enabled:

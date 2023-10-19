@@ -20,6 +20,11 @@ from transformers.models.llama.modeling_llama import apply_rotary_pos_emb, repea
 
 from axolotl.monkeypatch.utils import get_cu_seqlens_from_pos_ids
 
+RMSNORM_SEQ_LENS = [
+    256, 512, 768, 1024, 1280, 1536, 2048, 
+    2560, 3072, 4096, 5120, 6144, 7168, 8192
+]
+
 try:
     from flash_attn.flash_attn_interface import (  # pylint: disable=ungrouped-imports
         flash_attn_kvpacked_func,
@@ -37,8 +42,45 @@ except ImportError:
 
 LOG = logging.getLogger("axolotl")
 
+def set_module_name(model, name, value):
+    if '.' in name:
+        parent_name = name.rsplit('.', 1)[0]
+        child_name = name[len(parent_name) + 1:]
+        parent = model.get_submodule(parent_name)
+    else:
+        parent_name = ''
+        parent = model
+        child_name = name
+
+    setattr(parent, child_name, value)
+
+def replace_llama_mlp_with_swiglu(model):
+    from xformers.ops import SwiGLU
+    from transformers.models.llama.modeling_llama import LlamaMLP
+
+    class MLP(torch.nn.Module):
+        def __init__(self, config, gate_proj: torch.nn.Linear, up_proj: torch.nn.Linear, down_proj: torch.nn.Linear):
+            super().__init__()
+            self.config = config
+            self.swiglu = SwiGLU(
+                in_features=config.hidden_size,
+                hidden_features=config.intermediate_size,
+                bias=False,
+                _pack_weights=True
+            )
+            self.swiglu.w12.weight.data = torch.cat((gate_proj.weight.data, up_proj.weight.data), dim=0)
+            self.swiglu.w3.weight.data = down_proj.weight.data
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            return self.swiglu(x)
+    
+    for name, module in model.named_modules():
+        if isinstance(module, LlamaMLP):
+            mlp = MLP(module.config, module.gate_proj, module.up_proj, module.down_proj)
+            set_module_name(model, name, mlp)
 
 def replace_llama_attn_with_flash_attn(
+    sequence_len: int,
     packed: Optional[bool] = False,
     cross_entropy: Optional[bool] = False,
     rms_norm: Optional[bool] = False,
@@ -69,6 +111,10 @@ def replace_llama_attn_with_flash_attn(
 
     # skip only if explicitly disabled
     if rms_norm:
+        if sequence_len not in RMSNORM_SEQ_LENS:
+            LOG.info(f"Max sequence len of {sequence_len} not supported, must be one of {str(RMSNORM_SEQ_LENS)}")
+            return
+
         try:
             from flash_attn.ops.rms_norm import RMSNorm
 
