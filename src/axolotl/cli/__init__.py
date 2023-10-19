@@ -122,7 +122,7 @@ def do_inference(
     while True:
         response = requests.get(getJobURL)
         if response.status_code != 200:
-              time.sleep(1)
+              time.sleep(0.1)
               continue
         
         job = json.loads(response.content)
