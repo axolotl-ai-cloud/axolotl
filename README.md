@@ -901,6 +901,8 @@ CUDA_VISIBLE_DEVICES="" python3 -m axolotl.cli.merge_lora ...
 
 ## Common Errors 🧰
 
+See also the [FAQ's](./docs/faq.md).
+
 > If you encounter a 'Cuda out of memory' error, it means your GPU ran out of memory during the training process. Here's how to resolve it:
 
 Please reduce any below
