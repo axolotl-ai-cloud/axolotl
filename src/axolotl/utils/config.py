@@ -195,7 +195,7 @@ def validate_config(cfg):
     if not cfg.load_in_8bit and cfg.adapter == "lora":
         LOG.warning("We recommend setting `load_in_8bit: true` for LORA finetuning")
     
-    if cfg.adapter == "lora":
+    if cfg.adapter == "lora" and (cfg.flash_attn_fuse_qkv or cfg.flash_attn_fuse_mlp):
         raise ValueError('Fused modules are not supported with LoRA')
 
     if cfg.relora_steps:
