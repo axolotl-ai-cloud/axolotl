@@ -278,10 +278,11 @@ def load_model(
                     replace_llama_mlp_with_swiglu,
                     replace_llama_qkv_with_fused,
                 )
+
                 if cfg.flash_attn_fuse_mlp:
                     LOG.info("patching with SwiGLU")
                     replace_llama_mlp_with_swiglu(model)
-                    
+
                 if cfg.flash_attn_fuse_qkv:
                     LOG.info("patching with fused QKV")
                     replace_llama_qkv_with_fused(model)

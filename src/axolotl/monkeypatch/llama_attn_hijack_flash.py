@@ -158,8 +158,9 @@ class FusedAttention(LlamaAttention):
 
 class FusedMLP(torch.nn.Module):
     """
-        Fused MLP layer for incrementally improved training efficiency
+    Fused MLP layer for incrementally improved training efficiency
     """
+
     def __init__(
         self,
         config,
