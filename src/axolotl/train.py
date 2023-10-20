@@ -123,6 +123,11 @@ def train(
     LOG.info(f"Time per step: {t_elapsed/cfg['max_steps']:.2f} seconds")
     LOG.info(f"Training Completed!!! Saving pre-trained model to {cfg.output_dir}")
 
+    # post training
+    for name, module in model.named_modules():
+        if hasattr(module, "_post_training"):
+            module._post_training(model, name)
+
     if trainer.is_fsdp_enabled:
         trainer.accelerator.state.fsdp_plugin.set_state_dict_type("FULL_STATE_DICT")
         LOG.info("Set FSDP state dict type to FULL_STATE_DICT for saving.")
