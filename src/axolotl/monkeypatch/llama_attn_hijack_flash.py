@@ -58,7 +58,7 @@ def replace_llama_qkv_with_fused(model):
                 module.q_proj, 
                 module.k_proj, 
                 module.v_proj, 
-                module.o_proj
+                module.o_proj,
             )
             set_module_name(model, name, qkv)
 
@@ -117,7 +117,7 @@ class FusedAttention(LlamaAttention):
         q: torch.nn.Linear,
         k: torch.nn.Linear,
         v: torch.nn.Linear,
-        o: torch.nn.Linear
+        o: torch.nn.Linear,
     ):
         super().__init__(config)
         self.config = config
@@ -154,7 +154,7 @@ class FusedMLP(torch.nn.Module):
         config,
         gate_proj: torch.nn.Linear,
         up_proj: torch.nn.Linear,
-        down_proj: torch.nn.Linear
+        down_proj: torch.nn.Linear,
     ):
         super().__init__()
         self.config = config
