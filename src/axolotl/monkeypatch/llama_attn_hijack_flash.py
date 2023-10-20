@@ -161,8 +161,9 @@ def flashattn_forward(
 
     else:
         if isinstance(self, FusedAttention):
-            qkv = self.qkv_proj(hidden_states)
-            query_states, key_states, value_states = torch.split(qkv, self.out_features, dim=-1)
+            query_states, key_states, value_states = self.qkv_proj(
+                hidden_states
+            ).split(self.out_features, dim=-1)
         else:
             query_states = self.q_proj(hidden_states)
             key_states = self.k_proj(hidden_states)
