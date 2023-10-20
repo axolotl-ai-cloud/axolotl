@@ -48,7 +48,7 @@ def replace_llama_mlp_with_swiglu(model):
 def replace_llama_qkv_with_fused(model):
     for name, module in model.named_modules():
         if isinstance(module, LlamaAttention):
-            qkv = FusedAttention(module.config, module.q_proj, module.k_proj, module.k_proj, module.o_proj)
+            qkv = FusedAttention(module.config, module.q_proj, module.k_proj, module.v_proj, module.o_proj)
             set_module_name(model, name, qkv)
 
 def replace_llama_attn_with_flash_attn(
