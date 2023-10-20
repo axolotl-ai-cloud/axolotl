@@ -12,8 +12,8 @@ datasets:
   - path: mhenrichsen/alpaca_2k_test
     type: alpaca
 dataset_prepared_path: last_run_prepared
-val_set_size: 0.001
-output_dir: /tmp/out
+val_set_size: 0.01
+output_dir: ./out
 
 sequence_len: 4096
 sample_packing: true
@@ -53,8 +53,10 @@ local_rank:
 logging_steps: 1
 xformers_attention:
 flash_attention: true
-flash_attn_cross_entropy: False
-flash_attn_rms_norm: False
+flash_attn_cross_entropy: false
+flash_attn_rms_norm: true
+flash_attn_fuse_qkv: false
+flash_attn_fuse_mlp: true
 
 warmup_steps: 100
 eval_steps: 0.05
