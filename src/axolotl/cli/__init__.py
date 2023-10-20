@@ -126,7 +126,7 @@ def capture_model_output_chunk(url, session_id, b):
     global currentOutputChunks
     message = b.decode('utf-8')
     currentOutputChunks = currentOutputChunks + message
-    send_response(url, session_id, "chunk", message)
+    send_response(url, session_id, "continue", message)
 
 def do_inference(
     *,
@@ -192,7 +192,7 @@ def do_inference(
         task = json.loads(response.content)
         instruction: str = task["prompt"]
 
-        send_response(respondJobURL, task["session_id"], "start", "")
+        send_response(respondJobURL, task["session_id"], "begin", "")
         
         if prompter_module:
             prompt: str = next(
