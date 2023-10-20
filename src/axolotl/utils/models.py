@@ -273,7 +273,7 @@ def load_model(
                 **model_kwargs,
             )
 
-            if cfg.flash_attention:
+            if cfg.flash_attention and not inference:
                 from axolotl.monkeypatch.llama_attn_hijack_flash import (
                     replace_llama_mlp_with_swiglu,
                     replace_llama_qkv_with_fused,
