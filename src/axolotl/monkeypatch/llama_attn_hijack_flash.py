@@ -5,7 +5,7 @@
 import logging
 import warnings
 from functools import partial
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union, Callable
 
 import torch
 import torch.nn.functional as F
@@ -50,7 +50,84 @@ def set_module_name(model, name, value):
     setattr(parent, child_name, value)
 
 from xformers.ops import SwiGLU
-from transformers.models.llama.modeling_llama import LlamaMLP
+from transformers.models.llama.modeling_llama import (
+    LlamaMLP, 
+    LlamaAttention,
+    LlamaRotaryEmbedding, 
+    LlamaLinearScalingRotaryEmbedding, 
+    LlamaDynamicNTKScalingRotaryEmbedding,
+)
+
+class FusedAttention(torch.nn.Module):
+    def __init__(self, config, forward: Callable, q: torch.nn.Linear, k: torch.nn.Linear, v: torch.nn.Linear):
+        super().__init__()
+        self.config = config
+        self.forward_fn = forward
+        self.hidden_size = config.hidden_size
+        self.num_heads = config.num_attention_heads
+        self.head_dim = self.hidden_size // self.num_heads
+        self.num_key_value_heads = config.num_key_value_heads
+        self.num_key_value_groups = self.num_heads // self.num_key_value_heads
+        self.max_position_embeddings = config.max_position_embeddings
+        self.rope_theta = config.rope_theta
+        self.init_device = next(iter(q.state_dict().values())).device
+        self._init_rope()
+
+        if (self.head_dim * self.num_heads) != self.hidden_size:
+            raise ValueError(
+                f"hidden_size must be divisible by num_heads (got `hidden_size`: {self.hidden_size}"
+                f" and `num_heads`: {self.num_heads})."
+            )
+
+        # define equivalent fused qkv projection
+        self.out_features: List[int] = [q.out_features, k.out_features, v.out_features]
+        self.qkv_proj = torch.nn.Linear(q.in_features, sum(self.out_features), device=self.init_device)
+
+        # overwrite initialized weights with pretrained weights
+        self.qkv_proj.weight.data = torch.cat((q.weight.data, k.weight.data, v.weight.data), dim=0)
+    
+    def _init_rope(self):
+        if self.config.rope_scaling is None:
+            self.rotary_emb = LlamaRotaryEmbedding(
+                self.head_dim,
+                max_position_embeddings=self.max_position_embeddings,
+                base=self.rope_theta,
+                device=self.init_device,
+            )
+        else:
+            scaling_type = self.config.rope_scaling["type"]
+            scaling_factor = self.config.rope_scaling["factor"]
+            if scaling_type == "linear":
+                self.rotary_emb = LlamaLinearScalingRotaryEmbedding(
+                    self.head_dim,
+                    max_position_embeddings=self.max_position_embeddings,
+                    scaling_factor=scaling_factor,
+                    base=self.rope_theta,
+                    device=self.init_device,
+                )
+            elif scaling_type == "dynamic":
+                self.rotary_emb = LlamaDynamicNTKScalingRotaryEmbedding(
+                    self.head_dim,
+                    max_position_embeddings=self.max_position_embeddings,
+                    scaling_factor=scaling_factor,
+                    base=self.rope_theta,
+                    device=self.init_device,
+                )
+            else:
+                raise ValueError(f"Unknown RoPE scaling type {scaling_type}")
+    
+    def _post_training(self, model, name):
+        q_proj, k_proj, v_proj = torch.split(self.qkv_proj.weight.data, self.out_features, dim=0)
+
+        new_attn = LlamaAttention(self.config)
+        new_attn.q_proj.weight.data = q_proj
+        new_attn.k_proj.weight.data = k_proj
+        new_attn.v_proj.weight.data = v_proj
+
+        set_module_name(model, name, new_attn)
+    
+    def forward(self, *args, **kwargs):
+        return self.forward_fn(*args, **kwargs)
 
 class MLP(torch.nn.Module):
     def __init__(self, config, gate_proj: torch.nn.Linear, up_proj: torch.nn.Linear, down_proj: torch.nn.Linear):
@@ -85,6 +162,12 @@ def replace_llama_mlp_with_swiglu(model):
         if isinstance(module, LlamaMLP):
             mlp = MLP(module.config, module.gate_proj, module.up_proj, module.down_proj)
             set_module_name(model, name, mlp)
+
+def replace_llama_qkv_with_fused(model):
+    for name, module in model.named_modules():
+        if isinstance(module, LlamaAttention):
+            qkv = FusedAttention(module.config, module.forward, module.q_proj, module.k_proj, module.k_proj)
+            set_module_name(model, name, qkv)
 
 def replace_llama_attn_with_flash_attn(
     packed: Optional[bool] = False,
@@ -195,9 +278,13 @@ def flashattn_forward(
         value_states = torch.cat(value_states, dim=-1)
 
     else:
-        query_states = self.q_proj(hidden_states)
-        key_states = self.k_proj(hidden_states)
-        value_states = self.v_proj(hidden_states)
+        if isinstance(self, FusedAttention):
+            qkv_states = self.qkv_proj(hidden_states)
+            query_states, key_states, value_states = torch.chunk(qkv_states, 3, dim=-1)
+        else:
+            query_states = self.q_proj(hidden_states)
+            key_states = self.k_proj(hidden_states)
+            value_states = self.v_proj(hidden_states)
 
     query_states = query_states.view(
         bsz, q_len, self.num_heads, self.head_dim
