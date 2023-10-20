@@ -54,10 +54,10 @@ def replace_llama_qkv_with_fused(model):
     for name, module in model.named_modules():
         if isinstance(module, LlamaAttention):
             qkv = FusedAttention(
-                module.config, 
-                module.q_proj, 
-                module.k_proj, 
-                module.v_proj, 
+                module.config,
+                module.q_proj,
+                module.k_proj,
+                module.v_proj,
                 module.o_proj,
             )
             set_module_name(model, name, qkv)
