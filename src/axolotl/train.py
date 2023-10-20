@@ -39,10 +39,7 @@ class TrainDatasetMeta:
 
 
 def train(
-    *,
-    cfg: DictDefault,
-    cli_args: TrainerCliArgs,
-    dataset_meta: TrainDatasetMeta
+    *, cfg: DictDefault, cli_args: TrainerCliArgs, dataset_meta: TrainDatasetMeta
 ):
     # load the tokenizer first
     LOG.info(f"loading tokenizer... {cfg.tokenizer_config or cfg.base_model_config}")

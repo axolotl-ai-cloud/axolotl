@@ -190,13 +190,13 @@ def validate_config(cfg):
                 raise ValueError("Require cfg.load_in_4bit to be True for qlora")
         
         if cfg.flash_attn_fuse_qkv or cfg.flash_attn_fuse_mlp:
-            raise ValueError('Fused modules are not supported with QLoRA')
+            raise ValueError("Fused modules are not supported with QLoRA")
 
     if not cfg.load_in_8bit and cfg.adapter == "lora":
         LOG.warning("We recommend setting `load_in_8bit: true` for LORA finetuning")
     
     if cfg.adapter == "lora" and (cfg.flash_attn_fuse_qkv or cfg.flash_attn_fuse_mlp):
-        raise ValueError('Fused modules are not supported with LoRA')
+        raise ValueError("Fused modules are not supported with LoRA")
 
     if cfg.relora_steps:
         if cfg.adapter not in ("lora", "qlora"):
@@ -212,7 +212,7 @@ def validate_config(cfg):
             raise ValueError("ReLoRA is not compatible with the one_cycle scheduler")
 
         if cfg.flash_attn_fuse_qkv or cfg.flash_attn_fuse_mlp:
-            raise ValueError('Fused modules are not supported with ReLoRA')
+            raise ValueError("Fused modules are not supported with ReLoRA")
 
     if cfg.trust_remote_code:
         LOG.warning(

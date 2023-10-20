@@ -103,12 +103,12 @@ def get_cu_seqlens_from_pos_ids(position_ids):
     return torch.stack(results).to(dtype=torch.int32), torch.stack(max_seq_lens)
 
 def set_module_name(model, name, value):
-    if '.' in name:
-        parent_name = name.rsplit('.', 1)[0]
-        child_name = name[len(parent_name) + 1:]
+    if "." in name:
+        parent_name = name.rsplit(".", 1)[0]
+        child_name = name[len(parent_name) + 1 :]
         parent = model.get_submodule(parent_name)
     else:
-        parent_name = ''
+        parent_name = ""
         parent = model
         child_name = name
 
