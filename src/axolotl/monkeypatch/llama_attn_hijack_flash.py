@@ -23,6 +23,7 @@ from transformers.models.llama.modeling_llama import (
     repeat_kv,
 )
 from xformers.ops import SwiGLU
+
 from axolotl.monkeypatch.utils import get_cu_seqlens_from_pos_ids, set_module_name
 
 try:
@@ -42,6 +43,7 @@ except ImportError:
 
 LOG = logging.getLogger("axolotl")
 
+
 def replace_llama_mlp_with_swiglu(model):
     for name, module in model.named_modules():
         if isinstance(module, LlamaMLP):
@@ -49,6 +51,7 @@ def replace_llama_mlp_with_swiglu(model):
                 module.config, module.gate_proj, module.up_proj, module.down_proj
             )
             set_module_name(model, name, mlp)
+
 
 def replace_llama_qkv_with_fused(model):
     for name, module in model.named_modules():
@@ -61,6 +64,7 @@ def replace_llama_qkv_with_fused(model):
                 module.o_proj,
             )
             set_module_name(model, name, qkv)
+
 
 def replace_llama_attn_with_flash_attn(
     packed: Optional[bool] = False,
@@ -111,13 +115,17 @@ def replace_llama_attn_with_flash_attn(
 
 
 class FusedAttention(LlamaAttention):
+    """
+    Fused QKV Attention layer for incrementally improved training efficiency
+    """
+
     def __init__(
         self,
         config,
-        q: torch.nn.Linear,
-        k: torch.nn.Linear,
-        v: torch.nn.Linear,
-        o: torch.nn.Linear,
+        q: torch.nn.Linear,  # pylint: disable=invalid-name
+        k: torch.nn.Linear,  # pylint: disable=invalid-name
+        v: torch.nn.Linear,  # pylint: disable=invalid-name
+        o: torch.nn.Linear,  # pylint: disable=invalid-name
     ):
         super().__init__(config)
         self.config = config
@@ -134,7 +142,7 @@ class FusedAttention(LlamaAttention):
         self.qkv_proj.weight.data = torch.cat(
             (q.weight.data, k.weight.data, v.weight.data), dim=0
         )
-    
+
     def _post_training(self, model, name):
         q_proj, k_proj, v_proj = torch.split(
             self.qkv_proj.weight.data, self.out_features, dim=0
@@ -149,6 +157,9 @@ class FusedAttention(LlamaAttention):
 
 
 class FusedMLP(torch.nn.Module):
+    """
+        Fused MLP layer for incrementally improved training efficiency
+    """
     def __init__(
         self,
         config,
@@ -169,9 +180,9 @@ class FusedMLP(torch.nn.Module):
             (gate_proj.weight.data, up_proj.weight.data), dim=0
         )
         self.swiglu.w3.weight.data = down_proj.weight.data
-    
+
     def _post_training(self, model, name):
-        w1, w2 = torch.split(
+        w1, w2 = torch.split(  # pylint: disable=invalid-name
             self.swiglu.w12.weight.data, self.config.intermediate_size, dim=0
         )
 
@@ -183,7 +194,7 @@ class FusedMLP(torch.nn.Module):
 
         set_module_name(model, name, new_mlp)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor) -> torch.Tensor:  # pylint: disable=invalid-name
         return self.swiglu(x)
 
 
