@@ -9,12 +9,16 @@ gradient_accumulation_steps: 2
 micro_batch_size: 1
 
 ```shell
-accelerate launch scripts/finetune.py examples/llama-2/qlora.yml
-
+accelerate launch -m axolotl.cli.train examples/llama-2/qlora.yml
 ```
 or
 
 ```shell
-accelerate launch scripts/finetune.py examples/llama-2/lora.yml
+accelerate launch -m axolotl.cli.train examples/llama-2/lora.yml
+```
 
+To launch a full finetuning with 16-bit precision:
+
+```shell
+accelerate launch -m axolotl.cli.train examples/llama-2/fft_optimized.yml
 ```
