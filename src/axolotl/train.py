@@ -40,10 +40,7 @@ class TrainDatasetMeta:
 
 
 def train(
-    *,
-    cfg: DictDefault,
-    cli_args: TrainerCliArgs,
-    dataset_meta: TrainDatasetMeta,
+    *, cfg: DictDefault, cli_args: TrainerCliArgs, dataset_meta: TrainDatasetMeta
 ):
     # load the tokenizer first
     LOG.info(f"loading tokenizer... {cfg.tokenizer_config or cfg.base_model_config}")
@@ -119,6 +116,11 @@ def train(
         trainer.train(resume_from_checkpoint=resume_from_checkpoint)
 
     LOG.info(f"Training Completed!!! Saving pre-trained model to {cfg.output_dir}")
+
+    # post training
+    for name, module in model.named_modules():
+        if hasattr(module, "_post_training"):
+            module._post_training(model, name)  # pylint: disable=protected-access
 
     if trainer.is_fsdp_enabled:
         trainer.accelerator.state.fsdp_plugin.set_state_dict_type("FULL_STATE_DICT")
