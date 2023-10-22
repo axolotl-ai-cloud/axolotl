@@ -606,3 +606,46 @@ class ValidationTest(unittest.TestCase):
         )
 
         validate_config(cfg)
+
+    def test_load_in_x_bit_without_adapter(self):
+        cfg = DictDefault(
+            {
+                "load_in_4bit": True,
+            }
+        )
+
+        with pytest.raises(
+            ValueError,
+            match=r".*load_in_8bit and load_in_4bit are not supported without setting an adapter.*",
+        ):
+            validate_config(cfg)
+
+        cfg = DictDefault(
+            {
+                "load_in_8bit": True,
+            }
+        )
+
+        with pytest.raises(
+            ValueError,
+            match=r".*load_in_8bit and load_in_4bit are not supported without setting an adapter.*",
+        ):
+            validate_config(cfg)
+
+        cfg = DictDefault(
+            {
+                "load_in_4bit": True,
+                "adapter": "qlora",
+            }
+        )
+
+        validate_config(cfg)
+
+        cfg = DictDefault(
+            {
+                "load_in_8bit": True,
+                "adapter": "lora",
+            }
+        )
+
+        validate_config(cfg)
