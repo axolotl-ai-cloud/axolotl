@@ -152,6 +152,7 @@ class FusedAttention(LlamaAttention):
         new_attn.q_proj.weight.data = q_proj
         new_attn.k_proj.weight.data = k_proj
         new_attn.v_proj.weight.data = v_proj
+        new_attn.o_proj.weight.data = self.o_proj.weight.data
 
         set_module_name(model, name, new_attn)
 
