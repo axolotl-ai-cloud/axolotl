@@ -9,7 +9,7 @@ import numba
 import numpy as np
 from torch.utils.data import DistributedSampler, Sampler
 from queue import Queue
-from threading import Thread, Lock
+from threading import Thread
 
 LOG = logging.getLogger("axolotl.utils.dataloader")
 
@@ -151,8 +151,8 @@ class MultipackDistributedDataloader:
         packing_efficiency_estimate: float = 1.0,
         sample_packing_seq_len_multiplier: int = 1,
         device_count: int = 1,
-        num_threads: int = 1,
-        prefetch_max: int = 10,
+        num_threads: int = 4,
+        prefetch_max: int = 1000,
     ):
         # Dataset
         self.dataset = dataset
@@ -181,31 +181,27 @@ class MultipackDistributedDataloader:
         self.packing_efficiency_estimate = packing_efficiency_estimate or 1.0
         self.device_count = device_count
 
-        self.lock = Lock()
         self.queue = Queue(maxsize=prefetch_max)
         self.batches_indexed = set()
         self.done_count = 0
         self.num_threads = num_threads
+
+        # thread 0 gets batch 0, thread 1 gets batch 1
+        # thread 0 gets batch 2, thread 1 gets batch 3
+        # etc ...
+        self.worker_indices = [set(range(0, self.len_w_stats(), self.num_threads)) for i in range(self.num_threads)]
     
     def _worker(self, worker_id):
-        LOG.warning(f"[WORKER:{worker_id}] WORKER RUNNING!!!")
+        worker_indices = self.worker_indices[worker_id]
+        LOG.warning(f"[WORKER:{worker_id}] RUNNING - {len(worker_indices)} batches")
         for index, batch in enumerate(self._internal_batch_generator()):
-            with self.lock:
-                # O(1) complexity
-                if index not in self.batches_indexed:
-                    self.batches_indexed.add(index)
-                    should_add = True
-                else:
-                    should_add = False
-            
-            if should_add:
+            if index in worker_indices:
                 self.queue.put(batch)
 
         # stop the queue when all workers are done
-        with self.lock:
-            self.done_count += 1
-            if self.done_count == len(self.threads):
-                self.queue.put(None)
+        self.done_count += 1
+        if self.done_count == len(self.threads):
+            self.queue.put(None)
     
     def __iter__(self):
         LOG.warning("STARTING WORKERS!!!")
@@ -222,11 +218,12 @@ class MultipackDistributedDataloader:
             self.threads.append(thread)
 
         while True:
-            next_batch = self.queue.get()
-            if next_batch is None:
-                LOG.warning("DATALOADER STOPPED!!!")
+            item = self.queue.get()
+            if item is None:
                 break
-            yield next_batch
+            yield item
+        
+        LOG.warning("DATALOADER FINISHED!!!")
 
     def generate_batches(self, set_stats=False):
         LOG.info("generating packed batches")
