@@ -119,6 +119,9 @@ def normalize_config(cfg):
         or (cfg.model_type and "mistral" in cfg.model_type.lower())
     )
 
+    if isinstance(cfg.learning_rate, str):
+        cfg.learning_rate = float(cfg.learning_rate)
+
     log_gpu_memory_usage(LOG, "baseline", cfg.device)
 
 
