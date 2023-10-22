@@ -19,7 +19,7 @@ lora_fan_in_fan_out: false
 wandb_project:
 wandb_entity:
 wandb_watch:
-wandb_run_id:
+wandb_name:
 wandb_log_model:
 output_dir: ./jeopardy-bot-7b
 gradient_accumulation_steps: 1

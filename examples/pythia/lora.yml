@@ -18,7 +18,7 @@ lora_fan_in_fan_out: true  # pythia/GPTNeoX lora specific
 wandb_project:
 wandb_entity:
 wandb_watch:
-wandb_run_id:
+wandb_name:
 wandb_log_model:
 output_dir: ./lora-alpaca-pythia
 gradient_accumulation_steps: 1
