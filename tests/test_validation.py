@@ -565,3 +565,44 @@ class ValidationTest(unittest.TestCase):
         )
 
         validate_config(cfg)
+
+    def test_eval_table_size_conflict_eval_packing(self):
+        cfg = DictDefault(
+            {
+                "sample_packing": True,
+                "eval_table_size": 100,
+            }
+        )
+
+        with pytest.raises(
+            ValueError, match=r".*Please set 'eval_sample_packing' to false.*"
+        ):
+            validate_config(cfg)
+
+        cfg = DictDefault(
+            {
+                "sample_packing": True,
+                "eval_sample_packing": False,
+            }
+        )
+
+        validate_config(cfg)
+
+        cfg = DictDefault(
+            {
+                "sample_packing": False,
+                "eval_table_size": 100,
+            }
+        )
+
+        validate_config(cfg)
+
+        cfg = DictDefault(
+            {
+                "sample_packing": True,
+                "eval_table_size": 100,
+                "eval_sample_packing": False,
+            }
+        )
+
+        validate_config(cfg)
