@@ -79,6 +79,9 @@ def normalize_config(cfg):
 
     cfg.dataset_processes = cfg.dataset_processes or os.cpu_count()
 
+    if not cfg.base_model_config:
+        cfg.base_model_config = cfg.base_model
+
     model_config = load_model_config(cfg)
     cfg.model_config_type = model_config.model_type
 

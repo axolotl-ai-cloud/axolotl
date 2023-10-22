@@ -1,5 +1,4 @@
 base_model: codellama/CodeLlama-7b-hf
-base_model_config: codellama/CodeLlama-7b-hf
 model_type: LlamaForCausalLM
 tokenizer_type: CodeLlamaTokenizer
 is_llama_derived_model: true

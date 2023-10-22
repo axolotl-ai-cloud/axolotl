@@ -37,3 +37,10 @@ class NormalizeConfigTestCase(unittest.TestCase):
         normalize_config(cfg)
 
         assert cfg.learning_rate == 0.00005
+
+    def test_base_model_config_set_when_empty(self):
+        cfg = self._get_base_cfg()
+        del cfg.base_model_config
+        normalize_config(cfg)
+
+        assert cfg.base_model_config == cfg.base_model

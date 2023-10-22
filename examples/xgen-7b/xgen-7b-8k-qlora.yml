@@ -1,7 +1,6 @@
 # An example finetuning Saleforce's XGen-7b model with 8k context using qlora
 # on Tim Dettmer's Guanaco dataset.
 base_model: Salesforce/xgen-7b-8k-base
-base_model_config: Salesforce/xgen-7b-8k-base
 trust_remote_code: true
 model_type: AutoModelForCausalLM
 tokenizer_type: AutoTokenizer

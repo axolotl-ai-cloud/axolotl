@@ -29,7 +29,6 @@ class TestLoraLlama(unittest.TestCase):
         cfg = DictDefault(
             {
                 "base_model": "JackFram/llama-68m",
-                "base_model_config": "JackFram/llama-68m",
                 "tokenizer_type": "LlamaTokenizer",
                 "sequence_len": 1024,
                 "load_in_8bit": True,
@@ -72,7 +71,6 @@ class TestLoraLlama(unittest.TestCase):
         cfg = DictDefault(
             {
                 "base_model": "JackFram/llama-68m",
-                "base_model_config": "JackFram/llama-68m",
                 "tokenizer_type": "LlamaTokenizer",
                 "sequence_len": 1024,
                 "sample_packing": True,
@@ -117,7 +115,6 @@ class TestLoraLlama(unittest.TestCase):
         cfg = DictDefault(
             {
                 "base_model": "TheBlokeAI/jackfram_llama-68m-GPTQ",
-                "base_model_config": "TheBlokeAI/jackfram_llama-68m-GPTQ",
                 "model_type": "AutoModelForCausalLM",
                 "tokenizer_type": "LlamaTokenizer",
                 "sequence_len": 1024,

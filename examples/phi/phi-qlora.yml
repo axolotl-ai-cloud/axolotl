@@ -1,5 +1,4 @@
 base_model: microsoft/phi-1_5
-base_model_config: microsoft/phi-1_5
 model_type: AutoModelForCausalLM
 tokenizer_type: AutoTokenizer
 is_llama_derived_model: false

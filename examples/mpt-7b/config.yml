@@ -1,5 +1,4 @@
 base_model: mosaicml/mpt-7b
-base_model_config: mosaicml/mpt-7b
 tokenizer_type: AutoTokenizer
 trust_remote_code: true  # required for mpt as their model class is not merged into transformers yet
 load_in_8bit: false

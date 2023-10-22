@@ -1,5 +1,4 @@
 base_model: NousResearch/Llama-2-7b-hf
-base_model_config: NousResearch/Llama-2-7b-hf
 model_type: LlamaForCausalLM
 tokenizer_type: LlamaTokenizer
 is_llama_derived_model: true
