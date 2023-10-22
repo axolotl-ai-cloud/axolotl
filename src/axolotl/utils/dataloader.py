@@ -202,7 +202,7 @@ class MultipackDistributedDataloader:
     
     def _worker(self, worker_id):
         worker_indices = self.worker_indices[worker_id]
-        LOG.warning(f"[WORKER:{worker_id}] RUNNING - {len(worker_indices)} batches")
+        LOG.warning(f"[WORKER:{worker_id}] RUNNING - {len(worker_indices)*self.batch_size} samples")
         for index, sample in enumerate(self._internal_batch_generator()):
             if index in worker_indices:
                 if self.pin_memory:
