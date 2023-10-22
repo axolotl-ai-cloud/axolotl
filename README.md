@@ -819,7 +819,7 @@ accelerate launch -m axolotl.cli.train your_config.yml
 
 You can optionally pre-tokenize dataset with the following before finetuning:
 ```bash
-CUDA_VISIBLE_DEVICES="" accelerate launch -m axolotl.cli.train your_config.yml --prepare_ds_only
+CUDA_VISIBLE_DEVICES=0 accelerate launch -m axolotl.cli.train your_config.yml --prepare_ds_only
 ```
 
 ##### Config
