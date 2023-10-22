@@ -667,6 +667,13 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
     if cfg.ddp_broadcast_buffers is not None:
         training_arguments_kwargs["ddp_broadcast_buffers"] = cfg.ddp_broadcast_buffers
 
+    report_to = []
+    if cfg.use_wandb:
+        report_to.append("wandb")
+        training_arguments_kwargs["run_name"] = cfg.wandb_name
+    elif cfg.use_tensorboard:
+        report_to.append("tensorboard")
+
     training_args = AxolotlTrainingArguments(  # pylint: disable=unexpected-keyword-arg
         max_steps=total_num_steps if cfg.max_steps else -1,
         max_seq_length=cfg.sequence_len,
@@ -688,8 +695,7 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
         or False,
         ddp_find_unused_parameters=False if cfg.ddp else None,
         group_by_length=cfg.group_by_length,
-        report_to="wandb" if cfg.use_wandb else None,
-        run_name=cfg.wandb_run_id if cfg.use_wandb else None,
+        report_to=report_to,
         optim=cfg.optimizer if cfg.optimizer else "adamw_hf",
         lr_scheduler_type=cfg.lr_scheduler
         if cfg.lr_scheduler and cfg.lr_scheduler not in ("one_cycle", "log_sweep")

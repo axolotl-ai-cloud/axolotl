@@ -121,6 +121,9 @@ def normalize_config(cfg):
 
     log_gpu_memory_usage(LOG, "baseline", cfg.device)
 
+    if cfg.tensorboard:
+        cfg.use_tensorboard = True
+
 
 def validate_config(cfg):
     if is_torch_bf16_gpu_available():

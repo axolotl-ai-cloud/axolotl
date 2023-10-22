@@ -573,9 +573,12 @@ relora_cpu_offload: # True to perform lora weight merges on cpu during restarts,
 wandb_mode: # "offline" to save run metadata locally and not sync to the server, "disabled" to turn off wandb
 wandb_project: # Your wandb project name
 wandb_entity: # A wandb Team name if using a Team
-wandb_watch:
+wandb_watch: # Set whether to log your models gradients, parameters or neither
 wandb_run_id: # Set the name of your wandb run
 wandb_log_model: # "checkpoint" to log model to wandb Artifacts every `save_steps` or "end" to log only at the end of training
+
+# tensorboard
+tensorboard: # Set to true to enable
 
 # Where to save the full-finetuned model to
 output_dir: ./completed-model
