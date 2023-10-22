@@ -348,6 +348,15 @@ def validate_config(cfg):
             "eval_steps and evaluation_strategy are not supported with val_set_size == 0"
         )
 
+    if (
+        cfg.sample_packing
+        and cfg.eval_table_size
+        and cfg.eval_sample_packing is not False
+    ):
+        raise ValueError(
+            "eval_table_size and eval_sample_packing are not supported together with sample_packing. Please set 'eval_sample_packing' to false."
+        )
+
     # TODO
     # MPT 7b
     # https://github.com/facebookresearch/bitsandbytes/issues/25
