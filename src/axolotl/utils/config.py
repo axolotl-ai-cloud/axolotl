@@ -397,6 +397,14 @@ def validate_config(cfg):
             "Gradient checkpointing is broken for Qwen models for transformers>=4.35.0, except main branch."
         )
 
+    if cfg.wandb_run_id and len(cfg.wandb_run_id) > 0:
+        cfg.wandb_name = cfg.wandb_run_id
+        cfg.wandb_run_id = None
+
+        LOG.warning(
+            "wandb_run_id is not recommended anymore. Please use wandb_name instead."
+        )
+
     # TODO
     # MPT 7b
     # https://github.com/facebookresearch/bitsandbytes/issues/25
