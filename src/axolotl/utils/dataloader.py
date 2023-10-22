@@ -10,7 +10,7 @@ import numpy as np
 from torch.utils.data import DistributedSampler, Sampler
 from queue import Queue
 from threading import Thread
-
+import time
 LOG = logging.getLogger("axolotl.utils.dataloader")
 
 
@@ -182,7 +182,8 @@ class MultipackDistributedDataloader:
         self.packing_efficiency_estimate = packing_efficiency_estimate or 1.0
         self.device_count = device_count
 
-        self.queue = Queue(maxsize=prefetch_max)
+        # maxsize is maximum number of samples in queue
+        self.queue = Queue(maxsize=prefetch_max) 
         self.batches_indexed = set()
         self.done_count = 0
         self.num_threads = num_threads
@@ -207,6 +208,12 @@ class MultipackDistributedDataloader:
             if index in worker_indices:
                 if self.pin_memory:
                     sample = {k: torch.as_tensor(v).pin_memory() for k,v in sample.items()}
+
+                while True:
+                    if self.queue.full():
+                        time.sleep(1)
+                    else:
+                        break
                 self.queue.put(sample)
 
         # stop the queue when all workers are done
