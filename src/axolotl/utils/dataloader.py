@@ -4,7 +4,7 @@ import itertools
 import logging
 import math
 from typing import Any, Callable, List, Union
-
+import torch
 import numba
 import numpy as np
 from torch.utils.data import DistributedSampler, Sampler
@@ -153,6 +153,7 @@ class MultipackDistributedDataloader:
         device_count: int = 1,
         num_threads: int = 4,
         prefetch_max: int = 1000,
+        pin_memory: bool = True,
     ):
         # Dataset
         self.dataset = dataset
@@ -185,6 +186,7 @@ class MultipackDistributedDataloader:
         self.batches_indexed = set()
         self.done_count = 0
         self.num_threads = num_threads
+        self.pin_memory = pin_memory
 
         # thread 0 gets batch 0, thread 1 gets batch 1
         # thread 0 gets batch 2, thread 1 gets batch 3
@@ -194,9 +196,11 @@ class MultipackDistributedDataloader:
     def _worker(self, worker_id):
         worker_indices = self.worker_indices[worker_id]
         LOG.warning(f"[WORKER:{worker_id}] RUNNING - {len(worker_indices)} batches")
-        for index, batch in enumerate(self._internal_batch_generator()):
+        for index, sample in enumerate(self._internal_batch_generator()):
             if index in worker_indices:
-                self.queue.put(batch)
+                if self.pin_memory:
+                    sample = {k: torch.as_tensor(v).pin_memory() for k,v in sample.items()}
+                self.queue.put(sample)
 
         # stop the queue when all workers are done
         self.done_count += 1
