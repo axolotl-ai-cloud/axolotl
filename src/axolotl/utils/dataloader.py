@@ -151,7 +151,7 @@ class MultipackDistributedDataloader:
         packing_efficiency_estimate: float = 1.0,
         sample_packing_seq_len_multiplier: int = 1,
         device_count: int = 1,
-        num_threads: int = 4,
+        num_threads: int = 1,
         prefetch_max: int = 10,
     ):
         # Dataset
@@ -186,12 +186,6 @@ class MultipackDistributedDataloader:
         self.batches_indexed = set()
         self.done_count = 0
         self.num_threads = num_threads
-        self.threads = []
-        for i in range(num_threads):
-            thread = Thread(target=self._worker, args=(i,))
-            thread.daemon = True
-            thread.start()
-            self.threads.append(thread)
     
     def _worker(self, worker_id):
         LOG.warning(f"[WORKER:{worker_id}] WORKER RUNNING!!!")
@@ -215,6 +209,17 @@ class MultipackDistributedDataloader:
     
     def __iter__(self):
         LOG.warning("STARTING WORKERS!!!")
+        if hasattr(self.sampler, "set_epoch"):
+            new_epoch = self.sampler.epoch + 1
+            self.sampler.set_epoch(new_epoch)
+            LOG.info(f"calling sampler.set_epoch({new_epoch})")
+        
+        self.threads = []
+        for i in range(self.num_threads):
+            thread = Thread(target=self._worker, args=(i,))
+            thread.daemon = True
+            thread.start()
+            self.threads.append(thread)
 
         while True:
             next_batch = self.queue.get()
@@ -253,10 +258,6 @@ class MultipackDistributedDataloader:
         return batches, totseqs
 
     def _internal_batch_generator(self):
-        if hasattr(self.sampler, "set_epoch"):
-            new_epoch = self.sampler.epoch + 1
-            self.sampler.set_epoch(new_epoch)
-            LOG.info(f"calling sampler.set_epoch({new_epoch})")
         all_batches, _ = self.generate_batches(set_stats=True)
         features = self.dataset.features.keys()
         len_remaining = self._len_est()
