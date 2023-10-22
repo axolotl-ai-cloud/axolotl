@@ -151,7 +151,7 @@ class MultipackDistributedDataloader:
         packing_efficiency_estimate: float = 1.0,
         sample_packing_seq_len_multiplier: int = 1,
         device_count: int = 1,
-        num_threads: int = 4,
+        num_threads: int = 1,
         prefetch_max: int = 1000,
         pin_memory: bool = True,
     ):
@@ -192,6 +192,13 @@ class MultipackDistributedDataloader:
         # thread 0 gets batch 2, thread 1 gets batch 3
         # etc ...
         self.worker_indices = [set(range(0, self.len_w_stats(), self.num_threads)) for i in range(self.num_threads)]
+
+        self.threads = []
+        for i in range(self.num_threads):
+            thread = Thread(target=self._worker, args=(i,))
+            thread.daemon = True
+            thread.start()
+            self.threads.append(thread)
     
     def _worker(self, worker_id):
         worker_indices = self.worker_indices[worker_id]
@@ -208,18 +215,12 @@ class MultipackDistributedDataloader:
             self.queue.put(None)
     
     def __iter__(self):
-        LOG.warning("STARTING WORKERS!!!")
         if hasattr(self.sampler, "set_epoch"):
             new_epoch = self.sampler.epoch + 1
             self.sampler.set_epoch(new_epoch)
             LOG.info(f"calling sampler.set_epoch({new_epoch})")
         
-        self.threads = []
-        for i in range(self.num_threads):
-            thread = Thread(target=self._worker, args=(i,))
-            thread.daemon = True
-            thread.start()
-            self.threads.append(thread)
+        self.done_count = 0
 
         while True:
             item = self.queue.get()
