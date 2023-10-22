@@ -153,7 +153,6 @@ class MultipackDistributedDataloader:
         device_count: int = 1,
         num_threads: int = 1,
         prefetch_max: int = 1000,
-        pin_memory: bool = True,
     ):
         # Dataset
         self.dataset = dataset
@@ -187,7 +186,6 @@ class MultipackDistributedDataloader:
         self.batches_indexed = set()
         self.done_count = 0
         self.num_threads = num_threads
-        self.pin_memory = pin_memory
 
         # thread 0 gets batch 0, thread 1 gets batch 1
         # thread 0 gets batch 2, thread 1 gets batch 3
@@ -206,9 +204,6 @@ class MultipackDistributedDataloader:
         LOG.warning(f"[WORKER:{worker_id}] RUNNING - {len(worker_indices)*self.batch_size} samples")
         for index, sample in enumerate(self._internal_batch_generator()):
             if index in worker_indices:
-                if self.pin_memory:
-                    sample = {k: torch.as_tensor(v).pin_memory() for k,v in sample.items()}
-
                 while True:
                     if self.queue.full():
                         time.sleep(1)
