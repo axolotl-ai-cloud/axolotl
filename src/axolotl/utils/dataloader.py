@@ -153,6 +153,7 @@ class MultipackDistributedDataloader:
         sample_packing_seq_len_multiplier: int = 1,
         device_count: int = 1,
         prefetch_max: int = 1000,
+        num_epochs: int = 1,
     ):
         # Dataset
         self.dataset = dataset
@@ -171,6 +172,7 @@ class MultipackDistributedDataloader:
         self.seq_max_length = seq_max_length
         self.batch_max_length = batch_size * seq_max_length
         self.collate_fn = collate_fn
+        self.num_epochs = num_epochs
 
         self.num_replicas = 1
         self.rank = 0
@@ -188,16 +190,18 @@ class MultipackDistributedDataloader:
         self.thread.start()
 
     def _worker(self):
-        for sample in self._internal_batch_generator():
-            while True:
-                if self.queue.full():
-                    time.sleep(1)
-                else:
-                    break
-            self.queue.put(sample)
+        LOG.info(f"[WORKER] Epochs: {self.num_epochs}, Samples: {self.len_w_stats()*self.batch_size}")
+        for epoch in range(self.num_epochs):
+            for sample in self._internal_batch_generator():
+                while True:
+                    if self.queue.full():
+                        time.sleep(1)
+                    else:
+                        break
+                self.queue.put(sample)
 
-        # stop the queue when worker is done
-        self.queue.put(None)
+            # stop the queue when epoch is done
+            self.queue.put(None)
 
     def __iter__(self):
         if hasattr(self.sampler, "set_epoch"):
@@ -211,8 +215,6 @@ class MultipackDistributedDataloader:
             if item is None:
                 break
             yield item
-
-        LOG.info("DATALOADER FINISHED")
 
     def generate_batches(self, set_stats=False):
         LOG.info("generating packed batches")

@@ -178,7 +178,8 @@ class AxolotlTrainer(Trainer):
 
     args = None  # type: AxolotlTrainingArguments
 
-    def __init__(self, *args, bench_data_collator=None, **kwargs):
+    def __init__(self, *args, num_epochs=1, bench_data_collator=None, **kwargs):
+        self.num_epochs = num_epochs
         self.bench_data_collator = bench_data_collator
         super().__init__(*args, **kwargs)
 
@@ -249,6 +250,7 @@ class AxolotlTrainer(Trainer):
                     packing_efficiency_estimate=self.args.sample_packing_efficiency,
                     sample_packing_seq_len_multiplier=self.args.sample_packing_seq_len_multiplier,
                     device_count=int(os.environ.get("WORLD_SIZE", 1)),
+                    num_epochs=self.num_epochs,
                 )
             )
         return super().get_train_dataloader()
@@ -272,6 +274,7 @@ class AxolotlTrainer(Trainer):
                     packing_efficiency_estimate=self.args.sample_packing_efficiency,
                     sample_packing_seq_len_multiplier=self.args.eval_batch_size,
                     device_count=int(os.environ.get("WORLD_SIZE", 1)),
+                    num_epochs=self.num_epochs,
                 )
             )
         return super().get_eval_dataloader(eval_dataset)
@@ -501,6 +504,7 @@ def calculate_total_num_steps(cfg, train_dataset, tokenizer):
                 packing_efficiency_estimate=cfg.sample_packing_eff_est,
                 sample_packing_seq_len_multiplier=cfg.micro_batch_size,
                 device_count=int(os.environ.get("WORLD_SIZE", 1)),
+                num_epochs=cfg.num_epochs,
             )
             data_loader_len = data_loader.len_w_stats()
             actual_eff = data_loader.efficiency()
@@ -771,6 +775,7 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
             **data_collator_kwargs,
         ),
         callbacks=callbacks,
+        num_epochs=cfg.num_epochs,
         **trainer_kwargs,
     )
 
