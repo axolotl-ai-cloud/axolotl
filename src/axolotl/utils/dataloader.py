@@ -4,7 +4,7 @@ import itertools
 import logging
 import math
 from typing import Any, Callable, List, Union
-import torch
+
 import numba
 import numpy as np
 from torch.utils.data import DistributedSampler, Sampler
@@ -151,7 +151,6 @@ class MultipackDistributedDataloader:
         packing_efficiency_estimate: float = 1.0,
         sample_packing_seq_len_multiplier: int = 1,
         device_count: int = 1,
-        num_threads: int = 1,
         prefetch_max: int = 1000,
     ):
         # Dataset
@@ -182,47 +181,27 @@ class MultipackDistributedDataloader:
         self.device_count = device_count
 
         # maxsize is maximum number of samples in queue
-        self.queue = Queue(maxsize=prefetch_max) 
-        self.batches_indexed = set()
-        self.done_count = 0
-        self.num_threads = num_threads
-
-        # thread 0 gets batch 0, thread 1 gets batch 1
-        # thread 0 gets batch 2, thread 1 gets batch 3
-        # etc ...
-        self.worker_indices = [set(range(0, self.len_w_stats(), self.num_threads)) for i in range(self.num_threads)]
-
-        self.threads = []
-        for i in range(self.num_threads):
-            thread = Thread(target=self._worker, args=(i,))
-            thread.daemon = True
-            thread.start()
-            self.threads.append(thread)
+        self.queue = Queue(maxsize=prefetch_max)
+        self.thread = Thread(target=self._worker, daemon=True)
+        self.thread.start()
     
-    def _worker(self, worker_id):
-        worker_indices = self.worker_indices[worker_id]
-        LOG.warning(f"[WORKER:{worker_id}] RUNNING - {len(worker_indices)*self.batch_size} samples")
-        for index, sample in enumerate(self._internal_batch_generator()):
-            if index in worker_indices:
-                while True:
-                    if self.queue.full():
-                        time.sleep(1)
-                    else:
-                        break
-                self.queue.put(sample)
+    def _worker(self):
+        for sample in self._internal_batch_generator():
+            while True:
+                if self.queue.full():
+                    time.sleep(1)
+                else:
+                    break
+            self.queue.put(sample)
 
-        # stop the queue when all workers are done
-        self.done_count += 1
-        if self.done_count == len(self.threads):
-            self.queue.put(None)
+        # stop the queue when worker is done
+        self.queue.put(None)
     
     def __iter__(self):
         if hasattr(self.sampler, "set_epoch"):
             new_epoch = self.sampler.epoch + 1
             self.sampler.set_epoch(new_epoch)
             LOG.info(f"calling sampler.set_epoch({new_epoch})")
-        
-        self.done_count = 0
 
         while True:
             item = self.queue.get()
@@ -230,7 +209,7 @@ class MultipackDistributedDataloader:
                 break
             yield item
         
-        LOG.warning("DATALOADER FINISHED!!!")
+        LOG.info("DATALOADER FINISHED")
 
     def generate_batches(self, set_stats=False):
         LOG.info("generating packed batches")
