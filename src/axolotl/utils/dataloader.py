@@ -8,9 +8,10 @@ from typing import Any, Callable, List, Union
 import numba
 import numpy as np
 from torch.utils.data import DistributedSampler, Sampler
+import time
 from collections import deque
 from threading import Thread
-import time
+
 LOG = logging.getLogger("axolotl.utils.dataloader")
 
 
