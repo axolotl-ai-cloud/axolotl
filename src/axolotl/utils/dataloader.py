@@ -8,7 +8,7 @@ from typing import Any, Callable, List, Union
 import numba
 import numpy as np
 from torch.utils.data import DistributedSampler, Sampler
-from queue import Queue
+from collections import deque
 from threading import Thread
 import time
 LOG = logging.getLogger("axolotl.utils.dataloader")
@@ -181,21 +181,22 @@ class MultipackDistributedDataloader:
         self.device_count = device_count
 
         # maxsize is maximum number of samples in queue
-        self.queue = Queue(maxsize=prefetch_max)
+        self.prefetch_max = prefetch_max
+        self.queue = deque(maxlen=prefetch_max)
         self.thread = Thread(target=self._worker, daemon=True)
         self.thread.start()
     
     def _worker(self):
         for sample in self._internal_batch_generator():
             while True:
-                if self.queue.full():
+                if len(self.queue) == self.prefetch_max:
                     time.sleep(1)
                 else:
                     break
-            self.queue.put(sample)
+            self.queue.append(sample)
 
         # stop the queue when worker is done
-        self.queue.put(None)
+        self.queue.append(None)
     
     def __iter__(self):
         if hasattr(self.sampler, "set_epoch"):
@@ -204,7 +205,7 @@ class MultipackDistributedDataloader:
             LOG.info(f"calling sampler.set_epoch({new_epoch})")
 
         while True:
-            item = self.queue.get()
+            item = self.queue.popleft()
             if item is None:
                 break
             yield item
