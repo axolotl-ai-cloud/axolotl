@@ -1,5 +1,4 @@
 base_model: cerebras/btlm-3b-8k-base
-base_model_config: cerebras/btlm-3b-8k-base
 model_type: AutoModelForCausalLM
 tokenizer_type: GPT2Tokenizer
 trust_remote_code: true

@@ -1,5 +1,4 @@
 base_model: cerebras/Cerebras-GPT-1.3B
-base_model_config: cerebras/Cerebras-GPT-1.3B
 load_in_8bit: false
 load_in_4bit: true
 strict: false

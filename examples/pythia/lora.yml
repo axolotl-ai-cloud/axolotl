@@ -1,5 +1,4 @@
 base_model: EleutherAI/pythia-1.4b-deduped
-base_model_config: EleutherAI/pythia-1.4b-deduped
 load_in_8bit: true
 datasets:
   - path: teknium/GPT4-LLM-Cleaned

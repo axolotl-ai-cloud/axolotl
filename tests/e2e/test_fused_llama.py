@@ -31,7 +31,6 @@ class TestFusedLlama(unittest.TestCase):
         cfg = DictDefault(
             {
                 "base_model": "JackFram/llama-68m",
-                "base_model_config": "JackFram/llama-68m",
                 "flash_attention": True,
                 "flash_attn_fuse_qkv": True,
                 "flash_attn_fuse_mlp": True,
