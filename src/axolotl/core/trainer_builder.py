@@ -590,7 +590,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             self.cfg.wandb_run_id if self.cfg.use_wandb else None
         )
         training_arguments_kwargs["optim"] = (
-            self.cfg.optimizer if self.cfg.optimizer else "adamw_hf",
+            self.cfg.optimizer if self.cfg.optimizer else "adamw_hf"
         )
         training_arguments_kwargs["lr_scheduler_type"] = (
             self.cfg.lr_scheduler
