@@ -183,7 +183,7 @@ class MultipackDistributedDataloader:
 
         # maxsize is maximum number of samples in queue
         self.prefetch_max = prefetch_max
-        self.queue = deque(maxlen=prefetch_max)
+        self.queue: deque = deque(maxlen=prefetch_max)
         self.thread = Thread(target=self._worker, daemon=True)
         self.thread.start()
 
