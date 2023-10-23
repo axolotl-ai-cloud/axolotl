@@ -4,7 +4,7 @@ import itertools
 import logging
 import math
 import time
-from collections import deque
+from queue import Queue
 from threading import Thread
 from typing import Any, Callable, List, Union
 
@@ -183,21 +183,21 @@ class MultipackDistributedDataloader:
 
         # maxsize is maximum number of samples in queue
         self.prefetch_max = prefetch_max
-        self.queue: deque = deque(maxlen=prefetch_max)
+        self.queue: Queue = Queue(maxsize=prefetch_max)
         self.thread = Thread(target=self._worker, daemon=True)
         self.thread.start()
 
     def _worker(self):
         for sample in self._internal_batch_generator():
             while True:
-                if len(self.queue) == self.prefetch_max:
+                if self.queue.full():
                     time.sleep(1)
                 else:
                     break
-            self.queue.append(sample)
+            self.queue.put(sample)
 
         # stop the queue when worker is done
-        self.queue.append(None)
+        self.queue.put(None)
 
     def __iter__(self):
         if hasattr(self.sampler, "set_epoch"):
@@ -206,7 +206,8 @@ class MultipackDistributedDataloader:
             LOG.info(f"calling sampler.set_epoch({new_epoch})")
 
         while True:
-            item = self.queue.popleft()
+            item = self.queue.get()
+
             if item is None:
                 break
             yield item
