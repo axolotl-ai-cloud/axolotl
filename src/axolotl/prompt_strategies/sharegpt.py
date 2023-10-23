@@ -61,6 +61,7 @@ class SimpleShareGPTPromptTokenizingStrategy(ShareGPTPromptTokenizingStrategy):
     """
     basic sharegpt strategy to grab conversations from the sample row
     """
+
     _strict = True
 
     @property
