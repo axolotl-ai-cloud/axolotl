@@ -186,7 +186,7 @@ class MultipackDistributedDataloader:
         self.queue = deque(maxlen=prefetch_max)
         self.thread = Thread(target=self._worker, daemon=True)
         self.thread.start()
-    
+
     def _worker(self):
         for sample in self._internal_batch_generator():
             while True:
@@ -198,7 +198,7 @@ class MultipackDistributedDataloader:
 
         # stop the queue when worker is done
         self.queue.append(None)
-    
+
     def __iter__(self):
         if hasattr(self.sampler, "set_epoch"):
             new_epoch = self.sampler.epoch + 1
@@ -210,7 +210,7 @@ class MultipackDistributedDataloader:
             if item is None:
                 break
             yield item
-        
+
         LOG.info("DATALOADER FINISHED")
 
     def generate_batches(self, set_stats=False):
