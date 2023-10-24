@@ -237,10 +237,11 @@ def load_mm_dataset(
         image_grid_pinpoints=cfg.mm_image_grid_pinpoints or None,
     )
     data_args.image_processor = vision_tower.image_processor
+    data_args.mm_use_im_start_end = cfg.mm_use_im_start_end or False
     tokenizer = load_tokenizer(cfg)
     train_dataset = LazySupervisedDataset(
         tokenizer=tokenizer,
-        data_path=data_args["data_path"],
+        data_path=data_args.data_path,
         data_args=data_args,
     )
 

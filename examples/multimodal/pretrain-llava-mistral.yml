@@ -2,9 +2,10 @@ base_model: mistralai/Mistral-7B-v0.1
 model_type: MistralForCausalLM
 tokenizer_type: LlamaTokenizer
 is_mistral_derived_model: true
-multimodal: true
 
-vision_tower: openai/clip-vit-large-patch14
+# multimodal pretrain
+multimodal: true
+mm_vision_tower: openai/clip-vit-large-patch14
 tune_mm_mlp_adapter: true
 mm_vision_select_layer: -2
 mm_projector_type: mlp2x_gelu
@@ -21,7 +22,7 @@ val_set_size: 0.01
 output_dir: ./out
 
 sequence_len: 2048
-sample_packing: true
+sample_packing: false
 pad_to_sequence_len: true
 
 wandb_project:

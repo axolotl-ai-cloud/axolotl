@@ -5,6 +5,7 @@ import logging
 from pathlib import Path
 
 import fire
+import torch
 import transformers
 from colorama import Fore
 
@@ -47,6 +48,8 @@ def do_cli(config: Path = Path("examples/"), **kwargs):
     dataset_meta = load_mm_dataset(
         cfg=parsed_cfg, cli_args=parsed_cli_args, model=model
     )
+    del model
+    torch.cuda.empty_cache()
     if parsed_cli_args.prepare_ds_only:
         return
     train(cfg=parsed_cfg, cli_args=parsed_cli_args, dataset_meta=dataset_meta)
