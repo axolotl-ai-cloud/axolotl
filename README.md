@@ -356,6 +356,13 @@ See [examples](examples) for quick start. It is recommended to duplicate and mod
         - typescript
       type: ... # unimplemented custom format
 
+  # fastchat conversation
+  # See 'conversation' options: https://github.com/lm-sys/FastChat/blob/main/fastchat/conversation.py
+  datasets:
+    - path: ...
+      type: sharegpt
+      conversation: chatml
+
   # local
   datasets:
     - path: data.jsonl # or json
@@ -394,7 +401,7 @@ See [examples](examples) for quick start. It is recommended to duplicate and mod
 
 <details>
 
-<summary>All yaml options</summary>
+<summary>All yaml options (click me)</summary>
 
 ```yaml
 # This is the huggingface model that contains *.pt, *.safetensors, or *.bin files
@@ -461,7 +468,9 @@ datasets:
     data_files: # Optional[str] path to source data files
     shards: # Optional[int] number of shards to split data into
     name: # Optional[str] name of dataset configuration to load
-    conversation:  # Optional[str] fastchat conversation type, only used with type: sharegpt
+
+    # Optional[str] fastchat conversation type, only used with type: sharegpt
+    conversation:  # Options (see Conversation 'name'): https://github.com/lm-sys/FastChat/blob/main/fastchat/conversation.py
 
   # Custom user prompt
   - path: repo
