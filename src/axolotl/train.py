@@ -20,6 +20,14 @@ from axolotl.utils.dict import DictDefault
 from axolotl.utils.models import load_model, load_tokenizer
 from axolotl.utils.trainer import setup_trainer
 
+try:
+    from llava.train.train import safe_save_model_for_hf_trainer
+except ImportError:
+
+    def safe_save_model_for_hf_trainer(trainer: transformers.Trainer, output_dir: str):
+        raise ImportError("missing LLaVA package")
+
+
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 src_dir = os.path.join(project_root, "src")
 sys.path.insert(0, src_dir)
@@ -137,6 +145,8 @@ def train(
     # only save on rank 0, otherwise it corrupts output on multi-GPU when multiple processes attempt to write the same file
     if cfg.fsdp:
         trainer.save_model(cfg.output_dir)
+    elif cfg.multimodal:
+        safe_save_model_for_hf_trainer(trainer=trainer, output_dir=cfg.output_dir)
     elif cfg.deepspeed and is_deepspeed_zero3_enabled():
         # Copied over from: https://github.com/huggingface/accelerate/blob/5ae611118057232f441055f7ef9ba0b0f2b8d533/docs/source/usage_guides/deepspeed.md#saving-and-loading
         trainer.accelerator.wait_for_everyone()

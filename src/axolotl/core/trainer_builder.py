@@ -40,6 +40,14 @@ try:
 except ImportError:
     pass
 
+try:
+    from llava.train.llava_trainer import get_mm_adapter_state_maybe_zero_3
+except ImportError:
+
+    def get_mm_adapter_state_maybe_zero_3(named_params, keys_to_match):
+        raise ImportError("missing LLaVA package")
+
+
 LOG = logging.getLogger("axolotl.core.trainer_builder")
 
 
@@ -242,6 +250,36 @@ class AxolotlTrainer(Trainer):
         #     loss = trainer_weighted_loss(outputs, labels, shift_labels=True)
         #     return (loss, outputs) if return_outputs else loss
         return super().compute_loss(model, inputs, return_outputs=return_outputs)
+
+    def _save_checkpoint(self, model, trial, metrics=None):
+        if getattr(self.args, "tune_mm_mlp_adapter", False):
+            from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR
+
+            checkpoint_folder = f"{PREFIX_CHECKPOINT_DIR}-{self.state.global_step}"
+
+            run_dir = self._get_output_dir(trial=trial)
+            output_dir = os.path.join(run_dir, checkpoint_folder)
+
+            # Only save Adapter
+            keys_to_match = ["mm_projector", "vision_resampler"]
+            if getattr(self.args, "use_im_start_end", False):
+                keys_to_match.extend(["embed_tokens", "embed_in"])
+
+            weight_to_save = get_mm_adapter_state_maybe_zero_3(
+                self.model.named_parameters(), keys_to_match
+            )
+
+            if self.args.local_rank in (0, -1):
+                self.model.config.save_pretrained(output_dir)
+                torch.save(weight_to_save, os.path.join(output_dir, "mm_projector.bin"))
+        else:
+            super()._save_checkpoint(model, trial, metrics)
+
+    def _save(self, output_dir: Optional[str] = None, state_dict=None):
+        if getattr(self.args, "tune_mm_mlp_adapter", False):
+            pass
+        else:
+            super()._save(output_dir, state_dict)
 
 
 class OneCycleLRSchedulerTrainer(AxolotlTrainer):
@@ -628,18 +666,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 sys.path.append(self.cfg.torchdistx_path)
                 importlib.import_module("torchdistx")
 
-        data_collator_kwargs = {
-            "padding": True,  # True/"longest" is the default
-        }
-        if self.cfg.pad_to_sequence_len:
-            data_collator_kwargs["pad_to_multiple_of"] = 64 * math.ceil(
-                self.cfg.sequence_len / 64
-            )
-        else:
-            # A100 is best at 64, while others at 8. Let's use the larger so we don't have to check
-            # https://docs.nvidia.com/deeplearning/performance/dl-performance-matrix-multiplication/index.html
-            data_collator_kwargs["pad_to_multiple_of"] = 64
-
         if self.cfg.is_llama_derived_model and self.cfg.landmark_attention:
             from axolotl.monkeypatch.llama_landmark_attn import (
                 add_mem_tokens,
@@ -664,22 +690,15 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         trainer_kwargs, trainer_cls = self.hook_pre_create_trainer(
             trainer_kwargs, trainer_cls
         )
+        trainer_collator_kwargs = self.build_data_collator()
+
         trainer = trainer_cls(
             model=self.model,
             train_dataset=self.train_dataset,
             eval_dataset=self.eval_dataset,
             args=training_args,
-            data_collator=DataCollatorForSeq2Seq(
-                self.tokenizer,
-                return_tensors="pt",
-                **data_collator_kwargs,
-            ),
-            bench_data_collator=transformers.DataCollatorForSeq2Seq(
-                self.tokenizer,
-                return_tensors="pt",
-                **data_collator_kwargs,
-            ),
             callbacks=self.get_callbacks(),
+            **trainer_collator_kwargs,
             **trainer_kwargs,
         )
         trainer = self.hook_post_create_trainer(trainer)
@@ -687,3 +706,41 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             trainer.add_callback(callback)
 
         return trainer
+
+    def build_data_collator(self):
+        data_collator_kwargs = {
+            "padding": True,  # True/"longest" is the default
+        }
+        if self.cfg.pad_to_sequence_len:
+            data_collator_kwargs["pad_to_multiple_of"] = 64 * math.ceil(
+                self.cfg.sequence_len / 64
+            )
+        else:
+            # A100 is best at 64, while others at 8. Let's use the larger so we don't have to check
+            # https://docs.nvidia.com/deeplearning/performance/dl-performance-matrix-multiplication/index.html
+            data_collator_kwargs["pad_to_multiple_of"] = 64
+
+        collator_kwargs = {}
+        if self.cfg.multimodal:
+            from llava.train.train import DataCollatorForSupervisedDataset
+
+            collator_kwargs["data_collator"] = DataCollatorForSupervisedDataset(
+                tokenizer=self.tokenizer,
+            )
+        else:
+            collator_kwargs["data_collator"] = DataCollatorForSeq2Seq(
+                self.tokenizer,
+                return_tensors="pt",
+                **data_collator_kwargs,
+            )
+
+        if self.cfg.do_bench_eval:
+            collator_kwargs[
+                "bench_data_collator"
+            ] = transformers.DataCollatorForSeq2Seq(
+                self.tokenizer,
+                return_tensors="pt",
+                **data_collator_kwargs,
+            )
+
+        return collator_kwargs
