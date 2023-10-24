@@ -43,7 +43,7 @@ def do_cli(config: Path = Path("examples/"), **kwargs):
         parsed_cfg.dataset_prepared_path = DEFAULT_DATASET_PREPARED_PATH
 
     tokenizer = load_tokenizer(parsed_cfg)
-    model = load_model(parsed_cfg, tokenizer)
+    model, _ = load_model(parsed_cfg, tokenizer)
     dataset_meta = load_mm_dataset(
         cfg=parsed_cfg, cli_args=parsed_cli_args, model=model
     )

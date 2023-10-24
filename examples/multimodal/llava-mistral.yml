@@ -2,6 +2,7 @@ base_model: mistralai/Mistral-7B-v0.1
 model_type: MistralForCausalLM
 tokenizer_type: LlamaTokenizer
 is_mistral_derived_model: true
+multimodal: true
 
 vision_tower: openai/clip-vit-large-patch14
 tune_mm_mlp_adapter: true
