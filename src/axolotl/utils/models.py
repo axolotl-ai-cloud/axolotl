@@ -307,15 +307,16 @@ def load_model(
             vision_tower = model.get_vision_tower()
             vision_tower.to(dtype=cfg.torch_dtype)
 
+            # pylint: disable=duplicate-code
             data_args = DataArguments(
-                data_path=None,
+                data_path=cfg.datasets[0]["path"],
                 lazy_preprocess=cfg.mm_lazy_preprocess
                 if cfg.mm_lazy_preprocess is not None
                 else True,
                 is_multimodal=True,
-                image_folder=None,
-                image_aspect_ratio="square",
-                image_grid_pinpoints=None,
+                image_folder=cfg.mm_image_folder or None,
+                image_aspect_ratio=cfg.mm_image_aspect_ratio or "square",
+                image_grid_pinpoints=cfg.mm_image_grid_pinpoints or None,
             )
             data_args.image_processor = vision_tower.image_processor
             model.config.image_aspect_ratio = data_args.image_aspect_ratio

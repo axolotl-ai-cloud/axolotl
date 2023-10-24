@@ -54,8 +54,19 @@ def md5(to_hash: str, encoding: str = "utf-8") -> str:
         return hashlib.md5(to_hash.encode(encoding)).hexdigest()  # nosec
 
 
-def prepare_dataset(cfg, tokenizer):
-    if not cfg.pretraining_dataset:
+def prepare_dataset(cfg, tokenizer, model=None):
+    if cfg.multimodal:
+        if not model:
+            raise ValueError("missing model argument")
+        from llava.train.train import LazySupervisedDataset
+
+        with zero_first(is_main_process()):
+            eval_dataset = None
+            train_dataset = LazySupervisedDataset(
+                tokenizer=tokenizer,
+            )
+
+    elif not cfg.pretraining_dataset:
         with zero_first(is_main_process()):
             train_dataset, eval_dataset = load_prepare_datasets(
                 tokenizer, cfg, DEFAULT_DATASET_PREPARED_PATH

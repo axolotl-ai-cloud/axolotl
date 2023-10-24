@@ -2,6 +2,7 @@
 
 import importlib
 import logging
+import math
 import os
 import random
 import sys
@@ -213,6 +214,45 @@ def load_cfg(config: Path = Path("examples/"), **kwargs):
 
     setup_wandb_env_vars(cfg)
     return cfg
+
+
+def load_mm_dataset(
+    *,
+    cfg: DictDefault,
+    cli_args: TrainerCliArgs,  # pylint: disable=unused-argument
+    model,
+):
+    # pylint: disable=duplicate-code
+    from llava.train.train import DataArguments, LazySupervisedDataset
+
+    vision_tower = model.get_vision_tower()
+    data_args = DataArguments(
+        data_path=cfg.datasets[0]["path"],
+        lazy_preprocess=cfg.mm_lazy_preprocess
+        if cfg.mm_lazy_preprocess is not None
+        else True,
+        is_multimodal=True,
+        image_folder=cfg.mm_image_folder or None,
+        image_aspect_ratio=cfg.mm_image_aspect_ratio or "square",
+        image_grid_pinpoints=cfg.mm_image_grid_pinpoints or None,
+    )
+    data_args.image_processor = vision_tower.image_processor
+    tokenizer = load_tokenizer(cfg)
+    train_dataset = LazySupervisedDataset(
+        tokenizer=tokenizer,
+        data_path=data_args["data_path"],
+        data_args=data_args,
+    )
+
+    total_num_steps = int(
+        math.ceil(len(train_dataset) * cfg.num_epochs / cfg.batch_size)
+    )
+
+    return TrainDatasetMeta(
+        train_dataset=train_dataset,
+        eval_dataset=None,
+        total_num_steps=total_num_steps,
+    )
 
 
 def load_datasets(
