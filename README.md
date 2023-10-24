@@ -470,7 +470,7 @@ datasets:
     name: # Optional[str] name of dataset configuration to load
 
     # Optional[str] fastchat conversation type, only used with type: sharegpt
-    conversation:  # Options: https://github.com/lm-sys/FastChat/blob/main/fastchat/conversation.py
+    conversation:  # Options (see Conversation 'name'): https://github.com/lm-sys/FastChat/blob/main/fastchat/conversation.py
 
   # Custom user prompt
   - path: repo
