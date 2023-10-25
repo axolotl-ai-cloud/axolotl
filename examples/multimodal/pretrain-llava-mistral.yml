@@ -1,0 +1,64 @@
+base_model: mistralai/Mistral-7B-v0.1
+model_type: MistralForCausalLM
+tokenizer_type: LlamaTokenizer
+is_mistral_derived_model: true
+
+# multimodal pretrain
+multimodal: true
+mm_vision_tower: openai/clip-vit-large-patch14
+tune_mm_mlp_adapter: true
+mm_vision_select_layer: -2
+mm_projector_type: mlp2x_gelu
+mm_image_folder: ./llava/
+
+load_in_8bit: false
+load_in_4bit: false
+strict: false
+
+datasets:
+  - path: liuhaotian/LLaVA-CC3M-Pretrain-595K
+dataset_prepared_path:
+val_set_size: 0.0
+output_dir: ./out
+
+sequence_len: 2048
+sample_packing: false
+pad_to_sequence_len: true
+
+wandb_project:
+wandb_entity:
+wandb_watch:
+wandb_run_id:
+wandb_log_model:
+
+gradient_accumulation_steps: 4
+micro_batch_size: 2
+num_epochs: 1
+optimizer: adamw_torch
+lr_scheduler: cosine
+learning_rate: 0.002
+
+train_on_inputs: false
+group_by_length: false
+bf16: true
+fp16: false
+tf32: false
+
+gradient_checkpointing: true
+early_stopping_patience:
+resume_from_checkpoint:
+local_rank:
+logging_steps: 1
+xformers_attention:
+flash_attention: true
+
+warmup_steps: 10
+eval_steps: 0.05
+save_steps:
+debug:
+deepspeed:
+weight_decay: 0.0
+fsdp:
+fsdp_config:
+special_tokens:
+  pad_token: "<unk>"

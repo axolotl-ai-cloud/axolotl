@@ -255,7 +255,102 @@ def load_model(
             model_kwargs["use_flash_attention_2"] = True
 
     try:
-        if cfg.is_llama_derived_model and not cfg.trust_remote_code and not cfg.gptq:
+        if cfg.multimodal:
+            from llava.train.train import DataArguments, ModelArguments
+
+            if cfg.is_llama_derived_model:
+                from llava.model.language_model.llava_llama import LlavaLlamaForCausalLM
+
+                model = LlavaLlamaForCausalLM.from_pretrained(
+                    cfg.base_model,
+                )
+            elif cfg.is_mistral_derived_model:
+                from axolotl.models.llava.llava_mistral import LlavaMistralForCausalLM
+
+                model = LlavaMistralForCausalLM.from_pretrained(
+                    cfg.base_model,
+                )
+            else:
+                raise NotImplementedError(
+                    "unhandled model architecture for multimodal training"
+                )
+
+            if cfg.mm_freeze_backbone:
+                model.model.requires_grad_(False)
+
+            if cfg.gradient_checkpointing:
+                if hasattr(model, "enable_input_require_grads"):
+                    model.enable_input_require_grads()
+                else:
+
+                    def make_inputs_require_grad(
+                        module,
+                        input,
+                        output,  # pylint: disable=redefined-builtin,unused-argument
+                    ):
+                        output.requires_grad_(True)
+
+                    model.get_input_embeddings().register_forward_hook(
+                        make_inputs_require_grad
+                    )
+
+            model_args = ModelArguments(
+                model_name_or_path=cfg.base_model,
+                version="v0",
+                freeze_backbone=cfg.mm_freeze_backbone or False,
+                tune_mm_mlp_adapter=cfg.tune_mm_mlp_adapter or False,
+                vision_tower=cfg.mm_vision_tower,
+                mm_vision_select_layer=cfg.mm_vision_select_layer or -1,
+                pretrain_mm_mlp_adapter=cfg.pretrain_mm_mlp_adapter,
+                mm_projector_type=cfg.mm_projector_type or "linear",
+                mm_use_im_start_end=cfg.mm_use_im_start_end or False,
+                mm_use_im_patch_token=cfg.mm_use_im_patch_token or True,
+                mm_vision_select_feature=cfg.mm_vision_select_feature or "patch",
+            )
+
+            if cfg.mm_vision_tower is not None:
+                model.get_model().initialize_vision_modules(
+                    model_args=model_args, fsdp=cfg.fsdp
+                )
+
+            vision_tower = model.get_vision_tower()
+            vision_tower.to(dtype=cfg.torch_dtype, device=cfg.device)
+
+            # pylint: disable=duplicate-code
+            data_args = DataArguments(
+                data_path=cfg.datasets[0]["path"],
+                lazy_preprocess=cfg.mm_lazy_preprocess
+                if cfg.mm_lazy_preprocess is not None
+                else True,
+                is_multimodal=True,
+                image_folder=cfg.mm_image_folder or None,
+                image_aspect_ratio=cfg.mm_image_aspect_ratio or "square",
+                image_grid_pinpoints=cfg.mm_image_grid_pinpoints or None,
+            )
+            data_args.image_processor = vision_tower.image_processor
+            model.config.image_aspect_ratio = data_args.image_aspect_ratio
+            model.config.image_grid_pinpoints = data_args.image_grid_pinpoints
+            model.config.tune_mm_mlp_adapter = model_args.tune_mm_mlp_adapter
+            if model_args.tune_mm_mlp_adapter:
+                model.requires_grad_(False)
+                for (
+                    p  # pylint: disable=invalid-name
+                ) in model.get_model().mm_projector.parameters():
+                    p.requires_grad = True
+
+            model.config.freeze_mm_mlp_adapter = cfg.freeze_mm_mlp_adapter
+            if cfg.freeze_mm_mlp_adapter:
+                for (
+                    p  # pylint: disable=invalid-name
+                ) in model.get_model().mm_projector.parameters():
+                    p.requires_grad = False
+
+            model.config.mm_use_im_start_end = (
+                data_args.mm_use_im_start_end
+            ) = model_args.mm_use_im_start_end
+            model.config.mm_use_im_patch_token = model_args.mm_use_im_patch_token
+            model.initialize_vision_tokenizer(model_args, tokenizer=tokenizer)
+        elif cfg.is_llama_derived_model and not cfg.trust_remote_code and not cfg.gptq:
             from transformers import LlamaForCausalLM
 
             config_kwargs = {}
@@ -520,7 +615,14 @@ def load_llama_adapter(model, cfg):
 def find_all_linear_names(model):
     cls = (bnb.nn.Linear4bit, bnb.nn.Linear8bitLt, torch.nn.Linear, QuantLinear)
     lora_module_names = set()
+    multimodal_keywords = [
+        "mm_projector",
+        "vision_tower",
+        "vision_resampler",
+    ]  # for LLaVA
     for name, module in model.named_modules():
+        if any(mm_keyword in name for mm_keyword in multimodal_keywords):
+            continue
         if (
             isinstance(module, cls)
             or "Linear" in module.__class__.__name__
