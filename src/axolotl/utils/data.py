@@ -229,7 +229,11 @@ def load_tokenized_prepared_datasets(
                         "data_files must be either a string or list of strings"
                     )
                 ds = load_dataset(
-                    "json", name=config_dataset.name, data_files=fp, streaming=False, split=None
+                    "json",
+                    name=config_dataset.name,
+                    data_files=fp,
+                    streaming=False,
+                    split=None,
                 )
             if not ds:
                 raise ValueError("unhandled dataset load")
@@ -240,7 +244,9 @@ def load_tokenized_prepared_datasets(
                         num_shards=config_dataset.shards, index=0
                     )
                 else:
-                    ds = ds.shuffle(seed=seed).shard(num_shards=config_dataset.shards, index=0)
+                    ds = ds.shuffle(seed=seed).shard(
+                        num_shards=config_dataset.shards, index=0
+                    )
 
             d_base_type = d_prompt_style = None
             d_type = config_dataset.type
@@ -457,7 +463,9 @@ def load_prepare_datasets(
     return train_dataset, eval_dataset, prompters
 
 
-def get_dataset_wrapper(config_dataset, dataset, tokenizer, cfg, d_base_type, d_prompt_style):
+def get_dataset_wrapper(
+    config_dataset, dataset, tokenizer, cfg, d_base_type, d_prompt_style
+):
     dataset_wrapper = None
     dataset_prompter = None
 
@@ -470,7 +478,9 @@ def get_dataset_wrapper(config_dataset, dataset, tokenizer, cfg, d_base_type, d_
         dataset_prompter = UnsupportedPrompter()
         dataset_wrapper = dataset
     elif isinstance(config_dataset.type, DictDefault):
-        ds_strategy = load("user_defined", tokenizer, cfg, config_dataset.type.to_dict())
+        ds_strategy = load(
+            "user_defined", tokenizer, cfg, config_dataset.type.to_dict()
+        )
         dataset_prompter = UnsupportedPrompter()
         dataset_wrapper = TokenizedPromptDataset(ds_strategy, dataset)
     elif ds_strategy := load(config_dataset.type, tokenizer, cfg, config_dataset):
@@ -560,8 +570,12 @@ def get_dataset_wrapper(config_dataset, dataset, tokenizer, cfg, d_base_type, d_
         suffix = ""
         if ":load_" in config_dataset.type:
             suffix = f" Did you mean {config_dataset.type.replace(':load_', '.load_')}?"
-        LOG.error(f"unhandled prompt tokenization strategy: {config_dataset.type}. {suffix}")
-        raise ValueError(f"unhandled prompt tokenization strategy: {config_dataset.type} {suffix}")
+        LOG.error(
+            f"unhandled prompt tokenization strategy: {config_dataset.type}. {suffix}"
+        )
+        raise ValueError(
+            f"unhandled prompt tokenization strategy: {config_dataset.type} {suffix}"
+        )
 
     return dataset_wrapper, dataset_prompter
 
