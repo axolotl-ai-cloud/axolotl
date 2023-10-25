@@ -234,6 +234,7 @@ class ReflectAlpacaPrompter:
         reflection: Union[None, str] = None,
         corrected: Union[None, str] = None,
     ) -> Generator[str, None, None]:
+        # pylint: disable=duplicate-code
         yield self._build_result(
             instruction,
             input,
