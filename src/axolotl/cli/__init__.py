@@ -222,7 +222,9 @@ def load_datasets(
 ) -> TrainDatasetMeta:
     tokenizer = load_tokenizer(cfg)
 
-    train_dataset, eval_dataset, total_num_steps, prompters = prepare_dataset(cfg, tokenizer)
+    train_dataset, eval_dataset, total_num_steps, prompters = prepare_dataset(
+        cfg, tokenizer
+    )
 
     if cli_args.debug or cfg.debug:
         LOG.info("check_dataset_labels...")

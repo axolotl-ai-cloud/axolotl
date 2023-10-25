@@ -28,6 +28,7 @@ class TrainerCliArgs:
     prompter: Optional[str] = field(default=None)
     shard: bool = field(default=False)
 
+
 @dataclass
 class PreprocessCliArgs:
     """
@@ -38,6 +39,7 @@ class PreprocessCliArgs:
     debug_text_only: bool = field(default=False)
     debug_num_examples: int = field(default=1)
     prompter: Optional[str] = field(default=None)
+
 
 def load_model_and_tokenizer(
     *,

@@ -2,20 +2,15 @@
 
 import logging
 from enum import Enum
-from colorama import Fore
 from typing import Generator, Optional, Union
 
+from colorama import Fore
 from fastchat.conversation import Conversation, get_conv_template
 
 LOG = logging.getLogger("axolotl")
 IGNORE_TOKEN_ID = -100
-REPR_TEMPLATE = (
-    "\n<start>\n"
-    + Fore.CYAN
-    + "{full_prompt}"
-    + Fore.RESET
-    + "\n<end>\n"
-)
+REPR_TEMPLATE = "\n<start>\n" + Fore.CYAN + "{full_prompt}" + Fore.RESET + "\n<end>\n"
+
 
 class PromptStyle(Enum):
     """
@@ -61,7 +56,7 @@ class AlpacaPrompter:
                 "<|im_start|>user\n{instruction}<|im_end|>\n<|im_start|>assistant\n"
             )
             self.system_format = "<|im_start|>system\n{system}<|im_end|>\n"
-    
+
     def _build_result(self, instruction, input, output):
         # returns the full prompt from instruction and optional input
         # if a label (=response, =output) is provided, it's also appended.
@@ -79,7 +74,7 @@ class AlpacaPrompter:
             ) + self.turn_no_input_format.format(instruction=instruction)
         if output:
             res = f"{res}{output}"
-        
+
         return res
 
     def build_prompt(
@@ -89,7 +84,7 @@ class AlpacaPrompter:
         output: Union[None, str] = None,
     ) -> Generator[str, None, None]:
         yield self._build_result(instruction, input, output)
-    
+
     def __repr__(self) -> str:
         return REPR_TEMPLATE.format(
             full_prompt=self._build_result("{instruction}", "{input}", "{output}")
@@ -206,7 +201,7 @@ class ReflectAlpacaPrompter:
                 "\nTHOUGHT: {output}\nASSISTANT REFLECTION: {reflection}\nASSISTANT:"
             )
             self.response_split = "ASSISTANT:"
-    
+
     def _build_result(
         self,
         instruction: str,
@@ -228,7 +223,7 @@ class ReflectAlpacaPrompter:
                 corrected=corrected,
             )
             res = f"{res}{label}"
-        
+
         return res
 
     def build_prompt(
@@ -239,7 +234,6 @@ class ReflectAlpacaPrompter:
         reflection: Union[None, str] = None,
         corrected: Union[None, str] = None,
     ) -> Generator[str, None, None]:
-        
         yield self._build_result(
             instruction,
             input,
@@ -247,7 +241,7 @@ class ReflectAlpacaPrompter:
             reflection,
             corrected,
         )
-    
+
     def __repr__(self) -> str:
         return REPR_TEMPLATE.format(
             full_prompt=self._build_result("{instruction}", "{input}", "{output}")
@@ -285,7 +279,7 @@ class ShareGPTPrompter:  # pylint: disable=too-few-public-methods
             self.role_key_human = role_key_human
         if role_key_model:
             self.role_key_model = role_key_model
-    
+
     def _build_result(self, source):
         if len(source) < 2:
             # If there isn't a back and forth conversation, ignore it
@@ -320,7 +314,7 @@ class ShareGPTPrompter:  # pylint: disable=too-few-public-methods
             ):
                 LOG.warning(f"{SHAREGPT_ASSERTION_FAILED_ROLE}: {sentence}")
             conv.append_message(role, sentence["value"])
-        
+
         return conv.get_turns()
 
     def build_prompt(self, source) -> Generator[str, None, None]:
@@ -333,11 +327,8 @@ class ShareGPTPrompter:  # pylint: disable=too-few-public-methods
 
     def __repr__(self) -> str:
         turns = self._build_result([{"from": "{from}", "value": "{value}"}])
-        return "\n".join([
-            REPR_TEMPLATE.format(
-                full_prompt=part
-            ) for part in turns
-        ])
+        return "\n".join([REPR_TEMPLATE.format(full_prompt=part) for part in turns])
+
 
 class ShareGPTPrompterV2(ShareGPTPrompter):
     """
@@ -355,6 +346,7 @@ class ShareGPTPrompterV2(ShareGPTPrompter):
             role_key_human=role_key_human,
             role_key_model=role_key_model,
         )
+
 
 class UnsupportedPrompter:
     """

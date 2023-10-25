@@ -48,5 +48,6 @@ def do_cli(config: Path = Path("examples/"), **kwargs):
         + Fore.RESET
     )
 
+
 if __name__ == "__main__":
     fire.Fire(do_cli)

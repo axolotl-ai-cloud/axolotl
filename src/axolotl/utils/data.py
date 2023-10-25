@@ -561,9 +561,7 @@ def get_dataset_wrapper(d, ds, tokenizer, cfg, d_base_type, d_prompt_style):
         if ":load_" in d.type:
             suffix = f" Did you mean {d.type.replace(':load_', '.load_')}?"
         LOG.error(f"unhandled prompt tokenization strategy: {d.type}. {suffix}")
-        raise ValueError(
-            f"unhandled prompt tokenization strategy: {d.type} {suffix}"
-        )
+        raise ValueError(f"unhandled prompt tokenization strategy: {d.type} {suffix}")
     
     return dataset_wrapper, dataset_prompter
 

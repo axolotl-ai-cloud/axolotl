@@ -837,7 +837,7 @@ python -m axolotl.cli.preprocess your_config.yml
 
 #### Multi-GPU
 
-Below are the options available in axolotl for training with multiple GPUs. Note that DeepSpeed 
+Below are the options available in axolotl for training with multiple GPUs. Note that DeepSpeed
 is the recommended multi-GPU option currently because FSDP may experience
 [loss instability](https://github.com/huggingface/transformers/issues/26498).
 
