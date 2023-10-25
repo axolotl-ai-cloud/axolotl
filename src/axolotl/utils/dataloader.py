@@ -209,7 +209,7 @@ class MultipackDistributedDataloader:
             new_epoch = self.sampler.epoch + 1
             self.sampler.set_epoch(new_epoch)
             LOG.info(f"calling sampler.set_epoch({new_epoch})")
-        
+
         if not self.thread.is_alive:
             self.thread.start()
 
