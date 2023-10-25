@@ -187,10 +187,11 @@ class MultipackDistributedDataloader:
         self.prefetch_max = prefetch_max
         self.queue: Queue = Queue(maxsize=prefetch_max)
         self.thread = Thread(target=self._worker, daemon=True)
-        self.thread.start()
 
     def _worker(self):
-        LOG.info(f"[WORKER] Epochs: {self.num_epochs}, Samples: {self.len_w_stats()*self.batch_size}")
+        LOG.info(
+            f"[WORKER] Epochs: {self.num_epochs}, Samples: {self.len_w_stats()*self.batch_size}"
+        )
         for epoch in range(self.num_epochs):
             for sample in self._internal_batch_generator():
                 while True:
@@ -208,6 +209,9 @@ class MultipackDistributedDataloader:
             new_epoch = self.sampler.epoch + 1
             self.sampler.set_epoch(new_epoch)
             LOG.info(f"calling sampler.set_epoch({new_epoch})")
+        
+        if not self.thread.is_alive:
+            self.thread.start()
 
         while True:
             item = self.queue.get()
