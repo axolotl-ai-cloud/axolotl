@@ -111,7 +111,8 @@ class AxolotlTrainer(Trainer):
 
     args = None  # type: AxolotlTrainingArguments
 
-    def __init__(self, *args, bench_data_collator=None, **kwargs):
+    def __init__(self, *args, num_epochs=1, bench_data_collator=None, **kwargs):
+        self.num_epochs = num_epochs
         self.bench_data_collator = bench_data_collator
         super().__init__(*args, **kwargs)
 
@@ -182,6 +183,7 @@ class AxolotlTrainer(Trainer):
                     packing_efficiency_estimate=self.args.sample_packing_efficiency,
                     sample_packing_seq_len_multiplier=self.args.sample_packing_seq_len_multiplier,
                     device_count=int(os.environ.get("WORLD_SIZE", 1)),
+                    num_epochs=self.num_epochs,
                 )
             )
         return super().get_train_dataloader()
@@ -205,6 +207,7 @@ class AxolotlTrainer(Trainer):
                     packing_efficiency_estimate=self.args.sample_packing_efficiency,
                     sample_packing_seq_len_multiplier=self.args.eval_batch_size,
                     device_count=int(os.environ.get("WORLD_SIZE", 1)),
+                    num_epochs=self.num_epochs,
                 )
             )
         return super().get_eval_dataloader(eval_dataset)
@@ -680,6 +683,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 **data_collator_kwargs,
             ),
             callbacks=self.get_callbacks(),
+            num_epochs=self.cfg.num_epochs,
             **trainer_kwargs,
         )
         trainer = self.hook_post_create_trainer(trainer)
