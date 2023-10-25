@@ -3,7 +3,7 @@ import functools
 import hashlib
 import logging
 from pathlib import Path
-from typing import Dict, List, Tuple, Union
+from typing import Dict, List, Tuple, Union, Any
 
 import torch
 from datasets import (
@@ -302,7 +302,7 @@ def load_prepare_datasets(
     tokenizer: PreTrainedTokenizerBase,
     cfg,
     default_dataset_prepared_path,
-) -> Tuple[Dataset, Dataset]:
+) -> Tuple[Dataset, Dataset, List[Any]]:
     max_packed_sequence_len = (
         cfg.max_packed_sequence_len if cfg.max_packed_sequence_len else cfg.sequence_len
     )
