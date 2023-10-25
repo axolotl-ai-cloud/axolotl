@@ -355,3 +355,14 @@ class ShareGPTPrompterV2(ShareGPTPrompter):
             role_key_human=role_key_human,
             role_key_model=role_key_model,
         )
+
+class UnsupportedPrompter:
+    """
+    A dummy class for custom prompters
+    """
+
+    def __init__(self) -> None:
+        pass
+
+    def __repr__(self):
+        return "Pre-tokenized or custom dataset types are unsupported for logging"

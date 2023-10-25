@@ -36,6 +36,7 @@ from axolotl.prompters import (
     MultipleChoiceExplainPrompter,
     ReflectAlpacaPrompter,
     SummarizeTLDRPrompter,
+    UnsupportedPrompter,
 )
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import is_main_process, zero_first
@@ -466,11 +467,14 @@ def get_dataset_wrapper(d, ds, tokenizer, cfg, d_base_type, d_prompt_style):
         and "labels" in ds.features
     ):
         # dataset is already tokenized, just drop it straight in
+        dataset_prompter = UnsupportedPrompter()
         dataset_wrapper = ds
     elif isinstance(d.type, DictDefault):
         ds_strategy = load("user_defined", tokenizer, cfg, d.type.to_dict())
+        dataset_prompter = UnsupportedPrompter()
         dataset_wrapper = TokenizedPromptDataset(ds_strategy, ds)
     elif ds_strategy := load(d.type, tokenizer, cfg, d):
+        dataset_prompter = UnsupportedPrompter()
         dataset_wrapper = TokenizedPromptDataset(ds_strategy, ds)
     elif d_base_type == "alpaca":
         dataset_prompter = AlpacaPrompter(d_prompt_style)
