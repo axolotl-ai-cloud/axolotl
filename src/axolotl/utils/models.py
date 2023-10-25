@@ -31,7 +31,7 @@ LOG = logging.getLogger("axolotl")
 
 def load_model_config(cfg):
     model_config_name = cfg.base_model_config or cfg.base_model
-    trust_remote_code: bool = False or cfg.trust_remote_code
+    trust_remote_code = cfg.trust_remote_code is True
     return AutoConfig.from_pretrained(
         model_config_name, trust_remote_code=trust_remote_code
     )

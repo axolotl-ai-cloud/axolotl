@@ -1,5 +1,4 @@
 base_model: EleutherAI/gpt-j-6b
-base_model_config: EleutherAI/gpt-j-6b
 load_in_8bit: false
 load_in_4bit: true
 strict: false

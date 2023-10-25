@@ -79,6 +79,9 @@ def normalize_config(cfg):
 
     cfg.dataset_processes = cfg.dataset_processes or os.cpu_count()
 
+    if not cfg.base_model_config:
+        cfg.base_model_config = cfg.base_model
+
     model_config = load_model_config(cfg)
     cfg.model_config_type = model_config.model_type
 
@@ -118,6 +121,9 @@ def normalize_config(cfg):
         or "mistral" in cfg.base_model.lower()
         or (cfg.model_type and "mistral" in cfg.model_type.lower())
     )
+
+    if isinstance(cfg.learning_rate, str):
+        cfg.learning_rate = float(cfg.learning_rate)
 
     log_gpu_memory_usage(LOG, "baseline", cfg.device)
 
@@ -346,6 +352,21 @@ def validate_config(cfg):
     if cfg.val_set_size == 0 and (cfg.eval_steps or cfg.evaluation_strategy):
         raise ValueError(
             "eval_steps and evaluation_strategy are not supported with val_set_size == 0"
+        )
+
+    if (
+        cfg.sample_packing
+        and cfg.eval_table_size
+        and cfg.eval_sample_packing is not False
+    ):
+        raise ValueError(
+            "eval_table_size and eval_sample_packing are not supported together with sample_packing. Please set 'eval_sample_packing' to false."
+        )
+
+    if not cfg.adapter and (cfg.load_in_8bit or cfg.load_in_4bit):
+        raise ValueError(
+            "load_in_8bit and load_in_4bit are not supported without setting an adapter."
+            "If you want to full finetune, please turn off load_in_8bit and load_in_4bit."
         )
 
     # TODO

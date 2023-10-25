@@ -1,5 +1,4 @@
 base_model: EleutherAI/pythia-12b-deduped
-base_model_config: EleutherAI/pythia-12b-deduped
 base_model_ignore_patterns: pytorch*  # prefer safetensors
 model_type: GPTNeoXForCausalLM
 tokenizer_type: AutoTokenizer

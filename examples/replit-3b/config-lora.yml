@@ -1,5 +1,4 @@
 base_model: replit/replit-code-v1-3b
-base_model_config: replit/replit-code-v1-3b
 trust_remote_code: true
 load_in_8bit: false
 datasets:

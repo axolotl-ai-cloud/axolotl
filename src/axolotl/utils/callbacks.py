@@ -37,7 +37,7 @@ from axolotl.utils.distributed import (
 )
 
 if TYPE_CHECKING:
-    from axolotl.utils.trainer import AxolotlTrainingArguments
+    from axolotl.core.trainer_builder import AxolotlTrainingArguments
 
 LOG = logging.getLogger("axolotl.callbacks")
 IGNORE_INDEX = -100
