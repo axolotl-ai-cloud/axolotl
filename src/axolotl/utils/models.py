@@ -278,12 +278,21 @@ def load_model(
             if cfg.mm_freeze_backbone:
                 model.model.requires_grad_(False)
 
-            def make_inputs_require_grad(
-                module, input, output
-            ):  # pylint: disable=redefined-builtin,unused-argument
-                output.requires_grad_(True)
+            if cfg.gradient_checkpointing:
+                if hasattr(model, "enable_input_require_grads"):
+                    model.enable_input_require_grads()
+                else:
 
-            model.get_input_embeddings().register_forward_hook(make_inputs_require_grad)
+                    def make_inputs_require_grad(
+                        module,
+                        input,
+                        output,  # pylint: disable=redefined-builtin,unused-argument
+                    ):
+                        output.requires_grad_(True)
+
+                    model.get_input_embeddings().register_forward_hook(
+                        make_inputs_require_grad
+                    )
 
             model_args = ModelArguments(
                 model_name_or_path=cfg.base_model,
@@ -299,13 +308,13 @@ def load_model(
                 mm_vision_select_feature=cfg.mm_vision_select_feature or "patch",
             )
 
-            if cfg.mm_vision_tower:
+            if cfg.mm_vision_tower is not None:
                 model.get_model().initialize_vision_modules(
                     model_args=model_args, fsdp=cfg.fsdp
                 )
 
             vision_tower = model.get_vision_tower()
-            vision_tower.to(dtype=cfg.torch_dtype)
+            vision_tower.to(dtype=cfg.torch_dtype, device=cfg.device)
 
             # pylint: disable=duplicate-code
             data_args = DataArguments(

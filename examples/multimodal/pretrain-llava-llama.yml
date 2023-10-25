@@ -1,7 +1,7 @@
-base_model: mistralai/Mistral-7B-v0.1
-model_type: MistralForCausalLM
+base_model: NousResearch/Llama-2-7b-hf
+model_type: LlamaForCausalLM
 tokenizer_type: LlamaTokenizer
-is_mistral_derived_model: true
+is_llama_derived_model: true
 
 # multimodal pretrain
 multimodal: true
@@ -16,9 +16,10 @@ load_in_4bit: false
 strict: false
 
 datasets:
-  - path: liuhaotian/LLaVA-CC3M-Pretrain-595K
+  - path: ./data/blip_laion_cc_sbu_558k.json
+#  - path: liuhaotian/LLaVA-CC3M-Pretrain-595K
 dataset_prepared_path:
-val_set_size: 0.01
+val_set_size: 0.0
 output_dir: ./out
 
 sequence_len: 2048
@@ -33,8 +34,8 @@ wandb_log_model:
 
 gradient_accumulation_steps: 4
 micro_batch_size: 2
-num_epochs: 4
-optimizer: adamw_bnb_8bit
+num_epochs: 1
+optimizer: adamw_torch
 lr_scheduler: cosine
 learning_rate: 0.002
 
