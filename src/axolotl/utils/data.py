@@ -271,7 +271,7 @@ def load_tokenized_prepared_datasets(
             )
             datasets.append(dataset_wrapper)
             prompters.append(dataset_prompter)
-            
+
         LOG.info("merging datasets")
         dataset = concatenate_datasets(datasets)
 
@@ -562,8 +562,9 @@ def get_dataset_wrapper(d, ds, tokenizer, cfg, d_base_type, d_prompt_style):
             suffix = f" Did you mean {d.type.replace(':load_', '.load_')}?"
         LOG.error(f"unhandled prompt tokenization strategy: {d.type}. {suffix}")
         raise ValueError(f"unhandled prompt tokenization strategy: {d.type} {suffix}")
-    
+
     return dataset_wrapper, dataset_prompter
+
 
 def encode_pretraining(
     tokenizer: PreTrainedTokenizerBase, max_tokens: int, examples: List[str]
