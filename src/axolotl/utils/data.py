@@ -150,13 +150,13 @@ def load_tokenized_prepared_datasets(
                     yield dataset
 
         # pylint: disable=invalid-name
-        for d in for_d_in_datasets(cfg.datasets):
+        for config_dataset in for_d_in_datasets(cfg.datasets):
             ds: Union[Dataset, DatasetDict] = None
             ds_from_hub = False
             try:
                 load_dataset(
-                    d.path,
-                    name=d.name,
+                    config_dataset.path,
+                    name=config_dataset.name,
                     streaming=True,
                     token=use_auth_token,
                 )
@@ -165,33 +165,33 @@ def load_tokenized_prepared_datasets(
                 pass
 
             # prefer local dataset, even if hub exists
-            local_path = Path(d.path)
+            local_path = Path(config_dataset.path)
             if local_path.exists():
                 if local_path.is_dir():
                     # TODO dirs with arrow or parquet files could be loaded with `load_from_disk`
                     ds = load_dataset(
-                        d.path,
-                        name=d.name,
-                        data_files=d.data_files,
+                        config_dataset.path,
+                        name=config_dataset.name,
+                        data_files=config_dataset.data_files,
                         streaming=False,
                         split=None,
                     )
                 elif local_path.is_file():
                     ds_type = "json"
-                    if d.ds_type:
-                        ds_type = d.ds_type
-                    elif ".parquet" in d.path:
+                    if config_dataset.ds_type:
+                        ds_type = config_dataset.ds_type
+                    elif ".parquet" in config_dataset.path:
                         ds_type = "parquet"
-                    elif ".arrow" in d.path:
+                    elif ".arrow" in config_dataset.path:
                         ds_type = "arrow"
-                    elif ".csv" in d.path:
+                    elif ".csv" in config_dataset.path:
                         ds_type = "csv"
-                    elif ".txt" in d.path:
+                    elif ".txt" in config_dataset.path:
                         ds_type = "text"
                     ds = load_dataset(
                         ds_type,
-                        name=d.name,
-                        data_files=d.path,
+                        name=config_dataset.name,
+                        data_files=config_dataset.path,
                         streaming=False,
                         split=None,
                     )
@@ -201,25 +201,25 @@ def load_tokenized_prepared_datasets(
                     )
             elif ds_from_hub:
                 ds = load_dataset(
-                    d.path,
-                    name=d.name,
+                    config_dataset.path,
+                    name=config_dataset.name,
                     streaming=False,
-                    data_files=d.data_files,
+                    data_files=config_dataset.data_files,
                     token=use_auth_token,
                 )
             else:
-                if isinstance(d.data_files, str):
+                if isinstance(config_dataset.data_files, str):
                     fp = hf_hub_download(
-                        repo_id=d.path,
+                        repo_id=config_dataset.path,
                         repo_type="dataset",
-                        filename=d.data_files,
+                        filename=config_dataset.data_files,
                     )
-                elif isinstance(d.data_files, list):
+                elif isinstance(config_dataset.data_files, list):
                     fp = []
-                    for file in d.data_files:
+                    for file in config_dataset.data_files:
                         fp.append(
                             hf_hub_download(
-                                repo_id=d.path,
+                                repo_id=config_dataset.path,
                                 repo_type="dataset",
                                 filename=file,
                             )
@@ -229,21 +229,21 @@ def load_tokenized_prepared_datasets(
                         "data_files must be either a string or list of strings"
                     )
                 ds = load_dataset(
-                    "json", name=d.name, data_files=fp, streaming=False, split=None
+                    "json", name=config_dataset.name, data_files=fp, streaming=False, split=None
                 )
             if not ds:
                 raise ValueError("unhandled dataset load")
             # support for using a subset of the data
-            if d.shards:
+            if config_dataset.shards:
                 if "train" in ds:
                     ds = ds.shuffle(seed=seed)["train"].shard(
-                        num_shards=d.shards, index=0
+                        num_shards=config_dataset.shards, index=0
                     )
                 else:
-                    ds = ds.shuffle(seed=seed).shard(num_shards=d.shards, index=0)
+                    ds = ds.shuffle(seed=seed).shard(num_shards=config_dataset.shards, index=0)
 
             d_base_type = d_prompt_style = None
-            d_type = d.type
+            d_type = config_dataset.type
             if isinstance(d_type, str):
                 d_type_split = d_type.split(":")
                 d_base_type = d_type_split[0]
@@ -252,18 +252,18 @@ def load_tokenized_prepared_datasets(
                 ds = ds["train"]
             elif (
                 isinstance(ds, DatasetDict)
-                and d.train_on_split
-                and d.train_on_split in ds
+                and config_dataset.train_on_split
+                and config_dataset.train_on_split in ds
             ):
-                ds = ds[d.train_on_split]
+                ds = ds[config_dataset.train_on_split]
             elif isinstance(ds, DatasetDict):
                 raise ValueError(
-                    f"no train split found for dataset {d.path}, you may specify a split with 'train_on_split: `"
+                    f"no train split found for dataset {config_dataset.path}, you may specify a split with 'train_on_split: `"
                 )
 
             dataset_wrapper, dataset_prompter = get_dataset_wrapper(
-                d=d,
-                ds=ds,
+                config_dataset=config_dataset,
+                dataset=ds,
                 tokenizer=tokenizer,
                 cfg=cfg,
                 d_base_type=d_base_type,
@@ -457,25 +457,25 @@ def load_prepare_datasets(
     return train_dataset, eval_dataset, prompters
 
 
-def get_dataset_wrapper(d, ds, tokenizer, cfg, d_base_type, d_prompt_style):
+def get_dataset_wrapper(config_dataset, dataset, tokenizer, cfg, d_base_type, d_prompt_style):
     dataset_wrapper = None
     dataset_prompter = None
 
     if (
-        "input_ids" in ds.features
-        and "attention_mask" in ds.features
-        and "labels" in ds.features
+        "input_ids" in dataset.features
+        and "attention_mask" in dataset.features
+        and "labels" in dataset.features
     ):
         # dataset is already tokenized, just drop it straight in
         dataset_prompter = UnsupportedPrompter()
-        dataset_wrapper = ds
-    elif isinstance(d.type, DictDefault):
-        ds_strategy = load("user_defined", tokenizer, cfg, d.type.to_dict())
+        dataset_wrapper = dataset
+    elif isinstance(config_dataset.type, DictDefault):
+        ds_strategy = load("user_defined", tokenizer, cfg, config_dataset.type.to_dict())
         dataset_prompter = UnsupportedPrompter()
-        dataset_wrapper = TokenizedPromptDataset(ds_strategy, ds)
-    elif ds_strategy := load(d.type, tokenizer, cfg, d):
+        dataset_wrapper = TokenizedPromptDataset(ds_strategy, dataset)
+    elif ds_strategy := load(config_dataset.type, tokenizer, cfg, config_dataset):
         dataset_prompter = UnsupportedPrompter()
-        dataset_wrapper = TokenizedPromptDataset(ds_strategy, ds)
+        dataset_wrapper = TokenizedPromptDataset(ds_strategy, dataset)
     elif d_base_type == "alpaca":
         dataset_prompter = AlpacaPrompter(d_prompt_style)
         ds_strategy = AlpacaPromptTokenizingStrategy(
@@ -484,7 +484,7 @@ def get_dataset_wrapper(d, ds, tokenizer, cfg, d_base_type, d_prompt_style):
             cfg.train_on_inputs,
             cfg.sequence_len,
         )
-        ds_wrapper = TokenizedPromptDataset(ds_strategy, ds)
+        ds_wrapper = TokenizedPromptDataset(ds_strategy, dataset)
         dataset_wrapper = ds_wrapper
     elif d_base_type == "explainchoice":
         dataset_prompter = MultipleChoiceExplainPrompter(d_prompt_style)
@@ -494,7 +494,7 @@ def get_dataset_wrapper(d, ds, tokenizer, cfg, d_base_type, d_prompt_style):
             cfg.train_on_inputs,
             cfg.sequence_len,
         )
-        ds_wrapper = TokenizedPromptDataset(ds_strategy, ds)
+        ds_wrapper = TokenizedPromptDataset(ds_strategy, dataset)
         dataset_wrapper = ds_wrapper
     elif d_base_type == "concisechoice":
         dataset_prompter = MultipleChoiceConcisePrompter(d_prompt_style)
@@ -504,7 +504,7 @@ def get_dataset_wrapper(d, ds, tokenizer, cfg, d_base_type, d_prompt_style):
             cfg.train_on_inputs,
             cfg.sequence_len,
         )
-        ds_wrapper = TokenizedPromptDataset(ds_strategy, ds)
+        ds_wrapper = TokenizedPromptDataset(ds_strategy, dataset)
         dataset_wrapper = ds_wrapper
     elif d_base_type == "summarizetldr":
         dataset_prompter = SummarizeTLDRPrompter(d_prompt_style)
@@ -514,7 +514,7 @@ def get_dataset_wrapper(d, ds, tokenizer, cfg, d_base_type, d_prompt_style):
             cfg.train_on_inputs,
             cfg.sequence_len,
         )
-        ds_wrapper = TokenizedPromptDataset(ds_strategy, ds)
+        ds_wrapper = TokenizedPromptDataset(ds_strategy, dataset)
         dataset_wrapper = ds_wrapper
     elif d_base_type == "jeopardy":
         dataset_prompter = JeopardyPrompter(d_prompt_style)
@@ -524,7 +524,7 @@ def get_dataset_wrapper(d, ds, tokenizer, cfg, d_base_type, d_prompt_style):
             cfg.train_on_inputs,
             cfg.sequence_len,
         )
-        ds_wrapper = TokenizedPromptDataset(ds_strategy, ds)
+        ds_wrapper = TokenizedPromptDataset(ds_strategy, dataset)
         dataset_wrapper = ds_wrapper
     elif d_base_type == "oasst":
         dataset_prompter = AlpacaPrompter(d_prompt_style)
@@ -534,7 +534,7 @@ def get_dataset_wrapper(d, ds, tokenizer, cfg, d_base_type, d_prompt_style):
             cfg.train_on_inputs,
             cfg.sequence_len,
         )
-        ds_wrapper = TokenizedPromptDataset(ds_strategy, ds)
+        ds_wrapper = TokenizedPromptDataset(ds_strategy, dataset)
         dataset_wrapper = ds_wrapper
     elif d_base_type == "gpteacher":
         dataset_prompter = GPTeacherPrompter(d_prompt_style)
@@ -544,7 +544,7 @@ def get_dataset_wrapper(d, ds, tokenizer, cfg, d_base_type, d_prompt_style):
             cfg.train_on_inputs,
             cfg.sequence_len,
         )
-        ds_wrapper = TokenizedPromptDataset(ds_strategy, ds)
+        ds_wrapper = TokenizedPromptDataset(ds_strategy, dataset)
         dataset_wrapper = ds_wrapper
     elif d_base_type == "reflection":
         dataset_prompter = ReflectAlpacaPrompter(d_prompt_style)
@@ -554,14 +554,14 @@ def get_dataset_wrapper(d, ds, tokenizer, cfg, d_base_type, d_prompt_style):
             cfg.train_on_inputs,
             cfg.sequence_len,
         )
-        ds_wrapper = TokenizedPromptDataset(ds_strategy, ds)
+        ds_wrapper = TokenizedPromptDataset(ds_strategy, dataset)
         dataset_wrapper = ds_wrapper
     else:
         suffix = ""
-        if ":load_" in d.type:
-            suffix = f" Did you mean {d.type.replace(':load_', '.load_')}?"
-        LOG.error(f"unhandled prompt tokenization strategy: {d.type}. {suffix}")
-        raise ValueError(f"unhandled prompt tokenization strategy: {d.type} {suffix}")
+        if ":load_" in config_dataset.type:
+            suffix = f" Did you mean {config_dataset.type.replace(':load_', '.load_')}?"
+        LOG.error(f"unhandled prompt tokenization strategy: {config_dataset.type}. {suffix}")
+        raise ValueError(f"unhandled prompt tokenization strategy: {config_dataset.type} {suffix}")
 
     return dataset_wrapper, dataset_prompter
 

@@ -57,15 +57,15 @@ class AlpacaPrompter:
             )
             self.system_format = "<|im_start|>system\n{system}<|im_end|>\n"
 
-    def _build_result(self, instruction, input, output):
+    def _build_result(self, instruction, input_text, output):
         # returns the full prompt from instruction and optional input
         # if a label (=response, =output) is provided, it's also appended.
-        if input:
+        if input_text:
             res = (
                 self.system_format.format(system=self.system_prompt)
                 if self.system_prompt
                 else ""
-            ) + self.turn_format.format(instruction=instruction, input=input)
+            ) + self.turn_format.format(instruction=instruction, input=input_text)
         else:
             res = (
                 self.system_format.format(system=self.system_no_input_prompt)

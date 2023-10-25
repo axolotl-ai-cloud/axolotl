@@ -6,7 +6,6 @@ from pathlib import Path
 
 import fire
 import transformers
-from colorama import Fore
 
 from axolotl.cli import (
     check_accelerate_default_config,
