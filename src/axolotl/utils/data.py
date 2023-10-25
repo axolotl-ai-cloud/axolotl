@@ -3,7 +3,7 @@ import functools
 import hashlib
 import logging
 from pathlib import Path
-from typing import Dict, List, Tuple, Union, Any
+from typing import Any, Dict, List, Tuple, Union
 
 import torch
 from datasets import (
