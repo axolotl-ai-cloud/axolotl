@@ -186,7 +186,7 @@ class MultipackDistributedDataloader:
         # maxsize is maximum number of samples in queue
         self.prefetch_max = prefetch_max
         self.queue: Queue = Queue(maxsize=prefetch_max)
-        self.thread = Thread(target=self._worker, daemon=True)
+        self.thread = None
 
     def _worker(self):
         LOG.info(
@@ -210,7 +210,8 @@ class MultipackDistributedDataloader:
             self.sampler.set_epoch(new_epoch)
             LOG.info(f"calling sampler.set_epoch({new_epoch})")
 
-        if not self.thread.is_alive():
+        if self.thread is None:
+            self.thread = Thread(target=self._worker, daemon=True)
             self.thread.start()
 
         while True:
