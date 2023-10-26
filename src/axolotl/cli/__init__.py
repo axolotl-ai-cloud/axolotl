@@ -222,7 +222,9 @@ def load_datasets(
 ) -> TrainDatasetMeta:
     tokenizer = load_tokenizer(cfg)
 
-    train_dataset, eval_dataset, total_num_steps = prepare_dataset(cfg, tokenizer)
+    train_dataset, eval_dataset, total_num_steps, prompters = prepare_dataset(
+        cfg, tokenizer
+    )
 
     if cli_args.debug or cfg.debug:
         LOG.info("check_dataset_labels...")
@@ -237,6 +239,10 @@ def load_datasets(
             num_examples=cli_args.debug_num_examples,
             text_only=cli_args.debug_text_only,
         )
+
+        LOG.info("printing prompters...")
+        for prompter in prompters:
+            LOG.info(prompter)
 
     return TrainDatasetMeta(
         train_dataset=train_dataset,

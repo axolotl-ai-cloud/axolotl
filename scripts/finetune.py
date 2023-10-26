@@ -45,8 +45,6 @@ def do_cli(config: Path = Path("examples/"), **kwargs):
         shard(cfg=parsed_cfg, cli_args=parsed_cli_args)
     else:
         dataset_meta = load_datasets(cfg=parsed_cfg, cli_args=parsed_cli_args)
-        if parsed_cli_args.prepare_ds_only:
-            return
         train(cfg=parsed_cfg, cli_args=parsed_cli_args, dataset_meta=dataset_meta)
 
 

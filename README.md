@@ -32,7 +32,6 @@ Features:
   - [How to Use Custom Pretokenized Dataset](#how-to-use-your-custom-pretokenized-dataset)
 - [Config](#config)
   - [Train](#train)
-  - [Training w/ Deepspeed](#training-with-deepspeed)
   - [Inference](#inference)
   - [Merge LORA to Base](#merge-lora-to-base)
 - [Common Errors](#common-errors-)
@@ -824,14 +823,41 @@ Run
 accelerate launch -m axolotl.cli.train your_config.yml
 ```
 
-#### Multi-GPU
+#### Preprocess dataset
 
-You can optionally pre-tokenize dataset with the following before finetuning:
+You can optionally pre-tokenize dataset with the following before finetuning.
+This is recommended for large datasets.
+
+- Set `push_dataset_to_hub: hf_user/repo` to push it to Huggingface.
+- Use `--debug` to see preprocessed examples.
+
 ```bash
-CUDA_VISIBLE_DEVICES=0 accelerate launch -m axolotl.cli.train your_config.yml --prepare_ds_only
+python -m axolotl.cli.preprocess your_config.yml
 ```
 
-##### Config
+#### Multi-GPU
+
+Below are the options available in axolotl for training with multiple GPUs. Note that DeepSpeed
+is the recommended multi-GPU option currently because FSDP may experience
+[loss instability](https://github.com/huggingface/transformers/issues/26498).
+
+##### DeepSpeed
+
+Deepspeed is an optimization suite for multi-gpu systems allowing you to train much larger models than you
+might typically be able to fit into your GPU's VRAM. More information about the various optimization types
+for deepspeed is available at https://huggingface.co/docs/accelerate/main/en/usage_guides/deepspeed#what-is-integrated
+
+We provide several default deepspeed JSON configurations for ZeRO stage 1, 2, and 3.
+
+```yaml
+deepspeed: deepspeed/zero1.json
+```
+
+```shell
+accelerate launch -m axolotl.cli.train examples/llama-2/config.py --deepspeed deepspeed/zero1.json
+```
+
+##### FSDP
 
 - llama FSDP
 ```yaml
@@ -854,24 +880,6 @@ wandb_entity:
 wandb_watch:
 wandb_run_id:
 wandb_log_model:
-```
-
-### Training with Deepspeed
-
-Deepspeed is an optimization suite for multi-gpu systems allowing you to train much larger models than you
-might typically be able to fit into your GPU's VRAM. More information about the various optimization types
-for deepspeed is available at https://huggingface.co/docs/accelerate/main/en/usage_guides/deepspeed#what-is-integrated
-
-We provide several default deepspeed JSON configurations for ZeRO stage 1, 2, and 3.
-
-```shell
-accelerate launch -m axolotl.cli.train examples/llama-2/config.py --deepspeed deepspeed/zero1.json
-```
-
-or
-
-```yaml
-deepspeed: deepspeed/zero1.json
 ```
 
 ### Inference

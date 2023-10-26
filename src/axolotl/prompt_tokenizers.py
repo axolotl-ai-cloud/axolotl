@@ -245,6 +245,7 @@ class ReflectionPromptTokenizingStrategy(PromptTokenizingStrategy):
         raise NotImplementedError
 
     def tokenize_prompt(self, prompt):
+        # pylint: disable=duplicate-code
         (
             instruction,
             input,  # pylint: disable=redefined-builtin
