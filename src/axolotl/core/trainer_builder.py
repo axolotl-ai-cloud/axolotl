@@ -18,7 +18,12 @@ import torch
 import transformers
 from datasets import Dataset
 from torch.optim.lr_scheduler import OneCycleLR
-from torch.utils.data import DataLoader, DistributedSampler, SequentialSampler
+from torch.utils.data import (
+    DataLoader,
+    DistributedSampler,
+    RandomSampler,
+    SequentialSampler,
+)
 from transformers import EarlyStoppingCallback, Trainer, TrainingArguments
 from transformers.trainer_pt_utils import SequentialDistributedSampler
 
@@ -33,6 +38,7 @@ from axolotl.utils.callbacks import (
 )
 from axolotl.utils.collators import DataCollatorForSeq2Seq
 from axolotl.utils.dataloader import MultipackDistributedDataloader
+from axolotl.utils.samplers import DemoBatchSampler
 from axolotl.utils.schedulers import get_cosine_schedule_with_quadratic_warmup
 
 try:
@@ -146,11 +152,15 @@ class AxolotlTrainer(Trainer):
 
     def _get_train_sampler(self) -> Optional[torch.utils.data.Sampler]:
         if self.args.world_size > 1 and self.args.sample_packing:
-            return DistributedSampler(
-                self.train_dataset,
-                num_replicas=self.args.world_size,
-                rank=self.args.process_index,
-                seed=self.args.seed,
+            # return DistributedSampler(
+            #     self.train_dataset,
+            #     num_replicas=self.args.world_size,
+            #     rank=self.args.process_index,
+            #     seed=self.args.seed,
+            # )
+            return DemoBatchSampler(
+                RandomSampler(self.train_dataset),
+                batch_size=self.args.train_batch_size,
             )
         return super()._get_train_sampler()
 
