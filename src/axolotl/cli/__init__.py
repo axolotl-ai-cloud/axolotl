@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional, Union
 
 import torch
 import yaml
+import json
 
 # add src to the pythonpath so we don't need to pip install this
 from accelerate.commands.config import config_args
@@ -85,6 +86,14 @@ def do_inference(
     cfg: DictDefault,
     cli_args: TrainerCliArgs,
 ):
+    
+    # Support for several multiline prompts from JSON file
+    idx_prompt = 0
+    prompts = {}
+    if cli_args.prompt_file:
+        with open(cli_args.prompt_file, 'r', encoding='utf-8') as file:
+            prompts = [json.loads(line.strip())['instruction'] for line in file]
+                
     model, tokenizer = load_model_and_tokenizer(cfg=cfg, cli_args=cli_args)
     prompter = cli_args.prompter
     default_tokens = {"unk_token": "<unk>", "bos_token": "<s>", "eos_token": "</s>"}
@@ -112,9 +121,16 @@ def do_inference(
 
     while True:
         print("=" * 80)
-        # support for multiline inputs
-        instruction = get_multi_line_input()
-        if not instruction:
+        if prompts:
+            if idx_prompt < len(prompts):
+                instruction = prompts[idx_prompt]
+                idx_prompt += 1
+            else:
+                return
+        else:
+            instruction = get_multi_line_input()
+        # Run inference only on one device
+        if not instruction or cfg.device != "cuda:0":
             return
         if prompter_module:
             prompt: str = next(
@@ -122,27 +138,35 @@ def do_inference(
             )
         else:
             prompt = instruction.strip()
+        print(f"Prompt is: {prompt}")
         batch = tokenizer(prompt, return_tensors="pt", add_special_tokens=True)
 
-        print("=" * 40)
+        print("=" * 80)
+        
         model.eval()
         with torch.no_grad():
-            generation_config = GenerationConfig(
-                repetition_penalty=1.1,
-                max_new_tokens=1024,
-                temperature=0.9,
-                top_p=0.95,
-                top_k=40,
-                bos_token_id=tokenizer.bos_token_id,
-                eos_token_id=tokenizer.eos_token_id,
-                pad_token_id=tokenizer.pad_token_id,
-                do_sample=True,
-                use_cache=True,
-                return_dict_in_generate=True,
-                output_attentions=False,
-                output_hidden_states=False,
-                output_scores=False,
-            )
+            if cli_args.generation_cfg:
+                generation_config = GenerationConfig.from_pretrained(
+                    cfg.lora_model_dir, 
+                    cli_args.generation_cfg
+                )
+            else:
+                generation_config = GenerationConfig(
+                    repetition_penalty=1.1,
+                    max_new_tokens=1024,
+                    temperature=0.9,
+                    top_p=0.95,
+                    top_k=40,
+                    bos_token_id=tokenizer.bos_token_id,
+                    eos_token_id=tokenizer.eos_token_id,
+                    pad_token_id=tokenizer.pad_token_id,
+                    do_sample=True,
+                    use_cache=True,
+                    return_dict_in_generate=True,
+                    output_attentions=False,
+                    output_hidden_states=False,
+                    output_scores=False,
+                )
             streamer = TextStreamer(tokenizer)
             generated = model.generate(
                 inputs=batch["input_ids"].to(cfg.device),
