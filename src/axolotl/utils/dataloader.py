@@ -3,6 +3,9 @@ import hashlib
 import itertools
 import logging
 import math
+import time
+from queue import Queue
+from threading import Thread
 from typing import Any, Callable, List, Union
 
 import numba
@@ -149,6 +152,8 @@ class MultipackDistributedDataloader:
         packing_efficiency_estimate: float = 1.0,
         sample_packing_seq_len_multiplier: int = 1,
         device_count: int = 1,
+        prefetch_max: int = 1000,
+        num_epochs: int = 1,
     ):
         # Dataset
         self.dataset = dataset
@@ -167,6 +172,7 @@ class MultipackDistributedDataloader:
         self.seq_max_length = seq_max_length
         self.batch_max_length = batch_size * seq_max_length
         self.collate_fn = collate_fn
+        self.num_epochs = num_epochs
 
         self.num_replicas = 1
         self.rank = 0
@@ -176,6 +182,44 @@ class MultipackDistributedDataloader:
         self.eff_total_slots = 0
         self.packing_efficiency_estimate = packing_efficiency_estimate or 1.0
         self.device_count = device_count
+
+        # maxsize is maximum number of samples in queue
+        self.prefetch_max = prefetch_max
+        self.queue: Queue = Queue(maxsize=prefetch_max)
+        self.thread = None
+
+    def _worker(self):
+        LOG.info(
+            f"[WORKER] Epochs: {self.num_epochs}, Samples: {self.len_w_stats()*self.batch_size}"
+        )
+        for epoch in range(self.num_epochs):
+            for sample in self._internal_batch_generator():
+                while True:
+                    if self.queue.full():
+                        time.sleep(1)
+                    else:
+                        break
+                self.queue.put(sample)
+
+            # stop the queue when epoch is done
+            self.queue.put(None)
+
+    def __iter__(self):
+        if hasattr(self.sampler, "set_epoch"):
+            new_epoch = self.sampler.epoch + 1
+            self.sampler.set_epoch(new_epoch)
+            LOG.info(f"calling sampler.set_epoch({new_epoch})")
+
+        if self.thread is None:
+            self.thread = Thread(target=self._worker, daemon=True)
+            self.thread.start()
+
+        while True:
+            item = self.queue.get()
+
+            if item is None:
+                break
+            yield item
 
     def generate_batches(self, set_stats=False):
         LOG.info("generating packed batches")
@@ -206,11 +250,7 @@ class MultipackDistributedDataloader:
 
         return batches, totseqs
 
-    def __iter__(self):
-        if hasattr(self.sampler, "set_epoch"):
-            new_epoch = self.sampler.epoch + 1
-            self.sampler.set_epoch(new_epoch)
-            LOG.info(f"calling sampler.set_epoch({new_epoch})")
+    def _internal_batch_generator(self):
         all_batches, _ = self.generate_batches(set_stats=True)
         features = self.dataset.features.keys()
         len_remaining = self._len_est()

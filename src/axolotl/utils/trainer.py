@@ -216,6 +216,7 @@ def calculate_total_num_steps(cfg, train_dataset, tokenizer):
                 packing_efficiency_estimate=cfg.sample_packing_eff_est,
                 sample_packing_seq_len_multiplier=cfg.micro_batch_size,
                 device_count=int(os.environ.get("WORLD_SIZE", 1)),
+                num_epochs=cfg.num_epochs,
             )
             data_loader_len = data_loader.len_w_stats()
             actual_eff = data_loader.efficiency()
