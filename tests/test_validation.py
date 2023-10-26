@@ -682,6 +682,55 @@ class ValidationTest(unittest.TestCase):
 
         validate_config(cfg)
 
+    def test_add_tokens_adapter(self):
+        cfg = DictDefault(
+            {"adapter": "qlora", "load_in_4bit": True, "tokens": ["<|imstart|>"]}
+        )
+
+        with self._caplog.at_level(logging.WARNING):
+            validate_config(cfg)
+            assert any(
+                "lora_modules_to_save not properly set yet adding new tokens"
+                in record.message
+                for record in self._caplog.records
+            )
+
+            assert all(
+                x in cfg.lora_modules_to_save for x in ["embed_tokens", "lm_head"]
+            )
+
+        cfg = DictDefault(
+            {
+                "adapter": "qlora",
+                "load_in_4bit": True,
+                "tokens": ["<|imstart|>"],
+                "lora_modules_to_save": ["embed_tokens"],
+            }
+        )
+
+        with self._caplog.at_level(logging.WARNING):
+            validate_config(cfg)
+            assert any(
+                "lora_modules_to_save not properly set yet adding new tokens"
+                in record.message
+                for record in self._caplog.records
+            )
+
+            assert all(
+                x in cfg.lora_modules_to_save for x in ["embed_tokens", "lm_head"]
+            )
+
+        cfg = DictDefault(
+            {
+                "adapter": "qlora",
+                "load_in_4bit": True,
+                "tokens": ["<|imstart|>"],
+                "lora_modules_to_save": ["embed_tokens", "lm_head"],
+            }
+        )
+
+        validate_config(cfg)
+
 
 class ValidationWandbTest(ValidationTest):
     """
