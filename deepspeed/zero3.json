@@ -1,3 +1,4 @@
+{
   "zero_optimization": {
     "stage": 3,
     "overlap_comm": true,
@@ -37,7 +38,8 @@
       "warmup_min_lr": "auto",
       "warmup_max_lr": "auto",
       "warmup_num_steps": "auto",
-      "decay_style": "linear"
+      "warmup_type": "linear",
+      "total_num_steps": "auto"
     }
   },
   "gradient_accumulation_steps": "auto",
