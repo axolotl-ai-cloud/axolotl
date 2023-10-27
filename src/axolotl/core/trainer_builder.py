@@ -161,7 +161,7 @@ class AxolotlTrainer(Trainer):
         return self.lr_scheduler
 
     def _get_train_sampler(self) -> Optional[torch.utils.data.Sampler]:
-        if self.args.world_size > 1 and self.args.sample_packing:
+        if self.args.sample_packing:
             return MultipackBatchSampler(
                 RandomSampler(self.train_dataset),
                 self.args.train_batch_size,
@@ -214,7 +214,7 @@ class AxolotlTrainer(Trainer):
             dataloader_params["worker_init_fn"] = seed_worker
 
             self.accelerator.even_batches = False
-            return self.accelerator.prepare(
+            return self.accelerator.prepare_data_loader(
                 DataLoader(train_dataset, **dataloader_params)
             )
         return super().get_train_dataloader()
