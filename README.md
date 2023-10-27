@@ -106,6 +106,24 @@ accelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \
   ```bash
   docker run --gpus '"all"' --rm -it winglian/axolotl:main-py3.10-cu118-2.0.1
   ```
+
+  <details>
+
+  <summary>Docker advanced</summary>
+
+  A more powerful Docker command to run would be this:
+
+  ```bash
+  docker run --gpus '"all"' --rm -it --name axolotl --ipc=host --ulimit memlock=-1 --ulimit stack=67108864 --mount type=volume,src=axolotl,target=/workspace/axolotl -v ${HOME}/.cache/huggingface:/root/.cache/huggingface winglian/axolotl:main-py3.10-cu118-2.0.1
+  ```
+
+  It additionally:
+  * Prevents memory issues when running e.g. deepspeed (e.g. you could hit SIGBUS/signal 7 error) through `--ipc` and `--ulimit` args.
+  * Persists the downloaded HF data (models etc.) and your modifications to axolotl code through `--mount`/`-v` args.
+  * The `--name` argument simply makes it easier to refer to the container in vscode (`Dev Containers: Attach to Running Container...`) or in your terminal.
+
+  </details><br/>
+
   - `winglian/axolotl-runpod:main-latest`: for runpod or use this [direct link](https://runpod.io/gsc?template=v2ickqhz9s&ref=6i7fkpdz)
 
   Or run on the current files for development:
