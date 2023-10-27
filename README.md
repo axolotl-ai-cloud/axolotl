@@ -106,6 +106,13 @@ accelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \
   ```bash
   docker run --gpus '"all"' --rm -it winglian/axolotl:main-py3.10-cu118-2.0.1
   ```
+  - `winglian/axolotl-runpod:main-latest`: for runpod or use this [direct link](https://runpod.io/gsc?template=v2ickqhz9s&ref=6i7fkpdz)
+
+  Or run on the current files for development:
+
+  ```sh
+  docker compose up -d
+  ```
 
   <details>
 
@@ -122,15 +129,9 @@ accelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \
   * Persists the downloaded HF data (models etc.) and your modifications to axolotl code through `--mount`/`-v` args.
   * The `--name` argument simply makes it easier to refer to the container in vscode (`Dev Containers: Attach to Running Container...`) or in your terminal.
 
-  </details><br/>
+  [More information on nvidia website](https://docs.nvidia.com/deeplearning/frameworks/user-guide/index.html#setincshmem)
 
-  - `winglian/axolotl-runpod:main-latest`: for runpod or use this [direct link](https://runpod.io/gsc?template=v2ickqhz9s&ref=6i7fkpdz)
-
-  Or run on the current files for development:
-
-  ```sh
-  docker compose up -d
-  ```
+  </details>
 
 #### Conda/Pip venv
   1. Install python >=**3.9**
