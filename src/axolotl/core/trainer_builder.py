@@ -20,13 +20,20 @@ import transformers
 from datasets import Dataset
 from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import (
+    BatchSampler,
     DataLoader,
     DistributedSampler,
     RandomSampler,
-    SequentialSampler, BatchSampler,
+    SequentialSampler,
 )
-from transformers import EarlyStoppingCallback, Trainer, TrainingArguments, is_datasets_available
+from transformers import (
+    EarlyStoppingCallback,
+    Trainer,
+    TrainingArguments,
+    is_datasets_available,
+)
 from transformers.trainer_pt_utils import SequentialDistributedSampler
+from transformers.trainer_utils import seed_worker
 
 from axolotl.monkeypatch.relora import ReLoRACallback, ReLoRAScheduler
 from axolotl.utils.callbacks import (
@@ -40,8 +47,8 @@ from axolotl.utils.callbacks import (
 from axolotl.utils.collators import DataCollatorForSeq2Seq
 from axolotl.utils.dataloader import MultipackDistributedDataloader
 from axolotl.utils.samplers import DemoBatchSampler
+from axolotl.utils.samplers.multipack import MultipackBatchSampler
 from axolotl.utils.schedulers import get_cosine_schedule_with_quadratic_warmup
-from transformers.trainer_utils import seed_worker
 
 try:
     import torch._dynamo  # pylint: disable=ungrouped-imports
@@ -154,16 +161,17 @@ class AxolotlTrainer(Trainer):
 
     def _get_train_sampler(self) -> Optional[torch.utils.data.Sampler]:
         if self.args.world_size > 1 and self.args.sample_packing:
-            # return DistributedSampler(
-            #     self.train_dataset,
-            #     num_replicas=self.args.world_size,
-            #     rank=self.args.process_index,
-            #     seed=self.args.seed,
-            # )
-            return DemoBatchSampler(
+            return MultipackBatchSampler(
                 RandomSampler(self.train_dataset),
-                batch_size=self.args.train_batch_size,
+                self.args.train_batch_size,
                 drop_last=True,
+                batch_max_len=self._train_batch_size * self.args.max_seq_length,
+                lengths=(
+                    self.train_dataset.data.column("position_ids")
+                    .to_pandas()
+                    .apply(lambda x: x[-1] + 1)
+                    .values
+                ),
             )
         return super()._get_train_sampler()
 
@@ -202,9 +210,13 @@ class AxolotlTrainer(Trainer):
         train_dataset = self.train_dataset
         data_collator = self.data_collator
         if is_datasets_available() and isinstance(train_dataset, datasets.Dataset):
-            train_dataset = self._remove_unused_columns(train_dataset, description="training")
+            train_dataset = self._remove_unused_columns(
+                train_dataset, description="training"
+            )
         else:
-            data_collator = self._get_collator_with_removed_columns(data_collator, description="training")
+            data_collator = self._get_collator_with_removed_columns(
+                data_collator, description="training"
+            )
 
         dataloader_params = {
             "batch_size": self._train_batch_size,
@@ -217,9 +229,10 @@ class AxolotlTrainer(Trainer):
             sampler = self._get_train_sampler()
             if isinstance(sampler, BatchSampler):
                 dataloader_params["batch_sampler"] = sampler
+                del dataloader_params["batch_size"]
             else:
                 dataloader_params["sampler"] = sampler
-            dataloader_params["drop_last"] = self.args.dataloader_drop_last
+                dataloader_params["drop_last"] = self.args.dataloader_drop_last
             dataloader_params["worker_init_fn"] = seed_worker
 
         return self.accelerator.prepare(DataLoader(train_dataset, **dataloader_params))
