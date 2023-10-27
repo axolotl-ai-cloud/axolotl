@@ -17,6 +17,7 @@ from typing import Optional, Union
 import datasets
 import torch
 import transformers
+from accelerate.state import AcceleratorState
 from datasets import Dataset
 from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import (
@@ -192,40 +193,17 @@ class AxolotlTrainer(Trainer):
         return super()._get_eval_sampler(eval_dataset)
 
     def get_train_dataloader(self) -> Union[DataLoader, MultipackDistributedDataloader]:
-        if self.args.sample_packing and False:
-            train_sampler = self._get_train_sampler()
-            return self.accelerator.prepare(
-                MultipackDistributedDataloader(
-                    self.train_dataset,
-                    batch_size=self._train_batch_size,
-                    seq_max_length=self.args.max_seq_length,
-                    collate_fn=self.data_collator,
-                    sampler=train_sampler,
-                    packing_efficiency_estimate=self.args.sample_packing_efficiency,
-                    sample_packing_seq_len_multiplier=self.args.sample_packing_seq_len_multiplier,
-                    device_count=int(os.environ.get("WORLD_SIZE", 1)),
-                    num_epochs=self.num_epochs,
-                )
-            )
-        train_dataset = self.train_dataset
-        data_collator = self.data_collator
-        if is_datasets_available() and isinstance(train_dataset, datasets.Dataset):
-            train_dataset = self._remove_unused_columns(
-                train_dataset, description="training"
-            )
-        else:
-            data_collator = self._get_collator_with_removed_columns(
-                data_collator, description="training"
-            )
+        if self.args.sample_packing:
+            train_dataset = self.train_dataset
+            train_dataset = train_dataset.remove_columns(["length"])
+            data_collator = self.data_collator
+            dataloader_params = {
+                "batch_size": self._train_batch_size,
+                "collate_fn": data_collator,
+                "num_workers": self.args.dataloader_num_workers,
+                "pin_memory": self.args.dataloader_pin_memory,
+            }
 
-        dataloader_params = {
-            "batch_size": self._train_batch_size,
-            "collate_fn": data_collator,
-            "num_workers": self.args.dataloader_num_workers,
-            "pin_memory": self.args.dataloader_pin_memory,
-        }
-
-        if not isinstance(train_dataset, torch.utils.data.IterableDataset):
             sampler = self._get_train_sampler()
             if isinstance(sampler, BatchSampler):
                 dataloader_params["batch_sampler"] = sampler
@@ -235,9 +213,11 @@ class AxolotlTrainer(Trainer):
                 dataloader_params["drop_last"] = self.args.dataloader_drop_last
             dataloader_params["worker_init_fn"] = seed_worker
 
-        return self.accelerator.prepare(DataLoader(train_dataset, **dataloader_params))
-
-        # return super().get_train_dataloader()
+            self.accelerator.even_batches = False
+            return self.accelerator.prepare(
+                DataLoader(train_dataset, **dataloader_params)
+            )
+        return super().get_train_dataloader()
 
     def get_eval_dataloader(
         self, eval_dataset: Optional[Dataset] = None
@@ -740,5 +720,10 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         trainer = self.hook_post_create_trainer(trainer)
         for callback in self.get_post_trainer_create_callbacks(trainer):
             trainer.add_callback(callback)
+
+        if self.cfg.deepspeed and self.cfg.sample_packing:
+            trainer.accelerator.state.deepspeed_plugin.deepspeed_config[
+                "train_micro_batch_size_per_gpu"
+            ] = self.cfg.micro_batch_size
 
         return trainer

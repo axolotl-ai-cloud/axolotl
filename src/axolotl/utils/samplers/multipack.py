@@ -102,6 +102,7 @@ class MultipackBatchSampler(BatchSampler):
         lengths: np.ndarray,
     ):
         super().__init__(sampler, batch_size, drop_last)
+        self.batch_size = None
         self.batch_max_len = batch_max_len
         self.lengths: np.ndarray = lengths
 
@@ -130,7 +131,7 @@ class MultipackBatchSampler(BatchSampler):
             n=1,
         )
 
-        batches = [indices[batch] for batch in batches]
+        batches = [[indices[b_idx] for b_idx in batch] for batch in batches]
 
         # statistics
         if set_stats:
@@ -149,3 +150,6 @@ class MultipackBatchSampler(BatchSampler):
 
     def efficiency(self):
         return self.eff_total_used / self.eff_total_slots
+
+    def __len__(self):
+        return self.num_batches()

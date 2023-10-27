@@ -54,6 +54,24 @@ class DataCollatorForSeq2Seq:
     return_tensors: str = "pt"
 
     def __call__(self, features, return_tensors=None):
+        chunked_data = {}
+        for feature in features[0].keys():
+            if feature == "length":
+                continue
+            if feature == "attention_mask":
+                arrays = [
+                    (1) * np.array(item[feature])
+                    for item in features
+                    if feature in item
+                ]
+                chunked_data[feature] = np.concatenate(arrays)
+            else:
+                arrays = [
+                    np.array(item[feature]) for item in features if feature in item
+                ]
+                chunked_data[feature] = np.concatenate(arrays)
+        features = [chunked_data]
+
         labels = None
         if return_tensors is None:
             return_tensors = self.return_tensors
