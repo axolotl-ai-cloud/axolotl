@@ -14,6 +14,7 @@ from functools import partial
 from pathlib import Path
 from typing import Optional, Union
 
+import datasets
 import torch
 import transformers
 from datasets import Dataset
@@ -22,9 +23,9 @@ from torch.utils.data import (
     DataLoader,
     DistributedSampler,
     RandomSampler,
-    SequentialSampler,
+    SequentialSampler, BatchSampler,
 )
-from transformers import EarlyStoppingCallback, Trainer, TrainingArguments
+from transformers import EarlyStoppingCallback, Trainer, TrainingArguments, is_datasets_available
 from transformers.trainer_pt_utils import SequentialDistributedSampler
 
 from axolotl.monkeypatch.relora import ReLoRACallback, ReLoRAScheduler
@@ -40,6 +41,7 @@ from axolotl.utils.collators import DataCollatorForSeq2Seq
 from axolotl.utils.dataloader import MultipackDistributedDataloader
 from axolotl.utils.samplers import DemoBatchSampler
 from axolotl.utils.schedulers import get_cosine_schedule_with_quadratic_warmup
+from transformers.trainer_utils import seed_worker
 
 try:
     import torch._dynamo  # pylint: disable=ungrouped-imports
@@ -161,6 +163,7 @@ class AxolotlTrainer(Trainer):
             return DemoBatchSampler(
                 RandomSampler(self.train_dataset),
                 batch_size=self.args.train_batch_size,
+                drop_last=True,
             )
         return super()._get_train_sampler()
 
@@ -181,7 +184,7 @@ class AxolotlTrainer(Trainer):
         return super()._get_eval_sampler(eval_dataset)
 
     def get_train_dataloader(self) -> Union[DataLoader, MultipackDistributedDataloader]:
-        if self.args.sample_packing:
+        if self.args.sample_packing and False:
             train_sampler = self._get_train_sampler()
             return self.accelerator.prepare(
                 MultipackDistributedDataloader(
@@ -196,7 +199,32 @@ class AxolotlTrainer(Trainer):
                     num_epochs=self.num_epochs,
                 )
             )
-        return super().get_train_dataloader()
+        train_dataset = self.train_dataset
+        data_collator = self.data_collator
+        if is_datasets_available() and isinstance(train_dataset, datasets.Dataset):
+            train_dataset = self._remove_unused_columns(train_dataset, description="training")
+        else:
+            data_collator = self._get_collator_with_removed_columns(data_collator, description="training")
+
+        dataloader_params = {
+            "batch_size": self._train_batch_size,
+            "collate_fn": data_collator,
+            "num_workers": self.args.dataloader_num_workers,
+            "pin_memory": self.args.dataloader_pin_memory,
+        }
+
+        if not isinstance(train_dataset, torch.utils.data.IterableDataset):
+            sampler = self._get_train_sampler()
+            if isinstance(sampler, BatchSampler):
+                dataloader_params["batch_sampler"] = sampler
+            else:
+                dataloader_params["sampler"] = sampler
+            dataloader_params["drop_last"] = self.args.dataloader_drop_last
+            dataloader_params["worker_init_fn"] = seed_worker
+
+        return self.accelerator.prepare(DataLoader(train_dataset, **dataloader_params))
+
+        # return super().get_train_dataloader()
 
     def get_eval_dataloader(
         self, eval_dataset: Optional[Dataset] = None
