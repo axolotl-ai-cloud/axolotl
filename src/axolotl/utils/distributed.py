@@ -51,6 +51,17 @@ def get_world_size():
 
 
 @contextmanager
+def zero_only():
+    """
+    Context manager that only runs the enclosed block on the main rank.
+    """
+    if is_main_process():
+        yield
+    else:
+        yield None
+
+
+@contextmanager
 def zero_first(is_main):
     """
     runs the wrapped context so that rank 0 runs first before other ranks
