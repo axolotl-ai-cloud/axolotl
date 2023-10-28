@@ -519,6 +519,15 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 "sample_packing_efficiency"
             ] = self.cfg.sample_packing_eff_est
 
+        if self.cfg.dataloader_pin_memory is not None:
+            training_arguments_kwargs[
+                "dataloader_pin_memory"
+            ] = self.cfg.dataloader_pin_memory
+        if self.cfg.dataloader_num_workers is not None:
+            training_arguments_kwargs[
+                "dataloader_num_workers"
+            ] = self.cfg.dataloader_num_workers
+
         if self.cfg.eval_steps:
             training_arguments_kwargs["evaluation_strategy"] = "steps"
             training_arguments_kwargs["eval_steps"] = self.cfg.eval_steps
