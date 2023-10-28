@@ -157,6 +157,7 @@ class AxolotlTrainer(Trainer):
                     .apply(lambda x: x[-1] + 1)
                     .values
                 ),
+                packing_efficiency_estimate=self.args.sample_packing_efficiency,
             )
         return super()._get_train_sampler()
 
@@ -175,6 +176,7 @@ class AxolotlTrainer(Trainer):
                     .apply(lambda x: x[-1] + 1)
                     .values
                 ),
+                packing_efficiency_estimate=self.args.sample_packing_efficiency,
             )
         return super()._get_eval_sampler(eval_dataset)
 

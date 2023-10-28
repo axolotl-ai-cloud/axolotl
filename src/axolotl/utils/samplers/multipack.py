@@ -2,11 +2,16 @@
 """
 Multipack Batch Sampler
 """
+import logging
+import math
+import os
 from typing import Any, Iterable, List, Union
 
 import numba
 import numpy as np
 from torch.utils.data import BatchSampler, Sampler
+
+LOG = logging.getLogger("axolotl.utils.samplers.multipack")
 
 
 @numba.njit
@@ -109,11 +114,13 @@ class MultipackBatchSampler(BatchSampler):
         drop_last: bool,
         batch_max_len: int,
         lengths: np.ndarray,
+        packing_efficiency_estimate: float = 1.0,
     ):
         super().__init__(sampler, batch_size, drop_last)
         self.batch_size = None
         self.batch_max_len = batch_max_len
         self.lengths: np.ndarray = lengths
+        self.packing_efficiency_estimate = packing_efficiency_estimate or 1.0
 
         assert isinstance(self.lengths, np.ndarray)
 
@@ -154,11 +161,33 @@ class MultipackBatchSampler(BatchSampler):
         return iter(batches)
 
     def num_batches(self):
-        batches = self.generate_batches()
+        batches = self.generate_batches(set_stats=True)
         return len(batches)
 
     def efficiency(self):
         return self.eff_total_used / self.eff_total_slots
 
     def __len__(self):
-        return self.num_batches()
+        self.num_batches()
+        return self._len_est()
+
+    def _len_est(self):
+        world_size = int(os.getenv("WORLD_SIZE", "1"))
+        lengths_sum = np.sum(self.lengths)
+        lengths_sum_per_device = lengths_sum // world_size
+        LOG.info(
+            f"packing_efficiency_estimate: {self.packing_efficiency_estimate} "
+            f"total_num_tokens per device: {lengths_sum_per_device}"
+        )
+
+        # shave off 1% + 1 for dealing with variance in packing from random sampler to sampler
+        return (
+            world_size
+            * math.floor(
+                0.99
+                * lengths_sum_per_device
+                / self.packing_efficiency_estimate
+                // self.batch_max_len
+            )
+            - 1
+        )

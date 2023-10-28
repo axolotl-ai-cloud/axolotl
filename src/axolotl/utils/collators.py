@@ -145,4 +145,4 @@ class BatchSamplerDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):
                 ]
                 chunked_data[feature] = np.concatenate(arrays)
         features = [chunked_data]
-        return super().__init__(features, return_tensors=return_tensors)
+        return super().__call__(features, return_tensors=return_tensors)

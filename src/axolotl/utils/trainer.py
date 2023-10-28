@@ -232,7 +232,12 @@ def calculate_total_num_steps(cfg, train_dataset):
             )
     else:
         total_num_steps = int(
-            math.ceil(len(train_dataset) * cfg.num_epochs / cfg.batch_size)
+            math.ceil(
+                len(train_dataset)
+                * cfg.num_epochs
+                / int(os.environ.get("WORLD_SIZE", 1))
+                / cfg.batch_size
+            )
         )
     LOG.debug(f"total_num_steps: {total_num_steps}", main_process_only=True)
     return total_num_steps
