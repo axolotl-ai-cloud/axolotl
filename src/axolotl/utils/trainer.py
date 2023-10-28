@@ -212,7 +212,13 @@ def calculate_total_num_steps(cfg, train_dataset):
             LOG.debug(f"data_loader_len: {data_loader_len}", main_process_only=True)
             # FIXME: is there a bug here somewhere? the total num steps depends
             # on the agreed on value for sample_packing_eff_est
-            total_num_steps = int(math.floor(data_loader_len * cfg.num_epochs))
+            total_num_steps = int(
+                math.floor(
+                    data_loader_len
+                    * cfg.num_epochs
+                    / int(os.environ.get("WORLD_SIZE", 1))
+                )
+            )
 
             def calc_sample_packing_eff_est(estimates: List[float]):
                 LOG.info(f"sample_packing_eff_est across ranks: {repr(estimates)}")
