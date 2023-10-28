@@ -618,14 +618,14 @@ gradient_accumulation_steps: 1
 # The number of samples to include in each batch. This is the number of samples sent to each GPU.
 micro_batch_size: 2
 eval_batch_size:
-num_epochs: 3
+num_epochs: 4
 warmup_steps: 100
 learning_rate: 0.00003
 lr_quadratic_warmup:
 logging_steps:
 save_strategy: # Set to `no` to skip checkpoint saves
 save_steps: # Leave empty to save at each epoch
-eval_steps: # Leave empty to eval at each epoch
+eval_steps: # Leave empty to eval at each epoch, integers for every N steps. decimal for fraction of total steps
 save_total_limit: # Checkpoints saved at a time
 # Maximum number of iterations to train for. It precedes num_epochs which means that
 # if both are set, num_epochs will not be guaranteed.
