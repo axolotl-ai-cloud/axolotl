@@ -80,11 +80,11 @@ def prepare_dataset(cfg, tokenizer):
         )
     if cfg.max_steps:
         total_num_steps = min(
-            calculate_total_num_steps(cfg, train_dataset, tokenizer), cfg.max_steps
+            calculate_total_num_steps(cfg, train_dataset), cfg.max_steps
         )
         LOG.info(f"Maximum number of steps set at {total_num_steps}")
     else:
-        total_num_steps = calculate_total_num_steps(cfg, train_dataset, tokenizer)
+        total_num_steps = calculate_total_num_steps(cfg, train_dataset)
     return train_dataset, eval_dataset, total_num_steps, prompters
 
 

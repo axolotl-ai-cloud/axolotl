@@ -1,8 +1,11 @@
-from typing import Iterable, List, Optional, Union
+# pylint: skip-file
+"""
+Multipack Batch Sampler
+"""
+from typing import Any, Iterable, List, Union
 
 import numba
 import numpy as np
-import torch.distributed as dist
 from torch.utils.data import BatchSampler, Sampler
 
 
@@ -35,8 +38,8 @@ def ffd_with_result(a: np.ndarray, c: int, start_index: int):
     indices = np.argsort(a)[::-1]
     a = a[indices]
 
-    bins = []
-    bins_result = []
+    bins: List[Any] = []
+    bins_result: List[Any] = []
     for a_id, size in enumerate(a):
         add_new = True
         for idx in range(len(bins)):
@@ -67,23 +70,25 @@ def allocate(
 
     while True:
         # binary search [l, r)
-        l = 1
-        r = 1 + np.searchsorted(lengths_cumsum[start_index:], s + c * n, "right")
+        left = 1
+        right = 1 + np.searchsorted(lengths_cumsum[start_index:], s + c * n, "right")
 
-        while r - l > 1:
-            m = (l + r) // 2
-            if ffd_check(lengths[start_index : start_index + m], c, n):
-                l = m
+        while right - left > 1:
+            mid = (left + right) // 2
+            if ffd_check(lengths[start_index : start_index + mid], c, n):
+                left = mid
             else:
-                r = m
+                right = mid
 
         # use length l
-        batch = ffd_with_result(lengths[start_index : start_index + l], c, start_index)
+        batch = ffd_with_result(
+            lengths[start_index : start_index + left], c, start_index
+        )
         assert len(batch) <= n
         if len(batch) < n:
             break
 
-        start_index += l
+        start_index += left
         s = lengths_cumsum[start_index - 1]
 
         # add local rank
@@ -93,6 +98,10 @@ def allocate(
 
 
 class MultipackBatchSampler(BatchSampler):
+    """
+    Batch Sampler class for multipack
+    """
+
     def __init__(
         self,
         sampler: Union[Sampler[int], Iterable[int]],

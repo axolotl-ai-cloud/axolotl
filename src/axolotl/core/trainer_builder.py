@@ -6,7 +6,6 @@ import abc
 import importlib
 import logging
 import math
-import os
 import sys
 from abc import abstractmethod
 from dataclasses import dataclass, field
@@ -14,26 +13,12 @@ from functools import partial
 from pathlib import Path
 from typing import Optional, Union
 
-import datasets
 import torch
 import transformers
-from accelerate.state import AcceleratorState
 from datasets import Dataset
 from torch.optim.lr_scheduler import OneCycleLR
-from torch.utils.data import (
-    BatchSampler,
-    DataLoader,
-    DistributedSampler,
-    RandomSampler,
-    SequentialSampler,
-)
-from transformers import (
-    EarlyStoppingCallback,
-    Trainer,
-    TrainingArguments,
-    is_datasets_available,
-)
-from transformers.trainer_pt_utils import SequentialDistributedSampler
+from torch.utils.data import BatchSampler, DataLoader, RandomSampler, SequentialSampler
+from transformers import EarlyStoppingCallback, Trainer, TrainingArguments
 from transformers.trainer_utils import seed_worker
 
 from axolotl.monkeypatch.relora import ReLoRACallback, ReLoRAScheduler
@@ -45,10 +30,9 @@ from axolotl.utils.callbacks import (
     bench_eval_callback_factory,
     log_prediction_callback_factory,
 )
-from axolotl.utils.collators import DataCollatorForSeq2Seq
+from axolotl.utils.collators import BatchSamplerDataCollatorForSeq2Seq
 from axolotl.utils.dataloader import MultipackDistributedDataloader
-from axolotl.utils.samplers import DemoBatchSampler
-from axolotl.utils.samplers.multipack import MultipackBatchSampler
+from axolotl.utils.samplers import MultipackBatchSampler
 from axolotl.utils.schedulers import get_cosine_schedule_with_quadratic_warmup
 
 try:
@@ -179,20 +163,22 @@ class AxolotlTrainer(Trainer):
     def _get_eval_sampler(
         self, eval_dataset: Dataset
     ) -> Optional[torch.utils.data.Sampler]:
-        if (
-            self.args.world_size > 1
-            and self.args.sample_packing
-            and self.args.eval_sample_packing is not False
-        ):
-            return SequentialDistributedSampler(
-                eval_dataset,
-                num_replicas=self.args.world_size,
-                rank=self.args.process_index,
-                batch_size=self.args.per_device_eval_batch_size,
+        if self.args.sample_packing and self.args.eval_sample_packing is not False:
+            return MultipackBatchSampler(
+                SequentialSampler(eval_dataset),
+                self.args.per_device_eval_batch_size,
+                drop_last=True,
+                batch_max_len=self.args.eval_batch_size * self.args.max_seq_length,
+                lengths=(
+                    eval_dataset.data.column("position_ids")
+                    .to_pandas()
+                    .apply(lambda x: x[-1] + 1)
+                    .values
+                ),
             )
         return super()._get_eval_sampler(eval_dataset)
 
-    def get_train_dataloader(self) -> Union[DataLoader, MultipackDistributedDataloader]:
+    def get_train_dataloader(self) -> DataLoader:
         if self.args.sample_packing:
             train_dataset = self.train_dataset
             train_dataset = train_dataset.remove_columns(["length"])
@@ -228,18 +214,25 @@ class AxolotlTrainer(Trainer):
             )
 
             eval_sampler = self._get_eval_sampler(eval_dataset)
-            return self.accelerator.prepare(
-                MultipackDistributedDataloader(
-                    eval_dataset,
-                    batch_size=self.args.eval_batch_size,
-                    seq_max_length=self.args.max_seq_length,
-                    collate_fn=self.data_collator,
-                    sampler=eval_sampler,
-                    packing_efficiency_estimate=self.args.sample_packing_efficiency,
-                    sample_packing_seq_len_multiplier=self.args.eval_batch_size,
-                    device_count=int(os.environ.get("WORLD_SIZE", 1)),
-                    num_epochs=self.num_epochs,
-                )
+            eval_dataset = eval_dataset.remove_columns(["length"])
+            data_collator = self.data_collator
+            dataloader_params = {
+                "batch_size": self.args.eval_batch_size,
+                "collate_fn": data_collator,
+                "num_workers": self.args.dataloader_num_workers,
+                "pin_memory": self.args.dataloader_pin_memory,
+            }
+
+            if isinstance(eval_sampler, BatchSampler):
+                dataloader_params["batch_sampler"] = eval_sampler
+                del dataloader_params["batch_size"]
+            else:
+                dataloader_params["sampler"] = eval_sampler
+                dataloader_params["drop_last"] = self.args.dataloader_drop_last
+
+            self.accelerator.even_batches = False
+            return self.accelerator.prepare_data_loader(
+                DataLoader(eval_dataset, **dataloader_params)
             )
         return super().get_eval_dataloader(eval_dataset)
 
@@ -703,7 +696,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             train_dataset=self.train_dataset,
             eval_dataset=self.eval_dataset,
             args=training_args,
-            data_collator=DataCollatorForSeq2Seq(
+            data_collator=BatchSamplerDataCollatorForSeq2Seq(
                 self.tokenizer,
                 return_tensors="pt",
                 **data_collator_kwargs,
