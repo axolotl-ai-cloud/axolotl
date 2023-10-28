@@ -325,7 +325,6 @@ def load_model(
                 model = AutoModelForCausalLM.from_pretrained(
                     base_model,
                     config=model_config,
-                    torch_dtype=cfg.torch_dtype,
                     trust_remote_code=cfg.trust_remote_code or False,
                     **model_kwargs,
                 )
@@ -359,7 +358,6 @@ def load_model(
                 model = AutoModelForCausalLM.from_pretrained(
                     base_model,
                     config=model_config,
-                    torch_dtype=cfg.torch_dtype,
                     trust_remote_code=cfg.trust_remote_code or False,
                     **model_kwargs,
                 )
