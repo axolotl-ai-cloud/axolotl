@@ -26,7 +26,7 @@ wandb_log_model:
 output_dir: ./lora-replit
 batch_size: 8
 micro_batch_size: 1
-num_epochs: 3
+num_epochs: 4
 optimizer:
 torchdistx_path:
 lr_scheduler:

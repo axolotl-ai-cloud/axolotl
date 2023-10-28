@@ -23,7 +23,7 @@ wandb_log_model:
 output_dir: ./lora-alpaca-pythia
 gradient_accumulation_steps: 1
 micro_batch_size: 4
-num_epochs: 3
+num_epochs: 4
 learning_rate: 0.00001
 train_on_inputs: false
 group_by_length: false
@@ -33,5 +33,5 @@ early_stopping_patience:
 resume_from_checkpoint:
 local_rank:
 weight_decay: 0.1
-eval_steps: 20
+eval_steps: 0.05
 logging_steps: 1

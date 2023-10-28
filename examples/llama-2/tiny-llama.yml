@@ -34,7 +34,7 @@ wandb_log_model:
 
 gradient_accumulation_steps: 4
 micro_batch_size: 2
-num_epochs: 3
+num_epochs: 4
 optimizer: adamw_bnb_8bit
 lr_scheduler: cosine
 learning_rate: 0.0002
@@ -54,7 +54,7 @@ xformers_attention:
 flash_attention: true
 
 warmup_steps: 10
-eval_steps: 20
+eval_steps: 0.05
 eval_table_size:
 save_steps:
 debug:

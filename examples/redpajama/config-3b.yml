@@ -27,7 +27,7 @@ wandb_log_model:
 output_dir: ./redpajama-alpaca-3b
 batch_size: 4
 micro_batch_size: 1
-num_epochs: 3
+num_epochs: 4
 optimizer: adamw_bnb_8bit
 torchdistx_path:
 lr_scheduler: cosine
