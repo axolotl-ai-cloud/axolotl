@@ -18,6 +18,7 @@ from axolotl.common.cli import TrainerCliArgs
 from axolotl.logging_config import configure_logging
 from axolotl.monkeypatch import neft_embeddings
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.distributed import zero_only
 from axolotl.utils.models import load_model, load_tokenizer
 from axolotl.utils.trainer import setup_trainer
 
@@ -44,7 +45,10 @@ def train(
     *, cfg: DictDefault, cli_args: TrainerCliArgs, dataset_meta: TrainDatasetMeta
 ):
     # load the tokenizer first
-    LOG.info(f"loading tokenizer... {cfg.tokenizer_config or cfg.base_model_config}")
+    with zero_only():
+        LOG.debug(
+            f"loading tokenizer... {cfg.tokenizer_config or cfg.base_model_config}"
+        )
     tokenizer = load_tokenizer(cfg)
 
     train_dataset = dataset_meta.train_dataset
@@ -52,7 +56,10 @@ def train(
     total_num_steps = dataset_meta.total_num_steps
 
     # Load the model and tokenizer
-    LOG.info("loading model and (optionally) peft_config...")
+    msg = "loading model"
+    if cfg.adapter:
+        msg += " and peft_config..."
+    LOG.debug(msg)
     model, peft_config = load_model(cfg, tokenizer, inference=cli_args.inference)
 
     safe_serialization = cfg.save_safetensors is True
