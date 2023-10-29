@@ -386,6 +386,20 @@ def load_model(
         )
         model.config.max_position_embeddings = cfg.sequence_len
 
+    if (
+        hasattr(model.config, "bos_token_id")
+        and model.config.bos_token_id
+        and model.config.bos_token_id != tokenizer.bos_token_id
+    ):
+        model.config.bos_token_id = tokenizer.bos_token_id
+
+    if (
+        hasattr(model.config, "eos_token_id")
+        and model.config.eos_token_id
+        and model.config.eos_token_id != tokenizer.eos_token_id
+    ):
+        model.config.eos_token_id = tokenizer.eos_token_id
+
     if model.device.type == "cuda":
         log_gpu_memory_usage(LOG, "after model load", model.device)
 
