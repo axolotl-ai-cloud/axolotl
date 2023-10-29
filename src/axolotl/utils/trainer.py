@@ -13,7 +13,7 @@ import torch.distributed as dist
 from datasets import set_caching_enabled
 from torch.utils.data import DistributedSampler, RandomSampler
 
-from axolotl.core.trainer_builder import HFCausalTrainerBuilder
+from axolotl.core.trainer_builder import AxolotlTrainer, HFCausalTrainerBuilder
 from axolotl.utils.collators import DataCollatorForSeq2Seq
 from axolotl.utils.dataloader import MultipackDistributedDataloader
 from axolotl.utils.distributed import (
@@ -259,7 +259,9 @@ def setup_fsdp_envs(cfg):
         ] = cfg.fsdp_config.fsdp_transformer_layer_cls_to_wrap
 
 
-def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_steps):
+def setup_trainer(
+    cfg, train_dataset, eval_dataset, model, tokenizer, total_num_steps
+) -> AxolotlTrainer:
     if cfg.fsdp:
         setup_fsdp_envs(cfg)
     elif cfg.deepspeed:

@@ -159,14 +159,14 @@ def train(
         # The model name saved is `pytorch_model.bin`
         unwrapped_model.save_pretrained(
             cfg.output_dir,
-            is_main_process=trainer.accelerator.is_main_process,
+            is_main_process=trainer.args.should_save,
             save_function=trainer.accelerator.save,
             state_dict=trainer.accelerator.get_state_dict(trainer.model_wrapped),
         )
-    elif cfg.local_rank == 0:
+    elif trainer.args.should_save:
         if cfg.flash_optimum:
             model = BetterTransformer.reverse(model)
-
+        # TODO figure out if `trainer.save_model(cfg.output_dir)` is sufficient here
         model.save_pretrained(cfg.output_dir, safe_serialization=safe_serialization)
 
     if not cfg.hub_model_id:

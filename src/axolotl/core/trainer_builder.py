@@ -271,20 +271,25 @@ class AxolotlTrainer(Trainer):
             run_dir = self._get_output_dir(trial=trial)
             output_dir = os.path.join(run_dir, checkpoint_folder)
 
-            # Only save Adapter
-            keys_to_match = ["mm_projector", "vision_resampler"]
-            if getattr(self.args, "use_im_start_end", False):
-                keys_to_match.extend(["embed_tokens", "embed_in"])
-
-            weight_to_save = get_mm_adapter_state_maybe_zero_3(
-                self.model.named_parameters(), keys_to_match
-            )
+            weights_to_save = self._get_mm_mlp_adapter_weights()
 
             if self.args.local_rank in (0, -1):
                 self.model.config.save_pretrained(output_dir)
-                torch.save(weight_to_save, os.path.join(output_dir, "mm_projector.bin"))
+                torch.save(
+                    weights_to_save, os.path.join(output_dir, "mm_projector.bin")
+                )
         else:
             super()._save_checkpoint(model, trial, metrics)
+
+    def _get_mm_mlp_adapter_weights(self):
+        # Only save Adapter
+        keys_to_match = ["mm_projector", "vision_resampler"]
+        if getattr(self.args, "use_im_start_end", False):
+            keys_to_match.extend(["embed_tokens", "embed_in"])
+
+        return get_mm_adapter_state_maybe_zero_3(
+            self.model.named_parameters(), keys_to_match
+        )
 
     def _save(self, output_dir: Optional[str] = None, state_dict=None):
         if getattr(self.args, "tune_mm_mlp_adapter", False):
@@ -659,8 +664,17 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         training_arguments_kwargs[
             "sample_packing_seq_len_multiplier"
         ] = self.cfg.micro_batch_size
+
         training_arguments_kwargs["relora_steps"] = self.cfg.relora_steps
         training_arguments_kwargs["relora_warmup_steps"] = self.cfg.relora_warmup_steps
+
+        # multimodal: llava
+        training_arguments_kwargs["tune_mm_mlp_adapter"] = self.cfg.tune_mm_mlp_adapter
+        training_arguments_kwargs[
+            "freeze_mm_mlp_adapter"
+        ] = self.cfg.freeze_mm_mlp_adapter
+        training_arguments_kwargs["mm_projector_lr"] = self.cfg.mm_projector_lr
+
         training_arguments_kwargs = self.hook_pre_create_training_args(
             training_arguments_kwargs
         )
