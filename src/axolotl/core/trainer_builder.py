@@ -110,6 +110,17 @@ class AxolotlTrainingArguments(TrainingArguments):
     bench_source_max_len: int = field(
         default=2048, metadata={"help": "Maximum source sequence length for bench."}
     )
+    tune_mm_mlp_adapter: bool = field(
+        default=False,
+        metadata={"help": "Whether to train the multimodal projector adapter"},
+    )
+    freeze_mm_mlp_adapter: bool = field(
+        default=False,
+        metadata={"help": "Whether to freeze the multimodal projector adapter"},
+    )
+    mm_projector_lr: Optional[float] = field(
+        default=None, metadata={"help": "Learning rate for the multimodal projector"}
+    )
 
 
 class AxolotlTrainer(Trainer):
