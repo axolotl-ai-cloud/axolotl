@@ -286,8 +286,8 @@ def load_model(
                     def make_inputs_require_grad(
                         module,
                         input,
-                        output,  # pylint: disable=redefined-builtin,unused-argument
-                    ):
+                        output,
+                    ):  # pylint: disable=redefined-builtin,unused-argument
                         output.requires_grad_(True)
 
                     model.get_input_embeddings().register_forward_hook(
@@ -304,7 +304,7 @@ def load_model(
                 pretrain_mm_mlp_adapter=cfg.pretrain_mm_mlp_adapter,
                 mm_projector_type=cfg.mm_projector_type or "linear",
                 mm_use_im_start_end=cfg.mm_use_im_start_end or False,
-                mm_use_im_patch_token=cfg.mm_use_im_patch_token or True,
+                mm_use_im_patch_token=cfg.mm_use_im_patch_token,
                 mm_vision_select_feature=cfg.mm_vision_select_feature or "patch",
             )
 
@@ -330,8 +330,8 @@ def load_model(
             data_args.image_processor = vision_tower.image_processor
             model.config.image_aspect_ratio = data_args.image_aspect_ratio
             model.config.image_grid_pinpoints = data_args.image_grid_pinpoints
-            model.config.tune_mm_mlp_adapter = model_args.tune_mm_mlp_adapter
-            if model_args.tune_mm_mlp_adapter:
+            model.config.tune_mm_mlp_adapter = cfg.tune_mm_mlp_adapter
+            if cfg.tune_mm_mlp_adapter:
                 model.requires_grad_(False)
                 for (
                     p  # pylint: disable=invalid-name
@@ -347,8 +347,8 @@ def load_model(
 
             model.config.mm_use_im_start_end = (
                 data_args.mm_use_im_start_end
-            ) = model_args.mm_use_im_start_end
-            model.config.mm_use_im_patch_token = model_args.mm_use_im_patch_token
+            ) = cfg.mm_use_im_start_end
+            model.config.mm_use_im_patch_token = cfg.mm_use_im_patch_token
             model.initialize_vision_tokenizer(model_args, tokenizer=tokenizer)
         elif cfg.is_llama_derived_model and not cfg.trust_remote_code and not cfg.gptq:
             from transformers import LlamaForCausalLM

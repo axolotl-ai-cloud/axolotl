@@ -7,9 +7,11 @@ is_llama_derived_model: true
 multimodal: true
 mm_vision_tower: openai/clip-vit-large-patch14
 tune_mm_mlp_adapter: true
+mm_freeze_backbone: true
 mm_vision_select_layer: -2
 mm_projector_type: mlp2x_gelu
 mm_image_folder: ./llava/
+mm_use_im_patch_token: false
 
 load_in_8bit: false
 load_in_4bit: false
@@ -54,7 +56,7 @@ flash_attention: true
 
 warmup_steps: 10
 eval_steps:
-save_steps:
+save_steps: 0.1
 debug:
 deepspeed:
 weight_decay: 0.0
