@@ -21,6 +21,7 @@ from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import DataLoader, DistributedSampler, SequentialSampler
 from transformers import EarlyStoppingCallback, Trainer, TrainingArguments
 from transformers.trainer_pt_utils import SequentialDistributedSampler
+from transformers.utils import is_sagemaker_mp_enabled
 
 from axolotl.monkeypatch.relora import ReLoRACallback, ReLoRAScheduler
 from axolotl.utils.callbacks import (
@@ -33,6 +34,7 @@ from axolotl.utils.callbacks import (
 )
 from axolotl.utils.collators import DataCollatorForSeq2Seq
 from axolotl.utils.dataloader import MultipackDistributedDataloader
+from axolotl.utils.optimizers import AdaLomo
 from axolotl.utils.schedulers import get_cosine_schedule_with_quadratic_warmup
 
 try:
@@ -115,6 +117,17 @@ class AxolotlTrainer(Trainer):
         self.num_epochs = num_epochs
         self.bench_data_collator = bench_data_collator
         super().__init__(*args, **kwargs)
+
+    def create_optimizer(self):
+        if self.args.optim == "adalomo":
+            opt_model = self.model_wrapped if is_sagemaker_mp_enabled() else self.model
+            self.optimizer = AdaLomo(  # pylint: disable=attribute-defined-outside-init
+                opt_model,
+                lr=self.args.learning_rate,
+                loss_scale=2**10,
+            )
+            return self.optimizer
+        return super().create_optimizer()
 
     def create_scheduler(
         self, num_training_steps: int, optimizer: torch.optim.Optimizer = None
