@@ -230,6 +230,8 @@ def flashattn_forward(
     attention_mask: [bsz, q_len]
     """
     # pylint: disable=duplicate-code
+    original_dtype = hidden_states.dtype
+
     bsz, q_len, _ = hidden_states.size()
 
     if not hasattr(self, "pretraining_tp"):
@@ -269,6 +271,13 @@ def flashattn_forward(
             query_states = self.q_proj(hidden_states)
             key_states = self.k_proj(hidden_states)
             value_states = self.v_proj(hidden_states)
+
+    if query_states.dtype == torch.float32:
+        query_states = query_states.to(dtype=original_dtype)
+    if key_states.dtype == torch.float32:
+        key_states = key_states.to(dtype=original_dtype)
+    if value_states.dtype == torch.float32:
+        value_states = value_states.to(dtype=original_dtype)
 
     query_states = query_states.view(
         bsz, q_len, self.num_heads, self.head_dim
@@ -427,6 +436,10 @@ def flashattn_forward(
         )
     else:
         attn_output = self.o_proj(attn_output)
+
+    # handle conversion back for IA3
+    if attn_output.dtype == torch.float32:
+        attn_output = attn_output.to(dtype=original_dtype)
 
     return attn_output, None, past_key_value
 
@@ -621,6 +634,7 @@ def llama_model_forward(
     )
 
     hidden_states = inputs_embeds
+    original_dtype = hidden_states.dtype
 
     if self.gradient_checkpointing and self.training:
         if use_cache:
@@ -677,6 +691,10 @@ def llama_model_forward(
             )
 
         hidden_states = layer_outputs[0]
+
+        # handle conversion back for IA3
+        if hidden_states.dtype == torch.float32:
+            hidden_states = hidden_states.to(dtype=original_dtype)
 
         if use_cache:
             next_decoder_cache += (layer_outputs[2 if output_attentions else 1],)

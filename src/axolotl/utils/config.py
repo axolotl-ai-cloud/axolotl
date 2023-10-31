@@ -127,6 +127,18 @@ def normalize_config(cfg):
 
     log_gpu_memory_usage(LOG, "baseline", cfg.device)
 
+    if cfg.adapter is not None:
+        for key in list(cfg.keys()):
+            if key.startswith("lora_"):
+                new_key = key.replace("lora_", "peft_")
+                LOG.warning(
+                    PendingDeprecationWarning(
+                        f"{key} soon to be deprecated. please use {new_key}"
+                    )
+                )
+                cfg[new_key] = cfg[key]
+                del cfg[key]
+
 
 def validate_config(cfg):
     if is_torch_bf16_gpu_available():
@@ -199,7 +211,10 @@ def validate_config(cfg):
             raise ValueError("Fused modules are not supported with QLoRA")
 
     if not cfg.load_in_8bit and cfg.adapter == "lora":
-        LOG.warning("We recommend setting `load_in_8bit: true` for LORA finetuning")
+        LOG.warning("We recommend setting `load_in_8bit: true` for LoRA finetuning")
+
+    if not cfg.load_in_8bit and cfg.adapter == "ia3":
+        LOG.warning("We recommend setting `load_in_8bit: true` for IA3 finetuning")
 
     if cfg.adapter == "lora" and (cfg.flash_attn_fuse_qkv or cfg.flash_attn_fuse_mlp):
         raise ValueError("Fused modules are not supported with LoRA")

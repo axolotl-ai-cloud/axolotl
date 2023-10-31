@@ -24,6 +24,10 @@ class TestLoraLlama(unittest.TestCase):
     """
 
     def test_lora(self):
+        """
+        support for legacy lora_ configs
+        :return:
+        """
         # pylint: disable=duplicate-code
         output_dir = tempfile.mkdtemp()
         cfg = DictDefault(
@@ -37,6 +41,101 @@ class TestLoraLlama(unittest.TestCase):
                 "lora_alpha": 64,
                 "lora_dropout": 0.05,
                 "lora_target_linear": True,
+                "val_set_size": 0.1,
+                "special_tokens": {
+                    "unk_token": "<unk>",
+                    "bos_token": "<s>",
+                    "eos_token": "</s>",
+                },
+                "datasets": [
+                    {
+                        "path": "mhenrichsen/alpaca_2k_test",
+                        "type": "alpaca",
+                    },
+                ],
+                "num_epochs": 2,
+                "micro_batch_size": 8,
+                "gradient_accumulation_steps": 1,
+                "output_dir": output_dir,
+                "learning_rate": 0.00001,
+                "optimizer": "adamw_torch",
+                "lr_scheduler": "cosine",
+            }
+        )
+        normalize_config(cfg)
+        cli_args = TrainerCliArgs()
+        dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
+
+        train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
+        assert (Path(output_dir) / "adapter_model.bin").exists()
+
+    def test_lora_peft(self):
+        """
+        support for legacy lora_ configs
+        :return:
+        """
+        # pylint: disable=duplicate-code
+        output_dir = tempfile.mkdtemp()
+        cfg = DictDefault(
+            {
+                "base_model": "JackFram/llama-68m",
+                "base_model_config": "JackFram/llama-68m",
+                "tokenizer_type": "LlamaTokenizer",
+                "sequence_len": 1024,
+                "load_in_8bit": True,
+                "adapter": "lora",
+                "peft_r": 32,
+                "peft_alpha": 64,
+                "peft_dropout": 0.05,
+                "peft_target_linear": True,
+                "val_set_size": 0.1,
+                "special_tokens": {
+                    "unk_token": "<unk>",
+                    "bos_token": "<s>",
+                    "eos_token": "</s>",
+                },
+                "datasets": [
+                    {
+                        "path": "mhenrichsen/alpaca_2k_test",
+                        "type": "alpaca",
+                    },
+                ],
+                "num_epochs": 2,
+                "micro_batch_size": 8,
+                "gradient_accumulation_steps": 1,
+                "output_dir": output_dir,
+                "learning_rate": 0.00001,
+                "optimizer": "adamw_torch",
+                "lr_scheduler": "cosine",
+            }
+        )
+        normalize_config(cfg)
+        cli_args = TrainerCliArgs()
+        dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
+
+        train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
+        assert (Path(output_dir) / "adapter_model.bin").exists()
+
+    def test_ia3_peft(self):
+        """
+        support for IA3 peft
+        :return:
+        """
+        # pylint: disable=duplicate-code
+        output_dir = tempfile.mkdtemp()
+        cfg = DictDefault(
+            {
+                "base_model": "JackFram/llama-68m",
+                "base_model_config": "JackFram/llama-68m",
+                "tokenizer_type": "LlamaTokenizer",
+                "sequence_len": 1024,
+                "load_in_8bit": True,
+                "adapter": "ia3",
+                "peft_r": 32,
+                "peft_alpha": 64,
+                "peft_dropout": 0.05,
+                "peft_target_modules": ["k_proj", "v_proj", "down_proj"],
+                "peft_feedforward_modules": ["down_proj"],
                 "val_set_size": 0.1,
                 "special_tokens": {
                     "unk_token": "<unk>",

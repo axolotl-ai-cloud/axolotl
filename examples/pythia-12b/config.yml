@@ -12,7 +12,7 @@ datasets:
 dataset_prepared_path:
 val_set_size: 0.05
 adapter:
-lora_model_dir:
+peft_model_dir:
 sequence_len: 2048
 max_packed_sequence_len: 2048
 lora_r: 64
