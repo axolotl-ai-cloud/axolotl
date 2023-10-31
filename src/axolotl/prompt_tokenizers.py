@@ -394,7 +394,7 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
                         LOG.warning(f"assistant turn has empty text: {prompt}")
                     res = self._tokenize(
                         turn,
-                        add_eos_token=True,
+                        add_eos_token=False if conversation.name == 'chatml' else True,
                         strip_bos_token=True,
                     )
                     role_res = self._tokenize(

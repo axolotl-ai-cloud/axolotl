@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Optional
 
 import torch
+import torch.distributed as dist
 import transformers.modelcard
 from datasets import Dataset
 from optimum.bettertransformer import BetterTransformer
@@ -70,6 +71,11 @@ def train(
                 f"Using Auto-resume functionality to start with checkpoint at {cfg.resume_from_checkpoint}"
             )
     resume_from_checkpoint = cfg.resume_from_checkpoint
+
+    if dist.get_rank() == 0:
+        print('\n\n*********** INPUT SANITY CHECK ***********')
+        print(tokenizer.decode(train_dataset[0]['input_ids'], skip_special_tokens=False))
+        print('******************************************\n\n')
 
     trainer = setup_trainer(
         cfg, train_dataset, eval_dataset, model, tokenizer, total_num_steps
@@ -161,5 +167,8 @@ def train(
 
     if not cfg.hub_model_id:
         trainer.create_model_card(model_name=cfg.output_dir.lstrip("./"))
+    else:
+        dataset = [d['path'] for d in cfg.datasets]
+        trainer.push_to_hub(dataset=dataset, dataset_tags=dataset)
 
     return model, tokenizer
