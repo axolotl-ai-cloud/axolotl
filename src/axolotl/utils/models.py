@@ -72,11 +72,6 @@ def load_tokenizer(cfg):
         # set a pad_token, but use eos_token so we don't add a new token
         tokenizer.pad_token = LLAMA_DEFAULT_EOS_TOKEN
 
-    LOG.debug(f"EOS: {tokenizer.eos_token_id} / {tokenizer.eos_token}")
-    LOG.debug(f"BOS: {tokenizer.bos_token_id} / {tokenizer.bos_token}")
-    LOG.debug(f"PAD: {tokenizer.pad_token_id} / {tokenizer.pad_token}")
-    LOG.debug(f"UNK: {tokenizer.unk_token_id} / {tokenizer.unk_token}")
-
     if tokenizer.__class__.__name__ == "GPTNeoXTokenizerFast":
         tokenizer.add_special_tokens({"pad_token": "[PAD]"})
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -97,6 +92,11 @@ def load_tokenizer(cfg):
                 for token in cfg.tokens
             ]
         )
+
+    LOG.debug(f"EOS: {tokenizer.eos_token_id} / {tokenizer.eos_token}")
+    LOG.debug(f"BOS: {tokenizer.bos_token_id} / {tokenizer.bos_token}")
+    LOG.debug(f"PAD: {tokenizer.pad_token_id} / {tokenizer.pad_token}")
+    LOG.debug(f"UNK: {tokenizer.unk_token_id} / {tokenizer.unk_token}")
 
     return tokenizer
 
@@ -179,26 +179,6 @@ def load_model(
 
         LOG.info("patching with flash attention")
         replace_mistral_attn_with_flash_attn(packed=cfg.sample_packing)
-
-    if cfg.is_llama_derived_model and cfg.noisy_embedding_alpha:
-        from axolotl.monkeypatch.llama_embeddings_hijack import (
-            replace_llama_embeddings_with_uniform_distribution,
-        )
-
-        LOG.info("patching with noisy embeddings")
-        replace_llama_embeddings_with_uniform_distribution(
-            noise_alpha=cfg.noisy_embedding_alpha
-        )
-
-    if cfg.is_mistral_derived_model and cfg.noisy_embedding_alpha:
-        from axolotl.monkeypatch.mistral_embeddings_hijack import (
-            replace_mistral_embeddings_with_uniform_distribution,
-        )
-
-        LOG.info("patching with noisy embeddings")
-        replace_mistral_embeddings_with_uniform_distribution(
-            noise_alpha=cfg.noisy_embedding_alpha
-        )
 
     if cfg.is_llama_derived_model and cfg.xpos_rope:
         from axolotl.monkeypatch.xpos_rope_llama_monkey_patch import (
@@ -405,6 +385,20 @@ def load_model(
             f"increasing model.config.max_position_embeddings from {model.config.max_position_embeddings} to {cfg.sequence_len}"
         )
         model.config.max_position_embeddings = cfg.sequence_len
+
+    if (
+        hasattr(model.config, "bos_token_id")
+        and model.config.bos_token_id
+        and model.config.bos_token_id != tokenizer.bos_token_id
+    ):
+        model.config.bos_token_id = tokenizer.bos_token_id
+
+    if (
+        hasattr(model.config, "eos_token_id")
+        and model.config.eos_token_id
+        and model.config.eos_token_id != tokenizer.eos_token_id
+    ):
+        model.config.eos_token_id = tokenizer.eos_token_id
 
     if model.device.type == "cuda":
         log_gpu_memory_usage(LOG, "after model load", model.device)
