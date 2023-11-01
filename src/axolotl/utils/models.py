@@ -30,7 +30,6 @@ from transformers import (  # noqa: F401
 from axolotl.prompt_tokenizers import LLAMA_DEFAULT_EOS_TOKEN
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.dict import DictDefault
-from axolotl.utils.distributed import is_distributed
 
 LOG = logging.getLogger("axolotl")
 
@@ -334,8 +333,6 @@ def load_model(
                 low_cpu_mem_usage=True,
                 offload_state_dict=True,
             )
-            model = tp.tensor_parallel(model, distributed=is_distributed())
-            model.hf_device_map = tp.infer_sharded_device_map(model)
         else:
             config = AutoConfig.from_pretrained(
                 base_model,

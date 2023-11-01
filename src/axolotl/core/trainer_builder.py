@@ -14,6 +14,7 @@ from functools import partial
 from pathlib import Path
 from typing import Optional, Union
 
+import tensor_parallel as tp
 import torch
 import transformers
 from datasets import Dataset
@@ -33,6 +34,7 @@ from axolotl.utils.callbacks import (
 )
 from axolotl.utils.collators import DataCollatorForSeq2Seq
 from axolotl.utils.dataloader import MultipackDistributedDataloader
+from axolotl.utils.distributed import is_distributed
 from axolotl.utils.schedulers import get_cosine_schedule_with_quadratic_warmup
 
 try:
@@ -101,6 +103,9 @@ class AxolotlTrainingArguments(TrainingArguments):
     )
     bench_source_max_len: int = field(
         default=2048, metadata={"help": "Maximum source sequence length for bench."}
+    )
+    tensor_parallel: bool = field(
+        default=False, metadata={"help": "Use tensor parallelism to train"}
     )
 
 
@@ -245,6 +250,14 @@ class AxolotlTrainer(Trainer):
         #     loss = trainer_weighted_loss(outputs, labels, shift_labels=True)
         #     return (loss, outputs) if return_outputs else loss
         return super().compute_loss(model, inputs, return_outputs=return_outputs)
+
+    def _wrap_model(self, model, training=True, dataloader=None):
+        if self.args.tensor_parallel:
+            model = tp.tensor_parallel(model, distributed=is_distributed())
+            model.hf_device_map = tp.infer_sharded_device_map(model)
+        else:
+            model = super()._wrap_model(model, training=training, dataloader=dataloader)
+        return model
 
 
 class OneCycleLRSchedulerTrainer(AxolotlTrainer):
@@ -618,6 +631,8 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         ] = self.cfg.micro_batch_size
         training_arguments_kwargs["relora_steps"] = self.cfg.relora_steps
         training_arguments_kwargs["relora_warmup_steps"] = self.cfg.relora_warmup_steps
+        training_arguments_kwargs["tensor_parallel"] = self.cfg.tensor_parallel is True
+
         training_arguments_kwargs = self.hook_pre_create_training_args(
             training_arguments_kwargs
         )
