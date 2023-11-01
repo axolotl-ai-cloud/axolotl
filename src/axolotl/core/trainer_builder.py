@@ -371,7 +371,10 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         return trainer_kwargs, trainer_cls
 
     def hook_post_create_trainer(self, trainer):
-        # TODO
+        if self.cfg.tensor_parallel:
+            trainer.model = trainer.accelerator.prepare_model(
+                trainer.model, device_placement=True
+            )
         return trainer
 
     def get_callbacks(self):
