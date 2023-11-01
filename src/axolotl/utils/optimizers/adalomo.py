@@ -86,16 +86,16 @@ class AdaLomo(Optimizer):
 
         # register hook function, which will be called through the backward process
         for n, p in self.model.named_parameters():
-            if len(p.ds_shape) == 1:
+            if len(self._get_param_shape_func(p)) == 1:
                 self.exp_avg_sq[n] = torch.zeros(
-                    p.ds_shape[0], dtype=torch.float32
+                    self._get_param_shape_func(p)[0], dtype=torch.float32
                 ).cuda()
             else:
                 self.exp_avg_sq_row[n] = torch.zeros(
-                    p.ds_shape[0], dtype=torch.float32
+                    self._get_param_shape_func(p)[0], dtype=torch.float32
                 ).cuda()
                 self.exp_avg_sq_col[n] = torch.zeros(
-                    p.ds_shape[1], dtype=torch.float32
+                    self._get_param_shape_func(p)[1], dtype=torch.float32
                 ).cuda()
 
             if p.requires_grad:
@@ -108,6 +108,9 @@ class AdaLomo(Optimizer):
             clip_grad_value=clip_grad_value,
         )
         super(AdaLomo, self).__init__(self.model.parameters(), defaults)
+
+    def _get_param_shape_func(self, param):
+        return param.ds_shape if hasattr(param, "ds_id") else param.shape
 
     @property
     def dp_rank(self):
@@ -172,7 +175,10 @@ class AdaLomo(Optimizer):
                                 # Normalize the gradient according to its norm (computed in another pass)
                                 grad_fp32.mul_(self.clip_coef)
 
-                            beta2t = 1.0 - math.pow(self.step_num, self.decay_rate)
+                            if self.step_num == 0:
+                                beta2t = 0.0
+                            else:
+                                beta2t = 1.0 - math.pow(self.step_num, self.decay_rate)
                             update = (grad_fp32**2) + self.eps[0]
 
                             if len(p.data.shape) > 1:
@@ -202,7 +208,7 @@ class AdaLomo(Optimizer):
                             p_rms = torch.norm(p_fp32, 2.0) / math.sqrt(p.numel())
                             lr = self.lr
                             param_scale = max(self.eps[1], p_rms)
-                            lr = lr * param_scale
+                            lr = lr * param_scale.item()
 
                             if self.do_weight_decay:
                                 p_fp32.mul_(1.0 - lr * self.weight_decay)
@@ -254,10 +260,13 @@ class AdaLomo(Optimizer):
                                 # Normalize the gradient according to its norm (computed in another pass)
                                 grad_fp32.mul_(self.clip_coef)
 
-                            beta2t = 1.0 - math.pow(self.step_num, self.decay_rate)
+                            if self.step_num == 0:
+                                beta2t = 0.0  # same as step 1
+                            else:
+                                beta2t = 1.0 - math.pow(self.step_num, self.decay_rate)
                             update = (grad_fp32**2) + self.eps[0]  # 改成addcmul_
 
-                            if len(p.ds_shape) > 1:
+                            if len(self._get_param_shape_func(p)) > 1:
                                 self.exp_avg_sq_row[n].mul_(beta2t).add_(
                                     update.mean(dim=-1), alpha=1.0 - beta2t
                                 )
@@ -344,3 +353,6 @@ class AdaLomo(Optimizer):
             self.clip_coef = float(self.clip_grad_norm) / (total_norm + 1e-6)
             self.clip_coef = torch.clamp(self.clip_coef, max=1.0)
         self.gather_norm = False
+
+    def step(self, closure=...):
+        pass
