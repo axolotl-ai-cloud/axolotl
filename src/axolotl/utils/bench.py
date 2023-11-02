@@ -1,6 +1,5 @@
 """Benchmarking and measurement utilities"""
 import functools
-
 import logging
 
 import pynvml
