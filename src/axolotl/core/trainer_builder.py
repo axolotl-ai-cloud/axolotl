@@ -145,7 +145,7 @@ class AxolotlTrainer(Trainer):
             if self.args.n_gpu > 1:
                 loss = loss.mean()  # mean() to average on multi-gpu parallel training
 
-            return loss / self.args.gradient_accumulation_steps
+            return loss
         return super().training_step(model, inputs)
 
     def _inner_training_step(
@@ -164,10 +164,10 @@ class AxolotlTrainer(Trainer):
     ):
         if self.args.optim == "adalomo":
             with self.accelerator.accumulate(model):
-                tr_loss_step = self.training_step(model, inputs)
-            tr_loss += tr_loss_step
-            del tr_loss_step
-            self.current_flos += float(self.floating_point_ops(inputs))
+                tr_loss = self.training_step(model, inputs)
+            self.current_flos += float(  # pylint: disable=no-member
+                self.floating_point_ops(inputs)
+            )
             is_last_step_and_steps_less_than_grad_acc = (
                 steps_in_epoch <= args.gradient_accumulation_steps
                 and (step + 1) == steps_in_epoch
@@ -183,26 +183,28 @@ class AxolotlTrainer(Trainer):
                 if is_last_step_and_steps_less_than_grad_acc or (
                     version.parse(accelerate_version) <= version.parse("0.20.3")
                 ):
-                    self.accelerator.gradient_state._set_sync_gradients(True)
+                    self.accelerator.gradient_state._set_sync_gradients(  # pylint: disable=protected-access
+                        True
+                    )
 
                 self.lr_scheduler.step()
                 last_lr = self.lr_scheduler.get_last_lr()[0]
                 # if torch.is_tensor(last_lr):
                 #     last_lr = last_lr.item()
-                self.optimizer.fused_backward(tr_loss, last_lr)
+                self.optimizer.optimizer.fused_backward(tr_loss, last_lr)
 
                 model.zero_grad()
                 self.state.global_step += 1
                 self.state.epoch = epoch + (step + 1 + steps_skipped) / steps_in_epoch
-                self.control = self.callback_handler.on_step_end(
+                self.control = self.callback_handler.on_step_end(  # pylint: disable=attribute-defined-outside-init
                     args, self.state, self.control
                 )
 
-                self._maybe_log_save_evaluate(
+                self._maybe_log_save_evaluate(  # pylint: disable=attribute-defined-outside-init
                     tr_loss, model, trial, epoch, ignore_keys_for_eval
                 )
             else:
-                self.control = self.callback_handler.on_substep_end(
+                self.control = self.callback_handler.on_substep_end(  # pylint: disable=attribute-defined-outside-init
                     args, self.state, self.control
                 )
 
