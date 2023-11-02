@@ -502,7 +502,7 @@ def load_adapter(model, cfg, adapter, inference=False):
         except NotImplementedError:
             LOG.warning("enable_input_require_grads not implemented on model")
     if adapter == "qlora" and cfg.tensor_parallel:
-        return load_tp_qlora(model)
+        model, _ = load_tp_qlora(model)
     if adapter in ["lora", "qlora"]:
         return load_lora(model, cfg, inference=inference)
     if adapter == "llama-adapter":
