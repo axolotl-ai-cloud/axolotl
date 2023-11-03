@@ -31,3 +31,4 @@ scikit-learn==1.2.2
 pynvml
 art
 fschat==0.2.29
+gradio
