@@ -231,7 +231,12 @@ def do_inference_gradio(
                 all_text += new_text
                 yield all_text
 
-    demo = gr.Interface(fn=generate, inputs="textbox", outputs="text", title=cfg.get("gradio_title", "Axolotl Gradio Interface"))
+    demo = gr.Interface(
+        fn=generate,
+        inputs="textbox",
+        outputs="text",
+        title=cfg.get("gradio_title", "Axolotl Gradio Interface"),
+    )
     demo.queue().launch(show_api=False, share=True)
 
 
