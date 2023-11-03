@@ -369,6 +369,10 @@ def validate_config(cfg):
             "If you want to full finetune, please turn off load_in_8bit and load_in_4bit."
         )
 
+    if cfg.tensor_parallel and cfg.gradient_checkpointing:
+        raise ValueError(
+            "TensorParallelPreTrainedModel does not support gradient checkpointing"
+        )
     # TODO
     # MPT 7b
     # https://github.com/facebookresearch/bitsandbytes/issues/25
