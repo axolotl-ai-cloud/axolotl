@@ -415,10 +415,22 @@ class OurTrainer(Trainer):
 
                 if step % args.gradient_accumulation_steps == 0:
                     self.control = self.callback_handler.on_step_begin(args, self.state, self.control)
-
+                args.trainer = "zo"
+                
                 # MeZO added: estimate gradient
-                #if args.trainer == "zo":
-                tr_loss_step = self.zo_step(model, inputs)
+                if args.trainer == "zo":
+                    tr_loss_step = self.zo_step(model, inputs)
+                else:
+                    if (
+                        ((step + 1) % args.gradient_accumulation_steps != 0)
+                        and args.local_rank != -1
+                        and args._no_sync_in_gradient_accumulation
+                    ):
+                        # Avoid unnecessary DDP synchronization since there will be no backward pass on this example.
+                        with model.no_sync():
+                            tr_loss_step = self.training_step(model, inputs)
+                    else:
+                        tr_loss_step = self.training_step(model, inputs)
 
                 if (
                     args.logging_nan_inf_filter
@@ -442,7 +454,58 @@ class OurTrainer(Trainer):
                     and (step + 1) == steps_in_epoch
                 ):
                     # MeZO added: update model with the estimated gradient
-                    self.zo_update(model)
+                    if args.trainer == "zo":
+                        self.zo_update(model)
+                    else:
+                        # Gradient clipping
+                        if args.max_grad_norm is not None and args.max_grad_norm > 0 and not self.deepspeed:
+                            # deepspeed does its own clipping
+
+                            if self.do_grad_scaling:
+                                # Reduce gradients first for XLA
+                                if is_torch_tpu_available():
+                                    gradients = xm._fetch_gradients(self.optimizer)
+                                    xm.all_reduce("sum", gradients, scale=1.0 / xm.xrt_world_size())
+                                # AMP: gradients need unscaling
+                                self.scaler.unscale_(self.optimizer)
+
+                            if is_sagemaker_mp_enabled() and args.fp16:
+                                self.optimizer.clip_master_grads(args.max_grad_norm)
+                            elif hasattr(self.optimizer, "clip_grad_norm"):
+                                # Some optimizers (like the sharded optimizer) have a specific way to do gradient clipping
+                                self.optimizer.clip_grad_norm(args.max_grad_norm)
+                            elif hasattr(model, "clip_grad_norm_"):
+                                # Some models (like FullyShardedDDP) have a specific way to do gradient clipping
+                                model.clip_grad_norm_(args.max_grad_norm)
+                            else:
+                                # Revert to normal clipping otherwise, handling Apex or full precision
+                                nn.utils.clip_grad_norm_(
+                                    amp.master_params(self.optimizer) if self.use_apex else model.parameters(),
+                                    args.max_grad_norm,
+                                )
+
+                        # Optimizer step
+                        optimizer_was_run = True
+                        if self.deepspeed:
+                            pass  # called outside the loop
+                        elif is_torch_tpu_available():
+                            if self.do_grad_scaling:
+                                self.scaler.step(self.optimizer)
+                                self.scaler.update()
+                            else:
+                                xm.optimizer_step(self.optimizer)
+                        elif self.do_grad_scaling:
+                            scale_before = self.scaler.get_scale()
+                            self.scaler.step(self.optimizer)
+                            self.scaler.update()
+                            scale_after = self.scaler.get_scale()
+                            optimizer_was_run = scale_before <= scale_after
+                        else:
+                            self.optimizer.step()
+
+                        if optimizer_was_run and not self.deepspeed:
+                            self.lr_scheduler.step()
+                        model.zero_grad()
 
                     self.state.global_step += 1
                     self.state.epoch = epoch + (step + 1) / steps_in_epoch
