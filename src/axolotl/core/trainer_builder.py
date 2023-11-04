@@ -188,6 +188,7 @@ class OurTrainer(Trainer):
     def _inner_training_loop(
         self, batch_size=None, args=None, resume_from_checkpoint=None, trial=None, ignore_keys_for_eval=None
     ):
+        self.model.config.use_cache = False
         print('z inner training loop')
         
         # Setting up training control variables:
@@ -195,6 +196,7 @@ class OurTrainer(Trainer):
         # number of training steps per epoch: num_update_steps_per_epoch
         # total number of training steps to execute: max_steps
         train_dataloader = self.get_train_dataloader()
+        eval_dataloader = self.get_eval_dataloader()
         total_train_batch_size = args.train_batch_size * args.gradient_accumulation_steps * args.world_size
 
         len_dataloader = None
@@ -399,6 +401,8 @@ class OurTrainer(Trainer):
                 self._load_rng_state(resume_from_checkpoint)
 
             step = -1
+            #not sure if it should be here, or inside the loop
+            first_batch = next(iter(eval_dataloader))
             for step, inputs in enumerate(epoch_iterator):
 
                 # Skip past any already trained steps if resuming training
@@ -419,6 +423,7 @@ class OurTrainer(Trainer):
                 
                 # MeZO added: estimate gradient
                 if args.trainer == "zo":
+                    print('mezo tr loss')
                     tr_loss_step = self.zo_step(model, inputs)
                 else:
                     if (
@@ -455,6 +460,7 @@ class OurTrainer(Trainer):
                 ):
                     # MeZO added: update model with the estimated gradient
                     if args.trainer == "zo":
+                        print('mezo update')
                         self.zo_update(model)
                     else:
                         # Gradient clipping
@@ -501,16 +507,27 @@ class OurTrainer(Trainer):
                             scale_after = self.scaler.get_scale()
                             optimizer_was_run = scale_before <= scale_after
                         else:
+                            print('optimizer step')
                             self.optimizer.step()
 
                         if optimizer_was_run and not self.deepspeed:
                             self.lr_scheduler.step()
                         model.zero_grad()
-
+                    
+                    # Call the evaluate_model function
+                    
                     self.state.global_step += 1
                     self.state.epoch = epoch + (step + 1) / steps_in_epoch
                     self.control = self.callback_handler.on_step_end(args, self.state, self.control)
-
+                    
+                    print(f"Step {self.state.global_step}, Training Step Loss: {tr_loss_step.item()}")
+                                        
+                    eval_loss = self.zo_forward(model, first_batch)
+                    print(f"Evaluation loss: {eval_loss}")
+                    
+                    # Log the training loss to WandB
+                    logger.info(f"Step {self.state.global_step}, Training Step Loss: {tr_loss_step.item()}")
+                    #wandb.log({"Training Loss": tr_loss_step.item(), "Step": self.state.global_step})
                     self._maybe_log_save_evaluate(tr_loss, model, trial, epoch, ignore_keys_for_eval)
                 else:
                     self.control = self.callback_handler.on_substep_end(args, self.state, self.control)
@@ -687,7 +704,6 @@ class OurTrainer(Trainer):
         
         return loss1
 
-
     def zo_update(self, model):
         """
         Update the parameters with the estimated gradients.
@@ -710,7 +726,6 @@ class OurTrainer(Trainer):
 
     ############## Misc overload functions ##############
 
-
     def _set_signature_columns_if_needed(self):
         """
         We overload this function for non-differentiable objective training to pass "gold" -- the gold text for the task
@@ -722,7 +737,6 @@ class OurTrainer(Trainer):
             # Labels may be named label or label_ids, the default data collator handles that.
             self._signature_columns += list(set(["label", "label_ids"] + self.label_names))
             self._signature_columns += ["gold"]
-
     
     def save_model(self, output_dir: Optional[str] = None, _internal_call: bool = False):
         """
@@ -935,7 +949,6 @@ class AxolotlTrainer(OurTrainer):
         loss = super().compute_loss(model, inputs, return_outputs=return_outputs)
         print(loss)
         return loss
-
 
 class OneCycleLRSchedulerTrainer(AxolotlTrainer):
     """
