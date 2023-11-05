@@ -412,7 +412,7 @@ class AxolotlTrainer(Trainer):
 
             step = -1
             #not sure if it should be here, or inside the loop
-            first_batch = next(iter(eval_dataloader))
+            
             for step, inputs in enumerate(epoch_iterator):
 
                 # Skip past any already trained steps if resuming training
@@ -529,7 +529,7 @@ class AxolotlTrainer(Trainer):
                     
                     #check if current step is an eval step
                     if self.state.global_step % self.args.eval_steps == 0:
-                        eval_loss = self.zo_forward(model, first_batch)
+                        eval_loss = self.zo_forward(model, eval_dataloader)
                         logger.info(f"Step {self.state.global_step}, Training Step Loss: {tr_loss_step.item()}, Evaluation loss: {eval_loss}")
                     else:
                         logger.info(f"Step {self.state.global_step}, Training Step Loss: {tr_loss_step.item()}")
