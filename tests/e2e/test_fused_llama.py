@@ -4,7 +4,6 @@ E2E tests for lora llama
 
 import logging
 import os
-import tempfile
 import unittest
 from pathlib import Path
 
@@ -15,6 +14,7 @@ from axolotl.common.cli import TrainerCliArgs
 from axolotl.train import train
 from axolotl.utils.config import normalize_config
 from axolotl.utils.dict import DictDefault
+from tests.utils import with_temp_dir
 
 LOG = logging.getLogger("axolotl.tests.e2e")
 os.environ["WANDB_DISABLED"] = "true"
@@ -25,9 +25,9 @@ class TestFusedLlama(unittest.TestCase):
     Test case for Llama models using Fused layers
     """
 
-    def test_fft_packing(self):
+    @with_temp_dir
+    def test_fft_packing(self, output_dir):
         # pylint: disable=duplicate-code
-        output_dir = tempfile.mkdtemp()
         cfg = DictDefault(
             {
                 "base_model": "JackFram/llama-68m",
