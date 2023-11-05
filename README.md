@@ -601,7 +601,8 @@ wandb_mode: # "offline" to save run metadata locally and not sync to the server,
 wandb_project: # Your wandb project name
 wandb_entity: # A wandb Team name if using a Team
 wandb_watch:
-wandb_run_id: # Set the name of your wandb run
+wandb_run_name: # Set the name of your wandb run (if not set, wandb_run_id will be also used as the run name)
+wandb_run_id: # Set the run ID of your wandb run (if not set, a random unique ID will be created by wandb)
 wandb_log_model: # "checkpoint" to log model to wandb Artifacts every `save_steps` or "end" to log only at the end of training
 
 # Where to save the full-finetuned model to
