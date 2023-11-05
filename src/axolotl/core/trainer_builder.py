@@ -432,7 +432,9 @@ class AxolotlTrainer(Trainer):
                 args.trainer = "zo"
                 
                 # MeZO added: estimate gradient
-                if args.trainer == "zo":
+                
+                if(True):
+                    print('zo loss')
                     tr_loss_step = self.zo_step(model, inputs)
                 else:
                     if (
@@ -468,7 +470,8 @@ class AxolotlTrainer(Trainer):
                     and (step + 1) == steps_in_epoch
                 ):
                     # MeZO added: update model with the estimated gradient
-                    if args.trainer == "zo":
+                    if (True):
+                        print('update')
                         self.zo_update(model)
                     else:
                         # Gradient clipping
@@ -547,9 +550,9 @@ class AxolotlTrainer(Trainer):
                             eval_loss += self.zo_forward(model, inputs)
                             #just get the first -- there is only one, so no need for average
                         eval_loss = eval_loss / (step +1)
-                        logger.info(f"Step: {self.state.global_step}, Epoch: {round(self.state.global_step/(self.num_epochs*steps_in_epoch),2)}, LR: {self._get_learning_rate()}, Train Loss: {tr_loss_step.item()}, Eval Loss: {eval_loss}")
+                        logger.info(f"Step: {self.state.global_step}, Epoch: {round(self.state.global_step/steps_in_epoch,2)}, LR: {self._get_learning_rate()}, Train Loss: {tr_loss_step.item()}, Eval Loss: {eval_loss}")
                     else:
-                        logger.info(f"Step: {self.state.global_step},  Epoch: {round(self.state.global_step/(self.num_epochs*steps_in_epoch),2)}, LR: {self._get_learning_rate()}, Train Loss: {tr_loss_step.item()}")
+                        logger.info(f"Step: {self.state.global_step},  Epoch: {round(self.state.global_step/steps_in_epoch,2)}, LR: {self._get_learning_rate()}, Train Loss: {tr_loss_step.item()}")
 
                     #wandb.log({"Training Loss": tr_loss_step.item(), "Step": self.state.global_step})
                     self._maybe_log_save_evaluate(tr_loss, model, trial, epoch, ignore_keys_for_eval)
