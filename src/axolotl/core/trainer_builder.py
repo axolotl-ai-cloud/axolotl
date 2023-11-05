@@ -527,12 +527,30 @@ class AxolotlTrainer(Trainer):
                     self.state.epoch = epoch + (step + 1) / steps_in_epoch
                     self.control = self.callback_handler.on_step_end(args, self.state, self.control)
                     
-                    #check if current step is an eval step
-                    if self.state.global_step % self.args.eval_steps == 0:
-                        eval_loss = self.zo_forward(model, eval_dataloader)
-                        logger.info(f"Step {self.state.global_step}, Training Step Loss: {tr_loss_step.item()}, Evaluation loss: {eval_loss}")
+                    # Define a flag to check if evaluation should be performed
+                    should_evaluate = False
+
+                    # Check if eval_steps is an integer and if we're at the correct step to evaluate
+                    if isinstance(self.args.eval_steps, int) and self.state.global_step % self.args.eval_steps == 0:
+                        should_evaluate = True
+                    # If eval_steps is a float, treat it as a percentage of steps_in_epoch
+                    elif isinstance(self.args.eval_steps, float) and self.state.global_step % int(steps_in_epoch * self.args.eval_steps) == 0:
+                        should_evaluate = True
+                    # Lastly, check if we're at the end of an epoch
+                    elif self.state.global_step % steps_in_epoch == 0:
+                        should_evaluate = True
+
+                    # Perform evaluation if necessary and log the results
+                    if should_evaluate:
+                        eval_loss = 0
+                        for step, inputs in enumerate(eval_dataloader):
+                            eval_loss += self.zo_forward(model, inputs)
+                            #just get the first
+                            #break
+                        eval_loss = eval_loss / (step + 1)
+                        logger.info(f"Step {self.state.global_step}, Train Loss: {tr_loss_step.item()}, Avg Eval Loss: {eval_loss}, # Evals: {step + 1}")
                     else:
-                        logger.info(f"Step {self.state.global_step}, Training Step Loss: {tr_loss_step.item()}")
+                        logger.info(f"Step {self.state.global_step}, Train Loss: {tr_loss_step.item()}")
 
                     #wandb.log({"Training Loss": tr_loss_step.item(), "Step": self.state.global_step})
                     self._maybe_log_save_evaluate(tr_loss, model, trial, epoch, ignore_keys_for_eval)
