@@ -544,13 +544,12 @@ class AxolotlTrainer(Trainer):
                     if should_evaluate:
                         eval_loss = 0
                         for step, inputs in enumerate(eval_dataloader):
-                            eval_loss += self.zo_forward(model, inputs)
-                            #just get the first
-                            #break
-                        eval_loss = eval_loss / (step + 1)
-                        logger.info(f"Step {self.state.global_step}, Train Loss: {tr_loss_step.item()}, Avg Eval Loss: {eval_loss}, # Evals: {step + 1}")
+                            eval_loss = self.zo_forward(model, inputs)
+                            #just get the first -- there is only one, so no need for average
+                            break
+                        logger.info(f"Step: {self.state.global_step}, Epoch: {round(self.state.global_step/(self.num_epochs*steps_in_epoch),2)}, LR: {self._get_learning_rate()}, Train Loss: {tr_loss_step.item()}, Eval Loss: {eval_loss}")
                     else:
-                        logger.info(f"Step {self.state.global_step}, Train Loss: {tr_loss_step.item()}")
+                        logger.info(f"Step: {self.state.global_step},  Epoch: {round(self.state.global_step/(self.num_epochs*steps_in_epoch),2)}, LR: {self._get_learning_rate()}, Train Loss: {tr_loss_step.item()}")
 
                     #wandb.log({"Training Loss": tr_loss_step.item(), "Step": self.state.global_step})
                     self._maybe_log_save_evaluate(tr_loss, model, trial, epoch, ignore_keys_for_eval)
