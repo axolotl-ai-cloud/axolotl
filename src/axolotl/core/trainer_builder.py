@@ -434,7 +434,7 @@ class AxolotlTrainer(Trainer):
                 # MeZO added: estimate gradient
                 
                 if(True):
-                    print('zo loss')
+                    #print('zo loss')
                     tr_loss_step = self.zo_step(model, inputs)
                 else:
                     if (
@@ -471,7 +471,7 @@ class AxolotlTrainer(Trainer):
                 ):
                     # MeZO added: update model with the estimated gradient
                     if (True):
-                        print('update')
+                        #print('update')
                         self.zo_update(model)
                     else:
                         # Gradient clipping
