@@ -482,10 +482,14 @@ def get_dataset_wrapper(
             "user_defined", tokenizer, cfg, config_dataset.type.to_dict()
         )
         dataset_prompter = UnsupportedPrompter()
-        dataset_wrapper = TokenizedPromptDataset(ds_strategy, dataset)
+        dataset_wrapper = TokenizedPromptDataset(
+            ds_strategy, dataset, process_count=cfg.dataset_processes
+        )
     elif ds_strategy := load(config_dataset.type, tokenizer, cfg, config_dataset):
         dataset_prompter = UnsupportedPrompter()
-        dataset_wrapper = TokenizedPromptDataset(ds_strategy, dataset)
+        dataset_wrapper = TokenizedPromptDataset(
+            ds_strategy, dataset, process_count=cfg.dataset_processes
+        )
     elif d_base_type == "alpaca":
         dataset_prompter = AlpacaPrompter(d_prompt_style)
         ds_strategy = AlpacaPromptTokenizingStrategy(
@@ -494,7 +498,9 @@ def get_dataset_wrapper(
             cfg.train_on_inputs,
             cfg.sequence_len,
         )
-        ds_wrapper = TokenizedPromptDataset(ds_strategy, dataset)
+        ds_wrapper = TokenizedPromptDataset(
+            ds_strategy, dataset, process_count=cfg.dataset_processes
+        )
         dataset_wrapper = ds_wrapper
     elif d_base_type == "explainchoice":
         dataset_prompter = MultipleChoiceExplainPrompter(d_prompt_style)
@@ -504,7 +510,9 @@ def get_dataset_wrapper(
             cfg.train_on_inputs,
             cfg.sequence_len,
         )
-        ds_wrapper = TokenizedPromptDataset(ds_strategy, dataset)
+        ds_wrapper = TokenizedPromptDataset(
+            ds_strategy, dataset, process_count=cfg.dataset_processes
+        )
         dataset_wrapper = ds_wrapper
     elif d_base_type == "concisechoice":
         dataset_prompter = MultipleChoiceConcisePrompter(d_prompt_style)
@@ -514,7 +522,9 @@ def get_dataset_wrapper(
             cfg.train_on_inputs,
             cfg.sequence_len,
         )
-        ds_wrapper = TokenizedPromptDataset(ds_strategy, dataset)
+        ds_wrapper = TokenizedPromptDataset(
+            ds_strategy, dataset, process_count=cfg.dataset_processes
+        )
         dataset_wrapper = ds_wrapper
     elif d_base_type == "summarizetldr":
         dataset_prompter = SummarizeTLDRPrompter(d_prompt_style)
@@ -524,7 +534,9 @@ def get_dataset_wrapper(
             cfg.train_on_inputs,
             cfg.sequence_len,
         )
-        ds_wrapper = TokenizedPromptDataset(ds_strategy, dataset)
+        ds_wrapper = TokenizedPromptDataset(
+            ds_strategy, dataset, process_count=cfg.dataset_processes
+        )
         dataset_wrapper = ds_wrapper
     elif d_base_type == "jeopardy":
         dataset_prompter = JeopardyPrompter(d_prompt_style)
@@ -534,7 +546,9 @@ def get_dataset_wrapper(
             cfg.train_on_inputs,
             cfg.sequence_len,
         )
-        ds_wrapper = TokenizedPromptDataset(ds_strategy, dataset)
+        ds_wrapper = TokenizedPromptDataset(
+            ds_strategy, dataset, process_count=cfg.dataset_processes
+        )
         dataset_wrapper = ds_wrapper
     elif d_base_type == "oasst":
         dataset_prompter = AlpacaPrompter(d_prompt_style)
@@ -544,7 +558,9 @@ def get_dataset_wrapper(
             cfg.train_on_inputs,
             cfg.sequence_len,
         )
-        ds_wrapper = TokenizedPromptDataset(ds_strategy, dataset)
+        ds_wrapper = TokenizedPromptDataset(
+            ds_strategy, dataset, process_count=cfg.dataset_processes
+        )
         dataset_wrapper = ds_wrapper
     elif d_base_type == "gpteacher":
         dataset_prompter = GPTeacherPrompter(d_prompt_style)
@@ -554,7 +570,9 @@ def get_dataset_wrapper(
             cfg.train_on_inputs,
             cfg.sequence_len,
         )
-        ds_wrapper = TokenizedPromptDataset(ds_strategy, dataset)
+        ds_wrapper = TokenizedPromptDataset(
+            ds_strategy, dataset, process_count=cfg.dataset_processes
+        )
         dataset_wrapper = ds_wrapper
     elif d_base_type == "reflection":
         dataset_prompter = ReflectAlpacaPrompter(d_prompt_style)
@@ -564,7 +582,9 @@ def get_dataset_wrapper(
             cfg.train_on_inputs,
             cfg.sequence_len,
         )
-        ds_wrapper = TokenizedPromptDataset(ds_strategy, dataset)
+        ds_wrapper = TokenizedPromptDataset(
+            ds_strategy, dataset, process_count=cfg.dataset_processes
+        )
         dataset_wrapper = ds_wrapper
     else:
         suffix = ""
