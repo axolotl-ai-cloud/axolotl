@@ -4,7 +4,6 @@ E2E tests for lora llama
 
 import logging
 import os
-import tempfile
 import unittest
 from pathlib import Path
 
@@ -13,6 +12,7 @@ from axolotl.common.cli import TrainerCliArgs
 from axolotl.train import train
 from axolotl.utils.config import normalize_config
 from axolotl.utils.dict import DictDefault
+from tests.utils import with_temp_dir
 
 LOG = logging.getLogger("axolotl.tests.e2e")
 os.environ["WANDB_DISABLED"] = "true"
@@ -23,9 +23,9 @@ class TestLoraLlama(unittest.TestCase):
     Test case for Llama models using LoRA
     """
 
-    def test_lora(self):
+    @with_temp_dir
+    def test_lora(self, output_dir):
         # pylint: disable=duplicate-code
-        output_dir = tempfile.mkdtemp()
         cfg = DictDefault(
             {
                 "base_model": "JackFram/llama-68m",
@@ -65,9 +65,9 @@ class TestLoraLlama(unittest.TestCase):
         train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
         assert (Path(output_dir) / "adapter_model.bin").exists()
 
-    def test_lora_packing(self):
+    @with_temp_dir
+    def test_lora_packing(self, output_dir):
         # pylint: disable=duplicate-code
-        output_dir = tempfile.mkdtemp()
         cfg = DictDefault(
             {
                 "base_model": "JackFram/llama-68m",
@@ -109,9 +109,9 @@ class TestLoraLlama(unittest.TestCase):
         train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
         assert (Path(output_dir) / "adapter_model.bin").exists()
 
-    def test_lora_gptq(self):
+    @with_temp_dir
+    def test_lora_gptq(self, output_dir):
         # pylint: disable=duplicate-code
-        output_dir = tempfile.mkdtemp()
         cfg = DictDefault(
             {
                 "base_model": "TheBlokeAI/jackfram_llama-68m-GPTQ",
