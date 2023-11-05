@@ -97,6 +97,10 @@ accelerate launch -m axolotl.cli.train examples/openllama-3b/lora.yml
 # inference
 accelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \
     --lora_model_dir="./lora-out"
+
+# gradio
+accelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \
+    --lora_model_dir="./lora-out" --gradio
 ```
 
 ## Installation
@@ -918,6 +922,10 @@ Pass the appropriate flag to the train command:
   ```bash
   cat /tmp/prompt.txt | python -m axolotl.cli.inference examples/your_config.yml \
     --base_model="./completed-model" --prompter=None --load_in_8bit=True
+  ```
+-- With gradio hosting
+  ```bash
+  python -m axolotl.cli.inference examples/your_config.yml --gradio
   ```
 
 Please use `--sample_packing False` if you have it on and receive the error similar to below:
