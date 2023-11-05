@@ -527,11 +527,13 @@ class AxolotlTrainer(Trainer):
                     self.state.epoch = epoch + (step + 1) / steps_in_epoch
                     self.control = self.callback_handler.on_step_end(args, self.state, self.control)
                     
-                    eval_loss = self.zo_forward(model, first_batch)
-                    print(f"Step {self.state.global_step}, Training Step Loss: {tr_loss_step.item()}, Evaluation loss: {eval_loss}")
-                                        
-                    # Log the training loss to WandB
-                    logger.info(f"Step {self.state.global_step}, Training Step Loss: {tr_loss_step.item()}")
+                    #check if current step is an eval step
+                    if self.state.global_step % self.args.eval_steps == 0:
+                        eval_loss = self.zo_forward(model, first_batch)
+                        logger.info(f"Step {self.state.global_step}, Training Step Loss: {tr_loss_step.item()}, Evaluation loss: {eval_loss}")
+                    else:
+                        logger.info(f"Step {self.state.global_step}, Training Step Loss: {tr_loss_step.item()}")
+
                     #wandb.log({"Training Loss": tr_loss_step.item(), "Step": self.state.global_step})
                     self._maybe_log_save_evaluate(tr_loss, model, trial, epoch, ignore_keys_for_eval)
                 else:
@@ -590,8 +592,9 @@ class AxolotlTrainer(Trainer):
         self.is_in_train = False
 
         self._memory_tracker.stop_and_update_metrics(metrics)
-
+        #logger.info(metrics)
         self.log(metrics)
+
         print(metrics)
 
         run_dir = self._get_output_dir(trial)
@@ -649,7 +652,7 @@ class AxolotlTrainer(Trainer):
             if self.args.n_gpu > 1:
                 # Warning: this is copied from the original Huggingface Trainer. Untested.
                 loss = loss.mean()  # mean() to average on multi-gpu parallel training
-                print(loss)
+                #print(loss)
         return loss.detach()
 
 
@@ -940,7 +943,6 @@ class AxolotlTrainer(Trainer):
         #     loss = trainer_weighted_loss(outputs, labels, shift_labels=True)
         #     return (loss, outputs) if return_outputs else loss
         loss = super().compute_loss(model, inputs, return_outputs=return_outputs)
-        print(loss)
         return loss
 
 class OneCycleLRSchedulerTrainer(AxolotlTrainer):
