@@ -181,15 +181,25 @@ class AxolotlTrainingArguments(TrainingArguments):
         default=2048, metadata={"help": "Maximum source sequence length for bench."}
     )
 
-class OurTrainer(Trainer):
+class AxolotlTrainer(Trainer):
+    """
+    Extend the base Trainer for axolotl helpers
+    """
+
+    args = None  # type: AxolotlTrainingArguments
 
     from transformers.trainer_pt_utils import _get_learning_rate, log_metrics, metrics_format, save_metrics, save_state
+
+    def __init__(self, *args, num_epochs=1, bench_data_collator=None, **kwargs):
+        self.num_epochs = num_epochs
+        self.bench_data_collator = bench_data_collator
+        super().__init__(*args, **kwargs)
+
 
     def _inner_training_loop(
         self, batch_size=None, args=None, resume_from_checkpoint=None, trial=None, ignore_keys_for_eval=None
     ):
         self.model.config.use_cache = False
-        print('z inner training loop')
         
         # Setting up training control variables:
         # number of training epochs: num_train_epochs
@@ -423,7 +433,6 @@ class OurTrainer(Trainer):
                 
                 # MeZO added: estimate gradient
                 if args.trainer == "zo":
-                    print('mezo tr loss')
                     tr_loss_step = self.zo_step(model, inputs)
                 else:
                     if (
@@ -460,7 +469,6 @@ class OurTrainer(Trainer):
                 ):
                     # MeZO added: update model with the estimated gradient
                     if args.trainer == "zo":
-                        print('mezo update')
                         self.zo_update(model)
                     else:
                         # Gradient clipping
@@ -507,7 +515,6 @@ class OurTrainer(Trainer):
                             scale_after = self.scaler.get_scale()
                             optimizer_was_run = scale_before <= scale_after
                         else:
-                            print('optimizer step')
                             self.optimizer.step()
 
                         if optimizer_was_run and not self.deepspeed:
@@ -520,11 +527,9 @@ class OurTrainer(Trainer):
                     self.state.epoch = epoch + (step + 1) / steps_in_epoch
                     self.control = self.callback_handler.on_step_end(args, self.state, self.control)
                     
-                    print(f"Step {self.state.global_step}, Training Step Loss: {tr_loss_step.item()}")
-                                        
                     eval_loss = self.zo_forward(model, first_batch)
-                    print(f"Evaluation loss: {eval_loss}")
-                    
+                    print(f"Step {self.state.global_step}, Training Step Loss: {tr_loss_step.item()}, Evaluation loss: {eval_loss}")
+                                        
                     # Log the training loss to WandB
                     logger.info(f"Step {self.state.global_step}, Training Step Loss: {tr_loss_step.item()}")
                     #wandb.log({"Training Loss": tr_loss_step.item(), "Step": self.state.global_step})
@@ -805,18 +810,6 @@ class OurTrainer(Trainer):
         # Push to the Hub when `save_model` is called by the user.
         if self.args.push_to_hub and not _internal_call:
             self.push_to_hub(commit_message="Model save")
-
-class AxolotlTrainer(OurTrainer):
-    """
-    Extend the base Trainer for axolotl helpers
-    """
-
-    args = None  # type: AxolotlTrainingArguments
-
-    def __init__(self, *args, num_epochs=1, bench_data_collator=None, **kwargs):
-        self.num_epochs = num_epochs
-        self.bench_data_collator = bench_data_collator
-        super().__init__(*args, **kwargs)
 
     def create_scheduler(
         self, num_training_steps: int, optimizer: torch.optim.Optimizer = None
