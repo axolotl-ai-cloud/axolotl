@@ -1,6 +1,5 @@
 """Prepare and train a model on a dataset. Can also infer from a model or merge lora"""
 
-import logging
 import os
 import signal
 import sys
@@ -10,6 +9,7 @@ from typing import Optional
 
 import torch
 import transformers.modelcard
+from accelerate.logging import get_logger
 from datasets import Dataset
 from optimum.bettertransformer import BetterTransformer
 from transformers.deepspeed import is_deepspeed_zero3_enabled
@@ -18,7 +18,6 @@ from axolotl.common.cli import TrainerCliArgs
 from axolotl.logging_config import configure_logging
 from axolotl.monkeypatch import neft_embeddings
 from axolotl.utils.dict import DictDefault
-from axolotl.utils.distributed import zero_only
 from axolotl.utils.models import load_model, load_tokenizer
 from axolotl.utils.trainer import setup_trainer
 
@@ -27,7 +26,7 @@ src_dir = os.path.join(project_root, "src")
 sys.path.insert(0, src_dir)
 
 configure_logging()
-LOG = logging.getLogger("axolotl.train")
+LOG = get_logger("axolotl.train")
 
 
 @dataclass
@@ -45,10 +44,10 @@ def train(
     *, cfg: DictDefault, cli_args: TrainerCliArgs, dataset_meta: TrainDatasetMeta
 ):
     # load the tokenizer first
-    with zero_only():
-        LOG.debug(
-            f"loading tokenizer... {cfg.tokenizer_config or cfg.base_model_config}"
-        )
+    LOG.debug(
+        f"loading tokenizer... {cfg.tokenizer_config or cfg.base_model_config}",
+        main_process_only=True,
+    )
     tokenizer = load_tokenizer(cfg)
 
     train_dataset = dataset_meta.train_dataset
