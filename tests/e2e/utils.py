@@ -14,7 +14,7 @@ def with_temp_dir(test_func):
         temp_dir = tempfile.mkdtemp()
         try:
             # Pass the temporary directory to the test function
-            test_func(temp_dir, *args, **kwargs)
+            test_func(*args, temp_dir=temp_dir, **kwargs)
         finally:
             # Clean up the directory after the test
             shutil.rmtree(temp_dir)
