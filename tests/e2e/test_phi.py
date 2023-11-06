@@ -25,7 +25,7 @@ class TestPhi(unittest.TestCase):
     """
 
     @with_temp_dir
-    def test_ft(self, output_dir):
+    def test_ft(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
@@ -55,7 +55,7 @@ class TestPhi(unittest.TestCase):
                 "num_epochs": 1,
                 "micro_batch_size": 1,
                 "gradient_accumulation_steps": 1,
-                "output_dir": output_dir,
+                "output_dir": temp_dir,
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_bnb_8bit",
                 "lr_scheduler": "cosine",
@@ -67,10 +67,10 @@ class TestPhi(unittest.TestCase):
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
         train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-        assert (Path(output_dir) / "pytorch_model.bin").exists()
+        assert (Path(temp_dir) / "pytorch_model.bin").exists()
 
     @with_temp_dir
-    def test_ft_packed(self, output_dir):
+    def test_ft_packed(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
@@ -100,7 +100,7 @@ class TestPhi(unittest.TestCase):
                 "num_epochs": 1,
                 "micro_batch_size": 1,
                 "gradient_accumulation_steps": 1,
-                "output_dir": output_dir,
+                "output_dir": temp_dir,
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_bnb_8bit",
                 "lr_scheduler": "cosine",
@@ -112,4 +112,4 @@ class TestPhi(unittest.TestCase):
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
         train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-        assert (Path(output_dir) / "pytorch_model.bin").exists()
+        assert (Path(temp_dir) / "pytorch_model.bin").exists()

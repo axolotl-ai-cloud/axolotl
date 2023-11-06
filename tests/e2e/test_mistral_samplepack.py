@@ -27,7 +27,7 @@ class TestMistral(unittest.TestCase):
     """
 
     @with_temp_dir
-    def test_lora_packing(self, output_dir):
+    def test_lora_packing(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
@@ -56,7 +56,7 @@ class TestMistral(unittest.TestCase):
                 "num_epochs": 2,
                 "micro_batch_size": 2,
                 "gradient_accumulation_steps": 1,
-                "output_dir": output_dir,
+                "output_dir": temp_dir,
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_torch",
                 "lr_scheduler": "cosine",
@@ -70,10 +70,10 @@ class TestMistral(unittest.TestCase):
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
         train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-        assert (Path(output_dir) / "adapter_model.bin").exists()
+        assert (Path(temp_dir) / "adapter_model.bin").exists()
 
     @with_temp_dir
-    def test_ft_packing(self, output_dir):
+    def test_ft_packing(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
@@ -96,7 +96,7 @@ class TestMistral(unittest.TestCase):
                 "num_epochs": 2,
                 "micro_batch_size": 2,
                 "gradient_accumulation_steps": 1,
-                "output_dir": output_dir,
+                "output_dir": temp_dir,
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_torch",
                 "lr_scheduler": "cosine",
@@ -114,4 +114,4 @@ class TestMistral(unittest.TestCase):
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
         train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-        assert (Path(output_dir) / "pytorch_model.bin").exists()
+        assert (Path(temp_dir) / "pytorch_model.bin").exists()
