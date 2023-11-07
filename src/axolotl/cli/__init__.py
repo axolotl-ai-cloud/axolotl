@@ -92,7 +92,7 @@ def do_inference(
     prompts = {}
     if cli_args.prompt_file:
         with open(cli_args.prompt_file, 'r', encoding='utf-8') as file:
-            prompts = [json.loads(line.strip())['instruction'] for line in file]
+            prompts = iter([json.loads(line.strip())['instruction'] for line in file])
                 
     model, tokenizer = load_model_and_tokenizer(cfg=cfg, cli_args=cli_args)
     prompter = cli_args.prompter
@@ -118,19 +118,19 @@ def do_inference(
         )
 
     model = model.to(cfg.device)
+    # Run inference only on one device
+    if cfg.device != "cuda:0":
+        return
 
     while True:
-        print("=" * 80)
         if prompts:
-            if idx_prompt < len(prompts):
-                instruction = prompts[idx_prompt]
-                idx_prompt += 1
-            else:
+            try:
+                instruction = next(prompts)
+            except StopIteration:
                 return
         else:
             instruction = get_multi_line_input()
-        # Run inference only on one device
-        if not instruction or cfg.device != "cuda:0":
+        if not instruction:
             return
         if prompter_module:
             prompt: str = next(
@@ -138,18 +138,15 @@ def do_inference(
             )
         else:
             prompt = instruction.strip()
-        print(f"Prompt is: {prompt}")
+        # print(f"Prompt is: {prompt}")
         batch = tokenizer(prompt, return_tensors="pt", add_special_tokens=True)
 
-        print("=" * 80)
+        # print("=" * 80)
         
         model.eval()
         with torch.no_grad():
             if cli_args.generation_cfg:
-                generation_config = GenerationConfig.from_pretrained(
-                    cfg.lora_model_dir, 
-                    cli_args.generation_cfg
-                )
+                generation_config = GenerationConfig.from_pretrained('', cli_args.generation_cfg)
             else:
                 generation_config = GenerationConfig(
                     repetition_penalty=1.1,
@@ -167,14 +164,38 @@ def do_inference(
                     output_hidden_states=False,
                     output_scores=False,
                 )
-            streamer = TextStreamer(tokenizer)
-            generated = model.generate(
-                inputs=batch["input_ids"].to(cfg.device),
-                generation_config=generation_config,
-                streamer=streamer,
-            )
-        print("=" * 40)
-        print(tokenizer.decode(generated["sequences"].cpu().tolist()[0]))
+            if prompts:
+                generated = model.generate(
+                    inputs=batch["input_ids"].to(cfg.device),
+                    generation_config=generation_config,
+                )
+            else:
+                generated = model.generate(
+                    inputs=batch["input_ids"].to(cfg.device),
+                    generation_config=generation_config,
+                    streamer = TextStreamer(tokenizer)
+                )
+        # lst = generated
+        # print(
+        #     tokenizer.decode(
+        #         generated.cpu().tolist()[0],
+        #         clean_up_tokenization_spaces=True
+        #         )
+        #     )
+        generated_sequence = generated.cpu().tolist()[0]
+
+        # Decode text
+        text = tokenizer.decode(generated_sequence, clean_up_tokenization_spaces=True)
+# 
+        # Remove all text after the stop token
+        # text = text[: text.find(default_tokens['eos_token'])]
+
+        # Remove the excess text that was used for pre-processing
+        answer = text # text[len(prompt) :]
+
+        print(f"[\"answer\"] : {answer}")
+        
+        print("=" * 80)
 
 
 def choose_config(path: Path):
