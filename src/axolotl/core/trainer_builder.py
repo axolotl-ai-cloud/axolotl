@@ -102,6 +102,10 @@ class AxolotlTrainingArguments(TrainingArguments):
     bench_source_max_len: int = field(
         default=2048, metadata={"help": "Maximum source sequence length for bench."}
     )
+    dataloader_prefetch_factor: Optional[int] = field(
+        default=None,
+        metadata={"help": "prefetch_factor argument to the dataloader"},
+    )
 
 
 class AxolotlTrainer(Trainer):
@@ -191,6 +195,10 @@ class AxolotlTrainer(Trainer):
                 "num_workers": self.args.dataloader_num_workers,
                 "pin_memory": self.args.dataloader_pin_memory,
             }
+            if self.args.dataloader_prefetch_factor:
+                dataloader_params[
+                    "dataloader_prefetch_factor"
+                ] = self.args.dataloader_prefetch_factor
 
             sampler = self._get_train_sampler()
             if isinstance(sampler, BatchSampler):
@@ -224,6 +232,10 @@ class AxolotlTrainer(Trainer):
                 "num_workers": self.args.dataloader_num_workers,
                 "pin_memory": self.args.dataloader_pin_memory,
             }
+            if self.args.dataloader_prefetch_factor:
+                dataloader_params[
+                    "dataloader_prefetch_factor"
+                ] = self.args.dataloader_prefetch_factor
 
             if isinstance(eval_sampler, BatchSampler):
                 dataloader_params["batch_sampler"] = eval_sampler
@@ -255,6 +267,10 @@ class AxolotlTrainer(Trainer):
             "num_workers": self.args.dataloader_num_workers,
             "pin_memory": self.args.dataloader_pin_memory,
         }
+        if self.args.dataloader_prefetch_factor:
+            dataloader_params[
+                "dataloader_prefetch_factor"
+            ] = self.args.dataloader_prefetch_factor
 
         if not isinstance(bench_dataset, torch.utils.data.IterableDataset):
             dataloader_params["sampler"] = self._get_bench_sampler(bench_dataset)
@@ -527,6 +543,10 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             training_arguments_kwargs[
                 "dataloader_num_workers"
             ] = self.cfg.dataloader_num_workers
+        if self.cfg.dataloader_prefetch_factor is not None:
+            training_arguments_kwargs[
+                "dataloader_prefetch_factor"
+            ] = self.cfg.dataloader_prefetch_factor
 
         if self.cfg.eval_steps:
             training_arguments_kwargs["evaluation_strategy"] = "steps"
