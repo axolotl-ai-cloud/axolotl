@@ -1,7 +1,7 @@
 --extra-index-url https://download.pytorch.org/whl/cu118
 --extra-index-url https://huggingface.github.io/autogptq-index/whl/cu118/
 torch==2.0.1
-auto-gptq
+auto-gptq==0.5.0
 packaging
 peft @ git+https://github.com/huggingface/peft.git
 transformers @ git+https://github.com/huggingface/transformers.git@bd6205919aad4d3a2300a39a98a642f1cc3a5348
