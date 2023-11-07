@@ -16,7 +16,7 @@ datasets:
     data_files:
       - openassistant_best_replies_train.jsonl
     type: "completion"
-dataset_prepared_path: last_run_prepared
+dataset_prepared_path:
 val_set_size: 0.01
 # enable QLoRA
 adapter: qlora

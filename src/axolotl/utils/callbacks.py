@@ -514,3 +514,27 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer):
             return control
 
     return LogPredictionCallback
+
+
+class SaveAxolotlConfigtoWandBCallback(TrainerCallback):
+    """Callback to save axolotl config to wandb"""
+
+    def __init__(self, axolotl_config_path):
+        self.axolotl_config_path = axolotl_config_path
+
+    def on_train_begin(
+        self,
+        args: AxolotlTrainingArguments,  # pylint: disable=unused-argument
+        state: TrainerState,  # pylint: disable=unused-argument
+        control: TrainerControl,
+        **kwargs,  # pylint: disable=unused-argument
+    ):
+        if is_main_process():
+            try:
+                artifact = wandb.Artifact(name="axolotl-config", type="config")
+                artifact.add_file(local_path=self.axolotl_config_path)
+                wandb.run.log_artifact(artifact)
+                LOG.info("Axolotl config has been saved to WandB as an artifact.")
+            except (FileNotFoundError, ConnectionError) as err:
+                LOG.warning(f"Error while saving Axolotl config to WandB: {err}")
+        return control

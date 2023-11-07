@@ -90,6 +90,73 @@ class TestPromptTokenizationStrategies(unittest.TestCase):
             strat.tokenize_prompt(conversation)
             assert "assistant turn has empty text" in self._caplog.records[1].message
 
+    def test_sharegpt_warnings_turns(self):
+        conversation = {
+            "conversations": [
+                {"from": "system", "value": "lorem"},
+                {"from": "gpt", "value": "ipsum"},
+                {"from": "human", "value": "dolor"},
+                {"from": "human", "value": "dolor"},
+                {"from": "gpt", "value": "sit"},
+            ]
+        }
+        prompter = ShareGPTPrompterV2()
+        strat = ShareGPTPromptTokenizingStrategy(
+            prompter,
+            self.tokenizer,
+            False,
+            2048,
+        )
+        with self._caplog.at_level(logging.WARNING):
+            strat.tokenize_prompt(conversation)
+            assert (
+                "Role did not alternate between turns (gpt and human)"
+                in self._caplog.records[0].message
+            )
+
+    def test_sharegpt_changes_roles(self):
+        conversation = {
+            "roles": ["USER", "CHARACTER"],
+            "conversations": [
+                {"from": "system", "value": "lorem"},
+                {"from": "gpt", "value": "ipsum"},
+                {"from": "human", "value": "dolor"},
+                {"from": "gpt", "value": "sit"},
+            ],
+        }
+        prompter = ShareGPTPrompterV2()
+        strat = ShareGPTPromptTokenizingStrategy(
+            prompter,
+            self.tokenizer,
+            False,
+            2048,
+        )
+        with self._caplog.at_level(logging.WARNING):
+            res = strat.tokenize_prompt(conversation)
+            assert "CHARACTER" in self.tokenizer.decode(res["input_ids"])
+
+    def test_sharegpt_assistant_label_ignore(self):
+        conversation = {
+            "roles": ["user", "assistant"],
+            "conversations": [
+                {"from": "system", "value": "lorem"},
+                {"from": "gpt", "value": "ipsum"},
+                {"from": "human", "value": "dolor"},
+                {"from": "gpt", "value": "sit"},
+            ],
+        }
+        prompter = ShareGPTPrompterV2()
+        strat = ShareGPTPromptTokenizingStrategy(
+            prompter,
+            self.tokenizer,
+            False,
+            2048,
+        )
+        with self._caplog.at_level(logging.WARNING):
+            res = strat.tokenize_prompt(conversation)
+            idx = res["input_ids"].index(20255)  # assistant token
+            assert res["labels"][idx] == -100
+
     def test_no_sys_prompt(self):
         """
         tests the interface between the user and assistant parts

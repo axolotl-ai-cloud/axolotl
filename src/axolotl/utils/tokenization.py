@@ -31,7 +31,8 @@ def check_example_labels(example, tokenizer, text_only=False):
         )
         colored_tokens.append(colored_token)
 
-    LOG.info(" ".join(colored_tokens))
+    delimiter = "" if text_only else " "
+    LOG.info(delimiter.join(colored_tokens))
     LOG.info("\n\n\n")
     print(" ".join(colored_tokens))
 

@@ -12,7 +12,7 @@ push_dataset_to_hub:
 datasets:
   - path: teknium/GPT4-LLM-Cleaned
     type: alpaca:chat
-dataset_prepared_path: last_run_prepared
+dataset_prepared_path:
 val_set_size: 0.01
 adapter:
 lora_model_dir:

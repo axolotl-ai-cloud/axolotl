@@ -30,6 +30,7 @@ from axolotl.monkeypatch.relora import ReLoRACallback, ReLoRAScheduler
 from axolotl.utils.callbacks import (
     EvalFirstStepCallback,
     GPUStatsCallback,
+    SaveAxolotlConfigtoWandBCallback,
     SaveBetterTransformerModelCallback,
     bench_eval_callback_factory,
     log_prediction_callback_factory,
@@ -668,9 +669,7 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
         max_steps=total_num_steps if cfg.max_steps else -1,
         max_seq_length=cfg.sequence_len,
         per_device_train_batch_size=cfg.micro_batch_size,
-        per_device_eval_batch_size=cfg.eval_batch_size
-        if cfg.eval_batch_size is not None
-        else cfg.micro_batch_size,
+        per_device_eval_batch_size=cfg.eval_batch_size,
         gradient_accumulation_steps=cfg.gradient_accumulation_steps,
         eval_accumulation_steps=cfg.gradient_accumulation_steps,
         num_train_epochs=cfg.num_epochs,
@@ -776,6 +775,9 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
     if cfg.use_wandb and cfg.eval_table_size > 0:
         LogPredictionCallback = log_prediction_callback_factory(trainer, tokenizer)
         trainer.add_callback(LogPredictionCallback(cfg))
+
+    if cfg.use_wandb:
+        trainer.add_callback(SaveAxolotlConfigtoWandBCallback(cfg.axolotl_config_path))
 
     if cfg.do_bench_eval:
         trainer.add_callback(bench_eval_callback_factory(trainer, tokenizer))

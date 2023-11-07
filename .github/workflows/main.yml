@@ -23,6 +23,11 @@ jobs:
             python_version: "3.10"
             pytorch: 2.0.1
             axolotl_extras:
+          - cuda: 118
+            cuda_version: 11.8.0
+            python_version: "3.10"
+            pytorch: 2.1.0
+            axolotl_extras:
     runs-on: [self-hosted, gpu, docker]
     steps:
       - name: Checkout
@@ -46,6 +51,7 @@ jobs:
           build-args: |
             BASE_TAG=${{ github.ref_name }}-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}
             CUDA=${{ matrix.cuda }}
+            PYTORCH_VERSION=${{ matrix.pytorch }}
           file: ./docker/Dockerfile
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.metadata.outputs.tags }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
@@ -68,6 +74,11 @@ jobs:
             pytorch: 2.0.1
             axolotl_extras:
             is_latest: true
+          - cuda: 118
+            cuda_version: 11.8.0
+            python_version: "3.10"
+            pytorch: 2.1.0
+            axolotl_extras:
     runs-on: [self-hosted, gpu, docker]
     steps:
       - name: Checkout

@@ -6,7 +6,7 @@ load_in_8bit: false
 datasets:
   - path: vicgalle/alpaca-gpt4
     type: alpaca
-dataset_prepared_path: last_run_prepared
+dataset_prepared_path:
 val_set_size: 0.02
 adapter:
 lora_model_dir:

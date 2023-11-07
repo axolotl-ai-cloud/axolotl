@@ -1,5 +1,4 @@
 """Module for models and model loading"""
-import importlib
 import logging
 import math
 import os
@@ -12,6 +11,7 @@ from optimum.bettertransformer import BetterTransformer
 from peft import PeftConfig, prepare_model_for_kbit_training
 from peft.tuners.lora import QuantLinear
 from transformers import (  # noqa: F401
+    AddedToken,
     AutoConfig,
     AutoModelForCausalLM,
     AutoTokenizer,
@@ -81,11 +81,22 @@ def load_tokenizer(cfg):
         tokenizer.add_special_tokens({"pad_token": "[PAD]"})
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
+    # Mistral's official FA implementation requires left padding
+    if cfg.is_mistral_derived_model and cfg.flash_attention and not cfg.sample_packing:
+        tokenizer.padding_side = "left"
+
     if cfg.special_tokens:
         for k, val in cfg.special_tokens.items():
-            tokenizer.add_special_tokens({k: val})
+            tokenizer.add_special_tokens(
+                {k: AddedToken(val, rstrip=False, lstrip=False, normalized=False)}
+            )
     if cfg.tokens:
-        tokenizer.add_tokens(list(cfg.tokens))
+        tokenizer.add_tokens(
+            [
+                AddedToken(token, rstrip=False, lstrip=False, normalized=False)
+                for token in cfg.tokens
+            ]
+        )
 
     return tokenizer
 
@@ -113,6 +124,17 @@ def load_model(
             )
 
             replace_btlm_attn_with_flash_attn(cfg.base_model)
+
+    if (
+        hasattr(model_config, "model_type")
+        and model_config.model_type == "stablelm_epoch"
+    ):
+        if cfg.flash_attention and cfg.sample_packing:
+            from axolotl.monkeypatch.stablelm_attn_hijack_flash import (
+                replace_stablelm_attn_with_flash_attn,
+            )
+
+            replace_stablelm_attn_with_flash_attn(cfg.base_model)
 
     if cfg.is_llama_derived_model and cfg.flash_attention and cfg.sample_packing:
         if cfg.device not in ["mps", "cpu"] and not inference:
@@ -150,13 +172,33 @@ def load_model(
         # Note: This might overwrite previous additional_special_tokens
         tokenizer.add_special_tokens({"additional_special_tokens": [MEM_TOKEN]})
 
-    if cfg.is_mistral_derived_model and cfg.flash_attention:
+    if cfg.is_mistral_derived_model and cfg.flash_attention and cfg.sample_packing:
         from axolotl.monkeypatch.mistral_attn_hijack_flash import (
             replace_mistral_attn_with_flash_attn,
         )
 
         LOG.info("patching with flash attention")
         replace_mistral_attn_with_flash_attn(packed=cfg.sample_packing)
+
+    if cfg.is_llama_derived_model and cfg.noisy_embedding_alpha:
+        from axolotl.monkeypatch.llama_embeddings_hijack import (
+            replace_llama_embeddings_with_uniform_distribution,
+        )
+
+        LOG.info("patching with noisy embeddings")
+        replace_llama_embeddings_with_uniform_distribution(
+            noise_alpha=cfg.noisy_embedding_alpha
+        )
+
+    if cfg.is_mistral_derived_model and cfg.noisy_embedding_alpha:
+        from axolotl.monkeypatch.mistral_embeddings_hijack import (
+            replace_mistral_embeddings_with_uniform_distribution,
+        )
+
+        LOG.info("patching with noisy embeddings")
+        replace_mistral_embeddings_with_uniform_distribution(
+            noise_alpha=cfg.noisy_embedding_alpha
+        )
 
     if cfg.is_llama_derived_model and cfg.xpos_rope:
         from axolotl.monkeypatch.xpos_rope_llama_monkey_patch import (
@@ -176,21 +218,11 @@ def load_model(
         LOG.info("patching _expand_mask")
         hijack_expand_mask()
 
-    # special handling b/c remote MixFormers code doesn't have _no_split_modules set
-    if (
-        "MixFormerSequentialConfig" in model_config.__class__.__name__
-        and cfg.model_type == "AutoModelForCausalLM"
-    ):
-        module_name = model_config.__class__.__module__.replace(
-            ".configuration_mixformer_sequential", ".modeling_mixformer_sequential"
-        )
-        modeling_phi = importlib.import_module(module_name)
-        # pylint:disable=protected-access
-        modeling_phi.MixFormerSequentialForCausalLM._no_split_modules = [
-            "ParallelBlock"
-        ]
-
     model_kwargs = {}
+
+    model_kwargs["device_map"] = cfg.device_map
+    model_kwargs["torch_dtype"] = cfg.torch_dtype
+
     if cfg.model_revision:
         model_kwargs["revision"] = cfg.model_revision
     if cfg.gptq:
@@ -215,8 +247,13 @@ def load_model(
         )
     # sample packing uses custom FA2 patch
     if cfg.flash_attention and not cfg.sample_packing:
-        if cfg.is_llama_derived_model or cfg.is_falcon_derived_model:
+        if (
+            cfg.is_llama_derived_model
+            or cfg.is_falcon_derived_model
+            or cfg.is_mistral_derived_model
+        ):
             model_kwargs["use_flash_attention_2"] = True
+
     try:
         if cfg.is_llama_derived_model and not cfg.trust_remote_code and not cfg.gptq:
             from transformers import LlamaForCausalLM
@@ -231,10 +268,8 @@ def load_model(
             model = LlamaForCausalLM.from_pretrained(
                 base_model,
                 config=config,
-                device_map=cfg.device_map,
                 load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
                 load_in_4bit=cfg.load_in_4bit and cfg.adapter is not None,
-                torch_dtype=cfg.torch_dtype,
                 **model_kwargs,
             )
         # elif model_type == "GPTNeoXForCausalLM" and cfg.flash_attention:
@@ -268,28 +303,22 @@ def load_model(
 
             model = MixFormerSequentialForCausalLM.from_pretrained(
                 base_model,
-                device_map=cfg.device_map,
                 load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
                 load_in_4bit=cfg.load_in_4bit and cfg.adapter is not None,
-                torch_dtype=cfg.torch_dtype,
                 **model_kwargs,
             )
         elif model_type and not cfg.trust_remote_code:
             if cfg.gptq:
                 model = AutoModelForCausalLM.from_pretrained(
                     base_model,
-                    device_map=cfg.device_map,
-                    torch_dtype=cfg.torch_dtype,
                     trust_remote_code=cfg.trust_remote_code or False,
                     **model_kwargs,
                 )
             else:
                 model = getattr(transformers, model_type).from_pretrained(
                     base_model,
-                    device_map=cfg.device_map,
                     load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
                     load_in_4bit=cfg.load_in_4bit and cfg.adapter is not None,
-                    torch_dtype=cfg.torch_dtype,
                     trust_remote_code=cfg.trust_remote_code or False,
                     **model_kwargs,
                 )
@@ -318,8 +347,6 @@ def load_model(
                 model = AutoModelForCausalLM.from_pretrained(
                     base_model,
                     config=config,
-                    device_map=cfg.device_map,
-                    torch_dtype=cfg.torch_dtype,
                     trust_remote_code=cfg.trust_remote_code or False,
                     **model_kwargs,
                 )
@@ -327,10 +354,8 @@ def load_model(
                 model = AutoModelForCausalLM.from_pretrained(
                     base_model,
                     config=config,
-                    device_map=cfg.device_map,
                     load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
                     load_in_4bit=cfg.load_in_4bit and cfg.adapter is not None,
-                    torch_dtype=cfg.torch_dtype,
                     trust_remote_code=cfg.trust_remote_code or False,
                     **model_kwargs,
                 )
@@ -341,10 +366,8 @@ def load_model(
         LOG.exception(err)
         model = AutoModelForCausalLM.from_pretrained(
             base_model,
-            device_map=cfg.device_map,
             load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
             load_in_4bit=cfg.load_in_4bit and cfg.adapter is not None,
-            torch_dtype=cfg.torch_dtype,
             trust_remote_code=cfg.trust_remote_code or False,
             **model_kwargs,
         )

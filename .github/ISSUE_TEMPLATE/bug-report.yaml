@@ -54,6 +54,13 @@ body:
       required: true
 
   - type: textarea
+    id: config
+    attributes:
+      label: Config yaml
+      description: |
+        Please attach the config yaml!
+
+  - type: textarea
     id: possible-solution
     attributes:
       label: Possible solution

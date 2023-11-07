@@ -16,6 +16,7 @@ from datasets import (
 from huggingface_hub import hf_hub_download
 from transformers import PreTrainedTokenizerBase
 
+from axolotl.common.const import DEFAULT_DATASET_PREPARED_PATH
 from axolotl.datasets import ConstantLengthDataset, TokenizedPromptDataset
 from axolotl.prompt_strategies import load
 from axolotl.prompt_tokenizers import (
@@ -44,7 +45,6 @@ from axolotl.utils.trainer import (
 )
 
 LOG = logging.getLogger("axolotl")
-DEFAULT_DATASET_PREPARED_PATH = "last_run_prepared"
 
 
 def md5(to_hash: str, encoding: str = "utf-8") -> str:
@@ -114,7 +114,7 @@ def load_tokenized_prepared_datasets(
         if cfg.push_dataset_to_hub:
             dataset = load_dataset(
                 f"{cfg.push_dataset_to_hub}/{ds_hash}",
-                use_auth_token=use_auth_token,
+                token=use_auth_token,
             )
             dataset = dataset["train"]
     except Exception:  # pylint: disable=broad-except # nosec
@@ -122,7 +122,7 @@ def load_tokenized_prepared_datasets(
 
     if dataset:
         ...
-    elif any(prepared_ds_path.glob("*")):
+    elif cfg.dataset_prepared_path and any(prepared_ds_path.glob("*")):
         LOG.info(f"Loading prepared dataset from disk at {prepared_ds_path}...")
         dataset = load_from_disk(str(prepared_ds_path))
         LOG.info("Prepared dataset loaded from disk...")
@@ -155,7 +155,7 @@ def load_tokenized_prepared_datasets(
                     d.path,
                     name=d.name,
                     streaming=True,
-                    use_auth_token=use_auth_token,
+                    token=use_auth_token,
                 )
                 ds_from_hub = True
             except FileNotFoundError:
@@ -202,7 +202,7 @@ def load_tokenized_prepared_datasets(
                     name=d.name,
                     streaming=False,
                     data_files=d.data_files,
-                    use_auth_token=use_auth_token,
+                    token=use_auth_token,
                 )
             else:
                 if isinstance(d.data_files, str):
@@ -417,7 +417,7 @@ def load_prepare_datasets(
                 )
                 dataset = load_dataset(
                     f"{cfg.push_dataset_to_hub}/{ds_hash}",
-                    use_auth_token=use_auth_token,
+                    token=use_auth_token,
                 )
                 dataset = dataset["train"]
         except Exception:  # pylint: disable=broad-except # nosec
@@ -425,7 +425,7 @@ def load_prepare_datasets(
 
         if dataset:
             ...
-        elif any(prepared_ds_path.glob("*")):
+        elif cfg.dataset_prepared_path and any(prepared_ds_path.glob("*")):
             LOG.info(
                 f"Loading prepared packed dataset from disk at {prepared_ds_path}..."
             )
