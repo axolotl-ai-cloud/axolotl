@@ -1,3 +1,0 @@
-# Small dev details
-
-/

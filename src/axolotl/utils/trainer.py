@@ -8,20 +8,13 @@ from typing import List
 import numpy as np
 import torch
 import torch.cuda
-import torch.distributed as dist
 from accelerate.logging import get_logger
 from datasets import set_caching_enabled
-from torch.utils.data import DistributedSampler, RandomSampler
+from torch.utils.data import DataLoader, RandomSampler
 
 from axolotl.core.trainer_builder import HFCausalTrainerBuilder
-from axolotl.utils.collators import DataCollatorForSeq2Seq
-from axolotl.utils.dataloader import MultipackDistributedDataloader
-from axolotl.utils.distributed import (
-    is_distributed,
-    is_main_process,
-    reduce_and_broadcast,
-    zero_first,
-)
+from axolotl.utils.distributed import is_main_process, reduce_and_broadcast, zero_first
+from axolotl.utils.samplers import MultipackBatchSampler
 
 LOG = get_logger("axolotl")
 
@@ -148,7 +141,7 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset, tokenizer):
     return train_dataset, eval_dataset
 
 
-def calculate_total_num_steps(cfg, train_dataset, tokenizer):
+def calculate_total_num_steps(cfg, train_dataset):
     if cfg.sample_packing:
         # we have to drop anything longer then sequence len otherwise
         # flash attention with position ids fails
@@ -196,37 +189,36 @@ def calculate_total_num_steps(cfg, train_dataset, tokenizer):
                 main_process_only=True,
             )
         else:
-            if cfg.world_size > 1 and is_distributed():
-                sampler = DistributedSampler(
-                    train_dataset,
-                    num_replicas=cfg.world_size,
-                    rank=dist.get_rank(),
-                    seed=cfg.seed or 42,
-                )
-            else:
-                sampler = RandomSampler(train_dataset)
-
-            data_loader = MultipackDistributedDataloader(
-                train_dataset,
+            sampler = MultipackBatchSampler(
+                sampler=RandomSampler(train_dataset),
                 batch_size=cfg.micro_batch_size,
-                seq_max_length=cfg.max_packed_sequence_len or cfg.sequence_len,
-                collate_fn=DataCollatorForSeq2Seq(
-                    tokenizer,
-                    return_tensors="pt",
-                    padding="longest",
+                drop_last=True,
+                batch_max_len=cfg.micro_batch_size
+                * (cfg.max_packed_sequence_len or cfg.sequence_len),
+                lengths=(
+                    train_dataset.data.column("position_ids")
+                    .to_pandas()
+                    .apply(lambda x: x[-1] + 1)
+                    .values
                 ),
-                sampler=sampler,
-                packing_efficiency_estimate=cfg.sample_packing_eff_est,
-                sample_packing_seq_len_multiplier=cfg.micro_batch_size,
-                device_count=int(os.environ.get("WORLD_SIZE", 1)),
-                num_epochs=cfg.num_epochs,
             )
-            data_loader_len = data_loader.len_w_stats()
-            actual_eff = data_loader.efficiency()
+
+            data_loader = DataLoader(
+                train_dataset.remove_columns(["length"]),
+                batch_sampler=sampler,
+            )
+            data_loader_len = len(data_loader)
+            actual_eff = sampler.efficiency()
             LOG.debug(f"data_loader_len: {data_loader_len}", main_process_only=True)
             # FIXME: is there a bug here somewhere? the total num steps depends
             # on the agreed on value for sample_packing_eff_est
-            total_num_steps = int(math.floor(data_loader_len * cfg.num_epochs))
+            total_num_steps = int(
+                math.floor(
+                    data_loader_len
+                    * cfg.num_epochs
+                    / int(os.environ.get("WORLD_SIZE", 1))
+                )
+            )
 
             def calc_sample_packing_eff_est(estimates: List[float]):
                 LOG.info(f"sample_packing_eff_est across ranks: {repr(estimates)}")
@@ -246,7 +238,12 @@ def calculate_total_num_steps(cfg, train_dataset, tokenizer):
             )
     else:
         total_num_steps = int(
-            math.ceil(len(train_dataset) * cfg.num_epochs / cfg.batch_size)
+            math.ceil(
+                len(train_dataset)
+                * cfg.num_epochs
+                / int(os.environ.get("WORLD_SIZE", 1))
+                / cfg.batch_size
+            )
         )
     LOG.debug(f"total_num_steps: {total_num_steps}", main_process_only=True)
     return total_num_steps
