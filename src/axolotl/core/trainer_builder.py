@@ -197,7 +197,7 @@ class AxolotlTrainer(Trainer):
             }
             if self.args.dataloader_prefetch_factor:
                 dataloader_params[
-                    "dataloader_prefetch_factor"
+                    "prefetch_factor"
                 ] = self.args.dataloader_prefetch_factor
 
             sampler = self._get_train_sampler()
@@ -234,7 +234,7 @@ class AxolotlTrainer(Trainer):
             }
             if self.args.dataloader_prefetch_factor:
                 dataloader_params[
-                    "dataloader_prefetch_factor"
+                    "prefetch_factor"
                 ] = self.args.dataloader_prefetch_factor
 
             if isinstance(eval_sampler, BatchSampler):
@@ -268,9 +268,7 @@ class AxolotlTrainer(Trainer):
             "pin_memory": self.args.dataloader_pin_memory,
         }
         if self.args.dataloader_prefetch_factor:
-            dataloader_params[
-                "dataloader_prefetch_factor"
-            ] = self.args.dataloader_prefetch_factor
+            dataloader_params["prefetch_factor"] = self.args.dataloader_prefetch_factor
 
         if not isinstance(bench_dataset, torch.utils.data.IterableDataset):
             dataloader_params["sampler"] = self._get_bench_sampler(bench_dataset)
