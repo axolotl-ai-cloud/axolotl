@@ -10,8 +10,10 @@ ENV PATH="/root/miniconda3/bin:${PATH}"
 ARG PYTHON_VERSION="3.9"
 ARG PYTORCH_VERSION="2.0.1"
 ARG CUDA="118"
+ARG TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6 9.0+PTX"
 
 ENV PYTHON_VERSION=$PYTHON_VERSION
+ENV TORCH_CUDA_ARCH_LIST=$TORCH_CUDA_ARCH_LIST
 
 RUN apt-get update \
     && apt-get install -y wget git build-essential ninja-build git-lfs libaio-dev && rm -rf /var/lib/apt/lists/* \
@@ -29,45 +31,7 @@ WORKDIR /workspace
 RUN python3 -m pip install --upgrade pip && pip3 install packaging && \
     python3 -m pip install --no-cache-dir -U torch==${PYTORCH_VERSION}+cu${CUDA} deepspeed-kernels --extra-index-url https://download.pytorch.org/whl/cu$CUDA
 
-FROM base-builder AS deepspeed-builder
-
-ARG TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6 9.0+PTX"
-
-WORKDIR /workspace
-
-RUN git clone https://github.com/microsoft/DeepSpeed.git && \
-    cd DeepSpeed && \
-    MAX_CONCURRENCY=8 DS_BUILD_SPARSE_ATTN=0 DS_BUILD_OPS=1 DS_BUILD_EVOFORMER_ATTN=0 python3 setup.py bdist_wheel
-
-FROM base-builder AS bnb-builder
-
-WORKDIR /workspace
-ARG CUDA="118"
-ENV CUDA=$CUDA
-ARG MAX_JOBS="-1"
-ENV MAX_JOBS=$MAX_JOBS
-
-RUN git clone https://github.com/TimDettmers/bitsandbytes.git && \
-    cd bitsandbytes && \
-    CUDA_VERSION=$CUDA make cuda11x && \
-    python setup.py bdist_wheel
-
-FROM base-builder
-
-ARG TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6 9.0+PTX"
-ENV TORCH_CUDA_ARCH_LIST=$TORCH_CUDA_ARCH_LIST
-
-RUN mkdir -p /workspace/builds
-COPY --from=bnb-builder /workspace/bitsandbytes /workspace/builds/bitsandbytes
-
-RUN mkdir -p /workspace/wheels/bitsandbytes
-COPY --from=deepspeed-builder /workspace/DeepSpeed/dist/deepspeed-*.whl wheels
-COPY --from=bnb-builder /workspace/bitsandbytes/dist/bitsandbytes-*.whl wheels
-COPY --from=bnb-builder /workspace/bitsandbytes/bitsandbytes/libbitsandbytes*.so wheels/bitsandbytes
-
-RUN pip3 install wheels/deepspeed-*.whl
-RUN cd /workspace/builds/bitsandbytes && python3 setup.py install
-RUN git lfs install --skip-repo
-RUN pip3 install awscli && \
+RUN git lfs install --skip-repo && \
+    pip3 install awscli && \
     # The base image ships with `pydantic==1.8.2` which is not working
     pip3 install -U --no-cache-dir pydantic==1.10.10
