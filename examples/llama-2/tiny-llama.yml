@@ -12,7 +12,7 @@ datasets:
   - path: mhenrichsen/alpaca_2k_test
     type: alpaca
 dataset_prepared_path:
-val_set_size: 0.01
+val_set_size: 0.05
 output_dir: ./lora-out
 
 sequence_len: 4096

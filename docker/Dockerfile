@@ -21,9 +21,9 @@ WORKDIR /workspace/axolotl
 # If AXOLOTL_EXTRAS is set, append it in brackets
 RUN sed -i "s/torch==.*/torch==$PYTORCH_VERSION/" requirements.txt
 RUN if [ "$AXOLOTL_EXTRAS" != "" ] ; then \
-        pip install -e .[flash-attn,$AXOLOTL_EXTRAS]; \
+        pip install -e .[deepspeed,flash-attn,$AXOLOTL_EXTRAS]; \
     else \
-        pip install -e .[flash-attn]; \
+        pip install -e .[deepspeed,flash-attn]; \
     fi
 
 # fix so that git fetch/pull from remote works
