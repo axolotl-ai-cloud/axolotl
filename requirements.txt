@@ -17,7 +17,7 @@ sentencepiece
 wandb
 einops
 xformers>=0.0.22
-optimum
+optimum==1.13.2
 hf_transfer
 colorama
 numba
