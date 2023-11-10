@@ -3,7 +3,7 @@ import functools
 import hashlib
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Tuple, Union
+from typing import Dict, List, Tuple, Union
 
 import torch
 from datasets import (
@@ -34,6 +34,7 @@ from axolotl.prompters import (
     JeopardyPrompter,
     MultipleChoiceConcisePrompter,
     MultipleChoiceExplainPrompter,
+    Prompter,
     ReflectAlpacaPrompter,
     SummarizeTLDRPrompter,
     UnsupportedPrompter,
@@ -90,7 +91,7 @@ def prepare_dataset(cfg, tokenizer):
 
 def load_tokenized_prepared_datasets(
     tokenizer, cfg, default_dataset_prepared_path
-) -> DatasetDict:
+) -> Tuple[DatasetDict, List[Prompter]]:
     tokenizer_name = tokenizer.__class__.__name__
     ds_hash = str(
         md5(
@@ -302,7 +303,7 @@ def load_prepare_datasets(
     tokenizer: PreTrainedTokenizerBase,
     cfg,
     default_dataset_prepared_path,
-) -> Tuple[Dataset, Dataset, List[Any]]:
+) -> Tuple[Dataset, Dataset, List[Prompter]]:
     max_packed_sequence_len = (
         cfg.max_packed_sequence_len if cfg.max_packed_sequence_len else cfg.sequence_len
     )
@@ -311,7 +312,7 @@ def load_prepare_datasets(
     )  # make sure we don't accidentally set it larger than sequence_len
 
     tokenizer_name = tokenizer.__class__.__name__
-    prompters = []
+    prompters: List[Prompter] = []
     if cfg.max_packed_sequence_len is not None:
         # see if we can go ahead and load the stacked dataset
         seed = f"@{str(cfg.seed)}" if cfg.seed else ""
@@ -445,14 +446,13 @@ def load_prepare_datasets(
         train_fingerprint = md5(to_hash_train)
         test_fingerprint = md5(to_hash_test)
 
-        with zero_first(is_main_process()):
-            dataset = dataset.train_test_split(
-                test_size=cfg.val_set_size,
-                shuffle=False,
-                seed=cfg.seed or 42,
-                train_new_fingerprint=train_fingerprint,
-                test_new_fingerprint=test_fingerprint,
-            )
+        dataset = dataset.train_test_split(
+            test_size=cfg.val_set_size,
+            shuffle=False,
+            seed=cfg.seed or 42,
+            train_new_fingerprint=train_fingerprint,
+            test_new_fingerprint=test_fingerprint,
+        )
 
         train_dataset = dataset["train"]
         eval_dataset = dataset["test"]

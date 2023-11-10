@@ -11,7 +11,7 @@ from abc import abstractmethod
 from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
-from typing import Optional, Union
+from typing import Optional
 
 import torch
 import transformers
@@ -31,7 +31,6 @@ from axolotl.utils.callbacks import (
     log_prediction_callback_factory,
 )
 from axolotl.utils.collators import BatchSamplerDataCollatorForSeq2Seq
-from axolotl.utils.dataloader import MultipackDistributedDataloader
 from axolotl.utils.samplers import MultipackBatchSampler
 from axolotl.utils.schedulers import get_cosine_schedule_with_quadratic_warmup
 
@@ -215,9 +214,7 @@ class AxolotlTrainer(Trainer):
             )
         return super().get_train_dataloader()
 
-    def get_eval_dataloader(
-        self, eval_dataset: Optional[Dataset] = None
-    ) -> Union[DataLoader, MultipackDistributedDataloader]:
+    def get_eval_dataloader(self, eval_dataset: Optional[Dataset] = None) -> DataLoader:
         if self.args.sample_packing and self.args.eval_sample_packing is not False:
             eval_dataset = (
                 eval_dataset if eval_dataset is not None else self.eval_dataset
@@ -260,7 +257,7 @@ class AxolotlTrainer(Trainer):
     def get_bench_dataloader(
         self,
         bench_dataset: Dataset,
-    ) -> Union[DataLoader, MultipackDistributedDataloader]:
+    ) -> DataLoader:
         dataloader_params = {
             "batch_size": self.args.eval_batch_size,
             "collate_fn": self.bench_data_collator,
