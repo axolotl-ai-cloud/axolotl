@@ -268,6 +268,8 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
         setup_fsdp_envs(cfg)
     elif cfg.deepspeed:
         os.environ["ACCELERATE_USE_DEEPSPEED"] = "true"
+    if cfg.fp8:
+        os.environ["ACCELERATE_MIXED_PRECISION"] = "fp8"
 
     trainer_builder = HFCausalTrainerBuilder(cfg, model, tokenizer)
     trainer_builder.train_dataset = train_dataset

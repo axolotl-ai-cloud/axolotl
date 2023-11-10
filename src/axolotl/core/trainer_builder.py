@@ -483,6 +483,10 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         training_arguments_kwargs["fp16"] = (
             self.cfg.fp16 and not self.cfg.bf16
         ) or False
+        if self.cfg.fp8:
+            training_arguments_kwargs["fp16"] = False
+            training_arguments_kwargs["bf16"] = False
+
         training_arguments_kwargs["tf32"] = self.cfg.tf32
         training_arguments_kwargs["warmup_steps"] = warmup_steps
         training_arguments_kwargs["logging_steps"] = logging_steps
