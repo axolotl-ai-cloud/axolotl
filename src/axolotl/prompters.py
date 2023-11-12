@@ -22,7 +22,13 @@ class PromptStyle(Enum):
     CHATML = "chatml"
 
 
-class AlpacaPrompter:
+class Prompter:
+    """
+    Base prompter class for all prompters
+    """
+
+
+class AlpacaPrompter(Prompter):
     """
     Base class for alpaca prompters
     """
@@ -159,7 +165,7 @@ class NomicGPT4AllPrompter(AlpacaPrompter):
     """
 
 
-class ReflectAlpacaPrompter:
+class ReflectAlpacaPrompter(Prompter):
     """
     Prompter for ReflectAlpaca
     """
@@ -254,7 +260,7 @@ SHAREGPT_ASSERTION_FAILED_ROLE = (
 )
 
 
-class ShareGPTPrompter:  # pylint: disable=too-few-public-methods
+class ShareGPTPrompter(Prompter):  # pylint: disable=too-few-public-methods
     """
     A prompter that generates prompts for the ShareGPT
     """
@@ -349,7 +355,7 @@ class ShareGPTPrompterV2(ShareGPTPrompter):
         )
 
 
-class UnsupportedPrompter:
+class UnsupportedPrompter(Prompter):
     """
     A dummy class for custom prompters
     """
