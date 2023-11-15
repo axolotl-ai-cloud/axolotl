@@ -9,6 +9,8 @@ import subprocess
 import unittest
 from pathlib import Path
 
+from transformers.utils import is_torch_bf16_gpu_available
+
 from axolotl.cli import load_datasets
 from axolotl.common.cli import TrainerCliArgs
 from axolotl.train import train
@@ -60,6 +62,10 @@ class TestResumeLlama(unittest.TestCase):
                 "save_steps": 10,
             }
         )
+        if is_torch_bf16_gpu_available():
+            cfg.bf16 = True
+        else:
+            cfg.fp16 = True
         normalize_config(cfg)
         cli_args = TrainerCliArgs()
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
