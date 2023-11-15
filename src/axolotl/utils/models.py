@@ -236,9 +236,6 @@ def load_model(
         for key, val in cfg.model_config.items():
             setattr(model_config, key, val)
 
-    if cfg.rope_scaling:
-        setattr(model_config, "rope_scaling", cfg.rope_scaling)
-
     try:
         if cfg.is_llama_derived_model and not cfg.trust_remote_code and not cfg.gptq:
             from transformers import LlamaForCausalLM
@@ -350,9 +347,6 @@ def load_model(
                     **model_kwargs,
                 )
     except Exception as err:  # pylint: disable=broad-exception-caught
-        LOG.error(
-            "Exception raised attempting to load model, retrying with AutoModelForCausalLM"
-        )
         LOG.exception(err)
         raise err
 
