@@ -491,6 +491,7 @@ datasets:
     data_files: # Optional[str] path to source data files
     shards: # Optional[int] number of shards to split data into
     name: # Optional[str] name of dataset configuration to load
+    train_on_split: train # Optional[str] name of dataset split to load from
 
     # Optional[str] fastchat conversation type, only used with type: sharegpt
     conversation:  # Options (see Conversation 'name'): https://github.com/lm-sys/FastChat/blob/main/fastchat/conversation.py
