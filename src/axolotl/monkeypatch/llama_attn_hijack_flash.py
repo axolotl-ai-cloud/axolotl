@@ -321,7 +321,7 @@ def flashattn_forward(
         # only on first autoregressive step q,k,v have same seqlen
         is_causal = key_states.shape == query_states.shape
 
-    dropout_rate = 0.0 if not self.training else self.attention_dropout
+    dropout_rate = 0.0 if not self.training else getattr(self, "attention_dropout", 0.0)
 
     if cu_seqlens is not None and max_seqlen is not None and cu_seqlens.dim() == 1:
         # special handling using sample packing
