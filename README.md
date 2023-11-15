@@ -204,6 +204,28 @@ Use `winglian/axolotl-runpod:main-latest` or use this [direct link](https://runp
 #### Windows
 Please use WSL or Docker!
 
+
+#### Launching on public clouds (GCP, AWS, Azure, OCI, and more)
+To launch on GPU instances (both on-demand and spot instances) on 7+ clouds, you can use [SkyPilot](https://skypilot.readthedocs.io/en/latest/index.html):
+```bash
+pip install "skypilot-nightly[gcp,aws,azure,oci,lambda,kubernetes,ibm,scp]"  # choose your clouds
+sky check
+```
+Get the [example YAMLs](https://github.com/skypilot-org/skypilot/tree/master/llm/axolotl) of using Axolotl to finetune `mistralai/Mistral-7B-v0.1`:
+```
+git clone https://github.com/skypilot-org/skypilot.git
+cd skypilot/llm/axolotl
+```
+Use one command to launch:
+```bash
+# On-demand 
+HF_TOKEN=xx sky launch axolotl.yaml --env HF_TOKEN
+
+# Managed spot (auto-recovery on preemption)
+HF_TOKEN=xx BUCKET=<unique-name> sky spot launch axolotl-spot.yaml --env HF_TOKEN --env BUCKET
+```
+
+
 ### Dataset
 
 Axolotl supports a variety of dataset formats. Below are some of the formats you can use.
