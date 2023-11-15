@@ -71,7 +71,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip3 uninstall -y transformers accelerate
+          pip3 uninstall -y transformers accelerate flash-attn
           FLASH_ATTENTION_FORCE_BUILD=TRUE pip3 install -U flash-attn
           pip3 install -U -e .
           pip3 install -r requirements-tests.txt
