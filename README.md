@@ -111,7 +111,6 @@ accelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \
   ```bash
   docker run --gpus '"all"' --rm -it winglian/axolotl:main-py3.10-cu118-2.0.1
   ```
-  - `winglian/axolotl-runpod:main-latest`: for runpod or use this [direct link](https://runpod.io/gsc?template=v2ickqhz9s&ref=6i7fkpdz)
 
   Or run on the current files for development:
 
@@ -153,6 +152,10 @@ accelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \
         huggingface-cli login
         ```
         Get the token at huggingface.co/settings/tokens
+
+#### Runpod
+
+Use `winglian/axolotl-runpod:main-latest` or use this [direct link](https://runpod.io/gsc?template=v2ickqhz9s&ref=6i7fkpdz)
 
 #### LambdaLabs
   <details>
