@@ -99,7 +99,12 @@ def load_tokenized_prepared_datasets(
                 str(cfg.sequence_len)
                 + "@"
                 + "|".join(
-                    sorted([f"{d.path}:{d.type}:{d.shards}" for d in cfg.datasets])
+                    sorted(
+                        [
+                            f"{d.path}:{d.type}:{d.shards}:{d.conversation}"
+                            for d in cfg.datasets
+                        ]
+                    )
                 )
                 + "|"
                 + tokenizer_name
