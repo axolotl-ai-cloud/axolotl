@@ -11,7 +11,6 @@ import torch
 import transformers.modelcard
 from accelerate.logging import get_logger
 from datasets import Dataset
-from optimum.bettertransformer import BetterTransformer
 from transformers.deepspeed import is_deepspeed_zero3_enabled
 
 from axolotl.common.cli import TrainerCliArgs
@@ -48,6 +47,8 @@ def train(
         f"loading tokenizer... {cfg.tokenizer_config or cfg.base_model_config}",
         main_process_only=True,
     )
+    if cfg.flash_optimum:
+        from optimum.bettertransformer import BetterTransformer
     tokenizer = load_tokenizer(cfg)
 
     train_dataset = dataset_meta.train_dataset
