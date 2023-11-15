@@ -48,18 +48,18 @@ class TestResumeLlama(unittest.TestCase):
                 "special_tokens": {},
                 "datasets": [
                     {
-                        "path": "mhenrichsen/alpaca_2k_test",
+                        "path": "vicgalle/alpaca-gpt4",
                         "type": "alpaca",
                     },
                 ],
                 "num_epochs": 2,
-                "micro_batch_size": 8,
+                "micro_batch_size": 1,
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_torch",
                 "lr_scheduler": "cosine",
-                "save_steps": 30,
+                "save_steps": 10,
                 "save_total_limit": 5,
                 "max_steps": 40,
             }
@@ -76,7 +76,7 @@ class TestResumeLlama(unittest.TestCase):
 
         resume_cfg = cfg | DictDefault(
             {
-                "resume_from_checkpoint": f"{temp_dir}/checkpoint-10/",
+                "resume_from_checkpoint": f"{temp_dir}/checkpoint-30/",
             }
         )
         normalize_config(resume_cfg)
