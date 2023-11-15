@@ -25,8 +25,10 @@ Features:
 - [Installation](#installation)
   - [Docker](#docker)
   - [Conda/Pip venv](#condapip-venv)
+  - [Runpod](#runpod)
   - [LambdaLabs](#lambdalabs)
   - [Windows](#windows)
+  - [Launching on public clouds via SkyPilot](#launching-on-public-clouds-via-skypilot)
 - [Dataset](#dataset)
   - [How to Add Custom Prompts](#how-to-add-custom-prompts)
   - [How to Use Custom Pretokenized Dataset](#how-to-use-your-custom-pretokenized-dataset)
@@ -205,8 +207,8 @@ Use `winglian/axolotl-runpod:main-latest` or use this [direct link](https://runp
 Please use WSL or Docker!
 
 
-#### Launching on public clouds (GCP, AWS, Azure, OCI, and more)
-To launch on GPU instances (both on-demand and spot instances) on 7+ clouds, you can use [SkyPilot](https://skypilot.readthedocs.io/en/latest/index.html):
+#### Launching on public clouds via SkyPilot
+To launch on GPU instances (both on-demand and spot instances) on 7+ clouds (GCP, AWS, Azure, OCI, and more), you can use [SkyPilot](https://skypilot.readthedocs.io/en/latest/index.html):
 ```bash
 pip install "skypilot-nightly[gcp,aws,azure,oci,lambda,kubernetes,ibm,scp]"  # choose your clouds
 sky check
