@@ -59,7 +59,9 @@ class TestResumeLlama(unittest.TestCase):
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_torch",
                 "lr_scheduler": "cosine",
-                "save_steps": 10,
+                "save_steps": 30,
+                "save_total_limit": 5,
+                "max_steps": 40,
             }
         )
         if is_torch_bf16_gpu_available():
@@ -90,4 +92,4 @@ class TestResumeLlama(unittest.TestCase):
         )
         pattern = r"first_step\s+(\d+)"
         first_steps = int(re.findall(pattern, res.stdout)[0])
-        assert first_steps == 11
+        assert first_steps == 31
