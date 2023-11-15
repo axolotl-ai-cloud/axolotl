@@ -25,8 +25,10 @@ Features:
 - [Installation](#installation)
   - [Docker](#docker)
   - [Conda/Pip venv](#condapip-venv)
+  - [Runpod](#runpod)
   - [LambdaLabs](#lambdalabs)
   - [Windows](#windows)
+  - [Launching on public clouds via SkyPilot](#launching-on-public-clouds-via-skypilot)
 - [Dataset](#dataset)
   - [How to Add Custom Prompts](#how-to-add-custom-prompts)
   - [How to Use Custom Pretokenized Dataset](#how-to-use-your-custom-pretokenized-dataset)
@@ -203,6 +205,28 @@ Use `winglian/axolotl-runpod:main-latest` or use this [direct link](https://runp
 
 #### Windows
 Please use WSL or Docker!
+
+
+#### Launching on public clouds via SkyPilot
+To launch on GPU instances (both on-demand and spot instances) on 7+ clouds (GCP, AWS, Azure, OCI, and more), you can use [SkyPilot](https://skypilot.readthedocs.io/en/latest/index.html):
+```bash
+pip install "skypilot-nightly[gcp,aws,azure,oci,lambda,kubernetes,ibm,scp]"  # choose your clouds
+sky check
+```
+Get the [example YAMLs](https://github.com/skypilot-org/skypilot/tree/master/llm/axolotl) of using Axolotl to finetune `mistralai/Mistral-7B-v0.1`:
+```
+git clone https://github.com/skypilot-org/skypilot.git
+cd skypilot/llm/axolotl
+```
+Use one command to launch:
+```bash
+# On-demand 
+HF_TOKEN=xx sky launch axolotl.yaml --env HF_TOKEN
+
+# Managed spot (auto-recovery on preemption)
+HF_TOKEN=xx BUCKET=<unique-name> sky spot launch axolotl-spot.yaml --env HF_TOKEN --env BUCKET
+```
+
 
 ### Dataset
 
