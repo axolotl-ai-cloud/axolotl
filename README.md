@@ -109,7 +109,7 @@ accelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \
 
 #### Docker
   ```bash
-  docker run --privileged --gpus '"all"' --shm-size 10g --rm -it winglian/axolotl:main-py3.10-cu118-2.0.1
+  docker run --gpus '"all"' --rm -it winglian/axolotl:main-py3.10-cu118-2.0.1
   ```
   - `winglian/axolotl-runpod:main-latest`: for runpod or use this [direct link](https://runpod.io/gsc?template=v2ickqhz9s&ref=6i7fkpdz)
 
@@ -133,6 +133,8 @@ accelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \
   * Prevents memory issues when running e.g. deepspeed (e.g. you could hit SIGBUS/signal 7 error) through `--ipc` and `--ulimit` args.
   * Persists the downloaded HF data (models etc.) and your modifications to axolotl code through `--mount`/`-v` args.
   * The `--name` argument simply makes it easier to refer to the container in vscode (`Dev Containers: Attach to Running Container...`) or in your terminal.
+  * The `--privileged` flag gives all capabilities to the container.
+  * The `--shm-size 10g` argument increases the shared memory size. Use this if you see `exitcode: -7` errors using deepspeed.
 
   [More information on nvidia website](https://docs.nvidia.com/deeplearning/frameworks/user-guide/index.html#setincshmem)
 
