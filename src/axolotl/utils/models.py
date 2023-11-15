@@ -31,9 +31,14 @@ LOG = logging.getLogger("axolotl")
 def load_model_config(cfg):
     model_config_name = cfg.base_model_config or cfg.base_model
     trust_remote_code = cfg.trust_remote_code is True
-    return AutoConfig.from_pretrained(
+    model_config = AutoConfig.from_pretrained(
         model_config_name, trust_remote_code=trust_remote_code
     )
+    if cfg.model_config:
+        for key, val in cfg.model_config.items():
+            setattr(model_config, key, val)
+
+    return model_config
 
 
 def load_tokenizer(cfg):
@@ -231,10 +236,6 @@ def load_model(
             or cfg.is_mistral_derived_model
         ):
             model_kwargs["use_flash_attention_2"] = True
-
-    if cfg.model_config:
-        for key, val in cfg.model_config.items():
-            setattr(model_config, key, val)
 
     try:
         if cfg.is_llama_derived_model and not cfg.trust_remote_code and not cfg.gptq:
