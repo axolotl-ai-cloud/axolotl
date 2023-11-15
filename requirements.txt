@@ -32,3 +32,4 @@ pynvml
 art
 fschat==0.2.29
 gradio
+tensorboard
