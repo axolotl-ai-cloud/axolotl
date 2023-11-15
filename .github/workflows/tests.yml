@@ -71,8 +71,9 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip3 uninstall -y transformers accelerate flash-attn
-          pip3 install -U -e .[flash-attn]
+          pip3 uninstall -y transformers accelerate
+          FLASH_ATTENTION_FORCE_BUILD=TRUE pip3 install -U flash-attn
+          pip3 install -U -e .
           pip3 install -r requirements-tests.txt
 
       - name: Run e2e tests
