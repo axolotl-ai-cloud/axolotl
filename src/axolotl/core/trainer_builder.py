@@ -543,16 +543,16 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 "dataloader_prefetch_factor"
             ] = self.cfg.dataloader_prefetch_factor
 
-        if self.cfg.eval_steps:
+        if self.cfg.val_set_size == 0:
+            # no eval set, so don't eval
+            training_arguments_kwargs["evaluation_strategy"] = "no"
+        elif self.cfg.eval_steps:
             training_arguments_kwargs["evaluation_strategy"] = "steps"
             training_arguments_kwargs["eval_steps"] = self.cfg.eval_steps
         elif self.cfg.evaluation_strategy:
             training_arguments_kwargs[
                 "evaluation_strategy"
             ] = self.cfg.evaluation_strategy
-        elif self.cfg.val_set_size == 0:
-            # no eval set, so don't eval
-            training_arguments_kwargs["evaluation_strategy"] = "no"
         else:
             # we have an eval set, but no steps defined, default to use epoch
             training_arguments_kwargs["evaluation_strategy"] = "epoch"

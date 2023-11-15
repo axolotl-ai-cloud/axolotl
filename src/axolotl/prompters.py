@@ -75,7 +75,7 @@ class AlpacaPrompter(Prompter):
         else:
             res = (
                 self.system_format.format(system=self.system_no_input_prompt)
-                if self.system_prompt
+                if self.system_no_input_prompt
                 else ""
             ) + self.turn_no_input_format.format(instruction=instruction)
         if output:

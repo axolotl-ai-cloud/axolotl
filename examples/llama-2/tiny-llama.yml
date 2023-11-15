@@ -1,4 +1,4 @@
-base_model: PY007/TinyLlama-1.1B-step-50K-105b
+base_model: PY007/TinyLlama-1.1B-intermediate-step-715k-1.5T
 
 model_type: LlamaForCausalLM
 tokenizer_type: LlamaTokenizer

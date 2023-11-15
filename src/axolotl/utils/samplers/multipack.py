@@ -181,13 +181,16 @@ class MultipackBatchSampler(BatchSampler):
         )
 
         # shave off 1% + 1 for dealing with variance in packing from random sampler to sampler
-        return (
-            world_size
-            * math.floor(
-                0.99
-                * lengths_sum_per_device
-                / self.packing_efficiency_estimate
-                // self.batch_max_len
-            )
-            - 1
+        return min(
+            1,
+            (
+                world_size
+                * math.floor(
+                    0.99
+                    * lengths_sum_per_device
+                    / self.packing_efficiency_estimate
+                    // self.batch_max_len
+                )
+                - 1
+            ),
         )
