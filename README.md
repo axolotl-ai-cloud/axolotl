@@ -220,7 +220,7 @@ cd skypilot/llm/axolotl
 ```
 Use one command to launch:
 ```bash
-# On-demand 
+# On-demand
 HF_TOKEN=xx sky launch axolotl.yaml --env HF_TOKEN
 
 # Managed spot (auto-recovery on preemption)
