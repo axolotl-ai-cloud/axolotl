@@ -46,7 +46,7 @@ def print_axolotl_text_art(suffix=None):
     ascii_text = "  axolotl"
     if suffix:
         ascii_text += f"  x  {suffix}"
-    ascii_art = text2art(" axolotl", font=font)
+    ascii_art = text2art(ascii_text, font=font)
 
     if is_main_process():
         print(ascii_art)
