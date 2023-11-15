@@ -30,6 +30,7 @@ def xformers_forward(
     output_attentions: bool = False,
     use_cache: bool = False,
     padding_mask: Optional[torch.LongTensor] = None,  # pylint: disable=unused-argument
+    **kwargs,  # pylint: disable=unused-argument
 ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
     # pylint: disable=duplicate-code
     bsz, q_len, _ = hidden_states.size()
