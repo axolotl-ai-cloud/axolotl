@@ -142,31 +142,32 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset, tokenizer):
 
 
 def calculate_total_num_steps(cfg, train_dataset):
+    if not cfg.total_num_tokens:
+        total_num_tokens = np.sum(
+            train_dataset.data.column("input_ids")
+            .to_pandas()
+            .apply(lambda x: len(x))  # pylint: disable=unnecessary-lambda
+            .values
+        )
+        LOG.debug(f"total_num_tokens: {total_num_tokens}", main_process_only=True)
+        cfg.total_num_tokens = total_num_tokens
+
+    if not cfg.total_supervised_tokens:
+        total_supervised_tokens = (
+            train_dataset.data.column("labels")
+            .to_pandas()
+            .apply(lambda x: np.sum(np.array(x) != -100))
+            .sum()
+        )
+        LOG.debug(
+            f"`total_supervised_tokens: {total_supervised_tokens}`",
+            main_process_only=True,
+        )
+        cfg.total_supervised_tokens = total_supervised_tokens
+
     if cfg.sample_packing:
         # we have to drop anything longer then sequence len otherwise
         # flash attention with position ids fails
-        if not cfg.total_num_tokens:
-            total_num_tokens = np.sum(
-                train_dataset.data.column("input_ids")
-                .to_pandas()
-                .apply(lambda x: len(x))  # pylint: disable=unnecessary-lambda
-                .values
-            )
-            LOG.debug(f"total_num_tokens: {total_num_tokens}", main_process_only=True)
-            cfg.total_num_tokens = total_num_tokens
-
-        if not cfg.total_supervised_tokens:
-            total_supervised_tokens = (
-                train_dataset.data.column("labels")
-                .to_pandas()
-                .apply(lambda x: np.sum(np.array(x) != -100))
-                .sum()
-            )
-            LOG.debug(
-                f"`total_supervised_tokens: {total_supervised_tokens}`",
-                main_process_only=True,
-            )
-            cfg.total_supervised_tokens = total_supervised_tokens
 
         if cfg.sample_packing_eff_est:
             total_num_steps = (
