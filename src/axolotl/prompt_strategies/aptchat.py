@@ -89,7 +89,7 @@ class AptChatPrompter:
         self, source, *args, **kwargs  # pylint: disable=unused-argument
     ) -> Generator[Tuple[str, str], None, None]:
         for msg in source:
-            yield msg["role"], msg["value"]
+            yield msg["role"], msg["content"]
 
 
 def load(tokenizer, cfg):
