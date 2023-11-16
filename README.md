@@ -91,7 +91,6 @@ cd axolotl
 
 pip3 install packaging
 pip3 install -e '.[flash-attn,deepspeed]'
-pip3 install -U git+https://github.com/huggingface/peft.git
 
 # finetune lora
 accelerate launch -m axolotl.cli.train examples/openllama-3b/lora.yml
