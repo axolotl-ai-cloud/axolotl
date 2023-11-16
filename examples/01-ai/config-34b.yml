@@ -10,7 +10,7 @@ strict: false
 push_dataset_to_hub: true
 hf_use_auth_token: true
 datasets:
-  - path: communityai/apt-chat-micro-dataset-llm-v2-714k
+  - path: communityai/aptchatv1-template-micro-dataset-llm-v2-714k
     type: aptchat
 dataset_prepared_path:
 val_set_size: 0.002
@@ -37,9 +37,11 @@ wandb_run_id:
 wandb_log_model:
 output_dir: ./01-ai-yi-34b
 
+gradient_checkpointing: true
 gradient_accumulation_steps: 4
-batch_size: 8
+# batch_size: 8
 micro_batch_size: 8
+eval_batch_size: 8
 num_epochs: 3
 optimizer: adamw_bnb_8bit
 torchdistx_path:
@@ -50,7 +52,7 @@ group_by_length: false
 bf16: true
 fp16: false
 tf32: true
-gradient_checkpointing: true
+
 early_stopping_patience:
 resume_from_checkpoint:
 local_rank:
