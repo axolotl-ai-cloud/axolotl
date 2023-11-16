@@ -79,6 +79,14 @@ def prepare_dataset(cfg, tokenizer):
         train_dataset, eval_dataset = process_datasets_for_packing(
             cfg, train_dataset, eval_dataset, tokenizer
         )
+
+    if eval_dataset and cfg.sample_packing and cfg.eval_sample_packing is not False:
+        total_eval_steps = calculate_total_num_steps(cfg, eval_dataset, update=False)
+        if total_eval_steps == 0:
+            raise ValueError(
+                "eval dataset split is too small for sample_packing. You should set `eval_sample_packing: False`. "
+            )
+
     if cfg.max_steps:
         total_num_steps = min(
             calculate_total_num_steps(cfg, train_dataset), cfg.max_steps
