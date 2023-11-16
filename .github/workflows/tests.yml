@@ -71,6 +71,7 @@ jobs:
 
       - name: Install dependencies
         run: |
+          pip3 install --extra-index-url https://download.pytorch.org/whl/cu118 -U torch==2.0.1
           pip3 uninstall -y transformers accelerate
           pip3 install -U -e .[flash-attn]
           pip3 install -r requirements-tests.txt
