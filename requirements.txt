@@ -1,5 +1,5 @@
 --extra-index-url https://huggingface.github.io/autogptq-index/whl/cu118/
-auto-gptq==0.4.2
+auto-gptq==0.5.1
 packaging
 peft==0.6.0
 transformers==4.35.1
