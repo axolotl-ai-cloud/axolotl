@@ -519,6 +519,11 @@ def validate_config(cfg):
                         "bf16.enabled or fp16.enabled must be set to true when using ZeRO-3 with flash-attention"
                     )
 
+    if cfg.test_datasets and cfg.val_set_size:
+        raise ValueError(
+            "non-zero val_set_size should not be used with test_datasets configuration"
+        )
+
     # TODO
     # MPT 7b
     # https://github.com/facebookresearch/bitsandbytes/issues/25
