@@ -427,7 +427,8 @@ See [examples](examples) for quick start. It is recommended to duplicate and mod
       type: context_qa.load_v2
       train_on_split: validation
 
-  # dataset with splits, but no train split
+  # loading from s3 or gcs
+  # s3 creds will be loaded from the system default and gcs only supports public access
   dataset:
     - path: s3://path_to_ds # Accepts folder with arrow/parquet or file path like above. Supports s3, gcs.
       ...
