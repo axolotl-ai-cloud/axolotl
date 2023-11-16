@@ -4,19 +4,20 @@ model_type: LlamaForCausalLM
 tokenizer_type: LlamaTokenizer
 is_llama_derived_model: true
 
-load_in_8bit: true
+load_in_8bit: false
 load_in_4bit: false
 strict: false
 
 datasets:
-  - path: mhenrichsen/alpaca_2k_test
+  - path: mhenrichsen/context-aware-splits-english
     type: alpaca
 dataset_prepared_path:
-val_set_size: 0.05
-output_dir: ./lora-out
+val_set_size: 200
+output_dir: ./tiny-llama
 
-sequence_len: 4096
+sequence_len: 8192
 sample_packing: true
+pad_to_sequence_len: true
 
 adapter: lora
 lora_model_dir:
@@ -32,9 +33,9 @@ wandb_watch:
 wandb_run_id:
 wandb_log_model:
 
-gradient_accumulation_steps: 4
-micro_batch_size: 2
-num_epochs: 4
+gradient_accumulation_steps: 1
+micro_batch_size: 8
+num_epochs: 3
 optimizer: adamw_bnb_8bit
 lr_scheduler: cosine
 learning_rate: 0.0002
@@ -53,13 +54,13 @@ logging_steps: 1
 xformers_attention:
 flash_attention: true
 
-warmup_steps: 10
+warmup_steps: 50
 eval_steps: 0.05
 eval_table_size:
-save_steps:
+save_steps: 0.50
 debug:
 deepspeed:
-weight_decay: 0.0
+weight_decay: 0.1
 fsdp:
 fsdp_config:
 special_tokens:
