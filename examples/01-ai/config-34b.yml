@@ -8,11 +8,13 @@ load_in_4bit: false
 gptq: false
 strict: false
 push_dataset_to_hub: true
+hf_use_auth_token: true
 datasets:
   - path: communityai/apt-chat-micro-dataset-llm-v2-714k
     type: aptchat
 dataset_prepared_path:
 val_set_size: 0.002
+noisy_embedding_alpha: 5.0
 
 sequence_len: 4096
 sample_packing: false
