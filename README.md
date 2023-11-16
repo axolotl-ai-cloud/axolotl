@@ -426,6 +426,12 @@ See [examples](examples) for quick start. It is recommended to duplicate and mod
     - path: knowrohit07/know_sql
       type: context_qa.load_v2
       train_on_split: validation
+
+  # loading from s3 or gcs
+  # s3 creds will be loaded from the system default and gcs only supports public access
+  dataset:
+    - path: s3://path_to_ds # Accepts folder with arrow/parquet or file path like above. Supports s3, gcs.
+      ...
   ```
 
 - loading
@@ -520,7 +526,7 @@ float16: true
 
 # A list of one or more datasets to finetune the model with
 datasets:
-  # HuggingFace dataset repo | "json" for local dataset, make sure to fill data_files
+  # HuggingFace dataset repo | s3://,gs:// path | "json" for local dataset, make sure to fill data_files
   - path: vicgalle/alpaca-gpt4
   # The type of prompt to use for training. [alpaca, sharegpt, gpteacher, oasst, reflection]
     type: alpaca # format | format:<prompt_style> (chat/instruct) | <prompt_strategies>.load_<load_fn>

@@ -11,7 +11,7 @@ deepspeed
 addict
 fire
 PyYAML>=6.0
-datasets
+datasets>=2.14.0
 flash-attn>=2.3.0
 sentencepiece
 wandb
@@ -33,3 +33,8 @@ art
 fschat==0.2.29
 gradio
 tensorboard
+
+# remote filesystems
+s3fs
+gcsfs
+# adlfs
