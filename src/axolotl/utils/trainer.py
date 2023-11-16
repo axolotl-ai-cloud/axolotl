@@ -141,7 +141,7 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset, tokenizer):
     return train_dataset, eval_dataset
 
 
-def calculate_total_num_steps(cfg, train_dataset):
+def calculate_total_num_steps(cfg, train_dataset, update=True):
     if not cfg.total_num_tokens:
         total_num_tokens = np.sum(
             train_dataset.data.column("input_ids")
@@ -150,7 +150,8 @@ def calculate_total_num_steps(cfg, train_dataset):
             .values
         )
         LOG.debug(f"total_num_tokens: {total_num_tokens}", main_process_only=True)
-        cfg.total_num_tokens = total_num_tokens
+        if update:
+            cfg.total_num_tokens = total_num_tokens
 
     if not cfg.total_supervised_tokens:
         total_supervised_tokens = (
@@ -163,7 +164,8 @@ def calculate_total_num_steps(cfg, train_dataset):
             f"`total_supervised_tokens: {total_supervised_tokens}`",
             main_process_only=True,
         )
-        cfg.total_supervised_tokens = total_supervised_tokens
+        if update:
+            cfg.total_supervised_tokens = total_supervised_tokens
 
     if cfg.sample_packing:
         # we have to drop anything longer then sequence len otherwise
@@ -232,7 +234,8 @@ def calculate_total_num_steps(cfg, train_dataset):
             sample_packing_eff_est = (
                 math.ceil(sample_packing_actual_eff_all * 100.0) / 100.0
             )
-            cfg.sample_packing_eff_est = sample_packing_eff_est
+            if update:
+                cfg.sample_packing_eff_est = sample_packing_eff_est
             LOG.debug(
                 f"sample_packing_eff_est: {cfg.sample_packing_eff_est}",
                 main_process_only=True,
