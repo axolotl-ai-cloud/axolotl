@@ -489,6 +489,14 @@ is_llama_derived_model:
 # Please note that if you set this to true, `padding_side` will be set to "left" by default
 is_mistral_derived_model:
 
+# optional overrides to the base model configuration
+model_config:
+  # RoPE Scaling https://github.com/huggingface/transformers/pull/24653
+  rope_scaling:
+    type: # linear | dynamic
+    factor: # float
+
+
 # Whether you are training a 4-bit GPTQ quantized model
 gptq: true
 gptq_groupsize: 128 # group size
@@ -756,10 +764,6 @@ landmark_attention:
 # xpos RoPE see https://github.com/kaiokendev/cutoff-len-is-context-len/blob/main/util/xpos_rope_llama_monkey_patch.py
 # LLaMA only
 xpos_rope:
-# RoPE Scaling https://github.com/huggingface/transformers/pull/24653
-rope_scaling:
-  type: # linear | dynamic
-  factor: # float
 
 # Resume from a specific checkpoint dir
 resume_from_checkpoint:
