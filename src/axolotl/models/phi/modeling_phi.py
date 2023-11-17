@@ -18,6 +18,7 @@ from transformers import PretrainedConfig, PreTrainedModel
 from transformers.activations import ACT2FN
 from transformers.modeling_outputs import CausalLMOutputWithPast
 
+from ...monkeypatch.utils import get_cu_seqlens_from_pos_ids
 from .configuration_phi import PhiConfig
 
 try:
@@ -625,7 +626,11 @@ class MHA(nn.Module):
         self.checkpointing = checkpointing
 
     def _forward_self_attn(
-        self, x: torch.FloatTensor, key_padding_mask: Optional[torch.BoolTensor]
+        self,
+        x: torch.FloatTensor,
+        key_padding_mask: Optional[torch.BoolTensor],
+        cu_seqlens: Optional[torch.LongTensor] = None,
+        max_seqlen: Optional[int] = None,
     ) -> torch.FloatTensor:
         qkv = self.Wqkv(x)
         qkv = rearrange(
@@ -638,8 +643,11 @@ class MHA(nn.Module):
         if self.flash_attn:
             batch_size, seqlen = qkv.shape[0], qkv.shape[1]
 
-            cu_seqlens, max_seqlen = None, None
-            if key_padding_mask is not None:
+            if (
+                key_padding_mask is not None
+                and cu_seqlens is None
+                and max_seqlen is None
+            ):
                 # If `key_padding_mask` is supplied, we need to unpad the input and retrieve
                 # the `cu_seqlens` and `max_seqlen` to be used by `flash-attn`
                 qkv, indices, cu_seqlens, max_seqlen = unpad_input(
@@ -763,6 +771,8 @@ class MHA(nn.Module):
         x: torch.FloatTensor,
         past_key_values: Optional[InferenceParams] = None,
         attention_mask: Optional[Union[torch.LongTensor, torch.BoolTensor]] = None,
+        cu_seqlens: Optional[torch.LongTensor] = None,
+        max_seqlen: Optional[int] = None,
         **kwargs,
     ) -> Tuple[torch.FloatTensor, torch.FloatTensor]:
         # TODO: Need an alternative way for dynamic control flow: torch.any(~attention_mask.bool())
@@ -775,12 +785,18 @@ class MHA(nn.Module):
         if self.n_head == self.n_head_kv:
             if past_key_values is None:
                 # If `past_key_values` are not supplied, we run self-attention
-                attn_output = self._forward_self_attn(x, attention_mask)
+                attn_output = self._forward_self_attn(
+                    x, attention_mask, cu_seqlens=cu_seqlens, max_seqlen=max_seqlen
+                )
             else:
                 # If `past_key_values` are supplied, it means that we might have cached values and
                 # could take advantage of cross-attention
                 attn_output = self._forward_cross_attn(
-                    x, past_key_values, attention_mask
+                    x,
+                    past_key_values,
+                    attention_mask,
+                    cu_seqlens=cu_seqlens,
+                    max_seqlen=max_seqlen,
                 )
         # MQA / GQA
         else:
@@ -972,6 +988,8 @@ class PhiModel(PhiPreTrainedModel):
         input_ids: torch.LongTensor,
         past_key_values: Optional[Union[torch.FloatTensor, InferenceParams]] = None,
         attention_mask: Optional[torch.BoolTensor] = None,
+        cu_seqlens: Optional[torch.LongTensor] = None,
+        max_seqlen: Optional[int] = None,
     ) -> torch.FloatTensor:
         hidden_states = self.embd(input_ids)
 
@@ -980,6 +998,8 @@ class PhiModel(PhiPreTrainedModel):
                 hidden_states,
                 past_key_values=past_key_values,
                 attention_mask=attention_mask,
+                cu_seqlens=cu_seqlens,
+                max_seqlen=max_seqlen,
             )
 
         return hidden_states
@@ -1014,10 +1034,23 @@ class PhiForCausalLM(PhiPreTrainedModel):
         past_key_values: Optional[Union[torch.FloatTensor, InferenceParams]] = None,
         attention_mask: Optional[torch.BoolTensor] = None,
         labels: Optional[torch.LongTensor] = None,
+        position_ids: Optional[torch.LongTensor] = None,
         **kwargs,
     ) -> CausalLMOutputWithPast:
+        cu_seqlens: Optional[torch.LongTensor] = None
+        max_seqlen: Optional[int] = None
+        if position_ids is not None:
+            batch_size, seq_length = input_ids.shape
+            position_ids = position_ids.view(-1, seq_length).long()
+            cu_seqlens, max_seqlen = get_cu_seqlens_from_pos_ids(position_ids)
+            cu_seqlens = cu_seqlens.squeeze()
+
         hidden_states = self.transformer(
-            input_ids, past_key_values=past_key_values, attention_mask=attention_mask
+            input_ids,
+            past_key_values=past_key_values,
+            attention_mask=attention_mask,
+            cu_seqlens=cu_seqlens,
+            max_seqlen=max_seqlen,
         )
         lm_logits = self.lm_head(hidden_states)
 
