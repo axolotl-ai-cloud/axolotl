@@ -1,5 +1,5 @@
 base_model: microsoft/phi-1_5
-model_type: MixFormerSequentialForCausalLM
+model_type: PhiForCausalLM
 tokenizer_type: AutoTokenizer
 is_llama_derived_model: false
 trust_remote_code: true
