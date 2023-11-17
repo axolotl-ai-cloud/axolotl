@@ -87,7 +87,6 @@ Get started with Axolotl in just a few steps! This quickstart guide will walk yo
 
 `pip3 install "axolotl[flash-attn,deepspeed] @ git+https://github.com/OpenAccess-AI-Collective/axolotl"`
 
-
 ### For developers
 ```bash
 git clone https://github.com/OpenAccess-AI-Collective/axolotl
