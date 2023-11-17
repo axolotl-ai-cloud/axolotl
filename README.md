@@ -85,13 +85,19 @@ Get started with Axolotl in just a few steps! This quickstart guide will walk yo
 
 **Requirements**: Python >=3.9 and Pytorch >=2.0.
 
+`pip3 install "axolotl[flash-attn,deepspeed] @ git+https://github.com/OpenAccess-AI-Collective/axolotl"`
+
+### For developers
 ```bash
 git clone https://github.com/OpenAccess-AI-Collective/axolotl
 cd axolotl
 
 pip3 install packaging
 pip3 install -e '.[flash-attn,deepspeed]'
+```
 
+### Usage
+```bash
 # finetune lora
 accelerate launch -m axolotl.cli.train examples/openllama-3b/lora.yml
 
