@@ -4,6 +4,9 @@ tokenizer_type: AutoTokenizer
 is_llama_derived_model: false
 trust_remote_code: true
 
+model_config:
+  flash_attn: true
+
 load_in_8bit: false
 load_in_4bit: false
 strict: false
