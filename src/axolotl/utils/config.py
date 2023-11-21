@@ -8,11 +8,13 @@ from transformers.utils import is_torch_bf16_gpu_available
 
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.models import load_model_config
+from axolotl.utils.trainer import prepare_loader
 
 LOG = logging.getLogger("axolotl")
 
 
 def choose_device(cfg):
+    prepare_loader(cfg)
     def get_device():
         try:
             if torch.cuda.is_available():
