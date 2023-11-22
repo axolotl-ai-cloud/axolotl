@@ -288,10 +288,10 @@ def load_model(
         #         device=cfg.device,
         #     )
         #     model.train() # sets to train instead of eval mode
-        elif model_type == "MixFormerSequentialForCausalLM":
-            from axolotl.models.phi import MixFormerSequentialForCausalLM
+        elif model_type == "PhiForCausalLM":
+            from axolotl.models.phi import PhiForCausalLM
 
-            model = MixFormerSequentialForCausalLM.from_pretrained(
+            model = PhiForCausalLM.from_pretrained(
                 base_model,
                 load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
                 load_in_4bit=cfg.load_in_4bit and cfg.adapter is not None,
