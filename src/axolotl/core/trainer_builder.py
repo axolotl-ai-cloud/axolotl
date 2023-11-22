@@ -658,7 +658,9 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             self.cfg.sample_packing if self.cfg.sample_packing else False
         )
         training_arguments_kwargs["eval_sample_packing"] = (
-            self.cfg.sample_packing if self.cfg.sample_packing else False
+            self.cfg.sample_packing
+            if self.cfg.eval_sample_packing is not False
+            else False
         )
         training_arguments_kwargs[
             "sample_packing_seq_len_multiplier"

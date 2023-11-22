@@ -31,7 +31,7 @@ class TestPhi(unittest.TestCase):
             {
                 "base_model": "microsoft/phi-1_5",
                 "trust_remote_code": True,
-                "model_type": "MixFormerSequentialForCausalLM",
+                "model_type": "PhiForCausalLM",
                 "tokenizer_type": "AutoTokenizer",
                 "sequence_len": 512,
                 "sample_packing": False,
@@ -76,7 +76,7 @@ class TestPhi(unittest.TestCase):
             {
                 "base_model": "microsoft/phi-1_5",
                 "trust_remote_code": True,
-                "model_type": "MixFormerSequentialForCausalLM",
+                "model_type": "PhiForCausalLM",
                 "tokenizer_type": "AutoTokenizer",
                 "sequence_len": 512,
                 "sample_packing": True,

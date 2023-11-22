@@ -182,7 +182,7 @@ class MultipackBatchSampler(BatchSampler):
 
         # shave off 1% + 1 for dealing with variance in packing from random sampler to sampler
         return max(
-            1,
+            0,
             (
                 world_size
                 * math.floor(
