@@ -543,6 +543,8 @@ datasets:
 
     # Optional[str] fastchat conversation type, only used with type: sharegpt
     conversation:  # Options (see Conversation 'name'): https://github.com/lm-sys/FastChat/blob/main/fastchat/conversation.py
+    field_human: # Optional[str]. Human key to use for conversation.
+    field_model: # Optional[str]. Assistant key to use for conversation.
 
   # Custom user prompt
   - path: repo
