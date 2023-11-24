@@ -5,8 +5,8 @@ tokenizer_type: AutoTokenizer
 is_qwen_derived_model: true
 trust_remote_code: true
 
-load_in_8bit: true
-load_in_4bit: false
+load_in_8bit: false
+load_in_4bit: true
 strict: false
 
 datasets:
