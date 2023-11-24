@@ -47,7 +47,7 @@ bf16: true
 fp16: false
 tf32: false
 
-gradient_checkpointing: true
+gradient_checkpointing: false
 early_stopping_patience:
 resume_from_checkpoint:
 local_rank:
