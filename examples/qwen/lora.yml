@@ -16,9 +16,9 @@ dataset_prepared_path:
 val_set_size: 0.05
 output_dir: ./lora-out
 
-sequence_len: 4096
-sample_packing: true
-pad_to_sequence_len: true
+sequence_len: 2048
+sample_packing: false
+pad_to_sequence_len:
 
 adapter: lora
 lora_model_dir:
