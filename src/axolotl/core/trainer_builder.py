@@ -461,11 +461,14 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         return AxolotlTrainer
 
     def build(self, total_num_steps):
-        warmup_steps = (
-            self.cfg.warmup_steps
-            if self.cfg.warmup_steps is not None
-            else min(int(0.03 * total_num_steps), 100)
-        )
+        warmup_steps = None
+        if self.cfg.warmup_steps is not None:
+            warmup_steps = self.cfg.warmup_steps
+        elif self.cfg.warmup_ratio is not None:
+            warmup_steps = max(int(self.cfg.warmup_ratio * total_num_steps), 0)
+        else:
+            warmup_steps = min(int(0.03 * total_num_steps), 100)
+
         logging_steps = (
             self.cfg.logging_steps
             if self.cfg.logging_steps is not None

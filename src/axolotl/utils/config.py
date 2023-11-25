@@ -372,6 +372,9 @@ def validate_config(cfg):
     if cfg.rope_scaling:
         LOG.warning("`rope_scaling` should now be be a key under `model_config`")
 
+    if cfg.warmup_steps and cfg.warmup_ratio:
+        raise ValueError("warmup_steps and warmup_ratio are mutually exclusive")
+
     # TODO
     # MPT 7b
     # https://github.com/facebookresearch/bitsandbytes/issues/25

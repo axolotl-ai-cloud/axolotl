@@ -675,7 +675,8 @@ gradient_accumulation_steps: 1
 micro_batch_size: 2
 eval_batch_size:
 num_epochs: 4
-warmup_steps: 100
+warmup_steps: 100  # cannot use with warmup_ratio
+warmup_ratio: 0.05  # cannot use with warmup_steps
 learning_rate: 0.00003
 lr_quadratic_warmup:
 logging_steps:
