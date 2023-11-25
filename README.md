@@ -77,6 +77,7 @@ Features:
 | XGen     | ✅         | ❓    | ✅     | ❓             | ❓                 | ❓          | ✅            |
 | phi      | ✅         | ✅    | ✅     | ❓             | ❓                 | ❓          | ❓            |
 | RWKV     | ✅         | ❓    | ❓     | ❓             | ❓                 | ❓          | ❓            |
+| Qwen     | ✅         | ✅    | ✅     | ❓             | ❓                 | ❓          | ❓            |
 
 
 ## Quickstart ⚡
@@ -499,6 +500,7 @@ is_falcon_derived_model:
 is_llama_derived_model:
 # Please note that if you set this to true, `padding_side` will be set to "left" by default
 is_mistral_derived_model:
+is_qwen_derived_model:
 
 # optional overrides to the base model configuration
 model_config:

@@ -122,6 +122,19 @@ def normalize_config(cfg):
         or (cfg.model_type and "mistral" in cfg.model_type.lower())
     )
 
+    cfg.is_qwen_derived_model = (
+        (
+            hasattr(model_config, "model_type")
+            and model_config.model_type
+            in [
+                "qwen",
+            ]
+        )
+        or cfg.is_qwen_derived_model
+        or "qwen" in cfg.base_model.lower()
+        or (cfg.model_type and "qwen" in cfg.model_type.lower())
+    )
+
     if isinstance(cfg.learning_rate, str):
         cfg.learning_rate = float(cfg.learning_rate)
 
@@ -378,6 +391,11 @@ def validate_config(cfg):
 
     if cfg.warmup_steps and cfg.warmup_ratio:
         raise ValueError("warmup_steps and warmup_ratio are mutually exclusive")
+
+    if cfg.is_qwen_derived_model and cfg.gradient_checkpointing:
+        LOG.warning(
+            "Gradient checkpointing is broken for Qwen models for transformers>=4.35.0, except main branch."
+        )
 
     # TODO
     # MPT 7b
