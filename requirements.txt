@@ -9,7 +9,7 @@ deepspeed
 addict
 fire
 PyYAML>=6.0
-datasets>=2.14.0
+datasets>=2.15.0
 flash-attn==2.3.3
 sentencepiece
 wandb
