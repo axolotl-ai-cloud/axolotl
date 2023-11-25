@@ -266,7 +266,7 @@ def setup_fsdp_envs(cfg):
             "FSDP_TRANSFORMER_CLS_TO_WRAP"
         ] = cfg.fsdp_config.fsdp_transformer_layer_cls_to_wrap
 
-def prepare_loader(cfg):
+def prepare_optim_env(cfg):
     if cfg.fsdp:
         setup_fsdp_envs(cfg)
     elif cfg.deepspeed:
