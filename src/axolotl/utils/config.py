@@ -165,7 +165,11 @@ def validate_config(cfg):
             "batch_size is not recommended. Please use gradient_accumulation_steps instead.",
             "To calculate the equivalent gradient_accumulation_steps, divide batch_size / micro_batch_size / number of gpus.",
         )
-    if cfg.eval_batch_size != cfg.micro_batch_size:
+    if (
+        cfg.eval_batch_size
+        and cfg.micro_batch_size
+        and cfg.eval_batch_size != cfg.micro_batch_size
+    ):
         LOG.warning(
             "eval_batch_size != micro_batch_size. This can lead to VRAM instability."
         )
