@@ -20,6 +20,7 @@ from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import BatchSampler, DataLoader, RandomSampler, SequentialSampler
 from transformers import EarlyStoppingCallback, Trainer, TrainingArguments
 from transformers.trainer_utils import seed_worker
+from trl import DPOTrainer
 
 from axolotl.monkeypatch.relora import ReLoRACallback, ReLoRAScheduler
 from axolotl.utils.callbacks import (
@@ -420,11 +421,20 @@ class TrainerBuilderBase(abc.ABC):
 
     _train_dataset = None
     _eval_dataset = None
+    _model_ref = None
 
     def __init__(self, cfg, model, tokenizer):
         self.cfg = cfg
         self.model = model
         self.tokenizer = tokenizer
+
+    @property
+    def model_ref(self):
+        return self._model_ref
+
+    @model_ref.setter
+    def model_ref(self, model):
+        self._model_ref = model
 
     @property
     def train_dataset(self):
@@ -827,3 +837,43 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             return_tensors="pt",
             **kwargs,
         )
+
+
+class HFRLTrainerBuilder(TrainerBuilderBase):
+    def get_callbacks(self):
+        callbacks = []
+        return callbacks
+
+    def build(self, total_num_steps):
+        training_args = TrainingArguments(
+            per_device_train_batch_size=self.cfg.micro_batch_size,
+            max_steps=total_num_steps,
+            remove_unused_columns=False,
+            gradient_accumulation_steps=self.cfg.gradient_accumulation_steps,
+            learning_rate=self.cfg.learning_rate,
+            eval_steps=self.cfg.eval_steps,
+            output_dir=self.cfg.output_dir,
+            warmup_steps=20,
+            bf16=True,
+            gradient_checkpointing=self.cfg.gradient_checkpointing,
+            evaluation_strategy="steps",
+            logging_first_step=True,
+            logging_steps=1,
+            optim="rmsprop",
+        )
+        dpo_trainer = DPOTrainer(
+            self.model,
+            self.model_ref,
+            args=training_args,
+            beta=0.1,
+            train_dataset=self.train_dataset,
+            eval_dataset=self.eval_dataset,
+            tokenizer=self.tokenizer,
+            max_length=self.cfg.sequence_len,
+            max_target_length=None,
+            max_prompt_length=self.cfg.sequence_len,
+            generate_during_eval=True,
+            loss_type="ipo",
+        )
+
+        return dpo_trainer

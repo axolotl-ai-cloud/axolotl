@@ -2,6 +2,7 @@
 
 import importlib
 import logging
+import math
 import os
 import random
 import sys
@@ -16,6 +17,7 @@ import yaml
 # add src to the pythonpath so we don't need to pip install this
 from accelerate.commands.config import config_args
 from art import text2art
+from datasets import load_dataset
 from huggingface_hub import HfApi
 from huggingface_hub.utils import LocalTokenNotFoundError
 from transformers import GenerationConfig, TextIteratorStreamer, TextStreamer
@@ -317,6 +319,33 @@ def load_datasets(
         LOG.info("printing prompters...")
         for prompter in prompters:
             LOG.info(prompter)
+
+    return TrainDatasetMeta(
+        train_dataset=train_dataset,
+        eval_dataset=eval_dataset,
+        total_num_steps=total_num_steps,
+    )
+
+
+def load_rl_datasets(
+    *,
+    cfg: DictDefault,
+    cli_args: TrainerCliArgs,
+) -> TrainDatasetMeta:
+    train_dataset = load_dataset(
+        cfg.datasets[0]["path"], split=cfg.datasets[0]["split"]
+    )
+    eval_dataset = load_dataset(
+        cfg.test_datasets[0]["path"], split=cfg.test_datasets[0]["split"]
+    )
+    total_num_steps = int(
+        math.ceil(
+            len(train_dataset)
+            * cfg.num_epochs
+            / int(os.environ.get("WORLD_SIZE", 1))
+            / cfg.batch_size
+        )
+    )
 
     return TrainDatasetMeta(
         train_dataset=train_dataset,
