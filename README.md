@@ -694,6 +694,9 @@ max_steps:
 eval_table_size: # Approximate number of predictions sent to wandb depending on batch size. Enabled above 0. Default is 0
 eval_table_max_new_tokens: # Total number of tokens generated for predictions sent to wandb. Default is 128
 
+loss_watchdog_threshold: # High loss value, indicating the learning has broken down (a good estimate is ~2 times the loss at the start of training)
+loss_watchdog_patience: # Number of high-loss steps in a row before the trainer aborts (default: 3)
+
 # Save model as safetensors (require safetensors package)
 save_safetensors:
 

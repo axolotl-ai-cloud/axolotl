@@ -62,6 +62,9 @@ logging_steps: 1
 xformers_attention:
 flash_attention: true
 
+loss_watchdog_threshold: 5.0
+loss_watchdog_patience: 3
+
 warmup_steps: 10
 eval_steps: 0.05
 eval_table_size:
