@@ -844,6 +844,10 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         callbacks = []
         return callbacks
 
+    def get_post_trainer_create_callbacks(self):
+        callbacks = []
+        return callbacks
+
     def build(self, total_num_steps):
         training_args = TrainingArguments(
             per_device_train_batch_size=self.cfg.micro_batch_size,
