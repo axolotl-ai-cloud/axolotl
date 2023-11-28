@@ -865,6 +865,8 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             logging_first_step=True,
             logging_steps=1,
             optim="rmsprop",
+            dataloader_num_workers=8,
+            dataloader_pin_memory=True,
         )
         dpo_trainer = DPOTrainer(
             self.model,

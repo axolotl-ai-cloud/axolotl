@@ -350,7 +350,6 @@ def load_rl_datasets(
         math.ceil(
             len(train_dataset)
             * cfg.num_epochs
-            / int(os.environ.get("WORLD_SIZE", 1))
             / cfg.batch_size
         )
     )
