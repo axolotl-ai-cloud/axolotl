@@ -335,23 +335,44 @@ def load_rl_datasets(
     train_dataset = load_dataset(
         cfg.datasets[0]["path"], split=cfg.datasets[0]["split"]
     )
-    eval_dataset = load_dataset(
-        cfg.test_datasets[0]["path"], split=cfg.test_datasets[0]["split"]
-    )
+    # eval_dataset = load_dataset(
+    #     cfg.test_datasets[0]["path"], split=cfg.test_datasets[0]["split"]
+    # )
+    eval_dataset = None
+
+    def intel_apply_chatml(sample):
+        if "system" in sample and sample["system"]:
+            sample["prompt"] = (
+                f"<|im_start|>system\n{sample['system']}<|im_end|>\n"
+                f"<|im_start|>user\n{sample['question']}<|im_end|>\n<|im_start|>assistant\n"
+            )
+        else:
+            sample[
+                "prompt"
+            ] = f"<|im_start|>user\n{sample['question']}<|im_end|>\n<|im_start|>assistant\n"
+        sample["chosen"] = f"{sample['chatgpt']}<|im_end|>"
+        sample["rejected"] = f"{sample['llama2-13b-chat']}<|im_end|>"
+        return sample
+
     def apply_chatml(sample):
-        sample["prompt"] = f"<|im_start|>user\n{sample['prompt']}<|im_end|>\n<|im_start|>assistant\n"
+        if "system" in sample and sample["system"]:
+            sample["prompt"] = (
+                f"<|im_start|>system\n{sample['system']}<|im_end|>\n"
+                f"<|im_start|>user\n{sample['prompt']}<|im_end|>\n<|im_start|>assistant\n"
+            )
+        else:
+            sample[
+                "prompt"
+            ] = f"<|im_start|>user\n{sample['prompt']}<|im_end|>\n<|im_start|>assistant\n"
         sample["chosen"] = f"{sample['chosen']}<|im_end|>"
         sample["rejected"] = f"{sample['rejected']}<|im_end|>"
         return sample
 
-    train_dataset = train_dataset.map(apply_chatml)
-    eval_dataset = eval_dataset.map(apply_chatml)
+    train_dataset = train_dataset.map(intel_apply_chatml)
+    # eval_dataset = eval_dataset.map(intel_apply_chatml)
+
     total_num_steps = int(
-        math.ceil(
-            len(train_dataset)
-            * cfg.num_epochs
-            / cfg.batch_size
-        )
+        math.ceil(len(train_dataset) * cfg.num_epochs / cfg.batch_size)
     )
 
     return TrainDatasetMeta(
