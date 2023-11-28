@@ -216,6 +216,7 @@ def load_model(
     model_kwargs = {}
 
     model_kwargs["device_map"] = cfg.device_map
+    model_kwargs["max_memory"] = cfg.max_memory
     model_kwargs["torch_dtype"] = cfg.torch_dtype
 
     if cfg.model_revision:
