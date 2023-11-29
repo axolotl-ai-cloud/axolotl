@@ -267,12 +267,14 @@ def setup_fsdp_envs(cfg):
         ] = cfg.fsdp_config.fsdp_transformer_layer_cls_to_wrap
 
 
-def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_steps):
+def prepare_optim_env(cfg):
     if cfg.fsdp:
         setup_fsdp_envs(cfg)
     elif cfg.deepspeed:
         os.environ["ACCELERATE_USE_DEEPSPEED"] = "true"
 
+
+def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_steps):
     trainer_builder = HFCausalTrainerBuilder(cfg, model, tokenizer)
     trainer_builder.train_dataset = train_dataset
     trainer_builder.eval_dataset = eval_dataset

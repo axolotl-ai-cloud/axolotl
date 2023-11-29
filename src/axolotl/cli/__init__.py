@@ -29,6 +29,7 @@ from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import is_main_process
 from axolotl.utils.models import load_tokenizer
 from axolotl.utils.tokenization import check_dataset_labels
+from axolotl.utils.trainer import prepare_optim_env
 from axolotl.utils.wandb_ import setup_wandb_env_vars
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -295,6 +296,8 @@ def load_cfg(config: Path = Path("examples/"), **kwargs):
                 cfg[k] = kwargs[k]
 
     validate_config(cfg)
+
+    prepare_optim_env(cfg)
 
     normalize_config(cfg)
 
