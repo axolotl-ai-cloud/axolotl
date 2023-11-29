@@ -72,7 +72,7 @@ def do_merge_lora(
 
     LOG.info("running merge of LoRA with base model")
     model = model.merge_and_unload()
-    model.to(dtype=torch.float16)
+    model.to(dtype=cfg.torch_dtype)
 
     if cfg.local_rank == 0:
         LOG.info(f"saving merged model to: {str(Path(cfg.output_dir) / 'merged')}")
