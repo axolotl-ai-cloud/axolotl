@@ -72,7 +72,7 @@ def do_merge_lora(
     LOG.info("running merge of LoRA with base model")
     model = model.merge_and_unload()
     if cfg.bf16:
-        model.to(dtype=torch.float16)
+        model.to(dtype=torch.bfloat16)
     else:
         model.to(dtype=torch.float16)
 
