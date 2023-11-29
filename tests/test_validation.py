@@ -682,7 +682,13 @@ class ValidationTest(unittest.TestCase):
 
         validate_config(cfg)
 
-    def test_wandb_rename_run_id_to_name(self):
+
+class ValidationWandbTest(ValidationTest):
+    """
+    Validation test for wandb
+    """
+
+    def test_wandb_set_run_id_to_name(self):
         cfg = DictDefault(
             {
                 "wandb_run_id": "foo",
@@ -692,12 +698,12 @@ class ValidationTest(unittest.TestCase):
         with self._caplog.at_level(logging.WARNING):
             validate_config(cfg)
             assert any(
-                "wandb_run_id is not recommended anymore. Please use wandb_name instead."
+                "wandb_run_id sets the ID of the run. If you would like to set the name, please use wandb_name instead."
                 in record.message
                 for record in self._caplog.records
             )
 
-            assert cfg.wandb_name == "foo" and cfg.wandb_run_id is None
+            assert cfg.wandb_name == "foo" and cfg.wandb_run_id == "foo"
 
         cfg = DictDefault(
             {
@@ -707,11 +713,14 @@ class ValidationTest(unittest.TestCase):
 
         validate_config(cfg)
 
+        assert cfg.wandb_name == "foo" and cfg.wandb_run_id is None
+
     def test_wandb_sets_env(self):
         cfg = DictDefault(
             {
                 "wandb_project": "foo",
                 "wandb_name": "bar",
+                "wandb_run_id": "bat",
                 "wandb_entity": "baz",
                 "wandb_mode": "online",
                 "wandb_watch": "false",
@@ -725,6 +734,7 @@ class ValidationTest(unittest.TestCase):
 
         assert os.environ.get("WANDB_PROJECT", "") == "foo"
         assert os.environ.get("WANDB_NAME", "") == "bar"
+        assert os.environ.get("WANDB_RUN_ID", "") == "bat"
         assert os.environ.get("WANDB_ENTITY", "") == "baz"
         assert os.environ.get("WANDB_MODE", "") == "online"
         assert os.environ.get("WANDB_WATCH", "") == "false"
