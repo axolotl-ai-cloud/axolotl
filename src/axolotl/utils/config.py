@@ -122,6 +122,19 @@ def normalize_config(cfg):
         or (cfg.model_type and "mistral" in cfg.model_type.lower())
     )
 
+    cfg.is_qwen_derived_model = (
+        (
+            hasattr(model_config, "model_type")
+            and model_config.model_type
+            in [
+                "qwen",
+            ]
+        )
+        or cfg.is_qwen_derived_model
+        or "qwen" in cfg.base_model.lower()
+        or (cfg.model_type and "qwen" in cfg.model_type.lower())
+    )
+
     if isinstance(cfg.learning_rate, str):
         cfg.learning_rate = float(cfg.learning_rate)
 
@@ -165,7 +178,11 @@ def validate_config(cfg):
             "batch_size is not recommended. Please use gradient_accumulation_steps instead.",
             "To calculate the equivalent gradient_accumulation_steps, divide batch_size / micro_batch_size / number of gpus.",
         )
-    if cfg.eval_batch_size != cfg.micro_batch_size:
+    if (
+        cfg.eval_batch_size
+        and cfg.micro_batch_size
+        and cfg.eval_batch_size != cfg.micro_batch_size
+    ):
         LOG.warning(
             "eval_batch_size != micro_batch_size. This can lead to VRAM instability."
         )
@@ -371,6 +388,14 @@ def validate_config(cfg):
 
     if cfg.rope_scaling:
         LOG.warning("`rope_scaling` should now be be a key under `model_config`")
+
+    if cfg.warmup_steps and cfg.warmup_ratio:
+        raise ValueError("warmup_steps and warmup_ratio are mutually exclusive")
+
+    if cfg.is_qwen_derived_model and cfg.gradient_checkpointing:
+        LOG.warning(
+            "Gradient checkpointing is broken for Qwen models for transformers>=4.35.0, except main branch."
+        )
 
     # TODO
     # MPT 7b

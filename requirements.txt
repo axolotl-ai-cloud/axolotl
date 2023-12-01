@@ -2,14 +2,15 @@
 auto-gptq==0.5.1
 packaging
 peft==0.6.0
-transformers==4.35.1
+transformers==4.35.2
+tokenizers==0.15.0
 bitsandbytes>=0.41.1
 accelerate==0.24.1
 deepspeed
 addict
 fire
 PyYAML>=6.0
-datasets>=2.14.0
+datasets>=2.15.0
 flash-attn==2.3.3
 sentencepiece
 wandb
@@ -29,7 +30,7 @@ scikit-learn==1.2.2
 pynvml
 art
 fschat==0.2.29
-gradio
+gradio==3.50.2
 tensorboard
 
 # remote filesystems
