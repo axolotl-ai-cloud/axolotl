@@ -332,12 +332,11 @@ def load_rl_datasets(
     cfg: DictDefault,
     cli_args: TrainerCliArgs,
 ) -> TrainDatasetMeta:
-    train_dataset_0 = load_dataset(
-        cfg.datasets[0]["path"], split=cfg.datasets[0]["split"]
-    )
-    train_dataset_1 = load_dataset(
-        cfg.datasets[1]["path"], split=cfg.datasets[1]["split"]
-    )
+    train_datasets = []
+    for i, ds_cfg in enumerate(cfg.datasets):
+        train_datasets[i] = load_dataset(
+            ds_cfg["path"], split=ds_cfg["split"]
+        )
     # eval_dataset = load_dataset(
     #     cfg.test_datasets[0]["path"], split=cfg.test_datasets[0]["split"]
     # )
@@ -371,9 +370,25 @@ def load_rl_datasets(
         sample["rejected"] = f"{sample['rejected']}<|im_end|>"
         return sample
 
-    train_dataset_0 = train_dataset_0.map(intel_apply_chatml)
-    train_dataset_1 = train_dataset_1.map(apply_chatml)
-    train_dataset = concatenate_datasets([train_dataset_0, train_dataset_1])
+    def ultra_apply_chatml(sample):
+        if "system" in sample and sample["system"]:
+            sample["prompt"] = (
+                f"<|im_start|>system\n{sample['system']}<|im_end|>\n"
+                f"<|im_start|>user\n{sample['prompt']}<|im_end|>\n<|im_start|>assistant\n"
+            )
+        else:
+            sample[
+                "prompt"
+            ] = f"<|im_start|>user\n{sample['prompt']}<|im_end|>\n<|im_start|>assistant\n"
+        sample["chosen"] = f"{sample['chosen'][1]['content']}<|im_end|>"
+        sample["rejected"] = f"{sample['rejected'][1]['content']}<|im_end|>"
+        return sample
+
+    for i, ds in enumerate(train_datasets):
+        type = cfg.datasets[i]["type"]
+        fn = locals()[type]
+        train_datasets[i] = ds.map(fn)
+    train_dataset = concatenate_datasets(train_datasets)
 
     # eval_dataset = eval_dataset.map(intel_apply_chatml)
 
