@@ -4,7 +4,7 @@ from trl import PPOTrainer
 
 
 class TRLPPOTrainer(PPOTrainer):
-    def train(self, reward_pipe):
+    def train(self, reward_pipe, resume_from_checkpoint=None):
         generation_kwargs = {
             "min_length": -1,
             "top_k": 0.0,

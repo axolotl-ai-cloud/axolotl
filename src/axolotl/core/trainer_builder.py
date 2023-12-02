@@ -839,7 +839,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         )
 
 
-class HFRLTrainerBuilder(TrainerBuilderBase):
+class HFDPOTrainerBuilder(TrainerBuilderBase):
     def get_callbacks(self):
         callbacks = []
         return callbacks
@@ -855,8 +855,8 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             remove_unused_columns=False,
             gradient_accumulation_steps=self.cfg.gradient_accumulation_steps,
             learning_rate=self.cfg.learning_rate,
-            evaluation_strategy="steps",
-            eval_steps=self.cfg.eval_steps,
+            evaluation_strategy="no",
+            # eval_steps=self.cfg.eval_steps,
             save_strategy="steps",
             save_steps=self.cfg.save_steps,
             output_dir=self.cfg.output_dir,
@@ -866,7 +866,7 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             gradient_checkpointing_kwargs={"use_reentrant": False},
             logging_first_step=True,
             logging_steps=1,
-            optim="rmsprop",
+            optim=self.cfg.optimizer,
             dataloader_num_workers=8,
             dataloader_pin_memory=True,
         )
@@ -876,13 +876,30 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             args=training_args,
             beta=0.1,
             train_dataset=self.train_dataset,
-            eval_dataset=self.eval_dataset,
+            # eval_dataset=self.eval_dataset,
+            eval_dataset=None,
             tokenizer=self.tokenizer,
             max_length=self.cfg.sequence_len,
             max_target_length=None,
             max_prompt_length=self.cfg.sequence_len,
             generate_during_eval=True,
-            loss_type="ipo",
+            # label_smoothing=0.05,
+            # loss_type="ipo",
         )
 
         return dpo_trainer
+
+
+class HFPPOTrainerBuilder(TrainerBuilderBase):
+    def get_callbacks(self):
+        callbacks = []
+        return callbacks
+
+    def get_post_trainer_create_callbacks(self, trainer):
+        callbacks = []
+        return callbacks
+
+    def build(self, total_num_steps):
+        # build PPOConfig
+
+        pass

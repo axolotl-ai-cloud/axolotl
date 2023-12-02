@@ -17,7 +17,7 @@ import yaml
 # add src to the pythonpath so we don't need to pip install this
 from accelerate.commands.config import config_args
 from art import text2art
-from datasets import load_dataset
+from datasets import concatenate_datasets, load_dataset
 from huggingface_hub import HfApi
 from huggingface_hub.utils import LocalTokenNotFoundError
 from transformers import GenerationConfig, TextIteratorStreamer, TextStreamer
@@ -332,8 +332,11 @@ def load_rl_datasets(
     cfg: DictDefault,
     cli_args: TrainerCliArgs,
 ) -> TrainDatasetMeta:
-    train_dataset = load_dataset(
+    train_dataset_0 = load_dataset(
         cfg.datasets[0]["path"], split=cfg.datasets[0]["split"]
+    )
+    train_dataset_1 = load_dataset(
+        cfg.datasets[1]["path"], split=cfg.datasets[1]["split"]
     )
     # eval_dataset = load_dataset(
     #     cfg.test_datasets[0]["path"], split=cfg.test_datasets[0]["split"]
@@ -350,8 +353,8 @@ def load_rl_datasets(
             sample[
                 "prompt"
             ] = f"<|im_start|>user\n{sample['question']}<|im_end|>\n<|im_start|>assistant\n"
-        sample["chosen"] = f"{sample['chatgpt']}<|im_end|>"
-        sample["rejected"] = f"{sample['llama2-13b-chat']}<|im_end|>"
+        sample["chosen"] = f"{sample['chosen']}<|im_end|>"
+        sample["rejected"] = f"{sample['rejected']}<|im_end|>"
         return sample
 
     def apply_chatml(sample):
@@ -368,7 +371,10 @@ def load_rl_datasets(
         sample["rejected"] = f"{sample['rejected']}<|im_end|>"
         return sample
 
-    train_dataset = train_dataset.map(intel_apply_chatml)
+    train_dataset_0 = train_dataset_0.map(intel_apply_chatml)
+    train_dataset_1 = train_dataset_1.map(apply_chatml)
+    train_dataset = concatenate_datasets([train_dataset_0, train_dataset_1])
+
     # eval_dataset = eval_dataset.map(intel_apply_chatml)
 
     total_num_steps = int(
