@@ -334,13 +334,27 @@ def load_rl_datasets(
 ) -> TrainDatasetMeta:
     train_datasets = []
     for i, ds_cfg in enumerate(cfg.datasets):
-        train_datasets[i] = load_dataset(
+        train_datasets.insert(i, load_dataset(
             ds_cfg["path"], split=ds_cfg["split"]
-        )
+        ))
     # eval_dataset = load_dataset(
     #     cfg.test_datasets[0]["path"], split=cfg.test_datasets[0]["split"]
     # )
     eval_dataset = None
+
+    def argilla_apply_chatml(sample):
+        if "system" in sample and sample["system"]:
+            sample["prompt"] = (
+                f"<|im_start|>system\n{sample['system']}<|im_end|>\n"
+                f"<|im_start|>user\n{sample['instruction']}<|im_end|>\n<|im_start|>assistant\n"
+            )
+        else:
+            sample[
+                "prompt"
+            ] = f"<|im_start|>user\n{sample['instruction']}<|im_end|>\n<|im_start|>assistant\n"
+        sample["chosen"] = f"{sample['chosen_response']}<|im_end|>"
+        sample["rejected"] = f"{sample['rejected_response']}<|im_end|>"
+        return sample
 
     def intel_apply_chatml(sample):
         if "system" in sample and sample["system"]:
