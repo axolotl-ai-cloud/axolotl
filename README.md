@@ -660,6 +660,7 @@ wandb_project: # Your wandb project name
 wandb_entity: # A wandb Team name if using a Team
 wandb_watch:
 wandb_name: # Set the name of your wandb run
+wandb_run_id: # Set the ID of your wandb run
 wandb_log_model: # "checkpoint" to log model to wandb Artifacts every `save_steps` or "end" to log only at the end of training
 
 # Where to save the full-finetuned model to
