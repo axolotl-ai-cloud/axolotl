@@ -52,7 +52,7 @@ setup(
             "deepspeed",
         ],
         "mamba": [
-            "git+https://github.com/OpenAccess-AI-Collective/mamba.git@model-kwargs"
+            "mamba-ssm @ git+https://github.com/OpenAccess-AI-Collective/mamba.git@model-kwargs",
         ],
     },
 )
