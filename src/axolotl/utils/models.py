@@ -38,6 +38,25 @@ def load_model_config(cfg):
         for key, val in cfg.model_config.items():
             setattr(model_config, key, val)
 
+    if (
+        hasattr(model_config, "quantization_config")
+        and model_config.quantization_config
+    ):
+        if not cfg.gptq:
+            raise ValueError(
+                "model_config.quantization_config is set but gptq is not. "
+                "Please use the gptq flag to train quantized model or point to a non-quantized model."
+            )
+
+        if (
+            hasattr(model_config.quantization_config, "quant_method")
+            and model_config.quantization_config.quant_method != "gptq"
+        ):
+            raise ValueError(
+                "model_config.quantization_config.quant_method is not set to gptq."
+                "Please make sure to point to a GPTQ model."
+            )
+
     return model_config
 
 
