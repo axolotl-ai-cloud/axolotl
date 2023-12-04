@@ -32,8 +32,8 @@ def check_model_config(cfg: DictDefault, model_config: AutoConfig):
     quant_config_exists = hasattr(model_config, "quantization_config")
     quant_config_method_is_gptq = (
         quant_config_exists
-        and hasattr(model_config.quantization_config, "quant_method")
-        and model_config.quantization_config.quant_method == "gptq"
+        and "quant_method" in model_config.quantization_config
+        and model_config.quantization_config["quant_method"] == "gptq"
     )
 
     if cfg.gptq and not quant_config_method_is_gptq:
