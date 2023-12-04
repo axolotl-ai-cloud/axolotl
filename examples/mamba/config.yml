@@ -1,4 +1,4 @@
-base_model: state-spaces/mamba-2.8b
+base_model: state-spaces/mamba-130m
 model_type: MambaLMHeadModel
 tokenizer_type: AutoTokenizer
 tokenizer_config: EleutherAI/gpt-neox-20b
@@ -15,8 +15,8 @@ val_set_size: 0.05
 output_dir: ./out
 
 sequence_len: 2048
-sample_packing: true
-pad_to_sequence_len: true
+sample_packing: false
+pad_to_sequence_len: false
 
 wandb_project:
 wandb_entity:

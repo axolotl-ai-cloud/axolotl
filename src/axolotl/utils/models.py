@@ -341,15 +341,17 @@ def load_model(
                 **model_kwargs,
             )
         elif model_type == "MambaLMHeadModel":
+            # FIXME this is janky at best and hacked together to make it work
             from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
 
+            model_kwargs["dtype"] = model_kwargs["torch_dtype"]
+            model_kwargs["device"] = torch.cuda.current_device()
             del model_kwargs["torch_dtype"]
             del model_kwargs["device_map"]
+            del model_kwargs["max_memory"]
 
             model = MambaLMHeadModel.from_pretrained(
                 base_model,
-                load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
-                load_in_4bit=cfg.load_in_4bit and cfg.adapter is not None,
                 **model_kwargs,
             )
         elif model_type and not cfg.trust_remote_code:
@@ -446,7 +448,7 @@ def load_model(
     ):
         model.config.eos_token_id = tokenizer.eos_token_id
 
-    if model.device.type == "cuda":
+    if hasattr(model, "device") and model.device.type == "cuda":
         log_gpu_memory_usage(LOG, "after model load", model.device)
 
     # make sure these are fp32 per Ramesh et al. (2021)

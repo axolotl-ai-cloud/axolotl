@@ -282,7 +282,10 @@ class AxolotlTrainer(Trainer):
         #     outputs = model(**inputs)
         #     loss = trainer_weighted_loss(outputs, labels, shift_labels=True)
         #     return (loss, outputs) if return_outputs else loss
-        return super().compute_loss(model, inputs, return_outputs=return_outputs)
+        loss = super().compute_loss(model, inputs, return_outputs=return_outputs)
+        if loss.numel() > 1:
+            loss = loss.mean()
+        return loss
 
 
 class OneCycleLRSchedulerTrainer(AxolotlTrainer):
