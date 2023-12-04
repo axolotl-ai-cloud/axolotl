@@ -11,7 +11,7 @@ datasets:
   - path: teknium/GPT4-LLM-Cleaned
     type: alpaca
 dataset_prepared_path:
-val_set_size: 0.01
+val_set_size: 0.05
 output_dir: ./relora-out
 
 adapter: qlora

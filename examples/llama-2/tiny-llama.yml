@@ -1,4 +1,4 @@
-base_model: PY007/TinyLlama-1.1B-step-50K-105b
+base_model: PY007/TinyLlama-1.1B-intermediate-step-715k-1.5T
 
 model_type: LlamaForCausalLM
 tokenizer_type: LlamaTokenizer
@@ -12,7 +12,7 @@ datasets:
   - path: mhenrichsen/alpaca_2k_test
     type: alpaca
 dataset_prepared_path:
-val_set_size: 0.01
+val_set_size: 0.05
 output_dir: ./lora-out
 
 sequence_len: 4096

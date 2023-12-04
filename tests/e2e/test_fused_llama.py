@@ -4,7 +4,6 @@ E2E tests for lora llama
 
 import logging
 import os
-import tempfile
 import unittest
 from pathlib import Path
 
@@ -16,6 +15,8 @@ from axolotl.train import train
 from axolotl.utils.config import normalize_config
 from axolotl.utils.dict import DictDefault
 
+from .utils import with_temp_dir
+
 LOG = logging.getLogger("axolotl.tests.e2e")
 os.environ["WANDB_DISABLED"] = "true"
 
@@ -25,9 +26,9 @@ class TestFusedLlama(unittest.TestCase):
     Test case for Llama models using Fused layers
     """
 
-    def test_fft_packing(self):
+    @with_temp_dir
+    def test_fft_packing(self, temp_dir):
         # pylint: disable=duplicate-code
-        output_dir = tempfile.mkdtemp()
         cfg = DictDefault(
             {
                 "base_model": "JackFram/llama-68m",
@@ -51,7 +52,7 @@ class TestFusedLlama(unittest.TestCase):
                 "num_epochs": 2,
                 "micro_batch_size": 2,
                 "gradient_accumulation_steps": 1,
-                "output_dir": output_dir,
+                "output_dir": temp_dir,
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_torch",
                 "lr_scheduler": "cosine",
@@ -69,4 +70,4 @@ class TestFusedLlama(unittest.TestCase):
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
         train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-        assert (Path(output_dir) / "pytorch_model.bin").exists()
+        assert (Path(temp_dir) / "pytorch_model.bin").exists()

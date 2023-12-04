@@ -201,6 +201,8 @@ def flashattn_forward(
         # only on first autoregressive step q,k,v have same seqlen
         is_causal = key_states.shape == query_states.shape
 
+    dropout_rate = 0.0 if not self.training else getattr(self, "attention_dropout", 0.0)
+
     if cu_seqlens is not None and max_seqlen is not None and cu_seqlens.dim() == 1:
         # special handling using sample packing
         qkv = torch.stack(
@@ -213,7 +215,7 @@ def flashattn_forward(
             qkv,
             cu_seqlens,
             max_seqlen,
-            0.0,
+            dropout_p=dropout_rate,
             softmax_scale=None,
             causal=True,
             window_size=window_size,
@@ -239,7 +241,7 @@ def flashattn_forward(
             qkv_unpad,
             cu_seqlens_q,
             max_seqlen_q,
-            0.0,
+            dropout_p=dropout_rate,
             softmax_scale=None,
             causal=is_causal,
             window_size=window_size,
@@ -253,6 +255,7 @@ def flashattn_forward(
             output = flash_attn_kvpacked_func(
                 query_states,
                 torch.stack([key_states, value_states], 2),
+                dropout_p=dropout_rate,
                 causal=is_causal,
                 window_size=window_size,
             )
@@ -286,7 +289,7 @@ def flashattn_forward(
                 cu_seqlens_k,
                 max_seqlen_q,
                 max_seqlen_k,
-                0.0,
+                dropout_p=dropout_rate,
                 softmax_scale=None,
                 causal=is_causal,
                 window_size=window_size,

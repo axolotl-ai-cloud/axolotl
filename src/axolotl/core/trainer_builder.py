@@ -6,21 +6,20 @@ import abc
 import importlib
 import logging
 import math
-import os
 import sys
 from abc import abstractmethod
 from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
-from typing import Optional, Union
+from typing import Optional
 
 import torch
 import transformers
 from datasets import Dataset
 from torch.optim.lr_scheduler import OneCycleLR
-from torch.utils.data import DataLoader, DistributedSampler, SequentialSampler
+from torch.utils.data import BatchSampler, DataLoader, RandomSampler, SequentialSampler
 from transformers import EarlyStoppingCallback, Trainer, TrainingArguments
-from transformers.trainer_pt_utils import SequentialDistributedSampler
+from transformers.trainer_utils import seed_worker
 
 from axolotl.monkeypatch.relora import ReLoRACallback, ReLoRAScheduler
 from axolotl.utils.callbacks import (
@@ -31,8 +30,8 @@ from axolotl.utils.callbacks import (
     bench_eval_callback_factory,
     log_prediction_callback_factory,
 )
-from axolotl.utils.collators import DataCollatorForSeq2Seq
-from axolotl.utils.dataloader import MultipackDistributedDataloader
+from axolotl.utils.collators import BatchSamplerDataCollatorForSeq2Seq
+from axolotl.utils.samplers import MultipackBatchSampler
 from axolotl.utils.schedulers import get_cosine_schedule_with_quadratic_warmup
 
 try:
@@ -102,6 +101,10 @@ class AxolotlTrainingArguments(TrainingArguments):
     bench_source_max_len: int = field(
         default=2048, metadata={"help": "Maximum source sequence length for bench."}
     )
+    dataloader_prefetch_factor: Optional[int] = field(
+        default=None,
+        metadata={"help": "prefetch_factor argument to the dataloader"},
+    )
 
 
 class AxolotlTrainer(Trainer):
@@ -145,70 +148,102 @@ class AxolotlTrainer(Trainer):
         return self.lr_scheduler
 
     def _get_train_sampler(self) -> Optional[torch.utils.data.Sampler]:
-        if self.args.world_size > 1 and self.args.sample_packing:
-            return DistributedSampler(
-                self.train_dataset,
-                num_replicas=self.args.world_size,
-                rank=self.args.process_index,
-                seed=self.args.seed,
+        if self.args.sample_packing:
+            return MultipackBatchSampler(
+                RandomSampler(self.train_dataset),
+                self.args.train_batch_size,
+                drop_last=True,
+                batch_max_len=self._train_batch_size * self.args.max_seq_length,
+                lengths=(
+                    self.train_dataset.data.column("position_ids")
+                    .to_pandas()
+                    .apply(lambda x: x[-1] + 1)
+                    .values
+                ),
+                packing_efficiency_estimate=self.args.sample_packing_efficiency,
             )
         return super()._get_train_sampler()
 
     def _get_eval_sampler(
         self, eval_dataset: Dataset
     ) -> Optional[torch.utils.data.Sampler]:
-        if (
-            self.args.world_size > 1
-            and self.args.sample_packing
-            and self.args.eval_sample_packing is not False
-        ):
-            return SequentialDistributedSampler(
-                eval_dataset,
-                num_replicas=self.args.world_size,
-                rank=self.args.process_index,
-                batch_size=self.args.per_device_eval_batch_size,
+        if self.args.sample_packing and self.args.eval_sample_packing is not False:
+            return MultipackBatchSampler(
+                SequentialSampler(eval_dataset),
+                self.args.per_device_eval_batch_size,
+                drop_last=True,
+                batch_max_len=self.args.eval_batch_size * self.args.max_seq_length,
+                lengths=(
+                    eval_dataset.data.column("position_ids")
+                    .to_pandas()
+                    .apply(lambda x: x[-1] + 1)
+                    .values
+                ),
+                packing_efficiency_estimate=self.args.sample_packing_efficiency,
             )
         return super()._get_eval_sampler(eval_dataset)
 
-    def get_train_dataloader(self) -> Union[DataLoader, MultipackDistributedDataloader]:
+    def get_train_dataloader(self) -> DataLoader:
         if self.args.sample_packing:
-            train_sampler = self._get_train_sampler()
-            return self.accelerator.prepare(
-                MultipackDistributedDataloader(
-                    self.train_dataset,
-                    batch_size=self._train_batch_size,
-                    seq_max_length=self.args.max_seq_length,
-                    collate_fn=self.data_collator,
-                    sampler=train_sampler,
-                    packing_efficiency_estimate=self.args.sample_packing_efficiency,
-                    sample_packing_seq_len_multiplier=self.args.sample_packing_seq_len_multiplier,
-                    device_count=int(os.environ.get("WORLD_SIZE", 1)),
-                    num_epochs=self.num_epochs,
-                )
+            train_dataset = self.train_dataset
+            train_dataset = train_dataset.remove_columns(["length"])
+            data_collator = self.data_collator
+            dataloader_params = {
+                "batch_size": self._train_batch_size,
+                "collate_fn": data_collator,
+                "num_workers": self.args.dataloader_num_workers,
+                "pin_memory": self.args.dataloader_pin_memory,
+            }
+            if self.args.dataloader_prefetch_factor:
+                dataloader_params[
+                    "prefetch_factor"
+                ] = self.args.dataloader_prefetch_factor
+
+            sampler = self._get_train_sampler()
+            if isinstance(sampler, BatchSampler):
+                dataloader_params["batch_sampler"] = sampler
+                del dataloader_params["batch_size"]
+            else:
+                dataloader_params["sampler"] = sampler
+                dataloader_params["drop_last"] = self.args.dataloader_drop_last
+            dataloader_params["worker_init_fn"] = seed_worker
+
+            self.accelerator.even_batches = False
+            return self.accelerator.prepare_data_loader(
+                DataLoader(train_dataset, **dataloader_params)
             )
         return super().get_train_dataloader()
 
-    def get_eval_dataloader(
-        self, eval_dataset: Optional[Dataset] = None
-    ) -> Union[DataLoader, MultipackDistributedDataloader]:
+    def get_eval_dataloader(self, eval_dataset: Optional[Dataset] = None) -> DataLoader:
         if self.args.sample_packing and self.args.eval_sample_packing is not False:
             eval_dataset = (
                 eval_dataset if eval_dataset is not None else self.eval_dataset
             )
 
             eval_sampler = self._get_eval_sampler(eval_dataset)
-            return self.accelerator.prepare(
-                MultipackDistributedDataloader(
-                    eval_dataset,
-                    batch_size=self.args.eval_batch_size,
-                    seq_max_length=self.args.max_seq_length,
-                    collate_fn=self.data_collator,
-                    sampler=eval_sampler,
-                    packing_efficiency_estimate=self.args.sample_packing_efficiency,
-                    sample_packing_seq_len_multiplier=self.args.eval_batch_size,
-                    device_count=int(os.environ.get("WORLD_SIZE", 1)),
-                    num_epochs=self.num_epochs,
-                )
+            eval_dataset = eval_dataset.remove_columns(["length"])
+            data_collator = self.data_collator
+            dataloader_params = {
+                "batch_size": self.args.eval_batch_size,
+                "collate_fn": data_collator,
+                "num_workers": self.args.dataloader_num_workers,
+                "pin_memory": self.args.dataloader_pin_memory,
+            }
+            if self.args.dataloader_prefetch_factor:
+                dataloader_params[
+                    "prefetch_factor"
+                ] = self.args.dataloader_prefetch_factor
+
+            if isinstance(eval_sampler, BatchSampler):
+                dataloader_params["batch_sampler"] = eval_sampler
+                del dataloader_params["batch_size"]
+            else:
+                dataloader_params["sampler"] = eval_sampler
+                dataloader_params["drop_last"] = self.args.dataloader_drop_last
+
+            self.accelerator.even_batches = False
+            return self.accelerator.prepare_data_loader(
+                DataLoader(eval_dataset, **dataloader_params)
             )
         return super().get_eval_dataloader(eval_dataset)
 
@@ -222,13 +257,15 @@ class AxolotlTrainer(Trainer):
     def get_bench_dataloader(
         self,
         bench_dataset: Dataset,
-    ) -> Union[DataLoader, MultipackDistributedDataloader]:
+    ) -> DataLoader:
         dataloader_params = {
             "batch_size": self.args.eval_batch_size,
             "collate_fn": self.bench_data_collator,
             "num_workers": self.args.dataloader_num_workers,
             "pin_memory": self.args.dataloader_pin_memory,
         }
+        if self.args.dataloader_prefetch_factor:
+            dataloader_params["prefetch_factor"] = self.args.dataloader_prefetch_factor
 
         if not isinstance(bench_dataset, torch.utils.data.IterableDataset):
             dataloader_params["sampler"] = self._get_bench_sampler(bench_dataset)
@@ -424,11 +461,14 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         return AxolotlTrainer
 
     def build(self, total_num_steps):
-        warmup_steps = (
-            self.cfg.warmup_steps
-            if self.cfg.warmup_steps is not None
-            else min(int(0.03 * total_num_steps), 100)
-        )
+        warmup_steps = None
+        if self.cfg.warmup_steps is not None:
+            warmup_steps = self.cfg.warmup_steps
+        elif self.cfg.warmup_ratio is not None:
+            warmup_steps = max(int(self.cfg.warmup_ratio * total_num_steps), 0)
+        else:
+            warmup_steps = min(int(0.03 * total_num_steps), 100)
+
         logging_steps = (
             self.cfg.logging_steps
             if self.cfg.logging_steps is not None
@@ -493,16 +533,29 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 "sample_packing_efficiency"
             ] = self.cfg.sample_packing_eff_est
 
-        if self.cfg.eval_steps:
+        if self.cfg.dataloader_pin_memory is not None:
+            training_arguments_kwargs[
+                "dataloader_pin_memory"
+            ] = self.cfg.dataloader_pin_memory
+        if self.cfg.dataloader_num_workers is not None:
+            training_arguments_kwargs[
+                "dataloader_num_workers"
+            ] = self.cfg.dataloader_num_workers
+        if self.cfg.dataloader_prefetch_factor is not None:
+            training_arguments_kwargs[
+                "dataloader_prefetch_factor"
+            ] = self.cfg.dataloader_prefetch_factor
+
+        if self.cfg.val_set_size == 0:
+            # no eval set, so don't eval
+            training_arguments_kwargs["evaluation_strategy"] = "no"
+        elif self.cfg.eval_steps:
             training_arguments_kwargs["evaluation_strategy"] = "steps"
             training_arguments_kwargs["eval_steps"] = self.cfg.eval_steps
         elif self.cfg.evaluation_strategy:
             training_arguments_kwargs[
                 "evaluation_strategy"
             ] = self.cfg.evaluation_strategy
-        elif self.cfg.val_set_size == 0:
-            # no eval set, so don't eval
-            training_arguments_kwargs["evaluation_strategy"] = "no"
         else:
             # we have an eval set, but no steps defined, default to use epoch
             training_arguments_kwargs["evaluation_strategy"] = "epoch"
@@ -610,7 +663,9 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             self.cfg.sample_packing if self.cfg.sample_packing else False
         )
         training_arguments_kwargs["eval_sample_packing"] = (
-            self.cfg.sample_packing if self.cfg.sample_packing else False
+            self.cfg.sample_packing
+            if self.cfg.eval_sample_packing is not False
+            else False
         )
         training_arguments_kwargs[
             "sample_packing_seq_len_multiplier"
@@ -674,7 +729,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             train_dataset=self.train_dataset,
             eval_dataset=self.eval_dataset,
             args=training_args,
-            data_collator=DataCollatorForSeq2Seq(
+            data_collator=BatchSamplerDataCollatorForSeq2Seq(
                 self.tokenizer,
                 return_tensors="pt",
                 **data_collator_kwargs,
@@ -691,5 +746,10 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         trainer = self.hook_post_create_trainer(trainer)
         for callback in self.get_post_trainer_create_callbacks(trainer):
             trainer.add_callback(callback)
+
+        if self.cfg.deepspeed and self.cfg.sample_packing:
+            trainer.accelerator.state.deepspeed_plugin.deepspeed_config[
+                "train_micro_batch_size_per_gpu"
+            ] = self.cfg.micro_batch_size
 
         return trainer

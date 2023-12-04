@@ -1,6 +1,5 @@
 """Prepare and train a model on a dataset. Can also infer from a model or merge lora"""
 
-import logging
 import os
 import signal
 import sys
@@ -10,6 +9,7 @@ from typing import Optional
 
 import torch
 import transformers.modelcard
+from accelerate.logging import get_logger
 from datasets import Dataset
 from optimum.bettertransformer import BetterTransformer
 from transformers.deepspeed import is_deepspeed_zero3_enabled
@@ -26,7 +26,7 @@ src_dir = os.path.join(project_root, "src")
 sys.path.insert(0, src_dir)
 
 configure_logging()
-LOG = logging.getLogger("axolotl.train")
+LOG = get_logger("axolotl.train")
 
 
 @dataclass
@@ -44,7 +44,10 @@ def train(
     *, cfg: DictDefault, cli_args: TrainerCliArgs, dataset_meta: TrainDatasetMeta
 ):
     # load the tokenizer first
-    LOG.info(f"loading tokenizer... {cfg.tokenizer_config or cfg.base_model_config}")
+    LOG.debug(
+        f"loading tokenizer... {cfg.tokenizer_config or cfg.base_model_config}",
+        main_process_only=True,
+    )
     tokenizer = load_tokenizer(cfg)
 
     train_dataset = dataset_meta.train_dataset
@@ -52,7 +55,10 @@ def train(
     total_num_steps = dataset_meta.total_num_steps
 
     # Load the model and tokenizer
-    LOG.info("loading model and (optionally) peft_config...")
+    msg = "loading model"
+    if cfg.adapter:
+        msg += " and peft_config..."
+    LOG.debug(msg)
     model, peft_config = load_model(cfg, tokenizer, inference=cli_args.inference)
 
     safe_serialization = cfg.save_safetensors is True

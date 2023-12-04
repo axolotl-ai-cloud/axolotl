@@ -649,3 +649,33 @@ class ValidationTest(unittest.TestCase):
         )
 
         validate_config(cfg)
+
+    def test_warmup_step_no_conflict(self):
+        cfg = DictDefault(
+            {
+                "warmup_steps": 10,
+                "warmup_ratio": 0.1,
+            }
+        )
+
+        with pytest.raises(
+            ValueError,
+            match=r".*warmup_steps and warmup_ratio are mutually exclusive*",
+        ):
+            validate_config(cfg)
+
+        cfg = DictDefault(
+            {
+                "warmup_steps": 10,
+            }
+        )
+
+        validate_config(cfg)
+
+        cfg = DictDefault(
+            {
+                "warmup_ratio": 0.1,
+            }
+        )
+
+        validate_config(cfg)

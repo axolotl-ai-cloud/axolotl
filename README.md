@@ -25,8 +25,10 @@ Features:
 - [Installation](#installation)
   - [Docker](#docker)
   - [Conda/Pip venv](#condapip-venv)
+  - [Runpod](#runpod)
   - [LambdaLabs](#lambdalabs)
   - [Windows](#windows)
+  - [Launching on public clouds via SkyPilot](#launching-on-public-clouds-via-skypilot)
 - [Dataset](#dataset)
   - [How to Add Custom Prompts](#how-to-add-custom-prompts)
   - [How to Use Custom Pretokenized Dataset](#how-to-use-your-custom-pretokenized-dataset)
@@ -74,6 +76,8 @@ Features:
 | gpt-j    | ✅         | ✅    | ✅     | ❌             | ❌                 | ❓          | ❓            |
 | XGen     | ✅         | ❓    | ✅     | ❓             | ❓                 | ❓          | ✅            |
 | phi      | ✅         | ✅    | ✅     | ❓             | ❓                 | ❓          | ❓            |
+| RWKV     | ✅         | ❓    | ❓     | ❓             | ❓                 | ❓          | ❓            |
+| Qwen     | ✅         | ✅    | ✅     | ❓             | ❓                 | ❓          | ❓            |
 
 
 ## Quickstart ⚡
@@ -82,20 +86,29 @@ Get started with Axolotl in just a few steps! This quickstart guide will walk yo
 
 **Requirements**: Python >=3.9 and Pytorch >=2.0.
 
+`pip3 install "axolotl[flash-attn,deepspeed] @ git+https://github.com/OpenAccess-AI-Collective/axolotl"`
+
+### For developers
 ```bash
 git clone https://github.com/OpenAccess-AI-Collective/axolotl
 cd axolotl
 
 pip3 install packaging
 pip3 install -e '.[flash-attn,deepspeed]'
-pip3 install -U git+https://github.com/huggingface/peft.git
+```
 
+### Usage
+```bash
 # finetune lora
 accelerate launch -m axolotl.cli.train examples/openllama-3b/lora.yml
 
 # inference
 accelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \
     --lora_model_dir="./lora-out"
+
+# gradio
+accelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \
+    --lora_model_dir="./lora-out" --gradio
 ```
 
 ## Installation
@@ -106,7 +119,6 @@ accelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \
   ```bash
   docker run --gpus '"all"' --rm -it winglian/axolotl:main-py3.10-cu118-2.0.1
   ```
-  - `winglian/axolotl-runpod:main-latest`: for runpod or use this [direct link](https://runpod.io/gsc?template=v2ickqhz9s&ref=6i7fkpdz)
 
   Or run on the current files for development:
 
@@ -121,13 +133,15 @@ accelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \
   A more powerful Docker command to run would be this:
 
   ```bash
-  docker run --gpus '"all"' --rm -it --name axolotl --ipc=host --ulimit memlock=-1 --ulimit stack=67108864 --mount type=volume,src=axolotl,target=/workspace/axolotl -v ${HOME}/.cache/huggingface:/root/.cache/huggingface winglian/axolotl:main-py3.10-cu118-2.0.1
+  docker run --privileged --gpus '"all"' --shm-size 10g --rm -it --name axolotl --ipc=host --ulimit memlock=-1 --ulimit stack=67108864 --mount type=volume,src=axolotl,target=/workspace/axolotl -v ${HOME}/.cache/huggingface:/root/.cache/huggingface winglian/axolotl:main-py3.10-cu118-2.0.1
   ```
 
   It additionally:
   * Prevents memory issues when running e.g. deepspeed (e.g. you could hit SIGBUS/signal 7 error) through `--ipc` and `--ulimit` args.
   * Persists the downloaded HF data (models etc.) and your modifications to axolotl code through `--mount`/`-v` args.
   * The `--name` argument simply makes it easier to refer to the container in vscode (`Dev Containers: Attach to Running Container...`) or in your terminal.
+  * The `--privileged` flag gives all capabilities to the container.
+  * The `--shm-size 10g` argument increases the shared memory size. Use this if you see `exitcode: -7` errors using deepspeed.
 
   [More information on nvidia website](https://docs.nvidia.com/deeplearning/frameworks/user-guide/index.html#setincshmem)
 
@@ -148,6 +162,10 @@ accelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \
         huggingface-cli login
         ```
         Get the token at huggingface.co/settings/tokens
+
+#### Runpod
+
+Use `winglian/axolotl-runpod:main-latest` or use this [direct link](https://runpod.io/gsc?template=v2ickqhz9s&ref=6i7fkpdz)
 
 #### LambdaLabs
   <details>
@@ -195,6 +213,28 @@ accelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \
 
 #### Windows
 Please use WSL or Docker!
+
+
+#### Launching on public clouds via SkyPilot
+To launch on GPU instances (both on-demand and spot instances) on 7+ clouds (GCP, AWS, Azure, OCI, and more), you can use [SkyPilot](https://skypilot.readthedocs.io/en/latest/index.html):
+```bash
+pip install "skypilot-nightly[gcp,aws,azure,oci,lambda,kubernetes,ibm,scp]"  # choose your clouds
+sky check
+```
+Get the [example YAMLs](https://github.com/skypilot-org/skypilot/tree/master/llm/axolotl) of using Axolotl to finetune `mistralai/Mistral-7B-v0.1`:
+```
+git clone https://github.com/skypilot-org/skypilot.git
+cd skypilot/llm/axolotl
+```
+Use one command to launch:
+```bash
+# On-demand
+HF_TOKEN=xx sky launch axolotl.yaml --env HF_TOKEN
+
+# Managed spot (auto-recovery on preemption)
+HF_TOKEN=xx BUCKET=<unique-name> sky spot launch axolotl-spot.yaml --env HF_TOKEN --env BUCKET
+```
+
 
 ### Dataset
 
@@ -392,6 +432,12 @@ See [examples](examples) for quick start. It is recommended to duplicate and mod
     - path: knowrohit07/know_sql
       type: context_qa.load_v2
       train_on_split: validation
+
+  # loading from s3 or gcs
+  # s3 creds will be loaded from the system default and gcs only supports public access
+  dataset:
+    - path: s3://path_to_ds # Accepts folder with arrow/parquet or file path like above. Supports s3, gcs.
+      ...
   ```
 
 - loading
@@ -454,6 +500,15 @@ is_falcon_derived_model:
 is_llama_derived_model:
 # Please note that if you set this to true, `padding_side` will be set to "left" by default
 is_mistral_derived_model:
+is_qwen_derived_model:
+
+# optional overrides to the base model configuration
+model_config:
+  # RoPE Scaling https://github.com/huggingface/transformers/pull/24653
+  rope_scaling:
+    type: # linear | dynamic
+    factor: # float
+
 
 # Whether you are training a 4-bit GPTQ quantized model
 gptq: true
@@ -478,7 +533,7 @@ float16: true
 
 # A list of one or more datasets to finetune the model with
 datasets:
-  # HuggingFace dataset repo | "json" for local dataset, make sure to fill data_files
+  # HuggingFace dataset repo | s3://,gs:// path | "json" for local dataset, make sure to fill data_files
   - path: vicgalle/alpaca-gpt4
   # The type of prompt to use for training. [alpaca, sharegpt, gpteacher, oasst, reflection]
     type: alpaca # format | format:<prompt_style> (chat/instruct) | <prompt_strategies>.load_<load_fn>
@@ -486,9 +541,12 @@ datasets:
     data_files: # Optional[str] path to source data files
     shards: # Optional[int] number of shards to split data into
     name: # Optional[str] name of dataset configuration to load
+    train_on_split: train # Optional[str] name of dataset split to load from
 
     # Optional[str] fastchat conversation type, only used with type: sharegpt
     conversation:  # Options (see Conversation 'name'): https://github.com/lm-sys/FastChat/blob/main/fastchat/conversation.py
+    field_human: # Optional[str]. Human key to use for conversation.
+    field_model: # Optional[str]. Assistant key to use for conversation.
 
   # Custom user prompt
   - path: repo
@@ -620,7 +678,8 @@ gradient_accumulation_steps: 1
 micro_batch_size: 2
 eval_batch_size:
 num_epochs: 4
-warmup_steps: 100
+warmup_steps: 100  # cannot use with warmup_ratio
+warmup_ratio: 0.05  # cannot use with warmup_steps
 learning_rate: 0.00003
 lr_quadratic_warmup:
 logging_steps:
@@ -722,10 +781,6 @@ landmark_attention:
 # xpos RoPE see https://github.com/kaiokendev/cutoff-len-is-context-len/blob/main/util/xpos_rope_llama_monkey_patch.py
 # LLaMA only
 xpos_rope:
-# RoPE Scaling https://github.com/huggingface/transformers/pull/24653
-rope_scaling:
-  type: # linear | dynamic
-  factor: # float
 
 # Resume from a specific checkpoint dir
 resume_from_checkpoint:
@@ -918,6 +973,10 @@ Pass the appropriate flag to the train command:
   ```bash
   cat /tmp/prompt.txt | python -m axolotl.cli.inference examples/your_config.yml \
     --base_model="./completed-model" --prompter=None --load_in_8bit=True
+  ```
+-- With gradio hosting
+  ```bash
+  python -m axolotl.cli.inference examples/your_config.yml --gradio
   ```
 
 Please use `--sample_packing False` if you have it on and receive the error similar to below:
