@@ -647,7 +647,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         training_arguments_kwargs["group_by_length"] = self.cfg.group_by_length
         training_arguments_kwargs["report_to"] = "wandb" if self.cfg.use_wandb else None
         training_arguments_kwargs["run_name"] = (
-            self.cfg.wandb_run_id if self.cfg.use_wandb else None
+            self.cfg.wandb_name if self.cfg.use_wandb else None
         )
         training_arguments_kwargs["optim"] = (
             self.cfg.optimizer if self.cfg.optimizer else "adamw_hf"

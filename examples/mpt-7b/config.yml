@@ -21,7 +21,7 @@ lora_fan_in_fan_out: false
 wandb_project: mpt-alpaca-7b
 wandb_entity:
 wandb_watch:
-wandb_run_id:
+wandb_name:
 wandb_log_model:
 output_dir: ./mpt-alpaca-7b
 gradient_accumulation_steps: 1
