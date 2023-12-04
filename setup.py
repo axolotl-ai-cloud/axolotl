@@ -51,5 +51,8 @@ setup(
         "deepspeed": [
             "deepspeed",
         ],
+        "mamba": [
+            "git+https://github.com/state-spaces/mamba.git",
+        ],
     },
 )

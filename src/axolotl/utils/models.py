@@ -4,6 +4,7 @@ import math
 import os
 from typing import Optional, Tuple  # noqa: F401
 
+import addict
 import bitsandbytes as bnb
 import torch
 import transformers
@@ -52,6 +53,12 @@ def check_model_config(cfg: DictDefault, model_config: AutoConfig):
 def load_model_config(cfg):
     model_config_name = cfg.base_model_config or cfg.base_model
     trust_remote_code = cfg.trust_remote_code is True
+    if "state-spaces/mamba" in model_config_name:
+        return addict.Dict(
+            {
+                "model_type": "mamba",
+            }
+        )
     model_config = AutoConfig.from_pretrained(
         model_config_name, trust_remote_code=trust_remote_code
     )
@@ -333,6 +340,18 @@ def load_model(
                 load_in_4bit=cfg.load_in_4bit and cfg.adapter is not None,
                 **model_kwargs,
             )
+        elif model_type == "MambaLMHeadModel":
+            from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
+
+            del model_kwargs["torch_dtype"]
+            del model_kwargs["device_map"]
+
+            model = MambaLMHeadModel.from_pretrained(
+                base_model,
+                load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
+                load_in_4bit=cfg.load_in_4bit and cfg.adapter is not None,
+                **model_kwargs,
+            )
         elif model_type and not cfg.trust_remote_code:
             if cfg.gptq:
                 model = AutoModelForCausalLM.from_pretrained(
@@ -392,13 +411,17 @@ def load_model(
         if cfg.resize_token_embeddings_to_32x
         else len(tokenizer)
     )
-    if model.get_input_embeddings().num_embeddings < embeddings_len:
+    if (
+        hasattr(model, "get_input_embeddings")
+        and model.get_input_embeddings().num_embeddings < embeddings_len
+    ):
         model.resize_token_embeddings(embeddings_len)
     else:
         model.tie_weights()
 
     if (
-        hasattr(model.config, "max_position_embeddings")
+        hasattr(model, "config")
+        and hasattr(model.config, "max_position_embeddings")
         and model.config.max_position_embeddings
         and cfg.sequence_len > model.config.max_position_embeddings
     ):
@@ -408,14 +431,16 @@ def load_model(
         model.config.max_position_embeddings = cfg.sequence_len
 
     if (
-        hasattr(model.config, "bos_token_id")
+        hasattr(model, "config")
+        and hasattr(model.config, "bos_token_id")
         and model.config.bos_token_id
         and model.config.bos_token_id != tokenizer.bos_token_id
     ):
         model.config.bos_token_id = tokenizer.bos_token_id
 
     if (
-        hasattr(model.config, "eos_token_id")
+        hasattr(model, "config")
+        and hasattr(model.config, "eos_token_id")
         and model.config.eos_token_id
         and model.config.eos_token_id != tokenizer.eos_token_id
     ):
@@ -480,7 +505,8 @@ def load_model(
             requires_grad.append(f"{name}: {param.requires_grad}")
     if len(requires_grad) == 0:
         LOG.warning("there are no parameters that require gradient updates")
-    model.config.use_cache = False
+    if hasattr(model, "config"):
+        model.config.use_cache = False
 
     if cfg.flash_optimum:
         model = BetterTransformer.transform(model)
