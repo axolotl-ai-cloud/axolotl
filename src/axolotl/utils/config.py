@@ -27,7 +27,7 @@ def choose_device(cfg):
 
     cfg.device = get_device()
     if cfg.world_size == 1:
-        cfg.device_map = "auto"
+        cfg.device_map = cfg.device_map or "auto"
     else:
         if cfg.device.startswith("cuda"):
             cfg.device_map = {"": torch.cuda.current_device()}

@@ -612,6 +612,12 @@ eval_sample_packing:
 sample_packing_eff_est:
 total_num_tokens:
 
+# Passed through to transformers when loading the model when launched without accelerate
+# Use `sequential` when training w/ model parallelism to limit memory
+device_map:
+# Defines the max memory usage per gpu on the system. Passed through to transformers when loading the model.
+max_memory:
+
 # If you want to use 'lora' or 'qlora' or leave blank to train all parameters in original model
 adapter: lora
 # If you already have a lora model trained that you want to load, put that here.
