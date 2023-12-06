@@ -42,7 +42,6 @@ def mamba_forward(
         # Enable model parallelism
         shift_labels = shift_labels.to(shift_logits.device)
         loss = loss_fct(shift_logits, shift_labels)
-        print(loss, shift_logits, shift_logits.dtype, shift_labels, shift_labels.dtype)
         return (loss,)
 
     else:
