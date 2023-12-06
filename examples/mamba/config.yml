@@ -29,7 +29,7 @@ micro_batch_size: 2
 num_epochs: 4
 optimizer: adamw_bnb_8bit
 lr_scheduler: cosine
-learning_rate: 0.000005
+learning_rate: 3e-7
 
 train_on_inputs: false
 group_by_length: false

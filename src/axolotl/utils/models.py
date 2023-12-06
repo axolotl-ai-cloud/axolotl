@@ -22,6 +22,7 @@ from transformers import (  # noqa: F401
     PreTrainedTokenizerBase,
 )
 
+from axolotl.models.mamba import fix_mamba_attn_for_loss
 from axolotl.prompt_tokenizers import LLAMA_DEFAULT_EOS_TOKEN
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.dict import DictDefault
@@ -342,7 +343,7 @@ def load_model(
             )
         elif model_type == "MambaLMHeadModel":
             # FIXME this is janky at best and hacked together to make it work
-            from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
+            MambaLMHeadModel = fix_mamba_attn_for_loss()
 
             model_kwargs["dtype"] = model_kwargs["torch_dtype"]
             model_kwargs["device"] = torch.cuda.current_device()
