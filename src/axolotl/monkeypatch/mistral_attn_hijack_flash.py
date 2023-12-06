@@ -13,16 +13,20 @@ from flash_attn.flash_attn_interface import (  # pylint: disable=ungrouped-impor
     flash_attn_varlen_kvpacked_func,
     flash_attn_varlen_qkvpacked_func,
 )
-from transformers.modeling_outputs import BaseModelOutputWithPast
+from transformers.modeling_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from transformers.models.mistral.modeling_mistral import (
     MistralAttention as OriginalMistralAttention,
 )
 from transformers.models.mistral.modeling_mistral import (
     MistralDecoderLayer as OriginalMistralDecoderLayer,
 )
+from transformers.models.mistral.modeling_mistral import (
+    MistralForCausalLM as OriginalMistralForCausalLM,
+)
 from transformers.models.mistral.modeling_mistral import apply_rotary_pos_emb, repeat_kv
 
 from axolotl.monkeypatch.utils import get_cu_seqlens_from_pos_ids
+from axolotl.monkeypatch.cross_entropy import fast_cross_entropy_loss
 
 LOG = logging.getLogger("axolotl.monkeypatch.mistral")
 
@@ -35,6 +39,9 @@ def replace_mistral_attn_with_flash_attn(
     )
     transformers.models.mistral.modeling_mistral.MistralAttention.forward = (
         flashattn_forward
+    )
+    transformers.models.mistral.modeling_mistral.MistralForCausalLM.forward = (
+        mistral_causallm_forward
     )
     if packed:
         transformers.models.mistral.modeling_mistral.MistralDecoderLayer = (
@@ -641,3 +648,75 @@ class MistralDecoderLayer(OriginalMistralDecoderLayer):
             outputs += (present_key_value,)
 
         return outputs
+
+def mistral_causallm_forward(
+    self: OriginalMistralForCausalLM,
+    input_ids: torch.LongTensor = None,
+    attention_mask: Optional[torch.Tensor] = None,
+    position_ids: Optional[torch.LongTensor] = None,
+    past_key_values: Optional[List[torch.FloatTensor]] = None,
+    inputs_embeds: Optional[torch.FloatTensor] = None,
+    labels: Optional[torch.LongTensor] = None,
+    use_cache: Optional[bool] = None,
+    output_attentions: Optional[bool] = None,
+    output_hidden_states: Optional[bool] = None,
+    return_dict: Optional[bool] = None,
+    *args, **kwargs
+) -> Union[Tuple, CausalLMOutputWithPast]:
+    r"""
+    Args:
+        labels (`torch.LongTensor` of shape `(batch_size, sequence_length)`, *optional*):
+            Labels for computing the masked language modeling loss. Indices should either be in `[0, ...,
+            config.vocab_size]` or -100 (see `input_ids` docstring). Tokens with indices set to `-100` are ignored
+            (masked), the loss is only computed for the tokens with labels in `[0, ..., config.vocab_size]`.
+    ```"""
+
+    output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
+    output_hidden_states = (
+        output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+    )
+    return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
+    # decoder outputs consists of (dec_features, layer_state, dec_hidden, dec_attn)
+    outputs = self.model(
+        input_ids=input_ids,
+        attention_mask=attention_mask,
+        position_ids=position_ids,
+        past_key_values=past_key_values,
+        inputs_embeds=inputs_embeds,
+        use_cache=use_cache,
+        output_attentions=output_attentions,
+        output_hidden_states=output_hidden_states,
+        return_dict=return_dict,
+    )
+
+    hidden_states = outputs[0]
+    logits = self.lm_head(hidden_states)
+    logits = logits.float()
+
+    loss = None
+    if labels is not None:
+        # Shift so that tokens < n predict n
+        shift_logits = logits[..., :-1, :].contiguous()
+        shift_labels = labels[..., 1:].contiguous()
+        # Flatten the tokens
+        shift_logits = shift_logits.view(-1, self.config.vocab_size)
+        shift_labels = shift_labels.view(-1)
+        shift_labels = shift_labels.to(shift_logits.device)
+
+        # FAST CROSS ENTROPY
+        if self.config.vocab_size > 65536:
+            raise Exception("Fast cross entropy is only compatible with vocab_size <= 65536")
+        loss = fast_cross_entropy_loss(shift_logits, shift_labels)
+
+    if not return_dict:
+        output = (logits,) + outputs[1:]
+        return (loss,) + output if loss is not None else output
+
+    return CausalLMOutputWithPast(
+        loss=loss,
+        logits=logits,
+        past_key_values=outputs.past_key_values,
+        hidden_states=outputs.hidden_states,
+        attentions=outputs.attentions,
+    )
