@@ -550,6 +550,11 @@ tf32: true # require >=ampere
 bfloat16: true # require >=ampere
 float16: true
 
+# Limit the memory for all available GPUs to this amount (if an integer, expressed in gigabytes); default: unset
+gpu_memory_limit: 20GiB
+# Do the LoRA/PEFT loading on CPU -- this is required if the base model is so large it takes up most or all of the available GPU VRAM, e.g. during a model and LoRA merge
+lora_on_cpu: true
+
 # A list of one or more datasets to finetune the model with
 datasets:
   # HuggingFace dataset repo | s3://,gs:// path | "json" for local dataset, make sure to fill data_files
