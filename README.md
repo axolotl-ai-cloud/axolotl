@@ -1043,11 +1043,13 @@ Add below flag to train command above
 python3 -m axolotl.cli.merge_lora examples/your_config.yml --lora_model_dir="./completed-model"
 ```
 
-If you run out of CUDA memory, you can try to merge in system RAM with
+You may need to use the `gpu_memory_limit` and/or `lora_on_cpu` config options to avoid running out of memory. If you still run out of CUDA memory, you can try to merge in system RAM with
 
 ```bash
 CUDA_VISIBLE_DEVICES="" python3 -m axolotl.cli.merge_lora ...
 ```
+
+although this will be very slow, and using the config options above are recommended instead.
 
 ## Common Errors 🧰
 
