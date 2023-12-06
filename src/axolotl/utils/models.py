@@ -2,7 +2,7 @@
 import logging
 import math
 import os
-from typing import Optional, Tuple  # noqa: F401
+from typing import Any, Optional, Tuple  # noqa: F401
 
 import addict
 import bitsandbytes as bnb
@@ -685,10 +685,15 @@ def load_lora(model, cfg, inference=False):
 
     if cfg.lora_model_dir:
         LOG.debug("Loading pretained PEFT - LoRA")
+        model_kwargs: Any = {}
+        if cfg.lora_on_cpu:
+            model_kwargs["max_memory"] = {"cpu": "256GiB"}
+            model_kwargs["device_map"] = {"": "cpu"}
         model = PeftModel.from_pretrained(
             model,
             cfg.lora_model_dir,
             is_trainable=(not inference),
+            **model_kwargs,
         )
     else:
         model = get_peft_model(model, lora_config)
