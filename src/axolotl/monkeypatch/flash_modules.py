@@ -2,11 +2,11 @@ import torch
 import logging
 import warnings
 from einops import rearrange
+from functools import partial
 import torch.nn.functional as F
 from typing import Optional, Tuple
 from flash_attn.bert_padding import pad_input, unpad_input
-
-from axolotl.monkeypatch.fused_module import FusedAttention
+from axolotl.monkeypatch.fused_modules import FusedAttention
 
 try:
     from flash_attn.flash_attn_interface import (  # pylint: disable=ungrouped-imports
@@ -383,3 +383,44 @@ def generate_qkv(
         v,
         output_pad_fn,
     )
+
+def replace_cross_entropy(modeling_class, module_name):
+    """
+    modeling_class: transformers.models.llama.modeling_<class>
+    module_name: CrossEntropyLoss
+    """
+    try:
+        from flash_attn.losses.cross_entropy import CrossEntropyLoss
+
+        LOG.info("patching with flash_attn.losses.cross_entropy")
+
+        cross_entropy_loss = partial(
+            CrossEntropyLoss, inplace_backward=True
+        )
+
+        setattr(modeling_class, module_name, cross_entropy_loss)
+        
+    except ImportError:
+        LOG.info(
+            "optimized flash-attention CrossEntropyLoss not found (run `pip install 'git+https://github.com/Dao-AILab/flash-attention.git#egg=xentropy_cuda_lib&subdirectory=csrc/xentropy'`)"
+        )
+
+def replace_rms_norm(modeling_class, module_name):
+    """
+    modeling_class: transformers.models.llama.modeling_<class>
+    module_name: RMSNorm
+    """
+    try:
+        from flash_attn.ops.rms_norm import RMSNorm
+
+        class FlashRMSNorm(RMSNorm):
+            """A faster RMS Norm."""
+            def __init__(self, hidden_size, eps=1e-6):
+                super().__init__(hidden_size, eps=eps)
+        
+        LOG.info("patching with flash_attn.ops.rms_norm")
+        setattr(modeling_class, module_name, FlashRMSNorm)
+    except ImportError:
+        LOG.info(
+            "optimized flash-attention RMSNorm not found (run `pip install 'git+https://github.com/Dao-AILab/flash-attention.git#egg=dropout_layer_norm&subdirectory=csrc/layer_norm'`)"
+        )

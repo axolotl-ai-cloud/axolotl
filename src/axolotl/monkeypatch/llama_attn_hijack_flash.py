@@ -24,8 +24,8 @@ from transformers.models.llama.modeling_llama import (
 )
 
 from axolotl.monkeypatch.utils import get_cu_seqlens_from_pos_ids, set_module_name
-from axolotl.monkeypatch.fused_module import FusedAttention, FusedMLP
-from axolotl.monkeypatch.flash_module import flashattn_forward
+from axolotl.monkeypatch.fused_modules import FusedAttention, FusedMLP
+from axolotl.monkeypatch.flash_modules import flashattn_forward
 
 
 LOG = logging.getLogger("axolotl")
@@ -69,39 +69,6 @@ def replace_llama_attn_with_flash_attn(
         transformers.models.llama.modeling_llama.LlamaModel.forward = (
             llama_model_forward
         )
-
-    # skip only if explicitly disabled
-    if cross_entropy:
-        try:
-            from flash_attn.losses.cross_entropy import CrossEntropyLoss
-
-            LOG.info("patching with flash_attn.losses.cross_entropy")
-            transformers.models.llama.modeling_llama.CrossEntropyLoss = partial(
-                CrossEntropyLoss, inplace_backward=True
-            )
-        except ImportError:
-            LOG.info(
-                "optimized flash-attention CrossEntropyLoss not found (run `pip install 'git+https://github.com/Dao-AILab/flash-attention.git#egg=xentropy_cuda_lib&subdirectory=csrc/xentropy'`)"
-            )
-
-    # skip only if explicitly disabled
-    if rms_norm:
-        try:
-            from flash_attn.ops.rms_norm import RMSNorm
-
-            class LlamaRMSNorm(RMSNorm):
-                """Patched LLamaRMSNorm"""
-
-                def __init__(self, hidden_size, eps=1e-6):
-                    super().__init__(hidden_size, eps=eps)
-
-            LOG.info("patching with flash_attn.ops.rms_norm")
-            transformers.models.llama.modeling_llama.LlamaRMSNorm = LlamaRMSNorm
-        except ImportError:
-            LOG.info(
-                "optimized flash-attention RMSNorm not found (run `pip install 'git+https://github.com/Dao-AILab/flash-attention.git#egg=dropout_layer_norm&subdirectory=csrc/layer_norm'`)"
-            )
-
 
 
 # Disable the transformation of the attention mask in LlamaModel as the flash attention
