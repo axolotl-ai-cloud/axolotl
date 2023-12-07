@@ -193,7 +193,11 @@ def load_model(
         )
 
         LOG.info("patching with flash attention")
-        replace_mistral_attn_with_flash_attn(packed=cfg.sample_packing)
+        replace_mistral_attn_with_flash_attn(
+            packed=cfg.sample_packing,
+            cross_entropy=cfg.flash_attn_cross_entropy,
+            rms_norm=cfg.flash_attn_rms_norm,
+        )
 
     if cfg.is_llama_derived_model and cfg.xpos_rope:
         from axolotl.monkeypatch.xpos_rope_llama_monkey_patch import (
