@@ -3,7 +3,6 @@
 # copied from https://github.com/lm-sys/FastChat/blob/main/fastchat/train/llama_flash_attn_monkey_patch.py
 
 import logging
-from functools import partial
 from typing import List, Optional, Tuple, Union
 
 import torch

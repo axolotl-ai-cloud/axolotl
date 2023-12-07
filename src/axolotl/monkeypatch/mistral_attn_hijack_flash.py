@@ -6,17 +6,7 @@ from typing import List, Optional, Tuple, Union
 
 import torch
 import transformers
-from einops import rearrange
-from flash_attn.bert_padding import pad_input, unpad_input
-from flash_attn.flash_attn_interface import (  # pylint: disable=ungrouped-imports
-    flash_attn_kvpacked_func,
-    flash_attn_varlen_kvpacked_func,
-    flash_attn_varlen_qkvpacked_func,
-)
 from transformers.modeling_outputs import BaseModelOutputWithPast
-from transformers.models.mistral.modeling_mistral import (
-    MistralAttention as OriginalMistralAttention,
-)
 from transformers.models.mistral.modeling_mistral import (
     MistralDecoderLayer as OriginalMistralDecoderLayer,
     MistralMLP
