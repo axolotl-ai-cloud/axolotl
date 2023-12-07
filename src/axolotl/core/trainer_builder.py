@@ -288,11 +288,15 @@ class AxolotlTrainer(Trainer):
         #     outputs = model(**inputs)
         #     loss = trainer_weighted_loss(outputs, labels, shift_labels=True)
         #     return (loss, outputs) if return_outputs else loss
-        if self.args.model_type == "mamba":
-            return self.compute_mamba_loss(model, inputs, return_outputs=return_outputs)
         return super().compute_loss(model, inputs, return_outputs=return_outputs)
 
-    def compute_mamba_loss(
+
+class AxolotlMambaTrainer(AxolotlTrainer):
+    """
+    Mamba specific trainer to handle loss calculation
+    """
+
+    def compute_loss(
         self,
         model,
         inputs,
@@ -490,6 +494,8 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             return OneCycleLRSchedulerTrainer
         if self.cfg.relora_steps:
             return ReLoRATrainer
+        if self.cfg.model_config_type == "mamba":
+            return AxolotlMambaTrainer
         return AxolotlTrainer
 
     def build(self, total_num_steps):
@@ -557,7 +563,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             if self.cfg.hub_strategy:
                 training_arguments_kwargs["hub_strategy"] = self.cfg.hub_strategy
 
-        if self.cfg.save_safetensors:
+        if self.cfg.save_safetensors is not None:
             training_arguments_kwargs["save_safetensors"] = self.cfg.save_safetensors
 
         if self.cfg.sample_packing_eff_est:
