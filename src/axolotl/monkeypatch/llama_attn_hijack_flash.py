@@ -6,7 +6,6 @@ import logging
 from typing import List, Optional, Tuple, Union
 
 import torch
-import torch.nn.functional as F
 import transformers
 from transformers.modeling_outputs import BaseModelOutputWithPast
 from transformers.models.llama.modeling_llama import LlamaAttention
