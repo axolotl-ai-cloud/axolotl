@@ -705,6 +705,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         training_arguments_kwargs = self.hook_pre_create_training_args(
             training_arguments_kwargs
         )
+        training_arguments_kwargs["model_type"] = self.cfg.model_config_type
         training_args = (
             AxolotlTrainingArguments(  # pylint: disable=unexpected-keyword-arg
                 **training_arguments_kwargs,
