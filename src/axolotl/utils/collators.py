@@ -166,12 +166,12 @@ class MambaDataCollator:
             for key in ("input_ids", "labels")
         )
         input_ids = torch.nn.utils.rnn.pad_sequence(
-            torch.Tensor(input_ids),
+            input_ids,
             batch_first=True,
             padding_value=self.tokenizer.pad_token_id,
         )
         labels = torch.nn.utils.rnn.pad_sequence(
-            torch.Tensor(labels), batch_first=True, padding_value=IGNORE_INDEX
+            labels, batch_first=True, padding_value=IGNORE_INDEX
         )
 
         return {
