@@ -54,15 +54,19 @@ def check_model_config(cfg: DictDefault, model_config: AutoConfig):
 def load_model_config(cfg):
     model_config_name = cfg.base_model_config or cfg.base_model
     trust_remote_code = cfg.trust_remote_code is True
-    if "state-spaces/mamba" in model_config_name:
-        return addict.Dict(
-            {
-                "model_type": "mamba",
-            }
+    try:
+        model_config = AutoConfig.from_pretrained(
+            model_config_name, trust_remote_code=trust_remote_code
         )
-    model_config = AutoConfig.from_pretrained(
-        model_config_name, trust_remote_code=trust_remote_code
-    )
+    except ValueError as err:
+        if "mamba" in model_config_name:
+            return addict.Dict(
+                {
+                    "model_type": "mamba",
+                }
+            )
+        raise err
+
     if cfg.model_config:
         for key, val in cfg.model_config.items():
             setattr(model_config, key, val)
@@ -343,7 +347,7 @@ def load_model(
             )
         elif model_type == "MambaLMHeadModel":
             # FIXME this is janky at best and hacked together to make it work
-            MambaLMHeadModel = fix_mamba_attn_for_loss()
+            MambaLMHeadModel = fix_mamba_attn_for_loss()  # pylint: disable=invalid-name
 
             model_kwargs["dtype"] = model_kwargs["torch_dtype"]
             model_kwargs["device"] = torch.cuda.current_device()

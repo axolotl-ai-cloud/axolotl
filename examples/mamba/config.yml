@@ -1,4 +1,4 @@
-base_model: state-spaces/mamba-130m
+base_model: state-spaces/mamba-2.8b
 model_type: MambaLMHeadModel
 tokenizer_type: AutoTokenizer
 tokenizer_config: EleutherAI/gpt-neox-20b
@@ -25,11 +25,11 @@ wandb_name:
 wandb_log_model:
 
 gradient_accumulation_steps: 4
-micro_batch_size: 2
+micro_batch_size: 1
 num_epochs: 4
-optimizer: adamw_bnb_8bit
+optimizer: paged_adamw_8bit
 lr_scheduler: cosine
-learning_rate: 3e-7
+learning_rate: 5e-5
 
 train_on_inputs: false
 group_by_length: false
@@ -57,6 +57,4 @@ weight_decay: 0.0
 fsdp:
 fsdp_config:
 special_tokens:
-  bos_token: "<s>"
-  eos_token: "</s>"
-  unk_token: "<unk>"
+  pad_token: "<|endoftext|>"

@@ -31,7 +31,10 @@ from axolotl.utils.callbacks import (
     bench_eval_callback_factory,
     log_prediction_callback_factory,
 )
-from axolotl.utils.collators import BatchSamplerDataCollatorForSeq2Seq
+from axolotl.utils.collators import (
+    BatchSamplerDataCollatorForSeq2Seq,
+    MambaDataCollator,
+)
 from axolotl.utils.samplers import MultipackBatchSampler
 from axolotl.utils.schedulers import get_cosine_schedule_with_quadratic_warmup
 
@@ -49,6 +52,9 @@ class AxolotlTrainingArguments(TrainingArguments):
     Extend the base TrainingArguments for axolotl helpers
     """
 
+    model_type: Optional[str] = field(
+        default=None, metadata={"help": "HF model configuration model_type."}
+    )
     lr_quadratic_warmup: bool = field(
         default=False,
         metadata={"help": "Use quadratic warmup for cosine scheduling."},
@@ -282,10 +288,29 @@ class AxolotlTrainer(Trainer):
         #     outputs = model(**inputs)
         #     loss = trainer_weighted_loss(outputs, labels, shift_labels=True)
         #     return (loss, outputs) if return_outputs else loss
-        loss = super().compute_loss(model, inputs, return_outputs=return_outputs)
-        if loss.numel() > 1:
-            loss = loss.mean()
-        return loss
+        if self.args.model_type == "mamba":
+            return self.compute_mamba_loss(model, inputs, return_outputs=return_outputs)
+        return super().compute_loss(model, inputs, return_outputs=return_outputs)
+
+    def compute_mamba_loss(
+        self,
+        model,
+        inputs,
+        return_outputs=False,  # pylint: disable=unused-argument
+    ):
+        input_ids = inputs.pop("input_ids")
+        lm_logits = model(input_ids).logits
+
+        labels = input_ids.to(lm_logits.device)
+        shift_logits = lm_logits[:, :-1, :].contiguous()
+        labels = labels[:, 1:].contiguous()
+
+        loss_fct = torch.nn.CrossEntropyLoss()
+        lm_loss = loss_fct(
+            shift_logits.view(-1, shift_logits.size(-1)), labels.view(-1)
+        )
+
+        return lm_loss
 
 
 class OneCycleLRSchedulerTrainer(AxolotlTrainer):
@@ -734,11 +759,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             train_dataset=self.train_dataset,
             eval_dataset=self.eval_dataset,
             args=training_args,
-            data_collator=BatchSamplerDataCollatorForSeq2Seq(
-                self.tokenizer,
-                return_tensors="pt",
-                **data_collator_kwargs,
-            ),
+            data_collator=self.build_collator(**data_collator_kwargs),
             bench_data_collator=transformers.DataCollatorForSeq2Seq(
                 self.tokenizer,
                 return_tensors="pt",
@@ -758,3 +779,13 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             ] = self.cfg.micro_batch_size
 
         return trainer
+
+    def build_collator(self, **kwargs):
+        if self.cfg.model_config_type == "mamba":
+            return MambaDataCollator(tokenizer=self.tokenizer)
+
+        return BatchSamplerDataCollatorForSeq2Seq(
+            self.tokenizer,
+            return_tensors="pt",
+            **kwargs,
+        )

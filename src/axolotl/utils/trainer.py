@@ -140,11 +140,6 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset, tokenizer):
             if eval_dataset:
                 eval_dataset = eval_dataset.remove_columns("attention_mask")
 
-        if cfg.model_config_type == "mamba":
-            train_dataset = train_dataset.remove_columns("labels")
-            if eval_dataset:
-                eval_dataset = eval_dataset.remove_columns("labels")
-
     return train_dataset, eval_dataset
 
 
