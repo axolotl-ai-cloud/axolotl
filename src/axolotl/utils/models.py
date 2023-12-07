@@ -278,6 +278,15 @@ def load_model(
                 if cfg.flash_attn_fuse_qkv:
                     LOG.info("patching with fused QKV")
                     replace_llama_qkv_with_fused(model)
+        elif cfg.is_mistral_derived_model and not cfg.trust_remote_code and not cfg.gptq:
+            if cfg.flash_attention and not inference:
+                from axolotl.monkeypatch.mistral_attn_hijack_flash import (
+                    replace_mistral_mlp_with_swiglu,
+                )
+
+                if cfg.flash_attn_fuse_mlp:
+                    LOG.info("patching with SwiGLU")
+                    replace_mistral_mlp_with_swiglu(model)
         # elif model_type == "GPTNeoXForCausalLM" and cfg.flash_attention:
         #     This is a WIP, still an issue with the backward pass
         #     RuntimeError: grad can be implicitly created only for scalar outputs

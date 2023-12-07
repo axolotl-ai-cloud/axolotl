@@ -19,18 +19,28 @@ from transformers.models.mistral.modeling_mistral import (
 )
 from transformers.models.mistral.modeling_mistral import (
     MistralDecoderLayer as OriginalMistralDecoderLayer,
+    MistralMLP
 )
 from transformers.models.mistral.modeling_mistral import apply_rotary_pos_emb, repeat_kv
 
-from axolotl.monkeypatch.utils import get_cu_seqlens_from_pos_ids
+from axolotl.monkeypatch.utils import get_cu_seqlens_from_pos_ids, set_module_name
 
 from axolotl.monkeypatch.flash_modules import (
     flashattn_forward,
     replace_cross_entropy,
     replace_rms_norm
 )
+from axolotl.monkeypatch.fused_modules import FusedMLP
 
 LOG = logging.getLogger("axolotl.monkeypatch.mistral")
+
+def replace_mistral_mlp_with_swiglu(model):
+    for name, module in model.named_modules():
+        if isinstance(module, MistralMLP):
+            mlp = FusedMLP(
+                module.config, module.gate_proj, module.up_proj, module.down_proj
+            )
+            set_module_name(model, name, mlp)
 
 
 def replace_mistral_attn_with_flash_attn(
