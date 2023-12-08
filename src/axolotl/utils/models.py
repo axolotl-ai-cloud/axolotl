@@ -305,7 +305,7 @@ def load_model(
         device_map = infer_auto_device_map(
             model_canvas,
             max_memory=max_memory,
-            dtype="float16",  # TODO: may probably use bfloat16 and others here as well
+            dtype=cfg.torch_dtype,
         )
         # We can discard max_memory now as we have a device map set up for us
         max_memory = None
