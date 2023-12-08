@@ -245,7 +245,7 @@ Have dataset(s) in one of the following format (JSONL recommended):
   ```json
   {"instruction": "...", "input": "...", "output": "..."}
   ```
-- `sharegpt`: conversations where `from` is `human`/`gpt`
+- `sharegpt`: conversations where `from` is `human`/`gpt`. (optional: `system` to override default system prompt)
   ```json
   {"conversations": [{"from": "...", "value": "..."}]}
   ```
