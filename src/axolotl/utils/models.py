@@ -92,6 +92,7 @@ def load_tokenizer(cfg):
             "LlamaTokenizer",
             "LlamaTokenizerFast",
             "CodeLlamaTokenizer",
+            "CodeLlamaTokenizerFast",
         ]
         and hasattr(tokenizer, "pad_token")
         and not tokenizer.pad_token
@@ -124,6 +125,23 @@ def load_tokenizer(cfg):
             tokenizer.add_special_tokens(
                 {k: AddedToken(val, rstrip=False, lstrip=False, normalized=False)}
             )
+
+        # If we add bos_token and eos_token, we need to update the post processor to
+        # handle them correctly.
+        # https://github.com/huggingface/transformers/pull/24132
+        bos_or_eos_in_special_tokens = (
+            "bos_token" in cfg.special_tokens and "eos_token" in cfg.special_tokens
+        )
+        if (
+            tokenizer.__class__.__name__
+            in (
+                "LlamaTokenizerFast",
+                "CodeLlamaTokenizerFast",
+            )
+            and bos_or_eos_in_special_tokens
+        ):
+            tokenizer.update_post_processor()
+
     if cfg.tokens:
         tokenizer.add_tokens(
             [
