@@ -36,7 +36,7 @@ class TestMistral(unittest.TestCase):
                 "flash_attention": False,
                 "sequence_len": 1024,
                 "load_in_8bit": False,
-                "val_set_size": 0.1,
+                "val_set_size": 0.0,
                 "datasets": [
                     {
                         "path": "mhenrichsen/alpaca_2k_test",
@@ -53,7 +53,7 @@ class TestMistral(unittest.TestCase):
                 "lr_scheduler": "cosine",
                 "max_steps": 20,
                 "save_steps": 10,
-                "eval_steps": 10,
+                "eval_steps": None,
                 "save_safetensors": False,
             }
         )
