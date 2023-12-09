@@ -54,18 +54,24 @@ def check_model_config(cfg: DictDefault, model_config: AutoConfig):
 def load_model_config(cfg):
     model_config_name = cfg.base_model_config or cfg.base_model
     trust_remote_code = cfg.trust_remote_code is True
-    try:
-        model_config = AutoConfig.from_pretrained(
-            model_config_name, trust_remote_code=trust_remote_code
-        )
-    except ValueError as err:
-        if "mamba" in model_config_name:
-            return addict.Dict(
-                {
-                    "model_type": "mamba",
-                }
+    model_type = cfg.model_type
+
+    if model_type == "MixtralForCausalLM":
+        from axolotl.models.mixtral.configuration_moe_mistral import MixtralConfig
+        model_config = MixtralConfig.from_pretrained(model_config_name)
+    else:
+        try:
+            model_config = AutoConfig.from_pretrained(
+                model_config_name, trust_remote_code=trust_remote_code
             )
-        raise err
+        except ValueError as err:
+            if "mamba" in model_config_name:
+                return addict.Dict(
+                    {
+                        "model_type": "mamba",
+                    }
+                )
+            raise err
 
     if cfg.model_config:
         for key, val in cfg.model_config.items():
