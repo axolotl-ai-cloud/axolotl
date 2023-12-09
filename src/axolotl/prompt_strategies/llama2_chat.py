@@ -81,7 +81,7 @@ class LLama2ChatTokenizingStrategy(PromptTokenizingStrategy):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.sequence_len = 4096
+        self.sequence_len = getattr(self, 'sequence_len', 4096)
         self.tokenizer.add_special_tokens({"pad_token": "<pad>"})
         # https://huggingface.co/meta-llama/Llama-2-7b-chat-hf/blob/main/added_tokens.json
 
