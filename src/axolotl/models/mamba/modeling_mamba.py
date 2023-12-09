@@ -1,8 +1,10 @@
 # pylint: skip-file
-
+import os
 from collections import namedtuple
 from functools import partial
+from typing import Optional, Union
 
+import torch
 from mamba_ssm.models.mixer_seq_simple import MixerModel, _init_weights
 from mamba_ssm.utils.generation import GenerationMixin
 from mamba_ssm.utils.hf import load_config_hf, load_state_dict_hf
@@ -105,6 +107,15 @@ class MambaLMHeadModel(nn.Module, GenerationMixin):
         else:
             CausalLMOutput = namedtuple("CausalLMOutput", ["logits"])
             return CausalLMOutput(logits=lm_logits)
+
+    def save_pretrained(
+        self,
+        save_directory: Union[str, os.PathLike],
+        state_dict: Optional[dict] = None,
+    ):
+        if state_dict is None:
+            state_dict = self.state_dict()
+        torch.save(state_dict, os.path.join(save_directory, "pytorch_model.bin"))
 
     @classmethod
     def from_pretrained(cls, pretrained_model_name, device=None, dtype=None, **kwargs):
