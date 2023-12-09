@@ -369,6 +369,15 @@ def load_model(
                 load_in_4bit=cfg.load_in_4bit and cfg.adapter is not None,
                 **model_kwargs,
             )
+        elif model_type == "MixtralForCausalLM":
+            from axolotl.models.mixtral import MixtralForCausalLM
+
+            model = MixtralForCausalLM.from_pretrained(
+                base_model,
+                load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
+                load_in_4bit=cfg.load_in_4bit and cfg.adapter is not None,
+                **model_kwargs,
+            )
         elif model_type == "MambaLMHeadModel":
             # FIXME this is janky at best and hacked together to make it work
             MambaLMHeadModel = fix_mamba_attn_for_loss()  # pylint: disable=invalid-name
