@@ -54,6 +54,7 @@ class TestMistral(unittest.TestCase):
                 "max_steps": 20,
                 "save_steps": 10,
                 "eval_steps": 10,
+                "save_safetensors": False,
             }
         )
         normalize_config(cfg)
