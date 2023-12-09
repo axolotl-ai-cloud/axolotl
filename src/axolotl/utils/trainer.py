@@ -131,8 +131,10 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset, tokenizer):
                     )
 
         # Phi doesn't want the attention_mask feature when training
-        if "CodeGenTokenizer" in tokenizer.__class__.__name__ or (
-            cfg.is_mistral_derived_model and cfg.flash_attention
+        if (
+            "CodeGenTokenizer" in tokenizer.__class__.__name__
+            or (cfg.is_mistral_derived_model and cfg.flash_attention)
+            or cfg.model_config_type == "mamba"
         ):
             train_dataset = train_dataset.remove_columns("attention_mask")
             if eval_dataset:
@@ -153,7 +155,9 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
         if update:
             cfg.total_num_tokens = total_num_tokens
 
-    if not cfg.total_supervised_tokens:
+    skip_estimates = cfg.model_config_type == "mamba"
+
+    if not skip_estimates and not cfg.total_supervised_tokens:
         total_supervised_tokens = (
             train_dataset.data.column("labels")
             .to_pandas()
@@ -167,7 +171,7 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
         if update:
             cfg.total_supervised_tokens = total_supervised_tokens
 
-    if cfg.sample_packing:
+    if not skip_estimates and cfg.sample_packing:
         # we have to drop anything longer then sequence len otherwise
         # flash attention with position ids fails
 

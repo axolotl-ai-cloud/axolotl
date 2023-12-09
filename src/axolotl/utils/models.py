@@ -4,6 +4,7 @@ import math
 import os
 from typing import Optional, Tuple  # noqa: F401
 
+import addict
 import bitsandbytes as bnb
 import torch
 import transformers
@@ -21,6 +22,7 @@ from transformers import (  # noqa: F401
     PreTrainedTokenizerBase,
 )
 
+from axolotl.models.mamba import fix_mamba_attn_for_loss
 from axolotl.prompt_tokenizers import LLAMA_DEFAULT_EOS_TOKEN
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.dict import DictDefault
@@ -52,9 +54,19 @@ def check_model_config(cfg: DictDefault, model_config: AutoConfig):
 def load_model_config(cfg):
     model_config_name = cfg.base_model_config or cfg.base_model
     trust_remote_code = cfg.trust_remote_code is True
-    model_config = AutoConfig.from_pretrained(
-        model_config_name, trust_remote_code=trust_remote_code
-    )
+    try:
+        model_config = AutoConfig.from_pretrained(
+            model_config_name, trust_remote_code=trust_remote_code
+        )
+    except ValueError as err:
+        if "mamba" in model_config_name:
+            return addict.Dict(
+                {
+                    "model_type": "mamba",
+                }
+            )
+        raise err
+
     if cfg.model_config:
         for key, val in cfg.model_config.items():
             setattr(model_config, key, val)
@@ -351,6 +363,20 @@ def load_model(
                 load_in_4bit=cfg.load_in_4bit and cfg.adapter is not None,
                 **model_kwargs,
             )
+        elif model_type == "MambaLMHeadModel":
+            # FIXME this is janky at best and hacked together to make it work
+            MambaLMHeadModel = fix_mamba_attn_for_loss()  # pylint: disable=invalid-name
+
+            model_kwargs["dtype"] = model_kwargs["torch_dtype"]
+            model_kwargs["device"] = torch.cuda.current_device()
+            del model_kwargs["torch_dtype"]
+            del model_kwargs["device_map"]
+            del model_kwargs["max_memory"]
+
+            model = MambaLMHeadModel.from_pretrained(
+                base_model,
+                **model_kwargs,
+            )
         elif model_type and not cfg.trust_remote_code:
             if cfg.gptq:
                 model = AutoModelForCausalLM.from_pretrained(
@@ -410,13 +436,17 @@ def load_model(
         if cfg.resize_token_embeddings_to_32x
         else len(tokenizer)
     )
-    if model.get_input_embeddings().num_embeddings < embeddings_len:
+    if (
+        hasattr(model, "get_input_embeddings")
+        and model.get_input_embeddings().num_embeddings < embeddings_len
+    ):
         model.resize_token_embeddings(embeddings_len)
     else:
         model.tie_weights()
 
     if (
-        hasattr(model.config, "max_position_embeddings")
+        hasattr(model, "config")
+        and hasattr(model.config, "max_position_embeddings")
         and model.config.max_position_embeddings
         and cfg.sequence_len > model.config.max_position_embeddings
     ):
@@ -426,20 +456,22 @@ def load_model(
         model.config.max_position_embeddings = cfg.sequence_len
 
     if (
-        hasattr(model.config, "bos_token_id")
+        hasattr(model, "config")
+        and hasattr(model.config, "bos_token_id")
         and model.config.bos_token_id
         and model.config.bos_token_id != tokenizer.bos_token_id
     ):
         model.config.bos_token_id = tokenizer.bos_token_id
 
     if (
-        hasattr(model.config, "eos_token_id")
+        hasattr(model, "config")
+        and hasattr(model.config, "eos_token_id")
         and model.config.eos_token_id
         and model.config.eos_token_id != tokenizer.eos_token_id
     ):
         model.config.eos_token_id = tokenizer.eos_token_id
 
-    if model.device.type == "cuda":
+    if hasattr(model, "device") and model.device.type == "cuda":
         log_gpu_memory_usage(LOG, "after model load", model.device)
 
     # make sure these are fp32 per Ramesh et al. (2021)
@@ -498,7 +530,8 @@ def load_model(
             requires_grad.append(f"{name}: {param.requires_grad}")
     if len(requires_grad) == 0:
         LOG.warning("there are no parameters that require gradient updates")
-    model.config.use_cache = False
+    if hasattr(model, "config"):
+        model.config.use_cache = False
 
     if cfg.flash_optimum:
         model = BetterTransformer.transform(model)
