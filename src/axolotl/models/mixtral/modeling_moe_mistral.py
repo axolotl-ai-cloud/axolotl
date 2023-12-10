@@ -678,7 +678,7 @@ class MixtralDecoderLayer(nn.Module):
         self.hidden_size = config.hidden_size
         self.self_attn = (
             MistralAttention(config=config, layer_idx=layer_idx)
-            if not getattr(config, "_flash_attn_2_enabled", False)
+            if not getattr(config, "_attn_implementation", "flash_attention_2")
             else MistralFlashAttention2(config, layer_idx=layer_idx)
         )
         self.mlp = MoE(config)
@@ -882,6 +882,7 @@ class MistralModel(MixtralPreTrainedModel):
         self.layers = nn.ModuleList(
             [MixtralDecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
         )
+        self._use_flash_attention_2 = config._attn_implementation == "flash_attention_2"
         self.norm = MistralRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
         self.gradient_checkpointing = False

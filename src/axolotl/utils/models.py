@@ -307,7 +307,7 @@ def load_model(
             or cfg.is_falcon_derived_model
             or cfg.is_mistral_derived_model
         ):
-            model_kwargs["use_flash_attention_2"] = True
+            model_kwargs["attn_implementation"] = "flash_attention_2"
 
     try:
         if cfg.is_llama_derived_model and not cfg.trust_remote_code and not cfg.gptq:
