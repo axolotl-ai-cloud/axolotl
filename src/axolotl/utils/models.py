@@ -375,7 +375,7 @@ def load_model(
         elif model_type == "MixtralForCausalLM":
             from axolotl.models.mixtral import (
                 MixtralForCausalLM,
-                replace_mixtral_mlp_with_swiglu
+                replace_mixtral_mlp_with_swiglu,
             )
 
             model = MixtralForCausalLM.from_pretrained(
@@ -387,7 +387,7 @@ def load_model(
 
             LOG.info("Mixtral MoE: Replacing experts with SwiGLU")
             replace_mixtral_mlp_with_swiglu(model)
-            
+
         elif model_type == "MambaLMHeadModel":
             # FIXME this is janky at best and hacked together to make it work
             MambaLMHeadModel = fix_mamba_attn_for_loss()  # pylint: disable=invalid-name

@@ -46,11 +46,10 @@ from transformers.utils import (
     logging,
     replace_return_docstrings,
 )
+from xformers.ops import SwiGLU
 
 from ...monkeypatch.utils import get_cu_seqlens_from_pos_ids, set_module_name
 from .configuration_moe_mistral import MixtralConfig
-
-from xformers.ops import SwiGLU
 
 if is_flash_attn_2_available():
     from flash_attn import (
