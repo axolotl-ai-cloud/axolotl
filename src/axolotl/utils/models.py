@@ -385,8 +385,9 @@ def load_model(
                 **model_kwargs,
             )
 
-            LOG.info("Mixtral MoE: Replacing experts with SwiGLU")
-            replace_mixtral_mlp_with_swiglu(model)
+            if cfg.flash_attn_fuse_mlp:
+                LOG.info("Mixtral MoE: Replacing experts with SwiGLU")
+                replace_mixtral_mlp_with_swiglu(model)
 
         elif model_type == "MambaLMHeadModel":
             # FIXME this is janky at best and hacked together to make it work
