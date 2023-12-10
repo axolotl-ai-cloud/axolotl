@@ -64,7 +64,9 @@ def train(
     model_ref = None
     if cfg.rl:
         # load the model again for model_ref/baseline
-        model_ref, _ = load_model(cfg, tokenizer, inference=cli_args.inference)
+        model_ref, _ = load_model(
+            cfg, tokenizer, inference=cli_args.inference, reference_model=True
+        )
 
     safe_serialization = cfg.save_safetensors is True
 

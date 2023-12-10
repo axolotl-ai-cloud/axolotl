@@ -200,6 +200,7 @@ def load_model(
     cfg: DictDefault,
     tokenizer: PreTrainedTokenizerBase,
     inference: bool = False,
+    reference_model: bool = False,
 ) -> Tuple[PreTrainedModel, Optional[PeftConfig]]:
     """
     Load a model for a given configuration and tokenizer.
@@ -290,6 +291,14 @@ def load_model(
     model_kwargs["device_map"] = cfg.device_map
     model_kwargs["max_memory"] = cfg.max_memory
     model_kwargs["torch_dtype"] = cfg.torch_dtype
+    if cfg.rl:
+        if torch.cuda.device_count() > 1:
+            if reference_model:
+                model_kwargs["device_map"] = "cuda:" + str(
+                    torch.cuda.current_device() + 1
+                )
+            else:
+                model_kwargs["device_map"] = "cuda:" + str(torch.cuda.current_device())
 
     if is_deepspeed_zero3_enabled():
         del model_kwargs["device_map"]
