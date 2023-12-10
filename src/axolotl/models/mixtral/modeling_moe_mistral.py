@@ -678,7 +678,7 @@ class MixtralDecoderLayer(nn.Module):
         self.hidden_size = config.hidden_size
         self.self_attn = (
             MistralAttention(config=config, layer_idx=layer_idx)
-            if not getattr(config, "_attn_implementation", "flash_attention_2")
+            if config._attn_implementation != "flash_attention_2"
             else MistralFlashAttention2(config, layer_idx=layer_idx)
         )
         self.mlp = MoE(config)
