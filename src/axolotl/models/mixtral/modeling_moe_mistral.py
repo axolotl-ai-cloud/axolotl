@@ -44,8 +44,7 @@ from transformers.utils import (
     replace_return_docstrings,
 )
 from .configuration_moe_mistral import MixtralConfig
-
-
+from ...monkeypatch.utils import get_cu_seqlens_from_pos_ids
 
 if is_flash_attn_2_available():
     from flash_attn import flash_attn_func, flash_attn_varlen_func, flash_attn_varlen_qkvpacked_func
@@ -936,6 +935,8 @@ class MistralModel(MixtralPreTrainedModel):
             past_key_values_length = past_key_values.get_seq_length()
             seq_length_with_past = seq_length_with_past + past_key_values_length
 
+        cu_seqlens = None
+        max_seqlen = None
         if position_ids is None:
             device = input_ids.device if input_ids is not None else inputs_embeds.device
             position_ids = torch.arange(
@@ -944,6 +945,8 @@ class MistralModel(MixtralPreTrainedModel):
             position_ids = position_ids.unsqueeze(0).view(-1, seq_length)
         else:
             position_ids = position_ids.view(-1, seq_length).long()
+            cu_seqlens, max_seqlen = get_cu_seqlens_from_pos_ids(position_ids)
+            cu_seqlens = cu_seqlens.squeeze()
 
         if inputs_embeds is None:
             inputs_embeds = self.embed_tokens(input_ids)
@@ -1001,6 +1004,8 @@ class MistralModel(MixtralPreTrainedModel):
                     past_key_values,
                     output_attentions,
                     use_cache,
+                    cu_seqlens,
+                    max_seqlen,
                 )
             else:
                 layer_outputs = decoder_layer(
@@ -1010,6 +1015,8 @@ class MistralModel(MixtralPreTrainedModel):
                     past_key_value=past_key_values,
                     output_attentions=output_attentions,
                     use_cache=use_cache,
+                    cu_seqlens=cu_seqlens,
+                    max_seqlen=max_seqlen,
                 )
 
             hidden_states = layer_outputs[0]
