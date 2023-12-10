@@ -58,6 +58,7 @@ def load_model_config(cfg):
 
     if model_type == "MixtralForCausalLM":
         from axolotl.models.mixtral.configuration_moe_mistral import MixtralConfig
+
         model_config = MixtralConfig.from_pretrained(model_config_name)
     else:
         try:

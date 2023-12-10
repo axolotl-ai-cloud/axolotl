@@ -17,7 +17,6 @@
 from transformers.configuration_utils import PretrainedConfig
 from transformers.utils import logging
 
-
 logger = logging.get_logger(__name__)
 
 MISTRAL_PRETRAINED_CONFIG_ARCHIVE_MAP = {
@@ -145,6 +144,7 @@ class MixtralConfig(PretrainedConfig):
         self.num_experts = num_experts
         self.num_experts_per_token = num_experts_per_token
 
+        # pylint: disable=duplicate-code
         super().__init__(
             pad_token_id=pad_token_id,
             bos_token_id=bos_token_id,
