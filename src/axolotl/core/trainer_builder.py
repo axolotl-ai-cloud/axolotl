@@ -840,6 +840,10 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
 
 
 class HFDPOTrainerBuilder(TrainerBuilderBase):
+    """
+    Trainer factory class for DPO Trainer
+    """
+
     def get_callbacks(self):
         callbacks = []
         return callbacks
@@ -872,7 +876,6 @@ class HFDPOTrainerBuilder(TrainerBuilderBase):
             dataloader_num_workers=8,
             dataloader_pin_memory=True,
             save_total_limit=self.cfg.save_total_limit or 5,
-            hub_model_id=self.hub_model_id,
         )
         dpo_trainer = DPOTrainer(
             self.model,
@@ -895,6 +898,10 @@ class HFDPOTrainerBuilder(TrainerBuilderBase):
 
 
 class HFPPOTrainerBuilder(TrainerBuilderBase):
+    """
+    HF Factory class for PPO Trainer
+    """
+
     def get_callbacks(self):
         callbacks = []
         return callbacks
