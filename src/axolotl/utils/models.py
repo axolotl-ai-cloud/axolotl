@@ -308,7 +308,8 @@ def load_model(
             or cfg.is_falcon_derived_model
             or cfg.is_mistral_derived_model
         ):
-            model_kwargs["attn_implementation"] = "flash_attention_2"
+            # TODO enable once properly supported in transformers
+            # model_kwargs["attn_implementation"] = "flash_attention_2"
             model_kwargs["use_flash_attention_2"] = True  # legacy, to be deprecated
 
     try:
