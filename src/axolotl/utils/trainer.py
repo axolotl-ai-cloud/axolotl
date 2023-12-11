@@ -276,6 +276,8 @@ def prepare_optim_env(cfg):
         setup_fsdp_envs(cfg)
     elif cfg.deepspeed:
         os.environ["ACCELERATE_USE_DEEPSPEED"] = "true"
+    if cfg.fp8:
+        os.environ["ACCELERATE_MIXED_PRECISION"] = "fp8"
 
 
 def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_steps):
