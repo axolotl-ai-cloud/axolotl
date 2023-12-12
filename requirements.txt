@@ -29,7 +29,7 @@ scipy
 scikit-learn==1.2.2
 pynvml
 art
-fschat==0.2.29
+fschat==0.2.34
 gradio==3.50.2
 tensorboard
 
