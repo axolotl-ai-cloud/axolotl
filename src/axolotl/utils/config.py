@@ -78,9 +78,13 @@ def normalize_config(cfg):
         cfg.torch_dtype = torch.float32
 
     if cfg.saves_per_epoch:
-        cfg.save_steps = 1.0 / (cfg.saves_per_epoch * cfg.num_epochs)
+        save_steps = 1.0 / (cfg.saves_per_epoch * cfg.num_epochs)
+        if save_steps < 1.0:  # prevent saves on every step
+            cfg.save_steps = save_steps
     if cfg.evals_per_epoch:
-        cfg.eval_steps = 1.0 / (cfg.evals_per_epoch * cfg.num_epochs)
+        eval_steps = 1.0 / (cfg.evals_per_epoch * cfg.num_epochs)
+        if eval_steps < 1.0:  # prevent evals on every step
+            cfg.eval_steps = eval_steps
 
     cfg.dataset_processes = cfg.dataset_processes or os.cpu_count()
 
@@ -362,9 +366,21 @@ def validate_config(cfg):
         raise ValueError(
             "save_steps and saves_per_epoch are mutually exclusive and cannot be used together."
         )
+    if cfg.saves_per_epoch and cfg.save_strategy and cfg.save_strategy != "steps":
+        raise ValueError(
+            "save_strategy must be empty or set to `steps` when used with saves_per_epoch."
+        )
     if cfg.evals_per_epoch and cfg.eval_steps:
         raise ValueError(
             "eval_steps and evals_per_epoch are mutually exclusive and cannot be used together."
+        )
+    if (
+        cfg.evals_per_epoch
+        and cfg.evaluation_strategy
+        and cfg.evaluation_strategy != "steps"
+    ):
+        raise ValueError(
+            "evaluation_strategy must be empty or set to `steps` when used with evals_per_epoch."
         )
     if cfg.save_strategy and cfg.save_steps and cfg.save_strategy != "steps":
         raise ValueError(
