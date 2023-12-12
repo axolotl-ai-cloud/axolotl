@@ -58,9 +58,9 @@ flash_attn_fuse_qkv: false
 flash_attn_fuse_mlp: true
 
 warmup_steps: 100
-eval_steps: 0.05
+evals_per_epoch: 4
 eval_table_size:
-save_steps:
+saves_per_epoch: 1
 debug:
 deepspeed: #deepspeed/zero2.json # multi-gpu only
 weight_decay: 0.1
