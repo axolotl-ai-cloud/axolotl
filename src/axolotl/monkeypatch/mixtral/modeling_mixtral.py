@@ -1,7 +1,7 @@
 """
 Mixtral modeling for multipack
 """
-# pylint: disable=missing-module-docstring,unused-argument,protected-access,pointless-string-statement
+# pylint: disable=missing-module-docstring,unused-argument,protected-access,pointless-string-statement,duplicate-code
 import logging
 import warnings
 from typing import List, Optional, Tuple, Union
