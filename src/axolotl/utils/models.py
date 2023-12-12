@@ -308,17 +308,22 @@ def load_model(
             bnb_4bit_quant_type="nf4",
         )
     # sample packing uses custom FA2 patch
-    if cfg.flash_attention and not cfg.sample_packing:
-        if (
-            cfg.is_llama_derived_model
-            or cfg.is_falcon_derived_model
-            or cfg.is_mistral_derived_model
-            or cfg.model_config_type == "mixtral"
-        ):
-            model_kwargs["attn_implementation"] = "flash_attention_2"
-    elif cfg.flash_attention and cfg.sample_packing:
-        if cfg.model_config_type == "mixtral":
-            model_kwargs["attn_implementation"] = "multipack"
+    if cfg.flash_attention:
+        if not cfg.sample_packing:
+            if (
+                cfg.is_llama_derived_model
+                or cfg.is_falcon_derived_model
+                or cfg.is_mistral_derived_model
+                or model_config.model_type == "mixtral"
+            ):
+                model_config._attn_implementation = (  # pylint: disable=protected-access
+                    "flash_attention_2"
+                )
+        else:
+            if model_config.model_type == "mixtral":
+                model_config._attn_implementation = (  # pylint: disable=protected-access
+                    "flash_attention_2"
+                )
 
     try:
         if cfg.is_llama_derived_model and not cfg.trust_remote_code and not cfg.gptq:
