@@ -77,6 +77,11 @@ def normalize_config(cfg):
     else:
         cfg.torch_dtype = torch.float32
 
+    if cfg.saves_per_epoch:
+        cfg.save_steps = 1.0 / (cfg.saves_per_epoch * cfg.num_epochs)
+    if cfg.evals_per_epoch:
+        cfg.eval_steps = 1.0 / (cfg.evals_per_epoch * cfg.num_epochs)
+
     cfg.dataset_processes = cfg.dataset_processes or os.cpu_count()
 
     if not cfg.base_model_config:
@@ -352,6 +357,15 @@ def validate_config(cfg):
                 cfg.datasets[idx].type = cfg.datasets[idx].type.replace(
                     "sharegpt_simple", "sharegpt"
                 )
+
+    if cfg.saves_per_epoch and cfg.save_steps:
+        raise ValueError(
+            "save_steps and saves_per_epoch are mutually exclusive and cannot be used together."
+        )
+    if cfg.evals_per_epoch and cfg.eval_steps:
+        raise ValueError(
+            "eval_steps and evals_per_epoch are mutually exclusive and cannot be used together."
+        )
     if cfg.save_strategy and cfg.save_steps and cfg.save_strategy != "steps":
         raise ValueError(
             "save_strategy and save_steps mismatch. Please set save_strategy to 'steps' or remove save_steps."

@@ -47,10 +47,10 @@ xformers_attention:
 flash_attention:
 
 warmup_steps: 10
-eval_steps:
+evals_per_epoch: 4
 eval_table_size:
 eval_table_max_new_tokens: 128
-save_steps:  0.25
+saves_per_epoch: 1
 debug:
 deepspeed:
 weight_decay: 0.0

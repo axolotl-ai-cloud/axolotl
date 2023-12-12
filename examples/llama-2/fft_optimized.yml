@@ -58,7 +58,7 @@ flash_attn_fuse_qkv: false
 flash_attn_fuse_mlp: true
 
 warmup_steps: 100
-eval_steps: 0.05
+evals_per_epoch: 4
 eval_table_size:
 save_steps:
 debug:
