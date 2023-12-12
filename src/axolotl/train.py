@@ -16,7 +16,6 @@ from transformers.deepspeed import is_deepspeed_zero3_enabled
 
 from axolotl.common.cli import TrainerCliArgs
 from axolotl.logging_config import configure_logging
-from axolotl.monkeypatch import neft_embeddings
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.models import load_model, load_tokenizer
 from axolotl.utils.trainer import setup_trainer
@@ -116,7 +115,6 @@ def train(
     if cfg.group_by_length:
         LOG.info("hang tight... sorting dataset for group_by_length")
 
-    pretrain_hooks(cfg, trainer)
     if cfg.flash_optimum:
         with torch.backends.cuda.sdp_kernel(
             enable_flash=True, enable_math=True, enable_mem_efficient=True
@@ -124,7 +122,6 @@ def train(
             trainer.train(resume_from_checkpoint=resume_from_checkpoint)
     else:
         trainer.train(resume_from_checkpoint=resume_from_checkpoint)
-    post_train_hooks(cfg, trainer)
 
     LOG.info(f"Training Completed!!! Saving pre-trained model to {cfg.output_dir}")
 
@@ -174,23 +171,3 @@ def train(
         trainer.create_model_card(model_name=cfg.output_dir.lstrip("./"))
 
     return model, tokenizer
-
-
-def pretrain_hooks(cfg, trainer):
-    """
-    Run hooks right before kicking off the training
-    :param cfg:
-    :param trainer:
-    :return:
-    """
-    neft_embeddings.pretrain_hook(cfg, trainer)
-
-
-def post_train_hooks(cfg, trainer):
-    """
-    Run hooks right after training completes
-    :param cfg:
-    :param trainer:
-    :return:
-    """
-    neft_embeddings.post_train_hook(cfg, trainer)
