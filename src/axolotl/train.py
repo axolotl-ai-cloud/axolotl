@@ -115,6 +115,7 @@ def train(
     if cfg.group_by_length:
         LOG.info("hang tight... sorting dataset for group_by_length")
 
+    pretrain_hooks(cfg, trainer)
     if cfg.flash_optimum:
         with torch.backends.cuda.sdp_kernel(
             enable_flash=True, enable_math=True, enable_mem_efficient=True
@@ -122,6 +123,7 @@ def train(
             trainer.train(resume_from_checkpoint=resume_from_checkpoint)
     else:
         trainer.train(resume_from_checkpoint=resume_from_checkpoint)
+    post_train_hooks(cfg, trainer)
 
     LOG.info(f"Training Completed!!! Saving pre-trained model to {cfg.output_dir}")
 
@@ -171,3 +173,23 @@ def train(
         trainer.create_model_card(model_name=cfg.output_dir.lstrip("./"))
 
     return model, tokenizer
+
+
+def pretrain_hooks(cfg, trainer):
+    """
+    Run hooks right before kicking off the training
+    :param cfg:
+    :param trainer:
+    :return:
+    """
+    pass
+
+
+def post_train_hooks(cfg, trainer):
+    """
+    Run hooks right after training completes
+    :param cfg:
+    :param trainer:
+    :return:
+    """
+    pass
