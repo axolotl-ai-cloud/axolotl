@@ -2,7 +2,7 @@
 auto-gptq==0.5.1
 packaging
 peft==0.6.0
-transformers @ git+https://github.com/huggingface/transformers.git@df5c5c62ae253055336f5bb0828ca8e3e15ab6bd
+transformers @ git+https://github.com/huggingface/transformers.git@e5079b0b2abcef11ecbdae60ba4a6636c57b725d
 tokenizers==0.15.0
 bitsandbytes>=0.41.1
 accelerate==0.24.1

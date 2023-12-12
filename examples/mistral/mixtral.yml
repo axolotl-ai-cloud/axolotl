@@ -1,5 +1,5 @@
-base_model: DiscoResearch/mixtral-7b-8expert
-model_type: MixtralForCausalLM
+base_model: mistralai/Mixtral-8x7B-v0.1
+model_type: AutoModelForCausalLM
 tokenizer_type: LlamaTokenizer
 trust_remote_code: true
 

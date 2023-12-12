@@ -54,25 +54,19 @@ def check_model_config(cfg: DictDefault, model_config: AutoConfig):
 def load_model_config(cfg):
     model_config_name = cfg.base_model_config or cfg.base_model
     trust_remote_code = cfg.trust_remote_code is True
-    model_type = cfg.model_type
 
-    if model_type == "MixtralForCausalLM":
-        from axolotl.models.mixtral.configuration_moe_mistral import MixtralConfig
-
-        model_config = MixtralConfig.from_pretrained(model_config_name)
-    else:
-        try:
-            model_config = AutoConfig.from_pretrained(
-                model_config_name, trust_remote_code=trust_remote_code
+    try:
+        model_config = AutoConfig.from_pretrained(
+            model_config_name, trust_remote_code=trust_remote_code
+        )
+    except ValueError as err:
+        if "mamba" in model_config_name:
+            return addict.Dict(
+                {
+                    "model_type": "mamba",
+                }
             )
-        except ValueError as err:
-            if "mamba" in model_config_name:
-                return addict.Dict(
-                    {
-                        "model_type": "mamba",
-                    }
-                )
-            raise err
+        raise err
 
     if cfg.model_config:
         for key, val in cfg.model_config.items():
@@ -255,6 +249,18 @@ def load_model(
         LOG.info("patching with flash attention")
         replace_mistral_attn_with_flash_attn(packed=cfg.sample_packing)
 
+    if (
+        cfg.model_config_type == "mixtral"
+        and cfg.flash_attention
+        and cfg.sample_packing
+    ):
+        from axolotl.monkeypatch.mixtral import (
+            replace_mixtral_attn_with_multipack_flash_attn,
+        )
+
+        LOG.info("patching with flash attention")
+        replace_mixtral_attn_with_multipack_flash_attn()
+
     if cfg.is_llama_derived_model and cfg.xpos_rope:
         from axolotl.monkeypatch.xpos_rope_llama_monkey_patch import (
             replace_llama_rope_with_xpos_rope,
@@ -302,15 +308,22 @@ def load_model(
             bnb_4bit_quant_type="nf4",
         )
     # sample packing uses custom FA2 patch
-    if cfg.flash_attention and not cfg.sample_packing:
-        if (
-            cfg.is_llama_derived_model
-            or cfg.is_falcon_derived_model
-            or cfg.is_mistral_derived_model
-        ):
-            # TODO enable once properly supported in transformers
-            # model_kwargs["attn_implementation"] = "flash_attention_2"
-            model_kwargs["use_flash_attention_2"] = True  # legacy, to be deprecated
+    if cfg.flash_attention:
+        if not cfg.sample_packing:
+            if (
+                cfg.is_llama_derived_model
+                or cfg.is_falcon_derived_model
+                or cfg.is_mistral_derived_model
+                or model_config.model_type == "mixtral"
+            ):
+                model_config._attn_implementation = (  # pylint: disable=protected-access
+                    "flash_attention_2"
+                )
+        else:
+            if model_config.model_type == "mixtral":
+                model_config._attn_implementation = (  # pylint: disable=protected-access
+                    "flash_attention_2"
+                )
 
     try:
         if cfg.is_llama_derived_model and not cfg.trust_remote_code and not cfg.gptq:
@@ -367,15 +380,6 @@ def load_model(
             from axolotl.models.phi import PhiForCausalLM
 
             model = PhiForCausalLM.from_pretrained(
-                base_model,
-                load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
-                load_in_4bit=cfg.load_in_4bit and cfg.adapter is not None,
-                **model_kwargs,
-            )
-        elif model_type == "MixtralForCausalLM":
-            from axolotl.models.mixtral import MixtralForCausalLM
-
-            model = MixtralForCausalLM.from_pretrained(
                 base_model,
                 load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
                 load_in_4bit=cfg.load_in_4bit and cfg.adapter is not None,
