@@ -319,6 +319,7 @@ def load_model(
                 model_config._attn_implementation = (  # pylint: disable=protected-access
                     "flash_attention_2"
                 )
+                model_kwargs["use_flash_attention_2"] = True
         else:
             if model_config.model_type == "mixtral":
                 model_config._attn_implementation = (  # pylint: disable=protected-access
