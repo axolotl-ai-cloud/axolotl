@@ -175,21 +175,19 @@ def train(
     return model, tokenizer
 
 
-def pretrain_hooks(cfg, trainer):
+def pretrain_hooks(_cfg, _trainer):
     """
     Run hooks right before kicking off the training
     :param cfg:
     :param trainer:
     :return:
     """
-    pass
 
 
-def post_train_hooks(cfg, trainer):
+def post_train_hooks(_cfg, _trainer):
     """
     Run hooks right after training completes
     :param cfg:
     :param trainer:
     :return:
     """
-    pass

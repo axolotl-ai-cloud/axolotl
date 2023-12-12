@@ -411,12 +411,11 @@ def validate_config(cfg):
             cfg.neftune_noise_alpha = cfg.noisy_embedding_alpha
         else:
             # User is providing both; bail and have them sort out their settings
-            raise ValueError("noisy_embedding_alpha is deprecated, use neftune_noise_alpha; both are set, please remove the deprecated noisy_embedding_alpha setting")
+            raise ValueError(
+                "noisy_embedding_alpha is deprecated, use neftune_noise_alpha; both are set, please remove the deprecated noisy_embedding_alpha setting"
+            )
 
-    if (
-        cfg.neftune_noise_alpha is not None
-        and cfg.neftune_noise_alpha <= 0.0
-    ):
+    if cfg.neftune_noise_alpha is not None and cfg.neftune_noise_alpha <= 0.0:
         raise ValueError("neftune_noise_alpha must be > 0.0")
 
     # TODO
