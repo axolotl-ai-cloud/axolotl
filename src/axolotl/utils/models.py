@@ -191,6 +191,7 @@ def load_model(
 
     # TODO refactor as a kwarg
     load_in_8bit = cfg.load_in_8bit
+    load_in_4bit = cfg.load_in_4bit
 
     if hasattr(model_config, "model_type") and model_config.model_type == "btlm":
         if cfg.flash_attention:
@@ -535,7 +536,7 @@ def load_model(
 
     model, lora_config = load_adapter(model, cfg, cfg.adapter)
 
-    if cfg.ddp and not load_in_8bit:
+    if cfg.ddp and not load_in_8bit and not load_in_4bit:
         model.to(f"cuda:{cfg.local_rank}")
 
     if torch.cuda.device_count() > 1 and int(os.getenv("WORLD_SIZE", "1")) == 1:
