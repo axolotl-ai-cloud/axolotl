@@ -41,6 +41,16 @@ def choose_device(cfg):
         cfg.device_map = None
 
 
+def add_defaults(cfg):
+    # setup sane defaults if left unspecified
+    if cfg.dataloader_num_workers is None:
+        cfg.dataloader_num_workers = int(os.getenv("WORLD_SIZE", "1"))
+    if cfg.dataloader_prefetch_factor is None:
+        cfg.dataloader_prefetch_factor = cfg.batch_size * 2
+    if cfg.dataloader_pin_memory is None:
+        cfg.dataloader_pin_memory = True
+
+
 def normalize_config(cfg):
     # setup some derived config / hyperparams
     cfg.gradient_accumulation_steps = cfg.gradient_accumulation_steps or (
