@@ -1,7 +1,12 @@
 """
 module to freeze/unfreeze parameters by name
 """
+import logging
 import re
+
+from axolotl.utils.distributed import is_main_process
+
+LOG = logging.getLogger("axolotl.utils.freeze")
 
 
 def freeze_parameters_except(model, regex_patterns):
@@ -28,4 +33,6 @@ def freeze_parameters_except(model, regex_patterns):
     # Unfreeze layers that match the regex patterns
     for name, param in model.named_parameters():
         if any(pattern.match(name) for pattern in compiled_patterns):
+            if is_main_process():
+                LOG.debug(f"unfreezing {name}")
             param.requires_grad = True
