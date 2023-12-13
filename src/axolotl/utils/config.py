@@ -434,6 +434,20 @@ def validate_config(cfg):
             "wandb_run_id sets the ID of the run. If you would like to set the name, please use wandb_name instead."
         )
 
+    if cfg.noisy_embedding_alpha is not None:
+        # Deprecated, use neftune_noise_alpha
+        LOG.warning("noisy_embedding_alpha is deprecated, use neftune_noise_alpha")
+        if cfg.neftune_noise_alpha is None:
+            cfg.neftune_noise_alpha = cfg.noisy_embedding_alpha
+        else:
+            # User is providing both; bail and have them sort out their settings
+            raise ValueError(
+                "noisy_embedding_alpha is deprecated, use neftune_noise_alpha; both are set, please remove the deprecated noisy_embedding_alpha setting"
+            )
+
+    if cfg.neftune_noise_alpha is not None and cfg.neftune_noise_alpha <= 0.0:
+        raise ValueError("neftune_noise_alpha must be > 0.0")
+
     # TODO
     # MPT 7b
     # https://github.com/facebookresearch/bitsandbytes/issues/25
