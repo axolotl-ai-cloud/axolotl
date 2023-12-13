@@ -332,11 +332,9 @@ def load_rl_datasets(
     cfg: DictDefault,
     cli_args: TrainerCliArgs,
 ) -> TrainDatasetMeta:
-    train_datasets = []
+    train_datasets: List[Any] = []
     for i, ds_cfg in enumerate(cfg.datasets):
-        train_datasets.insert(i, load_dataset(
-            ds_cfg["path"], split=ds_cfg["split"]
-        ))
+        train_datasets.insert(i, load_dataset(ds_cfg["path"], split=ds_cfg["split"]))
     # eval_dataset = load_dataset(
     #     cfg.test_datasets[0]["path"], split=cfg.test_datasets[0]["split"]
     # )
@@ -399,8 +397,8 @@ def load_rl_datasets(
         return sample
 
     for i, ds in enumerate(train_datasets):
-        type = cfg.datasets[i]["type"]
-        fn = locals()[type]
+        _type = cfg.datasets[i]["type"]
+        fn = locals()[_type]
         train_datasets[i] = ds.map(fn)
     train_dataset = concatenate_datasets(train_datasets)
 
