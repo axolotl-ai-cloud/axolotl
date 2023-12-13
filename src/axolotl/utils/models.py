@@ -21,6 +21,7 @@ from transformers import (  # noqa: F401
     PreTrainedModel,
     PreTrainedTokenizerBase,
 )
+from transformers.deepspeed import is_deepspeed_zero3_enabled
 
 from axolotl.models.mamba import fix_mamba_attn_for_loss
 from axolotl.prompt_tokenizers import LLAMA_DEFAULT_EOS_TOKEN
@@ -284,6 +285,9 @@ def load_model(
     model_kwargs["device_map"] = cfg.device_map
     model_kwargs["max_memory"] = cfg.max_memory
     model_kwargs["torch_dtype"] = cfg.torch_dtype
+
+    if is_deepspeed_zero3_enabled():
+        del model_kwargs["device_map"]
 
     if cfg.model_revision:
         model_kwargs["revision"] = cfg.model_revision
