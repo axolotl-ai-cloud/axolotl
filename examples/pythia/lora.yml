@@ -33,5 +33,5 @@ early_stopping_patience:
 resume_from_checkpoint:
 local_rank:
 weight_decay: 0.1
-eval_steps: 0.05
+evals_per_epoch: 4
 logging_steps: 1

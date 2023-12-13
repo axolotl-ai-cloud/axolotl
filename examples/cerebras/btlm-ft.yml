@@ -72,8 +72,8 @@ gptq_groupsize:
 gptq_model_v1:
 
 warmup_steps: 32
-eval_steps:
-save_steps:
+evals_per_epoch: 4
+saves_per_epoch: 1
 save_total_limit:
 
 debug:
