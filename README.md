@@ -477,6 +477,7 @@ See [examples](examples) for quick start. It is recommended to duplicate and mod
 <summary>All yaml options (click me)</summary>
 
 ```yaml
+```yaml
 # This is the huggingface model that contains *.pt, *.safetensors, or *.bin files
 # This can also be a relative path to a model on disk
 base_model: ./llama-7b-hf
@@ -698,9 +699,11 @@ warmup_ratio: 0.05  # cannot use with warmup_steps
 learning_rate: 0.00003
 lr_quadratic_warmup:
 logging_steps:
+eval_steps: # Leave empty to eval at each epoch, integers for every N steps. decimal for fraction of total steps
+evals_per_epoch: # number of times per epoch to run evals, mutually exclusive with eval_steps
 save_strategy: # Set to `no` to skip checkpoint saves
 save_steps: # Leave empty to save at each epoch
-eval_steps: # Leave empty to eval at each epoch, integers for every N steps. decimal for fraction of total steps
+saves_per_epoch: # number of times per epoch to save a checkpoint, mutually exclusive with save_steps
 save_total_limit: # Checkpoints saved at a time
 # Maximum number of iterations to train for. It precedes num_epochs which means that
 # if both are set, num_epochs will not be guaranteed.
