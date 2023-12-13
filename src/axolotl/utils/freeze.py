@@ -26,7 +26,6 @@ def freeze_parameters_except(model, regex_patterns):
         param.requires_grad = False
 
     # Unfreeze layers that match the regex patterns
-    for name, child in model.named_children():
+    for name, param in model.named_parameters():
         if any(pattern.match(name) for pattern in compiled_patterns):
-            for param in child.parameters():
-                param.requires_grad = True
+            param.requires_grad = True
