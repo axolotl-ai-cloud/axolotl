@@ -247,11 +247,11 @@ Have dataset(s) in one of the following format (JSONL recommended):
   ```json
   {"instruction": "...", "input": "...", "output": "..."}
   ```
-- `sharegpt`: conversations where `from` is `human`/`gpt`. (optional: `system` to override default system prompt).
+- `sharegpt`: conversations where `from` is `human`/`gpt`. (optional: `system` to override default system prompt)
   ```json
   {"conversations": [{"from": "...", "value": "..."}]}
   ```
-- `llama-2`: the json is the same format as `sharegpt` above, with the following config (see the [config section](#config) for more details).
+- `llama-2`: the json is the same format as `sharegpt` above, with the following config (see the [config section](#config) for more details)
     ```yml
     datasets:
       - path: <your-path>
