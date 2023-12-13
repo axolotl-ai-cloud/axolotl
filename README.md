@@ -1043,6 +1043,10 @@ Please reduce any below
   - `gradient_accumulation_steps`
   - `sequence_len`
 
+If it does not help, try running without deepspeed and without accelerate (replace "accelerate launch" with "python") in the command.
+
+Using adamw_bnb_8bit might also save you some memory.
+
 > `failed (exitcode: -9)`
 
 Usually means your system has run out of system memory.
