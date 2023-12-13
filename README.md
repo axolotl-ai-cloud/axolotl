@@ -477,7 +477,6 @@ See [examples](examples) for quick start. It is recommended to duplicate and mod
 <summary>All yaml options (click me)</summary>
 
 ```yaml
-```yaml
 # This is the huggingface model that contains *.pt, *.safetensors, or *.bin files
 # This can also be a relative path to a model on disk
 base_model: ./llama-7b-hf
