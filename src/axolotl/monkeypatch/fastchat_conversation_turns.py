@@ -88,7 +88,7 @@ def get_turns(  # pylint: disable=too-many-return-statements
             yield "", system_prompt
         else:
             yield "", "[INST] "
-        for i, (role, message) in enumerate(self.messages[1:]):
+        for i, (role, message) in enumerate(self.messages):
             if message:
                 yield role + " ", message + seps[i % 2]
             else:
