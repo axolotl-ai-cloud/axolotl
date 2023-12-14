@@ -115,7 +115,7 @@ class TestPromptTokenizationStrategies(unittest.TestCase):
             )
 
     def test_sharegpt_llama_missing_turns(self):
-        "Make sure there are no missing turns when ussing sharegpt/llama-2"
+        "Make sure there are no missing turns with the sharegpt/llama-2 format."
 
         conversation = {
             "conversations": [
