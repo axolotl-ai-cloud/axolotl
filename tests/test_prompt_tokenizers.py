@@ -134,10 +134,12 @@ class TestPromptTokenizationStrategies(unittest.TestCase):
             2048,
         )
 
-        non_system_prompt = strat.tokenizer.decode(strat.tokenize_prompt(conversation)['input_ids'])
-        for c in conversation['conversations']:
-            if c['from'] != 'system':
-                assert(c['value'] in non_system_prompt)
+        non_system_prompt = strat.tokenizer.decode(
+            strat.tokenize_prompt(conversation)["input_ids"]
+        )
+        for msg in conversation["conversations"]:
+            if msg["from"] != "system":
+                assert msg["value"] in non_system_prompt
 
     def test_sharegpt_changes_roles(self):
         conversation = {
