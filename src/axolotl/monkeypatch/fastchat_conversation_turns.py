@@ -86,8 +86,10 @@ def get_turns(  # pylint: disable=too-many-return-statements
         if self.system_message:
             if self.messages:
                 # For llama, the system message is incorporated into the first human instruction
-                system_prompt += self.messages[0][1]
-                self.messages.pop(0)
+                first_role, first_msg = self.messages[0]
+                if first_role == self.roles[0]:
+                    system_prompt += first_msg
+                    self.messages.pop(0)
             yield "", system_prompt
         for i, (role, message) in enumerate(self.messages):
             if message:
