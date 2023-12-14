@@ -114,6 +114,31 @@ class TestPromptTokenizationStrategies(unittest.TestCase):
                 in self._caplog.records[0].message
             )
 
+    def test_sharegpt_llama_missing_turns(self):
+        "Make sure there are no missing turns when ussing sharegpt/llama-2"
+
+        conversation = {
+            "conversations": [
+                {"from": "system", "value": "lorem"},
+                {"from": "gpt", "value": "ipsum"},
+                {"from": "human", "value": "abc"},
+                {"from": "human", "value": "123"},
+                {"from": "gpt", "value": "sit"},
+            ]
+        }
+        prompter = ShareGPTPrompterV2(conversation="llama-2")
+        strat = ShareGPTPromptTokenizingStrategy(
+            prompter,
+            self.tokenizer,
+            False,
+            2048,
+        )
+
+        non_system_prompt = strat.tokenizer.decode(strat.tokenize_prompt(conversation)['input_ids'])
+        for c in conversation['conversations']:
+            if c['from'] != 'system':
+                assert(c['value'] in non_system_prompt)
+
     def test_sharegpt_changes_roles(self):
         conversation = {
             "roles": ["USER", "CHARACTER"],
