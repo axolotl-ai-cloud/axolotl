@@ -85,15 +85,17 @@ def get_turns(  # pylint: disable=too-many-return-statements
     if self.sep_style == SeparatorStyle.LLAMA2:
         seps = [self.sep, self.sep2]
         if self.system_message:
+            if (
+                self.messages
+            ):  # For llama, the system message is incorporated into the first human instruction
+                system_prompt += self.messages[0][1]
+                self.messages.pop(0)
             yield "", system_prompt
         else:
             yield "", "[INST] "
         for i, (role, message) in enumerate(self.messages):
             if message:
-                if i == 0:
-                    yield "", message + " "
-                else:
-                    yield role + " ", message + seps[i % 2]
+                yield role + " ", message + seps[i % 2]
             else:
                 yield role, ""
         return
