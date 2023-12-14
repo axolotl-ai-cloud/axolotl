@@ -22,8 +22,8 @@ LOG = logging.getLogger("axolotl.cli.train")
 
 def do_cli(config: Path = Path("examples/"), **kwargs):
     # pylint: disable=duplicate-code
-    print_axolotl_text_art()
     parsed_cfg = load_cfg(config, **kwargs)
+    print_axolotl_text_art()
     check_accelerate_default_config()
     check_user_token()
     parser = transformers.HfArgumentParser((TrainerCliArgs))

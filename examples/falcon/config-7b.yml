@@ -26,7 +26,7 @@ lora_fan_in_fan_out:
 wandb_project:
 wandb_entity:
 wandb_watch:
-wandb_run_id:
+wandb_name:
 wandb_log_model:
 output_dir: ./falcon-7b
 batch_size: 2
@@ -51,8 +51,8 @@ flash_attention:
 gptq_groupsize:
 gptq_model_v1:
 warmup_steps: 40
-eval_steps: 5
-save_steps: 43
+evals_per_epoch: 4
+saves_per_epoch: 1
 debug:
 deepspeed:
 weight_decay: 0.0

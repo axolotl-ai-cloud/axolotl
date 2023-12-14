@@ -27,7 +27,7 @@ def choose_device(cfg):
 
     cfg.device = get_device()
     if cfg.world_size == 1:
-        cfg.device_map = "auto"
+        cfg.device_map = cfg.device_map or "auto"
     else:
         if cfg.device.startswith("cuda"):
             cfg.device_map = {"": torch.cuda.current_device()}
@@ -76,6 +76,15 @@ def normalize_config(cfg):
         cfg.torch_dtype = torch.float16
     else:
         cfg.torch_dtype = torch.float32
+
+    if cfg.saves_per_epoch:
+        save_steps = 1.0 / (cfg.saves_per_epoch * cfg.num_epochs)
+        if save_steps < 1.0:  # prevent saves on every step
+            cfg.save_steps = save_steps
+    if cfg.evals_per_epoch:
+        eval_steps = 1.0 / (cfg.evals_per_epoch * cfg.num_epochs)
+        if eval_steps < 1.0:  # prevent evals on every step
+            cfg.eval_steps = eval_steps
 
     cfg.dataset_processes = cfg.dataset_processes or os.cpu_count()
 
@@ -352,6 +361,27 @@ def validate_config(cfg):
                 cfg.datasets[idx].type = cfg.datasets[idx].type.replace(
                     "sharegpt_simple", "sharegpt"
                 )
+
+    if cfg.saves_per_epoch and cfg.save_steps:
+        raise ValueError(
+            "save_steps and saves_per_epoch are mutually exclusive and cannot be used together."
+        )
+    if cfg.saves_per_epoch and cfg.save_strategy and cfg.save_strategy != "steps":
+        raise ValueError(
+            "save_strategy must be empty or set to `steps` when used with saves_per_epoch."
+        )
+    if cfg.evals_per_epoch and cfg.eval_steps:
+        raise ValueError(
+            "eval_steps and evals_per_epoch are mutually exclusive and cannot be used together."
+        )
+    if (
+        cfg.evals_per_epoch
+        and cfg.evaluation_strategy
+        and cfg.evaluation_strategy != "steps"
+    ):
+        raise ValueError(
+            "evaluation_strategy must be empty or set to `steps` when used with evals_per_epoch."
+        )
     if cfg.save_strategy and cfg.save_steps and cfg.save_strategy != "steps":
         raise ValueError(
             "save_strategy and save_steps mismatch. Please set save_strategy to 'steps' or remove save_steps."
@@ -396,6 +426,27 @@ def validate_config(cfg):
         LOG.warning(
             "Gradient checkpointing is broken for Qwen models for transformers>=4.35.0, except main branch."
         )
+
+    if cfg.wandb_run_id and not cfg.wandb_name:
+        cfg.wandb_name = cfg.wandb_run_id
+
+        LOG.warning(
+            "wandb_run_id sets the ID of the run. If you would like to set the name, please use wandb_name instead."
+        )
+
+    if cfg.noisy_embedding_alpha is not None:
+        # Deprecated, use neftune_noise_alpha
+        LOG.warning("noisy_embedding_alpha is deprecated, use neftune_noise_alpha")
+        if cfg.neftune_noise_alpha is None:
+            cfg.neftune_noise_alpha = cfg.noisy_embedding_alpha
+        else:
+            # User is providing both; bail and have them sort out their settings
+            raise ValueError(
+                "noisy_embedding_alpha is deprecated, use neftune_noise_alpha; both are set, please remove the deprecated noisy_embedding_alpha setting"
+            )
+
+    if cfg.neftune_noise_alpha is not None and cfg.neftune_noise_alpha <= 0.0:
+        raise ValueError("neftune_noise_alpha must be > 0.0")
 
     # TODO
     # MPT 7b

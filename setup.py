@@ -46,10 +46,13 @@ setup(
     dependency_links=dependency_links,
     extras_require={
         "flash-attn": [
-            "flash-attn>=2.3.0",
+            "flash-attn==2.3.3",
         ],
         "deepspeed": [
             "deepspeed",
+        ],
+        "mamba-ssm": [
+            "mamba-ssm==1.0.1",
         ],
     },
 )

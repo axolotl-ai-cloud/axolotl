@@ -124,6 +124,36 @@ class GPUStatsCallback(
         return control
 
 
+class LossWatchDogCallback(TrainerCallback):
+    """Callback to track loss and stop training if loss is too high"""
+
+    def __init__(self, cfg):
+        self.cfg = cfg
+        self.logged = False
+        self.violations = 0
+        self.threshold = cfg.loss_watchdog_threshold
+        self.patience = cfg.loss_watchdog_patience or 3
+
+    def on_step_end(
+        self,
+        _args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **_kwargs,
+    ):
+        if len(state.log_history) > 0 and "loss" in state.log_history[-1]:
+            if state.log_history[-1]["loss"] > self.threshold:
+                self.violations += 1
+                if self.violations >= self.patience:
+                    LOG.warning(
+                        "Loss is too high, stopping training (loss_watchdog_threshold)"
+                    )
+                    control.should_training_stop = True
+            else:
+                self.violations = 0
+        return control
+
+
 def bench_eval_callback_factory(trainer, tokenizer):
     accuracy = evaluate.load("accuracy")
     abcd_idx = [

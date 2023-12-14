@@ -4,6 +4,7 @@ import math
 import os
 from typing import Optional, Tuple  # noqa: F401
 
+import addict
 import bitsandbytes as bnb
 import torch
 import transformers
@@ -20,7 +21,9 @@ from transformers import (  # noqa: F401
     PreTrainedModel,
     PreTrainedTokenizerBase,
 )
+from transformers.deepspeed import is_deepspeed_zero3_enabled
 
+from axolotl.models.mamba import fix_mamba_attn_for_loss
 from axolotl.prompt_tokenizers import LLAMA_DEFAULT_EOS_TOKEN
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.dict import DictDefault
@@ -28,15 +31,49 @@ from axolotl.utils.dict import DictDefault
 LOG = logging.getLogger("axolotl")
 
 
+def check_model_config(cfg: DictDefault, model_config: AutoConfig):
+    quant_config_exists = hasattr(model_config, "quantization_config")
+    quant_config_method_is_gptq = (
+        quant_config_exists
+        and "quant_method" in model_config.quantization_config
+        and model_config.quantization_config["quant_method"] == "gptq"
+    )
+
+    if cfg.gptq and not quant_config_method_is_gptq:
+        raise ValueError(
+            "model_config.quantization_config is not set or quant_method is not set to gptq. "
+            "Please make sure to point to a GPTQ model."
+        )
+
+    if not cfg.gptq and quant_config_exists:
+        raise ValueError(
+            "model_config.quantization_config is set but `gptq` flag is not. "
+            "Please use the `gptq` flag to train quantized model or point to a non-quantized model."
+        )
+
+
 def load_model_config(cfg):
     model_config_name = cfg.base_model_config or cfg.base_model
     trust_remote_code = cfg.trust_remote_code is True
-    model_config = AutoConfig.from_pretrained(
-        model_config_name, trust_remote_code=trust_remote_code
-    )
+
+    try:
+        model_config = AutoConfig.from_pretrained(
+            model_config_name, trust_remote_code=trust_remote_code
+        )
+    except ValueError as err:
+        if "mamba" in model_config_name:
+            return addict.Dict(
+                {
+                    "model_type": "mamba",
+                }
+            )
+        raise err
+
     if cfg.model_config:
         for key, val in cfg.model_config.items():
             setattr(model_config, key, val)
+
+    check_model_config(cfg, model_config)
 
     return model_config
 
@@ -69,6 +106,7 @@ def load_tokenizer(cfg):
             "LlamaTokenizer",
             "LlamaTokenizerFast",
             "CodeLlamaTokenizer",
+            "CodeLlamaTokenizerFast",
         ]
         and hasattr(tokenizer, "pad_token")
         and not tokenizer.pad_token
@@ -101,6 +139,23 @@ def load_tokenizer(cfg):
             tokenizer.add_special_tokens(
                 {k: AddedToken(val, rstrip=False, lstrip=False, normalized=False)}
             )
+
+        # If we add bos_token and eos_token, we need to update the post processor to
+        # handle them correctly.
+        # https://github.com/huggingface/transformers/pull/24132
+        bos_or_eos_in_special_tokens = (
+            "bos_token" in cfg.special_tokens and "eos_token" in cfg.special_tokens
+        )
+        if (
+            tokenizer.__class__.__name__
+            in (
+                "LlamaTokenizerFast",
+                "CodeLlamaTokenizerFast",
+            )
+            and bos_or_eos_in_special_tokens
+        ):
+            tokenizer.update_post_processor()
+
     if cfg.tokens:
         tokenizer.add_tokens(
             [
@@ -195,6 +250,18 @@ def load_model(
         LOG.info("patching with flash attention")
         replace_mistral_attn_with_flash_attn(packed=cfg.sample_packing)
 
+    if (
+        cfg.model_config_type == "mixtral"
+        and cfg.flash_attention
+        and cfg.sample_packing
+    ):
+        from axolotl.monkeypatch.mixtral import (
+            replace_mixtral_attn_with_multipack_flash_attn,
+        )
+
+        LOG.info("patching with flash attention")
+        replace_mixtral_attn_with_multipack_flash_attn()
+
     if cfg.is_llama_derived_model and cfg.xpos_rope:
         from axolotl.monkeypatch.xpos_rope_llama_monkey_patch import (
             replace_llama_rope_with_xpos_rope,
@@ -216,7 +283,11 @@ def load_model(
     model_kwargs = {}
 
     model_kwargs["device_map"] = cfg.device_map
+    model_kwargs["max_memory"] = cfg.max_memory
     model_kwargs["torch_dtype"] = cfg.torch_dtype
+
+    if is_deepspeed_zero3_enabled():
+        del model_kwargs["device_map"]
 
     if cfg.model_revision:
         model_kwargs["revision"] = cfg.model_revision
@@ -241,13 +312,26 @@ def load_model(
             bnb_4bit_quant_type="nf4",
         )
     # sample packing uses custom FA2 patch
-    if cfg.flash_attention and not cfg.sample_packing:
-        if (
-            cfg.is_llama_derived_model
-            or cfg.is_falcon_derived_model
-            or cfg.is_mistral_derived_model
-        ):
-            model_kwargs["use_flash_attention_2"] = True
+    if cfg.flash_attention:
+        if not cfg.sample_packing:
+            if (
+                cfg.is_llama_derived_model
+                or cfg.is_falcon_derived_model
+                or cfg.is_mistral_derived_model
+                or model_config.model_type == "mixtral"
+            ):
+                model_config._attn_implementation = (  # pylint: disable=protected-access
+                    "flash_attention_2"
+                )
+        else:
+            if model_config.model_type == "mixtral":
+                model_config._attn_implementation = (  # pylint: disable=protected-access
+                    "flash_attention_2"
+                )
+            else:
+                model_config._attn_implementation = (  # pylint: disable=protected-access
+                    "eager"
+                )
 
     try:
         if cfg.is_llama_derived_model and not cfg.trust_remote_code and not cfg.gptq:
@@ -309,6 +393,20 @@ def load_model(
                 load_in_4bit=cfg.load_in_4bit and cfg.adapter is not None,
                 **model_kwargs,
             )
+        elif model_type == "MambaLMHeadModel":
+            # FIXME this is janky at best and hacked together to make it work
+            MambaLMHeadModel = fix_mamba_attn_for_loss()  # pylint: disable=invalid-name
+
+            model_kwargs["dtype"] = model_kwargs["torch_dtype"]
+            model_kwargs["device"] = torch.cuda.current_device()
+            del model_kwargs["torch_dtype"]
+            del model_kwargs["device_map"]
+            del model_kwargs["max_memory"]
+
+            model = MambaLMHeadModel.from_pretrained(
+                base_model,
+                **model_kwargs,
+            )
         elif model_type and not cfg.trust_remote_code:
             if cfg.gptq:
                 model = AutoModelForCausalLM.from_pretrained(
@@ -368,13 +466,17 @@ def load_model(
         if cfg.resize_token_embeddings_to_32x
         else len(tokenizer)
     )
-    if model.get_input_embeddings().num_embeddings < embeddings_len:
+    if (
+        hasattr(model, "get_input_embeddings")
+        and model.get_input_embeddings().num_embeddings < embeddings_len
+    ):
         model.resize_token_embeddings(embeddings_len)
     else:
         model.tie_weights()
 
     if (
-        hasattr(model.config, "max_position_embeddings")
+        hasattr(model, "config")
+        and hasattr(model.config, "max_position_embeddings")
         and model.config.max_position_embeddings
         and cfg.sequence_len > model.config.max_position_embeddings
     ):
@@ -384,20 +486,22 @@ def load_model(
         model.config.max_position_embeddings = cfg.sequence_len
 
     if (
-        hasattr(model.config, "bos_token_id")
+        hasattr(model, "config")
+        and hasattr(model.config, "bos_token_id")
         and model.config.bos_token_id
         and model.config.bos_token_id != tokenizer.bos_token_id
     ):
         model.config.bos_token_id = tokenizer.bos_token_id
 
     if (
-        hasattr(model.config, "eos_token_id")
+        hasattr(model, "config")
+        and hasattr(model.config, "eos_token_id")
         and model.config.eos_token_id
         and model.config.eos_token_id != tokenizer.eos_token_id
     ):
         model.config.eos_token_id = tokenizer.eos_token_id
 
-    if model.device.type == "cuda":
+    if hasattr(model, "device") and model.device.type == "cuda":
         log_gpu_memory_usage(LOG, "after model load", model.device)
 
     # make sure these are fp32 per Ramesh et al. (2021)
@@ -456,7 +560,8 @@ def load_model(
             requires_grad.append(f"{name}: {param.requires_grad}")
     if len(requires_grad) == 0:
         LOG.warning("there are no parameters that require gradient updates")
-    model.config.use_cache = False
+    if hasattr(model, "config"):
+        model.config.use_cache = False
 
     if cfg.flash_optimum:
         model = BetterTransformer.transform(model)

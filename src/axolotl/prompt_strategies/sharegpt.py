@@ -13,7 +13,7 @@ register_conv_template(
         system_message="You are a helpful assistant.",
         roles=["<|im_start|>user", "<|im_start|>assistant"],
         sep_style=SeparatorStyle.CHATML,
-        sep="<|im_end|>\n",
+        sep="<|im_end|>",
     )
 )
 

@@ -16,8 +16,8 @@ from transformers.deepspeed import is_deepspeed_zero3_enabled
 
 from axolotl.common.cli import TrainerCliArgs
 from axolotl.logging_config import configure_logging
-from axolotl.monkeypatch import neft_embeddings
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.freeze import freeze_parameters_except
 from axolotl.utils.models import load_model, load_tokenizer
 from axolotl.utils.trainer import setup_trainer
 
@@ -78,11 +78,15 @@ def train(
             )
     resume_from_checkpoint = cfg.resume_from_checkpoint
 
+    if cfg.unfrozen_parameters:
+        freeze_parameters_except(model, cfg.unfrozen_parameters)
+
     trainer = setup_trainer(
         cfg, train_dataset, eval_dataset, model, tokenizer, total_num_steps
     )
 
-    model.config.use_cache = False
+    if hasattr(model, "config"):
+        model.config.use_cache = False
 
     # go ahead and presave, so we have the adapter config available to inspect
     if peft_config:
@@ -92,7 +96,8 @@ def train(
     if not Path(cfg.output_dir).is_dir():
         os.makedirs(cfg.output_dir, exist_ok=True)
     tokenizer.save_pretrained(str(Path(cfg.output_dir)))
-    model.config.save_pretrained(str(Path(cfg.output_dir)))
+    if hasattr(model, "config"):
+        model.config.save_pretrained(str(Path(cfg.output_dir)))
 
     # In case we want to stop early with ctrl+c, this is a nice to have to save the pretrained model
     if cfg.local_rank == 0:
@@ -174,21 +179,19 @@ def train(
     return model, tokenizer
 
 
-def pretrain_hooks(cfg, trainer):
+def pretrain_hooks(_cfg, _trainer):
     """
     Run hooks right before kicking off the training
     :param cfg:
     :param trainer:
     :return:
     """
-    neft_embeddings.pretrain_hook(cfg, trainer)
 
 
-def post_train_hooks(cfg, trainer):
+def post_train_hooks(_cfg, _trainer):
     """
     Run hooks right after training completes
     :param cfg:
     :param trainer:
     :return:
     """
-    neft_embeddings.post_train_hook(cfg, trainer)

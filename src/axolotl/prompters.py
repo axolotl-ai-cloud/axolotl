@@ -33,8 +33,8 @@ class AlpacaPrompter(Prompter):
     Base class for alpaca prompters
     """
 
-    system_prompt = "Below is an instruction that describes a task, paired with an input that provides further context. Write a response that appropriately completes the request.\n\n"
-    system_no_input_prompt = "Below is an instruction that describes a task. Write a response that appropriately completes the request.\n\n"
+    system_prompt = "Below is an instruction that describes a task, paired with an input that provides further context. Write a response that appropriately completes the request."
+    system_no_input_prompt = "Below is an instruction that describes a task. Write a response that appropriately completes the request."
     system_format: str = "{system}"
     turn_format: str
     turn_no_input_format: str

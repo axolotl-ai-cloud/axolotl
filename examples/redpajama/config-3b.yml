@@ -22,7 +22,7 @@ lora_fan_in_fan_out: false
 wandb_project: redpajama-alpaca-3b
 wandb_entity:
 wandb_watch:
-wandb_run_id:
+wandb_name:
 wandb_log_model:
 output_dir: ./redpajama-alpaca-3b
 batch_size: 4
@@ -45,8 +45,8 @@ flash_attention:
 gptq_groupsize:
 gptq_model_v1:
 warmup_steps: 20
-eval_steps: 110
-save_steps: 660
+evals_per_epoch: 4
+saves_per_epoch: 1
 debug:
 deepspeed:
 weight_decay: 0.0001
