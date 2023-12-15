@@ -250,10 +250,11 @@ Have dataset(s) in one of the following format (JSONL recommended):
   ```json
   {"instruction": "...", "input": "...", "output": "..."}
   ```
-- `sharegpt`: conversations where `from` is `human`/`gpt`. (optional: `system` to override default system prompt)
+- `sharegpt`: lists of conversations (single or multi turn) with a `value` and `from` for each turn. (optional: `system` to override default system prompt). Conversation templated used is `chatml`.
   ```json
   {"conversations": [{"from": "...", "value": "..."}]}
   ```
+  set `strict: false` to seamlessly support other common variations of this format. Supports alternative names for conversations column (`conversations`/`conversation`/`messages`), from field key (`from`/`role`), value field key (`value`/`content`/`text`) and role names (`human`/`user`/`prompter`/`assistant`/`gpt`) 
 - `llama-2`: the json is the same format as `sharegpt` above, with the following config (see the [config section](#config) for more details)
     ```yml
     datasets:
