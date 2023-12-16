@@ -40,7 +40,11 @@ class AlpacaPrompter(Prompter):
     turn_no_input_format: str
     prompt_style: Optional[PromptStyle] = None
 
-    def __init__(self, prompt_style=PromptStyle.INSTRUCT.value):
+    def __init__(self, prompt_style=PromptStyle.INSTRUCT.value, system_prompt=None, system_no_input_prompt=None):
+        if system_prompt is not None:
+            self.system_prompt = system_prompt
+        if system_no_input_prompt is not None:
+            self.system_no_input_prompt = system_no_input_prompt
         self.prompt_style = prompt_style if prompt_style else PromptStyle.INSTRUCT.value
         self.match_prompt_style()
 

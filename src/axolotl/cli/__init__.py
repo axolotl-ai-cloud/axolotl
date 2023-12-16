@@ -90,6 +90,9 @@ def do_inference(
 ):
     model, tokenizer = load_model_and_tokenizer(cfg=cfg, cli_args=cli_args)
     prompter = cli_args.prompter
+    prompt_style = cli_args.prompt_style
+    system_prompt = cli_args.system_prompt
+    system_no_input_prompt = cli_args.system_no_input_prompt
     default_tokens = {"unk_token": "<unk>", "bos_token": "<s>", "eos_token": "</s>"}
 
     for token, symbol in default_tokens.items():
@@ -99,9 +102,8 @@ def do_inference(
 
     prompter_module = None
     if prompter:
-        prompter_module = getattr(
-            importlib.import_module("axolotl.prompters"), prompter
-        )
+        PrompterClass = getattr(importlib.import_module("axolotl.prompters"), prompter)
+        prompter_module = PrompterClass(prompt_style=prompt_style, system_prompt=system_prompt, system_no_input_prompt=system_no_input_prompt)
 
     if cfg.landmark_attention:
         from axolotl.monkeypatch.llama_landmark_attn import set_model_mem_id
