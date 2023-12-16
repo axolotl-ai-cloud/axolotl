@@ -27,9 +27,6 @@ class TrainerCliArgs:
     merge_lora: bool = field(default=False)
     prompter: Optional[str] = field(default=None)
     shard: bool = field(default=False)
-    prompt_style: Optional[str] = field(default=None)
-    system_prompt: Optional[str] = field(default=None)
-    system_no_input_prompt: Optional[str] = field(default=None)
 
 
 @dataclass
