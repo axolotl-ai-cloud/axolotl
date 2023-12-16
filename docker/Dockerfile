@@ -10,7 +10,7 @@ ARG PYTORCH_VERSION="2.0.1"
 ENV PYTORCH_VERSION=$PYTORCH_VERSION
 
 RUN apt-get update && \
-    apt-get install -y vim curl
+    apt-get install -y vim curl nano libnccl2 libnccl-dev
 
 WORKDIR /workspace
 
