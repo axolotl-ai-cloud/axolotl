@@ -981,7 +981,7 @@ wandb_log_model:
 
 ##### Special Tokens
 
-It is important to have special tokens like delimiters, end-of-sequence, beginning-of-sequence in your tokenizer's vocubulary.  This will help you avoid tokenization issues and help your model train better.  You can do this in axolotl like this:
+It is important to have special tokens like delimiters, end-of-sequence, beginning-of-sequence in your tokenizer's vocabulary.  This will help you avoid tokenization issues and help your model train better.  You can do this in axolotl like this:
 
 ```yml
 special_tokens:
