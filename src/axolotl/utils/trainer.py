@@ -253,6 +253,12 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                 / cfg.batch_size
             )
         )
+    if cfg.gradient_checkpointing:
+        # Divide total num steps by the gradient accumulation steps (rounded up)
+        total_num_steps = int(
+            (total_num_steps + cfg.gradient_accumulation_steps - 1)
+            / cfg.gradient_accumulation_steps
+        )
     LOG.debug(f"total_num_steps: {total_num_steps}", main_process_only=True)
     return total_num_steps
 
