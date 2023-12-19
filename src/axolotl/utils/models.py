@@ -257,15 +257,18 @@ def load_model(
             replace_stablelm_attn_with_flash_attn(cfg.base_model)
 
     if cfg.sample_packing and cfg.s2_attention:
-        raise ValueError("Received `sample_packing=true` and `s2_attention=true`; however, \
-        shifted-sparse attention does not current support sample packing.")
+        raise ValueError(
+            "Received `sample_packing=true` and `s2_attention=true`; however, \
+        shifted-sparse attention does not current support sample packing."
+        )
 
     # Modify all llama derived models in one block
     if cfg.is_llama_derived_model:
         if cfg.flash_attention:
             from axolotl.monkeypatch.llama_attn_hijack_flash import (
-                    replace_llama_attn_with_flash_attn,
-                )
+                replace_llama_attn_with_flash_attn,
+            )
+
             if cfg.sample_packing:
                 if cfg.device not in ["mps", "cpu"] and not inference:
                     LOG.info("patching with flash attention for sample packing")
@@ -280,16 +283,20 @@ def load_model(
                     packed=False,
                     cross_entropy=cfg.flash_attn_cross_entropy,
                     rms_norm=cfg.flash_attn_rms_norm,
-                    use_shifted_sparse_attn=True
+                    use_shifted_sparse_attn=True,
                 )
         elif cfg.xformers_attention:
             from axolotl.monkeypatch.llama_attn_hijack_xformers import (
                 hijack_llama_attention,
             )
+
             LOG.info("patching with xformers attention")
             hijack_llama_attention()
         elif cfg.sdp_attention:
-            from axolotl.monkeypatch.llama_attn_hijack_sdp import hijack_llama_sdp_attention
+            from axolotl.monkeypatch.llama_attn_hijack_sdp import (
+                hijack_llama_sdp_attention,
+            )
+
             LOG.info("patching with sdp attention")
             hijack_llama_sdp_attention()
         elif cfg.landmark_attention:
@@ -304,7 +311,9 @@ def load_model(
             # Note: This might overwrite previous additional_special_tokens
             tokenizer.add_special_tokens({"additional_special_tokens": [MEM_TOKEN]})
         elif cfg.s2_attention:
-            raise NotImplementedError("Shifted-sparse attention not currently implemented without flash attention.")
+            raise NotImplementedError(
+                "Shifted-sparse attention not currently implemented without flash attention."
+            )
 
         if cfg.xpos_rope:
             from axolotl.monkeypatch.xpos_rope_llama_monkey_patch import (

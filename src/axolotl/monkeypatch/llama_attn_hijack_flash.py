@@ -76,9 +76,13 @@ def replace_llama_attn_with_flash_attn(
         _prepare_decoder_attention_mask
     )
     if use_shifted_sparse_attn:
-        transformers.models.llama.modeling_llama.LlamaAttention.forward = flashattn_forward_with_s2attn
+        transformers.models.llama.modeling_llama.LlamaAttention.forward = (
+            flashattn_forward_with_s2attn
+        )
     else:
-        transformers.models.llama.modeling_llama.LlamaAttention.forward = flashattn_forward
+        transformers.models.llama.modeling_llama.LlamaAttention.forward = (
+            flashattn_forward
+        )
 
     if packed:
         transformers.models.llama.modeling_llama.LlamaDecoderLayer = LlamaDecoderLayer
@@ -218,7 +222,9 @@ def _prepare_decoder_attention_mask(
     return attention_mask
 
 
-group_size_ratio = 1/4
+GROUP_SIZE_RATIO = 1 / 4
+
+
 def flashattn_forward_with_s2attn(
     self,
     hidden_states: torch.Tensor,
@@ -301,18 +307,25 @@ def flashattn_forward_with_s2attn(
     nheads = qkv.shape[-2]
     # shift
 
-    group_size = int(q_len * group_size_ratio)
+    group_size = int(q_len * GROUP_SIZE_RATIO)
     if q_len % group_size > 0:
-        raise ValueError("q_len %d should be divisible by group size %d." % (q_len, group_size))
+        raise ValueError(
+            f"q_len {q_len} should be divisible by group size {group_size}."
+        )
 
-    qkv = qkv.reshape(bsz, q_len, 3, 2, self.num_heads // 2, self.head_dim).permute(0, 3, 1, 2, 4, 5).reshape(bsz * 2,
-                                                                                                              q_len, 3,
-                                                                                                              self.num_heads // 2,
-                                                                                                              self.head_dim)
+    qkv = (
+        qkv.reshape(bsz, q_len, 3, 2, self.num_heads // 2, self.head_dim)
+        .permute(0, 3, 1, 2, 4, 5)
+        .reshape(bsz * 2, q_len, 3, self.num_heads // 2, self.head_dim)
+    )
     x = rearrange(qkv, "b s three h d -> b s (three h d)")
     x_unpad, indices, cu_q_lens, max_s = unpad_input(x, key_padding_mask)
-    cu_q_len_tmp = torch.arange(0, max_s, group_size, device=key_padding_mask.device, dtype=cu_q_lens.dtype)
-    cu_q_len_tmp = torch.stack([cu_q_len_tmp, cu_q_len_tmp + group_size // 2]).repeat(bsz, 1) + cu_q_lens[:-1].unsqueeze(-1)
+    cu_q_len_tmp = torch.arange(
+        0, max_s, group_size, device=key_padding_mask.device, dtype=cu_q_lens.dtype
+    )
+    cu_q_len_tmp = torch.stack([cu_q_len_tmp, cu_q_len_tmp + group_size // 2]).repeat(
+        bsz, 1
+    ) + cu_q_lens[:-1].unsqueeze(-1)
     cu_q_lens = torch.cat([cu_q_len_tmp, cu_q_lens[1:].unsqueeze(-1)], dim=-1).view(-1)
 
     x_unpad = rearrange(
@@ -328,8 +341,11 @@ def flashattn_forward_with_s2attn(
         "b s (h d) -> b s h d",
         h=nheads // 2,
     )
-    output = output.reshape(bsz, 2, q_len, nheads // 2, self.head_dim).transpose(1, 2).reshape(bsz, q_len, nheads,
-                                                                                               self.head_dim)
+    output = (
+        output.reshape(bsz, 2, q_len, nheads // 2, self.head_dim)
+        .transpose(1, 2)
+        .reshape(bsz, q_len, nheads, self.head_dim)
+    )
     return self.o_proj(rearrange(output, "b s h d -> b s (h d)")), None, past_key_value
 
 
