@@ -104,6 +104,8 @@ def do_inference(
         )
 
     model = model.to(cfg.device)
+    if cfg.bf16:
+        model = model.to(torch.bfloat16)
 
     while True:
         print("=" * 80)
@@ -169,6 +171,8 @@ def do_inference_gradio(
         )
 
     model = model.to(cfg.device)
+    if cfg.bf16:
+        model = model.to(torch.bfloat16)
 
     def generate(instruction):
         if not instruction:
