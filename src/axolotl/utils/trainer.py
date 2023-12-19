@@ -224,6 +224,7 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                     data_loader_len
                     * cfg.num_epochs
                     / int(os.environ.get("WORLD_SIZE", 1))
+                    / (cfg.gradient_accumulation_steps or 1)
                 )
             )
 
