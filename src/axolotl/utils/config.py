@@ -458,10 +458,8 @@ def validate_config(cfg):
             )
         )
     ):
-        cfg.lora_modules_to_save = ["embed_tokens", "lm_head"]
-
-        LOG.warning(
-            "lora_modules_to_save not properly set yet adding new tokens, defaulting to ['embed_tokens', 'lm_head']"
+        raise ValueError(
+            "lora_modules_to_save not properly set yet adding new tokens. Please add `embed_tokens` and `lm_head` to `lora_modules_to_save`."
         )
 
     # TODO

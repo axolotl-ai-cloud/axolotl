@@ -687,17 +687,11 @@ class ValidationTest(unittest.TestCase):
             {"adapter": "qlora", "load_in_4bit": True, "tokens": ["<|imstart|>"]}
         )
 
-        with self._caplog.at_level(logging.WARNING):
+        with pytest.raises(
+            ValueError,
+            match=r".*lora_modules_to_save not properly set yet adding new tokens*",
+        ):
             validate_config(cfg)
-            assert any(
-                "lora_modules_to_save not properly set yet adding new tokens"
-                in record.message
-                for record in self._caplog.records
-            )
-
-            assert all(
-                x in cfg.lora_modules_to_save for x in ["embed_tokens", "lm_head"]
-            )
 
         cfg = DictDefault(
             {
@@ -708,17 +702,11 @@ class ValidationTest(unittest.TestCase):
             }
         )
 
-        with self._caplog.at_level(logging.WARNING):
+        with pytest.raises(
+            ValueError,
+            match=r".*lora_modules_to_save not properly set yet adding new tokens*",
+        ):
             validate_config(cfg)
-            assert any(
-                "lora_modules_to_save not properly set yet adding new tokens"
-                in record.message
-                for record in self._caplog.records
-            )
-
-            assert all(
-                x in cfg.lora_modules_to_save for x in ["embed_tokens", "lm_head"]
-            )
 
         cfg = DictDefault(
             {
