@@ -30,7 +30,7 @@ def get_turns(  # pylint: disable=too-many-return-statements
             else:
                 yield role + ":", ""
         return
-    if self.sep_style == SeparatorStyle.ADD_COLON_TWO:
+    elif self.sep_style == SeparatorStyle.ADD_COLON_TWO:
         seps = [self.sep, self.sep2]
         yield "", system_prompt + seps[0]
         for i, (role, message) in enumerate(self.messages):
@@ -39,7 +39,7 @@ def get_turns(  # pylint: disable=too-many-return-statements
             else:
                 yield role + ":", ""
         return
-    if self.sep_style == SeparatorStyle.ADD_COLON_SPACE_SINGLE:
+    elif self.sep_style == SeparatorStyle.ADD_COLON_SPACE_SINGLE:
         yield "", system_prompt + self.sep
         for role, message in self.messages:
             if message:
@@ -47,7 +47,7 @@ def get_turns(  # pylint: disable=too-many-return-statements
             else:
                 yield role + ": ", ""  # must be end with a space
         return
-    if self.sep_style == SeparatorStyle.ADD_NEW_LINE_SINGLE:
+    elif self.sep_style == SeparatorStyle.ADD_NEW_LINE_SINGLE:
         yield "", "" if system_prompt == "" else system_prompt + self.sep
         for role, message in self.messages:
             if message:
@@ -55,7 +55,7 @@ def get_turns(  # pylint: disable=too-many-return-statements
             else:
                 yield role + "\n", ""
         return
-    if self.sep_style == SeparatorStyle.NO_COLON_SINGLE:
+    elif self.sep_style == SeparatorStyle.NO_COLON_SINGLE:
         yield "", system_prompt
         for role, message in self.messages:
             if message:
@@ -63,7 +63,7 @@ def get_turns(  # pylint: disable=too-many-return-statements
             else:
                 yield role, ""
         return
-    if self.sep_style == SeparatorStyle.NO_COLON_TWO:
+    elif self.sep_style == SeparatorStyle.NO_COLON_TWO:
         seps = [self.sep, self.sep2]
         yield "", system_prompt
         for i, (role, message) in enumerate(self.messages):
@@ -72,7 +72,7 @@ def get_turns(  # pylint: disable=too-many-return-statements
             else:
                 yield role, ""
         return
-    if self.sep_style == SeparatorStyle.RWKV:
+    elif self.sep_style == SeparatorStyle.RWKV:
         yield "", system_prompt
         for i, (role, message) in enumerate(self.messages):
             if message:
@@ -82,7 +82,7 @@ def get_turns(  # pylint: disable=too-many-return-statements
             else:
                 yield role + ":", ""
         return
-    if self.sep_style == SeparatorStyle.LLAMA2 and self.name != "mistral":
+    elif self.sep_style == SeparatorStyle.LLAMA2 and self.name != "mistral":
         if self.system_message:
             if self.messages:
                 # For llama, the system message is incorporated into the first human instruction
@@ -101,7 +101,7 @@ def get_turns(  # pylint: disable=too-many-return-statements
             else:
                 yield role, ""
         return
-    if self.sep_style == SeparatorStyle.LLAMA2 and self.name == "mistral":
+    elif self.sep_style == SeparatorStyle.LLAMA2 and self.name == "mistral":
         contains_sys_msg = False
         if self.system_message:
             contains_sys_msg = True
@@ -109,6 +109,9 @@ def get_turns(  # pylint: disable=too-many-return-statements
                 # There is no clear guidance on how to handle system messages in Mistral so we just prepend it to the first human instruction seperated by a newline
                 first_role, first_msg = self.messages[0]
                 if first_role == self.roles[0]:
+                    system_prompt = self.system_template.format(
+                        system_message=" " + self.system_message
+                    )
                     system_prompt += first_msg
                     self.messages.pop(0)
             yield "", system_prompt
@@ -120,7 +123,7 @@ def get_turns(  # pylint: disable=too-many-return-statements
             else:
                 yield role, ""
         return
-    if self.sep_style == SeparatorStyle.CHATGLM:
+    elif self.sep_style == SeparatorStyle.CHATGLM:
         # source: https://huggingface.co/THUDM/chatglm-6b/blob/1d240ba371910e9282298d4592532d7f0f3e9f3e/modeling_chatglm.py#L1302-L1308
         # source2: https://huggingface.co/THUDM/chatglm2-6b/blob/e186c891cf64310ac66ef10a87e6635fa6c2a579/modeling_chatglm.py#L926
         round_add_n = 1 if self.name == "chatglm2" else 0
@@ -136,7 +139,7 @@ def get_turns(  # pylint: disable=too-many-return-statements
             else:
                 yield f"{role}：", ""
         return
-    if self.sep_style == SeparatorStyle.CHATML:
+    elif self.sep_style == SeparatorStyle.CHATML:
         yield "", "" if system_prompt == "" else system_prompt + self.sep + "\n"
         for role, message in self.messages:
             if message:
@@ -144,7 +147,7 @@ def get_turns(  # pylint: disable=too-many-return-statements
             else:
                 yield role + "\n", ""
         return
-    if self.sep_style == SeparatorStyle.CHATINTERN:
+    elif self.sep_style == SeparatorStyle.CHATINTERN:
         # source: https://huggingface.co/internlm/internlm-chat-7b-8k/blob/bd546fa984b4b0b86958f56bf37f94aa75ab8831/modeling_internlm.py#L771
         seps = [self.sep, self.sep2]
         yield "", system_prompt
@@ -155,7 +158,7 @@ def get_turns(  # pylint: disable=too-many-return-statements
             else:
                 yield role + ":", ""
         return
-    if self.sep_style == SeparatorStyle.DOLLY:
+    elif self.sep_style == SeparatorStyle.DOLLY:
         seps = [self.sep, self.sep2]
         yield "", system_prompt
         for i, (role, message) in enumerate(self.messages):
@@ -165,7 +168,7 @@ def get_turns(  # pylint: disable=too-many-return-statements
             else:
                 yield role + ":\n", ""
         return
-    if self.sep_style == SeparatorStyle.PHOENIX:
+    elif self.sep_style == SeparatorStyle.PHOENIX:
         yield "", system_prompt
         for role, message in self.messages:
             if message:
@@ -173,7 +176,7 @@ def get_turns(  # pylint: disable=too-many-return-statements
             else:
                 yield role + ": " + "<s>", ""
         return
-    if self.sep_style == SeparatorStyle.ROBIN:
+    elif self.sep_style == SeparatorStyle.ROBIN:
         yield "", system_prompt + self.sep
         for role, message in self.messages:
             if message:
@@ -181,7 +184,7 @@ def get_turns(  # pylint: disable=too-many-return-statements
             else:
                 yield role + ":\n", ""
         return
-    if self.sep_style == SeparatorStyle.FALCON_CHAT:
+    elif self.sep_style == SeparatorStyle.FALCON_CHAT:
         if self.system_message:
             yield "", system_prompt + self.sep
         for role, message in self.messages:
