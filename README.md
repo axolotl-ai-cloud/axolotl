@@ -102,7 +102,7 @@ pip3 install -e '.[flash-attn,deepspeed]'
 ```
 
 ### Usage
-```bash
+```bashtet
 # finetune lora
 accelerate launch -m axolotl.cli.train examples/openllama-3b/lora.yml
 
