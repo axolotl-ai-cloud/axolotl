@@ -1,6 +1,6 @@
 """setup.py for axolotl"""
 
-from importlib.metadata import version
+from importlib.metadata import PackageNotFoundError, version
 
 from setuptools import find_packages, setup
 
@@ -24,10 +24,13 @@ def parse_requirements():
                 # Handle standard packages
                 _install_requires.append(line)
 
-    torch_version = version("torch")
-    if torch_version.startswith("2.1.1"):
-        _install_requires.pop(_install_requires.index("xformers==0.0.22"))
-        _install_requires.append("xformers==0.0.23")
+    try:
+        torch_version = version("torch")
+        if torch_version.startswith("2.1.1"):
+            _install_requires.pop(_install_requires.index("xformers==0.0.22"))
+            _install_requires.append("xformers==0.0.23")
+    except PackageNotFoundError:
+        pass
 
     return _install_requires, _dependency_links
 
