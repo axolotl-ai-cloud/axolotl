@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - "main"
-      - "fix-docker" # will remove this when the PR passes
 
 jobs:
   build-axolotl:
@@ -52,9 +51,8 @@ jobs:
         with:
           context: .
           load: true
-          # BASE_TAG=${{ github.ref_name }}-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}
           build-args: |
-            BASE_TAG=main-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}
+            BASE_TAG=${{ github.ref_name }}-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}
             CUDA=${{ matrix.cuda }}
             PYTORCH_VERSION=${{ matrix.pytorch }}
           file: ./docker/Dockerfile
