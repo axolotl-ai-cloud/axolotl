@@ -59,6 +59,7 @@ jobs:
           tags: |
             ${{ steps.metadata.outputs.tags }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
             ${{ (matrix.is_latest) && format('{0}-latest', steps.metadata.outputs.tags) || '' }}
+          labels: ${{ steps.metadata.outputs.labels }}
       - name: Unit Tests
         run: |
           docker run --rm ${{ steps.metadata.outputs.tags }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }} pytest --ignore=tests/e2e/ /workspace/axolotl/tests/
@@ -67,7 +68,6 @@ jobs:
         run: |
           docker push ${{ steps.metadata.outputs.tags }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
           docker push ${{ (matrix.is_latest) && format('{0}-latest', steps.metadata.outputs.tags) || '' }}
-
 
   build-axolotl-runpod:
     needs: build-axolotl
