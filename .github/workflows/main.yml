@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - "main"
+      - "dev"
 
 jobs:
   build-axolotl:
@@ -51,8 +52,9 @@ jobs:
         with:
           context: .
           load: true
+          # BASE_TAG=${{ github.ref_name }}-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}
           build-args: |
-            BASE_TAG=${{ github.ref_name }}-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}
+            BASE_TAG=main-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}
             CUDA=${{ matrix.cuda }}
             PYTORCH_VERSION=${{ matrix.pytorch }}
           file: ./docker/Dockerfile
@@ -67,7 +69,10 @@ jobs:
         if: github.event_name != 'pull_request'
         run: |
           docker push ${{ steps.metadata.outputs.tags }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
-          docker push ${{ (matrix.is_latest) && format('{0}-latest', steps.metadata.outputs.tags) || '' }}
+          latest_tag=${{ (matrix.is_latest) && format('{0}-latest', steps.metadata.outputs.tags) || '' }}
+          if [ -n "$latest_tag" ]; then
+            docker push "$latest_tag"
+          fi
 
   build-axolotl-runpod:
     needs: build-axolotl
