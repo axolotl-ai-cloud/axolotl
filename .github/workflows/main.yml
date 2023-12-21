@@ -48,6 +48,7 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+      # guidance for testing before pushing: https://docs.docker.com/build/ci/github-actions/test-before-push/
       - name: Build and export to Docker
         uses: docker/build-push-action@v5
         with:
