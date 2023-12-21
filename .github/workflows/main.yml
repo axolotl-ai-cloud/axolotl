@@ -29,6 +29,11 @@ jobs:
             python_version: "3.10"
             pytorch: 2.1.1
             axolotl_extras:
+          - cuda: 121
+            cuda_version: 12.1.0
+            python_version: "3.10"
+            pytorch: 2.1.1
+            axolotl_extras:
     runs-on: [self-hosted, gpu, docker]
     steps:
       - name: Checkout
@@ -92,6 +97,11 @@ jobs:
             is_latest: true
           - cuda: 118
             cuda_version: 11.8.0
+            python_version: "3.10"
+            pytorch: 2.1.1
+            axolotl_extras:
+          - cuda: 121
+            cuda_version: 12.1.0
             python_version: "3.10"
             pytorch: 2.1.1
             axolotl_extras:
