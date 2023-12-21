@@ -11,7 +11,7 @@ datasets:
   - path: mhenrichsen/alpaca_2k_test
     type: alpaca
 dataset_prepared_path: last_run_prepared
-val_set_size: 0.05
+val_set_size: 0.1
 output_dir: ./qlora-out
 
 adapter: qlora
