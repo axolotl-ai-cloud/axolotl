@@ -63,7 +63,7 @@ jobs:
             ${{ (matrix.is_latest) && format('{0}-latest', steps.metadata.outputs.tags) || '' }}
       - name: Unit Tests
         run: |
-          docker run --rm pytest --ignore=tests/e2e/ /workspace/axolotl/tests/
+          docker run --rm ${{ steps.metadata.outputs.tags }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }} pytest --ignore=tests/e2e/ /workspace/axolotl/tests/
       - name: Build and push
         uses: docker/build-push-action@v5
         with:
