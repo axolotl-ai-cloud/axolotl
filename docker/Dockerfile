@@ -25,6 +25,9 @@ RUN if [ "$AXOLOTL_EXTRAS" != "" ] ; then \
         pip install -e .[deepspeed,flash-attn]; \
     fi
 
+# So we can test the Docker image
+RUN pip install pytest
+
 # fix so that git fetch/pull from remote works
 RUN git config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*" && \
     git config --get remote.origin.fetch
