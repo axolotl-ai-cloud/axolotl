@@ -39,8 +39,6 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: winglian/axolotl
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Login to Docker Hub
@@ -54,8 +52,9 @@ jobs:
         with:
           context: .
           load: true
+          # BASE_TAG=${{ github.ref_name }}-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}
           build-args: |
-            BASE_TAG=${{ github.ref_name }}-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}
+            BASE_TAG=main-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}
             CUDA=${{ matrix.cuda }}
             PYTORCH_VERSION=${{ matrix.pytorch }}
           file: ./docker/Dockerfile
