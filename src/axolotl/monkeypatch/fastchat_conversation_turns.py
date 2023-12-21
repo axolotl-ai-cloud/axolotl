@@ -82,7 +82,7 @@ def get_turns(  # pylint: disable=too-many-return-statements
             else:
                 yield role + ":", ""
         return
-    if self.sep_style == SeparatorStyle.LLAMA2:
+    if self.sep_style == SeparatorStyle.LLAMA2 and self.name != "mistral":
         if self.system_message:
             if self.messages:
                 # For llama, the system message is incorporated into the first human instruction
@@ -97,6 +97,28 @@ def get_turns(  # pylint: disable=too-many-return-statements
                     i % 2 != 0 and self.system_message
                 ):
                     role = "<s> " + role
+                yield role + " ", message
+            else:
+                yield role, ""
+        return
+    if self.sep_style == SeparatorStyle.LLAMA2 and self.name == "mistral":
+        contains_sys_msg = False
+        if self.system_message:
+            contains_sys_msg = True
+            if self.messages:
+                # There is no clear guidance on how to handle system messages in Mistral so we just prepend it to the first human instruction seperated by a newline
+                first_role, first_msg = self.messages[0]
+                if first_role == self.roles[0]:
+                    system_prompt = self.system_template.format(
+                        system_message=" " + self.system_message
+                    )
+                    system_prompt += first_msg
+                    self.messages.pop(0)
+            yield "", system_prompt
+        for i, (role, message) in enumerate(self.messages):
+            if message and i == 0 and not contains_sys_msg:
+                yield "", system_prompt.strip() + " " + message  # if there is no system message, we need to make sure there is the a `<s> [INST]` at the beginning of the first instruction.
+            elif message:
                 yield role + " ", message
             else:
                 yield role, ""
