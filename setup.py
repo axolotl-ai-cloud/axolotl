@@ -1,5 +1,7 @@
 """setup.py for axolotl"""
 
+from importlib.metadata import version
+
 from setuptools import find_packages, setup
 
 
@@ -22,12 +24,10 @@ def parse_requirements():
                 # Handle standard packages
                 _install_requires.append(line)
 
-    # TODO(wing) remove once xformers release supports torch 2.1.0
-    if "torch==2.1.0" in _install_requires:
+    torch_version = version("torch")
+    if torch_version.startswith("2.1.1"):
         _install_requires.pop(_install_requires.index("xformers==0.0.22"))
-        _install_requires.append(
-            "xformers @ git+https://github.com/facebookresearch/xformers.git@main"
-        )
+        _install_requires.append("xformers==0.0.23")
 
     return _install_requires, _dependency_links
 
