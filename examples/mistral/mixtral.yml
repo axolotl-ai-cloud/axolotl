@@ -23,6 +23,9 @@ unfrozen_parameters:
 #  - model.layers.3[0-9]+.block_sparse_moe.gate.*
 #  - model.layers.3[0-9]+.block_sparse_moe.experts.*
 
+model_config:
+  output_router_logits: true
+
 adapter: qlora
 lora_model_dir:
 
