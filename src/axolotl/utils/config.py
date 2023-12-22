@@ -448,6 +448,20 @@ def validate_config(cfg):
     if cfg.neftune_noise_alpha is not None and cfg.neftune_noise_alpha <= 0.0:
         raise ValueError("neftune_noise_alpha must be > 0.0")
 
+    if (
+        cfg.adapter
+        and cfg.tokens
+        and (
+            not cfg.lora_modules_to_save
+            or not all(
+                x in cfg.lora_modules_to_save for x in ["embed_tokens", "lm_head"]
+            )
+        )
+    ):
+        raise ValueError(
+            "lora_modules_to_save not properly set yet adding new tokens. Please add `embed_tokens` and `lm_head` to `lora_modules_to_save`."
+        )
+
     # TODO
     # MPT 7b
     # https://github.com/facebookresearch/bitsandbytes/issues/25

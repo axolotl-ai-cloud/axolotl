@@ -136,6 +136,23 @@ def load_tokenizer(cfg):
 
     if cfg.special_tokens:
         for k, val in cfg.special_tokens.items():
+            # check if new special token is not already in tokenizer and
+            # is adapter training to make sure lora_modules_to_save is set
+            if (
+                (getattr(tokenizer, k) is None or getattr(tokenizer, k) != val)
+                and cfg.adapter
+                and (
+                    not cfg.lora_modules_to_save
+                    or not all(
+                        x in cfg.lora_modules_to_save
+                        for x in ["embed_tokens", "lm_head"]
+                    )
+                )
+            ):
+                raise ValueError(
+                    "Please set lora_modules_to_save to ['embed_tokens', 'lm_head'] when using an adapter and changing the special tokens."
+                )
+
             tokenizer.add_special_tokens(
                 {k: AddedToken(val, rstrip=False, lstrip=False, normalized=False)}
             )

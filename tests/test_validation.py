@@ -682,6 +682,43 @@ class ValidationTest(unittest.TestCase):
 
         validate_config(cfg)
 
+    def test_add_tokens_adapter(self):
+        cfg = DictDefault(
+            {"adapter": "qlora", "load_in_4bit": True, "tokens": ["<|imstart|>"]}
+        )
+
+        with pytest.raises(
+            ValueError,
+            match=r".*lora_modules_to_save not properly set yet adding new tokens*",
+        ):
+            validate_config(cfg)
+
+        cfg = DictDefault(
+            {
+                "adapter": "qlora",
+                "load_in_4bit": True,
+                "tokens": ["<|imstart|>"],
+                "lora_modules_to_save": ["embed_tokens"],
+            }
+        )
+
+        with pytest.raises(
+            ValueError,
+            match=r".*lora_modules_to_save not properly set yet adding new tokens*",
+        ):
+            validate_config(cfg)
+
+        cfg = DictDefault(
+            {
+                "adapter": "qlora",
+                "load_in_4bit": True,
+                "tokens": ["<|imstart|>"],
+                "lora_modules_to_save": ["embed_tokens", "lm_head"],
+            }
+        )
+
+        validate_config(cfg)
+
 
 class ValidationWandbTest(ValidationTest):
     """
