@@ -54,7 +54,7 @@ micro_batch_size: 1
 gradient_checkpointing: true
 
 # wandb
-wandb_project: yi-34B-chat-alpaca
+wandb_project:
 
 # Optimizer
 optimizer: paged_adamw_8bit
