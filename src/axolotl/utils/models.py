@@ -435,7 +435,6 @@ def load_model(
             model_kwargs["device"] = torch.cuda.current_device()
             del model_kwargs["torch_dtype"]
             del model_kwargs["device_map"]
-            del model_kwargs["max_memory"]
 
             model = MambaLMHeadModel.from_pretrained(
                 base_model,
