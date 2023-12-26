@@ -877,6 +877,12 @@ class HFDPOTrainerBuilder(TrainerBuilderBase):
             dataloader_pin_memory=True,
             save_total_limit=self.cfg.save_total_limit or 5,
         )
+        dpo_trainer_kwargs = {}
+        if self.cfg.rl == "ipo":
+            dpo_trainer_kwargs["loss_type"] = "ipo"
+            if self.cfg.dpo_label_smoothing:
+                dpo_trainer_kwargs["label_smoothing"] = self.cfg.dpo_label_smoothing
+
         dpo_trainer = DPOTrainer(
             self.model,
             self.model_ref,
@@ -890,8 +896,7 @@ class HFDPOTrainerBuilder(TrainerBuilderBase):
             max_target_length=None,
             max_prompt_length=self.cfg.sequence_len,
             generate_during_eval=True,
-            # label_smoothing=0.05,
-            # loss_type="ipo",
+            **dpo_trainer_kwargs,
         )
 
         return dpo_trainer
@@ -912,5 +917,4 @@ class HFPPOTrainerBuilder(TrainerBuilderBase):
 
     def build(self, total_num_steps):
         # build PPOConfig
-
         pass
