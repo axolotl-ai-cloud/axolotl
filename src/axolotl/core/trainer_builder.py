@@ -291,7 +291,7 @@ class AxolotlTrainer(Trainer):
         #     return (loss, outputs) if return_outputs else loss
         return super().compute_loss(model, inputs, return_outputs=return_outputs)
 
-    def _sanitze_kwargs_for_tagging(tag_names, kwargs=None):
+    def _sanitize_kwargs_for_tagging(self, tag_names, kwargs=None):
         if isinstance(tag_names, str):
             tag_names = [tag_names]
 
@@ -312,7 +312,7 @@ class AxolotlTrainer(Trainer):
         Overwrite the `push_to_hub` method in order to force-add the tags when pushing the
         model on the Hub. Please refer to `~transformers.Trainer.push_to_hub` for more details.
         """
-        kwargs = self._sanitze_kwargs_for_tagging(
+        kwargs = self._sanitize_kwargs_for_tagging(
             tag_names=self.tag_names, kwargs=kwargs
         )
 
