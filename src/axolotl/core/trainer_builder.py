@@ -9,10 +9,9 @@ import math
 import sys
 from abc import abstractmethod
 from dataclasses import dataclass, field
-from functools import partial
+from functools import partial, wraps
 from pathlib import Path
 from typing import Optional
-from functools import wraps
 
 import torch
 import transformers
@@ -306,14 +305,16 @@ class AxolotlTrainer(Trainer):
                 kwargs["tags"] = tag_names
 
         return kwargs
-        
+
     @wraps(Trainer.push_to_hub)
     def push_to_hub(self, *args, **kwargs) -> str:
         """
         Overwrite the `push_to_hub` method in order to force-add the tags when pushing the
         model on the Hub. Please refer to `~transformers.Trainer.push_to_hub` for more details.
         """
-        kwargs = self._sanitze_kwargs_for_tagging(tag_names=self.tag_names, kwargs=kwargs)
+        kwargs = self._sanitze_kwargs_for_tagging(
+            tag_names=self.tag_names, kwargs=kwargs
+        )
 
         return super().push_to_hub(*args, **kwargs)
 
@@ -322,6 +323,7 @@ class AxolotlMambaTrainer(AxolotlTrainer):
     """
     Mamba specific trainer to handle loss calculation
     """
+
     tag_names = ["axolotl", "mamba"]
 
     def compute_loss(
@@ -349,6 +351,7 @@ class OneCycleLRSchedulerTrainer(AxolotlTrainer):
     """
     Trainer subclass that uses the OneCycleLR scheduler
     """
+
     tag_names = ["axolotl", "onecycle"]
 
     def __init__(self, *args, **kwargs):
@@ -379,6 +382,7 @@ class ReLoRATrainer(AxolotlTrainer):
     """
     Trainer subclass that uses the OneCycleLR scheduler
     """
+
     tag_names = ["axolotl", "relora"]
 
     def __init__(self, *args, **kwargs):
