@@ -852,7 +852,17 @@ class HFDPOTrainerBuilder(TrainerBuilderBase):
         callbacks = []
         return callbacks
 
-    def build(self, total_num_steps):
+    def build_training_arguments(self, total_num_steps):
+        training_args_kwargs = {}
+        for arg in [
+            "adam_beta1",
+            "adam_beta2",
+            "adam_epsilon",
+            "dataloader_num_workers",
+            "dataloader_pin_memory",
+        ]:
+            if hasattr(self.cfg, arg) and getattr(self.cfg, arg) is not None:
+                training_args_kwargs[arg] = getattr(self.cfg, arg)
         training_args = TrainingArguments(
             per_device_train_batch_size=self.cfg.micro_batch_size,
             max_steps=total_num_steps,
@@ -871,12 +881,14 @@ class HFDPOTrainerBuilder(TrainerBuilderBase):
             logging_first_step=True,
             logging_steps=1,
             optim=self.cfg.optimizer,
-            adam_beta2=0.95,
-            adam_epsilon=0.00001,
-            dataloader_num_workers=8,
-            dataloader_pin_memory=True,
             save_total_limit=self.cfg.save_total_limit or 5,
+            **training_args_kwargs,
         )
+
+        return training_args
+
+    def build(self, total_num_steps):
+        training_args = self.build_training_arguments(total_num_steps)
         dpo_trainer_kwargs = {}
         if self.cfg.rl == "ipo":
             dpo_trainer_kwargs["loss_type"] = "ipo"
@@ -887,7 +899,7 @@ class HFDPOTrainerBuilder(TrainerBuilderBase):
             self.model,
             self.model_ref,
             args=training_args,
-            beta=0.1,
+            beta=self.cfg.dpo_beta or 0.1,
             train_dataset=self.train_dataset,
             # eval_dataset=self.eval_dataset,
             eval_dataset=None,
