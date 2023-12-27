@@ -23,6 +23,7 @@ def fixture_cfg():
             "warmup_steps": 10,
             "gradient_checkpointing": False,
             "optimizer": "adamw_torch",
+            "sequence_len": 2048,
             "rl": True,
             "adam_beta1": 0.998,
             "adam_beta2": 0.9,
