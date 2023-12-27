@@ -330,7 +330,7 @@ def load_datasets(
 def load_rl_datasets(
     *,
     cfg: DictDefault,
-    cli_args: TrainerCliArgs,
+    cli_args: TrainerCliArgs,  # pylint: disable=unused-argument
 ) -> TrainDatasetMeta:
     train_datasets: List[Any] = []
     for i, ds_cfg in enumerate(cfg.datasets):
@@ -340,7 +340,7 @@ def load_rl_datasets(
     # )
     eval_dataset = None
 
-    def argilla_apply_chatml(sample):
+    def argilla_apply_chatml(sample):  # pylint: disable=possibly-unused-variable
         if "system" in sample and sample["system"]:
             sample["prompt"] = (
                 f"<|im_start|>system\n{sample['system']}<|im_end|>\n"
@@ -354,7 +354,7 @@ def load_rl_datasets(
         sample["rejected"] = f"{sample['rejected_response']}<|im_end|>"
         return sample
 
-    def intel_apply_chatml(sample):
+    def intel_apply_chatml(sample):  # pylint: disable=possibly-unused-variable
         if "system" in sample and sample["system"]:
             sample["prompt"] = (
                 f"<|im_start|>system\n{sample['system']}<|im_end|>\n"
@@ -368,7 +368,7 @@ def load_rl_datasets(
         sample["rejected"] = f"{sample['rejected']}<|im_end|>"
         return sample
 
-    def apply_chatml(sample):
+    def apply_chatml(sample):  # pylint: disable=possibly-unused-variable
         if "system" in sample and sample["system"]:
             sample["prompt"] = (
                 f"<|im_start|>system\n{sample['system']}<|im_end|>\n"
@@ -382,7 +382,7 @@ def load_rl_datasets(
         sample["rejected"] = f"{sample['rejected']}<|im_end|>"
         return sample
 
-    def ultra_apply_chatml(sample):
+    def ultra_apply_chatml(sample):  # pylint: disable=possibly-unused-variable
         if "system" in sample and sample["system"]:
             sample["prompt"] = (
                 f"<|im_start|>system\n{sample['system']}<|im_end|>\n"
@@ -396,10 +396,10 @@ def load_rl_datasets(
         sample["rejected"] = f"{sample['rejected'][1]['content']}<|im_end|>"
         return sample
 
-    for i, ds in enumerate(train_datasets):
+    for i, data_set in enumerate(train_datasets):
         _type = cfg.datasets[i]["type"]
-        fn = locals()[_type]
-        train_datasets[i] = ds.map(fn)
+        ds_type_fn = locals()[_type]
+        train_datasets[i] = data_set.map(ds_type_fn)
     train_dataset = concatenate_datasets(train_datasets)
 
     # eval_dataset = eval_dataset.map(intel_apply_chatml)

@@ -1,10 +1,21 @@
+"""
+module for TRL PPO training
+"""
 import torch
 from tqdm import tqdm
 from trl import PPOTrainer
 
 
 class TRLPPOTrainer(PPOTrainer):
-    def train(self, reward_pipe, resume_from_checkpoint=None):
+    """
+    wrapper for ppo trainer to handle customizations
+    """
+
+    def train(
+        self,
+        reward_pipe,
+        resume_from_checkpoint=None,  # pylint: disable=unused-argument
+    ):
         generation_kwargs = {
             "min_length": -1,
             "top_k": 0.0,
@@ -19,7 +30,9 @@ class TRLPPOTrainer(PPOTrainer):
             "batch_size": 16,
         }
 
-        for epoch, batch in tqdm(enumerate(self.dataloader)):
+        for epoch, batch in tqdm(  # pylint: disable=unused-variable
+            enumerate(self.dataloader)
+        ):
             query_tensors = batch["input_ids"]
 
             # generate model response

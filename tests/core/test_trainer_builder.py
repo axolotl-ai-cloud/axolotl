@@ -1,8 +1,6 @@
 """
 unit tests for axolotl.core.trainer_builder
 """
-import unittest
-
 import pytest
 
 from axolotl.core.trainer_builder import HFDPOTrainerBuilder
@@ -45,7 +43,7 @@ def fixture_model(cfg, tokenizer):
     return load_model(cfg, tokenizer)
 
 
-class TestHFDPOTrainerBuilder(unittest.TestCase):
+class TestHFDPOTrainerBuilder:
     """
     TestCase class for DPO trainer builder
     """
