@@ -103,14 +103,6 @@ def do_inference(
             importlib.import_module("axolotl.prompters"), prompter
         )
 
-    if cfg.landmark_attention:
-        from axolotl.monkeypatch.llama_landmark_attn import set_model_mem_id
-
-        set_model_mem_id(model, tokenizer)
-        model.set_mem_cache_args(
-            max_seq_len=255, mem_freq=50, top_k=5, max_cache_size=None
-        )
-
     model = model.to(cfg.device)
 
     while True:
@@ -174,14 +166,6 @@ def do_inference_gradio(
     if prompter:
         prompter_module = getattr(
             importlib.import_module("axolotl.prompters"), prompter
-        )
-
-    if cfg.landmark_attention:
-        from axolotl.monkeypatch.llama_landmark_attn import set_model_mem_id
-
-        set_model_mem_id(model, tokenizer)
-        model.set_mem_cache_args(
-            max_seq_len=255, mem_freq=50, top_k=5, max_cache_size=None
         )
 
     model = model.to(cfg.device)

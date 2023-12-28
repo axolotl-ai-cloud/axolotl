@@ -798,11 +798,6 @@ flash_attn_fuse_mlp: # Whether to fuse part of the MLP into a single operation
 # Whether to use scaled-dot-product attention
 # https://pytorch.org/docs/stable/generated/torch.nn.functional.scaled_dot_product_attention.html
 sdp_attention:
-# Landmark attention (only llama)
-landmark_attention:
-# xpos RoPE see https://github.com/kaiokendev/cutoff-len-is-context-len/blob/main/util/xpos_rope_llama_monkey_patch.py
-# LLaMA only
-xpos_rope:
 
 # Resume from a specific checkpoint dir
 resume_from_checkpoint:
