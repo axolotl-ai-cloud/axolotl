@@ -9,7 +9,7 @@ import math
 import sys
 from abc import abstractmethod
 from dataclasses import dataclass, field
-from functools import partial, wraps
+from functools import wraps
 from pathlib import Path
 from typing import Optional
 
@@ -779,26 +779,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             # A100 is best at 64, while others at 8. Let's use the larger so we don't have to check
             # https://docs.nvidia.com/deeplearning/performance/dl-performance-matrix-multiplication/index.html
             data_collator_kwargs["pad_to_multiple_of"] = 64
-
-        if self.cfg.is_llama_derived_model and self.cfg.landmark_attention:
-            from axolotl.monkeypatch.llama_landmark_attn import (
-                add_mem_tokens,
-                get_mem_id,
-                set_model_mem_id,
-            )
-
-            set_model_mem_id(self.model, self.tokenizer)
-
-            LOG.info("Adding landmark attention tokens to dataset")
-
-            for dataset in [self.train_dataset, self.eval_dataset]:
-                dataset = dataset.map(
-                    partial(
-                        add_mem_tokens, mem_freq=50, mem_id=get_mem_id(self.tokenizer)
-                    ),
-                    batched=False,
-                    num_proc=32,
-                )
 
         trainer_cls = self._get_trainer_cls()
         trainer_kwargs, trainer_cls = self.hook_pre_create_trainer(

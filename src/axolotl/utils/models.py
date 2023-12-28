@@ -247,17 +247,6 @@ def load_model(
 
         LOG.info("patching with sdp attention")
         hijack_llama_sdp_attention()
-    elif cfg.is_llama_derived_model and cfg.landmark_attention:
-        from axolotl.monkeypatch.llama_landmark_attn import (
-            MEM_TOKEN,
-            patch_llama_with_landmark_attn,
-        )
-
-        LOG.info("patching with landmark attention")
-        patch_llama_with_landmark_attn()
-
-        # Note: This might overwrite previous additional_special_tokens
-        tokenizer.add_special_tokens({"additional_special_tokens": [MEM_TOKEN]})
 
     if cfg.is_mistral_derived_model and cfg.flash_attention and cfg.sample_packing:
         from axolotl.monkeypatch.mistral_attn_hijack_flash import (
@@ -278,14 +267,6 @@ def load_model(
 
         LOG.info("patching with flash attention")
         replace_mixtral_attn_with_multipack_flash_attn()
-
-    if cfg.is_llama_derived_model and cfg.xpos_rope:
-        from axolotl.monkeypatch.xpos_rope_llama_monkey_patch import (
-            replace_llama_rope_with_xpos_rope,
-        )
-
-        LOG.info("patching with xpos rope")
-        replace_llama_rope_with_xpos_rope()
 
     if (
         cfg.is_llama_derived_model
