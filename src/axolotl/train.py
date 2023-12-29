@@ -183,7 +183,7 @@ def train(
     if not cfg.hub_model_id:
         trainer.create_model_card(
             model_name=cfg.output_dir.lstrip("./"),
-            dataset_tags=[d['path'] for d in cfg['datasets'] if not Path(d['path']).is_dir()],
+            dataset_tags=[d["path"] for d in cfg["datasets"] if not Path(d["path"]).is_dir()],
         )
 
     return model, tokenizer
