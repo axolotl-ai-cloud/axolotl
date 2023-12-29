@@ -18,7 +18,15 @@ def do_cli(config: Path = Path("examples/"), **kwargs):
         return_remaining_strings=True
     )
     parsed_cli_args.merge_lora = True
-    parsed_cfg = load_cfg(config, merge_lora=True, **kwargs)
+
+    parsed_cfg = load_cfg(
+        config,
+        merge_lora=True,
+        load_in_8bit=False,
+        load_in_4bit=False,
+        flash_attention=False,
+        **kwargs
+    )
 
     do_merge_lora(cfg=parsed_cfg, cli_args=parsed_cli_args)
 
