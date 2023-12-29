@@ -103,9 +103,7 @@ def do_inference(
             importlib.import_module("axolotl.prompters"), prompter
         )
 
-    model = model.to(cfg.device)
-    if cfg.bf16:
-        model = model.to(torch.bfloat16)
+    model = model.to(cfg.device, dtype=cfg.torch_dtype)
 
     while True:
         print("=" * 80)
@@ -170,9 +168,7 @@ def do_inference_gradio(
             importlib.import_module("axolotl.prompters"), prompter
         )
 
-    model = model.to(cfg.device)
-    if cfg.bf16:
-        model = model.to(torch.bfloat16)
+    model = model.to(cfg.device, dtype=cfg.torch_dtype)
 
     def generate(instruction):
         if not instruction:
