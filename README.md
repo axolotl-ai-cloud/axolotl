@@ -520,6 +520,9 @@ model_config:
     type: # linear | dynamic
     factor: # float
 
+# optional overrides to the bnb quantization configuration
+bnb_config_kwargs:
+
 
 # Whether you are training a 4-bit GPTQ quantized model
 gptq: true
@@ -996,7 +999,7 @@ When you include these tokens in your axolotl config, axolotl adds these tokens 
 ### Inference Playground
 
 Axolotl allows you to load your model in an interactive terminal playground for quick experimentation.
-The config file is the same config file used for training. 
+The config file is the same config file used for training.
 
 Pass the appropriate flag to the inference command, depending upon what kind of model was trained:
 
