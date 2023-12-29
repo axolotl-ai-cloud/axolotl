@@ -990,9 +990,12 @@ tokens: # these are delimiters
 
 When you include these tokens in your axolotl config, axolotl adds these tokens to the tokenizer's vocabulary.
 
-### Inference
+### Inference Playground
 
-Pass the appropriate flag to the train command:
+Axolotl allows you to load your model in an interactive terminal playground for quick experimentation.
+The config file is the same config file used for training. 
+
+Pass the appropriate flag to the inference command, depending upon what kind of model was trained:
 
 - Pretrained LORA:
   ```bash
