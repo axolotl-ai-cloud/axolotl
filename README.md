@@ -996,7 +996,7 @@ When you include these tokens in your axolotl config, axolotl adds these tokens 
 ### Inference Playground
 
 Axolotl allows you to load your model in an interactive terminal playground for quick experimentation.
-The config file is the same config file used for training. 
+The config file is the same config file used for training.
 
 Pass the appropriate flag to the inference command, depending upon what kind of model was trained:
 
