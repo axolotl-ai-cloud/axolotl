@@ -569,7 +569,9 @@ class SaveAxolotlConfigtoWandBCallback(TrainerCallback):
                 ) as temp_file:
                     copyfile(self.axolotl_config_path, temp_file.name)
                     wandb.save(temp_file.name)
-                LOG.info("The Axolotl config has been saved to the WandB run under files.")
+                LOG.info(
+                    "The Axolotl config has been saved to the WandB run under files."
+                )
             except (FileNotFoundError, ConnectionError) as err:
                 LOG.warning(f"Error while saving Axolotl config to WandB: {err}")
         return control
