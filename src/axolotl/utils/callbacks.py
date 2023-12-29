@@ -563,9 +563,6 @@ class SaveAxolotlConfigtoWandBCallback(TrainerCallback):
     ):
         if is_main_process():
             try:
-                artifact = wandb.Artifact(name="axolotl-config", type="config")
-                artifact.add_file(local_path=self.axolotl_config_path)
-                wandb.run.log_artifact(artifact)
                 # sync config to top level in run, cannot delete file right away because wandb schedules it to be synced even w/policy = 'now', so let OS delete it later.
                 with NamedTemporaryFile(
                     mode="w", delete=False, suffix=".yml", prefix="axolotl_config_"
