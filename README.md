@@ -672,6 +672,7 @@ relora_warmup_steps: # Number of per-restart warmup steps
 relora_cpu_offload: # True to perform lora weight merges on cpu during restarts, for modest gpu memory savings
 
 # wandb configuration if you're using it
+# Make sure your `WANDB_API_KEY` environment variable is set (recommended) or you login to wandb with `wandb login`.
 wandb_mode: # "offline" to save run metadata locally and not sync to the server, "disabled" to turn off wandb
 wandb_project: # Your wandb project name
 wandb_entity: # A wandb Team name if using a Team
@@ -963,6 +964,8 @@ fsdp_config:
 ```
 
 ##### Weights & Biases Logging
+
+Make sure your `WANDB_API_KEY` environment variable is set (recommended) or you login to wandb with `wandb login`.
 
 - wandb options
 ```yaml
