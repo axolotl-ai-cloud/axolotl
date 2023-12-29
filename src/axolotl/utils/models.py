@@ -301,13 +301,20 @@ def load_model(
                 **model_config.quantization_config
             )
     if cfg.adapter == "qlora" and cfg.load_in_4bit:
+        bnb_config = {
+            "load_in_4bit": True,
+            "llm_int8_threshold": 6.0,
+            "llm_int8_has_fp16_weight": False,
+            "bnb_4bit_compute_dtype": cfg.torch_dtype,
+            "bnb_4bit_use_double_quant": True,
+            "bnb_4bit_quant_type": "nf4",
+        }
+
+        if cfg.bnb_config_kwargs:
+            bnb_config.update(cfg.bnb_config_kwargs)
+
         model_kwargs["quantization_config"] = BitsAndBytesConfig(
-            load_in_4bit=True,
-            llm_int8_threshold=6.0,
-            llm_int8_has_fp16_weight=False,
-            bnb_4bit_compute_dtype=cfg.torch_dtype,
-            bnb_4bit_use_double_quant=True,
-            bnb_4bit_quant_type="nf4",
+            **bnb_config,
         )
     # sample packing uses custom FA2 patch
     if cfg.flash_attention:

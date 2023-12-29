@@ -520,6 +520,14 @@ model_config:
     type: # linear | dynamic
     factor: # float
 
+# optional overrides to the bnb 4bit quantization configuration
+# https://huggingface.co/docs/transformers/main/main_classes/quantization#transformers.BitsAndBytesConfig
+bnb_config_kwargs:
+  # These are default values
+  llm_int8_has_fp16_weight: false
+  bnb_4bit_quant_type: nf4
+  bnb_4bit_use_double_quant: true
+
 
 # Whether you are training a 4-bit GPTQ quantized model
 gptq: true
@@ -1027,7 +1035,7 @@ Please use `--sample_packing False` if you have it on and receive the error simi
 Add below flag to train command above
 
 ```bash
-python3 -m axolotl.cli.merge_lora examples/your_config.yml --lora_model_dir="./completed-model" --load_in_8bit=False --load_in_4bit=False
+python3 -m axolotl.cli.merge_lora examples/your_config.yml --lora_model_dir="./completed-model"
 ```
 
 If you run out of CUDA memory, you can try to merge in system RAM with
