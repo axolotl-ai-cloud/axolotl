@@ -996,7 +996,7 @@ When you include these tokens in your axolotl config, axolotl adds these tokens 
 ### Inference Playground
 
 Axolotl allows you to load your model in an interactive terminal playground for quick experimentation.
-The config file is the same config file used for training. 
+The config file is the same config file used for training.
 
 Pass the appropriate flag to the inference command, depending upon what kind of model was trained:
 
@@ -1027,7 +1027,7 @@ Please use `--sample_packing False` if you have it on and receive the error simi
 Add below flag to train command above
 
 ```bash
-python3 -m axolotl.cli.merge_lora examples/your_config.yml --lora_model_dir="./completed-model" --load_in_8bit=False --load_in_4bit=False
+python3 -m axolotl.cli.merge_lora examples/your_config.yml --lora_model_dir="./completed-model"
 ```
 
 If you run out of CUDA memory, you can try to merge in system RAM with
