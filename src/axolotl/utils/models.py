@@ -26,6 +26,7 @@ from transformers.deepspeed import is_deepspeed_zero3_enabled
 from axolotl.models.mamba import fix_mamba_attn_for_loss
 from axolotl.prompt_tokenizers import LLAMA_DEFAULT_EOS_TOKEN
 from axolotl.utils.bench import log_gpu_memory_usage
+from axolotl.utils.chat_templates import chat_templates
 from axolotl.utils.dict import DictDefault
 
 LOG = logging.getLogger("axolotl")
@@ -186,6 +187,12 @@ def load_tokenizer(cfg):
     LOG.debug(f"PAD: {tokenizer.pad_token_id} / {tokenizer.pad_token}")
     LOG.debug(f"UNK: {tokenizer.unk_token_id} / {tokenizer.unk_token}")
 
+    if cfg.chat_template:
+        tokenizer.chat_template = chat_templates(cfg.chat_template)
+    else:
+        LOG.info(
+            "No Chat template selected. Consider adding a chat template for easier inference."
+        )
     return tokenizer
 
 
