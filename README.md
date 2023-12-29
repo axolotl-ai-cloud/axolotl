@@ -672,6 +672,7 @@ relora_warmup_steps: # Number of per-restart warmup steps
 relora_cpu_offload: # True to perform lora weight merges on cpu during restarts, for modest gpu memory savings
 
 # wandb configuration if you're using it
+# Make sure your `WANDB_API_KEY` environment variable is set (recommended) or you login to wandb with `wandb login`.
 wandb_mode: # "offline" to save run metadata locally and not sync to the server, "disabled" to turn off wandb
 wandb_project: # Your wandb project name
 wandb_entity: # A wandb Team name if using a Team
@@ -964,6 +965,8 @@ fsdp_config:
 
 ##### Weights & Biases Logging
 
+Make sure your `WANDB_API_KEY` environment variable is set (recommended) or you login to wandb with `wandb login`.
+
 - wandb options
 ```yaml
 wandb_mode:
@@ -990,9 +993,12 @@ tokens: # these are delimiters
 
 When you include these tokens in your axolotl config, axolotl adds these tokens to the tokenizer's vocabulary.
 
-### Inference
+### Inference Playground
 
-Pass the appropriate flag to the train command:
+Axolotl allows you to load your model in an interactive terminal playground for quick experimentation.
+The config file is the same config file used for training. 
+
+Pass the appropriate flag to the inference command, depending upon what kind of model was trained:
 
 - Pretrained LORA:
   ```bash
