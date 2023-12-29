@@ -283,7 +283,7 @@ def load_model(
     max_memory = cfg.max_memory
     device_map = cfg.device_map
 
-    if cfg.gpu_memory_limit and max_memory is None:
+    if cfg.gpu_memory_limit:
         gpu_memory_limit = (
             str(cfg.gpu_memory_limit) + "GiB"
             if isinstance(cfg.gpu_memory_limit, int)
