@@ -520,6 +520,14 @@ model_config:
     type: # linear | dynamic
     factor: # float
 
+# optional overrides to the bnb 4bit quantization configuration
+# https://huggingface.co/docs/transformers/main/main_classes/quantization#transformers.BitsAndBytesConfig
+bnb_config_kwargs:
+  # These are default values
+  llm_int8_has_fp16_weight: false
+  bnb_4bit_quant_type: nf4
+  bnb_4bit_use_double_quant: true
+
 
 # Whether you are training a 4-bit GPTQ quantized model
 gptq: true
