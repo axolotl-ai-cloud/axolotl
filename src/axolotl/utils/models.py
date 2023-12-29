@@ -190,7 +190,9 @@ def load_tokenizer(cfg):
     if cfg.chat_template:
         tokenizer.chat_template = templates(cfg.chat_template)
     else:
-        LOG.info("No Chat template selected. Consider adding a chat template for easier inference.")
+        LOG.info(
+            "No Chat template selected. Consider adding a chat template for easier inference."
+        )
     return tokenizer
 
 
