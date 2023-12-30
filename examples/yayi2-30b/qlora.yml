@@ -21,7 +21,7 @@ lora_model_dir:
 
 sequence_len: 2048 # Fits in 40gb VRAM. Can easily do 4096 in A100 80 or a A6000
 sample_packing: false
-pad_to_sequence_len: true
+pad_to_sequence_len: false
 
 lora_r: 32
 lora_alpha: 16
@@ -29,13 +29,7 @@ lora_dropout: 0.05
 lora_target_linear: true
 lora_fan_in_fan_out:
 lora_target_modules:
-  - gate_proj
-  - down_proj
-  - up_proj
-  - q_proj
-  - v_proj
-  - k_proj
-  - o_proj
+  - W_pack
 
 wandb_project: yayi2
 wandb_entity:
@@ -48,7 +42,7 @@ micro_batch_size: 1
 num_epochs: 1
 optimizer: adamw_bnb_8bit
 lr_scheduler: cosine
-learning_rate: 0.00002
+learning_rate: 0.0005
 
 train_on_inputs: false
 group_by_length: false
