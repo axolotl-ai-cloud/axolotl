@@ -34,6 +34,8 @@ fschat==0.2.34
 gradio==3.50.2
 tensorboard
 
+mamba-ssm==1.0.1
+
 # remote filesystems
 s3fs
 gcsfs
