@@ -19,7 +19,7 @@ adapter: qlora
 lora_model_dir:
 
 sequence_len: 8192
-sample_packing: true
+sample_packing: false
 pad_to_sequence_len: true
 
 lora_r: 32
