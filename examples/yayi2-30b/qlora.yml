@@ -2,6 +2,7 @@ base_model: wenge-research/yayi2-30b
 model_type: AutoModelForCausalLM
 tokenizer_type: AutoTokenizer
 is_mistral_derived_model: false
+trust_remote_code: true
 
 load_in_8bit: false
 load_in_4bit: true
