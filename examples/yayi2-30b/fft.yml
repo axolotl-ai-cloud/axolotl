@@ -54,7 +54,7 @@ eval_table_size:
 eval_table_max_new_tokens: 128
 saves_per_epoch: 1
 debug:
-deepspeed: deepspeed/zero3.json
+deepspeed: deepspeed/zero3_cpu.json
 weight_decay: 0.0
 fsdp:
 fsdp_config:
