@@ -29,7 +29,6 @@ lora_dropout: 0.05
 lora_target_linear: true
 lora_fan_in_fan_out:
 lora_target_modules:
-  - W_pack
 
 wandb_project: yayi2
 wandb_entity:
