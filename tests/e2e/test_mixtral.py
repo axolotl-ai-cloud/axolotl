@@ -27,7 +27,7 @@ class TestMixtral(unittest.TestCase):
     """
 
     @with_temp_dir
-    def test_lora(self, temp_dir):
+    def test_qlora(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
@@ -35,8 +35,8 @@ class TestMixtral(unittest.TestCase):
                 "tokenizer_config": "mistralai/Mixtral-8x7B-v0.1",
                 "flash_attention": True,
                 "sequence_len": 1024,
-                "load_in_8bit": True,
-                "adapter": "lora",
+                "load_in_4bit": True,
+                "adapter": "qlora",
                 "lora_r": 16,
                 "lora_alpha": 32,
                 "lora_dropout": 0.1,
