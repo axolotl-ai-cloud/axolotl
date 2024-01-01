@@ -107,5 +107,13 @@ class TestMixtral(unittest.TestCase):
         cli_args = TrainerCliArgs()
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
-        train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
+        model, _ = train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
+        assert (
+            "axolotl.monkeypatch.mixtral.modeling_mixtral"
+            in model.model.layers[0].self_attn.__class__.__module__
+        )
+        assert (
+            "MixtralMultipackFlashAttention2"
+            in model.model.layers[0].self_attn.__class__.__name__
+        )
         assert (Path(temp_dir) / "pytorch_model.bin").exists()
