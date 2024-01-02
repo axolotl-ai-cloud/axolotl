@@ -1,4 +1,4 @@
-name: ci-cd
+name: e2e-docker-tests
 
 on:
   pull_request:
