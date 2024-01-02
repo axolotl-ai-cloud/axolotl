@@ -566,6 +566,14 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             training_arguments_kwargs[
                 "gradient_checkpointing"
             ] = self.cfg.gradient_checkpointing
+            if self.cfg.gradient_checkpointing_kwargs:
+                training_arguments_kwargs[
+                    "gradient_checkpointing_kwargs"
+                ] = self.cfg.gradient_checkpointing_kwargs
+            else:
+                training_arguments_kwargs["gradient_checkpointing_kwargs"] = {
+                    "use_reentrant": False
+                }
         if self.cfg.fsdp:
             training_arguments_kwargs["fsdp"] = self.cfg.fsdp
             if self.cfg.fsdp_config:

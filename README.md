@@ -741,6 +741,9 @@ group_by_length: false
 
 # Whether to use gradient checkpointing https://huggingface.co/docs/transformers/v4.18.0/en/performance#gradient-checkpointing
 gradient_checkpointing: false
+# additional kwargs to pass to the trainer for gradient checkpointing
+# gradient_checkpointing_kwargs:
+#   use_reentrant: false
 
 # Stop training after this many evaluation losses have increased in a row
 # https://huggingface.co/transformers/v4.2.2/_modules/transformers/trainer_callback.html#EarlyStoppingCallback
