@@ -935,8 +935,9 @@ accelerate launch -m axolotl.cli.train your_config.yml
 You can optionally pre-tokenize dataset with the following before finetuning.
 This is recommended for large datasets.
 
-- Set `push_dataset_to_hub: hf_user/repo` to push it to Huggingface.
-- Use `--debug` to see preprocessed examples.
+- Set `dataset_prepared_path:` to a local folder for saving and loading pre-tokenized dataset.
+- (Optional): Set `push_dataset_to_hub: hf_user/repo` to push it to Huggingface.
+- (Optional): Use `--debug` to see preprocessed examples.
 
 ```bash
 python -m axolotl.cli.preprocess your_config.yml
