@@ -261,7 +261,11 @@ def mixtral_model_forward(
     if inputs_embeds is None:
         inputs_embeds = self.embed_tokens(input_ids)
 
-    if attention_mask is not None and self._use_flash_attention_2 and use_cache:
+    if (
+        attention_mask is not None
+        and self._attn_implementation == "flash_attention_2"
+        and use_cache
+    ):
         is_padding_right = attention_mask[:, -1].sum().item() != batch_size
         if is_padding_right:
             raise ValueError(
@@ -270,7 +274,7 @@ def mixtral_model_forward(
                 " call `tokenizer.padding_side  = 'left'` before tokenizing the input. "
             )
 
-    if self._use_flash_attention_2:
+    if self._attn_implementation == "flash_attention_2":
         # 2d mask is passed through the layers
         attention_mask = (
             attention_mask
