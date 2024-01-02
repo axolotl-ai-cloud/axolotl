@@ -644,7 +644,7 @@ max_memory:
 adapter: lora
 # If you already have a lora model trained that you want to load, put that here.
 # This means after training, if you want to test the model, you should set this to the value of `output_dir`.
-# Note that if you merge an adapter to the base model, a new subdirectory `merged` will be created under the original directory, which you will want to use instead.
+# Note that if you merge an adapter to the base model, a new subdirectory `merged` will be created under the `output_dir`.
 lora_model_dir:
 
 # LoRA hyperparameters
