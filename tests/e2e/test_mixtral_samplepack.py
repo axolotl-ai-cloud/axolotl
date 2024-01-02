@@ -62,6 +62,10 @@ class TestMixtral(unittest.TestCase):
                 "sample_packing": True,
             }
         )
+        if is_torch_bf16_gpu_available():
+            cfg.bf16 = True
+        else:
+            cfg.fp16 = True
         normalize_config(cfg)
         cli_args = TrainerCliArgs()
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
