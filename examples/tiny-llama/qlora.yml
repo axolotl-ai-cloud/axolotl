@@ -1,11 +1,10 @@
-base_model: PY007/TinyLlama-1.1B-intermediate-step-715k-1.5T
-
+base_model: TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T
 model_type: LlamaForCausalLM
 tokenizer_type: LlamaTokenizer
 is_llama_derived_model: true
 
-load_in_8bit: true
-load_in_4bit: false
+load_in_8bit: false
+load_in_4bit: true
 strict: false
 
 datasets:
@@ -13,16 +12,19 @@ datasets:
     type: alpaca
 dataset_prepared_path:
 val_set_size: 0.05
-output_dir: ./lora-out
+output_dir: ./qlora-out
+
+adapter: qlora
+lora_model_dir:
 
 sequence_len: 4096
 sample_packing: true
+pad_to_sequence_len: true
 
-adapter: lora
-lora_model_dir:
 lora_r: 32
 lora_alpha: 16
 lora_dropout: 0.05
+lora_target_modules:
 lora_target_linear: true
 lora_fan_in_fan_out:
 
@@ -35,7 +37,7 @@ wandb_log_model:
 gradient_accumulation_steps: 4
 micro_batch_size: 2
 num_epochs: 4
-optimizer: adamw_bnb_8bit
+optimizer: paged_adamw_32bit
 lr_scheduler: cosine
 learning_rate: 0.0002
 
@@ -55,7 +57,6 @@ flash_attention: true
 
 warmup_steps: 10
 evals_per_epoch: 4
-eval_table_size:
 saves_per_epoch: 1
 debug:
 deepspeed:
@@ -63,6 +64,4 @@ weight_decay: 0.0
 fsdp:
 fsdp_config:
 special_tokens:
-  bos_token: "<s>"
-  eos_token: "</s>"
-  unk_token: "<unk>"
+
