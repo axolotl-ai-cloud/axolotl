@@ -643,7 +643,8 @@ max_memory:
 # If you want to use 'lora' or 'qlora' or leave blank to train all parameters in original model
 adapter: lora
 # If you already have a lora model trained that you want to load, put that here.
-# This means after training, if you want to test the model, you should set this to the value of `lora_out_dir`.
+# This means after training, if you want to test the model, you should set this to the value of `output_dir`.
+# Note that if you merge an adapter to the base model, a new subdirectory `merged` will be created under the `output_dir`.
 lora_model_dir:
 
 # LoRA hyperparameters
@@ -670,10 +671,6 @@ lora_modules_to_save:
 #  - embed_tokens
 #  - lm_head
 
-# Once you complete training, the model will be saved to the following directory.
-# If you merge the adapter to the base model, a subdirectory `merged` will be created under this directory.
-# Make sure `lora_model_dir` points to this directory if you want to use the trained model.
-lora_out_dir:
 lora_fan_in_fan_out: false
 
 # ReLoRA configuration
