@@ -8,7 +8,8 @@ from axolotl.common.cli import TrainerCliArgs
 from axolotl.utils.config import normalize_config
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.models import load_model, load_tokenizer
-from tests.e2e.utils import with_temp_dir
+
+from .utils import with_temp_dir
 
 
 class TestModelPatches(unittest.TestCase):
