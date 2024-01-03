@@ -422,11 +422,6 @@ def validate_config(cfg):
     if cfg.warmup_steps and cfg.warmup_ratio:
         raise ValueError("warmup_steps and warmup_ratio are mutually exclusive")
 
-    if cfg.is_qwen_derived_model and cfg.gradient_checkpointing:
-        LOG.warning(
-            "Gradient checkpointing is broken for Qwen models for transformers>=4.35.0, except main branch."
-        )
-
     if cfg.wandb_run_id and not cfg.wandb_name:
         cfg.wandb_name = cfg.wandb_run_id
 
