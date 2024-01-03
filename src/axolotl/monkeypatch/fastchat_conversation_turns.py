@@ -152,7 +152,7 @@ def get_turns(  # pylint: disable=too-many-return-statements
             yield "", system_prompt
         for role, message in self.messages:
             if message:
-                yield role + "\n", " " +message
+                yield role + "\n", " " + message
             else:
                 yield role
         return
