@@ -332,15 +332,18 @@ def load_model(
                 or cfg.is_mistral_derived_model
                 or model_config.model_type == "mixtral"
             ):
+                model_kwargs["attn_implementation"] = "flash_attention_2"
                 model_config._attn_implementation = (  # pylint: disable=protected-access
                     "flash_attention_2"
                 )
         else:
             if model_config.model_type == "mixtral":
+                model_kwargs["attn_implementation"] = "flash_attention_2"
                 model_config._attn_implementation = (  # pylint: disable=protected-access
                     "flash_attention_2"
                 )
             else:
+                model_kwargs["attn_implementation"] = "eager"
                 model_config._attn_implementation = (  # pylint: disable=protected-access
                     "eager"
                 )
