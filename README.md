@@ -10,7 +10,7 @@ Features:
 - Integrated with xformer, flash attention, rope scaling, and multipacking
 - Works with single GPU or multiple GPUs via FSDP or Deepspeed
 - Easily run with Docker locally or on the cloud
-- Log results and optionally checkpoints to wandb
+- Log results and optionally checkpoints to wandb or mlflow
 - And more!
 
 
