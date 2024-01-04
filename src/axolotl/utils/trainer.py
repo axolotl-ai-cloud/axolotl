@@ -12,7 +12,7 @@ from accelerate.logging import get_logger
 from datasets import set_caching_enabled
 from torch.utils.data import DataLoader, RandomSampler
 
-from axolotl.core.trainer_builder import HFCausalTrainerBuilder
+from axolotl.core.trainer_builder import HFCausalTrainerBuilder, HFDPOTrainerBuilder
 from axolotl.utils.distributed import is_main_process, reduce_and_broadcast, zero_first
 from axolotl.utils.samplers import MultipackBatchSampler
 
@@ -280,7 +280,12 @@ def prepare_optim_env(cfg):
 
 
 def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_steps):
-    trainer_builder = HFCausalTrainerBuilder(cfg, model, tokenizer)
+    if cfg.rl:
+        trainer_builder = HFDPOTrainerBuilder(cfg, model[0], tokenizer)
+        trainer_builder.model_ref = model[1]
+    else:
+        trainer_builder = HFCausalTrainerBuilder(cfg, model[0], tokenizer)
+
     trainer_builder.train_dataset = train_dataset
     trainer_builder.eval_dataset = eval_dataset
 
