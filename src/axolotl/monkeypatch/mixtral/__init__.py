@@ -17,6 +17,6 @@ def replace_mixtral_attn_with_multipack_flash_attn():
     transformers.models.mixtral.modeling_mixtral.MixtralModel.forward = (
         mixtral_model_forward
     )
-    transformers.models.mixtral.modeling_mixtral.MISTRAL_ATTENTION_CLASSES[
+    transformers.models.mixtral.modeling_mixtral.MIXTRAL_ATTENTION_CLASSES[
         "flash_attention_2"
     ] = MixtralMultipackFlashAttention2
