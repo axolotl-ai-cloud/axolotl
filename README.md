@@ -689,6 +689,10 @@ wandb_name: # Set the name of your wandb run
 wandb_run_id: # Set the ID of your wandb run
 wandb_log_model: # "checkpoint" to log model to wandb Artifacts every `save_steps` or "end" to log only at the end of training
 
+# mlflow configuration if you're using it
+# Make sure your `MLFLOW_TRACKING_URI` is set. 
+mlflow_experiment_name: # Your experiment name
+
 # Where to save the full-finetuned model to
 output_dir: ./completed-model
 
