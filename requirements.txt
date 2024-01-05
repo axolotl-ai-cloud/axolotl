@@ -37,3 +37,5 @@ tensorboard
 s3fs
 gcsfs
 # adlfs
+
+trl @ git+https://github.com/huggingface/trl.git@main

@@ -200,6 +200,7 @@ def load_model(
     cfg: DictDefault,
     tokenizer: PreTrainedTokenizerBase,
     inference: bool = False,
+    reference_model: bool = False,
 ) -> Tuple[PreTrainedModel, Optional[PeftConfig]]:
     """
     Load a model for a given configuration and tokenizer.
@@ -290,6 +291,15 @@ def load_model(
     model_kwargs["device_map"] = cfg.device_map
     model_kwargs["max_memory"] = cfg.max_memory
     model_kwargs["torch_dtype"] = cfg.torch_dtype
+    # TODO can we put the reference model on it's own gpu? I think we have to move logits around to calculate loss
+    # if cfg.rl:
+    #     if torch.cuda.device_count() > 1:
+    #         if reference_model:
+    #             model_kwargs["device_map"] = "cuda:" + str(
+    #                 torch.cuda.current_device() + 1
+    #             )
+    #         else:
+    #             model_kwargs["device_map"] = "cuda:" + str(torch.cuda.current_device())
 
     if is_deepspeed_zero3_enabled():
         del model_kwargs["device_map"]
@@ -560,9 +570,11 @@ def load_model(
                 if hasattr(module, "weight"):
                     module.to(cfg.torch_dtype)
 
-    model, lora_config = load_adapter(model, cfg, cfg.adapter)
+    lora_config = None
+    if not reference_model or cfg.lora_model_dir:
+        model, lora_config = load_adapter(model, cfg, cfg.adapter)
 
-    if cfg.ddp and not load_in_8bit:
+    if cfg.ddp and not load_in_8bit and not (cfg.rl and cfg.load_in_4bit):
         model.to(f"cuda:{cfg.local_rank}")
 
     if torch.cuda.device_count() > 1 and int(os.getenv("WORLD_SIZE", "1")) == 1:
