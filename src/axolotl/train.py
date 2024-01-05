@@ -188,6 +188,9 @@ def train(
 
     if not cfg.hub_model_id:
         trainer.create_model_card(model_name=cfg.output_dir.lstrip("./"))
+    elif cfg.hub_model_id:
+        # defensively push to the hub to ensure the model card is updated
+        trainer.push_to_hub()
 
     return model, tokenizer
 
