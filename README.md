@@ -1036,10 +1036,10 @@ Please use `--sample_packing False` if you have it on and receive the error simi
 
 ### Merge LORA to base
 
-Add below flag to train command above
+The following command will merge your LORA adapater with your base model.  You can optionally pass the argument `--lora_model_dir` to specify the directory where your LORA adapter was saved, otherwhise, this will be inferred from `output_dir` in your axolotl config file.  The merged model is saved in the sub-directory `{lora_model_dir}/merged`.
 
 ```bash
-python3 -m axolotl.cli.merge_lora examples/your_config.yml --lora_model_dir="./completed-model"
+python3 -m axolotl.cli.merge_lora your_config.yml --lora_model_dir="./completed-model"
 ```
 
 If you run out of CUDA memory, you can try to merge in system RAM with
