@@ -5,6 +5,7 @@ import logging
 from pathlib import Path
 
 import fire
+import torch
 import transformers
 
 from axolotl.cli import (
@@ -19,6 +20,7 @@ from axolotl.common.cli import TrainerCliArgs
 from axolotl.train import train
 
 LOG = logging.getLogger("axolotl.cli.train")
+# torch.set_printoptions(threshold=10000)
 
 
 def do_cli(config: Path = Path("examples/"), **kwargs):

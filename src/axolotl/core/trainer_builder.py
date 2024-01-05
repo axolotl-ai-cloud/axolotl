@@ -157,7 +157,7 @@ class AxolotlTrainer(Trainer):
         return self.lr_scheduler
 
     def _get_train_sampler(self) -> Optional[torch.utils.data.Sampler]:
-        if self.args.sample_packing:
+        if self.args.sample_packing and False:
             return MultipackBatchSampler(
                 RandomSampler(self.train_dataset),
                 self.args.train_batch_size,
@@ -193,7 +193,7 @@ class AxolotlTrainer(Trainer):
         return super()._get_eval_sampler(eval_dataset)
 
     def get_train_dataloader(self) -> DataLoader:
-        if self.args.sample_packing:
+        if self.args.sample_packing and False:
             train_dataset = self.train_dataset
             train_dataset = train_dataset.remove_columns(["length"])
             data_collator = self.data_collator
@@ -808,7 +808,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             train_dataset=self.train_dataset,
             eval_dataset=self.eval_dataset,
             args=training_args,
-            data_collator=self.build_collator(**data_collator_kwargs),
+            # data_collator=self.build_collator(**data_collator_kwargs),
             bench_data_collator=transformers.DataCollatorForSeq2Seq(
                 self.tokenizer,
                 return_tensors="pt",

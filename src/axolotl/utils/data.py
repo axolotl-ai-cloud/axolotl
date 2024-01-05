@@ -4,7 +4,7 @@ import hashlib
 import logging
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, List, Tuple, Union
+from typing import Dict, List, Tuple, Union, Optional
 
 import numpy as np
 import torch
@@ -42,6 +42,7 @@ from axolotl.prompters import (
     SummarizeTLDRPrompter,
     UnsupportedPrompter,
 )
+from axolotl.utils.collators import BatchSamplerDataCollatorForSeq2Seq, PretrainingBatchSamplerDataCollatorForSeq2Seq
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import is_main_process, zero_first
 from axolotl.utils.samplers.multipack import MultipackBatchSampler
@@ -72,6 +73,7 @@ def prepare_dataset(cfg, tokenizer):
         train_dataset = load_pretraining_dataset(
             cfg.pretraining_dataset,
             tokenizer,
+            cfg,
             max_tokens=cfg.sequence_len,
             seed=cfg.seed or 42,
         )
@@ -811,9 +813,15 @@ def encode_pretraining(
     return ret
 
 
-def load_pretraining_dataset(path, tokenizer, max_tokens=2048, seed=42):
-    encode = functools.partial(encode_pretraining, tokenizer, max_tokens)
-    dataset = load_dataset(path, streaming=True, split="train")
+def load_pretraining_dataset(path, tokenizer, cfg, name=None, max_tokens=2048, seed=42):
+    if cfg.sample_packing:
+        collate_fn = PretrainingBatchSamplerDataCollatorForSeq2Seq(tokenizer, return_tensors="pt", padding=True, pad_to_multiple_of=max_tokens)
+        encode = functools.partial(encode_packed_pretraining, tokenizer, collate_fn, max_seq_length=max_tokens, batch_size=cfg.micro_batch_size)
+        cfg.micro_batch_size = 1
+    else:
+        encode = functools.partial(encode_pretraining, tokenizer, max_tokens)
+
+    dataset = load_dataset(path, streaming=True, split="train", name="en")
     dataset = dataset.shuffle(seed=seed, buffer_size=10_000)
     dataset = dataset.map(
         encode,
@@ -828,9 +836,10 @@ def load_pretraining_dataset(path, tokenizer, max_tokens=2048, seed=42):
 
 def encode_packed_pretraining(
     tokenizer: PreTrainedTokenizerBase,
+    collate_fn,
     examples: List[str],
-    max_seq_length: int = 8192,
-    sample_packing_efficiency: int = 1,
+    max_seq_length: int = 2048,
+    batch_size: int = 4,
 ) -> Dict[str, List]:
     # pylint: disable=duplicate-code
     # tokenize all the examples
@@ -859,33 +868,27 @@ def encode_packed_pretraining(
 
     sampler = MultipackBatchSampler(
         RandomSampler(train_dataset),
-        batch_size=1,
+        batch_size=batch_size,
         drop_last=True,
-        batch_max_len=max_seq_length,
+        batch_max_len=batch_size * max_seq_length,
         lengths=(
             train_dataset.data.column("position_ids")
             .to_pandas()
             .apply(lambda x: x[-1] + 1)
             .values
         ),
-        packing_efficiency_estimate=sample_packing_efficiency,
     )
 
     chunked_data = defaultdict(list)
 
     for data in sampler:
         features = train_dataset[data]
+        features["labels"] = features["input_ids"].copy()
+        collated_features = collate_fn(features)
 
         for feature in features.keys():
             if feature == "length":
                 continue
-            if feature == "attention_mask":
-                arrays = [(1) * np.array(item) for item in features[feature]]
-                chunked_data[feature].append(np.concatenate(arrays))
-            else:
-                arrays = [np.array(item) for item in features[feature]]
-                chunked_data[feature].append(np.concatenate(arrays))
-
-    chunked_data["labels"] = chunked_data["input_ids"].copy()
+            chunked_data[feature].append(collated_features[feature].squeeze(0))
 
     return chunked_data
