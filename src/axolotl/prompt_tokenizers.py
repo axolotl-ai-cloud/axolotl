@@ -379,10 +379,12 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
                         add_eos_token=False,
                         strip_bos_token=True,
                     )
-                    # everything from this is masked out from the labels
-                    labels = [IGNORE_TOKEN_ID] * len(res["input_ids"])
+                    if self.train_on_inputs:
+                        labels = copy.deepcopy(res["input_ids"])
+                    else:
+                        # everything from this is masked out from the labels
+                        labels = [IGNORE_TOKEN_ID] * len(res["input_ids"])
                 elif assistant in role:
-                    # TODO label assistant token/tokens w/ IGNORE_TOKEN_ID
                     role = (
                         role.replace(role_remap[1]["from"], role_remap[1]["to"])
                         if role_remap
@@ -406,18 +408,24 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
                         add_eos_token=False,
                         strip_bos_token=True,
                     )
-                    # not masked out from labels
                     labels = copy.deepcopy(res["input_ids"])
-                    len_role = len(role_res["input_ids"])
-                    labels[:len_role] = [IGNORE_TOKEN_ID] * min(len_role, len(labels))
+                    if not self.train_on_inputs:
+                        # mask out role tokens from the labels
+                        len_role = len(role_res["input_ids"])
+                        labels[:len_role] = [IGNORE_TOKEN_ID] * min(
+                            len_role, len(labels)
+                        )
                 elif role == "":
                     turn = content
                     # this is only ever the first part, should include the bos token and the user query
                     res = self._tokenize(
                         turn, add_eos_token=False, strip_bos_token=False
                     )
-                    # everything from this is masked out from the labels
-                    labels = [IGNORE_TOKEN_ID] * len(res["input_ids"])
+                    if self.train_on_inputs:
+                        labels = copy.deepcopy(res["input_ids"])
+                    else:
+                        # everything from this is masked out from the labels
+                        labels = [IGNORE_TOKEN_ID] * len(res["input_ids"])
                 else:
                     LOG.warning(f"unhandled role: {role}")
                     continue
