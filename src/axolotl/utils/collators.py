@@ -179,6 +179,7 @@ class MambaDataCollator:
             "labels": labels,
         }
 
+
 @dataclass
 class PretrainingBatchSamplerDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):
     """
@@ -191,16 +192,10 @@ class PretrainingBatchSamplerDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):
             if feature == "length":
                 continue
             if feature == "attention_mask":
-                arrays = [
-                    (1) * np.array(item)
-                    for item in features[feature]
-                ]
+                arrays = [(1) * np.array(item) for item in features[feature]]
                 chunked_data[feature] = np.concatenate(arrays)
             else:
-                arrays = [
-                    np.array(item) for item in features[feature]
-                ]
+                arrays = [np.array(item) for item in features[feature]]
                 chunked_data[feature] = np.concatenate(arrays)
         features = [chunked_data]
         return super().__call__(features, return_tensors=return_tensors)
-

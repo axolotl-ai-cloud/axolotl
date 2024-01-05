@@ -9,7 +9,9 @@ load_in_4bit: false
 strict: false
 
 max_steps: 200
-pretraining_dataset: c4
+pretraining_dataset:
+  path: c4
+  name: en
 dataset_prepared_path:
 val_set_size: 0.0
 output_dir: ./model-out
@@ -45,7 +47,7 @@ xformers_attention:
 flash_attention: true
 
 warmup_steps: 10
-evals_per_epoch: 
+evals_per_epoch:
 eval_table_size:
 saves_per_epoch: 1
 debug:

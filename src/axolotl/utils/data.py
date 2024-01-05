@@ -4,9 +4,8 @@ import hashlib
 import logging
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, List, Tuple, Union, Optional
+from typing import Dict, List, Tuple, Union
 
-import numpy as np
 import torch
 from datasets import (
     Dataset,
@@ -42,7 +41,7 @@ from axolotl.prompters import (
     SummarizeTLDRPrompter,
     UnsupportedPrompter,
 )
-from axolotl.utils.collators import BatchSamplerDataCollatorForSeq2Seq, PretrainingBatchSamplerDataCollatorForSeq2Seq
+from axolotl.utils.collators import PretrainingBatchSamplerDataCollatorForSeq2Seq
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import is_main_process, zero_first
 from axolotl.utils.samplers.multipack import MultipackBatchSampler
@@ -70,10 +69,17 @@ def prepare_dataset(cfg, tokenizer):
                 tokenizer, cfg, DEFAULT_DATASET_PREPARED_PATH
             )
     else:
+        path = cfg.pretraining_dataset
+        name = None
+        if isinstance(dict, cfg.pretraining_dataset):
+            path = cfg.pretraining_dataset.path
+            name = cfg.pretraining_dataset.name
+
         train_dataset = load_pretraining_dataset(
-            cfg.pretraining_dataset,
+            path,
             tokenizer,
             cfg,
+            name=name,
             max_tokens=cfg.sequence_len,
             seed=cfg.seed or 42,
         )
@@ -815,13 +821,22 @@ def encode_pretraining(
 
 def load_pretraining_dataset(path, tokenizer, cfg, name=None, max_tokens=2048, seed=42):
     if cfg.sample_packing:
-        collate_fn = PretrainingBatchSamplerDataCollatorForSeq2Seq(tokenizer, return_tensors="pt", padding=True, pad_to_multiple_of=max_tokens)
-        encode = functools.partial(encode_packed_pretraining, tokenizer, collate_fn, max_seq_length=max_tokens, batch_size=cfg.micro_batch_size)
+        collate_fn = PretrainingBatchSamplerDataCollatorForSeq2Seq(
+            tokenizer, return_tensors="pt", padding=True, pad_to_multiple_of=max_tokens
+        )
+        encode = functools.partial(
+            encode_packed_pretraining,
+            tokenizer,
+            collate_fn,
+            max_seq_length=max_tokens,
+            batch_size=cfg.micro_batch_size,
+        )
+        # set this to 1 so downstream data_loader doesn't try to increase the batch again
         cfg.micro_batch_size = 1
     else:
         encode = functools.partial(encode_pretraining, tokenizer, max_tokens)
 
-    dataset = load_dataset(path, streaming=True, split="train", name="en")
+    dataset = load_dataset(path, streaming=True, split="train", name=name)
     dataset = dataset.shuffle(seed=seed, buffer_size=10_000)
     dataset = dataset.map(
         encode,
