@@ -822,7 +822,10 @@ def encode_pretraining(
 def load_pretraining_dataset(path, tokenizer, cfg, name=None, max_tokens=2048, seed=42):
     if cfg.sample_packing:
         collate_fn = PretrainingBatchSamplerDataCollatorForSeq2Seq(
-            tokenizer, return_tensors="pt", padding=True, pad_to_multiple_of=max_tokens
+            tokenizer,
+            return_tensors="pt",
+            padding=True,
+            pad_to_multiple_of=max_tokens * cfg.micro_batch_size,
         )
         encode = functools.partial(
             encode_packed_pretraining,
