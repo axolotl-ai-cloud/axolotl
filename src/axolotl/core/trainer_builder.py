@@ -611,6 +611,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             training_arguments_kwargs["hub_model_id"] = self.cfg.hub_model_id
             training_arguments_kwargs["push_to_hub"] = True
             training_arguments_kwargs["hub_private_repo"] = True
+            training_arguments_kwargs["hub_always_push"] = True
 
             if self.cfg.hub_strategy:
                 training_arguments_kwargs["hub_strategy"] = self.cfg.hub_strategy
