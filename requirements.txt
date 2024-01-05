@@ -33,9 +33,9 @@ art
 fschat==0.2.34
 gradio==3.50.2
 tensorboard
+packaging==23.2
 
 mamba-ssm==1.0.1
-packaging==23.2
 
 # remote filesystems
 s3fs
