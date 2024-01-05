@@ -35,6 +35,7 @@ gradio==3.50.2
 tensorboard
 
 mamba-ssm==1.0.1
+packaging==23.2
 
 # remote filesystems
 s3fs
