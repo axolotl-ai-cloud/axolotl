@@ -2,7 +2,7 @@
 import logging
 import math
 import os
-from typing import Optional, Tuple  # noqa: F401
+from typing import Any, Optional, Tuple  # noqa: F401
 
 import addict
 import bitsandbytes as bnb
@@ -288,8 +288,37 @@ def load_model(
 
     model_kwargs = {}
 
-    model_kwargs["device_map"] = cfg.device_map
-    model_kwargs["max_memory"] = cfg.max_memory
+    max_memory = cfg.max_memory
+    device_map = cfg.device_map
+
+    if cfg.gpu_memory_limit:
+        gpu_memory_limit = (
+            str(cfg.gpu_memory_limit) + "GiB"
+            if isinstance(cfg.gpu_memory_limit, int)
+            else cfg.gpu_memory_limit
+        )
+
+        max_memory = {}
+        for i in range(torch.cuda.device_count()):
+            max_memory[i] = gpu_memory_limit
+        max_memory["cpu"] = "256GiB"  # something sufficiently large to fit anything
+
+    if max_memory is not None:
+        # Based on https://github.com/togethercomputer/OpenChatKit/blob/main/inference/bot.py
+        from accelerate import infer_auto_device_map, init_empty_weights
+
+        with init_empty_weights():
+            model_canvas = AutoModelForCausalLM.from_config(model_config)
+        model_canvas.tie_weights()
+        device_map = infer_auto_device_map(
+            model_canvas,
+            max_memory=max_memory,
+            dtype=cfg.torch_dtype,
+        )
+        # We can discard max_memory now as we have a device map set up for us
+        max_memory = None
+
+    model_kwargs["device_map"] = device_map
     model_kwargs["torch_dtype"] = cfg.torch_dtype
     # TODO can we put the reference model on it's own gpu? I think we have to move logits around to calculate loss
     # if cfg.rl:
@@ -426,7 +455,6 @@ def load_model(
             model_kwargs["device"] = torch.cuda.current_device()
             del model_kwargs["torch_dtype"]
             del model_kwargs["device_map"]
-            del model_kwargs["max_memory"]
 
             model = MambaLMHeadModel.from_pretrained(
                 base_model,
@@ -683,10 +711,15 @@ def load_lora(model, cfg, inference=False):
 
     if cfg.lora_model_dir:
         LOG.debug("Loading pretained PEFT - LoRA")
+        model_kwargs: Any = {}
+        if cfg.lora_on_cpu:
+            model_kwargs["max_memory"] = {"cpu": "256GiB"}
+            model_kwargs["device_map"] = {"": "cpu"}
         model = PeftModel.from_pretrained(
             model,
             cfg.lora_model_dir,
             is_trainable=(not inference),
+            **model_kwargs,
         )
     else:
         model = get_peft_model(model, lora_config)

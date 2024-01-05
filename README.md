@@ -550,6 +550,11 @@ tf32: true # require >=ampere
 bfloat16: true # require >=ampere
 float16: true
 
+# Limit the memory for all available GPUs to this amount (if an integer, expressed in gigabytes); default: unset
+gpu_memory_limit: 20GiB
+# Do the LoRA/PEFT loading on CPU -- this is required if the base model is so large it takes up most or all of the available GPU VRAM, e.g. during a model and LoRA merge
+lora_on_cpu: true
+
 # A list of one or more datasets to finetune the model with
 datasets:
   # HuggingFace dataset repo | s3://,gs:// path | "json" for local dataset, make sure to fill data_files
@@ -1042,11 +1047,13 @@ The following command will merge your LORA adapater with your base model.  You c
 python3 -m axolotl.cli.merge_lora your_config.yml --lora_model_dir="./completed-model"
 ```
 
-If you run out of CUDA memory, you can try to merge in system RAM with
+You may need to use the `gpu_memory_limit` and/or `lora_on_cpu` config options to avoid running out of memory. If you still run out of CUDA memory, you can try to merge in system RAM with
 
 ```bash
 CUDA_VISIBLE_DEVICES="" python3 -m axolotl.cli.merge_lora ...
 ```
+
+although this will be very slow, and using the config options above are recommended instead.
 
 ## Common Errors 🧰
 
