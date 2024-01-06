@@ -60,6 +60,12 @@ class AxolotlTrainingArguments(TrainingArguments):
         default=False,
         metadata={"help": "Use quadratic warmup for cosine scheduling."},
     )
+    pretraining: bool = field(
+        default=False,
+        metadata={
+            "help": "Indicates to trainer whether we are doing continued pretraining."
+        },
+    )
     sample_packing: bool = field(
         default=False,
         metadata={"help": "Use sample packing for efficient training."},
@@ -157,7 +163,7 @@ class AxolotlTrainer(Trainer):
         return self.lr_scheduler
 
     def _get_train_sampler(self) -> Optional[torch.utils.data.Sampler]:
-        if self.args.sample_packing:
+        if self.args.sample_packing and not self.args.pretraining:
             return MultipackBatchSampler(
                 RandomSampler(self.train_dataset),
                 self.args.train_batch_size,
@@ -193,7 +199,7 @@ class AxolotlTrainer(Trainer):
         return super()._get_eval_sampler(eval_dataset)
 
     def get_train_dataloader(self) -> DataLoader:
-        if self.args.sample_packing:
+        if self.args.sample_packing and not self.args.pretraining:
             train_dataset = self.train_dataset
             train_dataset = train_dataset.remove_columns(["length"])
             data_collator = self.data_collator
@@ -768,6 +774,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             training_arguments_kwargs
         )
         training_arguments_kwargs["model_type"] = self.cfg.model_config_type
+        training_arguments_kwargs["pretraining"] = bool(self.cfg.pretraining_dataset)
 
         if self.cfg.neftune_noise_alpha is not None:
             training_arguments_kwargs[
@@ -808,7 +815,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             train_dataset=self.train_dataset,
             eval_dataset=self.eval_dataset,
             args=training_args,
-            data_collator=self.build_collator(**data_collator_kwargs),
+            data_collator=self.build_collator(training_args, **data_collator_kwargs),
             bench_data_collator=transformers.DataCollatorForSeq2Seq(
                 self.tokenizer,
                 return_tensors="pt",
@@ -829,7 +836,10 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
 
         return trainer
 
-    def build_collator(self, **kwargs):
+    def build_collator(self, training_args: AxolotlTrainingArguments, **kwargs):
+        if training_args.pretraining:
+            return None
+
         if self.cfg.model_config_type == "mamba":
             return MambaDataCollator(tokenizer=self.tokenizer)
 
