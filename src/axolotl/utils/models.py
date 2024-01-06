@@ -139,6 +139,7 @@ def load_tokenizer(cfg):
         for k, val in cfg.special_tokens.items():
             # check if new special token is not already in tokenizer and
             # is adapter training to make sure lora_modules_to_save is set
+            # pylint: disable=too-many-boolean-expressions
             if (
                 (getattr(tokenizer, k) is None or getattr(tokenizer, k) != val)
                 and cfg.adapter
@@ -149,6 +150,7 @@ def load_tokenizer(cfg):
                         for x in ["embed_tokens", "lm_head"]
                     )
                 )
+                and (cfg.is_llama_derived_model or cfg.is_mistral_derived_model)
             ):
                 raise ValueError(
                     "Please set lora_modules_to_save to ['embed_tokens', 'lm_head'] when using an adapter and changing the special tokens."
