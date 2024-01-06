@@ -392,7 +392,10 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
                     # this should be the assistant response, should end with an eos token
                     if not content.strip():
                         LOG.warning(f"assistant turn has empty text: {prompt}")
-                    add_eos_token = conversation.sep != self.tokenizer.eos_token
+                    add_eos_token = not (
+                        conversation.name == "chatml"
+                        and conversation.sep == self.tokenizer.eos_token
+                    )
                     res = self._tokenize(
                         turn,
                         add_eos_token=add_eos_token,
