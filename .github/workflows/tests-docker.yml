@@ -5,6 +5,7 @@ on:
     paths:
       - '**.py'
       - 'requirements.txt'
+      - '.github/workflows/*.yml'
   workflow_dispatch:
 
 jobs:
