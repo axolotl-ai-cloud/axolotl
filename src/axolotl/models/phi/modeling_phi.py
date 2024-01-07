@@ -87,7 +87,6 @@ class Embedding(nn.Module):
         return hidden_states
 
 
-@torch.jit.script
 def _apply_rotary_emb(
     x: torch.FloatTensor,
     cos: torch.FloatTensor,
@@ -837,6 +836,8 @@ class ParallelBlock(nn.Module):
 
         self.mixer = MHA(config, layer_idx=block_idx)
         self.mlp = MLP(config)
+        self.checkpointing = False
+        self._gradient_checkpointing_func = None
 
     def forward(
         self,
@@ -845,23 +846,52 @@ class ParallelBlock(nn.Module):
         attention_mask: Optional[torch.BoolTensor] = None,
         **kwargs,
     ) -> torch.FloatTensor:
-        residual = hidden_states
-        hidden_states = self.ln(hidden_states)
-
-        attn_outputs = self.mixer(
+        def _forward(
+            mixer,
+            resid_dropout,
+            mlp,
+            ln,
             hidden_states,
-            past_key_values=past_key_values,
-            attention_mask=attention_mask,
+            past_key_values,
+            attention_mask,
+        ):
+            residual = hidden_states
+            hidden_states = ln(hidden_states)
+
+            attn_outputs = mixer(
+                hidden_states,
+                past_key_values=past_key_values,
+                attention_mask=attention_mask,
+            )
+            if isinstance(attn_outputs, tuple):
+                attn_outputs = attn_outputs[0]
+
+            attn_outputs = resid_dropout(attn_outputs)
+            feed_forward_hidden_states = resid_dropout(mlp(hidden_states))
+
+            return attn_outputs + feed_forward_hidden_states + residual
+
+        if self.training and self.checkpointing:
+            return self._gradient_checkpointing_func(
+                _forward,
+                self.mixer,
+                self.resid_dropout,
+                self.mlp,
+                self.ln,
+                hidden_states,
+                past_key_values,
+                attention_mask,
+            )
+
+        return _forward(
+            self.mixer,
+            self.resid_dropout,
+            self.mlp,
+            self.ln,
+            hidden_states,
+            past_key_values,
+            attention_mask,
         )
-        if isinstance(attn_outputs, tuple):
-            attn_outputs = attn_outputs[0]
-
-        attn_outputs = self.resid_dropout(attn_outputs)
-        feed_forward_hidden_states = self.resid_dropout(self.mlp(hidden_states))
-
-        hidden_states = attn_outputs + feed_forward_hidden_states + residual
-
-        return hidden_states
 
 
 class CausalLMHead(nn.Module):
