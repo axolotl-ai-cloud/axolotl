@@ -55,6 +55,8 @@ def check_model_config(cfg: DictDefault, model_config: AutoConfig):
 
 def load_model_config(cfg):
     model_config_name = cfg.base_model_config or cfg.base_model
+    if not model_config_name and cfg.tokenizer_config:
+        model_config_name = cfg.tokenizer_config
     trust_remote_code = cfg.trust_remote_code is True
 
     try:
@@ -80,6 +82,7 @@ def load_model_config(cfg):
 
 
 def load_tokenizer(cfg):
+    model_config = load_model_config(cfg)
     tokenizer_kwargs = {}
     use_fast = True  # this is the default
 
@@ -150,7 +153,7 @@ def load_tokenizer(cfg):
                         for x in ["embed_tokens", "lm_head"]
                     )
                 )
-                and (cfg.is_llama_derived_model or cfg.is_mistral_derived_model)
+                and (model_config.model_type in ["llama", "mistral", "mixtral"])
             ):
                 raise ValueError(
                     "Please set lora_modules_to_save to ['embed_tokens', 'lm_head'] when using an adapter and changing the special tokens."
