@@ -1,10 +1,9 @@
 base_model: microsoft/phi-2
-model_type: PhiForCausalLM
+model_type: AutoModelForCausalLM
 tokenizer_type: AutoTokenizer
-is_llama_derived_model: false
 trust_remote_code: true
 
-load_in_8bit: true
+load_in_8bit: false
 load_in_4bit: false
 strict: false
 
@@ -20,7 +19,7 @@ sequence_len: 2048
 sample_packing: false  # currently unsupported
 pad_to_sequence_len:
 
-adapter: lora
+adapter:
 lora_model_dir:
 lora_r: 16
 lora_alpha: 32
@@ -40,7 +39,7 @@ wandb_log_model:
 gradient_accumulation_steps: 1
 micro_batch_size: 1
 num_epochs: 4
-optimizer: adamw_torch
+optimizer: paged_adamw_8bit
 adam_beta2: 0.95
 adam_epsilon: 0.00001
 max_grad_norm: 1.0
@@ -59,7 +58,7 @@ resume_from_checkpoint:
 local_rank:
 logging_steps: 1
 xformers_attention:
-flash_attention:
+flash_attention: true
 
 warmup_steps: 100
 evals_per_epoch: 4
