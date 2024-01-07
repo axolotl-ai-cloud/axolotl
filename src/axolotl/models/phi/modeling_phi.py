@@ -30,6 +30,8 @@ except ImportError:
     FlashRotaryEmbedding = None
     FlashSelfAttention, FlashCrossAttention = None, None
 
+# this is in a seperate try/except block since sometimes fused_dense isn't available
+# and it shouldn't completely disable flash attn when it isn't
 try:
     from flash_attn.ops.fused_dense import FusedDense
 except ImportError:
