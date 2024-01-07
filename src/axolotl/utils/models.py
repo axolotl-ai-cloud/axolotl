@@ -154,9 +154,8 @@ def load_tokenizer(cfg):
                     "Please set lora_modules_to_save to ['embed_tokens', 'lm_head'] when using an adapter and changing the special tokens."
                 )
 
-            rstrip = k == "eos_token"
             tokenizer.add_special_tokens(
-                {k: AddedToken(val, rstrip=rstrip, lstrip=False, normalized=False)}
+                {k: AddedToken(val, rstrip=False, lstrip=False, normalized=False)}
             )
 
         # If we add bos_token and eos_token, we need to update the post processor to
