@@ -457,6 +457,11 @@ def validate_config(cfg):
             "lora_modules_to_save not properly set yet adding new tokens. Please add `embed_tokens` and `lm_head` to `lora_modules_to_save`."
         )
 
+    if cfg.max_memory is not None and cfg.gpu_memory_limit is not None:
+        raise ValueError(
+            "max_memory and gpu_memory_limit are mutually exclusive and cannot be used together."
+        )
+
     # TODO
     # MPT 7b
     # https://github.com/facebookresearch/bitsandbytes/issues/25

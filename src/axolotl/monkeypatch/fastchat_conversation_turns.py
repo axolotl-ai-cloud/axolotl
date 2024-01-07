@@ -147,6 +147,15 @@ def get_turns(  # pylint: disable=too-many-return-statements
             else:
                 yield role + "\n", ""
         return
+    if self.sep_style == SeparatorStyle.CHATGLM3:
+        if self.system_message:
+            yield "", system_prompt
+        for role, message in self.messages:
+            if message:
+                yield role + "\n", " " + message
+            else:
+                yield role
+        return
     if self.sep_style == SeparatorStyle.CHATINTERN:
         # source: https://huggingface.co/internlm/internlm-chat-7b-8k/blob/bd546fa984b4b0b86958f56bf37f94aa75ab8831/modeling_internlm.py#L771
         seps = [self.sep, self.sep2]

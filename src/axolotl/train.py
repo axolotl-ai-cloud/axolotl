@@ -61,6 +61,12 @@ def train(
         msg += " and peft_config..."
     LOG.debug(msg)
     model, peft_config = load_model(cfg, tokenizer, inference=cli_args.inference)
+    model_ref = None
+    if cfg.rl:
+        # load the model again for model_ref/baseline
+        model_ref, _ = load_model(
+            cfg, tokenizer, inference=cli_args.inference, reference_model=True
+        )
 
     safe_serialization = cfg.save_safetensors is True
 
@@ -83,7 +89,7 @@ def train(
         freeze_parameters_except(model, cfg.unfrozen_parameters)
 
     trainer = setup_trainer(
-        cfg, train_dataset, eval_dataset, model, tokenizer, total_num_steps
+        cfg, train_dataset, eval_dataset, (model, model_ref), tokenizer, total_num_steps
     )
 
     if hasattr(model, "config"):
@@ -182,6 +188,9 @@ def train(
 
     if not cfg.hub_model_id:
         trainer.create_model_card(model_name=cfg.output_dir.lstrip("./"))
+    elif cfg.hub_model_id:
+        # defensively push to the hub to ensure the model card is updated
+        trainer.push_to_hub()
 
     return model, tokenizer
 

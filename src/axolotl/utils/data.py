@@ -2,6 +2,7 @@
 import functools
 import hashlib
 import logging
+from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Tuple, Union
 
@@ -14,6 +15,7 @@ from datasets import (
     load_from_disk,
 )
 from huggingface_hub import hf_hub_download
+from torch.utils.data import RandomSampler
 from transformers import PreTrainedTokenizerBase
 
 from axolotl.common.const import DEFAULT_DATASET_PREPARED_PATH
@@ -39,11 +41,14 @@ from axolotl.prompters import (
     SummarizeTLDRPrompter,
     UnsupportedPrompter,
 )
+from axolotl.utils.collators import PretrainingBatchSamplerDataCollatorForSeq2Seq
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import is_main_process, zero_first
+from axolotl.utils.samplers.multipack import MultipackBatchSampler
 from axolotl.utils.trainer import (
     calculate_total_num_steps,
     process_datasets_for_packing,
+    process_pretraining_datasets_for_packing,
 )
 
 LOG = logging.getLogger("axolotl")
@@ -64,9 +69,17 @@ def prepare_dataset(cfg, tokenizer):
                 tokenizer, cfg, DEFAULT_DATASET_PREPARED_PATH
             )
     else:
+        path = cfg.pretraining_dataset
+        name = None
+        if isinstance(cfg.pretraining_dataset, dict):
+            path = cfg.pretraining_dataset["path"]
+            name = cfg.pretraining_dataset["name"]
+
         train_dataset = load_pretraining_dataset(
-            cfg.pretraining_dataset,
+            path,
             tokenizer,
+            cfg,
+            name=name,
             max_tokens=cfg.sequence_len,
             seed=cfg.seed or 42,
         )
@@ -806,9 +819,27 @@ def encode_pretraining(
     return ret
 
 
-def load_pretraining_dataset(path, tokenizer, max_tokens=2048, seed=42):
-    encode = functools.partial(encode_pretraining, tokenizer, max_tokens)
-    dataset = load_dataset(path, streaming=True, split="train")
+def load_pretraining_dataset(path, tokenizer, cfg, name=None, max_tokens=2048, seed=42):
+    if cfg.sample_packing:
+        collate_fn = PretrainingBatchSamplerDataCollatorForSeq2Seq(
+            tokenizer,
+            return_tensors="pt",
+            padding=True,
+            pad_to_multiple_of=max_tokens * cfg.micro_batch_size,
+        )
+        encode = functools.partial(
+            encode_packed_pretraining,
+            tokenizer,
+            collate_fn,
+            max_seq_length=max_tokens,
+            batch_size=cfg.micro_batch_size,
+        )
+        # set this to 1 so downstream data_loader doesn't try to increase the batch again
+        cfg.micro_batch_size = 1
+    else:
+        encode = functools.partial(encode_pretraining, tokenizer, max_tokens)
+
+    dataset = load_dataset(path, streaming=True, split="train", name=name)
     dataset = dataset.shuffle(seed=seed, buffer_size=10_000)
     dataset = dataset.map(
         encode,
@@ -819,3 +850,63 @@ def load_pretraining_dataset(path, tokenizer, max_tokens=2048, seed=42):
         remove_columns=dataset.features.keys(),
     )
     return dataset
+
+
+def encode_packed_pretraining(
+    tokenizer: PreTrainedTokenizerBase,
+    collate_fn,
+    examples: List[str],
+    max_seq_length: int = 2048,
+    batch_size: int = 4,
+) -> Dict[str, List]:
+    # pylint: disable=duplicate-code
+    # tokenize all the examples
+    # rows get split with stride (overlap)
+    res = tokenizer(
+        examples,
+        truncation=True,
+        max_length=max_seq_length - 1,
+        add_special_tokens=True,
+        return_overflowing_tokens=True,
+        stride=256,
+    )
+
+    input_ids = [seq + [tokenizer.eos_token_id] for seq in res["input_ids"]]
+    attention_mask = [seq + [1] for seq in res["attention_mask"]]
+
+    tokenized_examples = {
+        "input_ids": input_ids,
+        "attention_mask": attention_mask,
+    }
+
+    train_dataset = Dataset.from_dict(tokenized_examples)
+    train_dataset = process_pretraining_datasets_for_packing(
+        train_dataset, max_seq_length
+    )
+
+    sampler = MultipackBatchSampler(
+        RandomSampler(train_dataset),
+        batch_size=batch_size,
+        drop_last=True,
+        batch_max_len=batch_size * max_seq_length,
+        lengths=(
+            train_dataset.data.column("position_ids")
+            .to_pandas()
+            .apply(lambda x: x[-1] + 1)
+            .values
+        ),
+    )
+
+    chunked_data = defaultdict(list)
+
+    for data in sampler:
+        features = train_dataset[data]
+        features["labels"] = features["input_ids"].copy()
+        collated_features = collate_fn(features)
+
+        for feature in features.keys():
+            if feature == "length":
+                continue
+            chunked_data[feature].append(collated_features[feature].squeeze(0))
+
+    return chunked_data

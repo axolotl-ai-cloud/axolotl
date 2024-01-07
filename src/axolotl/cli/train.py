@@ -12,6 +12,7 @@ from axolotl.cli import (
     check_user_token,
     load_cfg,
     load_datasets,
+    load_rl_datasets,
     print_axolotl_text_art,
 )
 from axolotl.common.cli import TrainerCliArgs
@@ -30,7 +31,10 @@ def do_cli(config: Path = Path("examples/"), **kwargs):
     parsed_cli_args, _ = parser.parse_args_into_dataclasses(
         return_remaining_strings=True
     )
-    dataset_meta = load_datasets(cfg=parsed_cfg, cli_args=parsed_cli_args)
+    if parsed_cfg.rl:
+        dataset_meta = load_rl_datasets(cfg=parsed_cfg, cli_args=parsed_cli_args)
+    else:
+        dataset_meta = load_datasets(cfg=parsed_cfg, cli_args=parsed_cli_args)
     train(cfg=parsed_cfg, cli_args=parsed_cli_args, dataset_meta=dataset_meta)
 
 
