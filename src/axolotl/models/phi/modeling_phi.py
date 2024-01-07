@@ -25,11 +25,14 @@ try:
     from flash_attn.bert_padding import pad_input, unpad_input
     from flash_attn.layers.rotary import RotaryEmbedding as FlashRotaryEmbedding
     from flash_attn.modules.mha import FlashCrossAttention, FlashSelfAttention
-    from flash_attn.ops.fused_dense import FusedDense
 except ImportError:
     pad_input, unpad_input = None, None
     FlashRotaryEmbedding = None
     FlashSelfAttention, FlashCrossAttention = None, None
+
+try:
+    from flash_attn.ops.fused_dense import FusedDense
+except ImportError:
     FusedDense = None
 
 

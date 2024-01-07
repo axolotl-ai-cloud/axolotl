@@ -388,6 +388,9 @@ def load_model(
                 model_config._attn_implementation = (  # pylint: disable=protected-access
                     "eager"
                 )
+        if model_config.model_type == "phi-msft":
+            model_config.flash_attn = True
+            model_config.flash_rotary = True
 
     try:
         if cfg.is_llama_derived_model and not cfg.trust_remote_code and not cfg.gptq:
@@ -440,11 +443,12 @@ def load_model(
         #         device=cfg.device,
         #     )
         #     model.train() # sets to train instead of eval mode
-        elif model_type == "PhiForCausalLM":
+        elif model_type == "PhiForCausalLM" or model_config.model_type == "phi-msft":
             from axolotl.models.phi import PhiForCausalLM
 
             model = PhiForCausalLM.from_pretrained(
                 base_model,
+                config=model_config,
                 load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
                 load_in_4bit=cfg.load_in_4bit and cfg.adapter is not None,
                 **model_kwargs,
