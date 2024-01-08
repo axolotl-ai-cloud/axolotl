@@ -60,6 +60,9 @@ class TestPhi(unittest.TestCase):
                 "lr_scheduler": "cosine",
                 "bf16": True,
                 "flash_attention": True,
+                "max_steps": 20,
+                "save_steps": 10,
+                "eval_steps": 10,
             }
         )
         normalize_config(cfg)
