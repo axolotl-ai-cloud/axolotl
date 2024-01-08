@@ -37,7 +37,7 @@ from axolotl.utils.collators import (
     DataCollatorForSeq2Seq,
     MambaDataCollator,
 )
-from axolotl.utils.samplers import MultipackBatchSampler
+from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 from axolotl.utils.schedulers import get_cosine_schedule_with_quadratic_warmup
 
 try:
@@ -170,12 +170,7 @@ class AxolotlTrainer(Trainer):
                 self.args.train_batch_size,
                 drop_last=True,
                 batch_max_len=self._train_batch_size * self.args.max_seq_length,
-                lengths=(
-                    self.train_dataset.data.column("position_ids")
-                    .to_pandas()
-                    .apply(lambda x: x[-1] + 1)
-                    .values
-                ),
+                lengths=get_dataset_lengths(self.train_dataset),
                 packing_efficiency_estimate=self.args.sample_packing_efficiency,
             )
         return super()._get_train_sampler()
@@ -189,12 +184,7 @@ class AxolotlTrainer(Trainer):
                 self.args.per_device_eval_batch_size,
                 drop_last=True,
                 batch_max_len=self.args.eval_batch_size * self.args.max_seq_length,
-                lengths=(
-                    eval_dataset.data.column("position_ids")
-                    .to_pandas()
-                    .apply(lambda x: x[-1] + 1)
-                    .values
-                ),
+                lengths=get_dataset_lengths(eval_dataset),
                 packing_efficiency_estimate=self.args.sample_packing_efficiency,
             )
         return super()._get_eval_sampler(eval_dataset)
