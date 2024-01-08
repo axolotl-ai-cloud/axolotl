@@ -109,15 +109,18 @@ def disable_datasets_caching():
 def process_datasets_for_packing(cfg, train_dataset, eval_dataset, tokenizer):
     drop_long = partial(drop_long_seq, sequence_len=cfg.sequence_len)
     with zero_first(is_main_process()):
+        if cfg.group_by_length:
+            train_dataset = train_dataset.map(
+                add_length, num_proc=cfg.dataset_processes
+            )
+
+        max_input_len = np.max(get_dataset_lengths(train_dataset))
+        LOG.debug(f"max_input_len: {max_input_len}", main_process_only=True)
+
         train_dataset = train_dataset.filter(drop_long, num_proc=cfg.dataset_processes)
         if eval_dataset:
             eval_dataset = eval_dataset.filter(
                 drop_long, num_proc=cfg.dataset_processes
-            )
-
-        if cfg.group_by_length:
-            train_dataset = train_dataset.map(
-                add_length, num_proc=cfg.dataset_processes
             )
 
         if cfg.sample_packing:
