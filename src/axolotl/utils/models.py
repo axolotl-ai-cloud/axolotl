@@ -394,6 +394,7 @@ def load_model(
         if model_config.model_type == "phi-msft":
             model_config.flash_attn = True
             model_config.flash_rotary = True
+            model_config.fused_dense = True
 
     try:
         if cfg.is_llama_derived_model and not cfg.trust_remote_code and not cfg.gptq:
