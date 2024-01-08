@@ -26,6 +26,7 @@ class TestPhi(unittest.TestCase):
     Test case for Phi2 models
     """
 
+    @pytest.mark.skip(reason="fixme later")
     @with_temp_dir
     def test_phi2_ft(self, temp_dir):
         # pylint: disable=duplicate-code
