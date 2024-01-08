@@ -63,10 +63,13 @@ def train(
     model, peft_config = load_model(cfg, tokenizer, inference=cli_args.inference)
     model_ref = None
     if cfg.rl:
+        # use built-in trl autounwrap
+        model_ref = None
+
         # load the model again for model_ref/baseline
-        model_ref, _ = load_model(
-            cfg, tokenizer, inference=cli_args.inference, reference_model=True
-        )
+        # model_ref, _ = load_model(
+        #     cfg, tokenizer, inference=cli_args.inference, reference_model=True
+        # )
 
     safe_serialization = cfg.save_safetensors is True
 
