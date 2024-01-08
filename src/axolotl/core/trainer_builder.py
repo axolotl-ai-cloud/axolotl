@@ -34,6 +34,7 @@ from axolotl.utils.callbacks import (
 )
 from axolotl.utils.collators import (
     BatchSamplerDataCollatorForSeq2Seq,
+    DataCollatorForSeq2Seq,
     MambaDataCollator,
 )
 from axolotl.utils.samplers import MultipackBatchSampler
@@ -843,7 +844,14 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         if self.cfg.model_config_type == "mamba":
             return MambaDataCollator(tokenizer=self.tokenizer)
 
-        return BatchSamplerDataCollatorForSeq2Seq(
+        if training_args.sample_packing:
+            return BatchSamplerDataCollatorForSeq2Seq(
+                self.tokenizer,
+                return_tensors="pt",
+                **kwargs,
+            )
+
+        return DataCollatorForSeq2Seq(
             self.tokenizer,
             return_tensors="pt",
             **kwargs,
