@@ -44,7 +44,7 @@ from axolotl.prompters import (
 from axolotl.utils.collators import PretrainingBatchSamplerDataCollatorForSeq2Seq
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import is_main_process, zero_first
-from axolotl.utils.samplers.multipack import MultipackBatchSampler
+from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 from axolotl.utils.trainer import (
     calculate_total_num_steps,
     process_datasets_for_packing,
@@ -889,12 +889,7 @@ def encode_packed_pretraining(
         batch_size=batch_size,
         drop_last=True,
         batch_max_len=batch_size * max_seq_length,
-        lengths=(
-            train_dataset.data.column("position_ids")
-            .to_pandas()
-            .apply(lambda x: x[-1] + 1)
-            .values
-        ),
+        lengths=get_dataset_lengths(train_dataset),
     )
 
     chunked_data = defaultdict(list)

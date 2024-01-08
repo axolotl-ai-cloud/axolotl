@@ -14,7 +14,7 @@ from torch.utils.data import DataLoader, RandomSampler
 
 from axolotl.core.trainer_builder import HFCausalTrainerBuilder, HFDPOTrainerBuilder
 from axolotl.utils.distributed import is_main_process, reduce_and_broadcast, zero_first
-from axolotl.utils.samplers import MultipackBatchSampler
+from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 
 LOG = get_logger("axolotl")
 
@@ -212,12 +212,7 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                 drop_last=True,
                 batch_max_len=cfg.micro_batch_size
                 * (cfg.max_packed_sequence_len or cfg.sequence_len),
-                lengths=(
-                    train_dataset.data.column("position_ids")
-                    .to_pandas()
-                    .apply(lambda x: x[-1] + 1)
-                    .values
-                ),
+                lengths=get_dataset_lengths(train_dataset),
             )
 
             data_loader = DataLoader(
