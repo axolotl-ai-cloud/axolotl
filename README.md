@@ -1153,11 +1153,17 @@ pytest tests/
 
 ## Sponsors 🤝❤
 
-OpenAccess AI Collective is run by volunteer contributors who help us accelerate forward by fixing bugs, answering
+OpenAccess AI Collective is run by volunteer contributors such as [winglian](https://github.com/winglian),
+[NanoCode012](https://github.com/NanoCode012), [tmm1](https://github.com/tmm1),
+[mhenrichsen](https://github.com/mhenrichsen), [casper-hansen](https://github.com/casper-hansen),
+[hamelsmu](https://github.com/hamelsmu) and many more who help us accelerate forward by fixing bugs, answering
 community questions and implementing new features. Axolotl needs donations from sponsors for the compute needed to
-run our unit & integration tests, as well as help troubleshoot community issues. If you love axolotl, consider
-sponsoring the project via [GitHub Sponsors](https://github.com/sponsors/OpenAccess-AI-Collective), or reach out
-directly to [wing@openaccessaicollective.org](mailto:wing@openaccessaicollective.org).
+run our unit & integration tests, troubleshooting community issues, and providing bounties. If you love axolotl,
+consider sponsoring the project via [GitHub Sponsors](https://github.com/sponsors/OpenAccess-AI-Collective),
+[Ko-fi](https://ko-fi.com/axolotl_ai) or reach out directly to
+[wing@openaccessaicollective.org](mailto:wing@openaccessaicollective.org).
+
+---
 
 #### 💎 Diamond Sponsors - [Contact directly](mailto:wing@openaccessaicollective.org)
 
