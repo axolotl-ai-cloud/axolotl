@@ -108,7 +108,7 @@ def _apply_rotary_emb(
     c, s = rearrange(cos[:seqlen], "s d -> s 1 d"), rearrange(
         sin[:seqlen], "s d -> s 1 d"
     )
-    # x1, x2, c, s = [t.to(dtype=torch.float32) for t in [x1, x2, c, s]]
+    x1, x2, c, s = [t.to(dtype=torch.float32) for t in [x1, x2, c, s]]
 
     x_rot = torch.cat([x1 * c - x2 * s, x1 * s + x2 * c], axis=-1).to(x.dtype)
 
@@ -133,7 +133,7 @@ def _apply_rotary_emb_kv(
     c, s = rearrange(cos[:seqlen], "s d -> s 1 d"), rearrange(
         sin[:seqlen], "s d -> s 1 d"
     )
-    # k1, k2, c, s = [t.to(dtype=torch.float32) for t in [k1, k2, c, s]]
+    k1, k2, c, s = [t.to(dtype=torch.float32) for t in [k1, k2, c, s]]
 
     k_rot = torch.cat([k1 * c - k2 * s, k1 * s + k2 * c], axis=-1).to(kv.dtype)
 
@@ -168,7 +168,7 @@ def _apply_rotary_emb_qkv(
     c, s = rearrange(cos[:seqlen], "s d -> s 1 d"), rearrange(
         sin[:seqlen], "s d -> s 1 d"
     )
-    # q1, q2, k1, k2, c, s = [t.to(dtype=torch.float32) for t in [q1, q2, k1, k2, c, s]]
+    q1, q2, k1, k2, c, s = [t.to(dtype=torch.float32) for t in [q1, q2, k1, k2, c, s]]
 
     q_rot = torch.cat([q1 * c - q2 * s, q1 * s + q2 * c], axis=-1).to(qkv.dtype)
     k_rot = torch.cat([k1 * c - k2 * s, k1 * s + k2 * c], axis=-1).to(qkv.dtype)
@@ -220,8 +220,7 @@ class RotaryEmbedding(nn.Module):
 
         # Generate and save the scale buffer (non-trainable)
         scale = (
-            # (torch.arange(0, dim, 2, device=device, dtype=torch.float32) + 0.4 * dim)
-            (torch.arange(0, dim, 2, device=device, dtype=torch.bfloat16) + 0.4 * dim)
+            (torch.arange(0, dim, 2, device=device, dtype=torch.float32) + 0.4 * dim)
             / (1.4 * dim)
             if scale_base is not None
             else None
@@ -230,18 +229,16 @@ class RotaryEmbedding(nn.Module):
 
         # Initialize cached attributes since ONNX can't rely on dynamic initialization
         self._update_cos_sin_cache(
-            # max_position_embeddings, device=device, dtype=torch.float32
             max_position_embeddings,
             device=device,
-            dtype=torch.bfloat16,
+            dtype=torch.float32,
         )
 
     def _compute_inv_freq(self, device: Optional[str] = None) -> torch.FloatTensor:
         return 1.0 / (
             self.base
             ** (
-                # torch.arange(0, self.dim, 2, device=device, dtype=torch.float32)
-                torch.arange(0, self.dim, 2, device=device, dtype=torch.bfloat16)
+                torch.arange(0, self.dim, 2, device=device, dtype=torch.float32)
                 / self.dim
             )
         )
@@ -257,8 +254,7 @@ class RotaryEmbedding(nn.Module):
         # fp32 is preferred since the output of `torch.arange` can be quite large
         # and bf16 would lose a lot of precision
         if self.pos_idx_in_fp32:
-            # t = torch.arange(seqlen, device=device, dtype=torch.float32)
-            t = torch.arange(seqlen, device=device, dtype=torch.bfloat16)
+            t = torch.arange(seqlen, device=device, dtype=torch.float32)
             if self.inv_freq.dtype != torch.float32:
                 inv_freq = self._compute_inv_freq(device=device)
             else:
@@ -389,8 +385,8 @@ class SelfAttention(nn.Module):
         batch_size, seqlen = qkv.shape[0], qkv.shape[1]
         q, k, v = qkv.unbind(dim=2)
 
-        # q = q.to(torch.float32)
-        # k = k.to(torch.float32)
+        q = q.to(torch.float32)
+        k = k.to(torch.float32)
 
         causal = self.causal if causal is None else causal
         softmax_scale = self.softmax_scale or 1.0 / math.sqrt(q.shape[-1])
@@ -458,8 +454,8 @@ class CrossAttention(nn.Module):
             kv = repeat(kv, "... hkv d -> ... (hkv g) d", g=q.shape[2] // kv.shape[3])
         k, v = kv.unbind(dim=2)
 
-        # q = q.to(torch.float32)
-        # k = k.to(torch.float32)
+        q = q.to(torch.float32)
+        k = k.to(torch.float32)
 
         causal = self.causal if causal is None else causal
         softmax_scale = self.softmax_scale or 1.0 / math.sqrt(q.shape[-1])
@@ -916,8 +912,7 @@ class CausalLMHead(nn.Module):
 
     def forward(self, hidden_states: torch.FloatTensor) -> torch.FloatTensor:
         hidden_states = self.ln(hidden_states)
-        # logits = self.linear(hidden_states).to(torch.float32)
-        logits = self.linear(hidden_states)
+        logits = self.linear(hidden_states).to(torch.float32)
 
         return logits
 
