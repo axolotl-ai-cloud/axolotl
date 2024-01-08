@@ -17,6 +17,7 @@ def parse_requirements():
                 _dependency_links.append(url)
             elif (
                 "flash-attn" not in line
+                and "flash-attention" not in line
                 and "deepspeed" not in line
                 and line
                 and line[0] != "#"
@@ -50,6 +51,9 @@ setup(
     extras_require={
         "flash-attn": [
             "flash-attn==2.3.3",
+        ],
+        "fused-dense-lib": [
+            "fused-dense-lib  @ git+https://github.com/Dao-AILab/flash-attention@v2.3.3#subdirectory=csrc/fused_dense_lib",
         ],
         "deepspeed": [
             "deepspeed",

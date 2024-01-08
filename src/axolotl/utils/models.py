@@ -55,6 +55,8 @@ def check_model_config(cfg: DictDefault, model_config: AutoConfig):
 
 def load_model_config(cfg):
     model_config_name = cfg.base_model_config or cfg.base_model
+    if not model_config_name and cfg.tokenizer_config:
+        model_config_name = cfg.tokenizer_config
     trust_remote_code = cfg.trust_remote_code is True
 
     try:
@@ -80,6 +82,7 @@ def load_model_config(cfg):
 
 
 def load_tokenizer(cfg):
+    model_config = load_model_config(cfg)
     tokenizer_kwargs = {}
     use_fast = True  # this is the default
 
@@ -139,6 +142,7 @@ def load_tokenizer(cfg):
         for k, val in cfg.special_tokens.items():
             # check if new special token is not already in tokenizer and
             # is adapter training to make sure lora_modules_to_save is set
+            # pylint: disable=too-many-boolean-expressions
             if (
                 (getattr(tokenizer, k) is None or getattr(tokenizer, k) != val)
                 and cfg.adapter
@@ -149,6 +153,7 @@ def load_tokenizer(cfg):
                         for x in ["embed_tokens", "lm_head"]
                     )
                 )
+                and (model_config.model_type in ["llama", "mistral", "mixtral"])
             ):
                 raise ValueError(
                     "Please set lora_modules_to_save to ['embed_tokens', 'lm_head'] when using an adapter and changing the special tokens."
@@ -386,6 +391,10 @@ def load_model(
                 model_config._attn_implementation = (  # pylint: disable=protected-access
                     "eager"
                 )
+        if model_config.model_type == "phi-msft":
+            model_config.flash_attn = True
+            model_config.flash_rotary = True
+            model_config.fused_dense = True
 
     try:
         if cfg.is_llama_derived_model and not cfg.trust_remote_code and not cfg.gptq:
@@ -438,11 +447,12 @@ def load_model(
         #         device=cfg.device,
         #     )
         #     model.train() # sets to train instead of eval mode
-        elif model_type == "PhiForCausalLM":
+        elif model_type == "PhiForCausalLM" or model_config.model_type == "phi-msft":
             from axolotl.models.phi import PhiForCausalLM
 
             model = PhiForCausalLM.from_pretrained(
                 base_model,
+                config=model_config,
                 load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
                 load_in_4bit=cfg.load_in_4bit and cfg.adapter is not None,
                 **model_kwargs,
