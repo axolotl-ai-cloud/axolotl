@@ -44,7 +44,7 @@ adam_beta2: 0.95
 adam_epsilon: 0.00001
 max_grad_norm: 1.0
 lr_scheduler: cosine
-learning_rate: 0.000003
+learning_rate: 1e-5
 
 train_on_inputs: false
 group_by_length: true
