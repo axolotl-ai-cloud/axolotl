@@ -164,6 +164,10 @@ class AxolotlTrainer(Trainer):
                     num_training_steps=num_training_steps,
                 )
             elif self.args.lr_scheduler_type == "cosine" and self.args.cosine_min_lr_ratio is not None:
+                assert 0 <= self.args.cosine_min_lr_ratio <= 1.0, "cosine_min_lr_ratio must be between 0.0 and 1.0"
+                if self.args.deepspeed:
+                    LOG.warning("Using cosine scheduler with deepspeed. This may be ignored if a scheduler is set \
+                                in the deepspeed JSON")
                 self.lr_scheduler = get_cosine_schedule_with_min_lr(  # pylint: disable=attribute-defined-outside-init
                     optimizer,
                     num_warmup_steps=self.args.get_warmup_steps(num_training_steps),
