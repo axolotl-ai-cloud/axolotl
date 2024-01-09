@@ -61,8 +61,8 @@ setup(
         "mamba-ssm": [
             "mamba-ssm==1.0.1",
         ],
-        "autogptq": [
-            "auto-gptq==0.5.1 --extra-index-url https://huggingface.github.io/autogptq-index/whl/cu118/",
+        "auto-gptq": [
+            "auto-gptq==0.5.1",
         ],
     },
 )
