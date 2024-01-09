@@ -39,6 +39,7 @@ jobs:
             --file ./docker/Dockerfile \
             --build-arg BASE_TAG=$BASE_TAG \
             --build-arg CUDA=$CUDA \
+            --build-arg GITHUB_REF=$GITHUB_REF \
             --build-arg PYTORCH_VERSION=$PYTORCH_VERSION \
             --tag test-axolotl
       - name: Unit Tests w docker image

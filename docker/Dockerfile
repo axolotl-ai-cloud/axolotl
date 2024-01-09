@@ -6,6 +6,7 @@ ARG AXOLOTL_EXTRAS=""
 ARG CUDA="118"
 ENV BNB_CUDA_VERSION=$CUDA
 ARG PYTORCH_VERSION="2.0.1"
+ARG GITHUB_REF="main"
 
 ENV PYTORCH_VERSION=$PYTORCH_VERSION
 
@@ -14,7 +15,7 @@ RUN apt-get update && \
 
 WORKDIR /workspace
 
-RUN git clone --depth=1 https://github.com/OpenAccess-AI-Collective/axolotl.git
+RUN git clone --depth=1 -b $GITHUB_REF https://github.com/OpenAccess-AI-Collective/axolotl.git
 
 WORKDIR /workspace/axolotl
 
