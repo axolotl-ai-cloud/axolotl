@@ -747,7 +747,12 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             False if self.cfg.ddp else None
         )
         training_arguments_kwargs["group_by_length"] = self.cfg.group_by_length
-        training_arguments_kwargs["report_to"] = "wandb" if self.cfg.use_wandb else None
+        report_to = None
+        if self.cfg.use_wandb:
+            report_to = "wandb"
+        if self.cfg.use_mlflow:
+            report_to = "mlflow"
+        training_arguments_kwargs["report_to"] = report_to
         training_arguments_kwargs["run_name"] = (
             self.cfg.wandb_name if self.cfg.use_wandb else None
         )

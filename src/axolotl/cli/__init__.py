@@ -29,6 +29,7 @@ from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.data import prepare_dataset
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import is_main_process
+from axolotl.utils.mlflow_ import setup_mlflow_env_vars
 from axolotl.utils.models import load_tokenizer
 from axolotl.utils.tokenization import check_dataset_labels
 from axolotl.utils.trainer import prepare_optim_env
@@ -289,6 +290,9 @@ def load_cfg(config: Path = Path("examples/"), **kwargs):
     normalize_config(cfg)
 
     setup_wandb_env_vars(cfg)
+
+    setup_mlflow_env_vars(cfg)
+
     return cfg
 
 

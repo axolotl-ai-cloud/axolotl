@@ -10,7 +10,7 @@ Features:
 - Integrated with xformer, flash attention, rope scaling, and multipacking
 - Works with single GPU or multiple GPUs via FSDP or Deepspeed
 - Easily run with Docker locally or on the cloud
-- Log results and optionally checkpoints to wandb
+- Log results and optionally checkpoints to wandb or mlflow
 - And more!
 
 
@@ -694,6 +694,10 @@ wandb_watch:
 wandb_name: # Set the name of your wandb run
 wandb_run_id: # Set the ID of your wandb run
 wandb_log_model: # "checkpoint" to log model to wandb Artifacts every `save_steps` or "end" to log only at the end of training
+
+# mlflow configuration if you're using it
+mlflow_tracking_uri: # URI to mlflow
+mlflow_experiment_name: # Your experiment name
 
 # Where to save the full-finetuned model to
 output_dir: ./completed-model
