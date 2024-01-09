@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 
 import pytest
+from transformers.utils import is_torch_bf16_gpu_available
 
 from axolotl.cli import load_datasets
 from axolotl.common.cli import TrainerCliArgs
@@ -59,7 +60,6 @@ class TestPhi(unittest.TestCase):
                 "learning_rate": 0.00001,
                 "optimizer": "paged_adamw_8bit",
                 "lr_scheduler": "cosine",
-                "bf16": True,
                 "flash_attention": True,
                 "max_steps": 10,
                 "save_steps": 10,
@@ -67,6 +67,10 @@ class TestPhi(unittest.TestCase):
                 "save_safetensors": True,
             }
         )
+        if is_torch_bf16_gpu_available():
+            cfg.bf16 = True
+        else:
+            cfg.fp16 = True
         normalize_config(cfg)
         cli_args = TrainerCliArgs()
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
@@ -110,9 +114,13 @@ class TestPhi(unittest.TestCase):
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_bnb_8bit",
                 "lr_scheduler": "cosine",
-                "bf16": True,
             }
         )
+        if is_torch_bf16_gpu_available():
+            cfg.bf16 = True
+        else:
+            cfg.fp16 = True
+
         normalize_config(cfg)
         cli_args = TrainerCliArgs()
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
