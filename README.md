@@ -595,6 +595,9 @@ datasets:
       # For `completion` datsets only, uses the provided field instead of `text` column
       field:
 
+# use RL training: dpo, ipo, kto_pair
+rl:
+
 # Saves the desired chat template to the tokenizer_config.json for easier inferencing
 # Currently supports chatml and inst (mistral/mixtral)
 chat_template: chatml
