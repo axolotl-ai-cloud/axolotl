@@ -9,8 +9,8 @@ from axolotl.prompters import ShareGPTPrompterV2
 register_conv_template(
     Conversation(
         name="chatml",
-        system_template="<|im_start|>system\n{system_message}",
-        system_message="You are a helpful assistant.",
+        # system_template="<|im_start|>system\n{system_message}",
+        # system_message="",
         roles=["<|im_start|>user", "<|im_start|>assistant"],
         sep_style=SeparatorStyle.CHATML,
         sep="<|im_end|>",

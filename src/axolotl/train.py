@@ -49,6 +49,8 @@ def train(
         main_process_only=True,
     )
     tokenizer = load_tokenizer(cfg)
+    
+    print(tokenizer)
 
     train_dataset = dataset_meta.train_dataset
     eval_dataset = dataset_meta.eval_dataset
@@ -81,7 +83,7 @@ def train(
     trainer = setup_trainer(
         cfg, train_dataset, eval_dataset, model, tokenizer, total_num_steps
     )
-
+    
     if hasattr(model, "config"):
         model.config.use_cache = False
 

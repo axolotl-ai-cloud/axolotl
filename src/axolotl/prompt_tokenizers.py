@@ -370,15 +370,39 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
                         if role_remap
                         else role
                     )
-                    turn = role + content
+                        
                     # this is still the user query, we should
                     if not content.strip():
                         LOG.warning(f"user turn has empty text: {prompt}")
-                    res = self._tokenize(
-                        turn,
+                    
+                    role_res = self._tokenize(
+                        role,
                         add_eos_token=False,
                         strip_bos_token=True,
                     )
+                    
+                    # check if it's just a single token
+                    if len(role_res["input_ids"]) > 1:
+                        LOG.warning(f"Role has {len(role_res['input_ids'])}: {role_res['input_ids']}")
+                        # if input ids has 4 tokens, we  want to strip the first one
+                        # strip of the tokens after first one
+                        if len(role_res["input_ids"]) > 3:
+                            role_res["input_ids"] = role_res["input_ids"][1:]
+                            role_res["attention_mask"] = role_res["attention_mask"][1:]
+                            LOG.warning(f"Role has {len(role_res['input_ids'])}: {role_res['input_ids']}")
+                        
+                    role_content = self._tokenize(
+                        content,
+                        add_eos_token=False,
+                        strip_bos_token=True,
+                    )
+                    
+                    # concat the contents of the role and the content
+                    res = {
+                        "input_ids": role_res["input_ids"] + role_content["input_ids"],
+                        "attention_mask": role_res["attention_mask"] + role_content["attention_mask"],
+                    }   
+                    
                     # everything from this is masked out from the labels
                     labels = [IGNORE_TOKEN_ID] * len(res["input_ids"])
                 elif assistant in role:
@@ -394,7 +418,7 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
                         LOG.warning(f"assistant turn has empty text: {prompt}")
                     res = self._tokenize(
                         turn,
-                        add_eos_token=True,
+                        add_eos_token=False, # commenting because it is the same as the role.
                         strip_bos_token=True,
                     )
                     role_res = self._tokenize(
@@ -407,17 +431,25 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
                     len_role = len(role_res["input_ids"])
                     labels[:len_role] = [IGNORE_TOKEN_ID] * min(len_role, len(labels))
                 elif role == "":
-                    turn = content
+                    turn = "<s>"
                     # this is only ever the first part, should include the bos token and the user query
                     res = self._tokenize(
-                        turn, add_eos_token=False, strip_bos_token=False
+                        turn, add_eos_token=False, strip_bos_token=True
                     )
+
                     # everything from this is masked out from the labels
                     labels = [IGNORE_TOKEN_ID] * len(res["input_ids"])
                 else:
-                    LOG.warning(f"unhandled role: {role}")
+                    turn = "<s>"
+                    # this is only ever the first part, should include the bos token and the user query
+                    res = self._tokenize(
+                        turn, add_eos_token=False, strip_bos_token=True
+                    )
+                    # everything from this is masked out from the labels
+                    labels = [IGNORE_TOKEN_ID] * len(res["input_ids"])
+                    # LOG.warning(f"unhandled role: {role}")
                     continue
-
+                
                 # pylint: disable=duplicate-code
                 result, current_len = parse_tokenized_to_result(
                     result,
@@ -426,6 +458,7 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
                     labels,
                     pad_token_id=self.tokenizer.pad_token_id,
                 )
+                
             return result
         except (KeyError, AssertionError, IndexError) as err:
             raise InvalidDataException(str(err)) from err

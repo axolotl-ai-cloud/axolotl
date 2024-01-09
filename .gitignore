@@ -165,3 +165,10 @@ cython_debug/
 # WandB
 # wandb creates a folder to store logs for training runs
 wandb
+croissantllm-0301
+out-w-*
+last_run_prepared
+examples/llama-2/*
+deepspeed/zero3_croissant.json
+axolotl-env/
+*.ipynb

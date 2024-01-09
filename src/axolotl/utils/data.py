@@ -27,6 +27,7 @@ from axolotl.prompt_tokenizers import (
     JeopardyPromptTokenizingStrategy,
     OpenAssistantPromptTokenizingStrategy,
     SummarizeTLDRPromptTokenizingStrategy,
+    ShareGPTPromptTokenizingStrategy
 )
 from axolotl.prompters import (
     AlpacaPrompter,
@@ -38,6 +39,7 @@ from axolotl.prompters import (
     ReflectAlpacaPrompter,
     SummarizeTLDRPrompter,
     UnsupportedPrompter,
+    ShareGPTPrompterV2
 )
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import is_main_process, zero_first
@@ -554,6 +556,11 @@ def load_prepare_datasets(
 
         train_dataset = dataset["train"]
         eval_dataset = dataset["test"]
+        # make sure that the eval dataset is divisible by the batch size
+        eval_dataset = eval_dataset.select(
+            range(len(eval_dataset) - (len(eval_dataset) % cfg.batch_size))
+        )
+        print("Size of eval dataset: ", len(eval_dataset))
     else:
         train_dataset = dataset
         eval_dataset = None
@@ -675,6 +682,18 @@ def get_dataset_wrapper(
     elif d_base_type == "reflection":
         dataset_prompter = ReflectAlpacaPrompter(d_prompt_style)
         ds_strategy = AlpacaReflectionPTStrategy(
+            dataset_prompter,
+            tokenizer,
+            cfg.train_on_inputs,
+            cfg.sequence_len,
+        )
+        ds_wrapper = TokenizedPromptDataset(
+            ds_strategy, dataset, process_count=cfg.dataset_processes
+        )
+        dataset_wrapper = ds_wrapper
+    elif d_base_type == "sharegpt":
+        dataset_prompter = ShareGPTPrompterV2(d_prompt_style)
+        ds_strategy = ShareGPTPromptTokenizingStrategy(
             dataset_prompter,
             tokenizer,
             cfg.train_on_inputs,

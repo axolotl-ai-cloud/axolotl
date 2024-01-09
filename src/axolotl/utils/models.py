@@ -118,6 +118,7 @@ def load_tokenizer(cfg):
     ):
         # set a pad_token, but use eos_token so we don't add a new token
         tokenizer.pad_token = LLAMA_DEFAULT_EOS_TOKEN
+        tokenizer.chat_template = "{% for message in messages %}{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>' + '\n'}}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}"
 
     if tokenizer.__class__.__name__ == "GPTNeoXTokenizerFast":
         tokenizer.add_special_tokens({"pad_token": "[PAD]"})
@@ -316,6 +317,7 @@ def load_model(
         if cfg.is_llama_derived_model and not cfg.trust_remote_code and not cfg.gptq:
             from transformers import LlamaForCausalLM
 
+            print("Base model:", base_model)
             model = LlamaForCausalLM.from_pretrained(
                 base_model,
                 config=model_config,
@@ -323,6 +325,7 @@ def load_model(
                 load_in_4bit=cfg.load_in_4bit and cfg.adapter is not None,
                 **model_kwargs,
             )
+            print(model)
 
             if cfg.flash_attention and not inference:
                 from axolotl.monkeypatch.llama_attn_hijack_flash import (

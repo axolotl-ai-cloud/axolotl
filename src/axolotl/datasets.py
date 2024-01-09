@@ -48,12 +48,16 @@ class TokenizedPromptDataset(Dataset):
         if self.prompt_tokenizer.supports_batched:
             map_kwargs["batched"] = True
             map_kwargs["batch_size"] = 100
-        return dataset.map(
+            
+        print(dataset[0])
+        mapped = dataset.map(
             self.prompt_tokenizer.tokenize_prompt,
             num_proc=num_proc,
             remove_columns=features,
             **map_kwargs,
         )
+        print(mapped[0])
+        return mapped
 
 
 # TODO this isn't the best since it can't interleave datasets

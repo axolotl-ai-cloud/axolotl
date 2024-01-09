@@ -72,7 +72,6 @@ class Llama2ChatConversation:
         """Append a new message."""
         self.messages.append([role, message])
 
-
 class LLama2ChatTokenizingStrategy(PromptTokenizingStrategy):
     """
     Tokenizing strategy for ShareGPT prompts.
