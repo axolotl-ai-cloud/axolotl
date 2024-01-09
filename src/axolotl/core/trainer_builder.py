@@ -38,7 +38,10 @@ from axolotl.utils.collators import (
     MambaDataCollator,
 )
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
-from axolotl.utils.schedulers import get_cosine_schedule_with_quadratic_warmup
+from axolotl.utils.schedulers import (
+    get_cosine_schedule_with_min_lr,
+    get_cosine_schedule_with_quadratic_warmup,
+)
 
 try:
     import torch._dynamo  # pylint: disable=ungrouped-imports
@@ -120,6 +123,10 @@ class AxolotlTrainingArguments(TrainingArguments):
         default=None,
         metadata={"help": "prefetch_factor argument to the dataloader"},
     )
+    cosine_min_lr_ratio: Optional[float] = field(
+        default=None,
+        metadata={"help": "Minimum learning rate is min_lr_ratio * learning_rate"},
+    )
 
 
 class AxolotlTrainer(Trainer):
@@ -158,6 +165,17 @@ class AxolotlTrainer(Trainer):
                     optimizer,
                     num_warmup_steps=self.args.get_warmup_steps(num_training_steps),
                     num_training_steps=num_training_steps,
+                )
+            elif self.args.lr_scheduler_type == "cosine" and self.args.cosine_min_lr_ratio is not None:
+                assert 0 <= self.args.cosine_min_lr_ratio <= 1.0, "cosine_min_lr_ratio must be between 0.0 and 1.0"
+                if self.args.deepspeed:
+                    LOG.warning("Using cosine scheduler with deepspeed. This may be ignored if a scheduler is set \
+                                in the deepspeed JSON")
+                self.lr_scheduler = get_cosine_schedule_with_min_lr(  # pylint: disable=attribute-defined-outside-init
+                    optimizer,
+                    num_warmup_steps=self.args.get_warmup_steps(num_training_steps),
+                    num_training_steps=num_training_steps,
+                    min_lr_ratio=self.args.cosine_min_lr_ratio,
                 )
             else:
                 return super().create_scheduler(num_training_steps, optimizer)
@@ -745,6 +763,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         training_arguments_kwargs["lr_scheduler_kwargs"] = (
             self.cfg.lr_scheduler_kwargs if self.cfg.lr_scheduler_kwargs else {}
         )
+        training_arguments_kwargs["cosine_min_lr_ratio"] = self.cfg.cosine_min_lr_ratio
         training_arguments_kwargs["weight_decay"] = (
             self.cfg.weight_decay if self.cfg.weight_decay is not None else 0.0
         )

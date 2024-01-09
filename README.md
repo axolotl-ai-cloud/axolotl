@@ -755,6 +755,7 @@ early_stopping_patience: 3
 # Specify a scheduler and kwargs to use with the optimizer
 lr_scheduler: # 'one_cycle' | 'log_sweep' | empty for cosine
 lr_scheduler_kwargs:
+cosine_min_lr_ratio: # decay lr to some percentage of the peak lr, e.g. cosine_min_lr_ratio=0.1 for 10% of peak lr
 
 # For one_cycle optim
 lr_div_factor: # Learning rate div factor
