@@ -38,7 +38,10 @@ from axolotl.utils.collators import (
     MambaDataCollator,
 )
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
-from axolotl.utils.schedulers import get_cosine_schedule_with_quadratic_warmup, get_cosine_schedule_with_min_lr
+from axolotl.utils.schedulers import (
+    get_cosine_schedule_with_min_lr,
+    get_cosine_schedule_with_quadratic_warmup,
+)
 
 try:
     import torch._dynamo  # pylint: disable=ungrouped-imports
