@@ -7,7 +7,8 @@ import os
 import unittest
 from pathlib import Path
 
-from transformers.utils import is_torch_bf16_gpu_available
+import pytest
+from transformers.utils import is_auto_gptq_available, is_torch_bf16_gpu_available
 
 from axolotl.cli import load_datasets
 from axolotl.common.cli import TrainerCliArgs
@@ -117,6 +118,7 @@ class TestLoraLlama(unittest.TestCase):
         train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
         assert (Path(temp_dir) / "adapter_model.bin").exists()
 
+    @pytest.mark.skipif(not is_auto_gptq_available(), reason="auto-gptq not available")
     @with_temp_dir
     def test_lora_gptq(self, temp_dir):
         # pylint: disable=duplicate-code

@@ -752,7 +752,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             report_to = "wandb"
         if self.cfg.use_mlflow:
             report_to = "mlflow"
-        training_arguments_kwargs["report_to"] = None
+        training_arguments_kwargs["report_to"] = report_to
         training_arguments_kwargs["run_name"] = (
             self.cfg.wandb_name if self.cfg.use_wandb else None
         )

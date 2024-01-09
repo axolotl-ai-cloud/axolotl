@@ -19,9 +19,9 @@ LOG = logging.getLogger("axolotl.tests.e2e")
 os.environ["WANDB_DISABLED"] = "true"
 
 
-class TestMistral(unittest.TestCase):
+class TestMamba(unittest.TestCase):
     """
-    Test case for Llama models using LoRA
+    Test case for Mamba models
     """
 
     @with_temp_dir
