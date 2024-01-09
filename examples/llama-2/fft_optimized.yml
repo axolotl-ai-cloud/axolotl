@@ -1,4 +1,4 @@
-base_model: /mnt/data/nunomg/7B_all_mc4_parallel_eos_20b_20b_ckpt
+base_model: ...
 model_type: LlamaForCausalLM
 tokenizer_type: LlamaTokenizer
 is_llama_derived_model: true
@@ -8,13 +8,13 @@ load_in_4bit: false
 strict: false
 
 datasets:
-  - path: Unbabel/TowerLLM-SFT-2112
+  - path: ...
     type: sharegpt
     conversation: chatml
 
 dataset_prepared_path: 
 val_set_size: 0
-output_dir: out-w-parallel-local-w-eos-4epochs-7e-6/
+output_dir: ...
 
 sequence_len: 2048
 sample_packing: true
