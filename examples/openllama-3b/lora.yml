@@ -54,8 +54,8 @@ flash_attention: true
 gptq_groupsize:
 gptq_model_v1:
 warmup_steps: 20
-eval_steps: 0.05
-save_steps:
+evals_per_epoch: 4
+saves_per_epoch: 1
 debug:
 deepspeed:
 weight_decay: 0.1

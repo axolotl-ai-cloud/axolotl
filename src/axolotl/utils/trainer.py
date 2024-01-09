@@ -12,9 +12,9 @@ from accelerate.logging import get_logger
 from datasets import set_caching_enabled
 from torch.utils.data import DataLoader, RandomSampler
 
-from axolotl.core.trainer_builder import HFCausalTrainerBuilder
+from axolotl.core.trainer_builder import HFCausalTrainerBuilder, HFDPOTrainerBuilder
 from axolotl.utils.distributed import is_main_process, reduce_and_broadcast, zero_first
-from axolotl.utils.samplers import MultipackBatchSampler
+from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 
 LOG = get_logger("axolotl")
 
@@ -143,6 +143,16 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset, tokenizer):
     return train_dataset, eval_dataset
 
 
+def process_pretraining_datasets_for_packing(train_dataset, sequence_len):
+    drop_long = partial(drop_long_seq, sequence_len=sequence_len)
+
+    train_dataset = train_dataset.filter(drop_long)
+    train_dataset = train_dataset.map(
+        add_position_ids,
+    )
+    return train_dataset
+
+
 def calculate_total_num_steps(cfg, train_dataset, update=True):
     if not cfg.total_num_tokens:
         total_num_tokens = np.sum(
@@ -202,12 +212,7 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                 drop_last=True,
                 batch_max_len=cfg.micro_batch_size
                 * (cfg.max_packed_sequence_len or cfg.sequence_len),
-                lengths=(
-                    train_dataset.data.column("position_ids")
-                    .to_pandas()
-                    .apply(lambda x: x[-1] + 1)
-                    .values
-                ),
+                lengths=get_dataset_lengths(train_dataset),
             )
 
             data_loader = DataLoader(
@@ -276,10 +281,16 @@ def prepare_optim_env(cfg):
         setup_fsdp_envs(cfg)
     elif cfg.deepspeed:
         os.environ["ACCELERATE_USE_DEEPSPEED"] = "true"
+        os.environ["ACCELERATE_DEEPSPEED_CONFIG_FILE"] = cfg.deepspeed
 
 
 def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_steps):
-    trainer_builder = HFCausalTrainerBuilder(cfg, model, tokenizer)
+    if cfg.rl:
+        trainer_builder = HFDPOTrainerBuilder(cfg, model[0], tokenizer)
+        trainer_builder.model_ref = model[1]
+    else:
+        trainer_builder = HFCausalTrainerBuilder(cfg, model[0], tokenizer)
+
     trainer_builder.train_dataset = train_dataset
     trainer_builder.eval_dataset = eval_dataset
 

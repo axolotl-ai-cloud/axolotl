@@ -2,7 +2,7 @@
 import logging
 import math
 import os
-from typing import Optional, Tuple  # noqa: F401
+from typing import Any, Optional, Tuple  # noqa: F401
 
 import addict
 import bitsandbytes as bnb
@@ -21,10 +21,12 @@ from transformers import (  # noqa: F401
     PreTrainedModel,
     PreTrainedTokenizerBase,
 )
+from transformers.deepspeed import is_deepspeed_zero3_enabled
 
 from axolotl.models.mamba import fix_mamba_attn_for_loss
 from axolotl.prompt_tokenizers import LLAMA_DEFAULT_EOS_TOKEN
 from axolotl.utils.bench import log_gpu_memory_usage
+from axolotl.utils.chat_templates import chat_templates
 from axolotl.utils.dict import DictDefault
 
 LOG = logging.getLogger("axolotl")
@@ -53,26 +55,22 @@ def check_model_config(cfg: DictDefault, model_config: AutoConfig):
 
 def load_model_config(cfg):
     model_config_name = cfg.base_model_config or cfg.base_model
+    if not model_config_name and cfg.tokenizer_config:
+        model_config_name = cfg.tokenizer_config
     trust_remote_code = cfg.trust_remote_code is True
-    model_type = cfg.model_type
 
-    if model_type == "MixtralForCausalLM":
-        from axolotl.models.mixtral.configuration_moe_mistral import MixtralConfig
-
-        model_config = MixtralConfig.from_pretrained(model_config_name)
-    else:
-        try:
-            model_config = AutoConfig.from_pretrained(
-                model_config_name, trust_remote_code=trust_remote_code
+    try:
+        model_config = AutoConfig.from_pretrained(
+            model_config_name, trust_remote_code=trust_remote_code
+        )
+    except ValueError as err:
+        if "mamba" in model_config_name:
+            return addict.Dict(
+                {
+                    "model_type": "mamba",
+                }
             )
-        except ValueError as err:
-            if "mamba" in model_config_name:
-                return addict.Dict(
-                    {
-                        "model_type": "mamba",
-                    }
-                )
-            raise err
+        raise err
 
     if cfg.model_config:
         for key, val in cfg.model_config.items():
@@ -84,6 +82,7 @@ def load_model_config(cfg):
 
 
 def load_tokenizer(cfg):
+    model_config = load_model_config(cfg)
     tokenizer_kwargs = {}
     use_fast = True  # this is the default
 
@@ -142,6 +141,25 @@ def load_tokenizer(cfg):
 
     if cfg.special_tokens:
         for k, val in cfg.special_tokens.items():
+            # check if new special token is not already in tokenizer and
+            # is adapter training to make sure lora_modules_to_save is set
+            # pylint: disable=too-many-boolean-expressions
+            if (
+                (getattr(tokenizer, k) is None or getattr(tokenizer, k) != val)
+                and cfg.adapter
+                and (
+                    not cfg.lora_modules_to_save
+                    or not all(
+                        x in cfg.lora_modules_to_save
+                        for x in ["embed_tokens", "lm_head"]
+                    )
+                )
+                and (model_config.model_type in ["llama", "mistral", "mixtral"])
+            ):
+                raise ValueError(
+                    "Please set lora_modules_to_save to ['embed_tokens', 'lm_head'] when using an adapter and changing the special tokens."
+                )
+
             tokenizer.add_special_tokens(
                 {k: AddedToken(val, rstrip=False, lstrip=False, normalized=False)}
             )
@@ -175,6 +193,12 @@ def load_tokenizer(cfg):
     LOG.debug(f"PAD: {tokenizer.pad_token_id} / {tokenizer.pad_token}")
     LOG.debug(f"UNK: {tokenizer.unk_token_id} / {tokenizer.unk_token}")
 
+    if cfg.chat_template:
+        tokenizer.chat_template = chat_templates(cfg.chat_template)
+    else:
+        LOG.info(
+            "No Chat template selected. Consider adding a chat template for easier inference."
+        )
     return tokenizer
 
 
@@ -182,6 +206,7 @@ def load_model(
     cfg: DictDefault,
     tokenizer: PreTrainedTokenizerBase,
     inference: bool = False,
+    reference_model: bool = False,
 ) -> Tuple[PreTrainedModel, Optional[PeftConfig]]:
     """
     Load a model for a given configuration and tokenizer.
@@ -236,17 +261,6 @@ def load_model(
 
         LOG.info("patching with sdp attention")
         hijack_llama_sdp_attention()
-    elif cfg.is_llama_derived_model and cfg.landmark_attention:
-        from axolotl.monkeypatch.llama_landmark_attn import (
-            MEM_TOKEN,
-            patch_llama_with_landmark_attn,
-        )
-
-        LOG.info("patching with landmark attention")
-        patch_llama_with_landmark_attn()
-
-        # Note: This might overwrite previous additional_special_tokens
-        tokenizer.add_special_tokens({"additional_special_tokens": [MEM_TOKEN]})
 
     if cfg.is_mistral_derived_model and cfg.flash_attention and cfg.sample_packing:
         from axolotl.monkeypatch.mistral_attn_hijack_flash import (
@@ -256,13 +270,17 @@ def load_model(
         LOG.info("patching with flash attention")
         replace_mistral_attn_with_flash_attn(packed=cfg.sample_packing)
 
-    if cfg.is_llama_derived_model and cfg.xpos_rope:
-        from axolotl.monkeypatch.xpos_rope_llama_monkey_patch import (
-            replace_llama_rope_with_xpos_rope,
+    if (
+        cfg.model_config_type == "mixtral"
+        and cfg.flash_attention
+        and cfg.sample_packing
+    ):
+        from axolotl.monkeypatch.mixtral import (
+            replace_mixtral_attn_with_multipack_flash_attn,
         )
 
-        LOG.info("patching with xpos rope")
-        replace_llama_rope_with_xpos_rope()
+        LOG.info("patching with flash attention")
+        replace_mixtral_attn_with_multipack_flash_attn()
 
     if (
         cfg.is_llama_derived_model
@@ -276,9 +294,50 @@ def load_model(
 
     model_kwargs = {}
 
-    model_kwargs["device_map"] = cfg.device_map
-    model_kwargs["max_memory"] = cfg.max_memory
+    max_memory = cfg.max_memory
+    device_map = cfg.device_map
+
+    if cfg.gpu_memory_limit:
+        gpu_memory_limit = (
+            str(cfg.gpu_memory_limit) + "GiB"
+            if isinstance(cfg.gpu_memory_limit, int)
+            else cfg.gpu_memory_limit
+        )
+
+        max_memory = {}
+        for i in range(torch.cuda.device_count()):
+            max_memory[i] = gpu_memory_limit
+        max_memory["cpu"] = "256GiB"  # something sufficiently large to fit anything
+
+    if max_memory is not None:
+        # Based on https://github.com/togethercomputer/OpenChatKit/blob/main/inference/bot.py
+        from accelerate import infer_auto_device_map, init_empty_weights
+
+        with init_empty_weights():
+            model_canvas = AutoModelForCausalLM.from_config(model_config)
+        model_canvas.tie_weights()
+        device_map = infer_auto_device_map(
+            model_canvas,
+            max_memory=max_memory,
+            dtype=cfg.torch_dtype,
+        )
+        # We can discard max_memory now as we have a device map set up for us
+        max_memory = None
+
+    model_kwargs["device_map"] = device_map
     model_kwargs["torch_dtype"] = cfg.torch_dtype
+    # TODO can we put the reference model on it's own gpu? I think we have to move logits around to calculate loss
+    # if cfg.rl:
+    #     if torch.cuda.device_count() > 1:
+    #         if reference_model:
+    #             model_kwargs["device_map"] = "cuda:" + str(
+    #                 torch.cuda.current_device() + 1
+    #             )
+    #         else:
+    #             model_kwargs["device_map"] = "cuda:" + str(torch.cuda.current_device())
+
+    if is_deepspeed_zero3_enabled():
+        del model_kwargs["device_map"]
 
     if cfg.model_revision:
         model_kwargs["revision"] = cfg.model_revision
@@ -294,24 +353,49 @@ def load_model(
                 **model_config.quantization_config
             )
     if cfg.adapter == "qlora" and cfg.load_in_4bit:
+        bnb_config = {
+            "load_in_4bit": True,
+            "llm_int8_threshold": 6.0,
+            "llm_int8_has_fp16_weight": False,
+            "bnb_4bit_compute_dtype": cfg.torch_dtype,
+            "bnb_4bit_use_double_quant": True,
+            "bnb_4bit_quant_type": "nf4",
+        }
+
+        if cfg.bnb_config_kwargs:
+            bnb_config.update(cfg.bnb_config_kwargs)
+
         model_kwargs["quantization_config"] = BitsAndBytesConfig(
-            load_in_4bit=True,
-            llm_int8_threshold=6.0,
-            llm_int8_has_fp16_weight=False,
-            bnb_4bit_compute_dtype=cfg.torch_dtype,
-            bnb_4bit_use_double_quant=True,
-            bnb_4bit_quant_type="nf4",
+            **bnb_config,
         )
     # sample packing uses custom FA2 patch
-    if cfg.flash_attention and not cfg.sample_packing:
-        if (
-            cfg.is_llama_derived_model
-            or cfg.is_falcon_derived_model
-            or cfg.is_mistral_derived_model
-        ):
-            # TODO enable once properly supported in transformers
-            # model_kwargs["attn_implementation"] = "flash_attention_2"
-            model_kwargs["use_flash_attention_2"] = True  # legacy, to be deprecated
+    if cfg.flash_attention:
+        if not cfg.sample_packing:
+            if (
+                cfg.is_llama_derived_model
+                or cfg.is_falcon_derived_model
+                or cfg.is_mistral_derived_model
+                or model_config.model_type == "mixtral"
+            ):
+                model_kwargs["attn_implementation"] = "flash_attention_2"
+                model_config._attn_implementation = (  # pylint: disable=protected-access
+                    "flash_attention_2"
+                )
+        else:
+            if model_config.model_type == "mixtral":
+                model_kwargs["attn_implementation"] = "flash_attention_2"
+                model_config._attn_implementation = (  # pylint: disable=protected-access
+                    "flash_attention_2"
+                )
+            else:
+                model_kwargs["attn_implementation"] = "eager"
+                model_config._attn_implementation = (  # pylint: disable=protected-access
+                    "eager"
+                )
+        if model_config.model_type == "phi-msft":
+            model_config.flash_attn = True
+            model_config.flash_rotary = True
+            model_config.fused_dense = True
 
     try:
         if cfg.is_llama_derived_model and not cfg.trust_remote_code and not cfg.gptq:
@@ -366,20 +450,12 @@ def load_model(
         #         device=cfg.device,
         #     )
         #     model.train() # sets to train instead of eval mode
-        elif model_type == "PhiForCausalLM":
+        elif model_type == "PhiForCausalLM" or model_config.model_type == "phi-msft":
             from axolotl.models.phi import PhiForCausalLM
 
             model = PhiForCausalLM.from_pretrained(
                 base_model,
-                load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
-                load_in_4bit=cfg.load_in_4bit and cfg.adapter is not None,
-                **model_kwargs,
-            )
-        elif model_type == "MixtralForCausalLM":
-            from axolotl.models.mixtral import MixtralForCausalLM
-
-            model = MixtralForCausalLM.from_pretrained(
-                base_model,
+                config=model_config,
                 load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
                 load_in_4bit=cfg.load_in_4bit and cfg.adapter is not None,
                 **model_kwargs,
@@ -392,7 +468,6 @@ def load_model(
             model_kwargs["device"] = torch.cuda.current_device()
             del model_kwargs["torch_dtype"]
             del model_kwargs["device_map"]
-            del model_kwargs["max_memory"]
 
             model = MambaLMHeadModel.from_pretrained(
                 base_model,
@@ -536,9 +611,11 @@ def load_model(
                 if hasattr(module, "weight"):
                     module.to(cfg.torch_dtype)
 
-    model, lora_config = load_adapter(model, cfg, cfg.adapter)
+    lora_config = None
+    if not reference_model or cfg.lora_model_dir:
+        model, lora_config = load_adapter(model, cfg, cfg.adapter)
 
-    if cfg.ddp and not load_in_8bit:
+    if cfg.ddp and not load_in_8bit and not (cfg.rl and cfg.load_in_4bit):
         model.to(f"cuda:{cfg.local_rank}")
 
     if torch.cuda.device_count() > 1 and int(os.getenv("WORLD_SIZE", "1")) == 1:
@@ -647,10 +724,15 @@ def load_lora(model, cfg, inference=False):
 
     if cfg.lora_model_dir:
         LOG.debug("Loading pretained PEFT - LoRA")
+        model_kwargs: Any = {}
+        if cfg.lora_on_cpu:
+            model_kwargs["max_memory"] = {"cpu": "256GiB"}
+            model_kwargs["device_map"] = {"": "cpu"}
         model = PeftModel.from_pretrained(
             model,
             cfg.lora_model_dir,
             is_trainable=(not inference),
+            **model_kwargs,
         )
     else:
         model = get_peft_model(model, lora_config)

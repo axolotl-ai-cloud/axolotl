@@ -1,5 +1,5 @@
-base_model: DiscoResearch/mixtral-7b-8expert
-model_type: MixtralForCausalLM
+base_model: mistralai/Mixtral-8x7B-v0.1
+model_type: AutoModelForCausalLM
 tokenizer_type: LlamaTokenizer
 trust_remote_code: true
 
@@ -13,6 +13,18 @@ datasets:
 dataset_prepared_path: last_run_prepared
 val_set_size: 0.0
 output_dir: ./qlora-out
+
+## You can optionally freeze the entire model and unfreeze a subset of parameters
+unfrozen_parameters:
+#  - lm_head.*
+#  - model.embed_tokens.*
+#  - model.layers.2[0-9]+.block_sparse_moe.gate.*
+#  - model.layers.2[0-9]+.block_sparse_moe.experts.*
+#  - model.layers.3[0-9]+.block_sparse_moe.gate.*
+#  - model.layers.3[0-9]+.block_sparse_moe.experts.*
+
+model_config:
+  output_router_logits: true
 
 adapter: qlora
 lora_model_dir:
@@ -67,10 +79,10 @@ loss_watchdog_threshold: 5.0
 loss_watchdog_patience: 3
 
 warmup_steps: 10
-eval_steps:
+evals_per_epoch: 4
 eval_table_size:
 eval_table_max_new_tokens: 128
-save_steps:
+saves_per_epoch: 1
 debug:
 deepspeed: deepspeed/zero2.json
 weight_decay: 0.0

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 import os
+from shutil import copyfile
+from tempfile import NamedTemporaryFile
 from typing import TYPE_CHECKING, Dict, List
 
 import evaluate
@@ -561,10 +563,15 @@ class SaveAxolotlConfigtoWandBCallback(TrainerCallback):
     ):
         if is_main_process():
             try:
-                artifact = wandb.Artifact(name="axolotl-config", type="config")
-                artifact.add_file(local_path=self.axolotl_config_path)
-                wandb.run.log_artifact(artifact)
-                LOG.info("Axolotl config has been saved to WandB as an artifact.")
+                # sync config to top level in run, cannot delete file right away because wandb schedules it to be synced even w/policy = 'now', so let OS delete it later.
+                with NamedTemporaryFile(
+                    mode="w", delete=False, suffix=".yml", prefix="axolotl_config_"
+                ) as temp_file:
+                    copyfile(self.axolotl_config_path, temp_file.name)
+                    wandb.save(temp_file.name)
+                LOG.info(
+                    "The Axolotl config has been saved to the WandB run under files."
+                )
             except (FileNotFoundError, ConnectionError) as err:
                 LOG.warning(f"Error while saving Axolotl config to WandB: {err}")
         return control

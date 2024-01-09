@@ -9,27 +9,32 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any, Callable, Dict, Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
 from einops import rearrange, repeat
+from torch.utils.checkpoint import checkpoint
 from transformers import PretrainedConfig, PreTrainedModel
 from transformers.activations import ACT2FN
 from transformers.modeling_outputs import CausalLMOutputWithPast
 
-from ...monkeypatch.utils import get_cu_seqlens_from_pos_ids
 from .configuration_phi import PhiConfig
 
 try:
     from flash_attn.bert_padding import pad_input, unpad_input
     from flash_attn.layers.rotary import RotaryEmbedding as FlashRotaryEmbedding
     from flash_attn.modules.mha import FlashCrossAttention, FlashSelfAttention
-    from flash_attn.ops.fused_dense import FusedDense
-except:  # noqa: E722
+except ImportError:
     pad_input, unpad_input = None, None
     FlashRotaryEmbedding = None
     FlashSelfAttention, FlashCrossAttention = None, None
+
+# this is in a seperate try/except block since sometimes fused_dense isn't available
+# and it shouldn't completely disable flash attn when it isn't
+try:
+    from flash_attn.ops.fused_dense import FusedDense
+except ImportError:
     FusedDense = None
 
 
@@ -224,7 +229,9 @@ class RotaryEmbedding(nn.Module):
 
         # Initialize cached attributes since ONNX can't rely on dynamic initialization
         self._update_cos_sin_cache(
-            max_position_embeddings, device=device, dtype=torch.float32
+            max_position_embeddings,
+            device=device,
+            dtype=torch.float32,
         )
 
     def _compute_inv_freq(self, device: Optional[str] = None) -> torch.FloatTensor:
@@ -281,34 +288,32 @@ class RotaryEmbedding(nn.Module):
         seqlen_offset: int = 0,
         **kwargs,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        seq_start = seqlen_offset
-        seq_end = seq_start + qkv.shape[1]
-
         if (
-            self._cos_cached.device != qkv.device
+            self._seq_len_cached < qkv.shape[1] + seqlen_offset
+            or self._cos_cached.device != qkv.device
             or self._cos_cached.dtype != qkv.dtype
             or (self.training and self._cos_cached.is_inference())
         ):
             self._update_cos_sin_cache(
-                self.max_position_embeddings, device=qkv.device, dtype=qkv.dtype
+                qkv.shape[1] + seqlen_offset, device=qkv.device, dtype=qkv.dtype
             )
 
         if kv is None:
             return _apply_rotary_emb_qkv(
                 qkv,
-                self._cos_cached[seq_start:seq_end],
-                self._sin_cached[seq_start:seq_end],
+                self._cos_cached[seqlen_offset:],
+                self._sin_cached[seqlen_offset:],
             )
         else:
             q = _apply_rotary_emb(
                 qkv,
-                self._cos_cached[seq_start:seq_end],
-                self._sin_cached[seq_start:seq_end],
+                self._cos_cached[seqlen_offset:],
+                self._sin_cached[seqlen_offset:],
             )
             kv = _apply_rotary_emb_kv(
                 kv,
-                self._cos_cached[seq_start:seq_end],
-                self._sin_cached[seq_start:seq_end],
+                self._cos_cached[seqlen_offset:],
+                self._sin_cached[seqlen_offset:],
             )
 
             return q, kv
@@ -511,7 +516,7 @@ def _update_kv_cache(
     num_heads, head_dim = kv.shape[-2:]
 
     if layer_idx not in inference_params.key_value_memory_dict:
-        kv_cache = torch.empty(
+        inference_params.key_value_memory_dict[layer_idx] = torch.empty(
             inference_params.max_batch_size,
             inference_params.max_seqlen,
             2,
@@ -520,9 +525,6 @@ def _update_kv_cache(
             dtype=kv.dtype,
             device=kv.device,
         )
-        inference_params.key_value_memory_dict[layer_idx] = kv_cache
-    else:
-        kv_cache = inference_params.key_value_memory_dict[layer_idx]
 
     batch_start = inference_params.batch_size_offset
     batch_end = batch_start + kv.shape[0]
@@ -530,8 +532,19 @@ def _update_kv_cache(
     sequence_start = inference_params.seqlen_offset
     sequence_end = sequence_start + kv.shape[1]
 
-    kv_cache[batch_start:batch_end, sequence_start:sequence_end, ...] = kv
-    kv = kv_cache[batch_start:batch_end, :sequence_end, ...]
+    # When the current sequence length is equal to or larger than the maximum sequence length,
+    # we need to concatenate the current `kv` with the cached `kv` to expand its length
+    if sequence_end >= inference_params.max_seqlen:
+        inference_params.key_value_memory_dict[layer_idx] = torch.concatenate(
+            (inference_params.key_value_memory_dict[layer_idx], kv), dim=1
+        )
+
+    inference_params.key_value_memory_dict[layer_idx][
+        batch_start:batch_end, sequence_start:sequence_end, ...
+    ] = kv
+    kv = inference_params.key_value_memory_dict[layer_idx][
+        batch_start:batch_end, :sequence_end, ...
+    ]
 
     return kv
 
@@ -624,13 +637,10 @@ class MHA(nn.Module):
         self.layer_idx = layer_idx
         self.return_residual = return_residual
         self.checkpointing = checkpointing
+        self._gradient_checkpointing_func = None
 
     def _forward_self_attn(
-        self,
-        x: torch.FloatTensor,
-        key_padding_mask: Optional[torch.BoolTensor],
-        cu_seqlens: Optional[torch.LongTensor] = None,
-        max_seqlen: Optional[int] = None,
+        self, x: torch.FloatTensor, key_padding_mask: Optional[torch.BoolTensor]
     ) -> torch.FloatTensor:
         qkv = self.Wqkv(x)
         qkv = rearrange(
@@ -643,20 +653,21 @@ class MHA(nn.Module):
         if self.flash_attn:
             batch_size, seqlen = qkv.shape[0], qkv.shape[1]
 
-            if (
-                key_padding_mask is not None
-                and cu_seqlens is None
-                and max_seqlen is None
-            ):
+            cu_seqlens, max_seqlen = None, None
+            if key_padding_mask is not None:
                 # If `key_padding_mask` is supplied, we need to unpad the input and retrieve
                 # the `cu_seqlens` and `max_seqlen` to be used by `flash-attn`
                 qkv, indices, cu_seqlens, max_seqlen = unpad_input(
                     qkv, key_padding_mask
                 )
 
-            if self.checkpointing:
-                attn_output = torch.utils.checkpoint.checkpoint(
-                    self.inner_attn, qkv, cu_seqlens=cu_seqlens, max_seqlen=max_seqlen
+            if self.checkpointing and self.training:
+                attn_output = self._gradient_checkpointing_func(
+                    self.inner_attn,
+                    qkv,
+                    cu_seqlens=cu_seqlens,
+                    max_seqlen=max_seqlen,
+                    use_reentrant=False,
                 )
             else:
                 attn_output = self.inner_attn(
@@ -670,9 +681,12 @@ class MHA(nn.Module):
                 else attn_output
             )
 
-        if self.checkpointing:
-            return torch.utils.checkpoint.checkpoint(
-                self.inner_attn, qkv, key_padding_mask=key_padding_mask
+        if self.checkpointing and self.training:
+            return self._gradient_checkpointing_func(
+                self.inner_attn,
+                qkv,
+                key_padding_mask=key_padding_mask,
+                use_reentrant=False,
             )
 
         return self.inner_attn(qkv, key_padding_mask=key_padding_mask)
@@ -725,8 +739,8 @@ class MHA(nn.Module):
                     q, key_padding_mask
                 )
 
-            if self.checkpointing:
-                attn_output = torch.utils.checkpoint.checkpoint(
+            if self.checkpointing and self.training:
+                attn_output = self._gradient_checkpointing_func(
                     self.inner_cross_attn,
                     q,
                     kv,
@@ -735,6 +749,7 @@ class MHA(nn.Module):
                     max_seqlen=max_seqlen_q,
                     cu_seqlens_k=cu_seqlens_k,
                     max_seqlen_k=max_seqlen_k,
+                    use_reentrant=False,
                 )
             else:
                 attn_output = self.inner_cross_attn(
@@ -753,13 +768,14 @@ class MHA(nn.Module):
                 else attn_output
             )
 
-        if self.checkpointing:
-            return torch.utils.checkpoint.checkpoint(
+        if self.checkpointing and self.training:
+            return self._gradient_checkpointing_func(
                 self.inner_cross_attn,
                 q,
                 kv,
                 key_padding_mask=key_padding_mask,
                 causal=causal,
+                use_reentrant=False,
             )
 
         return self.inner_cross_attn(
@@ -771,11 +787,8 @@ class MHA(nn.Module):
         x: torch.FloatTensor,
         past_key_values: Optional[InferenceParams] = None,
         attention_mask: Optional[Union[torch.LongTensor, torch.BoolTensor]] = None,
-        cu_seqlens: Optional[torch.LongTensor] = None,
-        max_seqlen: Optional[int] = None,
         **kwargs,
     ) -> Tuple[torch.FloatTensor, torch.FloatTensor]:
-        # TODO: Need an alternative way for dynamic control flow: torch.any(~attention_mask.bool())
         if attention_mask is not None:
             attention_mask = attention_mask.bool()
         else:
@@ -785,18 +798,12 @@ class MHA(nn.Module):
         if self.n_head == self.n_head_kv:
             if past_key_values is None:
                 # If `past_key_values` are not supplied, we run self-attention
-                attn_output = self._forward_self_attn(
-                    x, attention_mask, cu_seqlens=cu_seqlens, max_seqlen=max_seqlen
-                )
+                attn_output = self._forward_self_attn(x, attention_mask)
             else:
                 # If `past_key_values` are supplied, it means that we might have cached values and
                 # could take advantage of cross-attention
                 attn_output = self._forward_cross_attn(
-                    x,
-                    past_key_values,
-                    attention_mask,
-                    cu_seqlens=cu_seqlens,
-                    max_seqlen=max_seqlen,
+                    x, past_key_values, attention_mask
                 )
         # MQA / GQA
         else:
@@ -830,6 +837,8 @@ class ParallelBlock(nn.Module):
 
         self.mixer = MHA(config, layer_idx=block_idx)
         self.mlp = MLP(config)
+        self.checkpointing = False
+        self._gradient_checkpointing_func = None
 
     def forward(
         self,
@@ -838,23 +847,52 @@ class ParallelBlock(nn.Module):
         attention_mask: Optional[torch.BoolTensor] = None,
         **kwargs,
     ) -> torch.FloatTensor:
-        residual = hidden_states
-        hidden_states = self.ln(hidden_states)
-
-        attn_outputs = self.mixer(
+        def _forward(
+            mixer,
+            resid_dropout,
+            mlp,
+            ln,
             hidden_states,
-            past_key_values=past_key_values,
-            attention_mask=attention_mask,
+            past_key_values,
+            attention_mask,
+        ):
+            residual = hidden_states
+            hidden_states = ln(hidden_states)
+
+            attn_outputs = mixer(
+                hidden_states,
+                past_key_values=past_key_values,
+                attention_mask=attention_mask,
+            )
+            if isinstance(attn_outputs, tuple):
+                attn_outputs = attn_outputs[0]
+
+            attn_outputs = resid_dropout(attn_outputs)
+            feed_forward_hidden_states = resid_dropout(mlp(hidden_states))
+
+            return attn_outputs + feed_forward_hidden_states + residual
+
+        if self.training and self.checkpointing:
+            return self._gradient_checkpointing_func(
+                _forward,
+                self.mixer,
+                self.resid_dropout,
+                self.mlp,
+                self.ln,
+                hidden_states,
+                past_key_values,
+                attention_mask,
+            )
+
+        return _forward(
+            self.mixer,
+            self.resid_dropout,
+            self.mlp,
+            self.ln,
+            hidden_states,
+            past_key_values,
+            attention_mask,
         )
-        if isinstance(attn_outputs, tuple):
-            attn_outputs = attn_outputs[0]
-
-        attn_outputs = self.resid_dropout(attn_outputs)
-        feed_forward_hidden_states = self.resid_dropout(self.mlp(hidden_states))
-
-        hidden_states = attn_outputs + feed_forward_hidden_states + residual
-
-        return hidden_states
 
 
 class CausalLMHead(nn.Module):
@@ -911,7 +949,7 @@ class PhiPreTrainedModel(PreTrainedModel):
 
     config_class = PhiConfig
     base_model_prefix = "transformer"
-    supports_gradient_checkpointing = False
+    supports_gradient_checkpointing = True
     _no_split_modules = ["ParallelBlock"]
 
     def __init__(self, *inputs, **kwargs) -> None:
@@ -930,6 +968,14 @@ class PhiPreTrainedModel(PreTrainedModel):
             if module.bias is not None:
                 module.bias.data.zero_()
             module.weight.data.fill_(1.0)
+
+    def _set_gradient_checkpointing(
+        self, enable: bool = True, gradient_checkpointing_func: Callable = checkpoint
+    ):
+        for module in self.modules():
+            if hasattr(module, "checkpointing"):
+                module._gradient_checkpointing_func = gradient_checkpointing_func
+                module.checkpointing = enable
 
     def prepare_inputs_for_generation(
         self,
@@ -951,7 +997,7 @@ class PhiPreTrainedModel(PreTrainedModel):
             )
         else:
             # Assume that `past_key_values` has cached all tokens up to the last token in `input_ids`
-            past_key_values.seqlen_offset = len(input_ids[0]) - 1
+            past_key_values.seqlen_offset = input_ids.shape[1] - 1
             input_ids = input_ids[:, -1].unsqueeze(-1)
 
         return {
@@ -988,8 +1034,6 @@ class PhiModel(PhiPreTrainedModel):
         input_ids: torch.LongTensor,
         past_key_values: Optional[Union[torch.FloatTensor, InferenceParams]] = None,
         attention_mask: Optional[torch.BoolTensor] = None,
-        cu_seqlens: Optional[torch.LongTensor] = None,
-        max_seqlen: Optional[int] = None,
     ) -> torch.FloatTensor:
         hidden_states = self.embd(input_ids)
 
@@ -998,8 +1042,6 @@ class PhiModel(PhiPreTrainedModel):
                 hidden_states,
                 past_key_values=past_key_values,
                 attention_mask=attention_mask,
-                cu_seqlens=cu_seqlens,
-                max_seqlen=max_seqlen,
             )
 
         return hidden_states
@@ -1034,23 +1076,10 @@ class PhiForCausalLM(PhiPreTrainedModel):
         past_key_values: Optional[Union[torch.FloatTensor, InferenceParams]] = None,
         attention_mask: Optional[torch.BoolTensor] = None,
         labels: Optional[torch.LongTensor] = None,
-        position_ids: Optional[torch.LongTensor] = None,
         **kwargs,
     ) -> CausalLMOutputWithPast:
-        cu_seqlens: Optional[torch.LongTensor] = None
-        max_seqlen: Optional[int] = None
-        if position_ids is not None:
-            batch_size, seq_length = input_ids.shape
-            position_ids = position_ids.view(-1, seq_length).long()
-            cu_seqlens, max_seqlen = get_cu_seqlens_from_pos_ids(position_ids)
-            cu_seqlens = cu_seqlens.squeeze()
-
         hidden_states = self.transformer(
-            input_ids,
-            past_key_values=past_key_values,
-            attention_mask=attention_mask,
-            cu_seqlens=cu_seqlens,
-            max_seqlen=max_seqlen,
+            input_ids, past_key_values=past_key_values, attention_mask=attention_mask
         )
         lm_logits = self.lm_head(hidden_states)
 

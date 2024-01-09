@@ -62,8 +62,8 @@ flash_attention:
 sdp_attention:
 flash_optimum:
 warmup_steps: 100
-eval_steps:
-save_steps:
+evals_per_epoch: 4
+saves_per_epoch: 1
 debug:
 deepspeed:
 weight_decay: 0.1

@@ -60,8 +60,8 @@ xformers_attention:
 flash_attention: true
 
 warmup_steps: 10
-eval_steps: 0.05
-save_steps: 50
+evals_per_epoch: 4
+saves_per_epoch: 1
 debug:
 deepspeed:
 weight_decay: 0.0

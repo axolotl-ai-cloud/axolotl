@@ -2,7 +2,7 @@
 auto-gptq==0.5.1
 packaging
 peft==0.6.0
-transformers @ git+https://github.com/huggingface/transformers.git@df5c5c62ae253055336f5bb0828ca8e3e15ab6bd
+transformers @ git+https://github.com/huggingface/transformers.git@3cefac1d974db5e2825a0cb2b842883a628be7a0
 tokenizers==0.15.0
 bitsandbytes>=0.41.1
 accelerate==0.24.1
@@ -11,8 +11,8 @@ addict
 fire
 PyYAML>=6.0
 datasets>=2.15.0
-packaging
-# flash-attn==2.3.3
+flash-attn==2.3.3
+fused-dense-lib  @ git+https://github.com/Dao-AILab/flash-attention@v2.3.3#subdirectory=csrc/fused_dense_lib
 sentencepiece
 wandb
 einops
@@ -30,7 +30,7 @@ scipy
 scikit-learn==1.2.2
 pynvml
 art
-fschat==0.2.29
+fschat==0.2.34
 gradio==3.50.2
 tensorboard
 
@@ -38,3 +38,5 @@ tensorboard
 s3fs
 gcsfs
 # adlfs
+
+trl @ git+https://github.com/huggingface/trl.git@main

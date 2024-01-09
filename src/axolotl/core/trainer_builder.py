@@ -9,7 +9,7 @@ import math
 import sys
 from abc import abstractmethod
 from dataclasses import dataclass, field
-from functools import partial
+from functools import wraps
 from pathlib import Path
 from typing import Optional
 
@@ -20,6 +20,7 @@ from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import BatchSampler, DataLoader, RandomSampler, SequentialSampler
 from transformers import EarlyStoppingCallback, Trainer, TrainingArguments
 from transformers.trainer_utils import seed_worker
+from trl import DPOTrainer
 
 from axolotl.monkeypatch.relora import ReLoRACallback, ReLoRAScheduler
 from axolotl.utils.callbacks import (
@@ -33,9 +34,10 @@ from axolotl.utils.callbacks import (
 )
 from axolotl.utils.collators import (
     BatchSamplerDataCollatorForSeq2Seq,
+    DataCollatorForSeq2Seq,
     MambaDataCollator,
 )
-from axolotl.utils.samplers import MultipackBatchSampler
+from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 from axolotl.utils.schedulers import get_cosine_schedule_with_quadratic_warmup
 
 try:
@@ -58,6 +60,12 @@ class AxolotlTrainingArguments(TrainingArguments):
     lr_quadratic_warmup: bool = field(
         default=False,
         metadata={"help": "Use quadratic warmup for cosine scheduling."},
+    )
+    pretraining: bool = field(
+        default=False,
+        metadata={
+            "help": "Indicates to trainer whether we are doing continued pretraining."
+        },
     )
     sample_packing: bool = field(
         default=False,
@@ -120,6 +128,7 @@ class AxolotlTrainer(Trainer):
     """
 
     args = None  # type: AxolotlTrainingArguments
+    tag_names = ["axolotl"]
 
     def __init__(self, *args, num_epochs=1, bench_data_collator=None, **kwargs):
         self.num_epochs = num_epochs
@@ -155,18 +164,13 @@ class AxolotlTrainer(Trainer):
         return self.lr_scheduler
 
     def _get_train_sampler(self) -> Optional[torch.utils.data.Sampler]:
-        if self.args.sample_packing:
+        if self.args.sample_packing and not self.args.pretraining:
             return MultipackBatchSampler(
                 RandomSampler(self.train_dataset),
                 self.args.train_batch_size,
                 drop_last=True,
                 batch_max_len=self._train_batch_size * self.args.max_seq_length,
-                lengths=(
-                    self.train_dataset.data.column("position_ids")
-                    .to_pandas()
-                    .apply(lambda x: x[-1] + 1)
-                    .values
-                ),
+                lengths=get_dataset_lengths(self.train_dataset),
                 packing_efficiency_estimate=self.args.sample_packing_efficiency,
             )
         return super()._get_train_sampler()
@@ -180,18 +184,13 @@ class AxolotlTrainer(Trainer):
                 self.args.per_device_eval_batch_size,
                 drop_last=True,
                 batch_max_len=self.args.eval_batch_size * self.args.max_seq_length,
-                lengths=(
-                    eval_dataset.data.column("position_ids")
-                    .to_pandas()
-                    .apply(lambda x: x[-1] + 1)
-                    .values
-                ),
+                lengths=get_dataset_lengths(eval_dataset),
                 packing_efficiency_estimate=self.args.sample_packing_efficiency,
             )
         return super()._get_eval_sampler(eval_dataset)
 
     def get_train_dataloader(self) -> DataLoader:
-        if self.args.sample_packing:
+        if self.args.sample_packing and not self.args.pretraining:
             train_dataset = self.train_dataset
             train_dataset = train_dataset.remove_columns(["length"])
             data_collator = self.data_collator
@@ -290,11 +289,40 @@ class AxolotlTrainer(Trainer):
         #     return (loss, outputs) if return_outputs else loss
         return super().compute_loss(model, inputs, return_outputs=return_outputs)
 
+    def _sanitize_kwargs_for_tagging(self, tag_names, kwargs=None):
+        if isinstance(tag_names, str):
+            tag_names = [tag_names]
+
+        if kwargs is not None:
+            if "tags" not in kwargs:
+                kwargs["tags"] = tag_names
+            elif "tags" in kwargs and isinstance(kwargs["tags"], list):
+                kwargs["tags"].extend(tag_names)
+            elif "tags" in kwargs and isinstance(kwargs["tags"], str):
+                tag_names.append(kwargs["tags"])
+                kwargs["tags"] = tag_names
+
+        return kwargs
+
+    @wraps(Trainer.push_to_hub)
+    def push_to_hub(self, *args, **kwargs) -> str:
+        """
+        Overwrite the `push_to_hub` method in order to force-add the tags when pushing the
+        model on the Hub. Please refer to `~transformers.Trainer.push_to_hub` for more details.
+        """
+        kwargs = self._sanitize_kwargs_for_tagging(
+            tag_names=self.tag_names, kwargs=kwargs
+        )
+
+        return super().push_to_hub(*args, **kwargs)
+
 
 class AxolotlMambaTrainer(AxolotlTrainer):
     """
     Mamba specific trainer to handle loss calculation
     """
+
+    tag_names = ["axolotl", "mamba"]
 
     def compute_loss(
         self,
@@ -321,6 +349,8 @@ class OneCycleLRSchedulerTrainer(AxolotlTrainer):
     """
     Trainer subclass that uses the OneCycleLR scheduler
     """
+
+    tag_names = ["axolotl", "onecycle"]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -350,6 +380,8 @@ class ReLoRATrainer(AxolotlTrainer):
     """
     Trainer subclass that uses the OneCycleLR scheduler
     """
+
+    tag_names = ["axolotl", "relora"]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -386,11 +418,20 @@ class TrainerBuilderBase(abc.ABC):
 
     _train_dataset = None
     _eval_dataset = None
+    _model_ref = None
 
     def __init__(self, cfg, model, tokenizer):
         self.cfg = cfg
         self.model = model
         self.tokenizer = tokenizer
+
+    @property
+    def model_ref(self):
+        return self._model_ref
+
+    @model_ref.setter
+    def model_ref(self, model):
+        self._model_ref = model
 
     @property
     def train_dataset(self):
@@ -532,6 +573,14 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             training_arguments_kwargs[
                 "gradient_checkpointing"
             ] = self.cfg.gradient_checkpointing
+            if self.cfg.gradient_checkpointing_kwargs:
+                training_arguments_kwargs[
+                    "gradient_checkpointing_kwargs"
+                ] = self.cfg.gradient_checkpointing_kwargs
+            else:
+                training_arguments_kwargs["gradient_checkpointing_kwargs"] = {
+                    "use_reentrant": False
+                }
         if self.cfg.fsdp:
             training_arguments_kwargs["fsdp"] = self.cfg.fsdp
             if self.cfg.fsdp_config:
@@ -559,6 +608,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             training_arguments_kwargs["hub_model_id"] = self.cfg.hub_model_id
             training_arguments_kwargs["push_to_hub"] = True
             training_arguments_kwargs["hub_private_repo"] = True
+            training_arguments_kwargs["hub_always_push"] = True
 
             if self.cfg.hub_strategy:
                 training_arguments_kwargs["hub_strategy"] = self.cfg.hub_strategy
@@ -692,6 +742,9 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             and self.cfg.lr_scheduler not in ("one_cycle", "log_sweep")
             else "cosine"
         )
+        training_arguments_kwargs["lr_scheduler_kwargs"] = (
+            self.cfg.lr_scheduler_kwargs if self.cfg.lr_scheduler_kwargs else {}
+        )
         training_arguments_kwargs["weight_decay"] = (
             self.cfg.weight_decay if self.cfg.weight_decay is not None else 0.0
         )
@@ -712,6 +765,13 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             training_arguments_kwargs
         )
         training_arguments_kwargs["model_type"] = self.cfg.model_config_type
+        training_arguments_kwargs["pretraining"] = bool(self.cfg.pretraining_dataset)
+
+        if self.cfg.neftune_noise_alpha is not None:
+            training_arguments_kwargs[
+                "neftune_noise_alpha"
+            ] = self.cfg.neftune_noise_alpha
+
         training_args = (
             AxolotlTrainingArguments(  # pylint: disable=unexpected-keyword-arg
                 **training_arguments_kwargs,
@@ -767,7 +827,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             train_dataset=self.train_dataset,
             eval_dataset=self.eval_dataset,
             args=training_args,
-            data_collator=self.build_collator(**data_collator_kwargs),
+            data_collator=self.build_collator(training_args, **data_collator_kwargs),
             bench_data_collator=transformers.DataCollatorForSeq2Seq(
                 self.tokenizer,
                 return_tensors="pt",
@@ -788,12 +848,115 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
 
         return trainer
 
-    def build_collator(self, **kwargs):
+    def build_collator(self, training_args: AxolotlTrainingArguments, **kwargs):
+        if training_args.pretraining:
+            return None
+
         if self.cfg.model_config_type == "mamba":
             return MambaDataCollator(tokenizer=self.tokenizer)
 
-        return BatchSamplerDataCollatorForSeq2Seq(
+        if training_args.sample_packing:
+            return BatchSamplerDataCollatorForSeq2Seq(
+                self.tokenizer,
+                return_tensors="pt",
+                **kwargs,
+            )
+
+        return DataCollatorForSeq2Seq(
             self.tokenizer,
             return_tensors="pt",
             **kwargs,
         )
+
+
+class HFDPOTrainerBuilder(TrainerBuilderBase):
+    """
+    Trainer factory class for DPO Trainer
+    """
+
+    def get_callbacks(self):
+        callbacks = []
+        return callbacks
+
+    def get_post_trainer_create_callbacks(self, trainer):
+        callbacks = []
+        return callbacks
+
+    def build_training_arguments(self, total_num_steps):
+        training_args_kwargs = {}
+        for arg in [
+            "adam_beta1",
+            "adam_beta2",
+            "adam_epsilon",
+            "dataloader_num_workers",
+            "dataloader_pin_memory",
+        ]:
+            if hasattr(self.cfg, arg) and getattr(self.cfg, arg) is not None:
+                training_args_kwargs[arg] = getattr(self.cfg, arg)
+        training_args = TrainingArguments(
+            per_device_train_batch_size=self.cfg.micro_batch_size,
+            max_steps=total_num_steps,
+            remove_unused_columns=False,
+            gradient_accumulation_steps=self.cfg.gradient_accumulation_steps,
+            learning_rate=self.cfg.learning_rate,
+            evaluation_strategy="no",
+            # eval_steps=self.cfg.eval_steps,
+            save_strategy="steps",
+            save_steps=self.cfg.save_steps,
+            output_dir=self.cfg.output_dir,
+            warmup_steps=self.cfg.warmup_steps,
+            bf16=True,
+            gradient_checkpointing=self.cfg.gradient_checkpointing,
+            gradient_checkpointing_kwargs={"use_reentrant": False},
+            logging_first_step=True,
+            logging_steps=1,
+            optim=self.cfg.optimizer,
+            save_total_limit=self.cfg.save_total_limit or 5,
+            **training_args_kwargs,
+        )
+
+        return training_args
+
+    def build(self, total_num_steps):
+        training_args = self.build_training_arguments(total_num_steps)
+        dpo_trainer_kwargs = {}
+        if self.cfg.rl == "ipo":
+            dpo_trainer_kwargs["loss_type"] = "ipo"
+            if self.cfg.dpo_label_smoothing:
+                dpo_trainer_kwargs["label_smoothing"] = self.cfg.dpo_label_smoothing
+
+        dpo_trainer = DPOTrainer(
+            self.model,
+            self.model_ref,
+            args=training_args,
+            beta=self.cfg.dpo_beta or 0.1,
+            train_dataset=self.train_dataset,
+            # eval_dataset=self.eval_dataset,
+            eval_dataset=None,
+            tokenizer=self.tokenizer,
+            max_length=self.cfg.sequence_len,
+            max_target_length=None,
+            max_prompt_length=self.cfg.sequence_len,
+            generate_during_eval=True,
+            **dpo_trainer_kwargs,
+        )
+
+        return dpo_trainer
+
+
+class HFPPOTrainerBuilder(TrainerBuilderBase):
+    """
+    HF Factory class for PPO Trainer
+    """
+
+    def get_callbacks(self):
+        callbacks = []
+        return callbacks
+
+    def get_post_trainer_create_callbacks(self, trainer):
+        callbacks = []
+        return callbacks
+
+    def build(self, total_num_steps):
+        # build PPOConfig
+        pass
