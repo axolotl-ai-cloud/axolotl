@@ -927,6 +927,8 @@ class HFDPOTrainerBuilder(TrainerBuilderBase):
             dpo_trainer_kwargs["loss_type"] = "ipo"
             if self.cfg.dpo_label_smoothing:
                 dpo_trainer_kwargs["label_smoothing"] = self.cfg.dpo_label_smoothing
+        elif self.cfg.rl == "kto":
+            dpo_trainer_kwargs["loss_type"] = "kto"
 
         dpo_trainer = DPOTrainer(
             self.model,
