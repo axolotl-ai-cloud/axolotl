@@ -20,9 +20,9 @@ WORKDIR /workspace/axolotl
 
 # If AXOLOTL_EXTRAS is set, append it in brackets
 RUN if [ "$AXOLOTL_EXTRAS" != "" ] ; then \
-        pip install -e .[deepspeed,flash-attn,$AXOLOTL_EXTRAS]; \
+        pip install -e .[deepspeed,flash-attn,mamba-ssm,$AXOLOTL_EXTRAS]; \
     else \
-        pip install -e .[deepspeed,flash-attn]; \
+        pip install -e .[deepspeed,flash-attn,mamba-ssm]; \
     fi
 
 # So we can test the Docker image

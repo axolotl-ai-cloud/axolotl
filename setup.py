@@ -19,6 +19,7 @@ def parse_requirements():
                 "flash-attn" not in line
                 and "flash-attention" not in line
                 and "deepspeed" not in line
+                and "mamba-ssm" not in line
                 and line
                 and line[0] != "#"
             ):
