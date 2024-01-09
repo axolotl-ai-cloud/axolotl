@@ -104,7 +104,7 @@ class TestSharegpt:
                 role_key_human=None,
             ),
             tokenizer,
-            True,  # train_on_inputs
+            False,  # train_on_inputs
             2048,  # sequence_len
         )
 
@@ -124,30 +124,30 @@ class TestSharegpt:
         ]
         # fmt: on
 
-    # def test_no_train_on_input(self, sharegpt_dataset, tokenizer):
-    #     strategy = SimpleShareGPTPromptTokenizingStrategy(
-    #         ShareGPTPrompterV2(
-    #             conversation="chatml",
-    #             role_key_model=None,
-    #             role_key_human=None,
-    #         ),
-    #         tokenizer,
-    #         False,  # train_on_inputs
-    #         2048,  # sequence_len
-    #     )
-    #
-    #     dataset_wrapper = TokenizedPromptDataset(
-    #         strategy, sharegpt_dataset, process_count=1
-    #     )
-    #
-    #     labels = dataset_wrapper[0]["labels"]
-    #     # fmt: off
-    #     assert labels == [
-    #         1,   # bos
-    #         32001, 1587, 13, 25997, 32000, 28705, 13,  # system
-    #         32001, 2188, 13, 21558, 32000, 28705, 13,  # human
-    #         32001, 13892, 13, 21558, 32000, 28705, 13,  # gpt
-    #         32001, 2188, 13, 12684, 17664, 32000, 28705, 13,   # human
-    #         32001, 13892, 13, 12684, 17664, 32000, 28705, 13,  # gpt
-    #     ]
-    #     # fmt: on
+    def test_no_train_on_input(self, sharegpt_dataset, tokenizer):
+        strategy = SimpleShareGPTPromptTokenizingStrategy(
+            ShareGPTPrompterV2(
+                conversation="chatml",
+                role_key_model=None,
+                role_key_human=None,
+            ),
+            tokenizer,
+            True,  # train_on_inputs
+            2048,  # sequence_len
+        )
+
+        dataset_wrapper = TokenizedPromptDataset(
+            strategy, sharegpt_dataset, process_count=1
+        )
+
+        labels = dataset_wrapper[0]["labels"]
+        # fmt: off
+        assert labels == [
+            1,   # bos
+            32001, 1587, 13, 25997, 32000, 28705, 13,  # system
+            32001, 2188, 13, 21558, 32000, 28705, 13,  # human
+            32001, 13892, 13, 21558, 32000, 28705, 13,  # gpt
+            32001, 2188, 13, 12684, 17664, 32000, 28705, 13,   # human
+            32001, 13892, 13, 12684, 17664, 32000, 28705, 13,  # gpt
+        ]
+        # fmt: on
