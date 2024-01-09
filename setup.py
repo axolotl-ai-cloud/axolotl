@@ -61,5 +61,8 @@ setup(
         "mamba-ssm": [
             "mamba-ssm==1.0.1",
         ],
+        "auto-gptq": [
+            "auto-gptq==0.5.1",
+        ],
     },
 )
