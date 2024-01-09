@@ -40,4 +40,4 @@ s3fs
 gcsfs
 # adlfs
 
-trl==0.7.9
+trl>=0.7.9
