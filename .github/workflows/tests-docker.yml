@@ -43,4 +43,4 @@ jobs:
             --tag test-axolotl
       - name: Unit Tests w docker image
         run: |
-          docker run --privileged --gpus '"all" --rm test-axolotl pytest /workspace/axolotl/tests/
+          docker run --privileged --gpus "all" --rm test-axolotl pytest /workspace/axolotl/tests/
