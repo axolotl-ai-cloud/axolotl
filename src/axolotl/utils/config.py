@@ -150,6 +150,18 @@ def normalize_config(cfg):
     log_gpu_memory_usage(LOG, "baseline", cfg.device)
 
 
+def normalize_cfg_datasets(cfg):
+    """
+    helpers for mapping chat_template to various dataset configurations as necessary
+    """
+
+    if cfg.chat_template and cfg.chat_template == "chatml":
+        if cfg.datasets:
+            for idx, ds_cfg in enumerate(cfg.datasets):
+                if ds_cfg.type == "sharegpt" and not ds_cfg.conversation:
+                    cfg.datasets[idx].conversation = "chatml"
+
+
 def validate_config(cfg):
     if is_torch_bf16_gpu_available():
         if not cfg.bf16 and not cfg.bfloat16:

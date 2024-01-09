@@ -3,7 +3,7 @@ Test classes for checking functionality of the cfg normalization
 """
 import unittest
 
-from axolotl.utils.config import normalize_config
+from axolotl.utils.config import normalize_cfg_datasets, normalize_config
 from axolotl.utils.dict import DictDefault
 
 
@@ -44,3 +44,26 @@ class NormalizeConfigTestCase(unittest.TestCase):
         normalize_config(cfg)
 
         assert cfg.base_model_config == cfg.base_model
+
+    def test_chat_template_chatml(self):
+        cfg = DictDefault(
+            {
+                "chat_template": "chatml",
+                "datasets": [
+                    {
+                        "path": "lorem/ipsum",
+                        "type": "sharegpt",
+                        "conversation": "vicuna_v1.1",
+                    },
+                    {
+                        "path": "sit/amet",
+                        "type": "sharegpt",
+                    },
+                ],
+            }
+        )
+
+        normalize_cfg_datasets(cfg)
+
+        assert cfg.datasets[0].conversation == "vicuna_v1.1"
+        assert cfg.datasets[1].conversation == "chatml"
