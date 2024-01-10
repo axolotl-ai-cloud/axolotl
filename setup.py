@@ -12,7 +12,10 @@ def parse_requirements():
         lines = [r.strip() for r in requirements_file.readlines()]
         for line in lines:
             is_extras = (
-                "flash-attn" in line or "deepspeed" in line or "mamba-ssm" in line
+                "flash-attn" in line
+                or "flash-attention" in line
+                or "deepspeed" in line
+                or "mamba-ssm" in line
             )
             if line.startswith("--extra-index-url"):
                 # Handle custom index URLs
