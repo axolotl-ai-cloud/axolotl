@@ -1,5 +1,5 @@
 --extra-index-url https://huggingface.github.io/autogptq-index/whl/cu118/
-packaging
+packaging==23.2
 peft==0.7.0
 transformers @ git+https://github.com/huggingface/transformers.git@3cefac1d974db5e2825a0cb2b842883a628be7a0
 tokenizers==0.15.0
@@ -33,6 +33,8 @@ art
 fschat==0.2.34
 gradio==3.50.2
 tensorboard
+
+mamba-ssm==1.1.1
 
 # remote filesystems
 s3fs
