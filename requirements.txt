@@ -11,7 +11,6 @@ fire
 PyYAML>=6.0
 datasets>=2.15.0
 flash-attn==2.3.3
-fused-dense-lib  @ git+https://github.com/Dao-AILab/flash-attention@v2.3.3#subdirectory=csrc/fused_dense_lib
 sentencepiece
 wandb
 einops
