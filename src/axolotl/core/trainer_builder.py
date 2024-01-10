@@ -1,3 +1,4 @@
+# pylint: disable=too-many-lines
 """
 Builder for the training args and trainer
 """
@@ -671,6 +672,12 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             training_arguments_kwargs[
                 "dataloader_prefetch_factor"
             ] = self.cfg.dataloader_prefetch_factor
+        if self.cfg.dataloader_drop_last is not None:
+            training_arguments_kwargs[
+                "dataloader_drop_last"
+            ] = self.cfg.dataloader_drop_last
+        elif self.cfg.sample_packing and self.cfg.eval_sample_packing is False:
+            training_arguments_kwargs["dataloader_drop_last"] = True
 
         if self.cfg.val_set_size == 0:
             # no eval set, so don't eval
