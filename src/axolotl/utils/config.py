@@ -159,6 +159,9 @@ def normalize_cfg_datasets(cfg):
         if cfg.datasets:
             for idx, ds_cfg in enumerate(cfg.datasets):
                 if ds_cfg.type == "sharegpt" and not ds_cfg.conversation:
+                    LOG.info(
+                        f"updating dataset {ds_cfg.path} with `conversation: chatml` to match your chat_template"
+                    )
                     cfg.datasets[idx].conversation = "chatml"
 
 
