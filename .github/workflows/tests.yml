@@ -7,10 +7,12 @@ on:
     paths:
       - '**.py'
       - 'requirements.txt'
+      - '.github/workflows/*.yml'
   pull_request:
       paths:
        - '**.py'
        - 'requirements.txt'
+       - '.github/workflows/*.yml'
   workflow_dispatch:
 
 jobs:
@@ -53,29 +55,54 @@ jobs:
         run: |
           pytest --ignore=tests/e2e/ tests/
 
-  e2e-test:
-    name: E2E Tests
-    runs-on: [self-hosted, gpu]
-    timeout-minutes: 20
+  docker-e2e-tests:
+    if: github.repository_owner == 'OpenAccess-AI-Collective'
+    # this job needs to be run on self-hosted GPU runners...
+    runs-on: [self-hosted, gpu, docker]
+    timeout-minutes: 30
     needs: [pre-commit, pytest]
 
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - cuda: 118
+            cuda_version: 11.8.0
+            python_version: "3.10"
+            pytorch: 2.0.1
+          - cuda: 121
+            cuda_version: 12.1.0
+            python_version: "3.10"
+            pytorch: 2.1.1
     steps:
-      - name: Check out repository code
-        uses: actions/checkout@v3
-
-      - name: Setup Python
-        uses: actions/setup-python@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Docker metadata
+        id: metadata
+        uses: docker/metadata-action@v5
         with:
-          python-version: "3.10"
-#          cache: 'pip' # caching pip dependencies
-
-      - name: Install dependencies
+          images: winglian/axolotl-tests
+      - name: Build Docker image
         run: |
-          pip3 install --extra-index-url https://download.pytorch.org/whl/cu118 -U torch==2.0.1
-          pip3 uninstall -y transformers accelerate
-          pip3 install -U -e .[flash-attn,mamba-ssm]
-          pip3 install -r requirements-tests.txt
-
-      - name: Run e2e tests
+          # Set up build arguments
+          BASE_TAG="main-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}"
+          CUDA="${{ matrix.cuda }}"
+          PYTORCH_VERSION="${{ matrix.pytorch }}"
+          # Build the Docker image
+          docker build . \
+            --file ./docker/Dockerfile-tests \
+            --build-arg BASE_TAG=$BASE_TAG \
+            --build-arg CUDA=$CUDA \
+            --build-arg GITHUB_REF=$GITHUB_REF \
+            --build-arg PYTORCH_VERSION=$PYTORCH_VERSION \
+            --tag ${{ steps.metadata.outputs.tags }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }} \
+            --no-cache
+      - name: Unit Tests w docker image
         run: |
-          pytest tests/e2e/
+          docker run --rm ${{ steps.metadata.outputs.tags }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }} pytest --ignore=tests/e2e/ /workspace/axolotl/tests/
+      - name: GPU Unit Tests w docker image
+        run: |
+          docker run --privileged --gpus "all" --env WANDB_DISABLED=true --rm ${{ steps.metadata.outputs.tags }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }} pytest --ignore=tests/e2e/patched/ /workspace/axolotl/tests/e2e/
+      - name: GPU Unit Tests monkeypatched w docker image
+        run: |
+          docker run --privileged --gpus "all" --env WANDB_DISABLED=true --rm ${{ steps.metadata.outputs.tags }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }} pytest /workspace/axolotl/tests/e2e/patched/
