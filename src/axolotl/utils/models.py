@@ -588,13 +588,14 @@ def load_model(
         log_gpu_memory_usage(LOG, "after model load", model.device)
 
     # make sure these are fp32 per Ramesh et al. (2021)
+    embedding_modules = get_linear_embedding_layers(cfg.model_config.model_type)
     for name, module in model.named_modules():
         if "norm" in name:
             module.to(torch.float32)
         if model_config.model_type == "btlm":
             # don't upcast lm_head for btlm
             continue
-        if "lm_head" in name or "embed_tokens" in name:
+        if any(m in name for m in embedding_modules):
             if hasattr(module, "weight"):
                 module.to(torch.float32)
 
@@ -627,7 +628,7 @@ def load_model(
         for name, module in model.named_modules():
             if "norm" in name:
                 module.to(cfg.torch_dtype)
-            if "lm_head" in name or "embed_tokens" in name:
+            if any(m in name for m in embedding_modules):
                 if hasattr(module, "weight"):
                     module.to(cfg.torch_dtype)
 
