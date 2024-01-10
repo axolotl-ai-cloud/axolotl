@@ -1,5 +1,5 @@
 """
-Test module for sharegpt integration w chatml
+Test module for alpacha integration w chatml
 """
 import pytest
 from datasets import Dataset
@@ -7,13 +7,12 @@ from tokenizers import AddedToken
 from transformers import AutoTokenizer
 
 from axolotl.datasets import TokenizedPromptDataset
-from axolotl.prompt_strategies.sharegpt import SimpleShareGPTPromptTokenizingStrategy
 from axolotl.prompt_tokenizers import AlpacaPromptTokenizingStrategy
 from axolotl.prompters import AlpacaPrompter
 
 
 @pytest.fixture(name="alpacha_dataset")
-def fixture_sharegpt_dataset():
+def fixture_alpacha_dataset():
     return Dataset.from_list(
         [
             {"instruction": "Evaluate this sentence for spelling and grammar mistakes", "input": "He finnished his meal and left the resturant", "output": "He finished his meal and left the restaurant."}
