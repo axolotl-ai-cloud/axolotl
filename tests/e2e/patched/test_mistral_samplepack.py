@@ -7,7 +7,6 @@ import os
 import unittest
 from pathlib import Path
 
-import pytest
 from transformers.utils import is_torch_bf16_gpu_available
 
 from axolotl.cli import load_datasets
@@ -16,34 +15,37 @@ from axolotl.train import train
 from axolotl.utils.config import normalize_config
 from axolotl.utils.dict import DictDefault
 
-from .utils import with_temp_dir
+from ..utils import with_temp_dir
 
 LOG = logging.getLogger("axolotl.tests.e2e")
 os.environ["WANDB_DISABLED"] = "true"
 
 
-class TestPhi(unittest.TestCase):
+class TestMistral(unittest.TestCase):
     """
-    Test case for Phi2 models
+    Test case for Llama models using LoRA
     """
 
-    @pytest.mark.skip(reason="fixme later")
     @with_temp_dir
-    def test_phi2_ft(self, temp_dir):
+    def test_lora_packing(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "microsoft/phi-2",
-                "trust_remote_code": True,
-                "model_type": "AutoModelForCausalLM",
-                "tokenizer_type": "AutoTokenizer",
-                "sequence_len": 512,
-                "sample_packing": False,
-                "load_in_8bit": False,
-                "adapter": None,
+                "base_model": "openaccess-ai-collective/tiny-mistral",
+                "flash_attention": True,
+                "sample_packing": True,
+                "sequence_len": 1024,
+                "load_in_8bit": True,
+                "adapter": "lora",
+                "lora_r": 32,
+                "lora_alpha": 64,
+                "lora_dropout": 0.05,
+                "lora_target_linear": True,
                 "val_set_size": 0.1,
                 "special_tokens": {
-                    "pad_token": "<|endoftext|>",
+                    "unk_token": "<unk>",
+                    "bos_token": "<s>",
+                    "eos_token": "</s>",
                 },
                 "datasets": [
                     {
@@ -51,53 +53,39 @@ class TestPhi(unittest.TestCase):
                         "type": "alpaca",
                     },
                 ],
-                "dataset_shard_num": 10,
-                "dataset_shard_idx": 0,
-                "num_epochs": 1,
-                "micro_batch_size": 1,
+                "num_epochs": 2,
+                "micro_batch_size": 2,
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
-                "optimizer": "paged_adamw_8bit",
+                "optimizer": "adamw_torch",
                 "lr_scheduler": "cosine",
-                "flash_attention": True,
-                "max_steps": 10,
+                "max_steps": 20,
                 "save_steps": 10,
                 "eval_steps": 10,
-                "save_safetensors": True,
             }
         )
-        if is_torch_bf16_gpu_available():
-            cfg.bf16 = True
-        else:
-            cfg.fp16 = True
         normalize_config(cfg)
         cli_args = TrainerCliArgs()
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
         train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-        assert (Path(temp_dir) / "pytorch_model.bin").exists()
+        assert (Path(temp_dir) / "adapter_model.bin").exists()
 
-    @pytest.mark.skip(reason="multipack no longer supported atm")
     @with_temp_dir
-    def test_ft_packed(self, temp_dir):
+    def test_ft_packing(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "microsoft/phi-2",
-                "trust_remote_code": True,
-                "model_type": "PhiForCausalLM",
-                "tokenizer_type": "AutoTokenizer",
-                "sequence_len": 512,
+                "base_model": "openaccess-ai-collective/tiny-mistral",
+                "flash_attention": True,
                 "sample_packing": True,
-                "load_in_8bit": False,
-                "adapter": None,
+                "sequence_len": 1024,
                 "val_set_size": 0.1,
                 "special_tokens": {
-                    "unk_token": "<|endoftext|>",
-                    "bos_token": "<|endoftext|>",
-                    "eos_token": "<|endoftext|>",
-                    "pad_token": "<|endoftext|>",
+                    "unk_token": "<unk>",
+                    "bos_token": "<s>",
+                    "eos_token": "</s>",
                 },
                 "datasets": [
                     {
@@ -105,22 +93,22 @@ class TestPhi(unittest.TestCase):
                         "type": "alpaca",
                     },
                 ],
-                "dataset_shard_num": 10,
-                "dataset_shard_idx": 0,
-                "num_epochs": 1,
-                "micro_batch_size": 1,
+                "num_epochs": 2,
+                "micro_batch_size": 2,
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
-                "optimizer": "adamw_bnb_8bit",
+                "optimizer": "adamw_torch",
                 "lr_scheduler": "cosine",
+                "max_steps": 20,
+                "save_steps": 10,
+                "eval_steps": 10,
             }
         )
         if is_torch_bf16_gpu_available():
             cfg.bf16 = True
         else:
             cfg.fp16 = True
-
         normalize_config(cfg)
         cli_args = TrainerCliArgs()
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)

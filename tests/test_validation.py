@@ -6,6 +6,7 @@ import unittest
 from typing import Optional
 
 import pytest
+from transformers.utils import is_torch_bf16_gpu_available
 
 from axolotl.utils.config import validate_config
 from axolotl.utils.dict import DictDefault
@@ -354,6 +355,10 @@ class ValidationTest(unittest.TestCase):
         with pytest.raises(ValueError, match=regex_exp):
             validate_config(cfg)
 
+    @pytest.mark.skipif(
+        is_torch_bf16_gpu_available(),
+        reason="test should only run on gpus w/o bf16 support",
+    )
     def test_merge_lora_no_bf16_fail(self):
         """
         This is assumed to be run on a CPU machine, so bf16 is not supported.
@@ -778,6 +783,15 @@ class ValidationWandbTest(ValidationTest):
         assert os.environ.get("WANDB_LOG_MODEL", "") == "checkpoint"
         assert os.environ.get("WANDB_DISABLED", "") != "true"
 
+        os.environ.pop("WANDB_PROJECT", None)
+        os.environ.pop("WANDB_NAME", None)
+        os.environ.pop("WANDB_RUN_ID", None)
+        os.environ.pop("WANDB_ENTITY", None)
+        os.environ.pop("WANDB_MODE", None)
+        os.environ.pop("WANDB_WATCH", None)
+        os.environ.pop("WANDB_LOG_MODEL", None)
+        os.environ.pop("WANDB_DISABLED", None)
+
     def test_wandb_set_disabled(self):
         cfg = DictDefault({})
 
@@ -798,3 +812,6 @@ class ValidationWandbTest(ValidationTest):
         setup_wandb_env_vars(cfg)
 
         assert os.environ.get("WANDB_DISABLED", "") != "true"
+
+        os.environ.pop("WANDB_PROJECT", None)
+        os.environ.pop("WANDB_DISABLED", None)

@@ -1,5 +1,5 @@
 """
-E2E tests for mixtral
+E2E tests for lora llama
 """
 
 import logging
@@ -7,7 +7,8 @@ import os
 import unittest
 from pathlib import Path
 
-from transformers.utils import is_torch_bf16_gpu_available
+import pytest
+from transformers.utils import is_auto_gptq_available, is_torch_bf16_gpu_available
 
 from axolotl.cli import load_datasets
 from axolotl.common.cli import TrainerCliArgs
@@ -15,34 +16,39 @@ from axolotl.train import train
 from axolotl.utils.config import normalize_config
 from axolotl.utils.dict import DictDefault
 
-from .utils import with_temp_dir
+from ..utils import with_temp_dir
 
 LOG = logging.getLogger("axolotl.tests.e2e")
 os.environ["WANDB_DISABLED"] = "true"
 
 
-class TestMixtral(unittest.TestCase):
+class TestLoraLlama(unittest.TestCase):
     """
-    Test case for Llama models using LoRA
+    Test case for Llama models using LoRA w multipack
     """
 
     @with_temp_dir
-    def test_qlora(self, temp_dir):
+    def test_lora_packing(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "hf-internal-testing/Mixtral-tiny",
-                "tokenizer_config": "mistralai/Mixtral-8x7B-v0.1",
+                "base_model": "JackFram/llama-68m",
+                "tokenizer_type": "LlamaTokenizer",
+                "sequence_len": 1024,
+                "sample_packing": True,
                 "flash_attention": True,
-                "sequence_len": 2048,
-                "load_in_4bit": True,
-                "adapter": "qlora",
-                "lora_r": 16,
-                "lora_alpha": 32,
-                "lora_dropout": 0.1,
+                "load_in_8bit": True,
+                "adapter": "lora",
+                "lora_r": 32,
+                "lora_alpha": 64,
+                "lora_dropout": 0.05,
                 "lora_target_linear": True,
                 "val_set_size": 0.1,
-                "special_tokens": {},
+                "special_tokens": {
+                    "unk_token": "<unk>",
+                    "bos_token": "<s>",
+                    "eos_token": "</s>",
+                },
                 "datasets": [
                     {
                         "path": "mhenrichsen/alpaca_2k_test",
@@ -50,22 +56,19 @@ class TestMixtral(unittest.TestCase):
                     },
                 ],
                 "num_epochs": 2,
-                "micro_batch_size": 2,
+                "micro_batch_size": 8,
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
-                "optimizer": "adamw_bnb_8bit",
+                "optimizer": "adamw_torch",
                 "lr_scheduler": "cosine",
-                "max_steps": 20,
-                "save_steps": 10,
-                "eval_steps": 10,
-                "sample_packing": True,
             }
         )
         if is_torch_bf16_gpu_available():
             cfg.bf16 = True
         else:
             cfg.fp16 = True
+
         normalize_config(cfg)
         cli_args = TrainerCliArgs()
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
@@ -73,17 +76,32 @@ class TestMixtral(unittest.TestCase):
         train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
         assert (Path(temp_dir) / "adapter_model.bin").exists()
 
+    @pytest.mark.skipif(not is_auto_gptq_available(), reason="auto-gptq not available")
     @with_temp_dir
-    def test_ft(self, temp_dir):
+    def test_lora_gptq_packed(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "hf-internal-testing/Mixtral-tiny",
-                "tokenizer_config": "mistralai/Mixtral-8x7B-v0.1",
+                "base_model": "TheBlokeAI/jackfram_llama-68m-GPTQ",
+                "model_type": "AutoModelForCausalLM",
+                "tokenizer_type": "LlamaTokenizer",
+                "sequence_len": 1024,
+                "sample_packing": True,
                 "flash_attention": True,
-                "sequence_len": 2048,
+                "load_in_8bit": True,
+                "adapter": "lora",
+                "gptq": True,
+                "gptq_disable_exllama": True,
+                "lora_r": 32,
+                "lora_alpha": 64,
+                "lora_dropout": 0.05,
+                "lora_target_linear": True,
                 "val_set_size": 0.1,
-                "special_tokens": {},
+                "special_tokens": {
+                    "unk_token": "<unk>",
+                    "bos_token": "<s>",
+                    "eos_token": "</s>",
+                },
                 "datasets": [
                     {
                         "path": "mhenrichsen/alpaca_2k_test",
@@ -91,33 +109,18 @@ class TestMixtral(unittest.TestCase):
                     },
                 ],
                 "num_epochs": 2,
-                "micro_batch_size": 2,
+                "save_steps": 0.5,
+                "micro_batch_size": 8,
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
-                "optimizer": "adamw_bnb_8bit",
+                "optimizer": "adamw_torch",
                 "lr_scheduler": "cosine",
-                "max_steps": 20,
-                "save_steps": 10,
-                "eval_steps": 10,
-                "sample_packing": True,
             }
         )
-        if is_torch_bf16_gpu_available():
-            cfg.bf16 = True
-        else:
-            cfg.fp16 = True
         normalize_config(cfg)
         cli_args = TrainerCliArgs()
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
-        model, _ = train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-        assert (
-            "axolotl.monkeypatch.mixtral.modeling_mixtral"
-            in model.model.layers[0].self_attn.__class__.__module__
-        )
-        assert (
-            "MixtralMultipackFlashAttention2"
-            in model.model.layers[0].self_attn.__class__.__name__
-        )
-        assert (Path(temp_dir) / "pytorch_model.bin").exists()
+        train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
+        assert (Path(temp_dir) / "adapter_model.bin").exists()

@@ -17,7 +17,7 @@ from axolotl.train import train
 from axolotl.utils.config import normalize_config
 from axolotl.utils.dict import DictDefault
 
-from .utils import most_recent_subdir, with_temp_dir
+from ..utils import most_recent_subdir, with_temp_dir
 
 LOG = logging.getLogger("axolotl.tests.e2e")
 os.environ["WANDB_DISABLED"] = "true"
@@ -29,7 +29,7 @@ class TestResumeLlama(unittest.TestCase):
     """
 
     @with_temp_dir
-    def test_resume_qlora(self, temp_dir):
+    def test_resume_qlora_packed(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
