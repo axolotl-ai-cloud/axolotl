@@ -151,6 +151,10 @@ def normalize_config(cfg):
 
 
 def validate_config(cfg):
+    """
+    This is a "pre-validation" step that handles the yaml configuration before we have any
+    information about the model architecture
+    """
     if is_torch_bf16_gpu_available():
         if not cfg.bf16 and not cfg.bfloat16:
             LOG.info("bf16 support detected, but not enabled for this configuration.")
@@ -442,20 +446,6 @@ def validate_config(cfg):
 
     if cfg.neftune_noise_alpha is not None and cfg.neftune_noise_alpha <= 0.0:
         raise ValueError("neftune_noise_alpha must be > 0.0")
-
-    if (
-        cfg.adapter
-        and cfg.tokens
-        and (
-            not cfg.lora_modules_to_save
-            or not all(
-                x in cfg.lora_modules_to_save for x in ["embed_tokens", "lm_head"]
-            )
-        )
-    ):
-        raise ValueError(
-            "lora_modules_to_save not properly set yet adding new tokens. Please add `embed_tokens` and `lm_head` to `lora_modules_to_save`."
-        )
 
     if cfg.max_memory is not None and cfg.gpu_memory_limit is not None:
         raise ValueError(

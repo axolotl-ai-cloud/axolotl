@@ -2,7 +2,7 @@
 import logging
 import math
 import os
-from typing import Any, Optional, Tuple  # noqa: F401
+from typing import Any, Optional, Tuple, Union  # noqa: F401
 
 import addict
 import bitsandbytes as bnb
@@ -28,12 +28,16 @@ from axolotl.prompt_tokenizers import LLAMA_DEFAULT_EOS_TOKEN
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.chat_templates import chat_templates
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.lora_embeddings import get_linear_embedding_layers
 
 LOG = logging.getLogger("axolotl")
 
 
-def check_model_config(cfg: DictDefault, model_config: AutoConfig):
-    quant_config_exists = hasattr(model_config, "quantization_config")
+def check_model_config(cfg: DictDefault, model_config: Union[AutoConfig, DictDefault]):
+    quant_config_exists = (
+        hasattr(model_config, "quantization_config")
+        and model_config.quantization_config
+    )
     quant_config_method_is_gptq = (
         quant_config_exists
         and "quant_method" in model_config.quantization_config
@@ -50,6 +54,20 @@ def check_model_config(cfg: DictDefault, model_config: AutoConfig):
         raise ValueError(
             "model_config.quantization_config is set but `gptq` flag is not. "
             "Please use the `gptq` flag to train quantized model or point to a non-quantized model."
+        )
+
+    lora_modules_to_save = get_linear_embedding_layers(model_config.model_type)
+    if (
+        cfg.adapter
+        and cfg.tokens
+        and (
+            not cfg.lora_modules_to_save
+            or not all(x in cfg.lora_modules_to_save for x in lora_modules_to_save)
+        )
+    ):
+        lora_modules_to_save = ", ".join(map(lambda x: f"`{x}`", lora_modules_to_save))
+        raise ValueError(
+            f"`lora_modules_to_save` not properly set when adding new tokens. Please include {lora_modules_to_save} in `lora_modules_to_save`."
         )
 
 
@@ -139,6 +157,7 @@ def load_tokenizer(cfg):
                 setattr(tokenizer, attr_name, "<|endoftext|>")
 
     if cfg.special_tokens:
+        lora_modules_to_save = get_linear_embedding_layers(model_config.model_type)
         for k, val in cfg.special_tokens.items():
             # check if new special token is not already in tokenizer and
             # is adapter training to make sure lora_modules_to_save is set
@@ -149,14 +168,15 @@ def load_tokenizer(cfg):
                 and (
                     not cfg.lora_modules_to_save
                     or not all(
-                        x in cfg.lora_modules_to_save
-                        for x in ["embed_tokens", "lm_head"]
+                        x in cfg.lora_modules_to_save for x in lora_modules_to_save
                     )
                 )
-                and (model_config.model_type in ["llama", "mistral", "mixtral"])
             ):
+                lora_modules_to_save = ", ".join(
+                    [f"`{x}`" for x in lora_modules_to_save]
+                )
                 raise ValueError(
-                    "Please set lora_modules_to_save to ['embed_tokens', 'lm_head'] when using an adapter and changing the special tokens."
+                    f"Please set lora_modules_to_save to {lora_modules_to_save} when using an adapter and changing the special tokens."
                 )
 
             tokenizer.add_special_tokens(
