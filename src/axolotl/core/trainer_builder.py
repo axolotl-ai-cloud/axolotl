@@ -34,8 +34,10 @@ from axolotl.utils.callbacks import (
     log_prediction_callback_factory,
 )
 from axolotl.utils.collators import (
+    ConcatenateCollators,
     BatchSamplerDataCollatorForSeq2Seq,
     DataCollatorForSeq2Seq,
+    MissingFeaturesCollator,
     MambaDataCollator,
 )
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
@@ -857,9 +859,16 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             train_dataset=self.train_dataset,
             eval_dataset=self.eval_dataset,
             args=training_args,
-            data_collator=self.build_collator(training_args, **data_collator_kwargs),
+            data_collator=self.build_collator(
+                training_args,
+                collate_missing_features=self.cfg.collate_missing_features,
+                **data_collator_kwargs,
+            ),
             eval_data_collator=self.build_collator(
-                training_args, is_eval=True, **data_collator_kwargs
+                training_args,
+                is_eval=True,
+                collate_missing_features=self.cfg.collate_missing_features,
+                **data_collator_kwargs,
             ),
             bench_data_collator=transformers.DataCollatorForSeq2Seq(
                 self.tokenizer,
@@ -882,32 +891,41 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         return trainer
 
     def build_collator(
-        self, training_args: AxolotlTrainingArguments, is_eval=False, **kwargs
+        self, training_args: AxolotlTrainingArguments, is_eval=False,
+        collate_missing_features=[], **kwargs
     ):
         if training_args.pretraining:
             return None
 
         if self.cfg.model_config_type == "mamba":
-            return MambaDataCollator(tokenizer=self.tokenizer)
+            collator = MambaDataCollator(tokenizer=self.tokenizer)
+        else:
+            use_batch_sampler_collator = False
+            if is_eval is False and training_args.sample_packing:
+                use_batch_sampler_collator = True
+            if is_eval and training_args.eval_sample_packing:
+                use_batch_sampler_collator = True
 
-        use_batch_sampler_collator = False
-        if is_eval is False and training_args.sample_packing:
-            use_batch_sampler_collator = True
-        if is_eval and training_args.eval_sample_packing:
-            use_batch_sampler_collator = True
+            if use_batch_sampler_collator:
+                collator = BatchSamplerDataCollatorForSeq2Seq(
+                    self.tokenizer,
+                    return_tensors="pt",
+                    **kwargs,
+                )
+            else:
+                collator = DataCollatorForSeq2Seq(
+                    self.tokenizer,
+                    return_tensors="pt",
+                    **kwargs,
+                )
 
-        if use_batch_sampler_collator:
-            return BatchSamplerDataCollatorForSeq2Seq(
-                self.tokenizer,
-                return_tensors="pt",
-                **kwargs,
-            )
+        if collate_missing_features:
+            collator = ConcatenateCollators([
+                MissingFeaturesCollator(collate_missing_features),
+                collator,
+                ])
 
-        return DataCollatorForSeq2Seq(
-            self.tokenizer,
-            return_tensors="pt",
-            **kwargs,
-        )
+        return collator
 
 
 class HFDPOTrainerBuilder(TrainerBuilderBase):

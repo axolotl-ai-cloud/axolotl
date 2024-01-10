@@ -1,8 +1,8 @@
 """
 DataCollator for axolotl to pad labels and position_ids for packed sequences
 """
-from dataclasses import dataclass
-from typing import Any, Dict, Optional, Sequence, Union
+from dataclasses import dataclass, field
+from typing import Any, Dict, Optional, Sequence, Union, List
 
 import numpy as np
 import torch
@@ -11,6 +11,15 @@ from transformers import PreTrainedTokenizerBase
 from transformers.utils import PaddingStrategy
 
 IGNORE_INDEX = -100
+
+@dataclass
+class ConcatenateCollators:
+    collators: List[Any]
+
+    def __call__(self, features, **kwargs):
+        for collator in self.collators:
+            features = collator(features, **kwargs)
+        return features
 
 
 @dataclass
@@ -150,6 +159,47 @@ class BatchSamplerDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):
                 chunked_data[feature] = np.concatenate(arrays)
         features = [chunked_data]
         return super().__call__(features, return_tensors=return_tensors)
+
+
+@dataclass
+class MissingFeaturesCollator:
+    collate_missing_features: List[str] = field(default_factory=list)
+
+    def __call__(self, features, **kwargs):
+        """
+        Collates missing features if specified and nercessary.
+        
+        Default behavior:
+            - labels: copy input_ids
+            - position_ids: [0, 1, 2, ..., len(input_ids)-1]
+            - attention_mask: [1, 1, 1, ...] with same length as input_ids
+        """
+        # no features to collate
+        if len(self.collate_missing_features) == 0:
+            return features
+        
+        # all features are present (in the first item, and therefore presumably all items)
+        features_present = set(features[0].keys())
+        if set(self.collate_missing_features) == features_present:
+            return features
+        
+        assert 'input_ids' in features_present, "input_ids must be in features"
+
+        # collate missing features
+        collate_labels = 'labels' in self.collate_missing_features
+        collate_position_ids = 'position_ids' in self.collate_missing_features
+        collate_attention_mask = 'attention_mask' in self.collate_missing_features
+        
+        for item in features:
+            n = len(item['input_ids'])
+            if collate_labels and 'labels' not in item:
+                item['labels'] = item['input_ids'][:]
+            if collate_position_ids and 'position_ids' not in item:
+                item['position_ids'] = [i for i in range(n)]
+            if collate_attention_mask and 'attention_mask' not in item:
+                item['attention_mask'] = [1 for _ in range(n)]
+
+        return features
 
 
 @dataclass
