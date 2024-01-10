@@ -25,7 +25,11 @@ from transformers import GenerationConfig, TextIteratorStreamer, TextStreamer
 from axolotl.common.cli import TrainerCliArgs, load_model_and_tokenizer
 from axolotl.logging_config import configure_logging
 from axolotl.train import TrainDatasetMeta
-from axolotl.utils.config import normalize_config, validate_config
+from axolotl.utils.config import (
+    normalize_cfg_datasets,
+    normalize_config,
+    validate_config,
+)
 from axolotl.utils.data import prepare_dataset
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import is_main_process
@@ -288,6 +292,8 @@ def load_cfg(config: Path = Path("examples/"), **kwargs):
     prepare_optim_env(cfg)
 
     normalize_config(cfg)
+
+    normalize_cfg_datasets(cfg)
 
     setup_wandb_env_vars(cfg)
 

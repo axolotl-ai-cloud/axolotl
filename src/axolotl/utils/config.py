@@ -150,6 +150,21 @@ def normalize_config(cfg):
     log_gpu_memory_usage(LOG, "baseline", cfg.device)
 
 
+def normalize_cfg_datasets(cfg):
+    """
+    helpers for mapping chat_template to various dataset configurations as necessary
+    """
+
+    if cfg.chat_template and cfg.chat_template == "chatml":
+        if cfg.datasets:
+            for idx, ds_cfg in enumerate(cfg.datasets):
+                if ds_cfg.type == "sharegpt" and not ds_cfg.conversation:
+                    LOG.info(
+                        f"updating dataset {ds_cfg.path} with `conversation: chatml` to match your chat_template"
+                    )
+                    cfg.datasets[idx].conversation = "chatml"
+
+
 def validate_config(cfg):
     """
     This is a "pre-validation" step that handles the yaml configuration before we have any
