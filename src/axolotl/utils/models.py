@@ -588,7 +588,7 @@ def load_model(
         log_gpu_memory_usage(LOG, "after model load", model.device)
 
     # make sure these are fp32 per Ramesh et al. (2021)
-    embedding_modules = get_linear_embedding_layers(cfg.model_config.model_type)
+    embedding_modules = get_linear_embedding_layers(cfg.model_config_type)
     for name, module in model.named_modules():
         if "norm" in name:
             module.to(torch.float32)
