@@ -4,7 +4,7 @@ peft==0.7.0
 transformers @ git+https://github.com/huggingface/transformers.git@3cefac1d974db5e2825a0cb2b842883a628be7a0
 tokenizers==0.15.0
 bitsandbytes>=0.41.1
-accelerate==0.24.1
+accelerate @ git+https://github.com/huggingface/accelerate.git@0d2280dadc6a93413a5496613b7fdda3a4d2551b
 deepspeed
 addict
 fire
