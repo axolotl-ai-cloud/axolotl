@@ -48,4 +48,7 @@ jobs:
           docker run --rm test-axolotl pytest --ignore=tests/e2e/ /workspace/axolotl/tests/
       - name: GPU Unit Tests w docker image
         run: |
-          docker run --privileged --gpus "all" --env WANDB_DISABLED=true --rm test-axolotl pytest /workspace/axolotl/tests/e2e/
+          docker run --privileged --gpus "all" --env WANDB_DISABLED=true --rm test-axolotl pytest --ignore=tests/e2e/patched/ /workspace/axolotl/tests/e2e/
+      - name: GPU Unit Tests monkeypatched w docker image
+        run: |
+          docker run --privileged --gpus "all" --env WANDB_DISABLED=true --rm test-axolotl pytest /workspace/axolotl/tests/e2e/patched/
