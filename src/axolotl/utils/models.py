@@ -172,8 +172,11 @@ def load_tokenizer(cfg):
                     )
                 )
             ):
+                lora_modules_to_save = ", ".join(
+                    [f"`{x}`" for x in lora_modules_to_save]
+                )
                 raise ValueError(
-                    "Please set lora_modules_to_save to ['embed_tokens', 'lm_head'] when using an adapter and changing the special tokens."
+                    f"Please set lora_modules_to_save to {lora_modules_to_save} when using an adapter and changing the special tokens."
                 )
 
             tokenizer.add_special_tokens(
