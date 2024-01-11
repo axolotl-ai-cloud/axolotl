@@ -160,6 +160,6 @@ style="border-radius: 10px; display: block; margin: auto;" width="560" height="3
 </div>
 <br>
 
----
+
 
 [^1]: The config actually mimics the command `CUDA_VISIBLE_DEVICES=0 python -m accelerate.commands.launch -m axolotl.cli.train devtools/sharegpt.yml`, but this is the same thing.
