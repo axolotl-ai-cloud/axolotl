@@ -10,7 +10,7 @@ import torch
 import torch.cuda
 from accelerate.logging import get_logger
 from datasets import set_caching_enabled
-from torch.utils.data import DataLoader, RandomSampler
+from torch.utils.data import RandomSampler
 
 from axolotl.core.trainer_builder import HFCausalTrainerBuilder, HFDPOTrainerBuilder
 from axolotl.utils.distributed import is_main_process, reduce_and_broadcast, zero_first
@@ -210,7 +210,9 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                 .sum()
             )
         else:
-            LOG.debug("Dataset does not contain labels, assuming all tokens are supervised")
+            LOG.debug(
+                "Dataset does not contain labels, assuming all tokens are supervised"
+            )
             total_supervised_tokens = cfg.total_num_tokens
 
         LOG.debug(
@@ -260,9 +262,7 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
             # on the agreed on value for sample_packing_eff_est
             total_num_steps = int(
                 math.floor(
-                    sampler_len
-                    * cfg.num_epochs
-                    / int(os.environ.get("WORLD_SIZE", 1))
+                    sampler_len * cfg.num_epochs / int(os.environ.get("WORLD_SIZE", 1))
                 )
             )
 
