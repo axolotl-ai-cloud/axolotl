@@ -14,8 +14,6 @@ datasets:
 val_set_size: 0
 output_dir: temp_debug/axolotl_outputs/model
 dataset_prepared_path: temp_debug/axolotl_outputs/data
-
-dataset_shard_idx: 0
 dataset_processes: 1
 
 sequence_len: 4096
