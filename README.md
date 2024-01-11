@@ -39,6 +39,7 @@ Features:
   - [Special Tokens](#special-tokens)
 - [Common Errors](#common-errors-)
   - [Tokenization Mismatch b/w Training & Inference](#tokenization-mismatch-bw-inference--training)
+- [Debugging Axolotl](#debugging-axolotl)
 - [Need Help?](#need-help-)
 - [Badge](#badge-)
 - [Community Showcase](#community-showcase)
@@ -1066,7 +1067,7 @@ although this will be very slow, and using the config options above are recommen
 
 ## Common Errors 🧰
 
-See also the [FAQ's](./docs/faq.md).
+See also the [FAQ's](./docs/faq.md) and [debugging guide](docs/debugging.md).
 
 > If you encounter a 'Cuda out of memory' error, it means your GPU ran out of memory during the training process. Here's how to resolve it:
 
@@ -1115,6 +1116,10 @@ If you decode a prompt constructed by axolotl, you might see spaces between toke
 4. As an additional troubleshooting step, you can look look at the token ids between 1 and 2 to make sure they are identical.
 
 Having misalignment between your prompts during training and inference can cause models to perform very poorly, so it is worth checking this.  See [this blog post](https://hamel.dev/notes/llm/05_tokenizer_gotchas.html) for a concrete example.
+
+## Debugging Axolotl
+
+See [this debugging guide](docs/debugging.md) for tips on debugging Axolotl, along with an example configuration for debugging with VSCode.
 
 ## Need help? 🙋♂️
 
