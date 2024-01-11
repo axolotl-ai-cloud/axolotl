@@ -171,7 +171,7 @@ accelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \
 
 #### Runpod
 
-Use `winglian/axolotl-runpod:main-latest` or use this [direct link](https://runpod.io/gsc?template=v2ickqhz9s&ref=6i7fkpdz)
+Use `winglian/axolotl-cloud:main-latest` or use this [direct link](https://runpod.io/gsc?template=v2ickqhz9s&ref=6i7fkpdz)
 
 #### LambdaLabs
   <details>
