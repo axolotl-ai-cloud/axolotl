@@ -62,7 +62,7 @@ The easiest way to get started is to modify the [.vscode/launch.json](../.vscode
 
 For example, to mimic the command `cd devtools && CUDA_VISIBLE_DEVICES=0 accelerate launch -m axolotl.cli.train dev_sharegpt.yml`, you would use the below configuration[^1].  Note that we add additional flags that override the axolotl config and incorporate the tips above (see the comments). We also set the working directory to `devtools` and set the `env` variable `HF_HOME` to a temporary folder that is later partially deleted.  This is because we want to delete the HF dataset cache before each run in this particular
 
-```json
+```jsonc
 // .vscode/launch.json
 {
     "version": "0.2.0",
@@ -109,7 +109,7 @@ For example, to mimic the command `cd devtools && CUDA_VISIBLE_DEVICES=0 acceler
 
 Below is the [./vscode/tasks.json](../.vscode/tasks.json) file that defines the `cleanup-for-dataprep` task.  This task is run before each debugging session when you use the above configuration.  Note how there are two tasks that delete the two folders mentioned above.  The third task `cleanup-for-dataprep` is a composite task that combines the two tasks.  A composite task is necessary because VSCode does not allow you to specify multiple tasks in the `preLaunchTask` argument of the `launch.json` file.
 
-```json
+```jsonc
 // .vscode/tasks.json
 // this file is used by launch.json
 {
