@@ -65,6 +65,8 @@ For example, to mimic the command `cd devtools && CUDA_VISIBLE_DEVICES=0 acceler
             "request": "launch",
             "args": [
                 "-m", "axolotl.cli.train", "dev_sharegpt.yml",
+                // The flags below simplify debugging by overriding the axolotl config 
+                // with the debugging tips above.  Modify as needed.
                 "--dataset_processes=1",      // limits data preprocessing to one process
                 "--max_steps=1",              // limits training to just one step
                 "--batch_size=1",             // minimizes batch size
