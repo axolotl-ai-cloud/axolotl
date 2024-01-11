@@ -17,7 +17,6 @@ While debugging it's helpful to simplify your test scenario as much as possible.
     dataset:
         ...
         shards: 20
-    dataset_shard_idx: 0
     ```
 3. **Use a small model**: A good example of a small model is [TinyLlama/TinyLlama-1.1B-Chat-v1.0](https://huggingface.co/TinyLlama/TinyLlama-1.1B-Chat-v1.0).
 4. **Minimize iteration time**: Make sure the training loop finishes as fast as possible, with these settings.
