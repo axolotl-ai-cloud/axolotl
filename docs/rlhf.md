@@ -33,3 +33,12 @@ datasets:
 ```yaml
 rl: ipo
 ```
+
+#### Trl autounwrap for peft
+
+Trl supports autounwrapping peft models, so that a ref model does not need to be additionally loaded, leading to less VRAM needed. This is on by default. To turn it off, pass the following config.
+
+```yaml
+# load ref model when adapter training.
+rl_adapter_ref_model: true
+```

@@ -30,13 +30,13 @@ While debugging it's helpful to simplify your test scenario as much as possible.
 3. **Use a small model**: A good example of a small model is [TinyLlama/TinyLlama-1.1B-Chat-v1.0](https://huggingface.co/TinyLlama/TinyLlama-1.1B-Chat-v1.0).
 4. **Minimize iteration time**: Make sure the training loop finishes as fast as possible, with these settings.
     - `micro_batch_size: 1`
-    - `max_steps: 1` 
+    - `max_steps: 1`
     - `val_set_size: 0`
 5. **Clear Caches:** Axolotl caches certain steps and so does the underlying HuggingFace trainer.  You may want to clear some of these caches when debugging.
     - Data preprocessing: When debugging data preprocessing, which includes prompt template formation, you may want to delete the directory set in `dataset_prepared_path:` in your axolotl config.  If you didn't set this value, the default is `last_run_prepared`.
     - HF Hub: If you are debugging data preprocessing, you should clear the relevant HF cache [HuggingFace cache](https://huggingface.co/docs/datasets/cache), by deleting the appropriate `~/.cache/huggingface/datasets/...` folder(s).
     - **The recommended approach is to redirect all outputs and caches to a temporary folder and delete selected subfolders before each run.  This is demonstrated in the example configuration below.**
-        
+
 
 ## Debugging with VSCode
 
@@ -74,7 +74,7 @@ For example, to mimic the command `cd devtools && CUDA_VISIBLE_DEVICES=0 acceler
             "request": "launch",
             "args": [
                 "-m", "axolotl.cli.train", "dev_sharegpt.yml",
-                // The flags below simplify debugging by overriding the axolotl config 
+                // The flags below simplify debugging by overriding the axolotl config
                 // with the debugging tips above.  Modify as needed.
                 "--dataset_processes=1",      // limits data preprocessing to one process
                 "--max_steps=1",              // limits training to just one step
@@ -101,7 +101,7 @@ For example, to mimic the command `cd devtools && CUDA_VISIBLE_DEVICES=0 acceler
 
 - The argument `justMyCode` is set to `true` such that you step through only the axolotl code.  If you want to step into dependencies, set this to `false`.
 - The `preLaunchTask`: `cleanup-for-dataprep` is defined in [.vscode/tasks.json](../.vscode/tasks.json) and is used to delete the following folders before debugging, which is essential to ensure that the data pre-processing code is run from scratch:
-    -  `./devtools/temp_debug/axolotl_outputs` 
+    -  `./devtools/temp_debug/axolotl_outputs`
     - `./devtools/temp_debug/.hf-cache/datasets`
 
 >[!Tip]
