@@ -1,6 +1,15 @@
 # Debugging Axolotl
 
-This document provides some tips and tricks for debugging Axolotl.  It also provides an example configuration for debugging with VSCode.  A good debugging setup is essential to developing Axolotl and understanding how the code works behind the scenes.
+This document provides some tips and tricks for debugging Axolotl.  It also provides an example configuration for debugging with VSCode.  A good debugging setup is essential to understanding how Axolotl code works behind the scenes.
+
+## Table of Contents
+
+- [General Tips](#general-tips)
+- [Debugging with VSCode](#debugging-with-vscode)
+    - [Background](#background)
+    - [Configuration](#configuration)
+    - [Customizing your debugger](#customizing-your-debugger)
+    - [Video Tutorial](#video-tutorial)
 
 ## General Tips
 
@@ -12,7 +21,7 @@ While debugging it's helpful to simplify your test scenario as much as possible.
 1. **Eliminate Concurrency**: Restrict the number of processes to 1 for both training and data preprocessing:
     - Set `CUDA_VISIBLE_DEVICES` to a single GPU, ex: `export CUDA_VISIBLE_DEVICES=0`.
     - Set `dataset_processes: 1` in your axolotl config or run the training command with `--dataset_processes=1`.
-2. **Use a small dataset**: Construct or use a small dataset from HF Hub. When using a small dataset, you will often have to make sure `sample_packing: False` and `eval_sample_packing: False` to avoid errors.  If you are in a pinch and don't have time to construct a small dataset but want to use from the HF Hub, you can shard the data and only use the first shard, however, this will still tokenize the entire dataset:
+2. **Use a small dataset**: Construct or use a small dataset from HF Hub. When using a small dataset, you will often have to make sure `sample_packing: False` and `eval_sample_packing: False` to avoid errors.  If you are in a pinch and don't have time to construct a small dataset but want to use from the HF Hub, you can shard the data (this will still tokenize the entire dataset, but will only use a fraction of the data for training.  For example, to shard the dataset into 20 pieces, add the following to your axolotl config):
     ```yaml
     dataset:
         ...
@@ -131,14 +140,23 @@ Below is the [./vscode/tasks.json](../.vscode/tasks.json) file that defines the 
 }
 ```
 
-### Configure your own debugging
+### Customizing your debugger
 
 Your debugging use case may differ from the example above.  The easiest thing to do is to put your own axolotl config in the `devtools` folder and modify the `launch.json` file to use your config.  You may also want to modify the `preLaunchTask` to delete different folders or not delete anything at all.
 
 ### Video Tutorial
 
-The following video tutorial walks through the above configuration and demonstrates how to debug with VSCode:
+The following video tutorial walks through the above configuration and demonstrates how to debug with VSCode, (click the image below to watch):
 
+<div>
+<center>
+<a href="https://youtu.be/xUUB11yeMmc?si=z6Ea1BrRYkq6wsMx" target="_blank"
+title="How to debug Axolotl (for fine tuning LLMs)"><img
+src="https://i.ytimg.com/vi/xUUB11yeMmc/maxresdefault.jpg"
+style="border-radius: 10px" width="560" height="315" /></a>
+</center>
+<center><figcaption style="font-size: smaller;"><a href="https://hamel.dev">Hamel Husain's</a> tutorial: <a href="https://www.youtube.com/watch?v=xUUB11yeMmc">Debugging Axolotl w/VSCode</a></figcaption></center>
+</div>
 
 ---
 
