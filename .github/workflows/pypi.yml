@@ -34,11 +34,11 @@ jobs:
         run: echo ::set-output name=TAG_NAME::$(echo $GITHUB_REF | cut -d / -f 3)
 
       - name: Update version in setup.py
-        run: >-
+        run: |
           sed -i -E 's/version="([0-9.]+)",/version="${{ steps.tag.outputs.TAG_NAME }}",/g' setup.py
 
       - name: Build a binary wheel
-        run: >-
+        run: |
           python setup.py sdist bdist_wheel
 
       - name: Publish package distributions to PyPI
