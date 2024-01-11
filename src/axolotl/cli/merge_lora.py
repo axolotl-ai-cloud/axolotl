@@ -35,6 +35,10 @@ def do_cli(config: Path = Path("examples/"), **kwargs):
             f"Target directory for merge: `{parsed_cfg.lora_model_dir}` does not exist."
         )
 
+    parsed_cfg.load_in_4bit = False
+    parsed_cfg.load_in_8bit = False
+    parsed_cfg.flash_attention = False
+
     do_merge_lora(cfg=parsed_cfg, cli_args=parsed_cli_args)
 
 
