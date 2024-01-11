@@ -3,12 +3,11 @@ Test module for alpacha integration w chatml
 """
 import pytest
 from datasets import Dataset
-from tokenizers import AddedToken
-from transformers import AutoTokenizer
 
 from axolotl.datasets import TokenizedPromptDataset
 from axolotl.prompt_tokenizers import AlpacaPromptTokenizingStrategy
 from axolotl.prompters import AlpacaPrompter
+from utils import fixture_tokenizer
 
 
 @pytest.fixture(name="alpacha_dataset")
@@ -22,25 +21,6 @@ def fixture_alpacha_dataset():
             }
         ]
     )
-
-
-@pytest.fixture(name="tokenizer")
-def fixture_tokenizer():
-    tokenizer = AutoTokenizer.from_pretrained("mistralai/Mistral-7B-v0.1")
-    tokenizer.add_special_tokens(
-        {
-            "eos_token": AddedToken(
-                "<|im_end|>", rstrip=False, lstrip=False, normalized=False
-            )
-        }
-    )
-    tokenizer.add_tokens(
-        [
-            AddedToken("<|im_start|>", rstrip=False, lstrip=False, normalized=False),
-        ]
-    )
-
-    return tokenizer
 
 
 class TestAlpacha:
