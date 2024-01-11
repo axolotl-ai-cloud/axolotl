@@ -25,7 +25,7 @@ Features:
 - [Installation](#installation)
   - [Docker](#docker)
   - [Conda/Pip venv](#condapip-venv)
-  - [Runpod](#runpod)
+  - [Cloud GPU](#cloud-gpu)
   - [LambdaLabs](#lambdalabs)
   - [Windows](#windows)
   - [Launching on public clouds via SkyPilot](#launching-on-public-clouds-via-skypilot)
@@ -169,9 +169,11 @@ accelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \
         ```
         Get the token at huggingface.co/settings/tokens
 
-#### Runpod
+#### Cloud GPU
 
-Use `winglian/axolotl-cloud:main-latest` or use this [direct link](https://runpod.io/gsc?template=v2ickqhz9s&ref=6i7fkpdz)
+For cloud GPU providers that support docker images, use [`winglian/axolotl-cloud:main-latest`](https://hub.docker.com/r/winglian/axolotl-cloud/tags)
+
+- on RunPod use this [direct link](https://runpod.io/gsc?template=v2ickqhz9s&ref=6i7fkpdz)
 
 #### LambdaLabs
   <details>
