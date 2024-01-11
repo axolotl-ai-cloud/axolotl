@@ -1,5 +1,7 @@
 **/axolotl.egg-info
 configs
+last_run_prepared/
+.vscode
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
