@@ -30,6 +30,7 @@ def fixture_cfg():
             "adam_epsilon": 0.00001,
             "dataloader_num_workers": 1,
             "dataloader_pin_memory": True,
+            "model_config_type": "llama",
         }
     )
 

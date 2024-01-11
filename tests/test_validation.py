@@ -770,7 +770,7 @@ class ValidationCheckModelConfig(BaseValidation):
                 "adapter": "qlora",
                 "load_in_4bit": True,
                 "tokens": ["<|imstart|>"],
-                "lora_modules_to_save": ["embd", "lm_head.linear"],
+                "lora_modules_to_save": ["embd.wte", "lm_head.linear"],
             }
         )
 
