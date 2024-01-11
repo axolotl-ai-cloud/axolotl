@@ -299,29 +299,10 @@ def load_model(
 
             LOG.info("patching with sdp attention")
             hijack_llama_sdp_attention()
-        elif cfg.landmark_attention:
-            from axolotl.monkeypatch.llama_landmark_attn import (
-                MEM_TOKEN,
-                patch_llama_with_landmark_attn,
-            )
-
-            LOG.info("patching with landmark attention")
-            patch_llama_with_landmark_attn()
-
-            # Note: This might overwrite previous additional_special_tokens
-            tokenizer.add_special_tokens({"additional_special_tokens": [MEM_TOKEN]})
         elif cfg.s2_attention:
             raise NotImplementedError(
                 "Shifted-sparse attention not currently implemented without flash attention."
             )
-
-        if cfg.xpos_rope:
-            from axolotl.monkeypatch.xpos_rope_llama_monkey_patch import (
-                replace_llama_rope_with_xpos_rope,
-            )
-
-            LOG.info("patching with xpos rope")
-            replace_llama_rope_with_xpos_rope()
 
         LOG.info("patching with sdp attention")
         hijack_llama_sdp_attention()
