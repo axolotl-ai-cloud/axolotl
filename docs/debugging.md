@@ -32,6 +32,16 @@ While debugging it's helpful to simplify your test scenario as much as possible.
 
 ## Debugging with VSCode
 
+### Background
+
+The below example shows how to configure VSCode to debug data preprocessing of the `sharegpt` format.  This is the format used when you have the following in your axolotl config:
+
+```yaml
+datasets:
+  - path: <path to your sharegpt formatted dataset> # example on HF Hub: philschmid/guanaco-sharegpt-style
+    type: sharegpt
+```
+
 >[!Important]
 > If you are already familiar with advanced VSCode debugging, you can skip the below explanation and look at the files [.vscode/launch.json](../.vscode/launch.json) and [.vscode/tasks.json](../.vscode/tasks.json) for an example configuration.
 
