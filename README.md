@@ -156,12 +156,18 @@ accelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \
   1. Install python >=**3.9**
 
   2. Install pytorch stable https://pytorch.org/get-started/locally/
-
+  
+  ```bash
+  pip install torch==2.1.0 torchvision==0.16.0 torchaudio==2.1.0 --index-url https://download.pytorch.org/whl/cu118
+  ```
+  
   3. Install Axolotl along with python dependencies
         ```bash
         pip3 install packaging
-        pip3 install -e '.[flash-attn,deepspeed]'
+        pip3 install deepspeed
+        pip3 install flash-attn==2.3.2 # Check https://github.com/OpenAccess-AI-Collective/axolotl/issues/911
         ```
+
   4. (Optional) Login to Huggingface to use gated models/datasets.
         ```bash
         huggingface-cli login
@@ -931,6 +937,14 @@ w1_new = w1_old - learning rate × (Total gradient for w1 / 6)
 Run
 ```bash
 accelerate launch -m axolotl.cli.train your_config.yml
+```
+
+** Training on 4 GPUS: **
+
+Go to `deepspeed/zero3.json` and change line 40 ("num_processes": 4). Then run the following command:
+
+```bash
+CUDA_VISIBLE_DEVICES=0,1,2,3 accelerate launch --main_process_port PORT_NUM -m axolotl.cli.train examples/llama-2/fft_optimized.yml --deepspeed deepspeed/zero3.json
 ```
 
 #### Preprocess dataset
