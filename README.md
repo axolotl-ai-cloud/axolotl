@@ -25,7 +25,7 @@ Features:
 - [Installation](#installation)
   - [Docker](#docker)
   - [Conda/Pip venv](#condapip-venv)
-  - [Cloud GPU](#cloud-gpu)
+  - [Cloud GPU](#cloud-gpu) - Runpod, Latitude
   - [LambdaLabs](#lambdalabs)
   - [Windows](#windows)
   - [Launching on public clouds via SkyPilot](#launching-on-public-clouds-via-skypilot)
