@@ -148,15 +148,17 @@ Your debugging use case may differ from the example above.  The easiest thing to
 
 The following video tutorial walks through the above configuration and demonstrates how to debug with VSCode, (click the image below to watch):
 
-<div>
-<center>
+<div style="text-align: center; line-height: 0;">
+
 <a href="https://youtu.be/xUUB11yeMmc?si=z6Ea1BrRYkq6wsMx" target="_blank"
 title="How to debug Axolotl (for fine tuning LLMs)"><img
 src="https://i.ytimg.com/vi/xUUB11yeMmc/maxresdefault.jpg"
-style="border-radius: 10px" width="560" height="315" /></a>
-</center>
-<center><figcaption style="font-size: smaller;"><a href="https://hamel.dev">Hamel Husain's</a> tutorial: <a href="https://www.youtube.com/watch?v=xUUB11yeMmc">Debugging Axolotl w/VSCode</a></figcaption></center>
+style="border-radius: 10px; display: block; margin: auto;" width="560" height="315" /></a>
+
+<figcaption style="font-size: smaller;"><a href="https://hamel.dev">Hamel Husain's</a> tutorial: <a href="https://www.youtube.com/watch?v=xUUB11yeMmc">Debugging Axolotl w/VSCode</a></figcaption>
+
 </div>
+<br>
 
 ---
 
