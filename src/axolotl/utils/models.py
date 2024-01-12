@@ -590,7 +590,7 @@ def load_model(
     # make sure these are fp32 per Ramesh et al. (2021)
     embedding_modules = get_linear_embedding_layers(cfg.model_config_type)
     for name, module in model.named_modules():
-        if "norm" in name:
+        if any(m in name for m in ["norm", "gate"]):
             module.to(torch.float32)
         if model_config.model_type == "btlm":
             # don't upcast lm_head for btlm
