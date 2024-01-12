@@ -133,7 +133,7 @@ accelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \
   ```
 
 >[!Tip]
-> If you want to debug axolotl or prefer to use Docker as your development environment, see the section of the [Debugging Guide on Docker](docs/debugging.md#debugging-with-docker).
+> If you want to debug axolotl or prefer to use Docker as your development environment, see the debugging guide's [section on Docker](docs/debugging.md#debugging-with-docker).
 
   <details>
 
