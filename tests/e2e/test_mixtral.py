@@ -7,6 +7,7 @@ import os
 import unittest
 from pathlib import Path
 
+import torch
 from transformers.utils import is_torch_bf16_gpu_available
 
 from axolotl.cli import load_datasets
@@ -65,7 +66,8 @@ class TestMixtral(unittest.TestCase):
         cli_args = TrainerCliArgs()
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
-        train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
+        model, _ = train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
+        assert model.base_model.model.layers[0].mlp.gate.dtype == torch.float32
         assert (Path(temp_dir) / "adapter_model.bin").exists()
 
     @with_temp_dir
@@ -107,7 +109,8 @@ class TestMixtral(unittest.TestCase):
         cli_args = TrainerCliArgs()
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
-        train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
+        model, _ = train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
+        assert model.base_model.model.layers[0].mlp.gate.dtype == torch.float32
         assert (Path(temp_dir) / "adapter_model.bin").exists()
 
     @with_temp_dir

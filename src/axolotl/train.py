@@ -5,14 +5,16 @@ import signal
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple, Union
 
 import torch
 import transformers.modelcard
 from accelerate.logging import get_logger
 from datasets import Dataset
 from optimum.bettertransformer import BetterTransformer
+from peft import PeftModel
 from pkg_resources import get_distribution  # type: ignore
+from transformers import PreTrainedModel, PreTrainedTokenizer
 from transformers.deepspeed import is_deepspeed_zero3_enabled
 
 from axolotl.common.cli import TrainerCliArgs
@@ -43,7 +45,7 @@ class TrainDatasetMeta:
 
 def train(
     *, cfg: DictDefault, cli_args: TrainerCliArgs, dataset_meta: TrainDatasetMeta
-):
+) -> Tuple[Union[PeftModel, PreTrainedModel], PreTrainedTokenizer]:
     # load the tokenizer first
     LOG.debug(
         f"loading tokenizer... {cfg.tokenizer_config or cfg.base_model_config}",
