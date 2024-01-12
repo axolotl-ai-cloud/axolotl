@@ -77,7 +77,7 @@ class TestMixtral(unittest.TestCase):
         model, _ = train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
         assert (
             model.base_model.model.model.layers[0].block_sparse_moe.gate.weight.dtype
-            == torch.float32
+            == torch.uint8
         )
         assert (Path(temp_dir) / "adapter_model.bin").exists()
 
@@ -131,7 +131,7 @@ class TestMixtral(unittest.TestCase):
         model, _ = train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
         assert (
             model.base_model.model.model.layers[0].block_sparse_moe.gate.weight.dtype
-            == torch.float32
+            == torch.uint8
         )
         assert (Path(temp_dir) / "adapter_model.bin").exists()
 
@@ -177,6 +177,10 @@ class TestMixtral(unittest.TestCase):
                 "eval_steps": 10,
             }
         )
+        if is_torch_bf16_gpu_available():
+            cfg.bf16 = True
+        else:
+            cfg.fp16 = True
         normalize_config(cfg)
         cli_args = TrainerCliArgs()
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
@@ -231,6 +235,10 @@ class TestMixtral(unittest.TestCase):
             }
         )
         normalize_config(cfg)
+        if is_torch_bf16_gpu_available():
+            cfg.bf16 = True
+        else:
+            cfg.fp16 = True
         cli_args = TrainerCliArgs()
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
