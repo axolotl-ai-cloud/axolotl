@@ -58,7 +58,7 @@ jobs:
   docker-e2e-tests:
     if: github.repository_owner == 'OpenAccess-AI-Collective'
     # this job needs to be run on self-hosted GPU runners...
-    runs-on: [self-hosted, gpu, docker]
+    runs-on: [axolotl-gpu-runner]
     timeout-minutes: 30
     needs: [pre-commit, pytest]
 
