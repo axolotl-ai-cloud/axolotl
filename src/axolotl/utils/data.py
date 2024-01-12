@@ -4,7 +4,7 @@ import hashlib
 import logging
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import torch
 from datasets import (
@@ -21,6 +21,7 @@ from transformers import PreTrainedTokenizerBase
 from axolotl.common.const import DEFAULT_DATASET_PREPARED_PATH
 from axolotl.datasets import TokenizedPromptDataset
 from axolotl.prompt_strategies import load
+from axolotl.prompt_strategies.dpo import load as load_dpo
 from axolotl.prompt_tokenizers import (
     AlpacaMultipleChoicePromptTokenizingStrategy,
     AlpacaPromptTokenizingStrategy,
@@ -850,3 +851,25 @@ def encode_packed_pretraining(
             chunked_data[feature].append(collated_features[feature].squeeze(0))
 
     return chunked_data
+
+
+def load_prepare_dpo_datasets(cfg):
+    train_datasets: List[Any] = []
+    eval_dataset = None
+
+    for i, ds_cfg in enumerate(cfg.datasets):
+        ds = load_dataset(  # pylint: disable=invalid-name
+            ds_cfg["path"], split=ds_cfg["split"]
+        )
+        train_datasets.insert(i, ds)
+
+    for i, data_set in enumerate(train_datasets):
+        _type = cfg.datasets[i]["type"]
+        ds_transform_fn = load_dpo(_type, cfg)
+        train_datasets[i] = data_set.map(
+            ds_transform_fn,
+            desc="Mapping RL Dataset",
+        )
+    train_dataset = concatenate_datasets(train_datasets)
+
+    return train_dataset, eval_dataset
