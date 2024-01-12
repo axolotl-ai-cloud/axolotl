@@ -132,6 +132,9 @@ accelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \
   docker compose up -d
   ```
 
+>[!Tip]
+> If you want to debug axolotl or prefer to use Docker as your development environment, see the [debugging guide's section on Docker](docs/debugging.md#debugging-with-docker).
+
   <details>
 
   <summary>Docker advanced</summary>
