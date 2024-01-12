@@ -170,7 +170,7 @@ The following video tutorial walks through the above configuration and demonstra
 
 <div style="text-align: center; line-height: 0;">
 
-<a href="https://youtu.be/xUUB11yeMmc?si=z6Ea1BrRYkq6wsMx" target="_blank"
+<a href="https://youtu.be/xUUB11yeMmc" target="_blank"
 title="How to debug Axolotl (for fine tuning LLMs)"><img
 src="https://i.ytimg.com/vi/xUUB11yeMmc/maxresdefault.jpg"
 style="border-radius: 10px; display: block; margin: auto;" width="560" height="315" /></a>
@@ -182,7 +182,7 @@ style="border-radius: 10px; display: block; margin: auto;" width="560" height="3
 
 ## Debugging With Docker
 
-Using [official axolotl Docker images](https://hub.docker.com/r/winglian/axolotl/tags) is a great way to debug your code, and is a very popular way to use Axolotl.  Attaching VSCode to Docker takes a few more steps.  
+Using [official Axolotl Docker images](https://hub.docker.com/r/winglian/axolotl/tags) is a great way to debug your code, and is a very popular way to use Axolotl.  Attaching VSCode to Docker takes a few more steps.  
 
 ### Setup
 
@@ -224,7 +224,18 @@ Now you are ready to debug as described above (see [Debugging with VSCode](#debu
 
 Here is a short video that demonstrates how to attach to a Docker container on a remote host:
 
-TODO
+<div style="text-align: center; line-height: 0;">
+
+<a href="https://youtu.be/A_A2CEHj4ew" target="_blank"
+title="Debugging Axolotl Part 2: Attaching to Docker on a Remote Host"><img
+src="https://i.ytimg.com/vi/A_A2CEHj4ew/maxresdefault.jpg"
+style="border-radius: 10px; display: block; margin: auto;" width="560" height="315" /></a>
+
+<figcaption style="font-size: smaller;"><a href="https://hamel.dev">Hamel Husain's</a> tutorial: <a href="https://youtu.be/A_A2CEHj4ew">Debugging Axolotl Part 2: Attaching to Docker on a Remote Host
+</a></figcaption>
+
+</div>
+<br>
 
 [^1]: The config actually mimics the command `CUDA_VISIBLE_DEVICES=0 python -m accelerate.commands.launch -m axolotl.cli.train devtools/sharegpt.yml`, but this is the same thing.
 
