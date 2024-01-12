@@ -182,7 +182,7 @@ style="border-radius: 10px; display: block; margin: auto;" width="560" height="3
 
 ## Debugging With Docker
 
-Using [official Axolotl Docker images](https://hub.docker.com/r/winglian/axolotl/tags) is a great way to debug your code, and is a very popular way to use Axolotl.  Attaching VSCode to Docker takes a few more steps.  
+Using [official Axolotl Docker images](https://hub.docker.com/r/winglian/axolotl/tags) is a great way to debug your code, and is a very popular way to use Axolotl.  Attaching VSCode to Docker takes a few more steps.
 
 ### Setup
 
@@ -218,7 +218,7 @@ Next, if you are using a remote host, [Remote into this host with VSCode](https:
 
 Next, select `Dev Containers: Attach to Running Container...` using the command palette (`CMD + SHIFT + P`) in VSCode.  You will be prompted to select a container to attach to.  Select the container you just created.  You will now be in the container with a working directory that is at the root of the project.  Any changes you make to the code will be reflected both in the container and on the host.
 
-Now you are ready to debug as described above (see [Debugging with VSCode](#debugging-with-vscode)). 
+Now you are ready to debug as described above (see [Debugging with VSCode](#debugging-with-vscode)).
 
 ### Video - Attaching To Docker On Remote Host
 
