@@ -10,6 +10,10 @@ This document provides some tips and tricks for debugging Axolotl.  It also prov
     - [Configuration](#configuration)
     - [Customizing your debugger](#customizing-your-debugger)
     - [Video Tutorial](#video-tutorial)
+- [Debugging With Docker](#debugging-with-docker)
+    - [Setup](#setup)
+    - [Attach To Container](#attach-to-container)
+    - [Video - Attaching To Docker On Remote Host](#video---attaching-to-docker-on-remote-host)
 
 ## General Tips
 
@@ -18,7 +22,8 @@ While debugging it's helpful to simplify your test scenario as much as possible.
 > [!Important]
 > All of these tips are incorporated into the [example configuration](#configuration) for debugging with VSCode below.
 
-1. **Eliminate Concurrency**: Restrict the number of processes to 1 for both training and data preprocessing:
+1. **Make sure you are using the latest version of axolotl**:  This project changes often and bugs get fixed fast.  Check your git branch and make sure you have pulled the latest changes from `main`.
+1. **Eliminate concurrency**: Restrict the number of processes to 1 for both training and data preprocessing:
     - Set `CUDA_VISIBLE_DEVICES` to a single GPU, ex: `export CUDA_VISIBLE_DEVICES=0`.
     - Set `dataset_processes: 1` in your axolotl config or run the training command with `--dataset_processes=1`.
 2. **Use a small dataset**: Construct or use a small dataset from HF Hub. When using a small dataset, you will often have to make sure `sample_packing: False` and `eval_sample_packing: False` to avoid errors.  If you are in a pinch and don't have time to construct a small dataset but want to use from the HF Hub, you can shard the data (this will still tokenize the entire dataset, but will only use a fraction of the data for training.  For example, to shard the dataset into 20 pieces, add the following to your axolotl config):
@@ -55,6 +60,21 @@ datasets:
 
 >[!Tip]
 > If you prefer to watch a video, rather than read, you can skip to the [video tutorial](#video-tutorial) below (but doing both is recommended).
+
+### Setup
+
+Make sure you have an [editable install](https://setuptools.pypa.io/en/latest/userguide/development_mode.html) of Axolotl, which ensures that changes you make to the code are reflected at runtime.  Run the following commands from the root of this project:
+
+```bash
+pip3 install packaging
+pip3 install -e '.[flash-attn,deepspeed]'
+```
+
+#### Remote Hosts
+
+If you developing on a remote host, you can easily use VSCode to debug remotely.  To do so, you will need to follow this [remote - SSH guide](https://code.visualstudio.com/docs/remote/ssh).  You can also see the video below on [Docker and Remote SSH debugging](#video---attaching-to-docker-on-remote-host).
+
+```bash
 
 ### Configuration
 
@@ -150,7 +170,7 @@ The following video tutorial walks through the above configuration and demonstra
 
 <div style="text-align: center; line-height: 0;">
 
-<a href="https://youtu.be/xUUB11yeMmc?si=z6Ea1BrRYkq6wsMx" target="_blank"
+<a href="https://youtu.be/xUUB11yeMmc" target="_blank"
 title="How to debug Axolotl (for fine tuning LLMs)"><img
 src="https://i.ytimg.com/vi/xUUB11yeMmc/maxresdefault.jpg"
 style="border-radius: 10px; display: block; margin: auto;" width="560" height="315" /></a>
@@ -160,6 +180,63 @@ style="border-radius: 10px; display: block; margin: auto;" width="560" height="3
 </div>
 <br>
 
+## Debugging With Docker
 
+Using [official Axolotl Docker images](https://hub.docker.com/r/winglian/axolotl/tags) is a great way to debug your code, and is a very popular way to use Axolotl.  Attaching VSCode to Docker takes a few more steps.  
+
+### Setup
+
+On the host that is running axolotl (ex: if you are using a remote host), clone the axolotl repo and change your current directory to the root:
+
+```bash
+git clone https://github.com/OpenAccess-AI-Collective/axolotl
+cd axolotl
+```
+
+>[!Tip]
+> If you already have axolotl cloned on your host, make sure you have the latest changes and change into the root of the project.
+
+Next, run the desired docker image and mount the current directory. Below is a docker command you can run to do this:[^2]
+
+```bash
+docker run --privileged --gpus '"all"' --shm-size 10g --rm -it --name axolotl --ipc=host --ulimit memlock=-1 --ulimit stack=67108864 --mount type=bind,src="${PWD}",target=/workspace/axolotl -v ${HOME}/.cache/huggingface:/root/.cache/huggingface winglian/axolotl:main-py3.10-cu118-2.0.1
+```
+
+>[!Tip]
+> To understand which containers are available, see the [Docker section of the README](../README.md#docker) and the [DockerHub repo](https://hub.docker.com/r/winglian/axolotl/tags).  For details of how the Docker containers are built, see axolotl's [Docker CI builds](../.github/workflows/main.yml).
+
+You will now be in the container.  Next, perform an editable install of Axolotl:
+
+```bash
+pip3 install packaging
+pip3 install -e '.[flash-attn,deepspeed]'
+```
+
+### Attach To Container
+
+Next, if you are using a remote host, [Remote into this host with VSCode](https://code.visualstudio.com/docs/remote/ssh).  If you are using a local host, you can skip this step.
+
+Next, select `Dev Containers: Attach to Running Container...` using the command palette (`CMD + SHIFT + P`) in VSCode.  You will be prompted to select a container to attach to.  Select the container you just created.  You will now be in the container with a working directory that is at the root of the project.  Any changes you make to the code will be reflected both in the container and on the host.
+
+Now you are ready to debug as described above (see [Debugging with VSCode](#debugging-with-vscode)). 
+
+### Video - Attaching To Docker On Remote Host
+
+Here is a short video that demonstrates how to attach to a Docker container on a remote host:
+
+<div style="text-align: center; line-height: 0;">
+
+<a href="https://youtu.be/A_A2CEHj4ew" target="_blank"
+title="Debugging Axolotl Part 2: Attaching to Docker on a Remote Host"><img
+src="https://i.ytimg.com/vi/A_A2CEHj4ew/maxresdefault.jpg"
+style="border-radius: 10px; display: block; margin: auto;" width="560" height="315" /></a>
+
+<figcaption style="font-size: smaller;"><a href="https://hamel.dev">Hamel Husain's</a> tutorial: <a href="https://youtu.be/A_A2CEHj4ew">Debugging Axolotl Part 2: Attaching to Docker on a Remote Host
+</a></figcaption>
+
+</div>
+<br>
 
 [^1]: The config actually mimics the command `CUDA_VISIBLE_DEVICES=0 python -m accelerate.commands.launch -m axolotl.cli.train devtools/sharegpt.yml`, but this is the same thing.
+
+[^2]: Many of the below flags are recommended best practices by Nvidia when using nvidia-container-toolkit.  You can read more about these flags [here](https://docs.nvidia.com/deeplearning/frameworks/user-guide/index.html).
