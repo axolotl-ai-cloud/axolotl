@@ -182,7 +182,7 @@ style="border-radius: 10px; display: block; margin: auto;" width="560" height="3
 
 ## Debugging With Docker
 
-Using [official axolotl Docker images](https://hub.docker.com/r/winglian/axolotl/tags) are a great way to debug your code, and is a very popular way to use Axolotl.  Attaching VSCode to Docker takes a few more steps.  
+Using [official axolotl Docker images](https://hub.docker.com/r/winglian/axolotl/tags) is a great way to debug your code, and is a very popular way to use Axolotl.  Attaching VSCode to Docker takes a few more steps.  
 
 ### Setup
 
