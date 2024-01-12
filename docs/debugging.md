@@ -63,7 +63,7 @@ datasets:
 
 ### Setup
 
-Make sure you have an [editable install](https://setuptools.pypa.io/en/latest/userguide/development_mode.html) of Axolotl, which ensures that changes you make to the code are reflected at runtime.  If you don't, run the following from the root of this project:
+Make sure you have an [editable install](https://setuptools.pypa.io/en/latest/userguide/development_mode.html) of Axolotl, which ensures that changes you make to the code are reflected at runtime.  Run the following commands from the root of this project:
 
 ```bash
 pip3 install packaging
