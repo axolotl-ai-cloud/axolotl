@@ -134,4 +134,5 @@ jobs:
              ${{ steps.metadata.outputs.tags }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
              winglian/axolotl-runpod:main-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
              ${{ (matrix.is_latest) && format('{0}-latest', steps.metadata.outputs.tags) || '' }}
+             ${{ (matrix.is_latest) && format('{0}-latest', 'winglian/axolotl-runpod:main') || '' }}
           labels: ${{ steps.metadata.outputs.labels }}
