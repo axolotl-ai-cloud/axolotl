@@ -63,10 +63,10 @@ def normalize_config(cfg):
 
     if cfg.bf16 == "auto":
         if is_torch_bf16_gpu_available():
-            LOG.info("bf16 support detected, enabling for this configuration.")
+            LOG.debug("bf16 support detected, enabling for this configuration.")
             cfg.bf16 = True
         else:
-            LOG.info("bf16 support not detected, disabling for this configuration.")
+            LOG.debug("bf16 support not detected, disabling for this configuration.")
             cfg.bf16 = False
 
     if cfg.device == "mps":
