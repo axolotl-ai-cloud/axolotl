@@ -9,7 +9,7 @@ def nectar(cfg):  # pylint: disable=possibly-unused-variable,unused-argument
         data["prompt"] = (
             "<|system|>\n</s>\n"
             "<|user|>\n"
-            f"{sample['prompt']}<\\s>\n"
+            f"{sample['prompt']}</s>\n"
             "<|assistant|>\n"
         )
         answers = sorted(sample["answers"], key=lambda x: x["rank"])
