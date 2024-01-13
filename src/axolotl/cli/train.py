@@ -6,7 +6,6 @@ from pathlib import Path
 
 import fire
 import transformers
-from datasets import disable_caching
 
 from axolotl.cli import (
     check_accelerate_default_config,
@@ -29,15 +28,10 @@ def do_cli(config: Path = Path("examples/"), **kwargs):
     check_accelerate_default_config()
     check_user_token()
     parser = transformers.HfArgumentParser((TrainerCliArgs))
-    parsed_cli_args, remaining_args = parser.parse_args_into_dataclasses(
+    parsed_cli_args, _ = parser.parse_args_into_dataclasses(
         return_remaining_strings=True
     )
 
-    if (
-        remaining_args.get("disable_caching") is not None
-        and remaining_args["disable_caching"]
-    ):
-        disable_caching()
     if parsed_cfg.rl:
         dataset_meta = load_rl_datasets(cfg=parsed_cfg, cli_args=parsed_cli_args)
     else:
