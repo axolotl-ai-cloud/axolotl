@@ -6,7 +6,7 @@ on:
        - '**.py'
        - 'requirements.txt'
        - '.github/workflows/*.yml'
-       - "*.md"
+       - "**.md"
   workflow_dispatch:
 
 jobs:
