@@ -2,6 +2,7 @@
 Test classes for checking functionality of the cfg normalization
 """
 import unittest
+from unittest.mock import patch
 
 from axolotl.utils.config import normalize_cfg_datasets, normalize_config
 from axolotl.utils.dict import DictDefault
@@ -67,3 +68,23 @@ class NormalizeConfigTestCase(unittest.TestCase):
 
         assert cfg.datasets[0].conversation == "vicuna_v1.1"
         assert cfg.datasets[1].conversation == "chatml"
+
+    @patch("axolotl.utils.config.is_torch_bf16_gpu_available")
+    def test_bf16_auto_setter_available(self, mock_bf16_avail):
+        cfg = self._get_base_cfg()
+        cfg.bf16 = "auto"
+        mock_bf16_avail.return_value = True
+
+        normalize_config(cfg)
+
+        self.assertTrue(cfg.bf16)
+
+    @patch("axolotl.utils.config.is_torch_bf16_gpu_available")
+    def test_bf16_auto_setter_not_available(self, mock_bf16_avail):
+        cfg = self._get_base_cfg()
+        cfg.bf16 = "auto"
+        mock_bf16_avail.return_value = False
+
+        normalize_config(cfg)
+
+        self.assertFalse(cfg.bf16)
