@@ -3,10 +3,10 @@ CLI to run training on a model
 """
 import logging
 from pathlib import Path
-from datasets import disable_caching
 
 import fire
 import transformers
+from datasets import disable_caching
 
 from axolotl.cli import (
     check_accelerate_default_config,
@@ -33,7 +33,10 @@ def do_cli(config: Path = Path("examples/"), **kwargs):
         return_remaining_strings=True
     )
 
-    if remaining_args.get("disable_caching") is not None and remaining_args["disable_caching"]:
+    if (
+        remaining_args.get("disable_caching") is not None
+        and remaining_args["disable_caching"]
+    ):
         disable_caching()
     if parsed_cfg.rl:
         dataset_meta = load_rl_datasets(cfg=parsed_cfg, cli_args=parsed_cli_args)

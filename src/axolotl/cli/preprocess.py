@@ -32,8 +32,11 @@ def do_cli(config: Path = Path("examples/"), **kwargs):
     parsed_cli_args, remaining_args = parser.parse_args_into_dataclasses(
         return_remaining_strings=True
     )
-    
-    if remaining_args.get("disable_caching") is not None and remaining_args["disable_caching"]:
+
+    if (
+        remaining_args.get("disable_caching") is not None
+        and remaining_args["disable_caching"]
+    ):
         disable_caching()
     if not parsed_cfg.dataset_prepared_path:
         msg = (
