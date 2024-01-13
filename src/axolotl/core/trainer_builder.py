@@ -460,6 +460,7 @@ class TrainerBuilderBase(abc.ABC):
     _train_dataset = None
     _eval_dataset = None
     _model_ref = None
+    _peft_config = None
 
     def __init__(self, cfg, model, tokenizer):
         self.cfg = cfg
@@ -489,6 +490,14 @@ class TrainerBuilderBase(abc.ABC):
     @eval_dataset.setter
     def eval_dataset(self, dataset):
         self._eval_dataset = dataset
+
+    @property
+    def peft_config(self):
+        return self._peft_config
+
+    @peft_config.setter
+    def peft_config(self, peft_config):
+        self._peft_config = peft_config
 
     @abstractmethod
     def build(self, total_num_steps):
@@ -987,6 +996,8 @@ class HFDPOTrainerBuilder(TrainerBuilderBase):
             dpo_trainer_kwargs["loss_type"] = "kto_pair"
         if self.eval_dataset:
             dpo_trainer_kwargs["eval_dataset"] = self.eval_dataset
+        if self.cfg.adapter and self.peft_config:
+            dpo_trainer_kwargs["peft_config"] = self.peft_config
         dpo_trainer = DPOTrainer(
             self.model,
             self.model_ref,

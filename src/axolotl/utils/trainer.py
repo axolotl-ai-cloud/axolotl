@@ -316,9 +316,10 @@ def prepare_optim_env(cfg):
 
 
 def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_steps):
-    if cfg.rl:
+    if cfg.rl in ["dpo", "ipo", "kto_pair"]:
         trainer_builder = HFDPOTrainerBuilder(cfg, model[0], tokenizer)
         trainer_builder.model_ref = model[1]
+        trainer_builder.peft_config = model[2]
     else:
         trainer_builder = HFCausalTrainerBuilder(cfg, model[0], tokenizer)
 

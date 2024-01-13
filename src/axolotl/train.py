@@ -96,7 +96,12 @@ def train(
         freeze_parameters_except(model, cfg.unfrozen_parameters)
 
     trainer = setup_trainer(
-        cfg, train_dataset, eval_dataset, (model, model_ref), tokenizer, total_num_steps
+        cfg,
+        train_dataset,
+        eval_dataset,
+        (model, model_ref, peft_config),
+        tokenizer,
+        total_num_steps,
     )
 
     if hasattr(model, "config"):
