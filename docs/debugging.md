@@ -226,12 +226,12 @@ Here is a short video that demonstrates how to attach to a Docker container on a
 
 <div style="text-align: center; line-height: 0;">
 
-<a href="https://youtu.be/A_A2CEHj4ew" target="_blank"
+<a href="https://youtu.be/0AuoR7QnHR0" target="_blank"
 title="Debugging Axolotl Part 2: Attaching to Docker on a Remote Host"><img
-src="https://i.ytimg.com/vi/A_A2CEHj4ew/maxresdefault.jpg"
+src="https://i.ytimg.com/vi/0AuoR7QnHR0/hqdefault.jpg"
 style="border-radius: 10px; display: block; margin: auto;" width="560" height="315" /></a>
 
-<figcaption style="font-size: smaller;"><a href="https://hamel.dev">Hamel Husain's</a> tutorial: <a href="https://youtu.be/A_A2CEHj4ew">Debugging Axolotl Part 2: Attaching to Docker on a Remote Host
+<figcaption style="font-size: smaller;"><a href="https://hamel.dev">Hamel Husain's</a> tutorial: <a href="https://youtu.be/0AuoR7QnHR0">Debugging Axolotl Part 2: Attaching to Docker on a Remote Host
 </a></figcaption>
 
 </div>
