@@ -854,22 +854,29 @@ def encode_packed_pretraining(
 
 
 def load_prepare_dpo_datasets(cfg):
-    train_datasets: List[Any] = []
-    eval_dataset = None
+    def load_split(dataset_cfgs, _cfg):
+        split_datasets: List[Any] = []
+        for i, ds_cfg in enumerate(dataset_cfgs):
+            ds = load_dataset(  # pylint: disable=invalid-name
+                ds_cfg["path"],
+                split=ds_cfg["split"],
+                desc="Mapping RL Dataset",
+            )
+            split_datasets.insert(i, ds)
 
-    for i, ds_cfg in enumerate(cfg.datasets):
-        ds = load_dataset(  # pylint: disable=invalid-name
-            ds_cfg["path"], split=ds_cfg["split"]
-        )
-        train_datasets.insert(i, ds)
+        for i, data_set in enumerate(split_datasets):
+            _type = dataset_cfgs[i]["type"]
+            ds_transform_fn = load_dpo(_type, _cfg)
+            split_datasets[i] = data_set.map(
+                ds_transform_fn,
+                desc="Mapping RL Dataset",
+            )
 
-    for i, data_set in enumerate(train_datasets):
-        _type = cfg.datasets[i]["type"]
-        ds_transform_fn = load_dpo(_type, cfg)
-        train_datasets[i] = data_set.map(
-            ds_transform_fn,
-            desc="Mapping RL Dataset",
-        )
-    train_dataset = concatenate_datasets(train_datasets)
+        return concatenate_datasets(split_datasets)
+
+    train_dataset = load_split(cfg.datasets, cfg)
+    eval_dataset = load_split(cfg.test_datasets, cfg)
+    if not eval_dataset:
+        eval_dataset = None
 
     return train_dataset, eval_dataset

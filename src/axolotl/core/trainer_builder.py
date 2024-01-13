@@ -949,14 +949,17 @@ class HFDPOTrainerBuilder(TrainerBuilderBase):
         ]:
             if hasattr(self.cfg, arg) and getattr(self.cfg, arg) is not None:
                 training_args_kwargs[arg] = getattr(self.cfg, arg)
+        if self.eval_dataset:
+            training_args_kwargs["evaluation_strategy"] = "steps"
+            training_args_kwargs["eval_steps"] = self.cfg.eval_steps
+        else:
+            training_args_kwargs["evaluation_strategy"] = "no"
         training_args = TrainingArguments(
             per_device_train_batch_size=self.cfg.micro_batch_size,
             max_steps=total_num_steps,
             remove_unused_columns=False,
             gradient_accumulation_steps=self.cfg.gradient_accumulation_steps,
             learning_rate=self.cfg.learning_rate,
-            evaluation_strategy="no",
-            # eval_steps=self.cfg.eval_steps,
             save_strategy="steps",
             save_steps=self.cfg.save_steps,
             output_dir=self.cfg.output_dir,
@@ -982,14 +985,14 @@ class HFDPOTrainerBuilder(TrainerBuilderBase):
                 dpo_trainer_kwargs["label_smoothing"] = self.cfg.dpo_label_smoothing
         elif self.cfg.rl == "kto_pair":
             dpo_trainer_kwargs["loss_type"] = "kto_pair"
-
+        if self.eval_dataset:
+            dpo_trainer_kwargs["eval_dataset"] = self.eval_dataset
         dpo_trainer = DPOTrainer(
             self.model,
             self.model_ref,
             args=training_args,
             beta=self.cfg.dpo_beta or 0.1,
             train_dataset=self.train_dataset,
-            # eval_dataset=self.eval_dataset,
             eval_dataset=None,
             tokenizer=self.tokenizer,
             max_length=self.cfg.sequence_len,
