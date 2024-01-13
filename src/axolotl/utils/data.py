@@ -255,14 +255,16 @@ def load_tokenized_prepared_datasets(
             local_path = Path(config_dataset.path)
             if local_path.exists():
                 if local_path.is_dir():
-                    # TODO dirs with arrow or parquet files could be loaded with `load_from_disk`
-                    ds = load_dataset(
-                        config_dataset.path,
-                        name=config_dataset.name,
-                        data_files=config_dataset.data_files,
-                        streaming=False,
-                        split=None,
-                    )
+                    if any(local_path.glob("*.arrow")) or any(local_path.glob("*.parquet")):
+                        ds = load_from_disk(config_dataset.path)
+                    else:
+                        ds = load_dataset(
+                            config_dataset.path,
+                            name=config_dataset.name,
+                            data_files=config_dataset.data_files,
+                            streaming=False,
+                            split=None,
+                        )
                 elif local_path.is_file():
                     ds_type = get_ds_type(config_dataset)
 
