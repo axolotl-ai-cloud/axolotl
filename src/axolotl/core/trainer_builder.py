@@ -975,7 +975,6 @@ class HFDPOTrainerBuilder(TrainerBuilderBase):
             save_steps=self.cfg.save_steps,
             output_dir=self.cfg.output_dir,
             warmup_steps=self.cfg.warmup_steps,
-            bf16=True,
             gradient_checkpointing=self.cfg.gradient_checkpointing,
             gradient_checkpointing_kwargs={"use_reentrant": False},
             logging_first_step=True,
