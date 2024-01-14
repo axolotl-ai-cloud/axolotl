@@ -694,6 +694,21 @@ class ValidationTest(BaseValidation):
 
         validate_config(cfg)
 
+    def test_unfrozen_parameters_w_peft_layers_to_transform(self):
+        cfg = DictDefault(
+            {
+                "adapter": "lora",
+                "unfrozen_parameters": ["model.layers.2[0-9]+.block_sparse_moe.gate.*"],
+                "peft_layers_to_transform": [0, 1],
+            }
+        )
+
+        with pytest.raises(
+            ValueError,
+            match=r".*can have unexpected behavior*",
+        ):
+            validate_config(cfg)
+
 
 class ValidationCheckModelConfig(BaseValidation):
     """
