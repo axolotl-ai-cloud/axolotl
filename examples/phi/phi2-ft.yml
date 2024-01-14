@@ -1,4 +1,5 @@
 base_model: microsoft/phi-2
+model_revision:  834565c  # pin model repo to the previous architecture
 model_type: AutoModelForCausalLM
 tokenizer_type: AutoTokenizer
 trust_remote_code: true
