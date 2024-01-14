@@ -64,7 +64,7 @@ class TestAlpacha:
         input_ids = dataset_wrapper[0]["input_ids"]
 
         assert input_ids == [
-            1,
+            1,  # Bos
             32001,
             1587,
             13,
@@ -101,7 +101,7 @@ class TestAlpacha:
             28723,
             32000,
             28705,
-            13,
+            13,  # instruction
             32001,
             2188,
             13,
@@ -131,7 +131,7 @@ class TestAlpacha:
             440,
             32000,
             28705,
-            13,
+            13,  # input
             32001,
             13892,
             13,
@@ -144,7 +144,7 @@ class TestAlpacha:
             272,
             9926,
             28723,
-            32000,
+            32000,  # output
         ]
 
     def test_no_train_on_input(self, alpacha_dataset, tokenizer):
@@ -162,6 +162,7 @@ class TestAlpacha:
         labels = dataset_wrapper[0]["labels"]
 
         assert labels == [
+            -100,  # bos
             -100,
             -100,
             -100,
@@ -198,6 +199,7 @@ class TestAlpacha:
             -100,
             -100,
             -100,
+            -100,  # instruction
             -100,
             -100,
             -100,
@@ -227,9 +229,7 @@ class TestAlpacha:
             -100,
             -100,
             -100,
-            -100,
-            -100,
-            -100,
+            -100,  # input
             -100,
             -100,
             -100,
@@ -242,7 +242,7 @@ class TestAlpacha:
             272,
             9926,
             28723,
-            32000,
+            32000,  # Output
         ]
 
     def test_w_train_on_input(self, alpacha_dataset, tokenizer):
@@ -260,7 +260,7 @@ class TestAlpacha:
         labels = dataset_wrapper[0]["labels"]
 
         assert labels == [
-            1,
+            1,  # Bos
             32001,
             1587,
             13,
@@ -297,7 +297,7 @@ class TestAlpacha:
             28723,
             32000,
             28705,
-            13,
+            13,  # instruction
             32001,
             2188,
             13,
@@ -327,7 +327,7 @@ class TestAlpacha:
             440,
             32000,
             28705,
-            13,
+            13,  # input
             32001,
             13892,
             13,
@@ -340,5 +340,5 @@ class TestAlpacha:
             272,
             9926,
             28723,
-            32000,
+            32000,  # output
         ]
