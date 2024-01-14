@@ -304,9 +304,6 @@ def load_model(
                 "Shifted-sparse attention not currently implemented without flash attention."
             )
 
-        LOG.info("patching with sdp attention")
-        hijack_llama_sdp_attention()
-
     # Modify mistral derived models
     if cfg.is_mistral_derived_model and cfg.flash_attention and cfg.sample_packing:
         from axolotl.monkeypatch.mistral_attn_hijack_flash import (
