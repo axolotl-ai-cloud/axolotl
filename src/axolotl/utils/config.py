@@ -68,6 +68,8 @@ def normalize_config(cfg):
         else:
             LOG.debug("bf16 support not detected, disabling for this configuration.")
             cfg.bf16 = False
+            if cfg.fp16 is None:
+                cfg.fp16 = True
 
     if cfg.device == "mps":
         cfg.load_in_8bit = False

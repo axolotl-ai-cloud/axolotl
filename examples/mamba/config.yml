@@ -35,7 +35,7 @@ train_on_inputs: false
 group_by_length: true
 
 bf16: auto
-fp16: false
+fp16:
 tf32: true
 
 gradient_checkpointing: false

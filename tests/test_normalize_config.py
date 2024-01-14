@@ -84,8 +84,10 @@ class NormalizeConfigTestCase(unittest.TestCase):
     def test_bf16_auto_setter_not_available(self, mock_bf16_avail):
         cfg = self._get_base_cfg()
         cfg.bf16 = "auto"
+        cfg.fp16 = None
         mock_bf16_avail.return_value = False
 
         normalize_config(cfg)
 
         self.assertFalse(cfg.bf16)
+        self.assertTrue(cfg.fp16)
