@@ -78,6 +78,7 @@ class NormalizeConfigTestCase(unittest.TestCase):
         normalize_config(cfg)
 
         self.assertTrue(cfg.bf16)
+        self.assertFalse(cfg.fp16)
 
     @patch("axolotl.utils.config.is_torch_bf16_gpu_available")
     def test_bf16_auto_setter_not_available(self, mock_bf16_avail):

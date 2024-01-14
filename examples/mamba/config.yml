@@ -34,7 +34,7 @@ learning_rate: 5e-5
 train_on_inputs: false
 group_by_length: true
 
-bf16: true
+bf16: auto
 fp16: false
 tf32: true
 

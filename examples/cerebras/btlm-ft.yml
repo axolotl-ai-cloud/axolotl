@@ -53,7 +53,7 @@ lr_quadratic_warmup: true
 learning_rate: 0.000085
 train_on_inputs: true
 group_by_length: false
-bf16: true
+bf16: auto
 fp16: false
 tf32: true
 

@@ -77,6 +77,8 @@ def normalize_config(cfg):
         cfg.bf16 = False
     else:
         torch.backends.cuda.matmul.allow_tf32 = cfg.tf32 or False
+        if cfg.bf16:
+            cfg.fp16 = False
 
     if cfg.bf16 or cfg.bfloat16:
         cfg.torch_dtype = torch.bfloat16

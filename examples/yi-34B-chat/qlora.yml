@@ -7,7 +7,7 @@ load_in_8bit: false
 load_in_4bit: true
 strict: false
 sequence_len: 1024
-bf16: true
+bf16: auto
 fp16: false
 tf32: false
 flash_attention: true
