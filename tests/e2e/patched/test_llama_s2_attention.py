@@ -116,4 +116,4 @@ class TestLlamaShiftedSparseAttention(unittest.TestCase):
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
         train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-        assert (Path(temp_dir) / "adapter_model.bin").exists()
+        assert (Path(temp_dir) / "pytorch_model.bin").exists()
