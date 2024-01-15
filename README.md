@@ -461,7 +461,7 @@ See [examples](examples) for quick start. It is recommended to duplicate and mod
   load_in_4bit: true
   load_in_8bit: true
   bf16: auto # require >=ampere, auto will detect if your GPU supports this and choose automatically.
-  fp16: # unset this value to use fp16 when bf16 is auto detected. set to false if you want to fallback to fp32
+  fp16: # leave empty to use fp16 when bf16 is 'auto'. set to false if you want to fallback to fp32
   tf32: true # require >=ampere
   bfloat16: true # require >=ampere, use instead of bf16 when you don't want AMP (automatic mixed precision)
   float16: true # use instead of fp16 when you don't want AMP
