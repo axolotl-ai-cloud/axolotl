@@ -108,7 +108,7 @@ def disable_datasets_caching():
 
 def process_datasets_for_packing(cfg, train_dataset, eval_dataset, tokenizer):
     drop_long = partial(drop_long_seq, sequence_len=cfg.sequence_len)
-    with zero_first(is_main_process()):
+    with zero_first(is_main_process()), disable_datasets_caching():
         if cfg.group_by_length:
             train_dataset = train_dataset.map(
                 add_length, num_proc=cfg.dataset_processes
