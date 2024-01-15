@@ -11,7 +11,7 @@ from axolotl.prompt_tokenizers import AlpacaPromptTokenizingStrategy
 from axolotl.prompters import AlpacaPrompter
 
 
-@pytest.fixture(name="alpacha_dataset")
+@pytest.fixture(name="alpaca_dataset")
 def fixture_alpacha_dataset():
     return Dataset.from_list(
         [
@@ -44,9 +44,9 @@ def fixture_tokenizer():
     return tokenizer
 
 
-class TestAlpacha:
+class TestAlpacaChatml:
     """
-    Test class for alpacha prompter
+    Test class for alpaca prompter
     """
 
     def test_no_double_im_end(self, alpacha_dataset, tokenizer):
