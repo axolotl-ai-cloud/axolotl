@@ -374,7 +374,7 @@ Have dataset(s) in one of the following format (JSONL recommended):
 For a dataset that is preprocessed for instruction purposes:
 
 ```json
-{"instruction": "...", "output": "..."}
+{"input": "...", "output": "..."}
 ```
 
 You can use this example in your YAML config:
@@ -385,6 +385,8 @@ datasets:
     type:
       system_prompt: ""
       field_system: system
+      field_instruction: input
+      field_output: output
       format: "[INST] {instruction} [/INST]"
       no_input_format: "[INST] {instruction} [/INST]"
 ```
