@@ -32,6 +32,7 @@ from axolotl.utils.callbacks import (
     SaveBetterTransformerModelCallback,
     bench_eval_callback_factory,
     log_prediction_callback_factory,
+    SaveAxolotlConfigtoMlflowCallback,
 )
 from axolotl.utils.collators import (
     BatchSamplerDataCollatorForSeq2Seq,
@@ -542,6 +543,11 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             callbacks.append(
                 SaveAxolotlConfigtoWandBCallback(self.cfg.axolotl_config_path)
             )
+        if self.cfg.use_mlflow:
+            callbacks.append(
+                SaveAxolotlConfigtoMlflowCallback(self.cfg.axolotl_config_path)
+            )
+        
 
         if self.cfg.loss_watchdog_threshold is not None:
             callbacks.append(LossWatchDogCallback(self.cfg))
