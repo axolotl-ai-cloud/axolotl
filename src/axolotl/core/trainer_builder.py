@@ -958,6 +958,7 @@ class HFDPOTrainerBuilder(TrainerBuilderBase):
         ]:
             if hasattr(self.cfg, arg) and getattr(self.cfg, arg) is not None:
                 training_args_kwargs[arg] = getattr(self.cfg, arg)
+
         if self.eval_dataset:
             training_args_kwargs["evaluation_strategy"] = "steps"
             training_args_kwargs["eval_steps"] = self.cfg.eval_steps
@@ -965,6 +966,14 @@ class HFDPOTrainerBuilder(TrainerBuilderBase):
             training_args_kwargs["evaluation_strategy"] = "no"
         if self.cfg.bf16 or self.cfg.bfloat16:
             training_args_kwargs["bf16"] = True
+
+        training_args_kwargs["lr_scheduler_type"] = (
+            self.cfg.lr_scheduler if self.cfg.lr_scheduler else "cosine"
+        )
+        training_args_kwargs["lr_scheduler_kwargs"] = (
+            self.cfg.lr_scheduler_kwargs if self.cfg.lr_scheduler_kwargs else {}
+        )
+
         training_args = TrainingArguments(
             per_device_train_batch_size=self.cfg.micro_batch_size,
             max_steps=total_num_steps,
