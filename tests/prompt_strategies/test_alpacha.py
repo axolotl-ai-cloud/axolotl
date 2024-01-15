@@ -1,5 +1,5 @@
 """
-Test module for alpacha integration w chatml
+Test module for alpaca integration w chatml
 """
 import pytest
 from datasets import Dataset
@@ -8,11 +8,11 @@ from transformers import AutoTokenizer
 
 from axolotl.datasets import TokenizedPromptDataset
 from axolotl.prompt_tokenizers import AlpacaPromptTokenizingStrategy
-from axolotl.prompters import AlpacaPrompter
+from axolotl.prompters import AlpacaPrompter, PromptStyle
 
 
 @pytest.fixture(name="alpaca_dataset")
-def fixture_alpacha_dataset():
+def fixture_alpaca_dataset():
     return Dataset.from_list(
         [
             {
@@ -49,16 +49,16 @@ class TestAlpacaChatml:
     Test class for alpaca prompter
     """
 
-    def test_no_double_im_end(self, alpacha_dataset, tokenizer):
+    def test_no_double_im_end(self, alpaca_dataset, tokenizer):
         strategy = AlpacaPromptTokenizingStrategy(
-            AlpacaPrompter(prompt_style="chatml"),
+            AlpacaPrompter(prompt_style=PromptStyle.CHATML.value),
             tokenizer,
             False,  # train_on_inputs
             2048,  # sequence_len
         )
 
         dataset_wrapper = TokenizedPromptDataset(
-            strategy, alpacha_dataset, process_count=1
+            strategy, alpaca_dataset, process_count=1
         )
 
         input_ids = dataset_wrapper[0]["input_ids"]
@@ -147,16 +147,16 @@ class TestAlpacaChatml:
             32000,  # output
         ]
 
-    def test_no_train_on_input(self, alpacha_dataset, tokenizer):
+    def test_no_train_on_input(self, alpaca_dataset, tokenizer):
         strategy = AlpacaPromptTokenizingStrategy(
-            AlpacaPrompter(prompt_style="chatml"),
+            AlpacaPrompter(prompt_style=PromptStyle.CHATML.value),
             tokenizer,
             False,  # train_on_inputs
             2048,  # sequence_len
         )
 
         dataset_wrapper = TokenizedPromptDataset(
-            strategy, alpacha_dataset, process_count=1
+            strategy, alpaca_dataset, process_count=1
         )
 
         labels = dataset_wrapper[0]["labels"]
@@ -245,16 +245,16 @@ class TestAlpacaChatml:
             32000,  # Output
         ]
 
-    def test_w_train_on_input(self, alpacha_dataset, tokenizer):
+    def test_w_train_on_input(self, alpaca_dataset, tokenizer):
         strategy = AlpacaPromptTokenizingStrategy(
-            AlpacaPrompter(prompt_style="chatml"),
+            AlpacaPrompter(prompt_style=PromptStyle.CHATML.value),
             tokenizer,
             True,  # train_on_inputs
             2048,  # sequence_len
         )
 
         dataset_wrapper = TokenizedPromptDataset(
-            strategy, alpacha_dataset, process_count=1
+            strategy, alpaca_dataset, process_count=1
         )
 
         labels = dataset_wrapper[0]["labels"]
