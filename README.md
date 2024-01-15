@@ -577,10 +577,10 @@ datasets:
     field_human: # Optional[str]. Human key to use for conversation.
     field_model: # Optional[str]. Assistant key to use for conversation.
 
-  # Custom user prompt
+  # Custom user instruction prompt
   - path: repo
     type:
-      # The below are defaults. only set what's needed.
+      # The below are defaults. only set what's needed if you use a different column name.
       system_prompt: ""
       system_format: "{system}"
       field_system: system
@@ -589,6 +589,7 @@ datasets:
       field_output: output
 
       # Customizable to be single line or multi-line
+      # Use {instruction}/{input} as key to be replaced
       # 'format' can include {input}
       format: |-
         User: {instruction} {input}
