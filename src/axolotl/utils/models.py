@@ -733,6 +733,7 @@ def load_lora(model, cfg, inference=False):
         r=cfg.lora_r,
         lora_alpha=cfg.lora_alpha,
         target_modules=lora_target_modules,
+        layers_to_transform=cfg.peft_layers_to_transform,
         lora_dropout=cfg.lora_dropout,
         fan_in_fan_out=cfg.lora_fan_in_fan_out,
         modules_to_save=cfg.lora_modules_to_save if cfg.lora_modules_to_save else None,

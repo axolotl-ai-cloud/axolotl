@@ -677,7 +677,8 @@ lora_target_modules:
 #  - gate_proj
 #  - down_proj
 #  - up_proj
-lora_target_linear: # If true, will target all linear layers
+lora_target_linear: # If true, will target all linear modules
+peft_layers_to_transform: # The layer indices to transform, otherwise, apply to all layers
 
 # If you added new tokens to the tokenizer, you may need to save some LoRA modules because they need to know the new tokens.
 # For LLaMA and Mistral, you need to save `embed_tokens` and `lm_head`. It may vary for other models.

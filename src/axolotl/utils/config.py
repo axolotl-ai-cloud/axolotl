@@ -257,6 +257,11 @@ def validate_config(cfg):
     if cfg.adapter == "lora" and (cfg.flash_attn_fuse_qkv or cfg.flash_attn_fuse_mlp):
         raise ValueError("Fused modules are not supported with LoRA")
 
+    if cfg.adapter and cfg.peft_layers_to_transform and cfg.unfrozen_parameters:
+        raise ValueError(
+            "`unfrozen_parameters` used with `peft_layers_to_transform` can have unexpected behavior."
+        )
+
     if cfg.relora_steps:
         if cfg.adapter not in ("lora", "qlora"):
             raise ValueError("cfg.adapter must be lora or qlora to use ReLoRA")
