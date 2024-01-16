@@ -113,7 +113,7 @@ jobs:
         id: metadata
         uses: docker/metadata-action@v5
         with:
-          images: winglian/axolotl-runpod
+          images: winglian/axolotl-cloud
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
@@ -128,9 +128,11 @@ jobs:
           build-args: |
             BASE_TAG=${{ github.ref_name }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
             CUDA=${{ matrix.cuda }}
-          file: ./docker/Dockerfile-runpod
+          file: ./docker/Dockerfile-cloud
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
              ${{ steps.metadata.outputs.tags }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
+             winglian/axolotl-runpod:main-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
              ${{ (matrix.is_latest) && format('{0}-latest', steps.metadata.outputs.tags) || '' }}
+             ${{ (matrix.is_latest) && format('{0}-latest', 'winglian/axolotl-runpod:main') || '' }}
           labels: ${{ steps.metadata.outputs.labels }}

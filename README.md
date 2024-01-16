@@ -25,7 +25,7 @@ Features:
 - [Installation](#installation)
   - [Docker](#docker)
   - [Conda/Pip venv](#condapip-venv)
-  - [Runpod](#runpod)
+  - [Cloud GPU](#cloud-gpu) - Runpod, Latitude
   - [LambdaLabs](#lambdalabs)
   - [Windows](#windows)
   - [Launching on public clouds via SkyPilot](#launching-on-public-clouds-via-skypilot)
@@ -172,9 +172,11 @@ docker run --privileged --gpus '"all"' --shm-size 10g --rm -it --name axolotl --
         ```
         Get the token at huggingface.co/settings/tokens
 
-#### Runpod
+#### Cloud GPU
 
-Use `winglian/axolotl-runpod:main-latest` or use this [direct link](https://runpod.io/gsc?template=v2ickqhz9s&ref=6i7fkpdz)
+For cloud GPU providers that support docker images, use [`winglian/axolotl-cloud:main-latest`](https://hub.docker.com/r/winglian/axolotl-cloud/tags)
+
+- on RunPod use this [direct link](https://runpod.io/gsc?template=v2ickqhz9s&ref=6i7fkpdz)
 
 #### LambdaLabs
   <details>
