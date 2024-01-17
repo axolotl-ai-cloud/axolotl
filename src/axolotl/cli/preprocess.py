@@ -18,6 +18,7 @@ from axolotl.cli import (
 )
 from axolotl.common.cli import PreprocessCliArgs
 from axolotl.common.const import DEFAULT_DATASET_PREPARED_PATH
+from axolotl.prompt_strategies.sharegpt import register_chatml_template
 
 LOG = logging.getLogger("axolotl.cli.preprocess")
 
@@ -33,6 +34,12 @@ def do_cli(config: Path = Path("examples/"), **kwargs):
     parsed_cli_args, _ = parser.parse_args_into_dataclasses(
         return_remaining_strings=True
     )
+
+    if parsed_cfg.chat_template == "chatml" and parsed_cfg.default_system_message:
+        LOG.info(
+            f"ChatML set. Adding default system message: {parsed_cfg.default_system_message}"
+        )
+        register_chatml_template(parsed_cfg.default_system_message)
 
     if not parsed_cfg.dataset_prepared_path:
         msg = (
