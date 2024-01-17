@@ -57,6 +57,7 @@ class TokenizedPromptDataset(Dataset):
             num_proc=num_proc,
             remove_columns=features,
             load_from_cache_file=load_from_cache_file,
+            keep_in_memory=True,
             **map_kwargs,
         )
 
