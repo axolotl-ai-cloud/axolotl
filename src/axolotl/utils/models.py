@@ -355,7 +355,9 @@ def load_model(
     #         else:
     #             model_kwargs["device_map"] = "cuda:" + str(torch.cuda.current_device())
 
-    if is_deepspeed_zero3_enabled() or cfg.deepspeed:
+    if is_deepspeed_zero3_enabled():
+        del model_kwargs["device_map"]
+    elif cfg.deepspeed:
         del model_kwargs["device_map"]
         model_kwargs["low_cpu_mem_usage"] = True
 
