@@ -355,6 +355,65 @@ class ShareGPTPrompterV2(ShareGPTPrompter):
         )
 
 
+CONVERSATION_ROLE_FORMAT = {
+    "chatml": "<|im_start|>{ROLE}",
+    "zephyr": "<|{ROLE}|>",
+}
+
+
+class ShareGPTPrompterV2MultiRole(ShareGPTPrompterV2):
+    """
+    An multi-role V2 prompter that generates prompts for the ShareGPT that supports multi-role
+    """
+
+    def _build_result(self, source):
+        if len(source) < 2:
+            # If there isn't a back and forth conversation, ignore it
+            # also happens on the data splitting leaving empty conversations
+            raise IndexError(
+                f"A conversation entry has less than 2 messages :\n{source}"
+            )
+
+        conv = self._conversation.copy()
+
+        # Add the conversation system prompt if provided, otherwise use the default one
+        if source[0]["from"] == "system":
+            conv.set_system_message(source[0]["value"])
+            source.pop(0)
+
+        roles = {self.role_key_human: conv.roles[0], self.role_key_model: conv.roles[1]}
+
+        try:
+            # Apply prompt templates
+            if source[0]["from"] not in roles:
+                # Skip the first one if it is not from human
+                source = source[1:]
+        except IndexError as err:
+            # sometimes there is a bing or system chat
+            raise err
+
+        conv.messages = []
+        for _, sentence in enumerate(source):
+            from_role = sentence["from"]
+            if from_role in roles:
+                role = roles[from_role]
+            else:
+                if self._conversation.name not in CONVERSATION_ROLE_FORMAT:
+                    raise NotImplementedError(
+                        f"Role ({role}) not in default roles, and {self._conversation.name} does not support role remapping yet."
+                    )
+
+                role = CONVERSATION_ROLE_FORMAT[self._conversation.name].format(
+                    ROLE=from_role
+                )
+
+            if len(conv.messages) > 0 and ((role == conv.messages[-1][0])):
+                LOG.warning(f"Roles did not alternate: {sentence}")
+            conv.append_message(role, sentence["value"])
+
+        return conv.get_turns()
+
+
 class UnsupportedPrompter(Prompter):
     """
     A dummy class for custom prompters
