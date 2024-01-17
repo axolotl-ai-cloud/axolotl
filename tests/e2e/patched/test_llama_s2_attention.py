@@ -31,7 +31,7 @@ class TestLlamaShiftedSparseAttention(unittest.TestCase):
             {
                 "base_model": "JackFram/llama-68m",
                 "tokenizer_type": "LlamaTokenizer",
-                "sequence_len": 65536,
+                "sequence_len": 32768,
                 "sample_packing": False,
                 "flash_attention": True,
                 "s2_attention": True,
@@ -77,7 +77,7 @@ class TestLlamaShiftedSparseAttention(unittest.TestCase):
             {
                 "base_model": "JackFram/llama-68m",
                 "tokenizer_type": "LlamaTokenizer",
-                "sequence_len": 65536,
+                "sequence_len": 32768,
                 "sample_packing": False,
                 "flash_attention": True,
                 "s2_attention": True,
@@ -85,7 +85,7 @@ class TestLlamaShiftedSparseAttention(unittest.TestCase):
                 "special_tokens": {},
                 "datasets": [
                     {
-                        "path": "mhenrichsen/alpaca_2k_test",
+                        "path": "Yukang/LongAlpaca-12k",
                         "type": "alpaca",
                     },
                 ],
