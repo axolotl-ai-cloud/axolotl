@@ -35,7 +35,10 @@ class TokenizedPromptDataset(Dataset):
     ):
         self.prompt_tokenizer = prompt_tokenizer
         self.process_count = process_count
-        super().__init__(self.process(dataset).data, **kwargs)
+        super().__init__(
+            self.process(dataset).data,
+            **kwargs,
+        )
 
     def process(self, dataset):
         features = dataset.features.keys()
@@ -52,6 +55,7 @@ class TokenizedPromptDataset(Dataset):
             self.prompt_tokenizer.tokenize_prompt,
             num_proc=num_proc,
             remove_columns=features,
+            keep_in_memory=True,
             **map_kwargs,
         )
 

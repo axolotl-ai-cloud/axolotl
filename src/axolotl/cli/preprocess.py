@@ -25,6 +25,7 @@ def do_cli(config: Path = Path("examples/"), **kwargs):
     # pylint: disable=duplicate-code
     print_axolotl_text_art()
     parsed_cfg = load_cfg(config, **kwargs)
+    parsed_cfg.is_preprocess = True
     check_accelerate_default_config()
     check_user_token()
     parser = transformers.HfArgumentParser((PreprocessCliArgs))
