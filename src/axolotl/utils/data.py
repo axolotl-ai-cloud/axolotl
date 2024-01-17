@@ -594,12 +594,18 @@ def get_dataset_wrapper(
         )
         dataset_prompter = UnsupportedPrompter()
         dataset_wrapper = TokenizedPromptDataset(
-            ds_strategy, dataset, process_count=cfg.dataset_processes
+            ds_strategy,
+            dataset,
+            process_count=cfg.dataset_processes,
+            load_from_cache_file=not cfg.is_mistral_derived_model,
         )
     elif ds_strategy := load(config_dataset.type, tokenizer, cfg, config_dataset):
         dataset_prompter = UnsupportedPrompter()
         dataset_wrapper = TokenizedPromptDataset(
-            ds_strategy, dataset, process_count=cfg.dataset_processes
+            ds_strategy,
+            dataset,
+            process_count=cfg.dataset_processes,
+            load_from_cache_file=not cfg.is_mistral_derived_model,
         )
     elif d_base_type == "alpaca":
         dataset_prompter = AlpacaPrompter(d_prompt_style)
@@ -610,7 +616,10 @@ def get_dataset_wrapper(
             cfg.sequence_len,
         )
         ds_wrapper = TokenizedPromptDataset(
-            ds_strategy, dataset, process_count=cfg.dataset_processes
+            ds_strategy,
+            dataset,
+            process_count=cfg.dataset_processes,
+            load_from_cache_file=not cfg.is_mistral_derived_model,
         )
         dataset_wrapper = ds_wrapper
     elif d_base_type == "explainchoice":
@@ -622,7 +631,10 @@ def get_dataset_wrapper(
             cfg.sequence_len,
         )
         ds_wrapper = TokenizedPromptDataset(
-            ds_strategy, dataset, process_count=cfg.dataset_processes
+            ds_strategy,
+            dataset,
+            process_count=cfg.dataset_processes,
+            load_from_cache_file=not cfg.is_mistral_derived_model,
         )
         dataset_wrapper = ds_wrapper
     elif d_base_type == "concisechoice":
@@ -634,7 +646,10 @@ def get_dataset_wrapper(
             cfg.sequence_len,
         )
         ds_wrapper = TokenizedPromptDataset(
-            ds_strategy, dataset, process_count=cfg.dataset_processes
+            ds_strategy,
+            dataset,
+            process_count=cfg.dataset_processes,
+            load_from_cache_file=not cfg.is_mistral_derived_model,
         )
         dataset_wrapper = ds_wrapper
     elif d_base_type == "summarizetldr":
@@ -646,7 +661,10 @@ def get_dataset_wrapper(
             cfg.sequence_len,
         )
         ds_wrapper = TokenizedPromptDataset(
-            ds_strategy, dataset, process_count=cfg.dataset_processes
+            ds_strategy,
+            dataset,
+            process_count=cfg.dataset_processes,
+            load_from_cache_file=not cfg.is_mistral_derived_model,
         )
         dataset_wrapper = ds_wrapper
     elif d_base_type == "jeopardy":
@@ -658,7 +676,10 @@ def get_dataset_wrapper(
             cfg.sequence_len,
         )
         ds_wrapper = TokenizedPromptDataset(
-            ds_strategy, dataset, process_count=cfg.dataset_processes
+            ds_strategy,
+            dataset,
+            process_count=cfg.dataset_processes,
+            load_from_cache_file=not cfg.is_mistral_derived_model,
         )
         dataset_wrapper = ds_wrapper
     elif d_base_type == "oasst":
@@ -670,7 +691,10 @@ def get_dataset_wrapper(
             cfg.sequence_len,
         )
         ds_wrapper = TokenizedPromptDataset(
-            ds_strategy, dataset, process_count=cfg.dataset_processes
+            ds_strategy,
+            dataset,
+            process_count=cfg.dataset_processes,
+            load_from_cache_file=not cfg.is_mistral_derived_model,
         )
         dataset_wrapper = ds_wrapper
     elif d_base_type == "gpteacher":
@@ -682,7 +706,10 @@ def get_dataset_wrapper(
             cfg.sequence_len,
         )
         ds_wrapper = TokenizedPromptDataset(
-            ds_strategy, dataset, process_count=cfg.dataset_processes
+            ds_strategy,
+            dataset,
+            process_count=cfg.dataset_processes,
+            load_from_cache_file=not cfg.is_mistral_derived_model,
         )
         dataset_wrapper = ds_wrapper
     elif d_base_type == "reflection":
@@ -694,7 +721,10 @@ def get_dataset_wrapper(
             cfg.sequence_len,
         )
         ds_wrapper = TokenizedPromptDataset(
-            ds_strategy, dataset, process_count=cfg.dataset_processes
+            ds_strategy,
+            dataset,
+            process_count=cfg.dataset_processes,
+            load_from_cache_file=not cfg.is_mistral_derived_model,
         )
         dataset_wrapper = ds_wrapper
     else:

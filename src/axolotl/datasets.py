@@ -31,13 +31,17 @@ class TokenizedPromptDataset(Dataset):
         prompt_tokenizer: PromptTokenizingStrategy,
         dataset: IterableDataset,
         process_count: Optional[int] = None,
+        load_from_cache_file: Optional[bool] = None,
         **kwargs,
     ):
         self.prompt_tokenizer = prompt_tokenizer
         self.process_count = process_count
-        super().__init__(self.process(dataset).data, **kwargs)
+        super().__init__(
+            self.process(dataset, load_from_cache_file=load_from_cache_file).data,
+            **kwargs,
+        )
 
-    def process(self, dataset):
+    def process(self, dataset, load_from_cache_file=None):
         features = dataset.features.keys()
         num_proc = (
             min(64, self.process_count)
@@ -52,6 +56,7 @@ class TokenizedPromptDataset(Dataset):
             self.prompt_tokenizer.tokenize_prompt,
             num_proc=num_proc,
             remove_columns=features,
+            load_from_cache_file=load_from_cache_file,
             **map_kwargs,
         )
 

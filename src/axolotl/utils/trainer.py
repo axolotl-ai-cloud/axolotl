@@ -111,27 +111,39 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset, tokenizer):
     with zero_first(is_main_process()):
         if cfg.group_by_length:
             train_dataset = train_dataset.map(
-                add_length, num_proc=cfg.dataset_processes
+                add_length,
+                num_proc=cfg.dataset_processes,
+                load_from_cache_file=not cfg.is_preprocess,
             )
 
         if cfg.sample_packing:
             train_dataset = train_dataset.map(
-                add_position_ids, num_proc=cfg.dataset_processes
+                add_position_ids,
+                num_proc=cfg.dataset_processes,
+                load_from_cache_file=not cfg.is_preprocess,
             )
             if cfg.eval_sample_packing is not False:
                 if eval_dataset:
                     eval_dataset = eval_dataset.map(
-                        add_position_ids, num_proc=cfg.dataset_processes
+                        add_position_ids,
+                        num_proc=cfg.dataset_processes,
+                        load_from_cache_file=not cfg.is_preprocess,
                     )
 
         if cfg.group_by_length or cfg.sample_packing:
             max_input_len = np.max(get_dataset_lengths(train_dataset))
             LOG.debug(f"max_input_len: {max_input_len}", main_process_only=True)
 
-        train_dataset = train_dataset.filter(drop_long, num_proc=cfg.dataset_processes)
+        train_dataset = train_dataset.filter(
+            drop_long,
+            num_proc=cfg.dataset_processes,
+            load_from_cache_file=not cfg.is_preprocess,
+        )
         if eval_dataset:
             eval_dataset = eval_dataset.filter(
-                drop_long, num_proc=cfg.dataset_processes
+                drop_long,
+                num_proc=cfg.dataset_processes,
+                load_from_cache_file=not cfg.is_preprocess,
             )
 
         # Phi doesn't want the attention_mask feature when training
