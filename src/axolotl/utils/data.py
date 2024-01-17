@@ -152,7 +152,11 @@ def load_tokenized_prepared_datasets(
 
     if dataset:
         ...
-    elif cfg.dataset_prepared_path and any(prepared_ds_path.glob("*")):
+    elif (
+        cfg.dataset_prepared_path
+        and any(prepared_ds_path.glob("*"))
+        and not cfg.is_preprocess
+    ):
         LOG.info(f"Loading prepared dataset from disk at {prepared_ds_path}...")
         dataset = load_from_disk(str(prepared_ds_path))
         LOG.info("Prepared dataset loaded from disk...")
@@ -465,7 +469,11 @@ def load_prepare_datasets(
 
         if dataset:
             ...
-        elif cfg.dataset_prepared_path and any(prepared_ds_path.glob("*")):
+        elif (
+            cfg.dataset_prepared_path
+            and any(prepared_ds_path.glob("*"))
+            and not cfg.is_preprocess
+        ):
             LOG.info(
                 f"Loading prepared packed dataset from disk at {prepared_ds_path}..."
             )
