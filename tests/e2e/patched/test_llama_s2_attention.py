@@ -7,8 +7,6 @@ import os
 import unittest
 from pathlib import Path
 
-from transformers.utils import is_torch_bf16_gpu_available
-
 from axolotl.cli import load_datasets
 from axolotl.common.cli import TrainerCliArgs
 from axolotl.train import train
@@ -33,21 +31,21 @@ class TestLlamaShiftedSparseAttention(unittest.TestCase):
             {
                 "base_model": "JackFram/llama-68m",
                 "tokenizer_type": "LlamaTokenizer",
-                "sequence_len": 1024,
+                "sequence_len": 65536,
                 "sample_packing": False,
                 "flash_attention": True,
                 "s2_attention": True,
                 "load_in_8bit": True,
                 "adapter": "lora",
                 "lora_r": 32,
-                "lora_alpha": 64,
+                "lora_alpha": 16,
                 "lora_dropout": 0.05,
                 "lora_target_linear": True,
                 "val_set_size": 0.1,
                 "special_tokens": {},
                 "datasets": [
                     {
-                        "path": "mhenrichsen/alpaca_2k_test",
+                        "path": "Yukang/LongAlpaca-12k",
                         "type": "alpaca",
                     },
                 ],
@@ -61,12 +59,9 @@ class TestLlamaShiftedSparseAttention(unittest.TestCase):
                 "max_steps": 10,
                 "save_steps": 5,
                 "eval_steps": 5,
+                "bf16": "auto",
             }
         )
-        if is_torch_bf16_gpu_available():
-            cfg.bf16 = True
-        else:
-            cfg.fp16 = True
 
         normalize_config(cfg)
         cli_args = TrainerCliArgs()
@@ -82,7 +77,7 @@ class TestLlamaShiftedSparseAttention(unittest.TestCase):
             {
                 "base_model": "JackFram/llama-68m",
                 "tokenizer_type": "LlamaTokenizer",
-                "sequence_len": 1024,
+                "sequence_len": 65536,
                 "sample_packing": False,
                 "flash_attention": True,
                 "s2_attention": True,
@@ -104,12 +99,9 @@ class TestLlamaShiftedSparseAttention(unittest.TestCase):
                 "max_steps": 10,
                 "save_steps": 5,
                 "eval_steps": 5,
+                "bf16": "auto",
             }
         )
-        if is_torch_bf16_gpu_available():
-            cfg.bf16 = True
-        else:
-            cfg.fp16 = True
 
         normalize_config(cfg)
         cli_args = TrainerCliArgs()

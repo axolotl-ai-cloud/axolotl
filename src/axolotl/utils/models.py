@@ -259,7 +259,7 @@ def load_model(
     if cfg.sample_packing and cfg.s2_attention:
         raise ValueError(
             "Received `sample_packing=true` and `s2_attention=true`; however, \
-        shifted-sparse attention does not current support sample packing."
+        shifted-sparse attention does not currently support sample packing."
         )
 
     # Modify all llama derived models in one block
