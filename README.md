@@ -1150,7 +1150,7 @@ Building something cool with Axolotl? Consider adding a badge to your model card
 Check out some of the projects and models that have been built using Axolotl! Have a model you'd like to add to our Community Showcase? Open a PR with your model.
 
 Open Access AI Collective
-- [Minotaur 13b](https://huggingface.co/openaccess-ai-collective/minotaur-13b)
+- [Minotaur 13b](https://huggingface.co/openaccess-ai-collective/minotaur-13b-fixed)
 - [Manticore 13b](https://huggingface.co/openaccess-ai-collective/manticore-13b)
 - [Hippogriff 30b](https://huggingface.co/openaccess-ai-collective/hippogriff-30b-chat)
 
