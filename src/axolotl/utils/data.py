@@ -74,6 +74,11 @@ def prepare_dataset(cfg, tokenizer):
         if isinstance(cfg.pretraining_dataset, dict):
             path = cfg.pretraining_dataset["path"]
             name = cfg.pretraining_dataset["name"]
+        elif isinstance(cfg.pretraining_dataset, list) and isinstance(
+            cfg.pretraining_dataset[0], dict
+        ):
+            path = cfg.pretraining_dataset[0]["path"]
+            name = cfg.pretraining_dataset[0]["name"]
 
         train_dataset = load_pretraining_dataset(
             path,
@@ -760,6 +765,7 @@ def load_pretraining_dataset(path, tokenizer, cfg, name=None, max_tokens=2048, s
     dataset = dataset.map(
         encode,
         batched=True,
+        batch_size=10_000,
         input_columns="text",
         # remove all the existing columns after mapping since they end up having
         # a different length than the encoded/tokenized column
