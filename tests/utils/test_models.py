@@ -33,5 +33,5 @@ class ModelsUtilsTest(unittest.TestCase):
                 load_model(cfg, tokenizer="")
             assert (
                 "shifted-sparse attention does not currently support sample packing"
-                in exc.value.message
+                in str(exc.value)
             )
