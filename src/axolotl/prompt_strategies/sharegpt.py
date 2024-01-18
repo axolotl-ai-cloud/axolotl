@@ -280,6 +280,17 @@ class MultiRoleShareGPTPromptTokenizingStrategy(SimpleShareGPTPromptTokenizingSt
                         labels[:len_role] = [IGNORE_TOKEN_ID] * min(
                             len_role, len(labels)
                         )
+                elif role == "":
+                    turn = content
+                    # this is only ever the first part, should include the bos token and the user query
+                    res = self._tokenize(
+                        turn, add_eos_token=False, strip_bos_token=False
+                    )
+                    if self.train_on_inputs:
+                        labels = copy.deepcopy(res["input_ids"])
+                    else:
+                        # everything from this is masked out from the labels
+                        labels = [IGNORE_TOKEN_ID] * len(res["input_ids"])
                 else:
                     LOG.warning(f"unhandled role: {role}")
                     continue
