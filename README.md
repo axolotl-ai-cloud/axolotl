@@ -632,6 +632,11 @@ val_set_size: 0.04
 dataset_shard_num:
 # Index of shard to use for whole dataset
 dataset_shard_idx:
+# At training time, collates certain features of the dataset if they are missing
+collate_missing_features:
+  # - labels # copy input_ids
+  # - position_ids # [0, 1, 2, ..., len(input_ids)-1]
+  # - attention_mask [1, 1, 1, ...] with same length as input_ids
 
 # The maximum length of an input to train with, this should typically be less than 2048
 # as most models have a token/context limit of 2048
