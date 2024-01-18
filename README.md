@@ -834,7 +834,8 @@ flash_attn_fuse_mlp: # Whether to fuse part of the MLP into a single operation
 # Whether to use scaled-dot-product attention
 # https://pytorch.org/docs/stable/generated/torch.nn.functional.scaled_dot_product_attention.html
 sdp_attention:
-
+# Shifted-sparse attention (only llama) - https://arxiv.org/pdf/2309.12307.pdf
+s2_attention:
 # Resume from a specific checkpoint dir
 resume_from_checkpoint:
 # If resume_from_checkpoint isn't set and you simply want it to start where it left off.

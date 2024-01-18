@@ -52,6 +52,7 @@ local_rank:
 logging_steps: 1
 xformers_attention:
 flash_attention: true
+s2_attention:
 
 warmup_steps: 10
 evals_per_epoch: 4

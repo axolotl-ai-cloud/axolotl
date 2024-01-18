@@ -52,6 +52,7 @@ logging_steps: 1
 xformers_attention:
 flash_attention: true
 gptq_groupsize:
+s2_attention:
 gptq_model_v1:
 warmup_steps: 20
 evals_per_epoch: 4

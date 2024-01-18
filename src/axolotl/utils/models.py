@@ -256,31 +256,55 @@ def load_model(
 
             replace_stablelm_attn_with_flash_attn(cfg.base_model)
 
-    if cfg.is_llama_derived_model and cfg.flash_attention and cfg.sample_packing:
-        if cfg.device not in ["mps", "cpu"] and not inference:
+    if cfg.sample_packing and cfg.s2_attention:
+        raise ValueError(
+            "Received `sample_packing=true` and `s2_attention=true`; however, \
+        shifted-sparse attention does not currently support sample packing."
+        )
+
+    # Modify all llama derived models in one block
+    if cfg.is_llama_derived_model:
+        if cfg.flash_attention:
             from axolotl.monkeypatch.llama_attn_hijack_flash import (
                 replace_llama_attn_with_flash_attn,
             )
 
-            LOG.info("patching with flash attention for sample packing")
-            replace_llama_attn_with_flash_attn(
-                packed=cfg.sample_packing,
-                cross_entropy=cfg.flash_attn_cross_entropy,
-                rms_norm=cfg.flash_attn_rms_norm,
+            if cfg.sample_packing:
+                if cfg.device not in ["mps", "cpu"] and not inference:
+                    LOG.info("patching with flash attention for sample packing")
+                    replace_llama_attn_with_flash_attn(
+                        packed=True,
+                        cross_entropy=cfg.flash_attn_cross_entropy,
+                        rms_norm=cfg.flash_attn_rms_norm,
+                    )
+            elif cfg.s2_attention:
+                LOG.info("patching w/ flash-enabled, shifted-sparse attention")
+                replace_llama_attn_with_flash_attn(
+                    packed=False,
+                    cross_entropy=cfg.flash_attn_cross_entropy,
+                    rms_norm=cfg.flash_attn_rms_norm,
+                    use_shifted_sparse_attn=True,
+                )
+        elif cfg.xformers_attention:
+            from axolotl.monkeypatch.llama_attn_hijack_xformers import (
+                hijack_llama_attention,
             )
-    elif cfg.is_llama_derived_model and cfg.xformers_attention:
-        from axolotl.monkeypatch.llama_attn_hijack_xformers import (
-            hijack_llama_attention,
-        )
 
-        LOG.info("patching with xformers attention")
-        hijack_llama_attention()
-    elif cfg.is_llama_derived_model and cfg.sdp_attention:
-        from axolotl.monkeypatch.llama_attn_hijack_sdp import hijack_llama_sdp_attention
+            LOG.info("patching with xformers attention")
+            hijack_llama_attention()
+        elif cfg.sdp_attention:
+            from axolotl.monkeypatch.llama_attn_hijack_sdp import (
+                hijack_llama_sdp_attention,
+            )
 
-        LOG.info("patching with sdp attention")
-        hijack_llama_sdp_attention()
+            LOG.info("patching with sdp attention")
+            hijack_llama_sdp_attention()
+        elif cfg.s2_attention:
+            raise NotImplementedError(
+                "Shifted-sparse attention not currently implemented without flash attention."
+            )
 
+    # Modify mistral derived models
     if cfg.is_mistral_derived_model and cfg.flash_attention and cfg.sample_packing:
         from axolotl.monkeypatch.mistral_attn_hijack_flash import (
             replace_mistral_attn_with_flash_attn,
@@ -387,9 +411,12 @@ def load_model(
         model_kwargs["quantization_config"] = BitsAndBytesConfig(
             **bnb_config,
         )
+
     # sample packing uses custom FA2 patch
     if cfg.flash_attention:
         if not cfg.sample_packing:
+            if cfg.s2_attention:
+                pass
             if (
                 cfg.is_llama_derived_model
                 or cfg.is_falcon_derived_model
