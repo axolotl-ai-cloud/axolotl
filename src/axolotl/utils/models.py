@@ -305,12 +305,16 @@ def load_model(
             )
 
     # Modify mistral derived models
-    if cfg.is_mistral_derived_model and cfg.flash_attention and cfg.sample_packing:
+    if (
+        cfg.model_config_type == "mistral"
+        and cfg.flash_attention
+        and cfg.sample_packing
+    ):
         from axolotl.monkeypatch.mistral_attn_hijack_flash import (
             replace_mistral_attn_with_flash_attn,
         )
 
-        LOG.info("patching with flash attention")
+        LOG.info("patching mistral with flash attention")
         replace_mistral_attn_with_flash_attn(packed=cfg.sample_packing)
 
     if (
@@ -322,7 +326,7 @@ def load_model(
             replace_mixtral_attn_with_multipack_flash_attn,
         )
 
-        LOG.info("patching with flash attention")
+        LOG.info("patching mixtral with flash attention")
         replace_mixtral_attn_with_multipack_flash_attn()
 
     if (
