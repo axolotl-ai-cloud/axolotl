@@ -8,7 +8,7 @@ import torch.nn.functional as F
 @torch.jit.script
 def get_max_seqlen_in_batch(attention_mask: torch.Tensor) -> torch.Tensor:
     max_num = int(torch.max(attention_mask).item())
-    batch_size, seq_len = attention_mask.shape
+    batch_size, _ = attention_mask.shape
     counts = torch.zeros((batch_size, max_num), dtype=torch.int32)
 
     for i in range(1, max_num + 1):

@@ -12,7 +12,7 @@ from abc import abstractmethod
 from dataclasses import dataclass, field
 from functools import wraps
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Type, Union
 
 import torch
 import transformers
@@ -897,6 +897,13 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         if is_eval and training_args.eval_sample_packing:
             use_batch_sampler_collator = True
 
+        collator: Type[
+            Union[
+                V2BatchSamplerDataCollatorForSeq2Seq,
+                BatchSamplerDataCollatorForSeq2Seq,
+                DataCollatorForSeq2Seq,
+            ]
+        ]
         if use_batch_sampler_collator:
             if self.cfg.model_config_type == "mixtral":
                 collator = V2BatchSamplerDataCollatorForSeq2Seq

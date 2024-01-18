@@ -5,10 +5,10 @@ import os
 from pathlib import Path
 
 import torch
-from axolotl.utils.dict import DictDefault
 from transformers.utils import is_torch_bf16_gpu_available
 
 from axolotl.utils.bench import log_gpu_memory_usage
+from axolotl.utils.dict import DictDefault
 from axolotl.utils.models import load_model_config
 
 LOG = logging.getLogger("axolotl")
@@ -499,9 +499,23 @@ def validate_config(cfg):
     if cfg.flash_attention and cfg.deepspeed and Path(cfg.deepspeed).is_file():
         with open(cfg.deepspeed, encoding="utf-8") as file:
             contents = file.read()
-            deepspeed_cfg = DictDefault(json.loads(contents))
-            if deepspeed_cfg.zero_optimization and deepspeed_cfg.zero_optimization.stage == 3:
-                if not (deepspeed_cfg.bf16.enabled is True or deepspeed_cfg.fp16.enabled is True):
+            deepspeed_cfg: DictDefault = DictDefault(json.loads(contents))
+            if (
+                deepspeed_cfg.zero_optimization
+                and deepspeed_cfg.zero_optimization.stage == 3
+            ):
+                if not (
+                    (
+                        deepspeed_cfg.bf16
+                        and deepspeed_cfg.bf16.enabled  # pylint: disable=no-member
+                        is True
+                    )
+                    or (
+                        deepspeed_cfg.fp16
+                        and deepspeed_cfg.fp16.enabled  # pylint: disable=no-member
+                        is True
+                    )
+                ):
                     raise ValueError(
                         "bf16.enabled or fp16.enabled must be set to true when using ZeRO-3 with flash-attention"
                     )
