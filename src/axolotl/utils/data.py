@@ -866,11 +866,16 @@ def load_prepare_dpo_datasets(cfg):
 
         for i, data_set in enumerate(split_datasets):
             _type = dataset_cfgs[i]["type"]
-            ds_transform_fn = load_dpo(_type, _cfg)
-            split_datasets[i] = data_set.map(
-                ds_transform_fn,
-                desc="Mapping RL Dataset",
-            )
+            if _type:
+                ds_transform_fn = load_dpo(_type, _cfg)
+                split_datasets[i] = data_set.map(
+                    ds_transform_fn,
+                    desc="Mapping RL Dataset",
+                )
+            else:
+                # If no `type` is provided, assume the dataset is already in the expected format with
+                # "prompt", "chosen" and "rejected" already preprocessed
+                split_datasets[i] = data_set
 
         return concatenate_datasets(split_datasets)
 
