@@ -327,19 +327,6 @@ class ValidationTest(BaseValidation):
     def test_packing(self):
         cfg = DictDefault(
             {
-                "max_packed_sequence_len": 2048,
-            }
-        )
-        with self._caplog.at_level(logging.WARNING):
-            validate_config(cfg)
-            assert any(
-                "max_packed_sequence_len will be deprecated in favor of sample_packing"
-                in record.message
-                for record in self._caplog.records
-            )
-
-        cfg = DictDefault(
-            {
                 "sample_packing": True,
                 "pad_to_sequence_len": None,
             }
@@ -351,16 +338,6 @@ class ValidationTest(BaseValidation):
                 in record.message
                 for record in self._caplog.records
             )
-
-        cfg = DictDefault(
-            {
-                "max_packed_sequence_len": 2048,
-                "sample_packing": True,
-            }
-        )
-        regex_exp = r".*set only one of max_packed_sequence_len \(deprecated soon\) or sample_packing.*"
-        with pytest.raises(ValueError, match=regex_exp):
-            validate_config(cfg)
 
     @pytest.mark.skipif(
         is_torch_bf16_gpu_available(),
