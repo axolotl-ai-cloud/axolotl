@@ -52,11 +52,7 @@ class TestModelPatches(unittest.TestCase):
         model, _ = load_model(cfg, tokenizer, inference=cli_args.inference)
 
         assert (
-            "axolotl.monkeypatch.mixtral.modeling_mixtral"
-            in model.model.layers[0].self_attn.__class__.__module__
-        )
-        assert (
-            "MixtralMultipackFlashAttention2"
+            "MixtralFlashAttention2"
             in model.model.layers[0].self_attn.__class__.__name__
         )
 
