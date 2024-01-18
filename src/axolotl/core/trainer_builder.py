@@ -37,6 +37,7 @@ from axolotl.utils.collators import (
     BatchSamplerDataCollatorForSeq2Seq,
     DataCollatorForSeq2Seq,
     MambaDataCollator,
+    V2BatchSamplerDataCollatorForSeq2Seq,
 )
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 from axolotl.utils.schedulers import (
@@ -897,13 +898,14 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             use_batch_sampler_collator = True
 
         if use_batch_sampler_collator:
-            return BatchSamplerDataCollatorForSeq2Seq(
-                self.tokenizer,
-                return_tensors="pt",
-                **kwargs,
-            )
+            if self.cfg.model_config_type == "mixtral":
+                collator = V2BatchSamplerDataCollatorForSeq2Seq
+            else:
+                collator = BatchSamplerDataCollatorForSeq2Seq
+        else:
+            collator = DataCollatorForSeq2Seq
 
-        return DataCollatorForSeq2Seq(
+        return collator(
             self.tokenizer,
             return_tensors="pt",
             **kwargs,

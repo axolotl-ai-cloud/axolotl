@@ -153,6 +153,33 @@ class BatchSamplerDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):
 
 
 @dataclass
+class V2BatchSamplerDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):
+    """
+    Collator for multipack specific to the using the BatchSampler
+    """
+
+    def __call__(self, features, return_tensors=None):
+        chunked_data = {}
+        for feature in features[0].keys():
+            if feature == "length":
+                continue
+            if feature == "attention_mask":
+                arrays = [
+                    (i + 1) * np.array(item[feature])
+                    for i, item in enumerate(features)
+                    if feature in item
+                ]
+                chunked_data[feature] = np.concatenate(arrays)
+            else:
+                arrays = [
+                    np.array(item[feature]) for item in features if feature in item
+                ]
+                chunked_data[feature] = np.concatenate(arrays)
+        features = [chunked_data]
+        return super().__call__(features, return_tensors=return_tensors)
+
+
+@dataclass
 class MambaDataCollator:
     """
     Collator for State Space Models (Mamba)
