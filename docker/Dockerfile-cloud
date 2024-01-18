@@ -7,6 +7,9 @@ ENV TRANSFORMERS_CACHE="/workspace/data/huggingface-cache/hub"
 ENV HF_HOME="/workspace/data/huggingface-cache/hub"
 ENV HF_HUB_ENABLE_HF_TRANSFER="1"
 
+EXPOSE 8888
+EXPOSE 22
+
 COPY scripts/cloud-entrypoint.sh /root/cloud-entrypoint.sh
 
 RUN pip install jupyterlab notebook && \
