@@ -281,7 +281,11 @@ def load_model(
         LOG.info("patching with sdp attention")
         hijack_llama_sdp_attention()
 
-    if cfg.is_mistral_derived_model and cfg.flash_attention and cfg.sample_packing:
+    if (
+        cfg.model_config_type == "mistral"
+        and cfg.flash_attention
+        and cfg.sample_packing
+    ):
         from axolotl.monkeypatch.mistral_attn_hijack_flash import (
             replace_mistral_attn_with_flash_attn,
         )

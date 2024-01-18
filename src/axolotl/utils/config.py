@@ -135,7 +135,7 @@ def normalize_config(cfg):
             ]
         )
         or cfg.is_mistral_derived_model
-        or "mistral" in cfg.base_model.lower()
+        or "mistral" in cfg.base_model.lower().split("/")[-1]
         or (cfg.model_type and "mistral" in cfg.model_type.lower())
     )
 
