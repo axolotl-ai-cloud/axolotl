@@ -290,7 +290,7 @@ def load_model(
             replace_mistral_attn_with_flash_attn,
         )
 
-        LOG.info("patching with flash attention")
+        LOG.info("patching mistral with flash attention")
         replace_mistral_attn_with_flash_attn(packed=cfg.sample_packing)
 
     if (
@@ -302,7 +302,7 @@ def load_model(
             replace_mixtral_attn_with_multipack_flash_attn,
         )
 
-        LOG.info("patching with flash attention")
+        LOG.info("patching mixtral with flash attention")
         replace_mixtral_attn_with_multipack_flash_attn()
 
     if (

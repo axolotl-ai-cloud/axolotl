@@ -484,6 +484,16 @@ def validate_config(cfg):
             "max_memory and gpu_memory_limit are mutually exclusive and cannot be used together."
         )
 
+    if (
+        cfg.unfrozen_parameters
+        and cfg.gradient_checkpointing_kwargs
+        and cfg.gradient_checkpointing_kwargs.use_reentrant is True
+    ):
+        # https://github.com/huggingface/transformers/issues/21381
+        raise ValueError(
+            "`use_reentrant` must be false when used with partially frozen model."
+        )
+
     # TODO
     # MPT 7b
     # https://github.com/facebookresearch/bitsandbytes/issues/25

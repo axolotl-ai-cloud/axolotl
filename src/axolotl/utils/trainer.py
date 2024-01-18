@@ -152,6 +152,7 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset, tokenizer):
             or (cfg.is_mistral_derived_model and cfg.flash_attention)
             or cfg.model_config_type == "mamba"
         ):
+            LOG.info("dropping attention_mask column")
             train_dataset = train_dataset.remove_columns("attention_mask")
             if eval_dataset:
                 eval_dataset = eval_dataset.remove_columns("attention_mask")
