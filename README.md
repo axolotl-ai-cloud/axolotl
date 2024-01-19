@@ -1,5 +1,5 @@
 ## What's New
-- Added `Mistral-7b-example`: A comprehensive example for fine-tuning Mistral-7b model. [Check it out here](https://github.com/Tilemachoc/axolotl/examples/mistral/Mistral-7b-example).
+- Added `Mistral-7b-example`: A comprehensive example for fine-tuning Mistral-7b model. [Check it out here](https://github.com/Tilemachoc/axolotl/tree/mistral-7b-example/examples/mistral/Mistral-7b-example).
 
 # Axolotl
 
