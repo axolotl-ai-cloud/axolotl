@@ -7,14 +7,24 @@ echo 'source /etc/rp_environment' >> ~/.bashrc
 
 if [[ $PUBLIC_KEY ]]
 then
+    # runpod
     mkdir -p ~/.ssh
     chmod 700 ~/.ssh
     echo $PUBLIC_KEY >> ~/.ssh/authorized_keys
     chmod 700 -R ~/.ssh
     # Start the SSH service in the background
     service ssh start
+elif [[ $SSH_KEY ]]
+then
+    # latitude.sh
+    mkdir -p ~/.ssh
+    chmod 700 ~/.ssh
+    echo $SSH_KEY >> ~/.ssh/authorized_keys
+    chmod 700 -R ~/.ssh
+    # Start the SSH service in the background
+    service ssh start
 else
-    echo "No PUBLIC_KEY ENV variable provided, not starting openSSH daemon"
+    echo "No PUBLIC_KEY or SSH_KEY environment variable provided, not starting openSSH daemon"
 fi
 
 # Check if JUPYTER_PASSWORD is set and not empty
