@@ -35,7 +35,7 @@ fi
 
 if [ "$JUPYTER_DISABLE" != "1" ]; then
     # Run Jupyter Lab in the background
-    jupyter lab --allow-root --ip 0.0.0.0 &
+    jupyter lab --allow-root --ip 0.0.0.0 --ServerApp.allow_origin='*' &
 fi
 
 # Execute the passed arguments (CMD)
