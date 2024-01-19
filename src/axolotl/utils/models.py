@@ -762,7 +762,7 @@ def find_all_linear_names(model):
             names = name.split(".")
             lora_module_names.add(names[0] if len(names) == 1 else names[-1])
 
-    embedding_modules = get_linear_embedding_layers(model.model_type)
+    embedding_modules = get_linear_embedding_layers(model.config.model_type)
     output_embedding = embedding_modules[1]
     if output_embedding in lora_module_names:  # needed for 16-bit
         lora_module_names.remove(output_embedding)
