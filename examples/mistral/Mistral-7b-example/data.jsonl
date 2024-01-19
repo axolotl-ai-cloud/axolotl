@@ -1,0 +1,2 @@
+Your Data structured should look like this:
+{"conversations": [{"from": "Customer", "value": "\"<Customer>: Who is the Founder of Apple\""}, {"from": "gpt", "value": "\"<Chatbot>: The founder of Apple is Steve Jobs\""}]}
