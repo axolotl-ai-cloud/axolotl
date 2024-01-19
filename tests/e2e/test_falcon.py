@@ -38,6 +38,10 @@ class TestFalcon(unittest.TestCase):
                 "lora_alpha": 64,
                 "lora_dropout": 0.05,
                 "lora_target_linear": True,
+                "lora_modules_to_save": [
+                    "word_embeddings",
+                    "lm_head",
+                ],
                 "val_set_size": 0.1,
                 "special_tokens": {
                     "bos_token": "<|endoftext|>",
@@ -69,6 +73,7 @@ class TestFalcon(unittest.TestCase):
         train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
         assert (Path(temp_dir) / "adapter_model.bin").exists() @ with_temp_dir
 
+    @with_temp_dir
     def test_lora_added_vocab(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
