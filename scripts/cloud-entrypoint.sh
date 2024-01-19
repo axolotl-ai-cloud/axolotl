@@ -5,8 +5,7 @@ echo "Exporting environment variables..."
 printenv | grep -E '^RUNPOD_|^PATH=|^_=' | sed 's/^\(.*\)=\(.*\)$/export \1="\2"/' >> /etc/rp_environment
 echo 'source /etc/rp_environment' >> ~/.bashrc
 
-if [[ $PUBLIC_KEY ]]
-then
+if [[ $PUBLIC_KEY ]]; then
     # runpod
     mkdir -p ~/.ssh
     chmod 700 ~/.ssh
@@ -14,8 +13,7 @@ then
     chmod 700 -R ~/.ssh
     # Start the SSH service in the background
     service ssh start
-elif [[ $SSH_KEY ]]
-then
+elif [ -n "$SSH_KEY" ]; then
     # latitude.sh
     mkdir -p ~/.ssh
     chmod 700 ~/.ssh
