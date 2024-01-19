@@ -40,7 +40,10 @@ class TestFalconPatched(unittest.TestCase):
                 "lora_dropout": 0.1,
                 "lora_target_linear": True,
                 "val_set_size": 0.1,
-                "special_tokens": {},
+                "special_tokens": {
+                    "bos_token": "<|endoftext|>",
+                    "pad_token": "<|endoftext|>",
+                },
                 "datasets": [
                     {
                         "path": "mhenrichsen/alpaca_2k_test",
@@ -77,7 +80,10 @@ class TestFalconPatched(unittest.TestCase):
                 "sample_packing": True,
                 "sequence_len": 2048,
                 "val_set_size": 0.1,
-                "special_tokens": {},
+                "special_tokens": {
+                    "bos_token": "<|endoftext|>",
+                    "pad_token": "<|endoftext|>",
+                },
                 "datasets": [
                     {
                         "path": "mhenrichsen/alpaca_2k_test",
