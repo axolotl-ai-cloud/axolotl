@@ -71,10 +71,7 @@ def prepare_dataset(cfg, tokenizer):
     else:
         path = cfg.pretraining_dataset
         name = None
-        if isinstance(cfg.pretraining_dataset, dict):
-            path = cfg.pretraining_dataset["path"]
-            name = cfg.pretraining_dataset["name"]
-        elif isinstance(cfg.pretraining_dataset, list) and isinstance(
+        if isinstance(cfg.pretraining_dataset, list) and isinstance(
             cfg.pretraining_dataset[0], dict
         ):
             path = cfg.pretraining_dataset[0]["path"]

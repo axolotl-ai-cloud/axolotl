@@ -155,6 +155,9 @@ def normalize_config(cfg):
     if isinstance(cfg.learning_rate, str):
         cfg.learning_rate = float(cfg.learning_rate)
 
+    if isinstance(cfg.pretraining_dataset, dict):
+        cfg.pretraining_dataset = [cfg.pretraining_dataset]
+
     log_gpu_memory_usage(LOG, "baseline", cfg.device)
 
 
