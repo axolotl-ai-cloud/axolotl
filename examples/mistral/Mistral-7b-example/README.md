@@ -11,8 +11,5 @@ Hardware Utilized: For reference, the fine-tuning in this guide was performed us
 To upload your fine-tuned model to Hugging Face, include the following files:
 ![Screenshot 2024-01-19 213932](https://github.com/OpenAccess-AI-Collective/axolotl/assets/138583191/d660eb84-2d76-46a1-9846-cf0aeb3006d9)
 
-## Get in Touch
-For further information, queries, or collaboration opportunities, feel free to contact me:
 
-Tilemachos Chatzipapas
-Email: _t.chatzipapas@gmail.com_
+By Tilemachos Chatzipapas t.chatzipapas@gmail.com
