@@ -81,6 +81,15 @@ def trainer_weighted_loss(model_output, labels, shift_labels=True):
     return weighted_cross_entropy(logits, labels, weights)
 
 
+@contextmanager
+def disable_datasets_caching():
+    try:
+        set_caching_enabled(False)
+        yield
+    finally:
+        set_caching_enabled(True)
+
+
 def add_position_ids(sample):
     sample_len = len(sample["input_ids"])
     sample["position_ids"] = torch.arange(len(sample["input_ids"]))
@@ -95,15 +104,6 @@ def add_length(sample):
 
 def drop_long_seq(sample, sequence_len=2048):
     return len(sample["input_ids"]) <= sequence_len and len(sample["input_ids"]) > 0
-
-
-@contextmanager
-def disable_datasets_caching():
-    try:
-        set_caching_enabled(False)
-        yield
-    finally:
-        set_caching_enabled(True)
 
 
 def process_datasets_for_packing(cfg, train_dataset, eval_dataset, tokenizer):
@@ -227,8 +227,7 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                 sampler=RandomSampler(train_dataset),
                 batch_size=cfg.micro_batch_size,
                 drop_last=True,
-                batch_max_len=cfg.micro_batch_size
-                * (cfg.max_packed_sequence_len or cfg.sequence_len),
+                batch_max_len=cfg.micro_batch_size * cfg.sequence_len,
                 lengths=get_dataset_lengths(train_dataset),
             )
 

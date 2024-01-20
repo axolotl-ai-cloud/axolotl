@@ -19,7 +19,7 @@ from torch.utils.data import RandomSampler
 from transformers import PreTrainedTokenizerBase
 
 from axolotl.common.const import DEFAULT_DATASET_PREPARED_PATH
-from axolotl.datasets import ConstantLengthDataset, TokenizedPromptDataset
+from axolotl.datasets import TokenizedPromptDataset
 from axolotl.prompt_strategies import load
 from axolotl.prompt_tokenizers import (
     AlpacaMultipleChoicePromptTokenizingStrategy,
@@ -71,9 +71,11 @@ def prepare_dataset(cfg, tokenizer):
     else:
         path = cfg.pretraining_dataset
         name = None
-        if isinstance(cfg.pretraining_dataset, dict):
-            path = cfg.pretraining_dataset["path"]
-            name = cfg.pretraining_dataset["name"]
+        if isinstance(cfg.pretraining_dataset, list) and isinstance(
+            cfg.pretraining_dataset[0], dict
+        ):
+            path = cfg.pretraining_dataset[0]["path"]
+            name = cfg.pretraining_dataset[0]["name"]
 
         train_dataset = load_pretraining_dataset(
             path,
@@ -87,11 +89,6 @@ def prepare_dataset(cfg, tokenizer):
         train_dataset = train_dataset.with_format("torch")
         eval_dataset = None
         return train_dataset, eval_dataset, cfg.max_steps, prompters
-
-    with zero_first(is_main_process()):
-        train_dataset, eval_dataset = process_datasets_for_packing(
-            cfg, train_dataset, eval_dataset, tokenizer
-        )
 
     if eval_dataset and cfg.sample_packing and cfg.eval_sample_packing is not False:
         total_eval_steps = calculate_total_num_steps(cfg, eval_dataset, update=False)
@@ -163,6 +160,10 @@ def load_tokenized_prepared_datasets(
     else:
         LOG.info(f"Unable to find prepared dataset in {prepared_ds_path}")
         LOG.info("Loading raw datasets...")
+        if not cfg.is_preprocess:
+            LOG.warning(
+                "Processing datasets during training can lead to VRAM instability. Please pre-process your dataset"
+            )
 
         if cfg.seed:
             seed = cfg.seed
@@ -382,6 +383,9 @@ def load_tokenized_prepared_datasets(
         if len(datasets) > 1:
             LOG.info("shuffle merged datasets")
             dataset = dataset.shuffle(seed=seed)
+
+        dataset, _ = process_datasets_for_packing(cfg, dataset, None, tokenizer)
+
         if cfg.local_rank == 0:
             LOG.info(f"Saving merged prepared dataset to disk... {prepared_ds_path}")
             dataset.save_to_disk(prepared_ds_path)
@@ -419,119 +423,9 @@ def load_prepare_datasets(
     cfg,
     default_dataset_prepared_path,
 ) -> Tuple[Dataset, Dataset, List[Prompter]]:
-    max_packed_sequence_len = (
-        cfg.max_packed_sequence_len if cfg.max_packed_sequence_len else cfg.sequence_len
+    dataset, prompters = load_tokenized_prepared_datasets(
+        tokenizer, cfg, default_dataset_prepared_path
     )
-    max_packed_sequence_len = min(
-        max_packed_sequence_len, cfg.sequence_len
-    )  # make sure we don't accidentally set it larger than sequence_len
-
-    tokenizer_name = tokenizer.__class__.__name__
-    prompters: List[Prompter] = []
-    if cfg.max_packed_sequence_len is not None:
-        # see if we can go ahead and load the stacked dataset
-        seed = f"@{str(cfg.seed)}" if cfg.seed else ""
-        ds_hash = str(
-            md5(
-                (
-                    str(cfg.sequence_len)
-                    + "@"
-                    + str(max_packed_sequence_len)
-                    + seed
-                    + "|".join(
-                        sorted([f"{d.path}:{d.type}:{d.shards}" for d in cfg.datasets])
-                    )
-                    + "|"
-                    + tokenizer_name
-                )
-            )
-        )
-        prepared_ds_path = (
-            Path(cfg.dataset_prepared_path) / ds_hash
-            if cfg.dataset_prepared_path
-            else Path(default_dataset_prepared_path) / ds_hash
-        )
-
-        dataset = None
-        use_auth_token = cfg.hf_use_auth_token
-        try:
-            if cfg.push_dataset_to_hub:
-                LOG.info(
-                    f"Checking for packed prepared dataset from hub... {cfg.push_dataset_to_hub}/{ds_hash}"
-                )
-                dataset = load_dataset(
-                    f"{cfg.push_dataset_to_hub}/{ds_hash}",
-                    token=use_auth_token,
-                )
-                dataset = dataset["train"]
-        except Exception:  # pylint: disable=broad-except # nosec
-            pass
-
-        if dataset:
-            ...
-        elif (
-            cfg.dataset_prepared_path
-            and any(prepared_ds_path.glob("*"))
-            and not cfg.is_preprocess
-        ):
-            LOG.info(
-                f"Loading prepared packed dataset from disk at {prepared_ds_path}..."
-            )
-            dataset = load_from_disk(str(prepared_ds_path))
-            LOG.info("Prepared packed dataset loaded from disk...")
-            if cfg.push_dataset_to_hub:
-                LOG.info(
-                    f"Saving packed prepared dataset with push_to_hub... {cfg.push_dataset_to_hub}/{ds_hash}"
-                )
-                dataset.push_to_hub(
-                    f"{cfg.push_dataset_to_hub}/{ds_hash}", private=True
-                )
-        else:
-            dataset, prompters = load_tokenized_prepared_datasets(
-                tokenizer, cfg, default_dataset_prepared_path
-            )
-
-            if cfg.seed:
-                dataset = dataset.shuffle(seed=cfg.seed)
-
-            constant_len_dataset = ConstantLengthDataset(
-                tokenizer,
-                [dataset],
-                seq_length=max_packed_sequence_len,
-            )
-            LOG.info(f"packing master dataset to len: {cfg.max_packed_sequence_len}")
-            dataset = Dataset.from_list(list(constant_len_dataset))
-
-            # filter out bad data
-            # TODO convert to dataset.filter(...)
-            dataset = Dataset.from_list(
-                [
-                    d
-                    for d in dataset
-                    if len(d["input_ids"]) <= cfg.sequence_len
-                    and len(d["input_ids"]) > 0
-                    and len(d["input_ids"]) == len(d["attention_mask"])
-                    and len(d["input_ids"]) == len(d["labels"])
-                ]
-            )
-
-            if cfg.local_rank == 0:
-                LOG.info(
-                    f"Saving packed prepared dataset to disk... {prepared_ds_path}"
-                )
-                dataset.save_to_disk(prepared_ds_path)
-                if cfg.push_dataset_to_hub:
-                    LOG.info(
-                        f"Saving packed prepared dataset with push_to_hub... {cfg.push_dataset_to_hub}/{ds_hash}"
-                    )
-                    dataset.push_to_hub(
-                        f"{cfg.push_dataset_to_hub}/{ds_hash}",
-                        private=True,
-                    )
-    else:
-        dataset, prompters = load_tokenized_prepared_datasets(
-            tokenizer, cfg, default_dataset_prepared_path
-        )
 
     if cfg.dataset_shard_num and cfg.dataset_shard_idx is not None:
         LOG.info(
@@ -877,6 +771,7 @@ def load_pretraining_dataset(path, tokenizer, cfg, name=None, max_tokens=2048, s
     dataset = dataset.map(
         encode,
         batched=True,
+        batch_size=10_000,
         input_columns="text",
         # remove all the existing columns after mapping since they end up having
         # a different length than the encoded/tokenized column

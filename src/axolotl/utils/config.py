@@ -157,6 +157,9 @@ def normalize_config(cfg):
     if isinstance(cfg.learning_rate, str):
         cfg.learning_rate = float(cfg.learning_rate)
 
+    if isinstance(cfg.pretraining_dataset, dict):
+        cfg.pretraining_dataset = [cfg.pretraining_dataset]
+
     log_gpu_memory_usage(LOG, "baseline", cfg.device)
 
 
@@ -192,18 +195,8 @@ def validate_config(cfg):
             raise ValueError(
                 "bf16 requested, but AMP is not supported on this GPU. Requires Ampere series or above."
             )
-    if cfg.max_packed_sequence_len and cfg.sample_packing:
-        raise ValueError(
-            "please set only one of max_packed_sequence_len (deprecated soon) or sample_packing"
-        )
     if cfg.max_packed_sequence_len:
-        LOG.warning(
-            str(
-                PendingDeprecationWarning(
-                    "max_packed_sequence_len will be deprecated in favor of sample_packing"
-                )
-            )
-        )
+        raise DeprecationWarning("`max_packed_sequence_len` is no longer supported")
 
     if cfg.sample_packing and not cfg.pad_to_sequence_len:
         LOG.warning(

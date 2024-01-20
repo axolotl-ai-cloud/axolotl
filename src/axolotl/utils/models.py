@@ -329,11 +329,7 @@ def load_model(
         LOG.info("patching mixtral with flash attention")
         replace_mixtral_attn_with_multipack_flash_attn()
 
-    if (
-        cfg.is_llama_derived_model
-        and (cfg.max_packed_sequence_len or cfg.sample_packing)
-        and not inference
-    ):
+    if cfg.is_llama_derived_model and cfg.sample_packing and not inference:
         from axolotl.monkeypatch.llama_expand_mask import hijack_expand_mask
 
         LOG.info("patching _expand_mask")

@@ -642,10 +642,6 @@ sequence_len: 2048
 # Pad inputs so each step uses constant sized buffers
 # This will reduce memory fragmentation and may prevent OOMs, by re-using memory more efficiently
 pad_to_sequence_len:
-# Max sequence length to concatenate training samples together up to
-# Inspired by StackLLaMA. see https://huggingface.co/blog/stackllama#supervised-fine-tuning
-# FutureWarning: This will soon be DEPRECATED
-max_packed_sequence_len: 1024
 # Use efficient multi-packing with block diagonal attention and per sequence position_ids. Recommend set to 'true'
 sample_packing:
 # Set to 'false' if getting errors during eval with sample_packing on.
