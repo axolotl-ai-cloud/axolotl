@@ -324,6 +324,18 @@ class ValidationTest(BaseValidation):
 
         validate_config(cfg)
 
+    def test_deprecated_packing(self):
+        cfg = DictDefault(
+            {
+                "max_packed_sequence_len": 1024,
+            }
+        )
+        with pytest.raises(
+            DeprecationWarning,
+            match=r"`max_packed_sequence_len` is no longer supported",
+        ):
+            validate_config(cfg)
+
     def test_packing(self):
         cfg = DictDefault(
             {

@@ -186,6 +186,8 @@ def validate_config(cfg):
             raise ValueError(
                 "bf16 requested, but AMP is not supported on this GPU. Requires Ampere series or above."
             )
+    if cfg.max_packed_sequence_len:
+        raise DeprecationWarning("`max_packed_sequence_len` is no longer supported")
 
     if cfg.sample_packing and not cfg.pad_to_sequence_len:
         LOG.warning(
