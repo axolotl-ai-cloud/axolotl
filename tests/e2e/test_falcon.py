@@ -71,7 +71,7 @@ class TestFalcon(unittest.TestCase):
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
         train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-        assert (Path(temp_dir) / "adapter_model.bin").exists() @ with_temp_dir
+        assert (Path(temp_dir) / "adapter_model.bin").exists()
 
     @with_temp_dir
     def test_lora_added_vocab(self, temp_dir):
