@@ -160,6 +160,10 @@ def load_tokenized_prepared_datasets(
     else:
         LOG.info(f"Unable to find prepared dataset in {prepared_ds_path}")
         LOG.info("Loading raw datasets...")
+        if not cfg.is_preprocess:
+            LOG.warning(
+                "Processing datasets during training can lead to VRAM instability. Please pre-process your dataset"
+            )
 
         if cfg.seed:
             seed = cfg.seed

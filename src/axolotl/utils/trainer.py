@@ -107,10 +107,6 @@ def drop_long_seq(sample, sequence_len=2048):
 
 
 def process_datasets_for_packing(cfg, train_dataset, eval_dataset, tokenizer):
-    if cfg.is_preprocess:
-        LOG.warning(
-            "Processing datasets during training can lead to VRAM instability. Please pre-process your dataset"
-        )
     drop_long = partial(drop_long_seq, sequence_len=cfg.sequence_len)
     with zero_first(is_main_process()):
         if cfg.group_by_length:
