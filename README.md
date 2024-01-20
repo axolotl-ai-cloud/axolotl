@@ -618,6 +618,9 @@ push_dataset_to_hub: # repo path
 # The maximum number of processes to use while preprocessing your input dataset. This defaults to `os.cpu_count()`
 # if not set.
 dataset_processes: # defaults to os.cpu_count() if not set
+# Keep dataset in memory while preprocessing
+# Only needed if cached dataset is taking too much storage
+dataset_keep_in_memory:
 # push checkpoints to hub
 hub_model_id: # repo path to push finetuned model
 # how to push checkpoints to hub

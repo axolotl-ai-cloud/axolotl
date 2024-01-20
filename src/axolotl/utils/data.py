@@ -588,6 +588,11 @@ def get_dataset_wrapper(
     dataset_wrapper = None
     dataset_prompter = None
 
+    ds_kwargs = {
+        "process_count": cfg.dataset_processes,
+        "keep_in_memory": cfg.dataset_keep_in_memory is True,
+    }
+
     if (
         "input_ids" in dataset.features
         and "attention_mask" in dataset.features
@@ -604,14 +609,14 @@ def get_dataset_wrapper(
         dataset_wrapper = TokenizedPromptDataset(
             ds_strategy,
             dataset,
-            process_count=cfg.dataset_processes,
+            **ds_kwargs,
         )
     elif ds_strategy := load(config_dataset.type, tokenizer, cfg, config_dataset):
         dataset_prompter = UnsupportedPrompter()
         dataset_wrapper = TokenizedPromptDataset(
             ds_strategy,
             dataset,
-            process_count=cfg.dataset_processes,
+            **ds_kwargs,
         )
     elif d_base_type == "alpaca":
         dataset_prompter = AlpacaPrompter(d_prompt_style)
@@ -624,7 +629,7 @@ def get_dataset_wrapper(
         ds_wrapper = TokenizedPromptDataset(
             ds_strategy,
             dataset,
-            process_count=cfg.dataset_processes,
+            **ds_kwargs,
         )
         dataset_wrapper = ds_wrapper
     elif d_base_type == "explainchoice":
@@ -638,7 +643,7 @@ def get_dataset_wrapper(
         ds_wrapper = TokenizedPromptDataset(
             ds_strategy,
             dataset,
-            process_count=cfg.dataset_processes,
+            **ds_kwargs,
         )
         dataset_wrapper = ds_wrapper
     elif d_base_type == "concisechoice":
@@ -652,7 +657,7 @@ def get_dataset_wrapper(
         ds_wrapper = TokenizedPromptDataset(
             ds_strategy,
             dataset,
-            process_count=cfg.dataset_processes,
+            **ds_kwargs,
         )
         dataset_wrapper = ds_wrapper
     elif d_base_type == "summarizetldr":
@@ -666,7 +671,7 @@ def get_dataset_wrapper(
         ds_wrapper = TokenizedPromptDataset(
             ds_strategy,
             dataset,
-            process_count=cfg.dataset_processes,
+            **ds_kwargs,
         )
         dataset_wrapper = ds_wrapper
     elif d_base_type == "jeopardy":
@@ -680,7 +685,7 @@ def get_dataset_wrapper(
         ds_wrapper = TokenizedPromptDataset(
             ds_strategy,
             dataset,
-            process_count=cfg.dataset_processes,
+            **ds_kwargs,
         )
         dataset_wrapper = ds_wrapper
     elif d_base_type == "oasst":
@@ -694,7 +699,7 @@ def get_dataset_wrapper(
         ds_wrapper = TokenizedPromptDataset(
             ds_strategy,
             dataset,
-            process_count=cfg.dataset_processes,
+            **ds_kwargs,
         )
         dataset_wrapper = ds_wrapper
     elif d_base_type == "gpteacher":
@@ -708,7 +713,7 @@ def get_dataset_wrapper(
         ds_wrapper = TokenizedPromptDataset(
             ds_strategy,
             dataset,
-            process_count=cfg.dataset_processes,
+            **ds_kwargs,
         )
         dataset_wrapper = ds_wrapper
     elif d_base_type == "reflection":
@@ -722,7 +727,7 @@ def get_dataset_wrapper(
         ds_wrapper = TokenizedPromptDataset(
             ds_strategy,
             dataset,
-            process_count=cfg.dataset_processes,
+            **ds_kwargs,
         )
         dataset_wrapper = ds_wrapper
     else:
