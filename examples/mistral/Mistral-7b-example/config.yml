@@ -9,11 +9,11 @@ load_in_4bit: false
 strict: false
 
 datasets:
-  - path: example/dataset.json #Path to json dataset file in huggingface
+  - path: tilemachos/Demo-Dataset #Path to json dataset file in huggingface
     #for type,conversation arguments read axolotl readme and pick what is suited for your project, I wanted a chatbot and put sharegpt and chatml
     type: sharegpt 
     conversation: chatml
-dataset_prepared_path: example/dataset.json #Path to json dataset file in huggingface
+dataset_prepared_path: tilemachos/Demo-Dataset #Path to json dataset file in huggingface
 val_set_size: 0.05
 output_dir: ./out
 
