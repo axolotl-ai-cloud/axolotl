@@ -124,6 +124,12 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset, tokenizer):
             if eval_dataset:
                 eval_dataset = eval_dataset.remove_columns("attention_mask")
 
+        if cfg.model_config_type == "falcon":
+            LOG.info("dropping token_type_ids column")
+            train_dataset = train_dataset.remove_columns("token_type_ids")
+            if eval_dataset:
+                eval_dataset = eval_dataset.remove_columns("token_type_ids")
+
         train_dataset = train_dataset.filter(
             drop_long,
             num_proc=cfg.dataset_processes,

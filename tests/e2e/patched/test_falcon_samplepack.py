@@ -39,6 +39,7 @@ class TestFalconPatched(unittest.TestCase):
                 "lora_alpha": 32,
                 "lora_dropout": 0.1,
                 "lora_target_linear": True,
+                "lora_modules_to_save": ["word_embeddings", "lm_head"],
                 "val_set_size": 0.1,
                 "special_tokens": {
                     "bos_token": "<|endoftext|>",
