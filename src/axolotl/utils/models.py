@@ -76,10 +76,15 @@ def load_model_config(cfg):
     if not model_config_name and cfg.tokenizer_config:
         model_config_name = cfg.tokenizer_config
     trust_remote_code = cfg.trust_remote_code is True
+    config_kwargs = {}
+    if cfg.model_revision:
+        config_kwargs["revision"] = cfg.model_revision
 
     try:
         model_config = AutoConfig.from_pretrained(
-            model_config_name, trust_remote_code=trust_remote_code
+            model_config_name,
+            trust_remote_code=trust_remote_code,
+            **config_kwargs,
         )
     except ValueError as err:
         if "mamba" in model_config_name:
