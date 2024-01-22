@@ -12,7 +12,7 @@ EXPOSE 22
 
 COPY scripts/cloud-entrypoint.sh /root/cloud-entrypoint.sh
 
-RUN pip install jupyterlab notebook && \
+RUN pip install jupyterlab notebook ipywidgets && \
     jupyter lab clean
 RUN apt install --yes --no-install-recommends openssh-server tmux && \
     mkdir -p ~/.ssh && \

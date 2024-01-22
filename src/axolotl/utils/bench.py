@@ -20,7 +20,8 @@ def check_cuda_device(default_value):
             device = kwargs.get("device", args[0] if args else None)
 
             if (
-                not torch.cuda.is_available()
+                device is None
+                or not torch.cuda.is_available()
                 or device == "auto"
                 or torch.device(device).type == "cpu"
             ):

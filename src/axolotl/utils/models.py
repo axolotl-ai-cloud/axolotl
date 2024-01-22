@@ -2,7 +2,7 @@
 import logging
 import math
 import os
-from typing import Any, Optional, Tuple, Union  # noqa: F401
+from typing import Any, Dict, Optional, Tuple, Union  # noqa: F401
 
 import addict
 import bitsandbytes as bnb
@@ -348,7 +348,11 @@ def load_model(
         LOG.info("patching _expand_mask")
         hijack_expand_mask()
 
-    model_kwargs = {}
+    model_kwargs: Dict[str, Any] = {}
+
+    if cfg.model_kwargs:
+        for key, val in model_kwargs.items():
+            model_kwargs[key] = val
 
     max_memory = cfg.max_memory
     device_map = cfg.device_map

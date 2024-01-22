@@ -746,9 +746,10 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         training_arguments_kwargs[
             "per_device_train_batch_size"
         ] = self.cfg.micro_batch_size
-        training_arguments_kwargs[
-            "per_device_eval_batch_size"
-        ] = self.cfg.eval_batch_size
+        if self.cfg.eval_batch_size:
+            training_arguments_kwargs[
+                "per_device_eval_batch_size"
+            ] = self.cfg.eval_batch_size
         training_arguments_kwargs[
             "gradient_accumulation_steps"
         ] = self.cfg.gradient_accumulation_steps
