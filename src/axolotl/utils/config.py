@@ -142,17 +142,12 @@ def normalize_config(cfg):
     )
 
     cfg.is_qwen_derived_model = (
-        (
-            hasattr(model_config, "model_type")
-            and model_config.model_type
-            in [
-                "qwen",
-            ]
-        )
-        or cfg.is_qwen_derived_model
-        or "qwen" in cfg.base_model.lower()
-        or (cfg.model_type and "qwen" in cfg.model_type.lower())
-    )
+        hasattr(model_config, "model_type")
+        and model_config.model_type
+        in [
+            "qwen",
+        ]
+    ) or cfg.is_qwen_derived_model
 
     if isinstance(cfg.learning_rate, str):
         cfg.learning_rate = float(cfg.learning_rate)
