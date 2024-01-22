@@ -435,6 +435,7 @@ def load_model(
                 or cfg.is_falcon_derived_model
                 or cfg.is_mistral_derived_model
                 or model_config.model_type == "mixtral"
+                or model_config.model_type == "qwen2"
             ):
                 model_kwargs["attn_implementation"] = "flash_attention_2"
                 model_config._attn_implementation = (  # pylint: disable=protected-access
