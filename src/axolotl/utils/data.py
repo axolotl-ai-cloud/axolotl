@@ -121,7 +121,7 @@ def load_tokenized_prepared_datasets(
                 + str(
                     int(
                         -1
-                        if cfg.eval_sample_packing is None
+                        if (cfg.eval_sample_packing is None)
                         else cfg.eval_sample_packing
                     )
                 )
