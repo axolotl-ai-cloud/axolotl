@@ -116,6 +116,18 @@ def load_tokenized_prepared_datasets(
             (
                 str(cfg.sequence_len)
                 + "@"
+                + str(int(cfg.sample_packing))
+                + "@"
+                + str(
+                    int(
+                        -1
+                        if cfg.eval_sample_packing is None
+                        else cfg.eval_sample_packing
+                    )
+                )
+                + "@"
+                + str(int(cfg.group_by_length))
+                + "@"
                 + "|".join(
                     sorted(
                         [
