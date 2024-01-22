@@ -334,6 +334,14 @@ def load_model(
         LOG.info("patching mixtral with flash attention")
         replace_mixtral_attn_with_multipack_flash_attn()
 
+    if cfg.model_config_type == "qwen2" and cfg.flash_attention and cfg.sample_packing:
+        from axolotl.monkeypatch.qwen2 import (
+            replace_qwen2_attn_with_multipack_flash_attn,
+        )
+
+        LOG.info("patching qwen2 with flash attention")
+        replace_qwen2_attn_with_multipack_flash_attn()
+
     if cfg.is_llama_derived_model and cfg.sample_packing and not inference:
         from axolotl.monkeypatch.llama_expand_mask import hijack_expand_mask
 
@@ -426,14 +434,14 @@ def load_model(
                 cfg.is_llama_derived_model
                 or cfg.is_falcon_derived_model
                 or cfg.is_mistral_derived_model
-                or model_config.model_type == "mixtral"
+                or model_config.model_type in ["mixtral", "qwen2"]
             ):
                 model_kwargs["attn_implementation"] = "flash_attention_2"
                 model_config._attn_implementation = (  # pylint: disable=protected-access
                     "flash_attention_2"
                 )
         else:
-            if model_config.model_type == "mixtral":
+            if model_config.model_type in ["mixtral", "qwen2"]:
                 model_kwargs["attn_implementation"] = "flash_attention_2"
                 model_config._attn_implementation = (  # pylint: disable=protected-access
                     "flash_attention_2"
