@@ -28,6 +28,7 @@ from axolotl.utils.callbacks import (
     EvalFirstStepCallback,
     GPUStatsCallback,
     LossWatchDogCallback,
+    SaveAxolotlConfigtoMlflowCallback,
     SaveAxolotlConfigtoWandBCallback,
     SaveBetterTransformerModelCallback,
     bench_eval_callback_factory,
@@ -542,6 +543,10 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         if self.cfg.use_wandb:
             callbacks.append(
                 SaveAxolotlConfigtoWandBCallback(self.cfg.axolotl_config_path)
+            )
+        if self.cfg.use_mlflow:
+            callbacks.append(
+                SaveAxolotlConfigtoMlflowCallback(self.cfg.axolotl_config_path)
             )
 
         if self.cfg.loss_watchdog_threshold is not None:
