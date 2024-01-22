@@ -90,6 +90,11 @@ def prepare_dataset(cfg, tokenizer):
         eval_dataset = None
         return train_dataset, eval_dataset, cfg.max_steps, prompters
 
+    with zero_first(is_main_process()):
+        train_dataset, eval_dataset = process_datasets_for_packing(
+            cfg, train_dataset, eval_dataset, tokenizer
+        )
+
     if eval_dataset and cfg.sample_packing and cfg.eval_sample_packing is not False:
         total_eval_steps = calculate_total_num_steps(cfg, eval_dataset, update=False)
         if total_eval_steps == 0:
@@ -162,7 +167,7 @@ def load_tokenized_prepared_datasets(
         LOG.info("Loading raw datasets...")
         if not cfg.is_preprocess:
             LOG.warning(
-                "Processing datasets during training can lead to VRAM instability. Please pre-process your dataset"
+                "Processing datasets during training can lead to VRAM instability. Please pre-process your dataset."
             )
 
         if cfg.seed:
@@ -383,8 +388,6 @@ def load_tokenized_prepared_datasets(
         if len(datasets) > 1:
             LOG.info("shuffle merged datasets")
             dataset = dataset.shuffle(seed=seed)
-
-        dataset, _ = process_datasets_for_packing(cfg, dataset, None, tokenizer)
 
         if cfg.local_rank == 0:
             LOG.info(f"Saving merged prepared dataset to disk... {prepared_ds_path}")
