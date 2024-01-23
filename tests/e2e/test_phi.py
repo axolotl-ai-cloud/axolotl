@@ -30,7 +30,6 @@ class TestPhi(unittest.TestCase):
         cfg = DictDefault(
             {
                 "base_model": "microsoft/phi-1_5",
-                "trust_remote_code": True,
                 "model_type": "AutoModelForCausalLM",
                 "tokenizer_type": "AutoTokenizer",
                 "sequence_len": 2048,
@@ -76,7 +75,6 @@ class TestPhi(unittest.TestCase):
         cfg = DictDefault(
             {
                 "base_model": "microsoft/phi-1_5",
-                "trust_remote_code": True,
                 "model_type": "AutoModelForCausalLM",
                 "tokenizer_type": "AutoTokenizer",
                 "sequence_len": 2048,

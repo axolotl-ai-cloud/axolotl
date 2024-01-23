@@ -30,7 +30,6 @@ class TestPhiMultipack(unittest.TestCase):
         cfg = DictDefault(
             {
                 "base_model": "microsoft/phi-1_5",
-                "trust_remote_code": True,
                 "model_type": "PhiForCausalLM",
                 "tokenizer_type": "AutoTokenizer",
                 "sequence_len": 2048,
@@ -78,7 +77,6 @@ class TestPhiMultipack(unittest.TestCase):
         cfg = DictDefault(
             {
                 "base_model": "microsoft/phi-1_5",
-                "trust_remote_code": True,
                 "model_type": "PhiForCausalLM",
                 "tokenizer_type": "AutoTokenizer",
                 "sequence_len": 2048,
