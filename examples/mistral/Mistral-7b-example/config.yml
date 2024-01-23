@@ -11,7 +11,7 @@ strict: false
 datasets:
   - path: tilemachos/Demo-Dataset #Path to json dataset file in huggingface
     #for type,conversation arguments read axolotl readme and pick what is suited for your project, I wanted a chatbot and put sharegpt and chatml
-    type: sharegpt 
+    type: sharegpt
     conversation: chatml
 dataset_prepared_path: tilemachos/Demo-Dataset #Path to json dataset file in huggingface
 val_set_size: 0.05
@@ -25,7 +25,7 @@ lora_dropout: 0.05
 lora_target_modules:
   - q_proj
   - v_proj
-  
+
 sequence_len: 512
 sample_packing: false
 pad_to_sequence_len: true
