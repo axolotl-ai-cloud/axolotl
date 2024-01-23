@@ -56,6 +56,9 @@ class TestDPOLlamaLora(unittest.TestCase):
                 "lr_scheduler": "cosine",
                 "max_steps": 20,
                 "save_steps": 10,
+                "warmup_steps": 5,
+                "gradient_checkpointing": True,
+                "gradient_checkpointing_kwargs": {"use_reentrant": True},
             }
         )
         normalize_config(cfg)
@@ -97,6 +100,9 @@ class TestDPOLlamaLora(unittest.TestCase):
                 "lr_scheduler": "cosine",
                 "max_steps": 20,
                 "save_steps": 10,
+                "warmup_steps": 5,
+                "gradient_checkpointing": True,
+                "gradient_checkpointing_kwargs": {"use_reentrant": True},
             }
         )
         normalize_config(cfg)
@@ -138,6 +144,9 @@ class TestDPOLlamaLora(unittest.TestCase):
                 "lr_scheduler": "cosine",
                 "max_steps": 20,
                 "save_steps": 10,
+                "warmup_steps": 5,
+                "gradient_checkpointing": True,
+                "gradient_checkpointing_kwargs": {"use_reentrant": True},
             }
         )
         normalize_config(cfg)
