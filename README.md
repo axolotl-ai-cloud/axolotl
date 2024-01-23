@@ -1,3 +1,6 @@
+## What's New
+- Added `Mistral-7b-example`: A comprehensive example for fine-tuning Mistral-7b model. [Check it out here](https://github.com/Tilemachoc/axolotl/tree/mistral-7b-example/examples/mistral/Mistral-7b-example).
+
 # Axolotl
 
 Axolotl is a tool designed to streamline the fine-tuning of various AI models, offering support for multiple configurations and architectures.
