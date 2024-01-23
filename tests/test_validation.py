@@ -742,11 +742,11 @@ class ValidationCheckModelConfig(BaseValidation):
 
         check_model_config(cfg, model_config)
 
-    def test_phi2_add_tokens_adapter(self):
+    def test_phi_add_tokens_adapter(self):
         cfg = DictDefault(
             {"adapter": "qlora", "load_in_4bit": True, "tokens": ["<|imstart|>"]}
         )
-        model_config = DictDefault({"model_type": "phi-msft"})
+        model_config = DictDefault({"model_type": "phi"})
 
         with pytest.raises(
             ValueError,
