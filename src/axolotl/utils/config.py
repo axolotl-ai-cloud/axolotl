@@ -364,20 +364,6 @@ def validate_config(cfg):
                 "`early_stopping_patience` requires that eval_steps should evenly divide save_steps."
             )
 
-    if cfg.model_type == "MixFormerSequentialForCausalLM" and cfg.adapter is not None:
-        LOG.warning("Use AutoModelForCausalLM for phi/MixFormer models with qLoRA")
-
-    if cfg.model_config_type == "mixformer-sequential":
-        if cfg.sample_packing:
-            if cfg.adapter is not None:
-                LOG.warning(
-                    "phi/MixFormer models are not currently compatible with LoRA and sample_packing"
-                )
-            if cfg.model_type == "AutoModelForCausalLM":
-                raise ValueError(
-                    "`model_type: MixFormerSequentialForCausalLM` required for sample_packing"
-                )
-
     if cfg.datasets:
         for idx, ds_cfg in enumerate(cfg.datasets):
             if not ds_cfg.type:

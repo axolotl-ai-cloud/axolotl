@@ -16,9 +16,9 @@ dataset_prepared_path:
 val_set_size: 0.05
 output_dir: ./phi-sft-out
 
-sequence_len: 1024
-sample_packing: false  # not CURRENTLY compatible with LoRAs
-pad_to_sequence_len:
+sequence_len: 2048
+sample_packing: true
+pad_to_sequence_len: true
 
 adapter: qlora
 lora_model_dir:
@@ -35,7 +35,7 @@ wandb_name:
 wandb_log_model:
 
 gradient_accumulation_steps: 1
-micro_batch_size: 1
+micro_batch_size: 2
 num_epochs: 4
 optimizer: adamw_torch
 adam_beta2: 0.95
@@ -50,13 +50,13 @@ bf16: auto
 fp16:
 tf32: true
 
-gradient_checkpointing:
+gradient_checkpointing: true
 early_stopping_patience:
 resume_from_checkpoint:
 local_rank:
 logging_steps: 1
 xformers_attention:
-flash_attention:
+flash_attention: true
 
 warmup_steps: 100
 evals_per_epoch: 4
@@ -68,7 +68,4 @@ fsdp:
 fsdp_config:
 resize_token_embeddings_to_32x: true
 special_tokens:
-  bos_token: "<|endoftext|>"
-  eos_token: "<|endoftext|>"
-  unk_token: "<|endoftext|>"
   pad_token: "<|endoftext|>"
