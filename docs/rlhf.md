@@ -19,14 +19,14 @@ The various RL training methods are implemented in trl and wrapped via axolotl. 
 
 #### DPO
 ```yaml
-rl: true
+rl: dpo
 datasets:
   - path: Intel/orca_dpo_pairs
     split: train
-    type: intel_apply_chatml
+    type: chatml.intel
   - path: argilla/ultrafeedback-binarized-preferences
     split: train
-    type: argilla_apply_chatml
+    type: chatml.argilla
 ```
 
 #### IPO
