@@ -930,7 +930,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             ]
         ]
         if use_batch_sampler_collator:
-            if self.cfg.model_config_type in ["mixtral", "qwen2"]:
+            if self.cfg.model_config_type in ["mixtral", "qwen2", "falcon", "phi"]:
                 collator = V2BatchSamplerDataCollatorForSeq2Seq
             else:
                 collator = BatchSamplerDataCollatorForSeq2Seq

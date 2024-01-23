@@ -29,7 +29,7 @@ class TestPhi(unittest.TestCase):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "microsoft/phi-2",
+                "base_model": "microsoft/phi-1_5",
                 "trust_remote_code": True,
                 "model_type": "AutoModelForCausalLM",
                 "tokenizer_type": "AutoTokenizer",
