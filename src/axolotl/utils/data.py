@@ -888,12 +888,13 @@ def load_prepare_dpo_datasets(cfg):
 
         return concatenate_datasets(split_datasets)
 
-    train_dataset = load_split(cfg.datasets, cfg)
+    with zero_first(is_main_process()):
+        train_dataset = load_split(cfg.datasets, cfg)
 
-    eval_dataset = None
-    if cfg.test_datasets:
-        eval_dataset = load_split(cfg.test_datasets, cfg)
-    if not eval_dataset:
         eval_dataset = None
+        if cfg.test_datasets:
+            eval_dataset = load_split(cfg.test_datasets, cfg)
+        if not eval_dataset:
+            eval_dataset = None
 
     return train_dataset, eval_dataset

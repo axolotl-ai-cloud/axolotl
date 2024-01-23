@@ -47,14 +47,10 @@ def train(
     *, cfg: DictDefault, cli_args: TrainerCliArgs, dataset_meta: TrainDatasetMeta
 ) -> Tuple[Union[PeftModel, PreTrainedModel], PreTrainedTokenizer]:
     # load the tokenizer first
-    try:
-        LOG.debug(
-            f"loading tokenizer... {cfg.tokenizer_config or cfg.base_model_config}",
-            main_process_only=True,
-        )
-    except RuntimeError:
-        # sometimes Accelerator() needs to be called un-necessarily before using logging
-        pass
+    LOG.debug(
+        f"loading tokenizer... {cfg.tokenizer_config or cfg.base_model_config}",
+        main_process_only=True,
+    )
     tokenizer = load_tokenizer(cfg)
 
     train_dataset = dataset_meta.train_dataset
