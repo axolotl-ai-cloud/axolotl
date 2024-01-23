@@ -1122,7 +1122,7 @@ If you decode a prompt constructed by axolotl, you might see spaces between toke
 1. Materialize some data using `python -m axolotl.cli.preprocess your_config.yml --debug`, and then decode the first few rows with your model's tokenizer.
 2. During inference, right before you pass a tensor of token ids to your model, decode these tokens back into a string.
 3. Make sure the inference string from #2 looks **exactly** like the data you fine tuned on from #1, including spaces and new lines.  If they aren't the same adjust your inference server accordingly.
-4. As an additional troubleshooting step, you can look look at the token ids between 1 and 2 to make sure they are identical.
+4. As an additional troubleshooting step, you can look at the token ids between 1 and 2 to make sure they are identical.
 
 Having misalignment between your prompts during training and inference can cause models to perform very poorly, so it is worth checking this.  See [this blog post](https://hamel.dev/notes/llm/05_tokenizer_gotchas.html) for a concrete example.
 
