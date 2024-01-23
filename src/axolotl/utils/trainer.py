@@ -109,6 +109,33 @@ def drop_long_seq(sample, sequence_len=2048):
 def process_datasets_for_packing(cfg, train_dataset, eval_dataset, tokenizer):
     drop_long = partial(drop_long_seq, sequence_len=cfg.sequence_len)
     with zero_first(is_main_process()):
+        if cfg.is_preprocess:
+            max_input_len = np.max(get_dataset_lengths(train_dataset))
+            LOG.debug(f"max_input_len: {max_input_len}", main_process_only=True)
+
+        # Phi doesn't want the attention_mask feature when training
+        if (
+            "CodeGenTokenizer" in tokenizer.__class__.__name__
+            or (cfg.is_mistral_derived_model and cfg.flash_attention)
+            or cfg.model_config_type == "mamba"
+        ):
+            LOG.info("dropping attention_mask column")
+            train_dataset = train_dataset.remove_columns("attention_mask")
+            if eval_dataset:
+                eval_dataset = eval_dataset.remove_columns("attention_mask")
+
+        train_dataset = train_dataset.filter(
+            drop_long,
+            num_proc=cfg.dataset_processes,
+            load_from_cache_file=not cfg.is_preprocess,
+        )
+        if eval_dataset:
+            eval_dataset = eval_dataset.filter(
+                drop_long,
+                num_proc=cfg.dataset_processes,
+                load_from_cache_file=not cfg.is_preprocess,
+            )
+
         if cfg.group_by_length:
             train_dataset = train_dataset.map(
                 add_length,
@@ -129,33 +156,6 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset, tokenizer):
                         num_proc=cfg.dataset_processes,
                         load_from_cache_file=not cfg.is_preprocess,
                     )
-
-        if cfg.group_by_length or cfg.sample_packing:
-            max_input_len = np.max(get_dataset_lengths(train_dataset))
-            LOG.debug(f"max_input_len: {max_input_len}", main_process_only=True)
-
-        train_dataset = train_dataset.filter(
-            drop_long,
-            num_proc=cfg.dataset_processes,
-            load_from_cache_file=not cfg.is_preprocess,
-        )
-        if eval_dataset:
-            eval_dataset = eval_dataset.filter(
-                drop_long,
-                num_proc=cfg.dataset_processes,
-                load_from_cache_file=not cfg.is_preprocess,
-            )
-
-        # Phi doesn't want the attention_mask feature when training
-        if (
-            "CodeGenTokenizer" in tokenizer.__class__.__name__
-            or (cfg.is_mistral_derived_model and cfg.flash_attention)
-            or cfg.model_config_type == "mamba"
-        ):
-            LOG.info("dropping attention_mask column")
-            train_dataset = train_dataset.remove_columns("attention_mask")
-            if eval_dataset:
-                eval_dataset = eval_dataset.remove_columns("attention_mask")
 
     return train_dataset, eval_dataset
 

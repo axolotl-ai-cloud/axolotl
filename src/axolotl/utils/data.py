@@ -116,6 +116,12 @@ def load_tokenized_prepared_datasets(
             (
                 str(cfg.sequence_len)
                 + "@"
+                + str(cfg.sample_packing)
+                + "@"
+                + str(cfg.eval_sample_packing)
+                + "@"
+                + str(cfg.group_by_length)
+                + "@"
                 + "|".join(
                     sorted(
                         [
@@ -162,7 +168,7 @@ def load_tokenized_prepared_datasets(
         LOG.info("Loading raw datasets...")
         if not cfg.is_preprocess:
             LOG.warning(
-                "Processing datasets during training can lead to VRAM instability. Please pre-process your dataset"
+                "Processing datasets during training can lead to VRAM instability. Please pre-process your dataset."
             )
 
         if cfg.seed:
