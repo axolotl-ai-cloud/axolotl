@@ -3,6 +3,9 @@ module for DPO style dataset transform strategies
 """
 
 import importlib
+import logging
+
+LOG = logging.getLogger("axolotl")
 
 
 def load(strategy, cfg):
@@ -14,4 +17,5 @@ def load(strategy, cfg):
         load_kwargs = {}
         return func(cfg, **load_kwargs)
     except Exception:  # pylint: disable=broad-exception-caught
+        LOG.warning(f"unable to load strategy {strategy}")
         return None
