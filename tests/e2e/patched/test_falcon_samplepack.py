@@ -1,5 +1,5 @@
 """
-E2E tests for mixtral
+E2E tests for falcon
 """
 
 import logging
@@ -19,9 +19,9 @@ LOG = logging.getLogger("axolotl.tests.e2e")
 os.environ["WANDB_DISABLED"] = "true"
 
 
-class TestMixtral(unittest.TestCase):
+class TestFalconPatched(unittest.TestCase):
     """
-    Test case for Llama models using LoRA
+    Test case for Falcon models
     """
 
     @with_temp_dir
@@ -29,8 +29,7 @@ class TestMixtral(unittest.TestCase):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "hf-internal-testing/Mixtral-tiny",
-                "tokenizer_config": "mistralai/Mixtral-8x7B-v0.1",
+                "base_model": "illuin/tiny-random-FalconForCausalLM",
                 "flash_attention": True,
                 "sample_packing": True,
                 "sequence_len": 2048,
@@ -40,8 +39,12 @@ class TestMixtral(unittest.TestCase):
                 "lora_alpha": 32,
                 "lora_dropout": 0.1,
                 "lora_target_linear": True,
+                "lora_modules_to_save": ["word_embeddings", "lm_head"],
                 "val_set_size": 0.1,
-                "special_tokens": {},
+                "special_tokens": {
+                    "bos_token": "<|endoftext|>",
+                    "pad_token": "<|endoftext|>",
+                },
                 "datasets": [
                     {
                         "path": "mhenrichsen/alpaca_2k_test",
@@ -73,13 +76,15 @@ class TestMixtral(unittest.TestCase):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "hf-internal-testing/Mixtral-tiny",
-                "tokenizer_config": "mistralai/Mixtral-8x7B-v0.1",
+                "base_model": "illuin/tiny-random-FalconForCausalLM",
                 "flash_attention": True,
                 "sample_packing": True,
                 "sequence_len": 2048,
                 "val_set_size": 0.1,
-                "special_tokens": {},
+                "special_tokens": {
+                    "bos_token": "<|endoftext|>",
+                    "pad_token": "<|endoftext|>",
+                },
                 "datasets": [
                     {
                         "path": "mhenrichsen/alpaca_2k_test",
@@ -103,9 +108,5 @@ class TestMixtral(unittest.TestCase):
         cli_args = TrainerCliArgs()
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
-        model, _ = train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-        assert (
-            "MixtralFlashAttention2"
-            in model.model.layers[0].self_attn.__class__.__name__
-        )
+        train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
         assert (Path(temp_dir) / "pytorch_model.bin").exists()

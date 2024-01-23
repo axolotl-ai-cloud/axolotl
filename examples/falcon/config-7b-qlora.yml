@@ -89,5 +89,5 @@ fsdp:
 fsdp_config:
 special_tokens:
   pad_token: "<|endoftext|>"
-  bos_token: ">>ABSTRACT<<"
+  bos_token: "<|endoftext|>"
   eos_token: "<|endoftext|>"
