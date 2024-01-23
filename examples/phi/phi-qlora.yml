@@ -45,12 +45,14 @@ lr_scheduler: cosine
 learning_rate: 0.000003
 
 train_on_inputs: false
-group_by_length: true
+group_by_length: false
 bf16: auto
 fp16:
 tf32: true
 
 gradient_checkpointing: true
+gradient_checkpointing_kwargs:
+  use_reentrant: True
 early_stopping_patience:
 resume_from_checkpoint:
 local_rank:
