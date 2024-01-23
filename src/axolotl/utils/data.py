@@ -857,12 +857,23 @@ def load_prepare_dpo_datasets(cfg):
     def load_split(dataset_cfgs, _cfg):
         split_datasets: List[Any] = []
         for i, ds_cfg in enumerate(dataset_cfgs):
-            ds = load_dataset(  # pylint: disable=invalid-name
-                ds_cfg["path"],
-                split=ds_cfg["split"],
-                desc="Mapping RL Dataset",
-            )
-            split_datasets.insert(i, ds)
+            if ds_cfg["ds_type"] == "json":
+                for data_file in ds_cfg["data_files"]:
+                    data_files = {ds_cfg["split"]: data_file}
+                    ds = load_dataset(
+                        "json",
+                        data_files=data_files,
+                        split=ds_cfg["split"],
+                        desc="Mapping RL Dataset",
+                    )
+                    split_datasets.insert(i, ds)
+            else:
+                ds = load_dataset(  # pylint: disable=invalid-name
+                    ds_cfg["path"],
+                    split=ds_cfg["split"],
+                    desc="Mapping RL Dataset",
+                )
+                split_datasets.insert(i, ds)
 
         for i, data_set in enumerate(split_datasets):
             _type = dataset_cfgs[i]["type"]
