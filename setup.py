@@ -11,17 +11,17 @@ def parse_requirements():
     with open("./requirements.txt", encoding="utf-8") as requirements_file:
         lines = [r.strip() for r in requirements_file.readlines()]
         for line in lines:
+            is_extras = (
+                "flash-attn" in line
+                or "flash-attention" in line
+                or "deepspeed" in line
+                or "mamba-ssm" in line
+            )
             if line.startswith("--extra-index-url"):
                 # Handle custom index URLs
                 _, url = line.split()
                 _dependency_links.append(url)
-            elif (
-                "flash-attn" not in line
-                and "flash-attention" not in line
-                and "deepspeed" not in line
-                and line
-                and line[0] != "#"
-            ):
+            elif not is_extras and line and line[0] != "#":
                 # Handle standard packages
                 _install_requires.append(line)
 

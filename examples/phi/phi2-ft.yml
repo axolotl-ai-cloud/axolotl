@@ -1,4 +1,5 @@
 base_model: microsoft/phi-2
+model_revision:  834565c  # pin model repo to the previous architecture
 model_type: AutoModelForCausalLM
 tokenizer_type: AutoTokenizer
 trust_remote_code: true
@@ -48,8 +49,8 @@ learning_rate: 1e-5
 
 train_on_inputs: false
 group_by_length: false
-bf16: true
-fp16: false
+bf16: auto
+fp16:
 tf32: true
 
 gradient_checkpointing: true

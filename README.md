@@ -1,3 +1,6 @@
+## What's New
+- Added `Mistral-7b-example`: A comprehensive example for fine-tuning Mistral-7b model. [Check it out here](https://github.com/Tilemachoc/axolotl/tree/mistral-7b-example/examples/mistral/Mistral-7b-example).
+
 # Axolotl
 
 Axolotl is a tool designed to streamline the fine-tuning of various AI models, offering support for multiple configurations and architectures.
@@ -25,7 +28,7 @@ Features:
 - [Installation](#installation)
   - [Docker](#docker)
   - [Conda/Pip venv](#condapip-venv)
-  - [Runpod](#runpod)
+  - [Cloud GPU](#cloud-gpu) - Runpod, Latitude
   - [LambdaLabs](#lambdalabs)
   - [Windows](#windows)
   - [Launching on public clouds via SkyPilot](#launching-on-public-clouds-via-skypilot)
@@ -39,6 +42,7 @@ Features:
   - [Special Tokens](#special-tokens)
 - [Common Errors](#common-errors-)
   - [Tokenization Mismatch b/w Training & Inference](#tokenization-mismatch-bw-inference--training)
+- [Debugging Axolotl](#debugging-axolotl)
 - [Need Help?](#need-help-)
 - [Badge](#badge-)
 - [Community Showcase](#community-showcase)
@@ -131,6 +135,9 @@ accelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \
   docker compose up -d
   ```
 
+>[!Tip]
+> If you want to debug axolotl or prefer to use Docker as your development environment, see the [debugging guide's section on Docker](docs/debugging.md#debugging-with-docker).
+
   <details>
 
   <summary>Docker advanced</summary>
@@ -138,7 +145,7 @@ accelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \
   A more powerful Docker command to run would be this:
 
   ```bash
-  docker run --privileged --gpus '"all"' --shm-size 10g --rm -it --name axolotl --ipc=host --ulimit memlock=-1 --ulimit stack=67108864 --mount type=volume,src=axolotl,target=/workspace/axolotl -v ${HOME}/.cache/huggingface:/root/.cache/huggingface winglian/axolotl:main-py3.10-cu118-2.0.1
+docker run --privileged --gpus '"all"' --shm-size 10g --rm -it --name axolotl --ipc=host --ulimit memlock=-1 --ulimit stack=67108864 --mount type=bind,src="${PWD}",target=/workspace/axolotl -v ${HOME}/.cache/huggingface:/root/.cache/huggingface winglian/axolotl:main-py3.10-cu118-2.0.1
   ```
 
   It additionally:
@@ -168,9 +175,11 @@ accelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \
         ```
         Get the token at huggingface.co/settings/tokens
 
-#### Runpod
+#### Cloud GPU
 
-Use `winglian/axolotl-runpod:main-latest` or use this [direct link](https://runpod.io/gsc?template=v2ickqhz9s&ref=6i7fkpdz)
+For cloud GPU providers that support docker images, use [`winglian/axolotl-cloud:main-latest`](https://hub.docker.com/r/winglian/axolotl-cloud/tags)
+
+- on RunPod use this [direct link](https://runpod.io/gsc?template=v2ickqhz9s&ref=6i7fkpdz)
 
 #### LambdaLabs
   <details>
@@ -371,7 +380,7 @@ Have dataset(s) in one of the following format (JSONL recommended):
 For a dataset that is preprocessed for instruction purposes:
 
 ```json
-{"instruction": "...", "output": "..."}
+{"input": "...", "output": "..."}
 ```
 
 You can use this example in your YAML config:
@@ -382,6 +391,8 @@ datasets:
     type:
       system_prompt: ""
       field_system: system
+      field_instruction: input
+      field_output: output
       format: "[INST] {instruction} [/INST]"
       no_input_format: "[INST] {instruction} [/INST]"
 ```
@@ -457,8 +468,8 @@ See [examples](examples) for quick start. It is recommended to duplicate and mod
   ```yaml
   load_in_4bit: true
   load_in_8bit: true
-  bf16: true # require >=ampere
-  fp16: true
+  bf16: auto # require >=ampere, auto will detect if your GPU supports this and choose automatically.
+  fp16: # leave empty to use fp16 when bf16 is 'auto'. set to false if you want to fallback to fp32
   tf32: true # require >=ampere
   bfloat16: true # require >=ampere, use instead of bf16 when you don't want AMP (automatic mixed precision)
   float16: true # use instead of fp16 when you don't want AMP
@@ -574,10 +585,10 @@ datasets:
     field_human: # Optional[str]. Human key to use for conversation.
     field_model: # Optional[str]. Assistant key to use for conversation.
 
-  # Custom user prompt
+  # Custom user instruction prompt
   - path: repo
     type:
-      # The below are defaults. only set what's needed.
+      # The below are defaults. only set what's needed if you use a different column name.
       system_prompt: ""
       system_format: "{system}"
       field_system: system
@@ -586,6 +597,7 @@ datasets:
       field_output: output
 
       # Customizable to be single line or multi-line
+      # Use {instruction}/{input} as key to be replaced
       # 'format' can include {input}
       format: |-
         User: {instruction} {input}
@@ -610,6 +622,9 @@ push_dataset_to_hub: # repo path
 # The maximum number of processes to use while preprocessing your input dataset. This defaults to `os.cpu_count()`
 # if not set.
 dataset_processes: # defaults to os.cpu_count() if not set
+# Keep dataset in memory while preprocessing
+# Only needed if cached dataset is taking too much storage
+dataset_keep_in_memory:
 # push checkpoints to hub
 hub_model_id: # repo path to push finetuned model
 # how to push checkpoints to hub
@@ -631,10 +646,6 @@ sequence_len: 2048
 # Pad inputs so each step uses constant sized buffers
 # This will reduce memory fragmentation and may prevent OOMs, by re-using memory more efficiently
 pad_to_sequence_len:
-# Max sequence length to concatenate training samples together up to
-# Inspired by StackLLaMA. see https://huggingface.co/blog/stackllama#supervised-fine-tuning
-# FutureWarning: This will soon be DEPRECATED
-max_packed_sequence_len: 1024
 # Use efficient multi-packing with block diagonal attention and per sequence position_ids. Recommend set to 'true'
 sample_packing:
 # Set to 'false' if getting errors during eval with sample_packing on.
@@ -671,7 +682,8 @@ lora_target_modules:
 #  - gate_proj
 #  - down_proj
 #  - up_proj
-lora_target_linear: # If true, will target all linear layers
+lora_target_linear: # If true, will target all linear modules
+peft_layers_to_transform: # The layer indices to transform, otherwise, apply to all layers
 
 # If you added new tokens to the tokenizer, you may need to save some LoRA modules because they need to know the new tokens.
 # For LLaMA and Mistral, you need to save `embed_tokens` and `lm_head`. It may vary for other models.
@@ -825,7 +837,8 @@ flash_attn_fuse_mlp: # Whether to fuse part of the MLP into a single operation
 # Whether to use scaled-dot-product attention
 # https://pytorch.org/docs/stable/generated/torch.nn.functional.scaled_dot_product_attention.html
 sdp_attention:
-
+# Shifted-sparse attention (only llama) - https://arxiv.org/pdf/2309.12307.pdf
+s2_attention:
 # Resume from a specific checkpoint dir
 resume_from_checkpoint:
 # If resume_from_checkpoint isn't set and you simply want it to start where it left off.
@@ -1067,7 +1080,7 @@ although this will be very slow, and using the config options above are recommen
 
 ## Common Errors 🧰
 
-See also the [FAQ's](./docs/faq.md).
+See also the [FAQ's](./docs/faq.md) and [debugging guide](docs/debugging.md).
 
 > If you encounter a 'Cuda out of memory' error, it means your GPU ran out of memory during the training process. Here's how to resolve it:
 
@@ -1113,9 +1126,13 @@ If you decode a prompt constructed by axolotl, you might see spaces between toke
 1. Materialize some data using `python -m axolotl.cli.preprocess your_config.yml --debug`, and then decode the first few rows with your model's tokenizer.
 2. During inference, right before you pass a tensor of token ids to your model, decode these tokens back into a string.
 3. Make sure the inference string from #2 looks **exactly** like the data you fine tuned on from #1, including spaces and new lines.  If they aren't the same adjust your inference server accordingly.
-4. As an additional troubleshooting step, you can look look at the token ids between 1 and 2 to make sure they are identical.
+4. As an additional troubleshooting step, you can look at the token ids between 1 and 2 to make sure they are identical.
 
 Having misalignment between your prompts during training and inference can cause models to perform very poorly, so it is worth checking this.  See [this blog post](https://hamel.dev/notes/llm/05_tokenizer_gotchas.html) for a concrete example.
+
+## Debugging Axolotl
+
+See [this debugging guide](docs/debugging.md) for tips on debugging Axolotl, along with an example configuration for debugging with VSCode.
 
 ## Need help? 🙋♂️
 
@@ -1136,7 +1153,7 @@ Building something cool with Axolotl? Consider adding a badge to your model card
 Check out some of the projects and models that have been built using Axolotl! Have a model you'd like to add to our Community Showcase? Open a PR with your model.
 
 Open Access AI Collective
-- [Minotaur 13b](https://huggingface.co/openaccess-ai-collective/minotaur-13b)
+- [Minotaur 13b](https://huggingface.co/openaccess-ai-collective/minotaur-13b-fixed)
 - [Manticore 13b](https://huggingface.co/openaccess-ai-collective/manticore-13b)
 - [Hippogriff 30b](https://huggingface.co/openaccess-ai-collective/hippogriff-30b-chat)
 

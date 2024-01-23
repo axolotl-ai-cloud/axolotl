@@ -1,0 +1,10 @@
+{"conversations": [{"from": "Customer", "value": "\"<Customer>: Who is the Founder of Apple\""}, {"from": "gpt", "value": "\"<Chatbot>: The founder of Apple is Steve Jobs\""}]}
+{"conversations": [{"from": "Customer", "value": "\"<Customer>: What is the capital of France?\""}, {"from": "gpt", "value": "\"<Chatbot>: The capital of France is Paris.\""}]}
+{"conversations": [{"from": "Customer", "value": "\"<Customer>: How far is the Moon from Earth?\""}, {"from": "gpt", "value": "\"<Chatbot>: The Moon is approximately 384,400 kilometers from Earth.\""}]}
+{"conversations": [{"from": "Customer", "value": "\"<Customer>: What is the tallest mountain in the world?\""}, {"from": "gpt", "value": "\"<Chatbot>: The tallest mountain in the world is Mount Everest.\""}]}
+{"conversations": [{"from": "Customer", "value": "\"<Customer>: Who wrote Romeo and Juliet?\""}, {"from": "gpt", "value": "\"<Chatbot>: Romeo and Juliet was written by William Shakespeare.\""}]}
+{"conversations": [{"from": "Customer", "value": "\"<Customer>: What is the boiling point of water?\""}, {"from": "gpt", "value": "\"<Chatbot>: The boiling point of water is 100 degrees Celsius.\""}]}
+{"conversations": [{"from": "Customer", "value": "\"<Customer>: When was the first man on the moon?\""}, {"from": "gpt", "value": "\"<Chatbot>: The first man landed on the moon in 1969.\""}]}
+{"conversations": [{"from": "Customer", "value": "\"<Customer>: What is the largest ocean?\""}, {"from": "gpt", "value": "\"<Chatbot>: The largest ocean is the Pacific Ocean.\""}]}
+{"conversations": [{"from": "Customer", "value": "\"<Customer>: Who invented the telephone?\""}, {"from": "gpt", "value": "\"<Chatbot>: The telephone was invented by Alexander Graham Bell.\""}]}
+{"conversations": [{"from": "Customer", "value": "\"<Customer>: What is the formula for water?\""}, {"from": "gpt", "value": "\"<Chatbot>: The chemical formula for water is H2O.\""}]}

@@ -20,3 +20,8 @@
 ## Types of changes
 
 <!--- What types of changes does your code introduce? Put an `x` in all the boxes that apply: -->
+
+## Social Handles (Optional)
+
+<!-- Thanks for submitting a bugfix or enhancement. -->
+<!-- We'd love to show our thanks to you on Twitter & Discord if you provide your handle -->

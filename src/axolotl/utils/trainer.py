@@ -81,6 +81,15 @@ def trainer_weighted_loss(model_output, labels, shift_labels=True):
     return weighted_cross_entropy(logits, labels, weights)
 
 
+@contextmanager
+def disable_datasets_caching():
+    try:
+        set_caching_enabled(False)
+        yield
+    finally:
+        set_caching_enabled(True)
+
+
 def add_position_ids(sample):
     sample_len = len(sample["input_ids"])
     sample["position_ids"] = torch.arange(len(sample["input_ids"]))
@@ -97,42 +106,12 @@ def drop_long_seq(sample, sequence_len=2048):
     return len(sample["input_ids"]) <= sequence_len and len(sample["input_ids"]) > 0
 
 
-@contextmanager
-def disable_datasets_caching():
-    try:
-        set_caching_enabled(False)
-        yield
-    finally:
-        set_caching_enabled(True)
-
-
 def process_datasets_for_packing(cfg, train_dataset, eval_dataset, tokenizer):
     drop_long = partial(drop_long_seq, sequence_len=cfg.sequence_len)
     with zero_first(is_main_process()):
-        if cfg.group_by_length:
-            train_dataset = train_dataset.map(
-                add_length, num_proc=cfg.dataset_processes
-            )
-
-        if cfg.sample_packing:
-            train_dataset = train_dataset.map(
-                add_position_ids, num_proc=cfg.dataset_processes
-            )
-            if cfg.eval_sample_packing is not False:
-                if eval_dataset:
-                    eval_dataset = eval_dataset.map(
-                        add_position_ids, num_proc=cfg.dataset_processes
-                    )
-
-        if cfg.group_by_length or cfg.sample_packing:
+        if cfg.is_preprocess:
             max_input_len = np.max(get_dataset_lengths(train_dataset))
             LOG.debug(f"max_input_len: {max_input_len}", main_process_only=True)
-
-        train_dataset = train_dataset.filter(drop_long, num_proc=cfg.dataset_processes)
-        if eval_dataset:
-            eval_dataset = eval_dataset.filter(
-                drop_long, num_proc=cfg.dataset_processes
-            )
 
         # Phi doesn't want the attention_mask feature when training
         if (
@@ -140,9 +119,54 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset, tokenizer):
             or (cfg.is_mistral_derived_model and cfg.flash_attention)
             or cfg.model_config_type == "mamba"
         ):
+            LOG.info("dropping attention_mask column")
             train_dataset = train_dataset.remove_columns("attention_mask")
             if eval_dataset:
                 eval_dataset = eval_dataset.remove_columns("attention_mask")
+
+        if cfg.model_config_type == "falcon":
+            LOG.info("dropping token_type_ids column")
+            train_dataset = train_dataset.remove_columns("token_type_ids")
+            if eval_dataset:
+                eval_dataset = eval_dataset.remove_columns("token_type_ids")
+
+        train_dataset = train_dataset.filter(
+            drop_long,
+            num_proc=cfg.dataset_processes,
+            load_from_cache_file=not cfg.is_preprocess,
+            desc="Dropping Long Sequences",
+        )
+        if eval_dataset:
+            eval_dataset = eval_dataset.filter(
+                drop_long,
+                num_proc=cfg.dataset_processes,
+                load_from_cache_file=not cfg.is_preprocess,
+                desc="Dropping Long Sequences",
+            )
+
+        if cfg.group_by_length:
+            train_dataset = train_dataset.map(
+                add_length,
+                num_proc=cfg.dataset_processes,
+                load_from_cache_file=not cfg.is_preprocess,
+                desc="Group By Length",
+            )
+
+        if cfg.sample_packing:
+            train_dataset = train_dataset.map(
+                add_position_ids,
+                num_proc=cfg.dataset_processes,
+                load_from_cache_file=not cfg.is_preprocess,
+                desc="Add position_id column (Sample Packing)",
+            )
+            if cfg.eval_sample_packing is not False:
+                if eval_dataset:
+                    eval_dataset = eval_dataset.map(
+                        add_position_ids,
+                        num_proc=cfg.dataset_processes,
+                        load_from_cache_file=not cfg.is_preprocess,
+                        desc="Add position_id column (Sample Packing)",
+                    )
 
     return train_dataset, eval_dataset
 
@@ -150,9 +174,13 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset, tokenizer):
 def process_pretraining_datasets_for_packing(train_dataset, sequence_len):
     drop_long = partial(drop_long_seq, sequence_len=sequence_len)
 
-    train_dataset = train_dataset.filter(drop_long)
+    train_dataset = train_dataset.filter(
+        drop_long,
+        desc="Dropping Long Sequences",
+    )
     train_dataset = train_dataset.map(
         add_position_ids,
+        desc="Add position_id column (Pretraining Sample Packing)",
     )
     return train_dataset
 
@@ -214,8 +242,7 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                 sampler=RandomSampler(train_dataset),
                 batch_size=cfg.micro_batch_size,
                 drop_last=True,
-                batch_max_len=cfg.micro_batch_size
-                * (cfg.max_packed_sequence_len or cfg.sequence_len),
+                batch_max_len=cfg.micro_batch_size * cfg.sequence_len,
                 lengths=get_dataset_lengths(train_dataset),
             )
 
@@ -289,9 +316,10 @@ def prepare_optim_env(cfg):
 
 
 def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_steps):
-    if cfg.rl:
+    if cfg.rl in ["dpo", "ipo", "kto_pair"]:
         trainer_builder = HFDPOTrainerBuilder(cfg, model[0], tokenizer)
         trainer_builder.model_ref = model[1]
+        trainer_builder.peft_config = model[2]
     else:
         trainer_builder = HFCausalTrainerBuilder(cfg, model[0], tokenizer)
 

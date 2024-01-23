@@ -5,14 +5,16 @@ import signal
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple, Union
 
 import torch
 import transformers.modelcard
 from accelerate.logging import get_logger
 from datasets import Dataset
 from optimum.bettertransformer import BetterTransformer
+from peft import PeftModel
 from pkg_resources import get_distribution  # type: ignore
+from transformers import PreTrainedModel, PreTrainedTokenizer
 from transformers.deepspeed import is_deepspeed_zero3_enabled
 
 from axolotl.common.cli import TrainerCliArgs
@@ -43,7 +45,7 @@ class TrainDatasetMeta:
 
 def train(
     *, cfg: DictDefault, cli_args: TrainerCliArgs, dataset_meta: TrainDatasetMeta
-):
+) -> Tuple[Union[PeftModel, PreTrainedModel], PreTrainedTokenizer]:
     # load the tokenizer first
     LOG.debug(
         f"loading tokenizer... {cfg.tokenizer_config or cfg.base_model_config}",
@@ -63,10 +65,15 @@ def train(
     model, peft_config = load_model(cfg, tokenizer, inference=cli_args.inference)
     model_ref = None
     if cfg.rl:
-        # load the model again for model_ref/baseline
-        model_ref, _ = load_model(
-            cfg, tokenizer, inference=cli_args.inference, reference_model=True
-        )
+        if cfg.adapter and not cfg.rl_adapter_ref_model:
+            # use built-in trl autounwrap
+            LOG.debug("Passing model_ref: None to RL trainer")
+            model_ref = None  # explicit setting to None
+        else:
+            # load the model again for model_ref/baseline
+            model_ref, _ = load_model(
+                cfg, tokenizer, inference=cli_args.inference, reference_model=True
+            )
 
     safe_serialization = cfg.save_safetensors is True
 
@@ -89,7 +96,12 @@ def train(
         freeze_parameters_except(model, cfg.unfrozen_parameters)
 
     trainer = setup_trainer(
-        cfg, train_dataset, eval_dataset, (model, model_ref), tokenizer, total_num_steps
+        cfg,
+        train_dataset,
+        eval_dataset,
+        (model, model_ref, peft_config),
+        tokenizer,
+        total_num_steps,
     )
 
     if hasattr(model, "config"):

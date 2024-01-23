@@ -324,20 +324,19 @@ class ValidationTest(BaseValidation):
 
         validate_config(cfg)
 
-    def test_packing(self):
+    def test_deprecated_packing(self):
         cfg = DictDefault(
             {
-                "max_packed_sequence_len": 2048,
+                "max_packed_sequence_len": 1024,
             }
         )
-        with self._caplog.at_level(logging.WARNING):
+        with pytest.raises(
+            DeprecationWarning,
+            match=r"`max_packed_sequence_len` is no longer supported",
+        ):
             validate_config(cfg)
-            assert any(
-                "max_packed_sequence_len will be deprecated in favor of sample_packing"
-                in record.message
-                for record in self._caplog.records
-            )
 
+    def test_packing(self):
         cfg = DictDefault(
             {
                 "sample_packing": True,
@@ -351,16 +350,6 @@ class ValidationTest(BaseValidation):
                 in record.message
                 for record in self._caplog.records
             )
-
-        cfg = DictDefault(
-            {
-                "max_packed_sequence_len": 2048,
-                "sample_packing": True,
-            }
-        )
-        regex_exp = r".*set only one of max_packed_sequence_len \(deprecated soon\) or sample_packing.*"
-        with pytest.raises(ValueError, match=regex_exp):
-            validate_config(cfg)
 
     @pytest.mark.skipif(
         is_torch_bf16_gpu_available(),
@@ -694,6 +683,21 @@ class ValidationTest(BaseValidation):
 
         validate_config(cfg)
 
+    def test_unfrozen_parameters_w_peft_layers_to_transform(self):
+        cfg = DictDefault(
+            {
+                "adapter": "lora",
+                "unfrozen_parameters": ["model.layers.2[0-9]+.block_sparse_moe.gate.*"],
+                "peft_layers_to_transform": [0, 1],
+            }
+        )
+
+        with pytest.raises(
+            ValueError,
+            match=r".*can have unexpected behavior*",
+        ):
+            validate_config(cfg)
+
 
 class ValidationCheckModelConfig(BaseValidation):
     """
@@ -770,7 +774,7 @@ class ValidationCheckModelConfig(BaseValidation):
                 "adapter": "qlora",
                 "load_in_4bit": True,
                 "tokens": ["<|imstart|>"],
-                "lora_modules_to_save": ["embd", "lm_head.linear"],
+                "lora_modules_to_save": ["embd.wte", "lm_head.linear"],
             }
         )
 

@@ -1,17 +1,16 @@
 --extra-index-url https://huggingface.github.io/autogptq-index/whl/cu118/
-packaging
+packaging==23.2
 peft==0.7.0
-transformers @ git+https://github.com/huggingface/transformers.git@3cefac1d974db5e2825a0cb2b842883a628be7a0
+transformers==4.37.0
 tokenizers==0.15.0
 bitsandbytes>=0.41.1
-accelerate @ git+https://github.com/huggingface/accelerate.git@0d2280dadc6a93413a5496613b7fdda3a4d2551b
+accelerate==0.26.1
 deepspeed
 addict
 fire
 PyYAML>=6.0
 datasets>=2.15.0
 flash-attn==2.3.3
-fused-dense-lib  @ git+https://github.com/Dao-AILab/flash-attention@v2.3.3#subdirectory=csrc/fused_dense_lib
 sentencepiece
 wandb
 einops
@@ -33,6 +32,8 @@ art
 fschat==0.2.34
 gradio==3.50.2
 tensorboard
+
+mamba-ssm==1.1.1
 
 # remote filesystems
 s3fs

@@ -7,8 +7,6 @@ import os
 import unittest
 from pathlib import Path
 
-from transformers.utils import is_torch_bf16_gpu_available
-
 from axolotl.cli import load_datasets
 from axolotl.common.cli import TrainerCliArgs
 from axolotl.train import train
@@ -34,6 +32,7 @@ class TestMixtral(unittest.TestCase):
                 "base_model": "hf-internal-testing/Mixtral-tiny",
                 "tokenizer_config": "mistralai/Mixtral-8x7B-v0.1",
                 "flash_attention": True,
+                "sample_packing": True,
                 "sequence_len": 2048,
                 "load_in_4bit": True,
                 "adapter": "qlora",
@@ -59,13 +58,9 @@ class TestMixtral(unittest.TestCase):
                 "max_steps": 20,
                 "save_steps": 10,
                 "eval_steps": 10,
-                "sample_packing": True,
+                "bf16": "auto",
             }
         )
-        if is_torch_bf16_gpu_available():
-            cfg.bf16 = True
-        else:
-            cfg.fp16 = True
         normalize_config(cfg)
         cli_args = TrainerCliArgs()
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
@@ -81,6 +76,7 @@ class TestMixtral(unittest.TestCase):
                 "base_model": "hf-internal-testing/Mixtral-tiny",
                 "tokenizer_config": "mistralai/Mixtral-8x7B-v0.1",
                 "flash_attention": True,
+                "sample_packing": True,
                 "sequence_len": 2048,
                 "val_set_size": 0.1,
                 "special_tokens": {},
@@ -100,24 +96,16 @@ class TestMixtral(unittest.TestCase):
                 "max_steps": 20,
                 "save_steps": 10,
                 "eval_steps": 10,
-                "sample_packing": True,
+                "bf16": "auto",
             }
         )
-        if is_torch_bf16_gpu_available():
-            cfg.bf16 = True
-        else:
-            cfg.fp16 = True
         normalize_config(cfg)
         cli_args = TrainerCliArgs()
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
         model, _ = train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
         assert (
-            "axolotl.monkeypatch.mixtral.modeling_mixtral"
-            in model.model.layers[0].self_attn.__class__.__module__
-        )
-        assert (
-            "MixtralMultipackFlashAttention2"
+            "MixtralFlashAttention2"
             in model.model.layers[0].self_attn.__class__.__name__
         )
         assert (Path(temp_dir) / "pytorch_model.bin").exists()

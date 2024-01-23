@@ -2,7 +2,7 @@
 import logging
 import math
 import os
-from typing import Any, Optional, Tuple, Union  # noqa: F401
+from typing import Any, Dict, Optional, Tuple, Union  # noqa: F401
 
 import addict
 import bitsandbytes as bnb
@@ -76,10 +76,15 @@ def load_model_config(cfg):
     if not model_config_name and cfg.tokenizer_config:
         model_config_name = cfg.tokenizer_config
     trust_remote_code = cfg.trust_remote_code is True
+    config_kwargs = {}
+    if cfg.model_revision:
+        config_kwargs["revision"] = cfg.model_revision
 
     try:
         model_config = AutoConfig.from_pretrained(
-            model_config_name, trust_remote_code=trust_remote_code
+            model_config_name,
+            trust_remote_code=trust_remote_code,
+            **config_kwargs,
         )
     except ValueError as err:
         if "mamba" in model_config_name:
@@ -256,37 +261,65 @@ def load_model(
 
             replace_stablelm_attn_with_flash_attn(cfg.base_model)
 
-    if cfg.is_llama_derived_model and cfg.flash_attention and cfg.sample_packing:
-        if cfg.device not in ["mps", "cpu"] and not inference:
+    if cfg.sample_packing and cfg.s2_attention:
+        raise ValueError(
+            "Received `sample_packing=true` and `s2_attention=true`; however, \
+        shifted-sparse attention does not currently support sample packing."
+        )
+
+    # Modify all llama derived models in one block
+    if cfg.is_llama_derived_model:
+        if cfg.flash_attention:
             from axolotl.monkeypatch.llama_attn_hijack_flash import (
                 replace_llama_attn_with_flash_attn,
             )
 
-            LOG.info("patching with flash attention for sample packing")
-            replace_llama_attn_with_flash_attn(
-                packed=cfg.sample_packing,
-                cross_entropy=cfg.flash_attn_cross_entropy,
-                rms_norm=cfg.flash_attn_rms_norm,
+            if cfg.sample_packing:
+                if cfg.device not in ["mps", "cpu"] and not inference:
+                    LOG.info("patching with flash attention for sample packing")
+                    replace_llama_attn_with_flash_attn(
+                        packed=True,
+                        cross_entropy=cfg.flash_attn_cross_entropy,
+                        rms_norm=cfg.flash_attn_rms_norm,
+                    )
+            elif cfg.s2_attention:
+                LOG.info("patching w/ flash-enabled, shifted-sparse attention")
+                replace_llama_attn_with_flash_attn(
+                    packed=False,
+                    cross_entropy=cfg.flash_attn_cross_entropy,
+                    rms_norm=cfg.flash_attn_rms_norm,
+                    use_shifted_sparse_attn=True,
+                )
+        elif cfg.xformers_attention:
+            from axolotl.monkeypatch.llama_attn_hijack_xformers import (
+                hijack_llama_attention,
             )
-    elif cfg.is_llama_derived_model and cfg.xformers_attention:
-        from axolotl.monkeypatch.llama_attn_hijack_xformers import (
-            hijack_llama_attention,
-        )
 
-        LOG.info("patching with xformers attention")
-        hijack_llama_attention()
-    elif cfg.is_llama_derived_model and cfg.sdp_attention:
-        from axolotl.monkeypatch.llama_attn_hijack_sdp import hijack_llama_sdp_attention
+            LOG.info("patching with xformers attention")
+            hijack_llama_attention()
+        elif cfg.sdp_attention:
+            from axolotl.monkeypatch.llama_attn_hijack_sdp import (
+                hijack_llama_sdp_attention,
+            )
 
-        LOG.info("patching with sdp attention")
-        hijack_llama_sdp_attention()
+            LOG.info("patching with sdp attention")
+            hijack_llama_sdp_attention()
+        elif cfg.s2_attention:
+            raise NotImplementedError(
+                "Shifted-sparse attention not currently implemented without flash attention."
+            )
 
-    if cfg.is_mistral_derived_model and cfg.flash_attention and cfg.sample_packing:
+    # Modify mistral derived models
+    if (
+        cfg.model_config_type == "mistral"
+        and cfg.flash_attention
+        and cfg.sample_packing
+    ):
         from axolotl.monkeypatch.mistral_attn_hijack_flash import (
             replace_mistral_attn_with_flash_attn,
         )
 
-        LOG.info("patching with flash attention")
+        LOG.info("patching mistral with flash attention")
         replace_mistral_attn_with_flash_attn(packed=cfg.sample_packing)
 
     if (
@@ -298,20 +331,36 @@ def load_model(
             replace_mixtral_attn_with_multipack_flash_attn,
         )
 
-        LOG.info("patching with flash attention")
+        LOG.info("patching mixtral with flash attention")
         replace_mixtral_attn_with_multipack_flash_attn()
 
-    if (
-        cfg.is_llama_derived_model
-        and (cfg.max_packed_sequence_len or cfg.sample_packing)
-        and not inference
-    ):
+    if cfg.model_config_type == "falcon" and cfg.flash_attention and cfg.sample_packing:
+        from axolotl.monkeypatch.falcon import (
+            replace_falcon_attn_with_multipack_flash_attn,
+        )
+
+        LOG.info("patching falcon with flash attention")
+        replace_falcon_attn_with_multipack_flash_attn()
+
+    if cfg.model_config_type == "qwen2" and cfg.flash_attention and cfg.sample_packing:
+        from axolotl.monkeypatch.qwen2 import (
+            replace_qwen2_attn_with_multipack_flash_attn,
+        )
+
+        LOG.info("patching qwen2 with flash attention")
+        replace_qwen2_attn_with_multipack_flash_attn()
+
+    if cfg.is_llama_derived_model and cfg.sample_packing and not inference:
         from axolotl.monkeypatch.llama_expand_mask import hijack_expand_mask
 
         LOG.info("patching _expand_mask")
         hijack_expand_mask()
 
-    model_kwargs = {}
+    model_kwargs: Dict[str, Any] = {}
+
+    if cfg.model_kwargs:
+        for key, val in model_kwargs.items():
+            model_kwargs[key] = val
 
     max_memory = cfg.max_memory
     device_map = cfg.device_map
@@ -387,21 +436,19 @@ def load_model(
         model_kwargs["quantization_config"] = BitsAndBytesConfig(
             **bnb_config,
         )
+
     # sample packing uses custom FA2 patch
     if cfg.flash_attention:
         if not cfg.sample_packing:
-            if (
-                cfg.is_llama_derived_model
-                or cfg.is_falcon_derived_model
-                or cfg.is_mistral_derived_model
-                or model_config.model_type == "mixtral"
-            ):
-                model_kwargs["attn_implementation"] = "flash_attention_2"
-                model_config._attn_implementation = (  # pylint: disable=protected-access
-                    "flash_attention_2"
-                )
+            if cfg.s2_attention:
+                pass
+            # most other models support flash attention, we can define exceptions as they come up
+            model_kwargs["attn_implementation"] = "flash_attention_2"
+            model_config._attn_implementation = (  # pylint: disable=protected-access
+                "flash_attention_2"
+            )
         else:
-            if model_config.model_type == "mixtral":
+            if model_config.model_type in ["mixtral", "qwen2", "falcon"]:
                 model_kwargs["attn_implementation"] = "flash_attention_2"
                 model_config._attn_implementation = (  # pylint: disable=protected-access
                     "flash_attention_2"
@@ -417,7 +464,11 @@ def load_model(
             model_config.fused_dense = True
 
     try:
-        if cfg.is_llama_derived_model and not cfg.trust_remote_code and not cfg.gptq:
+        if (
+            model_config.model_type == "llama"
+            and not cfg.trust_remote_code
+            and not cfg.gptq
+        ):
             from transformers import LlamaForCausalLM
 
             model = LlamaForCausalLM.from_pretrained(
@@ -588,13 +639,14 @@ def load_model(
         log_gpu_memory_usage(LOG, "after model load", model.device)
 
     # make sure these are fp32 per Ramesh et al. (2021)
+    embedding_modules = get_linear_embedding_layers(cfg.model_config_type)
     for name, module in model.named_modules():
-        if "norm" in name:
+        if any(m in name for m in ["norm", "gate"]):
             module.to(torch.float32)
         if model_config.model_type == "btlm":
             # don't upcast lm_head for btlm
             continue
-        if "lm_head" in name or "embed_tokens" in name:
+        if any(m in name for m in embedding_modules):
             if hasattr(module, "weight"):
                 module.to(torch.float32)
 
@@ -619,21 +671,23 @@ def load_model(
 
     # LlamaRMSNorm layers are in fp32 after kbit_training or full finetune, so we need to
     # convert them back to fp16/bf16 for flash-attn compatibility.
-    if needs_fa2_dtype or (
-        cfg.flash_attention
-        and (cfg.is_llama_derived_model or cfg.is_mistral_derived_model)
-    ):
+    if needs_fa2_dtype or cfg.flash_attention:
         LOG.info("converting modules to %s for flash attention", cfg.torch_dtype)
         for name, module in model.named_modules():
             if "norm" in name:
                 module.to(cfg.torch_dtype)
-            if "lm_head" in name or "embed_tokens" in name:
+            if any(m in name for m in embedding_modules):
                 if hasattr(module, "weight"):
                     module.to(cfg.torch_dtype)
 
     lora_config = None
     if not reference_model or cfg.lora_model_dir:
-        model, lora_config = load_adapter(model, cfg, cfg.adapter)
+        # if we're not loading the reference model, then we're loading the model for training
+        # then the dpo trainer doesn't want the peft model loaded over it, it just wants the lora/peft config
+        if cfg.adapter and cfg.rl in ["dpo", "ipo", "kto_pair"] and not cfg.merge_lora:
+            _, lora_config = load_lora(model, cfg, inference=False, config_only=True)
+        else:
+            model, lora_config = load_adapter(model, cfg, cfg.adapter)
 
     if cfg.ddp and not load_in_8bit and not (cfg.rl and cfg.load_in_4bit):
         model.to(f"cuda:{cfg.local_rank}")
@@ -713,14 +767,16 @@ def find_all_linear_names(model):
             names = name.split(".")
             lora_module_names.add(names[0] if len(names) == 1 else names[-1])
 
-    if "lm_head" in lora_module_names:  # needed for 16-bit
-        lora_module_names.remove("lm_head")
+    embedding_modules = get_linear_embedding_layers(model.config.model_type)
+    output_embedding = embedding_modules[1]
+    if output_embedding in lora_module_names:  # needed for 16-bit
+        lora_module_names.remove(output_embedding)
 
     return list(lora_module_names)
 
 
-def load_lora(model, cfg, inference=False):
-    # type: (PreTrainedModel, DictDefault, bool) -> Tuple[PreTrainedModel, Optional[PeftConfig]]
+def load_lora(model, cfg, inference=False, config_only=False):
+    # type: (PreTrainedModel, DictDefault, bool, bool) -> Tuple[Optional[PreTrainedModel], Optional[PeftConfig]]
 
     from peft import LoraConfig, PeftModel, get_peft_model
 
@@ -735,12 +791,16 @@ def load_lora(model, cfg, inference=False):
         r=cfg.lora_r,
         lora_alpha=cfg.lora_alpha,
         target_modules=lora_target_modules,
+        layers_to_transform=cfg.peft_layers_to_transform,
         lora_dropout=cfg.lora_dropout,
         fan_in_fan_out=cfg.lora_fan_in_fan_out,
         modules_to_save=cfg.lora_modules_to_save if cfg.lora_modules_to_save else None,
         bias="none",
         task_type="CAUSAL_LM",
     )
+
+    if config_only:
+        return None, lora_config
 
     if cfg.lora_model_dir:
         LOG.debug("Loading pretained PEFT - LoRA")
