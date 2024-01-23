@@ -44,6 +44,7 @@ class TestDPOLlamaLora(unittest.TestCase):
                     {
                         "path": "Intel/orca_dpo_pairs",
                         "type": "chatml.intel",
+                        "split": "train",
                     },
                 ],
                 "num_epochs": 1,
@@ -84,6 +85,7 @@ class TestDPOLlamaLora(unittest.TestCase):
                     {
                         "path": "Intel/orca_dpo_pairs",
                         "type": "chatml.intel",
+                        "split": "train",
                     },
                 ],
                 "num_epochs": 1,
@@ -124,6 +126,7 @@ class TestDPOLlamaLora(unittest.TestCase):
                     {
                         "path": "Intel/orca_dpo_pairs",
                         "type": "chatml.intel",
+                        "split": "train",
                     },
                 ],
                 "num_epochs": 1,
