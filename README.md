@@ -1,6 +1,3 @@
-## What's New
-- Added `Mistral-7b-example`: A comprehensive example for fine-tuning Mistral-7b model. [Check it out here](https://github.com/Tilemachoc/axolotl/tree/mistral-7b-example/examples/mistral/Mistral-7b-example).
-
 # Axolotl
 
 Axolotl is a tool designed to streamline the fine-tuning of various AI models, offering support for multiple configurations and architectures.
@@ -108,6 +105,9 @@ pip3 install -e '.[flash-attn,deepspeed]'
 
 ### Usage
 ```bash
+# preprocess datasets - optional but recommended
+CUDA_VISIBLE_DEVICES="" python -m axolotl.cli.preprocess examples/openllama-3b/lora.yml
+
 # finetune lora
 accelerate launch -m axolotl.cli.train examples/openllama-3b/lora.yml
 
