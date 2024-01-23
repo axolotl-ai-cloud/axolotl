@@ -169,6 +169,7 @@ def load_tokenizer(cfg):
             # pylint: disable=too-many-boolean-expressions
             if (
                 (getattr(tokenizer, k) is None or getattr(tokenizer, k) != val)
+                and (len(tokenizer.encode(val)) > 1)
                 and cfg.adapter
                 and (
                     not cfg.lora_modules_to_save
