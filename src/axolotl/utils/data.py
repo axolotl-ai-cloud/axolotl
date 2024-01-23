@@ -4,7 +4,7 @@ import hashlib
 import logging
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import torch
 from datasets import (
@@ -21,6 +21,7 @@ from transformers import PreTrainedTokenizerBase
 from axolotl.common.const import DEFAULT_DATASET_PREPARED_PATH
 from axolotl.datasets import TokenizedPromptDataset
 from axolotl.prompt_strategies import load
+from axolotl.prompt_strategies.dpo import load as load_dpo
 from axolotl.prompt_tokenizers import (
     AlpacaMultipleChoicePromptTokenizingStrategy,
     AlpacaPromptTokenizingStrategy,
@@ -850,3 +851,50 @@ def encode_packed_pretraining(
             chunked_data[feature].append(collated_features[feature].squeeze(0))
 
     return chunked_data
+
+
+def load_prepare_dpo_datasets(cfg):
+    def load_split(dataset_cfgs, _cfg):
+        split_datasets: List[Any] = []
+        for i, ds_cfg in enumerate(dataset_cfgs):
+            if ds_cfg["ds_type"] == "json":
+                for data_file in ds_cfg["data_files"]:
+                    data_files = {ds_cfg["split"]: data_file}
+                    ds = load_dataset(  # pylint: disable=invalid-name
+                        "json",
+                        data_files=data_files,
+                        split=ds_cfg["split"],
+                    )
+                    split_datasets.insert(i, ds)
+            else:
+                ds = load_dataset(  # pylint: disable=invalid-name
+                    ds_cfg["path"],
+                    split=ds_cfg["split"],
+                )
+                split_datasets.insert(i, ds)
+
+        for i, data_set in enumerate(split_datasets):
+            _type = dataset_cfgs[i]["type"]
+            if _type:
+                ds_transform_fn = load_dpo(_type, _cfg)
+                split_datasets[i] = data_set.map(
+                    ds_transform_fn,
+                    desc="Mapping RL Dataset",
+                )
+            else:
+                # If no `type` is provided, assume the dataset is already in the expected format with
+                # "prompt", "chosen" and "rejected" already preprocessed
+                split_datasets[i] = data_set
+
+        return concatenate_datasets(split_datasets)
+
+    with zero_first(is_main_process()):
+        train_dataset = load_split(cfg.datasets, cfg)
+
+        eval_dataset = None
+        if cfg.test_datasets:
+            eval_dataset = load_split(cfg.test_datasets, cfg)
+        if not eval_dataset:
+            eval_dataset = None
+
+    return train_dataset, eval_dataset

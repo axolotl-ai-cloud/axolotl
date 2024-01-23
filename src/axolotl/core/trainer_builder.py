@@ -12,14 +12,19 @@ from abc import abstractmethod
 from dataclasses import dataclass, field
 from functools import wraps
 from pathlib import Path
-from typing import Optional, Type, Union
+from typing import List, Optional, Type, Union
 
 import torch
 import transformers
 from datasets import Dataset
 from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import BatchSampler, DataLoader, RandomSampler, SequentialSampler
-from transformers import EarlyStoppingCallback, Trainer, TrainingArguments
+from transformers import (
+    EarlyStoppingCallback,
+    Trainer,
+    TrainerCallback,
+    TrainingArguments,
+)
 from transformers.trainer_utils import seed_worker
 from trl import DPOTrainer
 
@@ -460,6 +465,7 @@ class TrainerBuilderBase(abc.ABC):
     _train_dataset = None
     _eval_dataset = None
     _model_ref = None
+    _peft_config = None
 
     def __init__(self, cfg, model, tokenizer):
         self.cfg = cfg
@@ -490,25 +496,32 @@ class TrainerBuilderBase(abc.ABC):
     def eval_dataset(self, dataset):
         self._eval_dataset = dataset
 
+    @property
+    def peft_config(self):
+        return self._peft_config
+
+    @peft_config.setter
+    def peft_config(self, peft_config):
+        self._peft_config = peft_config
+
     @abstractmethod
     def build(self, total_num_steps):
         pass
 
-    @abstractmethod
-    def get_callbacks(self):
-        pass
+    def get_callbacks(self) -> List[TrainerCallback]:
+        callbacks = []
+        if self.cfg.use_wandb:
+            callbacks.append(
+                SaveAxolotlConfigtoWandBCallback(self.cfg.axolotl_config_path)
+            )
+
+        return callbacks
 
     @abstractmethod
     def get_post_trainer_create_callbacks(self, trainer):
         """
         Callbacks added after the trainer is created, usually b/c these need access to the trainer
         """
-
-
-class HFCausalTrainerBuilder(TrainerBuilderBase):
-    """
-    Build the HuggingFace training args/trainer for Causal models
-    """
 
     def hook_pre_create_training_args(self, training_arguments_kwargs):
         # TODO
@@ -526,10 +539,16 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         # TODO
         return trainer
 
+
+class HFCausalTrainerBuilder(TrainerBuilderBase):
+    """
+    Build the HuggingFace training args/trainer for Causal models
+    """
+
     def get_callbacks(self):
-        callbacks = []
+        callbacks = super().get_callbacks()
         callbacks.append(GPUStatsCallback(self.cfg))
-        callbacks.append(EvalFirstStepCallback)
+        callbacks.append(EvalFirstStepCallback())
 
         if self.cfg.relora_steps:
             callbacks.append(ReLoRACallback(self.cfg))
@@ -538,7 +557,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             hasattr(self.model, "use_bettertransformer")
             and self.model.use_bettertransformer is True
         ):
-            callbacks.append(SaveBetterTransformerModelCallback)
+            callbacks.append(SaveBetterTransformerModelCallback())
 
         if self.cfg.use_wandb:
             callbacks.append(
@@ -931,7 +950,7 @@ class HFDPOTrainerBuilder(TrainerBuilderBase):
     """
 
     def get_callbacks(self):
-        callbacks = []
+        callbacks = super().get_callbacks()
         return callbacks
 
     def get_post_trainer_create_callbacks(self, trainer):
@@ -949,21 +968,60 @@ class HFDPOTrainerBuilder(TrainerBuilderBase):
         ]:
             if hasattr(self.cfg, arg) and getattr(self.cfg, arg) is not None:
                 training_args_kwargs[arg] = getattr(self.cfg, arg)
+
+        if self.cfg.hub_model_id:
+            training_args_kwargs["hub_model_id"] = self.cfg.hub_model_id
+            training_args_kwargs["push_to_hub"] = True
+            training_args_kwargs["hub_private_repo"] = True
+            training_args_kwargs["hub_always_push"] = True
+
+            if self.cfg.hub_strategy:
+                training_args_kwargs["hub_strategy"] = self.cfg.hub_strategy
+
+        if self.cfg.save_safetensors is not None:
+            training_args_kwargs["save_safetensors"] = self.cfg.save_safetensors
+
+        if self.eval_dataset:
+            training_args_kwargs["evaluation_strategy"] = "steps"
+            training_args_kwargs["eval_steps"] = self.cfg.eval_steps
+        else:
+            training_args_kwargs["evaluation_strategy"] = "no"
+        if self.cfg.bf16 or self.cfg.bfloat16:
+            training_args_kwargs["bf16"] = True
+
+        training_args_kwargs["lr_scheduler_type"] = (
+            self.cfg.lr_scheduler if self.cfg.lr_scheduler else "cosine"
+        )
+        training_args_kwargs["lr_scheduler_kwargs"] = (
+            self.cfg.lr_scheduler_kwargs if self.cfg.lr_scheduler_kwargs else {}
+        )
+
+        if self.cfg.dataloader_pin_memory is not None:
+            training_args_kwargs[
+                "dataloader_pin_memory"
+            ] = self.cfg.dataloader_pin_memory
+        if self.cfg.dataloader_num_workers is not None:
+            training_args_kwargs[
+                "dataloader_num_workers"
+            ] = self.cfg.dataloader_num_workers
+        if self.cfg.dataloader_prefetch_factor is not None:
+            training_args_kwargs[
+                "dataloader_prefetch_factor"
+            ] = self.cfg.dataloader_prefetch_factor
+
         training_args = TrainingArguments(
             per_device_train_batch_size=self.cfg.micro_batch_size,
-            max_steps=total_num_steps,
+            max_steps=self.cfg.max_steps or total_num_steps,
             remove_unused_columns=False,
             gradient_accumulation_steps=self.cfg.gradient_accumulation_steps,
             learning_rate=self.cfg.learning_rate,
-            evaluation_strategy="no",
-            # eval_steps=self.cfg.eval_steps,
             save_strategy="steps",
             save_steps=self.cfg.save_steps,
             output_dir=self.cfg.output_dir,
             warmup_steps=self.cfg.warmup_steps,
-            bf16=True,
             gradient_checkpointing=self.cfg.gradient_checkpointing,
-            gradient_checkpointing_kwargs={"use_reentrant": False},
+            gradient_checkpointing_kwargs=self.cfg.gradient_checkpointing_kwargs
+            or {"use_reentrant": False},
             logging_first_step=True,
             logging_steps=1,
             optim=self.cfg.optimizer,
@@ -982,22 +1040,27 @@ class HFDPOTrainerBuilder(TrainerBuilderBase):
                 dpo_trainer_kwargs["label_smoothing"] = self.cfg.dpo_label_smoothing
         elif self.cfg.rl == "kto_pair":
             dpo_trainer_kwargs["loss_type"] = "kto_pair"
-
+        if self.eval_dataset:
+            dpo_trainer_kwargs["eval_dataset"] = self.eval_dataset
+        if self.cfg.adapter and self.peft_config:
+            dpo_trainer_kwargs["peft_config"] = self.peft_config
         dpo_trainer = DPOTrainer(
             self.model,
             self.model_ref,
             args=training_args,
             beta=self.cfg.dpo_beta or 0.1,
             train_dataset=self.train_dataset,
-            # eval_dataset=self.eval_dataset,
-            eval_dataset=None,
             tokenizer=self.tokenizer,
             max_length=self.cfg.sequence_len,
             max_target_length=None,
             max_prompt_length=self.cfg.sequence_len,
             generate_during_eval=True,
+            callbacks=self.get_callbacks(),
             **dpo_trainer_kwargs,
         )
+        dpo_trainer = self.hook_post_create_trainer(dpo_trainer)
+        for callback in self.get_post_trainer_create_callbacks(dpo_trainer):
+            dpo_trainer.add_callback(callback)
 
         return dpo_trainer
 

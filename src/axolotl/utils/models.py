@@ -682,7 +682,12 @@ def load_model(
 
     lora_config = None
     if not reference_model or cfg.lora_model_dir:
-        model, lora_config = load_adapter(model, cfg, cfg.adapter)
+        # if we're not loading the reference model, then we're loading the model for training
+        # then the dpo trainer doesn't want the peft model loaded over it, it just wants the lora/peft config
+        if cfg.adapter and cfg.rl in ["dpo", "ipo", "kto_pair"] and not cfg.merge_lora:
+            _, lora_config = load_lora(model, cfg, inference=False, config_only=True)
+        else:
+            model, lora_config = load_adapter(model, cfg, cfg.adapter)
 
     if cfg.ddp and not load_in_8bit and not (cfg.rl and cfg.load_in_4bit):
         model.to(f"cuda:{cfg.local_rank}")
@@ -770,8 +775,8 @@ def find_all_linear_names(model):
     return list(lora_module_names)
 
 
-def load_lora(model, cfg, inference=False):
-    # type: (PreTrainedModel, DictDefault, bool) -> Tuple[PreTrainedModel, Optional[PeftConfig]]
+def load_lora(model, cfg, inference=False, config_only=False):
+    # type: (PreTrainedModel, DictDefault, bool, bool) -> Tuple[Optional[PreTrainedModel], Optional[PeftConfig]]
 
     from peft import LoraConfig, PeftModel, get_peft_model
 
@@ -793,6 +798,9 @@ def load_lora(model, cfg, inference=False):
         bias="none",
         task_type="CAUSAL_LM",
     )
+
+    if config_only:
+        return None, lora_config
 
     if cfg.lora_model_dir:
         LOG.debug("Loading pretained PEFT - LoRA")
