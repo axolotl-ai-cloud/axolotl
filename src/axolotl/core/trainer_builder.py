@@ -1011,7 +1011,7 @@ class HFDPOTrainerBuilder(TrainerBuilderBase):
 
         training_args = TrainingArguments(
             per_device_train_batch_size=self.cfg.micro_batch_size,
-            max_steps=total_num_steps,
+            max_steps=self.cfg.max_steps or total_num_steps,
             remove_unused_columns=False,
             gradient_accumulation_steps=self.cfg.gradient_accumulation_steps,
             learning_rate=self.cfg.learning_rate,
