@@ -792,6 +792,7 @@ def load_pretraining_dataset(path, tokenizer, cfg, name=None, max_tokens=2048, s
         # remove all the existing columns after mapping since they end up having
         # a different length than the encoded/tokenized column
         remove_columns=dataset.features.keys(),
+        desc="Encoding Pretraining",
     )
     return dataset
 

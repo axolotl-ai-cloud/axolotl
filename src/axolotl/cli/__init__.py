@@ -410,7 +410,10 @@ def load_rl_datasets(
     for i, data_set in enumerate(train_datasets):
         _type = cfg.datasets[i]["type"]
         ds_type_fn = locals()[_type]
-        train_datasets[i] = data_set.map(ds_type_fn)
+        train_datasets[i] = data_set.map(
+            ds_type_fn,
+            desc="Mapping RL Dataset",
+        )
     train_dataset = concatenate_datasets(train_datasets)
 
     # eval_dataset = eval_dataset.map(intel_apply_chatml)
