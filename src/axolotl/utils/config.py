@@ -204,6 +204,9 @@ def validate_config(cfg):
     if cfg.max_packed_sequence_len:
         raise DeprecationWarning("`max_packed_sequence_len` is no longer supported")
 
+    if cfg.sample_packing and cfg.rl:
+        raise ValueError("`sample_packing: true` does not work with RLHF training")
+
     if cfg.sample_packing and not cfg.pad_to_sequence_len:
         LOG.warning(
             "`pad_to_sequence_len: true` is recommended when using sample_packing"
