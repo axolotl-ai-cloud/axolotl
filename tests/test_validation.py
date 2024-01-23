@@ -742,11 +742,11 @@ class ValidationCheckModelConfig(BaseValidation):
 
         check_model_config(cfg, model_config)
 
-    def test_phi2_add_tokens_adapter(self):
+    def test_phi_add_tokens_adapter(self):
         cfg = DictDefault(
             {"adapter": "qlora", "load_in_4bit": True, "tokens": ["<|imstart|>"]}
         )
-        model_config = DictDefault({"model_type": "phi-msft"})
+        model_config = DictDefault({"model_type": "phi"})
 
         with pytest.raises(
             ValueError,
@@ -759,7 +759,7 @@ class ValidationCheckModelConfig(BaseValidation):
                 "adapter": "qlora",
                 "load_in_4bit": True,
                 "tokens": ["<|imstart|>"],
-                "lora_modules_to_save": ["embed_tokens", "lm_head"],
+                "lora_modules_to_save": ["embd.wte", "lm_head.linear"],
             }
         )
 
@@ -774,7 +774,7 @@ class ValidationCheckModelConfig(BaseValidation):
                 "adapter": "qlora",
                 "load_in_4bit": True,
                 "tokens": ["<|imstart|>"],
-                "lora_modules_to_save": ["embd.wte", "lm_head.linear"],
+                "lora_modules_to_save": ["embed_tokens", "lm_head"],
             }
         )
 

@@ -106,19 +106,16 @@ def drop_long_seq(sample, sequence_len=2048):
     return len(sample["input_ids"]) <= sequence_len and len(sample["input_ids"]) > 0
 
 
-def process_datasets_for_packing(cfg, train_dataset, eval_dataset, tokenizer):
+def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
     drop_long = partial(drop_long_seq, sequence_len=cfg.sequence_len)
     with zero_first(is_main_process()):
         if cfg.is_preprocess:
             max_input_len = np.max(get_dataset_lengths(train_dataset))
             LOG.debug(f"max_input_len: {max_input_len}", main_process_only=True)
 
-        # Phi doesn't want the attention_mask feature when training
         if (
-            "CodeGenTokenizer" in tokenizer.__class__.__name__
-            or (cfg.is_mistral_derived_model and cfg.flash_attention)
-            or cfg.model_config_type == "mamba"
-        ):
+            cfg.is_mistral_derived_model and cfg.flash_attention
+        ) or cfg.model_config_type == "mamba":
             LOG.info("dropping attention_mask column")
             train_dataset = train_dataset.remove_columns("attention_mask")
             if eval_dataset:

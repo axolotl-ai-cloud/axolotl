@@ -169,6 +169,7 @@ def load_tokenizer(cfg):
             # pylint: disable=too-many-boolean-expressions
             if (
                 (getattr(tokenizer, k) is None or getattr(tokenizer, k) != val)
+                and (len(tokenizer.encode(val)) > 1)
                 and cfg.adapter
                 and (
                     not cfg.lora_modules_to_save
@@ -342,6 +343,12 @@ def load_model(
         LOG.info("patching falcon with flash attention")
         replace_falcon_attn_with_multipack_flash_attn()
 
+    if cfg.model_config_type == "phi" and cfg.flash_attention and cfg.sample_packing:
+        from axolotl.monkeypatch.phi import replace_phi_attn_with_multipack_flash_attn
+
+        LOG.info("patching phi with flash attention")
+        replace_phi_attn_with_multipack_flash_attn()
+
     if cfg.model_config_type == "qwen2" and cfg.flash_attention and cfg.sample_packing:
         from axolotl.monkeypatch.qwen2 import (
             replace_qwen2_attn_with_multipack_flash_attn,
@@ -448,7 +455,7 @@ def load_model(
                 "flash_attention_2"
             )
         else:
-            if model_config.model_type in ["mixtral", "qwen2", "falcon"]:
+            if model_config.model_type in ["mixtral", "qwen2", "falcon", "phi"]:
                 model_kwargs["attn_implementation"] = "flash_attention_2"
                 model_config._attn_implementation = (  # pylint: disable=protected-access
                     "flash_attention_2"
@@ -458,10 +465,6 @@ def load_model(
                 model_config._attn_implementation = (  # pylint: disable=protected-access
                     "eager"
                 )
-        if model_config.model_type == "phi-msft":
-            model_config.flash_attn = True
-            model_config.flash_rotary = True
-            model_config.fused_dense = True
 
     try:
         if (
@@ -518,16 +521,6 @@ def load_model(
         #         device=cfg.device,
         #     )
         #     model.train() # sets to train instead of eval mode
-        elif model_type == "PhiForCausalLM" or model_config.model_type == "phi-msft":
-            from axolotl.models.phi import PhiForCausalLM
-
-            model = PhiForCausalLM.from_pretrained(
-                base_model,
-                config=model_config,
-                load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
-                load_in_4bit=cfg.load_in_4bit and cfg.adapter is not None,
-                **model_kwargs,
-            )
         elif model_type == "MambaLMHeadModel":
             # FIXME this is janky at best and hacked together to make it work
             MambaLMHeadModel = fix_mamba_attn_for_loss()  # pylint: disable=invalid-name
