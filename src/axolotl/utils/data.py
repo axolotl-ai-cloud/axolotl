@@ -864,14 +864,12 @@ def load_prepare_dpo_datasets(cfg):
                         "json",
                         data_files=data_files,
                         split=ds_cfg["split"],
-                        desc="Mapping RL Dataset",
                     )
                     split_datasets.insert(i, ds)
             else:
                 ds = load_dataset(  # pylint: disable=invalid-name
                     ds_cfg["path"],
                     split=ds_cfg["split"],
-                    desc="Mapping RL Dataset",
                 )
                 split_datasets.insert(i, ds)
 
