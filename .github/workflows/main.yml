@@ -7,7 +7,7 @@ on:
 
 jobs:
   build-axolotl:
-    if: github.repository_owner == 'OpenAccess-AI-Collective'
+    if: ${{ ! contains(github.event.commits[0].message, '[skip docker]]') && github.repository_owner == 'OpenAccess-AI-Collective' }}
     # this job needs to be run on self-hosted GPU runners...
     strategy:
       fail-fast: false
@@ -79,7 +79,7 @@ jobs:
 
   build-axolotl-runpod:
     needs: build-axolotl
-    if: github.repository_owner == 'OpenAccess-AI-Collective'
+    if: ${{ ! contains(github.event.commits[0].message, '[skip docker]]') && github.repository_owner == 'OpenAccess-AI-Collective' }}
     # this job needs to be run on self-hosted GPU runners...
     strategy:
       matrix:
