@@ -860,7 +860,7 @@ def load_prepare_dpo_datasets(cfg):
             if ds_cfg["ds_type"] == "json":
                 for data_file in ds_cfg["data_files"]:
                     data_files = {ds_cfg["split"]: data_file}
-                    ds = load_dataset(
+                    ds = load_dataset(  # pylint: disable=invalid-name
                         "json",
                         data_files=data_files,
                         split=ds_cfg["split"],
