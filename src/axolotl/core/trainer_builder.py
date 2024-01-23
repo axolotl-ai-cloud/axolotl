@@ -227,7 +227,8 @@ class AxolotlTrainer(Trainer):
     def get_train_dataloader(self) -> DataLoader:
         if self.args.sample_packing and not self.args.pretraining:
             train_dataset = self.train_dataset
-            train_dataset = train_dataset.remove_columns(["length"])
+            if "length" in train_dataset.features.keys():
+                train_dataset = train_dataset.remove_columns(["length"])
             data_collator = self.data_collator
             dataloader_params = {
                 "batch_size": self._train_batch_size,
