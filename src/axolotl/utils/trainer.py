@@ -143,7 +143,7 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset, tokenizer):
                 add_length,
                 num_proc=cfg.dataset_processes,
                 load_from_cache_file=not cfg.is_preprocess,
-                desc="Packing (Group By Length)",
+                desc="Group By Length",
             )
 
         if cfg.sample_packing:
@@ -151,7 +151,7 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset, tokenizer):
                 add_position_ids,
                 num_proc=cfg.dataset_processes,
                 load_from_cache_file=not cfg.is_preprocess,
-                desc="Packing (Sample Packing)",
+                desc="Add position_id column (Sample Packing)",
             )
             if cfg.eval_sample_packing is not False:
                 if eval_dataset:
@@ -159,7 +159,7 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset, tokenizer):
                         add_position_ids,
                         num_proc=cfg.dataset_processes,
                         load_from_cache_file=not cfg.is_preprocess,
-                        desc="Packing (Sample Packing)",
+                        desc="Add position_id column (Sample Packing)",
                     )
 
     return train_dataset, eval_dataset
@@ -174,7 +174,7 @@ def process_pretraining_datasets_for_packing(train_dataset, sequence_len):
     )
     train_dataset = train_dataset.map(
         add_position_ids,
-        desc="Packing Pretraining Dataset",
+        desc="Add position_id column (Pretraining Sample Packing)",
     )
     return train_dataset
 
