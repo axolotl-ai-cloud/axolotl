@@ -159,6 +159,13 @@ def normalize_config(cfg):
     if isinstance(cfg.pretraining_dataset, dict):
         cfg.pretraining_dataset = [cfg.pretraining_dataset]
 
+    if (
+        cfg.gradient_checkpointing
+        and cfg.unfrozen_parameters is None
+        and cfg.gradient_checkpointing_kwargs is None
+    ):
+        cfg.gradient_checkpointing_kwargs = {"use_reentrant": True}
+
     log_gpu_memory_usage(LOG, "baseline", cfg.device)
 
 
