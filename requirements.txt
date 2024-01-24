@@ -5,7 +5,7 @@ transformers==4.37.0
 tokenizers==0.15.0
 bitsandbytes>=0.41.1
 accelerate==0.26.1
-deepspeed
+deepspeed>=0.13.1
 addict
 fire
 PyYAML>=6.0
