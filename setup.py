@@ -57,6 +57,7 @@ setup(
         ],
         "deepspeed": [
             "deepspeed>=0.13.1",
+            "deepspeed-kernels",
         ],
         "mamba-ssm": [
             "mamba-ssm==1.0.1",
