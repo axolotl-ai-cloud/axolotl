@@ -333,7 +333,10 @@ def load_model(
         )
 
         LOG.info("patching mixtral with flash attention")
-        replace_mixtral_attn_with_multipack_flash_attn()
+        mixtral_patch_kwargs = {}
+        if is_deepspeed_zero3_enabled():
+            mixtral_patch_kwargs["for_zero3"] = True
+        replace_mixtral_attn_with_multipack_flash_attn(**mixtral_patch_kwargs)
 
     if cfg.model_config_type == "falcon" and cfg.flash_attention and cfg.sample_packing:
         from axolotl.monkeypatch.falcon import (
