@@ -35,7 +35,7 @@ lora_fan_in_fan_out:
 wandb_project:
 wandb_entity:
 wandb_watch:
-wandb_run_id:
+wandb_name:
 wandb_log_model:
 
 output_dir: btlm-out
@@ -53,8 +53,8 @@ lr_quadratic_warmup: true
 learning_rate: 0.000085
 train_on_inputs: true
 group_by_length: false
-bf16: true
-fp16: false
+bf16: auto
+fp16:
 tf32: true
 
 gradient_checkpointing: false
@@ -72,8 +72,8 @@ gptq_groupsize:
 gptq_model_v1:
 
 warmup_steps: 32
-eval_steps:
-save_steps:
+evals_per_epoch: 4
+saves_per_epoch: 1
 save_total_limit:
 
 debug:

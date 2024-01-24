@@ -1,3 +1,4 @@
+# pylint: disable=too-many-lines
 """
 Builder for the training args and trainer
 """
@@ -9,30 +10,46 @@ import math
 import sys
 from abc import abstractmethod
 from dataclasses import dataclass, field
-from functools import partial
+from functools import wraps
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional, Type, Union
 
 import torch
 import transformers
 from datasets import Dataset
 from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import BatchSampler, DataLoader, RandomSampler, SequentialSampler
-from transformers import EarlyStoppingCallback, Trainer, TrainingArguments
+from transformers import (
+    EarlyStoppingCallback,
+    Trainer,
+    TrainerCallback,
+    TrainingArguments,
+)
 from transformers.trainer_utils import seed_worker
+from trl import DPOTrainer
 
 from axolotl.monkeypatch.relora import ReLoRACallback, ReLoRAScheduler
 from axolotl.utils.callbacks import (
     EvalFirstStepCallback,
     GPUStatsCallback,
+    LossWatchDogCallback,
+    SaveAxolotlConfigtoMlflowCallback,
     SaveAxolotlConfigtoWandBCallback,
     SaveBetterTransformerModelCallback,
     bench_eval_callback_factory,
     log_prediction_callback_factory,
 )
-from axolotl.utils.collators import BatchSamplerDataCollatorForSeq2Seq
-from axolotl.utils.samplers import MultipackBatchSampler
-from axolotl.utils.schedulers import get_cosine_schedule_with_quadratic_warmup
+from axolotl.utils.collators import (
+    BatchSamplerDataCollatorForSeq2Seq,
+    DataCollatorForSeq2Seq,
+    MambaDataCollator,
+    V2BatchSamplerDataCollatorForSeq2Seq,
+)
+from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
+from axolotl.utils.schedulers import (
+    get_cosine_schedule_with_min_lr,
+    get_cosine_schedule_with_quadratic_warmup,
+)
 
 try:
     import torch._dynamo  # pylint: disable=ungrouped-imports
@@ -48,9 +65,18 @@ class AxolotlTrainingArguments(TrainingArguments):
     Extend the base TrainingArguments for axolotl helpers
     """
 
+    model_type: Optional[str] = field(
+        default=None, metadata={"help": "HF model configuration model_type."}
+    )
     lr_quadratic_warmup: bool = field(
         default=False,
         metadata={"help": "Use quadratic warmup for cosine scheduling."},
+    )
+    pretraining: bool = field(
+        default=False,
+        metadata={
+            "help": "Indicates to trainer whether we are doing continued pretraining."
+        },
     )
     sample_packing: bool = field(
         default=False,
@@ -105,6 +131,10 @@ class AxolotlTrainingArguments(TrainingArguments):
         default=None,
         metadata={"help": "prefetch_factor argument to the dataloader"},
     )
+    cosine_min_lr_ratio: Optional[float] = field(
+        default=None,
+        metadata={"help": "Minimum learning rate is min_lr_ratio * learning_rate"},
+    )
 
 
 class AxolotlTrainer(Trainer):
@@ -113,11 +143,21 @@ class AxolotlTrainer(Trainer):
     """
 
     args = None  # type: AxolotlTrainingArguments
+    tag_names = ["axolotl"]
 
-    def __init__(self, *args, num_epochs=1, bench_data_collator=None, **kwargs):
+    def __init__(
+        self,
+        *_args,
+        num_epochs=1,
+        bench_data_collator=None,
+        eval_data_collator=None,
+        **kwargs
+    ):
         self.num_epochs = num_epochs
         self.bench_data_collator = bench_data_collator
-        super().__init__(*args, **kwargs)
+        self.eval_data_collator = eval_data_collator
+        super().__init__(*_args, **kwargs)
+        self.train_data_collator = self.data_collator
 
     def create_scheduler(
         self, num_training_steps: int, optimizer: torch.optim.Optimizer = None
@@ -143,23 +183,29 @@ class AxolotlTrainer(Trainer):
                     num_warmup_steps=self.args.get_warmup_steps(num_training_steps),
                     num_training_steps=num_training_steps,
                 )
+            elif self.args.lr_scheduler_type == "cosine" and self.args.cosine_min_lr_ratio is not None:
+                assert 0 <= self.args.cosine_min_lr_ratio <= 1.0, "cosine_min_lr_ratio must be between 0.0 and 1.0"
+                if self.args.deepspeed:
+                    LOG.warning("Using cosine scheduler with deepspeed. This may be ignored if a scheduler is set \
+                                in the deepspeed JSON")
+                self.lr_scheduler = get_cosine_schedule_with_min_lr(  # pylint: disable=attribute-defined-outside-init
+                    optimizer,
+                    num_warmup_steps=self.args.get_warmup_steps(num_training_steps),
+                    num_training_steps=num_training_steps,
+                    min_lr_ratio=self.args.cosine_min_lr_ratio,
+                )
             else:
                 return super().create_scheduler(num_training_steps, optimizer)
         return self.lr_scheduler
 
     def _get_train_sampler(self) -> Optional[torch.utils.data.Sampler]:
-        if self.args.sample_packing:
+        if self.args.sample_packing and not self.args.pretraining:
             return MultipackBatchSampler(
                 RandomSampler(self.train_dataset),
                 self.args.train_batch_size,
                 drop_last=True,
                 batch_max_len=self._train_batch_size * self.args.max_seq_length,
-                lengths=(
-                    self.train_dataset.data.column("position_ids")
-                    .to_pandas()
-                    .apply(lambda x: x[-1] + 1)
-                    .values
-                ),
+                lengths=get_dataset_lengths(self.train_dataset),
                 packing_efficiency_estimate=self.args.sample_packing_efficiency,
             )
         return super()._get_train_sampler()
@@ -173,20 +219,16 @@ class AxolotlTrainer(Trainer):
                 self.args.per_device_eval_batch_size,
                 drop_last=True,
                 batch_max_len=self.args.eval_batch_size * self.args.max_seq_length,
-                lengths=(
-                    eval_dataset.data.column("position_ids")
-                    .to_pandas()
-                    .apply(lambda x: x[-1] + 1)
-                    .values
-                ),
+                lengths=get_dataset_lengths(eval_dataset),
                 packing_efficiency_estimate=self.args.sample_packing_efficiency,
             )
         return super()._get_eval_sampler(eval_dataset)
 
     def get_train_dataloader(self) -> DataLoader:
-        if self.args.sample_packing:
+        if self.args.sample_packing and not self.args.pretraining:
             train_dataset = self.train_dataset
-            train_dataset = train_dataset.remove_columns(["length"])
+            if "length" in train_dataset.features.keys():
+                train_dataset = train_dataset.remove_columns(["length"])
             data_collator = self.data_collator
             dataloader_params = {
                 "batch_size": self._train_batch_size,
@@ -215,6 +257,16 @@ class AxolotlTrainer(Trainer):
         return super().get_train_dataloader()
 
     def get_eval_dataloader(self, eval_dataset: Optional[Dataset] = None) -> DataLoader:
+        if self.args.sample_packing and self.args.eval_sample_packing is False:
+            self.data_collator = (  # pylint: disable=attribute-defined-outside-init
+                self.eval_data_collator
+            )
+            dataloader = super().get_eval_dataloader(eval_dataset)
+            self.data_collator = (  # pylint: disable=attribute-defined-outside-init
+                self.train_data_collator
+            )
+            return dataloader
+
         if self.args.sample_packing and self.args.eval_sample_packing is not False:
             eval_dataset = (
                 eval_dataset if eval_dataset is not None else self.eval_dataset
@@ -245,6 +297,7 @@ class AxolotlTrainer(Trainer):
             return self.accelerator.prepare_data_loader(
                 DataLoader(eval_dataset, **dataloader_params)
             )
+
         return super().get_eval_dataloader(eval_dataset)
 
     def _get_bench_sampler(
@@ -283,11 +336,68 @@ class AxolotlTrainer(Trainer):
         #     return (loss, outputs) if return_outputs else loss
         return super().compute_loss(model, inputs, return_outputs=return_outputs)
 
+    def _sanitize_kwargs_for_tagging(self, tag_names, kwargs=None):
+        if isinstance(tag_names, str):
+            tag_names = [tag_names]
+
+        if kwargs is not None:
+            if "tags" not in kwargs:
+                kwargs["tags"] = tag_names
+            elif "tags" in kwargs and isinstance(kwargs["tags"], list):
+                kwargs["tags"].extend(tag_names)
+            elif "tags" in kwargs and isinstance(kwargs["tags"], str):
+                tag_names.append(kwargs["tags"])
+                kwargs["tags"] = tag_names
+
+        return kwargs
+
+    @wraps(Trainer.push_to_hub)
+    def push_to_hub(self, *args, **kwargs) -> str:
+        """
+        Overwrite the `push_to_hub` method in order to force-add the tags when pushing the
+        model on the Hub. Please refer to `~transformers.Trainer.push_to_hub` for more details.
+        """
+        kwargs = self._sanitize_kwargs_for_tagging(
+            tag_names=self.tag_names, kwargs=kwargs
+        )
+
+        return super().push_to_hub(*args, **kwargs)
+
+
+class AxolotlMambaTrainer(AxolotlTrainer):
+    """
+    Mamba specific trainer to handle loss calculation
+    """
+
+    tag_names = ["axolotl", "mamba"]
+
+    def compute_loss(
+        self,
+        model,
+        inputs,
+        return_outputs=False,  # pylint: disable=unused-argument
+    ):
+        input_ids = inputs.pop("input_ids")
+        lm_logits = model(input_ids).logits
+
+        labels = input_ids.to(lm_logits.device)
+        shift_logits = lm_logits[:, :-1, :].contiguous()
+        labels = labels[:, 1:].contiguous()
+
+        loss_fct = torch.nn.CrossEntropyLoss()
+        lm_loss = loss_fct(
+            shift_logits.view(-1, shift_logits.size(-1)), labels.view(-1)
+        )
+
+        return lm_loss
+
 
 class OneCycleLRSchedulerTrainer(AxolotlTrainer):
     """
     Trainer subclass that uses the OneCycleLR scheduler
     """
+
+    tag_names = ["axolotl", "onecycle"]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -317,6 +427,8 @@ class ReLoRATrainer(AxolotlTrainer):
     """
     Trainer subclass that uses the OneCycleLR scheduler
     """
+
+    tag_names = ["axolotl", "relora"]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -353,11 +465,21 @@ class TrainerBuilderBase(abc.ABC):
 
     _train_dataset = None
     _eval_dataset = None
+    _model_ref = None
+    _peft_config = None
 
     def __init__(self, cfg, model, tokenizer):
         self.cfg = cfg
         self.model = model
         self.tokenizer = tokenizer
+
+    @property
+    def model_ref(self):
+        return self._model_ref
+
+    @model_ref.setter
+    def model_ref(self, model):
+        self._model_ref = model
 
     @property
     def train_dataset(self):
@@ -375,25 +497,32 @@ class TrainerBuilderBase(abc.ABC):
     def eval_dataset(self, dataset):
         self._eval_dataset = dataset
 
+    @property
+    def peft_config(self):
+        return self._peft_config
+
+    @peft_config.setter
+    def peft_config(self, peft_config):
+        self._peft_config = peft_config
+
     @abstractmethod
     def build(self, total_num_steps):
         pass
 
-    @abstractmethod
-    def get_callbacks(self):
-        pass
+    def get_callbacks(self) -> List[TrainerCallback]:
+        callbacks = []
+        if self.cfg.use_wandb:
+            callbacks.append(
+                SaveAxolotlConfigtoWandBCallback(self.cfg.axolotl_config_path)
+            )
+
+        return callbacks
 
     @abstractmethod
     def get_post_trainer_create_callbacks(self, trainer):
         """
         Callbacks added after the trainer is created, usually b/c these need access to the trainer
         """
-
-
-class HFCausalTrainerBuilder(TrainerBuilderBase):
-    """
-    Build the HuggingFace training args/trainer for Causal models
-    """
 
     def hook_pre_create_training_args(self, training_arguments_kwargs):
         # TODO
@@ -411,10 +540,16 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         # TODO
         return trainer
 
+
+class HFCausalTrainerBuilder(TrainerBuilderBase):
+    """
+    Build the HuggingFace training args/trainer for Causal models
+    """
+
     def get_callbacks(self):
-        callbacks = []
+        callbacks = super().get_callbacks()
         callbacks.append(GPUStatsCallback(self.cfg))
-        callbacks.append(EvalFirstStepCallback)
+        callbacks.append(EvalFirstStepCallback())
 
         if self.cfg.relora_steps:
             callbacks.append(ReLoRACallback(self.cfg))
@@ -423,12 +558,19 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             hasattr(self.model, "use_bettertransformer")
             and self.model.use_bettertransformer is True
         ):
-            callbacks.append(SaveBetterTransformerModelCallback)
+            callbacks.append(SaveBetterTransformerModelCallback())
 
         if self.cfg.use_wandb:
             callbacks.append(
                 SaveAxolotlConfigtoWandBCallback(self.cfg.axolotl_config_path)
             )
+        if self.cfg.use_mlflow:
+            callbacks.append(
+                SaveAxolotlConfigtoMlflowCallback(self.cfg.axolotl_config_path)
+            )
+
+        if self.cfg.loss_watchdog_threshold is not None:
+            callbacks.append(LossWatchDogCallback(self.cfg))
 
         return callbacks
 
@@ -458,6 +600,8 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             return OneCycleLRSchedulerTrainer
         if self.cfg.relora_steps:
             return ReLoRATrainer
+        if self.cfg.model_config_type == "mamba":
+            return AxolotlMambaTrainer
         return AxolotlTrainer
 
     def build(self, total_num_steps):
@@ -494,6 +638,14 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             training_arguments_kwargs[
                 "gradient_checkpointing"
             ] = self.cfg.gradient_checkpointing
+            if self.cfg.gradient_checkpointing_kwargs:
+                training_arguments_kwargs[
+                    "gradient_checkpointing_kwargs"
+                ] = self.cfg.gradient_checkpointing_kwargs
+            else:
+                training_arguments_kwargs["gradient_checkpointing_kwargs"] = {
+                    "use_reentrant": False
+                }
         if self.cfg.fsdp:
             training_arguments_kwargs["fsdp"] = self.cfg.fsdp
             if self.cfg.fsdp_config:
@@ -521,11 +673,12 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             training_arguments_kwargs["hub_model_id"] = self.cfg.hub_model_id
             training_arguments_kwargs["push_to_hub"] = True
             training_arguments_kwargs["hub_private_repo"] = True
+            training_arguments_kwargs["hub_always_push"] = True
 
             if self.cfg.hub_strategy:
                 training_arguments_kwargs["hub_strategy"] = self.cfg.hub_strategy
 
-        if self.cfg.save_safetensors:
+        if self.cfg.save_safetensors is not None:
             training_arguments_kwargs["save_safetensors"] = self.cfg.save_safetensors
 
         if self.cfg.sample_packing_eff_est:
@@ -545,6 +698,12 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             training_arguments_kwargs[
                 "dataloader_prefetch_factor"
             ] = self.cfg.dataloader_prefetch_factor
+        if self.cfg.dataloader_drop_last is not None:
+            training_arguments_kwargs[
+                "dataloader_drop_last"
+            ] = self.cfg.dataloader_drop_last
+        elif self.cfg.sample_packing and self.cfg.eval_sample_packing is False:
+            training_arguments_kwargs["dataloader_drop_last"] = True
 
         if self.cfg.val_set_size == 0:
             # no eval set, so don't eval
@@ -612,9 +771,10 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         training_arguments_kwargs[
             "per_device_train_batch_size"
         ] = self.cfg.micro_batch_size
-        training_arguments_kwargs[
-            "per_device_eval_batch_size"
-        ] = self.cfg.eval_batch_size
+        if self.cfg.eval_batch_size:
+            training_arguments_kwargs[
+                "per_device_eval_batch_size"
+            ] = self.cfg.eval_batch_size
         training_arguments_kwargs[
             "gradient_accumulation_steps"
         ] = self.cfg.gradient_accumulation_steps
@@ -641,9 +801,14 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             False if self.cfg.ddp else None
         )
         training_arguments_kwargs["group_by_length"] = self.cfg.group_by_length
-        training_arguments_kwargs["report_to"] = "wandb" if self.cfg.use_wandb else None
+        report_to = None
+        if self.cfg.use_wandb:
+            report_to = "wandb"
+        if self.cfg.use_mlflow:
+            report_to = "mlflow"
+        training_arguments_kwargs["report_to"] = report_to
         training_arguments_kwargs["run_name"] = (
-            self.cfg.wandb_run_id if self.cfg.use_wandb else None
+            self.cfg.wandb_name if self.cfg.use_wandb else None
         )
         training_arguments_kwargs["optim"] = (
             self.cfg.optimizer if self.cfg.optimizer else "adamw_hf"
@@ -654,6 +819,10 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             and self.cfg.lr_scheduler not in ("one_cycle", "log_sweep")
             else "cosine"
         )
+        training_arguments_kwargs["lr_scheduler_kwargs"] = (
+            self.cfg.lr_scheduler_kwargs if self.cfg.lr_scheduler_kwargs else {}
+        )
+        training_arguments_kwargs["cosine_min_lr_ratio"] = self.cfg.cosine_min_lr_ratio
         training_arguments_kwargs["weight_decay"] = (
             self.cfg.weight_decay if self.cfg.weight_decay is not None else 0.0
         )
@@ -673,6 +842,14 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         training_arguments_kwargs = self.hook_pre_create_training_args(
             training_arguments_kwargs
         )
+        training_arguments_kwargs["model_type"] = self.cfg.model_config_type
+        training_arguments_kwargs["pretraining"] = bool(self.cfg.pretraining_dataset)
+
+        if self.cfg.neftune_noise_alpha is not None:
+            training_arguments_kwargs[
+                "neftune_noise_alpha"
+            ] = self.cfg.neftune_noise_alpha
+
         training_args = (
             AxolotlTrainingArguments(  # pylint: disable=unexpected-keyword-arg
                 **training_arguments_kwargs,
@@ -698,26 +875,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             # https://docs.nvidia.com/deeplearning/performance/dl-performance-matrix-multiplication/index.html
             data_collator_kwargs["pad_to_multiple_of"] = 64
 
-        if self.cfg.is_llama_derived_model and self.cfg.landmark_attention:
-            from axolotl.monkeypatch.llama_landmark_attn import (
-                add_mem_tokens,
-                get_mem_id,
-                set_model_mem_id,
-            )
-
-            set_model_mem_id(self.model, self.tokenizer)
-
-            LOG.info("Adding landmark attention tokens to dataset")
-
-            for dataset in [self.train_dataset, self.eval_dataset]:
-                dataset = dataset.map(
-                    partial(
-                        add_mem_tokens, mem_freq=50, mem_id=get_mem_id(self.tokenizer)
-                    ),
-                    batched=False,
-                    num_proc=32,
-                )
-
         trainer_cls = self._get_trainer_cls()
         trainer_kwargs, trainer_cls = self.hook_pre_create_trainer(
             trainer_kwargs, trainer_cls
@@ -727,10 +884,9 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             train_dataset=self.train_dataset,
             eval_dataset=self.eval_dataset,
             args=training_args,
-            data_collator=BatchSamplerDataCollatorForSeq2Seq(
-                self.tokenizer,
-                return_tensors="pt",
-                **data_collator_kwargs,
+            data_collator=self.build_collator(training_args, **data_collator_kwargs),
+            eval_data_collator=self.build_collator(
+                training_args, is_eval=True, **data_collator_kwargs
             ),
             bench_data_collator=transformers.DataCollatorForSeq2Seq(
                 self.tokenizer,
@@ -751,3 +907,183 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             ] = self.cfg.micro_batch_size
 
         return trainer
+
+    def build_collator(
+        self, training_args: AxolotlTrainingArguments, is_eval=False, **kwargs
+    ):
+        if training_args.pretraining:
+            return None
+
+        if self.cfg.model_config_type == "mamba":
+            return MambaDataCollator(tokenizer=self.tokenizer)
+
+        use_batch_sampler_collator = False
+        if is_eval is False and training_args.sample_packing:
+            use_batch_sampler_collator = True
+        if is_eval and training_args.eval_sample_packing:
+            use_batch_sampler_collator = True
+
+        collator: Type[
+            Union[
+                V2BatchSamplerDataCollatorForSeq2Seq,
+                BatchSamplerDataCollatorForSeq2Seq,
+                DataCollatorForSeq2Seq,
+            ]
+        ]
+        if use_batch_sampler_collator:
+            if self.cfg.model_config_type in ["mixtral", "qwen2", "falcon", "phi"]:
+                collator = V2BatchSamplerDataCollatorForSeq2Seq
+            else:
+                collator = BatchSamplerDataCollatorForSeq2Seq
+        else:
+            collator = DataCollatorForSeq2Seq
+
+        return collator(
+            self.tokenizer,
+            return_tensors="pt",
+            **kwargs,
+        )
+
+
+class HFDPOTrainerBuilder(TrainerBuilderBase):
+    """
+    Trainer factory class for DPO Trainer
+    """
+
+    def get_callbacks(self):
+        callbacks = super().get_callbacks()
+        return callbacks
+
+    def get_post_trainer_create_callbacks(self, trainer):
+        callbacks = []
+        return callbacks
+
+    def build_training_arguments(self, total_num_steps):
+        training_args_kwargs = {}
+        for arg in [
+            "adam_beta1",
+            "adam_beta2",
+            "adam_epsilon",
+            "dataloader_num_workers",
+            "dataloader_pin_memory",
+        ]:
+            if hasattr(self.cfg, arg) and getattr(self.cfg, arg) is not None:
+                training_args_kwargs[arg] = getattr(self.cfg, arg)
+
+        if self.cfg.hub_model_id:
+            training_args_kwargs["hub_model_id"] = self.cfg.hub_model_id
+            training_args_kwargs["push_to_hub"] = True
+            training_args_kwargs["hub_private_repo"] = True
+            training_args_kwargs["hub_always_push"] = True
+
+            if self.cfg.hub_strategy:
+                training_args_kwargs["hub_strategy"] = self.cfg.hub_strategy
+
+        if self.cfg.save_safetensors is not None:
+            training_args_kwargs["save_safetensors"] = self.cfg.save_safetensors
+
+        if self.eval_dataset:
+            training_args_kwargs["evaluation_strategy"] = "steps"
+            training_args_kwargs["eval_steps"] = self.cfg.eval_steps
+        else:
+            training_args_kwargs["evaluation_strategy"] = "no"
+        if self.cfg.bf16 or self.cfg.bfloat16:
+            training_args_kwargs["bf16"] = True
+
+        training_args_kwargs["lr_scheduler_type"] = (
+            self.cfg.lr_scheduler if self.cfg.lr_scheduler else "cosine"
+        )
+        training_args_kwargs["lr_scheduler_kwargs"] = (
+            self.cfg.lr_scheduler_kwargs if self.cfg.lr_scheduler_kwargs else {}
+        )
+        if self.cfg.remove_unused_columns is not None:
+            training_args_kwargs[
+                "remove_unused_columns"
+            ] = self.cfg.remove_unused_columns
+        else:
+            training_args_kwargs["remove_unused_columns"] = False
+
+        if self.cfg.dataloader_pin_memory is not None:
+            training_args_kwargs[
+                "dataloader_pin_memory"
+            ] = self.cfg.dataloader_pin_memory
+        if self.cfg.dataloader_num_workers is not None:
+            training_args_kwargs[
+                "dataloader_num_workers"
+            ] = self.cfg.dataloader_num_workers
+        if self.cfg.dataloader_prefetch_factor is not None:
+            training_args_kwargs[
+                "dataloader_prefetch_factor"
+            ] = self.cfg.dataloader_prefetch_factor
+
+        training_args = TrainingArguments(
+            per_device_train_batch_size=self.cfg.micro_batch_size,
+            max_steps=self.cfg.max_steps or total_num_steps,
+            gradient_accumulation_steps=self.cfg.gradient_accumulation_steps,
+            learning_rate=self.cfg.learning_rate,
+            save_strategy="steps",
+            save_steps=self.cfg.save_steps,
+            output_dir=self.cfg.output_dir,
+            warmup_steps=self.cfg.warmup_steps,
+            gradient_checkpointing=self.cfg.gradient_checkpointing,
+            gradient_checkpointing_kwargs=self.cfg.gradient_checkpointing_kwargs
+            or {"use_reentrant": False},
+            logging_first_step=True,
+            logging_steps=1,
+            optim=self.cfg.optimizer,
+            save_total_limit=self.cfg.save_total_limit or 5,
+            **training_args_kwargs,
+        )
+
+        return training_args
+
+    def build(self, total_num_steps):
+        training_args = self.build_training_arguments(total_num_steps)
+        dpo_trainer_kwargs = {}
+        if self.cfg.rl == "ipo":
+            dpo_trainer_kwargs["loss_type"] = "ipo"
+            if self.cfg.dpo_label_smoothing:
+                dpo_trainer_kwargs["label_smoothing"] = self.cfg.dpo_label_smoothing
+        elif self.cfg.rl == "kto_pair":
+            dpo_trainer_kwargs["loss_type"] = "kto_pair"
+        if self.eval_dataset:
+            dpo_trainer_kwargs["eval_dataset"] = self.eval_dataset
+        if self.cfg.adapter and self.peft_config:
+            dpo_trainer_kwargs["peft_config"] = self.peft_config
+        dpo_trainer = DPOTrainer(
+            self.model,
+            self.model_ref,
+            args=training_args,
+            beta=self.cfg.dpo_beta or 0.1,
+            train_dataset=self.train_dataset,
+            tokenizer=self.tokenizer,
+            max_length=self.cfg.sequence_len,
+            max_target_length=None,
+            max_prompt_length=self.cfg.sequence_len,
+            generate_during_eval=True,
+            callbacks=self.get_callbacks(),
+            **dpo_trainer_kwargs,
+        )
+        dpo_trainer = self.hook_post_create_trainer(dpo_trainer)
+        for callback in self.get_post_trainer_create_callbacks(dpo_trainer):
+            dpo_trainer.add_callback(callback)
+
+        return dpo_trainer
+
+
+class HFPPOTrainerBuilder(TrainerBuilderBase):
+    """
+    HF Factory class for PPO Trainer
+    """
+
+    def get_callbacks(self):
+        callbacks = []
+        return callbacks
+
+    def get_post_trainer_create_callbacks(self, trainer):
+        callbacks = []
+        return callbacks
+
+    def build(self, total_num_steps):
+        # build PPOConfig
+        pass

@@ -2,6 +2,7 @@
 
 import importlib
 import logging
+import math
 import os
 import random
 import sys
@@ -23,10 +24,15 @@ from transformers import GenerationConfig, TextIteratorStreamer, TextStreamer
 from axolotl.common.cli import TrainerCliArgs, load_model_and_tokenizer
 from axolotl.logging_config import configure_logging
 from axolotl.train import TrainDatasetMeta
-from axolotl.utils.config import normalize_config, validate_config
-from axolotl.utils.data import prepare_dataset
+from axolotl.utils.config import (
+    normalize_cfg_datasets,
+    normalize_config,
+    validate_config,
+)
+from axolotl.utils.data import load_prepare_dpo_datasets, prepare_dataset
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import is_main_process
+from axolotl.utils.mlflow_ import setup_mlflow_env_vars
 from axolotl.utils.models import load_tokenizer
 from axolotl.utils.tokenization import check_dataset_labels
 from axolotl.utils.trainer import prepare_optim_env
@@ -71,14 +77,19 @@ def do_merge_lora(
     safe_serialization = cfg.save_safetensors is True
 
     LOG.info("running merge of LoRA with base model")
-    model = model.merge_and_unload()
-    model.to(dtype=cfg.torch_dtype)
+    model = model.merge_and_unload(progressbar=True)
+    try:
+        model.to(dtype=cfg.torch_dtype)
+    except RuntimeError:
+        pass
+    model.generation_config.do_sample = True
 
     if cfg.local_rank == 0:
         LOG.info(f"saving merged model to: {str(Path(cfg.output_dir) / 'merged')}")
         model.save_pretrained(
             str(Path(cfg.output_dir) / "merged"),
             safe_serialization=safe_serialization,
+            progressbar=True,
         )
         tokenizer.save_pretrained(str(Path(cfg.output_dir) / "merged"))
 
@@ -103,15 +114,7 @@ def do_inference(
             importlib.import_module("axolotl.prompters"), prompter
         )
 
-    if cfg.landmark_attention:
-        from axolotl.monkeypatch.llama_landmark_attn import set_model_mem_id
-
-        set_model_mem_id(model, tokenizer)
-        model.set_mem_cache_args(
-            max_seq_len=255, mem_freq=50, top_k=5, max_cache_size=None
-        )
-
-    model = model.to(cfg.device)
+    model = model.to(cfg.device, dtype=cfg.torch_dtype)
 
     while True:
         print("=" * 80)
@@ -176,15 +179,7 @@ def do_inference_gradio(
             importlib.import_module("axolotl.prompters"), prompter
         )
 
-    if cfg.landmark_attention:
-        from axolotl.monkeypatch.llama_landmark_attn import set_model_mem_id
-
-        set_model_mem_id(model, tokenizer)
-        model.set_mem_cache_args(
-            max_seq_len=255, mem_freq=50, top_k=5, max_cache_size=None
-        )
-
-    model = model.to(cfg.device)
+    model = model.to(cfg.device, dtype=cfg.torch_dtype)
 
     def generate(instruction):
         if not instruction:
@@ -301,7 +296,12 @@ def load_cfg(config: Path = Path("examples/"), **kwargs):
 
     normalize_config(cfg)
 
+    normalize_cfg_datasets(cfg)
+
     setup_wandb_env_vars(cfg)
+
+    setup_mlflow_env_vars(cfg)
+
     return cfg
 
 
@@ -341,6 +341,23 @@ def load_datasets(
     )
 
 
+def load_rl_datasets(
+    *,
+    cfg: DictDefault,
+    cli_args: TrainerCliArgs,  # pylint: disable=unused-argument
+) -> TrainDatasetMeta:
+    train_dataset, eval_dataset = load_prepare_dpo_datasets(cfg)
+    total_num_steps = int(
+        math.ceil(len(train_dataset) * cfg.num_epochs / cfg.batch_size)
+    )
+
+    return TrainDatasetMeta(
+        train_dataset=train_dataset,
+        eval_dataset=eval_dataset,
+        total_num_steps=total_num_steps,
+    )
+
+
 def check_accelerate_default_config():
     if Path(config_args.default_yaml_config_file).exists():
         LOG.warning(
@@ -349,6 +366,13 @@ def check_accelerate_default_config():
 
 
 def check_user_token():
+    # Skip check if HF_HUB_OFFLINE is set to True
+    if os.getenv("HF_HUB_OFFLINE") == "1":
+        LOG.info(
+            "Skipping HuggingFace token verification because HF_HUB_OFFLINE is set to True. Only local files will be used."
+        )
+        return True
+
     # Verify if token is valid
     api = HfApi()
     try:

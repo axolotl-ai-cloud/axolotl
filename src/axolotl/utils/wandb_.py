@@ -2,20 +2,20 @@
 
 import os
 
+from axolotl.utils.dict import DictDefault
 
-def setup_wandb_env_vars(cfg):
-    if cfg.wandb_mode and cfg.wandb_mode == "offline":
-        os.environ["WANDB_MODE"] = cfg.wandb_mode
-    elif cfg.wandb_project and len(cfg.wandb_project) > 0:
-        os.environ["WANDB_PROJECT"] = cfg.wandb_project
+
+def setup_wandb_env_vars(cfg: DictDefault):
+    for key in cfg.keys():
+        if key.startswith("wandb_"):
+            value = cfg.get(key, "")
+
+            if value and isinstance(value, str) and len(value) > 0:
+                os.environ[key.upper()] = value
+
+    # Enable wandb if project name is present
+    if cfg.wandb_project and len(cfg.wandb_project) > 0:
         cfg.use_wandb = True
-        if cfg.wandb_entity and len(cfg.wandb_entity) > 0:
-            os.environ["WANDB_ENTITY"] = cfg.wandb_entity
-        if cfg.wandb_watch and len(cfg.wandb_watch) > 0:
-            os.environ["WANDB_WATCH"] = cfg.wandb_watch
-        if cfg.wandb_log_model and len(cfg.wandb_log_model) > 0:
-            os.environ["WANDB_LOG_MODEL"] = cfg.wandb_log_model
-        if cfg.wandb_run_id and len(cfg.wandb_run_id) > 0:
-            os.environ["WANDB_RUN_ID"] = cfg.wandb_run_id
+        os.environ.pop("WANDB_DISABLED", None)  # Remove if present
     else:
         os.environ["WANDB_DISABLED"] = "true"

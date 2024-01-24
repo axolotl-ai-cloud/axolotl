@@ -38,7 +38,7 @@ lora_fan_in_fan_out:
 wandb_project:
 wandb_entity:
 wandb_watch:
-wandb_run_id:
+wandb_name:
 wandb_log_model:
 output_dir: ./qlora-out
 
@@ -62,8 +62,8 @@ lr_scheduler: cosine
 learning_rate: 0.00002
 train_on_inputs: false
 group_by_length: false
-bf16: true
-fp16: false
+bf16: auto
+fp16:
 tf32: false
 gradient_checkpointing: true
 # stop training after this many evaluation losses have increased in a row
@@ -78,8 +78,8 @@ flash_attention:
 gptq_groupsize:
 gptq_model_v1:
 warmup_steps: 10
-eval_steps: 50
-save_steps: 50
+evals_per_epoch: 4
+saves_per_epoch: 1
 debug:
 deepspeed:
 weight_decay: 0.0

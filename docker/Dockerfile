@@ -10,7 +10,7 @@ ARG PYTORCH_VERSION="2.0.1"
 ENV PYTORCH_VERSION=$PYTORCH_VERSION
 
 RUN apt-get update && \
-    apt-get install -y vim curl
+    apt-get install -y --allow-change-held-packages vim curl nano libnccl2 libnccl-dev
 
 WORKDIR /workspace
 
@@ -19,12 +19,14 @@ RUN git clone --depth=1 https://github.com/OpenAccess-AI-Collective/axolotl.git
 WORKDIR /workspace/axolotl
 
 # If AXOLOTL_EXTRAS is set, append it in brackets
-RUN sed -i "s/torch==.*/torch==$PYTORCH_VERSION/" requirements.txt
 RUN if [ "$AXOLOTL_EXTRAS" != "" ] ; then \
-        pip install -e .[deepspeed,flash-attn,$AXOLOTL_EXTRAS]; \
+        pip install -e .[deepspeed,flash-attn,mamba-ssm,$AXOLOTL_EXTRAS]; \
     else \
-        pip install -e .[deepspeed,flash-attn]; \
+        pip install -e .[deepspeed,flash-attn,mamba-ssm]; \
     fi
+
+# So we can test the Docker image
+RUN pip install pytest
 
 # fix so that git fetch/pull from remote works
 RUN git config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*" && \

@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import logging
 import os
+from shutil import copyfile
+from tempfile import NamedTemporaryFile
 from typing import TYPE_CHECKING, Dict, List
 
 import evaluate
+import mlflow
 import numpy as np
 import pandas as pd
 import torch
@@ -121,6 +124,36 @@ class GPUStatsCallback(
         if not self.logged and state.global_step > 1:
             log_gpu_memory_usage(LOG, "while training", self.cfg.device)
             self.logged = True
+        return control
+
+
+class LossWatchDogCallback(TrainerCallback):
+    """Callback to track loss and stop training if loss is too high"""
+
+    def __init__(self, cfg):
+        self.cfg = cfg
+        self.logged = False
+        self.violations = 0
+        self.threshold = cfg.loss_watchdog_threshold
+        self.patience = cfg.loss_watchdog_patience or 3
+
+    def on_step_end(
+        self,
+        _args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **_kwargs,
+    ):
+        if len(state.log_history) > 0 and "loss" in state.log_history[-1]:
+            if state.log_history[-1]["loss"] > self.threshold:
+                self.violations += 1
+                if self.violations >= self.patience:
+                    LOG.warning(
+                        "Loss is too high, stopping training (loss_watchdog_threshold)"
+                    )
+                    control.should_training_stop = True
+            else:
+                self.violations = 0
         return control
 
 
@@ -531,10 +564,43 @@ class SaveAxolotlConfigtoWandBCallback(TrainerCallback):
     ):
         if is_main_process():
             try:
-                artifact = wandb.Artifact(name="axolotl-config", type="config")
-                artifact.add_file(local_path=self.axolotl_config_path)
-                wandb.run.log_artifact(artifact)
-                LOG.info("Axolotl config has been saved to WandB as an artifact.")
+                # sync config to top level in run, cannot delete file right away because wandb schedules it to be synced even w/policy = 'now', so let OS delete it later.
+                with NamedTemporaryFile(
+                    mode="w", delete=False, suffix=".yml", prefix="axolotl_config_"
+                ) as temp_file:
+                    copyfile(self.axolotl_config_path, temp_file.name)
+                    wandb.save(temp_file.name)
+                LOG.info(
+                    "The Axolotl config has been saved to the WandB run under files."
+                )
             except (FileNotFoundError, ConnectionError) as err:
                 LOG.warning(f"Error while saving Axolotl config to WandB: {err}")
+        return control
+
+
+class SaveAxolotlConfigtoMlflowCallback(TrainerCallback):
+    """Callback to save axolotl config to mlflow"""
+
+    def __init__(self, axolotl_config_path):
+        self.axolotl_config_path = axolotl_config_path
+
+    def on_train_begin(
+        self,
+        args: AxolotlTrainingArguments,  # pylint: disable=unused-argument
+        state: TrainerState,  # pylint: disable=unused-argument
+        control: TrainerControl,
+        **kwargs,  # pylint: disable=unused-argument
+    ):
+        if is_main_process():
+            try:
+                with NamedTemporaryFile(
+                    mode="w", delete=False, suffix=".yml", prefix="axolotl_config_"
+                ) as temp_file:
+                    copyfile(self.axolotl_config_path, temp_file.name)
+                    mlflow.log_artifact(temp_file.name, artifact_path="")
+                    LOG.info(
+                        "The Axolotl config has been saved to the MLflow artifacts."
+                    )
+            except (FileNotFoundError, ConnectionError) as err:
+                LOG.warning(f"Error while saving Axolotl config to MLflow: {err}")
         return control

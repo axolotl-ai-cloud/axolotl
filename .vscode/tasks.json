@@ -1,0 +1,27 @@
+//this file is used by launch.json
+{
+  "version": "2.0.0",
+  "tasks": [
+    // this task changes into the devtools directory and deletes the temp_debug/axolotl_outputs folder
+    {
+      "label": "delete-outputs",
+      "type": "shell",
+      "command": "rm -rf temp_debug/axolotl_outputs",
+      "options":{ "cwd": "${workspaceFolder}/devtools"},
+      "problemMatcher": []
+    },
+    // this task changes into the devtools directory and deletes the `temp_debug/.hf-cache/datasets` folder
+    {
+      "label": "delete-temp-hf-dataset-cache",
+      "type": "shell",
+      "command": "rm -rf temp_debug/.hf-cache/datasets",
+      "options":{ "cwd": "${workspaceFolder}/devtools"},
+      "problemMatcher": []
+    },
+      // this task combines the two tasks above
+    {
+     "label": "cleanup-for-dataprep",
+     "dependsOn": ["delete-outputs", "delete-temp-hf-dataset-cache"],
+    }
+  ]
+}

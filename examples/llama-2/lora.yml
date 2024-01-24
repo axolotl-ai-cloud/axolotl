@@ -29,7 +29,7 @@ lora_fan_in_fan_out:
 wandb_project:
 wandb_entity:
 wandb_watch:
-wandb_run_id:
+wandb_name:
 wandb_log_model:
 
 gradient_accumulation_steps: 4
@@ -41,8 +41,8 @@ learning_rate: 0.0002
 
 train_on_inputs: false
 group_by_length: false
-bf16: true
-fp16: false
+bf16: auto
+fp16:
 tf32: false
 
 gradient_checkpointing: true
@@ -52,12 +52,13 @@ local_rank:
 logging_steps: 1
 xformers_attention:
 flash_attention: true
+s2_attention:
 
 warmup_steps: 10
-eval_steps: 0.05
+evals_per_epoch: 4
 eval_table_size:
 eval_table_max_new_tokens: 128
-save_steps:
+saves_per_epoch: 1
 debug:
 deepspeed:
 weight_decay: 0.0

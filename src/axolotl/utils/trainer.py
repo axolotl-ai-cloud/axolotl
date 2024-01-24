@@ -12,9 +12,9 @@ from accelerate.logging import get_logger
 from datasets import set_caching_enabled
 from torch.utils.data import DataLoader, RandomSampler
 
-from axolotl.core.trainer_builder import HFCausalTrainerBuilder
+from axolotl.core.trainer_builder import HFCausalTrainerBuilder, HFDPOTrainerBuilder
 from axolotl.utils.distributed import is_main_process, reduce_and_broadcast, zero_first
-from axolotl.utils.samplers import MultipackBatchSampler
+from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 
 LOG = get_logger("axolotl")
 
@@ -81,6 +81,15 @@ def trainer_weighted_loss(model_output, labels, shift_labels=True):
     return weighted_cross_entropy(logits, labels, weights)
 
 
+@contextmanager
+def disable_datasets_caching():
+    try:
+        set_caching_enabled(False)
+        yield
+    finally:
+        set_caching_enabled(True)
+
+
 def add_position_ids(sample):
     sample_len = len(sample["input_ids"])
     sample["position_ids"] = torch.arange(len(sample["input_ids"]))
@@ -97,48 +106,82 @@ def drop_long_seq(sample, sequence_len=2048):
     return len(sample["input_ids"]) <= sequence_len and len(sample["input_ids"]) > 0
 
 
-@contextmanager
-def disable_datasets_caching():
-    try:
-        set_caching_enabled(False)
-        yield
-    finally:
-        set_caching_enabled(True)
-
-
-def process_datasets_for_packing(cfg, train_dataset, eval_dataset, tokenizer):
+def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
     drop_long = partial(drop_long_seq, sequence_len=cfg.sequence_len)
     with zero_first(is_main_process()):
-        train_dataset = train_dataset.filter(drop_long, num_proc=cfg.dataset_processes)
-        if eval_dataset:
-            eval_dataset = eval_dataset.filter(
-                drop_long, num_proc=cfg.dataset_processes
-            )
+        if cfg.is_preprocess:
+            min_input_len = np.min(get_dataset_lengths(train_dataset))
+            LOG.debug(f"min_input_len: {min_input_len}", main_process_only=True)
+            max_input_len = np.max(get_dataset_lengths(train_dataset))
+            LOG.debug(f"max_input_len: {max_input_len}", main_process_only=True)
 
-        if cfg.group_by_length:
-            train_dataset = train_dataset.map(
-                add_length, num_proc=cfg.dataset_processes
-            )
-
-        if cfg.sample_packing:
-            train_dataset = train_dataset.map(
-                add_position_ids, num_proc=cfg.dataset_processes
-            )
-            if cfg.eval_sample_packing is not False:
-                if eval_dataset:
-                    eval_dataset = eval_dataset.map(
-                        add_position_ids, num_proc=cfg.dataset_processes
-                    )
-
-        # Phi doesn't want the attention_mask feature when training
-        if "CodeGenTokenizer" in tokenizer.__class__.__name__ or (
+        if (
             cfg.is_mistral_derived_model and cfg.flash_attention
-        ):
+        ) or cfg.model_config_type == "mamba":
+            LOG.info("dropping attention_mask column")
             train_dataset = train_dataset.remove_columns("attention_mask")
             if eval_dataset:
                 eval_dataset = eval_dataset.remove_columns("attention_mask")
 
+        if cfg.model_config_type == "falcon":
+            LOG.info("dropping token_type_ids column")
+            train_dataset = train_dataset.remove_columns("token_type_ids")
+            if eval_dataset:
+                eval_dataset = eval_dataset.remove_columns("token_type_ids")
+
+        train_dataset = train_dataset.filter(
+            drop_long,
+            num_proc=cfg.dataset_processes,
+            load_from_cache_file=not cfg.is_preprocess,
+            desc="Dropping Long Sequences",
+        )
+        if eval_dataset:
+            eval_dataset = eval_dataset.filter(
+                drop_long,
+                num_proc=cfg.dataset_processes,
+                load_from_cache_file=not cfg.is_preprocess,
+                desc="Dropping Long Sequences",
+            )
+
+        if cfg.group_by_length:
+            train_dataset = train_dataset.map(
+                add_length,
+                num_proc=cfg.dataset_processes,
+                load_from_cache_file=not cfg.is_preprocess,
+                desc="Group By Length",
+            )
+
+        if cfg.sample_packing:
+            train_dataset = train_dataset.map(
+                add_position_ids,
+                num_proc=cfg.dataset_processes,
+                load_from_cache_file=not cfg.is_preprocess,
+                desc="Add position_id column (Sample Packing)",
+            )
+            if cfg.eval_sample_packing is not False:
+                if eval_dataset:
+                    eval_dataset = eval_dataset.map(
+                        add_position_ids,
+                        num_proc=cfg.dataset_processes,
+                        load_from_cache_file=not cfg.is_preprocess,
+                        desc="Add position_id column (Sample Packing)",
+                    )
+
     return train_dataset, eval_dataset
+
+
+def process_pretraining_datasets_for_packing(train_dataset, sequence_len):
+    drop_long = partial(drop_long_seq, sequence_len=sequence_len)
+
+    train_dataset = train_dataset.filter(
+        drop_long,
+        desc="Dropping Long Sequences",
+    )
+    train_dataset = train_dataset.map(
+        add_position_ids,
+        desc="Add position_id column (Pretraining Sample Packing)",
+    )
+    return train_dataset
 
 
 def calculate_total_num_steps(cfg, train_dataset, update=True):
@@ -153,7 +196,9 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
         if update:
             cfg.total_num_tokens = total_num_tokens
 
-    if not cfg.total_supervised_tokens:
+    skip_estimates = cfg.model_config_type == "mamba"
+
+    if not skip_estimates and not cfg.total_supervised_tokens:
         total_supervised_tokens = (
             train_dataset.data.column("labels")
             .to_pandas()
@@ -167,7 +212,7 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
         if update:
             cfg.total_supervised_tokens = total_supervised_tokens
 
-    if cfg.sample_packing:
+    if not skip_estimates and cfg.sample_packing:
         # we have to drop anything longer then sequence len otherwise
         # flash attention with position ids fails
 
@@ -196,14 +241,8 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                 sampler=RandomSampler(train_dataset),
                 batch_size=cfg.micro_batch_size,
                 drop_last=True,
-                batch_max_len=cfg.micro_batch_size
-                * (cfg.max_packed_sequence_len or cfg.sequence_len),
-                lengths=(
-                    train_dataset.data.column("position_ids")
-                    .to_pandas()
-                    .apply(lambda x: x[-1] + 1)
-                    .values
-                ),
+                batch_max_len=cfg.micro_batch_size * cfg.sequence_len,
+                lengths=get_dataset_lengths(train_dataset),
             )
 
             data_loader = DataLoader(
@@ -272,10 +311,17 @@ def prepare_optim_env(cfg):
         setup_fsdp_envs(cfg)
     elif cfg.deepspeed:
         os.environ["ACCELERATE_USE_DEEPSPEED"] = "true"
+        os.environ["ACCELERATE_DEEPSPEED_CONFIG_FILE"] = cfg.deepspeed
 
 
 def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_steps):
-    trainer_builder = HFCausalTrainerBuilder(cfg, model, tokenizer)
+    if cfg.rl in ["dpo", "ipo", "kto_pair"]:
+        trainer_builder = HFDPOTrainerBuilder(cfg, model[0], tokenizer)
+        trainer_builder.model_ref = model[1]
+        trainer_builder.peft_config = model[2]
+    else:
+        trainer_builder = HFCausalTrainerBuilder(cfg, model[0], tokenizer)
+
     trainer_builder.train_dataset = train_dataset
     trainer_builder.eval_dataset = eval_dataset
 

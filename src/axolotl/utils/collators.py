@@ -2,11 +2,15 @@
 DataCollator for axolotl to pad labels and position_ids for packed sequences
 """
 from dataclasses import dataclass
-from typing import Any, Optional, Union
+from typing import Any, Dict, Optional, Sequence, Union
 
 import numpy as np
+import torch
+import transformers
 from transformers import PreTrainedTokenizerBase
 from transformers.utils import PaddingStrategy
+
+IGNORE_INDEX = -100
 
 
 @dataclass
@@ -143,6 +147,82 @@ class BatchSamplerDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):
                 arrays = [
                     np.array(item[feature]) for item in features if feature in item
                 ]
+                chunked_data[feature] = np.concatenate(arrays)
+        features = [chunked_data]
+        return super().__call__(features, return_tensors=return_tensors)
+
+
+@dataclass
+class V2BatchSamplerDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):
+    """
+    Collator for multipack specific to the using the BatchSampler
+    """
+
+    def __call__(self, features, return_tensors=None):
+        chunked_data = {}
+        for feature in features[0].keys():
+            if feature == "length":
+                continue
+            if feature == "attention_mask":
+                arrays = [
+                    (i + 1) * np.array(item[feature])
+                    for i, item in enumerate(features)
+                    if feature in item
+                ]
+                chunked_data[feature] = np.concatenate(arrays)
+            else:
+                arrays = [
+                    np.array(item[feature]) for item in features if feature in item
+                ]
+                chunked_data[feature] = np.concatenate(arrays)
+        features = [chunked_data]
+        return super().__call__(features, return_tensors=return_tensors)
+
+
+@dataclass
+class MambaDataCollator:
+    """
+    Collator for State Space Models (Mamba)
+    """
+
+    tokenizer: transformers.PreTrainedTokenizer
+
+    def __call__(self, instances: Sequence[Dict]) -> Dict[str, torch.Tensor]:
+        input_ids, labels = tuple(
+            [torch.LongTensor(instance[key]) for instance in instances]
+            for key in ("input_ids", "labels")
+        )
+        input_ids = torch.nn.utils.rnn.pad_sequence(
+            input_ids,
+            batch_first=True,
+            padding_value=self.tokenizer.pad_token_id,
+        )
+        labels = torch.nn.utils.rnn.pad_sequence(
+            labels, batch_first=True, padding_value=IGNORE_INDEX
+        )
+
+        return {
+            "input_ids": input_ids,
+            "labels": labels,
+        }
+
+
+@dataclass
+class PretrainingBatchSamplerDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):
+    """
+    Collator for multipack specific to the using the BatchSampler
+    """
+
+    def __call__(self, features, return_tensors=None):
+        chunked_data = {}
+        for feature in features.keys():
+            if feature == "length":
+                continue
+            if feature == "attention_mask":
+                arrays = [(1) * np.array(item) for item in features[feature]]
+                chunked_data[feature] = np.concatenate(arrays)
+            else:
+                arrays = [np.array(item) for item in features[feature]]
                 chunked_data[feature] = np.concatenate(arrays)
         features = [chunked_data]
         return super().__call__(features, return_tensors=return_tensors)

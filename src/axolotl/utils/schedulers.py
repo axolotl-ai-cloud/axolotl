@@ -100,3 +100,43 @@ def get_cosine_schedule_with_quadratic_warmup(
         num_cycles=num_cycles,
     )
     return LambdaLR(optimizer, lr_lambda, last_epoch)
+
+
+def _get_cosine_schedule_with_min_lr_lambda(
+    current_step: int,
+    *,
+    num_warmup_steps: int,
+    num_training_steps: int,
+    min_lr_ratio: float
+):
+    # Warm up
+    if current_step < num_warmup_steps:
+        return float(current_step) / float(max(1, num_warmup_steps))
+
+    # Cosine learning rate decay
+    progress = float(current_step - num_warmup_steps) / float(
+        max(1, num_training_steps - num_warmup_steps)
+    )
+    scaling = 0.5 * (1.0 + math.cos(math.pi * progress))
+    return (1 - min_lr_ratio) * scaling + min_lr_ratio
+
+
+def get_cosine_schedule_with_min_lr(
+    optimizer: Optimizer,
+    num_warmup_steps: int,
+    num_training_steps: int,
+    min_lr_ratio: float = 0.0,
+):
+    """
+    Create a learning rate schedule which has:
+        - linear warmup from 0 -> `max_lr` over `num_warmup_steps`
+        - cosine learning rate annealing from `max_lr` -> `min_lr` over `num_training_steps`
+    """
+
+    lr_lambda = partial(
+        _get_cosine_schedule_with_min_lr_lambda,
+        num_warmup_steps=num_warmup_steps,
+        num_training_steps=num_training_steps,
+        min_lr_ratio=min_lr_ratio,
+    )
+    return LambdaLR(optimizer, lr_lambda)
