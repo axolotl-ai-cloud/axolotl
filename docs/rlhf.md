@@ -34,6 +34,16 @@ datasets:
 rl: ipo
 ```
 
+#### Using local dataset files
+```yaml
+datasets:
+  - ds_type: json
+    data_files:
+      - orca_rlhf.jsonl
+    split: train
+    type: chatml.intel
+```
+
 #### Trl autounwrap for peft
 
 Trl supports autounwrapping peft models, so that a ref model does not need to be additionally loaded, leading to less VRAM needed. This is on by default. To turn it off, pass the following config.

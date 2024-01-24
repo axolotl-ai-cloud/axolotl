@@ -996,6 +996,12 @@ class HFDPOTrainerBuilder(TrainerBuilderBase):
         training_args_kwargs["lr_scheduler_kwargs"] = (
             self.cfg.lr_scheduler_kwargs if self.cfg.lr_scheduler_kwargs else {}
         )
+        if self.cfg.remove_unused_columns is not None:
+            training_args_kwargs[
+                "remove_unused_columns"
+            ] = self.cfg.remove_unused_columns
+        else:
+            training_args_kwargs["remove_unused_columns"] = False
 
         if self.cfg.dataloader_pin_memory is not None:
             training_args_kwargs[
@@ -1013,7 +1019,6 @@ class HFDPOTrainerBuilder(TrainerBuilderBase):
         training_args = TrainingArguments(
             per_device_train_batch_size=self.cfg.micro_batch_size,
             max_steps=self.cfg.max_steps or total_num_steps,
-            remove_unused_columns=False,
             gradient_accumulation_steps=self.cfg.gradient_accumulation_steps,
             learning_rate=self.cfg.learning_rate,
             save_strategy="steps",
