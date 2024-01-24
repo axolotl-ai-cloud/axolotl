@@ -110,6 +110,8 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
     drop_long = partial(drop_long_seq, sequence_len=cfg.sequence_len)
     with zero_first(is_main_process()):
         if cfg.is_preprocess:
+            min_input_len = np.min(get_dataset_lengths(train_dataset))
+            LOG.debug(f"min_input_len: {min_input_len}", main_process_only=True)
             max_input_len = np.max(get_dataset_lengths(train_dataset))
             LOG.debug(f"max_input_len: {max_input_len}", main_process_only=True)
 
