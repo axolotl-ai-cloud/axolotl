@@ -371,7 +371,7 @@ def check_user_token():
             "Skipping HuggingFace token verification because HF_HUB_OFFLINE is set to True. Only local files will be used."
         )
         return True
-    
+
     # Verify if token is valid
     api = HfApi()
     try:
