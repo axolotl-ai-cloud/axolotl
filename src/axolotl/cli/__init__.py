@@ -82,6 +82,7 @@ def do_merge_lora(
         model.to(dtype=cfg.torch_dtype)
     except RuntimeError:
         pass
+    model.generation_config.do_sample = True
 
     if cfg.local_rank == 0:
         LOG.info(f"saving merged model to: {str(Path(cfg.output_dir) / 'merged')}")
