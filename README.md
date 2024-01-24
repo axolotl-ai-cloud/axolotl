@@ -861,7 +861,7 @@ tokens:
 fsdp:
 fsdp_config:
 
-# Deepspeed config path. e.g., deepspeed/zero3.json
+# Deepspeed config path. e.g., deepspeed_configs/zero3.json
 deepspeed:
 
 # Advanced DDP Arguments
@@ -982,11 +982,11 @@ for deepspeed is available at https://huggingface.co/docs/accelerate/main/en/usa
 We provide several default deepspeed JSON configurations for ZeRO stage 1, 2, and 3.
 
 ```yaml
-deepspeed: deepspeed/zero1.json
+deepspeed: deepspeed_configs/zero1.json
 ```
 
 ```shell
-accelerate launch -m axolotl.cli.train examples/llama-2/config.py --deepspeed deepspeed/zero1.json
+accelerate launch -m axolotl.cli.train examples/llama-2/config.py --deepspeed deepspeed_configs/zero1.json
 ```
 
 ##### FSDP
