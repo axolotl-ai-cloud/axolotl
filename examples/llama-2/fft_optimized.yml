@@ -62,7 +62,7 @@ evals_per_epoch: 4
 eval_table_size:
 saves_per_epoch: 1
 debug:
-deepspeed: #deepspeed/zero2.json # multi-gpu only
+deepspeed: #deepspeed_configs/zero2.json # multi-gpu only
 weight_decay: 0.1
 fsdp:
 fsdp_config:

@@ -15,7 +15,7 @@ from optimum.bettertransformer import BetterTransformer
 from peft import PeftModel
 from pkg_resources import get_distribution  # type: ignore
 from transformers import PreTrainedModel, PreTrainedTokenizer
-from transformers.deepspeed import is_deepspeed_zero3_enabled
+from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
 
 from axolotl.common.cli import TrainerCliArgs
 from axolotl.logging_config import configure_logging

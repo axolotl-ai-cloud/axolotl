@@ -21,7 +21,7 @@ from transformers import (  # noqa: F401
     PreTrainedModel,
     PreTrainedTokenizerBase,
 )
-from transformers.deepspeed import is_deepspeed_zero3_enabled
+from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
 
 from axolotl.models.mamba import fix_mamba_attn_for_loss
 from axolotl.prompt_tokenizers import LLAMA_DEFAULT_EOS_TOKEN
@@ -333,7 +333,10 @@ def load_model(
         )
 
         LOG.info("patching mixtral with flash attention")
-        replace_mixtral_attn_with_multipack_flash_attn()
+        mixtral_patch_kwargs = {}
+        if is_deepspeed_zero3_enabled():
+            mixtral_patch_kwargs["for_zero3"] = True
+        replace_mixtral_attn_with_multipack_flash_attn(**mixtral_patch_kwargs)
 
     if cfg.model_config_type == "falcon" and cfg.flash_attention and cfg.sample_packing:
         from axolotl.monkeypatch.falcon import (
@@ -645,6 +648,12 @@ def load_model(
 
     needs_fa2_dtype = cfg.adapter or cfg.fsdp
     skip_prepare_model_for_kbit_training = False
+
+    if cfg.model_config_type == "mixtral" and is_deepspeed_zero3_enabled():
+        from deepspeed.utils import set_z3_leaf_modules
+        from transformers.models.mixtral.modeling_mixtral import MixtralSparseMoeBlock
+
+        set_z3_leaf_modules(model, [MixtralSparseMoeBlock])
 
     if cfg.model_config_type == "qwen" and cfg.adapter == "lora":
         # Qwen doesn't play nicely with LoRA if this is enabled
