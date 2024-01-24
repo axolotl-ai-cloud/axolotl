@@ -365,6 +365,13 @@ def check_accelerate_default_config():
 
 
 def check_user_token():
+    # Skip check if HF_HUB_OFFLINE is set to True
+    if os.getenv("HF_HUB_OFFLINE") == "1":
+        LOG.info(
+            "Skipping HuggingFace token verification because HF_HUB_OFFLINE is set to True. Only local files will be used."
+        )
+        return True
+
     # Verify if token is valid
     api = HfApi()
     try:
