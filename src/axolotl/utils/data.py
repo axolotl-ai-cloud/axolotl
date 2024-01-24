@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import torch
+import yaml
 from datasets import (
     Dataset,
     DatasetDict,
@@ -853,6 +854,41 @@ def encode_packed_pretraining(
     return chunked_data
 
 
+def _get_path(ds_hash, cfg):
+    prepared_ds_path = (
+        Path(cfg.dataset_prepared_path) / ds_hash
+        if cfg.dataset_prepared_path
+        else Path(DEFAULT_DATASET_PREPARED_PATH) / ds_hash
+    )
+
+    return prepared_ds_path
+
+
+def _load_preprocessed_ds(cfg, sub_cfg):
+    ds_hash = md5(yaml.dump(sub_cfg, Dumper=yaml.Dumper))
+    prepared_ds_path = _get_path(ds_hash, cfg)
+    dataset = None
+
+    if (
+        cfg.dataset_prepared_path
+        and any(prepared_ds_path.glob("*"))
+        and not cfg.is_preprocess
+    ):
+        LOG.info(f"Loading prepared dataset from disk at {prepared_ds_path}...")
+        dataset = load_from_disk(str(prepared_ds_path))
+
+    return dataset
+
+
+def _save_preprocessed_ds(cfg, sub_cfg, dataset):
+    ds_hash = md5(yaml.dump(sub_cfg, Dumper=yaml.Dumper))
+    prepared_ds_path = _get_path(ds_hash, cfg)
+
+    if cfg.is_preprocess and is_main_process():
+        LOG.info(f"Loading prepared dataset from disk at {prepared_ds_path}...")
+        dataset.save_to_disk(str(prepared_ds_path))
+
+
 def load_prepare_dpo_datasets(cfg):
     def load_split(dataset_cfgs, _cfg):
         split_datasets: List[Any] = []
@@ -889,12 +925,25 @@ def load_prepare_dpo_datasets(cfg):
         return concatenate_datasets(split_datasets)
 
     with zero_first(is_main_process()):
-        train_dataset = load_split(cfg.datasets, cfg)
+        train_is_preprocessed = False
+        eval_is_preprocessed = False
+        if train_dataset := _load_preprocessed_ds(cfg, cfg.datasets):
+            train_is_preprocessed = True
+        else:
+            train_dataset = load_split(cfg.datasets, cfg)
 
         eval_dataset = None
         if cfg.test_datasets:
-            eval_dataset = load_split(cfg.test_datasets, cfg)
+            if eval_dataset := _load_preprocessed_ds(cfg, cfg.test_datasets):
+                eval_is_preprocessed = True
+            else:
+                eval_dataset = load_split(cfg.test_datasets, cfg)
         if not eval_dataset:
             eval_dataset = None
+
+        if not train_is_preprocessed:
+            _save_preprocessed_ds(cfg, cfg.datasets, train_dataset)
+        if eval_dataset and not eval_is_preprocessed:
+            _save_preprocessed_ds(cfg, cfg.test_datasets, eval_dataset)
 
     return train_dataset, eval_dataset
