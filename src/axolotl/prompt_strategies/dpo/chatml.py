@@ -26,6 +26,11 @@ def argilla(
 def icr(
     cfg,
 ):  # pylint: disable=possibly-unused-variable,unused-argument
+    """
+    chatml transforms for datasets with system, input, chosen, rejected
+    ex. https://huggingface.co/datasets/argilla/distilabel-intel-orca-dpo-pairs
+    """
+
     def transform_fn(sample):
         if "system" in sample and sample["system"]:
             sample["prompt"] = (
