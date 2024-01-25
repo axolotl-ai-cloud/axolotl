@@ -16,6 +16,7 @@ from datasets import (
     load_from_disk,
 )
 from huggingface_hub import hf_hub_download
+from huggingface_hub.utils import HFValidationError
 from torch.utils.data import RandomSampler
 from transformers import PreTrainedTokenizerBase
 
@@ -213,7 +214,7 @@ def load_tokenized_prepared_datasets(
                     token=use_auth_token,
                 )
                 ds_from_hub = True
-            except (FileNotFoundError, ConnectionError):
+            except (FileNotFoundError, ConnectionError, HFValidationError):
                 pass
 
             ds_from_cloud = False

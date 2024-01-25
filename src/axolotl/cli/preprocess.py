@@ -40,6 +40,8 @@ def do_cli(config: Path = Path("examples/"), **kwargs):
             f"ChatML set. Adding default system message: {parsed_cfg.default_system_message}"
         )
         register_chatml_template(parsed_cfg.default_system_message)
+    else:
+        register_chatml_template()
 
     if not parsed_cfg.dataset_prepared_path:
         msg = (

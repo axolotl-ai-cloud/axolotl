@@ -43,7 +43,10 @@ def do_train(cfg, cli_args) -> Tuple[PreTrainedModel, PreTrainedTokenizer]:
             f"ChatML set. Adding default system message: {cfg.default_system_message}"
         )
         register_chatml_template(cfg.default_system_message)
+    else:
+        register_chatml_template()
 
+    if cfg.rl:
         dataset_meta = load_rl_datasets(cfg=cfg, cli_args=cli_args)
     else:
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
