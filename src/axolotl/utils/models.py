@@ -67,7 +67,7 @@ def check_model_config(cfg: DictDefault, model_config: Union[AutoConfig, DictDef
     ):
         lora_modules_to_save = ", ".join(map(lambda x: f"`{x}`", lora_modules_to_save))
         raise ValueError(
-            f"`lora_modules_to_save` not properly set when adding new tokens. Please include {lora_modules_to_save} in `lora_modules_to_save`."
+            f"`lora_modules_to_save` not properly set when adding new tokens. Please include [{lora_modules_to_save}] in `lora_modules_to_save`."
         )
 
 
@@ -182,7 +182,7 @@ def load_tokenizer(cfg):
                     [f"`{x}`" for x in lora_modules_to_save]
                 )
                 raise ValueError(
-                    f"Please set lora_modules_to_save to {lora_modules_to_save} when using an adapter and changing the special tokens."
+                    f"Please set lora_modules_to_save to [{lora_modules_to_save}] when using an adapter and changing the special tokens."
                 )
 
             tokenizer.add_special_tokens(
