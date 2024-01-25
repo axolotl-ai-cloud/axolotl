@@ -651,7 +651,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             training_arguments_kwargs[
                 "gradient_checkpointing"
             ] = self.cfg.gradient_checkpointing
-            if self.cfg.gradient_checkpointing_kwargs:
+            if self.cfg.gradient_checkpointing_kwargs is not None:
                 training_arguments_kwargs[
                     "gradient_checkpointing_kwargs"
                 ] = self.cfg.gradient_checkpointing_kwargs
@@ -1028,6 +1028,18 @@ class HFDPOTrainerBuilder(TrainerBuilderBase):
             training_args_kwargs[
                 "dataloader_prefetch_factor"
             ] = self.cfg.dataloader_prefetch_factor
+        if self.cfg.gradient_checkpointing:
+            training_args_kwargs[
+                "gradient_checkpointing"
+            ] = self.cfg.gradient_checkpointing
+            if self.cfg.gradient_checkpointing_kwargs is not None:
+                training_args_kwargs[
+                    "gradient_checkpointing_kwargs"
+                ] = self.cfg.gradient_checkpointing_kwargs
+            else:
+                training_args_kwargs["gradient_checkpointing_kwargs"] = {
+                    "use_reentrant": False
+                }
 
         training_args = TrainingArguments(
             per_device_train_batch_size=self.cfg.micro_batch_size,
@@ -1038,9 +1050,6 @@ class HFDPOTrainerBuilder(TrainerBuilderBase):
             save_steps=self.cfg.save_steps,
             output_dir=self.cfg.output_dir,
             warmup_steps=self.cfg.warmup_steps,
-            gradient_checkpointing=self.cfg.gradient_checkpointing,
-            gradient_checkpointing_kwargs=self.cfg.gradient_checkpointing_kwargs
-            or {"use_reentrant": False},
             logging_first_step=True,
             logging_steps=1,
             optim=self.cfg.optimizer,
@@ -1063,6 +1072,10 @@ class HFDPOTrainerBuilder(TrainerBuilderBase):
             dpo_trainer_kwargs["eval_dataset"] = self.eval_dataset
         if self.cfg.adapter and self.peft_config:
             dpo_trainer_kwargs["peft_config"] = self.peft_config
+        if self.cfg.precompute_ref_log_probs is not None:
+            dpo_trainer_kwargs[
+                "precompute_ref_log_probs"
+            ] = self.cfg.precompute_ref_log_probs
         dpo_trainer = DPOTrainer(
             self.model,
             self.model_ref,

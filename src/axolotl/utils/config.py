@@ -163,6 +163,7 @@ def normalize_config(cfg):
         cfg.gradient_checkpointing
         and cfg.unfrozen_parameters is None
         and cfg.gradient_checkpointing_kwargs is None
+        and cfg.rl is None
     ):
         cfg.gradient_checkpointing_kwargs = {"use_reentrant": True}
 
