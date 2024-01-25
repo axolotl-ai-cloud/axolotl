@@ -27,9 +27,9 @@ def parse_requirements():
 
     try:
         torch_version = version("torch")
-        if torch_version.startswith("2.1.1"):
+        if torch_version.startswith("2.1."):
             _install_requires.pop(_install_requires.index("xformers==0.0.22"))
-            _install_requires.append("xformers==0.0.23")
+            _install_requires.append("xformers>=0.0.23")
     except PackageNotFoundError:
         pass
 
