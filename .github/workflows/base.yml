@@ -1,6 +1,7 @@
 name: ci-cd-base
 
-workflow_dispatch:
+on:
+  workflow_dispatch:
 
 jobs:
   build-base:
