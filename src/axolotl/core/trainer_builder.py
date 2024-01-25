@@ -192,7 +192,7 @@ class AxolotlTrainer(Trainer):
                     num_warmup_steps=self.args.get_warmup_steps(num_training_steps),
                     num_training_steps=num_training_steps,
                 )
-            elif use_cosine_min_lr:
+            elif self.args.cosine_min_lr_ratio and use_cosine_min_lr:
                 assert 0 <= self.args.cosine_min_lr_ratio <= 1.0, "cosine_min_lr_ratio must be between 0.0 and 1.0"
                 self.lr_scheduler = get_cosine_schedule_with_min_lr(  # pylint: disable=attribute-defined-outside-init
                     optimizer,
@@ -203,11 +203,11 @@ class AxolotlTrainer(Trainer):
             else:
                 return super().create_scheduler(num_training_steps, optimizer)
         else:
-                if use_cosine_quadratic:
-                    LOG.warning("axolotl's cosine scheduler with quadratic warmup not used (e.g., because of deepspeed).")
+            if use_cosine_quadratic:
+                LOG.warning("axolotl's cosine scheduler with quadratic warmup not used (e.g., because of deepspeed).")
 
-                if use_cosine_min_lr:
-                    LOG.warning("axolotl's cosine scheduler with min lr not used (e.g., because of deepspeed).")
+            if use_cosine_min_lr:
+                LOG.warning("axolotl's cosine scheduler with min lr not used (e.g., because of deepspeed).")
 
         return self.lr_scheduler
 
