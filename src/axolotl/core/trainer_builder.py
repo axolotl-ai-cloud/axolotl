@@ -1028,14 +1028,18 @@ class HFDPOTrainerBuilder(TrainerBuilderBase):
             training_args_kwargs[
                 "dataloader_prefetch_factor"
             ] = self.cfg.dataloader_prefetch_factor
-        if self.cfg.gradient_checkpointing_kwargs is not None:
+        if self.cfg.gradient_checkpointing:
             training_args_kwargs[
-                "gradient_checkpointing_kwargs"
-            ] = self.cfg.gradient_checkpointing_kwargs
-        else:
-            training_args_kwargs["gradient_checkpointing_kwargs"] = {
-                "use_reentrant": False
-            }
+                "gradient_checkpointing"
+            ] = self.cfg.gradient_checkpointing
+            if self.cfg.gradient_checkpointing_kwargs is not None:
+                training_args_kwargs[
+                    "gradient_checkpointing_kwargs"
+                ] = self.cfg.gradient_checkpointing_kwargs
+            else:
+                training_args_kwargs["gradient_checkpointing_kwargs"] = {
+                    "use_reentrant": False
+                }
 
         training_args = TrainingArguments(
             per_device_train_batch_size=self.cfg.micro_batch_size,
