@@ -1063,6 +1063,10 @@ class HFDPOTrainerBuilder(TrainerBuilderBase):
             dpo_trainer_kwargs["eval_dataset"] = self.eval_dataset
         if self.cfg.adapter and self.peft_config:
             dpo_trainer_kwargs["peft_config"] = self.peft_config
+        if self.cfg.precompute_ref_log_probs is not None:
+            dpo_trainer_kwargs[
+                "precompute_ref_log_probs"
+            ] = self.cfg.precompute_ref_log_probs
         dpo_trainer = DPOTrainer(
             self.model,
             self.model_ref,
