@@ -670,6 +670,8 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             training_arguments_kwargs["max_grad_norm"] = self.cfg.max_grad_norm
 
         if self.cfg.hub_model_id:
+            if not (self.cfg.save_steps or self.cfg.saves_per_epoch): 
+                LOG.warning("hub_model_id is set without any models being saved. To save a model, set either save_steps or saves_per_epoch.")
             training_arguments_kwargs["hub_model_id"] = self.cfg.hub_model_id
             training_arguments_kwargs["push_to_hub"] = True
             training_arguments_kwargs["hub_private_repo"] = True
