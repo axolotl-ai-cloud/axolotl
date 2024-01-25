@@ -63,6 +63,8 @@ def train(
         msg += " and peft_config..."
     LOG.debug(msg)
     model, peft_config = load_model(cfg, tokenizer, inference=cli_args.inference)
+    model.generation_config.do_sample = True
+
     model_ref = None
     if cfg.rl:
         if cfg.adapter and not cfg.rl_adapter_ref_model:
