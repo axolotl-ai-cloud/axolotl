@@ -698,6 +698,10 @@ class ValidationTest(BaseValidation):
         ):
             validate_config(cfg)
 
+    def test_hub_model_id_save_value(self):
+        cfg = DictDefault({"hub_model_id": "test"})
+        validate_config(cfg)
+
 
 class ValidationCheckModelConfig(BaseValidation):
     """
