@@ -642,15 +642,17 @@ def load_model(
 
     # make sure these are fp32 per Ramesh et al. (2021)
     embedding_modules = get_linear_embedding_layers(cfg.model_config_type)
-    for name, module in model.named_modules():
-        if any(m in name for m in ["norm", "gate"]):
-            module.to(torch.float32)
-        if model_config.model_type == "btlm":
-            # don't upcast lm_head for btlm
-            continue
-        if any(m in name for m in embedding_modules):
-            if hasattr(module, "weight"):
+    if not cfg.fsdp:
+        # FSDP doesn't like mixed Float and BFloat16
+        for name, module in model.named_modules():
+            if any(m in name for m in ["norm", "gate"]):
                 module.to(torch.float32)
+            if model_config.model_type == "btlm":
+                # don't upcast lm_head for btlm
+                continue
+            if any(m in name for m in embedding_modules):
+                if hasattr(module, "weight"):
+                    module.to(torch.float32)
 
     needs_fa2_dtype = cfg.adapter or cfg.fsdp
     skip_prepare_model_for_kbit_training = False

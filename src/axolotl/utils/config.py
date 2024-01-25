@@ -95,7 +95,7 @@ def normalize_config(cfg):
         save_steps = 1.0 / (cfg.saves_per_epoch * cfg.num_epochs)
         if save_steps < 1.0:  # prevent saves on every step
             cfg.save_steps = save_steps
-    if cfg.evals_per_epoch:
+    if (cfg.val_set_size or cfg.test_datasets) and cfg.evals_per_epoch:
         eval_steps = 1.0 / (cfg.evals_per_epoch * cfg.num_epochs)
         if eval_steps < 1.0:  # prevent evals on every step
             cfg.eval_steps = eval_steps
@@ -485,34 +485,42 @@ def validate_config(cfg):
             "`use_reentrant` must be false when used with partially frozen model."
         )
 
-    if cfg.flash_attention and cfg.deepspeed and Path(cfg.deepspeed).is_file():
+    if cfg.deepspeed and Path(cfg.deepspeed).is_file():
         with open(cfg.deepspeed, encoding="utf-8") as file:
             contents = file.read()
             deepspeed_cfg: DictDefault = DictDefault(json.loads(contents))
-            if (
-                deepspeed_cfg.zero_optimization
-                and deepspeed_cfg.zero_optimization.stage == 3
-            ):
-                if not (
-                    (
-                        deepspeed_cfg.bf16
-                        and deepspeed_cfg.bf16.enabled  # pylint: disable=no-member
-                        is True
-                    )
-                    or (
-                        deepspeed_cfg.fp16
-                        and deepspeed_cfg.fp16.enabled  # pylint: disable=no-member
-                        is True
-                    )
+            if cfg.flash_attention:
+                if (
+                    deepspeed_cfg.zero_optimization
+                    and deepspeed_cfg.zero_optimization.stage == 3
                 ):
-                    raise ValueError(
-                        "bf16.enabled or fp16.enabled must be set to true when using ZeRO-3 with flash-attention"
-                    )
+                    if not (
+                        (
+                            deepspeed_cfg.bf16
+                            and deepspeed_cfg.bf16.enabled  # pylint: disable=no-member
+                            is True
+                        )
+                        or (
+                            deepspeed_cfg.fp16
+                            and deepspeed_cfg.fp16.enabled  # pylint: disable=no-member
+                            is True
+                        )
+                    ):
+                        raise ValueError(
+                            "bf16.enabled or fp16.enabled must be set to true when using ZeRO-3 with flash-attention"
+                        )
+            if "8bit" in cfg.optimizer and deepspeed_cfg.optimizer:
+                LOG.warning(
+                    f"conflicting optimizer: {cfg.optimizer} used alongside deepspeed optimizer."
+                )
 
     if cfg.test_datasets and cfg.val_set_size:
         raise ValueError(
             "non-zero val_set_size should not be used with test_datasets configuration"
         )
+
+    if cfg.fsdp and "bnb" in cfg.optimizer:
+        raise ValueError(f"FSDP not compatible with {cfg.optimizer}")
 
     # TODO
     # MPT 7b
