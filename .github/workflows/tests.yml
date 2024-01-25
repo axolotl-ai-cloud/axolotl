@@ -106,3 +106,7 @@ jobs:
       - name: GPU Unit Tests monkeypatched w docker image
         run: |
           docker run --privileged --gpus "all" --env WANDB_DISABLED=true --rm ${{ steps.metadata.outputs.tags }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }} pytest /workspace/axolotl/tests/e2e/patched/
+      - name: Prune image from docker
+        if: github.ref != 'refs/heads/main'
+        run: |
+          docker rmi -f ${{ steps.metadata.outputs.tags }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}
