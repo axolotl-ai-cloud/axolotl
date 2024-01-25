@@ -613,6 +613,8 @@ rl:
 # Saves the desired chat template to the tokenizer_config.json for easier inferencing
 # Currently supports chatml and inst (mistral/mixtral)
 chat_template: chatml
+# Changes the default system message
+default_system_message: You are a helpful assistant. Please give a long and detailed answer. # Currently only supports chatml.
 # Axolotl attempts to save the dataset as an arrow after packing the data together so
 # subsequent training attempts load faster, relative path
 dataset_prepared_path: data/last_run_prepared
