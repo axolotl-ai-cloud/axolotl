@@ -53,7 +53,13 @@ setup(
             "flash-attn==2.3.3",
         ],
         "fused-dense-lib": [
-            "fused-dense-lib  @ git+https://github.com/Dao-AILab/flash-attention@v2.3.3#subdirectory=csrc/fused_dense_lib",
+            "fused-dense-lib @ git+https://github.com/Dao-AILab/flash-attention@v2.3.3#subdirectory=csrc/fused_dense_lib",
+        ],
+        "dropout-layer-norm": [
+            "dropout-layer-norm @ git+https://github.com/Dao-AILab/flash-attention@v2.3.3#subdirectory=csrc/layer_norm",
+        ],
+        "xentropy-cuda-lib": [
+            "xentropy_cuda_lib @ git+https://github.com/Dao-AILab/flash-attention.git@2.3.3#&subdirectory=csrc/xentropy",
         ],
         "deepspeed": [
             "deepspeed>=0.13.1",

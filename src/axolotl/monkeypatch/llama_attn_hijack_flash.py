@@ -113,7 +113,10 @@ def patch_cross_entropy():
 
 def patch_rms_norm():
     try:
-        from flash_attn.ops.rms_norm import RMSNorm
+        try:
+            from flash_attn.ops.triton.rms_norm import RMSNorm
+        except ImportError:
+            from flash_attn.ops.rms_norm import RMSNorm
 
         class LlamaRMSNorm(RMSNorm):
             """Patched LLamaRMSNorm"""
