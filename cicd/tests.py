@@ -42,7 +42,7 @@ cicd_image = Image.from_dockerfile(
 stub = Stub("Axolotl CI/CD", secrets=[])
 
 
-N_GPUS = int(os.environ.get("N_GPUS", 2))
+N_GPUS = int(os.environ.get("N_GPUS", 1))
 GPU_CONFIG = modal.gpu.A10G(count=N_GPUS)
 
 

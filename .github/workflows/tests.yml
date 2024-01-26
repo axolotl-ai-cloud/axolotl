@@ -58,7 +58,7 @@ jobs:
   docker-e2e-tests:
     if: github.repository_owner == 'OpenAccess-AI-Collective'
     # this job needs to be run on self-hosted GPU runners...
-    runs-on: [self-hosted, gpu, docker]
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     needs: [pre-commit, pytest]
 
@@ -75,10 +75,12 @@ jobs:
             cuda_version: 11.8.0
             python_version: "3.10"
             pytorch: 2.0.1
+            num_gpus: 1
           - cuda: 121
             cuda_version: 12.1.0
             python_version: "3.10"
             pytorch: 2.1.2
+            num_gpus: 1
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -95,6 +97,7 @@ jobs:
           echo "BASE_TAG=main-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}" >> $GITHUB_ENV
           echo "PYTORCH_VERSION=${{ matrix.pytorch}}" >> $GITHUB_ENV
           echo "CUDA=${{ matrix.cuda }}" >> $GITHUB_ENV
+          echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
       - name: Run training job on Modal
         run: |
           modal run cicd.tests
