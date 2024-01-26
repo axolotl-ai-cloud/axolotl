@@ -3,6 +3,7 @@ CLI to shard a trained model into 10GiB chunks
 """
 import logging
 from pathlib import Path
+from typing import Union
 
 import fire
 import transformers
@@ -25,7 +26,7 @@ def shard(
     model.save_pretrained(cfg.output_dir, safe_serialization=safe_serialization)
 
 
-def do_cli(config: Path = Path("examples/"), **kwargs):
+def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
     # pylint: disable=duplicate-code
     print_axolotl_text_art()
     parsed_cfg = load_cfg(config, **kwargs)

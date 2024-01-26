@@ -6,11 +6,14 @@ import math
 import os
 import random
 import sys
+import tempfile
 from pathlib import Path
 from threading import Thread
 from typing import Any, Dict, List, Optional, Union
+from urllib.parse import urlparse
 
 import gradio as gr
+import requests
 import torch
 import yaml
 
@@ -57,6 +60,27 @@ def print_axolotl_text_art(suffix=None):
 
     if is_main_process():
         print(ascii_art)
+
+
+def check_remote_config(config: Union[str, Path]):
+    if (
+        isinstance(config, str)
+        and config.startswith("https://")
+        and (config.endswith(".yml") or config.endswith("yaml"))
+    ):
+        path = urlparse(config).path
+        filename = os.path.basename(path)
+        temp_dir = tempfile.mkdtemp()
+        response = requests.get(config, timeout=30)
+        if response.status_code == 200:
+            # Open a file in binary write mode
+            with open(Path(temp_dir) / filename, "wb") as file:
+                # Write the content of the response to the file
+                file.write(response.content)
+            return Path(temp_dir) / filename
+
+    # fallback and simply return the original value
+    return config
 
 
 def get_multi_line_input() -> Optional[str]:
@@ -270,9 +294,10 @@ def check_not_in(list1: List[str], list2: Union[Dict[str, Any], List[str]]) -> b
     return not any(el in list2 for el in list1)
 
 
-def load_cfg(config: Path = Path("examples/"), **kwargs):
+def load_cfg(config: Union[str, Path] = Path("examples/"), **kwargs):
+    config = check_remote_config(config)
     if Path(config).is_dir():
-        config = choose_config(config)
+        config = choose_config(Path(config))
 
     # load the config from the yaml file
     with open(config, encoding="utf-8") as file:
