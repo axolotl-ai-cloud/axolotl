@@ -477,9 +477,6 @@ class AxolotlDPOTrainer(DPOTrainer):
 
     tag_names = ["axolotl", "dpo"]
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
     @wraps(DPOTrainer.push_to_hub)
     def push_to_hub(self, *args, **kwargs) -> str:
         """
