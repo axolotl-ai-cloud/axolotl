@@ -1,14 +1,11 @@
-ARG BASE_TAG=main-base
-FROM winglian/axolotl-base:$BASE_TAG
+FROM winglian/axolotl-base:main-base
 
-ARG TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6+PTX"
-ARG AXOLOTL_EXTRAS=""
-ARG CUDA="118"
-ENV BNB_CUDA_VERSION=$CUDA
-ARG PYTORCH_VERSION="2.0.1"
-ARG GITHUB_REF="main"
-
-ENV PYTORCH_VERSION=$PYTORCH_VERSION
+ENV TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6+PTX"
+ENV AXOLOTL_EXTRAS=""
+ENV CUDA="118"
+ENV BNB_CUDA_VERSION="118"
+ENV PYTORCH_VERSION="2.0.1"
+ENV GITHUB_REF="main"
 
 RUN apt-get update && \
     apt-get install -y --allow-change-held-packages vim curl nano libnccl2 libnccl-dev

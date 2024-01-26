@@ -58,9 +58,14 @@ jobs:
   docker-e2e-tests:
     if: github.repository_owner == 'OpenAccess-AI-Collective'
     # this job needs to be run on self-hosted GPU runners...
-    runs-on: [self-hosted, gpu, docker]
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     needs: [pre-commit, pytest]
+
+    env:
+      MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+      MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+      MODAL_ENVIRONMENT: axolotl-ci-cd
 
     strategy:
       fail-fast: false
@@ -70,43 +75,29 @@ jobs:
             cuda_version: 11.8.0
             python_version: "3.10"
             pytorch: 2.0.1
+            num_gpus: 1
           - cuda: 121
             cuda_version: 12.1.0
             python_version: "3.10"
             pytorch: 2.1.2
+            num_gpus: 1
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Docker metadata
-        id: metadata
-        uses: docker/metadata-action@v5
+      - name: Install Python
+        uses: actions/setup-python@v5
         with:
-          images: winglian/axolotl-tests
-      - name: Build Docker image
+          python-version: "3.10"
+      - name: Install Modal
         run: |
-          # Set up build arguments
-          BASE_TAG="main-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}"
-          CUDA="${{ matrix.cuda }}"
-          PYTORCH_VERSION="${{ matrix.pytorch }}"
-          # Build the Docker image
-          docker build . \
-            --file ./docker/Dockerfile-tests \
-            --build-arg BASE_TAG=$BASE_TAG \
-            --build-arg CUDA=$CUDA \
-            --build-arg GITHUB_REF=$GITHUB_REF \
-            --build-arg PYTORCH_VERSION=$PYTORCH_VERSION \
-            --tag ${{ steps.metadata.outputs.tags }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }} \
-            --no-cache
-      - name: Unit Tests w docker image
+          python -m pip install --upgrade pip
+          pip install modal jinja2
+      - name: Update env vars
         run: |
-          docker run --rm ${{ steps.metadata.outputs.tags }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }} pytest --ignore=tests/e2e/ /workspace/axolotl/tests/
-      - name: GPU Unit Tests w docker image
+          echo "BASE_TAG=main-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}" >> $GITHUB_ENV
+          echo "PYTORCH_VERSION=${{ matrix.pytorch}}" >> $GITHUB_ENV
+          echo "CUDA=${{ matrix.cuda }}" >> $GITHUB_ENV
+          echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
+      - name: Run training job on Modal
         run: |
-          docker run --privileged --gpus "all" --env WANDB_DISABLED=true --rm ${{ steps.metadata.outputs.tags }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }} pytest --ignore=tests/e2e/patched/ /workspace/axolotl/tests/e2e/
-      - name: GPU Unit Tests monkeypatched w docker image
-        run: |
-          docker run --privileged --gpus "all" --env WANDB_DISABLED=true --rm ${{ steps.metadata.outputs.tags }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }} pytest /workspace/axolotl/tests/e2e/patched/
-      - name: Prune image from docker
-        if: github.ref != 'refs/heads/main'
-        run: |
-          docker rmi -f ${{ steps.metadata.outputs.tags }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}
+          modal run cicd.tests
