@@ -1,3 +1,6 @@
+"""
+modal application to run axolotl gpu tests in Modal
+"""
 import os
 import pathlib
 import tempfile
@@ -27,7 +30,7 @@ df_args = {
 dockerfile_contents = df_template.render(**df_args)
 
 temp_dir = tempfile.mkdtemp()
-with open(pathlib.Path(temp_dir) / "Dockerfile", "w") as f:
+with open(pathlib.Path(temp_dir) / "Dockerfile", "w", encoding="utf-8") as f:
     f.write(dockerfile_contents)
 
 DOCKER_ENV = {
@@ -56,7 +59,7 @@ def run_cmd(cmd: str, run_folder: str):
 
     # Propagate errors from subprocess.
     if exit_code := subprocess.call(cmd.split(), cwd=run_folder):  # nosec
-        exit(exit_code)
+        exit(exit_code)  # pylint: disable=consider-using-sys-exit
 
 
 @stub.function(
@@ -65,8 +68,8 @@ def run_cmd(cmd: str, run_folder: str):
     timeout=60 * 30,
 )
 def cicd_pytest():
-    CMD = "pytest /workspace/axolotl/tests/e2e/patched/"
-    run_cmd(CMD, "/workspace/axolotl")
+    cmd = "pytest /workspace/axolotl/tests/e2e/patched/"
+    run_cmd(cmd, "/workspace/axolotl")
 
 
 @stub.local_entrypoint()
