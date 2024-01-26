@@ -20,7 +20,7 @@ df_args = {
     "PYTORCH_VERSION": os.environ.get("PYTORCH_VERSION", "2.0.1"),
     "BASE_TAG": os.environ.get("BASE_TAG", "main-base-py3.10-cu118-2.0.1"),
     "CUDA": os.environ.get("CUDA", "118"),
-    "GITHUB_REF": os.environ.get("GITHUB_REF", "ref/heads/main"),
+    "GITHUB_REF": os.environ.get("GITHUB_REF", "refs/heads/main"),
     "GITHUB_SHA": os.environ.get("GITHUB_SHA"),
 }
 
