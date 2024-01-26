@@ -23,15 +23,6 @@
     "hysteresis": 2,
     "min_loss_scale": 1
   },
-  "optimizer": {
-    "type": "AdamW",
-    "params": {
-      "lr": "auto",
-      "betas": "auto",
-      "eps": "auto",
-      "weight_decay": "auto"
-    }
-  },
   "gradient_accumulation_steps": "auto",
   "train_batch_size": "auto",
   "train_micro_batch_size_per_gpu": "auto",
