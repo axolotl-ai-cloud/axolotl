@@ -19,12 +19,12 @@ template_env = jinja2.Environment(
 df_template = template_env.get_template("Dockerfile.jinja")
 
 df_args = {
-    "AXOLOTL_EXTRAS": os.environ.get("AXOLOTL_EXTRAS"),
+    "AXOLOTL_EXTRAS": os.environ.get("AXOLOTL_EXTRAS", ""),
     "PYTORCH_VERSION": os.environ.get("PYTORCH_VERSION", "2.0.1"),
     "BASE_TAG": os.environ.get("BASE_TAG", "main-base-py3.10-cu118-2.0.1"),
     "CUDA": os.environ.get("CUDA", "118"),
     "GITHUB_REF": os.environ.get("GITHUB_REF", "refs/heads/main"),
-    "GITHUB_SHA": os.environ.get("GITHUB_SHA"),
+    "GITHUB_SHA": os.environ.get("GITHUB_SHA", ""),
 }
 
 dockerfile_contents = df_template.render(**df_args)
@@ -33,19 +33,11 @@ temp_dir = tempfile.mkdtemp()
 with open(pathlib.Path(temp_dir) / "Dockerfile", "w", encoding="utf-8") as f:
     f.write(dockerfile_contents)
 
-DOCKER_ENV = {
-    "PYTORCH_VERSION": os.environ.get("PYTORCH_VERSION"),
-    "BASE_TAG": os.environ.get("BASE_TAG"),
-    "CUDA": os.environ.get("CUDA"),
-    # "GITHUB_REF": os.environ.get("GITHUB_REF", "refs/head/main"),
-    "GITHUB_REF": os.environ.get("GITHUB_REF", "refs/heads/modal-ci"),
-}
-
 cicd_image = Image.from_dockerfile(
     pathlib.Path(temp_dir) / "Dockerfile",
     force_build=True,
     gpu="A10G",
-).env(DOCKER_ENV)
+).env(df_args)
 
 stub = Stub("Axolotl CI/CD", secrets=[])
 
