@@ -645,10 +645,7 @@ def load_model(
     if not cfg.fsdp:
         # FSDP doesn't like mixed Float and BFloat16
         for name, module in model.named_modules():
-            if (
-                any(m in name for m in ["norm", "gate"])
-                or "LayerNorm" in module.__class__.__name__
-            ):
+            if any(m in name for m in ["norm", "gate"]):
                 module.to(torch.float32)
             if model_config.model_type == "btlm":
                 # don't upcast lm_head for btlm
@@ -687,7 +684,7 @@ def load_model(
     if needs_fa2_dtype or cfg.flash_attention:
         LOG.info("converting modules to %s for flash attention", cfg.torch_dtype)
         for name, module in model.named_modules():
-            if "norm" in name or "LayerNorm" in module.__class__.__name__:
+            if "norm" in name:
                 module.to(cfg.torch_dtype)
             if any(m in name for m in embedding_modules):
                 if hasattr(module, "weight"):

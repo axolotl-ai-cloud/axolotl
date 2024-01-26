@@ -1,5 +1,4 @@
 --extra-index-url https://huggingface.github.io/autogptq-index/whl/cu118/
-jinja2
 packaging==23.2
 peft==0.7.1
 transformers==4.37.0
