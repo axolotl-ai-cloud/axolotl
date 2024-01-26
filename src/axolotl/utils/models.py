@@ -24,6 +24,12 @@ from transformers import (  # noqa: F401
 from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
 
 from axolotl.models.mamba import fix_mamba_attn_for_loss
+from axolotl.monkeypatch.llama_attn_hijack_flash import (
+    patch_cross_entropy as llama_patch_cross_entropy,
+)
+from axolotl.monkeypatch.llama_attn_hijack_flash import (
+    patch_rms_norm as llama_patch_rms_norm,
+)
 from axolotl.prompt_tokenizers import LLAMA_DEFAULT_EOS_TOKEN
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.chat_templates import chat_templates
@@ -281,15 +287,7 @@ def load_model(
                 replace_llama_attn_with_flash_attn,
             )
 
-            if cfg.sample_packing:
-                if cfg.device not in ["mps", "cpu"] and not inference:
-                    LOG.info("patching with flash attention for sample packing")
-                    replace_llama_attn_with_flash_attn(
-                        packed=True,
-                        cross_entropy=cfg.flash_attn_cross_entropy,
-                        rms_norm=cfg.flash_attn_rms_norm,
-                    )
-            elif cfg.s2_attention:
+            if cfg.s2_attention:
                 LOG.info("patching w/ flash-enabled, shifted-sparse attention")
                 replace_llama_attn_with_flash_attn(
                     packed=False,
@@ -297,6 +295,21 @@ def load_model(
                     rms_norm=cfg.flash_attn_rms_norm,
                     use_shifted_sparse_attn=True,
                 )
+            elif cfg.device not in ["mps", "cpu"] and not inference:
+                if cfg.sample_packing:
+                    LOG.info("patching with flash attention for sample packing")
+                    replace_llama_attn_with_flash_attn(
+                        packed=True,
+                        cross_entropy=cfg.flash_attn_cross_entropy,
+                        rms_norm=cfg.flash_attn_rms_norm,
+                    )
+                else:
+                    if cfg.flash_attn_cross_entropy:
+                        llama_patch_cross_entropy()
+
+                    if cfg.flash_attn_rms_norm:
+                        llama_patch_rms_norm()
+
         elif cfg.xformers_attention:
             from axolotl.monkeypatch.llama_attn_hijack_xformers import (
                 hijack_llama_attention,
