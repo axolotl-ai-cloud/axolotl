@@ -699,9 +699,21 @@ class ValidationTest(BaseValidation):
         ):
             validate_config(cfg)
 
-    def test_hub_model_id_save_value(self):
+    def test_hub_model_id_save_value_warns(self):
         cfg = DictDefault({"hub_model_id": "test"})
-        validate_config(cfg)
+
+        with self._caplog.at_level(logging.WARNING):
+            validate_config(cfg)
+            assert (
+                "set without any models being saved" in self._caplog.records[0].message
+            )
+
+    def test_hub_model_id_save_value(self):
+        cfg = DictDefault({"hub_model_id": "test", "saves_per_epoch": 4})
+
+        with self._caplog.at_level(logging.WARNING):
+            validate_config(cfg)
+            assert len(self._caplog.records) == 0
 
 
 class ValidationCheckModelConfig(BaseValidation):
