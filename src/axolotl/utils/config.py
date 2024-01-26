@@ -340,6 +340,11 @@ def validate_config(cfg):
             "push_to_hub_model_id is deprecated. Please use hub_model_id instead."
         )
 
+    if cfg.hub_model_id and not (cfg.save_steps or cfg.saves_per_epoch):
+        LOG.warning(
+            "hub_model_id is set without any models being saved. To save a model, set either save_steps or saves_per_epoch."
+        )
+
     if cfg.gptq and cfg.model_revision:
         raise ValueError(
             "model_revision is not supported for GPTQ models. "
