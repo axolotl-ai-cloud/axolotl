@@ -10,11 +10,14 @@ DOCKER_ENV = {
     "PYTORCH_VERSION": os.environ.get("PYTORCH_VERSION"),
     "BASE_TAG": os.environ.get("BASE_TAG"),
     "CUDA": os.environ.get("CUDA"),
-    "GITHUB_REF": os.environ.get("GITHUB_REF", "refs/head/main"),
+    # "GITHUB_REF": os.environ.get("GITHUB_REF", "refs/head/main"),
+    "GITHUB_REF": os.environ.get("GITHUB_REF", "refs/heads/modal-ci"),
 }
 
 cicd_image = Image.from_dockerfile(
-    cicd_path / "../docker/Dockerfile-modal", gpu="A10G"
+    cicd_path / "Dockerfile",
+    force_build=True,
+    gpu="A10G",
 ).env(DOCKER_ENV)
 
 stub = Stub("Axolotl CI/CD", secrets=[])
