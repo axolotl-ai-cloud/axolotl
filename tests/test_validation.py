@@ -26,6 +26,7 @@ class BaseValidation(unittest.TestCase):
         self._caplog = caplog
 
 
+# pylint: disable=too-many-public-methods
 class ValidationTest(BaseValidation):
     """
     Test the validation module
