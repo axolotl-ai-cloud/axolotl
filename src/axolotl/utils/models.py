@@ -161,7 +161,7 @@ def load_tokenizer(cfg):
             if getattr(tokenizer, attr_name) is None:
                 setattr(tokenizer, attr_name, "<|endoftext|>")
 
-    additional_special_tokens = cfg.special_tokens.pop('additional_special_tokens')
+    additional_special_tokens = cfg.special_tokens.pop("additional_special_tokens")
     if cfg.special_tokens:
         lora_modules_to_save = get_linear_embedding_layers(model_config.model_type)
         for k, val in cfg.special_tokens.items():
