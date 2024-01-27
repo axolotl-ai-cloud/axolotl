@@ -161,6 +161,8 @@ def load_tokenizer(cfg):
             if getattr(tokenizer, attr_name) is None:
                 setattr(tokenizer, attr_name, "<|endoftext|>")
 
+
+    additional_special_tokens = cfg.special_tokens.pop('additional_special_tokens')
     if cfg.special_tokens:
         lora_modules_to_save = get_linear_embedding_layers(model_config.model_type)
         for k, val in cfg.special_tokens.items():
@@ -211,6 +213,21 @@ def load_tokenizer(cfg):
                 AddedToken(token, rstrip=False, lstrip=False, normalized=False)
                 for token in cfg.tokens
             ]
+        )
+
+    # Additional special tokens are a List, and need to be treated differently than regular special
+    # tokens. We add them after we have called `add_tokens` in case these additional special tokens
+    # are new tokens.
+    #
+    # Usage:
+    #
+    # ```py
+    # special_tokens:
+    #   additional_special_tokens: ["<|im_start|>", "<|im_end|>"]
+    # ```
+    if additional_special_tokens is not None:
+        tokenizer.add_special_tokens(
+            {"additional_special_tokens": additional_special_tokens}
         )
 
     LOG.debug(f"EOS: {tokenizer.eos_token_id} / {tokenizer.eos_token}")
