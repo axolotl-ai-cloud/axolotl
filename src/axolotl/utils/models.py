@@ -658,7 +658,9 @@ def load_model(
     skip_prepare_model_for_kbit_training = False
 
     if cfg.model_config_type == "mixtral" and is_deepspeed_zero3_enabled():
-        from deepspeed.utils import set_z3_leaf_modules
+        from deepspeed.utils import (  # pylint: disable=no-name-in-module
+            set_z3_leaf_modules,
+        )
         from transformers.models.mixtral.modeling_mixtral import MixtralSparseMoeBlock
 
         set_z3_leaf_modules(model, [MixtralSparseMoeBlock])
