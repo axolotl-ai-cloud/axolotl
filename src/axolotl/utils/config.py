@@ -232,9 +232,6 @@ def validate_config(cfg):
             "eval_batch_size != micro_batch_size. This can lead to VRAM instability."
         )
 
-    if cfg.load_4bit:
-        raise ValueError("cfg.load_4bit parameter has been deprecated")
-
     if cfg.adapter == "qlora":
         if cfg.merge_lora:
             # can't merge qlora if loaded in 8bit or 4bit
@@ -260,7 +257,7 @@ def validate_config(cfg):
         if cfg.flash_attn_fuse_qkv or cfg.flash_attn_fuse_mlp:
             raise ValueError("Fused modules are not supported with QLoRA")
 
-    if not cfg.load_in_8bit and cfg.adapter == "lora":
+    if not cfg.load_in_8bit and cfg.adapter == "lora" and not cfg.peft.loftq_config:
         LOG.warning("We recommend setting `load_in_8bit: true` for LORA finetuning")
 
     if cfg.adapter == "lora" and (cfg.flash_attn_fuse_qkv or cfg.flash_attn_fuse_mlp):
