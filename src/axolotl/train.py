@@ -46,11 +46,6 @@ class TrainDatasetMeta:
 def train(
     *, cfg: DictDefault, cli_args: TrainerCliArgs, dataset_meta: TrainDatasetMeta
 ) -> Tuple[Union[PeftModel, PreTrainedModel], PreTrainedTokenizer]:
-    if cfg.resume_from_checkpoint and cfg.adapter and cfg.deepspeed:
-        from axolotl.monkeypatch.deepspeed import (  # noqa: F401 # pylint: disable=unused-import
-            deepspeed_load_checkpoint,
-        )
-
     # load the tokenizer first
     LOG.debug(
         f"loading tokenizer... {cfg.tokenizer_config or cfg.base_model_config}",
@@ -61,6 +56,24 @@ def train(
     train_dataset = dataset_meta.train_dataset
     eval_dataset = dataset_meta.eval_dataset
     total_num_steps = dataset_meta.total_num_steps
+
+    if cfg.resume_from_checkpoint is None and cfg.auto_resume_from_checkpoints:
+        possible_checkpoints = [
+            str(cp) for cp in Path(cfg.output_dir).glob("checkpoint-*")
+        ]
+        if len(possible_checkpoints) > 0:
+            sorted_paths = sorted(
+                possible_checkpoints,
+                key=lambda path: int(path.split("-")[-1]),
+            )
+            cfg.resume_from_checkpoint = sorted_paths[-1]
+            LOG.info(
+                f"Using Auto-resume functionality to start with checkpoint at {cfg.resume_from_checkpoint}"
+            )
+    resume_from_checkpoint = cfg.resume_from_checkpoint
+
+    if cfg.adapter and cfg.resume_from_checkpoint and not cfg.lora_model_dir:
+        LOG.info("")
 
     # Load the model and tokenizer
     msg = "loading model"
@@ -83,21 +96,6 @@ def train(
             )
 
     safe_serialization = cfg.save_safetensors is True
-
-    if cfg.resume_from_checkpoint is None and cfg.auto_resume_from_checkpoints:
-        possible_checkpoints = [
-            str(cp) for cp in Path(cfg.output_dir).glob("checkpoint-*")
-        ]
-        if len(possible_checkpoints) > 0:
-            sorted_paths = sorted(
-                possible_checkpoints,
-                key=lambda path: int(path.split("-")[-1]),
-            )
-            cfg.resume_from_checkpoint = sorted_paths[-1]
-            LOG.info(
-                f"Using Auto-resume functionality to start with checkpoint at {cfg.resume_from_checkpoint}"
-            )
-    resume_from_checkpoint = cfg.resume_from_checkpoint
 
     if cfg.unfrozen_parameters:
         freeze_parameters_except(model, cfg.unfrozen_parameters)

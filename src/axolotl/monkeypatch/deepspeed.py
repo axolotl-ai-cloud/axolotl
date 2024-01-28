@@ -4,12 +4,12 @@ Integration with Deepspeed
 
 import logging
 
-import transformers.integrations.deepspeed
+import transformers.trainer
 
 LOG = logging.getLogger("axolotl.monkeypatch.deepspeed")
 
 
-def deepspeed_load_checkpoint(deepspeed_engine, checkpoint_path):
+def patched_deepspeed_load_checkpoint(deepspeed_engine, checkpoint_path):
     # it's possible that the user is trying to resume from model_path, which doesn't necessarily
     # contain a deepspeed checkpoint. e.g. examples just check if the dir exists and assume it's
     # a resume from a checkpoint and not just a local pretrained weight. So we check here if the
@@ -35,6 +35,4 @@ def deepspeed_load_checkpoint(deepspeed_engine, checkpoint_path):
         raise ValueError(f"Can't find a valid checkpoint at {checkpoint_path}")
 
 
-transformers.integrations.deepspeed.deepspeed_load_checkpoint = (
-    deepspeed_load_checkpoint
-)
+transformers.trainer.deepspeed_load_checkpoint = patched_deepspeed_load_checkpoint

@@ -6,8 +6,9 @@ from pathlib import Path
 from typing import Tuple
 
 import fire
-import transformers
-from transformers import PreTrainedModel, PreTrainedTokenizer
+from transformers.hf_argparser import HfArgumentParser
+from transformers.modeling_utils import PreTrainedModel
+from transformers.tokenization_utils import PreTrainedTokenizer
 
 from axolotl.cli import (
     check_accelerate_default_config,
@@ -27,7 +28,7 @@ LOG = logging.getLogger("axolotl.cli.train")
 def do_cli(config: Path = Path("examples/"), **kwargs):
     # pylint: disable=duplicate-code
     parsed_cfg = load_cfg(config, **kwargs)
-    parser = transformers.HfArgumentParser((TrainerCliArgs))
+    parser = HfArgumentParser((TrainerCliArgs))
     parsed_cli_args, _ = parser.parse_args_into_dataclasses(
         return_remaining_strings=True
     )
@@ -50,6 +51,9 @@ def do_train(cfg, cli_args) -> Tuple[PreTrainedModel, PreTrainedTokenizer]:
         dataset_meta = load_rl_datasets(cfg=cfg, cli_args=cli_args)
     else:
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
+
+    if cfg.resume_from_checkpoint and cfg.adapter and cfg.deepspeed:
+        import axolotl.monkeypatch.deepspeed  # noqa: F401 # pylint: disable=unused-import
 
     return train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
 
