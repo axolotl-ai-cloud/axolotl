@@ -73,7 +73,8 @@ def train(
     resume_from_checkpoint = cfg.resume_from_checkpoint
 
     if cfg.adapter and cfg.resume_from_checkpoint and not cfg.lora_model_dir:
-        LOG.info("")
+        LOG.info(f"setting lora_model_dir to use {cfg.resume_from_checkpoint}")
+        cfg.lora_model_dir = cfg.resume_from_checkpoint
 
     # Load the model and tokenizer
     msg = "loading model"
