@@ -696,6 +696,12 @@ lora_modules_to_save:
 
 lora_fan_in_fan_out: false
 
+peft:
+  # Configuration options for loftq initialization for LoRA
+  # https://huggingface.co/docs/peft/developer_guides/quantization#loftq-initialization
+  loftq_config:
+    loftq_bits:  # typically 4 bits
+
 # ReLoRA configuration
 # Must use either 'lora' or 'qlora' adapter, and does not support fsdp or deepspeed
 relora_steps: # Number of steps per ReLoRA restart
