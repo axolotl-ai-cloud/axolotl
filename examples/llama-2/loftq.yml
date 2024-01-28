@@ -3,7 +3,7 @@ model_type: LlamaForCausalLM
 tokenizer_type: LlamaTokenizer
 is_llama_derived_model: true
 
-load_in_8bit: true
+load_in_8bit: false
 load_in_4bit: false
 strict: false
 
@@ -25,6 +25,9 @@ lora_alpha: 16
 lora_dropout: 0.05
 lora_target_linear: true
 lora_fan_in_fan_out:
+peft:
+  loftq_config:
+    loftq_bits: 4
 
 wandb_project:
 wandb_entity:
