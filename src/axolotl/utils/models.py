@@ -667,16 +667,17 @@ def load_model(
         # Qwen doesn't play nicely with LoRA if this is enabled
         skip_prepare_model_for_kbit_training = True
 
-    if cfg.peft.loftq_config:
+    loftq_bits = cfg.peft and cfg.peft.loftq_config and cfg.peft.loftq_config.loftq_bits
+    if cfg.adapter == "lora" and loftq_bits:
         skip_prepare_model_for_kbit_training = True
 
     if cfg.adapter in ["lora", "qlora"]:
-        LOG.info("converting PEFT model w/ prepare_model_for_kbit_training")
         if cfg.gradient_checkpointing:
             model.gradient_checkpointing_enable()
         if (
             cfg.load_in_8bit or cfg.load_in_4bit
         ) and not skip_prepare_model_for_kbit_training:
+            LOG.info("converting PEFT model w/ prepare_model_for_kbit_training")
             model = prepare_model_for_kbit_training(
                 model, use_gradient_checkpointing=cfg.gradient_checkpointing
             )
@@ -802,11 +803,9 @@ def load_lora(model, cfg, inference=False, config_only=False):
         lora_target_modules = list(set(lora_target_modules + linear_names))
 
     lora_config_kwargs = {}
-    loftq = cfg.peft and cfg.peft.loftq_config and cfg.peft.loftq_config.loftq_bits
-    if loftq:
-        lora_config_kwargs["loftq_config"] = LoftQConfig(
-            loftq_bits=cfg.peft.loftq_config.loftq_bits
-        )
+    loftq_bits = cfg.peft and cfg.peft.loftq_config and cfg.peft.loftq_config.loftq_bits
+    if loftq_bits:
+        lora_config_kwargs["loftq_config"] = LoftQConfig(loftq_bits=loftq_bits)
         lora_config_kwargs["init_lora_weights"] = "loftq"
 
     lora_config = LoraConfig(
