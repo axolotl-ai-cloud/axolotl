@@ -4,6 +4,8 @@ Integration with Deepspeed
 
 import logging
 
+import transformers.integrations.deepspeed
+
 LOG = logging.getLogger("axolotl.monkeypatch.deepspeed")
 
 
@@ -31,3 +33,8 @@ def deepspeed_load_checkpoint(deepspeed_engine, checkpoint_path):
             )
     else:
         raise ValueError(f"Can't find a valid checkpoint at {checkpoint_path}")
+
+
+transformers.integrations.deepspeed.deepspeed_load_checkpoint = (
+    deepspeed_load_checkpoint
+)

@@ -19,7 +19,6 @@ from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
 
 from axolotl.common.cli import TrainerCliArgs
 from axolotl.logging_config import configure_logging
-from axolotl.monkeypatch.deepspeed import deepspeed_load_checkpoint
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.freeze import freeze_parameters_except
 from axolotl.utils.models import load_model, load_tokenizer
@@ -47,6 +46,11 @@ class TrainDatasetMeta:
 def train(
     *, cfg: DictDefault, cli_args: TrainerCliArgs, dataset_meta: TrainDatasetMeta
 ) -> Tuple[Union[PeftModel, PreTrainedModel], PreTrainedTokenizer]:
+    if cfg.resume_from_checkpoint and cfg.adapter and cfg.deepspeed:
+        from axolotl.monkeypatch.deepspeed import (  # noqa: F401 # pylint: disable=unused-import
+            deepspeed_load_checkpoint,
+        )
+
     # load the tokenizer first
     LOG.debug(
         f"loading tokenizer... {cfg.tokenizer_config or cfg.base_model_config}",
@@ -94,11 +98,6 @@ def train(
                 f"Using Auto-resume functionality to start with checkpoint at {cfg.resume_from_checkpoint}"
             )
     resume_from_checkpoint = cfg.resume_from_checkpoint
-
-    if cfg.resume_from_checkpoint and cfg.adapter and cfg.deepspeed:
-        from transformers.integrations import deepspeed as integrations_deepspeed
-
-        integrations_deepspeed.deepspeed_load_checkpoint = deepspeed_load_checkpoint
 
     if cfg.unfrozen_parameters:
         freeze_parameters_except(model, cfg.unfrozen_parameters)
