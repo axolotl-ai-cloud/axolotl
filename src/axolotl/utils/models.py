@@ -802,7 +802,8 @@ def load_lora(model, cfg, inference=False, config_only=False):
         lora_target_modules = list(set(lora_target_modules + linear_names))
 
     lora_config_kwargs = {}
-    if cfg.peft.loftq_config.loftq_bits:
+    loftq = cfg.peft and cfg.peft.loftq_config and cfg.peft.loftq_config.loftq_bits
+    if loftq:
         lora_config_kwargs["loftq_config"] = LoftQConfig(
             loftq_bits=cfg.peft.loftq_config.loftq_bits
         )

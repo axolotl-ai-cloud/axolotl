@@ -257,7 +257,8 @@ def validate_config(cfg):
         if cfg.flash_attn_fuse_qkv or cfg.flash_attn_fuse_mlp:
             raise ValueError("Fused modules are not supported with QLoRA")
 
-    if not cfg.load_in_8bit and cfg.adapter == "lora" and not cfg.peft.loftq_config:
+    loftq = cfg.peft and cfg.peft.loftq_config and cfg.peft.loftq_config.loftq_bits
+    if not cfg.load_in_8bit and cfg.adapter == "lora" and not loftq:
         LOG.warning("We recommend setting `load_in_8bit: true` for LORA finetuning")
 
     if cfg.adapter == "lora" and (cfg.flash_attn_fuse_qkv or cfg.flash_attn_fuse_mlp):
