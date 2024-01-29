@@ -9,7 +9,7 @@ import bitsandbytes as bnb
 import torch
 import transformers
 from optimum.bettertransformer import BetterTransformer
-from peft import PeftConfig, prepare_model_for_kbit_training
+from peft import LoftQConfig, PeftConfig, prepare_model_for_kbit_training
 from peft.tuners.lora import QuantLinear
 from transformers import (  # noqa: F401
     AddedToken,
@@ -667,13 +667,17 @@ def load_model(
         # Qwen doesn't play nicely with LoRA if this is enabled
         skip_prepare_model_for_kbit_training = True
 
-    if (cfg.adapter == "lora" and load_in_8bit) or (
-        cfg.adapter == "qlora" and cfg.load_in_4bit
-    ):
-        LOG.info("converting PEFT model w/ prepare_model_for_kbit_training")
+    loftq_bits = cfg.peft and cfg.peft.loftq_config and cfg.peft.loftq_config.loftq_bits
+    if cfg.adapter == "lora" and loftq_bits:
+        skip_prepare_model_for_kbit_training = True
+
+    if cfg.adapter in ["lora", "qlora"]:
         if cfg.gradient_checkpointing:
             model.gradient_checkpointing_enable()
-        if not skip_prepare_model_for_kbit_training:
+        if (
+            cfg.load_in_8bit or cfg.load_in_4bit
+        ) and not skip_prepare_model_for_kbit_training:
+            LOG.info("converting PEFT model w/ prepare_model_for_kbit_training")
             model = prepare_model_for_kbit_training(
                 model, use_gradient_checkpointing=cfg.gradient_checkpointing
             )
@@ -700,6 +704,7 @@ def load_model(
             model, lora_config = load_adapter(model, cfg, cfg.adapter)
 
     if cfg.ddp and not load_in_8bit and not (cfg.rl and cfg.load_in_4bit):
+        # TODO revaldate this conditional
         model.to(f"cuda:{cfg.local_rank}")
 
     if torch.cuda.device_count() > 1 and int(os.getenv("WORLD_SIZE", "1")) == 1:
@@ -797,6 +802,12 @@ def load_lora(model, cfg, inference=False, config_only=False):
         LOG.info(f"found linear modules: {repr(linear_names)}")
         lora_target_modules = list(set(lora_target_modules + linear_names))
 
+    lora_config_kwargs = {}
+    loftq_bits = cfg.peft and cfg.peft.loftq_config and cfg.peft.loftq_config.loftq_bits
+    if loftq_bits:
+        lora_config_kwargs["loftq_config"] = LoftQConfig(loftq_bits=loftq_bits)
+        lora_config_kwargs["init_lora_weights"] = "loftq"
+
     lora_config = LoraConfig(
         r=cfg.lora_r,
         lora_alpha=cfg.lora_alpha,
@@ -807,6 +818,7 @@ def load_lora(model, cfg, inference=False, config_only=False):
         modules_to_save=cfg.lora_modules_to_save if cfg.lora_modules_to_save else None,
         bias="none",
         task_type="CAUSAL_LM",
+        **lora_config_kwargs,
     )
 
     if config_only:
