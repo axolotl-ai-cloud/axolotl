@@ -323,13 +323,13 @@ def load_model(
 
             LOG.info("patching with xformers attention")
             hijack_llama_attention()
-        elif cfg.sdp_attention:
+        elif cfg.sample_packing:
             from axolotl.monkeypatch.llama_attn_hijack_sdp import (
-                hijack_llama_sdp_prepare_4d_mask,
+                hijack_llama_prepare_4d_mask,
             )
 
-            LOG.info("patching llama _prepare_4d_causal_attention_mask_for_sdpa")
-            hijack_llama_sdp_prepare_4d_mask()
+            LOG.info("patching llama _prepare_4d_causal_attention_mask*")
+            hijack_llama_prepare_4d_mask()
         elif cfg.s2_attention:
             raise NotImplementedError(
                 "Shifted-sparse attention not currently implemented without flash attention."
