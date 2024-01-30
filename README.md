@@ -615,6 +615,8 @@ rl:
 chat_template: chatml
 # Changes the default system message
 default_system_message: You are a helpful assistant. Please give a long and detailed answer. # Currently only supports chatml.
+# A custom chat template in Jinja format. Will overwrite `chat_template` and `default_system_message`
+custom_chat_template: {% for message in messages %}{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>' + '\n'}}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>' + messages[-2]['role'] + '\n' }}{% endif %}
 # Axolotl attempts to save the dataset as an arrow after packing the data together so
 # subsequent training attempts load faster, relative path
 dataset_prepared_path: data/last_run_prepared

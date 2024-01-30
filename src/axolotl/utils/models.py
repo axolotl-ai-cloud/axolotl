@@ -218,14 +218,16 @@ def load_tokenizer(cfg):
     LOG.debug(f"PAD: {tokenizer.pad_token_id} / {tokenizer.pad_token}")
     LOG.debug(f"UNK: {tokenizer.unk_token_id} / {tokenizer.unk_token}")
 
-    if cfg.chat_template:
-        chat_template_string = chat_templates(cfg.chat_template)
+    if cfg.chat_template or cfg.custom_chat_template:
+        chat_template_string = chat_templates(cfg.chat_template, cfg.custom_chat_template)
         if cfg.default_system_message and cfg.chat_template == "chatml":
             chat_template_string = chat_template_string.replace(
                 "You are a helpful assistant.", cfg.default_system_message
             )
 
         tokenizer.chat_template = chat_template_string
+    elif cfg.custom_chat_template:
+        tokenizer.chat_template = cfg.custom_chat_template
     else:
         LOG.info(
             "No Chat template selected. Consider adding a chat template for easier inference."

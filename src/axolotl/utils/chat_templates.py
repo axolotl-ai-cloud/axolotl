@@ -4,12 +4,14 @@ These templates are used for formatting messages in a conversation.
 """
 
 
-def chat_templates(user_choice: str):
+def chat_templates(user_choice: str, user_custom_choice: str):
     """
     Finds the correct chat_template for the tokenizer_config.
+    Priority is given to `user_custom_choice` over `user_choice`.
 
     Args:
         user_choice (str): The user's choice of template.
+        user_custom_choice (str): The user's choice of a custom template.
 
     Returns:
         str: The chosen template string.
@@ -17,6 +19,9 @@ def chat_templates(user_choice: str):
     Raises:
         ValueError: If the user_choice is not found in the templates.
     """
+
+    if user_custom_choice:
+        return user_custom_choice
 
     templates = {
         "inst": "{{ bos_token }}{% for message in messages %}{% if (message['role'] == 'user') != (loop.index0 % 2 == 0) %}{{ raise_exception('Conversation roles must alternate user/assistant/user/assistant/...') }}{% endif %}{% if message['role'] == 'user' %}{{ '[INST] ' + message['content'] + ' [/INST]' }}{% elif message['role'] == 'assistant' %}{{ message['content'] + eos_token}}{% else %}{{ raise_exception('Only user and assistant roles are supported!') }}{% endif %}{% endfor %}",  # I don't know what this one is called. Used by Mistral/Mixtral.
