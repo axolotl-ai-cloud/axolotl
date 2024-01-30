@@ -8,7 +8,6 @@ import addict
 import bitsandbytes as bnb
 import torch
 import transformers
-from optimum.bettertransformer import BetterTransformer
 from peft import LoftQConfig, PeftConfig, prepare_model_for_kbit_training
 from peft.tuners.lora import QuantLinear
 from transformers import (  # noqa: F401
@@ -752,6 +751,8 @@ def load_model(
         model.config.use_cache = False
 
     if cfg.flash_optimum:
+        from optimum.bettertransformer import BetterTransformer
+
         model = BetterTransformer.transform(model)
 
     if cfg.adapter is not None:
