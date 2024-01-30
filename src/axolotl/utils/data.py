@@ -834,7 +834,7 @@ def encode_packed_pretraining(
 
     sampler = MultipackBatchSampler(
         RandomSampler(train_dataset),
-        batch_size=batch_size,
+        batch_size=1,
         drop_last=True,
         batch_max_len=batch_size * max_seq_length,
         lengths=get_dataset_lengths(train_dataset),
@@ -842,15 +842,16 @@ def encode_packed_pretraining(
 
     chunked_data = defaultdict(list)
 
-    for data in sampler:
-        features = train_dataset[data]
-        features["labels"] = features["input_ids"].copy()
-        collated_features = collate_fn(features)
+    for batch in sampler:
+        for data in batch:
+            features = train_dataset[data]
+            features["labels"] = features["input_ids"].copy()
+            collated_features = collate_fn(features)
 
-        for feature in features.keys():
-            if feature == "length":
-                continue
-            chunked_data[feature].append(collated_features[feature].squeeze(0))
+            for feature in features.keys():
+                if feature == "length":
+                    continue
+                chunked_data[feature].append(collated_features[feature].squeeze(0))
 
     return chunked_data
 

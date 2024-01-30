@@ -237,11 +237,17 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                 main_process_only=True,
             )
         else:
+            if cfg.flash_attention:
+                batch_size = 1
+                batch_max_len = cfg.micro_batch_size * cfg.sequence_len
+            else:
+                batch_size = cfg.micro_batch_size
+                batch_max_len = cfg.sequence_len
             sampler = MultipackBatchSampler(
                 sampler=RandomSampler(train_dataset),
-                batch_size=cfg.micro_batch_size,
+                batch_size=batch_size,
                 drop_last=True,
-                batch_max_len=cfg.micro_batch_size * cfg.sequence_len,
+                batch_max_len=batch_max_len,
                 lengths=get_dataset_lengths(train_dataset),
             )
 
