@@ -350,11 +350,11 @@ def validate_config(cfg):
             + "point to its path, and remove model_revision from the config."
         )
 
-    if cfg.sample_packing and cfg.sdp_attention:
-        # incompatible due to bug w/ accelerate causing 0.0 loss when using llama2
-        raise ValueError(
-            "sample_packing not compatible with sdp_attention. Use flash_attention"
-        )
+    # if cfg.sample_packing and cfg.sdp_attention:
+    #     # incompatible due to bug w/ accelerate causing 0.0 loss when using llama2
+    #     raise ValueError(
+    #         "sample_packing not compatible with sdp_attention. Use flash_attention"
+    #     )
 
     if cfg.sample_packing and cfg.xformers_attention:
         raise ValueError(

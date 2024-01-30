@@ -326,11 +326,11 @@ def load_model(
             hijack_llama_attention()
         elif cfg.sdp_attention:
             from axolotl.monkeypatch.llama_attn_hijack_sdp import (
-                hijack_llama_sdp_attention,
+                hijack_llama_sdp_prepare_4d_mask,
             )
 
-            LOG.info("patching with sdp attention")
-            hijack_llama_sdp_attention()
+            LOG.info("patching llama _prepare_4d_causal_attention_mask_for_sdpa")
+            hijack_llama_sdp_prepare_4d_mask()
         elif cfg.s2_attention:
             raise NotImplementedError(
                 "Shifted-sparse attention not currently implemented without flash attention."
@@ -506,6 +506,9 @@ def load_model(
                 model_config._attn_implementation = (  # pylint: disable=protected-access
                     "eager"
                 )
+    elif cfg.sdp_attention:
+        model_kwargs["attn_implementation"] = "sdpa"
+        model_config._attn_implementation = "sdpa"  # pylint: disable=protected-access
 
     try:
         if (

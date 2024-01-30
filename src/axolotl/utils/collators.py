@@ -7,7 +7,6 @@ from typing import Any, Dict, Optional, Sequence, Union
 import numpy as np
 import torch
 import transformers
-from transformers import DataCollatorForSeq2Seq as OriginalDataCollatorForSeq2Seq
 from transformers import PreTrainedTokenizerBase
 from transformers.utils import PaddingStrategy
 
@@ -127,7 +126,7 @@ class DataCollatorForSeq2Seq:
 
 
 @dataclass
-class BatchSamplerDataCollatorForSeq2Seq(OriginalDataCollatorForSeq2Seq):
+class BatchSamplerDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):
     """
     Collator for multipack specific to the using the BatchSampler
     """
@@ -156,7 +155,7 @@ class BatchSamplerDataCollatorForSeq2Seq(OriginalDataCollatorForSeq2Seq):
 
 
 @dataclass
-class V2BatchSamplerDataCollatorForSeq2Seq(OriginalDataCollatorForSeq2Seq):
+class V2BatchSamplerDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):
     """
     Collator for multipack specific to the using the BatchSampler
     """
