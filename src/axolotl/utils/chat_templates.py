@@ -7,7 +7,6 @@ These templates are used for formatting messages in a conversation.
 def chat_templates(user_choice: str):
     """
     Finds the correct chat_template for the tokenizer_config.
-    Priority is given to `user_custom_choice` over `user_choice`.
 
     Args:
         user_choice (str): The user's choice of template.
