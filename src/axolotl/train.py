@@ -57,6 +57,21 @@ def train(
     eval_dataset = dataset_meta.eval_dataset
     total_num_steps = dataset_meta.total_num_steps
 
+    if cfg.resume_from_checkpoint is None and cfg.auto_resume_from_checkpoints:
+        possible_checkpoints = [
+            str(cp) for cp in Path(cfg.output_dir).glob("checkpoint-*")
+        ]
+        if len(possible_checkpoints) > 0:
+            sorted_paths = sorted(
+                possible_checkpoints,
+                key=lambda path: int(path.split("-")[-1]),
+            )
+            cfg.resume_from_checkpoint = sorted_paths[-1]
+            LOG.info(
+                f"Using Auto-resume functionality to start with checkpoint at {cfg.resume_from_checkpoint}"
+            )
+    resume_from_checkpoint = cfg.resume_from_checkpoint
+
     # Load the model and tokenizer
     msg = "loading model"
     if cfg.adapter:
@@ -78,21 +93,6 @@ def train(
             )
 
     safe_serialization = cfg.save_safetensors is True
-
-    if cfg.resume_from_checkpoint is None and cfg.auto_resume_from_checkpoints:
-        possible_checkpoints = [
-            str(cp) for cp in Path(cfg.output_dir).glob("checkpoint-*")
-        ]
-        if len(possible_checkpoints) > 0:
-            sorted_paths = sorted(
-                possible_checkpoints,
-                key=lambda path: int(path.split("-")[-1]),
-            )
-            cfg.resume_from_checkpoint = sorted_paths[-1]
-            LOG.info(
-                f"Using Auto-resume functionality to start with checkpoint at {cfg.resume_from_checkpoint}"
-            )
-    resume_from_checkpoint = cfg.resume_from_checkpoint
 
     if cfg.unfrozen_parameters:
         freeze_parameters_except(model, cfg.unfrozen_parameters)

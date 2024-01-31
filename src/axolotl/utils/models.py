@@ -473,6 +473,18 @@ def load_model(
             **bnb_config,
         )
 
+    if cfg.load_in_8bit and cfg.adapter is not None:
+        model_kwargs["load_in_8bit"] = True
+    if cfg.load_in_4bit and cfg.adapter is not None:
+        model_kwargs["load_in_4bit"] = True
+
+    # no longer needed per https://github.com/huggingface/transformers/pull/26610
+    if "quantization_config" in model_kwargs or cfg.gptq:
+        if "load_in_8bit" in model_kwargs:
+            del model_kwargs["load_in_8bit"]
+        if "load_in_4bit" in model_kwargs:
+            del model_kwargs["load_in_4bit"]
+
     # sample packing uses custom FA2 patch
     if cfg.flash_attention:
         if not cfg.sample_packing:
@@ -506,8 +518,6 @@ def load_model(
             model = LlamaForCausalLM.from_pretrained(
                 base_model,
                 config=model_config,
-                load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
-                load_in_4bit=cfg.load_in_4bit and cfg.adapter is not None,
                 **model_kwargs,
             )
 
@@ -575,8 +585,6 @@ def load_model(
                 model = getattr(transformers, model_type).from_pretrained(
                     base_model,
                     config=model_config,
-                    load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
-                    load_in_4bit=cfg.load_in_4bit and cfg.adapter is not None,
                     trust_remote_code=cfg.trust_remote_code or False,
                     **model_kwargs,
                 )
@@ -608,8 +616,6 @@ def load_model(
                 model = AutoModelForCausalLM.from_pretrained(
                     base_model,
                     config=model_config,
-                    load_in_8bit=cfg.load_in_8bit and cfg.adapter is not None,
-                    load_in_4bit=cfg.load_in_4bit and cfg.adapter is not None,
                     trust_remote_code=cfg.trust_remote_code or False,
                     **model_kwargs,
                 )
@@ -678,7 +684,9 @@ def load_model(
     skip_prepare_model_for_kbit_training = False
 
     if cfg.model_config_type == "mixtral" and is_deepspeed_zero3_enabled():
-        from deepspeed.utils import set_z3_leaf_modules
+        from deepspeed.utils import (  # pylint: disable=no-name-in-module
+            set_z3_leaf_modules,
+        )
         from transformers.models.mixtral.modeling_mixtral import MixtralSparseMoeBlock
 
         set_z3_leaf_modules(model, [MixtralSparseMoeBlock])
