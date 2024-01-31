@@ -735,7 +735,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         elif self.cfg.sample_packing and self.cfg.eval_sample_packing is False:
             training_arguments_kwargs["dataloader_drop_last"] = True
 
-        if self.cfg.val_set_size == 0:
+        if not self.cfg.test_datasets and self.cfg.val_set_size == 0:
             # no eval set, so don't eval
             training_arguments_kwargs["evaluation_strategy"] = "no"
         elif self.cfg.eval_steps:
@@ -822,6 +822,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 self.cfg.load_best_model_at_end is not False
                 or self.cfg.early_stopping_patience
             )
+            and not self.cfg.test_datasets
             and self.cfg.val_set_size > 0
             and self.cfg.save_steps
             and self.cfg.eval_steps

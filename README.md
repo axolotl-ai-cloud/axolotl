@@ -607,6 +607,17 @@ datasets:
       # For `completion` datsets only, uses the provided field instead of `text` column
       field:
 
+# A list of one or more datasets to eval the model with.
+# You can use either test_datasets, or val_set_size, but not both.
+test_datasets:
+  - path: /workspace/data/eval.jsonl
+    ds_type: json
+    # You need to specify a split. For "json" datasets the default split is called "train".
+    split: train
+    type: completion
+    data_files:
+      - /workspace/data/eval.jsonl
+
 # use RL training: dpo, ipo, kto_pair
 rl:
 

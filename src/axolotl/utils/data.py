@@ -440,7 +440,7 @@ def load_prepare_datasets(
     split="train",
 ) -> Tuple[Dataset, Dataset, List[Prompter]]:
     dataset, prompters = load_tokenized_prepared_datasets(
-        tokenizer, cfg, default_dataset_prepared_path
+        tokenizer, cfg, default_dataset_prepared_path, split=split
     )
 
     if cfg.dataset_shard_num and cfg.dataset_shard_idx is not None:
