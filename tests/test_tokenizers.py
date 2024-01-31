@@ -67,6 +67,16 @@ class TestTokenizers(unittest.TestCase):
         )
         load_tokenizer(cfg)
 
+    def test_add_additional_special_tokens(self):
+        cfg = DictDefault(
+            {
+                "tokenizer_config": "huggyllama/llama-7b",
+                "special_tokens": {"additional_special_tokens": ["<|im_start|>"]},
+            }
+        )
+        tokenizer = load_tokenizer(cfg)
+        self.assertEqual(tokenizer("<|im_start|>user")["input_ids"], [1, 32000, 1404])
+
 
 if __name__ == "__main__":
     unittest.main()
