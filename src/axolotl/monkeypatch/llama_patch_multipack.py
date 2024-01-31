@@ -58,7 +58,7 @@ def llama_for_causal_lm_forward(
         return_dict=return_dict,
     )
 
-    cu_seqlens, max_seqlen = get_cu_seqlens_from_pos_ids(position_ids)
+    cu_seqlens, _ = get_cu_seqlens_from_pos_ids(position_ids)
 
     hidden_states = outputs[0]
     if self.config.pretraining_tp > 1:
@@ -76,16 +76,42 @@ def llama_for_causal_lm_forward(
 
     loss = None
     if labels is not None:
-        # Shift so that tokens < n predict n
-        shift_logits = logits[..., :-1, :].contiguous()
-        shift_labels = labels[..., 1:].contiguous()
-        # Flatten the tokens
-        loss_fct = CrossEntropyLoss()
-        shift_logits = shift_logits.view(-1, self.config.vocab_size)
-        shift_labels = shift_labels.view(-1)
-        # Enable model parallelism
-        shift_labels = shift_labels.to(shift_logits.device)
-        loss = loss_fct(shift_logits, shift_labels)
+        total_loss = 0
+        num_sequences_total = 0  # Total number of sequences across all batches
+
+        for batch_idx in range(cu_seqlens.shape[0]):
+            num_sequences = (
+                len(cu_seqlens[batch_idx]) - 1
+            )  # Number of sequences in the current batch
+
+            for seq_idx in range(num_sequences):
+                # Extract the sequence range from cu_seqlens for the current batch and sequence
+                start_pos = cu_seqlens[batch_idx, seq_idx]
+                end_pos = cu_seqlens[batch_idx, seq_idx + 1]
+                if start_pos == end_pos:
+                    break
+
+                # Slice the logits and labels for the current sequence
+                seq_logits = logits[..., start_pos : end_pos - 1, :].contiguous()
+                seq_labels = labels[..., start_pos + 1 : end_pos].contiguous()
+
+                # Flatten the tokens for the current sequence
+                loss_fct = CrossEntropyLoss()
+                seq_logits_flat = seq_logits[batch_idx, :, :]
+                seq_labels_flat = seq_labels[batch_idx, :]
+
+                # Enable model parallelism
+                seq_labels_flat = seq_labels_flat.to(seq_logits_flat.device)
+
+                # Calculate loss for the current sequence
+                seq_loss = loss_fct(seq_logits_flat, seq_labels_flat)
+                if not torch.isnan(seq_loss):
+                    total_loss += seq_loss
+
+            num_sequences_total += num_sequences
+
+        # Average the loss over all sequences in all batches
+        loss = total_loss / num_sequences_total
 
     if not return_dict:
         output = (logits,) + outputs[1:]
@@ -129,6 +155,9 @@ def hijack_llama_prepare_4d_mask():
     transformers.models.llama.modeling_llama._prepare_4d_causal_attention_mask = (  # pylint: disable=protected-access
         patched_prepare_4d_causal_attention_mask
     )
-    transformers.models.llama.modeling_llama.LlamaForCausalLM.forward = (
-        llama_for_causal_lm_forward
+    transformers.modeling_attn_mask_utils._prepare_4d_causal_attention_mask = (  # pylint: disable=protected-access
+        patched_prepare_4d_causal_attention_mask
     )
+    # transformers.models.llama.modeling_llama.LlamaForCausalLM.forward = (
+    #     llama_for_causal_lm_forward
+    # )

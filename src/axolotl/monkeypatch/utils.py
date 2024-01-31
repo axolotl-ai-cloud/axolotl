@@ -91,7 +91,6 @@ def get_cu_seqlens(attn_mask):
     return torch.stack(results).to(dtype=torch.int32), torch.stack(max_seq_lens)
 
 
-@torch.jit.script
 def get_cu_seqlens_from_pos_ids(position_ids):
     """generate a cumulative sequence length mask for flash attention using pos ids"""
     if len(position_ids.shape) == 1:
@@ -137,7 +136,18 @@ def get_cu_seqlens_from_pos_ids(position_ids):
         results.append(cu_seqlens)
         max_seq_lens.append(max_seq_len)
 
-    return torch.stack(results).to(dtype=torch.int32), torch.stack(max_seq_lens)
+    # Find the maximum value across all tensors
+    max_value = max(t.max() for t in results)
+
+    # Find the length of the longest tensor
+    max_length = max(t.size(0) for t in results)
+
+    # Pad each tensor to the same length and collect them in a list
+    padded_results = [
+        F.pad(t, (0, max_length - t.size(0)), "constant", max_value) for t in results
+    ]
+
+    return torch.stack(padded_results).to(dtype=torch.int32), torch.stack(max_seq_lens)
 
 
 def set_module_name(model, name, value):

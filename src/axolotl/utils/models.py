@@ -324,7 +324,7 @@ def load_model(
             LOG.info("patching with xformers attention")
             hijack_llama_attention()
         elif cfg.sample_packing:
-            from axolotl.monkeypatch.llama_attn_hijack_sdp import (
+            from axolotl.monkeypatch.llama_patch_multipack import (
                 hijack_llama_prepare_4d_mask,
             )
 
@@ -508,6 +508,9 @@ def load_model(
     elif cfg.sdp_attention:
         model_kwargs["attn_implementation"] = "sdpa"
         model_config._attn_implementation = "sdpa"  # pylint: disable=protected-access
+    elif cfg.eager_attention:
+        model_kwargs["attn_implementation"] = "eager"
+        model_config._attn_implementation = "eager"  # pylint: disable=protected-access
 
     try:
         if (
