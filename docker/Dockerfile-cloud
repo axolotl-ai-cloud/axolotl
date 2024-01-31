@@ -11,6 +11,7 @@ EXPOSE 8888
 EXPOSE 22
 
 COPY scripts/cloud-entrypoint.sh /root/cloud-entrypoint.sh
+COPY scripts/motd /etc/motd
 
 RUN pip install jupyterlab notebook ipywidgets && \
     jupyter lab clean
@@ -18,6 +19,7 @@ RUN apt install --yes --no-install-recommends openssh-server tmux && \
     mkdir -p ~/.ssh && \
     chmod 700 ~/.ssh && \
     printf "\n[[ -z \"\$TMUX\"  ]] && { tmux attach-session -t ssh_tmux || tmux new-session -s ssh_tmux; exit; }\n" >> ~/.bashrc && \
+    printf "[ ! -z \"\$TERM\" -a -r /etc/motd ] && cat /etc/motd\n" >> ~/.bashrc && \
     chmod +x /workspace/axolotl/scripts/cloud-entrypoint.sh && \
     chmod +x /root/cloud-entrypoint.sh
 

@@ -1,0 +1,17 @@
+
+                                 dP            dP   dP
+                                 88            88   88
+      .d8888b. dP.  .dP .d8888b. 88 .d8888b. d8888P 88
+      88'  `88  `8bd8'  88'  `88 88 88'  `88   88   88
+      88.  .88  .d88b.  88.  .88 88 88.  .88   88   88
+      `88888P8 dP'  `dP `88888P' dP `88888P'   dP   dP
+
+Welcome to the axolotl cloud image! If the you've mounted a disk to /workspace and the axolotl directory ie empty, run the following commands:
+
+```
+cd /workspace
+rm -rf /workspace/axolotl
+git clone https://github.com/OpenAccess-AI-Collective/axolotl.git
+cd axolotl
+pip install --no-deps -e .
+```
