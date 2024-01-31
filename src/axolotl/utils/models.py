@@ -229,12 +229,6 @@ def load_tokenizer(cfg):
     #   additional_special_tokens: ["<|im_start|>", "<|im_end|>"]
     # ```
     if additional_special_tokens is not None:
-        for token in additional_special_tokens:
-            if len(tokenizer.encode(token, add_special_tokens=False)) > 2:
-                LOG.warning(f"missing {token} in cfg.tokens, adding to vocabulary.")
-                tokenizer.add_tokens(
-                    [AddedToken(token, rstrip=False, lstrip=False, normalized=False)]
-                )
         tokenizer.add_special_tokens(
             {"additional_special_tokens": additional_special_tokens}
         )
