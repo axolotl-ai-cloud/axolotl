@@ -52,9 +52,6 @@ def do_train(cfg, cli_args) -> Tuple[PreTrainedModel, PreTrainedTokenizer]:
     else:
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
-    if cfg.resume_from_checkpoint and cfg.adapter and cfg.deepspeed:
-        import axolotl.monkeypatch.deepspeed  # noqa: F401 # pylint: disable=unused-import
-
     return train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
 
 
