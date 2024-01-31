@@ -698,6 +698,24 @@ class ValidationTest(BaseValidation):
                 "set without any models being saved" in self._caplog.records[0].message
             )
 
+    def test_chat_model_tokenizer(self):
+        cfg = DictDefault(
+            {
+                "datasets": [
+                    {
+                        "path": "unalignment/toxic-dpo-v0.1",
+                        "type": "toxic_apply_chatml",
+                        "conversation": "chatml",
+                    }
+                ]
+            }
+        )
+        with pytest.raises(
+            ValueError,
+            match=r".*Your dataset type*",
+        ):
+            validate_config(cfg)
+
     def test_hub_model_id_save_value(self):
         cfg = DictDefault({"hub_model_id": "test", "saves_per_epoch": 4})
 
