@@ -361,6 +361,13 @@ def validate_config(cfg):
             "sample_packing not compatible with xformers_attention. Use flash_attention"
         )
 
+    if cfg.sample_packing and cfg.sdp_attention and (cfg.bfloat16 or cfg.bf16):
+        # https://github.com/pytorch/pytorch/blob/1b03423526536b5f3d35bdfa95ccc6197556cf9b/test/test_transformers.py#L2440-L2450
+        LOG.warning(
+            "sample_packing & torch sdpa with bf16 is unsupported may results in 0.0 loss. "
+            "This may work on H100s."
+        )
+
     if cfg.early_stopping_patience:
         if not cfg.save_steps or not cfg.eval_steps:
             raise ValueError(
