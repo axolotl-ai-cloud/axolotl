@@ -455,8 +455,10 @@ def load_model(
 
     # no longer needed per https://github.com/huggingface/transformers/pull/26610
     if "quantization_config" in model_kwargs:
-        del model_kwargs["load_in_8bit"]
-        del model_kwargs["load_in_4bit"]
+        if "load_in_8bit" in model_kwargs:
+            del model_kwargs["load_in_8bit"]
+        if "load_in_4bit" in model_kwargs:
+            del model_kwargs["load_in_4bit"]
 
     # sample packing uses custom FA2 patch
     if cfg.flash_attention:
