@@ -232,10 +232,7 @@ def load_tokenizer(cfg):
             if len(tokenizer.encode(token)) > 1:
                 LOG.warning(f"missing {token} in cfg.tokens, adding to vocabulary.")
                 tokenizer.add_tokens(
-                    [
-                        AddedToken(token, rstrip=False, lstrip=False, normalized=False)
-                        for token in cfg.tokens
-                    ]
+                    [AddedToken(token, rstrip=False, lstrip=False, normalized=False)]
                 )
         tokenizer.add_special_tokens(
             {"additional_special_tokens": additional_special_tokens}
