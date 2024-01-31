@@ -528,7 +528,7 @@ def validate_config(cfg):
     if cfg.datasets:
         for idx, ds_cfg in enumerate(cfg.datasets):
             if (
-                ds_cfg.type in ["ultra_apply_chatml", "toxic_apply_chatml","chatml.intel"]
+                ds_cfg.type in ["ultra_apply_chatml", "toxic_apply_chatml","chatml.intel","chatml.argilla"]
                 and ds_cfg.conversation
             ):
                 raise ValueError(
