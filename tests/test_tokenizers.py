@@ -76,6 +76,11 @@ class TestTokenizers(unittest.TestCase):
         )
         tokenizer = load_tokenizer(cfg)
         self.assertEqual(tokenizer("<|im_start|>user")["input_ids"], [1, 32000, 1404])
+        self.assertEqual(len(tokenizer), 32001)
+
+        # ensure reloading the tokenizer again from cfg results in same vocab length
+        tokenizer = load_tokenizer(cfg)
+        self.assertEqual(len(tokenizer), 32001)
 
 
 if __name__ == "__main__":

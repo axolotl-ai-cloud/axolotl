@@ -163,17 +163,18 @@ def load_tokenizer(cfg):
 
     additional_special_tokens = None
     if cfg.special_tokens:
-        additional_special_tokens = cfg.special_tokens.pop(
+        special_tokens = cfg.special_tokens.to_dict()
+        additional_special_tokens = special_tokens.pop(
             "additional_special_tokens", None
         )
         lora_modules_to_save = get_linear_embedding_layers(model_config.model_type)
-        for k, val in cfg.special_tokens.items():
+        for k, val in special_tokens.items():
             # check if new special token is not already in tokenizer and
             # is adapter training to make sure lora_modules_to_save is set
             # pylint: disable=too-many-boolean-expressions
             if (
                 (getattr(tokenizer, k) is None or getattr(tokenizer, k) != val)
-                and (len(tokenizer.encode(val)) > 1)
+                and (len(tokenizer.encode(val, add_special_tokens=False)) > 2)
                 and cfg.adapter
                 and (
                     not cfg.lora_modules_to_save
@@ -229,7 +230,7 @@ def load_tokenizer(cfg):
     # ```
     if additional_special_tokens is not None:
         for token in additional_special_tokens:
-            if len(tokenizer.encode(token)) > 1:
+            if len(tokenizer.encode(token, add_special_tokens=False)) > 2:
                 LOG.warning(f"missing {token} in cfg.tokens, adding to vocabulary.")
                 tokenizer.add_tokens(
                     [AddedToken(token, rstrip=False, lstrip=False, normalized=False)]
