@@ -756,7 +756,7 @@ def load_llama_adapter(model, cfg):
     )
 
     if cfg.lora_model_dir:
-        LOG.debug("Loading pretained PEFT - llama_adapter")
+        LOG.debug("Loading pretrained PEFT - llama_adapter")
         model = PeftModel.from_pretrained(
             model,
             cfg.lora_model_dir,
@@ -825,7 +825,7 @@ def load_lora(model, cfg, inference=False, config_only=False):
         return None, lora_config
 
     if cfg.lora_model_dir:
-        LOG.debug("Loading pretained PEFT - LoRA")
+        LOG.debug("Loading pretrained PEFT - LoRA")
         model_kwargs: Any = {}
         if cfg.lora_on_cpu:
             model_kwargs["max_memory"] = {"cpu": "256GiB"}
