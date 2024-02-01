@@ -676,7 +676,7 @@ def load_model(
     if not cfg.fsdp:
         # FSDP doesn't like mixed Float and BFloat16
         for name, module in model.named_modules():
-            if "norm" in name or (model_config.model_type == "mixtral" and "gate" in name):
+            if "norm" in name or name == "gate":
                 module.to(torch.float32)
             if model_config.model_type == "btlm":
                 # don't upcast lm_head for btlm
