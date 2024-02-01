@@ -27,9 +27,10 @@ def parse_requirements():
 
     try:
         torch_version = version("torch")
-        if torch_version.startswith("2.1.1"):
+        _install_requires.append(f"torch=={torch_version}")
+        if torch_version.startswith("2.1."):
             _install_requires.pop(_install_requires.index("xformers==0.0.22"))
-            _install_requires.append("xformers==0.0.23")
+            _install_requires.append("xformers>=0.0.23")
     except PackageNotFoundError:
         pass
 
@@ -41,7 +42,7 @@ install_requires, dependency_links = parse_requirements()
 
 setup(
     name="axolotl",
-    version="0.3.0",
+    version="0.4.0",
     description="LLM Trainer",
     long_description="Axolotl is a tool designed to streamline the fine-tuning of various AI models, offering support for multiple configurations and architectures.",
     package_dir={"": "src"},
@@ -50,13 +51,14 @@ setup(
     dependency_links=dependency_links,
     extras_require={
         "flash-attn": [
-            "flash-attn==2.3.3",
+            "flash-attn==2.5.0",
         ],
         "fused-dense-lib": [
             "fused-dense-lib  @ git+https://github.com/Dao-AILab/flash-attention@v2.3.3#subdirectory=csrc/fused_dense_lib",
         ],
         "deepspeed": [
-            "deepspeed",
+            "deepspeed>=0.13.1",
+            "deepspeed-kernels",
         ],
         "mamba-ssm": [
             "mamba-ssm==1.0.1",

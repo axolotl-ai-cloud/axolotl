@@ -7,8 +7,13 @@ from tokenizers import AddedToken
 from transformers import AutoTokenizer
 
 from axolotl.datasets import TokenizedPromptDataset
-from axolotl.prompt_strategies.sharegpt import SimpleShareGPTPromptTokenizingStrategy
+from axolotl.prompt_strategies.sharegpt import (
+    SimpleShareGPTPromptTokenizingStrategy,
+    register_chatml_template,
+)
 from axolotl.prompters import ShareGPTPrompterV2
+
+register_chatml_template()
 
 
 @pytest.fixture(name="sharegpt_dataset")

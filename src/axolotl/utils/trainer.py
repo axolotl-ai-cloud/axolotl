@@ -106,19 +106,18 @@ def drop_long_seq(sample, sequence_len=2048):
     return len(sample["input_ids"]) <= sequence_len and len(sample["input_ids"]) > 0
 
 
-def process_datasets_for_packing(cfg, train_dataset, eval_dataset, tokenizer):
+def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
     drop_long = partial(drop_long_seq, sequence_len=cfg.sequence_len)
     with zero_first(is_main_process()):
         if cfg.is_preprocess:
+            min_input_len = np.min(get_dataset_lengths(train_dataset))
+            LOG.debug(f"min_input_len: {min_input_len}", main_process_only=True)
             max_input_len = np.max(get_dataset_lengths(train_dataset))
             LOG.debug(f"max_input_len: {max_input_len}", main_process_only=True)
 
-        # Phi doesn't want the attention_mask feature when training
         if (
-            "CodeGenTokenizer" in tokenizer.__class__.__name__
-            or (cfg.is_mistral_derived_model and cfg.flash_attention)
-            or cfg.model_config_type == "mamba"
-        ):
+            cfg.is_mistral_derived_model and cfg.flash_attention
+        ) or cfg.model_config_type == "mamba":
             LOG.info("dropping attention_mask column")
             train_dataset = train_dataset.remove_columns("attention_mask")
             if eval_dataset:
@@ -238,11 +237,17 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                 main_process_only=True,
             )
         else:
+            if cfg.flash_attention:
+                batch_size = 1
+                batch_max_len = cfg.micro_batch_size * cfg.sequence_len
+            else:
+                batch_size = cfg.micro_batch_size
+                batch_max_len = cfg.sequence_len
             sampler = MultipackBatchSampler(
                 sampler=RandomSampler(train_dataset),
-                batch_size=cfg.micro_batch_size,
+                batch_size=batch_size,
                 drop_last=True,
-                batch_max_len=cfg.micro_batch_size * cfg.sequence_len,
+                batch_max_len=batch_max_len,
                 lengths=get_dataset_lengths(train_dataset),
             )
 
@@ -250,7 +255,7 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                 train_dataset.remove_columns(["length"]),
                 batch_sampler=sampler,
             )
-            data_loader_len = len(data_loader)
+            data_loader_len = len(data_loader) // batch_size
             actual_eff = sampler.efficiency()
             LOG.debug(f"data_loader_len: {data_loader_len}", main_process_only=True)
             # FIXME: is there a bug here somewhere? the total num steps depends

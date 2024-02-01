@@ -13,27 +13,29 @@ from axolotl.train import train
 from axolotl.utils.config import normalize_config
 from axolotl.utils.dict import DictDefault
 
-from .utils import with_temp_dir
+from ..utils import with_temp_dir
 
 LOG = logging.getLogger("axolotl.tests.e2e")
 os.environ["WANDB_DISABLED"] = "true"
 
 
-class TestPhi(unittest.TestCase):
+class TestPhiMultipack(unittest.TestCase):
     """
     Test case for Phi2 models
     """
 
     @with_temp_dir
-    def test_phi_ft(self, temp_dir):
+    def test_ft_packed(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "microsoft/phi-1_5",
-                "model_type": "AutoModelForCausalLM",
+                "model_type": "PhiForCausalLM",
                 "tokenizer_type": "AutoTokenizer",
-                "sequence_len": 2048,
-                "sample_packing": False,
+                "sequence_len": 1024,
+                "sample_packing": True,
+                "flash_attention": True,
+                "pad_to_sequence_len": True,
                 "load_in_8bit": False,
                 "adapter": None,
                 "val_set_size": 0.1,
@@ -53,15 +55,15 @@ class TestPhi(unittest.TestCase):
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
-                "optimizer": "paged_adamw_8bit",
+                "optimizer": "adamw_bnb_8bit",
                 "lr_scheduler": "cosine",
-                "flash_attention": True,
-                "max_steps": 10,
-                "save_steps": 10,
+                "max_steps": 20,
                 "eval_steps": 10,
+                "save_steps": 10,
                 "bf16": "auto",
             }
         )
+
         normalize_config(cfg)
         cli_args = TrainerCliArgs()
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
@@ -70,15 +72,17 @@ class TestPhi(unittest.TestCase):
         assert (Path(temp_dir) / "pytorch_model.bin").exists()
 
     @with_temp_dir
-    def test_phi_qlora(self, temp_dir):
+    def test_qlora_packed(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "microsoft/phi-1_5",
-                "model_type": "AutoModelForCausalLM",
+                "model_type": "PhiForCausalLM",
                 "tokenizer_type": "AutoTokenizer",
-                "sequence_len": 2048,
-                "sample_packing": False,
+                "sequence_len": 1024,
+                "sample_packing": True,
+                "flash_attention": True,
+                "pad_to_sequence_len": True,
                 "load_in_8bit": False,
                 "adapter": "qlora",
                 "lora_r": 64,
@@ -102,15 +106,15 @@ class TestPhi(unittest.TestCase):
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
-                "optimizer": "paged_adamw_8bit",
+                "optimizer": "adamw_bnb_8bit",
                 "lr_scheduler": "cosine",
-                "flash_attention": True,
-                "max_steps": 10,
-                "save_steps": 10,
+                "max_steps": 20,
                 "eval_steps": 10,
+                "save_steps": 10,
                 "bf16": "auto",
             }
         )
+
         normalize_config(cfg)
         cli_args = TrainerCliArgs()
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)

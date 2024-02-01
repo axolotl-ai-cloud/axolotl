@@ -26,20 +26,11 @@ class BaseValidation(unittest.TestCase):
         self._caplog = caplog
 
 
+# pylint: disable=too-many-public-methods
 class ValidationTest(BaseValidation):
     """
     Test the validation module
     """
-
-    def test_load_4bit_deprecate(self):
-        cfg = DictDefault(
-            {
-                "load_4bit": True,
-            }
-        )
-
-        with pytest.raises(ValueError):
-            validate_config(cfg)
 
     def test_batch_size_unused_warning(self):
         cfg = DictDefault(
@@ -698,6 +689,22 @@ class ValidationTest(BaseValidation):
         ):
             validate_config(cfg)
 
+    def test_hub_model_id_save_value_warns(self):
+        cfg = DictDefault({"hub_model_id": "test"})
+
+        with self._caplog.at_level(logging.WARNING):
+            validate_config(cfg)
+            assert (
+                "set without any models being saved" in self._caplog.records[0].message
+            )
+
+    def test_hub_model_id_save_value(self):
+        cfg = DictDefault({"hub_model_id": "test", "saves_per_epoch": 4})
+
+        with self._caplog.at_level(logging.WARNING):
+            validate_config(cfg)
+            assert len(self._caplog.records) == 0
+
 
 class ValidationCheckModelConfig(BaseValidation):
     """
@@ -742,11 +749,11 @@ class ValidationCheckModelConfig(BaseValidation):
 
         check_model_config(cfg, model_config)
 
-    def test_phi2_add_tokens_adapter(self):
+    def test_phi_add_tokens_adapter(self):
         cfg = DictDefault(
             {"adapter": "qlora", "load_in_4bit": True, "tokens": ["<|imstart|>"]}
         )
-        model_config = DictDefault({"model_type": "phi-msft"})
+        model_config = DictDefault({"model_type": "phi"})
 
         with pytest.raises(
             ValueError,
@@ -759,7 +766,7 @@ class ValidationCheckModelConfig(BaseValidation):
                 "adapter": "qlora",
                 "load_in_4bit": True,
                 "tokens": ["<|imstart|>"],
-                "lora_modules_to_save": ["embed_tokens", "lm_head"],
+                "lora_modules_to_save": ["embd.wte", "lm_head.linear"],
             }
         )
 
@@ -774,7 +781,7 @@ class ValidationCheckModelConfig(BaseValidation):
                 "adapter": "qlora",
                 "load_in_4bit": True,
                 "tokens": ["<|imstart|>"],
-                "lora_modules_to_save": ["embd.wte", "lm_head.linear"],
+                "lora_modules_to_save": ["embed_tokens", "lm_head"],
             }
         )
 

@@ -4,7 +4,9 @@ helper utils for tests
 import os
 import shutil
 import tempfile
+import unittest
 from functools import wraps
+from importlib.metadata import version
 from pathlib import Path
 
 
@@ -31,3 +33,15 @@ def most_recent_subdir(path):
     subdir = max(subdirectories, key=os.path.getctime)
 
     return subdir
+
+
+def require_torch_2_1_1(test_case):
+    """
+    Decorator marking a test that requires torch >= 2.1.1
+    """
+
+    def is_min_2_1_1():
+        torch_version = version("torch")
+        return torch_version >= "2.1.1"
+
+    return unittest.skipUnless(is_min_2_1_1(), "test torch 2.1.1")(test_case)

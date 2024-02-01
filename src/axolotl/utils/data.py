@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import torch
+import yaml
 from datasets import (
     Dataset,
     DatasetDict,
@@ -15,6 +16,7 @@ from datasets import (
     load_from_disk,
 )
 from huggingface_hub import hf_hub_download
+from huggingface_hub.utils import HFValidationError
 from torch.utils.data import RandomSampler
 from transformers import PreTrainedTokenizerBase
 
@@ -212,7 +214,7 @@ def load_tokenized_prepared_datasets(
                     token=use_auth_token,
                 )
                 ds_from_hub = True
-            except (FileNotFoundError, ConnectionError):
+            except (FileNotFoundError, ConnectionError, HFValidationError):
                 pass
 
             ds_from_cloud = False
@@ -397,7 +399,7 @@ def load_tokenized_prepared_datasets(
             LOG.info("shuffle merged datasets")
             dataset = dataset.shuffle(seed=seed)
 
-        dataset, _ = process_datasets_for_packing(cfg, dataset, None, tokenizer)
+        dataset, _ = process_datasets_for_packing(cfg, dataset, None)
 
         if cfg.local_rank == 0:
             LOG.info(f"Saving merged prepared dataset to disk... {prepared_ds_path}")
@@ -438,7 +440,7 @@ def load_prepare_datasets(
     split="train",
 ) -> Tuple[Dataset, Dataset, List[Prompter]]:
     dataset, prompters = load_tokenized_prepared_datasets(
-        tokenizer, cfg, default_dataset_prepared_path
+        tokenizer, cfg, default_dataset_prepared_path, split=split
     )
 
     if cfg.dataset_shard_num and cfg.dataset_shard_idx is not None:
@@ -832,7 +834,7 @@ def encode_packed_pretraining(
 
     sampler = MultipackBatchSampler(
         RandomSampler(train_dataset),
-        batch_size=batch_size,
+        batch_size=1,
         drop_last=True,
         batch_max_len=batch_size * max_seq_length,
         lengths=get_dataset_lengths(train_dataset),
@@ -840,17 +842,53 @@ def encode_packed_pretraining(
 
     chunked_data = defaultdict(list)
 
-    for data in sampler:
-        features = train_dataset[data]
-        features["labels"] = features["input_ids"].copy()
-        collated_features = collate_fn(features)
+    for batch in sampler:
+        for data in batch:
+            features = train_dataset[data]
+            features["labels"] = features["input_ids"].copy()
+            collated_features = collate_fn(features)
 
-        for feature in features.keys():
-            if feature == "length":
-                continue
-            chunked_data[feature].append(collated_features[feature].squeeze(0))
+            for feature in features.keys():
+                if feature == "length":
+                    continue
+                chunked_data[feature].append(collated_features[feature].squeeze(0))
 
     return chunked_data
+
+
+def _get_path(ds_hash, cfg):
+    prepared_ds_path = (
+        Path(cfg.dataset_prepared_path) / ds_hash
+        if cfg.dataset_prepared_path
+        else Path(DEFAULT_DATASET_PREPARED_PATH) / ds_hash
+    )
+
+    return prepared_ds_path
+
+
+def _load_preprocessed_ds(cfg, sub_cfg):
+    ds_hash = md5(yaml.dump(sub_cfg, Dumper=yaml.Dumper))
+    prepared_ds_path = _get_path(ds_hash, cfg)
+    dataset = None
+
+    if (
+        cfg.dataset_prepared_path
+        and any(prepared_ds_path.glob("*"))
+        and not cfg.is_preprocess
+    ):
+        LOG.info(f"Loading prepared dataset from disk at {prepared_ds_path}...")
+        dataset = load_from_disk(str(prepared_ds_path))
+
+    return dataset
+
+
+def _save_preprocessed_ds(cfg, sub_cfg, dataset):
+    ds_hash = md5(yaml.dump(sub_cfg, Dumper=yaml.Dumper))
+    prepared_ds_path = _get_path(ds_hash, cfg)
+
+    if cfg.is_preprocess and is_main_process():
+        LOG.info(f"Loading prepared dataset from disk at {prepared_ds_path}...")
+        dataset.save_to_disk(str(prepared_ds_path))
 
 
 def load_prepare_dpo_datasets(cfg):
@@ -889,12 +927,25 @@ def load_prepare_dpo_datasets(cfg):
         return concatenate_datasets(split_datasets)
 
     with zero_first(is_main_process()):
-        train_dataset = load_split(cfg.datasets, cfg)
+        train_is_preprocessed = False
+        eval_is_preprocessed = False
+        if train_dataset := _load_preprocessed_ds(cfg, cfg.datasets):
+            train_is_preprocessed = True
+        else:
+            train_dataset = load_split(cfg.datasets, cfg)
 
         eval_dataset = None
         if cfg.test_datasets:
-            eval_dataset = load_split(cfg.test_datasets, cfg)
+            if eval_dataset := _load_preprocessed_ds(cfg, cfg.test_datasets):
+                eval_is_preprocessed = True
+            else:
+                eval_dataset = load_split(cfg.test_datasets, cfg)
         if not eval_dataset:
             eval_dataset = None
+
+        if not train_is_preprocessed:
+            _save_preprocessed_ds(cfg, cfg.datasets, train_dataset)
+        if eval_dataset and not eval_is_preprocessed:
+            _save_preprocessed_ds(cfg, cfg.test_datasets, eval_dataset)
 
     return train_dataset, eval_dataset

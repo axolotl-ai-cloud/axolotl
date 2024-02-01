@@ -51,7 +51,7 @@ class AlpacaPrompter(Prompter):
             self.turn_no_input_format = (
                 "### Instruction:\n{instruction}\n\n### Response:\n"
             )
-            self.system_format = "### System:\n{system}\n\n"
+            self.system_format = "{system}\n\n"
         if self.prompt_style == PromptStyle.CHAT.value:
             self.turn_format = "USER: {instruction}\n{input}\nASSISTANT:"
             self.turn_no_input_format = "USER: {instruction}\nASSISTANT:"

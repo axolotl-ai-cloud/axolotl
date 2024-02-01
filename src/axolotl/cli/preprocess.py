@@ -13,10 +13,12 @@ from axolotl.cli import (
     check_user_token,
     load_cfg,
     load_datasets,
+    load_rl_datasets,
     print_axolotl_text_art,
 )
 from axolotl.common.cli import PreprocessCliArgs
 from axolotl.common.const import DEFAULT_DATASET_PREPARED_PATH
+from axolotl.prompt_strategies.sharegpt import register_chatml_template
 
 LOG = logging.getLogger("axolotl.cli.preprocess")
 
@@ -33,6 +35,14 @@ def do_cli(config: Path = Path("examples/"), **kwargs):
         return_remaining_strings=True
     )
 
+    if parsed_cfg.chat_template == "chatml" and parsed_cfg.default_system_message:
+        LOG.info(
+            f"ChatML set. Adding default system message: {parsed_cfg.default_system_message}"
+        )
+        register_chatml_template(parsed_cfg.default_system_message)
+    else:
+        register_chatml_template()
+
     if not parsed_cfg.dataset_prepared_path:
         msg = (
             Fore.RED
@@ -43,7 +53,11 @@ def do_cli(config: Path = Path("examples/"), **kwargs):
         LOG.warning(msg)
         parsed_cfg.dataset_prepared_path = DEFAULT_DATASET_PREPARED_PATH
 
-    _ = load_datasets(cfg=parsed_cfg, cli_args=parsed_cli_args)
+    if parsed_cfg.rl:
+        load_rl_datasets(cfg=parsed_cfg, cli_args=parsed_cli_args)
+    else:
+        load_datasets(cfg=parsed_cfg, cli_args=parsed_cli_args)
+
     LOG.info(
         Fore.GREEN
         + f"Success! Preprocessed data path: `dataset_prepared_path: {parsed_cfg.dataset_prepared_path}`"

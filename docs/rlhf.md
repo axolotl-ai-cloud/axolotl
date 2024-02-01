@@ -12,26 +12,36 @@ feedback. Various methods include, but not limited to:
 
 ### RLHF using Axolotl
 
-[!IMPORTANT]
-This is a BETA feature and many features are not fully implemented. You are encouraged to open new PRs to improve the integration and functionality.
+>[!IMPORTANT]
+>This is a BETA feature and many features are not fully implemented. You are encouraged to open new PRs to improve the integration and functionality.
 
 The various RL training methods are implemented in trl and wrapped via axolotl. Below are various examples with how you can use various preference datasets to train models that use ChatML
 
 #### DPO
 ```yaml
-rl: true
+rl: dpo
 datasets:
   - path: Intel/orca_dpo_pairs
     split: train
-    type: intel_apply_chatml
+    type: chatml.intel
   - path: argilla/ultrafeedback-binarized-preferences
     split: train
-    type: argilla_apply_chatml
+    type: chatml.argilla
 ```
 
 #### IPO
 ```yaml
 rl: ipo
+```
+
+#### Using local dataset files
+```yaml
+datasets:
+  - ds_type: json
+    data_files:
+      - orca_rlhf.jsonl
+    split: train
+    type: chatml.intel
 ```
 
 #### Trl autounwrap for peft
