@@ -6,6 +6,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Optional
 
+import axolotl.monkeypatch.data.batch_dataset_fetcher  # pylint: disable=unused-import  # noqa: F401
 from axolotl.logging_config import configure_logging
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.models import load_model, load_tokenizer

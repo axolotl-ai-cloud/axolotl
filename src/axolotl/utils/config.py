@@ -202,6 +202,20 @@ def validate_config(cfg):
             raise ValueError(
                 "bf16 requested, but AMP is not supported on this GPU. Requires Ampere series or above."
             )
+    if (
+        # pylint: disable=too-many-boolean-expressions
+        not (cfg.bf16 or cfg.bfloat16)
+        and (cfg.fp16 or cfg.float16)
+        and not cfg.adapter
+        and not cfg.flash_attention
+        and cfg.sample_packing
+    ):
+        LOG.warning(
+            "Full fine tune w/o FA2 w/ sample packing and fp16/float16 is likely to raise errors. Try LoRA."
+        )
+        # ValueError: Attempting to unscale FP16 gradients.
+        # OR
+        # RuntimeError: expected mat1 and mat2 to have the same dtype, but got: float != c10::Half
     if cfg.max_packed_sequence_len:
         raise DeprecationWarning("`max_packed_sequence_len` is no longer supported")
 
@@ -350,15 +364,22 @@ def validate_config(cfg):
             + "point to its path, and remove model_revision from the config."
         )
 
-    if cfg.sample_packing and cfg.sdp_attention:
-        # incompatible due to bug w/ accelerate causing 0.0 loss when using llama2
-        raise ValueError(
-            "sample_packing not compatible with sdp_attention. Use flash_attention"
-        )
+    # if cfg.sample_packing and cfg.sdp_attention:
+    #     # incompatible due to bug w/ accelerate causing 0.0 loss when using llama2
+    #     raise ValueError(
+    #         "sample_packing not compatible with sdp_attention. Use flash_attention"
+    #     )
 
     if cfg.sample_packing and cfg.xformers_attention:
         raise ValueError(
             "sample_packing not compatible with xformers_attention. Use flash_attention"
+        )
+
+    if cfg.sample_packing and cfg.sdp_attention and (cfg.bfloat16 or cfg.bf16):
+        # https://github.com/pytorch/pytorch/blob/1b03423526536b5f3d35bdfa95ccc6197556cf9b/test/test_transformers.py#L2440-L2450
+        LOG.warning(
+            "sample_packing & torch sdpa with bf16 is unsupported may results in 0.0 loss. "
+            "This may work on H100s."
         )
 
     if cfg.early_stopping_patience:

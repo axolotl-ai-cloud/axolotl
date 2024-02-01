@@ -11,7 +11,7 @@ from axolotl.utils.collators import PretrainingBatchSamplerDataCollatorForSeq2Se
 from axolotl.utils.data import encode_packed_pretraining
 
 
-class TestPacking(unittest.TestCase):
+class TestPretrainingPacking(unittest.TestCase):
     """
     Test class for packing streaming dataset sequences
     """

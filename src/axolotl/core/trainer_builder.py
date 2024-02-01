@@ -98,6 +98,10 @@ class AxolotlTrainingArguments(TrainingArguments):
         default=False,
         metadata={"help": "Use sample packing for efficient training."},
     )
+    multipack_real_batches: bool = field(
+        default=False,
+        metadata={"help": "Use real batches for efficient training."},
+    )
     eval_sample_packing: Optional[bool] = field(
         default=None,
         metadata={"help": "Use sample packing for efficient evals."},
@@ -229,11 +233,19 @@ class AxolotlTrainer(Trainer):
 
     def _get_train_sampler(self) -> Optional[torch.utils.data.Sampler]:
         if self.args.sample_packing and not self.args.pretraining:
+            if self.args.multipack_real_batches:
+                batch_size = self.args.per_device_train_batch_size
+                batch_max_len = self.args.max_seq_length
+            else:
+                batch_size = 1
+                batch_max_len = (
+                    self.args.per_device_train_batch_size * self.args.max_seq_length
+                )
             return MultipackBatchSampler(
                 RandomSampler(self.train_dataset),
-                self.args.train_batch_size,
+                batch_size=batch_size,
                 drop_last=True,
-                batch_max_len=self._train_batch_size * self.args.max_seq_length,
+                batch_max_len=batch_max_len,
                 lengths=get_dataset_lengths(self.train_dataset),
                 packing_efficiency_estimate=self.args.sample_packing_efficiency,
             )
@@ -243,11 +255,19 @@ class AxolotlTrainer(Trainer):
         self, eval_dataset: Dataset
     ) -> Optional[torch.utils.data.Sampler]:
         if self.args.sample_packing and self.args.eval_sample_packing is not False:
+            if self.args.multipack_real_batches:
+                batch_size = self.args.per_device_eval_batch_size
+                batch_max_len = self.args.max_seq_length
+            else:
+                batch_size = 1
+                batch_max_len = (
+                    self.args.per_device_eval_batch_size * self.args.max_seq_length
+                )
             return MultipackBatchSampler(
                 SequentialSampler(eval_dataset),
-                self.args.per_device_eval_batch_size,
+                batch_size=batch_size,
                 drop_last=True,
-                batch_max_len=self.args.eval_batch_size * self.args.max_seq_length,
+                batch_max_len=batch_max_len,
                 lengths=get_dataset_lengths(eval_dataset),
                 packing_efficiency_estimate=self.args.sample_packing_efficiency,
             )
@@ -860,6 +880,9 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         training_arguments_kwargs["sample_packing"] = (
             self.cfg.sample_packing if self.cfg.sample_packing else False
         )
+        training_arguments_kwargs["multipack_real_batches"] = (
+            self.cfg.flash_attention is not True
+        )
         training_arguments_kwargs["eval_sample_packing"] = (
             self.cfg.sample_packing
             if self.cfg.eval_sample_packing is not False
@@ -963,6 +986,11 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         ]
         if use_batch_sampler_collator:
             if self.cfg.model_config_type in ["mixtral", "qwen2", "falcon", "phi"]:
+                collator = V2BatchSamplerDataCollatorForSeq2Seq
+            elif (
+                self.cfg.model_config_type in ["llama"]
+                and self.cfg.flash_attention is not True
+            ):
                 collator = V2BatchSamplerDataCollatorForSeq2Seq
             else:
                 collator = BatchSamplerDataCollatorForSeq2Seq

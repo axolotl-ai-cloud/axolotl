@@ -8,7 +8,6 @@ import addict
 import bitsandbytes as bnb
 import torch
 import transformers
-from optimum.bettertransformer import BetterTransformer
 from peft import LoftQConfig, PeftConfig, prepare_model_for_kbit_training
 from peft.tuners.lora import QuantLinear
 from transformers import (  # noqa: F401
@@ -324,13 +323,13 @@ def load_model(
 
             LOG.info("patching with xformers attention")
             hijack_llama_attention()
-        elif cfg.sdp_attention:
-            from axolotl.monkeypatch.llama_attn_hijack_sdp import (
-                hijack_llama_sdp_attention,
+        elif cfg.sample_packing:
+            from axolotl.monkeypatch.llama_patch_multipack import (
+                hijack_llama_prepare_4d_mask,
             )
 
-            LOG.info("patching with sdp attention")
-            hijack_llama_sdp_attention()
+            LOG.info("patching llama _prepare_4d_causal_attention_mask*")
+            hijack_llama_prepare_4d_mask()
         elif cfg.s2_attention:
             raise NotImplementedError(
                 "Shifted-sparse attention not currently implemented without flash attention."
@@ -506,6 +505,12 @@ def load_model(
                 model_config._attn_implementation = (  # pylint: disable=protected-access
                     "eager"
                 )
+    elif cfg.sdp_attention:
+        model_kwargs["attn_implementation"] = "sdpa"
+        model_config._attn_implementation = "sdpa"  # pylint: disable=protected-access
+    elif cfg.eager_attention:
+        model_kwargs["attn_implementation"] = "eager"
+        model_config._attn_implementation = "eager"  # pylint: disable=protected-access
 
     try:
         if (
@@ -749,6 +754,8 @@ def load_model(
         model.config.use_cache = False
 
     if cfg.flash_optimum:
+        from optimum.bettertransformer import BetterTransformer
+
         model = BetterTransformer.transform(model)
 
     if cfg.adapter is not None:

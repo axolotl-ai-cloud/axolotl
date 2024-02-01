@@ -33,6 +33,7 @@ class TestFusedLlama(unittest.TestCase):
             {
                 "base_model": "JackFram/llama-68m",
                 "flash_attention": True,
+                "pad_to_sequence_len": True,
                 "flash_attn_fuse_qkv": True,
                 "flash_attn_fuse_mlp": True,
                 "sample_packing": True,
