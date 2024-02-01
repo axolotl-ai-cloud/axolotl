@@ -1,6 +1,18 @@
 import torch
 import torch.nn.functional as F
 
+
+def keep_unpacked_data(data: torch.Tensor, index=None, nonzero_total=None, pad_val= None, pairs=False):
+    # pad val could be padding token (input_ids), -100 (labels), or 0 (attention_mask)
+    if index >= nonzero_total:
+        return False
+    if pairs and (index // 2) >= (nonzero_total // 2):
+        return False
+    if pad_val and (data == pad_val).all(dim=0).all():
+        return False
+    return True
+
+
 def split_and_pad_packed(tensor, cu_seqlens, max_seqlen, keep_fn=None):
     split_tensors = []
 

@@ -178,6 +178,9 @@ class V2BatchSamplerDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):
         features = [chunked_data]
         return super().__call__(features, return_tensors=return_tensors)
 
+@dataclass
+class BatchSamplerDPODataCollatorWithPadding:
+    
 
 @dataclass
 class MambaDataCollator:
