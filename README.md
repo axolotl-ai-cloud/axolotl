@@ -1155,9 +1155,11 @@ Having misalignment between your prompts during training and inference can cause
 
 See [this debugging guide](docs/debugging.md) for tips on debugging Axolotl, along with an example configuration for debugging with VSCode.
 
-## Need help? 🙋♂️
+## Need help? 🙋
 
-Join our [Discord server](https://discord.gg/HhrNrHJPRb) where we can help you
+Join our [Discord server](https://discord.gg/HhrNrHJPRb) where we our community members can help you.
+
+Need dedicated support? Please contact us at [✉️wing@openaccessaicollective.org](mailto:wing@openaccessaicollective.org) for dedicated support options.
 
 ## Badge ❤🏷️
 
