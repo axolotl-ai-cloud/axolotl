@@ -33,6 +33,7 @@ from axolotl.utils.config import (
     normalize_config,
     validate_config,
 )
+from axolotl.utils.config.models.input.v0_4_1 import AxolotlInputConfig
 from axolotl.utils.data import load_prepare_dpo_datasets, prepare_dataset
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import is_main_process
@@ -328,7 +329,6 @@ def load_cfg(config: Union[str, Path] = Path("examples/"), **kwargs):
     # load the config from the yaml file
     with open(config, encoding="utf-8") as file:
         cfg: DictDefault = DictDefault(yaml.safe_load(file))
-    cfg.axolotl_config_path = config
     # if there are any options passed in the cli, if it is something that seems valid from the yaml,
     # then overwrite the value
     cfg_keys = cfg.keys()
@@ -340,6 +340,10 @@ def load_cfg(config: Union[str, Path] = Path("examples/"), **kwargs):
                 cfg[k] = bool(kwargs[k])
             else:
                 cfg[k] = kwargs[k]
+
+    AxolotlInputConfig(cfg.to_dict())
+
+    cfg.axolotl_config_path = config
 
     validate_config(cfg)
 
