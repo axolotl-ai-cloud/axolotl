@@ -202,6 +202,20 @@ def validate_config(cfg):
             raise ValueError(
                 "bf16 requested, but AMP is not supported on this GPU. Requires Ampere series or above."
             )
+    if (
+        # pylint: disable=too-many-boolean-expressions
+        not (cfg.bf16 or cfg.bfloat16)
+        and (cfg.fp16 or cfg.float16)
+        and not cfg.adapter
+        and not cfg.flash_attention
+        and cfg.sample_packing
+    ):
+        LOG.warning(
+            "Full fine tune w/o FA2 w/ sample packing and fp16/float16 is likely to raise errors. Try LoRA."
+        )
+        # ValueError: Attempting to unscale FP16 gradients.
+        # OR
+        # RuntimeError: expected mat1 and mat2 to have the same dtype, but got: float != c10::Half
     if cfg.max_packed_sequence_len:
         raise DeprecationWarning("`max_packed_sequence_len` is no longer supported")
 

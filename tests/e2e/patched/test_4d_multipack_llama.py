@@ -25,7 +25,7 @@ class Test4dMultipackLlama(unittest.TestCase):
     """
 
     @with_temp_dir
-    def test_sdp_fft_packing(self, temp_dir):
+    def test_sdp_lora_packing(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
@@ -34,6 +34,12 @@ class Test4dMultipackLlama(unittest.TestCase):
                 "sdp_attention": True,
                 "sample_packing": True,
                 "pad_to_sequence_len": True,
+                "load_in_8bit": True,
+                "adapter": "lora",
+                "lora_r": 32,
+                "lora_alpha": 16,
+                "lora_dropout": 0.05,
+                "lora_target_linear": True,
                 "sequence_len": 1024,
                 "val_set_size": 0.1,
                 "datasets": [
@@ -63,7 +69,7 @@ class Test4dMultipackLlama(unittest.TestCase):
         assert (Path(temp_dir) / "pytorch_model.bin").exists()
 
     @with_temp_dir
-    def test_torch_fft_packing(self, temp_dir):
+    def test_torch_lora_packing(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
@@ -73,6 +79,12 @@ class Test4dMultipackLlama(unittest.TestCase):
                 "sample_packing": True,
                 "pad_to_sequence_len": True,
                 "sequence_len": 1024,
+                "load_in_8bit": True,
+                "adapter": "lora",
+                "lora_r": 32,
+                "lora_alpha": 16,
+                "lora_dropout": 0.05,
+                "lora_target_linear": True,
                 "val_set_size": 0.1,
                 "datasets": [
                     {
