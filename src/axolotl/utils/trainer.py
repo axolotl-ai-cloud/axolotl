@@ -10,7 +10,7 @@ import torch
 import torch.cuda
 from accelerate.logging import get_logger
 from datasets import set_caching_enabled
-from torch.utils.data import DataLoader, RandomSampler
+from torch.utils.data import RandomSampler
 
 from axolotl.core.trainer_builder import HFCausalTrainerBuilder, HFDPOTrainerBuilder
 from axolotl.utils.distributed import is_main_process, reduce_and_broadcast, zero_first
@@ -186,12 +186,15 @@ def process_pretraining_datasets_for_packing(train_dataset, sequence_len):
 
 def calculate_total_num_steps(cfg, train_dataset, update=True):
     if not cfg.total_num_tokens:
-        total_num_tokens = np.sum(
-            train_dataset.data.column("input_ids")
-            .to_pandas()
-            .apply(lambda x: len(x))  # pylint: disable=unnecessary-lambda
-            .values
-        )
+        if "length" in train_dataset.data.column_names:
+            total_num_tokens = np.sum(train_dataset.data["length"])
+        else:
+            total_num_tokens = np.sum(
+                train_dataset.data.column("input_ids")
+                .to_pandas()
+                .apply(lambda x: len(x))  # pylint: disable=unnecessary-lambda
+                .values
+            )
         LOG.debug(f"total_num_tokens: {total_num_tokens}", main_process_only=True)
         if update:
             cfg.total_num_tokens = total_num_tokens
@@ -199,14 +202,21 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
     skip_estimates = cfg.model_config_type == "mamba"
 
     if not skip_estimates and not cfg.total_supervised_tokens:
-        total_supervised_tokens = (
-            train_dataset.data.column("labels")
-            .to_pandas()
-            .apply(lambda x: np.sum(np.array(x) != -100))
-            .sum()
-        )
+        if "labels" in train_dataset.data.column_names:
+            total_supervised_tokens = (
+                train_dataset.data.column("labels")
+                .to_pandas()
+                .apply(lambda x: np.sum(np.array(x) != -100))
+                .sum()
+            )
+        else:
+            LOG.debug(
+                "Dataset does not contain labels, assuming all tokens are supervised"
+            )
+            total_supervised_tokens = cfg.total_num_tokens
+
         LOG.debug(
-            f"`total_supervised_tokens: {total_supervised_tokens}`",
+            f"total_supervised_tokens: {total_supervised_tokens}",
             main_process_only=True,
         )
         if update:
@@ -245,20 +255,14 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                 lengths=get_dataset_lengths(train_dataset),
             )
 
-            data_loader = DataLoader(
-                train_dataset.remove_columns(["length"]),
-                batch_sampler=sampler,
-            )
-            data_loader_len = len(data_loader)
+            sampler_len = sampler.num_batches()
             actual_eff = sampler.efficiency()
-            LOG.debug(f"data_loader_len: {data_loader_len}", main_process_only=True)
+            LOG.debug(f"sampler_len: {sampler_len}", main_process_only=True)
             # FIXME: is there a bug here somewhere? the total num steps depends
             # on the agreed on value for sample_packing_eff_est
             total_num_steps = int(
                 math.floor(
-                    data_loader_len
-                    * cfg.num_epochs
-                    / int(os.environ.get("WORLD_SIZE", 1))
+                    sampler_len * cfg.num_epochs / int(os.environ.get("WORLD_SIZE", 1))
                 )
             )
 
