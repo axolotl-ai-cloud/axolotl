@@ -11,7 +11,6 @@ val_set_size: 0.05
 adapter: qlora
 lora_model_dir:
 sequence_len: 2048
-max_packed_sequence_len: 2048
 lora_r: 16
 lora_alpha: 32
 lora_dropout: 0.05

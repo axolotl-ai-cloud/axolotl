@@ -12,7 +12,7 @@
     "stage3_gather_16bit_weights_on_model_save": true
   },
   "bf16": {
-    "enabled": true
+    "enabled": "auto"
   },
   "fp16": {
     "enabled": "auto",
@@ -22,15 +22,6 @@
     "loss_scale_window": 1000,
     "hysteresis": 2,
     "min_loss_scale": 1
-  },
-  "optimizer": {
-    "type": "AdamW",
-    "params": {
-      "lr": "auto",
-      "betas": "auto",
-      "eps": "auto",
-      "weight_decay": "auto"
-    }
   },
   "gradient_accumulation_steps": "auto",
   "train_batch_size": "auto",

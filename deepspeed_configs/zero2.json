@@ -1,6 +1,10 @@
 {
   "zero_optimization": {
-    "stage": 1,
+    "stage": 2,
+    "offload_optimizer": {
+      "device": "cpu"
+    },
+    "contiguous_gradients": true,
     "overlap_comm": true
   },
   "bf16": {
@@ -14,15 +18,6 @@
     "loss_scale_window": 1000,
     "hysteresis": 2,
     "min_loss_scale": 1
-  },
-  "optimizer": {
-    "type": "AdamW",
-    "params": {
-      "lr": "auto",
-      "betas": "auto",
-      "eps": "auto",
-      "weight_decay": "auto"
-    }
   },
   "gradient_accumulation_steps": "auto",
   "train_batch_size": "auto",

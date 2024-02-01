@@ -1,4 +1,11 @@
-# Multipack
+# Multipack (Sample Packing)
+
+## Visualization of Multipack with Flash Attention
+
+Because Flash Attention simply drops the attention mask, we do not need to
+construct a 4d attention mask. We only need to concatenate the sequences into
+a single batch and let flash attention know where each new sequence begins.
+
 
 4k context, bsz =4,
 each character represents 256 tokens
@@ -49,3 +56,18 @@ w packing ( note it's the same effective number of tokens per step, but a true b
    E E E E F F F F F G G G H H H H
    I I I J J J J K K K K K L L L X ]]
 ```
+
+cu_seqlens:
+[[ 0, 11, 17, 24, 28, 36, 41 44, 48, 51, 55, 60, 64]]
+
+
+## Multipack without Flash Attention
+
+Multipack can still be achieved without Flash attention, but with lower packing
+efficiency as we are not able to join multiple batches into a single batch due to
+context length limits without flash attention. We can use either Pytorch's Scaled
+Dot Product Attention implementation or native Pytorch attention implementation
+along with [4d attention masks](https://github.com/huggingface/transformers/pull/27539)
+to pack sequences together and avoid cross attention.
+
+<img src="./images/4d-mask.png" alt="axolotl" width="800">

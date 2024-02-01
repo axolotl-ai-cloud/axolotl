@@ -59,6 +59,22 @@ except ImportError:
 LOG = logging.getLogger("axolotl.core.trainer_builder")
 
 
+def _sanitize_kwargs_for_tagging(tag_names, kwargs=None):
+    if isinstance(tag_names, str):
+        tag_names = [tag_names]
+
+    if kwargs is not None:
+        if "tags" not in kwargs:
+            kwargs["tags"] = tag_names
+        elif "tags" in kwargs and isinstance(kwargs["tags"], list):
+            kwargs["tags"].extend(tag_names)
+        elif "tags" in kwargs and isinstance(kwargs["tags"], str):
+            tag_names.append(kwargs["tags"])
+            kwargs["tags"] = tag_names
+
+    return kwargs
+
+
 @dataclass
 class AxolotlTrainingArguments(TrainingArguments):
     """
@@ -81,6 +97,10 @@ class AxolotlTrainingArguments(TrainingArguments):
     sample_packing: bool = field(
         default=False,
         metadata={"help": "Use sample packing for efficient training."},
+    )
+    multipack_real_batches: bool = field(
+        default=False,
+        metadata={"help": "Use real batches for efficient training."},
     )
     eval_sample_packing: Optional[bool] = field(
         default=None,
@@ -170,24 +190,30 @@ class AxolotlTrainer(Trainer):
             num_training_steps (int): The number of training steps to do.
             optimizer (torch.optim.Optimizer): The training optimizer
         """
+        use_cosine_quadratic = (
+            self.args.lr_scheduler_type == "cosine"
+            and self.args.lr_quadratic_warmup is True
+        )
+
+        use_cosine_min_lr = (
+            self.args.lr_scheduler_type == "cosine"
+            and self.args.cosine_min_lr_ratio is not None
+        )
 
         # fmt: off
         if self.lr_scheduler is None:  # type: ignore  # pylint: disable=access-member-before-definition
             # fmt: on
-            if (
-                self.args.lr_scheduler_type == "cosine"
-                and self.args.lr_quadratic_warmup is True
-            ):
+            if use_cosine_quadratic:
+                if use_cosine_min_lr:
+                    LOG.warning("Both cosine quadratic warmup and min lr detected. Using quadratic warmup.")
+
                 self.lr_scheduler = get_cosine_schedule_with_quadratic_warmup(  # pylint: disable=attribute-defined-outside-init
                     optimizer,
                     num_warmup_steps=self.args.get_warmup_steps(num_training_steps),
                     num_training_steps=num_training_steps,
                 )
-            elif self.args.lr_scheduler_type == "cosine" and self.args.cosine_min_lr_ratio is not None:
+            elif self.args.cosine_min_lr_ratio and use_cosine_min_lr:
                 assert 0 <= self.args.cosine_min_lr_ratio <= 1.0, "cosine_min_lr_ratio must be between 0.0 and 1.0"
-                if self.args.deepspeed:
-                    LOG.warning("Using cosine scheduler with deepspeed. This may be ignored if a scheduler is set \
-                                in the deepspeed JSON")
                 self.lr_scheduler = get_cosine_schedule_with_min_lr(  # pylint: disable=attribute-defined-outside-init
                     optimizer,
                     num_warmup_steps=self.args.get_warmup_steps(num_training_steps),
@@ -196,15 +222,30 @@ class AxolotlTrainer(Trainer):
                 )
             else:
                 return super().create_scheduler(num_training_steps, optimizer)
+        else:
+            if use_cosine_quadratic:
+                LOG.warning("axolotl's cosine scheduler with quadratic warmup not used (e.g., because of deepspeed).")
+
+            if use_cosine_min_lr:
+                LOG.warning("axolotl's cosine scheduler with min lr not used (e.g., because of deepspeed).")
+
         return self.lr_scheduler
 
     def _get_train_sampler(self) -> Optional[torch.utils.data.Sampler]:
         if self.args.sample_packing and not self.args.pretraining:
+            if self.args.multipack_real_batches:
+                batch_size = self.args.per_device_train_batch_size
+                batch_max_len = self.args.max_seq_length
+            else:
+                batch_size = 1
+                batch_max_len = (
+                    self.args.per_device_train_batch_size * self.args.max_seq_length
+                )
             return MultipackBatchSampler(
                 RandomSampler(self.train_dataset),
-                self.args.train_batch_size,
+                batch_size=batch_size,
                 drop_last=True,
-                batch_max_len=self._train_batch_size * self.args.max_seq_length,
+                batch_max_len=batch_max_len,
                 lengths=get_dataset_lengths(self.train_dataset),
                 packing_efficiency_estimate=self.args.sample_packing_efficiency,
             )
@@ -214,11 +255,19 @@ class AxolotlTrainer(Trainer):
         self, eval_dataset: Dataset
     ) -> Optional[torch.utils.data.Sampler]:
         if self.args.sample_packing and self.args.eval_sample_packing is not False:
+            if self.args.multipack_real_batches:
+                batch_size = self.args.per_device_eval_batch_size
+                batch_max_len = self.args.max_seq_length
+            else:
+                batch_size = 1
+                batch_max_len = (
+                    self.args.per_device_eval_batch_size * self.args.max_seq_length
+                )
             return MultipackBatchSampler(
                 SequentialSampler(eval_dataset),
-                self.args.per_device_eval_batch_size,
+                batch_size=batch_size,
                 drop_last=True,
-                batch_max_len=self.args.eval_batch_size * self.args.max_seq_length,
+                batch_max_len=batch_max_len,
                 lengths=get_dataset_lengths(eval_dataset),
                 packing_efficiency_estimate=self.args.sample_packing_efficiency,
             )
@@ -227,7 +276,8 @@ class AxolotlTrainer(Trainer):
     def get_train_dataloader(self) -> DataLoader:
         if self.args.sample_packing and not self.args.pretraining:
             train_dataset = self.train_dataset
-            train_dataset = train_dataset.remove_columns(["length"])
+            if "length" in train_dataset.features.keys():
+                train_dataset = train_dataset.remove_columns(["length"])
             data_collator = self.data_collator
             dataloader_params = {
                 "batch_size": self._train_batch_size,
@@ -335,30 +385,13 @@ class AxolotlTrainer(Trainer):
         #     return (loss, outputs) if return_outputs else loss
         return super().compute_loss(model, inputs, return_outputs=return_outputs)
 
-    def _sanitize_kwargs_for_tagging(self, tag_names, kwargs=None):
-        if isinstance(tag_names, str):
-            tag_names = [tag_names]
-
-        if kwargs is not None:
-            if "tags" not in kwargs:
-                kwargs["tags"] = tag_names
-            elif "tags" in kwargs and isinstance(kwargs["tags"], list):
-                kwargs["tags"].extend(tag_names)
-            elif "tags" in kwargs and isinstance(kwargs["tags"], str):
-                tag_names.append(kwargs["tags"])
-                kwargs["tags"] = tag_names
-
-        return kwargs
-
     @wraps(Trainer.push_to_hub)
     def push_to_hub(self, *args, **kwargs) -> str:
         """
         Overwrite the `push_to_hub` method in order to force-add the tags when pushing the
         model on the Hub. Please refer to `~transformers.Trainer.push_to_hub` for more details.
         """
-        kwargs = self._sanitize_kwargs_for_tagging(
-            tag_names=self.tag_names, kwargs=kwargs
-        )
+        kwargs = _sanitize_kwargs_for_tagging(tag_names=self.tag_names, kwargs=kwargs)
 
         return super().push_to_hub(*args, **kwargs)
 
@@ -455,6 +488,24 @@ class ReLoRATrainer(AxolotlTrainer):
             self.lr_scheduler = lr_scheduler
 
         return self.lr_scheduler
+
+
+class AxolotlDPOTrainer(DPOTrainer):
+    """
+    Extend the base DPOTrainer for axolotl helpers
+    """
+
+    tag_names = ["axolotl", "dpo"]
+
+    @wraps(DPOTrainer.push_to_hub)
+    def push_to_hub(self, *args, **kwargs) -> str:
+        """
+        Overwrite the `push_to_hub` method in order to force-add the tags when pushing the
+        model on the Hub. Please refer to `~transformers.Trainer.push_to_hub` for more details.
+        """
+        kwargs = _sanitize_kwargs_for_tagging(tag_names=self.tag_names, kwargs=kwargs)
+
+        return super().push_to_hub(*args, **kwargs)
 
 
 class TrainerBuilderBase(abc.ABC):
@@ -637,7 +688,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             training_arguments_kwargs[
                 "gradient_checkpointing"
             ] = self.cfg.gradient_checkpointing
-            if self.cfg.gradient_checkpointing_kwargs:
+            if self.cfg.gradient_checkpointing_kwargs is not None:
                 training_arguments_kwargs[
                     "gradient_checkpointing_kwargs"
                 ] = self.cfg.gradient_checkpointing_kwargs
@@ -704,7 +755,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         elif self.cfg.sample_packing and self.cfg.eval_sample_packing is False:
             training_arguments_kwargs["dataloader_drop_last"] = True
 
-        if self.cfg.val_set_size == 0:
+        if not self.cfg.test_datasets and self.cfg.val_set_size == 0:
             # no eval set, so don't eval
             training_arguments_kwargs["evaluation_strategy"] = "no"
         elif self.cfg.eval_steps:
@@ -791,6 +842,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 self.cfg.load_best_model_at_end is not False
                 or self.cfg.early_stopping_patience
             )
+            and not self.cfg.test_datasets
             and self.cfg.val_set_size > 0
             and self.cfg.save_steps
             and self.cfg.eval_steps
@@ -827,6 +879,9 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         )
         training_arguments_kwargs["sample_packing"] = (
             self.cfg.sample_packing if self.cfg.sample_packing else False
+        )
+        training_arguments_kwargs["multipack_real_batches"] = (
+            self.cfg.flash_attention is not True
         )
         training_arguments_kwargs["eval_sample_packing"] = (
             self.cfg.sample_packing
@@ -930,7 +985,12 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             ]
         ]
         if use_batch_sampler_collator:
-            if self.cfg.model_config_type in ["mixtral", "qwen2"]:
+            if self.cfg.model_config_type in ["mixtral", "qwen2", "falcon", "phi"]:
+                collator = V2BatchSamplerDataCollatorForSeq2Seq
+            elif (
+                self.cfg.model_config_type in ["llama"]
+                and self.cfg.flash_attention is not True
+            ):
                 collator = V2BatchSamplerDataCollatorForSeq2Seq
             else:
                 collator = BatchSamplerDataCollatorForSeq2Seq
@@ -995,6 +1055,12 @@ class HFDPOTrainerBuilder(TrainerBuilderBase):
         training_args_kwargs["lr_scheduler_kwargs"] = (
             self.cfg.lr_scheduler_kwargs if self.cfg.lr_scheduler_kwargs else {}
         )
+        if self.cfg.remove_unused_columns is not None:
+            training_args_kwargs[
+                "remove_unused_columns"
+            ] = self.cfg.remove_unused_columns
+        else:
+            training_args_kwargs["remove_unused_columns"] = False
 
         if self.cfg.dataloader_pin_memory is not None:
             training_args_kwargs[
@@ -1008,20 +1074,28 @@ class HFDPOTrainerBuilder(TrainerBuilderBase):
             training_args_kwargs[
                 "dataloader_prefetch_factor"
             ] = self.cfg.dataloader_prefetch_factor
+        if self.cfg.gradient_checkpointing:
+            training_args_kwargs[
+                "gradient_checkpointing"
+            ] = self.cfg.gradient_checkpointing
+            if self.cfg.gradient_checkpointing_kwargs is not None:
+                training_args_kwargs[
+                    "gradient_checkpointing_kwargs"
+                ] = self.cfg.gradient_checkpointing_kwargs
+            else:
+                training_args_kwargs["gradient_checkpointing_kwargs"] = {
+                    "use_reentrant": False
+                }
 
         training_args = TrainingArguments(
             per_device_train_batch_size=self.cfg.micro_batch_size,
             max_steps=self.cfg.max_steps or total_num_steps,
-            remove_unused_columns=False,
             gradient_accumulation_steps=self.cfg.gradient_accumulation_steps,
             learning_rate=self.cfg.learning_rate,
             save_strategy="steps",
             save_steps=self.cfg.save_steps,
             output_dir=self.cfg.output_dir,
             warmup_steps=self.cfg.warmup_steps,
-            gradient_checkpointing=self.cfg.gradient_checkpointing,
-            gradient_checkpointing_kwargs=self.cfg.gradient_checkpointing_kwargs
-            or {"use_reentrant": False},
             logging_first_step=True,
             logging_steps=1,
             optim=self.cfg.optimizer,
@@ -1044,7 +1118,11 @@ class HFDPOTrainerBuilder(TrainerBuilderBase):
             dpo_trainer_kwargs["eval_dataset"] = self.eval_dataset
         if self.cfg.adapter and self.peft_config:
             dpo_trainer_kwargs["peft_config"] = self.peft_config
-        dpo_trainer = DPOTrainer(
+        if self.cfg.precompute_ref_log_probs is not None:
+            dpo_trainer_kwargs[
+                "precompute_ref_log_probs"
+            ] = self.cfg.precompute_ref_log_probs
+        dpo_trainer = AxolotlDPOTrainer(
             self.model,
             self.model_ref,
             args=training_args,

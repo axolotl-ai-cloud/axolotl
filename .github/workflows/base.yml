@@ -1,10 +1,7 @@
 name: ci-cd-base
 
 on:
-  push:
-    branches:
-      - "main-base"
-      - "dev-base"
+  workflow_dispatch:
 
 jobs:
   build-base:
@@ -17,23 +14,23 @@ jobs:
         include:
           - cuda: "118"
             cuda_version: 11.8.0
-            python_version: "3.9"
-            pytorch: 2.0.1
-            torch_cuda_arch_list: "7.0 7.5 8.0 8.6 9.0+PTX"
-          - cuda: "118"
-            cuda_version: 11.8.0
             python_version: "3.10"
             pytorch: 2.0.1
             torch_cuda_arch_list: "7.0 7.5 8.0 8.6 9.0+PTX"
           - cuda: "118"
             cuda_version: 11.8.0
             python_version: "3.10"
-            pytorch: 2.1.1
+            pytorch: 2.1.2
             torch_cuda_arch_list: "7.0 7.5 8.0 8.6 9.0+PTX"
           - cuda: "121"
             cuda_version: 12.1.0
             python_version: "3.10"
-            pytorch: 2.1.1
+            pytorch: 2.1.2
+            torch_cuda_arch_list: "7.0 7.5 8.0 8.6 9.0+PTX"
+          - cuda: "121"
+            cuda_version: 12.1.0
+            python_version: "3.11"
+            pytorch: 2.1.2
             torch_cuda_arch_list: "7.0 7.5 8.0 8.6 9.0+PTX"
     steps:
       - name: Checkout
@@ -56,7 +53,7 @@ jobs:
           context: .
           file: ./docker/Dockerfile-base
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.metadata.outputs.tags }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
+          tags: ${{ steps.metadata.outputs.tags }}-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
           labels: ${{ steps.metadata.outputs.labels }}
           build-args: |
             CUDA_VERSION=${{ matrix.cuda_version }}

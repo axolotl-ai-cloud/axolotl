@@ -1,11 +1,11 @@
 --extra-index-url https://huggingface.github.io/autogptq-index/whl/cu118/
 packaging==23.2
-peft==0.7.0
-transformers==4.37.0
+peft @ git+https://github.com/huggingface/peft.git
+transformers @ git+https://github.com/huggingface/transformers.git@bebeeee01275c32fccec3fa36d8b148d3813a7dc
 tokenizers==0.15.0
 bitsandbytes>=0.41.1
 accelerate==0.26.1
-deepspeed
+deepspeed>=0.13.1
 addict
 fire
 PyYAML>=6.0
@@ -15,16 +15,14 @@ sentencepiece
 wandb
 einops
 xformers==0.0.22
-optimum==1.13.2
+optimum==1.16.2
 hf_transfer
 colorama
 numba
 numpy>=1.24.4
 mlflow
 # qlora things
-bert-score==0.3.13
 evaluate==0.4.0
-rouge-score==0.1.2
 scipy
 scikit-learn==1.2.2
 pynvml

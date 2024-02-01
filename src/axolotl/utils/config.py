@@ -95,7 +95,7 @@ def normalize_config(cfg):
         save_steps = 1.0 / (cfg.saves_per_epoch * cfg.num_epochs)
         if save_steps < 1.0:  # prevent saves on every step
             cfg.save_steps = save_steps
-    if cfg.evals_per_epoch:
+    if (cfg.val_set_size or cfg.test_datasets) and cfg.evals_per_epoch:
         eval_steps = 1.0 / (cfg.evals_per_epoch * cfg.num_epochs)
         if eval_steps < 1.0:  # prevent evals on every step
             cfg.eval_steps = eval_steps
@@ -163,6 +163,7 @@ def normalize_config(cfg):
         cfg.gradient_checkpointing
         and cfg.unfrozen_parameters is None
         and cfg.gradient_checkpointing_kwargs is None
+        and cfg.rl is None
     ):
         cfg.gradient_checkpointing_kwargs = {"use_reentrant": True}
 
@@ -201,8 +202,25 @@ def validate_config(cfg):
             raise ValueError(
                 "bf16 requested, but AMP is not supported on this GPU. Requires Ampere series or above."
             )
+    if (
+        # pylint: disable=too-many-boolean-expressions
+        not (cfg.bf16 or cfg.bfloat16)
+        and (cfg.fp16 or cfg.float16)
+        and not cfg.adapter
+        and not cfg.flash_attention
+        and cfg.sample_packing
+    ):
+        LOG.warning(
+            "Full fine tune w/o FA2 w/ sample packing and fp16/float16 is likely to raise errors. Try LoRA."
+        )
+        # ValueError: Attempting to unscale FP16 gradients.
+        # OR
+        # RuntimeError: expected mat1 and mat2 to have the same dtype, but got: float != c10::Half
     if cfg.max_packed_sequence_len:
         raise DeprecationWarning("`max_packed_sequence_len` is no longer supported")
+
+    if cfg.sample_packing and cfg.rl:
+        raise ValueError("`sample_packing: true` does not work with RLHF training")
 
     if cfg.sample_packing and not cfg.pad_to_sequence_len:
         LOG.warning(
@@ -227,9 +245,6 @@ def validate_config(cfg):
         LOG.warning(
             "eval_batch_size != micro_batch_size. This can lead to VRAM instability."
         )
-
-    if cfg.load_4bit:
-        raise ValueError("cfg.load_4bit parameter has been deprecated")
 
     if cfg.adapter == "qlora":
         if cfg.merge_lora:
@@ -256,7 +271,8 @@ def validate_config(cfg):
         if cfg.flash_attn_fuse_qkv or cfg.flash_attn_fuse_mlp:
             raise ValueError("Fused modules are not supported with QLoRA")
 
-    if not cfg.load_in_8bit and cfg.adapter == "lora":
+    loftq = cfg.peft and cfg.peft.loftq_config and cfg.peft.loftq_config.loftq_bits
+    if not cfg.load_in_8bit and cfg.adapter == "lora" and not loftq:
         LOG.warning("We recommend setting `load_in_8bit: true` for LORA finetuning")
 
     if cfg.adapter == "lora" and (cfg.flash_attn_fuse_qkv or cfg.flash_attn_fuse_mlp):
@@ -336,6 +352,11 @@ def validate_config(cfg):
             "push_to_hub_model_id is deprecated. Please use hub_model_id instead."
         )
 
+    if cfg.hub_model_id and not (cfg.save_steps or cfg.saves_per_epoch):
+        LOG.warning(
+            "hub_model_id is set without any models being saved. To save a model, set either save_steps or saves_per_epoch."
+        )
+
     if cfg.gptq and cfg.model_revision:
         raise ValueError(
             "model_revision is not supported for GPTQ models. "
@@ -343,15 +364,22 @@ def validate_config(cfg):
             + "point to its path, and remove model_revision from the config."
         )
 
-    if cfg.sample_packing and cfg.sdp_attention:
-        # incompatible due to bug w/ accelerate causing 0.0 loss when using llama2
-        raise ValueError(
-            "sample_packing not compatible with sdp_attention. Use flash_attention"
-        )
+    # if cfg.sample_packing and cfg.sdp_attention:
+    #     # incompatible due to bug w/ accelerate causing 0.0 loss when using llama2
+    #     raise ValueError(
+    #         "sample_packing not compatible with sdp_attention. Use flash_attention"
+    #     )
 
     if cfg.sample_packing and cfg.xformers_attention:
         raise ValueError(
             "sample_packing not compatible with xformers_attention. Use flash_attention"
+        )
+
+    if cfg.sample_packing and cfg.sdp_attention and (cfg.bfloat16 or cfg.bf16):
+        # https://github.com/pytorch/pytorch/blob/1b03423526536b5f3d35bdfa95ccc6197556cf9b/test/test_transformers.py#L2440-L2450
+        LOG.warning(
+            "sample_packing & torch sdpa with bf16 is unsupported may results in 0.0 loss. "
+            "This may work on H100s."
         )
 
     if cfg.early_stopping_patience:
@@ -363,20 +391,6 @@ def validate_config(cfg):
             raise ValueError(
                 "`early_stopping_patience` requires that eval_steps should evenly divide save_steps."
             )
-
-    if cfg.model_type == "MixFormerSequentialForCausalLM" and cfg.adapter is not None:
-        LOG.warning("Use AutoModelForCausalLM for phi/MixFormer models with qLoRA")
-
-    if cfg.model_config_type == "mixformer-sequential":
-        if cfg.sample_packing:
-            if cfg.adapter is not None:
-                LOG.warning(
-                    "phi/MixFormer models are not currently compatible with LoRA and sample_packing"
-                )
-            if cfg.model_type == "AutoModelForCausalLM":
-                raise ValueError(
-                    "`model_type: MixFormerSequentialForCausalLM` required for sample_packing"
-                )
 
     if cfg.datasets:
         for idx, ds_cfg in enumerate(cfg.datasets):
@@ -495,34 +509,42 @@ def validate_config(cfg):
             "`use_reentrant` must be false when used with partially frozen model."
         )
 
-    if cfg.flash_attention and cfg.deepspeed and Path(cfg.deepspeed).is_file():
+    if cfg.deepspeed and Path(cfg.deepspeed).is_file():
         with open(cfg.deepspeed, encoding="utf-8") as file:
             contents = file.read()
             deepspeed_cfg: DictDefault = DictDefault(json.loads(contents))
-            if (
-                deepspeed_cfg.zero_optimization
-                and deepspeed_cfg.zero_optimization.stage == 3
-            ):
-                if not (
-                    (
-                        deepspeed_cfg.bf16
-                        and deepspeed_cfg.bf16.enabled  # pylint: disable=no-member
-                        is True
-                    )
-                    or (
-                        deepspeed_cfg.fp16
-                        and deepspeed_cfg.fp16.enabled  # pylint: disable=no-member
-                        is True
-                    )
+            if cfg.flash_attention:
+                if (
+                    deepspeed_cfg.zero_optimization
+                    and deepspeed_cfg.zero_optimization.stage == 3
                 ):
-                    raise ValueError(
-                        "bf16.enabled or fp16.enabled must be set to true when using ZeRO-3 with flash-attention"
-                    )
+                    if not (
+                        (
+                            deepspeed_cfg.bf16
+                            and deepspeed_cfg.bf16.enabled  # pylint: disable=no-member
+                            is True
+                        )
+                        or (
+                            deepspeed_cfg.fp16
+                            and deepspeed_cfg.fp16.enabled  # pylint: disable=no-member
+                            is True
+                        )
+                    ):
+                        raise ValueError(
+                            "bf16.enabled or fp16.enabled must be set to true when using ZeRO-3 with flash-attention"
+                        )
+            if "8bit" in cfg.optimizer and deepspeed_cfg.optimizer:
+                LOG.warning(
+                    f"conflicting optimizer: {cfg.optimizer} used alongside deepspeed optimizer."
+                )
 
     if cfg.test_datasets and cfg.val_set_size:
         raise ValueError(
             "non-zero val_set_size should not be used with test_datasets configuration"
         )
+
+    if cfg.fsdp and "bnb" in cfg.optimizer:
+        raise ValueError(f"FSDP not compatible with {cfg.optimizer}")
 
     # TODO
     # MPT 7b
