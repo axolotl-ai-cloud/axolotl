@@ -5,6 +5,11 @@ from typing import Optional
 
 import torch
 import torch.nn.functional as F
+from transformers.modeling_attn_mask_utils import (
+    _prepare_4d_causal_attention_mask,
+    _prepare_4d_causal_attention_mask_for_sdpa,
+)
+from transformers.utils import is_torch_bf16_gpu_available
 
 
 @torch.jit.script
@@ -198,3 +203,25 @@ def mask_2d_to_4d(
     masked_zero_one_mask = zero_one_mask * lower_triangular_ones
 
     return masked_zero_one_mask
+
+
+def patched_prepare_4d_causal_attention_mask(
+    attention_mask: Optional[torch.Tensor],
+    *args,
+):
+    dtype = torch.bfloat16 if is_torch_bf16_gpu_available() else torch.float32
+    return _prepare_4d_causal_attention_mask(
+        mask_2d_to_4d(attention_mask, dtype=dtype),
+        *args,
+    )
+
+
+def patched_prepare_4d_causal_attention_mask_for_sdpa(
+    attention_mask: Optional[torch.Tensor],
+    *args,
+):
+    dtype = torch.bfloat16 if is_torch_bf16_gpu_available() else torch.float32
+    return _prepare_4d_causal_attention_mask_for_sdpa(
+        mask_2d_to_4d(attention_mask, dtype=dtype),
+        *args,
+    )

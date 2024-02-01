@@ -153,7 +153,10 @@ def train(
     pretrain_hooks(cfg, trainer)
     if cfg.flash_optimum:
         with torch.backends.cuda.sdp_kernel(
-            enable_flash=True, enable_math=True, enable_mem_efficient=True
+            # TODO configure these from the YAML w/ sdp_kernel_kwargs: ...
+            enable_flash=True,
+            enable_math=True,
+            enable_mem_efficient=True,
         ):
             trainer.train(resume_from_checkpoint=resume_from_checkpoint)
     else:
