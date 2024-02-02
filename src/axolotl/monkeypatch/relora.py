@@ -321,9 +321,9 @@ def update_weights(
 ):
     if reinit:
         for adapter_name in target.lora_A:
-            target.reset_lora_parameters(adapter_name)
+            target.reset_lora_parameters(adapter_name, True)
         for adapter_name in target.lora_embedding_A:
-            target.reset_lora_parameters(adapter_name)
+            target.reset_lora_parameters(adapter_name, True)
 
     if isinstance(target, peft.tuners.lora.Linear4bit):
         # This could be faster, but the quantization of Linear4bit weights occurs
