@@ -25,7 +25,7 @@ from transformers import (
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR
 
 from axolotl.utils.dict import DictDefault
-from axolotl.utils.distributed import is_main_process
+from axolotl.utils.distributed import barrier, is_main_process
 
 LOG = logging.getLogger("axolotl.relora")
 
@@ -334,7 +334,9 @@ def update_weights(
         target.weight.data = new_weight.cpu()
         target.to(device)
     elif isinstance(target, peft.tuners.lora.Linear8bitLt):
-        target.weight = bnb.nn.Int8Params(new_weight, requires_grad=False).to(device)
+        target.weight.data = (
+            bnb.nn.Int8Params(new_weight, requires_grad=False).to(device).data
+        )
     else:
         target.weight.data = new_weight.to(device)
 
@@ -411,6 +413,7 @@ def merge_and_save(
             LOG.info(f"saving tensors to {shard_fn}")
             st.save_file(out_tensors, shard_fn, metadata={"format": "pt"})
 
+        barrier()
         del in_tensors
         del out_tensors
         torch.cuda.empty_cache()
