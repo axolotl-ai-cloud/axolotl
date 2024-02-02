@@ -125,11 +125,10 @@ class ReLoRACallback(TrainerCallback):
                 "relora",
             )
 
-            optimizer_state_keys = None
             if "adam" in args.optim.lower():
                 optimizer_state_keys = ["exp_avg", "exp_avg_sq"]
             else:
-                raise ValueError(f"Optimizer {args.optim} not supported")
+                raise ValueError(f"Optimizer {args.optim} not supported with ReLoRA")
 
             lora_params = [
                 n
@@ -137,6 +136,14 @@ class ReLoRACallback(TrainerCallback):
                 if p.requires_grad and "lora_" in n
             ]
 
+            model.save_pretrained(
+                os.path.join(
+                    args.output_dir,
+                    f"{PREFIX_CHECKPOINT_DIR}-{state.global_step}",
+                    "adapter",
+                ),
+                safe_serialization=True,
+            )
             with torch.no_grad():
                 merge_and_save(
                     model,
