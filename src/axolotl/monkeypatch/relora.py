@@ -44,7 +44,7 @@ def magnitude_pruning_(tensor, prune_ratio):
 def reset_optimizer(
     optimizer: torch.optim.Optimizer,
     *,
-    reset_params: list[torch.nn.Parameter],
+    reset_params: list[str],  # where str is the key to a torch.nn.Parameter
     optimizer_state_keys: list[str],
 ):
     pruning_fn = partial(magnitude_pruning_, prune_ratio=0.9)
@@ -132,7 +132,7 @@ class ReLoRACallback(TrainerCallback):
                 raise ValueError(f"Optimizer {args.optim} not supported")
 
             lora_params = [
-                p
+                n
                 for n, p in model.named_parameters()
                 if p.requires_grad and "lora_" in n
             ]
