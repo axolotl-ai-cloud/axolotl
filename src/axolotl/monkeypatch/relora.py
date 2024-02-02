@@ -6,7 +6,7 @@ import os.path
 import shutil
 from functools import partial
 from pathlib import Path
-from typing import Dict, List, Sequence
+from typing import Dict, List, Sequence, Union
 
 import bitsandbytes as bnb
 import peft
@@ -282,7 +282,11 @@ def sharded_paths(path: str, module_names: List[str]) -> Dict[str, str]:
 
 def lora_delta_weight(layer: peft.tuners.lora.LoraLayer, device) -> torch.Tensor:
     if isinstance(layer, (peft.tuners.lora.Linear8bitLt, peft.tuners.lora.Linear4bit)):
-        adapter = layer.active_adapter
+        adapter: Union[List[str], str] = layer.active_adapter
+        if isinstance(adapter, list):
+            if len(adapter) > 1:
+                raise ValueError("unhandled relora for multiple adapters")
+            adapter = adapter[0]
         return (
             peft.utils.transpose(
                 layer.lora_B[adapter].weight.detach().to(device)
@@ -292,7 +296,7 @@ def lora_delta_weight(layer: peft.tuners.lora.LoraLayer, device) -> torch.Tensor
             * layer.scaling[adapter]
         )
 
-    return layer.get_delta_weight().to(device)
+    raise ValueError("unhandled lora layer type")
 
 
 def find_lora_modules(model: peft.LoraModel) -> Dict[str, peft.tuners.lora.LoraLayer]:
