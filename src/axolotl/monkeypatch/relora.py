@@ -4,6 +4,7 @@ import json
 import logging
 import os.path
 import shutil
+from functools import partial
 from pathlib import Path
 from typing import Dict, List, Sequence
 
@@ -12,6 +13,7 @@ import peft
 import safetensors.torch as st
 import torch
 from huggingface_hub import snapshot_download
+from torch.distributed.optim import ZeroRedundancyOptimizer
 from torch.optim.lr_scheduler import LRScheduler
 from torch.optim.optimizer import Optimizer
 from transformers import (
@@ -28,18 +30,44 @@ from axolotl.utils.distributed import is_main_process
 LOG = logging.getLogger("axolotl.relora")
 
 
-def reset_optimizer(optimizer: torch.optim.Optimizer):
-    for group in optimizer.param_groups:
-        for param in group["params"]:
-            param_state = optimizer.state[param]
-            for key in param_state:
-                if "qmap" in key:
-                    continue
+@torch.no_grad()
+def magnitude_pruning_(tensor, prune_ratio):
+    tensor_magnitude = torch.abs(tensor)
+    threshold = torch.quantile(
+        tensor_magnitude.flatten().to(dtype=torch.float32), prune_ratio
+    ).to(dtype=tensor.dtype)
 
-                if key == "step" and isinstance(param_state[key], int):
-                    param_state[key] = 0
-                else:
-                    param_state[key] = torch.zeros_like(param_state[key])
+    mask = tensor_magnitude > threshold
+    tensor.mul_(mask.to(dtype=tensor.dtype))
+
+
+def reset_optimizer(
+    optimizer: torch.optim.Optimizer,
+    *,
+    reset_params: list[torch.nn.Parameter],
+    optimizer_state_keys: list[str],
+):
+    pruning_fn = partial(magnitude_pruning_, prune_ratio=0.9)
+    n_zeros = 0
+    n_total = 0
+
+    optimizer_state = optimizer.state
+    if isinstance(optimizer, ZeroRedundancyOptimizer):
+        optimizer_state = optimizer.optim.state
+
+    for param in reset_params:
+        param_state = optimizer_state[param]
+        if len(param_state) == 0:  # no state for this param, happens for ZeRo optimizer
+            continue
+        for key in optimizer_state_keys:
+            pruning_fn(
+                param_state[key]
+            )  # pruning fn has to be inplace to keep the same keys in the dict
+            n_total += param_state[key].numel()
+            n_zeros += torch.sum(param_state[key] == 0).item()
+
+    _zeroed = n_zeros / (1e-7 + n_total) * 100
+    LOG.info(f"Percent of optimizer states zeroed: {_zeroed:.2f}")
 
 
 class ReLoRACallback(TrainerCallback):
@@ -97,6 +125,18 @@ class ReLoRACallback(TrainerCallback):
                 "relora",
             )
 
+            optimizer_state_keys = None
+            if "adam" in args.optim.lower():
+                optimizer_state_keys = ["exp_avg", "exp_avg_sq"]
+            else:
+                raise ValueError(f"Optimizer {args.optim} not supported")
+
+            lora_params = [
+                p
+                for n, p in model.named_parameters()
+                if p.requires_grad and "lora_" in n
+            ]
+
             with torch.no_grad():
                 merge_and_save(
                     model,
@@ -107,7 +147,11 @@ class ReLoRACallback(TrainerCallback):
                     actually_save=is_main_process(),
                     cpu_offload=self.cpu_offload,
                 )
-                reset_optimizer(optimizer)
+                reset_optimizer(
+                    optimizer,
+                    reset_params=lora_params,
+                    optimizer_state_keys=optimizer_state_keys,
+                )
 
             if self.quantized:
                 self.last_full_model = checkpoint_folder
