@@ -126,6 +126,10 @@ class AxolotlTrainingArguments(TrainingArguments):
         default=None,
         metadata={"help": "how many warmup steps to take after reset for ReLoRA"},
     )
+    relora_anneal_steps: Optional[int] = field(
+        default=None,
+        metadata={"help": "how many warmup steps to take after reset for ReLoRA"},
+    )
     bench_split: Optional[str] = field(
         default="eval", metadata={"help": "The benchmark split to run on"}
     )
@@ -478,10 +482,14 @@ class ReLoRATrainer(AxolotlTrainer):
             warmup_steps = (
                 self.args.relora_warmup_steps if self.args.relora_warmup_steps else 10
             )
+            anneal_steps = (
+                self.args.relora_anneal_steps if self.args.relora_anneal_steps else 1
+            )
             self.lr_scheduler = ReLoRAScheduler(
                 optimizer,
                 lr_scheduler,
                 self.args.relora_steps,
+                anneal_steps,
                 warmup_steps,
             )
         else:
@@ -893,6 +901,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         ] = self.cfg.micro_batch_size
         training_arguments_kwargs["relora_steps"] = self.cfg.relora_steps
         training_arguments_kwargs["relora_warmup_steps"] = self.cfg.relora_warmup_steps
+        training_arguments_kwargs["relora_anneal_steps"] = self.cfg.relora_anneal_steps
         training_arguments_kwargs = self.hook_pre_create_training_args(
             training_arguments_kwargs
         )

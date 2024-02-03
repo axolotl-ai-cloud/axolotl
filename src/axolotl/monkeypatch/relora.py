@@ -249,11 +249,13 @@ class ReLoRAScheduler(LRScheduler):
         inner_schedule: LRScheduler,
         relora_steps: int,
         warmup_steps: int,
+        anneal_steps: int = 1,
         min_lr_scale: float = 0.001,
     ) -> None:
         self.inner_schedule = inner_schedule
         self.relora_steps = relora_steps
         self.warmup_steps = warmup_steps
+        self.anneal_steps = anneal_steps
         self.min_lr_scale = min_lr_scale
         super().__init__(optimizer, inner_schedule.last_epoch, inner_schedule.verbose)
 
@@ -263,13 +265,20 @@ class ReLoRAScheduler(LRScheduler):
         original = self.inner_schedule.get_lr()
         step = self.last_epoch
 
-        # per_relora_progress = step % self.relora_steps
-        # if per_relora_progress < self.warmup_steps:
-
         if step < self.relora_steps:
             scale = 1
         else:
-            cycle_t = min(1.0, (step % self.relora_steps) / self.warmup_steps)
+            per_relora_progress = step % self.relora_steps
+            if per_relora_progress < self.warmup_steps:
+                cycle_t = min(1.0, (per_relora_progress) / self.warmup_steps)
+            elif per_relora_progress > (self.relora_steps - self.anneal_steps):
+                cycle_t = min(
+                    1.0,
+                    (per_relora_progress - (self.relora_steps - self.anneal_steps))
+                    / self.anneal_steps,
+                )
+            else:
+                cycle_t = 1
             scale = cycle_t * (1 - self.min_lr_scale) + self.min_lr_scale
 
         if isinstance(original, Sequence):
