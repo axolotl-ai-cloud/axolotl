@@ -261,6 +261,10 @@ class ReLoRAScheduler(LRScheduler):
 
         original = self.inner_schedule.get_lr()
         step = self.last_epoch
+
+        # per_relora_progress = step % self.relora_steps
+        # if per_relora_progress < self.warmup_steps:
+
         if step < self.relora_steps:
             scale = 1
         else:
@@ -361,14 +365,17 @@ def merge_and_save(
 
     if not quantized:
         for module_name, target in modules.items():
-            update = target.get_delta_weight(target.active_adapter).detach()
+            active_adapter = target.active_adapter
+            if isinstance(active_adapter, list):
+                active_adapter = active_adapter[0]
+            update = target.get_delta_weight(active_adapter).detach()
             target.weight.data += update
 
             if reinit:
                 for adapter_name in target.lora_A:
-                    target.reset_lora_parameters(adapter_name)
+                    target.reset_lora_parameters(adapter_name, True)
                 for adapter_name in target.lora_embedding_A:
-                    target.reset_lora_parameters(adapter_name)
+                    target.reset_lora_parameters(adapter_name, True)
         return
 
     os.makedirs(model_dst, exist_ok=True)
