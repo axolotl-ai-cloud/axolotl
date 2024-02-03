@@ -68,6 +68,7 @@ def reset_optimizer(
 
     _zeroed = n_zeros / (1e-7 + n_total) * 100
     LOG.info(f"Percent of optimizer states zeroed: {_zeroed:.2f}")
+    LOG.info(f"absolute n of optimizer states zeroed: {n_zeros}")
 
 
 class ReLoRACallback(TrainerCallback):

@@ -447,7 +447,11 @@ def validate_config(cfg):
             "evaluation_strategy and eval_steps mismatch. Please set evaluation_strategy to 'steps' or remove eval_steps."
         )
 
-    if cfg.val_set_size == 0 and (cfg.eval_steps or cfg.evaluation_strategy):
+    if (
+        cfg.val_set_size == 0
+        and (cfg.eval_steps or cfg.evaluation_strategy)
+        and not cfg.test_datasets
+    ):
         raise ValueError(
             "eval_steps and evaluation_strategy are not supported with val_set_size == 0"
         )
