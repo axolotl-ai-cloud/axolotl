@@ -274,8 +274,7 @@ class ReLoRAScheduler(LRScheduler):
             elif per_relora_progress > (self.relora_steps - self.anneal_steps):
                 cycle_t = min(
                     1.0,
-                    (per_relora_progress - (self.relora_steps - self.anneal_steps))
-                    / self.anneal_steps,
+                    (self.relora_steps - per_relora_progress) / self.anneal_steps,
                 )
             else:
                 cycle_t = 1
