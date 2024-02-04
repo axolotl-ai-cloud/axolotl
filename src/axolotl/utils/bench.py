@@ -46,6 +46,7 @@ def gpu_memory_usage_all(device=0):
     smi = gpu_memory_usage_smi(device)
     return usage, reserved - usage, max(0, smi - reserved)
 
+
 def mps_memory_usage_all():
     usage = torch.mps.current_allocated_memory() / 1024.0**3
     reserved = torch.mps.driver_allocated_memory() / 1024.0**3

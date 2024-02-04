@@ -672,7 +672,7 @@ def load_model(
     ):
         model.config.eos_token_id = tokenizer.eos_token_id
 
-    if hasattr(model, "device") and (model.device.type == "cuda" or model.device.type == "mps"):
+    if hasattr(model, "device") and model.device.type in ("cuda", "mps"):
         log_gpu_memory_usage(LOG, "after model load", model.device)
 
     # make sure these are fp32 per Ramesh et al. (2021)

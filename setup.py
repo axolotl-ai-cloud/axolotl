@@ -1,8 +1,9 @@
 """setup.py for axolotl"""
 
-from importlib.metadata import PackageNotFoundError, version
-from packaging.version import Version, parse
 import platform
+from importlib.metadata import PackageNotFoundError, version
+
+from packaging.version import Version, parse
 from setuptools import find_packages, setup
 
 
