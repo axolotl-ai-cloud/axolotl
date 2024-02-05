@@ -10,6 +10,7 @@ def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
         ds_cfg["conversation"] if ds_cfg and "conversation" in ds_cfg else None
     )
     strategy = InstructShareGPTPromptTokenizingStrategy(
+        # pylint: disable=duplicate-code
         ShareGPTPrompterV2(
             conversation=conversation,
         ),
