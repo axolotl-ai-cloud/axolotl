@@ -360,11 +360,15 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
                     LOG.warning(f"expected tuple, got {part}")
                     continue
 
-                user, assistant = conversation.roles
+                tool_role_label = None
+                if len(conversation.roles) == 3:
+                    user_role_label, assistant_role_label, tool_role_label = conversation.roles
+                else:
+                    user_role_label, assistant_role_label = conversation.roles
                 role, content = part
 
                 # Uses "in" because role contains extra characters
-                if user in role:
+                if user_role_label in role:
                     role = (
                         role.replace(role_remap[0]["from"], role_remap[0]["to"])
                         if role_remap
@@ -384,7 +388,7 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
                     else:
                         # everything from this is masked out from the labels
                         labels = [IGNORE_TOKEN_ID] * len(res["input_ids"])
-                elif assistant in role:
+                elif assistant_role_label in role:
                     role = (
                         role.replace(role_remap[1]["from"], role_remap[1]["to"])
                         if role_remap
@@ -426,6 +430,8 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
                     else:
                         # everything from this is masked out from the labels
                         labels = [IGNORE_TOKEN_ID] * len(res["input_ids"])
+                elif tool_role_label and tool_role_label in role:
+                    labels = [IGNORE_TOKEN_ID] * len(res["input_ids"])
                 else:
                     LOG.warning(f"unhandled role: {role}")
                     continue

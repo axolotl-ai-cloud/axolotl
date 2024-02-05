@@ -267,6 +267,7 @@ class ShareGPTPrompter(Prompter):  # pylint: disable=too-few-public-methods
 
     role_key_human = "human"
     role_key_model = "gpt"
+    role_key_tool = "tool"
 
     def __init__(
         self,
@@ -303,6 +304,8 @@ class ShareGPTPrompter(Prompter):  # pylint: disable=too-few-public-methods
             source.pop(0)
 
         roles = {self.role_key_human: conv.roles[0], self.role_key_model: conv.roles[1]}
+        if self.role_key_tool:
+            roles[self.role_key_tool] = conv.roles[2]
 
         try:
             # Apply prompt templates
