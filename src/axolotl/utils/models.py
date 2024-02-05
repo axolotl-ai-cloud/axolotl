@@ -400,7 +400,7 @@ def load_model(
     model_kwargs: Dict[str, Any] = {}
 
     if cfg.model_kwargs:
-        for key, val in model_kwargs.items():
+        for key, val in cfg.model_kwargs.items():
             model_kwargs[key] = val
 
     max_memory = cfg.max_memory
