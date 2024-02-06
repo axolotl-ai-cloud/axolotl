@@ -102,6 +102,7 @@ def prepare_dataset(cfg, tokenizer):
             cfg,
             ds_wrapper_partial,
             max_tokens=cfg.sequence_len,
+            batch_size=cfg.micro_batch_size,
             seed=cfg.seed or 42,
         )
         # https://discuss.huggingface.co/t/how-to-use-huggingface-trainer-streaming-datasets-without-wrapping-it-with-torchdatas-iterablewrapper/25230
@@ -780,21 +781,28 @@ def encode_pretraining(
 
 
 def wrap_pretraining_dataset(
-    dataset, tokenizer, cfg, ds_wrapper_fn, max_tokens=2048, seed=42, buffer_size=10_000
+    dataset,
+    tokenizer,
+    cfg,
+    ds_wrapper_fn,
+    max_tokens=2048,
+    batch_size=1,
+    seed=42,
+    buffer_size=10_000,
 ):
     if cfg.sample_packing:
         collate_fn = PretrainingBatchSamplerDataCollatorForSeq2Seq(
             tokenizer,
             return_tensors="pt",
             padding=True,
-            pad_to_multiple_of=max_tokens * cfg.micro_batch_size,
+            pad_to_multiple_of=max_tokens * batch_size,
         )
         encode = functools.partial(
             encode_packed_pretraining,
             collate_fn,
             ds_wrapper_fn,
             max_seq_length=max_tokens,
-            batch_size=cfg.micro_batch_size,
+            batch_size=batch_size,
         )
         # set this to 1 so downstream data_loader doesn't try to increase the batch again
         cfg.micro_batch_size = 1
@@ -847,6 +855,8 @@ def encode_packed_pretraining(
                 del features["num_truncated_tokens"]
             if "num_truncated_tokens" in features:
                 del features["num_truncated_tokens"]
+            if "overflow_to_sample_mapping" in features:
+                del features["overflow_to_sample_mapping"]
             if "labels" not in features:
                 features["labels"] = features["input_ids"].copy()
             collated_features = collate_fn(features)
