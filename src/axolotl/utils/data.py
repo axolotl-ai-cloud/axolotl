@@ -11,6 +11,7 @@ import yaml
 from datasets import (
     Dataset,
     DatasetDict,
+    IterableDataset,
     concatenate_datasets,
     load_dataset,
     load_from_disk,
@@ -21,7 +22,7 @@ from torch.utils.data import RandomSampler
 from transformers import PreTrainedTokenizerBase
 
 from axolotl.common.const import DEFAULT_DATASET_PREPARED_PATH
-from axolotl.datasets import TokenizedPromptDataset
+from axolotl.datasets import TokenizedPromptDataset, TokenizedPromptIterableDataset
 from axolotl.prompt_strategies import load
 from axolotl.prompt_strategies.dpo import load as load_dpo
 from axolotl.prompt_tokenizers import (
@@ -522,7 +523,8 @@ def get_dataset_wrapper(
     }
 
     if (
-        "input_ids" in dataset.features
+        isinstance(dataset, Dataset)
+        and "input_ids" in dataset.features
         and "attention_mask" in dataset.features
         and "labels" in dataset.features
     ):
@@ -541,11 +543,18 @@ def get_dataset_wrapper(
         )
     elif ds_strategy := load(config_dataset.type, tokenizer, cfg, config_dataset):
         dataset_prompter = UnsupportedPrompter()
-        dataset_wrapper = TokenizedPromptDataset(
-            ds_strategy,
-            dataset,
-            **ds_kwargs,
-        )
+        if isinstance(dataset, IterableDataset):
+            dataset_wrapper = TokenizedPromptIterableDataset(
+                ds_strategy,
+                dataset,
+                **ds_kwargs,
+            )
+        else:
+            dataset_wrapper = TokenizedPromptDataset(
+                ds_strategy,
+                dataset,
+                **ds_kwargs,
+            )
     elif d_base_type == "alpaca":
         dataset_prompter = AlpacaPrompter(d_prompt_style)
         ds_strategy = AlpacaPromptTokenizingStrategy(
@@ -830,7 +839,7 @@ def encode_packed_pretraining(
     # pylint: disable=duplicate-code
     # tokenize all the examples
     # rows get split with stride (overlap)
-    tokenized_examples = ds_wrapper()
+    tokenized_examples = ds_wrapper(examples)
 
     train_dataset = Dataset.from_dict(tokenized_examples)
     train_dataset = process_pretraining_datasets_for_packing(
