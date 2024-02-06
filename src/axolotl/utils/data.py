@@ -22,7 +22,7 @@ from torch.utils.data import RandomSampler
 from transformers import PreTrainedTokenizerBase
 
 from axolotl.common.const import DEFAULT_DATASET_PREPARED_PATH
-from axolotl.datasets import TokenizedPromptDataset, TokenizedPromptIterableDataset
+from axolotl.datasets import TokenizedPromptDataset
 from axolotl.prompt_strategies import load
 from axolotl.prompt_strategies.dpo import load as load_dpo
 from axolotl.prompt_tokenizers import (
@@ -32,7 +32,6 @@ from axolotl.prompt_tokenizers import (
     GPTeacherPromptTokenizingStrategy,
     JeopardyPromptTokenizingStrategy,
     OpenAssistantPromptTokenizingStrategy,
-    PromptTokenizingStrategy,
     SummarizeTLDRPromptTokenizingStrategy,
 )
 from axolotl.prompters import (
@@ -542,18 +541,11 @@ def get_dataset_wrapper(
         )
     elif ds_strategy := load(config_dataset.type, tokenizer, cfg, config_dataset):
         dataset_prompter = UnsupportedPrompter()
-        if isinstance(dataset, IterableDataset):
-            dataset_wrapper = TokenizedPromptIterableDataset(
-                ds_strategy,
-                dataset,
-                **ds_kwargs,
-            )
-        else:
-            dataset_wrapper = TokenizedPromptDataset(
-                ds_strategy,
-                dataset,
-                **ds_kwargs,
-            )
+        dataset_wrapper = TokenizedPromptDataset(
+            ds_strategy,
+            dataset,
+            **ds_kwargs,
+        )
     elif d_base_type == "alpaca":
         dataset_prompter = AlpacaPrompter(d_prompt_style)
         ds_strategy = AlpacaPromptTokenizingStrategy(
@@ -819,7 +811,6 @@ def wrap_pretraining_dataset(
         # remove all the existing columns after mapping since they end up having
         # a different length than the encoded/tokenized column
         remove_columns=dataset.features.keys(),
-        desc="Encoding Pretraining",
     )
     return dataset
 
