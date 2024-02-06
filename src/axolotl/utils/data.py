@@ -11,7 +11,6 @@ import yaml
 from datasets import (
     Dataset,
     DatasetDict,
-    IterableDataset,
     concatenate_datasets,
     load_dataset,
     load_from_disk,
@@ -793,9 +792,9 @@ def wrap_pretraining_dataset(
         encode = functools.partial(
             encode_packed_pretraining,
             collate_fn,
+            ds_wrapper_fn,
             max_seq_length=max_tokens,
             batch_size=cfg.micro_batch_size,
-            ds_wrapper=ds_wrapper_fn,
         )
         # set this to 1 so downstream data_loader doesn't try to increase the batch again
         cfg.micro_batch_size = 1
@@ -818,9 +817,9 @@ def wrap_pretraining_dataset(
 def encode_packed_pretraining(
     collate_fn,
     examples: Dict[str, List],
+    ds_wrapper: Callable,
     max_seq_length: int = 2048,
     batch_size: int = 4,
-    ds_wrapper: Optional[Callable] = None,
 ) -> Dict[str, List]:
     # pylint: disable=duplicate-code
     # tokenize all the examples

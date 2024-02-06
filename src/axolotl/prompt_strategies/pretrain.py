@@ -1,3 +1,4 @@
+"""pretraining prompt strategies"""
 from typing import Generator
 
 from transformers import BatchEncoding
@@ -6,11 +7,15 @@ from axolotl.prompt_tokenizers import PromptTokenizingStrategy
 
 
 class PretrainTokenizer:
+    """basic tokenization class for pretraining"""
+
     def build_prompt(self, prompt) -> Generator[str, None, None]:
         yield prompt
 
 
 class PretrainTokenizationStrategy(PromptTokenizingStrategy):
+    """handles tokenization for pretraining with strides"""
+
     @property
     def supports_batched(self):
         return True
