@@ -98,12 +98,11 @@ def prepare_dataset(cfg, tokenizer):
             cfg.pretraining_dataset[0]["type"] or "pretrain",
         )
 
-        train_dataset = load_pretraining_dataset(
-            path,
+        train_dataset = wrap_pretraining_dataset(
+            load_dataset(path, streaming=True, split="train", name=name),
             tokenizer,
             cfg,
             ds_wrapper_partial,
-            name=name,
             max_tokens=cfg.sequence_len,
             seed=cfg.seed or 42,
         )
@@ -789,10 +788,9 @@ def encode_pretraining(
     return ret
 
 
-def load_pretraining_dataset(
-    path, tokenizer, cfg, ds_wrapper_fn, name=None, max_tokens=2048, seed=42
+def wrap_pretraining_dataset(
+    dataset, tokenizer, cfg, ds_wrapper_fn, max_tokens=2048, seed=42, buffer_size=10_000
 ):
-    map_kwargs = {}
     if cfg.sample_packing:
         collate_fn = PretrainingBatchSamplerDataCollatorForSeq2Seq(
             tokenizer,
@@ -802,7 +800,6 @@ def load_pretraining_dataset(
         )
         encode = functools.partial(
             encode_packed_pretraining,
-            tokenizer,
             collate_fn,
             max_seq_length=max_tokens,
             batch_size=cfg.micro_batch_size,
@@ -813,12 +810,11 @@ def load_pretraining_dataset(
     else:
         encode = functools.partial(encode_pretraining, tokenizer, max_tokens)
 
-    dataset = load_dataset(path, streaming=True, split="train", name=name)
-    dataset = dataset.shuffle(seed=seed, buffer_size=10_000)
+    dataset = dataset.shuffle(seed=seed, buffer_size=buffer_size)
     dataset = dataset.map(
         encode,
         batched=True,
-        batch_size=10_000,
+        batch_size=buffer_size,
         # input_columns="text",
         # remove all the existing columns after mapping since they end up having
         # a different length than the encoded/tokenized column
@@ -829,9 +825,8 @@ def load_pretraining_dataset(
 
 
 def encode_packed_pretraining(
-    tokenizer: PreTrainedTokenizerBase,
     collate_fn,
-    examples: List[str],
+    examples: Dict[str, List],
     max_seq_length: int = 2048,
     batch_size: int = 4,
     ds_wrapper: Optional[Callable] = None,
@@ -839,9 +834,8 @@ def encode_packed_pretraining(
     # pylint: disable=duplicate-code
     # tokenize all the examples
     # rows get split with stride (overlap)
-    tokenized_examples = ds_wrapper(examples)
+    train_dataset = ds_wrapper(Dataset.from_dict(examples))[0]
 
-    train_dataset = Dataset.from_dict(tokenized_examples)
     train_dataset = process_pretraining_datasets_for_packing(
         train_dataset, max_seq_length
     )
@@ -859,13 +853,15 @@ def encode_packed_pretraining(
     for batch in sampler:
         for data in batch:
             features = train_dataset[data]
-            features["labels"] = features["input_ids"].copy()
+            if "labels" not in features:
+                features["labels"] = features["input_ids"].copy()
             collated_features = collate_fn(features)
 
             for feature in features.keys():
                 if feature == "length":
                     continue
-                chunked_data[feature].append(collated_features[feature].squeeze(0))
+                if feature in ["labels", "input_ids", "position_ids", "attention_mask"]:
+                    chunked_data[feature].append(collated_features[feature].squeeze(0))
 
     return chunked_data
 

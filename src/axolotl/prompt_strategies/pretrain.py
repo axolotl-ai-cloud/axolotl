@@ -11,6 +11,10 @@ class PretrainTokenizer:
 
 
 class PretrainTokenizationStrategy(PromptTokenizingStrategy):
+    @property
+    def supports_batched(self):
+        return True
+
     def __init__(self, *args, max_length=None, **kwargs):
         super().__init__(*args, **kwargs)
         if max_length:
@@ -35,7 +39,7 @@ class PretrainTokenizationStrategy(PromptTokenizingStrategy):
         return res
 
     def tokenize_prompt(self, prompt):
-        self._tokenize(prompt)
+        return self._tokenize(prompt["text"])
 
 
 def load(tokenizer, cfg):
