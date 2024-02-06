@@ -816,8 +816,8 @@ def wrap_pretraining_dataset(
 
 def encode_packed_pretraining(
     collate_fn,
-    examples: Dict[str, List],
     ds_wrapper: Callable,
+    examples: Dict[str, List],
     max_seq_length: int = 2048,
     batch_size: int = 4,
 ) -> Dict[str, List]:
