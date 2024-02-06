@@ -844,6 +844,10 @@ def encode_packed_pretraining(
     for batch in sampler:
         for data in batch:
             features = train_dataset[data]
+            if "num_truncated_tokens" in features:
+                del features["num_truncated_tokens"]
+            if "num_truncated_tokens" in features:
+                del features["num_truncated_tokens"]
             if "labels" not in features:
                 features["labels"] = features["input_ids"].copy()
             collated_features = collate_fn(features)
@@ -851,8 +855,7 @@ def encode_packed_pretraining(
             for feature in features.keys():
                 if feature == "length":
                     continue
-                if feature in ["labels", "input_ids", "position_ids", "attention_mask"]:
-                    chunked_data[feature].append(collated_features[feature].squeeze(0))
+                chunked_data[feature].append(collated_features[feature].squeeze(0))
 
     return chunked_data
 
