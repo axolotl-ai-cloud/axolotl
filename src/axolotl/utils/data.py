@@ -140,7 +140,7 @@ def load_tokenized_prepared_datasets(
                 + "|".join(
                     sorted(
                         [
-                            f"{d.path}:{d.type}:{d.shards}:{d.conversation}"
+                            f"{d.path}:{d.type}:{d.shards}:{d.conversation}{d.split}"
                             for d in cfg_datasets
                         ]
                     )

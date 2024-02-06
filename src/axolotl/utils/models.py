@@ -8,7 +8,13 @@ import addict
 import bitsandbytes as bnb
 import torch
 import transformers
-from peft import LoftQConfig, PeftConfig, prepare_model_for_kbit_training
+from peft import (
+    LoftQConfig,
+    PeftConfig,
+    PeftModel,
+    PeftModelForCausalLM,
+    prepare_model_for_kbit_training,
+)
 from peft.tuners.lora import QuantLinear
 from transformers import (  # noqa: F401
     AddedToken,
@@ -628,6 +634,9 @@ def load_model(
         LOG.exception(err)
         raise err
 
+    if isinstance(model, (PeftModel, PeftModelForCausalLM)):
+        model = model.merge_and_unload()
+
     embeddings_len = (
         math.ceil(len(tokenizer) / 32) * 32
         if cfg.resize_token_embeddings_to_32x
@@ -782,7 +791,7 @@ def load_adapter(model, cfg, adapter, inference=False):
 
 def load_llama_adapter(model, cfg):
     # type: (PreTrainedModel, DictDefault) -> Tuple[PreTrainedModel, Optional[PeftConfig]]
-    from peft import AdaptionPromptConfig, PeftModel, get_peft_model
+    from peft import AdaptionPromptConfig, get_peft_model
 
     peft_config = AdaptionPromptConfig(
         adapter_layers=cfg.peft_adapter.layers,  # layers (L)
@@ -828,7 +837,7 @@ def find_all_linear_names(model):
 def load_lora(model, cfg, inference=False, config_only=False):
     # type: (PreTrainedModel, DictDefault, bool, bool) -> Tuple[Optional[PreTrainedModel], Optional[PeftConfig]]
 
-    from peft import LoraConfig, PeftModel, get_peft_model
+    from peft import LoraConfig, get_peft_model
 
     lora_target_modules = list(cfg.lora_target_modules or [])
 
