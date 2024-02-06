@@ -4,7 +4,7 @@ import hashlib
 import logging
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import torch
 import yaml
@@ -31,6 +31,7 @@ from axolotl.prompt_tokenizers import (
     GPTeacherPromptTokenizingStrategy,
     JeopardyPromptTokenizingStrategy,
     OpenAssistantPromptTokenizingStrategy,
+    PromptTokenizingStrategy,
     SummarizeTLDRPromptTokenizingStrategy,
 )
 from axolotl.prompters import (
@@ -88,10 +89,19 @@ def prepare_dataset(cfg, tokenizer):
             path = cfg.pretraining_dataset[0]["path"]
             name = cfg.pretraining_dataset[0]["name"]
 
+        ds_wrapper_partial = functools.partial(
+            get_dataset_wrapper,
+            cfg.pretraining_dataset[0],
+            tokenizer,
+            cfg,
+            cfg.pretraining_dataset[0]["type"] or "pretrain",
+        )
+
         train_dataset = load_pretraining_dataset(
             path,
             tokenizer,
             cfg,
+            ds_wrapper_partial,
             name=name,
             max_tokens=cfg.sequence_len,
             seed=cfg.seed or 42,
@@ -383,9 +393,9 @@ def load_tokenized_prepared_datasets(
 
             dataset_wrapper, dataset_prompter = get_dataset_wrapper(
                 config_dataset=config_dataset,
-                dataset=ds,
                 tokenizer=tokenizer,
                 cfg=cfg,
+                dataset=ds,
                 d_base_type=d_base_type,
                 d_prompt_style=d_prompt_style,
             )
@@ -496,7 +506,12 @@ def load_prepare_datasets(
 
 
 def get_dataset_wrapper(
-    config_dataset, dataset, tokenizer, cfg, d_base_type, d_prompt_style
+    config_dataset,
+    tokenizer,
+    cfg,
+    d_base_type,
+    dataset,
+    d_prompt_style=None,
 ):
     dataset_wrapper = None
     dataset_prompter = None
@@ -765,7 +780,10 @@ def encode_pretraining(
     return ret
 
 
-def load_pretraining_dataset(path, tokenizer, cfg, name=None, max_tokens=2048, seed=42):
+def load_pretraining_dataset(
+    path, tokenizer, cfg, ds_wrapper_fn, name=None, max_tokens=2048, seed=42
+):
+    map_kwargs = {}
     if cfg.sample_packing:
         collate_fn = PretrainingBatchSamplerDataCollatorForSeq2Seq(
             tokenizer,
@@ -779,6 +797,7 @@ def load_pretraining_dataset(path, tokenizer, cfg, name=None, max_tokens=2048, s
             collate_fn,
             max_seq_length=max_tokens,
             batch_size=cfg.micro_batch_size,
+            ds_wrapper=ds_wrapper_fn,
         )
         # set this to 1 so downstream data_loader doesn't try to increase the batch again
         cfg.micro_batch_size = 1
@@ -791,7 +810,7 @@ def load_pretraining_dataset(path, tokenizer, cfg, name=None, max_tokens=2048, s
         encode,
         batched=True,
         batch_size=10_000,
-        input_columns="text",
+        # input_columns="text",
         # remove all the existing columns after mapping since they end up having
         # a different length than the encoded/tokenized column
         remove_columns=dataset.features.keys(),
@@ -806,26 +825,12 @@ def encode_packed_pretraining(
     examples: List[str],
     max_seq_length: int = 2048,
     batch_size: int = 4,
+    ds_wrapper: Optional[Callable] = None,
 ) -> Dict[str, List]:
     # pylint: disable=duplicate-code
     # tokenize all the examples
     # rows get split with stride (overlap)
-    res = tokenizer(
-        examples,
-        truncation=True,
-        max_length=max_seq_length - 1,
-        add_special_tokens=True,
-        return_overflowing_tokens=True,
-        stride=256,
-    )
-
-    input_ids = [seq + [tokenizer.eos_token_id] for seq in res["input_ids"]]
-    attention_mask = [seq + [1] for seq in res["attention_mask"]]
-
-    tokenized_examples = {
-        "input_ids": input_ids,
-        "attention_mask": attention_mask,
-    }
+    tokenized_examples = ds_wrapper()
 
     train_dataset = Dataset.from_dict(tokenized_examples)
     train_dataset = process_pretraining_datasets_for_packing(

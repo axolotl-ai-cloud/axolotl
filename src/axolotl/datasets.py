@@ -5,7 +5,7 @@ import os
 from typing import List, Optional
 
 import torch
-from datasets import Dataset, IterableDataset
+from datasets import IterableDataset
 
 from .prompt_tokenizers import PromptTokenizingStrategy
 
@@ -18,7 +18,7 @@ from .prompt_tokenizers import PromptTokenizingStrategy
 LOG = logging.getLogger("axolotl")
 
 
-class TokenizedPromptDataset(Dataset):
+class TokenizedPromptDataset(IterableDataset):
     """
     Dataset that returns tokenized prompts from a stream of text files.
         Args:
