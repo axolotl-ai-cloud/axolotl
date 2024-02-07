@@ -1200,6 +1200,12 @@ pre-commit install
 pytest tests/
 ```
 
+Thanks to all of our contributors to date. Help drive open source AI progress forward by contributing to Axolotl.
+
+<a href="https://github.com/openaccess-ai-collective/axolotl/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=openaccess-ai-collective/axolotl" alt="contributor chart by https://contrib.rocks"/>
+</a>
+
 ## Sponsors 🤝❤
 
 OpenAccess AI Collective is run by volunteer contributors such as [winglian](https://github.com/winglian),
