@@ -29,6 +29,10 @@ from transformers import (  # noqa: F401
 from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
 
 from axolotl.models.mamba import fix_mamba_attn_for_loss
+from axolotl.monkeypatch.multipack import (
+    SUPPORTED_MULTIPACK_MODEL_TYPES,
+    patch_for_multipack,
+)
 from axolotl.prompt_tokenizers import LLAMA_DEFAULT_EOS_TOKEN
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.chat_templates import chat_templates
@@ -299,8 +303,15 @@ def load_model(
         shifted-sparse attention does not currently support sample packing."
         )
 
-    # Modify all llama derived models in one block
-    if cfg.is_llama_derived_model:
+    if (
+        cfg.model_config_type in SUPPORTED_MULTIPACK_MODEL_TYPES
+        and cfg.flash_attention
+        and cfg.sample_packing
+    ):
+        patch_for_multipack(cfg.model_config_type)
+    elif cfg.is_llama_derived_model:
+        # Modify all llama derived models in one block
+
         if cfg.flash_attention:
             from axolotl.monkeypatch.llama_attn_hijack_flash import (
                 replace_llama_attn_with_flash_attn,
@@ -353,43 +364,6 @@ def load_model(
 
         LOG.info("patching mistral with flash attention")
         replace_mistral_attn_with_flash_attn(packed=cfg.sample_packing)
-
-    if (
-        cfg.model_config_type == "mixtral"
-        and cfg.flash_attention
-        and cfg.sample_packing
-    ):
-        from axolotl.monkeypatch.mixtral import (
-            replace_mixtral_attn_with_multipack_flash_attn,
-        )
-
-        LOG.info("patching mixtral with flash attention")
-        mixtral_patch_kwargs = {}
-        if is_deepspeed_zero3_enabled():
-            mixtral_patch_kwargs["for_zero3"] = True
-        replace_mixtral_attn_with_multipack_flash_attn(**mixtral_patch_kwargs)
-
-    if cfg.model_config_type == "falcon" and cfg.flash_attention and cfg.sample_packing:
-        from axolotl.monkeypatch.falcon import (
-            replace_falcon_attn_with_multipack_flash_attn,
-        )
-
-        LOG.info("patching falcon with flash attention")
-        replace_falcon_attn_with_multipack_flash_attn()
-
-    if cfg.model_config_type == "phi" and cfg.flash_attention and cfg.sample_packing:
-        from axolotl.monkeypatch.phi import replace_phi_attn_with_multipack_flash_attn
-
-        LOG.info("patching phi with flash attention")
-        replace_phi_attn_with_multipack_flash_attn()
-
-    if cfg.model_config_type == "qwen2" and cfg.flash_attention and cfg.sample_packing:
-        from axolotl.monkeypatch.qwen2 import (
-            replace_qwen2_attn_with_multipack_flash_attn,
-        )
-
-        LOG.info("patching qwen2 with flash attention")
-        replace_qwen2_attn_with_multipack_flash_attn()
 
     if cfg.is_llama_derived_model and cfg.sample_packing and not inference:
         from axolotl.monkeypatch.llama_expand_mask import hijack_expand_mask
@@ -501,7 +475,7 @@ def load_model(
                 "flash_attention_2"
             )
         else:
-            if model_config.model_type in ["mixtral", "qwen2", "falcon", "phi"]:
+            if model_config.model_type in SUPPORTED_MULTIPACK_MODEL_TYPES:
                 model_kwargs["attn_implementation"] = "flash_attention_2"
                 model_config._attn_implementation = (  # pylint: disable=protected-access
                     "flash_attention_2"
