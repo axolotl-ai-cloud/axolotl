@@ -4,7 +4,9 @@ User-defined DPO strategies
 
 
 def default(cfg, dataset_idx=0, **kwargs):
-    ds_cfg = cfg["datasets"][dataset_idx]
+    ds_cfg = cfg["datasets"][dataset_idx]["type"]
+    if not isinstance(ds_cfg, dict):
+        raise ValueError(f"User-defined dataset type must be a dictionary. Got: {ds_cfg}")
     field_prompt = ds_cfg.get("field_prompt", "prompt")
     field_system = ds_cfg.get("field_system", "system")
     field_chosen = ds_cfg.get("field_chosen", "chosen")
