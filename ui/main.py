@@ -1,6 +1,8 @@
 """
 This module is used to launch Axolotl with user defined configurations.
 """
+import subprocess
+
 import gradio as gr
 import yaml
 
@@ -31,10 +33,27 @@ def config(
         "output_dir": output_dir,
         "val_set_size": val_size,
     }
-    with open("config.yaml", "w", encoding="utf-8") as file:
+    with open("config.yml", "w", encoding="utf-8") as file:
         yaml.dump(config_dict, file)
     print(config_dict)
     return yaml.dump(config_dict)
+
+
+def create_training_job():
+    # Start a long-running process
+    process = subprocess.Popen(
+        ["accelerate launch -m axolotl.cli.train config.yml"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+
+    # Read the output line by line as it becomes available
+    while True:
+        line = process.stdout.readline()
+        if not line:
+            break  # No more output
+        print(line.strip())
 
 
 with gr.Blocks(title="Axolotl Launcher") as demo:
@@ -91,5 +110,8 @@ with gr.Blocks(title="Axolotl Launcher") as demo:
         ],
         outputs=output,
     )
+
+    start_training = gr.Button("Start training")
+    start_training.click(create_training_job)
 
 demo.launch(share=True)
