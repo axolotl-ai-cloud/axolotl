@@ -60,7 +60,7 @@ s2_attention:
 warmup_steps: 10
 evals_per_epoch: 4
 eval_table_size:
-eval_table_max_new_tokens: 128
+eval_max_new_tokens: 128
 saves_per_epoch: 1
 debug:
 deepspeed:
