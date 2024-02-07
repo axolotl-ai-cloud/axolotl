@@ -72,7 +72,9 @@ def intel(cfg, **kwargs):  # pylint: disable=possibly-unused-variable,unused-arg
     return transform_fn
 
 
-def prompt_pairs(cfg, **kwargs):  # pylint: disable=possibly-unused-variable,unused-argument
+def prompt_pairs(
+    cfg, **kwargs
+):  # pylint: disable=possibly-unused-variable,unused-argument
     def transform_fn(sample):
         if "system" in sample and sample["system"]:
             sample["prompt"] = (
