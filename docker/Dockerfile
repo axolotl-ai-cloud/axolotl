@@ -18,7 +18,8 @@ RUN git clone --depth=1 https://github.com/OpenAccess-AI-Collective/axolotl.git
 
 WORKDIR /workspace/axolotl
 
-RUN pip install packaging
+RUN pip install --upgrade pip && \
+    pip install packaging
 
 # If AXOLOTL_EXTRAS is set, append it in brackets
 RUN if [ "$AXOLOTL_EXTRAS" != "" ] ; then \

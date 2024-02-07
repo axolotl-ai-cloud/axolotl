@@ -22,6 +22,9 @@ WORKDIR /workspace/axolotl
 RUN git fetch origin +$GITHUB_REF && \
     git checkout FETCH_HEAD
 
+RUN pip install --upgrade pip && \
+    pip install packaging \
+
 # If AXOLOTL_EXTRAS is set, append it in brackets
 RUN if [ "$AXOLOTL_EXTRAS" != "" ] ; then \
         pip install -e .[deepspeed,flash-attn,mamba-ssm,$AXOLOTL_EXTRAS]; \
