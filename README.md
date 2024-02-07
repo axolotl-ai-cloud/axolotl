@@ -37,6 +37,9 @@ Features:
   - [Inference](#inference)
   - [Merge LORA to Base](#merge-lora-to-base)
   - [Special Tokens](#special-tokens)
+- Advanced Topics
+  - [Multipack](./docs/multipack.md)<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M17 13.5v6H5v-12h6m3-3h6v6m0-6-9 9" class="icon_svg-stroke" stroke="#666" stroke-width="1.5" fill="none" fill-rule="evenodd" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+  - [RLHF & DPO](./docs/rlhf.md)<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M17 13.5v6H5v-12h6m3-3h6v6m0-6-9 9" class="icon_svg-stroke" stroke="#666" stroke-width="1.5" fill="none" fill-rule="evenodd" stroke-linecap="round" stroke-linejoin="round"></path></svg>
 - [Common Errors](#common-errors-)
   - [Tokenization Mismatch b/w Training & Inference](#tokenization-mismatch-bw-inference--training)
 - [Debugging Axolotl](#debugging-axolotl)
@@ -607,6 +610,17 @@ datasets:
       # For `completion` datsets only, uses the provided field instead of `text` column
       field:
 
+# A list of one or more datasets to eval the model with.
+# You can use either test_datasets, or val_set_size, but not both.
+test_datasets:
+  - path: /workspace/data/eval.jsonl
+    ds_type: json
+    # You need to specify a split. For "json" datasets the default split is called "train".
+    split: train
+    type: completion
+    data_files:
+      - /workspace/data/eval.jsonl
+
 # use RL training: dpo, ipo, kto_pair
 rl:
 
@@ -695,6 +709,12 @@ lora_modules_to_save:
 #  - lm_head
 
 lora_fan_in_fan_out: false
+
+peft:
+  # Configuration options for loftq initialization for LoRA
+  # https://huggingface.co/docs/peft/developer_guides/quantization#loftq-initialization
+  loftq_config:
+    loftq_bits:  # typically 4 bits
 
 # ReLoRA configuration
 # Must use either 'lora' or 'qlora' adapter, and does not support fsdp or deepspeed
@@ -1135,9 +1155,11 @@ Having misalignment between your prompts during training and inference can cause
 
 See [this debugging guide](docs/debugging.md) for tips on debugging Axolotl, along with an example configuration for debugging with VSCode.
 
-## Need help? 🙋♂️
+## Need help? 🙋
 
-Join our [Discord server](https://discord.gg/HhrNrHJPRb) where we can help you
+Join our [Discord server](https://discord.gg/HhrNrHJPRb) where we our community members can help you.
+
+Need dedicated support? Please contact us at [✉️wing@openaccessaicollective.org](mailto:wing@openaccessaicollective.org) for dedicated support options.
 
 ## Badge ❤🏷️
 

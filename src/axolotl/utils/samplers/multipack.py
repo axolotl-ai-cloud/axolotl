@@ -117,7 +117,7 @@ class MultipackBatchSampler(BatchSampler):
         packing_efficiency_estimate: float = 1.0,
     ):
         super().__init__(sampler, batch_size, drop_last)
-        self.batch_size = None
+        self.batch_size = batch_size
         self.batch_max_len = batch_max_len
         self.lengths: np.ndarray = lengths
         self.packing_efficiency_estimate = packing_efficiency_estimate or 1.0
@@ -147,7 +147,13 @@ class MultipackBatchSampler(BatchSampler):
             n=1,
         )
 
-        batches = [[indices[b_idx] for b_idx in batch] for batch in batches]
+        batches = [
+            [
+                [indices[b_idx] for b_idx in batch]
+                for batch in batches[i : i + self.batch_size]
+            ]
+            for i in range(0, len(batches), self.batch_size)
+        ]
 
         # statistics
         if set_stats:
@@ -189,7 +195,7 @@ class MultipackBatchSampler(BatchSampler):
                     0.99
                     * lengths_sum_per_device
                     / self.packing_efficiency_estimate
-                    // self.batch_max_len
+                    // (self.batch_max_len * self.batch_size)
                 )
                 - 1
             ),

@@ -132,24 +132,26 @@ class BatchSamplerDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):
     """
 
     def __call__(self, features, return_tensors=None):
-        chunked_data = {}
-        for feature in features[0].keys():
-            if feature == "length":
-                continue
-            if feature == "attention_mask":
-                arrays = [
-                    (1) * np.array(item[feature])
-                    for item in features
-                    if feature in item
-                ]
-                chunked_data[feature] = np.concatenate(arrays)
-            else:
-                arrays = [
-                    np.array(item[feature]) for item in features if feature in item
-                ]
-                chunked_data[feature] = np.concatenate(arrays)
-        features = [chunked_data]
-        return super().__call__(features, return_tensors=return_tensors)
+        if not isinstance(features[0], list):
+            features = [features]
+        out_features = [{} for _ in features]
+        for i, features_ in enumerate(features):
+            for feature in features_[0].keys():
+                if feature == "length":
+                    continue
+                if feature == "attention_mask":
+                    arrays = [
+                        (1) * np.array(item[feature])
+                        for i, item in enumerate(features_)
+                        if feature in item
+                    ]
+                    out_features[i][feature] = np.concatenate(arrays)
+                else:
+                    arrays = [
+                        np.array(item[feature]) for item in features_ if feature in item
+                    ]
+                    out_features[i][feature] = np.concatenate(arrays)
+        return super().__call__(out_features, return_tensors=return_tensors)
 
 
 @dataclass
@@ -159,24 +161,26 @@ class V2BatchSamplerDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):
     """
 
     def __call__(self, features, return_tensors=None):
-        chunked_data = {}
-        for feature in features[0].keys():
-            if feature == "length":
-                continue
-            if feature == "attention_mask":
-                arrays = [
-                    (i + 1) * np.array(item[feature])
-                    for i, item in enumerate(features)
-                    if feature in item
-                ]
-                chunked_data[feature] = np.concatenate(arrays)
-            else:
-                arrays = [
-                    np.array(item[feature]) for item in features if feature in item
-                ]
-                chunked_data[feature] = np.concatenate(arrays)
-        features = [chunked_data]
-        return super().__call__(features, return_tensors=return_tensors)
+        if not isinstance(features[0], list):
+            features = [features]
+        out_features = [{} for _ in features]
+        for i, features_ in enumerate(features):
+            for feature in features_[0].keys():
+                if feature == "length":
+                    continue
+                if feature == "attention_mask":
+                    arrays = [
+                        (i + 1) * np.array(item[feature])
+                        for i, item in enumerate(features_)
+                        if feature in item
+                    ]
+                    out_features[i][feature] = np.concatenate(arrays)
+                else:
+                    arrays = [
+                        np.array(item[feature]) for item in features_ if feature in item
+                    ]
+                    out_features[i][feature] = np.concatenate(arrays)
+        return super().__call__(out_features, return_tensors=return_tensors)
 
 
 @dataclass

@@ -32,16 +32,6 @@ class ValidationTest(BaseValidation):
     Test the validation module
     """
 
-    def test_load_4bit_deprecate(self):
-        cfg = DictDefault(
-            {
-                "load_4bit": True,
-            }
-        )
-
-        with pytest.raises(ValueError):
-            validate_config(cfg)
-
     def test_batch_size_unused_warning(self):
         cfg = DictDefault(
             {

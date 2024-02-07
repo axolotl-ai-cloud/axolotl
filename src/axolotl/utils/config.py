@@ -202,6 +202,20 @@ def validate_config(cfg):
             raise ValueError(
                 "bf16 requested, but AMP is not supported on this GPU. Requires Ampere series or above."
             )
+    if (
+        # pylint: disable=too-many-boolean-expressions
+        not (cfg.bf16 or cfg.bfloat16)
+        and (cfg.fp16 or cfg.float16)
+        and not cfg.adapter
+        and not cfg.flash_attention
+        and cfg.sample_packing
+    ):
+        LOG.warning(
+            "Full fine tune w/o FA2 w/ sample packing and fp16/float16 is likely to raise errors. Try LoRA."
+        )
+        # ValueError: Attempting to unscale FP16 gradients.
+        # OR
+        # RuntimeError: expected mat1 and mat2 to have the same dtype, but got: float != c10::Half
     if cfg.max_packed_sequence_len:
         raise DeprecationWarning("`max_packed_sequence_len` is no longer supported")
 
@@ -232,9 +246,6 @@ def validate_config(cfg):
             "eval_batch_size != micro_batch_size. This can lead to VRAM instability."
         )
 
-    if cfg.load_4bit:
-        raise ValueError("cfg.load_4bit parameter has been deprecated")
-
     if cfg.adapter == "qlora":
         if cfg.merge_lora:
             # can't merge qlora if loaded in 8bit or 4bit
@@ -260,7 +271,8 @@ def validate_config(cfg):
         if cfg.flash_attn_fuse_qkv or cfg.flash_attn_fuse_mlp:
             raise ValueError("Fused modules are not supported with QLoRA")
 
-    if not cfg.load_in_8bit and cfg.adapter == "lora":
+    loftq = cfg.peft and cfg.peft.loftq_config and cfg.peft.loftq_config.loftq_bits
+    if not cfg.load_in_8bit and cfg.adapter == "lora" and not loftq:
         LOG.warning("We recommend setting `load_in_8bit: true` for LORA finetuning")
 
     if cfg.adapter == "lora" and (cfg.flash_attn_fuse_qkv or cfg.flash_attn_fuse_mlp):
@@ -310,7 +322,7 @@ def validate_config(cfg):
             LOG.warning("BetterTransformers probably doesn't work with PEFT adapters")
         if cfg.fp16 or cfg.bf16:
             raise ValueError("AMP is not supported with BetterTransformer")
-        if cfg.float16 is not True and cfg.bloat16 is not True:
+        if cfg.float16 is not True and cfg.bfloat16 is not True:
             LOG.warning(
                 "You should probably set bfloat16 or float16 to true to "
                 "load the model in float16 for BetterTransformers"
@@ -352,15 +364,22 @@ def validate_config(cfg):
             + "point to its path, and remove model_revision from the config."
         )
 
-    if cfg.sample_packing and cfg.sdp_attention:
-        # incompatible due to bug w/ accelerate causing 0.0 loss when using llama2
-        raise ValueError(
-            "sample_packing not compatible with sdp_attention. Use flash_attention"
-        )
+    # if cfg.sample_packing and cfg.sdp_attention:
+    #     # incompatible due to bug w/ accelerate causing 0.0 loss when using llama2
+    #     raise ValueError(
+    #         "sample_packing not compatible with sdp_attention. Use flash_attention"
+    #     )
 
     if cfg.sample_packing and cfg.xformers_attention:
         raise ValueError(
             "sample_packing not compatible with xformers_attention. Use flash_attention"
+        )
+
+    if cfg.sample_packing and cfg.sdp_attention and (cfg.bfloat16 or cfg.bf16):
+        # https://github.com/pytorch/pytorch/blob/1b03423526536b5f3d35bdfa95ccc6197556cf9b/test/test_transformers.py#L2440-L2450
+        LOG.warning(
+            "sample_packing & torch sdpa with bf16 is unsupported may results in 0.0 loss. "
+            "This may work on H100s."
         )
 
     if cfg.early_stopping_patience:
@@ -428,7 +447,11 @@ def validate_config(cfg):
             "evaluation_strategy and eval_steps mismatch. Please set evaluation_strategy to 'steps' or remove eval_steps."
         )
 
-    if cfg.val_set_size == 0 and (cfg.eval_steps or cfg.evaluation_strategy):
+    if (
+        cfg.val_set_size == 0
+        and (cfg.eval_steps or cfg.evaluation_strategy)
+        and not cfg.test_datasets
+    ):
         raise ValueError(
             "eval_steps and evaluation_strategy are not supported with val_set_size == 0"
         )
