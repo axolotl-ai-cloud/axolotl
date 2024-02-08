@@ -95,4 +95,4 @@ with gr.Blocks(title="Axolotl Launcher") as demo:
         outputs=output,
     )
 
-demo.launch()
+demo.launch(debug=True, server_name="0.0.0.0", server_port=7860)
