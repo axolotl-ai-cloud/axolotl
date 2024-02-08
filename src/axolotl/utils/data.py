@@ -336,7 +336,7 @@ def load_tokenized_prepared_datasets(
                         split=None,
                         storage_options=storage_options,
                     )
-            elif config_dataset.path.startswith("http"):
+            elif config_dataset.path.startswith("https://"):
                 ds_type = get_ds_type(config_dataset)
                 ds = load_dataset(
                     ds_type,
