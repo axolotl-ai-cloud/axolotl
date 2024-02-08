@@ -477,7 +477,7 @@ See [examples](examples) for quick start. It is recommended to duplicate and mod
     - path: https://some.url.com/yourdata.jsonl # Accepts folder with arrow/parquet or file path like above. Supports s3, gcs.
       ds_type: json # this is the default, see other options below.
   ```
-f
+
 - loading
   ```yaml
   load_in_4bit: true
