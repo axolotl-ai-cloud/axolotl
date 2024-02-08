@@ -11,7 +11,6 @@ import torch
 import transformers.modelcard
 from accelerate.logging import get_logger
 from datasets import Dataset
-from optimum.bettertransformer import BetterTransformer
 from peft import PeftModel
 from pkg_resources import get_distribution  # type: ignore
 from transformers import PreTrainedModel, PreTrainedTokenizer
@@ -23,6 +22,11 @@ from axolotl.utils.dict import DictDefault
 from axolotl.utils.freeze import freeze_parameters_except
 from axolotl.utils.models import load_model, load_tokenizer
 from axolotl.utils.trainer import setup_trainer
+
+try:
+    from optimum.bettertransformer import BetterTransformer
+except ImportError:
+    BetterTransformer = None
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 src_dir = os.path.join(project_root, "src")
@@ -57,6 +61,21 @@ def train(
     eval_dataset = dataset_meta.eval_dataset
     total_num_steps = dataset_meta.total_num_steps
 
+    if cfg.resume_from_checkpoint is None and cfg.auto_resume_from_checkpoints:
+        possible_checkpoints = [
+            str(cp) for cp in Path(cfg.output_dir).glob("checkpoint-*")
+        ]
+        if len(possible_checkpoints) > 0:
+            sorted_paths = sorted(
+                possible_checkpoints,
+                key=lambda path: int(path.split("-")[-1]),
+            )
+            cfg.resume_from_checkpoint = sorted_paths[-1]
+            LOG.info(
+                f"Using Auto-resume functionality to start with checkpoint at {cfg.resume_from_checkpoint}"
+            )
+    resume_from_checkpoint = cfg.resume_from_checkpoint
+
     # Load the model and tokenizer
     msg = "loading model"
     if cfg.adapter:
@@ -78,21 +97,6 @@ def train(
             )
 
     safe_serialization = cfg.save_safetensors is True
-
-    if cfg.resume_from_checkpoint is None and cfg.auto_resume_from_checkpoints:
-        possible_checkpoints = [
-            str(cp) for cp in Path(cfg.output_dir).glob("checkpoint-*")
-        ]
-        if len(possible_checkpoints) > 0:
-            sorted_paths = sorted(
-                possible_checkpoints,
-                key=lambda path: int(path.split("-")[-1]),
-            )
-            cfg.resume_from_checkpoint = sorted_paths[-1]
-            LOG.info(
-                f"Using Auto-resume functionality to start with checkpoint at {cfg.resume_from_checkpoint}"
-            )
-    resume_from_checkpoint = cfg.resume_from_checkpoint
 
     if cfg.unfrozen_parameters:
         freeze_parameters_except(model, cfg.unfrozen_parameters)
@@ -124,7 +128,7 @@ def train(
     if cfg.local_rank == 0:
 
         def terminate_handler(_, __, model):
-            if cfg.flash_optimum:
+            if cfg.flash_optimum and BetterTransformer:
                 model = BetterTransformer.reverse(model)
             model.save_pretrained(cfg.output_dir, safe_serialization=safe_serialization)
             sys.exit(0)
@@ -149,7 +153,10 @@ def train(
     pretrain_hooks(cfg, trainer)
     if cfg.flash_optimum:
         with torch.backends.cuda.sdp_kernel(
-            enable_flash=True, enable_math=True, enable_mem_efficient=True
+            # TODO configure these from the YAML w/ sdp_kernel_kwargs: ...
+            enable_flash=True,
+            enable_math=True,
+            enable_mem_efficient=True,
         ):
             trainer.train(resume_from_checkpoint=resume_from_checkpoint)
     else:
@@ -195,7 +202,7 @@ def train(
             state_dict=trainer.accelerator.get_state_dict(trainer.model_wrapped),
         )
     elif cfg.local_rank == 0:
-        if cfg.flash_optimum:
+        if cfg.flash_optimum and BetterTransformer:
             model = BetterTransformer.reverse(model)
 
         model.save_pretrained(cfg.output_dir, safe_serialization=safe_serialization)

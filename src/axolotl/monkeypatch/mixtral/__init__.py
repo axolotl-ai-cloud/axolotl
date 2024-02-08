@@ -2,9 +2,6 @@
 Patches to support multipack for mixtral
 """
 import torch
-import transformers
-
-from axolotl.monkeypatch.utils import get_unpad_data
 
 
 def patch_mixtral_moe_forward_zero3() -> None:
@@ -51,11 +48,3 @@ def patch_mixtral_moe_forward_zero3() -> None:
 
     MixtralBLockSparseTop2MLP.forward = mlp_forward
     MixtralSparseMoeBlock.forward = moe_forward
-
-
-def replace_mixtral_attn_with_multipack_flash_attn(for_zero3=False):
-    transformers.models.mixtral.modeling_mixtral._get_unpad_data = (  # pylint: disable=protected-access
-        get_unpad_data
-    )
-    if for_zero3:
-        patch_mixtral_moe_forward_zero3()

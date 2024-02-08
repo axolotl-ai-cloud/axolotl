@@ -28,6 +28,7 @@ from transformers import (
 from transformers.trainer_utils import seed_worker
 from trl import DPOTrainer
 
+from axolotl.monkeypatch.multipack import SUPPORTED_MULTIPACK_MODEL_TYPES
 from axolotl.monkeypatch.relora import ReLoRACallback, ReLoRAScheduler
 from axolotl.utils.callbacks import (
     EvalFirstStepCallback,
@@ -59,6 +60,22 @@ except ImportError:
 LOG = logging.getLogger("axolotl.core.trainer_builder")
 
 
+def _sanitize_kwargs_for_tagging(tag_names, kwargs=None):
+    if isinstance(tag_names, str):
+        tag_names = [tag_names]
+
+    if kwargs is not None:
+        if "tags" not in kwargs:
+            kwargs["tags"] = tag_names
+        elif "tags" in kwargs and isinstance(kwargs["tags"], list):
+            kwargs["tags"].extend(tag_names)
+        elif "tags" in kwargs and isinstance(kwargs["tags"], str):
+            tag_names.append(kwargs["tags"])
+            kwargs["tags"] = tag_names
+
+    return kwargs
+
+
 @dataclass
 class AxolotlTrainingArguments(TrainingArguments):
     """
@@ -82,6 +99,10 @@ class AxolotlTrainingArguments(TrainingArguments):
         default=False,
         metadata={"help": "Use sample packing for efficient training."},
     )
+    multipack_real_batches: bool = field(
+        default=False,
+        metadata={"help": "Use real batches for efficient training."},
+    )
     eval_sample_packing: Optional[bool] = field(
         default=None,
         metadata={"help": "Use sample packing for efficient evals."},
@@ -103,6 +124,10 @@ class AxolotlTrainingArguments(TrainingArguments):
         metadata={"help": "how often to reset for ReLoRA"},
     )
     relora_warmup_steps: Optional[int] = field(
+        default=None,
+        metadata={"help": "how many warmup steps to take after reset for ReLoRA"},
+    )
+    relora_anneal_steps: Optional[int] = field(
         default=None,
         metadata={"help": "how many warmup steps to take after reset for ReLoRA"},
     )
@@ -213,11 +238,19 @@ class AxolotlTrainer(Trainer):
 
     def _get_train_sampler(self) -> Optional[torch.utils.data.Sampler]:
         if self.args.sample_packing and not self.args.pretraining:
+            if self.args.multipack_real_batches:
+                batch_size = self.args.per_device_train_batch_size
+                batch_max_len = self.args.max_seq_length
+            else:
+                batch_size = 1
+                batch_max_len = (
+                    self.args.per_device_train_batch_size * self.args.max_seq_length
+                )
             return MultipackBatchSampler(
                 RandomSampler(self.train_dataset),
-                self.args.train_batch_size,
+                batch_size=batch_size,
                 drop_last=True,
-                batch_max_len=self._train_batch_size * self.args.max_seq_length,
+                batch_max_len=batch_max_len,
                 lengths=get_dataset_lengths(self.train_dataset),
                 packing_efficiency_estimate=self.args.sample_packing_efficiency,
             )
@@ -227,11 +260,19 @@ class AxolotlTrainer(Trainer):
         self, eval_dataset: Dataset
     ) -> Optional[torch.utils.data.Sampler]:
         if self.args.sample_packing and self.args.eval_sample_packing is not False:
+            if self.args.multipack_real_batches:
+                batch_size = self.args.per_device_eval_batch_size
+                batch_max_len = self.args.max_seq_length
+            else:
+                batch_size = 1
+                batch_max_len = (
+                    self.args.per_device_eval_batch_size * self.args.max_seq_length
+                )
             return MultipackBatchSampler(
                 SequentialSampler(eval_dataset),
-                self.args.per_device_eval_batch_size,
+                batch_size=batch_size,
                 drop_last=True,
-                batch_max_len=self.args.eval_batch_size * self.args.max_seq_length,
+                batch_max_len=batch_max_len,
                 lengths=get_dataset_lengths(eval_dataset),
                 packing_efficiency_estimate=self.args.sample_packing_efficiency,
             )
@@ -349,30 +390,13 @@ class AxolotlTrainer(Trainer):
         #     return (loss, outputs) if return_outputs else loss
         return super().compute_loss(model, inputs, return_outputs=return_outputs)
 
-    def _sanitize_kwargs_for_tagging(self, tag_names, kwargs=None):
-        if isinstance(tag_names, str):
-            tag_names = [tag_names]
-
-        if kwargs is not None:
-            if "tags" not in kwargs:
-                kwargs["tags"] = tag_names
-            elif "tags" in kwargs and isinstance(kwargs["tags"], list):
-                kwargs["tags"].extend(tag_names)
-            elif "tags" in kwargs and isinstance(kwargs["tags"], str):
-                tag_names.append(kwargs["tags"])
-                kwargs["tags"] = tag_names
-
-        return kwargs
-
     @wraps(Trainer.push_to_hub)
     def push_to_hub(self, *args, **kwargs) -> str:
         """
         Overwrite the `push_to_hub` method in order to force-add the tags when pushing the
         model on the Hub. Please refer to `~transformers.Trainer.push_to_hub` for more details.
         """
-        kwargs = self._sanitize_kwargs_for_tagging(
-            tag_names=self.tag_names, kwargs=kwargs
-        )
+        kwargs = _sanitize_kwargs_for_tagging(tag_names=self.tag_names, kwargs=kwargs)
 
         return super().push_to_hub(*args, **kwargs)
 
@@ -459,16 +483,38 @@ class ReLoRATrainer(AxolotlTrainer):
             warmup_steps = (
                 self.args.relora_warmup_steps if self.args.relora_warmup_steps else 10
             )
+            anneal_steps = (
+                self.args.relora_anneal_steps if self.args.relora_anneal_steps else 1
+            )
             self.lr_scheduler = ReLoRAScheduler(
                 optimizer,
                 lr_scheduler,
                 self.args.relora_steps,
+                anneal_steps,
                 warmup_steps,
             )
         else:
             self.lr_scheduler = lr_scheduler
 
         return self.lr_scheduler
+
+
+class AxolotlDPOTrainer(DPOTrainer):
+    """
+    Extend the base DPOTrainer for axolotl helpers
+    """
+
+    tag_names = ["axolotl", "dpo"]
+
+    @wraps(DPOTrainer.push_to_hub)
+    def push_to_hub(self, *args, **kwargs) -> str:
+        """
+        Overwrite the `push_to_hub` method in order to force-add the tags when pushing the
+        model on the Hub. Please refer to `~transformers.Trainer.push_to_hub` for more details.
+        """
+        kwargs = _sanitize_kwargs_for_tagging(tag_names=self.tag_names, kwargs=kwargs)
+
+        return super().push_to_hub(*args, **kwargs)
 
 
 class TrainerBuilderBase(abc.ABC):
@@ -718,7 +764,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         elif self.cfg.sample_packing and self.cfg.eval_sample_packing is False:
             training_arguments_kwargs["dataloader_drop_last"] = True
 
-        if self.cfg.val_set_size == 0:
+        if not self.cfg.test_datasets and self.cfg.val_set_size == 0:
             # no eval set, so don't eval
             training_arguments_kwargs["evaluation_strategy"] = "no"
         elif self.cfg.eval_steps:
@@ -805,6 +851,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 self.cfg.load_best_model_at_end is not False
                 or self.cfg.early_stopping_patience
             )
+            and not self.cfg.test_datasets
             and self.cfg.val_set_size > 0
             and self.cfg.save_steps
             and self.cfg.eval_steps
@@ -842,6 +889,9 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         training_arguments_kwargs["sample_packing"] = (
             self.cfg.sample_packing if self.cfg.sample_packing else False
         )
+        training_arguments_kwargs["multipack_real_batches"] = (
+            self.cfg.flash_attention is not True
+        )
         training_arguments_kwargs["eval_sample_packing"] = (
             self.cfg.sample_packing
             if self.cfg.eval_sample_packing is not False
@@ -852,6 +902,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         ] = self.cfg.micro_batch_size
         training_arguments_kwargs["relora_steps"] = self.cfg.relora_steps
         training_arguments_kwargs["relora_warmup_steps"] = self.cfg.relora_warmup_steps
+        training_arguments_kwargs["relora_anneal_steps"] = self.cfg.relora_anneal_steps
         training_arguments_kwargs = self.hook_pre_create_training_args(
             training_arguments_kwargs
         )
@@ -944,7 +995,12 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             ]
         ]
         if use_batch_sampler_collator:
-            if self.cfg.model_config_type in ["mixtral", "qwen2", "falcon", "phi"]:
+            if self.cfg.model_config_type in SUPPORTED_MULTIPACK_MODEL_TYPES:
+                collator = V2BatchSamplerDataCollatorForSeq2Seq
+            elif (
+                self.cfg.model_config_type in ["llama"]
+                and self.cfg.flash_attention is not True
+            ):
                 collator = V2BatchSamplerDataCollatorForSeq2Seq
             else:
                 collator = BatchSamplerDataCollatorForSeq2Seq
@@ -1041,13 +1097,21 @@ class HFDPOTrainerBuilder(TrainerBuilderBase):
                     "use_reentrant": False
                 }
 
+        # set save_strategy and save_steps
+        if self.cfg.save_steps:
+            training_args_kwargs["save_strategy"] = "steps"
+            training_args_kwargs["save_steps"] = self.cfg.save_steps
+        elif self.cfg.save_strategy:
+            training_args_kwargs["save_strategy"] = self.cfg.save_strategy
+        else:
+            # default to saving each epoch if not defined
+            training_args_kwargs["save_strategy"] = "epoch"
+
         training_args = TrainingArguments(
             per_device_train_batch_size=self.cfg.micro_batch_size,
             max_steps=self.cfg.max_steps or total_num_steps,
             gradient_accumulation_steps=self.cfg.gradient_accumulation_steps,
             learning_rate=self.cfg.learning_rate,
-            save_strategy="steps",
-            save_steps=self.cfg.save_steps,
             output_dir=self.cfg.output_dir,
             warmup_steps=self.cfg.warmup_steps,
             logging_first_step=True,
@@ -1076,7 +1140,7 @@ class HFDPOTrainerBuilder(TrainerBuilderBase):
             dpo_trainer_kwargs[
                 "precompute_ref_log_probs"
             ] = self.cfg.precompute_ref_log_probs
-        dpo_trainer = DPOTrainer(
+        dpo_trainer = AxolotlDPOTrainer(
             self.model,
             self.model_ref,
             args=training_args,
