@@ -468,6 +468,12 @@ See [examples](examples) for quick start. It is recommended to duplicate and mod
   dataset:
     - path: s3://path_to_ds # Accepts folder with arrow/parquet or file path like above. Supports s3, gcs.
       ...
+
+  # loading from a public url
+  # The url must be a direct link to a file. The format is json (which includes jsonl) by default, unless you change the `ds_type` option.
+  dataset:
+    - path: https://some.url.com/yourdata.jsonl # Accepts folder with arrow/parquet or file path like above. Supports s3, gcs.
+      ds_type: json # this is the default, see other options below.
   ```
 
 - loading
