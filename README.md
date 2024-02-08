@@ -25,8 +25,8 @@ Features:
 - [Installation](#installation)
   - [Docker](#docker)
   - [Conda/Pip venv](#condapip-venv)
-  - [Cloud GPU](#cloud-gpu) - Runpod, Latitude
-  - [LambdaLabs](#lambdalabs)
+  - [Cloud GPU](#cloud-gpu) - Latitude.sh, RunPod
+  - [Bare Metal Cloud GPU](#bare-metal-cloud-gpu)
   - [Windows](#windows)
   - [Launching on public clouds via SkyPilot](#launching-on-public-clouds-via-skypilot)
 - [Dataset](#dataset)
@@ -182,10 +182,13 @@ docker run --privileged --gpus '"all"' --shm-size 10g --rm -it --name axolotl --
 
 For cloud GPU providers that support docker images, use [`winglian/axolotl-cloud:main-latest`](https://hub.docker.com/r/winglian/axolotl-cloud/tags)
 
-- on Latitude use this [direct link](https://latitude.sh/blueprint/989e0e79-3bf6-41ea-a46b-1f246e309d5c)
+- on Latitude.sh use this [direct link](https://latitude.sh/blueprint/989e0e79-3bf6-41ea-a46b-1f246e309d5c)
 - on RunPod use this [direct link](https://runpod.io/gsc?template=v2ickqhz9s&ref=6i7fkpdz)
 
-#### LambdaLabs
+#### Bare Metal Cloud GPU
+
+##### LambdaLabs
+
   <details>
 
   <summary>Click to Expand</summary>
