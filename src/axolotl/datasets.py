@@ -31,7 +31,7 @@ class TokenizedPromptDataset(Dataset):
     def __init__(  # pylint: disable=super-init-not-called
         self,
         prompt_tokenizer: PromptTokenizingStrategy,
-        dataset: IterableDataset,
+        dataset: Dataset,
         process_count: Optional[int] = None,
         keep_in_memory: Optional[bool] = False,
         **kwargs,

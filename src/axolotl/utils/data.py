@@ -4,7 +4,7 @@ import hashlib
 import logging
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import torch
 import yaml
@@ -16,6 +16,7 @@ from datasets import (
     load_from_disk,
 )
 from huggingface_hub import hf_hub_download
+from huggingface_hub.utils import HFValidationError
 from torch.utils.data import RandomSampler
 from transformers import PreTrainedTokenizerBase
 
@@ -87,12 +88,21 @@ def prepare_dataset(cfg, tokenizer):
             path = cfg.pretraining_dataset[0]["path"]
             name = cfg.pretraining_dataset[0]["name"]
 
-        train_dataset = load_pretraining_dataset(
-            path,
+        ds_wrapper_partial = functools.partial(
+            get_dataset_wrapper,
+            cfg.pretraining_dataset[0],
             tokenizer,
             cfg,
-            name=name,
+            cfg.pretraining_dataset[0]["type"] or "pretrain",
+        )
+
+        train_dataset = wrap_pretraining_dataset(
+            load_dataset(path, streaming=True, split="train", name=name),
+            tokenizer,
+            cfg,
+            ds_wrapper_partial,
             max_tokens=cfg.sequence_len,
+            batch_size=cfg.micro_batch_size,
             seed=cfg.seed or 42,
         )
         # https://discuss.huggingface.co/t/how-to-use-huggingface-trainer-streaming-datasets-without-wrapping-it-with-torchdatas-iterablewrapper/25230
@@ -139,7 +149,7 @@ def load_tokenized_prepared_datasets(
                 + "|".join(
                     sorted(
                         [
-                            f"{d.path}:{d.type}:{d.shards}:{d.conversation}"
+                            f"{d.path}:{d.type}:{d.shards}:{d.conversation}{d.split}"
                             for d in cfg_datasets
                         ]
                     )
@@ -213,7 +223,7 @@ def load_tokenized_prepared_datasets(
                     token=use_auth_token,
                 )
                 ds_from_hub = True
-            except (FileNotFoundError, ConnectionError):
+            except (FileNotFoundError, ConnectionError, HFValidationError):
                 pass
 
             ds_from_cloud = False
@@ -326,6 +336,16 @@ def load_tokenized_prepared_datasets(
                         split=None,
                         storage_options=storage_options,
                     )
+            elif config_dataset.path.startswith("https://"):
+                ds_type = get_ds_type(config_dataset)
+                ds = load_dataset(
+                    ds_type,
+                    name=config_dataset.name,
+                    data_files=config_dataset.path,
+                    streaming=False,
+                    split=None,
+                    storage_options=storage_options,
+                )
             else:
                 if isinstance(config_dataset.data_files, str):
                     fp = hf_hub_download(
@@ -382,9 +402,9 @@ def load_tokenized_prepared_datasets(
 
             dataset_wrapper, dataset_prompter = get_dataset_wrapper(
                 config_dataset=config_dataset,
-                dataset=ds,
                 tokenizer=tokenizer,
                 cfg=cfg,
+                dataset=ds,
                 d_base_type=d_base_type,
                 d_prompt_style=d_prompt_style,
             )
@@ -439,7 +459,7 @@ def load_prepare_datasets(
     split="train",
 ) -> Tuple[Dataset, Dataset, List[Prompter]]:
     dataset, prompters = load_tokenized_prepared_datasets(
-        tokenizer, cfg, default_dataset_prepared_path
+        tokenizer, cfg, default_dataset_prepared_path, split=split
     )
 
     if cfg.dataset_shard_num and cfg.dataset_shard_idx is not None:
@@ -495,7 +515,12 @@ def load_prepare_datasets(
 
 
 def get_dataset_wrapper(
-    config_dataset, dataset, tokenizer, cfg, d_base_type, d_prompt_style
+    config_dataset,
+    tokenizer,
+    cfg,
+    d_base_type,
+    dataset,
+    d_prompt_style=None,
 ):
     dataset_wrapper = None
     dataset_prompter = None
@@ -506,7 +531,8 @@ def get_dataset_wrapper(
     }
 
     if (
-        "input_ids" in dataset.features
+        isinstance(dataset, Dataset)
+        and "input_ids" in dataset.features
         and "attention_mask" in dataset.features
         and "labels" in dataset.features
     ):
@@ -764,76 +790,67 @@ def encode_pretraining(
     return ret
 
 
-def load_pretraining_dataset(path, tokenizer, cfg, name=None, max_tokens=2048, seed=42):
+def wrap_pretraining_dataset(
+    dataset,
+    tokenizer,
+    cfg,
+    ds_wrapper_fn,
+    max_tokens=2048,
+    batch_size=1,
+    seed=42,
+    buffer_size=10_000,
+):
     if cfg.sample_packing:
         collate_fn = PretrainingBatchSamplerDataCollatorForSeq2Seq(
             tokenizer,
             return_tensors="pt",
             padding=True,
-            pad_to_multiple_of=max_tokens * cfg.micro_batch_size,
+            pad_to_multiple_of=max_tokens * batch_size,
         )
         encode = functools.partial(
             encode_packed_pretraining,
-            tokenizer,
             collate_fn,
+            ds_wrapper_fn,
             max_seq_length=max_tokens,
-            batch_size=cfg.micro_batch_size,
+            batch_size=batch_size,
         )
         # set this to 1 so downstream data_loader doesn't try to increase the batch again
         cfg.micro_batch_size = 1
     else:
         encode = functools.partial(encode_pretraining, tokenizer, max_tokens)
 
-    dataset = load_dataset(path, streaming=True, split="train", name=name)
-    dataset = dataset.shuffle(seed=seed, buffer_size=10_000)
+    dataset = dataset.shuffle(seed=seed, buffer_size=buffer_size)
     dataset = dataset.map(
         encode,
         batched=True,
-        batch_size=10_000,
-        input_columns="text",
+        batch_size=buffer_size,
+        # input_columns="text",
         # remove all the existing columns after mapping since they end up having
         # a different length than the encoded/tokenized column
         remove_columns=dataset.features.keys(),
-        desc="Encoding Pretraining",
     )
     return dataset
 
 
 def encode_packed_pretraining(
-    tokenizer: PreTrainedTokenizerBase,
     collate_fn,
-    examples: List[str],
+    ds_wrapper: Callable,
+    examples: Dict[str, List],
     max_seq_length: int = 2048,
     batch_size: int = 4,
 ) -> Dict[str, List]:
     # pylint: disable=duplicate-code
     # tokenize all the examples
     # rows get split with stride (overlap)
-    res = tokenizer(
-        examples,
-        truncation=True,
-        max_length=max_seq_length - 1,
-        add_special_tokens=True,
-        return_overflowing_tokens=True,
-        stride=256,
-    )
+    train_dataset = ds_wrapper(Dataset.from_dict(examples))[0]
 
-    input_ids = [seq + [tokenizer.eos_token_id] for seq in res["input_ids"]]
-    attention_mask = [seq + [1] for seq in res["attention_mask"]]
-
-    tokenized_examples = {
-        "input_ids": input_ids,
-        "attention_mask": attention_mask,
-    }
-
-    train_dataset = Dataset.from_dict(tokenized_examples)
     train_dataset = process_pretraining_datasets_for_packing(
         train_dataset, max_seq_length
     )
 
     sampler = MultipackBatchSampler(
         RandomSampler(train_dataset),
-        batch_size=batch_size,
+        batch_size=1,
         drop_last=True,
         batch_max_len=batch_size * max_seq_length,
         lengths=get_dataset_lengths(train_dataset),
@@ -841,15 +858,23 @@ def encode_packed_pretraining(
 
     chunked_data = defaultdict(list)
 
-    for data in sampler:
-        features = train_dataset[data]
-        features["labels"] = features["input_ids"].copy()
-        collated_features = collate_fn(features)
+    for batch in sampler:
+        for data in batch:
+            features = train_dataset[data]
+            if "num_truncated_tokens" in features:
+                del features["num_truncated_tokens"]
+            if "num_truncated_tokens" in features:
+                del features["num_truncated_tokens"]
+            if "overflow_to_sample_mapping" in features:
+                del features["overflow_to_sample_mapping"]
+            if "labels" not in features:
+                features["labels"] = features["input_ids"].copy()
+            collated_features = collate_fn(features)
 
-        for feature in features.keys():
-            if feature == "length":
-                continue
-            chunked_data[feature].append(collated_features[feature].squeeze(0))
+            for feature in features.keys():
+                if feature == "length":
+                    continue
+                chunked_data[feature].append(collated_features[feature].squeeze(0))
 
     return chunked_data
 

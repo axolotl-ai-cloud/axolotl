@@ -12,8 +12,8 @@ feedback. Various methods include, but not limited to:
 
 ### RLHF using Axolotl
 
-[!IMPORTANT]
-This is a BETA feature and many features are not fully implemented. You are encouraged to open new PRs to improve the integration and functionality.
+>[!IMPORTANT]
+>This is a BETA feature and many features are not fully implemented. You are encouraged to open new PRs to improve the integration and functionality.
 
 The various RL training methods are implemented in trl and wrapped via axolotl. Below are various examples with how you can use various preference datasets to train models that use ChatML
 
