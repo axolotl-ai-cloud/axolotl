@@ -87,10 +87,10 @@ def check_remote_config(config: Union[str, Path]):
             # If it's not valid JSON, verify it's valid YAML
             try:
                 yaml.safe_load(content)
-            except yaml.YAMLError as e:
+            except yaml.YAMLError as err:
                 raise ValueError(
-                    f"Failed to parse the content at {config} as YAML: {e}"
-                )
+                    f"Failed to parse the content at {config} as YAML: {err}"
+                ) from err
 
         # Write the content to a file if it's valid YAML (or JSON treated as YAML)
         output_path = Path(temp_dir) / filename
@@ -101,12 +101,12 @@ def check_remote_config(config: Union[str, Path]):
         )
         return output_path
 
-    except requests.RequestException as e:
+    except requests.RequestException as err:
         # This catches all requests-related exceptions including HTTPError
-        raise RuntimeError(f"Failed to download {config}: {e}")
-    except Exception as e:
+        raise RuntimeError(f"Failed to download {config}: {err}") from err
+    except Exception as err:
         # Catch-all for any other exceptions
-        raise e
+        raise err
 
 
 def get_multi_line_input() -> Optional[str]:
