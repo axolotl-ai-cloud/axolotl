@@ -15,7 +15,7 @@ import pandas as pd
 import torch
 import torch.distributed as dist
 import wandb
-from datasets import load_dataset, Metric
+from datasets import Metric, load_dataset
 from optimum.bettertransformer import BetterTransformer
 from tqdm import tqdm
 from transformers import (
@@ -360,6 +360,7 @@ def bench_eval_callback_factory(trainer, tokenizer):
 
     return BenchEvalCallback
 
+
 def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
     class CausalLMBenchEvalCallback(TrainerCallback):
         """Callback to log prediction values during each evaluation"""
@@ -368,14 +369,14 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
             self.cfg = cfg
             self.logged = False
             self.metrics = self.__maybe_load_metrics()
-            
+
         def __maybe_load_metrics(self):
-            metrics = dict()
+            metrics = {}
             for metric in self.cfg.eval_causal_lm_metrics:
                 try:
                     metrics[metric] = evaluate.load(metric)
-                except Exception as e:
-                    LOG.warning(e.args)
+                except Exception as exc:  # pylint: disable=broad-exception-caught
+                    LOG.warning(exc.args)
             return metrics
 
         def on_evaluate(
@@ -414,30 +415,43 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
                 end = len(lst) - 1
                 ranges.append((start, end))
                 return ranges
-            
+
             def compute(metric: Metric, **kwargs):
                 # safely compute a metric and return the score if the format is correct
                 metric_score = None
                 try:
                     metric_score = metric.compute(**kwargs)
-                    return metric_score["score"] if "score" in metric_score else metric_score["mean_score"]
-                except:
-                    pass
+                    return (
+                        metric_score["score"]
+                        if "score" in metric_score
+                        else metric_score["mean_score"]
+                    )
+                except Exception:  # pylint: disable=broad-exception-caught
+                    LOG.warning(
+                        f"Failed to compute metric {metric} with kwargs {kwargs.keys()}"
+                    )
                 return metric_score
-            
+
             def evaluate_preds(sources, predictions, references):
-                if len(self.metrics) == 0:
-                    return
-                
-                scores = dict()
+                scores = {}
+
                 for metric_name, metric in self.metrics.items():
-                    score = compute(metric, references=references, predictions=predictions, sources=sources)
-                    score = score or compute(metric, references=[[r] for r in references], predictions=predictions)
+                    score = compute(
+                        metric,
+                        references=references,
+                        predictions=predictions,
+                        sources=sources,
+                    )
+                    score = score or compute(
+                        metric,
+                        references=[[r] for r in references],
+                        predictions=predictions,
+                    )
                     scores[metric_name] = score
                 return scores
 
             def predict_with_generate():
-                eval_src, eval_pred, eval_ref = list(), list(), list()
+                eval_src, eval_pred, eval_ref = [], [], []
 
                 for batch in tqdm(eval_dataloader):
                     batch_labels = batch["labels"].to(device)
@@ -512,7 +526,7 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
                     predicted_texts = tokenizer.batch_decode(
                         prediction_without_prompt_tokens_list, skip_special_tokens=True
                     )
-                    
+
                     eval_src.extend(prompt_texts)
                     eval_pred.extend(predicted_texts)
                     eval_ref.extend(completion_texts)
