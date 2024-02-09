@@ -121,6 +121,10 @@ accelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \
 # gradio
 accelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \
     --lora_model_dir="./lora-out" --gradio
+
+# remote yaml files - the yaml config can be hosted on a public URL
+# Note: the yaml config must directly link to the **raw** yaml
+accelerate launch -m axolotl.cli.train https://raw.githubusercontent.com/OpenAccess-AI-Collective/axolotl/main/examples/openllama-3b/lora.yml
 ```
 
 ## Installation
@@ -987,6 +991,9 @@ Run
 ```bash
 accelerate launch -m axolotl.cli.train your_config.yml
 ```
+
+> [!TIP]
+> You can also reference a config file that is hosted on a public URL, for example `accelerate launch -m axolotl.cli.train https://yourdomain.com/your_config.yml`
 
 #### Preprocess dataset
 

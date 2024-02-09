@@ -9,6 +9,7 @@ deepspeed>=0.13.1
 addict
 fire
 PyYAML>=6.0
+requests
 datasets>=2.15.0
 flash-attn==2.3.3
 sentencepiece

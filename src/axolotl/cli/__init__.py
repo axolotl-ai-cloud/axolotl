@@ -1,16 +1,20 @@
 """Prepare and train a model on a dataset. Can also infer from a model or merge lora"""
 
 import importlib
+import json
 import logging
 import math
 import os
 import random
 import sys
+import tempfile
 from pathlib import Path
 from threading import Thread
 from typing import Any, Dict, List, Optional, Union
+from urllib.parse import urlparse
 
 import gradio as gr
+import requests
 import torch
 import yaml
 
@@ -57,6 +61,52 @@ def print_axolotl_text_art(suffix=None):
 
     if is_main_process():
         print(ascii_art)
+
+
+def check_remote_config(config: Union[str, Path]):
+    # Check if the config is a valid HTTPS URL to a .yml or .yaml file
+    if not (isinstance(config, str) and config.startswith("https://")):
+        return config  # Return the original value if it's not a valid URL
+
+    filename = os.path.basename(urlparse(config).path)
+    temp_dir = tempfile.mkdtemp()
+
+    try:
+        response = requests.get(config, timeout=30)
+        response.raise_for_status()  # Check for HTTP errors
+
+        content = response.content
+        try:
+            # Try parsing as JSON first to catch cases where JSON content is mistakenly considered YAML
+            json.loads(content)
+            # Log a warning but do not raise an error; JSON is technically valid YAML - this can happen when you forget to point to a raw github link
+            LOG.warning(
+                f"Warning: The content of the file at {config} is JSON, which is technically valid YAML but might not be intended."
+            )
+        except json.JSONDecodeError:
+            # If it's not valid JSON, verify it's valid YAML
+            try:
+                yaml.safe_load(content)
+            except yaml.YAMLError as err:
+                raise ValueError(
+                    f"Failed to parse the content at {config} as YAML: {err}"
+                ) from err
+
+        # Write the content to a file if it's valid YAML (or JSON treated as YAML)
+        output_path = Path(temp_dir) / filename
+        with open(output_path, "wb") as file:
+            file.write(content)
+        LOG.info(
+            f"Using the following config obtained from {config}:\n\n{content.decode('utf-8')}\n"
+        )
+        return output_path
+
+    except requests.RequestException as err:
+        # This catches all requests-related exceptions including HTTPError
+        raise RuntimeError(f"Failed to download {config}: {err}") from err
+    except Exception as err:
+        # Catch-all for any other exceptions
+        raise err
 
 
 def get_multi_line_input() -> Optional[str]:
@@ -270,9 +320,10 @@ def check_not_in(list1: List[str], list2: Union[Dict[str, Any], List[str]]) -> b
     return not any(el in list2 for el in list1)
 
 
-def load_cfg(config: Path = Path("examples/"), **kwargs):
+def load_cfg(config: Union[str, Path] = Path("examples/"), **kwargs):
+    config = check_remote_config(config)
     if Path(config).is_dir():
-        config = choose_config(config)
+        config = choose_config(Path(config))
 
     # load the config from the yaml file
     with open(config, encoding="utf-8") as file:
