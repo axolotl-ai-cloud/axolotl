@@ -1,10 +1,10 @@
 """Prepare and train a model on a dataset. Can also infer from a model or merge lora"""
 
 import importlib
+import json
 import logging
 import math
 import os
-import json
 import random
 import sys
 import tempfile
@@ -80,19 +80,25 @@ def check_remote_config(config: Union[str, Path]):
             # Try parsing as JSON first to catch cases where JSON content is mistakenly considered YAML
             json.loads(content)
             # Log a warning but do not raise an error; JSON is technically valid YAML - this can happen when you forget to point to a raw github link
-            LOG.warning(f"Warning: The content of the file at {config} is JSON, which is technically valid YAML but might not be intended.")
+            LOG.warning(
+                f"Warning: The content of the file at {config} is JSON, which is technically valid YAML but might not be intended."
+            )
         except json.JSONDecodeError:
             # If it's not valid JSON, verify it's valid YAML
             try:
                 yaml.safe_load(content)
             except yaml.YAMLError as e:
-                raise ValueError(f"Failed to parse the content at {config} as YAML: {e}")
+                raise ValueError(
+                    f"Failed to parse the content at {config} as YAML: {e}"
+                )
 
         # Write the content to a file if it's valid YAML (or JSON treated as YAML)
         output_path = Path(temp_dir) / filename
         with open(output_path, "wb") as file:
             file.write(content)
-        LOG.info(f"Using the following config obtained from {config}:\n\n{content.decode('utf-8')}\n")
+        LOG.info(
+            f"Using the following config obtained from {config}:\n\n{content.decode('utf-8')}\n"
+        )
         return output_path
 
     except requests.RequestException as e:
