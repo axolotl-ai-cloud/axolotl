@@ -28,6 +28,7 @@ from transformers import (
 from transformers.trainer_utils import seed_worker
 from trl import DPOTrainer
 
+from axolotl.monkeypatch.multipack import SUPPORTED_MULTIPACK_MODEL_TYPES
 from axolotl.monkeypatch.relora import ReLoRACallback, ReLoRAScheduler
 from axolotl.utils.callbacks import (
     EvalFirstStepCallback,
@@ -994,7 +995,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             ]
         ]
         if use_batch_sampler_collator:
-            if self.cfg.model_config_type in ["mixtral", "qwen2", "falcon", "phi"]:
+            if self.cfg.model_config_type in SUPPORTED_MULTIPACK_MODEL_TYPES:
                 collator = V2BatchSamplerDataCollatorForSeq2Seq
             elif (
                 self.cfg.model_config_type in ["llama"]

@@ -336,6 +336,16 @@ def load_tokenized_prepared_datasets(
                         split=None,
                         storage_options=storage_options,
                     )
+            elif config_dataset.path.startswith("https://"):
+                ds_type = get_ds_type(config_dataset)
+                ds = load_dataset(
+                    ds_type,
+                    name=config_dataset.name,
+                    data_files=config_dataset.path,
+                    streaming=False,
+                    split=None,
+                    storage_options=storage_options,
+                )
             else:
                 if isinstance(config_dataset.data_files, str):
                     fp = hf_hub_download(
