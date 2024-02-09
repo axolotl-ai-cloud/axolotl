@@ -476,7 +476,7 @@ See [examples](examples) for quick start. It is recommended to duplicate and mod
   # Loading Data From a Public URL
   # - The file format is `json` (which includes `jsonl`) by default. For different formats, adjust the `ds_type` option accordingly.
   dataset:
-    - path: https://some.url.com/yourdata.jsonl # The URL should be a direct link to the file you wish to load. URLs must use HTTPS protocol for security reasons, not HTTP.
+    - path: https://some.url.com/yourdata.jsonl # The URL should be a direct link to the file you wish to load. URLs must use HTTPS protocol, not HTTP.
       ds_type: json # this is the default, see other options below.
   ```
 
