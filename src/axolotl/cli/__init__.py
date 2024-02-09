@@ -4,6 +4,7 @@ import importlib
 import logging
 import math
 import os
+import json
 import random
 import sys
 import tempfile
@@ -63,24 +64,43 @@ def print_axolotl_text_art(suffix=None):
 
 
 def check_remote_config(config: Union[str, Path]):
-    if (
-        isinstance(config, str)
-        and config.startswith("https://")
-        and (config.endswith(".yml") or config.endswith("yaml"))
-    ):
-        path = urlparse(config).path
-        filename = os.path.basename(path)
-        temp_dir = tempfile.mkdtemp()
-        response = requests.get(config, timeout=30)
-        if response.status_code == 200:
-            # Open a file in binary write mode
-            with open(Path(temp_dir) / filename, "wb") as file:
-                # Write the content of the response to the file
-                file.write(response.content)
-            return Path(temp_dir) / filename
+    # Check if the config is a valid HTTPS URL to a .yml or .yaml file
+    if not (isinstance(config, str) and config.startswith("https://")):
+        return config  # Return the original value if it's not a valid URL
 
-    # fallback and simply return the original value
-    return config
+    filename = os.path.basename(urlparse(config).path)
+    temp_dir = tempfile.mkdtemp()
+
+    try:
+        response = requests.get(config, timeout=30)
+        response.raise_for_status()  # Check for HTTP errors
+
+        content = response.content
+        try:
+            # Try parsing as JSON first to catch cases where JSON content is mistakenly considered YAML
+            json.loads(content)
+            # Log a warning but do not raise an error; JSON is technically valid YAML - this can happen when you forget to point to a raw github link
+            LOG.warning(f"Warning: The content of the file at {config} is JSON, which is technically valid YAML but might not be intended.")
+        except json.JSONDecodeError:
+            # If it's not valid JSON, verify it's valid YAML
+            try:
+                yaml.safe_load(content)
+            except yaml.YAMLError as e:
+                raise ValueError(f"Failed to parse the content at {config} as YAML: {e}")
+
+        # Write the content to a file if it's valid YAML (or JSON treated as YAML)
+        output_path = Path(temp_dir) / filename
+        with open(output_path, "wb") as file:
+            file.write(content)
+        LOG.info(f"Using the following config obtained from {config}:\n\n{content.decode('utf-8')}\n")
+        return output_path
+
+    except requests.RequestException as e:
+        # This catches all requests-related exceptions including HTTPError
+        raise RuntimeError(f"Failed to download {config}: {e}")
+    except Exception as e:
+        # Catch-all for any other exceptions
+        raise e
 
 
 def get_multi_line_input() -> Optional[str]:
