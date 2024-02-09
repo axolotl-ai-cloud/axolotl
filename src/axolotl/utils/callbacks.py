@@ -15,7 +15,7 @@ import pandas as pd
 import torch
 import torch.distributed as dist
 import wandb
-from datasets import Metric, load_dataset
+from datasets import load_dataset
 from optimum.bettertransformer import BetterTransformer
 from tqdm import tqdm
 from transformers import (
@@ -376,7 +376,7 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
                 try:
                     metrics[metric] = evaluate.load(metric)
                 except Exception as exc:  # pylint: disable=broad-exception-caught
-                    LOG.warning(exc.args)
+                    LOG.warning(f"{metric}: {exc.args}")
             return metrics
 
         def on_evaluate(
@@ -416,7 +416,7 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
                 ranges.append((start, end))
                 return ranges
 
-            def compute(metric: Metric, **kwargs):
+            def compute(metric: evaluate.Metric, **kwargs):
                 # safely compute a metric and return the score if the format is correct
                 metric_score = None
                 try:
@@ -427,8 +427,8 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
                         else metric_score["mean_score"]
                     )
                 except Exception:  # pylint: disable=broad-exception-caught
-                    LOG.warning(
-                        f"Failed to compute metric {metric} with kwargs {kwargs.keys()}"
+                    LOG.debug(
+                        f"Failed to compute metric {metric.name} with kwargs {kwargs.keys()}"
                     )
                 return metric_score
 
