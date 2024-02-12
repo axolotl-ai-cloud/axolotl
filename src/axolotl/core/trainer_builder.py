@@ -131,6 +131,10 @@ class AxolotlTrainingArguments(TrainingArguments):
         default=None,
         metadata={"help": "how many warmup steps to take after reset for ReLoRA"},
     )
+    relora_prune_ratio: Optional[float] = field(
+        default=0.9,
+        metadata={"help": "prune ratio for magnitude pruning of the optimizer"},
+    )
     bench_split: Optional[str] = field(
         default="eval", metadata={"help": "The benchmark split to run on"}
     )
@@ -900,9 +904,20 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         training_arguments_kwargs[
             "sample_packing_seq_len_multiplier"
         ] = self.cfg.micro_batch_size
-        training_arguments_kwargs["relora_steps"] = self.cfg.relora_steps
-        training_arguments_kwargs["relora_warmup_steps"] = self.cfg.relora_warmup_steps
-        training_arguments_kwargs["relora_anneal_steps"] = self.cfg.relora_anneal_steps
+        if self.cfg.relora_steps:
+            training_arguments_kwargs["relora_steps"] = self.cfg.relora_steps
+            training_arguments_kwargs[
+                "relora_warmup_steps"
+            ] = self.cfg.relora_warmup_steps
+            if self.cfg.relora_anneal_steps:
+                training_arguments_kwargs[
+                    "relora_anneal_steps"
+                ] = self.cfg.relora_anneal_steps
+            if self.cfg.relora_prune_ratio:
+                training_arguments_kwargs[
+                    "relora_prune_ratio"
+                ] = self.cfg.relora_prune_ratio
+
         training_arguments_kwargs = self.hook_pre_create_training_args(
             training_arguments_kwargs
         )
