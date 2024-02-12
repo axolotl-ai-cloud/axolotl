@@ -24,7 +24,6 @@ from transformers import (
 )
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR
 
-from axolotl.core.trainer_builder import AxolotlTrainingArguments
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import barrier, is_main_process
 
@@ -114,7 +113,7 @@ class ReLoRACallback(TrainerCallback):
 
     def on_step_begin(
         self,
-        args: AxolotlTrainingArguments,
+        args: TrainingArguments,
         state: TrainerState,
         control: TrainerControl,
         model: peft.LoraModel,
