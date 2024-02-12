@@ -61,7 +61,7 @@ def run_cmd(cmd: str, run_folder: str):
     timeout=60 * 30,
 )
 def cicd_pytest():
-    cmd = "pytest /workspace/axolotl/tests/e2e/patched/"
+    cmd = "pytest --ignore=tests/e2e/ /workspace/axolotl/tests/ && pytest --ignore=tests/e2e/patched/ /workspace/axolotl/tests/e2e/ && pytest /workspace/axolotl/tests/e2e/patched/"
     run_cmd(cmd, "/workspace/axolotl")
 
 
