@@ -61,8 +61,14 @@ def run_cmd(cmd: str, run_folder: str):
     timeout=60 * 30,
 )
 def cicd_pytest():
-    cmd = "./cicd/cicd.sh"
-    run_cmd(cmd, "/workspace/axolotl")
+    run_cmd(
+        "pytest --ignore=tests/e2e/ /workspace/axolotl/tests/", "/workspace/axolotl"
+    )
+    run_cmd(
+        "pytest --ignore=tests/e2e/patched/ /workspace/axolotl/tests/e2e/",
+        "/workspace/axolotl",
+    )
+    run_cmd("pytest /workspace/axolotl/tests/e2e/patched/", "/workspace/axolotl")
 
 
 @stub.local_entrypoint()
