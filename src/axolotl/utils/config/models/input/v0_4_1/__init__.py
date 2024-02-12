@@ -1,8 +1,7 @@
 import logging
 import os
-from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Literal, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel, Field, root_validator, validator
 from transformers import SchedulerType
@@ -65,8 +64,23 @@ class SpecialTokensConfig(BaseModel):
     additional_special_tokens: Optional[List[str]]
 
 
-class AxolotlInputConfig(BaseModel):
-    strict: Optional[bool] = Field(default=False)
+class LoraConfig(BaseModel):
+    load_in_8bit: Optional[bool] = Field(default=False)
+    load_in_4bit: Optional[bool] = Field(default=False)
+
+    adapter: Optional[str]
+    lora_model_dir: Optional[str]
+    lora_rank: Optional[int]
+    lora_alpha: Optional[int]
+    lora_fan_in_fan_out: Optional[bool]
+    lora_target_modules: Optional[List[str]]
+    lora_target_linear: Optional[bool]
+    lora_dropout: Optional[float]
+    peft_layers_to_transform: Optional[List[int]]
+    peft: Optional[PeftConfig]
+
+
+class ModelInputConfig(BaseModel):
     base_model: str
     base_model_config: Optional[str]
     tokenizer_config: Optional[str]
@@ -75,29 +89,15 @@ class AxolotlInputConfig(BaseModel):
     tokenizer_type: Optional[str] = Field(
         default=None, metadata={"help": "transformers tokenizer class"}
     )
+    model_type: Optional[str] = Field(default=None)
     model_revision: Optional[str]
     trust_remote_code: Optional[bool]
     gptq: Optional[bool]
 
-    output_dir: str = Field(default="./model-out")
-    hub_model_id: Optional[str]
-    hub_strategy: Optional[str]
-    save_safetensors: Optional[bool]
+    model_config: Optional[Dict[str, Any]]
 
-    # resume_from_checkpoint
 
-    rl: Optional[RLType]
-    datasets: List[Union[SFTDataset, DPODataset]]
-    pretraining_dataset: Optional[List[PretrainingDataset]] = Field(
-        metadata={"help": {"streaming dataset to use for pretraining"}}
-    )
-
-    device: Optional[Any]
-    device_map: Optional[Any]
-    world_size: Optional[int]
-    local_rank: Optional[int]
-    ddp: Optional[bool]
-
+class HyperparametersConfig(BaseModel):
     gradient_accumulation_steps: Optional[int] = Field(default=1)
     micro_batch_size: Optional[int] = Field(
         default=1, metadata={"help": "per gpu micro batch size for training"}
@@ -113,6 +113,57 @@ class AxolotlInputConfig(BaseModel):
         }
     )
 
+    learning_rate: Union[str, float]
+    weight_decay: Optional[float]
+    optimizer: Optional[OptimizerNames]
+    lr_scheduler: Optional[SchedulerType]
+    adam_epsilon: Optional[float]
+    adam_beta1: Optional[float]
+    adam_beta2: Optional[float]
+    max_grad_norm: Optional[float]
+    num_epochs: int = Field(default=1)
+
+    @validator(batch_size)
+    def hint_batch_size_set(cls, batch_size):
+        if batch_size:
+            LOG.warning(
+                "%s\n%s",
+                "batch_size is not recommended. Please use gradient_accumulation_steps instead.",
+                "To calculate the equivalent gradient_accumulation_steps, divide batch_size / micro_batch_size / number of gpus.",
+            )
+        return batch_size
+
+
+class ModelOutputConfig(BaseModel):
+    output_dir: str = Field(default="./model-out")
+    hub_model_id: Optional[str]
+    hub_strategy: Optional[str]
+    save_safetensors: Optional[bool]
+
+
+class AxolotlInputConfig(ModelInputConfig, LoraConfig, HyperparametersConfig, BaseModel):
+    strict: Optional[bool] = Field(default=False)
+    # resume_from_checkpoint
+
+    rl: Optional[RLType]
+
+    datasets: List[Union[SFTDataset, DPODataset]]
+    pretraining_dataset: Optional[List[PretrainingDataset]] = Field(
+        metadata={"help": {"streaming dataset to use for pretraining"}}
+    )
+    dataset_processes: Optional[int] = Field(default=os.cpu_count())
+    dataloader_pin_memory: Optional[bool]
+    dataloader_num_workers: Optional[int]
+    dataloader_prefetch_factor: Optional[int]
+    dataloader_drop_last: Optional[bool]
+
+
+    device: Optional[Any]
+    device_map: Optional[Any]
+    world_size: Optional[int]
+    local_rank: Optional[int]
+    ddp: Optional[bool]
+
     eval_table_size: Optional[int]
     eval_table_max_new_tokens: Optional[int]
 
@@ -123,30 +174,12 @@ class AxolotlInputConfig(BaseModel):
     tf32: Optional[bool]
     float32: Optional[bool]
 
-    load_in_8bit: Optional[bool] = Field(default=False)
-    load_in_4bit: Optional[bool] = Field(default=False)
-
-    adapter: Optional[str]
-    lora_model_dir: Optional[str]
-    lora_rank: Optional[int]
-    lora_alpha: Optional[int]
-    lora_fan_in_fan_out: Optional[bool]
-    lora_target_modules: Optional[List[str]]
-    lora_target_linear: Optional[bool]
-    lora_dropout: Optional[float]
-    peft_layers_to_transform: Optional[List[int]]
-
     # torch_dtype: Optional[torch.dtype]
-
-    dataset_processes: Optional[int] = Field(default=os.cpu_count())
 
     is_falcon_derived_model: Optional[bool] = Field(default=False)
     is_llama_derived_model: Optional[bool] = Field(default=False)
     is_mistral_derived_model: Optional[bool] = Field(default=False)
     is_qwen_derived_model: Optional[bool] = Field(default=False)
-
-    model_type: Optional[str] = Field(default=None)
-    learning_rate: Union[str, float]
 
     gradient_checkpointing: Optional[bool] = Field(default=False)
     gradient_checkpointing_kwargs: Optional[Dict[str, Any]]
@@ -160,7 +193,6 @@ class AxolotlInputConfig(BaseModel):
     sample_packing: Optional[bool]
     eval_sample_packing: Optional[bool]
     pad_to_sequence_len: Optional[bool]
-    num_epochs: int = Field(default=1)
 
     xformers_attention: Optional[bool]
     sdp_attention: Optional[bool]
@@ -172,17 +204,7 @@ class AxolotlInputConfig(BaseModel):
     fsdp: Optional[List[str]]
     fsdp_config: Optional[Dict[str, Any]]
 
-    optimizer: Optional[OptimizerNames]
-    lr_scheduler: Optional[SchedulerType]
-    adam_epsilon: Optional[float]
-    adam_beta1: Optional[float]
-    adam_beta2: Optional[float]
-    max_grad_norm: Optional[float]
-
     val_set_size: Optional[float] = Field(default=0.0)
-
-    weight_decay: Optional[float]
-    val_set_size: Optional[float]
 
     special_tokens: Optional[SpecialTokensConfig]
     tokens: Optional[List[str]]
@@ -193,11 +215,6 @@ class AxolotlInputConfig(BaseModel):
     save_steps: Optional[int]
     logging_steps: Optional[int]
     early_stopping_patience: Optional[int]
-
-    dataloader_pin_memory: Optional[bool]
-    dataloader_num_workers: Optional[int]
-    dataloader_prefetch_factor: Optional[int]
-    dataloader_drop_last: Optional[bool]
 
     # INTERNALS - document for now
     # - total_supervised_tokens
@@ -254,16 +271,6 @@ class AxolotlInputConfig(BaseModel):
                 "please set only one of gradient_accumulation_steps or batch_size"
             )
         return root
-
-    @validator(batch_size)
-    def hint_batch_size_set(cls, batch_size):
-        if batch_size:
-            LOG.warning(
-                "%s\n%s",
-                "batch_size is not recommended. Please use gradient_accumulation_steps instead.",
-                "To calculate the equivalent gradient_accumulation_steps, divide batch_size / micro_batch_size / number of gpus.",
-            )
-        return batch_size
 
     @root_validator
     def hint_eval_train_mbsz(cls, root):
