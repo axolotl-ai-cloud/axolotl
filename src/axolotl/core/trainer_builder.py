@@ -161,6 +161,12 @@ class AxolotlTrainingArguments(TrainingArguments):
         default=None,
         metadata={"help": "Minimum learning rate is min_lr_ratio * learning_rate"},
     )
+    cosine_constant_lr_ratio: Optional[float] = field(
+        default=None,
+        metadata={
+            "help": "Starting constant learning rate step is cosine_constant_lr_ratio * max_steps"
+        },
+    )
 
 
 class AxolotlTrainer(Trainer):
