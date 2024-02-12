@@ -409,6 +409,10 @@ def load_model(
 
     model_kwargs["device_map"] = device_map
     model_kwargs["torch_dtype"] = cfg.torch_dtype
+
+    if torch.backends.mps.is_available():
+        model_kwargs["device_map"] = "mps:0"
+
     # TODO can we put the reference model on it's own gpu? I think we have to move logits around to calculate loss
     # if cfg.rl:
     #     if torch.cuda.device_count() > 1:
@@ -651,7 +655,7 @@ def load_model(
     ):
         model.config.eos_token_id = tokenizer.eos_token_id
 
-    if hasattr(model, "device") and model.device.type == "cuda":
+    if hasattr(model, "device") and model.device.type in ("cuda", "mps"):
         log_gpu_memory_usage(LOG, "after model load", model.device)
 
     # make sure these are fp32 per Ramesh et al. (2021)

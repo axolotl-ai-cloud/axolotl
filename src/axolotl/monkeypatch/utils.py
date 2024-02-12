@@ -186,8 +186,8 @@ def mask_2d_to_4d(
     # Create a binary mask from the original mask where zeros remain zeros and all other values are set to one
     binary_mask = torch.where(
         mask != 0,
-        torch.tensor(1).to(dtype),
-        torch.tensor(0).to(dtype),
+        torch.tensor(1, device=mask.device).to(dtype),
+        torch.tensor(0, device=mask.device).to(dtype),
     )
 
     # Create a block-diagonal mask.
