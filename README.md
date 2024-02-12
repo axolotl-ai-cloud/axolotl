@@ -734,6 +734,8 @@ peft:
 # Must use either 'lora' or 'qlora' adapter, and does not support fsdp or deepspeed
 relora_steps: # Number of steps per ReLoRA restart
 relora_warmup_steps: # Number of per-restart warmup steps
+relora_anneal_steps: # Number of anneal steps for each relora cycle
+relora_prune_ratio: # threshold for optimizer magnitude when pruning
 relora_cpu_offload: # True to perform lora weight merges on cpu during restarts, for modest gpu memory savings
 
 # wandb configuration if you're using it
