@@ -1038,6 +1038,7 @@ fsdp:
 fsdp_config:
   fsdp_offload_params: true
   fsdp_state_dict_type: FULL_STATE_DICT
+  fsdp_sync_module_states: true
   fsdp_transformer_layer_cls_to_wrap: LlamaDecoderLayer
 ```
 
