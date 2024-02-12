@@ -1,6 +1,7 @@
 """Module containing data utilities"""
 import functools
 import hashlib
+import importlib
 import logging
 from collections import defaultdict
 from pathlib import Path
@@ -11,10 +12,12 @@ import yaml
 from datasets import (
     Dataset,
     DatasetDict,
+    IterableDataset,
     concatenate_datasets,
     load_dataset,
     load_from_disk,
 )
+from datasets.iterable_dataset import ExamplesIterable
 from huggingface_hub import hf_hub_download
 from huggingface_hub.utils import HFValidationError
 from torch.utils.data import RandomSampler
@@ -64,6 +67,25 @@ def md5(to_hash: str, encoding: str = "utf-8") -> str:
         return hashlib.md5(to_hash.encode(encoding)).hexdigest()  # nosec
 
 
+def get_streaming_dataset(ds_cfg):
+    path = ds_cfg["path"]
+    func = None
+    try:
+        load_fn = path.split(".")[-1]
+        module_name = ".".join(load_fn.split(".")[:-1])
+        mod = importlib.import_module(f".{module_name}", "axolotl")
+        func = getattr(mod, load_fn)
+    except Exception:
+        pass
+
+    if func:
+        data_producer = func(**ds_cfg)
+        return IterableDataset(ExamplesIterable(data_producer, {}))
+    else:
+        split = ds_cfg["split"] or "train"
+        return load_dataset(path, streaming=True, split=split, name=ds_cfg["name"])
+
+
 def prepare_dataset(cfg, tokenizer):
     prompters = []
     if not cfg.pretraining_dataset:
@@ -80,14 +102,6 @@ def prepare_dataset(cfg, tokenizer):
                     tokenizer, cfg, DEFAULT_DATASET_PREPARED_PATH
                 )
     else:
-        path = cfg.pretraining_dataset
-        name = None
-        if isinstance(cfg.pretraining_dataset, list) and isinstance(
-            cfg.pretraining_dataset[0], dict
-        ):
-            path = cfg.pretraining_dataset[0]["path"]
-            name = cfg.pretraining_dataset[0]["name"]
-
         ds_wrapper_partial = functools.partial(
             get_dataset_wrapper,
             cfg.pretraining_dataset[0],
@@ -97,7 +111,7 @@ def prepare_dataset(cfg, tokenizer):
         )
 
         train_dataset = wrap_pretraining_dataset(
-            load_dataset(path, streaming=True, split="train", name=name),
+            get_streaming_dataset(cfg.pretraining_dataset[0]),
             tokenizer,
             cfg,
             ds_wrapper_partial,
