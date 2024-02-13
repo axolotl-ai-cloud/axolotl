@@ -59,7 +59,7 @@ def run_cmd(cmd: str, run_folder: str):
 @stub.function(
     image=cicd_image,
     gpu=GPU_CONFIG,
-    timeout=60 * 60,
+    timeout=30 * 60,
 )
 def cicd_pytest(path, ignore=None):
     if ignore:
