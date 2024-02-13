@@ -50,6 +50,7 @@ from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 from axolotl.utils.schedulers import (
     get_cosine_schedule_with_min_lr,
     get_cosine_schedule_with_quadratic_warmup,
+    get_cosine_schedule_with_warmup_decay_constant,
 )
 
 try:
@@ -164,6 +165,12 @@ class AxolotlTrainingArguments(TrainingArguments):
         default=None,
         metadata={"help": "Minimum learning rate is min_lr_ratio * learning_rate"},
     )
+    cosine_constant_lr_ratio: Optional[float] = field(
+        default=None,
+        metadata={
+            "help": "Starting constant learning rate step is cosine_constant_lr_ratio * max_steps"
+        },
+    )
 
 
 class AxolotlTrainer(Trainer):
@@ -220,6 +227,16 @@ class AxolotlTrainer(Trainer):
                     optimizer,
                     num_warmup_steps=self.args.get_warmup_steps(num_training_steps),
                     num_training_steps=num_training_steps,
+                )
+            elif self.args.cosine_min_lr_ratio and self.args.cosine_constant_lr_ratio and use_cosine_min_lr:
+                assert 0 <= self.args.cosine_min_lr_ratio <= 1.0, "cosine_min_lr_ratio must be between 0.0 and 1.0"
+                assert 0 <= self.args.cosine_constant_lr_ratio <= 1.0, "cosine_constant_lr_ratio must be between 0.0 and 1.0"
+                self.lr_scheduler = get_cosine_schedule_with_warmup_decay_constant(  # pylint: disable=attribute-defined-outside-init
+                    optimizer,
+                    num_warmup_steps=self.args.get_warmup_steps(num_training_steps),
+                    num_training_steps=num_training_steps,
+                    min_lr_ratio=self.args.cosine_min_lr_ratio,
+                    constant_lr_ratio=self.args.cosine_constant_lr_ratio,
                 )
             elif self.args.cosine_min_lr_ratio and use_cosine_min_lr:
                 assert 0 <= self.args.cosine_min_lr_ratio <= 1.0, "cosine_min_lr_ratio must be between 0.0 and 1.0"
@@ -887,6 +904,9 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             self.cfg.lr_scheduler_kwargs if self.cfg.lr_scheduler_kwargs else {}
         )
         training_arguments_kwargs["cosine_min_lr_ratio"] = self.cfg.cosine_min_lr_ratio
+        training_arguments_kwargs[
+            "cosine_constant_lr_ratio"
+        ] = self.cfg.cosine_constant_lr_ratio
         training_arguments_kwargs["weight_decay"] = (
             self.cfg.weight_decay if self.cfg.weight_decay is not None else 0.0
         )
