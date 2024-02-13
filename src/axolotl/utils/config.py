@@ -159,6 +159,14 @@ def normalize_config(cfg):
         ]
     ) or cfg.is_qwen_derived_model
 
+    cfg.is_orion_derived_model = (
+        hasattr(model_config, "model_type")
+        and model_config.model_type
+        in [
+            "orion",
+        ]
+    ) or cfg.is_orion_derived_model
+
     if isinstance(cfg.learning_rate, str):
         cfg.learning_rate = float(cfg.learning_rate)
 
