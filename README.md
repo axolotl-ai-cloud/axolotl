@@ -25,8 +25,8 @@ Features:
 - [Installation](#installation)
   - [Docker](#docker)
   - [Conda/Pip venv](#condapip-venv)
-  - [Cloud GPU](#cloud-gpu) - Runpod, Latitude
-  - [LambdaLabs](#lambdalabs)
+  - [Cloud GPU](#cloud-gpu) - Latitude.sh, RunPod
+  - [Bare Metal Cloud GPU](#bare-metal-cloud-gpu)
   - [Windows](#windows)
   - [Launching on public clouds via SkyPilot](#launching-on-public-clouds-via-skypilot)
 - [Dataset](#dataset)
@@ -121,6 +121,10 @@ accelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \
 # gradio
 accelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \
     --lora_model_dir="./lora-out" --gradio
+
+# remote yaml files - the yaml config can be hosted on a public URL
+# Note: the yaml config must directly link to the **raw** yaml
+accelerate launch -m axolotl.cli.train https://raw.githubusercontent.com/OpenAccess-AI-Collective/axolotl/main/examples/openllama-3b/lora.yml
 ```
 
 ## Installation
@@ -182,9 +186,13 @@ docker run --privileged --gpus '"all"' --shm-size 10g --rm -it --name axolotl --
 
 For cloud GPU providers that support docker images, use [`winglian/axolotl-cloud:main-latest`](https://hub.docker.com/r/winglian/axolotl-cloud/tags)
 
+- on Latitude.sh use this [direct link](https://latitude.sh/blueprint/989e0e79-3bf6-41ea-a46b-1f246e309d5c)
 - on RunPod use this [direct link](https://runpod.io/gsc?template=v2ickqhz9s&ref=6i7fkpdz)
 
-#### LambdaLabs
+#### Bare Metal Cloud GPU
+
+##### LambdaLabs
+
   <details>
 
   <summary>Click to Expand</summary>
@@ -464,6 +472,12 @@ See [examples](examples) for quick start. It is recommended to duplicate and mod
   dataset:
     - path: s3://path_to_ds # Accepts folder with arrow/parquet or file path like above. Supports s3, gcs.
       ...
+
+  # Loading Data From a Public URL
+  # - The file format is `json` (which includes `jsonl`) by default. For different formats, adjust the `ds_type` option accordingly.
+  dataset:
+    - path: https://some.url.com/yourdata.jsonl # The URL should be a direct link to the file you wish to load. URLs must use HTTPS protocol, not HTTP.
+      ds_type: json # this is the default, see other options below.
   ```
 
 - loading
@@ -720,6 +734,8 @@ peft:
 # Must use either 'lora' or 'qlora' adapter, and does not support fsdp or deepspeed
 relora_steps: # Number of steps per ReLoRA restart
 relora_warmup_steps: # Number of per-restart warmup steps
+relora_anneal_steps: # Number of anneal steps for each relora cycle
+relora_prune_ratio: # threshold for optimizer magnitude when pruning
 relora_cpu_offload: # True to perform lora weight merges on cpu during restarts, for modest gpu memory savings
 
 # wandb configuration if you're using it
@@ -976,6 +992,9 @@ Run
 ```bash
 accelerate launch -m axolotl.cli.train your_config.yml
 ```
+
+> [!TIP]
+> You can also reference a config file that is hosted on a public URL, for example `accelerate launch -m axolotl.cli.train https://yourdomain.com/your_config.yml`
 
 #### Preprocess dataset
 

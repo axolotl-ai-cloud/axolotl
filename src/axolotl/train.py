@@ -208,7 +208,10 @@ def train(
         model.save_pretrained(cfg.output_dir, safe_serialization=safe_serialization)
 
     if not cfg.hub_model_id:
-        trainer.create_model_card(model_name=cfg.output_dir.lstrip("./"))
+        try:
+            trainer.create_model_card(model_name=cfg.output_dir.lstrip("./"))
+        except AttributeError:
+            pass
     elif cfg.hub_model_id:
         # defensively push to the hub to ensure the model card is updated
         trainer.push_to_hub()

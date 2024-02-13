@@ -46,8 +46,9 @@ def reset_optimizer(
     *,
     reset_params: list[str],  # where str is the key to a torch.nn.Parameter
     optimizer_state_keys: list[str],
+    prune_ratio: float = 0.9,
 ):
-    pruning_fn = partial(magnitude_pruning_, prune_ratio=0.9)
+    pruning_fn = partial(magnitude_pruning_, prune_ratio=prune_ratio)
     n_zeros = 0
     n_total = 0
 
@@ -159,6 +160,7 @@ class ReLoRACallback(TrainerCallback):
                     optimizer,
                     reset_params=lora_params,
                     optimizer_state_keys=optimizer_state_keys,
+                    prune_ratio=args.relora_prune_ratio,
                 )
 
             if self.quantized:
