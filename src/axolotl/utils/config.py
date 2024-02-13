@@ -56,7 +56,13 @@ def normalize_config(cfg):
     cfg.world_size = int(os.environ.get("WORLD_SIZE", 1))
     cfg.local_rank = int(os.environ.get("LOCAL_RANK", 0))
     cfg.eval_table_size = cfg.eval_table_size or 0
-    cfg.eval_table_max_new_tokens = cfg.eval_table_max_new_tokens or 128
+    cfg.eval_max_new_tokens = cfg.eval_max_new_tokens or 128
+    cfg.eval_causal_lm_metrics = cfg.eval_causal_lm_metrics or [
+        "sacrebleu",
+        "comet",
+        "ter",
+        "chrf",
+    ]
     choose_device(cfg)
     cfg.ddp = cfg.ddp if cfg.ddp is not None else cfg.world_size != 1
     if cfg.ddp:
@@ -549,6 +555,21 @@ def validate_config(cfg):
 
     if cfg.fsdp and "bnb" in cfg.optimizer:
         raise ValueError(f"FSDP not compatible with {cfg.optimizer}")
+
+    if cfg.do_causal_lm_eval and cfg.eval_sample_packing:
+        raise ValueError(
+            "do_causal_lm_eval is enabled, eval_sample_packing must be set to False"
+        )
+
+    if cfg.eval_causal_lm_metrics:
+        supported_metrics = ["sacrebleu", "comet", "ter", "chrf"]
+        if not isinstance(cfg.eval_causal_lm_metrics, list):
+            raise ValueError("eval_causal_lm_metrics must be a list")
+        # only ["sacrebleu", "comet", "ter", "chrf"] supported
+        if set(cfg.eval_causal_lm_metrics) - set(supported_metrics):
+            raise ValueError(
+                f"eval_causal_lm_metrics must be one of {supported_metrics}"
+            )
 
     # TODO
     # MPT 7b

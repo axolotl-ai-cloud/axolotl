@@ -38,6 +38,7 @@ from axolotl.utils.callbacks import (
     SaveAxolotlConfigtoWandBCallback,
     SaveBetterTransformerModelCallback,
     bench_eval_callback_factory,
+    causal_lm_bench_eval_callback_factory,
     log_prediction_callback_factory,
 )
 from axolotl.utils.collators import (
@@ -147,6 +148,9 @@ class AxolotlTrainingArguments(TrainingArguments):
     )
     do_bench_eval: Optional[bool] = field(
         default=False, metadata={"help": "Whether to run the Benchmark evaluation."}
+    )
+    do_causal_lm_eval: Optional[bool] = field(
+        default=False, metadata={"help": "Whether to run the Causal LM evaluation."}
     )
     max_bench_samples: Optional[int] = field(
         default=None,
@@ -664,6 +668,11 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
 
         if self.cfg.do_bench_eval:
             callbacks.append(bench_eval_callback_factory(trainer, self.tokenizer))
+        if self.cfg.do_causal_lm_eval:
+            CausalLMBenchEvalCallback = causal_lm_bench_eval_callback_factory(
+                trainer, self.tokenizer
+            )
+            callbacks.append(CausalLMBenchEvalCallback(self.cfg))
 
         if self.cfg.early_stopping_patience:
             early_stop_cb = EarlyStoppingCallback(
@@ -812,6 +821,8 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             training_arguments_kwargs["do_bench_eval"] = self.cfg.do_bench_eval
             if self.cfg.bench_dataset:
                 training_arguments_kwargs["bench_dataset"] = self.cfg.bench_dataset
+        if self.cfg.do_causal_lm_eval:
+            training_arguments_kwargs["do_causal_lm_eval"] = self.cfg.do_causal_lm_eval
         if self.cfg.metric_for_best_model:
             training_arguments_kwargs[
                 "metric_for_best_model"
