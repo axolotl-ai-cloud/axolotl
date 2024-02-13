@@ -4,7 +4,6 @@
 import os
 import pathlib
 import tempfile
-from typing import Optional
 
 import jinja2
 import modal
@@ -59,21 +58,12 @@ def run_cmd(cmd: str, run_folder: str):
 @stub.function(
     image=cicd_image,
     gpu=GPU_CONFIG,
-    timeout=30 * 60,
+    timeout=45 * 60,
 )
-def cicd_pytest(path, ignore=None):
-    if ignore:
-        run_cmd(
-            f"pytest --ignore={ignore} {path}",
-            "/workspace/axolotl",
-        )
-    else:
-        run_cmd(
-            f"pytest {path}",
-            "/workspace/axolotl",
-        )
+def cicd_pytest():
+    run_cmd("./cicd/cicd.sh", "/workspace/axolotl")
 
 
 @stub.local_entrypoint()
-def main(path: str, ignore: Optional[str] = None):
-    cicd_pytest.remote(path, ignore=ignore)
+def main():
+    cicd_pytest.remote()
