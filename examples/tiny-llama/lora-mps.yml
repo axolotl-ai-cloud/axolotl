@@ -1,9 +1,7 @@
-base_model: Qwen/Qwen-7B
-model_type: AutoModelForCausalLM
-tokenizer_type: AutoTokenizer
-
-is_qwen_derived_model: true
-trust_remote_code: true
+base_model: TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T
+model_type: LlamaForCausalLM
+tokenizer_type: LlamaTokenizer
+is_llama_derived_model: true
 
 load_in_8bit: true
 load_in_4bit: false
@@ -13,12 +11,13 @@ datasets:
   - path: mhenrichsen/alpaca_2k_test
     type: alpaca
 dataset_prepared_path:
-val_set_size: 0.05
+val_set_size: 0
 output_dir: ./lora-out
 
-sequence_len: 2048  # supports up to 8192
-sample_packing: false
-pad_to_sequence_len:
+sequence_len: 4096
+sample_packing: true
+pad_to_sequence_len: true
+eval_sample_packing: false
 
 adapter: lora
 lora_model_dir:
@@ -37,28 +36,26 @@ wandb_log_model:
 gradient_accumulation_steps: 4
 micro_batch_size: 2
 num_epochs: 4
-optimizer: adamw_bnb_8bit
+optimizer: adamw_torch
 lr_scheduler: cosine
 learning_rate: 0.0002
 
 train_on_inputs: false
 group_by_length: false
 bf16: auto
-fp16:
-tf32: false
+fp16: false
+tf32: true
 
-gradient_checkpointing: false
+gradient_checkpointing: true
 early_stopping_patience:
 resume_from_checkpoint:
 local_rank:
 logging_steps: 1
 xformers_attention:
-flash_attention:
+flash_attention: false
 
 warmup_steps: 10
-evals_per_epoch: 4
-eval_table_size:
-eval_max_new_tokens: 128
+evals_per_epoch: 0
 saves_per_epoch: 1
 debug:
 deepspeed:

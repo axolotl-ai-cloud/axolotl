@@ -29,7 +29,7 @@ num_epochs: 1
 val_set_size: 0.1
 evals_per_epoch: 5
 eval_table_size:
-eval_table_max_new_tokens: 128
+eval_max_new_tokens: 128
 eval_sample_packing: false
 eval_batch_size: 1
 

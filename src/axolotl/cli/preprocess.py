@@ -3,6 +3,7 @@ CLI to run training on a model
 """
 import logging
 from pathlib import Path
+from typing import Union
 
 import fire
 import transformers
@@ -23,7 +24,7 @@ from axolotl.prompt_strategies.sharegpt import register_chatml_template
 LOG = logging.getLogger("axolotl.cli.preprocess")
 
 
-def do_cli(config: Path = Path("examples/"), **kwargs):
+def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
     # pylint: disable=duplicate-code
     print_axolotl_text_art()
     parsed_cfg = load_cfg(config, **kwargs)

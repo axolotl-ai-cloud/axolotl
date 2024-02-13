@@ -121,6 +121,10 @@ accelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \
 # gradio
 accelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \
     --lora_model_dir="./lora-out" --gradio
+
+# remote yaml files - the yaml config can be hosted on a public URL
+# Note: the yaml config must directly link to the **raw** yaml
+accelerate launch -m axolotl.cli.train https://raw.githubusercontent.com/OpenAccess-AI-Collective/axolotl/main/examples/openllama-3b/lora.yml
 ```
 
 ## Installation
@@ -470,11 +474,9 @@ See [examples](examples) for quick start. It is recommended to duplicate and mod
       ...
 
   # Loading Data From a Public URL
-  # - URLs must use HTTPS protocol for security reasons, not HTTP.
-  # - The URL should be a direct link to the file you wish to load.
   # - The file format is `json` (which includes `jsonl`) by default. For different formats, adjust the `ds_type` option accordingly.
   dataset:
-    - path: https://some.url.com/yourdata.jsonl # Accepts folder with arrow/parquet or file path like above. Supports s3, gcs.
+    - path: https://some.url.com/yourdata.jsonl # The URL should be a direct link to the file you wish to load. URLs must use HTTPS protocol, not HTTP.
       ds_type: json # this is the default, see other options below.
   ```
 
@@ -732,6 +734,8 @@ peft:
 # Must use either 'lora' or 'qlora' adapter, and does not support fsdp or deepspeed
 relora_steps: # Number of steps per ReLoRA restart
 relora_warmup_steps: # Number of per-restart warmup steps
+relora_anneal_steps: # Number of anneal steps for each relora cycle
+relora_prune_ratio: # threshold for optimizer magnitude when pruning
 relora_cpu_offload: # True to perform lora weight merges on cpu during restarts, for modest gpu memory savings
 
 # wandb configuration if you're using it
@@ -780,7 +784,8 @@ save_total_limit: # Checkpoints saved at a time
 max_steps:
 
 eval_table_size: # Approximate number of predictions sent to wandb depending on batch size. Enabled above 0. Default is 0
-eval_table_max_new_tokens: # Total number of tokens generated for predictions sent to wandb. Default is 128
+eval_max_new_tokens: # Total number of tokens generated for predictions sent to wandb. Default is 128
+eval_causal_lm_metrics: # HF evaluate metrics used during evaluation. Default is ["sacrebleu", "comet", "ter", chrf]
 
 loss_watchdog_threshold: # High loss value, indicating the learning has broken down (a good estimate is ~2 times the loss at the start of training)
 loss_watchdog_patience: # Number of high-loss steps in a row before the trainer aborts (default: 3)
@@ -809,6 +814,7 @@ early_stopping_patience: 3
 lr_scheduler: # 'one_cycle' | 'log_sweep' | empty for cosine
 lr_scheduler_kwargs:
 cosine_min_lr_ratio: # decay lr to some percentage of the peak lr, e.g. cosine_min_lr_ratio=0.1 for 10% of peak lr
+cosine_constant_lr_ratio: # freeze lr at some percentage of the step, e.g. cosine_constant_lr_ratio=0.8 means start cosine_min_lr at 80% of training step (https://arxiv.org/pdf/2308.04014.pdf)
 
 # For one_cycle optim
 lr_div_factor: # Learning rate div factor
@@ -987,6 +993,9 @@ Run
 ```bash
 accelerate launch -m axolotl.cli.train your_config.yml
 ```
+
+> [!TIP]
+> You can also reference a config file that is hosted on a public URL, for example `accelerate launch -m axolotl.cli.train https://yourdomain.com/your_config.yml`
 
 #### Preprocess dataset
 
