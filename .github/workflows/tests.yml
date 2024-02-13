@@ -95,6 +95,12 @@ jobs:
           echo "AXOLOTL_ARGS=${{ matrix.axolotl_args}}" >> $GITHUB_ENV
           echo "CUDA=${{ matrix.cuda }}" >> $GITHUB_ENV
           echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
-      - name: Run tests job on Modal
+      - name: Run unit tests job on Modal
         run: |
-          modal run cicd.tests
+          modal run cicd.tests --path /workspace/axolotl/tests/ --ignore tests/e2e/
+      - name: Run E2E tests job on Modal
+        run: |
+          modal run cicd.tests --path /workspace/axolotl/tests/e2e/ --ignore tests/e2e/patched/
+      - name: Run Monkeypatched E2E tests job on Modal
+        run: |
+          modal run cicd.tests --path /workspace/axolotl/tests/e2e/patched/

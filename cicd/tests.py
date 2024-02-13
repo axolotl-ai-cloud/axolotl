@@ -4,6 +4,7 @@
 import os
 import pathlib
 import tempfile
+from typing import Optional
 
 import jinja2
 import modal
@@ -60,17 +61,19 @@ def run_cmd(cmd: str, run_folder: str):
     gpu=GPU_CONFIG,
     timeout=60 * 60,
 )
-def cicd_pytest():
-    run_cmd(
-        "pytest --ignore=tests/e2e/ /workspace/axolotl/tests/", "/workspace/axolotl"
-    )
-    run_cmd(
-        "pytest --ignore=tests/e2e/patched/ /workspace/axolotl/tests/e2e/",
-        "/workspace/axolotl",
-    )
-    run_cmd("pytest /workspace/axolotl/tests/e2e/patched/", "/workspace/axolotl")
+def cicd_pytest(path, ignore=None):
+    if ignore:
+        run_cmd(
+            f"pytest --ignore={ignore} {path}",
+            "/workspace/axolotl",
+        )
+    else:
+        run_cmd(
+            f"pytest {path}",
+            "/workspace/axolotl",
+        )
 
 
 @stub.local_entrypoint()
-def main():
-    cicd_pytest.remote()
+def main(path: str, ignore: Optional[str] = None):
+    cicd_pytest.remote(path, ignore=ignore)
