@@ -58,7 +58,7 @@ def run_cmd(cmd: str, run_folder: str):
 @stub.function(
     image=cicd_image,
     gpu=GPU_CONFIG,
-    timeout=60 * 30,
+    timeout=60 * 60,
 )
 def cicd_pytest():
     run_cmd(
