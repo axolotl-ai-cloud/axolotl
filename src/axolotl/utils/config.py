@@ -550,6 +550,22 @@ def validate_config(cfg):
     if cfg.fsdp and "bnb" in cfg.optimizer:
         raise ValueError(f"FSDP not compatible with {cfg.optimizer}")
 
+    if cfg.datasets:
+        for idx, ds_cfg in enumerate(cfg.datasets):
+            if (
+                ds_cfg.type
+                in [
+                    "ultra_apply_chatml",
+                    "toxic_apply_chatml",
+                    "chatml.intel",
+                    "chatml.argilla",
+                ]
+                and ds_cfg.conversation
+            ):
+                raise ValueError(
+                    f"Your dataset type: {ds_cfg.path} has a built in datasets conversation method"
+                )
+
     # TODO
     # MPT 7b
     # https://github.com/facebookresearch/bitsandbytes/issues/25
