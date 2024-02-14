@@ -37,7 +37,7 @@ with open(pathlib.Path(temp_dir) / "Dockerfile", "w", encoding="utf-8") as f:
 cicd_image = Image.from_dockerfile(
     pathlib.Path(temp_dir) / "Dockerfile",
     force_build=True,
-    gpu="A10G",
+    gpu="L4",
 ).env(df_args)
 
 stub = Stub("Axolotl CI/CD", secrets=[])
