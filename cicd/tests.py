@@ -37,7 +37,7 @@ with open(pathlib.Path(temp_dir) / "Dockerfile", "w", encoding="utf-8") as f:
 cicd_image = Image.from_dockerfile(
     pathlib.Path(temp_dir) / "Dockerfile",
     force_build=True,
-    gpu="L4",
+    gpu="A10G",
 ).env(df_args)
 
 stub = Stub("Axolotl CI/CD", secrets=[])
@@ -59,6 +59,8 @@ def run_cmd(cmd: str, run_folder: str):
     image=cicd_image,
     gpu=GPU_CONFIG,
     timeout=45 * 60,
+    cpu=8.0,
+    memory=131072,
 )
 def cicd_pytest():
     run_cmd("./cicd/cicd.sh", "/workspace/axolotl")
