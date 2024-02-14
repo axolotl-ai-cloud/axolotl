@@ -25,7 +25,7 @@ class AptChatPromptTokenizingStrategy(PromptTokenizingStrategy):
 
     def __init__(self, prompter, tokenizer, *args, **kwargs):
         super().__init__(prompter, tokenizer, *args, **kwargs)
-        res = self._tokenize("<|assistant|>\n", add_eos_token=False, strip_bos_token=True)
+        res = self._tokenize("<|im_start|>assistant\n", add_eos_token=False, strip_bos_token=True)
         self.bot_prefix_token_ids = res["input_ids"]
 
     def tokenize_prompt(self, prompt):
@@ -33,7 +33,7 @@ class AptChatPromptTokenizingStrategy(PromptTokenizingStrategy):
         for _, part in enumerate(self.prompter.build_prompt(prompt["conversations"])):
             role, message = part
             if role == "system":
-                prefix = "<|system|>\n"
+                prefix = "<|im_start|>system\n"
                 res = self._tokenize(
                     prefix + message.strip(),
                     add_eos_token=True,
@@ -42,7 +42,7 @@ class AptChatPromptTokenizingStrategy(PromptTokenizingStrategy):
                 # everything from this is masked out from the labels
                 labels = [IGNORE_TOKEN_ID] * len(res["input_ids"])
             elif role == "user" or role == "human":
-                prefix = "<|user|>\n"
+                prefix = "<|im_start|>user\n"
                 res = self._tokenize(
                     prefix + message.strip(),
                     add_eos_token=True,
@@ -51,7 +51,7 @@ class AptChatPromptTokenizingStrategy(PromptTokenizingStrategy):
                 # everything from this is masked out from the labels
                 labels = [IGNORE_TOKEN_ID] * len(res["input_ids"])
             elif role == "assistant" or role == "bot" or role == "gpt":
-                prefix = "<|assistant|>\n"
+                prefix = "<|im_start|>assistant\n"
                 res = self._tokenize(
                     prefix + message.strip(),
                     add_eos_token=True,
