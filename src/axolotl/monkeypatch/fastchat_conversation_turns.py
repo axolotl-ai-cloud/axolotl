@@ -106,7 +106,7 @@ def get_turns(  # pylint: disable=too-many-return-statements
         if self.system_message:
             contains_sys_msg = True
             if self.messages:
-                # There is no clear guidance on how to handle system messages in Mistral so we just prepend it to the first human instruction seperated by a newline
+                # There is no clear guidance on how to handle system messages in Mistral so we just prepend it to the first human instruction separated by a newline
                 first_role, first_msg = self.messages[0]
                 if first_role == self.roles[0]:
                     system_prompt = self.system_template.format(
