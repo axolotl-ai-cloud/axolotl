@@ -62,7 +62,7 @@ class EvalFirstStepCallback(
     ):
         if (
             args.evaluation_strategy == IntervalStrategy.STEPS
-            and args.eval_steps < 1.0
+            and (args.eval_steps < 1.0 or args.eval_steps > 1)
             and state.global_step == 1
         ):
             control.should_evaluate = True

@@ -49,7 +49,7 @@ from axolotl.utils.collators import (
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 from axolotl.utils.schedulers import (
     get_cosine_schedule_with_min_lr,
-    get_cosine_schedule_with_quadratic_warmup,
+    get_cosine_schedule_with_quadratic_warmup, JaggedLRRestartScheduler,
 )
 
 try:
@@ -129,7 +129,19 @@ class AxolotlTrainingArguments(TrainingArguments):
     )
     relora_anneal_steps: Optional[int] = field(
         default=None,
-        metadata={"help": "how many warmup steps to take after reset for ReLoRA"},
+        metadata={"help": "how many anneal steps to take before reset for ReLoRA"},
+    )
+    jagged_restart_steps: Optional[int] = field(
+        default=None,
+        metadata={"help": "how often to reset for jagged restarts"},
+    )
+    jagged_restarts_warmup_steps: Optional[int] = field(
+        default=None,
+        metadata={"help": "how many warmup steps to take after reset for jagged restarts"},
+    )
+    jagged_restarts_anneal_steps: Optional[int] = field(
+        default=None,
+        metadata={"help": "how many anneal steps to take before reset for jagged restarts"},
     )
     bench_split: Optional[str] = field(
         default="eval", metadata={"help": "The benchmark split to run on"}
@@ -226,13 +238,28 @@ class AxolotlTrainer(Trainer):
                     min_lr_ratio=self.args.cosine_min_lr_ratio,
                 )
             else:
-                return super().create_scheduler(num_training_steps, optimizer)
+                super().create_scheduler(num_training_steps, optimizer)
         else:
             if use_cosine_quadratic:
                 LOG.warning("axolotl's cosine scheduler with quadratic warmup not used (e.g., because of deepspeed).")
 
             if use_cosine_min_lr:
                 LOG.warning("axolotl's cosine scheduler with min lr not used (e.g., because of deepspeed).")
+
+        if self.args.jagged_restart_steps:
+            warmup_steps = (
+                self.args.jagged_restarts_warmup_steps or 10
+            )
+            anneal_steps = (
+                self.args.jagged_restarts_anneal_steps or 1
+            )
+            self.lr_scheduler = JaggedLRRestartScheduler(
+                optimizer,
+                self.lr_scheduler,
+                self.args.jagged_restart_steps,
+                warmup_steps,
+                anneal_steps,
+            )
 
         return self.lr_scheduler
 
@@ -873,6 +900,8 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         training_arguments_kwargs["optim"] = (
             self.cfg.optimizer if self.cfg.optimizer else "adamw_hf"
         )
+        if self.cfg.save_only_model:
+            training_arguments_kwargs["save_only_model"] = self.cfg.save_only_model
         training_arguments_kwargs["lr_scheduler_type"] = (
             self.cfg.lr_scheduler
             if self.cfg.lr_scheduler
