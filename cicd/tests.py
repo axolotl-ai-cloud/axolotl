@@ -37,14 +37,14 @@ with open(pathlib.Path(temp_dir) / "Dockerfile", "w", encoding="utf-8") as f:
 cicd_image = Image.from_dockerfile(
     pathlib.Path(temp_dir) / "Dockerfile",
     force_build=True,
-    gpu="A10G",
+    gpu="A100",
 ).env(df_args)
 
 stub = Stub("Axolotl CI/CD", secrets=[])
 
 
 N_GPUS = int(os.environ.get("N_GPUS", 1))
-GPU_CONFIG = modal.gpu.A10G(count=N_GPUS)
+GPU_CONFIG = modal.gpu.A100(count=N_GPUS)
 
 
 def run_cmd(cmd: str, run_folder: str):
