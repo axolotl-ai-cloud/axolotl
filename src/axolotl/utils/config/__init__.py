@@ -119,6 +119,10 @@ def normalize_config(cfg):
     model_config = load_model_config(cfg)
     cfg.model_config_type = model_config.model_type
 
+    cfg.tokenizer_config = (
+        cfg.tokenizer_config or cfg.base_model_config or cfg.base_model
+    )
+
     # figure out if the model is llama
     cfg.is_llama_derived_model = (
         (hasattr(model_config, "model_type") and model_config.model_type == "llama")
