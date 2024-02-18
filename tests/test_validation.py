@@ -699,7 +699,7 @@ class ValidationTest(BaseValidation):
             )
 
     def test_hub_model_id_save_value(self):
-        cfg = DictDefault({"hub_model_id": "test", "saves_per_epoch": 4})
+        cfg = DictDefault({"hub_model_id": "test", "save_strategy": "steps"})
 
         with self._caplog.at_level(logging.WARNING):
             validate_config(cfg)
