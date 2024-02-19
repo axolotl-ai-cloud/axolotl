@@ -176,6 +176,15 @@ class ModelInputConfig(BaseModel):
 
     model_config: Optional[Dict[str, Any]] = None
 
+    @field_validator("trust_remote_code")
+    @classmethod
+    def hint_trust_remote_code(cls, trust_remote_code):
+        if trust_remote_code:
+            LOG.warning(
+                "`trust_remote_code` is set to true. Please make sure that you reviewed the remote code/model."
+            )
+        return trust_remote_code
+
 
 class HyperparametersConfig(BaseModel):
     """training hyperparams configuration subset"""
@@ -253,6 +262,7 @@ class WandbConfig(BaseModel):
         return data
 
 
+# pylint: disable=too-many-public-methods
 class AxolotlInputConfig(
     ModelInputConfig,
     LoraConfig,
@@ -394,11 +404,57 @@ class AxolotlInputConfig(
 
     @model_validator(mode="before")
     @classmethod
-    def check_pretraining_w_max_steps(cls, root):
-        if root.get("pretraining_dataset") and not root.get("max_steps"):
+    def check_pretraining_w_max_steps(cls, data):
+        if data.get("pretraining_dataset") and not data.get("max_steps"):
             raise ValueError(
                 "max_steps must be set when using iterable pretraining_dataset, Trainer can't infer length and schedule optimizer/learning rate without it!"
             )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_pretraining_w_group_by_length(cls, data):
+        if data.get("pretraining_dataset") and data.get("group_by_length"):
+            LOG.warning(
+                "You probably want to disable group_by_length as it will force a streamed dataset to download completely."
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_gptq_w_revision(cls, data):
+        if data.get("gptq") and data.get("model_revision"):
+            raise ValueError(
+                "model_revision is not supported for GPTQ models. "
+                + "Please download the model from HuggingFace Hub manually for correct branch, "
+                + "point to its path, and remove model_revision from the config."
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_sample_packing_w_xformers(cls, root):
+        if root.get("sample_packing") and root.get("xformers_attention"):
+            raise ValueError(
+                "sample_packing not compatible with xformers_attention. Use flash_attention"
+            )
+
+        return root
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_sample_packing_w_sdpa_bf16(cls, root):
+        if (
+            root.get("sample_packing")
+            and root.get("sdp_attention")
+            and (root.get("bfloat16") or root.get("bf16"))
+        ):
+            # https://github.com/pytorch/pytorch/blob/1b03423526536b5f3d35bdfa95ccc6197556cf9b/test/test_transformers.py#L2440-L2450
+            LOG.warning(
+                "sample_packing & torch sdpa with bf16 is unsupported may results in 0.0 loss. "
+                "This may work on H100s."
+            )
+
         return root
 
     @model_validator(mode="before")
@@ -456,6 +512,13 @@ class AxolotlInputConfig(
         if (self.base_model and "falcon" in self.base_model.lower()) and self.fsdp:
             raise ValueError("FSDP is not supported for falcon models")
         return self
+
+    @model_validator(mode="after")
+    def check_mpt_checkpointing(self):
+        if (
+            self.base_model and "mpt" in self.base_model.lower()
+        ) and self.gradient_checkpointing:
+            raise ValueError("gradient_checkpointing is not supported for MPT models")
 
     @model_validator(mode="after")
     def check_better_transformers(self):
@@ -561,6 +624,75 @@ class AxolotlInputConfig(
             )
 
         return data
+
+    @model_validator(mode="after")
+    def check_fft_possible_bad_config(self):
+        if (
+            # pylint: disable=too-many-boolean-expressions
+            not (self.bf16 or self.bfloat16)
+            and (self.fp16 or self.float16)
+            and not self.adapter
+            and not self.flash_attention
+            and self.sample_packing
+        ):
+            LOG.warning(
+                "Full fine tune w/o FA2 w/ sample packing and fp16/float16 is likely to raise errors. Try LoRA."
+            )
+            # ValueError: Attempting to unscale FP16 gradients.
+            # OR
+            # RuntimeError: expected mat1 and mat2 to have the same dtype, but got: float != c10::Half
+        return self
+
+    @model_validator(mode="after")
+    def check_fused_lora(self):
+        if self.adapter in ["lora", "qlora"] and (
+            self.flash_attn_fuse_qkv or self.flash_attn_fuse_mlp
+        ):
+            raise ValueError("Fused modules are not supported with LoRA/QLoRA")
+        return self
+
+    @model_validator(mode="after")
+    def hint_lora_8bit(self):
+        loftq = (
+            self.peft and self.peft.loftq_config and self.peft.loftq_config.loftq_bits
+        )
+        if not self.load_in_8bit and self.adapter == "lora" and not loftq:
+            LOG.warning("We recommend setting `load_in_8bit: true` for LORA finetuning")
+        return self
+
+    @model_validator(mode="after")
+    def check_early_stopping(self):
+        if self.early_stopping_patience:
+            if not self.save_steps or self.eval_steps:
+                raise ValueError(
+                    "`early_stopping_patience` requires save_steps and eval_steps to be set. eval_steps should evenly divide save_steps."
+                )
+            if self.save_steps % self.eval_steps != 0:
+                raise ValueError(
+                    "`early_stopping_patience` requires that eval_steps should evenly divide save_steps."
+                )
+        return self
+
+    @model_validator(mode="after")
+    def check_relora(self):
+        if self.relora_steps:
+            if self.adapter not in ("lora", "qlora"):
+                raise ValueError("cfg.adapter must be lora or qlora to use ReLoRA")
+
+            if self.fsdp:
+                raise ValueError("fsdp not supported with ReLoRA")
+
+            if self.deepspeed:
+                raise ValueError("deepspeed not supported with ReLoRA")
+
+            if self.lr_scheduler == "one_cycle":
+                raise ValueError(
+                    "ReLoRA is not compatible with the one_cycle scheduler"
+                )
+
+            if self.flash_attn_fuse_qkv or self.flash_attn_fuse_mlp:
+                raise ValueError("Fused modules are not supported with ReLoRA")
+        return self
 
 
 class AxolotlConfigWCapabilities(AxolotlInputConfig):
