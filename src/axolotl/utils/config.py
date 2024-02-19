@@ -358,9 +358,9 @@ def validate_config(cfg):
             "push_to_hub_model_id is deprecated. Please use hub_model_id instead."
         )
 
-    if cfg.hub_model_id and cfg.save_strategy != "steps":
+    if cfg.hub_model_id and cfg.save_strategy not in ["steps", "epoch", None]:
         LOG.warning(
-            "hub_model_id is set without any models being saved. To save a model, set save_strategy to steps or leave empty."
+            "hub_model_id is set without any models being saved. To save a model, set save_strategy to steps, epochs or leave empty."
         )
 
     if cfg.gptq and cfg.model_revision:

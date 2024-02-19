@@ -689,8 +689,8 @@ class ValidationTest(BaseValidation):
         ):
             validate_config(cfg)
 
-    def test_hub_model_id_save_value_warns(self):
-        cfg = DictDefault({"hub_model_id": "test"})
+    def test_hub_model_id_save_value_warns_save_stragey_no(self):
+        cfg = DictDefault({"hub_model_id": "test", "save_strategy": "no"})
 
         with self._caplog.at_level(logging.WARNING):
             validate_config(cfg)
@@ -698,8 +698,38 @@ class ValidationTest(BaseValidation):
                 "set without any models being saved" in self._caplog.records[0].message
             )
 
-    def test_hub_model_id_save_value(self):
+    def test_hub_model_id_save_value_warns_random_value(self):
+        cfg = DictDefault({"hub_model_id": "test", "save_strategy": "test"})
+
+        with self._caplog.at_level(logging.WARNING):
+            validate_config(cfg)
+            assert (
+                "set without any models being saved" in self._caplog.records[0].message
+            )
+
+    def test_hub_model_id_save_value_steps(self):
         cfg = DictDefault({"hub_model_id": "test", "save_strategy": "steps"})
+
+        with self._caplog.at_level(logging.WARNING):
+            validate_config(cfg)
+            assert len(self._caplog.records) == 0
+
+    def test_hub_model_id_save_value_epochs(self):
+        cfg = DictDefault({"hub_model_id": "test", "save_strategy": "epoch"})
+
+        with self._caplog.at_level(logging.WARNING):
+            validate_config(cfg)
+            assert len(self._caplog.records) == 0
+
+    def test_hub_model_id_save_value_none(self):
+        cfg = DictDefault({"hub_model_id": "test", "save_strategy": None})
+
+        with self._caplog.at_level(logging.WARNING):
+            validate_config(cfg)
+            assert len(self._caplog.records) == 0
+
+    def test_hub_model_id_save_value_no_set_save_strategy(self):
+        cfg = DictDefault({"hub_model_id": "test"})
 
         with self._caplog.at_level(logging.WARNING):
             validate_config(cfg)
