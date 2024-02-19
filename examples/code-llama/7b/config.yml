@@ -9,8 +9,16 @@ strict: false
 
 datasets:
   - path: communityai/aptchat-v2-code-math-1k
-    type: aptchat
-dataset_prepared_path:
+    type: aptchat_v2
+    conversation: aptchat_v2
+# dataset_prepared_path: ./dataset/CodeLlamaTokenizer/codellama-7b-hf_19-feb-2024-10-20
+# push_dataset_to_hub:
+output_dir: ./model/codellama-ai/CodeLlama-7b-hf/19-feb-2024-10-39
+hf_use_auth_token: true
+hub_model_id: codellama-7b-hf_19-feb-2024-10-39
+hub_strategy: end
+# debug: true
+chat_template: aptchat_v2
 val_set_size: 0.05
 output_dir: ./out_v2
 
