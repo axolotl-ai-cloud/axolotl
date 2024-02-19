@@ -3,11 +3,17 @@ import json
 import logging
 import os
 from pathlib import Path
+from typing import Optional
 
 import torch
 from transformers.utils import is_torch_bf16_gpu_available
 
 from axolotl.utils.bench import log_gpu_memory_usage
+from axolotl.utils.config.models.input.v0_4_1 import (
+    AxolotlConfigWCapabilities,
+    AxolotlInputConfig,
+)
+from axolotl.utils.config.models.internals import GPUCapabilities
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.models import load_model_config
 
@@ -191,7 +197,15 @@ def normalize_cfg_datasets(cfg):
                     cfg.datasets[idx].conversation = "chatml"
 
 
-def validate_config(cfg):
+def validate_config(cfg: DictDefault, capabilities: Optional[GPUCapabilities] = None):
+    if capabilities:
+        return DictDefault(
+            dict(AxolotlConfigWCapabilities(**cfg.to_dict(), capabilities=capabilities))
+        )
+    return DictDefault(dict(AxolotlInputConfig(**cfg.to_dict())))
+
+
+def legacy_validate_config(cfg):
     """
     This is a "pre-validation" step that handles the yaml configuration before we have any
     information about the model architecture
@@ -479,9 +493,6 @@ def validate_config(cfg):
 
     if cfg.rope_scaling:
         LOG.warning("`rope_scaling` should now be be a key under `model_config`")
-
-    if cfg.warmup_steps and cfg.warmup_ratio:
-        raise ValueError("warmup_steps and warmup_ratio are mutually exclusive")
 
     if cfg.wandb_run_id and not cfg.wandb_name:
         cfg.wandb_name = cfg.wandb_run_id

@@ -24,16 +24,17 @@ from art import text2art
 from huggingface_hub import HfApi
 from huggingface_hub.utils import LocalTokenNotFoundError
 from transformers import GenerationConfig, TextIteratorStreamer, TextStreamer
+from transformers.utils import is_torch_bf16_gpu_available
 
 from axolotl.common.cli import TrainerCliArgs, load_model_and_tokenizer
 from axolotl.logging_config import configure_logging
 from axolotl.train import TrainDatasetMeta
 from axolotl.utils.config import (
+    GPUCapabilities,
     normalize_cfg_datasets,
     normalize_config,
     validate_config,
 )
-from axolotl.utils.config.models.input.v0_4_1 import AxolotlInputConfig
 from axolotl.utils.data import load_prepare_dpo_datasets, prepare_dataset
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import is_main_process
@@ -341,11 +342,13 @@ def load_cfg(config: Union[str, Path] = Path("examples/"), **kwargs):
             else:
                 cfg[k] = kwargs[k]
 
-    AxolotlInputConfig(cfg.to_dict())
-
     cfg.axolotl_config_path = config
 
-    validate_config(cfg)
+    capabilities = GPUCapabilities(
+        bf16=is_torch_bf16_gpu_available(), n_gpu=os.environ.get("WORLD_SIZE", 1)
+    )
+
+    cfg = validate_config(cfg, capabilities=capabilities)
 
     prepare_optim_env(cfg)
 
