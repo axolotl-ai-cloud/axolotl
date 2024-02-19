@@ -50,17 +50,36 @@ class PretrainingDataset(BaseModel):
     path: Optional[str] = None
 
 
+class UserDefinedPrompterType(BaseModel):
+    """structure for user defined prompt types"""
+
+    system_prompt: Optional[str] = None
+    system_format: Optional[str] = None
+    field_system: Optional[str] = None
+    field_instruction: Optional[str] = None
+    field_input: Optional[str] = None
+    field_output: Optional[str] = None
+
+    format: Optional[str] = None
+    no_input_format: Optional[str] = None
+    field: Optional[str] = None
+
+
 class SFTDataset(BaseModel):
     """SFT configuration subset"""
 
     path: Optional[str] = None
     split: Optional[str] = None
-    type: Optional[str] = None
+    type: Optional[Union[str, UserDefinedPrompterType]] = None
     shards: Optional[int] = None
     conversation: Optional[str] = None
     data_files: Optional[List[str]] = None
     name: Optional[str] = None
     ds_type: Optional[str] = None
+    train_on_split: Optional[str] = None
+
+    field_human: Optional[str] = None
+    field_model: Optional[str] = None
 
 
 class DPODataset(BaseModel):
@@ -133,7 +152,9 @@ class LoraConfig(BaseModel):
     peft_layers_to_transform: Optional[List[int]] = None
     peft: Optional[PeftConfig] = None
 
+    lora_on_cpu: Optional[bool] = None
     gptq: Optional[bool] = None
+    bnb_config_kwargs: Optional[Dict[str, Any]] = None
 
     merge_lora: Optional[bool] = None
 
@@ -223,10 +244,20 @@ class HyperparametersConfig(BaseModel):
         },
     )
 
+    train_on_inputs: Optional[bool] = None
+    group_by_length: Optional[bool] = None
+
     learning_rate: Union[str, float]
     weight_decay: Optional[float] = None
     optimizer: Optional[OptimizerNames] = None
+    torchdistx_path: Optional[str] = None
     lr_scheduler: Optional[SchedulerType] = None
+    lr_scheduler_kwargs: Optional[Dict[str, Any]] = None
+    lr_quadratic_warmup: Optional[bool] = None
+    cosine_min_lr_ratio: Optional[float] = None
+    cosine_constant_lr_ratio: Optional[float] = None
+    lr_div_factor: Optional[float] = None
+
     adam_epsilon: Optional[float] = None
     adam_beta1: Optional[float] = None
     adam_beta2: Optional[float] = None
@@ -252,6 +283,13 @@ class ModelOutputConfig(BaseModel):
     hub_model_id: Optional[str] = None
     hub_strategy: Optional[str] = None
     save_safetensors: Optional[bool] = None
+
+
+class MLFlowConfig(BaseModel):
+    """mlflow configuration subset"""
+
+    mlflow_tracking_uri: Optional[str] = None
+    mlflow_experiment_name: Optional[str] = None
 
 
 class WandbConfig(BaseModel):
@@ -284,21 +322,28 @@ class AxolotlInputConfig(
     LoraConfig,
     HyperparametersConfig,
     WandbConfig,
+    MLFlowConfig,
     DeprecatedParameters,
     BaseModel,
 ):
     """wrapper of all config options"""
 
     strict: Optional[bool] = Field(default=False)
-    # resume_from_checkpoint
+    resume_from_checkpoint: Optional[str] = None
+    auto_resume_from_checkpoints: Optional[bool] = None
+    resize_token_embeddings_to_32x: Optional[bool] = None
 
     rl: Optional[RLType] = None
 
     datasets: List[Union[SFTDataset, DPODataset]]
+    dataset_prepared_path: Optional[str] = None
+    dataset_shard_num: Optional[int] = None
+    dataset_shard_idx: Optional[int] = None
     pretraining_dataset: Optional[List[PretrainingDataset]] = Field(
         default=None, metadata={"help": {"streaming dataset to use for pretraining"}}
     )
     dataset_processes: Optional[int] = Field(default=os.cpu_count())
+    dataset_keep_in_memory: Optional[bool] = None
     dataloader_pin_memory: Optional[bool] = None
     dataloader_num_workers: Optional[int] = None
     dataloader_prefetch_factor: Optional[int] = None
@@ -313,8 +358,19 @@ class AxolotlInputConfig(
     local_rank: Optional[int] = None
     ddp: Optional[bool] = None
 
+    seed: Optional[int] = None
+    ddp_timeout: Optional[int] = None
+    ddp_bucket_cap_mb: Optional[int] = None
+    ddp_broadcast_buffers: Optional[bool] = None
+    ddp_find_unused_parameters: Optional[bool] = None
+
     eval_table_size: Optional[int] = None
-    eval_table_max_new_tokens: Optional[int] = None
+    eval_max_new_tokens: Optional[int] = None
+    do_causal_lm_eval: Optional[bool] = None
+    eval_causal_lm_metrics: Optional[List[str]] = None
+
+    loss_watchdog_threshold: Optional[float] = None
+    loss_watchdog_patience: Optional[int] = None
 
     bf16: Optional[Union[AutoType, bool]] = AutoType.AUTO
     fp16: Optional[bool] = None
@@ -344,7 +400,10 @@ class AxolotlInputConfig(
 
     xformers_attention: Optional[bool] = None
     sdp_attention: Optional[bool] = None
+    s2_attention: Optional[bool] = None
     flash_attention: Optional[bool] = None
+    flash_attn_cross_entropy: Optional[bool] = None
+    flash_attn_rms_norm: Optional[bool] = None
     flash_attn_fuse_qkv: Optional[bool] = None
     flash_attn_fuse_mlp: Optional[bool] = None
     flash_optimum: Optional[bool] = None
@@ -358,19 +417,31 @@ class AxolotlInputConfig(
     special_tokens: Optional[SpecialTokensConfig] = None
     tokens: Optional[List[str]] = None
 
+    torch_compile: Optional[bool] = None
+    torch_compile_backend: Optional[str] = None
+
     max_steps: Optional[int] = None
     warmup_steps: Optional[int] = None
     eval_steps: Optional[int] = None
     save_steps: Optional[int] = None
     saves_per_epoch: Optional[int] = None
     save_strategy: Optional[str] = None
+    save_total_limit: Optional[int] = None
     logging_steps: Optional[int] = None
     early_stopping_patience: Optional[int] = None
 
     neftune_noise_alpha: Optional[float] = None
 
+    max_memory: Optional[Union[int, str]] = None
+    gpu_memory_limit: Optional[str] = None
+
+    chat_template: Optional[Union[str, ChatTemplate]] = None
+    default_system_message: Optional[str] = None
+
     # INTERNALS - document for now
-    # - total_supervised_tokens
+    total_num_tokens: Optional[int] = None
+    total_supervised_tokens: Optional[int] = None
+    sample_packing_eff_est: Optional[float] = None
 
     @field_validator("datasets")
     @classmethod
