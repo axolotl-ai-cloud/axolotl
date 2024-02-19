@@ -16,6 +16,18 @@ from axolotl.utils.config.models.internals import GPUCapabilities
 LOG = logging.getLogger("axolotl.utils.config.models.input")
 
 
+class DeprecatedParameters(BaseModel):
+    """configurations that are deprecated"""
+
+    max_packed_sequence_len: Optional[int] = None
+
+    @field_validator("max_packed_sequence_len")
+    @classmethod
+    def validate_max_packed_sequence_len(cls, max_packed_sequence_len):
+        if max_packed_sequence_len:
+            raise DeprecationWarning("`max_packed_sequence_len` is no longer supported")
+
+
 class PretrainingDataset(BaseModel):
     """pretraining dataset configuration subset"""
 
@@ -242,7 +254,12 @@ class WandbConfig(BaseModel):
 
 
 class AxolotlInputConfig(
-    ModelInputConfig, LoraConfig, HyperparametersConfig, WandbConfig, BaseModel
+    ModelInputConfig,
+    LoraConfig,
+    HyperparametersConfig,
+    WandbConfig,
+    DeprecatedParameters,
+    BaseModel,
 ):
     """wrapper of all config options"""
 
