@@ -20,12 +20,28 @@ class DeprecatedParameters(BaseModel):
     """configurations that are deprecated"""
 
     max_packed_sequence_len: Optional[int] = None
+    rope_scaling: Optional[Any] = None
+    noisy_embedding_alpha: Optional[float] = None
 
     @field_validator("max_packed_sequence_len")
     @classmethod
     def validate_max_packed_sequence_len(cls, max_packed_sequence_len):
         if max_packed_sequence_len:
             raise DeprecationWarning("`max_packed_sequence_len` is no longer supported")
+
+    @field_validator("rope_scaling")
+    @classmethod
+    def validate_rope_scaling(cls, rope_scaling):
+        if rope_scaling:
+            raise DeprecationWarning(
+                "`rope_scaling` is no longer supported, it should now be be a key under `model_config`"
+            )
+
+    @field_validator("noisy_embedding_alpha")
+    @classmethod
+    def validate_noisy_embedding_alpha(cls, noisy_embedding_alpha):
+        if noisy_embedding_alpha:
+            LOG.warning("noisy_embedding_alpha is deprecated, use neftune_noise_alpha")
 
 
 class PretrainingDataset(BaseModel):
@@ -346,9 +362,12 @@ class AxolotlInputConfig(
     warmup_steps: Optional[int] = None
     eval_steps: Optional[int] = None
     save_steps: Optional[int] = None
+    saves_per_epoch: Optional[int] = None
     save_strategy: Optional[str] = None
     logging_steps: Optional[int] = None
     early_stopping_patience: Optional[int] = None
+
+    neftune_noise_alpha: Optional[float] = None
 
     # INTERNALS - document for now
     # - total_supervised_tokens
@@ -555,6 +574,10 @@ class AxolotlInputConfig(
             raise ValueError(
                 "save_strategy and save_steps mismatch. Please set save_strategy to 'steps' or remove save_steps."
             )
+        if data.get("saves_per_epoch") and data.get("save_steps"):
+            raise ValueError(
+                "save_steps and saves_per_epoch are mutually exclusive and cannot be used together."
+            )
         return data
 
     @model_validator(mode="before")
@@ -588,6 +611,18 @@ class AxolotlInputConfig(
             raise ValueError(
                 "eval_steps and evaluation_strategy are not supported with val_set_size == 0"
             )
+        if data.get("evals_per_epoch") and data.get("eval_steps"):
+            raise ValueError(
+                "eval_steps and evals_per_epoch are mutually exclusive and cannot be used together."
+            )
+        if (
+            data.get("evals_per_epoch")
+            and data.get("evaluation_strategy")
+            and data.get("evaluation_strategy") != "steps"
+        ):
+            raise ValueError(
+                "evaluation_strategy must be empty or set to `steps` when used with evals_per_epoch."
+            )
 
         return data
 
@@ -610,6 +645,25 @@ class AxolotlInputConfig(
         if data.get("warmup_steps") and data.get("warmup_ratio"):
             raise ValueError("warmup_steps and warmup_ratio are mutually exclusive")
         return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_neftune(cls, data):
+        if data.get("noisy_embedding_alpha") and not data.get("neftune_noise_alpha"):
+            data["neftune_noise_alpha"] = data["noisy_embedding_alpha"]
+            del data["noisy_embedding_alpha"]
+        elif data.get("noisy_embedding_alpha") and not data.get("neftune_noise_alpha"):
+            raise ValueError(
+                "noisy_embedding_alpha is deprecated, use neftune_noise_alpha; both are set, please remove the deprecated noisy_embedding_alpha setting"
+            )
+        return data
+
+    @field_validator("neftune_noise_alpha")
+    @classmethod
+    def validate_neftune_noise_alpha(cls, neftune_noise_alpha):
+        if neftune_noise_alpha is not None and neftune_noise_alpha <= 0.0:
+            raise ValueError("neftune_noise_alpha must be > 0.0")
+        return neftune_noise_alpha
 
     @model_validator(mode="before")
     @classmethod
@@ -693,6 +747,58 @@ class AxolotlInputConfig(
             if self.flash_attn_fuse_qkv or self.flash_attn_fuse_mlp:
                 raise ValueError("Fused modules are not supported with ReLoRA")
         return self
+
+    @model_validator(mode="before")
+    def check_mem_mismatch(self):
+        if self.max_memory is not None and self.gpu_memory_limit is not None:
+            raise ValueError(
+                "max_memory and gpu_memory_limit are mutually exclusive and cannot be used together."
+            )
+        return self
+
+    @model_validator(mode="before")
+    def check_use_reentrant_mismatch(self):
+        if (
+            self.unfrozen_parameters
+            and self.gradient_checkpointing_kwargs
+            and self.gradient_checkpointing_kwargs.use_reentrant is True
+        ):
+            # https://github.com/huggingface/transformers/issues/21381
+            raise ValueError(
+                "`use_reentrant` must be false when used with partially frozen model."
+            )
+        return self
+
+    @model_validator(mode="before")
+    def check_val_w_test_datasets(self):
+        if self.test_datasets and self.val_set_size:
+            raise ValueError(
+                "non-zero val_set_size should not be used with test_datasets configuration"
+            )
+        return self
+
+    @model_validator(mode="before")
+    def check_fsdp_w_8bit_optimizer(self):
+        if self.fsdp and "bnb" in self.optimizer.value:
+            raise ValueError(f"FSDP not compatible with {self.optimizer}")
+        return self
+
+    @model_validator(mode="before")
+    def check_causal_lm_evals(self):
+        if self.do_causal_lm_eval and self.eval_sample_packing:
+            raise ValueError(
+                "do_causal_lm_eval is enabled, eval_sample_packing must be set to False"
+            )
+
+        if self.eval_causal_lm_metrics:
+            supported_metrics = ["sacrebleu", "comet", "ter", "chrf"]
+            if not isinstance(self.eval_causal_lm_metrics, list):
+                raise ValueError("eval_causal_lm_metrics must be a list")
+            # only ["sacrebleu", "comet", "ter", "chrf"] supported
+            if set(self.eval_causal_lm_metrics) - set(supported_metrics):
+                raise ValueError(
+                    f"eval_causal_lm_metrics must be one of {supported_metrics}"
+                )
 
 
 class AxolotlConfigWCapabilities(AxolotlInputConfig):
