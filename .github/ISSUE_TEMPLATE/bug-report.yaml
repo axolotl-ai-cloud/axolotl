@@ -59,6 +59,7 @@ body:
       label: Config yaml
       description: |
         Please attach the config yaml!
+      render: yaml
 
   - type: textarea
     id: possible-solution
