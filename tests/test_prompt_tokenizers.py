@@ -204,13 +204,13 @@ class TestPromptTokenizationStrategies(unittest.TestCase):
         # fmt: off
         # System message, multi-turn conversations
         mt_ids = tokenize(test_data['multi_turn_sys'])
-        assert decode(mt_ids) == '<s> [INST] lorem\nabc [/INST] ipsum</s> [INST] 123 [/INST] sit</s>'
-        assert mt_ids == [1, 518, 25580, 29962, 301, 3668, 13, 10736, 518, 29914, 25580, 29962, 23421, 2, 518, 25580, 29962, 29871, 29896, 29906, 29941, 518, 29914, 25580, 29962, 7845, 2]
+        assert decode(mt_ids) == '<s> [INST]  lorem\nabc [/INST] ipsum</s> [INST] 123 [/INST] sit</s>'
+        assert mt_ids == [1, 518, 25580, 29962, 29871, 301, 3668, 13, 10736, 518, 29914, 25580, 29962, 23421, 2, 518, 25580, 29962, 29871, 29896, 29906, 29941, 518, 29914, 25580, 29962, 7845, 2]
 
         # System message, single-turn conversations
         st_ids = tokenize(test_data['single_turn_sys'])
-        assert decode(st_ids) == '<s> [INST] lorem\nabc [/INST] ipsum</s>'
-        assert st_ids == [1, 518, 25580, 29962, 301, 3668, 13, 10736, 518, 29914, 25580, 29962, 23421, 2]
+        assert decode(st_ids) == '<s> [INST]  lorem\nabc [/INST] ipsum</s>'
+        assert st_ids == [1, 518, 25580, 29962, 29871, 301, 3668, 13, 10736, 518, 29914, 25580, 29962, 23421, 2]
 
         # No system message, single-turn
         ns_ids = tokenize(test_data['single_turn_no_sys'])

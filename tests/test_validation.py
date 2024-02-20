@@ -50,15 +50,20 @@ class TestValidation(BaseValidation):
     Test the validation module
     """
 
-    def test_batch_size_unused_warning(self, minimal_cfg):
-        cfg = (
-            DictDefault(
-                {
-                    "micro_batch_size": 4,
-                    "batch_size": 32,
-                }
-            )
-            | minimal_cfg
+    def test_batch_size_unused_warning(self):
+        cfg = DictDefault(
+            {
+                "base_model": "TinyLlama/TinyLlama-1.1B-Chat-v0.6",
+                "learning_rate": 0.000001,
+                "datasets": [
+                    {
+                        "path": "mhenrichsen/alpaca_2k_test",
+                        "type": "alpaca",
+                    }
+                ],
+                "micro_batch_size": 4,
+                "batch_size": 32,
+            }
         )
 
         with self._caplog.at_level(logging.WARNING):

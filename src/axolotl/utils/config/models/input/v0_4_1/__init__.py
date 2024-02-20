@@ -28,6 +28,7 @@ class DeprecatedParameters(BaseModel):
     def validate_max_packed_sequence_len(cls, max_packed_sequence_len):
         if max_packed_sequence_len:
             raise DeprecationWarning("`max_packed_sequence_len` is no longer supported")
+        return max_packed_sequence_len
 
     @field_validator("rope_scaling")
     @classmethod
@@ -36,12 +37,14 @@ class DeprecatedParameters(BaseModel):
             raise DeprecationWarning(
                 "`rope_scaling` is no longer supported, it should now be be a key under `model_config`"
             )
+        return rope_scaling
 
     @field_validator("noisy_embedding_alpha")
     @classmethod
     def validate_noisy_embedding_alpha(cls, noisy_embedding_alpha):
         if noisy_embedding_alpha:
             LOG.warning("noisy_embedding_alpha is deprecated, use neftune_noise_alpha")
+        return noisy_embedding_alpha
 
 
 class PretrainingDataset(BaseModel):
@@ -196,6 +199,16 @@ class LoraConfig(BaseModel):
         return self
 
 
+class ReLoRAConfig(BaseModel):
+    """ReLoRA configuration subset"""
+
+    relora_steps: Optional[int] = None
+    relora_warmup_steps: Optional[int] = None
+    relora_anneal_steps: Optional[int] = None
+    relora_prune_ratio: Optional[float] = None
+    relora_cpu_offload: Optional[bool] = None
+
+
 class ModelInputConfig(BaseModel):
     """model to train on configuration subset"""
 
@@ -316,10 +329,11 @@ class WandbConfig(BaseModel):
         return data
 
 
-# pylint: disable=too-many-public-methods
+# pylint: disable=too-many-public-methods,too-many-ancestors
 class AxolotlInputConfig(
     ModelInputConfig,
     LoraConfig,
+    ReLoRAConfig,
     HyperparametersConfig,
     WandbConfig,
     MLFlowConfig,
@@ -609,6 +623,7 @@ class AxolotlInputConfig(
             self.base_model and "mpt" in self.base_model.lower()
         ) and self.gradient_checkpointing:
             raise ValueError("gradient_checkpointing is not supported for MPT models")
+        return self
 
     @model_validator(mode="after")
     def check_better_transformers(self):
@@ -820,56 +835,66 @@ class AxolotlInputConfig(
         return self
 
     @model_validator(mode="before")
-    def check_mem_mismatch(self):
-        if self.max_memory is not None and self.gpu_memory_limit is not None:
+    @classmethod
+    def check_mem_mismatch(cls, data):
+        if (
+            data.get("max_memory") is not None
+            and data.get("gpu_memory_limit") is not None
+        ):
             raise ValueError(
                 "max_memory and gpu_memory_limit are mutually exclusive and cannot be used together."
             )
-        return self
+        return data
 
     @model_validator(mode="before")
-    def check_use_reentrant_mismatch(self):
+    @classmethod
+    def check_use_reentrant_mismatch(cls, data):
         if (
-            self.unfrozen_parameters
-            and self.gradient_checkpointing_kwargs
-            and self.gradient_checkpointing_kwargs.use_reentrant is True
+            data.get("unfrozen_parameters")
+            and data.get("gradient_checkpointing_kwargs")
+            and data.get("gradient_checkpointing_kwargs", {}).get("use_reentrant")
+            is True
         ):
             # https://github.com/huggingface/transformers/issues/21381
             raise ValueError(
                 "`use_reentrant` must be false when used with partially frozen model."
             )
-        return self
+        return data
 
     @model_validator(mode="before")
-    def check_val_w_test_datasets(self):
-        if self.test_datasets and self.val_set_size:
+    @classmethod
+    def check_val_w_test_datasets(cls, data):
+        if data.get("test_datasets") and data.get("val_set_size"):
             raise ValueError(
                 "non-zero val_set_size should not be used with test_datasets configuration"
             )
-        return self
+        return data
 
     @model_validator(mode="before")
-    def check_fsdp_w_8bit_optimizer(self):
-        if self.fsdp and "bnb" in self.optimizer.value:
-            raise ValueError(f"FSDP not compatible with {self.optimizer}")
-        return self
+    @classmethod
+    def check_fsdp_w_8bit_optimizer(cls, data):
+        if data.get("fsdp") and "bnb" in data.get("optimizer", ""):
+            raise ValueError(f"FSDP not compatible with {data.get('optimizer')}")
+        return data
 
     @model_validator(mode="before")
-    def check_causal_lm_evals(self):
-        if self.do_causal_lm_eval and self.eval_sample_packing:
+    @classmethod
+    def check_causal_lm_evals(cls, data):
+        if data.get("do_causal_lm_eval") and data.get("eval_sample_packing"):
             raise ValueError(
                 "do_causal_lm_eval is enabled, eval_sample_packing must be set to False"
             )
 
-        if self.eval_causal_lm_metrics:
+        if data.get("eval_causal_lm_metrics"):
             supported_metrics = ["sacrebleu", "comet", "ter", "chrf"]
-            if not isinstance(self.eval_causal_lm_metrics, list):
+            if not isinstance(data.get("eval_causal_lm_metrics"), list):
                 raise ValueError("eval_causal_lm_metrics must be a list")
             # only ["sacrebleu", "comet", "ter", "chrf"] supported
-            if set(self.eval_causal_lm_metrics) - set(supported_metrics):
+            if set(data.get("eval_causal_lm_metrics")) - set(supported_metrics):
                 raise ValueError(
                     f"eval_causal_lm_metrics must be one of {supported_metrics}"
                 )
+        return data
 
 
 class AxolotlConfigWCapabilities(AxolotlInputConfig):
@@ -893,3 +918,4 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 raise ValueError(
                     "bf16 requested, but AMP is not supported on this GPU. Requires Ampere series or above."
                 )
+        return self
