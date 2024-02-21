@@ -151,6 +151,7 @@ class LoraConfig(BaseModel):
     lora_fan_in_fan_out: Optional[bool] = None
     lora_target_modules: Optional[List[str]] = None
     lora_target_linear: Optional[bool] = None
+    lora_modules_to_save: Optional[List[str]] = None
     lora_dropout: Optional[float] = None
     peft_layers_to_transform: Optional[List[int]] = None
     peft: Optional[PeftConfig] = None
@@ -301,6 +302,7 @@ class ModelOutputConfig(BaseModel):
 class MLFlowConfig(BaseModel):
     """mlflow configuration subset"""
 
+    use_mlflow: Optional[str] = None
     mlflow_tracking_uri: Optional[str] = None
     mlflow_experiment_name: Optional[str] = None
 
@@ -308,6 +310,7 @@ class MLFlowConfig(BaseModel):
 class WandbConfig(BaseModel):
     """wandb configuration subset"""
 
+    use_wandb: Optional[bool] = None
     wandb_name: Optional[str] = None
     wandb_run_id: Optional[str] = None
     wandb_mode: Optional[str] = None
@@ -353,7 +356,7 @@ class AxolotlInputConfig(
     dataset_prepared_path: Optional[str] = None
     dataset_shard_num: Optional[int] = None
     dataset_shard_idx: Optional[int] = None
-    pretraining_dataset: Optional[List[PretrainingDataset]] = Field(
+    pretraining_dataset: Optional[List[Union[SFTDataset, PretrainingDataset]]] = Field(
         default=None, metadata={"help": {"streaming dataset to use for pretraining"}}
     )
     dataset_processes: Optional[int] = Field(default=os.cpu_count())
@@ -382,6 +385,10 @@ class AxolotlInputConfig(
     eval_max_new_tokens: Optional[int] = None
     do_causal_lm_eval: Optional[bool] = None
     eval_causal_lm_metrics: Optional[List[str]] = None
+    do_bench_eval: Optional[bool] = None
+    bench_dataset: Optional[str] = None
+    metric_for_best_model: Optional[str] = None
+    greater_is_better: Optional[bool] = None
 
     loss_watchdog_threshold: Optional[float] = None
     loss_watchdog_patience: Optional[int] = None
@@ -436,7 +443,9 @@ class AxolotlInputConfig(
 
     max_steps: Optional[int] = None
     warmup_steps: Optional[int] = None
+    warmup_ratio: Optional[float] = None
     eval_steps: Optional[int] = None
+    evaluation_strategy: Optional[str] = None
     save_steps: Optional[int] = None
     saves_per_epoch: Optional[int] = None
     save_strategy: Optional[str] = None
@@ -456,6 +465,7 @@ class AxolotlInputConfig(
     total_num_tokens: Optional[int] = None
     total_supervised_tokens: Optional[int] = None
     sample_packing_eff_est: Optional[float] = None
+    axolotl_config_path: Optional[str] = None
 
     @field_validator("datasets")
     @classmethod
