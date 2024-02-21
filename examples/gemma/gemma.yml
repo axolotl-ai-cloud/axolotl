@@ -9,7 +9,7 @@ strict: false
  
 # huggingface repo
 datasets:
-  - path: vicgalle/alpaca-gpt4
+  - path: mhenrichsen/alpaca_2k_test
     type: alpaca
 val_set_size: 0.1
 output_dir: ./out
