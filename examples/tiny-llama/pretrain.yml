@@ -2,7 +2,6 @@ base_model: TinyLlama/TinyLlama-1.1B-Chat-v1.0
 
 model_type: LlamaForCausalLM
 tokenizer_type: LlamaTokenizer
-is_llama_derived_model: true
 
 load_in_8bit: false
 load_in_4bit: false
