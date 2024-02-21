@@ -52,7 +52,7 @@ logging_steps: 1
 xformers_attention:
 flash_attention: true
  
-warmup_ratio: 0.5
+warmup_ratio: 0.1
 evals_per_epoch: 4
 eval_table_size:
 eval_max_new_tokens: 128
