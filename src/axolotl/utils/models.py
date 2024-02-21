@@ -170,6 +170,18 @@ def load_tokenizer(cfg):
             if getattr(tokenizer, attr_name) is None:
                 setattr(tokenizer, attr_name, "<|endoftext|>")
 
+    # orion base only has single token, so we need to set the special tokens
+    if cfg.is_orion_derived_model:
+        token_ids = ["bos_token_id", "eos_token_id", "pad_token_id", "unk_token_id"]
+        for attr_name in token_ids:
+            if getattr(tokenizer, attr_name) is None:
+                setattr(tokenizer, attr_name, tokenizer.eod_id)
+
+        token_names = ["bos_token", "eos_token", "pad_token", "unk_token"]
+        for attr_name in token_names:
+            if getattr(tokenizer, attr_name) is None:
+                setattr(tokenizer, attr_name, "<|endoftext|>")
+
     additional_special_tokens = None
     if cfg.special_tokens:
         special_tokens = cfg.special_tokens.to_dict()
@@ -685,6 +697,10 @@ def load_model(
 
     if cfg.model_config_type == "qwen" and cfg.adapter == "lora":
         # Qwen doesn't play nicely with LoRA if this is enabled
+        skip_prepare_model_for_kbit_training = True
+
+    if cfg.model_config_type == "orion" and cfg.adapter == "lora":
+        # orion doesn't play nicely with LoRA if this is enabled
         skip_prepare_model_for_kbit_training = True
 
     loftq_bits = cfg.peft and cfg.peft.loftq_config and cfg.peft.loftq_config.loftq_bits

@@ -1,0 +1,75 @@
+base_model: codellama/CodeLlama-7b-hf
+model_type: LlamaForCausalLM
+tokenizer_type: CodeLlamaTokenizer
+is_llama_derived_model: true
+
+load_in_8bit: false
+load_in_4bit: false
+strict: false
+
+datasets:
+  - path: communityai/aptchat-v2-math-code-general-50k
+    type: aptchat_v2
+    conversation: aptchat_v2
+# dataset_prepared_path: ./dataset/CodeLlamaTokenizer/codellama-7b-hf_19-feb-2024-10-20
+# push_dataset_to_hub:
+output_dir: ./model/codellama-ai/CodeLlama-7b-hf/21-feb-2024-07-54
+hf_use_auth_token: true
+hub_model_id: codellama-7b-hf_21-feb-2024-07-54
+hub_strategy: end
+# debug: true
+chat_template: aptchat_v2
+val_set_size: 0.05
+
+sequence_len: 4096
+sample_packing: false
+pad_to_sequence_len: true
+
+# wandb_project: neural-network
+# wandb_entity: neural-network-018
+# wandb_watch:
+# wandb_name: codellama-15-feb-2024
+# wandb_log_model: checkpoint
+
+gradient_accumulation_steps: 16
+micro_batch_size: 4
+num_epochs: 3
+optimizer: adamw_bnb_8bit
+lr_scheduler: cosine
+learning_rate: 0.0002
+
+train_on_inputs: false
+group_by_length: false
+bf16: true
+fp16: true
+tf32: false
+
+gradient_checkpointing: true
+early_stopping_patience:
+resume_from_checkpoint:
+local_rank:
+logging_steps: 1
+xformers_attention:
+flash_attention: true
+s2_attention:
+
+warmup_steps: 10
+evals_per_epoch: 4
+eval_table_size:
+eval_max_new_tokens: 128
+eval_sample_packing: false
+saves_per_epoch: 1
+debug:
+deepspeed: /workspace/axolotl/deepspeed_configs/zero3_bf16.json
+weight_decay: 0.0
+fsdp:
+fsdp_config:
+special_tokens:
+  bos_token: "<s>"
+  eos_token: "<|im_end|>"
+  pad_toekn: "<|im_end|>"
+  unk_token: "<unk>"
+tokens:
+  - "<|im_start|>system"
+  - "<|im_start|>user"
+  - "<|im_start|>assistant"
