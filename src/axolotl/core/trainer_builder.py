@@ -883,8 +883,10 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 self.cfg.load_best_model_at_end is not False
                 or self.cfg.early_stopping_patience
             )
-            and not self.cfg.test_datasets
-            and self.cfg.val_set_size > 0
+            and (
+                (not self.cfg.test_datasets and self.cfg.val_set_size > 0)
+                or (self.cfg.test_datasets and self.cfg.val_set_size == 0)
+            )
             and self.cfg.save_steps
             and self.cfg.eval_steps
             and self.cfg.save_steps % self.cfg.eval_steps == 0
