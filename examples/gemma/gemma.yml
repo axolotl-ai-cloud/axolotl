@@ -7,9 +7,9 @@ load_in_8bit: false
 load_in_4bit: true
 strict: false
  
+# huggingface repo
 datasets:
-  - path: data.json
-    ds_type: json
+  - path: vicgalle/alpaca-gpt4
     type: alpaca
 val_set_size: 0.1
 output_dir: ./out
