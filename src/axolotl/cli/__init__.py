@@ -344,8 +344,16 @@ def load_cfg(config: Union[str, Path] = Path("examples/"), **kwargs):
 
     cfg.axolotl_config_path = config
 
+    try:
+        device_props = torch.cuda.get_device_properties("cuda")
+        gpu_version = "sm_" + str(device_props.major) + str(device_props.minor)
+    except:  # pylint: disable=bare-except # noqa: E722
+        gpu_version = None
+
     capabilities = GPUCapabilities(
-        bf16=is_torch_bf16_gpu_available(), n_gpu=os.environ.get("WORLD_SIZE", 1)
+        bf16=is_torch_bf16_gpu_available(),
+        n_gpu=os.environ.get("WORLD_SIZE", 1),
+        compute_capability=gpu_version,
     )
 
     cfg = validate_config(cfg, capabilities=capabilities)
