@@ -24,7 +24,7 @@ sequence_len: 4096
 sample_packing: false
 pad_to_sequence_len: false
  
-wandb_project: axolotl
+wandb_project:
 wandb_entity:
 wandb_watch:
 wandb_name:
