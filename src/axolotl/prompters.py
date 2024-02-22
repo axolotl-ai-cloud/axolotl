@@ -330,7 +330,7 @@ class ShareGPTPrompter(Prompter):  # pylint: disable=too-few-public-methods
                 if self._conversation.name not in CONVERSATION_ROLE_FORMAT:
                     raise NotImplementedError(
                         f"Role ({role}) not in default roles, and {self._conversation.name} does not support role remapping yet."
-                        "Please help us by creating an Issue to add support for this role."
+                        "Please help us by creating an Issue to add support for this conversation type."
                     )
 
                 role = CONVERSATION_ROLE_FORMAT[self._conversation.name].format(
