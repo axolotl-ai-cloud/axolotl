@@ -30,7 +30,7 @@ class Test4dMultipackLlama(unittest.TestCase):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "JackFram/llama-68m",
+                "base_model": "TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T",
                 "flash_attention": False,
                 "sdp_attention": True,
                 "sample_packing": True,
