@@ -69,7 +69,7 @@ jobs:
           - cuda: 118
             cuda_version: 11.8.0
             python_version: "3.10"
-            pytorch: 2.0.1
+            pytorch: 2.1.2
           - cuda: 121
             cuda_version: 12.1.0
             python_version: "3.10"

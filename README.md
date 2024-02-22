@@ -34,7 +34,7 @@ Features:
   - [How to Use Custom Pretokenized Dataset](#how-to-use-your-custom-pretokenized-dataset)
 - [Config](#config)
   - [Train](#train)
-  - [Inference](#inference)
+  - [Inference](#inference-playground)
   - [Merge LORA to Base](#merge-lora-to-base)
   - [Special Tokens](#special-tokens)
 - Advanced Topics
