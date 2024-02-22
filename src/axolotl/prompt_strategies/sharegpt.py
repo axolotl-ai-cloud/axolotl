@@ -93,13 +93,28 @@ class SimpleShareGPTPromptTokenizingStrategy(ShareGPTPromptTokenizingStrategy):
         self._strict = strict
 
     def get_conversation_thread(self, prompt):
-        conversations = prompt["conversations"]
         if self.strict:
-            return conversations
-        # remap roles - allow for assistant turn
-        role_map = {"human": "human", "assistant": "gpt", "gpt": "gpt"}
+            return prompt["conversations"]
+
+        conversations = (
+            prompt.get("conversations")
+            or prompt.get("conversation")
+            or prompt.get("messages")
+        )
+        role_map = {
+            "system": "system",
+            "human": "human",
+            "user": "human",
+            "prompter": "human",
+            "assistant": "gpt",
+            "gpt": "gpt",
+        }
         turns = [
-            {"from": role_map[t["from"]], "value": t["value"]} for t in conversations
+            {
+                "from": role_map[t.get("from", t.get("role"))],
+                "value": t.get("value", t.get("content", t.get("text"))),
+            }
+            for t in conversations
         ]
         return turns
 
