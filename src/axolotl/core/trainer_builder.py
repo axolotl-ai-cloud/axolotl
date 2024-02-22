@@ -5,6 +5,7 @@ Builder for the training args and trainer
 
 import abc
 import importlib
+import importlib.util
 import logging
 import math
 import sys
@@ -34,7 +35,6 @@ from axolotl.utils.callbacks import (
     EvalFirstStepCallback,
     GPUStatsCallback,
     LossWatchDogCallback,
-    SaveAxolotlConfigtoMlflowCallback,
     SaveAxolotlConfigtoWandBCallback,
     SaveBetterTransformerModelCallback,
     bench_eval_callback_factory,
@@ -60,6 +60,10 @@ except ImportError:
     pass
 
 LOG = logging.getLogger("axolotl.core.trainer_builder")
+
+
+def is_mlflow_available():
+    return importlib.util.find_spec("mlflow") is not None
 
 
 def _sanitize_kwargs_for_tagging(tag_names, kwargs=None):
@@ -648,7 +652,11 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             callbacks.append(
                 SaveAxolotlConfigtoWandBCallback(self.cfg.axolotl_config_path)
             )
-        if self.cfg.use_mlflow:
+        if self.cfg.use_mlflow and is_mlflow_available():
+            from axolotl.utils.callbacks.mlflow_ import (
+                SaveAxolotlConfigtoMlflowCallback,
+            )
+
             callbacks.append(
                 SaveAxolotlConfigtoMlflowCallback(self.cfg.axolotl_config_path)
             )
