@@ -597,9 +597,13 @@ datasets:
     train_on_split: train # Optional[str] name of dataset split to load from
 
     # Optional[str] fastchat conversation type, only used with type: sharegpt
-    conversation:  # Options (see Conversation 'name'): https://github.com/lm-sys/FastChat/blob/main/fastchat/conversation.py
+    conversation: # Options (see Conversation 'name'): https://github.com/lm-sys/FastChat/blob/main/fastchat/conversation.py
     field_human: # Optional[str]. Human key to use for conversation.
     field_model: # Optional[str]. Assistant key to use for conversation.
+    # Add additional keys from your dataset as input or output roles
+    roles:
+      input: # Optional[List[str]]. These will be masked based on train_on_input
+      output: # Optional[List[str]].
 
   # Custom user instruction prompt
   - path: repo

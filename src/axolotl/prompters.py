@@ -259,6 +259,11 @@ SHAREGPT_ASSERTION_FAILED_ROLE = (
     "Role did not alternate between turns (gpt and human). Please check your data."
 )
 
+CONVERSATION_ROLE_FORMAT = {
+    "chatml": "<|im_start|>{ROLE}",
+    "zephyr": "<|{ROLE}|>",
+}
+
 
 class ShareGPTPrompter(Prompter):  # pylint: disable=too-few-public-methods
     """
@@ -274,6 +279,7 @@ class ShareGPTPrompter(Prompter):  # pylint: disable=too-few-public-methods
         conversation: Optional[Union[str, Conversation]] = None,
         role_key_human: Optional[str] = None,
         role_key_model: Optional[str] = None,
+        roles: Optional[dict] = None,
     ):
         if conversation:
             if isinstance(conversation, Conversation):
@@ -287,84 +293,7 @@ class ShareGPTPrompter(Prompter):  # pylint: disable=too-few-public-methods
         if role_key_model:
             self.role_key_model = role_key_model
 
-    def _build_result(self, source):
-        if len(source) < 2:
-            # If there isn't a back and forth conversation, ignore it
-            # also happens on the data splitting leaving empty conversations
-            raise IndexError(
-                f"A conversation entry has less than 2 messages :\n{source}"
-            )
-
-        conv = self._conversation.copy()
-
-        # Add the conversation system prompt if provided, otherwise use the default one
-        if source[0]["from"] == "system":
-            conv.set_system_message(source[0]["value"])
-            source.pop(0)
-
-        roles = {self.role_key_human: conv.roles[0], self.role_key_model: conv.roles[1]}
-
-        try:
-            # Apply prompt templates
-            if source[0]["from"] not in roles:
-                # Skip the first one if it is not from human
-                source = source[1:]
-        except IndexError as err:
-            # sometimes there is a bing or system chat
-            raise err
-
-        conv.messages = []
-        for _, sentence in enumerate(source):
-            role = roles[sentence["from"]]
-            if len(conv.messages) > 0 and (
-                (role == conv.messages[-1][0]) or (role not in conv.roles)
-            ):
-                LOG.warning(f"{SHAREGPT_ASSERTION_FAILED_ROLE}: {sentence}")
-            conv.append_message(role, sentence["value"])
-
-        return conv.get_turns()
-
-    def build_prompt(self, source) -> Generator[str, None, None]:
-        turns = self._build_result(source)
-
-        for part in turns:
-            if part[0] and not part[1]:
-                LOG.warning(f"role with empty message: {part[0]}")
-            yield part
-
-    def __repr__(self) -> str:
-        turns = self._build_result([{"from": "{from}", "value": "{value}"}])
-        return "\n".join([REPR_TEMPLATE.format(full_prompt=part) for part in turns])
-
-
-class ShareGPTPrompterV2(ShareGPTPrompter):
-    """
-    A V2 prompter that generates prompts for the ShareGPT
-    """
-
-    def __init__(
-        self,
-        conversation: Optional[Union[str, Conversation]] = None,
-        role_key_human: Optional[str] = None,
-        role_key_model: Optional[str] = None,
-    ):
-        super().__init__(
-            conversation=conversation,
-            role_key_human=role_key_human,
-            role_key_model=role_key_model,
-        )
-
-
-CONVERSATION_ROLE_FORMAT = {
-    "chatml": "<|im_start|>{ROLE}",
-    "zephyr": "<|{ROLE}|>",
-}
-
-
-class ShareGPTPrompterV2MultiRole(ShareGPTPrompterV2):
-    """
-    An multi-role V2 prompter that generates prompts for the ShareGPT that supports multi-role
-    """
+        self.roles = roles
 
     def _build_result(self, source):
         if len(source) < 2:
@@ -401,6 +330,7 @@ class ShareGPTPrompterV2MultiRole(ShareGPTPrompterV2):
                 if self._conversation.name not in CONVERSATION_ROLE_FORMAT:
                     raise NotImplementedError(
                         f"Role ({role}) not in default roles, and {self._conversation.name} does not support role remapping yet."
+                        "Please help us by creating an Issue to add support for this role."
                     )
 
                 role = CONVERSATION_ROLE_FORMAT[self._conversation.name].format(
@@ -408,10 +338,43 @@ class ShareGPTPrompterV2MultiRole(ShareGPTPrompterV2):
                 )
 
             if len(conv.messages) > 0 and ((role == conv.messages[-1][0])):
-                LOG.warning(f"Roles did not alternate: {sentence}")
+                LOG.warning(f"{SHAREGPT_ASSERTION_FAILED_ROLE}: {sentence}")
+
             conv.append_message(role, sentence["value"])
 
         return conv.get_turns()
+
+    def build_prompt(self, source) -> Generator[str, None, None]:
+        turns = self._build_result(source)
+
+        for part in turns:
+            if part[0] and not part[1]:
+                LOG.warning(f"role with empty message: {part[0]}")
+            yield part
+
+    def __repr__(self) -> str:
+        turns = self._build_result([{"from": "{from}", "value": "{value}"}])
+        return "\n".join([REPR_TEMPLATE.format(full_prompt=part) for part in turns])
+
+
+class ShareGPTPrompterV2(ShareGPTPrompter):
+    """
+    A V2 prompter that generates prompts for the ShareGPT
+    """
+
+    def __init__(
+        self,
+        conversation: Optional[Union[str, Conversation]] = None,
+        role_key_human: Optional[str] = None,
+        role_key_model: Optional[str] = None,
+        roles: Optional[dict] = None,
+    ):
+        super().__init__(
+            conversation=conversation,
+            role_key_human=role_key_human,
+            role_key_model=role_key_model,
+            roles=roles,
+        )
 
 
 class UnsupportedPrompter(Prompter):
