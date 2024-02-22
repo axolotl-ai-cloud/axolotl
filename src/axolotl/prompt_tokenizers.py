@@ -436,7 +436,7 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
                         labels[:len_role] = [IGNORE_TOKEN_ID] * min(
                             len_role, len(labels)
                         )
-                elif role == "":
+                elif empty_role:
                     turn = content
                     # this is only ever the first part, should include the bos token and the user query
                     res = self._tokenize(
