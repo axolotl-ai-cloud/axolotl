@@ -6,6 +6,7 @@ import os
 from typing import Optional
 
 import pytest
+from pydantic import ValidationError
 
 from axolotl.utils.config import validate_config
 from axolotl.utils.config.models.input.v0_4_1 import AxolotlConfigWCapabilities
@@ -49,6 +50,93 @@ class TestValidation(BaseValidation):
     """
     Test the validation module
     """
+
+    def test_datasets_min_length(self):
+        cfg = DictDefault(
+            {
+                "base_model": "TinyLlama/TinyLlama-1.1B-Chat-v0.6",
+                "learning_rate": 0.000001,
+                "datasets": [],
+                "micro_batch_size": 1,
+                "gradient_accumulation_steps": 1,
+            }
+        )
+
+        with pytest.raises(
+            ValidationError,
+            match=r".*List should have at least 1 item after validation*",
+        ):
+            validate_config(cfg)
+
+    def test_datasets_min_length_empty(self):
+        cfg = DictDefault(
+            {
+                "base_model": "TinyLlama/TinyLlama-1.1B-Chat-v0.6",
+                "learning_rate": 0.000001,
+                "micro_batch_size": 1,
+                "gradient_accumulation_steps": 1,
+            }
+        )
+
+        with pytest.raises(
+            ValueError, match=r".*either datasets or pretraining_dataset is required*"
+        ):
+            validate_config(cfg)
+
+    def test_pretrain_dataset_min_length(self):
+        cfg = DictDefault(
+            {
+                "base_model": "TinyLlama/TinyLlama-1.1B-Chat-v0.6",
+                "learning_rate": 0.000001,
+                "pretraining_dataset": [],
+                "micro_batch_size": 1,
+                "gradient_accumulation_steps": 1,
+                "max_steps": 100,
+            }
+        )
+
+        with pytest.raises(
+            ValidationError,
+            match=r".*List should have at least 1 item after validation*",
+        ):
+            validate_config(cfg)
+
+    def test_valid_pretrain_dataset(self):
+        cfg = DictDefault(
+            {
+                "base_model": "TinyLlama/TinyLlama-1.1B-Chat-v0.6",
+                "learning_rate": 0.000001,
+                "pretraining_dataset": [
+                    {
+                        "path": "mhenrichsen/alpaca_2k_test",
+                        "type": "alpaca",
+                    }
+                ],
+                "micro_batch_size": 1,
+                "gradient_accumulation_steps": 1,
+                "max_steps": 100,
+            }
+        )
+
+        validate_config(cfg)
+
+    def test_valid_sft_dataset(self):
+        cfg = DictDefault(
+            {
+                "base_model": "TinyLlama/TinyLlama-1.1B-Chat-v0.6",
+                "learning_rate": 0.000001,
+                "datasets": [
+                    {
+                        "path": "mhenrichsen/alpaca_2k_test",
+                        "type": "alpaca",
+                    }
+                ],
+                "micro_batch_size": 1,
+                "gradient_accumulation_steps": 1,
+            }
+        )
+
+        validate_config(cfg)
 
     def test_batch_size_unused_warning(self):
         cfg = DictDefault(

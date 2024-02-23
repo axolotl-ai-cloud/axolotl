@@ -5,9 +5,9 @@ Module for pydantic models for configuration
 import logging
 import os
 from enum import Enum
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Union
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, conlist, field_validator, model_validator
 from transformers import SchedulerType
 from transformers.training_args import OptimizerNames
 
@@ -225,7 +225,7 @@ class ModelInputConfig(BaseModel):
     model_revision: Optional[str] = None
     trust_remote_code: Optional[bool] = None
 
-    model_config: Optional[Dict[str, Any]] = None
+    model_config_overrides: Optional[Dict[str, Any]] = None
 
     @field_validator("trust_remote_code")
     @classmethod
@@ -352,11 +352,14 @@ class AxolotlInputConfig(
 
     rl: Optional[RLType] = None
 
-    datasets: List[Union[SFTDataset, DPODataset]]
+    datasets: Optional[conlist(Union[SFTDataset, DPODataset], min_length=1)] = None  # type: ignore
     dataset_prepared_path: Optional[str] = None
     dataset_shard_num: Optional[int] = None
     dataset_shard_idx: Optional[int] = None
-    pretraining_dataset: Optional[List[Union[SFTDataset, PretrainingDataset]]] = Field(
+
+    pretraining_dataset: Optional[  # type: ignore
+        conlist(Union[SFTDataset, PretrainingDataset], min_length=1)
+    ] = Field(
         default=None, metadata={"help": {"streaming dataset to use for pretraining"}}
     )
     dataset_processes: Optional[int] = Field(default=os.cpu_count())
@@ -451,7 +454,7 @@ class AxolotlInputConfig(
     max_memory: Optional[Union[int, str]] = None
     gpu_memory_limit: Optional[Union[int, str]] = None
 
-    chat_template: Optional[Union[str, ChatTemplate]] = None
+    chat_template: Optional[Union[Literal["chatml", "inst"], ChatTemplate]] = None
     default_system_message: Optional[str] = None
 
     # INTERNALS - document for now, generally not set externally
@@ -466,13 +469,6 @@ class AxolotlInputConfig(
     is_llama_derived_model: Optional[bool] = Field(default=False)
     is_mistral_derived_model: Optional[bool] = Field(default=False)
     is_qwen_derived_model: Optional[bool] = Field(default=False)
-
-    @field_validator("datasets")
-    @classmethod
-    def check_non_empty_datasets(cls, datasets):
-        if len(datasets) == 0:
-            raise ValueError("datasets list cannot be empty")
-        return datasets
 
     @field_validator("datasets", mode="before")
     @classmethod
@@ -880,6 +876,13 @@ class AxolotlInputConfig(
                 raise ValueError(
                     f"eval_causal_lm_metrics must be one of {supported_metrics}"
                 )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_dataset_or_pretraining_dataset(cls, data):
+        if data.get("datasets") is None and data.get("pretraining_dataset") is None:
+            raise ValueError("either datasets or pretraining_dataset is required")
         return data
 
 

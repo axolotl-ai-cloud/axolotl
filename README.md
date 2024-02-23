@@ -543,7 +543,7 @@ is_mistral_derived_model:
 is_qwen_derived_model:
 
 # optional overrides to the base model configuration
-model_config:
+model_config_overrides:
   # RoPE Scaling https://github.com/huggingface/transformers/pull/24653
   rope_scaling:
     type: # linear | dynamic
