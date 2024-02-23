@@ -974,13 +974,18 @@ class TestValidation(BaseValidation):
 
         validate_config(cfg)
 
-    def test_unfrozen_parameters_w_peft_layers_to_transform(self):
-        cfg = DictDefault(
-            {
-                "adapter": "lora",
-                "unfrozen_parameters": ["model.layers.2[0-9]+.block_sparse_moe.gate.*"],
-                "peft_layers_to_transform": [0, 1],
-            }
+    def test_unfrozen_parameters_w_peft_layers_to_transform(self, minimal_cfg):
+        cfg = (
+            DictDefault(
+                {
+                    "adapter": "lora",
+                    "unfrozen_parameters": [
+                        "model.layers.2[0-9]+.block_sparse_moe.gate.*"
+                    ],
+                    "peft_layers_to_transform": [0, 1],
+                }
+            )
+            | minimal_cfg
         )
 
         with pytest.raises(
