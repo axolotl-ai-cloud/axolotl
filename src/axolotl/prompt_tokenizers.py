@@ -376,8 +376,8 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
                 role, content = part
 
                 # Uses "in" because role contains extra characters
-                input_turn = any(r in role.lower() for r in input_roles)
-                output_turn = any(r in role.lower() for r in output_roles)
+                input_turn = any(r.lower() in role.lower() for r in input_roles)
+                output_turn = any(r.lower() in role.lower() for r in output_roles)
                 empty_role = role.strip() == ""
 
                 if not any([input_turn, output_turn, empty_role]):

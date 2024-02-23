@@ -262,6 +262,7 @@ SHAREGPT_ASSERTION_FAILED_ROLE = (
 CONVERSATION_ROLE_FORMAT = {
     "chatml": "<|im_start|>{ROLE}",
     "zephyr": "<|{ROLE}|>",
+    "vicuna_v1.1": "{ROLE}",
 }
 
 
