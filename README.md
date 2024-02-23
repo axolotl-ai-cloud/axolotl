@@ -518,7 +518,7 @@ base_model_ignore_patterns:
 base_model_config: ./llama-7b-hf
 # You can specify to choose a specific model revision from huggingface hub
 model_revision:
-# Optional tokenizer configuration override in case you want to use a different tokenizer
+# Optional tokenizer configuration path in case you want to use a different tokenizer
 # than the one defined in the base model
 tokenizer_config:
 # If you want to specify the type of model to load, AutoModelForCausalLM is a good choice too
