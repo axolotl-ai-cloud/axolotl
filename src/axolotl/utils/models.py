@@ -104,8 +104,8 @@ def load_model_config(cfg):
             )
         raise err
 
-    if cfg.model_config:
-        for key, val in cfg.model_config.items():
+    if cfg.model_config_overrides:
+        for key, val in cfg.model_config_overrides.items():
             setattr(model_config, key, val)
 
     check_model_config(cfg, model_config)

@@ -543,7 +543,7 @@ is_mistral_derived_model:
 is_qwen_derived_model:
 
 # optional overrides to the base model configuration
-model_config:
+model_config_overrides:
   # RoPE Scaling https://github.com/huggingface/transformers/pull/24653
   rope_scaling:
     type: # linear | dynamic
@@ -560,8 +560,6 @@ bnb_config_kwargs:
 
 # Whether you are training a 4-bit GPTQ quantized model
 gptq: true
-gptq_groupsize: 128 # group size
-gptq_model_v1: false # v1 or v2
 
 # This will attempt to quantize the model down to 8 bits and use adam 8 bit optimizer
 load_in_8bit: true
@@ -818,10 +816,6 @@ cosine_constant_lr_ratio: # freeze lr at some percentage of the step, e.g. cosin
 
 # For one_cycle optim
 lr_div_factor: # Learning rate div factor
-
-# For log_sweep optim
-log_sweep_min_lr:
-log_sweep_max_lr:
 
 # Specify optimizer
 # Valid values are driven by the Transformers OptimizerNames class, see:
