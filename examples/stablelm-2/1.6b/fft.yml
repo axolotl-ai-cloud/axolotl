@@ -1,28 +1,29 @@
-base_model: TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T
-model_type: LlamaForCausalLM
-tokenizer_type: LlamaTokenizer
+base_model: stabilityai/stablelm-2-1_6b
+model_type: AutoModelForCausalLM
+tokenizer_type: AutoTokenizer
+trust_remote_code: true
 
-load_in_8bit: true
+load_in_8bit: false
 load_in_4bit: false
 strict: false
 
 datasets:
   - path: mhenrichsen/alpaca_2k_test
     type: alpaca
-dataset_prepared_path:
+dataset_prepared_path: last_run_prepared
 val_set_size: 0.05
-output_dir: ./lora-out
+output_dir: ./out
 
 sequence_len: 4096
 sample_packing: true
 pad_to_sequence_len: true
 
-adapter: lora
+adapter:
 lora_model_dir:
-lora_r: 32
-lora_alpha: 16
-lora_dropout: 0.05
-lora_target_linear: true
+lora_r:
+lora_alpha:
+lora_dropout:
+lora_target_linear:
 lora_fan_in_fan_out:
 
 wandb_project:
@@ -31,9 +32,9 @@ wandb_watch:
 wandb_name:
 wandb_log_model:
 
-gradient_accumulation_steps: 4
-micro_batch_size: 2
-num_epochs: 4
+gradient_accumulation_steps: 1
+micro_batch_size: 1
+num_epochs: 1
 optimizer: adamw_bnb_8bit
 lr_scheduler: cosine
 learning_rate: 0.0002
@@ -51,13 +52,18 @@ local_rank:
 logging_steps: 1
 xformers_attention:
 flash_attention: true
+flash_attn_cross_entropy: false
+flash_attn_rms_norm: true
+flash_attn_fuse_qkv: false
+flash_attn_fuse_mlp: true
 
-warmup_steps: 10
+warmup_steps: 100
 evals_per_epoch: 4
+eval_table_size:
 saves_per_epoch: 1
 debug:
-deepspeed:
-weight_decay: 0.0
+deepspeed: #deepspeed_configs/zero2.json # multi-gpu only
+weight_decay: 0.1
 fsdp:
 fsdp_config:
 special_tokens:

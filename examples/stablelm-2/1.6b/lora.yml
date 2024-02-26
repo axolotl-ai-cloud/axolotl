@@ -1,6 +1,7 @@
-base_model: TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T
-model_type: LlamaForCausalLM
-tokenizer_type: LlamaTokenizer
+base_model: stabilityai/stablelm-2-1_6b
+model_type: AutoModelForCausalLM
+tokenizer_type: AutoTokenizer
+trust_remote_code: true
 
 load_in_8bit: true
 load_in_4bit: false
@@ -31,9 +32,9 @@ wandb_watch:
 wandb_name:
 wandb_log_model:
 
-gradient_accumulation_steps: 4
-micro_batch_size: 2
-num_epochs: 4
+gradient_accumulation_steps: 1
+micro_batch_size: 1
+num_epochs: 1
 optimizer: adamw_bnb_8bit
 lr_scheduler: cosine
 learning_rate: 0.0002
@@ -51,6 +52,8 @@ local_rank:
 logging_steps: 1
 xformers_attention:
 flash_attention: true
+flash_attn_cross_entropy: false
+flash_attn_rms_norm: true
 
 warmup_steps: 10
 evals_per_epoch: 4

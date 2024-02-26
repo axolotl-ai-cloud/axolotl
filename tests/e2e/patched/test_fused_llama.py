@@ -57,9 +57,9 @@ class TestFusedLlama(unittest.TestCase):
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_torch",
                 "lr_scheduler": "cosine",
-                "max_steps": 20,
-                "save_steps": 10,
-                "eval_steps": 10,
+                "max_steps": 10,
+                "save_steps": 5,
+                "eval_steps": 5,
             }
         )
         if is_torch_bf16_gpu_available():

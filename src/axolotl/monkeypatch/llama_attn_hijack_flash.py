@@ -44,6 +44,18 @@ except ImportError:
 LOG = logging.getLogger("axolotl")
 
 
+def is_xformers_swiglu_available() -> bool:
+    from xformers.ops.common import get_xformers_operator
+
+    try:
+        get_xformers_operator("swiglu_packedw")()
+        return True
+    except RuntimeError as exc:
+        if "No such operator xformers::swiglu_packedw " in str(exc):
+            return False
+        return True
+
+
 def replace_llama_mlp_with_swiglu(model):
     for name, module in model.named_modules():
         if isinstance(module, LlamaMLP):
@@ -275,7 +287,9 @@ def flashattn_forward_with_s2attn(
     kv_seq_len = key_states.shape[-2]
     if past_key_value is not None:
         kv_seq_len += past_key_value[0].shape[-2]
-    cos, sin = self.rotary_emb(value_states, seq_len=kv_seq_len)
+    cos, sin = self.rotary_emb(
+        value_states, seq_len=kv_seq_len, position_ids=position_ids
+    )
     query_states, key_states = apply_rotary_pos_emb(
         query_states, key_states, cos, sin, position_ids
     )
@@ -425,7 +439,9 @@ def flashattn_forward(
     if past_key_value is not None:
         kv_seq_len += past_key_value[0].shape[-2]
 
-    cos, sin = self.rotary_emb(value_states, seq_len=kv_seq_len)
+    cos, sin = self.rotary_emb(
+        value_states, seq_len=kv_seq_len, position_ids=position_ids
+    )
     query_states, key_states = apply_rotary_pos_emb(
         query_states, key_states, cos, sin, position_ids
     )
@@ -688,6 +704,9 @@ def llama_model_forward(
     output_attentions: Optional[bool] = None,
     output_hidden_states: Optional[bool] = None,
     return_dict: Optional[bool] = None,
+    cache_position: Optional[  # pylint: disable=unused-argument
+        torch.LongTensor
+    ] = None,
 ) -> Union[Tuple, BaseModelOutputWithPast]:
     output_attentions = (
         output_attentions

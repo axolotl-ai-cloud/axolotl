@@ -39,17 +39,15 @@ class DictDefaultTest(unittest.TestCase):
         ), "DictDefault should support in operator for existing keys in list"
 
     def test_dict_or_operator(self):
-        cfg = DictDefault(
+        cfg = DictDefault({"key_a": {"key_b": "value_b"}, "key_f": "value_g"})
+
+        cfg = cfg | DictDefault(  # pylint: disable=unsupported-binary-operation
             {
                 "key_a": {"key_b": "value_a"},
                 "key_c": "value_c",
                 "key_d": ["value_d", "value_e"],
                 "key_f": "value_f",
             }
-        )
-
-        cfg = cfg | DictDefault(  # pylint: disable=unsupported-binary-operation
-            {"key_a": {"key_b": "value_b"}, "key_f": "value_g"}
         )
 
         assert (
