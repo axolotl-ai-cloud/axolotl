@@ -13,7 +13,6 @@ from axolotl.utils.config.models.input.v0_4_1 import (
     AxolotlConfigWCapabilities,
     AxolotlInputConfig,
 )
-from axolotl.utils.config.models.internals import GPUCapabilities
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.models import load_model_config
 
@@ -197,7 +196,7 @@ def normalize_cfg_datasets(cfg):
                     cfg.datasets[idx].conversation = "chatml"
 
 
-def validate_config(cfg: DictDefault, capabilities: Optional[GPUCapabilities] = None):
+def validate_config(cfg: DictDefault, capabilities: Optional[dict] = None):
     if capabilities:
         return DictDefault(
             dict(AxolotlConfigWCapabilities(**cfg.to_dict(), capabilities=capabilities))

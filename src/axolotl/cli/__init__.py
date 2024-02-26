@@ -30,7 +30,6 @@ from axolotl.common.cli import TrainerCliArgs, load_model_and_tokenizer
 from axolotl.logging_config import configure_logging
 from axolotl.train import TrainDatasetMeta
 from axolotl.utils.config import (
-    GPUCapabilities,
     normalize_cfg_datasets,
     normalize_config,
     validate_config,
@@ -350,13 +349,14 @@ def load_cfg(config: Union[str, Path] = Path("examples/"), **kwargs):
     except:  # pylint: disable=bare-except # noqa: E722
         gpu_version = None
 
-    capabilities = GPUCapabilities(
-        bf16=is_torch_bf16_gpu_available(),
-        n_gpu=os.environ.get("WORLD_SIZE", 1),
-        compute_capability=gpu_version,
+    cfg = validate_config(
+        cfg,
+        capabilities={
+            "bf16": is_torch_bf16_gpu_available(),
+            "n_gpu": os.environ.get("WORLD_SIZE", 1),
+            "compute_capability": gpu_version,
+        },
     )
-
-    cfg = validate_config(cfg, capabilities=capabilities)
 
     prepare_optim_env(cfg)
 
