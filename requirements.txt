@@ -21,7 +21,6 @@ hf_transfer
 colorama
 numba
 numpy>=1.24.4
-mlflow
 # qlora things
 evaluate==0.4.1
 scipy

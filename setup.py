@@ -82,5 +82,8 @@ setup(
         "auto-gptq": [
             "auto-gptq==0.5.1",
         ],
+        "mlflow": [
+            "mlflow",
+        ],
     },
 )
