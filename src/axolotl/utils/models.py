@@ -512,11 +512,12 @@ def load_model(
 
             if cfg.flash_attention and not inference:
                 from axolotl.monkeypatch.llama_attn_hijack_flash import (
+                    is_xformers_swiglu_available,
                     replace_llama_mlp_with_swiglu,
                     replace_llama_qkv_with_fused,
                 )
 
-                if cfg.flash_attn_fuse_mlp:
+                if cfg.flash_attn_fuse_mlp and is_xformers_swiglu_available():
                     LOG.info("patching with SwiGLU")
                     replace_llama_mlp_with_swiglu(model)
 

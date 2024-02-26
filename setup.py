@@ -50,6 +50,14 @@ def parse_requirements():
     except PackageNotFoundError:
         pass
 
+    try:
+        import torch
+
+        if torch.version.cuda == "11.8":
+            _dependency_links.append("https://download.pytorch.org/whl/cu118")
+    except ImportError:
+        pass
+
     return _install_requires, _dependency_links
 
 

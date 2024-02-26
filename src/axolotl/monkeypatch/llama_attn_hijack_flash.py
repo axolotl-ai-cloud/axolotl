@@ -44,6 +44,18 @@ except ImportError:
 LOG = logging.getLogger("axolotl")
 
 
+def is_xformers_swiglu_available() -> bool:
+    from xformers.ops.common import get_xformers_operator
+
+    try:
+        get_xformers_operator("swiglu_packedw")()
+        return True
+    except RuntimeError as exc:
+        if "No such operator xformers::swiglu_packedw " in str(exc):
+            return False
+        return True
+
+
 def replace_llama_mlp_with_swiglu(model):
     for name, module in model.named_modules():
         if isinstance(module, LlamaMLP):
