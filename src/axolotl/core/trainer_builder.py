@@ -970,18 +970,42 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 "neftune_noise_alpha"
             ] = self.cfg.neftune_noise_alpha
 
+        trainer_kwargs = {}
+
+        if self.cfg.optimizer == "lion_pytorch":
+            from lion_pytorch import Lion
+
+            lion_kwargs = {"lr": training_arguments_kwargs["learning_rate"]}
+            if "weight_decay" in training_arguments_kwargs:
+                lion_kwargs["weight_decay"] = training_arguments_kwargs["weight_decay"]
+
+            if (
+                "adam_beta1" in training_arguments_kwargs
+                and "adam_beta2" in training_arguments_kwargs
+            ):
+                lion_kwargs["betas"] = (
+                    training_arguments_kwargs["adam_beta1"],
+                    training_arguments_kwargs["adam_beta2"],
+                )
+
+            trainer_kwargs["optimizers"] = (
+                Lion(params=self.model.parameters(), **lion_kwargs),
+                None,
+            )
+            # Set default so transformers doesn't throw
+            training_arguments_kwargs["optim"] = "adamw_hf"
+
+        if self.cfg.optimizer == "adamw_anyprecision":
+            if Path(self.cfg.torchdistx_path).exists():
+                sys.path.append(self.cfg.torchdistx_path)
+                importlib.import_module("torchdistx")
+
         training_args = (
             AxolotlTrainingArguments(  # pylint: disable=unexpected-keyword-arg
                 **training_arguments_kwargs,
             )
         )
         training_args = self.hook_post_create_training_args(training_args)
-        trainer_kwargs = {}
-
-        if self.cfg.optimizer == "adamw_anyprecision":
-            if Path(self.cfg.torchdistx_path).exists():
-                sys.path.append(self.cfg.torchdistx_path)
-                importlib.import_module("torchdistx")
 
         data_collator_kwargs = {
             "padding": True,  # True/"longest" is the default

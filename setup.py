@@ -18,6 +18,7 @@ def parse_requirements():
                 or "flash-attention" in line
                 or "deepspeed" in line
                 or "mamba-ssm" in line
+                or "lion-pytorch" in line
             )
             if line.startswith("--extra-index-url"):
                 # Handle custom index URLs
@@ -84,6 +85,9 @@ setup(
         ],
         "mlflow": [
             "mlflow",
+        ],
+        "lion-pytorch": [
+            "lion-pytorch==0.1.2",
         ],
     },
 )
