@@ -85,12 +85,24 @@ class SFTDataset(BaseModel):
     field_model: Optional[str] = None
 
 
+class UserDefinedDPOType(BaseModel):
+    """User defined typing for DPO"""
+
+    field_system: Optional[str] = None
+    field_prompt: Optional[str] = None
+    field_chosen: Optional[str] = None
+    field_rejected: Optional[str] = None
+    prompt_format: Optional[str] = None
+    chosen_format: Optional[str] = None
+    rejected_format: Optional[str] = None
+
+
 class DPODataset(BaseModel):
     """DPO configuration subset"""
 
     path: Optional[str] = None
     split: Optional[str] = None
-    type: Optional[str] = None
+    type: Optional[Union[UserDefinedDPOType, str]] = None
     data_files: Optional[List[str]] = None
 
 
