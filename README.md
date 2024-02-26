@@ -22,7 +22,7 @@ Features:
 - [Introduction](#axolotl)
 - [Supported Features](#axolotl-supports)
 - [Quickstart](#quickstart-)
-- [Installation](#installation)
+- [Environment](#environment)
   - [Docker](#docker)
   - [Conda/Pip venv](#condapip-venv)
   - [Cloud GPU](#cloud-gpu) - Latitude.sh, RunPod
@@ -87,24 +87,19 @@ Features:
 | phi         | ✅         | ✅    | ✅     | ❓             | ❓                 | ❓          | ❓            |
 | RWKV        | ✅         | ❓    | ❓     | ❓             | ❓                 | ❓          | ❓            |
 | Qwen        | ✅         | ✅    | ✅     | ❓             | ❓                 | ❓          | ❓            |
+| Gemma       | ✅         | ✅    | ✅     | ❓             | ❓                 | ✅          | ❓            |
 
+✅: supported
+❌: not supported
+❓: untested
 
 ## Quickstart ⚡
 
 Get started with Axolotl in just a few steps! This quickstart guide will walk you through setting up and running a basic fine-tuning task.
 
-**Requirements**: Python >=3.9 and Pytorch >=2.0.
+**Requirements**: Python >=3.9 and Pytorch >=2.1.1.
 
 `pip3 install "axolotl[flash-attn,deepspeed] @ git+https://github.com/OpenAccess-AI-Collective/axolotl"`
-
-### For developers
-```bash
-git clone https://github.com/OpenAccess-AI-Collective/axolotl
-cd axolotl
-
-pip3 install packaging
-pip3 install -e '.[flash-attn,deepspeed]'
-```
 
 ### Usage
 ```bash
@@ -127,13 +122,14 @@ accelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \
 accelerate launch -m axolotl.cli.train https://raw.githubusercontent.com/OpenAccess-AI-Collective/axolotl/main/examples/openllama-3b/lora.yml
 ```
 
-## Installation
+## Advanced Setup
 
 ### Environment
 
 #### Docker
+
   ```bash
-  docker run --gpus '"all"' --rm -it winglian/axolotl:main-py3.10-cu118-2.0.1
+  docker run --gpus '"all"' --rm -it winglian/axolotl:main-latest
   ```
 
   Or run on the current files for development:
@@ -152,7 +148,7 @@ accelerate launch -m axolotl.cli.train https://raw.githubusercontent.com/OpenAcc
   A more powerful Docker command to run would be this:
 
   ```bash
-docker run --privileged --gpus '"all"' --shm-size 10g --rm -it --name axolotl --ipc=host --ulimit memlock=-1 --ulimit stack=67108864 --mount type=bind,src="${PWD}",target=/workspace/axolotl -v ${HOME}/.cache/huggingface:/root/.cache/huggingface winglian/axolotl:main-py3.10-cu118-2.0.1
+docker run --privileged --gpus '"all"' --shm-size 10g --rm -it --name axolotl --ipc=host --ulimit memlock=-1 --ulimit stack=67108864 --mount type=bind,src="${PWD}",target=/workspace/axolotl -v ${HOME}/.cache/huggingface:/root/.cache/huggingface winglian/axolotl:main-latest
   ```
 
   It additionally:
@@ -242,15 +238,18 @@ Please use WSL or Docker!
 
 #### Launching on public clouds via SkyPilot
 To launch on GPU instances (both on-demand and spot instances) on 7+ clouds (GCP, AWS, Azure, OCI, and more), you can use [SkyPilot](https://skypilot.readthedocs.io/en/latest/index.html):
+
 ```bash
 pip install "skypilot-nightly[gcp,aws,azure,oci,lambda,kubernetes,ibm,scp]"  # choose your clouds
 sky check
 ```
+
 Get the [example YAMLs](https://github.com/skypilot-org/skypilot/tree/master/llm/axolotl) of using Axolotl to finetune `mistralai/Mistral-7B-v0.1`:
 ```
 git clone https://github.com/skypilot-org/skypilot.git
 cd skypilot/llm/axolotl
 ```
+
 Use one command to launch:
 ```bash
 # On-demand
@@ -260,30 +259,31 @@ HF_TOKEN=xx sky launch axolotl.yaml --env HF_TOKEN
 HF_TOKEN=xx BUCKET=<unique-name> sky spot launch axolotl-spot.yaml --env HF_TOKEN --env BUCKET
 ```
 
-
 ### Dataset
 
 Axolotl supports a variety of dataset formats. Below are some of the formats you can use.
 Have dataset(s) in one of the following format (JSONL recommended):
 
-- `alpaca`: instruction; input(optional)
-  ```json
-  {"instruction": "...", "input": "...", "output": "..."}
-  ```
-- `sharegpt`: conversations where `from` is `human`/`gpt`. (optional: `system` to override default system prompt)
-  ```json
-  {"conversations": [{"from": "...", "value": "..."}]}
-  ```
-- `llama-2`: the json is the same format as `sharegpt` above, with the following config (see the [config section](#config) for more details)
-    ```yml
-    datasets:
-      - path: <your-path>
-        type: sharegpt
-        conversation: llama-2
-    ```
+#### Pretraining
+
 - `completion`: raw corpus
   ```json
   {"text": "..."}
+  ```
+
+Note: Axolotl usually loads the entire dataset into memory. This will be challenging for large datasets. Use the following config to enable streaming:
+
+```yaml
+pretraining_dataset: # hf path only
+```
+
+#### Supervised finetuning
+
+##### Instruction
+
+- `alpaca`: instruction; input(optional)
+  ```json
+  {"instruction": "...", "input": "...", "output": "..."}
   ```
 
 <details>
@@ -362,13 +362,27 @@ Have dataset(s) in one of the following format (JSONL recommended):
   ```json
   {"scores": "...", "critiques": "...", "instruction": "...", "answer": "...", "revision": "..."}
   ```
-- `pygmalion`: pygmalion
-  ```json
-  {"conversations": [{"role": "...", "value": "..."}]}
-  ```
 - `metharme`: instruction, adds additional eos tokens
   ```json
   {"prompt": "...", "generation": "..."}
+  ```
+
+</details>
+
+##### Conversation
+
+- `sharegpt`: conversations where `from` is `human`/`gpt`. (optional: first row with role `system` to override default system prompt)
+  ```json
+  {"conversations": [{"from": "...", "value": "..."}]}
+  ```
+
+<details>
+
+<summary>See other formats</summary>
+
+- `pygmalion`: pygmalion
+  ```json
+  {"conversations": [{"role": "...", "value": "..."}]}
   ```
 - `sharegpt.load_role`: conversations where `role` is used instead of `from`
   ```json
@@ -384,6 +398,8 @@ Have dataset(s) in one of the following format (JSONL recommended):
   ```
 
 </details>
+
+Note: `type: sharegpt` opens a special config `conversation:` that enables conversions to many Conversation types. See dataset section under [all yaml options](#all-yaml-options).
 
 #### How to add custom prompts
 
@@ -406,12 +422,16 @@ datasets:
       format: "[INST] {instruction} [/INST]"
       no_input_format: "[INST] {instruction} [/INST]"
 ```
+See full config options under [all yaml options](#all-yaml-options).
 
 #### How to use your custom pretokenized dataset
 
 - Do not pass a `type:`
 - Columns in Dataset must be exactly `input_ids`, `attention_mask`, `labels`
 
+```yaml
+- path: ...
+```
 
 ### Config
 
@@ -425,22 +445,18 @@ See [examples](examples) for quick start. It is recommended to duplicate and mod
 
 - dataset
   ```yaml
-  sequence_len: 2048 # max token length for prompt
-
-  # huggingface repo
   datasets:
+      # huggingface repo
     - path: vicgalle/alpaca-gpt4
-      type: alpaca # format from earlier
+      type: alpaca
 
-  # huggingface repo with specific configuration/subset
-  datasets:
+      # huggingface repo with specific configuration/subset
     - path: EleutherAI/pile
       name: enron_emails
       type: completion # format from earlier
       field: text # Optional[str] default: text, field to use for completion data
 
-  # huggingface repo with multiple named configurations/subsets
-  datasets:
+      # huggingface repo with multiple named configurations/subsets
     - path: bigcode/commitpackft
       name:
         - ruby
@@ -448,34 +464,29 @@ See [examples](examples) for quick start. It is recommended to duplicate and mod
         - typescript
       type: ... # unimplemented custom format
 
-  # fastchat conversation
-  # See 'conversation' options: https://github.com/lm-sys/FastChat/blob/main/fastchat/conversation.py
-  datasets:
+      # fastchat conversation
+      # See 'conversation' options: https://github.com/lm-sys/FastChat/blob/main/fastchat/conversation.py
     - path: ...
       type: sharegpt
-      conversation: chatml
+      conversation: chatml # default: vicuna_v1.1
 
-  # local
-  datasets:
+      # local
     - path: data.jsonl # or json
       ds_type: json # see other options below
       type: alpaca
 
-  # dataset with splits, but no train split
-  dataset:
+      # dataset with splits, but no train split
     - path: knowrohit07/know_sql
       type: context_qa.load_v2
       train_on_split: validation
 
-  # loading from s3 or gcs
-  # s3 creds will be loaded from the system default and gcs only supports public access
-  dataset:
+      # loading from s3 or gcs
+      # s3 creds will be loaded from the system default and gcs only supports public access
     - path: s3://path_to_ds # Accepts folder with arrow/parquet or file path like above. Supports s3, gcs.
       ...
 
-  # Loading Data From a Public URL
-  # - The file format is `json` (which includes `jsonl`) by default. For different formats, adjust the `ds_type` option accordingly.
-  dataset:
+      # Loading Data From a Public URL
+      # - The file format is `json` (which includes `jsonl`) by default. For different formats, adjust the `ds_type` option accordingly.
     - path: https://some.url.com/yourdata.jsonl # The URL should be a direct link to the file you wish to load. URLs must use HTTPS protocol, not HTTP.
       ds_type: json # this is the default, see other options below.
   ```
@@ -484,9 +495,11 @@ See [examples](examples) for quick start. It is recommended to duplicate and mod
   ```yaml
   load_in_4bit: true
   load_in_8bit: true
+
   bf16: auto # require >=ampere, auto will detect if your GPU supports this and choose automatically.
   fp16: # leave empty to use fp16 when bf16 is 'auto'. set to false if you want to fallback to fp32
   tf32: true # require >=ampere
+
   bfloat16: true # require >=ampere, use instead of bf16 when you don't want AMP (automatic mixed precision)
   float16: true # use instead of fp16 when you don't want AMP
   ```
@@ -494,7 +507,7 @@ See [examples](examples) for quick start. It is recommended to duplicate and mod
 
 - lora
   ```yaml
-  adapter: lora # qlora or leave blank for full finetune
+  adapter: lora # 'qlora' or leave blank for full finetune
   lora_r: 8
   lora_alpha: 16
   lora_dropout: 0.05
@@ -503,9 +516,9 @@ See [examples](examples) for quick start. It is recommended to duplicate and mod
     - v_proj
   ```
 
-<details>
+<details id="all-yaml-options">
 
-<summary>All yaml options (click me)</summary>
+<summary>All yaml options (click to expand)</summary>
 
 ```yaml
 # This is the huggingface model that contains *.pt, *.safetensors, or *.bin files
@@ -535,12 +548,13 @@ tokenizer_legacy:
 # This is reported to improve training speed on some models
 resize_token_embeddings_to_32x:
 
+# (Internal use only)
 # Used to identify which the model is based on
 is_falcon_derived_model:
 is_llama_derived_model:
+is_qwen_derived_model:
 # Please note that if you set this to true, `padding_side` will be set to "left" by default
 is_mistral_derived_model:
-is_qwen_derived_model:
 
 # optional overrides to the base model configuration
 model_config_overrides:
@@ -633,7 +647,7 @@ test_datasets:
     data_files:
       - /workspace/data/eval.jsonl
 
-# use RL training: dpo, ipo, kto_pair
+# use RL training: 'dpo', 'ipo', 'kto_pair'
 rl:
 
 # Saves the desired chat template to the tokenizer_config.json for easier inferencing
@@ -653,7 +667,7 @@ dataset_processes: # defaults to os.cpu_count() if not set
 # Only needed if cached dataset is taking too much storage
 dataset_keep_in_memory:
 # push checkpoints to hub
-hub_model_id: # repo path to push finetuned model
+hub_model_id: # private repo path to push finetuned model
 # how to push checkpoints to hub
 # https://huggingface.co/docs/transformers/v4.31.0/en/main_classes/trainer#transformers.TrainingArguments.hub_strategy
 hub_strategy:
@@ -1100,7 +1114,7 @@ Please use `--sample_packing False` if you have it on and receive the error simi
 
 ### Merge LORA to base
 
-The following command will merge your LORA adapater with your base model.  You can optionally pass the argument `--lora_model_dir` to specify the directory where your LORA adapter was saved, otherwhise, this will be inferred from `output_dir` in your axolotl config file.  The merged model is saved in the sub-directory `{lora_model_dir}/merged`.
+The following command will merge your LORA adapater with your base model. You can optionally pass the argument `--lora_model_dir` to specify the directory where your LORA adapter was saved, otherwhise, this will be inferred from `output_dir` in your axolotl config file.  The merged model is saved in the sub-directory `{lora_model_dir}/merged`.
 
 ```bash
 python3 -m axolotl.cli.merge_lora your_config.yml --lora_model_dir="./completed-model"
@@ -1161,7 +1175,7 @@ If you decode a prompt constructed by axolotl, you might see spaces between toke
 
 1. Materialize some data using `python -m axolotl.cli.preprocess your_config.yml --debug`, and then decode the first few rows with your model's tokenizer.
 2. During inference, right before you pass a tensor of token ids to your model, decode these tokens back into a string.
-3. Make sure the inference string from #2 looks **exactly** like the data you fine tuned on from #1, including spaces and new lines.  If they aren't the same adjust your inference server accordingly.
+3. Make sure the inference string from #2 looks **exactly** like the data you fine tuned on from #1, including spaces and new lines.  If they aren't the same, adjust your inference server accordingly.
 4. As an additional troubleshooting step, you can look at the token ids between 1 and 2 to make sure they are identical.
 
 Having misalignment between your prompts during training and inference can cause models to perform very poorly, so it is worth checking this.  See [this blog post](https://hamel.dev/notes/llm/05_tokenizer_gotchas.html) for a concrete example.
@@ -1208,11 +1222,20 @@ PRs are **greatly welcome**!
 
 Please run below to setup env
 ```bash
+git clone https://github.com/OpenAccess-AI-Collective/axolotl
+cd axolotl
+
+pip3 install packaging
+pip3 install -e '.[flash-attn,deepspeed]'
+
 pip3 install -r requirements-dev.txt -r requirements-tests.txt
 pre-commit install
 
 # test
 pytest tests/
+
+# optional: run against all files
+pre-commit run --all-files
 ```
 
 Thanks to all of our contributors to date. Help drive open source AI progress forward by contributing to Axolotl.
