@@ -146,7 +146,7 @@ class LoraConfig(BaseModel):
 
     adapter: Optional[str] = None
     lora_model_dir: Optional[str] = None
-    lora_rank: Optional[int] = None
+    lora_r: Optional[int] = None
     lora_alpha: Optional[int] = None
     lora_fan_in_fan_out: Optional[bool] = None
     lora_target_modules: Optional[List[str]] = None
