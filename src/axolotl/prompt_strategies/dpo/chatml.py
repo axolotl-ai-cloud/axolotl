@@ -5,6 +5,7 @@ DPO strategies for chatml
 
 def argilla(
     cfg,
+    **kwargs,
 ):  # pylint: disable=possibly-unused-variable,unused-argument
     def transform_fn(sample):
         if "system" in sample and sample["system"]:
@@ -25,6 +26,7 @@ def argilla(
 
 def icr(
     cfg,
+    **kwargs,
 ):  # pylint: disable=possibly-unused-variable,unused-argument
     """
     chatml transforms for datasets with system, input, chosen, rejected
@@ -48,7 +50,7 @@ def icr(
     return transform_fn
 
 
-def intel(cfg):  # pylint: disable=possibly-unused-variable,unused-argument
+def intel(cfg, **kwargs):  # pylint: disable=possibly-unused-variable,unused-argument
     """
     For Intel Orca DPO Pairs
     """
@@ -70,7 +72,9 @@ def intel(cfg):  # pylint: disable=possibly-unused-variable,unused-argument
     return transform_fn
 
 
-def prompt_pairs(cfg):  # pylint: disable=possibly-unused-variable,unused-argument
+def prompt_pairs(
+    cfg, **kwargs
+):  # pylint: disable=possibly-unused-variable,unused-argument
     def transform_fn(sample):
         if "system" in sample and sample["system"]:
             sample["prompt"] = (
@@ -88,7 +92,7 @@ def prompt_pairs(cfg):  # pylint: disable=possibly-unused-variable,unused-argume
     return transform_fn
 
 
-def ultra(cfg):  # pylint: disable=possibly-unused-variable,unused-argument
+def ultra(cfg, **kwargs):  # pylint: disable=possibly-unused-variable,unused-argument
     """
     for ultrafeedback binarized conversations
     """
