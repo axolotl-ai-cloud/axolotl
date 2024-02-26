@@ -336,6 +336,7 @@ class WandbConfig(BaseModel):
 # pylint: disable=too-many-public-methods,too-many-ancestors
 class AxolotlInputConfig(
     ModelInputConfig,
+    ModelOutputConfig,
     LoraConfig,
     ReLoRAConfig,
     HyperparametersConfig,
