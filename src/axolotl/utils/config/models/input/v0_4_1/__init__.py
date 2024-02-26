@@ -221,11 +221,16 @@ class ModelInputConfig(BaseModel):
     tokenizer_type: Optional[str] = Field(
         default=None, metadata={"help": "transformers tokenizer class"}
     )
-    model_type: Optional[str] = Field(default=None)
+    model_type: Optional[str] = Field(default=None, alias="type_of_model")
     model_revision: Optional[str] = None
     trust_remote_code: Optional[bool] = None
 
     model_config_overrides: Optional[Dict[str, Any]] = None
+
+    class Config:
+        """config for alias"""
+
+        allow_population_by_field_name = True
 
     @field_validator("trust_remote_code")
     @classmethod
