@@ -199,9 +199,15 @@ def normalize_cfg_datasets(cfg):
 def validate_config(cfg: DictDefault, capabilities: Optional[dict] = None):
     if capabilities:
         return DictDefault(
-            dict(AxolotlConfigWCapabilities(**cfg.to_dict(), capabilities=capabilities))
+            dict(
+                AxolotlConfigWCapabilities(
+                    **cfg.to_dict(), capabilities=capabilities
+                ).model_dump(exclude_unset=True)
+            )
         )
-    return DictDefault(dict(AxolotlInputConfig(**cfg.to_dict())))
+    return DictDefault(
+        dict(AxolotlInputConfig(**cfg.to_dict()).model_dump(exclude_unset=True))
+    )
 
 
 def legacy_validate_config(cfg):
