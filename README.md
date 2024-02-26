@@ -763,6 +763,7 @@ wandb_log_model: # "checkpoint" to log model to wandb Artifacts every `save_step
 # mlflow configuration if you're using it
 mlflow_tracking_uri: # URI to mlflow
 mlflow_experiment_name: # Your experiment name
+hf_mlflow_log_artifacts:  # set to true to copy each saved checkpoint on each save to mlflow artifact registry
 
 # Where to save the full-finetuned model to
 output_dir: ./completed-model
