@@ -94,7 +94,7 @@ jobs:
           docker build . \
             --file ./docker/Dockerfile-tests \
             --build-arg BASE_TAG=$BASE_TAG \
-            --build-arg AXOLOTL_ARGS=$AXOLOTL_ARGS \
+            --build-arg AXOLOTL_ARGS="$AXOLOTL_ARGS" \
             --build-arg CUDA=$CUDA \
             --build-arg GITHUB_REF=$GITHUB_REF \
             --build-arg PYTORCH_VERSION=$PYTORCH_VERSION \
