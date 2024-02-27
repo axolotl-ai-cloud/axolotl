@@ -222,7 +222,7 @@ class ModelInputConfig(BaseModel):
         default=None, metadata={"help": "transformers tokenizer class"}
     )
     model_type: Optional[str] = Field(default=None, alias="type_of_model")
-    model_revision: Optional[str] = None
+    model_revision: Optional[str] = Field(default=None, alias="revision_of_model")
     trust_remote_code: Optional[bool] = None
 
     model_config_overrides: Optional[Dict[str, Any]] = None
