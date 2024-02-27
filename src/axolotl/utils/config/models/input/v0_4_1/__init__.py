@@ -456,6 +456,7 @@ class AxolotlInputConfig(
     warmup_steps: Optional[int] = None
     warmup_ratio: Optional[float] = None
     eval_steps: Optional[Union[int, float]] = None
+    evals_per_epoch: Optional[Union[int]] = None
     evaluation_strategy: Optional[str] = None
     save_steps: Optional[Union[int, float]] = None
     saves_per_epoch: Optional[int] = None
