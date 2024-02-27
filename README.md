@@ -99,7 +99,23 @@ Get started with Axolotl in just a few steps! This quickstart guide will walk yo
 
 **Requirements**: Python >=3.9 and Pytorch >=2.1.1.
 
-`pip3 install "axolotl[flash-attn,deepspeed] @ git+https://github.com/OpenAccess-AI-Collective/axolotl"`
+### For developers
+```bash
+git clone https://github.com/OpenAccess-AI-Collective/axolotl
+cd axolotl
+
+pip3 install packaging
+```
+
+General case:
+```
+pip3 install -e '.[flash-attn,deepspeed]'
+```
+
+Mac: see https://github.com/OpenAccess-AI-Collective/axolotl/blob/13199f678b9aab39e92961323bdbce3234ee4b2b/docs/mac.md
+```
+pip3 install -e '.'
+```
 
 ### Usage
 ```bash
