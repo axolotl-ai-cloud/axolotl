@@ -76,6 +76,7 @@ class SFTDataset(BaseModel):
     type: Optional[Union[str, UserDefinedPrompterType]] = None
     shards: Optional[int] = None
     conversation: Optional[str] = None
+    chat_template: Optional[str] = None
     data_files: Optional[Union[str, List[str]]] = None
     name: Optional[str] = None
     ds_type: Optional[str] = None
