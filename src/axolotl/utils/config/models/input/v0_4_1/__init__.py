@@ -225,7 +225,9 @@ class ModelInputConfig(BaseModel):
     model_revision: Optional[str] = Field(default=None, alias="revision_of_model")
     trust_remote_code: Optional[bool] = None
 
-    model_config_overrides: Optional[Dict[str, Any]] = Field(default=None, alias="overrides_of_model_config")
+    model_config_overrides: Optional[Dict[str, Any]] = Field(
+        default=None, alias="overrides_of_model_config"
+    )
 
     class Config:
         """config for alias"""
