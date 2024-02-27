@@ -302,6 +302,13 @@ class HyperparametersConfig(BaseModel):
             )
         return batch_size
 
+    @field_validator("learning_rate")
+    @classmethod
+    def convert_learning_rate(cls, learning_rate):
+        if learning_rate and isinstance(learning_rate, str):
+            learning_rate = float(learning_rate)
+        return learning_rate
+
 
 class ModelOutputConfig(BaseModel):
     """model save configuration subset"""
@@ -368,6 +375,7 @@ class AxolotlInputConfig(
     rl: Optional[RLType] = None
 
     datasets: Optional[conlist(Union[SFTDataset, DPODataset], min_length=1)] = None  # type: ignore
+    test_datasets: Optional[conlist(Union[SFTDataset, DPODataset], min_length=1)] = None  # type: ignore
     dataset_prepared_path: Optional[str] = None
     dataset_shard_num: Optional[int] = None
     dataset_shard_idx: Optional[int] = None

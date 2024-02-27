@@ -255,7 +255,7 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                 train_dataset.remove_columns(["length"]),
                 batch_sampler=sampler,
             )
-            data_loader_len = len(data_loader) // batch_size
+            data_loader_len = len(data_loader) // cfg.batch_size
             actual_eff = sampler.efficiency()
             LOG.debug(f"data_loader_len: {data_loader_len}", main_process_only=True)
             # FIXME: is there a bug here somewhere? the total num steps depends
