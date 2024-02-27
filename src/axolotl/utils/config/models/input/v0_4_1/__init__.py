@@ -76,7 +76,7 @@ class SFTDataset(BaseModel):
     type: Optional[Union[str, UserDefinedPrompterType]] = None
     shards: Optional[int] = None
     conversation: Optional[str] = None
-    data_files: Optional[List[str]] = None
+    data_files: Optional[Union[str, List[str]]] = None
     name: Optional[str] = None
     ds_type: Optional[str] = None
     train_on_split: Optional[str] = None
@@ -454,9 +454,9 @@ class AxolotlInputConfig(
     max_steps: Optional[int] = None
     warmup_steps: Optional[int] = None
     warmup_ratio: Optional[float] = None
-    eval_steps: Optional[int] = None
+    eval_steps: Optional[Union[int, float]] = None
     evaluation_strategy: Optional[str] = None
-    save_steps: Optional[int] = None
+    save_steps: Optional[Union[int, float]] = None
     saves_per_epoch: Optional[int] = None
     save_strategy: Optional[str] = None
     save_total_limit: Optional[int] = None
