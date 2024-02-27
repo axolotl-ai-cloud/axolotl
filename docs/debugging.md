@@ -74,7 +74,6 @@ pip3 install -e '.[flash-attn,deepspeed]'
 
 If you developing on a remote host, you can easily use VSCode to debug remotely.  To do so, you will need to follow this [remote - SSH guide](https://code.visualstudio.com/docs/remote/ssh).  You can also see the video below on [Docker and Remote SSH debugging](#video---attaching-to-docker-on-remote-host).
 
-```bash
 
 ### Configuration
 
