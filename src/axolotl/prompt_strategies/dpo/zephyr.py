@@ -3,7 +3,7 @@ DPO strategies for zephyr
 """
 
 
-def nectar(cfg):  # pylint: disable=possibly-unused-variable,unused-argument
+def nectar(cfg, **kwargs):  # pylint: disable=possibly-unused-variable,unused-argument
     def transform_fn(sample):
         data = {}
         data["prompt"] = (

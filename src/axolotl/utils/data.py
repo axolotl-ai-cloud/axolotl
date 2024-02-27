@@ -937,7 +937,9 @@ def load_prepare_dpo_datasets(cfg):
         for i, data_set in enumerate(split_datasets):
             _type = dataset_cfgs[i]["type"]
             if _type:
-                ds_transform_fn = load_dpo(_type, _cfg)
+                if isinstance(_type, DictDefault):
+                    _type = "user_defined.default"
+                ds_transform_fn = load_dpo(_type, _cfg, dataset_idx=i)
                 split_datasets[i] = data_set.map(
                     ds_transform_fn,
                     desc="Mapping RL Dataset",
