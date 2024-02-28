@@ -6,10 +6,16 @@ from axolotl.prompt_tokenizers import PromptTokenizingStrategy
 class InputOutputStrategy(PromptTokenizingStrategy):
     """Prompt Strategy class for input/output pairs"""
 
+    def __init__(self, *args, eos_token=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.eos_token = eos_token
+        if not eos_token:
+            self.eos_token = self.tokenizer.eos_token
+
     def tokenize_prompt(self, prompt):
         # pylint: disable=duplicate-code
         input_: str = prompt["input"]
-        output: str = prompt["output"]
+        output: str = prompt["output"] + self.eos_token
         if not input_.endswith(" ") and not input_.endswith("\n"):
             input_ += " "
         input_ids_prompt = self.tokenizer(input_, return_tensors=None)["input_ids"]
