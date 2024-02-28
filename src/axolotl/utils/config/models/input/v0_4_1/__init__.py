@@ -47,6 +47,16 @@ class DeprecatedParameters(BaseModel):
         return noisy_embedding_alpha
 
 
+class RemappedParameters(BaseModel):
+    """parameters that have been remapped to other names"""
+
+    overrides_of_model_config: Optional[Dict[str, Any]] = Field(
+        default=None, alias="model_config"
+    )
+    type_of_model: Optional[str] = Field(default=None, alias="model_type")
+    revision_of_model: Optional[str] = Field(default=None, alias="model_revision")
+
+
 class PretrainingDataset(BaseModel):
     """pretraining dataset configuration subset"""
 
@@ -234,11 +244,7 @@ class ModelInputConfig(BaseModel):
     tokenizer_type: Optional[str] = Field(
         default=None, metadata={"help": "transformers tokenizer class"}
     )
-    model_type: Optional[str] = Field(default=None)
-    model_revision: Optional[str] = None
     trust_remote_code: Optional[bool] = None
-
-    model_config_overrides: Optional[Dict[str, Any]] = None
 
     @field_validator("trust_remote_code")
     @classmethod
@@ -362,10 +368,16 @@ class AxolotlInputConfig(
     HyperparametersConfig,
     WandbConfig,
     MLFlowConfig,
+    RemappedParameters,
     DeprecatedParameters,
     BaseModel,
 ):
     """wrapper of all config options"""
+
+    class Config:
+        """Config for alias"""
+
+        populate_by_name = True
 
     strict: Optional[bool] = Field(default=False)
     resume_from_checkpoint: Optional[str] = None
@@ -550,11 +562,11 @@ class AxolotlInputConfig(
     @model_validator(mode="before")
     @classmethod
     def check_gptq_w_revision(cls, data):
-        if data.get("gptq") and data.get("model_revision"):
+        if data.get("gptq") and data.get("revision_of_model"):
             raise ValueError(
-                "model_revision is not supported for GPTQ models. "
+                "revision_of_model is not supported for GPTQ models. "
                 + "Please download the model from HuggingFace Hub manually for correct branch, "
-                + "point to its path, and remove model_revision from the config."
+                + "point to its path, and remove revision_of_model from the config."
             )
         return data
 

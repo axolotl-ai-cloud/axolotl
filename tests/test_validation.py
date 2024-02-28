@@ -3,6 +3,7 @@
 
 import logging
 import os
+import warnings
 from typing import Optional
 
 import pytest
@@ -13,6 +14,8 @@ from axolotl.utils.config.models.input.v0_4_1 import AxolotlConfigWCapabilities
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.models import check_model_config
 from axolotl.utils.wandb_ import setup_wandb_env_vars
+
+warnings.filterwarnings("error")
 
 
 @pytest.fixture(name="minimal_cfg")
@@ -189,6 +192,45 @@ class TestValidation(BaseValidation):
         new_cfg = validate_config(cfg)
 
         assert new_cfg.learning_rate == 0.00005
+
+    def test_model_config_remap(self, minimal_cfg):
+        cfg = (
+            DictDefault(
+                {
+                    "model_config": {"model_type": "mistral"},
+                }
+            )
+            | minimal_cfg
+        )
+
+        new_cfg = validate_config(cfg)
+        assert new_cfg.overrides_of_model_config["model_type"] == "mistral"
+
+    def test_model_type_remap(self, minimal_cfg):
+        cfg = (
+            DictDefault(
+                {
+                    "model_type": "AutoModelForCausalLM",
+                }
+            )
+            | minimal_cfg
+        )
+
+        new_cfg = validate_config(cfg)
+        assert new_cfg.type_of_model == "AutoModelForCausalLM"
+
+    def test_model_revision_remap(self, minimal_cfg):
+        cfg = (
+            DictDefault(
+                {
+                    "model_revision": "main",
+                }
+            )
+            | minimal_cfg
+        )
+
+        new_cfg = validate_config(cfg)
+        assert new_cfg.revision_of_model == "main"
 
     def test_qlora(self, minimal_cfg):
         base_cfg = (
