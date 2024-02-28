@@ -7,6 +7,7 @@ class InputOutputStrategy(PromptTokenizingStrategy):
     """Prompt Strategy class for input/output pairs"""
 
     def tokenize_prompt(self, prompt):
+        # pylint: disable=duplicate-code
         input_: str = prompt["input"]
         output: str = prompt["output"]
         if not input_.endswith(" ") and not input_.endswith("\n"):
