@@ -86,8 +86,8 @@ def load_model_config(cfg):
         model_config_name = cfg.tokenizer_config
     trust_remote_code = cfg.trust_remote_code is True
     config_kwargs = {}
-    if cfg.model_revision:
-        config_kwargs["revision"] = cfg.model_revision
+    if cfg.revision_of_model:
+        config_kwargs["revision"] = cfg.revision_of_model
 
     try:
         model_config = AutoConfig.from_pretrained(
@@ -104,8 +104,8 @@ def load_model_config(cfg):
             )
         raise err
 
-    if cfg.model_config_overrides:
-        for key, val in cfg.model_config_overrides.items():
+    if cfg.overrides_of_model_config:
+        for key, val in cfg.overrides_of_model_config.items():
             setattr(model_config, key, val)
 
     check_model_config(cfg, model_config)
@@ -272,7 +272,7 @@ def load_model(
     Load a model for a given configuration and tokenizer.
     """
     base_model = cfg.base_model
-    model_type = cfg.model_type
+    model_type = cfg.type_of_model
     model_config = load_model_config(cfg)
 
     # TODO refactor as a kwarg
@@ -426,8 +426,8 @@ def load_model(
     if is_deepspeed_zero3_enabled():
         del model_kwargs["device_map"]
 
-    if cfg.model_revision:
-        model_kwargs["revision"] = cfg.model_revision
+    if cfg.revision_of_model:
+        model_kwargs["revision"] = cfg.revision_of_model
     if cfg.gptq:
         if not hasattr(model_config, "quantization_config"):
             LOG.warning("model config does not contain quantization_config information")

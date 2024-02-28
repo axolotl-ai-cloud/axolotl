@@ -546,7 +546,7 @@ base_model_ignore_patterns:
 # You can set that here, or leave this empty to default to base_model
 base_model_config: ./llama-7b-hf
 # You can specify to choose a specific model revision from huggingface hub
-model_revision:
+revision_of_model:
 # Optional tokenizer configuration path in case you want to use a different tokenizer
 # than the one defined in the base model
 tokenizer_config:
@@ -573,7 +573,7 @@ is_qwen_derived_model:
 is_mistral_derived_model:
 
 # optional overrides to the base model configuration
-model_config_overrides:
+overrides_of_model_config:
   # RoPE Scaling https://github.com/huggingface/transformers/pull/24653
   rope_scaling:
     type: # linear | dynamic
