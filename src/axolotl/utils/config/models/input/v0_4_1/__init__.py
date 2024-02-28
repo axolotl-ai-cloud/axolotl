@@ -322,7 +322,7 @@ class ModelOutputConfig(BaseModel):
 class MLFlowConfig(BaseModel):
     """mlflow configuration subset"""
 
-    use_mlflow: Optional[str] = None
+    use_mlflow: Optional[bool] = None
     mlflow_tracking_uri: Optional[str] = None
     mlflow_experiment_name: Optional[str] = None
     hf_mlflow_log_artifacts: Optional[bool] = None
