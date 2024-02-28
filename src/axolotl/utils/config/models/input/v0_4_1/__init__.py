@@ -302,6 +302,13 @@ class HyperparametersConfig(BaseModel):
             )
         return batch_size
 
+    @field_validator("learning_rate")
+    @classmethod
+    def convert_learning_rate(cls, learning_rate):
+        if learning_rate and isinstance(learning_rate, str):
+            learning_rate = float(learning_rate)
+        return learning_rate
+
 
 class ModelOutputConfig(BaseModel):
     """model save configuration subset"""
@@ -368,6 +375,7 @@ class AxolotlInputConfig(
     rl: Optional[RLType] = None
 
     datasets: Optional[conlist(Union[SFTDataset, DPODataset], min_length=1)] = None  # type: ignore
+    test_datasets: Optional[conlist(Union[SFTDataset, DPODataset], min_length=1)] = None  # type: ignore
     dataset_prepared_path: Optional[str] = None
     dataset_shard_num: Optional[int] = None
     dataset_shard_idx: Optional[int] = None
@@ -456,6 +464,7 @@ class AxolotlInputConfig(
     warmup_steps: Optional[int] = None
     warmup_ratio: Optional[float] = None
     eval_steps: Optional[Union[int, float]] = None
+    evals_per_epoch: Optional[Union[int]] = None
     evaluation_strategy: Optional[str] = None
     save_steps: Optional[Union[int, float]] = None
     saves_per_epoch: Optional[int] = None
@@ -463,6 +472,7 @@ class AxolotlInputConfig(
     save_total_limit: Optional[int] = None
     logging_steps: Optional[int] = None
     early_stopping_patience: Optional[int] = None
+    load_best_model_at_end: Optional[bool] = False
 
     neftune_noise_alpha: Optional[float] = None
 

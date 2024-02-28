@@ -176,6 +176,20 @@ class TestValidation(BaseValidation):
         with pytest.raises(ValueError, match=r".*At least two of*"):
             validate_config(cfg)
 
+    def test_lr_as_float(self, minimal_cfg):
+        cfg = (
+            DictDefault(  # pylint: disable=unsupported-binary-operation
+                {
+                    "learning_rate": "5e-5",
+                }
+            )
+            | minimal_cfg
+        )
+
+        new_cfg = validate_config(cfg)
+
+        assert new_cfg.learning_rate == 0.00005
+
     def test_qlora(self, minimal_cfg):
         base_cfg = (
             DictDefault(

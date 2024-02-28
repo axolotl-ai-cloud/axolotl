@@ -13,7 +13,6 @@ from threading import Thread
 from typing import Any, Dict, List, Optional, Union
 from urllib.parse import urlparse
 
-import gradio as gr
 import requests
 import torch
 import yaml
@@ -215,6 +214,8 @@ def do_inference_gradio(
     cfg: DictDefault,
     cli_args: TrainerCliArgs,
 ):
+    import gradio as gr
+
     model, tokenizer = load_model_and_tokenizer(cfg=cfg, cli_args=cli_args)
     prompter = cli_args.prompter
     default_tokens = {"unk_token": "<unk>", "bos_token": "<s>", "eos_token": "</s>"}
