@@ -25,7 +25,7 @@ RUN git fetch origin +$GITHUB_REF && \
 RUN if [ "$AXOLOTL_EXTRAS" != "" ] ; then \
         pip install -e .[deepspeed,flash-attn,mamba-ssm,$AXOLOTL_EXTRAS] $AXOLOTL_ARGS; \
     else \
-        pip install -e .[deepspeed,flash-attn,mamba-ssm] $AXOLOTL_ARGSå; \
+        pip install -e .[deepspeed,flash-attn,mamba-ssm] $AXOLOTL_ARGS; \
     fi
 
 # So we can test the Docker image
