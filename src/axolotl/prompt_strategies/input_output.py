@@ -1,9 +1,11 @@
 """Module for plain input/output prompt pairs"""
+from typing import Generator, Tuple
 
 from axolotl.prompt_tokenizers import PromptTokenizingStrategy
+from axolotl.prompters import IGNORE_TOKEN_ID, Prompter
 
 
-class InputOutputStrategy(PromptTokenizingStrategy):
+class RawInputOutputStrategy(PromptTokenizingStrategy):
     """Prompt Strategy class for input/output pairs"""
 
     def __init__(self, *args, eos_token=None, **kwargs):
@@ -14,18 +16,17 @@ class InputOutputStrategy(PromptTokenizingStrategy):
 
     def tokenize_prompt(self, prompt):
         # pylint: disable=duplicate-code
-        input_: str = prompt["input"]
-        output: str = prompt["output"] + self.eos_token
-        if not input_.endswith(" ") and not input_.endswith("\n"):
-            input_ += " "
-        input_ids_prompt = self.tokenizer(input_, return_tensors=None)["input_ids"]
-        input_ids = self.tokenizer(input_ + output, return_tensors=None)["input_ids"]
-
-        if not self.train_on_inputs:
-            user_prompt_len = len(input_ids_prompt)
-            labels = [-100] * user_prompt_len + input_ids[user_prompt_len:]
-        else:
-            labels = input_ids
+        input_ids = []
+        labels = []
+        for label, text in self.prompter.build_prompt(prompt["segments"]):
+            tokenized_output = self.tokenizer(
+                text, add_special_tokens=False, return_tensors=None
+            )["input_ids"]
+            input_ids += tokenized_output
+            if label or self.train_on_inputs:
+                labels += tokenized_output
+            else:
+                labels += [IGNORE_TOKEN_ID] * len(tokenized_output)
 
         tokenized_prompt = {
             "input_ids": input_ids,
@@ -36,9 +37,17 @@ class InputOutputStrategy(PromptTokenizingStrategy):
         return tokenized_prompt
 
 
+class RawInputOutputPrompter(Prompter):
+    """prompter for raw i/o data"""
+
+    def build_prompt(self, source) -> Generator[Tuple[bool, str], None, None]:
+        for segment in source:
+            yield segment["label"], segment["text"]
+
+
 def load(tokenizer, cfg):
-    return InputOutputStrategy(
-        None,
+    return RawInputOutputStrategy(
+        RawInputOutputPrompter(),
         tokenizer,
         cfg.train_on_inputs,
         cfg.sequence_len,
