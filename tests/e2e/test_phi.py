@@ -7,6 +7,8 @@ import os
 import unittest
 from pathlib import Path
 
+import pytest
+
 from axolotl.cli import load_datasets
 from axolotl.common.cli import TrainerCliArgs
 from axolotl.train import train
@@ -19,6 +21,7 @@ LOG = logging.getLogger("axolotl.tests.e2e")
 os.environ["WANDB_DISABLED"] = "true"
 
 
+@pytest.mark.skip(reason="doesn't seem to work on modal")
 class TestPhi(unittest.TestCase):
     """
     Test case for Phi2 models

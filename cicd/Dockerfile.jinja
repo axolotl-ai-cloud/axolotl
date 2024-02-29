@@ -1,0 +1,39 @@
+FROM winglian/axolotl-base:{{ BASE_TAG }}
+
+ENV TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6+PTX"
+ENV AXOLOTL_EXTRAS="{{ AXOLOTL_EXTRAS }}"
+ENV AXOLOTL_ARGS="{{ AXOLOTL_ARGS }}"
+ENV CUDA="{{ CUDA }}"
+ENV BNB_CUDA_VERSION="{{ CUDA }}"
+ENV PYTORCH_VERSION="{{ PYTORCH_VERSION }}"
+ENV GITHUB_REF="{{ GITHUB_REF }}"
+ENV GITHUB_SHA="{{ GITHUB_SHA }}"
+
+RUN apt-get update && \
+    apt-get install -y --allow-change-held-packages vim curl nano libnccl2 libnccl-dev
+
+WORKDIR /workspace
+
+RUN git clone --depth=1 https://github.com/OpenAccess-AI-Collective/axolotl.git
+
+WORKDIR /workspace/axolotl
+
+RUN git fetch origin +$GITHUB_REF && \
+    git checkout FETCH_HEAD
+
+# If AXOLOTL_EXTRAS is set, append it in brackets
+RUN if [ "$AXOLOTL_EXTRAS" != "" ] ; then \
+        pip install -e .[deepspeed,flash-attn,mamba-ssm,$AXOLOTL_EXTRAS] $AXOLOTL_ARGS; \
+    else \
+        pip install -e .[deepspeed,flash-attn,mamba-ssm] $AXOLOTL_ARGS; \
+    fi
+
+# So we can test the Docker image
+RUN pip install pytest
+
+# fix so that git fetch/pull from remote works
+RUN git config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*" && \
+    git config --get remote.origin.fetch
+
+# helper for huggingface-login cli
+RUN git config --global credential.helper store
