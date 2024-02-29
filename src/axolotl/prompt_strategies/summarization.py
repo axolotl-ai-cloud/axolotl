@@ -19,7 +19,7 @@ class SummarizationPrompter:
     input = "input"
     output = "output"
 
-    def build_prompt(self, data: Dict[str, str]) -> Generator(Tuple[str, str], None, None):
+    def build_prompt(self, data: Dict[str, str]) -> Generator[Tuple[str, str], None, None]:
         summary = data["content"]
         name = data["placeName"]
         reviews = "\n".join(data["reviews"])
