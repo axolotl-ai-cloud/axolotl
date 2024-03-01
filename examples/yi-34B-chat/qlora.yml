@@ -1,8 +1,7 @@
 base_model: 01-ai/Yi-34B-Chat
 model_type: LlamaForCausalLM
 tokenizer_type: LlamaTokenizer
-is_mistral_derived_model: false
-is_llama_derived_model: true
+
 load_in_8bit: false
 load_in_4bit: true
 strict: false
