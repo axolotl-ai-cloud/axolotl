@@ -1003,7 +1003,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             if self.cfg.optimizer == "prodigy":
                 from axolotl.custom_optim.prodigy import Prodigy
                 trainer_kwargs["optimizers"] = (
-                    Prodigy(params=self.model.parameters(), **custom_optim_kwargs),
+                    Prodigy(params=filter(lambda p: p.requires_grad, self.model.parameters()), **custom_optim_kwargs),
                     None,
                 )
 
