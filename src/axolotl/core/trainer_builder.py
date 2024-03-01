@@ -972,28 +972,45 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
 
         trainer_kwargs = {}
 
-        if self.cfg.optimizer == "lion_pytorch":
-            from lion_pytorch import Lion
 
-            lion_kwargs = {"lr": training_arguments_kwargs["learning_rate"]}
+        if self.cfg.optimizer in ["lion_pytorch", "prodigy", "sophia"]:
+
+            custom_optim_kwargs = {"lr": training_arguments_kwargs["learning_rate"]}
             if "weight_decay" in training_arguments_kwargs:
-                lion_kwargs["weight_decay"] = training_arguments_kwargs["weight_decay"]
+                custom_optim_kwargs["weight_decay"] = training_arguments_kwargs["weight_decay"]
 
             if (
                 "adam_beta1" in training_arguments_kwargs
                 and "adam_beta2" in training_arguments_kwargs
             ):
-                lion_kwargs["betas"] = (
+                custom_optim_kwargs["betas"] = (
                     training_arguments_kwargs["adam_beta1"],
                     training_arguments_kwargs["adam_beta2"],
                 )
 
-            trainer_kwargs["optimizers"] = (
-                Lion(params=self.model.parameters(), **lion_kwargs),
-                None,
-            )
+            if self.cfg.optimizer == "lion_pytorch":
+                from axolotl.custom_optim.lion import Lion
+                trainer_kwargs["optimizers"] = (
+                    Lion(params=self.model.parameters(), **custom_optim_kwargs),
+                    None,
+                )
+            if self.cfg.optimizer == "sophia":
+                from axolotl.custom_optim.sophia import SophiaG
+                trainer_kwargs["optimizers"] = (
+                    SophiaG(params=self.model.parameters(), **custom_optim_kwargs),
+                    None,
+                )
+            if self.cfg.optimizer == "prodigy":
+                from axolotl.custom_optim.prodigy import Prodigy
+                trainer_kwargs["optimizers"] = (
+                    Prodigy(params=self.model.parameters(), **custom_optim_kwargs),
+                    None,
+                )
+
             # Set default so transformers doesn't throw
             training_arguments_kwargs["optim"] = "adamw_hf"
+
+
 
         if self.cfg.optimizer == "adamw_anyprecision":
             if Path(self.cfg.torchdistx_path).exists():
