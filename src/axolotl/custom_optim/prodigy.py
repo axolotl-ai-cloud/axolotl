@@ -57,7 +57,7 @@ class Prodigy(torch.optim.Optimizer):
     def __init__(self, params, lr=1.0,
                  betas=(0.9, 0.999), beta3=None,
                  eps=1e-8, weight_decay=0, decouple=True,
-                 use_bias_correction=True, safeguard_warmup=True,
+                 use_bias_correction=False, safeguard_warmup=False,
                  d0=1e-6, d_coef=1.0, growth_rate=float('inf'),
                  fsdp_in_use=False):
         if not 0.0 < d0:
