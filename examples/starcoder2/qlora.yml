@@ -1,7 +1,4 @@
-base_model: /home/ubuntu/models/starcoder2-15b
-model_type: AutoModelForCausalLM
-tokenizer_type: AutoTokenizer
-trust_remote_code: true
+base_model: bigcode/starcoder2-3b
 
 load_in_8bit: false
 load_in_4bit: true
@@ -46,7 +43,7 @@ learning_rate: 2e-5
 
 train_on_inputs: false
 group_by_length: false
-bf16: true
+bf16: auto
 fp16: false
 tf32: false
 
@@ -60,18 +57,14 @@ flash_attention: true
 
 warmup_steps: 20
 evals_per_epoch: 4
-eval_batch_size: 1
 eval_steps:
 eval_table_size:
 saves_per_epoch: 4
 save_steps:
 save_total_limit: 2
 debug:
-deepspeed: deepspeed_configs/zero2.json
-weight_decay: 0.00
+deepspeed:
+weight_decay:
 fsdp:
 fsdp_config:
 special_tokens:
-  eos_token: "<|endoftext|>"
-  pad_token: "<|endoftext|>"
-  unk_token: "<|endoftext|>"
