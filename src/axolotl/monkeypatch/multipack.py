@@ -6,7 +6,14 @@ from transformers.integrations import is_deepspeed_zero3_enabled
 from axolotl.monkeypatch.mixtral import patch_mixtral_moe_forward_zero3
 from axolotl.monkeypatch.utils import get_unpad_data
 
-SUPPORTED_MULTIPACK_MODEL_TYPES = ["mixtral", "qwen2", "falcon", "phi", "gemma", "starcoder2"]
+SUPPORTED_MULTIPACK_MODEL_TYPES = [
+    "mixtral",
+    "qwen2",
+    "falcon",
+    "phi",
+    "gemma",
+    "starcoder2",
+]
 
 
 def patch_for_multipack(model_type):
