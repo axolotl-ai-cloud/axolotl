@@ -103,7 +103,7 @@ def update_fn_kernel(
     tl.store(offset_exp_avg_ptr, exp_avg, mask=mask)
 
 
-def update_fn(
+def triton_update_fn(
     p: torch.Tensor,
     grad: torch.Tensor,
     exp_avg: torch.Tensor,

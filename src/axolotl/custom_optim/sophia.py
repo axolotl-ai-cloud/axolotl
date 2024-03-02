@@ -168,7 +168,7 @@ def _single_tensor_sophiag(params: List[Tensor],
         step_t = state_steps[i]
 
         if capturable:
-            assert param.is_cuda and step_t.is_cuda and bs.is_cuda
+            assert param.is_cuda and step_t.is_cuda
 
         if torch.is_complex(param):
             grad = torch.view_as_real(grad)
