@@ -293,7 +293,7 @@ class HyperparametersConfig(BaseModel):
 
     learning_rate: Union[str, float]
     weight_decay: Optional[float] = None
-    optimizer: Optional[Union[OptimizerNames, Literal["lion_pytorch"]]]
+    optimizer: Optional[Union[OptimizerNames, Literal["lion_pytorch"]]] = None
     torchdistx_path: Optional[str] = None
     lr_scheduler: Optional[SchedulerType] = None
     lr_scheduler_kwargs: Optional[Dict[str, Any]] = None
