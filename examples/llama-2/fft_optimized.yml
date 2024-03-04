@@ -60,7 +60,7 @@ flash_attn_rms_norm: true
 flash_attn_fuse_qkv: false
 flash_attn_fuse_mlp: false
 
-warmup_steps: 500
+warmup_steps: 500 # ~50% of first epoch
 eval_steps:
 eval_sample_packing: False
 eval_table_size:
