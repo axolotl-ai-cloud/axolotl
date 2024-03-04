@@ -1,5 +1,10 @@
 """Module for LoRA+"""
 
+# MIT License
+#
+# Copyright (c) 2024 nikhil-ghosh-berkeley
+# https://github.com/nikhil-ghosh-berkeley/loraplus
+
 import logging
 from functools import reduce
 
