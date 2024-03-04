@@ -822,7 +822,7 @@ class AxolotlInputConfig(
     @model_validator(mode="after")
     def check_early_stopping(self):
         if self.early_stopping_patience:
-            if not self.save_steps or self.eval_steps:
+            if not self.save_steps or not self.eval_steps:
                 raise ValueError(
                     "`early_stopping_patience` requires save_steps and eval_steps to be set. eval_steps should evenly divide save_steps."
                 )
