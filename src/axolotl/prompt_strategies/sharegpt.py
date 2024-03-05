@@ -82,7 +82,7 @@ class SimpleShareGPTPromptTokenizingStrategy(ShareGPTPromptTokenizingStrategy):
     basic sharegpt strategy to grab conversations from the sample row
     """
 
-    _strict = True
+    _strict = False
 
     @property
     def strict(self):
@@ -96,10 +96,25 @@ class SimpleShareGPTPromptTokenizingStrategy(ShareGPTPromptTokenizingStrategy):
         conversations = prompt["conversations"]
         if self.strict:
             return conversations
-        # remap roles - allow for assistant turn
-        role_map = {"human": "human", "assistant": "gpt", "gpt": "gpt"}
+        role_key = "from"
+        if "role" in conversations[0].keys():
+            role_key = "role"
+        value_key = "value"
+        if "text" in conversations[0].keys():
+            value_key = "text"
+        elif "content" in conversations[0].keys():
+            value_key = "content"
+        # remap roles - allow for assistant turn"
+        role_map = {
+            "user": "human",
+            "human": "human",
+            "assistant": "gpt",
+            "gpt": "gpt",
+            "system": "system",
+        }
         turns = [
-            {"from": role_map[t["from"]], "value": t["value"]} for t in conversations
+            {"from": role_map[t[role_key]], "value": t[value_key]}
+            for t in conversations
         ]
         return turns
 
