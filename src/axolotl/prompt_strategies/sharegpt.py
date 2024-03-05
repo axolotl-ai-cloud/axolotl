@@ -104,8 +104,14 @@ class SimpleShareGPTPromptTokenizingStrategy(ShareGPTPromptTokenizingStrategy):
             value_key = "text"
         elif "content" in conversations[0].keys():
             value_key = "content"
-        # remap roles - allow for assistant turn
-        role_map = {"user": "human", "human": "human", "assistant": "gpt", "gpt": "gpt"}
+        # remap roles - allow for assistant turn"
+        role_map = {
+            "user": "human",
+            "human": "human",
+            "assistant": "gpt",
+            "gpt": "gpt",
+            "system": "system",
+        }
         turns = [
             {"from": role_map[t[role_key]], "value": t[value_key]}
             for t in conversations
