@@ -27,8 +27,10 @@ from transformers import (
     TrainingArguments,
 )
 from transformers.trainer_utils import seed_worker
+from transformers.utils import is_sagemaker_mp_enabled
 from trl import DPOTrainer
 
+from axolotl.loraplus import create_loraplus_optimizer
 from axolotl.monkeypatch.multipack import SUPPORTED_MULTIPACK_MODEL_TYPES
 from axolotl.monkeypatch.relora import ReLoRACallback, ReLoRAScheduler
 from axolotl.utils.callbacks import (
@@ -53,6 +55,9 @@ from axolotl.utils.schedulers import (
     get_cosine_schedule_with_quadratic_warmup,
     get_cosine_schedule_with_warmup_decay_constant,
 )
+
+if is_sagemaker_mp_enabled():
+    import smdistributed.modelparallel.torch as smp
 
 try:
     import torch._dynamo  # pylint: disable=ungrouped-imports
@@ -179,6 +184,13 @@ class AxolotlTrainingArguments(TrainingArguments):
             "help": "Starting constant learning rate step is cosine_constant_lr_ratio * max_steps"
         },
     )
+    loraplus_lr_ratio: Optional[float] = field(
+        default=None, metadata={"help": "loraplus learning rate ratio lr_B / lr_A."}
+    )
+    loraplus_lr_embedding: Optional[float] = field(
+        default=1e-6,
+        metadata={"help": "loraplus learning rate for lora embedding layers."},
+    )
 
 
 class AxolotlTrainer(Trainer):
@@ -202,6 +214,33 @@ class AxolotlTrainer(Trainer):
         self.eval_data_collator = eval_data_collator
         super().__init__(*_args, **kwargs)
         self.train_data_collator = self.data_collator
+
+    def create_optimizer(self):
+        if self.args.loraplus_lr_ratio is None:
+            return super().create_optimizer()
+
+        opt_model = self.model_wrapped if is_sagemaker_mp_enabled() else self.model
+        if self.optimizer is None:  # pylint: disable=access-member-before-definition
+            optimizer_cls, optimizer_kwargs = Trainer.get_optimizer_cls_and_kwargs(
+                self.args,
+            )
+
+            loraplus_lr_ratio = getattr(self.args, "loraplus_lr_ratio", None)
+            loraplus_lr_embedding = getattr(self.args, "loraplus_lr_embedding", None)
+            self.optimizer = create_loraplus_optimizer(  # pylint: disable=attribute-defined-outside-init
+                opt_model,
+                optimizer_cls,
+                optimizer_kwargs,
+                loraplus_lr_ratio,
+                loraplus_lr_embedding,
+            )
+
+        if is_sagemaker_mp_enabled():
+            self.optimizer = smp.DistributedOptimizer(  # pylint: disable=attribute-defined-outside-init
+                self.optimizer
+            )
+
+        return self.optimizer
 
     def create_scheduler(
         self, num_training_steps: int, optimizer: torch.optim.Optimizer = None
@@ -915,6 +954,10 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         training_arguments_kwargs["optim"] = (
             self.cfg.optimizer if self.cfg.optimizer else "adamw_hf"
         )
+        training_arguments_kwargs["loraplus_lr_ratio"] = self.cfg.loraplus_lr_ratio
+        training_arguments_kwargs[
+            "loraplus_lr_embedding"
+        ] = self.cfg.loraplus_lr_embedding
         training_arguments_kwargs["lr_scheduler_type"] = (
             self.cfg.lr_scheduler
             if self.cfg.lr_scheduler

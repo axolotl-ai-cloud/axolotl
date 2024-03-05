@@ -183,6 +183,17 @@ class LoraConfig(BaseModel):
     gptq: Optional[bool] = None
     bnb_config_kwargs: Optional[Dict[str, Any]] = None
 
+    loraplus_lr_ratio: Optional[float] = Field(
+        default=None,
+        metadata={
+            "help": "loraplus learning rate ratio lr_B / lr_A. Recommended value is 2^4."
+        },
+    )
+    loraplus_lr_embedding: Optional[float] = Field(
+        default=1e-6,
+        metadata={"help": "loraplus learning rate for lora embedding layers."},
+    )
+
     merge_lora: Optional[bool] = None
 
     @model_validator(mode="before")
