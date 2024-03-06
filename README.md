@@ -385,6 +385,15 @@ pretraining_dataset: # hf path only
 
 </details>
 
+##### Template-Free
+
+- `input_output`: template-free prompt construction
+  ```json
+   {"segments": [{"label": true|false, "text": "..."}]}
+  ```
+
+This is a special format that allows you to construct prompts without using templates. This is for advanced users who want more freedom with prompt construction.  See [these docs](docs/input_output.md) for more details.
+
 ##### Conversation
 
 - `sharegpt`: conversations where `from` is `human`/`gpt`. (optional: first row with role `system` to override default system prompt)
