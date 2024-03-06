@@ -138,7 +138,7 @@ seed: 49
 
 datasets:
   - path: output.jsonl
-    type: input_output 
+    type: input_output
 val_set_size: 0.1
 
 sequence_len: 896
@@ -164,8 +164,8 @@ verify that the correct items are being ignored:
 ```bash
 $ python -m axolotl.cli.preprocess training_config.yaml --debug
 
-... 
-[2024-03-05 23:36:46,969] [INFO] [axolotl.check_example_labels:35] [PID:607731] [RANK:0] <s>(1, 1) Hello(22557, 22557) 
+...
+[2024-03-05 23:36:46,969] [INFO] [axolotl.check_example_labels:35] [PID:607731] [RANK:0] <s>(1, 1) Hello(22557, 22557)
 (13, 13) hi(12014, 12014) there(736, 736) !(28808, 28808) .(28723, 28723) (28705, 28705) good(-100, 1179) bye(-100, 17664) (-100, 28705) fare(19111, 19111) well(5458, 5458) </s>(2, 2)
 
 ```
@@ -199,14 +199,14 @@ ds = load_from_disk(f'last_run_prepared/{directory[0]}/')
 >>> print(tok.decode(row['input_ids']))
 <s> Hello
     hi there!.  goodbye  farewell</s>
-``` 
+```
 
 We can check that the right tokens are ingored by comparing the labels
 to each token:
 
 ```python
 import pandas as pd
-pd.DataFrame([{'token': tok.decode(i), 'label': l, 'id':i} for i,l in 
+pd.DataFrame([{'token': tok.decode(i), 'label': l, 'id':i} for i,l in
               zip(row['input_ids'], row['labels'])])
 ```
 
