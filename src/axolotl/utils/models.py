@@ -830,6 +830,8 @@ def load_lora(model, cfg, inference=False, config_only=False):
     if loftq_bits:
         lora_config_kwargs["loftq_config"] = LoftQConfig(loftq_bits=loftq_bits)
         lora_config_kwargs["init_lora_weights"] = "loftq"
+    if cfg.peft_use_dora:
+        lora_config_kwargs["use_dora"] = cfg.peft_use_dora
 
     lora_config = LoraConfig(
         r=cfg.lora_r,
