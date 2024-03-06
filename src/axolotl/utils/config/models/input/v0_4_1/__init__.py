@@ -243,6 +243,7 @@ class LoraConfig(BaseModel):
             raise ValueError(
                 "`peft_use_dora` is not currently compatible with quantized weights."
             )
+        return data
 
 
 class ReLoRAConfig(BaseModel):
