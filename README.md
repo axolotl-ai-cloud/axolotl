@@ -97,7 +97,7 @@ Features:
 
 Get started with Axolotl in just a few steps! This quickstart guide will walk you through setting up and running a basic fine-tuning task.
 
-**Requirements**: Python >=3.9 and Pytorch >=2.1.1.
+**Requirements**: Python >=3.10 and Pytorch >=2.1.1.
 
 ### For developers
 ```bash
@@ -179,7 +179,7 @@ docker run --privileged --gpus '"all"' --shm-size 10g --rm -it --name axolotl --
   </details>
 
 #### Conda/Pip venv
-  1. Install python >=**3.9**
+  1. Install python >=**3.10**
 
   2. Install pytorch stable https://pytorch.org/get-started/locally/
 
@@ -212,11 +212,11 @@ For cloud GPU providers that support docker images, use [`winglian/axolotl-cloud
   1. Install python
   ```bash
   sudo apt update
-  sudo apt install -y python3.9
+  sudo apt install -y python3.10
 
-  sudo update-alternatives --install /usr/bin/python python /usr/bin/python3.9 1
-  sudo update-alternatives --config python # pick 3.9 if given option
-  python -V # should be 3.9
+  sudo update-alternatives --install /usr/bin/python python /usr/bin/python3.10 1
+  sudo update-alternatives --config python # pick 3.10 if given option
+  python -V # should be 3.10
 
   ```
 
