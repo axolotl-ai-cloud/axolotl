@@ -1,4 +1,4 @@
-from typing import Tuple, Optional, Callable
+from typing import Callable, Optional, Tuple
 
 import torch
 from torch.optim.optimizer import Optimizer
@@ -6,8 +6,10 @@ from torch.optim.optimizer import Optimizer
 try:
     import triton
     import triton.language as tl
-except ImportError as e:
-    print('triton is not installed, please install by running `pip install triton -U --pre`')
+except ImportError:
+    print(
+        "triton is not installed, please install by running `pip install triton -U --pre`"
+    )
     exit()
 
 
@@ -16,6 +18,7 @@ def exists(val):
 
 
 # update functions
+
 
 def update_fn(p, grad, exp_avg, lr, wd, beta1, beta2):
     # stepweight decay
@@ -33,16 +36,24 @@ def update_fn(p, grad, exp_avg, lr, wd, beta1, beta2):
 
 
 def clone_inplace_updated_params(nargs):
-    nargs['p_ptr'] = nargs['p_ptr'].clone()
-    nargs['exp_avg_ptr'] = nargs['exp_avg_ptr'].clone()
+    nargs["p_ptr"] = nargs["p_ptr"].clone()
+    nargs["exp_avg_ptr"] = nargs["exp_avg_ptr"].clone()
 
 
 # triton cuda kernel
 
-@triton.autotune(configs=[
-    triton.Config({'BLOCK_SIZE': 128}, num_warps=4, pre_hook=clone_inplace_updated_params),
-    triton.Config({'BLOCK_SIZE': 1024}, num_warps=8, pre_hook=clone_inplace_updated_params),
-], key=['n_elements'])
+
+@triton.autotune(
+    configs=[
+        triton.Config(
+            {"BLOCK_SIZE": 128}, num_warps=4, pre_hook=clone_inplace_updated_params
+        ),
+        triton.Config(
+            {"BLOCK_SIZE": 1024}, num_warps=8, pre_hook=clone_inplace_updated_params
+        ),
+    ],
+    key=["n_elements"],
+)
 @triton.jit
 def update_fn_kernel(
     p_ptr,
@@ -110,23 +121,15 @@ def triton_update_fn(
     lr: float,
     wd: float,
     beta1: float,
-    beta2: float
+    beta2: float,
 ):
     assert all([t.is_cuda for t in (p, grad, exp_avg)])
     n_elements = p.numel()
 
-    grid = lambda meta: (triton.cdiv(n_elements, meta['BLOCK_SIZE']),)
+    def grid(meta):
+        return (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
 
-    update_fn_kernel[grid](
-        p,
-        grad,
-        exp_avg,
-        lr,
-        wd,
-        beta1,
-        beta2,
-        n_elements
-    )
+    update_fn_kernel[grid](p, grad, exp_avg, lr, wd, beta1, beta2, n_elements)
 
 
 class Lion(Optimizer):
@@ -136,16 +139,12 @@ class Lion(Optimizer):
         lr: float = 1e-4,
         betas: Tuple[float, float] = (0.9, 0.99),
         weight_decay: float = 0.0,
-        use_triton: bool = False
+        use_triton: bool = False,
     ):
-        assert lr > 0.
-        assert all([0. <= beta <= 1. for beta in betas])
+        assert lr > 0.0
+        assert all([0.0 <= beta <= 1.0 for beta in betas])
 
-        defaults = dict(
-            lr=lr,
-            betas=betas,
-            weight_decay=weight_decay
-        )
+        defaults = dict(lr=lr, betas=betas, weight_decay=weight_decay)
 
         super().__init__(params, defaults)
 
@@ -155,37 +154,29 @@ class Lion(Optimizer):
             self.update_fn = triton_update_fn
 
     @torch.no_grad()
-    def step(
-        self,
-        closure: Optional[Callable] = None
-    ):
-
+    def step(self, closure: Optional[Callable] = None):
         loss = None
         if exists(closure):
             with torch.enable_grad():
                 loss = closure()
 
         for group in self.param_groups:
-            for p in filter(lambda p: exists(p.grad), group['params']):
-
-                grad, lr, wd, beta1, beta2, state = p.grad, group['lr'], group['weight_decay'], *group['betas'], \
-                self.state[p]
+            for p in filter(lambda p: exists(p.grad), group["params"]):
+                grad, lr, wd, beta1, beta2, state = (
+                    p.grad,
+                    group["lr"],
+                    group["weight_decay"],
+                    *group["betas"],
+                    self.state[p],
+                )
 
                 # init state - exponential moving average of gradient values
 
                 if len(state) == 0:
-                    state['exp_avg'] = torch.zeros_like(p)
+                    state["exp_avg"] = torch.zeros_like(p)
 
-                exp_avg = state['exp_avg']
+                exp_avg = state["exp_avg"]
 
-                self.update_fn(
-                    p,
-                    grad,
-                    exp_avg,
-                    lr,
-                    wd,
-                    beta1,
-                    beta2
-                )
+                self.update_fn(p, grad, exp_avg, lr, wd, beta1, beta2)
 
         return loss
