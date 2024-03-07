@@ -267,7 +267,8 @@ class ShareGPTPrompter(Prompter):  # pylint: disable=too-few-public-methods
 
     role_key_human = "human"
     role_key_model = "gpt"
-    role_key_tool = "tool"
+    # Optional, only used for tool usage datasets.
+    role_key_tool = None
 
     def __init__(
         self,
@@ -275,6 +276,7 @@ class ShareGPTPrompter(Prompter):  # pylint: disable=too-few-public-methods
         conversation: Optional[Union[str, Conversation]] = None,
         role_key_human: Optional[str] = None,
         role_key_model: Optional[str] = None,
+        role_key_tool: Optional[str] = None,
     ):
         if conversation:
             if isinstance(conversation, Conversation):
@@ -287,6 +289,8 @@ class ShareGPTPrompter(Prompter):  # pylint: disable=too-few-public-methods
             self.role_key_human = role_key_human
         if role_key_model:
             self.role_key_model = role_key_model
+        if role_key_tool:
+            self.role_key_tool = role_key_tool
 
     def _build_result(self, source):
         if len(source) < 2:
