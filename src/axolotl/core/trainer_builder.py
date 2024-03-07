@@ -1077,7 +1077,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 optimizer = GaLoreAdafactor(
                     param_groups,
                     lr=training_arguments_kwargs["learning_rate"],
-                    weight_decay=training_arguments_kwargs["weight_decay"],
+                    weight_decay=training_arguments_kwargs.get("weight_decay", 0.0),
                 )
             else:
                 galore_cls = GaLoreAdamW
@@ -1087,11 +1087,11 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                     param_groups,
                     lr=training_arguments_kwargs["learning_rate"],
                     betas=(
-                        training_arguments_kwargs["adam_beta1"],
-                        training_arguments_kwargs["adam_beta2"],
+                        training_arguments_kwargs.get("adam_beta1", 0.9),
+                        training_arguments_kwargs.get("adam_beta2", 0.999),
                     ),
-                    eps=training_arguments_kwargs["adam_epsilon"],
-                    weight_decay=training_arguments_kwargs["weight_decay"],
+                    eps=training_arguments_kwargs.get("adam_epsilon", 0.00000001),
+                    weight_decay=training_arguments_kwargs.get("weight_decay", 0.0),
                 )
 
             trainer_kwargs["optimizers"] = (
