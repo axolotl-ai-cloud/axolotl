@@ -25,7 +25,7 @@ Features:
 - [Environment](#environment)
   - [Docker](#docker)
   - [Conda/Pip venv](#condapip-venv)
-  - [Cloud GPU](#cloud-gpu) - Latitude.sh, JarvisLabs,RunPod
+  - [Cloud GPU](#cloud-gpu) - Latitude.sh, JarvisLabs, RunPod
   - [Bare Metal Cloud GPU](#bare-metal-cloud-gpu)
   - [Windows](#windows)
   - [Launching on public clouds via SkyPilot](#launching-on-public-clouds-via-skypilot)
