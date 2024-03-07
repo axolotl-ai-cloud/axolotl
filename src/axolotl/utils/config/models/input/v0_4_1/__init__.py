@@ -317,7 +317,14 @@ class HyperparametersConfig(BaseModel):
 
     learning_rate: Union[str, float]
     weight_decay: Optional[float] = None
-    optimizer: Optional[Union[OptimizerNames, Literal["lion_pytorch"]]] = None
+    optimizer: Optional[
+        Union[
+            OptimizerNames,
+            Literal[
+                "lion_pytorch", "galore_adamw8bit", "galore_adamw", "galore_ada_factor"
+            ],
+        ]
+    ] = None
     torchdistx_path: Optional[str] = None
     lr_scheduler: Optional[SchedulerType] = None
     lr_scheduler_kwargs: Optional[Dict[str, Any]] = None
@@ -400,6 +407,7 @@ class AxolotlInputConfig(
     ModelOutputConfig,
     LoraConfig,
     ReLoRAConfig,
+    GaloreConfig,
     HyperparametersConfig,
     WandbConfig,
     MLFlowConfig,
