@@ -1037,6 +1037,40 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             )
             # Set default so transformers doesn't throw
             training_arguments_kwargs["optim"] = "adamw_hf"
+        elif self.cfg.optimizer in [
+            "galore_adamw",
+            "galore_adamw8bit",
+            "galore_ada_factor",
+        ]:
+            from galore_torch import GaLoreAdafactor, GaLoreAdamW, GaLoreAdamW8bit
+
+            galore_cls = GaLoreAdamW
+            if self.cfg.optimizer == "galore_adamw8bit":
+                galore_cls = GaLoreAdamW8bit
+            elif self.cfg.optimizer == "galore_ada_factor":
+                galore_cls = GaLoreAdafactor
+
+            param_groups = [
+                {"params": training_arguments_kwargs},
+                {
+                    "rank": training_arguments_kwargs["galore_rank"],
+                    "update_proj_gap": training_arguments_kwargs[
+                        "galore_update_proj_gap"
+                    ],
+                    "scale": training_arguments_kwargs["galore_scale"],
+                    "proj_type": training_arguments_kwargs["galore_proj_type"],
+                },
+            ]
+            optimizer = galore_cls(
+                param_groups, lr=training_arguments_kwargs["learning_rate"]
+            )
+
+            trainer_kwargs["optimizers"] = (
+                optimizer,
+                None,
+            )
+            # Set default so transformers doesn't throw
+            training_arguments_kwargs["optim"] = "adamw_hf"
 
         if self.cfg.optimizer == "adamw_anyprecision":
             if Path(self.cfg.torchdistx_path).exists():
