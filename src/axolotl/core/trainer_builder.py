@@ -1045,12 +1045,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         ]:
             from galore_torch import GaLoreAdafactor, GaLoreAdamW, GaLoreAdamW8bit
 
-            galore_cls = GaLoreAdamW
-            if self.cfg.optimizer == "galore_adamw8bit":
-                galore_cls = GaLoreAdamW8bit
-            elif self.cfg.optimizer == "galore_ada_factor":
-                galore_cls = GaLoreAdafactor
-
             galore_params = []
             for module_name, module in model.named_modules():
                 if not isinstance(module, nn.Linear):
@@ -1079,9 +1073,26 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                     "proj_type": self.cfg.galore_proj_type,
                 },
             ]
-            optimizer = galore_cls(
-                param_groups, lr=training_arguments_kwargs["learning_rate"]
-            )
+            if self.cfg.optimizer == "galore_ada_factor":
+                optimizer = GaLoreAdafactor(
+                    param_groups,
+                    lr=training_arguments_kwargs["learning_rate"],
+                    weight_decay=training_arguments_kwargs["weight_decay"],
+                )
+            else:
+                galore_cls = GaLoreAdamW
+                if self.cfg.optimizer == "galore_adamw8bit":
+                    galore_cls = GaLoreAdamW8bit
+                optimizer = galore_cls(
+                    param_groups,
+                    lr=training_arguments_kwargs["learning_rate"],
+                    betas=(
+                        training_arguments_kwargs["adam_beta1"],
+                        training_arguments_kwargs["adam_beta2"],
+                    ),
+                    eps=training_arguments_kwargs["adam_epsilon"],
+                    weight_decay=training_arguments_kwargs["weight_decay"],
+                )
 
             trainer_kwargs["optimizers"] = (
                 optimizer,
