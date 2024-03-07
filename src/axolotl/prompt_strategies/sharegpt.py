@@ -192,8 +192,8 @@ class GlaiveShareGPTPromptTokenizingStrategy(SimpleShareGPTPromptTokenizingStrat
     sharegpt strategy that remaps glaive data to sharegpt format
     """
 
-    def get_conversation_thread(self, row):
-        conversation = chatml_to_conversation(row)
+    def get_conversation_thread(self, prompt):
+        conversation = chatml_to_conversation(prompt)
         conversation = merge_consecutive_messages(conversation)
 
         return conversation

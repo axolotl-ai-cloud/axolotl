@@ -3,7 +3,7 @@
 
 import logging
 import re
-from typing import List, Dict
+from typing import Dict, List
 
 from termcolor import colored
 
@@ -47,7 +47,8 @@ GLAIVE_TO_SHAREGPT_ROLE = {
     "ASSISTANT": "gpt",
     "FUNCTION RESPONSE": "tool",
 }
-GLAIVE_MSG_REGEX = re.compile(r"({}): ".format("|".join(GLAIVE_ROLES)))
+
+GLAIVE_MSG_REGEX = re.compile(rf"({'|'.join(GLAIVE_ROLES)}): ")
 
 
 def chatml_to_conversation(row: Dict[str, str]) -> List[Dict[str, str]]:
