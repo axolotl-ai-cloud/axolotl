@@ -277,7 +277,7 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                 calc_sample_packing_eff_est,
             )
             sample_packing_eff_est = (
-                math.ceil(sample_packing_actual_eff_all * 100.0) / 100.0
+                math.ceil(sample_packing_actual_eff_all * 10000.0) / 10000.0
             )
             if update:
                 cfg.sample_packing_eff_est = sample_packing_eff_est

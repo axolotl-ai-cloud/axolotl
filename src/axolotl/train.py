@@ -11,7 +11,7 @@ import torch
 import transformers.modelcard
 from accelerate.logging import get_logger
 from datasets import Dataset
-from peft import PeftModel
+from peft import PeftModel, PeftModelForCausalLM
 from pkg_resources import get_distribution  # type: ignore
 from transformers import PreTrainedModel, PreTrainedTokenizer
 from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
@@ -206,6 +206,20 @@ def train(
             model = BetterTransformer.reverse(model)
 
         model.save_pretrained(cfg.output_dir, safe_serialization=safe_serialization)
+
+    if cfg.adapter and isinstance(model, (PeftModel, PeftModelForCausalLM)):
+        model.to("cpu")
+        model = model.merge_and_unload()
+
+        if cfg.local_rank == 0:
+            LOG.info(f"saving merged model to: {str(Path(cfg.output_dir) / 'merged')}")
+            model.save_pretrained(
+                str(Path(cfg.output_dir) / "merged"),
+                safe_serialization=safe_serialization,
+                progressbar=True,
+            )
+            tokenizer.save_pretrained(str(Path(cfg.output_dir) / "merged"))
+
 
     if not cfg.hub_model_id:
         try:

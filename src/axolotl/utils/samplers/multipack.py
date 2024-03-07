@@ -5,7 +5,7 @@ Multipack Batch Sampler
 import logging
 import math
 import os
-from typing import Any, Iterable, List, Union
+from typing import Any, Iterable, List, Union, Optional
 
 import numba
 import numpy as np
@@ -115,12 +115,14 @@ class MultipackBatchSampler(BatchSampler):
         batch_max_len: int,
         lengths: np.ndarray,
         packing_efficiency_estimate: float = 1.0,
+        consistent_length: Optional[bool] = False,
     ):
         super().__init__(sampler, batch_size, drop_last)
         self.batch_size = batch_size
         self.batch_max_len = batch_max_len
         self.lengths: np.ndarray = lengths
         self.packing_efficiency_estimate = packing_efficiency_estimate or 1.0
+        self.consistent_length = consistent_length
 
         assert isinstance(self.lengths, np.ndarray)
 
@@ -164,11 +166,18 @@ class MultipackBatchSampler(BatchSampler):
 
     def __iter__(self):
         batches = self.generate_batches(set_stats=True)
-        return iter(batches)
+        if self.consistent_length:
+            length = self._len_est()
+            return iter(batches[:length])
+        else:
+            return iter(batches)
 
     def num_batches(self):
         batches = self.generate_batches(set_stats=True)
-        return len(batches)
+        if self.consistent_length:
+            return self._len_est()
+        else:
+            return len(batches)
 
     def efficiency(self):
         return self.eff_total_used / self.eff_total_slots
