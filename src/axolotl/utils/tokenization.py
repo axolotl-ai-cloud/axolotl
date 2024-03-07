@@ -1,9 +1,9 @@
 """Module for tokenization utilities"""
 
-import re
-from typing import List, Dict
 
 import logging
+import re
+from typing import List, Dict
 
 from termcolor import colored
 

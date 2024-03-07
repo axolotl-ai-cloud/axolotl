@@ -362,7 +362,9 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
 
                 tool_role_label = None
                 if len(conversation.roles) == 3:
-                    user_role_label, assistant_role_label, tool_role_label = conversation.roles
+                    user_role_label, assistant_role_label, tool_role_label = (
+                        conversation.roles
+                    )
                 else:
                     user_role_label, assistant_role_label = conversation.roles
                 role, content = part

@@ -6,7 +6,10 @@ from fastchat.conversation import Conversation, SeparatorStyle, register_conv_te
 
 from axolotl.prompt_tokenizers import ShareGPTPromptTokenizingStrategy
 from axolotl.prompters import ShareGPTPrompterV2
-from axolotl.utils.tokenization import chatml_to_conversation, merge_consecutive_messages
+from axolotl.utils.tokenization import (
+    chatml_to_conversation,
+    merge_consecutive_messages,
+)
 
 
 def register_chatml_template(system_message=None):
@@ -192,5 +195,5 @@ class GlaiveShareGPTPromptTokenizingStrategy(SimpleShareGPTPromptTokenizingStrat
     def get_conversation_thread(self, row):
         conversation = chatml_to_conversation(row)
         conversation = merge_consecutive_messages(conversation)
-        
+
         return conversation
