@@ -331,4 +331,4 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
     trainer_builder.train_dataset = train_dataset
     trainer_builder.eval_dataset = eval_dataset
 
-    return trainer_builder.build(total_num_steps)
+    return trainer_builder.build(total_num_steps, model[0])

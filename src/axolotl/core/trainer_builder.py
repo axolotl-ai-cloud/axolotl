@@ -18,6 +18,7 @@ from typing import List, Optional, Type, Union
 import torch
 import transformers
 from datasets import Dataset
+from torch import nn
 from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import BatchSampler, DataLoader, RandomSampler, SequentialSampler
 from transformers import (
@@ -633,7 +634,7 @@ class TrainerBuilderBase(abc.ABC):
         self._peft_config = peft_config
 
     @abstractmethod
-    def build(self, total_num_steps):
+    def build(self, total_num_steps, model):
         pass
 
     def get_callbacks(self) -> List[TrainerCallback]:
@@ -740,7 +741,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             return AxolotlMambaTrainer
         return AxolotlTrainer
 
-    def build(self, total_num_steps):
+    def build(self, total_num_steps, model):
         warmup_steps = None
         if self.cfg.warmup_steps is not None:
             warmup_steps = self.cfg.warmup_steps
@@ -1050,15 +1051,32 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             elif self.cfg.optimizer == "galore_ada_factor":
                 galore_cls = GaLoreAdafactor
 
+            galore_params = []
+            for module_name, module in model.named_modules():
+                if not isinstance(module, nn.Linear):
+                    continue
+
+                if not any(
+                    target_key in module_name
+                    for target_key in self.cfg.galore_target_modules
+                ):
+                    continue
+
+                galore_params.append(module.weight)
+
+            id_galore_params = [id(p) for p in galore_params]
+            regular_params = [
+                p for p in model.parameters() if id(p) not in id_galore_params
+            ]
+
             param_groups = [
-                {"params": training_arguments_kwargs},
+                {"params": regular_params},
                 {
-                    "rank": training_arguments_kwargs["galore_rank"],
-                    "update_proj_gap": training_arguments_kwargs[
-                        "galore_update_proj_gap"
-                    ],
-                    "scale": training_arguments_kwargs["galore_scale"],
-                    "proj_type": training_arguments_kwargs["galore_proj_type"],
+                    "params": galore_params,
+                    "rank": self.cfg.galore_rank,
+                    "update_proj_gap": self.cfg.galore_update_proj_gap,
+                    "scale": self.cfg.galore_scale,
+                    "proj_type": self.cfg.galore_proj_type,
                 },
             ]
             optimizer = galore_cls(
@@ -1280,7 +1298,7 @@ class HFDPOTrainerBuilder(TrainerBuilderBase):
 
         return training_args
 
-    def build(self, total_num_steps):
+    def build(self, total_num_steps, model):
         training_args = self.build_training_arguments(total_num_steps)
         dpo_trainer_kwargs = {}
         if self.cfg.rl == "ipo":
@@ -1331,6 +1349,6 @@ class HFPPOTrainerBuilder(TrainerBuilderBase):
         callbacks = []
         return callbacks
 
-    def build(self, total_num_steps):
+    def build(self, total_num_steps, model):
         # build PPOConfig
         pass

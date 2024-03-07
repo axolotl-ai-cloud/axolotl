@@ -2,6 +2,8 @@
 Module for pydantic models for configuration
 """
 
+# pylint: disable=too-many-lines
+
 import logging
 import os
 from enum import Enum
@@ -244,6 +246,16 @@ class LoraConfig(BaseModel):
                 "`peft_use_dora` is not currently compatible with quantized weights."
             )
         return data
+
+
+class GaloreConfig(BaseModel):
+    """Galore optimizer configuration"""
+
+    galore_rank: Optional[int] = None
+    galore_update_proj_gap: Optional[int] = 50
+    galore_scale: Optional[float] = 1.0
+    galore_proj_type: Optional[str] = "std"
+    galore_target_modules: Optional[List[str]] = ["attn", "mlp"]
 
 
 class ReLoRAConfig(BaseModel):
