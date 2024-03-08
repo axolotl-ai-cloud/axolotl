@@ -196,6 +196,10 @@ class AxolotlTrainingArguments(TrainingArguments):
         default=1e-6,
         metadata={"help": "loraplus learning rate for lora embedding layers."},
     )
+    qlora: bool = field(
+        default=False,
+        metadata={"help": "whether this is a qlora training"},
+    )
 
 
 class AxolotlTrainer(Trainer):
@@ -477,6 +481,11 @@ class AxolotlTrainer(Trainer):
     def create_accelerator_and_postprocess(self):
         rank = int(os.environ.get("LOCAL_RANK", 0))
         res = super().create_accelerator_and_postprocess()
+
+        if self.args.qlora is False:
+            return res
+
+        # the rest of this method override is specific to fsdp + qlora (for now)
         sync_module_states = (
             str_to_bool(os.environ.get("FSDP_SYNC_MODULE_STATES", "True")) == 1
         )
@@ -504,6 +513,7 @@ class AxolotlTrainer(Trainer):
             wrapping_policy = get_wrapping_policy_factory(self.args.model_type)
             fsdp_plugin = FullyShardedDataParallelPlugin(
                 auto_wrap_policy=wrapping_policy(),
+                cpu_offload=False,
                 use_orig_params=False,
                 limit_all_gathers=True,
                 param_init_fn=lambda module: module.to_empty(
@@ -835,6 +845,9 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             training_arguments_kwargs["fsdp"] = self.cfg.fsdp
             if self.cfg.fsdp_config:
                 training_arguments_kwargs["fsdp_config"] = dict(self.cfg.fsdp_config)
+
+        if self.cfg.adapter == "qlora":
+            training_arguments_kwargs["qlora"] = True
 
         # deepspeed
         if self.cfg.deepspeed:
