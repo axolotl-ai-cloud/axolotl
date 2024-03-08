@@ -8,6 +8,7 @@ import importlib
 import importlib.util
 import logging
 import math
+import os
 import sys
 from abc import abstractmethod
 from dataclasses import dataclass, field
@@ -17,7 +18,10 @@ from typing import List, Optional, Type, Union
 
 import torch
 import transformers
+from accelerate import FullyShardedDataParallelPlugin
+from accelerate.utils import str_to_bool
 from datasets import Dataset
+from torch.distributed.fsdp import MixedPrecision
 from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import BatchSampler, DataLoader, RandomSampler, SequentialSampler
 from transformers import (
@@ -30,6 +34,7 @@ from transformers.trainer_utils import seed_worker
 from transformers.utils import is_sagemaker_mp_enabled
 from trl import DPOTrainer
 
+from axolotl.core.policies.auto_wrap import get_wrapping_policy_factory
 from axolotl.loraplus import create_loraplus_optimizer
 from axolotl.monkeypatch.multipack import SUPPORTED_MULTIPACK_MODEL_TYPES
 from axolotl.monkeypatch.relora import ReLoRACallback, ReLoRAScheduler
@@ -190,6 +195,10 @@ class AxolotlTrainingArguments(TrainingArguments):
     loraplus_lr_embedding: Optional[float] = field(
         default=1e-6,
         metadata={"help": "loraplus learning rate for lora embedding layers."},
+    )
+    qlora: bool = field(
+        default=False,
+        metadata={"help": "whether this is a qlora training"},
     )
 
 
@@ -467,6 +476,56 @@ class AxolotlTrainer(Trainer):
         kwargs = _sanitize_kwargs_for_tagging(tag_names=self.tag_names, kwargs=kwargs)
 
         return super().push_to_hub(*args, **kwargs)
+
+    @wraps(Trainer.create_accelerator_and_postprocess)
+    def create_accelerator_and_postprocess(self):
+        rank = int(os.environ.get("LOCAL_RANK", 0))
+        res = super().create_accelerator_and_postprocess()
+
+        if self.args.qlora is False:
+            return res
+
+        # the rest of this method override is specific to fsdp + qlora (for now)
+        sync_module_states = (
+            str_to_bool(os.environ.get("FSDP_SYNC_MODULE_STATES", "True")) == 1
+        )
+
+        mp_policy = None
+        amp = os.environ["ACCELERATE_MIXED_PRECISION"]
+        if amp == "fp16":
+            mp_policy = MixedPrecision(
+                param_dtype=torch.float32,
+                reduce_dtype=torch.float32,
+                buffer_dtype=torch.float32,
+            )
+        elif amp == "bf16":
+            mp_policy = MixedPrecision(
+                param_dtype=torch.float32,
+                reduce_dtype=torch.float32,
+                buffer_dtype=torch.float32,
+            )
+
+        # If somehow we figure out how we want to parameterize we want to autocast buffers...
+        # mp_policy = MixedPrecision(param_dtype=torch.bfloat16, reduce_dtype=torch.bfloat16, buffer_dtype=torch.float32)
+        # load_param_skip_names = ['inv_freq']
+
+        if self.is_fsdp_enabled:
+            wrapping_policy = get_wrapping_policy_factory(self.args.model_type)
+            fsdp_plugin = FullyShardedDataParallelPlugin(
+                auto_wrap_policy=wrapping_policy(),
+                cpu_offload=False,
+                use_orig_params=False,
+                limit_all_gathers=True,
+                param_init_fn=lambda module: module.to_empty(
+                    device=torch.device("cuda"), recurse=False
+                )
+                if (rank != 0 and sync_module_states)
+                else None,
+                mixed_precision_policy=mp_policy,
+            )
+            self.accelerator.state.fsdp_plugin = fsdp_plugin
+
+        return res
 
 
 class AxolotlMambaTrainer(AxolotlTrainer):
@@ -786,6 +845,9 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             training_arguments_kwargs["fsdp"] = self.cfg.fsdp
             if self.cfg.fsdp_config:
                 training_arguments_kwargs["fsdp_config"] = dict(self.cfg.fsdp_config)
+
+        if self.cfg.adapter == "qlora":
+            training_arguments_kwargs["qlora"] = True
 
         # deepspeed
         if self.cfg.deepspeed:
