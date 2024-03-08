@@ -94,7 +94,9 @@ def load_guanaco(tokenizer, cfg):
 
 def load_glaive(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
     conversation = (
-        ds_cfg["conversation"] if ds_cfg and "conversation" in ds_cfg else "chatml_glaive"
+        ds_cfg["conversation"]
+        if ds_cfg and "conversation" in ds_cfg
+        else "chatml_glaive"
     )
     return GlaiveShareGPTPromptTokenizingStrategy(
         ShareGPTPrompterV2(conversation=conversation),
