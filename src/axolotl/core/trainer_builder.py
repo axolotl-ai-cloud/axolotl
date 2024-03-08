@@ -4,7 +4,6 @@ Builder for the training args and trainer
 """
 
 import abc
-import functools
 import importlib
 import importlib.util
 import logging
@@ -22,14 +21,7 @@ import transformers
 from accelerate import FullyShardedDataParallelPlugin
 from accelerate.utils import str_to_bool
 from datasets import Dataset
-from peft import PrefixEncoder, PromptEmbedding, PromptEncoder
-from torch import nn
 from torch.distributed.fsdp import MixedPrecision
-from torch.distributed.fsdp.wrap import (
-    _or_policy,
-    lambda_auto_wrap_policy,
-    transformer_auto_wrap_policy,
-)
 from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import BatchSampler, DataLoader, RandomSampler, SequentialSampler
 from transformers import (
@@ -38,15 +30,11 @@ from transformers import (
     TrainerCallback,
     TrainingArguments,
 )
-from transformers.models.llama.modeling_llama import (
-    LLAMA_ATTENTION_CLASSES,
-    LlamaDecoderLayer,
-    LlamaMLP,
-)
 from transformers.trainer_utils import seed_worker
 from transformers.utils import is_sagemaker_mp_enabled
 from trl import DPOTrainer
 
+from axolotl.core.policies.auto_wrap import get_wrapping_policy_factory
 from axolotl.loraplus import create_loraplus_optimizer
 from axolotl.monkeypatch.multipack import SUPPORTED_MULTIPACK_MODEL_TYPES
 from axolotl.monkeypatch.relora import ReLoRACallback, ReLoRAScheduler
@@ -208,57 +196,6 @@ class AxolotlTrainingArguments(TrainingArguments):
         default=1e-6,
         metadata={"help": "loraplus learning rate for lora embedding layers."},
     )
-
-
-# FIXME, this should be some sort of generator based on the model arch
-# This checks for lora layers (has weight and requires_grad)
-def get_wrapping_policy(custom_policy: bool = False):
-    if custom_policy:
-
-        def lambda_policy_fn(module):
-            # LORA trainable layers.
-            return isinstance(module, nn.Sequential) and all(
-                m.weight.requires_grad for m in module
-            )
-
-    else:
-
-        def lambda_policy_fn(module):
-            return (
-                len(list(module.named_children())) == 0
-                and getattr(module, "weight", None) is not None
-                and module.weight.requires_grad
-            )
-
-    def self_attn_policy_fn(module):
-        # Check module name is self_attn.
-        return isinstance(module, tuple(LLAMA_ATTENTION_CLASSES.values()))
-
-    def mlp_policy_fn(module):
-        # Check module name is self_attn.
-        return isinstance(module, LlamaMLP)
-
-    lambda_policy = functools.partial(
-        lambda_auto_wrap_policy, lambda_fn=lambda_policy_fn
-    )
-    self_attn_policy = functools.partial(
-        lambda_auto_wrap_policy, lambda_fn=self_attn_policy_fn
-    )
-    mlp_policy = functools.partial(lambda_auto_wrap_policy, lambda_fn=mlp_policy_fn)
-    transformer_layer_name = LlamaDecoderLayer
-    transformer_wrap_policy = functools.partial(
-        transformer_auto_wrap_policy,
-        transformer_layer_cls=(
-            PrefixEncoder,
-            PromptEncoder,
-            PromptEmbedding,
-            transformer_layer_name,
-        ),
-    )
-    policies = [lambda_policy, transformer_wrap_policy]
-    if custom_policy:
-        policies.extend([self_attn_policy, mlp_policy])
-    return functools.partial(_or_policy, policies=policies)
 
 
 class AxolotlTrainer(Trainer):
@@ -564,8 +501,9 @@ class AxolotlTrainer(Trainer):
         # load_param_skip_names = ['inv_freq']
 
         if self.is_fsdp_enabled:
+            wrapping_policy = get_wrapping_policy_factory(self.model.config.model_type)
             fsdp_plugin = FullyShardedDataParallelPlugin(
-                auto_wrap_policy=get_wrapping_policy(False),
+                auto_wrap_policy=wrapping_policy(False),
                 use_orig_params=False,
                 limit_all_gathers=True,
                 param_init_fn=lambda module: module.to_empty(

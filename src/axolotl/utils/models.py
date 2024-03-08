@@ -37,6 +37,7 @@ from transformers import (  # noqa: F401
 from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
 from transformers.utils import SAFE_WEIGHTS_INDEX_NAME, SAFE_WEIGHTS_NAME, hub
 
+from axolotl.core.policies.auto_wrap import SUPPORTED_AUTO_WRAP_MODEL_TYPES
 from axolotl.models.mamba import fix_mamba_attn_for_loss
 from axolotl.monkeypatch.multipack import (
     SUPPORTED_MULTIPACK_MODEL_TYPES,
@@ -618,7 +619,7 @@ def load_model(
 
     try:
         if (
-            model_config.model_type == "llama"
+            model_config.model_type in SUPPORTED_AUTO_WRAP_MODEL_TYPES
             and cfg.adapter == "qlora"
             and cfg.fsdp is not None
         ):
@@ -802,7 +803,9 @@ def load_model(
         raise err
 
     qlora_fsdp = (
-        cfg.fsdp and cfg.adapter == "qlora" and model_config.model_type == "llama"
+        cfg.fsdp
+        and cfg.adapter == "qlora"
+        and model_config.model_type in SUPPORTED_AUTO_WRAP_MODEL_TYPES
     )
 
     if isinstance(model, (PeftModel, PeftModelForCausalLM)) and not qlora_fsdp:
