@@ -617,7 +617,7 @@ def load_model(
             and cfg.fsdp is not None
         ):
             if cfg.bf16 or cfg.bfloat16:
-                torch_dtype, compute_dtype = torch.bfloat16, torch.bfloat16
+                torch_dtype, compute_dtype = torch.float32, torch.bfloat16
             elif cfg.fp16 or cfg.float16:
                 torch_dtype, compute_dtype = torch.float32, torch.float16
             else:
@@ -895,7 +895,7 @@ def load_model(
 
     # LlamaRMSNorm layers are in fp32 after kbit_training or full finetune, so we need to
     # convert them back to fp16/bf16 for flash-attn compatibility.
-    if needs_fa2_dtype or cfg.flash_attention:
+    if (needs_fa2_dtype or cfg.flash_attention) and not qlora_fsdp:
         LOG.info("converting modules to %s for flash attention", cfg.torch_dtype)
         for name, module in model.named_modules():
             if "norm" in name:
