@@ -617,12 +617,14 @@ def load_model(
         model_kwargs["attn_implementation"] = "eager"
         model_config._attn_implementation = "eager"  # pylint: disable=protected-access
 
+    qlora_fsdp = (
+        cfg.fsdp
+        and cfg.adapter == "qlora"
+        and model_config.model_type in SUPPORTED_AUTO_WRAP_MODEL_TYPES
+    )
+
     try:
-        if (
-            model_config.model_type in SUPPORTED_AUTO_WRAP_MODEL_TYPES
-            and cfg.adapter == "qlora"
-            and cfg.fsdp is not None
-        ):
+        if qlora_fsdp:
             if cfg.bf16 or cfg.bfloat16:
                 torch_dtype, compute_dtype = torch.float32, torch.bfloat16
             elif cfg.fp16 or cfg.float16:
@@ -801,12 +803,6 @@ def load_model(
     except Exception as err:  # pylint: disable=broad-exception-caught
         LOG.exception(err)
         raise err
-
-    qlora_fsdp = (
-        cfg.fsdp
-        and cfg.adapter == "qlora"
-        and model_config.model_type in SUPPORTED_AUTO_WRAP_MODEL_TYPES
-    )
 
     if isinstance(model, (PeftModel, PeftModelForCausalLM)) and not qlora_fsdp:
         model = model.merge_and_unload()
