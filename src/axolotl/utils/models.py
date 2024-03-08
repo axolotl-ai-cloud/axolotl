@@ -1,4 +1,6 @@
 """Module for models and model loading"""
+# pylint: disable=too-many-lines
+
 import logging
 import math
 import os
@@ -297,7 +299,9 @@ def replace_linear(
 
         if isinstance(module, torch.nn.Linear) and name not in skip_modules:
             if issubclass(linear_replacement, Linear4bit):
-                model._modules[name] = linear_replacement(
+                model._modules[  # pylint: disable=protected-access
+                    name
+                ] = linear_replacement(
                     module.in_features,
                     module.out_features,
                     module.bias is not None,
@@ -316,7 +320,7 @@ def load_and_quantize(
     value: Tensor,
     device: torch.device = None,
     dtype: torch.dtype = None,
-    skip_names: List[str] = [],
+    skip_names: Optional[List[str]] = None,
     is_meta_rank: bool = False,
     low_memory: bool = True,
     verbose: bool = False,
@@ -328,6 +332,9 @@ def load_and_quantize(
     Quantizes `Params4bit` on `device` then places on "cpu" if low_memory=True or "meta" if is_meta_rank=True.
     """
 
+    if skip_names is None:
+        skip_names = []
+
     def place_on_device(value):
         if is_meta_rank:
             device = "meta"
@@ -337,7 +344,7 @@ def load_and_quantize(
             device = "cuda"
         return value.to(device=device, dtype=dtype)
 
-    if any([skip_name in name for skip_name in skip_names]):
+    if any(skip_name in name for skip_name in skip_names):
         if verbose:
             print(f"Skipping {name} because it is in skip_names")
         return
@@ -345,8 +352,8 @@ def load_and_quantize(
     module_key, _, value_key = name.rpartition(".")
     try:
         submodule = module.get_submodule(module_key)
-    except AttributeError as e:
-        print(f"Module {module_key} not found:\n{e}")
+    except AttributeError as exc:
+        print(f"Module {module_key} not found:\n{exc}")
         return
 
     try:
@@ -371,7 +378,6 @@ def load_and_quantize(
     except AttributeError:
         # it's a buffer
         value = place_on_device(value)
-        pass
 
     setattr(submodule, value_key, value)
 
@@ -645,9 +651,9 @@ def load_model(
                     # This means the model doesn't have a model.safetensors.index.json because it is not sharded
                     files = []
                     files.append(hub.cached_file(base_model, SAFE_WEIGHTS_NAME))
-                except OSError as e:
+                except OSError as exc:
                     # This means the model probably doesn't have a safetensors file
-                    raise e
+                    raise exc
 
             # Load in the weights, using our custom load_and_quantize method which quantizes Params4bit on the fly
             # and then places each layer on CPU or meta if using low_memory to minimize GPU memory usage
@@ -1010,12 +1016,14 @@ def find_all_linear_names(model):
 def setup_quantized_meta_for_peft(model: nn.Module):
     """Replaces `quant_state.to` with a dummy function to prevent PEFT from moving `quant_state` to meta device"""
 
-    def temp_to_method(self, *args, **kwargs):
+    def temp_to_method(self, *args, **kwargs):  # pylint: disable=unused-argument
         return self
 
     for param in model.parameters():
         if isinstance(param, Params4bit):
-            param.quant_state._orig_to = param.quant_state.to
+            param.quant_state._orig_to = (  # pylint: disable=protected-access
+                param.quant_state.to
+            )
             param.quant_state.to = types.MethodType(temp_to_method, param.quant_state)
 
 
@@ -1023,8 +1031,10 @@ def setup_quantized_peft_meta_for_training(model: nn.Module):
     """Replaces dummy `quant_state.to` method with the original function to allow training to continue"""
     for param in model.parameters():
         if isinstance(param, Params4bit) and hasattr(param.quant_state, "_orig_to"):
-            param.quant_state.to = param.quant_state._orig_to
-            param.quant_state._orig_to = None
+            param.quant_state.to = (
+                param.quant_state._orig_to  # pylint: disable=protected-access
+            )
+            param.quant_state._orig_to = None  # pylint: disable=protected-access
 
 
 def load_lora(model, cfg, inference=False, config_only=False):
