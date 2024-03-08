@@ -4,10 +4,12 @@ Builder for the training args and trainer
 """
 
 import abc
+import functools
 import importlib
 import importlib.util
 import logging
 import math
+import os
 import sys
 from abc import abstractmethod
 from dataclasses import dataclass, field
@@ -17,7 +19,17 @@ from typing import List, Optional, Type, Union
 
 import torch
 import transformers
+from accelerate import FullyShardedDataParallelPlugin
+from accelerate.utils import str_to_bool
 from datasets import Dataset
+from peft import PrefixEncoder, PromptEmbedding, PromptEncoder
+from torch import nn
+from torch.distributed.fsdp import MixedPrecision
+from torch.distributed.fsdp.wrap import (
+    _or_policy,
+    lambda_auto_wrap_policy,
+    transformer_auto_wrap_policy,
+)
 from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import BatchSampler, DataLoader, RandomSampler, SequentialSampler
 from transformers import (
@@ -25,6 +37,11 @@ from transformers import (
     Trainer,
     TrainerCallback,
     TrainingArguments,
+)
+from transformers.models.llama.modeling_llama import (
+    LLAMA_ATTENTION_CLASSES,
+    LlamaDecoderLayer,
+    LlamaMLP,
 )
 from transformers.trainer_utils import seed_worker
 from transformers.utils import is_sagemaker_mp_enabled
@@ -191,6 +208,57 @@ class AxolotlTrainingArguments(TrainingArguments):
         default=1e-6,
         metadata={"help": "loraplus learning rate for lora embedding layers."},
     )
+
+
+# FIXME, this should be some sort of generator based on the model arch
+# This checks for lora layers (has weight and requires_grad)
+def get_wrapping_policy(custom_policy: bool = False):
+    if custom_policy:
+
+        def lambda_policy_fn(module):
+            # LORA trainable layers.
+            return isinstance(module, nn.Sequential) and all(
+                m.weight.requires_grad for m in module
+            )
+
+    else:
+
+        def lambda_policy_fn(module):
+            return (
+                len(list(module.named_children())) == 0
+                and getattr(module, "weight", None) is not None
+                and module.weight.requires_grad
+            )
+
+    def self_attn_policy_fn(module):
+        # Check module name is self_attn.
+        return isinstance(module, tuple(LLAMA_ATTENTION_CLASSES.values()))
+
+    def mlp_policy_fn(module):
+        # Check module name is self_attn.
+        return isinstance(module, LlamaMLP)
+
+    lambda_policy = functools.partial(
+        lambda_auto_wrap_policy, lambda_fn=lambda_policy_fn
+    )
+    self_attn_policy = functools.partial(
+        lambda_auto_wrap_policy, lambda_fn=self_attn_policy_fn
+    )
+    mlp_policy = functools.partial(lambda_auto_wrap_policy, lambda_fn=mlp_policy_fn)
+    transformer_layer_name = LlamaDecoderLayer
+    transformer_wrap_policy = functools.partial(
+        transformer_auto_wrap_policy,
+        transformer_layer_cls=(
+            PrefixEncoder,
+            PromptEncoder,
+            PromptEmbedding,
+            transformer_layer_name,
+        ),
+    )
+    policies = [lambda_policy, transformer_wrap_policy]
+    if custom_policy:
+        policies.extend([self_attn_policy, mlp_policy])
+    return functools.partial(_or_policy, policies=policies)
 
 
 class AxolotlTrainer(Trainer):
@@ -467,6 +535,49 @@ class AxolotlTrainer(Trainer):
         kwargs = _sanitize_kwargs_for_tagging(tag_names=self.tag_names, kwargs=kwargs)
 
         return super().push_to_hub(*args, **kwargs)
+
+    @wraps(Trainer.create_accelerator_and_postprocess)
+    def create_accelerator_and_postprocess(self):
+        rank = int(os.environ.get("LOCAL_RANK", 0))
+        res = super().create_accelerator_and_postprocess()
+        sync_module_states = (
+            str_to_bool(os.environ.get("FSDP_SYNC_MODULE_STATES", "True")) == 1
+        )
+
+        mp_policy = None
+        amp = os.environ["ACCELERATE_MIXED_PRECISION"]
+        if amp == "fp16":
+            mp_policy = MixedPrecision(
+                param_dtype=torch.float32,
+                reduce_dtype=torch.float32,
+                buffer_dtype=torch.float32,
+            )
+        elif amp == "bf16":
+            mp_policy = MixedPrecision(
+                param_dtype=torch.float32,
+                reduce_dtype=torch.float32,
+                buffer_dtype=torch.float32,
+            )
+
+        # If somehow we figure out how we want to parameterize we want to autocast buffers...
+        # mp_policy = MixedPrecision(param_dtype=torch.bfloat16, reduce_dtype=torch.bfloat16, buffer_dtype=torch.float32)
+        # load_param_skip_names = ['inv_freq']
+
+        if self.is_fsdp_enabled:
+            fsdp_plugin = FullyShardedDataParallelPlugin(
+                auto_wrap_policy=get_wrapping_policy(False),
+                use_orig_params=False,
+                limit_all_gathers=True,
+                param_init_fn=lambda module: module.to_empty(
+                    device=torch.device("cuda"), recurse=False
+                )
+                if (rank != 0 and sync_module_states)
+                else None,
+                mixed_precision_policy=mp_policy,
+            )
+            self.accelerator.state.fsdp_plugin = fsdp_plugin
+
+        return res
 
 
 class AxolotlMambaTrainer(AxolotlTrainer):

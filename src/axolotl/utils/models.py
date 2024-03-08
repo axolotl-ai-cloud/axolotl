@@ -2,12 +2,16 @@
 import logging
 import math
 import os
-from typing import Any, Dict, Optional, Tuple, Union  # noqa: F401
+from typing import Any, Dict, List, Optional, Tuple, Type, Union  # noqa: F401
 
 import addict
 import bitsandbytes as bnb
+import safetensors
 import torch
 import transformers
+from accelerate import init_empty_weights
+from bitsandbytes.nn import Linear4bit, Params4bit
+from fastcore.parallel import parallel
 from peft import (
     LoftQConfig,
     PeftConfig,
@@ -16,6 +20,7 @@ from peft import (
     prepare_model_for_kbit_training,
 )
 from peft.tuners.lora import QuantLinear
+from torch import Tensor, nn
 from transformers import (  # noqa: F401
     AddedToken,
     AutoConfig,
@@ -27,6 +32,7 @@ from transformers import (  # noqa: F401
     PreTrainedTokenizerBase,
 )
 from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
+from transformers.utils import SAFE_WEIGHTS_INDEX_NAME, SAFE_WEIGHTS_NAME, hub
 
 from axolotl.models.mamba import fix_mamba_attn_for_loss
 from axolotl.monkeypatch.multipack import (
@@ -262,6 +268,113 @@ def load_tokenizer(cfg):
     return tokenizer
 
 
+def replace_linear(
+    model: nn.Module,
+    linear_replacement: Type[nn.Module],
+    quant_config: Union[dict, None] = None,
+    skip_modules=None,
+    **kwargs,
+):
+    """
+    Replace linear modules with a new Linear module.
+    Parameters:
+        model (`torch.nn.Module`):
+            Input model or `torch.nn.Module` as the function is run recursively.
+        linear_replacement (`torch.nn.Module`):
+            The linear module that replaces the old one. Only expects standard arguments.
+            If other arguments need to be passed, use a lambda.
+        skip_modules (`List[str]`, *optional*, defaults to `lm_head`):
+            List of modules names not to convert. Defaults to `lm_head`.
+    """
+    if skip_modules is None:
+        skip_modules = ["lm_head"]
+    for name, module in model.named_children():
+        if len(list(module.children())) > 0:
+            replace_linear(
+                module, linear_replacement, quant_config, skip_modules, **kwargs
+            )
+
+        if isinstance(module, torch.nn.Linear) and name not in skip_modules:
+            if issubclass(linear_replacement, Linear4bit):
+                model._modules[name] = linear_replacement(
+                    module.in_features,
+                    module.out_features,
+                    module.bias is not None,
+                    **kwargs,
+                )
+            else:
+                raise ValueError(
+                    f"Unsupported linear replacement: {type(linear_replacement)}"
+                )
+    return model
+
+
+def load_and_quantize(
+    module: nn.Module,
+    name: str,
+    value: Tensor,
+    device: torch.device = None,
+    dtype: torch.dtype = None,
+    skip_names: List[str] = [],
+    is_meta_rank: bool = False,
+    low_memory: bool = True,
+    verbose: bool = False,
+    quant_method: str = "bnb",
+):
+    """
+    Loads `value` tensor into submodule of `module`, optionally skipping `skip_names` and converting to `dtype`.
+
+    Quantizes `Params4bit` on `device` then places on "cpu" if low_memory=True or "meta" if is_meta_rank=True.
+    """
+
+    def place_on_device(value):
+        if is_meta_rank:
+            device = "meta"
+        elif low_memory:
+            device = "cpu"
+        else:
+            device = "cuda"
+        return value.to(device=device, dtype=dtype)
+
+    if any([skip_name in name for skip_name in skip_names]):
+        if verbose:
+            print(f"Skipping {name} because it is in skip_names")
+        return
+
+    module_key, _, value_key = name.rpartition(".")
+    try:
+        submodule = module.get_submodule(module_key)
+    except AttributeError as e:
+        print(f"Module {module_key} not found:\n{e}")
+        return
+
+    try:
+        if quant_method == "bnb":
+            param = submodule.get_parameter(value_key)
+            if isinstance(param, Params4bit):
+                # With `sync_module_states=True`, a meta device Params4bit needs to be the same
+                # shape as the quantized Params4bit with an initialized quant_state. However,
+                # FSDP only syncs parameters and buffers, so the quant_state isn't copied. This
+                # workaround quantizes Params4bit to initialize quant_state on all ranks, then
+                # replaces Params4bit's data with a meta tensor to free memory on non-rank 0.
+                value = type(param)(
+                    value.to(device=device, dtype=dtype).data, **param.__dict__
+                ).cuda(device)
+                if is_meta_rank:
+                    value = type(param)(value.data.to("meta"), **value.__dict__)
+                elif low_memory:
+                    value = type(param)(value.data.to("cpu"), **value.__dict__)
+            else:
+                value = type(param)(place_on_device(value).data)
+
+    except AttributeError:
+        # it's a buffer
+        value = place_on_device(value)
+        pass
+
+    setattr(submodule, value_key, value)
+
+
 def load_model(
     cfg: DictDefault,
     tokenizer: PreTrainedTokenizerBase,
@@ -394,7 +507,7 @@ def load_model(
 
     if max_memory is not None:
         # Based on https://github.com/togethercomputer/OpenChatKit/blob/main/inference/bot.py
-        from accelerate import infer_auto_device_map, init_empty_weights
+        from accelerate import infer_auto_device_map
 
         with init_empty_weights():
             model_canvas = AutoModelForCausalLM.from_config(model_config)
@@ -498,6 +611,73 @@ def load_model(
 
     try:
         if (
+            model_config.model_type == "llama"
+            and cfg.adapter == "qlora"
+            and cfg.fsdp is not None
+        ):
+            if cfg.bf16 or cfg.bfloat16:
+                torch_dtype, compute_dtype = torch.bfloat16, torch.bfloat16
+            elif cfg.fp16 or cfg.float16:
+                torch_dtype, compute_dtype = torch.float32, torch.float16
+            else:
+                torch_dtype, compute_dtype = torch.float32, torch.float16
+
+            with init_empty_weights():
+                model = AutoModelForCausalLM.from_config(model_config)
+                model.model = replace_linear(
+                    model.model,
+                    Linear4bit,
+                    compute_dtype=compute_dtype,
+                    quant_type="nf4",
+                    quant_storage=torch_dtype,
+                )
+
+            model.is_loaded_in_4bit = True
+
+            # Grab the safetensors files that hold the weights
+            try:
+                idx = hub.cached_file(base_model, SAFE_WEIGHTS_INDEX_NAME)
+                files, _ = hub.get_checkpoint_shard_files(base_model, idx)
+            except OSError:
+                try:
+                    # This means the model doesn't have a model.safetensors.index.json because it is not sharded
+                    files = []
+                    files.append(hub.cached_file(base_model, SAFE_WEIGHTS_NAME))
+                except OSError as e:
+                    # This means the model probably doesn't have a safetensors file
+                    raise e
+
+            # Load in the weights, using our custom load_and_quantize method which quantizes Params4bit on the fly
+            # and then places each layer on CPU or meta if using low_memory to minimize GPU memory usage
+            def load_and_quantize_parallel(name_param, model, **kwargs):
+                name, param = name_param
+                load_and_quantize(model, name, param, **kwargs)
+
+            param_count = sum((p.numel() for n, p in model.named_parameters()))
+            for filename in files:
+                weights = safetensors.torch.load_file(filename)
+                quant_method = "bnb"
+                devprops = torch.cuda.get_device_properties(torch.cuda.current_device())
+                left = int(os.cpu_count() / torch.cuda.device_count())
+                right = int(
+                    8 * (devprops.total_memory / 1e9 / 40) * (70 / (param_count / 1e9))
+                )
+                n_workers = min(left, right)
+                parallel(
+                    load_and_quantize_parallel,
+                    weights.items(),
+                    n_workers=n_workers,
+                    threadpool=True,
+                    model=model,
+                    dtype=torch_dtype,
+                    device=cfg.local_rank,
+                    skip_names=[],
+                    is_meta_rank=(cfg.local_rank != 0),
+                    verbose=False,
+                    quant_method=quant_method,
+                )
+
+        elif (
             model_config.model_type == "llama"
             and not cfg.trust_remote_code
             and not cfg.gptq
@@ -613,7 +793,9 @@ def load_model(
         LOG.exception(err)
         raise err
 
-    if isinstance(model, (PeftModel, PeftModelForCausalLM)):
+    qlora_fsdp = cfg.fsdp and cfg.adapter == "qlora" and model_config.model_type == "llama"
+
+    if isinstance(model, (PeftModel, PeftModelForCausalLM)) and not qlora_fsdp:
         model = model.merge_and_unload()
 
     embeddings_len = (
@@ -692,7 +874,7 @@ def load_model(
     if cfg.adapter == "lora" and loftq_bits:
         skip_prepare_model_for_kbit_training = True
 
-    if cfg.adapter in ["lora", "qlora"]:
+    if cfg.adapter in ["lora", "qlora"] and not qlora_fsdp:
         if cfg.gradient_checkpointing:
             model.gradient_checkpointing_enable()
         if (
@@ -721,7 +903,7 @@ def load_model(
         # then the dpo trainer doesn't want the peft model loaded over it, it just wants the lora/peft config
         if cfg.adapter and cfg.rl in ["dpo", "ipo", "kto_pair"] and not cfg.merge_lora:
             _, lora_config = load_lora(model, cfg, inference=False, config_only=True)
-        else:
+        elif not qlora_fsdp:
             model, lora_config = load_adapter(model, cfg, cfg.adapter)
 
     if cfg.ddp and not load_in_8bit and not (cfg.rl and cfg.load_in_4bit):

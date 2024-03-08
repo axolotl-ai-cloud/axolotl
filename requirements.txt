@@ -40,3 +40,4 @@ gcsfs
 # adlfs
 
 trl>=0.7.9
+fastcore>=1.5.29
