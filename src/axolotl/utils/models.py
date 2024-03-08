@@ -2,6 +2,7 @@
 import logging
 import math
 import os
+import types
 from typing import Any, Dict, List, Optional, Tuple, Type, Union  # noqa: F401
 
 import addict
@@ -909,7 +910,7 @@ def load_model(
         # then the dpo trainer doesn't want the peft model loaded over it, it just wants the lora/peft config
         if cfg.adapter and cfg.rl in ["dpo", "ipo", "kto_pair"] and not cfg.merge_lora:
             _, lora_config = load_lora(model, cfg, inference=False, config_only=True)
-        elif not qlora_fsdp:
+        else:
             model, lora_config = load_adapter(model, cfg, cfg.adapter)
 
     if (
@@ -1006,6 +1007,26 @@ def find_all_linear_names(model):
     return list(lora_module_names)
 
 
+def setup_quantized_meta_for_peft(model: nn.Module):
+    """Replaces `quant_state.to` with a dummy function to prevent PEFT from moving `quant_state` to meta device"""
+
+    def temp_to_method(self, *args, **kwargs):
+        return self
+
+    for param in model.parameters():
+        if isinstance(param, Params4bit):
+            param.quant_state._orig_to = param.quant_state.to
+            param.quant_state.to = types.MethodType(temp_to_method, param.quant_state)
+
+
+def setup_quantized_peft_meta_for_training(model: nn.Module):
+    """Replaces dummy `quant_state.to` method with the original function to allow training to continue"""
+    for param in model.parameters():
+        if isinstance(param, Params4bit) and hasattr(param.quant_state, "_orig_to"):
+            param.quant_state.to = param.quant_state._orig_to
+            param.quant_state._orig_to = None
+
+
 def load_lora(model, cfg, inference=False, config_only=False):
     # type: (PreTrainedModel, DictDefault, bool, bool) -> Tuple[Optional[PreTrainedModel], Optional[PeftConfig]]
 
@@ -1042,6 +1063,9 @@ def load_lora(model, cfg, inference=False, config_only=False):
     if config_only:
         return None, lora_config
 
+    if cfg.fsdp and cfg.adapter == "qlora":
+        setup_quantized_meta_for_peft(model)
+
     if cfg.lora_model_dir:
         LOG.debug("Loading pretrained PEFT - LoRA")
         model_kwargs: Any = {}
@@ -1057,6 +1081,9 @@ def load_lora(model, cfg, inference=False, config_only=False):
     else:
         model = get_peft_model(model, lora_config)
 
-    model.print_trainable_parameters()
+    if int(os.environ.get("LOCAL_RANK", 0)) == 0:
+        model.print_trainable_parameters()
+    else:
+        setup_quantized_peft_meta_for_training(model)
 
     return model, lora_config
