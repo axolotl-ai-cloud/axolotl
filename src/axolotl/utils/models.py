@@ -1063,7 +1063,9 @@ def load_lora(model, cfg, inference=False, config_only=False):
     if config_only:
         return None, lora_config
 
-    if cfg.fsdp and cfg.adapter == "qlora":
+    rank = int(os.environ.get("LOCAL_RANK", 0))
+
+    if cfg.fsdp and cfg.adapter == "qlora" and rank != 0:
         setup_quantized_meta_for_peft(model)
 
     if cfg.lora_model_dir:
@@ -1081,7 +1083,7 @@ def load_lora(model, cfg, inference=False, config_only=False):
     else:
         model = get_peft_model(model, lora_config)
 
-    if int(os.environ.get("LOCAL_RANK", 0)) == 0:
+    if rank == 0:
         model.print_trainable_parameters()
     else:
         setup_quantized_peft_meta_for_training(model)
