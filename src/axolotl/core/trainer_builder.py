@@ -501,9 +501,9 @@ class AxolotlTrainer(Trainer):
         # load_param_skip_names = ['inv_freq']
 
         if self.is_fsdp_enabled:
-            wrapping_policy = get_wrapping_policy_factory(self.model.config.model_type)
+            wrapping_policy = get_wrapping_policy_factory(self.args.model_type)
             fsdp_plugin = FullyShardedDataParallelPlugin(
-                auto_wrap_policy=wrapping_policy(False),
+                auto_wrap_policy=wrapping_policy(),
                 use_orig_params=False,
                 limit_all_gathers=True,
                 param_init_fn=lambda module: module.to_empty(
