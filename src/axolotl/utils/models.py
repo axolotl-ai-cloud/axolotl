@@ -623,6 +623,7 @@ def load_model(
                 torch_dtype, compute_dtype = torch.float32, torch.float16
 
             with init_empty_weights():
+                LOG.info("Loading model with empty weights.")
                 model = AutoModelForCausalLM.from_config(model_config)
                 model.model = replace_linear(
                     model.model,
@@ -793,7 +794,9 @@ def load_model(
         LOG.exception(err)
         raise err
 
-    qlora_fsdp = cfg.fsdp and cfg.adapter == "qlora" and model_config.model_type == "llama"
+    qlora_fsdp = (
+        cfg.fsdp and cfg.adapter == "qlora" and model_config.model_type == "llama"
+    )
 
     if isinstance(model, (PeftModel, PeftModelForCausalLM)) and not qlora_fsdp:
         model = model.merge_and_unload()
@@ -874,7 +877,10 @@ def load_model(
     if cfg.adapter == "lora" and loftq_bits:
         skip_prepare_model_for_kbit_training = True
 
-    if cfg.adapter in ["lora", "qlora"] and not qlora_fsdp:
+    if qlora_fsdp:
+        skip_prepare_model_for_kbit_training = True
+
+    if cfg.adapter in ["lora", "qlora"]:
         if cfg.gradient_checkpointing:
             model.gradient_checkpointing_enable()
         if (
@@ -906,7 +912,12 @@ def load_model(
         elif not qlora_fsdp:
             model, lora_config = load_adapter(model, cfg, cfg.adapter)
 
-    if cfg.ddp and not load_in_8bit and not (cfg.rl and cfg.load_in_4bit):
+    if (
+        cfg.ddp
+        and not load_in_8bit
+        and not (cfg.rl and cfg.load_in_4bit)
+        and not qlora_fsdp
+    ):
         # TODO revaldate this conditional
         model.to(f"cuda:{cfg.local_rank}")
 
