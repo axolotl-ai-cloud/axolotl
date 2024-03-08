@@ -1085,7 +1085,7 @@ def load_lora(model, cfg, inference=False, config_only=False):
 
     if rank == 0:
         model.print_trainable_parameters()
-    else:
+    elif cfg.fsdp and cfg.adapter == "qlora":
         setup_quantized_peft_meta_for_training(model)
 
     return model, lora_config
