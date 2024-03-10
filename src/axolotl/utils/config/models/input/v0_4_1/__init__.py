@@ -179,6 +179,7 @@ class LoraConfig(BaseModel):
     peft_layers_to_transform: Optional[List[int]] = None
     peft: Optional[PeftConfig] = None
     peft_use_dora: Optional[bool] = None
+    peft_use_relora: Optional[bool] = None
 
     lora_on_cpu: Optional[bool] = None
     gptq: Optional[bool] = None
