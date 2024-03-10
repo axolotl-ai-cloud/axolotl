@@ -995,3 +995,4 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
     def check_fsdp_deepspeed(cls, data):
         if data.get("deepspeed") and data.get("fsdp"):
             raise ValueError("deepspeed and fsdp cannot be used together.")
+        return data
