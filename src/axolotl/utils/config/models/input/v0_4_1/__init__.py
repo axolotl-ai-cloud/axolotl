@@ -511,7 +511,9 @@ class AxolotlInputConfig(
 
     neftune_noise_alpha: Optional[float] = None
 
-    max_memory: Optional[Dict[Union[int, Literal['cpu','disk']],Union[int, str]]] = None
+    max_memory: Optional[
+        Dict[Union[int, Literal["cpu", "disk"]], Union[int, str]]
+    ] = None
     gpu_memory_limit: Optional[Union[int, str]] = None
 
     chat_template: Optional[Union[Literal["chatml", "inst"], ChatTemplate]] = None
