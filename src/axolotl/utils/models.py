@@ -1055,6 +1055,8 @@ def load_lora(model, cfg, inference=False, config_only=False):
         lora_config_kwargs["init_lora_weights"] = "loftq"
     if cfg.peft_use_dora:
         lora_config_kwargs["use_dora"] = cfg.peft_use_dora
+    if cfg.peft_use_rslora:
+        lora_config_kwargs["use_rslora"] = cfg.use_rslora
 
     lora_config = LoraConfig(
         r=cfg.lora_r,
