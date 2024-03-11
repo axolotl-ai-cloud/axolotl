@@ -415,8 +415,11 @@ def load_tokenized_prepared_datasets(
         dataset = concatenate_datasets(datasets)
 
         if len(datasets) > 1:
-            LOG.info("shuffle merged datasets")
-            dataset = dataset.shuffle(seed=seed)
+            if cfg.not_shuffle_merged_datasets:
+                LOG.info("NOT shuffling merged datasets")
+            else:
+                LOG.info("shuffle merged datasets")
+                dataset = dataset.shuffle(seed=seed)
 
         dataset, _ = process_datasets_for_packing(cfg, dataset, None)
 
@@ -819,7 +822,11 @@ def wrap_pretraining_dataset(
     else:
         encode = functools.partial(encode_pretraining, tokenizer, max_tokens)
 
-    dataset = dataset.shuffle(seed=seed, buffer_size=buffer_size)
+    if cfg.not_shuffle_merged_datasets:
+        LOG.info("NOT shuffling merged pretraining datasets")
+    else:
+        dataset = dataset.shuffle(seed=seed, buffer_size=buffer_size)
+
     dataset = dataset.map(
         encode,
         batched=True,
