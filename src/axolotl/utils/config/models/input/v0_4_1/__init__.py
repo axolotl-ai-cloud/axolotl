@@ -1,6 +1,7 @@
 """
 Module for pydantic models for configuration
 """
+# pylint: disable=too-many-lines
 
 import logging
 import os
