@@ -1,10 +1,15 @@
 """Module containing the SimpleShareGPTPromptTokenizingStrategy class"""
+
 from typing import Any, Dict, Optional
 
 from fastchat.conversation import Conversation, SeparatorStyle, register_conv_template
 
 from axolotl.prompt_tokenizers import ShareGPTPromptTokenizingStrategy
 from axolotl.prompters import ShareGPTPrompterV2
+from axolotl.utils.tokenization import (
+    chatml_to_conversation,
+    merge_consecutive_messages,
+)
 
 
 def register_chatml_template(system_message=None):
@@ -15,6 +20,16 @@ def register_chatml_template(system_message=None):
             system_template="<|im_start|>system\n{system_message}",
             system_message=system_message,
             roles=["<|im_start|>user", "<|im_start|>assistant"],
+            sep_style=SeparatorStyle.CHATML,
+            sep="<|im_end|>",
+        )
+    )
+    register_conv_template(
+        Conversation(
+            name="chatml_glaive",
+            system_template="<|im_start|>system\n{system_message}",
+            system_message=system_message,
+            roles=["<|im_start|>user", "<|im_start|>assistant", "<|im_start|>tool"],
             sep_style=SeparatorStyle.CHATML,
             sep="<|im_end|>",
         )
@@ -71,6 +86,20 @@ def load_role(tokenizer, cfg):
 def load_guanaco(tokenizer, cfg):
     return GuanacoShareGPTPromptTokenizingStrategy(
         ShareGPTPrompterV2(),
+        tokenizer,
+        cfg.train_on_inputs,
+        cfg.sequence_len,
+    )
+
+
+def load_glaive(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
+    conversation = (
+        ds_cfg["conversation"]
+        if ds_cfg and "conversation" in ds_cfg
+        else "chatml_glaive"
+    )
+    return GlaiveShareGPTPromptTokenizingStrategy(
+        ShareGPTPrompterV2(conversation=conversation),
         tokenizer,
         cfg.train_on_inputs,
         cfg.sequence_len,
@@ -158,3 +187,15 @@ class UltrachatShareGPTPromptTokenizingStrategy(SimpleShareGPTPromptTokenizingSt
             {"from": role_map[t["role"]], "value": t["content"]} for t in conversations
         ]
         return turns
+
+
+class GlaiveShareGPTPromptTokenizingStrategy(SimpleShareGPTPromptTokenizingStrategy):
+    """
+    sharegpt strategy that remaps glaive data to sharegpt format
+    """
+
+    def get_conversation_thread(self, prompt):
+        conversation = chatml_to_conversation(prompt)
+        conversation = merge_consecutive_messages(conversation)
+
+        return conversation
