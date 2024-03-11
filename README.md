@@ -662,6 +662,10 @@ datasets:
       # For `completion` datsets only, uses the provided field instead of `text` column
       field:
 
+# If true, the datasets will not be shuffled and will keep their original order in `datasets`.
+# The same applies to the `test_datasets` option and the `pretraining_dataset` option. Default is false.
+not_shuffle_merged_datasets: false
+
 # A list of one or more datasets to eval the model with.
 # You can use either test_datasets, or val_set_size, but not both.
 test_datasets:
