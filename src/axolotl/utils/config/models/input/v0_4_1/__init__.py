@@ -128,6 +128,7 @@ class RLType(str, Enum):
 
 class ChatTemplate(str, Enum):
     """Chat templates configuration subset"""
+
     alpaca = "alpaca"  # pylint: disable=invalid-name
     chatml = "chatml"  # pylint: disable=invalid-name
     inst = "inst"  # pylint: disable=invalid-name
