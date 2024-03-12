@@ -388,7 +388,6 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
                     LOG.warning(f"unhandled role: {role}")
                     continue
 
-                # Uses "in" because role contains extra characters
                 if input_turn:
                     role = (
                         role.replace(role_remap[0]["from"], role_remap[0]["to"])
