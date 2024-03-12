@@ -96,6 +96,8 @@ class SFTDataset(BaseModel):
     field_human: Optional[str] = None
     field_model: Optional[str] = None
 
+    roles: Optional[Dict[str, List[str]]] = None
+
 
 class UserDefinedDPOType(BaseModel):
     """User defined typing for DPO"""
