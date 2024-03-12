@@ -343,6 +343,10 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
         input_roles = {conversation.roles[0]}
         output_roles = {conversation.roles[1]}
 
+        if len(conversation.roles) == 3:
+            tool_role_label = conversation.roles[2]
+            input_roles.add(tool_role_label)
+
         # Add roles from the config
         if self.prompter.roles:
             if "input" in self.prompter.roles and self.prompter.roles["input"]:

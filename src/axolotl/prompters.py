@@ -274,12 +274,19 @@ class ShareGPTPrompter(Prompter):  # pylint: disable=too-few-public-methods
     role_key_human = "human"
     role_key_model = "gpt"
 
+    # Optional, only used for tool usage datasets.
+    role_key_tool = None
+
+    # Optional, role input/output mapping
+    roles = None
+
     def __init__(
         self,
         prompt_style=None,  # pylint: disable=unused-argument
         conversation: Optional[Union[str, Conversation]] = None,
         role_key_human: Optional[str] = None,
         role_key_model: Optional[str] = None,
+        role_key_tool: Optional[str] = None,
         roles: Optional[dict] = None,
     ):
         if conversation:
@@ -293,8 +300,10 @@ class ShareGPTPrompter(Prompter):  # pylint: disable=too-few-public-methods
             self.role_key_human = role_key_human
         if role_key_model:
             self.role_key_model = role_key_model
-
-        self.roles = roles
+        if role_key_tool:
+            self.role_key_tool = role_key_tool
+        if roles:
+            self.roles = roles
 
     def _build_result(self, source):
         if len(source) < 2:
@@ -312,6 +321,8 @@ class ShareGPTPrompter(Prompter):  # pylint: disable=too-few-public-methods
             source.pop(0)
 
         roles = {self.role_key_human: conv.roles[0], self.role_key_model: conv.roles[1]}
+        if self.role_key_tool:
+            roles[self.role_key_tool] = conv.roles[2]
 
         try:
             # Apply prompt templates

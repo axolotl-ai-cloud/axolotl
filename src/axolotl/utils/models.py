@@ -1,13 +1,20 @@
 """Module for models and model loading"""
+# pylint: disable=too-many-lines
+
 import logging
 import math
 import os
-from typing import Any, Dict, Optional, Tuple, Union  # noqa: F401
+import types
+from typing import Any, Dict, List, Optional, Tuple, Type, Union  # noqa: F401
 
 import addict
 import bitsandbytes as bnb
+import safetensors
 import torch
 import transformers
+from accelerate import init_empty_weights
+from bitsandbytes.nn import Linear4bit, Params4bit
+from fastcore.parallel import parallel
 from peft import (
     LoftQConfig,
     PeftConfig,
@@ -16,6 +23,7 @@ from peft import (
     prepare_model_for_kbit_training,
 )
 from peft.tuners.lora import QuantLinear
+from torch import Tensor, nn
 from transformers import (  # noqa: F401
     AddedToken,
     AutoConfig,
@@ -27,7 +35,9 @@ from transformers import (  # noqa: F401
     PreTrainedTokenizerBase,
 )
 from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
+from transformers.utils import SAFE_WEIGHTS_INDEX_NAME, SAFE_WEIGHTS_NAME, hub
 
+from axolotl.core.policies.auto_wrap import SUPPORTED_AUTO_WRAP_MODEL_TYPES
 from axolotl.models.mamba import fix_mamba_attn_for_loss
 from axolotl.monkeypatch.multipack import (
     SUPPORTED_MULTIPACK_MODEL_TYPES,
@@ -86,8 +96,8 @@ def load_model_config(cfg):
         model_config_name = cfg.tokenizer_config
     trust_remote_code = cfg.trust_remote_code is True
     config_kwargs = {}
-    if cfg.model_revision:
-        config_kwargs["revision"] = cfg.model_revision
+    if cfg.revision_of_model:
+        config_kwargs["revision"] = cfg.revision_of_model
 
     try:
         model_config = AutoConfig.from_pretrained(
@@ -104,8 +114,8 @@ def load_model_config(cfg):
             )
         raise err
 
-    if cfg.model_config:
-        for key, val in cfg.model_config.items():
+    if cfg.overrides_of_model_config:
+        for key, val in cfg.overrides_of_model_config.items():
             setattr(model_config, key, val)
 
     check_model_config(cfg, model_config)
@@ -262,6 +272,117 @@ def load_tokenizer(cfg):
     return tokenizer
 
 
+def replace_linear(
+    model: nn.Module,
+    linear_replacement: Type[nn.Module],
+    quant_config: Union[dict, None] = None,
+    skip_modules=None,
+    **kwargs,
+):
+    """
+    Replace linear modules with a new Linear module.
+    Parameters:
+        model (`torch.nn.Module`):
+            Input model or `torch.nn.Module` as the function is run recursively.
+        linear_replacement (`torch.nn.Module`):
+            The linear module that replaces the old one. Only expects standard arguments.
+            If other arguments need to be passed, use a lambda.
+        skip_modules (`List[str]`, *optional*, defaults to `lm_head`):
+            List of modules names not to convert. Defaults to `lm_head`.
+    """
+    if skip_modules is None:
+        skip_modules = ["lm_head"]
+    for name, module in model.named_children():
+        if len(list(module.children())) > 0:
+            replace_linear(
+                module, linear_replacement, quant_config, skip_modules, **kwargs
+            )
+
+        if isinstance(module, torch.nn.Linear) and name not in skip_modules:
+            if issubclass(linear_replacement, Linear4bit):
+                model._modules[  # pylint: disable=protected-access
+                    name
+                ] = linear_replacement(
+                    module.in_features,
+                    module.out_features,
+                    module.bias is not None,
+                    **kwargs,
+                )
+            else:
+                raise ValueError(
+                    f"Unsupported linear replacement: {type(linear_replacement)}"
+                )
+    return model
+
+
+def load_and_quantize(
+    module: nn.Module,
+    name: str,
+    value: Tensor,
+    device: torch.device = None,
+    dtype: torch.dtype = None,
+    skip_names: Optional[List[str]] = None,
+    is_meta_rank: bool = False,
+    low_memory: bool = True,
+    verbose: bool = False,
+    quant_method: str = "bnb",
+):
+    """
+    Loads `value` tensor into submodule of `module`, optionally skipping `skip_names` and converting to `dtype`.
+
+    Quantizes `Params4bit` on `device` then places on "cpu" if low_memory=True or "meta" if is_meta_rank=True.
+    """
+
+    if skip_names is None:
+        skip_names = []
+
+    def place_on_device(value):
+        if is_meta_rank:
+            device = "meta"
+        elif low_memory:
+            device = "cpu"
+        else:
+            device = "cuda"
+        return value.to(device=device, dtype=dtype)
+
+    if any(skip_name in name for skip_name in skip_names):
+        if verbose:
+            print(f"Skipping {name} because it is in skip_names")
+        return
+
+    module_key, _, value_key = name.rpartition(".")
+    try:
+        submodule = module.get_submodule(module_key)
+    except AttributeError as exc:
+        print(f"Module {module_key} not found:\n{exc}")
+        return
+
+    try:
+        if quant_method == "bnb":
+            param = submodule.get_parameter(value_key)
+            if isinstance(param, Params4bit):
+                # With `sync_module_states=True`, a meta device Params4bit needs to be the same
+                # shape as the quantized Params4bit with an initialized quant_state. However,
+                # FSDP only syncs parameters and buffers, so the quant_state isn't copied. This
+                # workaround quantizes Params4bit to initialize quant_state on all ranks, then
+                # replaces Params4bit's data with a meta tensor to free memory on non-rank 0.
+                value = type(param)(
+                    value.to(device=device, dtype=dtype).data, **param.__dict__
+                ).cuda(device)
+                if is_meta_rank:
+                    value = type(param)(value.data.to("meta"), **value.__dict__)
+                elif low_memory:
+                    value = type(param)(value.data.to("cpu"), **value.__dict__)
+            else:
+                value = type(param)(place_on_device(value).data)
+
+    except AttributeError:
+        # it's a buffer
+        value = place_on_device(value)
+
+    setattr(submodule, value_key, value)
+
+
 def load_model(
     cfg: DictDefault,
     tokenizer: PreTrainedTokenizerBase,
@@ -272,7 +393,7 @@ def load_model(
     Load a model for a given configuration and tokenizer.
     """
     base_model = cfg.base_model
-    model_type = cfg.model_type
+    model_type = cfg.type_of_model
     model_config = load_model_config(cfg)
 
     # TODO refactor as a kwarg
@@ -394,7 +515,7 @@ def load_model(
 
     if max_memory is not None:
         # Based on https://github.com/togethercomputer/OpenChatKit/blob/main/inference/bot.py
-        from accelerate import infer_auto_device_map, init_empty_weights
+        from accelerate import infer_auto_device_map
 
         with init_empty_weights():
             model_canvas = AutoModelForCausalLM.from_config(model_config)
@@ -426,8 +547,8 @@ def load_model(
     if is_deepspeed_zero3_enabled():
         del model_kwargs["device_map"]
 
-    if cfg.model_revision:
-        model_kwargs["revision"] = cfg.model_revision
+    if cfg.revision_of_model:
+        model_kwargs["revision"] = cfg.revision_of_model
     if cfg.gptq:
         if not hasattr(model_config, "quantization_config"):
             LOG.warning("model config does not contain quantization_config information")
@@ -496,8 +617,78 @@ def load_model(
         model_kwargs["attn_implementation"] = "eager"
         model_config._attn_implementation = "eager"  # pylint: disable=protected-access
 
+    qlora_fsdp = (
+        cfg.fsdp
+        and cfg.adapter == "qlora"
+        and model_config.model_type in SUPPORTED_AUTO_WRAP_MODEL_TYPES
+    )
+
     try:
-        if (
+        if qlora_fsdp:
+            if cfg.bf16 or cfg.bfloat16:
+                torch_dtype, compute_dtype = torch.float32, torch.bfloat16
+            elif cfg.fp16 or cfg.float16:
+                torch_dtype, compute_dtype = torch.float32, torch.float16
+            else:
+                torch_dtype, compute_dtype = torch.float32, torch.float16
+
+            with init_empty_weights():
+                LOG.info("Loading model with empty weights.")
+                model = AutoModelForCausalLM.from_config(model_config)
+                model.model = replace_linear(
+                    model.model,
+                    Linear4bit,
+                    compute_dtype=compute_dtype,
+                    quant_type="nf4",
+                    quant_storage=torch_dtype,
+                )
+
+            model.is_loaded_in_4bit = True
+
+            # Grab the safetensors files that hold the weights
+            try:
+                idx = hub.cached_file(base_model, SAFE_WEIGHTS_INDEX_NAME)
+                files, _ = hub.get_checkpoint_shard_files(base_model, idx)
+            except OSError:
+                try:
+                    # This means the model doesn't have a model.safetensors.index.json because it is not sharded
+                    files = []
+                    files.append(hub.cached_file(base_model, SAFE_WEIGHTS_NAME))
+                except OSError as exc:
+                    # This means the model probably doesn't have a safetensors file
+                    raise exc
+
+            # Load in the weights, using our custom load_and_quantize method which quantizes Params4bit on the fly
+            # and then places each layer on CPU or meta if using low_memory to minimize GPU memory usage
+            def load_and_quantize_parallel(name_param, model, **kwargs):
+                name, param = name_param
+                load_and_quantize(model, name, param, **kwargs)
+
+            param_count = sum((p.numel() for n, p in model.named_parameters()))
+            for filename in files:
+                weights = safetensors.torch.load_file(filename)
+                quant_method = "bnb"
+                devprops = torch.cuda.get_device_properties(torch.cuda.current_device())
+                left = int(os.cpu_count() / torch.cuda.device_count())
+                right = int(
+                    8 * (devprops.total_memory / 1e9 / 40) * (70 / (param_count / 1e9))
+                )
+                n_workers = min(left, right)
+                parallel(
+                    load_and_quantize_parallel,
+                    weights.items(),
+                    n_workers=n_workers,
+                    threadpool=True,
+                    model=model,
+                    dtype=torch_dtype,
+                    device=cfg.local_rank,
+                    skip_names=[],
+                    is_meta_rank=(cfg.local_rank != 0),
+                    verbose=False,
+                    quant_method=quant_method,
+                )
+
+        elif (
             model_config.model_type == "llama"
             and not cfg.trust_remote_code
             and not cfg.gptq
@@ -512,11 +703,12 @@ def load_model(
 
             if cfg.flash_attention and not inference:
                 from axolotl.monkeypatch.llama_attn_hijack_flash import (
+                    is_xformers_swiglu_available,
                     replace_llama_mlp_with_swiglu,
                     replace_llama_qkv_with_fused,
                 )
 
-                if cfg.flash_attn_fuse_mlp:
+                if cfg.flash_attn_fuse_mlp and is_xformers_swiglu_available():
                     LOG.info("patching with SwiGLU")
                     replace_llama_mlp_with_swiglu(model)
 
@@ -612,7 +804,7 @@ def load_model(
         LOG.exception(err)
         raise err
 
-    if isinstance(model, (PeftModel, PeftModelForCausalLM)):
+    if isinstance(model, (PeftModel, PeftModelForCausalLM)) and not qlora_fsdp:
         model = model.merge_and_unload()
 
     embeddings_len = (
@@ -691,6 +883,9 @@ def load_model(
     if cfg.adapter == "lora" and loftq_bits:
         skip_prepare_model_for_kbit_training = True
 
+    if qlora_fsdp:
+        skip_prepare_model_for_kbit_training = True
+
     if cfg.adapter in ["lora", "qlora"]:
         if cfg.gradient_checkpointing:
             model.gradient_checkpointing_enable()
@@ -705,7 +900,7 @@ def load_model(
 
     # LlamaRMSNorm layers are in fp32 after kbit_training or full finetune, so we need to
     # convert them back to fp16/bf16 for flash-attn compatibility.
-    if needs_fa2_dtype or cfg.flash_attention:
+    if (needs_fa2_dtype or cfg.flash_attention) and not qlora_fsdp:
         LOG.info("converting modules to %s for flash attention", cfg.torch_dtype)
         for name, module in model.named_modules():
             if "norm" in name:
@@ -723,7 +918,12 @@ def load_model(
         else:
             model, lora_config = load_adapter(model, cfg, cfg.adapter)
 
-    if cfg.ddp and not load_in_8bit and not (cfg.rl and cfg.load_in_4bit):
+    if (
+        cfg.ddp
+        and not load_in_8bit
+        and not (cfg.rl and cfg.load_in_4bit)
+        and not qlora_fsdp
+    ):
         # TODO revaldate this conditional
         model.to(f"cuda:{cfg.local_rank}")
 
@@ -812,6 +1012,30 @@ def find_all_linear_names(model):
     return list(lora_module_names)
 
 
+def setup_quantized_meta_for_peft(model: nn.Module):
+    """Replaces `quant_state.to` with a dummy function to prevent PEFT from moving `quant_state` to meta device"""
+
+    def temp_to_method(self, *args, **kwargs):  # pylint: disable=unused-argument
+        return self
+
+    for param in model.parameters():
+        if isinstance(param, Params4bit):
+            param.quant_state._orig_to = (  # pylint: disable=protected-access
+                param.quant_state.to
+            )
+            param.quant_state.to = types.MethodType(temp_to_method, param.quant_state)
+
+
+def setup_quantized_peft_meta_for_training(model: nn.Module):
+    """Replaces dummy `quant_state.to` method with the original function to allow training to continue"""
+    for param in model.parameters():
+        if isinstance(param, Params4bit) and hasattr(param.quant_state, "_orig_to"):
+            param.quant_state.to = (
+                param.quant_state._orig_to  # pylint: disable=protected-access
+            )
+            param.quant_state._orig_to = None  # pylint: disable=protected-access
+
+
 def load_lora(model, cfg, inference=False, config_only=False):
     # type: (PreTrainedModel, DictDefault, bool, bool) -> Tuple[Optional[PreTrainedModel], Optional[PeftConfig]]
 
@@ -829,6 +1053,10 @@ def load_lora(model, cfg, inference=False, config_only=False):
     if loftq_bits:
         lora_config_kwargs["loftq_config"] = LoftQConfig(loftq_bits=loftq_bits)
         lora_config_kwargs["init_lora_weights"] = "loftq"
+    if cfg.peft_use_dora:
+        lora_config_kwargs["use_dora"] = cfg.peft_use_dora
+    if cfg.peft_use_rslora:
+        lora_config_kwargs["use_rslora"] = cfg.use_rslora
 
     lora_config = LoraConfig(
         r=cfg.lora_r,
@@ -846,6 +1074,11 @@ def load_lora(model, cfg, inference=False, config_only=False):
     if config_only:
         return None, lora_config
 
+    rank = int(os.environ.get("LOCAL_RANK", 0))
+
+    if cfg.fsdp and cfg.adapter == "qlora" and rank != 0:
+        setup_quantized_meta_for_peft(model)
+
     if cfg.lora_model_dir:
         LOG.debug("Loading pretrained PEFT - LoRA")
         model_kwargs: Any = {}
@@ -861,6 +1094,9 @@ def load_lora(model, cfg, inference=False, config_only=False):
     else:
         model = get_peft_model(model, lora_config)
 
-    model.print_trainable_parameters()
+    if rank == 0:
+        model.print_trainable_parameters()
+    elif cfg.fsdp and cfg.adapter == "qlora":
+        setup_quantized_peft_meta_for_training(model)
 
     return model, lora_config

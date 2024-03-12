@@ -6,6 +6,10 @@ from fastchat.conversation import Conversation, SeparatorStyle, register_conv_te
 
 from axolotl.prompt_tokenizers import ShareGPTPromptTokenizingStrategy
 from axolotl.prompters import ShareGPTPrompterV2
+from axolotl.utils.tokenization import (
+    chatml_to_conversation,
+    merge_consecutive_messages,
+)
 
 LOG = logging.getLogger("axolotl")
 
@@ -18,6 +22,16 @@ def register_chatml_template(system_message=None):
             system_template="<|im_start|>system\n{system_message}",
             system_message=system_message,
             roles=["<|im_start|>user", "<|im_start|>assistant"],
+            sep_style=SeparatorStyle.CHATML,
+            sep="<|im_end|>",
+        )
+    )
+    register_conv_template(
+        Conversation(
+            name="chatml_glaive",
+            system_template="<|im_start|>system\n{system_message}",
+            system_message=system_message,
+            roles=["<|im_start|>user", "<|im_start|>assistant", "<|im_start|>tool"],
             sep_style=SeparatorStyle.CHATML,
             sep="<|im_end|>",
         )
@@ -82,12 +96,26 @@ def load_guanaco(tokenizer, cfg):
     )
 
 
+def load_glaive(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
+    conversation = (
+        ds_cfg["conversation"]
+        if ds_cfg and "conversation" in ds_cfg
+        else "chatml_glaive"
+    )
+    return GlaiveShareGPTPromptTokenizingStrategy(
+        ShareGPTPrompterV2(conversation=conversation),
+        tokenizer,
+        cfg.train_on_inputs,
+        cfg.sequence_len,
+    )
+
+
 class SimpleShareGPTPromptTokenizingStrategy(ShareGPTPromptTokenizingStrategy):
     """
     basic sharegpt strategy to grab conversations from the sample row
     """
 
-    _strict = True
+    _strict = False
 
     @property
     def strict(self):
@@ -101,10 +129,25 @@ class SimpleShareGPTPromptTokenizingStrategy(ShareGPTPromptTokenizingStrategy):
         conversations = prompt["conversations"]
         if self.strict:
             return conversations
-        # remap roles - allow for assistant turn
-        role_map = {"human": "human", "assistant": "gpt", "gpt": "gpt"}
+        role_key = "from"
+        if "role" in conversations[0].keys():
+            role_key = "role"
+        value_key = "value"
+        if "text" in conversations[0].keys():
+            value_key = "text"
+        elif "content" in conversations[0].keys():
+            value_key = "content"
+        # remap roles - allow for assistant turn"
+        role_map = {
+            "user": "human",
+            "human": "human",
+            "assistant": "gpt",
+            "gpt": "gpt",
+            "system": "system",
+        }
         turns = [
-            {"from": role_map[t["from"]], "value": t["value"]} for t in conversations
+            {"from": role_map[t[role_key]], "value": t[value_key]}
+            for t in conversations
         ]
         return turns
 
@@ -148,3 +191,15 @@ class UltrachatShareGPTPromptTokenizingStrategy(SimpleShareGPTPromptTokenizingSt
             {"from": role_map[t["role"]], "value": t["content"]} for t in conversations
         ]
         return turns
+
+
+class GlaiveShareGPTPromptTokenizingStrategy(SimpleShareGPTPromptTokenizingStrategy):
+    """
+    sharegpt strategy that remaps glaive data to sharegpt format
+    """
+
+    def get_conversation_thread(self, prompt):
+        conversation = chatml_to_conversation(prompt)
+        conversation = merge_consecutive_messages(conversation)
+
+        return conversation

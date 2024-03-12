@@ -267,7 +267,7 @@ class ReLoRAScheduler(LRScheduler):
         original = self.inner_schedule.get_lr()
         step = self.last_epoch
 
-        if step < self.relora_steps:
+        if step < self.relora_steps - self.warmup_steps:
             scale = 1
         else:
             per_relora_progress = step % self.relora_steps

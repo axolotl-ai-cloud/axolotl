@@ -1,4 +1,5 @@
 """Module for testing prompt tokenizers."""
+
 import json
 import logging
 import unittest
@@ -18,6 +19,7 @@ from axolotl.prompt_strategies.llama2_chat import (
     Llama2ChatPrompter,
     LLama2ChatTokenizingStrategy,
 )
+from axolotl.prompt_strategies.sharegpt import GlaiveShareGPTPromptTokenizingStrategy
 from axolotl.prompt_tokenizers import (
     AlpacaPromptTokenizingStrategy,
     ShareGPTPromptTokenizingStrategy,
@@ -204,13 +206,13 @@ class TestPromptTokenizationStrategies(unittest.TestCase):
         # fmt: off
         # System message, multi-turn conversations
         mt_ids = tokenize(test_data['multi_turn_sys'])
-        assert decode(mt_ids) == '<s> [INST] lorem\nabc [/INST] ipsum</s> [INST] 123 [/INST] sit</s>'
-        assert mt_ids == [1, 518, 25580, 29962, 301, 3668, 13, 10736, 518, 29914, 25580, 29962, 23421, 2, 518, 25580, 29962, 29871, 29896, 29906, 29941, 518, 29914, 25580, 29962, 7845, 2]
+        assert decode(mt_ids) == '<s> [INST]  lorem\nabc [/INST] ipsum</s> [INST] 123 [/INST] sit</s>'
+        assert mt_ids == [1, 518, 25580, 29962, 29871, 301, 3668, 13, 10736, 518, 29914, 25580, 29962, 23421, 2, 518, 25580, 29962, 29871, 29896, 29906, 29941, 518, 29914, 25580, 29962, 7845, 2]
 
         # System message, single-turn conversations
         st_ids = tokenize(test_data['single_turn_sys'])
-        assert decode(st_ids) == '<s> [INST] lorem\nabc [/INST] ipsum</s>'
-        assert st_ids == [1, 518, 25580, 29962, 301, 3668, 13, 10736, 518, 29914, 25580, 29962, 23421, 2]
+        assert decode(st_ids) == '<s> [INST]  lorem\nabc [/INST] ipsum</s>'
+        assert st_ids == [1, 518, 25580, 29962, 29871, 301, 3668, 13, 10736, 518, 29914, 25580, 29962, 23421, 2]
 
         # No system message, single-turn
         ns_ids = tokenize(test_data['single_turn_no_sys'])
@@ -264,6 +266,23 @@ class TestPromptTokenizationStrategies(unittest.TestCase):
         with self._caplog.at_level(logging.WARNING):
             res = strat.tokenize_prompt(conversation)
             idx = res["input_ids"].index(20255)  # assistant token
+            assert res["labels"][idx] == -100
+
+    def test_glaive_tool_label_ignore(self):
+        conversation = {
+            "system": "SYSTEM: This is a system prompt",
+            "chat": "USER: Can you book a flight for me from New York to London? ASSISTANT: I'm sorry, but I don't have the capability to book flights.  <|endoftext|>",
+        }
+        prompter = ShareGPTPrompterV2()
+        strat = GlaiveShareGPTPromptTokenizingStrategy(
+            prompter,
+            self.tokenizer,
+            False,
+            2048,
+        )
+        with self._caplog.at_level(logging.WARNING):
+            res = strat.tokenize_prompt(conversation)
+            idx = res["input_ids"].index(13566)  # assistant token
             assert res["labels"][idx] == -100
 
     def test_no_sys_prompt(self):

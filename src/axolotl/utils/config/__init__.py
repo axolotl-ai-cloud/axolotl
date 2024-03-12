@@ -3,11 +3,16 @@ import json
 import logging
 import os
 from pathlib import Path
+from typing import Optional
 
 import torch
 from transformers.utils import is_torch_bf16_gpu_available
 
 from axolotl.utils.bench import log_gpu_memory_usage
+from axolotl.utils.config.models.input.v0_4_1 import (
+    AxolotlConfigWCapabilities,
+    AxolotlInputConfig,
+)
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.models import load_model_config
 
@@ -119,7 +124,7 @@ def normalize_config(cfg):
         (hasattr(model_config, "model_type") and model_config.model_type == "llama")
         or cfg.is_llama_derived_model
         or "llama" in cfg.base_model.lower()
-        or (cfg.model_type and "llama" in cfg.model_type.lower())
+        or (cfg.type_of_model and "llama" in cfg.type_of_model.lower())
     )
 
     # figure out if the model is falcon
@@ -135,7 +140,7 @@ def normalize_config(cfg):
         )
         or cfg.is_falcon_derived_model
         or "falcon" in cfg.base_model.lower()
-        or (cfg.model_type and "rwforcausallm" in cfg.model_type.lower())
+        or (cfg.type_of_model and "rwforcausallm" in cfg.type_of_model.lower())
     )
 
     cfg.is_mistral_derived_model = (
@@ -148,7 +153,7 @@ def normalize_config(cfg):
         )
         or cfg.is_mistral_derived_model
         or "mistral" in cfg.base_model.lower().split("/")[-1]
-        or (cfg.model_type and "mistral" in cfg.model_type.lower())
+        or (cfg.type_of_model and "mistral" in cfg.type_of_model.lower())
     )
 
     cfg.is_qwen_derived_model = (
@@ -158,9 +163,6 @@ def normalize_config(cfg):
             "qwen",
         ]
     ) or cfg.is_qwen_derived_model
-
-    if isinstance(cfg.learning_rate, str):
-        cfg.learning_rate = float(cfg.learning_rate)
 
     if isinstance(cfg.pretraining_dataset, dict):
         cfg.pretraining_dataset = [cfg.pretraining_dataset]
@@ -191,7 +193,21 @@ def normalize_cfg_datasets(cfg):
                     cfg.datasets[idx].conversation = "chatml"
 
 
-def validate_config(cfg):
+def validate_config(cfg: DictDefault, capabilities: Optional[dict] = None):
+    if capabilities:
+        return DictDefault(
+            dict(
+                AxolotlConfigWCapabilities(
+                    **cfg.to_dict(), capabilities=capabilities
+                ).model_dump(exclude_unset=True)
+            )
+        )
+    return DictDefault(
+        dict(AxolotlInputConfig(**cfg.to_dict()).model_dump(exclude_unset=True))
+    )
+
+
+def legacy_validate_config(cfg):
     """
     This is a "pre-validation" step that handles the yaml configuration before we have any
     information about the model architecture
@@ -363,11 +379,11 @@ def validate_config(cfg):
             "hub_model_id is set without any models being saved. To save a model, set either save_steps or saves_per_epoch."
         )
 
-    if cfg.gptq and cfg.model_revision:
+    if cfg.gptq and cfg.revision_of_model:
         raise ValueError(
-            "model_revision is not supported for GPTQ models. "
+            "revision_of_model is not supported for GPTQ models. "
             + "Please download the model from HuggingFace Hub manually for correct branch, "
-            + "point to its path, and remove model_revision from the config."
+            + "point to its path, and remove revision_of_model from the config."
         )
 
     # if cfg.sample_packing and cfg.sdp_attention:
@@ -479,9 +495,6 @@ def validate_config(cfg):
 
     if cfg.rope_scaling:
         LOG.warning("`rope_scaling` should now be be a key under `model_config`")
-
-    if cfg.warmup_steps and cfg.warmup_ratio:
-        raise ValueError("warmup_steps and warmup_ratio are mutually exclusive")
 
     if cfg.wandb_run_id and not cfg.wandb_name:
         cfg.wandb_name = cfg.wandb_run_id

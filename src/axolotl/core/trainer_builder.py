@@ -5,8 +5,10 @@ Builder for the training args and trainer
 
 import abc
 import importlib
+import importlib.util
 import logging
 import math
+import os
 import sys
 from abc import abstractmethod
 from dataclasses import dataclass, field
@@ -16,7 +18,10 @@ from typing import List, Optional, Type, Union
 
 import torch
 import transformers
+from accelerate import FullyShardedDataParallelPlugin
+from accelerate.utils import str_to_bool
 from datasets import Dataset
+from torch.distributed.fsdp import MixedPrecision
 from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import BatchSampler, DataLoader, RandomSampler, SequentialSampler
 from transformers import (
@@ -26,15 +31,17 @@ from transformers import (
     TrainingArguments,
 )
 from transformers.trainer_utils import seed_worker
+from transformers.utils import is_sagemaker_mp_enabled
 from trl import DPOTrainer
 
+from axolotl.core.policies.auto_wrap import get_wrapping_policy_factory
+from axolotl.loraplus import create_loraplus_optimizer
 from axolotl.monkeypatch.multipack import SUPPORTED_MULTIPACK_MODEL_TYPES
 from axolotl.monkeypatch.relora import ReLoRACallback, ReLoRAScheduler
 from axolotl.utils.callbacks import (
     EvalFirstStepCallback,
     GPUStatsCallback,
     LossWatchDogCallback,
-    SaveAxolotlConfigtoMlflowCallback,
     SaveAxolotlConfigtoWandBCallback,
     SaveBetterTransformerModelCallback,
     bench_eval_callback_factory,
@@ -54,12 +61,19 @@ from axolotl.utils.schedulers import (
     get_cosine_schedule_with_warmup_decay_constant,
 )
 
+if is_sagemaker_mp_enabled():
+    import smdistributed.modelparallel.torch as smp
+
 try:
     import torch._dynamo  # pylint: disable=ungrouped-imports
 except ImportError:
     pass
 
 LOG = logging.getLogger("axolotl.core.trainer_builder")
+
+
+def is_mlflow_available():
+    return importlib.util.find_spec("mlflow") is not None
 
 
 def _sanitize_kwargs_for_tagging(tag_names, kwargs=None):
@@ -175,6 +189,17 @@ class AxolotlTrainingArguments(TrainingArguments):
             "help": "Starting constant learning rate step is cosine_constant_lr_ratio * max_steps"
         },
     )
+    loraplus_lr_ratio: Optional[float] = field(
+        default=None, metadata={"help": "loraplus learning rate ratio lr_B / lr_A."}
+    )
+    loraplus_lr_embedding: Optional[float] = field(
+        default=1e-6,
+        metadata={"help": "loraplus learning rate for lora embedding layers."},
+    )
+    qlora: bool = field(
+        default=False,
+        metadata={"help": "whether this is a qlora training"},
+    )
 
 
 class AxolotlTrainer(Trainer):
@@ -198,6 +223,33 @@ class AxolotlTrainer(Trainer):
         self.eval_data_collator = eval_data_collator
         super().__init__(*_args, **kwargs)
         self.train_data_collator = self.data_collator
+
+    def create_optimizer(self):
+        if self.args.loraplus_lr_ratio is None:
+            return super().create_optimizer()
+
+        opt_model = self.model_wrapped if is_sagemaker_mp_enabled() else self.model
+        if self.optimizer is None:  # pylint: disable=access-member-before-definition
+            optimizer_cls, optimizer_kwargs = Trainer.get_optimizer_cls_and_kwargs(
+                self.args,
+            )
+
+            loraplus_lr_ratio = getattr(self.args, "loraplus_lr_ratio", None)
+            loraplus_lr_embedding = getattr(self.args, "loraplus_lr_embedding", None)
+            self.optimizer = create_loraplus_optimizer(  # pylint: disable=attribute-defined-outside-init
+                opt_model,
+                optimizer_cls,
+                optimizer_kwargs,
+                loraplus_lr_ratio,
+                loraplus_lr_embedding,
+            )
+
+        if is_sagemaker_mp_enabled():
+            self.optimizer = smp.DistributedOptimizer(  # pylint: disable=attribute-defined-outside-init
+                self.optimizer
+            )
+
+        return self.optimizer
 
     def create_scheduler(
         self, num_training_steps: int, optimizer: torch.optim.Optimizer = None
@@ -425,6 +477,56 @@ class AxolotlTrainer(Trainer):
 
         return super().push_to_hub(*args, **kwargs)
 
+    @wraps(Trainer.create_accelerator_and_postprocess)
+    def create_accelerator_and_postprocess(self):
+        rank = int(os.environ.get("LOCAL_RANK", 0))
+        res = super().create_accelerator_and_postprocess()
+
+        if self.args.qlora is False:
+            return res
+
+        # the rest of this method override is specific to fsdp + qlora (for now)
+        sync_module_states = (
+            str_to_bool(os.environ.get("FSDP_SYNC_MODULE_STATES", "True")) == 1
+        )
+
+        mp_policy = None
+        amp = os.environ["ACCELERATE_MIXED_PRECISION"]
+        if amp == "fp16":
+            mp_policy = MixedPrecision(
+                param_dtype=torch.float32,
+                reduce_dtype=torch.float32,
+                buffer_dtype=torch.float32,
+            )
+        elif amp == "bf16":
+            mp_policy = MixedPrecision(
+                param_dtype=torch.float32,
+                reduce_dtype=torch.float32,
+                buffer_dtype=torch.float32,
+            )
+
+        # If somehow we figure out how we want to parameterize we want to autocast buffers...
+        # mp_policy = MixedPrecision(param_dtype=torch.bfloat16, reduce_dtype=torch.bfloat16, buffer_dtype=torch.float32)
+        # load_param_skip_names = ['inv_freq']
+
+        if self.is_fsdp_enabled:
+            wrapping_policy = get_wrapping_policy_factory(self.args.model_type)
+            fsdp_plugin = FullyShardedDataParallelPlugin(
+                auto_wrap_policy=wrapping_policy(),
+                cpu_offload=False,
+                use_orig_params=False,
+                limit_all_gathers=True,
+                param_init_fn=lambda module: module.to_empty(
+                    device=torch.device("cuda"), recurse=False
+                )
+                if (rank != 0 and sync_module_states)
+                else None,
+                mixed_precision_policy=mp_policy,
+            )
+            self.accelerator.state.fsdp_plugin = fsdp_plugin
+
+        return res
+
 
 class AxolotlMambaTrainer(AxolotlTrainer):
     """
@@ -648,7 +750,11 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             callbacks.append(
                 SaveAxolotlConfigtoWandBCallback(self.cfg.axolotl_config_path)
             )
-        if self.cfg.use_mlflow:
+        if self.cfg.use_mlflow and is_mlflow_available():
+            from axolotl.utils.callbacks.mlflow_ import (
+                SaveAxolotlConfigtoMlflowCallback,
+            )
+
             callbacks.append(
                 SaveAxolotlConfigtoMlflowCallback(self.cfg.axolotl_config_path)
             )
@@ -739,6 +845,9 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             training_arguments_kwargs["fsdp"] = self.cfg.fsdp
             if self.cfg.fsdp_config:
                 training_arguments_kwargs["fsdp_config"] = dict(self.cfg.fsdp_config)
+
+        if self.cfg.adapter == "qlora":
+            training_arguments_kwargs["qlora"] = True
 
         # deepspeed
         if self.cfg.deepspeed:
@@ -907,6 +1016,10 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         training_arguments_kwargs["optim"] = (
             self.cfg.optimizer if self.cfg.optimizer else "adamw_hf"
         )
+        training_arguments_kwargs["loraplus_lr_ratio"] = self.cfg.loraplus_lr_ratio
+        training_arguments_kwargs[
+            "loraplus_lr_embedding"
+        ] = self.cfg.loraplus_lr_embedding
         training_arguments_kwargs["lr_scheduler_type"] = (
             self.cfg.lr_scheduler
             if self.cfg.lr_scheduler
@@ -962,18 +1075,42 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 "neftune_noise_alpha"
             ] = self.cfg.neftune_noise_alpha
 
+        trainer_kwargs = {}
+
+        if self.cfg.optimizer == "lion_pytorch":
+            from lion_pytorch import Lion
+
+            lion_kwargs = {"lr": training_arguments_kwargs["learning_rate"]}
+            if "weight_decay" in training_arguments_kwargs:
+                lion_kwargs["weight_decay"] = training_arguments_kwargs["weight_decay"]
+
+            if (
+                "adam_beta1" in training_arguments_kwargs
+                and "adam_beta2" in training_arguments_kwargs
+            ):
+                lion_kwargs["betas"] = (
+                    training_arguments_kwargs["adam_beta1"],
+                    training_arguments_kwargs["adam_beta2"],
+                )
+
+            trainer_kwargs["optimizers"] = (
+                Lion(params=self.model.parameters(), **lion_kwargs),
+                None,
+            )
+            # Set default so transformers doesn't throw
+            training_arguments_kwargs["optim"] = "adamw_hf"
+
+        if self.cfg.optimizer == "adamw_anyprecision":
+            if Path(self.cfg.torchdistx_path).exists():
+                sys.path.append(self.cfg.torchdistx_path)
+                importlib.import_module("torchdistx")
+
         training_args = (
             AxolotlTrainingArguments(  # pylint: disable=unexpected-keyword-arg
                 **training_arguments_kwargs,
             )
         )
         training_args = self.hook_post_create_training_args(training_args)
-        trainer_kwargs = {}
-
-        if self.cfg.optimizer == "adamw_anyprecision":
-            if Path(self.cfg.torchdistx_path).exists():
-                sys.path.append(self.cfg.torchdistx_path)
-                importlib.import_module("torchdistx")
 
         data_collator_kwargs = {
             "padding": True,  # True/"longest" is the default
