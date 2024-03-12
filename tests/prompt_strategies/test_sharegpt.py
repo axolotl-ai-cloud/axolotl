@@ -242,7 +242,6 @@ class TestSharegpt:
         )
 
         labels = dataset_wrapper[0]["labels"]
-        print(labels)
         # fmt: off
         assert labels == [
             -100,   # bos

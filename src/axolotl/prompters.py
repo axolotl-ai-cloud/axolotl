@@ -300,7 +300,6 @@ class ShareGPTPrompter(Prompter):  # pylint: disable=too-few-public-methods
             self.role_key_model = role_key_model
         if role_key_tool:
             self.role_key_tool = role_key_tool
-        print(roles)
         if roles:
             self.roles = roles
 
