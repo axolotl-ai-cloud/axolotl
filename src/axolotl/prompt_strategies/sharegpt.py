@@ -46,7 +46,6 @@ def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
     field_human = ds_cfg["field_human"] if ds_cfg and "field_human" in ds_cfg else None
     field_model = ds_cfg["field_model"] if ds_cfg and "field_model" in ds_cfg else None
     roles = ds_cfg["roles"].to_dict() if ds_cfg and "roles" in ds_cfg else None
-    print("roles", roles)
     strategy = SimpleShareGPTPromptTokenizingStrategy(
         ShareGPTPrompterV2(
             conversation=conversation,
