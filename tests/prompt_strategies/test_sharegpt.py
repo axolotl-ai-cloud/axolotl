@@ -62,6 +62,38 @@ def fixture_sharegpt_glaive_dataset():
     )
 
 
+@pytest.fixture(name="multi_role_dataset")
+def fixture_multi_role_dataset():
+    return Dataset.from_list(
+        [
+            {
+                "conversations": [
+                    {
+                        "from": "system",
+                        "value": "use get_weather(city) to get the weather for a city",
+                    },
+                    {
+                        "from": "human",
+                        "value": "hello, what's the weather in New York?",
+                    },
+                    {
+                        "from": "gpt",
+                        "value": "let me get that for you",
+                    },
+                    {
+                        "from": "tool",
+                        "value": "get_weather(New York)",
+                    },
+                    {
+                        "from": "gpt",
+                        "value": "the weather in New York is 70 degrees and sunny",
+                    },
+                ]
+            }
+        ]
+    )
+
+
 @pytest.fixture(name="tokenizer")
 def fixture_tokenizer():
     tokenizer = AutoTokenizer.from_pretrained("mistralai/Mistral-7B-v0.1")
@@ -194,5 +226,30 @@ class TestSharegpt:
             32001, 1587, 13, 3260, 349, 264, 1587, 11510, 32000, 28705, 13,  # system
             32001, 2188, 13, 6325, 368, 1820, 264, 9314, 354, 528, 477, 1450, 2726, 298, 4222, 28804, 32000, 28705, 13,  # human
             32001, 13892, 13, 28737, 28742, 28719, 7371, 28725, 562, 315, 949, 28742, 28707, 506, 272, 21368, 298, 1820, 22447, 28723, 28705, 523, 28766, 416, 1009, 772, 28766, 28767, 32000, 28705, 13  # gpt
+        ]
+        # fmt: on
+
+    def test_multi_role_dataset(self, multi_role_dataset, tokenizer):
+        strategy = SimpleShareGPTPromptTokenizingStrategy(
+            ShareGPTPrompterV2(roles={"input": ["tool"]}),
+            tokenizer,
+            False,  # train_on_inputs
+            2048,  # sequence_len
+        )
+
+        dataset_wrapper = TokenizedPromptDataset(
+            strategy, multi_role_dataset, process_count=1
+        )
+
+        labels = dataset_wrapper[0]["labels"]
+        print(labels)
+        # fmt: off
+        assert labels == [
+            -100,   # bos
+            -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100,  # system
+            -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100,  # human
+            -100, -100, -100, -100, 1346, 528, 625, 369, 354, 368, 2, 32000,  # gpt
+            -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100,  # tool
+            -100, -100, -100, -100, 272, 8086, 297, 1450, 2726, 349, 28705, 28787, 28734, 11182, 304, 4376, 1780, 2, 32000,  # gpt
         ]
         # fmt: on
