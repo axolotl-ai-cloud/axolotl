@@ -1,47 +1,49 @@
-# use google/gemma-7b if you have access
-base_model: mhenrichsen/gemma-7b
-model_type: AutoModelForCausalLM
-tokenizer_type: AutoTokenizer
+base_model: bigcode/starcoder2-3b
 
 load_in_8bit: false
 load_in_4bit: true
 strict: false
 
-# huggingface repo
 datasets:
   - path: mhenrichsen/alpaca_2k_test
     type: alpaca
-val_set_size: 0.1
-output_dir: ./out
+
+
+dataset_prepared_path:
+val_set_size: 0.2
+output_dir: ./qlora
 
 adapter: qlora
+lora_model_dir:
+
+sequence_len: 8192
+sample_packing: true
+pad_to_sequence_len: true
+
 lora_r: 32
 lora_alpha: 16
 lora_dropout: 0.05
+lora_target_modules:
 lora_target_linear: true
-
-sequence_len: 4096
-sample_packing: true
-pad_to_sequence_len: true
+lora_fan_in_fan_out:
 
 wandb_project:
 wandb_entity:
 wandb_watch:
-wandb_name:
+wandb_run_id:
 wandb_log_model:
 
-
-gradient_accumulation_steps: 3
+gradient_accumulation_steps: 8
 micro_batch_size: 2
-num_epochs: 4
+num_epochs: 3
 optimizer: adamw_bnb_8bit
 lr_scheduler: cosine
-learning_rate: 0.0002
+learning_rate: 2e-5
 
 train_on_inputs: false
 group_by_length: false
 bf16: auto
-fp16:
+fp16: false
 tf32: false
 
 gradient_checkpointing: true
@@ -52,14 +54,16 @@ logging_steps: 1
 xformers_attention:
 flash_attention: true
 
-warmup_ratio: 0.1
+warmup_steps: 20
 evals_per_epoch: 4
+eval_steps:
 eval_table_size:
-eval_max_new_tokens: 128
-saves_per_epoch: 1
+saves_per_epoch: 4
+save_steps:
+save_total_limit: 2
 debug:
 deepspeed:
-weight_decay: 0.0
+weight_decay:
 fsdp:
 fsdp_config:
 special_tokens:

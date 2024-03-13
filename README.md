@@ -25,7 +25,7 @@ Features:
 - [Environment](#environment)
   - [Docker](#docker)
   - [Conda/Pip venv](#condapip-venv)
-  - [Cloud GPU](#cloud-gpu) - Latitude.sh, RunPod
+  - [Cloud GPU](#cloud-gpu) - Latitude.sh, JarvisLabs, RunPod
   - [Bare Metal Cloud GPU](#bare-metal-cloud-gpu)
   - [Windows](#windows)
   - [Launching on public clouds via SkyPilot](#launching-on-public-clouds-via-skypilot)
@@ -97,9 +97,25 @@ Features:
 
 Get started with Axolotl in just a few steps! This quickstart guide will walk you through setting up and running a basic fine-tuning task.
 
-**Requirements**: Python >=3.9 and Pytorch >=2.1.1.
+**Requirements**: Python >=3.10 and Pytorch >=2.1.1.
 
-`pip3 install "axolotl[flash-attn,deepspeed] @ git+https://github.com/OpenAccess-AI-Collective/axolotl"`
+### For developers
+```bash
+git clone https://github.com/OpenAccess-AI-Collective/axolotl
+cd axolotl
+
+pip3 install packaging
+```
+
+General case:
+```
+pip3 install -e '.[flash-attn,deepspeed]'
+```
+
+Mac: see https://github.com/OpenAccess-AI-Collective/axolotl/blob/13199f678b9aab39e92961323bdbce3234ee4b2b/docs/mac.md
+```
+pip3 install -e '.'
+```
 
 ### Usage
 ```bash
@@ -163,7 +179,7 @@ docker run --privileged --gpus '"all"' --shm-size 10g --rm -it --name axolotl --
   </details>
 
 #### Conda/Pip venv
-  1. Install python >=**3.9**
+  1. Install python >=**3.10**
 
   2. Install pytorch stable https://pytorch.org/get-started/locally/
 
@@ -183,6 +199,7 @@ docker run --privileged --gpus '"all"' --shm-size 10g --rm -it --name axolotl --
 For cloud GPU providers that support docker images, use [`winglian/axolotl-cloud:main-latest`](https://hub.docker.com/r/winglian/axolotl-cloud/tags)
 
 - on Latitude.sh use this [direct link](https://latitude.sh/blueprint/989e0e79-3bf6-41ea-a46b-1f246e309d5c)
+- on JarvisLabs.ai use this [direct link](https://jarvislabs.ai/templates/axolotl)
 - on RunPod use this [direct link](https://runpod.io/gsc?template=v2ickqhz9s&ref=6i7fkpdz)
 
 #### Bare Metal Cloud GPU
@@ -196,11 +213,11 @@ For cloud GPU providers that support docker images, use [`winglian/axolotl-cloud
   1. Install python
   ```bash
   sudo apt update
-  sudo apt install -y python3.9
+  sudo apt install -y python3.10
 
-  sudo update-alternatives --install /usr/bin/python python /usr/bin/python3.9 1
-  sudo update-alternatives --config python # pick 3.9 if given option
-  python -V # should be 3.9
+  sudo update-alternatives --install /usr/bin/python python /usr/bin/python3.10 1
+  sudo update-alternatives --config python # pick 3.10 if given option
+  python -V # should be 3.10
 
   ```
 
@@ -369,6 +386,15 @@ pretraining_dataset: # hf path only
 
 </details>
 
+##### Template-Free
+
+- `input_output`: template-free prompt construction
+  ```json
+   {"segments": [{"label": true|false, "text": "..."}]}
+  ```
+
+This is a special format that allows you to construct prompts without using templates. This is for advanced users who want more freedom with prompt construction.  See [these docs](docs/input_output.md) for more details.
+
 ##### Conversation
 
 - `sharegpt`: conversations where `from` is `human`/`gpt`. (optional: first row with role `system` to override default system prompt)
@@ -530,7 +556,7 @@ base_model_ignore_patterns:
 # You can set that here, or leave this empty to default to base_model
 base_model_config: ./llama-7b-hf
 # You can specify to choose a specific model revision from huggingface hub
-model_revision:
+revision_of_model:
 # Optional tokenizer configuration path in case you want to use a different tokenizer
 # than the one defined in the base model
 tokenizer_config:
@@ -557,7 +583,7 @@ is_qwen_derived_model:
 is_mistral_derived_model:
 
 # optional overrides to the base model configuration
-model_config_overrides:
+overrides_of_model_config:
   # RoPE Scaling https://github.com/huggingface/transformers/pull/24653
   rope_scaling:
     type: # linear | dynamic
@@ -1272,5 +1298,7 @@ consider sponsoring the project via [GitHub Sponsors](https://github.com/sponsor
 ---
 
 #### 🥉 Bronze Sponsors - $500/mo
+
+ - [JarvisLabs.ai](https://jarvislabs.ai)
 
 ---

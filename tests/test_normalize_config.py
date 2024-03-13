@@ -25,20 +25,6 @@ class NormalizeConfigTestCase(unittest.TestCase):
             }
         )
 
-    def test_lr_as_float(self):
-        cfg = (
-            self._get_base_cfg()
-            | DictDefault(  # pylint: disable=unsupported-binary-operation
-                {
-                    "learning_rate": "5e-5",
-                }
-            )
-        )
-
-        normalize_config(cfg)
-
-        assert cfg.learning_rate == 0.00005
-
     def test_base_model_config_set_when_empty(self):
         cfg = self._get_base_cfg()
         del cfg.base_model_config

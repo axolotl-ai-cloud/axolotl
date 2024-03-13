@@ -1,6 +1,7 @@
 """
 Test module for sharegpt integration w chatml
 """
+
 import pytest
 from datasets import Dataset
 from tokenizers import AddedToken
@@ -8,6 +9,7 @@ from transformers import AutoTokenizer
 
 from axolotl.datasets import TokenizedPromptDataset
 from axolotl.prompt_strategies.sharegpt import (
+    GlaiveShareGPTPromptTokenizingStrategy,
     SimpleShareGPTPromptTokenizingStrategy,
     register_chatml_template,
 )
@@ -43,6 +45,18 @@ def fixture_sharegpt_dataset():
                         "value": "goodbye",
                     },
                 ]
+            }
+        ]
+    )
+
+
+@pytest.fixture(name="glaive_dataset")
+def fixture_sharegpt_glaive_dataset():
+    return Dataset.from_list(
+        [
+            {
+                "system": "SYSTEM: This is a system prompt",
+                "chat": "USER: Can you book a flight for me from New York to London? ASSISTANT: I'm sorry, but I don't have the capability to book flights.  <|endoftext|>",
             }
         ]
     )
@@ -154,5 +168,31 @@ class TestSharegpt:
             32001, 13892, 13, 21558, 32000, 28705, 13,  # gpt
             32001, 2188, 13, 12684, 17664, 32000, 28705, 13,   # human
             32001, 13892, 13, 12684, 17664, 32000, 28705, 13,  # gpt
+        ]
+        # fmt: on
+
+    def test_chatml_glaive(self, glaive_dataset, tokenizer):
+        strategy = GlaiveShareGPTPromptTokenizingStrategy(
+            ShareGPTPrompterV2(
+                conversation="chatml",
+                role_key_model=None,
+                role_key_human=None,
+            ),
+            tokenizer,
+            True,  # train_on_inputs
+            2048,  # sequence_len
+        )
+
+        dataset_wrapper = TokenizedPromptDataset(
+            strategy, glaive_dataset, process_count=1
+        )
+
+        labels = dataset_wrapper[0]["labels"]
+        # fmt: off
+        assert labels == [
+            1,  # bos
+            32001, 1587, 13, 3260, 349, 264, 1587, 11510, 32000, 28705, 13,  # system
+            32001, 2188, 13, 6325, 368, 1820, 264, 9314, 354, 528, 477, 1450, 2726, 298, 4222, 28804, 32000, 28705, 13,  # human
+            32001, 13892, 13, 28737, 28742, 28719, 7371, 28725, 562, 315, 949, 28742, 28707, 506, 272, 21368, 298, 1820, 22447, 28723, 28705, 523, 28766, 416, 1009, 772, 28766, 28767, 32000, 28705, 13  # gpt
         ]
         # fmt: on

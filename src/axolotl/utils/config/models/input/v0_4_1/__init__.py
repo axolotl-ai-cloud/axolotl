@@ -1,6 +1,7 @@
 """
 Module for pydantic models for configuration
 """
+# pylint: disable=too-many-lines
 
 import logging
 import os
@@ -47,6 +48,16 @@ class DeprecatedParameters(BaseModel):
         return noisy_embedding_alpha
 
 
+class RemappedParameters(BaseModel):
+    """parameters that have been remapped to other names"""
+
+    overrides_of_model_config: Optional[Dict[str, Any]] = Field(
+        default=None, alias="model_config"
+    )
+    type_of_model: Optional[str] = Field(default=None, alias="model_type")
+    revision_of_model: Optional[str] = Field(default=None, alias="model_revision")
+
+
 class PretrainingDataset(BaseModel):
     """pretraining dataset configuration subset"""
 
@@ -76,7 +87,8 @@ class SFTDataset(BaseModel):
     type: Optional[Union[str, UserDefinedPrompterType]] = None
     shards: Optional[int] = None
     conversation: Optional[str] = None
-    data_files: Optional[List[str]] = None
+    chat_template: Optional[str] = None
+    data_files: Optional[Union[str, List[str]]] = None
     name: Optional[str] = None
     ds_type: Optional[str] = None
     train_on_split: Optional[str] = None
@@ -167,10 +179,23 @@ class LoraConfig(BaseModel):
     lora_dropout: Optional[float] = None
     peft_layers_to_transform: Optional[List[int]] = None
     peft: Optional[PeftConfig] = None
+    peft_use_dora: Optional[bool] = None
+    peft_use_relora: Optional[bool] = None
 
     lora_on_cpu: Optional[bool] = None
     gptq: Optional[bool] = None
     bnb_config_kwargs: Optional[Dict[str, Any]] = None
+
+    loraplus_lr_ratio: Optional[float] = Field(
+        default=None,
+        metadata={
+            "help": "loraplus learning rate ratio lr_B / lr_A. Recommended value is 2^4."
+        },
+    )
+    loraplus_lr_embedding: Optional[float] = Field(
+        default=1e-6,
+        metadata={"help": "loraplus learning rate for lora embedding layers."},
+    )
 
     merge_lora: Optional[bool] = None
 
@@ -211,6 +236,17 @@ class LoraConfig(BaseModel):
                     raise ValueError("Require cfg.load_in_4bit to be True for qlora")
         return self
 
+    @model_validator(mode="before")
+    @classmethod
+    def validate_quantized_dora(cls, data):
+        if data.get("peft_use_dora") and (
+            data.get("load_in_8bit") or data.get("load_in_4bit")
+        ):
+            raise ValueError(
+                "`peft_use_dora` is not currently compatible with quantized weights."
+            )
+        return data
+
 
 class ReLoRAConfig(BaseModel):
     """ReLoRA configuration subset"""
@@ -233,11 +269,7 @@ class ModelInputConfig(BaseModel):
     tokenizer_type: Optional[str] = Field(
         default=None, metadata={"help": "transformers tokenizer class"}
     )
-    model_type: Optional[str] = Field(default=None)
-    model_revision: Optional[str] = None
     trust_remote_code: Optional[bool] = None
-
-    model_config_overrides: Optional[Dict[str, Any]] = None
 
     @field_validator("trust_remote_code")
     @classmethod
@@ -301,6 +333,13 @@ class HyperparametersConfig(BaseModel):
             )
         return batch_size
 
+    @field_validator("learning_rate")
+    @classmethod
+    def convert_learning_rate(cls, learning_rate):
+        if learning_rate and isinstance(learning_rate, str):
+            learning_rate = float(learning_rate)
+        return learning_rate
+
 
 class ModelOutputConfig(BaseModel):
     """model save configuration subset"""
@@ -314,7 +353,7 @@ class ModelOutputConfig(BaseModel):
 class MLFlowConfig(BaseModel):
     """mlflow configuration subset"""
 
-    use_mlflow: Optional[str] = None
+    use_mlflow: Optional[bool] = None
     mlflow_tracking_uri: Optional[str] = None
     mlflow_experiment_name: Optional[str] = None
     hf_mlflow_log_artifacts: Optional[bool] = None
@@ -354,10 +393,16 @@ class AxolotlInputConfig(
     HyperparametersConfig,
     WandbConfig,
     MLFlowConfig,
+    RemappedParameters,
     DeprecatedParameters,
     BaseModel,
 ):
     """wrapper of all config options"""
+
+    class Config:
+        """Config for alias"""
+
+        populate_by_name = True
 
     strict: Optional[bool] = Field(default=False)
     resume_from_checkpoint: Optional[str] = None
@@ -367,6 +412,7 @@ class AxolotlInputConfig(
     rl: Optional[RLType] = None
 
     datasets: Optional[conlist(Union[SFTDataset, DPODataset], min_length=1)] = None  # type: ignore
+    test_datasets: Optional[conlist(Union[SFTDataset, DPODataset], min_length=1)] = None  # type: ignore
     dataset_prepared_path: Optional[str] = None
     dataset_shard_num: Optional[int] = None
     dataset_shard_idx: Optional[int] = None
@@ -454,18 +500,22 @@ class AxolotlInputConfig(
     max_steps: Optional[int] = None
     warmup_steps: Optional[int] = None
     warmup_ratio: Optional[float] = None
-    eval_steps: Optional[int] = None
+    eval_steps: Optional[Union[int, float]] = None
+    evals_per_epoch: Optional[Union[int]] = None
     evaluation_strategy: Optional[str] = None
-    save_steps: Optional[int] = None
+    save_steps: Optional[Union[int, float]] = None
     saves_per_epoch: Optional[int] = None
     save_strategy: Optional[str] = None
     save_total_limit: Optional[int] = None
     logging_steps: Optional[int] = None
     early_stopping_patience: Optional[int] = None
+    load_best_model_at_end: Optional[bool] = False
 
     neftune_noise_alpha: Optional[float] = None
 
-    max_memory: Optional[Union[int, str]] = None
+    max_memory: Optional[
+        Dict[Union[int, Literal["cpu", "disk"]], Union[int, str]]
+    ] = None
     gpu_memory_limit: Optional[Union[int, str]] = None
 
     chat_template: Optional[Union[Literal["chatml", "inst"], ChatTemplate]] = None
@@ -539,11 +589,11 @@ class AxolotlInputConfig(
     @model_validator(mode="before")
     @classmethod
     def check_gptq_w_revision(cls, data):
-        if data.get("gptq") and data.get("model_revision"):
+        if data.get("gptq") and data.get("revision_of_model"):
             raise ValueError(
-                "model_revision is not supported for GPTQ models. "
+                "revision_of_model is not supported for GPTQ models. "
                 + "Please download the model from HuggingFace Hub manually for correct branch, "
-                + "point to its path, and remove model_revision from the config."
+                + "point to its path, and remove revision_of_model from the config."
             )
         return data
 
@@ -799,7 +849,7 @@ class AxolotlInputConfig(
     @model_validator(mode="after")
     def check_early_stopping(self):
         if self.early_stopping_patience:
-            if not self.save_steps or self.eval_steps:
+            if not self.save_steps or not self.eval_steps:
                 raise ValueError(
                     "`early_stopping_patience` requires save_steps and eval_steps to be set. eval_steps should evenly divide save_steps."
                 )
@@ -942,4 +992,11 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 "This may work on H100s."
             )
 
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_fsdp_deepspeed(cls, data):
+        if data.get("deepspeed") and data.get("fsdp"):
+            raise ValueError("deepspeed and fsdp cannot be used together.")
         return data

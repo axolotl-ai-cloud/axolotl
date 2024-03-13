@@ -1,28 +1,34 @@
-# use google/gemma-7b if you have access
-base_model: mhenrichsen/gemma-7b
+base_model: mistralai/Mixtral-8x7B-v0.1
 model_type: AutoModelForCausalLM
-tokenizer_type: AutoTokenizer
+tokenizer_type: LlamaTokenizer
+trust_remote_code: true
 
 load_in_8bit: false
 load_in_4bit: true
 strict: false
 
-# huggingface repo
 datasets:
-  - path: mhenrichsen/alpaca_2k_test
+  - path: tatsu-lab/alpaca
     type: alpaca
-val_set_size: 0.1
-output_dir: ./out
+dataset_prepared_path: last_run_prepared
+val_set_size: 0.02
+output_dir: ./qlora-out
+
+model_config:
+  output_router_logits: true
 
 adapter: qlora
+lora_model_dir:
+
+sequence_len: 1024
+sample_packing: false
+pad_to_sequence_len: false
+
 lora_r: 32
 lora_alpha: 16
 lora_dropout: 0.05
 lora_target_linear: true
-
-sequence_len: 4096
-sample_packing: true
-pad_to_sequence_len: true
+lora_fan_in_fan_out:
 
 wandb_project:
 wandb_entity:
@@ -30,11 +36,10 @@ wandb_watch:
 wandb_name:
 wandb_log_model:
 
-
-gradient_accumulation_steps: 3
+gradient_accumulation_steps: 4
 micro_batch_size: 2
-num_epochs: 4
-optimizer: adamw_bnb_8bit
+num_epochs: 1
+optimizer: paged_adamw_8bit
 lr_scheduler: cosine
 learning_rate: 0.0002
 
@@ -52,14 +57,18 @@ logging_steps: 1
 xformers_attention:
 flash_attention: true
 
-warmup_ratio: 0.1
+loss_watchdog_threshold: 5.0
+loss_watchdog_patience: 3
+
+warmup_steps: 10
 evals_per_epoch: 4
 eval_table_size:
 eval_max_new_tokens: 128
 saves_per_epoch: 1
 debug:
-deepspeed:
 weight_decay: 0.0
 fsdp:
+  - full_shard
 fsdp_config:
+  fsdp_transformer_layer_cls_to_wrap: MixtralSparseMoeBlock
 special_tokens:
