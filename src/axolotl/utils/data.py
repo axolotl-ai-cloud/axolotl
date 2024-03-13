@@ -351,7 +351,8 @@ def load_tokenized_prepared_datasets(
                     )
             elif ds_from_puree:
                 ds_type = get_ds_type(config_dataset)
-                data_files = config_dataset.data_files + "/*." + ds_type
+                dataset_id = config_dataset.path.split("://")[1]
+                data_files = f"gs://puree/datasets/{dataset_id}/*.{ds_type}"
                 ds = load_dataset(
                     ds_type,
                     name=config_dataset.name,
