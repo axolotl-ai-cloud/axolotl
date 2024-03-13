@@ -24,10 +24,6 @@ from axolotl.common.const import DEFAULT_DATASET_PREPARED_PATH
 from axolotl.datasets import TokenizedPromptDataset
 from axolotl.prompt_strategies import load
 from axolotl.prompt_strategies.dpo import load as load_dpo
-from axolotl.prompt_strategies.summarization import (
-    SummarizationPrompter,
-    SummarizationPromptTokenizingStrategy,
-)
 from axolotl.prompt_tokenizers import (
     AlpacaMultipleChoicePromptTokenizingStrategy,
     AlpacaPromptTokenizingStrategy,
@@ -661,20 +657,6 @@ def get_dataset_wrapper(
     elif d_base_type == "reflection":
         dataset_prompter = ReflectAlpacaPrompter(d_prompt_style)
         ds_strategy = AlpacaReflectionPTStrategy(
-            dataset_prompter,
-            tokenizer,
-            cfg.train_on_inputs,
-            cfg.sequence_len,
-        )
-        ds_wrapper = TokenizedPromptDataset(
-            ds_strategy,
-            dataset,
-            **ds_kwargs,
-        )
-        dataset_wrapper = ds_wrapper
-    elif d_base_type == "summarization":
-        dataset_prompter = SummarizationPrompter(d_prompt_style)
-        ds_strategy = SummarizationPromptTokenizingStrategy(
             dataset_prompter,
             tokenizer,
             cfg.train_on_inputs,
