@@ -429,7 +429,7 @@ def load_model(
         and cfg.flash_attention
         and cfg.sample_packing
     ):
-        patch_for_multipack(cfg.model_config_type)
+        patch_for_multipack(cfg.model_config_type, model_name=cfg.base_model)
     elif cfg.is_llama_derived_model:
         # Modify all llama derived models in one block
 
