@@ -825,7 +825,7 @@ def wrap_pretraining_dataset(
     if cfg.shuffle_merged_datasets:
         dataset = dataset.shuffle(seed=seed, buffer_size=buffer_size)
     else:
-        LOG.info("NOT shuffling merged pretraining datasets")
+        LOG.debug("NOT shuffling merged pretraining datasets")
 
     dataset = dataset.map(
         encode,
