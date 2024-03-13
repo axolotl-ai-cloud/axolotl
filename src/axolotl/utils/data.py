@@ -262,11 +262,10 @@ def load_tokenized_prepared_datasets(
                     import gcsfs  # type: ignore
                 except ImportError as exc:
                     raise ImportError(
-                        "gs:// or gcs:// paths require gcsfs to be installed"
+                        "puree:// paths require gcsfs to be installed"
                     ) from exc
 
                 storage_options = {"token": None}
-                remote_file_system = gcsfs.GCSFileSystem(**storage_options)
                 ds_from_puree = True
 
             # TODO: Figure out how to get auth creds passed
