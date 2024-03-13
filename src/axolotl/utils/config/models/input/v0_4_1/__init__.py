@@ -129,8 +129,10 @@ class RLType(str, Enum):
 class ChatTemplate(str, Enum):
     """Chat templates configuration subset"""
 
+    alpaca = "alpaca"  # pylint: disable=invalid-name
     chatml = "chatml"  # pylint: disable=invalid-name
     inst = "inst"  # pylint: disable=invalid-name
+    gemma = "gemma"  # pylint: disable=invalid-name
 
 
 class LoftQConfig(BaseModel):
@@ -518,7 +520,7 @@ class AxolotlInputConfig(
     ] = None
     gpu_memory_limit: Optional[Union[int, str]] = None
 
-    chat_template: Optional[Union[Literal["chatml", "inst"], ChatTemplate]] = None
+    chat_template: Optional[ChatTemplate] = None
     default_system_message: Optional[str] = None
 
     # INTERNALS - document for now, generally not set externally
