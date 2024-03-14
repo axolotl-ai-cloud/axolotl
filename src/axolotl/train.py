@@ -19,7 +19,7 @@ from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
 from axolotl.common.cli import TrainerCliArgs
 from axolotl.logging_config import configure_logging
 from axolotl.utils.dict import DictDefault
-from axolotl.utils.freeze import freeze_parameters_except
+from axolotl.utils.freeze import freeze_layers_except
 from axolotl.utils.models import load_model, load_tokenizer
 from axolotl.utils.trainer import setup_trainer
 
@@ -99,7 +99,7 @@ def train(
     safe_serialization = cfg.save_safetensors is True
 
     if cfg.unfrozen_parameters:
-        freeze_parameters_except(model, cfg.unfrozen_parameters)
+        freeze_layers_except(model, cfg.unfrozen_parameters)
 
     trainer = setup_trainer(
         cfg,
