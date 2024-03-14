@@ -1080,6 +1080,10 @@ fsdp_config:
   fsdp_transformer_layer_cls_to_wrap: LlamaDecoderLayer
 ```
 
+##### FSDP + QLoRA
+
+Axolotl supports training with FSDP and QLoRA, see [these docs](docs/fsdp_qlora.md) for more information.
+
 ##### Weights & Biases Logging
 
 Make sure your `WANDB_API_KEY` environment variable is set (recommended) or you login to wandb with `wandb login`.
