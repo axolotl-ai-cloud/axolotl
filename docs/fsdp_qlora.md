@@ -25,7 +25,7 @@ To enable `QLoRA` with `FSDP`, you need to perform the following steps:
 
 - [PR #1378](https://github.com/OpenAccess-AI-Collective/axolotl/pull/1378) enabling QLoRA in FSDP in Axolotl.
 - [Blog Post](https://www.answer.ai/posts/2024-03-06-fsdp-qlora.html) from the [Answer.AI](https://www.answer.ai/) team describing the work that enabled QLoRA in FSDP.
-- Related HuggingFace PRs Enabling FDSP + QLorA:
+- Related HuggingFace PRs Enabling FDSP + QLoRA:
     - Accelerate [PR#2544](https://github.com/huggingface/accelerate/pull/2544 )
     - Transformers [PR#29587](https://github.com/huggingface/transformers/pull/29587)
     - TRL [PR#1416](https://github.com/huggingface/trl/pull/1416)
