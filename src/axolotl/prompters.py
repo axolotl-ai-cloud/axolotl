@@ -280,13 +280,13 @@ class ShareGPTPrompter(Prompter):  # pylint: disable=too-few-public-methods
                 self._conversation = conversation
             else:
                 self._conversation = get_conv_template(conversation)
-            print(self._conversation)
         else:
             self._conversation = get_conv_template("vicuna_v1.1")
         if role_key_human:
             self.role_key_human = role_key_human
         if role_key_model:
             self.role_key_model = role_key_model
+
 
     def _build_result(self, source):
         if len(source) < 2:
@@ -304,7 +304,7 @@ class ShareGPTPrompter(Prompter):  # pylint: disable=too-few-public-methods
             source.pop(0)
 
         roles = {self.role_key_human: conv.roles[0], self.role_key_model: conv.roles[1]}
-
+        
         try:
             # Apply prompt templates
             if source[0]["from"] not in roles:
@@ -320,7 +320,8 @@ class ShareGPTPrompter(Prompter):  # pylint: disable=too-few-public-methods
             if len(conv.messages) > 0 and (
                 (role == conv.messages[-1][0]) or (role not in conv.roles)
             ):
-                LOG.warning(f"{SHAREGPT_ASSERTION_FAILED_ROLE}: {sentence}")
+                if conv.name != "conversational_lm":
+                    LOG.warning(f"{SHAREGPT_ASSERTION_FAILED_ROLE}: {sentence}")
             conv.append_message(role, sentence["value"])
 
         return conv.get_turns()

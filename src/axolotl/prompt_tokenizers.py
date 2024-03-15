@@ -14,6 +14,8 @@ from axolotl.monkeypatch.fastchat_conversation_turns import (
 from axolotl.prompters import IGNORE_TOKEN_ID
 
 LOG = logging.getLogger("axolotl")
+logging.basicConfig(level=logging.DEBUG)  # This will show all logs from DEBUG level and above
+
 
 IGNORE_INDEX = -100
 LLAMA_DEFAULT_PAD_TOKEN = "<pad>"  # nosec
@@ -65,7 +67,7 @@ class PromptTokenizingStrategy(abc.ABC):
         if not prompt:
             LOG.warning("Empty text requested for tokenization.")
             return empty
-
+        
         result = self.tokenizer(
             prompt,
             truncation=True,
@@ -339,7 +341,7 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
         conversation: Conversation = (
             self.prompter._conversation.copy()  # pylint: disable=protected-access
         )
-
+        
         # support for custom roles from the dataset, only useful for vicuna style prompts/roles
         role_remap = []
         if (
@@ -351,18 +353,20 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
                 {"from": conversation.roles[0], "to": prompt["roles"][0]},
                 {"from": conversation.roles[1], "to": prompt["roles"][1]},
             ]
+        conversation_thread = self.get_conversation_thread(prompt)
+        built_prompt = self.prompter.build_prompt(conversation_thread)
 
         try:
             for _, part in enumerate(
                 self.prompter.build_prompt(self.get_conversation_thread(prompt))
-            ):
+            ):  
                 if not isinstance(part, tuple):
                     LOG.warning(f"expected tuple, got {part}")
                     continue
 
                 user, assistant = conversation.roles
                 role, content = part
-
+                
                 # Uses "in" because role contains extra characters
                 if user in role:
                     role = (
@@ -380,6 +384,7 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
                         add_eos_token=False,
                         strip_bos_token=True,
                     )
+
                     
                     # check if it's just a single token
                     if len(role_res["input_ids"]) > 1:
@@ -398,13 +403,24 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
                     )
                     
                     # concat the contents of the role and the content
-                    res = {
-                        "input_ids": role_res["input_ids"] + role_content["input_ids"],
-                        "attention_mask": role_res["attention_mask"] + role_content["attention_mask"],
-                    }   
+                    if conversation.name != "conversational_lm":
+                        res = {
+                            "input_ids": role_res["input_ids"] + role_content["input_ids"],
+                            "attention_mask": role_res["attention_mask"] + role_content["attention_mask"],
+                        }   
+                    else:
+                        res = {
+                            "input_ids": role_content["input_ids"],
+                            "attention_mask": role_content["attention_mask"],
+                        }
                     
-                    # everything from this is masked out from the labels
-                    labels = [IGNORE_TOKEN_ID] * len(res["input_ids"])
+                    if self.train_on_inputs:
+                        labels = copy.deepcopy(res["input_ids"])
+                    else:
+                        # everything from this is masked out from the labels
+                        labels = [IGNORE_TOKEN_ID] * len(res["input_ids"])
+                    # # everything from this is masked out from the labels
+                    # labels = [IGNORE_TOKEN_ID] * len(res["input_ids"])
                 elif assistant in role:
                     # TODO label assistant token/tokens w/ IGNORE_TOKEN_ID
                     role = (
@@ -412,24 +428,40 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
                         if role_remap
                         else role
                     )
-                    turn = role + content
+                    # turn = role + content
                     # this should be the assistant response, should end with an eos token
                     if not content.strip():
                         LOG.warning(f"assistant turn has empty text: {prompt}")
                     res = self._tokenize(
-                        turn,
+                        content,
                         add_eos_token=False, # commenting because it is the same as the role.
                         strip_bos_token=True,
                     )
-                    role_res = self._tokenize(
-                        role.rstrip(),
-                        add_eos_token=False,
-                        strip_bos_token=True,
-                    )
+                    
+                    if conversation.name != "conversational_lm":
+                        role_res = self._tokenize(
+                            role,
+                            add_eos_token=False,
+                            strip_bos_token=True,
+                        )
+                        print("Role", role_res)
+                    
+                        # concat the contents of the role and the content
+                        res = {
+                            "input_ids": role_res["input_ids"] + res["input_ids"],
+                            "attention_mask": role_res["attention_mask"] + res["attention_mask"],
+                        }   
+                    
                     # not masked out from labels
                     labels = copy.deepcopy(res["input_ids"])
-                    len_role = len(role_res["input_ids"])
-                    labels[:len_role] = [IGNORE_TOKEN_ID] * min(len_role, len(labels))
+                    if not self.train_on_inputs:
+                        # mask out role tokens from the labels
+                        len_role = len(role_res["input_ids"])
+                        labels[:len_role] = [IGNORE_TOKEN_ID] * min(
+                            len_role, len(labels)
+                        )
+                    # len_role = len(role_res["input_ids"])
+                    # labels[:len_role] = [IGNORE_TOKEN_ID] * min(len_role, len(labels))
                 elif role == "":
                     turn = "<s>"
                     # this is only ever the first part, should include the bos token and the user query
@@ -461,6 +493,7 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
                 
             return result
         except (KeyError, AssertionError, IndexError) as err:
+            print("Error in tokenizing prompt: ", prompt)
             raise InvalidDataException(str(err)) from err
 
 

@@ -1,4 +1,4 @@
-base_model: ...
+base_model: /mnt/data/nunomg/TowerBase-1b
 model_type: LlamaForCausalLM
 tokenizer_type: LlamaTokenizer
 is_llama_derived_model: true
@@ -8,13 +8,13 @@ load_in_4bit: false
 strict: false
 
 datasets:
-  - path: ...
+  - path: Unbabel/TowerBlocks-v0.1-mtchat
     type: sharegpt
     conversation: chatml
 
 dataset_prepared_path: 
 val_set_size: 0
-output_dir: ...
+output_dir: /mnt/data/nunomg/axolotl/ckpt/
 
 sequence_len: 2048
 sample_packing: true

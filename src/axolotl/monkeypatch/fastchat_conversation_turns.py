@@ -118,6 +118,18 @@ def get_turns(  # pylint: disable=too-many-return-statements
             else:
                 yield role + "\n", ""
         return
+    if self.sep_style == SeparatorStyle.CONVERSATIONAL_LM:
+        yield "", "" if system_prompt == "" else system_prompt + self.sep + "\n"
+        for role, message in self.messages:
+            # if it's the last message
+            if message == self.messages[-1][1]:
+                yield role, message + self.sep + "\n"
+                continue
+            if message:
+                yield role + "\n", message + "\n"
+            else:
+                yield role + "\n", ""
+        return
     if self.sep_style == SeparatorStyle.CHATINTERN:
         # source: https://huggingface.co/internlm/internlm-chat-7b-8k/blob/bd546fa984b4b0b86958f56bf37f94aa75ab8831/modeling_internlm.py#L771
         seps = [self.sep, self.sep2]

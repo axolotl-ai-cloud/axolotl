@@ -97,6 +97,10 @@ def _prepare_decoder_attention_mask(
     if attention_mask is None:
         return attention_mask
 
+    if sliding_window is None:
+        return attention_mask
+        
+
     # NOTE: attention mask and sliding masks are only broadcastable in certain scenarios.
     # Without attention_mask.shape[0] == 1, error will trigger after eval loss but only when wandb is enabled.
     if input_shape[-1] > 1 and attention_mask.shape[0] == 1:
@@ -151,10 +155,11 @@ def flashattn_forward(
     )
 
     use_sliding_windows = (
-        hasattr(self.config, "sliding_window") is not None
+        getattr(self.config, "sliding_window") is not None
         and kv_seq_len > self.config.sliding_window
     )
-
+    
+    
     if use_sliding_windows:
         window_size = (self.config.sliding_window, self.config.sliding_window)
     else:

@@ -63,7 +63,7 @@ def load_model_config(cfg):
     else:
         try:
             model_config = AutoConfig.from_pretrained(
-                model_config_name, trust_remote_code=trust_remote_code
+                model_config_name, trust_remote_code=True
             )
         except ValueError as err:
             if "mamba" in model_config_name:
@@ -94,13 +94,13 @@ def load_tokenizer(cfg):
         tokenizer_kwargs["legacy"] = cfg.tokenizer_legacy
 
     tokenizer_cls = AutoTokenizer
-    if cfg.tokenizer_type:
-        tokenizer_cls = getattr(transformers, cfg.tokenizer_type)
+    # if cfg.tokenizer_type:
+    #     tokenizer_cls = getattr(transformers, cfg.tokenizer_type)
 
     tokenizer_config = cfg.tokenizer_config or cfg.base_model_config or cfg.base_model
     tokenizer = tokenizer_cls.from_pretrained(
         tokenizer_config,
-        trust_remote_code=cfg.trust_remote_code or False,
+        trust_remote_code=True,
         use_fast=use_fast,
         **tokenizer_kwargs,
     )
@@ -312,9 +312,22 @@ def load_model(
             # TODO enable once properly supported in transformers
             # model_kwargs["attn_implementation"] = "flash_attention_2"
             model_kwargs["use_flash_attention_2"] = True  # legacy, to be deprecated
+    
+    # Modify mistral derived models
+    if (
+        cfg.model_config_type == "mistral"
+        and cfg.flash_attention
+        and cfg.sample_packing
+    ):
+        from axolotl.monkeypatch.mistral_attn_hijack_flash import (
+            replace_mistral_attn_with_flash_attn,
+        )
+
+        LOG.info("patching mistral with flash attention")
+        replace_mistral_attn_with_flash_attn(packed=cfg.sample_packing)
 
     try:
-        if cfg.is_llama_derived_model and not cfg.trust_remote_code and not cfg.gptq:
+        if cfg.model_config_type == "llama" and not cfg.trust_remote_code and not cfg.gptq:
             from transformers import LlamaForCausalLM
 
             print("Base model:", base_model)

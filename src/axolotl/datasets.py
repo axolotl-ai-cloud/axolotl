@@ -48,14 +48,19 @@ class TokenizedPromptDataset(Dataset):
         if self.prompt_tokenizer.supports_batched:
             map_kwargs["batched"] = True
             map_kwargs["batch_size"] = 100
-            
+        
+        print(dataset)
+        
+        print("Before map" + "-" * 50)
         print(dataset[0])
+        
         mapped = dataset.map(
             self.prompt_tokenizer.tokenize_prompt,
             num_proc=num_proc,
             remove_columns=features,
             **map_kwargs,
         )
+        print("After map" + "-" * 50)
         print(mapped[0])
         return mapped
 
