@@ -11,7 +11,14 @@ class SparseMoeBlock(nn.Module):
         self.num_experts = num_experts
         self.top_k = top_k
         self.gate = nn.Linear(self.hidden_dim, self.num_experts, bias=False)
-        self.experts: FusedExperts = experts
+        self.experts = FusedExperts(
+            experts=experts,
+            input_size=ffn_dim,
+            hidden_size=hidden_dim,
+            num_experts=num_experts,
+            top_k=top_k,
+            activation=experts[0].act_fn
+        )
 
     def _post_training(self, model, name):
         # get original weights back: reverse the concat + stack in the fused experts

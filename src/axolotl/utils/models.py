@@ -720,23 +720,14 @@ def load_model(
             and not cfg.adapter
             and cfg.fuse_moe
         ):
-            from axolotl.monkeypatch.moe.mlp import FusedExperts
             from axolotl.monkeypatch.utils import set_module_name
             from axolotl.monkeypatch.moe.moe import SparseMoeBlock
             from transformers.models.mixtral.modeling_mixtral import MixtralSparseMoeBlock
 
             for name, module in model.named_modules():
                 if isinstance(module, MixtralSparseMoeBlock):
-                    experts = FusedExperts(
-                        experts=module.experts,
-                        input_size=module.ffn_dim,
-                        hidden_size=module.hidden_dim,
-                        num_experts=module.num_experts,
-                        top_k=module.top_k,
-                        activation=module.experts[0].act_fn
-                    )
                     smoe = SparseMoeBlock(
-                        experts=experts,
+                        experts=module.experts,
                         hidden_dim=module.hidden_dim,
                         ffn_dim=module.ffn_dim,
                         num_experts=module.num_experts,
