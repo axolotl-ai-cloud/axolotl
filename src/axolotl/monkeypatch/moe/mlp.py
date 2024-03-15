@@ -15,8 +15,8 @@ class FusedExperts(nn.Module):
     def __init__(
         self,
         experts=None,
-        input_size=128,
-        hidden_size=512,
+        hidden_dim=128,
+        ffn_dim=512,
         num_experts=8,
         top_k=2,
         activation=nn.SiLU(),
@@ -28,37 +28,39 @@ class FusedExperts(nn.Module):
         super(FusedExperts, self).__init__()
 
         self.num_experts = num_experts
-        self.input_size = input_size
-        self.hidden_size = hidden_size
-        self.experts = ParallelExperts(num_experts, input_size, 2 * hidden_size)
-        self.output_experts = ParallelExperts(num_experts, hidden_size, input_size)
+        self.hidden_dim = hidden_dim
+        self.ffn_dim = ffn_dim
+        self.experts = ParallelExperts(num_experts, hidden_dim, 2 * ffn_dim)
+        self.output_experts = ParallelExperts(num_experts, ffn_dim, hidden_dim)
         self.top_k = min(top_k, self.num_experts)
         self.activation = activation
 
         # parallelize all w1 and w3 computation by concat + stack
         with torch.no_grad():
-            self.experts.weight.data = torch.stack(
+            torch.stack(
                 [
-                    torch.cat([experts[i].w1.weight, experts[i].w3.weight], dim=1)
+                    torch.cat([experts[i].w1.weight, experts[i].w3.weight], dim=0)
                     for i in range(len(experts))
                 ],
                 dim=0,
+                out=self.experts.weight.data,
             )
 
             # parallelize all w2 computation by stack
-            self.output_experts.weight.data = torch.stack(
+            torch.stack(
                 [expert.w2.weight for expert in experts],
                 dim=0,
-        )
+                out=self.output_experts.weight.data,
+            )
 
     def forward(
-        self, x: torch.Tensor, expert_p: torch.Tensor, expert_idxs: torch.Tensor
+        self, x: torch.Tensor, routing_weights: torch.Tensor, selected_experts: torch.Tensor
     ):
         x_shape = x.size()
         x = x.view(-1, x_shape[-1])
         with torch.no_grad():
             sorted_expert_idxs, sorted_scattered_idxs = ops.flatten_and_sort(
-                expert_idxs
+                selected_experts
             )
             padded_block_idxs, expert_offsets = ops.padded_block_indices(
                 sorted_expert_idxs, self.num_experts
@@ -82,7 +84,7 @@ class FusedExperts(nn.Module):
             padded_block_idxs,
             expert_offsets,
             grouped_in=True,
-            gates=expert_p,
+            gates=routing_weights,
         )
         y = y.view(*x_shape[:-1], y.size(-1))
         return y

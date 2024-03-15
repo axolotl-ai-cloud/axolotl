@@ -4,17 +4,17 @@ import torch.nn.functional as F
 from axolotl.monkeypatch.moe.mlp import FusedExperts
 
 class SparseMoeBlock(nn.Module):
-    def __init__(self, experts, hidden_dim, ffn_dim, num_experts, top_k):
+    def __init__(self, experts, gate, hidden_dim, ffn_dim, num_experts, top_k):
         super().__init__()
         self.hidden_dim = hidden_dim
         self.ffn_dim = ffn_dim
         self.num_experts = num_experts
         self.top_k = top_k
-        self.gate = nn.Linear(self.hidden_dim, self.num_experts, bias=False)
+        self.gate = gate
         self.experts = FusedExperts(
             experts=experts,
-            input_size=ffn_dim,
-            hidden_size=hidden_dim,
+            hidden_dim=hidden_dim,
+            ffn_dim=ffn_dim,
             num_experts=num_experts,
             top_k=top_k,
             activation=experts[0].act_fn

@@ -728,6 +728,7 @@ def load_model(
                 if isinstance(module, MixtralSparseMoeBlock):
                     smoe = SparseMoeBlock(
                         experts=module.experts,
+                        gate=module.gate,
                         hidden_dim=module.hidden_dim,
                         ffn_dim=module.ffn_dim,
                         num_experts=module.num_experts,
