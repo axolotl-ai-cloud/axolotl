@@ -14,6 +14,7 @@ import yaml
 from datasets import (
     Dataset,
     DatasetDict,
+    DownloadConfig,
     concatenate_datasets,
     load_dataset,
     load_from_disk,
@@ -362,7 +363,7 @@ def load_tokenized_prepared_datasets(
                     data_files=data_files,
                     streaming=False,
                     split=None,
-                    num_proc=num_proc,
+                    download_config=DownloadConfig(num_proc=num_proc),
                     storage_options=storage_options,
                 )
             elif config_dataset.path.startswith("https://"):
