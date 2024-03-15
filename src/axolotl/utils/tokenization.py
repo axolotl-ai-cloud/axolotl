@@ -1,6 +1,5 @@
 """Module for tokenization utilities"""
 
-
 import logging
 import re
 from typing import Dict, List
@@ -10,7 +9,13 @@ from termcolor import colored
 LOG = logging.getLogger("axolotl")
 
 
-def check_dataset_labels(dataset, tokenizer, num_examples=5, text_only=False, rl=False):
+def check_dataset_labels(
+    dataset,
+    tokenizer,
+    num_examples=5,
+    text_only=False,
+    rl=False,
+):
     # the dataset is already shuffled, so let's just check the first 5 elements
     for idx in range(num_examples):
         if not rl:
@@ -44,9 +49,14 @@ def check_example_labels(example, tokenizer, text_only=False):
 
 
 def color_token_for_rl_debug(decoded_token, encoded_token, color, text_only):
-        """Helper function to color tokens based on their type."""
-        colored_text = colored(decoded_token, color)
-        return colored_text if text_only else f"{colored_text}{colored(f'({encoded_token})', 'white')}"
+    """Helper function to color tokens based on their type."""
+    colored_text = colored(decoded_token, color)
+    return (
+        colored_text
+        if text_only
+        else f"{colored_text}{colored(f'({encoded_token})', 'white')}"
+    )
+
 
 def process_tokens_for_rl_debug(tokens, color, tokenizer, text_only):
     """Helper function to process and color tokens."""
@@ -56,14 +66,23 @@ def process_tokens_for_rl_debug(tokens, color, tokenizer, text_only):
     ]
     return colored_tokens
 
+
 def check_rl_example_labels(example, tokenizer, text_only=False):
-    input_tokens = example["prompt"]
-    labels_chosen, labels_rejected = example["chosen"], example["rejected"]
+    field_prompt, field_chosen, field_rejected = "prompt", "chosen", "rejected"
+
+    input_tokens = example[field_prompt]
+    labels_chosen, labels_rejected = example[field_chosen], example[field_rejected]
 
     # Process and color each type of token
-    colored_tokens = process_tokens_for_rl_debug(input_tokens, "red", tokenizer, text_only)
-    colored_chosens = process_tokens_for_rl_debug(labels_chosen, "green", tokenizer, text_only)
-    colored_rejecteds = process_tokens_for_rl_debug(labels_rejected, "red", tokenizer, text_only)
+    colored_tokens = process_tokens_for_rl_debug(
+        input_tokens, "yellow", tokenizer, text_only
+    )
+    colored_chosens = process_tokens_for_rl_debug(
+        labels_chosen, "green", tokenizer, text_only
+    )
+    colored_rejecteds = process_tokens_for_rl_debug(
+        labels_rejected, "red", tokenizer, text_only
+    )
 
     # Create a delimiter based on text_only flag
     delimiter = "" if text_only else " "
@@ -74,6 +93,7 @@ def check_rl_example_labels(example, tokenizer, text_only=False):
     LOG.info(f"REJECTED RESPONSE: {delimiter.join(colored_rejecteds)}\n\n\n")
 
     return delimiter.join(colored_tokens)
+
 
 GLAIVE_ROLES = ["USER", "ASSISTANT", "FUNCTION RESPONSE"]
 GLAIVE_TO_SHAREGPT_ROLE = {
