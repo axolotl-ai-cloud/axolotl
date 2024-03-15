@@ -14,11 +14,11 @@ from axolotl.monkeypatch.moe.linear import ParallelExperts
 class FusedExperts(nn.Module):
     def __init__(
         self,
-        experts,
-        input_size,
-        hidden_size,
-        num_experts,
-        top_k,
+        experts=None,
+        input_size=128,
+        hidden_size=512,
+        num_experts=8,
+        top_k=2,
         activation=nn.SiLU(),
     ):
         """
@@ -36,20 +36,19 @@ class FusedExperts(nn.Module):
         self.activation = activation
 
         # parallelize all w1 and w3 computation by concat + stack
-        self.experts.weight = torch.stack(
-            [
-                torch.cat([experts[i].w1, experts[i].w3], dim=1)
-                for i in range(len(experts))
-            ],
-            dim=0,
-            device=experts[0].w1.weight.device,
-        )
+        with torch.no_grad():
+            self.experts.weight.data = torch.stack(
+                [
+                    torch.cat([experts[i].w1.weight, experts[i].w3.weight], dim=1)
+                    for i in range(len(experts))
+                ],
+                dim=0,
+            )
 
-        # parallelize all w2 computation by stack
-        self.output_experts.weight = torch.stack(
-            [expert.w2 for expert in experts],
-            dim=0,
-            device=experts[0].w2.weight.device,
+            # parallelize all w2 computation by stack
+            self.output_experts.weight.data = torch.stack(
+                [expert.w2.weight for expert in experts],
+                dim=0,
         )
 
     def forward(
