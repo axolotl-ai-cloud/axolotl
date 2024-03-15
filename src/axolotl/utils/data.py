@@ -1,7 +1,10 @@
 """Module containing data utilities"""
+
 import functools
 import hashlib
 import logging
+import math
+import os
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
@@ -352,12 +355,14 @@ def load_tokenized_prepared_datasets(
                 ds_type = get_ds_type(config_dataset)
                 dataset_id = config_dataset.path.split("://")[1]
                 data_files = f"gs://puree/datasets/{dataset_id}/*.{ds_type}"
+                num_proc = min(10, math.ceil((os.cpu_count() or 1) / 2 ))
                 ds = load_dataset(
                     ds_type,
                     name=config_dataset.name,
                     data_files=data_files,
                     streaming=False,
                     split=None,
+                    num_proc=num_proc,
                     storage_options=storage_options,
                 )
             elif config_dataset.path.startswith("https://"):
