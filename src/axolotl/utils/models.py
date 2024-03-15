@@ -715,32 +715,35 @@ def load_model(
                 if cfg.flash_attn_fuse_qkv:
                     LOG.info("patching with fused QKV")
                     replace_llama_qkv_with_fused(model)
-        # elif model_type == "GPTNeoXForCausalLM" and cfg.flash_attention:
-        #     This is a WIP, still an issue with the backward pass
-        #     RuntimeError: grad can be implicitly created only for scalar outputs
-        #     TODO: try config.sequence_parallel = False
-        #     # https://github.com/HazyResearch/flash-attention/blob/40a25c8ee7465cf547b929cfa2937034e37bfce9/tests/models/test_gpt_neox.py#L12
-        #     # https://github.com/HazyResearch/flash-attention/tree/main/training#model-components
-        #     # add `**kwargs` to https://github.com/HazyResearch/flash-attention/blob/40a25c8ee7465cf547b929cfa2937034e37bfce9/flash_attn/models/gpt.py#L442
-        #     from flash_attn.utils.pretrained import state_dict_from_pretrained
-        #     from flash_attn.models.gpt import GPTLMHeadModel
-        #     from flash_attn.models.gpt_neox import remap_state_dict_hf_gpt_neox, gpt_neox_config_to_gpt2_config
-        #     from transformers import GPTNeoXConfig
-        #     config = gpt_neox_config_to_gpt2_config(GPTNeoXConfig.from_pretrained(base_model))
-        #     config.use_flash_attn = True
-        #     config.fused_bias_fc = True
-        #     config.fused_mlp = True  # GPT-NeoX-20B uses "gelu_fast"
-        #     config.activation_function = "gelu_fast"
-        #     config.fused_dropout_add_ln = True
-        #     # config.residual_in_fp32 = True
-        #
-        #     model: GPTLMHeadModel = GPTLMHeadModel.from_pretrained(
-        #         base_model,
-        #         config,
-        #         dtype=torch_dtype,
-        #         device=cfg.device,
-        #     )
-        #     model.train() # sets to train instead of eval mode
+        elif (
+            model_config.model_type == "mixtral"
+            and not cfg.adapter
+            and cfg.fuse_moe
+        ):
+            from axolotl.monkeypatch.moe.mlp import FusedExperts
+            from axolotl.monkeypatch.utils import set_module_name
+            from axolotl.monkeypatch.moe.moe import SparseMoeBlock
+            from transformers.models.mixtral.modeling_mixtral import MixtralSparseMoeBlock
+
+            for name, module in model.named_modules():
+                if isinstance(module, MixtralSparseMoeBlock):
+                    experts = FusedExperts(
+                        experts=module.experts,
+                        input_size=module.ffn_dim,
+                        hidden_size=module.hidden_dim,
+                        num_experts=module.num_experts,
+                        top_k=module.top_k,
+                        activation=module.experts[0].act_fn
+                    )
+                    smoe = SparseMoeBlock(
+                        experts=experts,
+                        hidden_dim=module.hidden_dim,
+                        ffn_dim=module.ffn_dim,
+                        num_experts=module.num_experts,
+                        top_k=module.top_k,
+                    )
+                    set_module_name(model, name, smoe)
+
         elif model_type == "MambaLMHeadModel":
             # FIXME this is janky at best and hacked together to make it work
             MambaLMHeadModel = fix_mamba_attn_for_loss()  # pylint: disable=invalid-name
