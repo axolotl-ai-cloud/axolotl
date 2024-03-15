@@ -356,15 +356,12 @@ def load_tokenized_prepared_datasets(
                 ds_type = get_ds_type(config_dataset)
                 dataset_id = config_dataset.path.split("://")[1]
                 data_files = f"gs://puree/datasets/{dataset_id}/*.{ds_type}"
-                num_proc = min(10, math.ceil((os.cpu_count() or 1) / 2 ))
-                print('num_proc', num_proc)
                 ds = load_dataset(
                     ds_type,
                     name=config_dataset.name,
                     data_files=data_files,
                     streaming=False,
                     split=None,
-                    download_config=DownloadConfig(num_proc=num_proc),
                     storage_options=storage_options,
                 )
             elif config_dataset.path.startswith("https://"):
