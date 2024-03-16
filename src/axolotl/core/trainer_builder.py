@@ -232,6 +232,7 @@ class AxolotlTrainer(Trainer):
         if self.optimizer is None:  # pylint: disable=access-member-before-definition
             optimizer_cls, optimizer_kwargs = Trainer.get_optimizer_cls_and_kwargs(
                 self.args,
+                opt_model,
             )
 
             loraplus_lr_ratio = getattr(self.args, "loraplus_lr_ratio", None)
@@ -1016,6 +1017,12 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         training_arguments_kwargs["optim"] = (
             self.cfg.optimizer if self.cfg.optimizer else "adamw_hf"
         )
+        if self.cfg.optim_args:
+            training_arguments_kwargs["optim_args"] = self.cfg.optim_args
+        if self.cfg.optim_target_modules:
+            training_arguments_kwargs[
+                "optim_target_modules"
+            ] = self.cfg.optim_target_modules
         training_arguments_kwargs["loraplus_lr_ratio"] = self.cfg.loraplus_lr_ratio
         training_arguments_kwargs[
             "loraplus_lr_embedding"

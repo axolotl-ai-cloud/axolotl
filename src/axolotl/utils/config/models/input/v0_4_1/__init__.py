@@ -310,6 +310,15 @@ class HyperparametersConfig(BaseModel):
     learning_rate: Union[str, float]
     weight_decay: Optional[float] = None
     optimizer: Optional[Union[OptimizerNames, Literal["lion_pytorch"]]] = None
+    optim_args: Optional[str] = Field(
+        default=None, metadata={"help": "Optional arguments to supply to optimizer."}
+    )
+    optim_target_modules: Optional[List[str]] = Field(
+        default=None,
+        metadata={
+            "help": "The target modules to optimize, i.e. the module names that you would like to train."
+        },
+    )
     torchdistx_path: Optional[str] = None
     lr_scheduler: Optional[SchedulerType] = None
     lr_scheduler_kwargs: Optional[Dict[str, Any]] = None
