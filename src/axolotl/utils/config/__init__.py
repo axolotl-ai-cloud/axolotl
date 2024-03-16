@@ -208,11 +208,11 @@ def validate_config(cfg: DictDefault, capabilities: Optional[dict] = None):
             dict(
                 AxolotlConfigWCapabilities(
                     **cfg.to_dict(), capabilities=capabilities
-                ).model_dump(exclude_unset=True)
+                ).model_dump(exclude_none=True)
             )
         )
     return DictDefault(
-        dict(AxolotlInputConfig(**cfg.to_dict()).model_dump(exclude_unset=True))
+        dict(AxolotlInputConfig(**cfg.to_dict()).model_dump(exclude_none=True))
     )
 
 

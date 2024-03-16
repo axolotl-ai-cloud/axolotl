@@ -54,6 +54,18 @@ class TestValidation(BaseValidation):
     Test the validation module
     """
 
+    def test_defaults(self, minimal_cfg):
+        test_cfg = DictDefault(
+            {
+                "weight_decay": None,
+            }
+            | minimal_cfg
+        )
+        cfg = validate_config(test_cfg)
+
+        assert cfg.train_on_inputs is False
+        assert cfg.weight_decay is None
+
     def test_datasets_min_length(self):
         cfg = DictDefault(
             {
