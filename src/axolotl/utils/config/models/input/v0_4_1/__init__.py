@@ -313,7 +313,7 @@ class HyperparametersConfig(BaseModel):
     optim_args: Optional[str] = Field(
         default=None, metadata={"help": "Optional arguments to supply to optimizer."}
     )
-    optim_target_modules: Optional[List[str]] = Field(
+    optim_target_modules: Optional[Union[List[str], Literal["all_linear"]]] = Field(
         default=None,
         metadata={
             "help": "The target modules to optimize, i.e. the module names that you would like to train."

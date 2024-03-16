@@ -900,7 +900,7 @@ optim_args:
 
 # The target modules to optimize, i.e. the module names that you would like to train, right now this is used only for GaLore algorithm
 optim_target_modules:
-# - attn
+# - self_attn  # for llama
 # - mlp
 
 # Specify weight decay
