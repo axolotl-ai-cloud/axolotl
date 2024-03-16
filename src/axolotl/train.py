@@ -110,9 +110,6 @@ def train(
         total_num_steps,
     )
 
-    if hasattr(model, "config"):
-        model.config.use_cache = False
-
     # go ahead and presave, so we have the adapter config available to inspect
     if peft_config:
         LOG.info(f"Pre-saving adapter config to {cfg.output_dir}")
