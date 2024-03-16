@@ -310,7 +310,7 @@ class HyperparametersConfig(BaseModel):
     learning_rate: Union[str, float]
     weight_decay: Optional[float] = None
     optimizer: Optional[Union[OptimizerNames, Literal["lion_pytorch"]]] = None
-    optim_args: Optional[Dict[str, Any]] = Field(
+    optim_args: Optional[Union[str, Dict[str, Any]]] = Field(
         default=None, metadata={"help": "Optional arguments to supply to optimizer."}
     )
     optim_target_modules: Optional[Union[List[str], Literal["all_linear"]]] = Field(

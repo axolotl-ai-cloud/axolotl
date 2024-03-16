@@ -216,7 +216,7 @@ class AxolotlTrainer(Trainer):
         num_epochs=1,
         bench_data_collator=None,
         eval_data_collator=None,
-        **kwargs
+        **kwargs,
     ):
         self.num_epochs = num_epochs
         self.bench_data_collator = bench_data_collator
@@ -1018,7 +1018,13 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             self.cfg.optimizer if self.cfg.optimizer else "adamw_hf"
         )
         if self.cfg.optim_args:
-            training_arguments_kwargs["optim_args"] = self.cfg.optim_args
+            if isinstance(self.cfg.optim_args, dict):
+                optim_args = ",".join(
+                    [f"{key}={value}" for key, value in self.cfg.optim_args.items()]
+                )
+            else:
+                optim_args = self.cfg.optim_args
+            training_arguments_kwargs["optim_args"] = optim_args
         if self.cfg.optim_target_modules:
             training_arguments_kwargs[
                 "optim_target_modules"
