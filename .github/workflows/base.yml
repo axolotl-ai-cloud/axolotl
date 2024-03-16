@@ -16,17 +16,22 @@ jobs:
             cuda_version: 11.8.0
             python_version: "3.10"
             pytorch: 2.1.2
-            torch_cuda_arch_list: "7.0 7.5 8.0 8.6 9.0+PTX"
+            torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
           - cuda: "121"
             cuda_version: 12.1.0
             python_version: "3.10"
             pytorch: 2.1.2
-            torch_cuda_arch_list: "7.0 7.5 8.0 8.6 9.0+PTX"
+            torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
           - cuda: "121"
             cuda_version: 12.1.0
             python_version: "3.11"
             pytorch: 2.1.2
-            torch_cuda_arch_list: "7.0 7.5 8.0 8.6 9.0+PTX"
+            torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
+          - cuda: "121"
+            cuda_version: 12.1.0
+            python_version: "3.11"
+            pytorch: 2.2.1
+            torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
     steps:
       - name: Checkout
         uses: actions/checkout@v3
