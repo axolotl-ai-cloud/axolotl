@@ -89,5 +89,6 @@ setup(
         "lion-pytorch": [
             "lion-pytorch==0.1.2",
         ],
+        "galore": ["galore_torch @ git+https://github.com/jiaweizzhao/GaLore"],
     },
 )
