@@ -843,7 +843,7 @@ group_by_length: false
 gradient_checkpointing: false
 # additional kwargs to pass to the trainer for gradient checkpointing
 # gradient_checkpointing_kwargs:
-#   use_reentrant: false
+#   use_reentrant: true
 
 # Stop training after this many evaluation losses have increased in a row
 # https://huggingface.co/transformers/v4.2.2/_modules/transformers/trainer_callback.html#EarlyStoppingCallback
