@@ -249,6 +249,21 @@ For cloud GPU providers that support docker images, use [`winglian/axolotl-cloud
   ```
   </details>
 
+##### GCP
+
+<details>
+
+<summary>Click to Expand</summary>
+
+Use a Deeplearning linux OS with cuda and pytorch installed. Then follow instructions on quickstart.
+
+Make sure to run the below to uninstall xla.
+```bash
+pip uninstall -y torch_xla[tpu]
+```
+
+</details>
+
 #### Windows
 Please use WSL or Docker!
 
