@@ -99,22 +99,12 @@ Get started with Axolotl in just a few steps! This quickstart guide will walk yo
 
 **Requirements**: Python >=3.10 and Pytorch >=2.1.1.
 
-### For developers
 ```bash
 git clone https://github.com/OpenAccess-AI-Collective/axolotl
 cd axolotl
 
 pip3 install packaging
-```
-
-General case:
-```
 pip3 install -e '.[flash-attn,deepspeed]'
-```
-
-Mac: see https://github.com/OpenAccess-AI-Collective/axolotl/blob/13199f678b9aab39e92961323bdbce3234ee4b2b/docs/mac.md
-```
-pip3 install -e '.'
 ```
 
 ### Usage
@@ -252,6 +242,13 @@ For cloud GPU providers that support docker images, use [`winglian/axolotl-cloud
 #### Windows
 Please use WSL or Docker!
 
+#### Mac
+
+Use the below instead of the install method in QuickStart.
+```
+pip3 install -e '.'
+```
+More info: [mac.md](/docs/mac.md)
 
 #### Launching on public clouds via SkyPilot
 To launch on GPU instances (both on-demand and spot instances) on 7+ clouds (GCP, AWS, Azure, OCI, and more), you can use [SkyPilot](https://skypilot.readthedocs.io/en/latest/index.html):
