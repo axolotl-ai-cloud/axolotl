@@ -4,6 +4,7 @@ https://github.com/shawntan/scattermoe
 https://arxiv.org/abs/2403.08245
 """
 
+import gc
 import torch
 from torch import nn
 
@@ -26,34 +27,24 @@ class FusedExperts(nn.Module):
         MLP of type Gated-Linear Unit, typically with a SiLU activation function.
         """
         super(FusedExperts, self).__init__()
-        expert_device = experts[0].w1.weight.device
-        output_expert_device = experts[0].w2.weight.device
 
+        device = experts[0].w1.weight.device
         self.num_experts = num_experts
         self.hidden_dim = hidden_dim
         self.ffn_dim = ffn_dim
-        self.experts = ParallelExperts(num_experts, hidden_dim, 2 * ffn_dim, expert_device)
-        self.output_experts = ParallelExperts(num_experts, ffn_dim, hidden_dim, output_expert_device)
+        self.experts = ParallelExperts(num_experts, hidden_dim, 2 * ffn_dim, device=device)
+        self.output_experts = ParallelExperts(num_experts, ffn_dim, hidden_dim, device=device)
         self.top_k = min(top_k, self.num_experts)
         self.activation = activation
 
-        # parallelize all w1 and w3 computation by concat + stack
         with torch.no_grad():
-            torch.stack(
-                [
-                    torch.cat([experts[i].w1.weight, experts[i].w3.weight], dim=0)
-                    for i in range(len(experts))
-                ],
-                dim=0,
-                out=self.experts.weight.data,
-            )
+            for i in range(len(experts)):
+                self.experts.weight.data[i] = torch.cat([experts[i].w1.weight, experts[i].w3.weight], dim=0)
+                self.output_experts.weight.data[i] = experts[i].w2.weight
 
-            # parallelize all w2 computation by stack
-            torch.stack(
-                [expert.w2.weight for expert in experts],
-                dim=0,
-                out=self.output_experts.weight.data,
-            )
+                del experts[i].w1, experts[i].w2, experts[i].w3
+                gc.collect()
+                torch.cuda.empty_cache()
 
     def forward(
         self, x: torch.Tensor, routing_weights: torch.Tensor, selected_experts: torch.Tensor
