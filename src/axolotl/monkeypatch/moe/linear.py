@@ -123,9 +123,11 @@ def parallel_linear(inputs, expert_weights, k,
     return results
 
 class ParallelExperts(nn.Module):
-    def __init__(self, num_experts, input_size, output_size) -> None:
+    def __init__(self, num_experts, input_size, output_size, device) -> None:
         super().__init__()
-        self.weight = nn.Parameter(torch.empty(num_experts, output_size, input_size))
+        self.weight = nn.Parameter(
+            torch.empty(num_experts, output_size, input_size, device=device)
+        )
         self.num_experts = num_experts
         self.input_size = input_size
         self.output_size = output_size
