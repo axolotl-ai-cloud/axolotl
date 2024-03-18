@@ -39,13 +39,15 @@ class FusedExperts(nn.Module):
 
         with torch.no_grad():
             for i in range(len(experts)):
-                self.experts.weight.data[i] = torch.cat([experts[i].w1.weight, experts[i].w3.weight], dim=0)
-                self.output_experts.weight.data[i] = experts[i].w2.weight
-
-            experts = experts.cpu()
-            del experts
-            gc.collect()
-            torch.cuda.empty_cache()
+                self.experts.weight.data[i].copy_(
+                    torch.cat(
+                        [experts[i].w1.weight.detach(), experts[i].w3.weight.detach()],
+                        dim=0
+                    )
+                )
+                self.output_experts.weight.data[i].copy_(
+                    experts[i].w2.weight.detach()
+                )
 
     def forward(
         self, x: torch.Tensor, routing_weights: torch.Tensor, selected_experts: torch.Tensor
