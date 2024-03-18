@@ -34,6 +34,21 @@ datasets:
 rl: ipo
 ```
 
+#### ORPO
+
+Paper: https://arxiv.org/abs/2403.07691
+
+```yaml
+rl: orpo
+orpo_alpha: 0.1
+remove_unused_columns: false
+
+chat_template: chatml
+datasets:
+  - path: argilla/ultrafeedback-binarized-preferences-cleaned
+    type: orpo.chat_template
+```
+
 #### Using local dataset files
 ```yaml
 datasets:

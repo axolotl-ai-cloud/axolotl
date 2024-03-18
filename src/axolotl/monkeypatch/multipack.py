@@ -1,6 +1,9 @@
 """multipack patching for v2 of sample packing"""
+import importlib
 
 import transformers
+from accelerate import init_empty_weights
+from transformers import AutoConfig, AutoModelForCausalLM
 from transformers.integrations import is_deepspeed_zero3_enabled
 
 from axolotl.monkeypatch.mixtral import patch_mixtral_moe_forward_zero3
@@ -12,11 +15,12 @@ SUPPORTED_MULTIPACK_MODEL_TYPES = [
     "falcon",
     "phi",
     "gemma",
+    "gemmoe",
     "starcoder2",
 ]
 
 
-def patch_for_multipack(model_type):
+def patch_for_multipack(model_type, model_name=None):
     if model_type == "mixtral":
         transformers.models.mixtral.modeling_mixtral._get_unpad_data = (  # pylint: disable=protected-access
             get_unpad_data
@@ -41,5 +45,17 @@ def patch_for_multipack(model_type):
         )
     elif model_type == "starcoder2":
         transformers.models.starcoder2.modeling_starcoder2._get_unpad_data = (  # pylint: disable=protected-access
+            get_unpad_data
+        )
+    elif model_type == "gemmoe":
+        model_config = AutoConfig.from_pretrained(model_name, trust_remote_code=True)
+        # we need to load the model here in order for modeling_gemmoe to be available
+        with init_empty_weights():
+            AutoModelForCausalLM.from_pretrained(model_name, trust_remote_code=True)
+        module_name = model_config.__class__.__module__.replace(
+            ".configuration_gemmoe", ".modeling_gemmoe"
+        )
+        modeling_gemmoe = importlib.import_module(module_name)
+        modeling_gemmoe._get_unpad_data = (  # pylint: disable=protected-access
             get_unpad_data
         )

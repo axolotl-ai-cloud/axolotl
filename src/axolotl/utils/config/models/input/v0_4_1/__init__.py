@@ -1,6 +1,7 @@
 """
 Module for pydantic models for configuration
 """
+# pylint: disable=too-many-lines
 
 import logging
 import os
@@ -123,13 +124,16 @@ class RLType(str, Enum):
     dpo = "dpo"  # pylint: disable=invalid-name
     ipo = "ipo"  # pylint: disable=invalid-name
     kto_pair = "kto_pair"  # pylint: disable=invalid-name
+    orpo = "orpo"  # pylint: disable=invalid-name
 
 
 class ChatTemplate(str, Enum):
     """Chat templates configuration subset"""
 
+    alpaca = "alpaca"  # pylint: disable=invalid-name
     chatml = "chatml"  # pylint: disable=invalid-name
     inst = "inst"  # pylint: disable=invalid-name
+    gemma = "gemma"  # pylint: disable=invalid-name
 
 
 class LoftQConfig(BaseModel):
@@ -179,6 +183,7 @@ class LoraConfig(BaseModel):
     peft_layers_to_transform: Optional[List[int]] = None
     peft: Optional[PeftConfig] = None
     peft_use_dora: Optional[bool] = None
+    peft_use_relora: Optional[bool] = None
 
     lora_on_cpu: Optional[bool] = None
     gptq: Optional[bool] = None
@@ -428,6 +433,8 @@ class AxolotlInputConfig(
     dataloader_prefetch_factor: Optional[int] = None
     dataloader_drop_last: Optional[bool] = None
 
+    remove_unused_columns: Optional[bool] = None
+
     push_dataset_to_hub: Optional[str] = None
     hf_use_auth_token: Optional[bool] = None
 
@@ -512,10 +519,14 @@ class AxolotlInputConfig(
 
     neftune_noise_alpha: Optional[float] = None
 
-    max_memory: Optional[Union[int, str]] = None
+    orpo_alpha: Optional[float] = None
+
+    max_memory: Optional[
+        Dict[Union[int, Literal["cpu", "disk"]], Union[int, str]]
+    ] = None
     gpu_memory_limit: Optional[Union[int, str]] = None
 
-    chat_template: Optional[Union[Literal["chatml", "inst"], ChatTemplate]] = None
+    chat_template: Optional[ChatTemplate] = None
     default_system_message: Optional[str] = None
 
     # INTERNALS - document for now, generally not set externally
@@ -989,4 +1000,11 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 "This may work on H100s."
             )
 
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_fsdp_deepspeed(cls, data):
+        if data.get("deepspeed") and data.get("fsdp"):
+            raise ValueError("deepspeed and fsdp cannot be used together.")
         return data

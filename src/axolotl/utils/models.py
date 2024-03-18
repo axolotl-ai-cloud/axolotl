@@ -429,7 +429,7 @@ def load_model(
         and cfg.flash_attention
         and cfg.sample_packing
     ):
-        patch_for_multipack(cfg.model_config_type)
+        patch_for_multipack(cfg.model_config_type, model_name=cfg.base_model)
     elif cfg.is_llama_derived_model:
         # Modify all llama derived models in one block
 
@@ -1055,6 +1055,8 @@ def load_lora(model, cfg, inference=False, config_only=False):
         lora_config_kwargs["init_lora_weights"] = "loftq"
     if cfg.peft_use_dora:
         lora_config_kwargs["use_dora"] = cfg.peft_use_dora
+    if cfg.peft_use_rslora:
+        lora_config_kwargs["use_rslora"] = cfg.use_rslora
 
     lora_config = LoraConfig(
         r=cfg.lora_r,
