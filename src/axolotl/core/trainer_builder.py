@@ -659,7 +659,18 @@ class AxolotlORPOTrainer(AxolotlTrainer):
     def compute_logps(
         self, prompt_attention_mask, chosen_inputs, chosen_attention_mask, logits
     ):
-        mask = chosen_attention_mask[:, :-1] - prompt_attention_mask[:, 1:]
+        # Get the shape of chosen_attention_mask[:, :-1]
+        chosen_shape = chosen_attention_mask[:, :-1].shape
+
+        # Calculate the padding size
+        pad_length = chosen_shape[1] - (prompt_attention_mask.shape[1] - 1)
+
+        # Pad prompt_attention_mask with zeros to match the desired shape
+        prompt_attention_mask_padded = torch.nn.functional.pad(prompt_attention_mask[:, 1:], (0, pad_length), mode='constant', value=0)
+
+        # Perform the subtraction operation
+        mask = chosen_attention_mask[:, :-1] > prompt_attention_mask_padded
+
         per_token_logps = torch.gather(
             logits[:, :-1, :].log_softmax(-1),
             dim=2,

@@ -485,9 +485,11 @@ class OrpoTokenizationTest(unittest.TestCase):
         assert "rejected_labels" in res
         assert "input_ids" in res
         assert "labels" in res
+        assert "prompt_attention_mask" in res
 
         assert len(res["rejected_input_ids"]) == len(res["rejected_labels"])
         assert len(res["input_ids"]) == len(res["labels"])
+        assert len(res["input_ids"]) == len(res["prompt_attention_mask"])
 
         assert res["rejected_labels"][0] == -100
         assert res["rejected_input_ids"][-1] == res["rejected_labels"][-1]
@@ -495,6 +497,8 @@ class OrpoTokenizationTest(unittest.TestCase):
         assert res["labels"][0] == -100
         assert res["input_ids"][-1] == res["labels"][-1]
 
+        assert res["prompt_attention_mask"][0] == 1
+        assert res["prompt_attention_mask"][-1] == 0
 
 if __name__ == "__main__":
     unittest.main()

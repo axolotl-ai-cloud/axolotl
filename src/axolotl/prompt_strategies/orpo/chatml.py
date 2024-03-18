@@ -137,11 +137,11 @@ class ORPOTokenizingStrategy(PromptTokenizingStrategy):
         return {
             "rejected_input_ids": rejected_input_ids,
             "rejected_labels": rejected_labels,
-            "rejected_attention_mask": [True] * len(rejected_labels),
+            "rejected_attention_mask": [1] * len(rejected_labels),
             "input_ids": input_ids,
             "labels": labels,
-            "attention_mask": [True] * len(labels),
-            "prompt_attention_mask": [True] * prompt_len,
+            "attention_mask": [1] * len(labels),
+            "prompt_attention_mask": [1] * prompt_len + [0] * (len(labels) - prompt_len),
         }
 
 
