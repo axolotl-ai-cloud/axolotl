@@ -666,7 +666,9 @@ class AxolotlORPOTrainer(AxolotlTrainer):
         pad_length = chosen_shape[1] - (prompt_attention_mask.shape[1] - 1)
 
         # Pad prompt_attention_mask with zeros to match the desired shape
-        prompt_attention_mask_padded = torch.nn.functional.pad(prompt_attention_mask[:, 1:], (0, pad_length), mode='constant', value=0)
+        prompt_attention_mask_padded = torch.nn.functional.pad(
+            prompt_attention_mask[:, 1:], (0, pad_length), mode="constant", value=0
+        )
 
         # Perform the subtraction operation
         mask = chosen_attention_mask[:, :-1] > prompt_attention_mask_padded
@@ -1041,7 +1043,9 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             training_arguments_kwargs["dataloader_drop_last"] = True
 
         if self.cfg.remove_unused_columns is not None:
-            training_arguments_kwargs["remove_unused_columns"] = self.cfg.remove_unused_columns
+            training_arguments_kwargs[
+                "remove_unused_columns"
+            ] = self.cfg.remove_unused_columns
 
         if not self.cfg.test_datasets and self.cfg.val_set_size == 0:
             # no eval set, so don't eval

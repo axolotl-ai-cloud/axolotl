@@ -20,7 +20,7 @@ from axolotl.prompt_strategies.llama2_chat import (
     Llama2ChatPrompter,
     LLama2ChatTokenizingStrategy,
 )
-from axolotl.prompt_strategies.orpo.chatml import load_prompt_pairs
+from axolotl.prompt_strategies.orpo.chatml import load
 from axolotl.prompt_strategies.sharegpt import GlaiveShareGPTPromptTokenizingStrategy
 from axolotl.prompt_tokenizers import (
     AlpacaPromptTokenizingStrategy,
@@ -475,7 +475,7 @@ class OrpoTokenizationTest(unittest.TestCase):
         ).select([0])
 
     def test_orpo_integration(self):
-        strat = load_prompt_pairs(
+        strat = load(
             self.tokenizer,
             DictDefault({"train_on_inputs": False}),
             DictDefault({"chat_template": "chatml"}),
@@ -499,6 +499,7 @@ class OrpoTokenizationTest(unittest.TestCase):
 
         assert res["prompt_attention_mask"][0] == 1
         assert res["prompt_attention_mask"][-1] == 0
+
 
 if __name__ == "__main__":
     unittest.main()
