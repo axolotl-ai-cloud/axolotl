@@ -15,7 +15,7 @@ from axolotl.monkeypatch.moe.linear import ParallelExperts
 class FusedExperts(nn.Module):
     def __init__(
         self,
-        experts=None,
+        experts: nn.ModuleList =None,
         hidden_dim=128,
         ffn_dim=512,
         num_experts=8,
@@ -42,9 +42,10 @@ class FusedExperts(nn.Module):
                 self.experts.weight.data[i] = torch.cat([experts[i].w1.weight, experts[i].w3.weight], dim=0)
                 self.output_experts.weight.data[i] = experts[i].w2.weight
 
-                del experts[i].w1, experts[i].w2, experts[i].w3
-                gc.collect()
-                torch.cuda.empty_cache()
+            experts = experts.cpu()
+            del experts
+            gc.collect()
+            torch.cuda.empty_cache()
 
     def forward(
         self, x: torch.Tensor, routing_weights: torch.Tensor, selected_experts: torch.Tensor

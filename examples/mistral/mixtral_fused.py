@@ -1,8 +1,8 @@
 import torch
 from tqdm import tqdm
 from axolotl.monkeypatch.moe.moe import SparseMoeBlock
-from transformers import AutoModelForCausalLM, AutoTokenizer, TextStreamer
-from transformers.models.mixtral.modeling_mixtral import MixtralSparseMoeBlock
+from transformers import AutoTokenizer, TextStreamer
+from transformers.models.mixtral.modeling_mixtral import MixtralSparseMoeBlock, MixtralForCausalLM, MixtralConfig
 
 def compute_memory_used_pct(device):
     memory_used = torch.cuda.max_memory_allocated(device) / (1024**3)
@@ -16,11 +16,16 @@ def compute_memory_used_pct(device):
 model_path = "mistralai/Mixtral-8x7B-Instruct-v0.1"
 
 # Load model
-model = AutoModelForCausalLM.from_pretrained(model_path, device_map="auto")
+config = MixtralConfig.from_pretrained(model_path, max_position_embeddings=2048)
+model = MixtralForCausalLM.from_pretrained(model_path, config=config, device_map="auto", low_cpu_mem_usage=True, torch_dtype=torch.float16)
 modules = {k:v for k,v in model.named_modules() if isinstance(v, MixtralSparseMoeBlock)}
 
+for device_index in range(torch.cuda.device_count()):
+    device_memory_pct = compute_memory_used_pct(device_index)
+    print(device_index, device_memory_pct)
+
 with tqdm(modules.items(), desc="scatter moe") as pbar:
-    for name, module in pbar:
+    for i, (name, module) in enumerate(pbar):
         smoe = SparseMoeBlock(
             experts=module.experts,
             gate=module.gate,
@@ -29,7 +34,7 @@ with tqdm(modules.items(), desc="scatter moe") as pbar:
             num_experts=module.num_experts,
             top_k=module.top_k,
         )
-        setattr(model, name, smoe)
+        setattr(model.model.layers[i], "block_sparse_moe", smoe)
         for device_index in range(torch.cuda.device_count()):
             device_memory_pct = compute_memory_used_pct(device_index)
             print(device_index, device_memory_pct)
