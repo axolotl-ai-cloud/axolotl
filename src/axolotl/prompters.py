@@ -280,8 +280,9 @@ class ShareGPTPrompter(Prompter):  # pylint: disable=too-few-public-methods
                 self._conversation = conversation
             else:
                 self._conversation = get_conv_template(conversation)
+            return conversation
         else:
-            self._conversation = get_conv_template("vicuna_v1.1")
+            self._conversation = get_conv_template("chatml")
         if role_key_human:
             self.role_key_human = role_key_human
         if role_key_model:

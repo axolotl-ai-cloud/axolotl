@@ -24,6 +24,7 @@ from transformers import (  # noqa: F401
 
 from axolotl.models.mamba import fix_mamba_attn_for_loss
 from axolotl.prompt_tokenizers import LLAMA_DEFAULT_EOS_TOKEN
+from axolotl.utils.chat_templates import chat_templates
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.dict import DictDefault
 
@@ -141,7 +142,11 @@ def load_tokenizer(cfg):
                 setattr(tokenizer, attr_name, "<|endoftext|>")
 
     if cfg.special_tokens:
-        for k, val in cfg.special_tokens.items():
+        special_tokens = cfg.special_tokens.to_dict()
+        additional_special_tokens = special_tokens.pop(
+            "additional_special_tokens", None
+        )
+        for k, val in special_tokens.items():
             tokenizer.add_special_tokens(
                 {k: AddedToken(val, rstrip=False, lstrip=False, normalized=False)}
             )
@@ -169,11 +174,21 @@ def load_tokenizer(cfg):
                 for token in cfg.tokens
             ]
         )
+        
+    if additional_special_tokens is not None:
+        tokenizer.add_special_tokens(
+            {"additional_special_tokens": additional_special_tokens}
+        )
 
+    LOG.debug(tokenizer)    
+
+    
     LOG.debug(f"EOS: {tokenizer.eos_token_id} / {tokenizer.eos_token}")
     LOG.debug(f"BOS: {tokenizer.bos_token_id} / {tokenizer.bos_token}")
     LOG.debug(f"PAD: {tokenizer.pad_token_id} / {tokenizer.pad_token}")
     LOG.debug(f"UNK: {tokenizer.unk_token_id} / {tokenizer.unk_token}")
+    
+ 
 
     return tokenizer
 
