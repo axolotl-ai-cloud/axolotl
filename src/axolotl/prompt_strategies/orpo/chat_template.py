@@ -29,11 +29,13 @@ def load(
     chatml transforms for datasets with system, input, chosen, rejected
     """
 
-    chat_template = "chatml"
+    chat_template = chat_templates("chatml", system_message=cfg.default_system_message)
     if ds_cfg and "chat_template" in ds_cfg:
         chat_template = ds_cfg["chat_template"]
         try:
-            chat_template = chat_templates(chat_template)
+            chat_template = chat_templates(
+                chat_template, system_message=cfg.default_system_message
+            )
         except ValueError:
             pass
 

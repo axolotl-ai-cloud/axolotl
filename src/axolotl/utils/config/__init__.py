@@ -191,6 +191,11 @@ def normalize_cfg_datasets(cfg):
                         f"updating dataset {ds_cfg.path} with `conversation: chatml` to match your chat_template"
                     )
                     cfg.datasets[idx].conversation = "chatml"
+                if ds_cfg.type == "orpo.chat_template" and not ds_cfg.chat_template:
+                    LOG.info(
+                        f"updating dataset {ds_cfg.path} with `chat_template: chatml` to match your chat_template"
+                    )
+                    cfg.datasets[idx].chat_template = "chatml"
 
 
 def validate_config(cfg: DictDefault, capabilities: Optional[dict] = None):

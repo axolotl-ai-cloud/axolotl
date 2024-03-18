@@ -20,7 +20,7 @@ from axolotl.prompt_strategies.llama2_chat import (
     Llama2ChatPrompter,
     LLama2ChatTokenizingStrategy,
 )
-from axolotl.prompt_strategies.orpo.chatml import load
+from axolotl.prompt_strategies.orpo.chat_template import load
 from axolotl.prompt_strategies.sharegpt import GlaiveShareGPTPromptTokenizingStrategy
 from axolotl.prompt_tokenizers import (
     AlpacaPromptTokenizingStrategy,

@@ -2,9 +2,10 @@
 This module provides functionality for selecting chat templates based on user choices.
 These templates are used for formatting messages in a conversation.
 """
+from typing import Optional
 
 
-def chat_templates(user_choice: str):
+def chat_templates(user_choice: str, system_message: Optional[str] = None):
     """
     Finds the correct chat_template for the tokenizer_config.
 
@@ -18,6 +19,11 @@ def chat_templates(user_choice: str):
         ValueError: If the user_choice is not found in the templates.
     """
 
+    default_system_message = "You are a helpful assistant."
+    template_system_message: str = (
+        system_message if system_message is not None else default_system_message
+    )
+
     templates = {
         "alpaca": "{% for message in messages %}{% if message['role'] == 'user' %}{{ '### Instruction: ' + message['content'] + '\n\n' }}{% elif message['role'] == 'assistant' %}{{ '### Response: ' + message['content'] + eos_token}}{% endif %}{% endfor %}",
         "inst": "{{ bos_token }}{% for message in messages %}{% if (message['role'] == 'user') != (loop.index0 % 2 == 0) %}{{ raise_exception('Conversation roles must alternate user/assistant/user/assistant/...') }}{% endif %}{% if message['role'] == 'user' %}{{ '[INST] ' + message['content'] + ' [/INST]' }}{% elif message['role'] == 'assistant' %}{{ message['content'] + eos_token}}{% else %}{{ raise_exception('Only user and assistant roles are supported!') }}{% endif %}{% endfor %}",  # I don't know what this one is called. Used by Mistral/Mixtral.
@@ -26,6 +32,9 @@ def chat_templates(user_choice: str):
     }
 
     if user_choice in templates:
-        return templates[user_choice]
+        template = templates[user_choice]
+        if default_system_message in template:
+            template = template.replace(default_system_message, template_system_message)
+        return template
 
     raise ValueError(f"Template '{user_choice}' not found.")
