@@ -68,8 +68,6 @@ class ORPOTokenizingStrategy(PromptTokenizingStrategy):
         messages: List[Message] = []
         if system := prompt.get("system", None):
             messages.append(Message(role="system", content=system, label=False))
-        else:
-            messages.append(Message(role="system", content="", label=False))
         messages.append(Message(role="user", content=prompt["prompt"], label=False))
         messages.append(
             Message(
@@ -84,9 +82,6 @@ class ORPOTokenizingStrategy(PromptTokenizingStrategy):
         messages: List[Message] = []
         if system := prompt.get("system", None):
             messages.append(Message(role="system", content=system, label=False))
-        else:
-            messages.append(Message(role="system", content="", label=False))
-
         messages.append(Message(role="user", content=prompt["prompt"], label=False))
         messages.append(
             Message(
