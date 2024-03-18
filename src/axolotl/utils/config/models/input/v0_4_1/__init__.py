@@ -124,6 +124,7 @@ class RLType(str, Enum):
     dpo = "dpo"  # pylint: disable=invalid-name
     ipo = "ipo"  # pylint: disable=invalid-name
     kto_pair = "kto_pair"  # pylint: disable=invalid-name
+    orpo = "orpo"  # pylint: disable=invalid-name
 
 
 class ChatTemplate(str, Enum):
@@ -431,6 +432,8 @@ class AxolotlInputConfig(
     dataloader_prefetch_factor: Optional[int] = None
     dataloader_drop_last: Optional[bool] = None
 
+    remove_unused_columns: Optional[bool] = None
+
     push_dataset_to_hub: Optional[str] = None
     hf_use_auth_token: Optional[bool] = None
 
@@ -514,6 +517,8 @@ class AxolotlInputConfig(
     load_best_model_at_end: Optional[bool] = False
 
     neftune_noise_alpha: Optional[float] = None
+
+    orpo_alpha: Optional[float] = None
 
     max_memory: Optional[
         Dict[Union[int, Literal["cpu", "disk"]], Union[int, str]]
