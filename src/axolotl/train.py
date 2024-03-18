@@ -85,7 +85,7 @@ def train(
     model.generation_config.do_sample = True
 
     model_ref = None
-    if cfg.rl:
+    if cfg.rl and cfg.rl != "orpo":
         if cfg.adapter and not cfg.rl_adapter_ref_model:
             # use built-in trl autounwrap
             LOG.debug("Passing model_ref: None to RL trainer")
