@@ -1029,6 +1029,9 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         elif self.cfg.sample_packing and self.cfg.eval_sample_packing is False:
             training_arguments_kwargs["dataloader_drop_last"] = True
 
+        if self.cfg.remove_unused_columns is not None:
+            training_arguments_kwargs["remove_unused_columns"] = self.cfg.remove_unused_columns
+
         if not self.cfg.test_datasets and self.cfg.val_set_size == 0:
             # no eval set, so don't eval
             training_arguments_kwargs["evaluation_strategy"] = "no"

@@ -432,6 +432,8 @@ class AxolotlInputConfig(
     dataloader_prefetch_factor: Optional[int] = None
     dataloader_drop_last: Optional[bool] = None
 
+    remove_unused_columns: Optional[bool]
+
     push_dataset_to_hub: Optional[str] = None
     hf_use_auth_token: Optional[bool] = None
 
