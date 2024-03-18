@@ -22,7 +22,7 @@ class MessageList(BaseModel):
     messages: List[Message]
 
 
-def load_prompt_pairs(
+def load(
     tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None, **kwargs
 ):  # pylint: disable=possibly-unused-variable,unused-argument
     """
@@ -141,7 +141,8 @@ class ORPOTokenizingStrategy(PromptTokenizingStrategy):
             "input_ids": input_ids,
             "labels": labels,
             "attention_mask": [1] * len(labels),
-            "prompt_attention_mask": [1] * prompt_len + [0] * (len(labels) - prompt_len),
+            "prompt_attention_mask": [1] * prompt_len
+            + [0] * (len(labels) - prompt_len),
         }
 
 
