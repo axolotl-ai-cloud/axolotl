@@ -907,7 +907,26 @@ lr_div_factor: # Learning rate div factor
 # - paged_adamw_8bit
 # - paged_lion_32bit
 # - paged_lion_8bit
+# - galore_adamw
+# - galore_adamw_8bit
+# - galore_adafactor
+# - galore_adamw_layerwise
+# - galore_adamw_8bit_layerwise
+# - galore_adafactor_layerwise
 optimizer:
+# Dictionary of arguments to pass to the optimizer
+optim_args:
+# For Galore Optimizers the following optim_args are available
+# rank:  # type: int
+# update_proj_gap  # type: int
+# scale  # type: float
+# proj_type:  # type: str, default = std
+
+# The target modules to optimize, i.e. the module names that you would like to train, right now this is used only for GaLore algorithm
+optim_target_modules:
+# - self_attn  # for llama
+# - mlp
+
 # Specify weight decay
 weight_decay:
 # adamw hyperparams
