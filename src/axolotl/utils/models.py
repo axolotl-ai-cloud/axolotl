@@ -888,7 +888,9 @@ def load_model(
 
     if cfg.adapter in ["lora", "qlora"]:
         if cfg.gradient_checkpointing:
-            model.gradient_checkpointing_enable()
+            model.gradient_checkpointing_enable(
+                gradient_checkpointing_kwargs=cfg.gradient_checkpointing_kwargs
+            )
         if (
             cfg.load_in_8bit or cfg.load_in_4bit
         ) and not skip_prepare_model_for_kbit_training:
