@@ -1,5 +1,6 @@
 """Module containing the SimpleShareGPTPromptTokenizingStrategy class"""
 
+import logging
 from typing import Any, Dict, Optional
 
 from fastchat.conversation import Conversation, SeparatorStyle, register_conv_template
@@ -10,6 +11,8 @@ from axolotl.utils.tokenization import (
     chatml_to_conversation,
     merge_consecutive_messages,
 )
+
+LOG = logging.getLogger("axolotl")
 
 
 def register_chatml_template(system_message=None):
@@ -42,11 +45,13 @@ def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
     )
     field_human = ds_cfg["field_human"] if ds_cfg and "field_human" in ds_cfg else None
     field_model = ds_cfg["field_model"] if ds_cfg and "field_model" in ds_cfg else None
+    roles = ds_cfg["roles"].to_dict() if ds_cfg and "roles" in ds_cfg else None
     strategy = SimpleShareGPTPromptTokenizingStrategy(
         ShareGPTPrompterV2(
             conversation=conversation,
             role_key_model=field_model,
             role_key_human=field_human,
+            roles=roles,
         ),
         tokenizer,
         cfg.train_on_inputs,
@@ -142,7 +147,12 @@ class SimpleShareGPTPromptTokenizingStrategy(ShareGPTPromptTokenizingStrategy):
             "system": "system",
         }
         turns = [
-            {"from": role_map[t[role_key]], "value": t[value_key]}
+            {
+                "from": (
+                    role_map[t[role_key]] if t[role_key] in role_map else t[role_key]
+                ),
+                "value": t[value_key],
+            }
             for t in conversations
         ]
         return turns
