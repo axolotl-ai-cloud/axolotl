@@ -227,6 +227,7 @@ def load_tokenized_prepared_datasets(
                 pass
 
             ds_from_cloud = False
+            ds_from_puree = False
             storage_options = {}
             remote_file_system = None
             if config_dataset.path.startswith("s3://"):
@@ -256,6 +257,17 @@ def load_tokenized_prepared_datasets(
                 # https://gcsfs.readthedocs.io/en/latest/#credentials
                 storage_options = {"token": None}
                 remote_file_system = gcsfs.GCSFileSystem(**storage_options)
+            elif config_dataset.path.startswith("puree://"):
+                try:
+                    import gcsfs  # type: ignore
+                except ImportError as exc:
+                    raise ImportError(
+                        "puree:// paths require gcsfs to be installed"
+                    ) from exc
+
+                storage_options = {"token": None}
+                ds_from_puree = True
+
             # TODO: Figure out how to get auth creds passed
             # elif config_dataset.path.startswith("adl://") or config_dataset.path.startswith("abfs://"):
             #     try:
@@ -336,6 +348,18 @@ def load_tokenized_prepared_datasets(
                         split=None,
                         storage_options=storage_options,
                     )
+            elif ds_from_puree:
+                ds_type = get_ds_type(config_dataset)
+                dataset_id = config_dataset.path.split("://")[1]
+                data_files = f"gs://puree/datasets/{dataset_id}/*.{ds_type}"
+                ds = load_dataset(
+                    ds_type,
+                    name=config_dataset.name,
+                    data_files=data_files,
+                    streaming=False,
+                    split=None,
+                    storage_options=storage_options,
+                )
             elif config_dataset.path.startswith("https://"):
                 ds_type = get_ds_type(config_dataset)
                 ds = load_dataset(

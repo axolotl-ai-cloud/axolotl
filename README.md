@@ -531,6 +531,11 @@ See [examples](examples) for quick start. It is recommended to duplicate and mod
       # - The file format is `json` (which includes `jsonl`) by default. For different formats, adjust the `ds_type` option accordingly.
     - path: https://some.url.com/yourdata.jsonl # The URL should be a direct link to the file you wish to load. URLs must use HTTPS protocol, not HTTP.
       ds_type: json # this is the default, see other options below.
+
+      # Loading dataset from Puree
+      # - `ds_type` needs to be parquet since puree always store dataset on parquet format
+    - path: puree://dataset_id
+      ds_type: parquet
   ```
 
 - loading
