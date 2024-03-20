@@ -43,3 +43,4 @@ trl @ git+https://github.com/huggingface/trl.git@304e208f778a5442c30cdda50034822
 fastcore>=1.5.29
 
 lpmm @ git+https://github.com/thu-ml/low-bit-optimizers.git@main
+yacs
