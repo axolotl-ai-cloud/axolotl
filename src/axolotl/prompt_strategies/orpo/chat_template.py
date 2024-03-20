@@ -36,6 +36,7 @@ def load(
             chat_template = chat_templates(chat_template)
         except ValueError:
             pass
+    tokenizer.chat_template = chat_template
 
     return ORPOTokenizingStrategy(
         ORPOPrompter(chat_template, tokenizer),
