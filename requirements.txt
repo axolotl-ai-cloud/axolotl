@@ -41,3 +41,5 @@ gcsfs
 
 trl @ git+https://github.com/huggingface/trl.git@304e208f778a5442c30cdda500348226cdc97d90
 fastcore>=1.5.29
+
+lpmm @ git+https://github.com/thu-ml/low-bit-optimizers.git@main

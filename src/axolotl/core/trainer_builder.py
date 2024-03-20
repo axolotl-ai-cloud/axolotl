@@ -15,8 +15,9 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from functools import wraps
 from pathlib import Path
-from typing import Dict, List, Literal, Optional, Type, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
+import lpmm
 import torch
 import transformers
 from accelerate import FullyShardedDataParallelPlugin
@@ -27,6 +28,7 @@ from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import BatchSampler, DataLoader, RandomSampler, SequentialSampler
 from transformers import (
     EarlyStoppingCallback,
+    PreTrainedModel,
     Trainer,
     TrainerCallback,
     TrainingArguments,
@@ -36,6 +38,7 @@ from transformers.utils import is_sagemaker_mp_enabled
 from trl import DPOTrainer
 
 from axolotl.core.policies.auto_wrap import get_wrapping_policy_factory
+from axolotl.core.trainers import OptimizerNames
 from axolotl.loraplus import create_loraplus_optimizer
 from axolotl.monkeypatch.multipack import SUPPORTED_MULTIPACK_MODEL_TYPES
 from axolotl.monkeypatch.relora import ReLoRACallback, ReLoRAScheduler
@@ -61,6 +64,9 @@ from axolotl.utils.schedulers import (
     get_cosine_schedule_with_quadratic_warmup,
     get_cosine_schedule_with_warmup_decay_constant,
 )
+
+# monkeypatch so it accepts our custom optimizers
+transformers.training_args.OptimizerNames = OptimizerNames
 
 if is_sagemaker_mp_enabled():
     import smdistributed.modelparallel.torch as smp
@@ -230,6 +236,38 @@ class AxolotlTrainer(Trainer):
         self._stored_metrics = defaultdict(lambda: defaultdict(list))
         if self.args.orpo_alpha:
             self.loss_fct = torch.nn.CrossEntropyLoss(reduction="none")
+
+    @staticmethod
+    def get_optimizer_cls_and_kwargs(
+        args: TrainingArguments, model: Optional[PreTrainedModel] = None
+    ) -> Tuple[Any, Any]:
+        optim_args = {}
+        if args.optim_args:
+            for mapping in args.optim_args.replace(" ", "").split(","):
+                key, value = mapping.split("=")
+                optim_args[key] = value
+
+        optimizer_kwargs = {"lr": args.learning_rate}
+
+        adam_kwargs = {
+            "betas": (args.adam_beta1, args.adam_beta2),
+            "eps": args.adam_epsilon,
+        }
+
+        if args.optim in [
+            OptimizerNames.LPMM_ADAMW_4BIT,
+            OptimizerNames.LPMM_ADAMW_4BIT_FUSED,
+        ]:
+            optimizer_cls = lpmm.optim.AdamW
+            optimizer_kwargs.update(adam_kwargs)
+            if args.optim == OptimizerNames.LPMM_ADAMW_4BIT_FUSED:
+                optimizer_kwargs.update({"fused": True})
+            return optimizer_cls, optimizer_kwargs
+
+        return Trainer.get_optimizer_cls_and_kwargs(
+            args,
+            model=model,
+        )
 
     def create_optimizer(self):
         if self.args.loraplus_lr_ratio is None:
