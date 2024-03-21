@@ -793,6 +793,12 @@ class TrainerBuilderBase(abc.ABC):
         self.model = model
         self.tokenizer = tokenizer
 
+        # in case the model supports tagging, add the axolotl tag.
+        # This makes sure the tag is correctly pushed even if a user calls
+        # model.push_to_hub instad of  trainer.push_to_hub.
+        if hasattr(model, "add_model_tags"):
+            model.add_model_tags(["axolotl"])
+
     @property
     def model_ref(self):
         return self._model_ref
