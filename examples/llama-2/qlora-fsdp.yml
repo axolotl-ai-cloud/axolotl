@@ -36,7 +36,7 @@ wandb_log_model:
 gradient_accumulation_steps: 4
 micro_batch_size: 4
 num_epochs: 4
-optimizer: paged_adamw_8bit
+optimizer: adamw_torch
 lr_scheduler: cosine
 learning_rate: 0.00001
 
@@ -66,5 +66,11 @@ weight_decay: 0.0
 fsdp:
   - full_shard
 fsdp_config:
+  fsdp_limit_all_gathers: true
+  fsdp_sync_module_states: true
+  fsdp_offload_params: true
+  fsdp_use_orig_params: false
+  fsdp_cpu_ram_efficient_loading: true
   fsdp_transformer_layer_cls_to_wrap: LlamaDecoderLayer
+  fsdp_state_dict_type: SHARDED_STATE_DICT
 special_tokens:

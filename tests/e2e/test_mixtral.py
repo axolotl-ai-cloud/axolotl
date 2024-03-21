@@ -77,7 +77,7 @@ class TestMixtral(unittest.TestCase):
         model, _ = train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
         assert (
             model.base_model.model.model.layers[0].block_sparse_moe.gate.weight.dtype
-            == torch.uint8
+            == torch.float32
         )
         assert (Path(temp_dir) / "adapter_model.bin").exists()
 
@@ -131,7 +131,7 @@ class TestMixtral(unittest.TestCase):
         model, _ = train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
         assert (
             model.base_model.model.model.layers[0].block_sparse_moe.gate.weight.dtype
-            == torch.uint8
+            == torch.float32
         )
         assert (Path(temp_dir) / "adapter_model.bin").exists()
 
