@@ -20,6 +20,9 @@ jobs:
           uses: actions/setup-python@v3
           with:
             python-version: '3.10'
+        - name: install dependencies
+          run: |
+            python3 -m pip install jupyter
         - name: Publish to GitHub Pages (and render)
           uses: quarto-dev/quarto-actions/publish@v2
           with:
