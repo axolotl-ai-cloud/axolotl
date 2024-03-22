@@ -1,4 +1,8 @@
-# Debugging Axolotl
+---
+title: Debugging
+description: How to debug Axolotl
+---
+
 
 This document provides some tips and tricks for debugging Axolotl.  It also provides an example configuration for debugging with VSCode.  A good debugging setup is essential to understanding how Axolotl code works behind the scenes.
 

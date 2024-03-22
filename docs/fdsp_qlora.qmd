@@ -1,4 +1,10 @@
-# FDSP + QLoRA
+---
+title: FDSP + QLoRA
+description: Use FSDP with QLoRA to fine-tune large LLMs on consumer GPUs.
+format:
+  html:
+    toc: true
+---
 
 ## Background
 
