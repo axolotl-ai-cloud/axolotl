@@ -1,0 +1,1883 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.4.533">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>Axolotl</title>
+<style>
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="site_libs/clipboard/clipboard.min.js"></script>
+<script src="site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="site_libs/quarto-search/fuse.min.js"></script>
+<script src="site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="./">
+<link href="./favicon.jpg" rel="icon" type="image/jpeg">
+<script src="site_libs/quarto-html/quarto.js"></script>
+<script src="site_libs/quarto-html/popper.min.js"></script>
+<script src="site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="site_libs/quarto-html/anchor.min.js"></script>
+<link href="site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="site_libs/quarto-html/quarto-syntax-highlighting.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="site_libs/bootstrap/bootstrap.min.css" rel="stylesheet" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+
+
+<link rel="stylesheet" href="styles.css">
+</head>
+
+<body class="nav-sidebar docked nav-fixed">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="./index.html">
+    <span class="navbar-title">Axolotl</span>
+    </a>
+  </div>
+        <div class="quarto-navbar-tools tools-wide">
+    <a href="https://twitter.com/axolotl_ai" title="" class="quarto-navigation-tool px-1" aria-label=""><i class="bi bi-twitter"></i></a>
+    <a href="https://github.com/OpenAccess-AI-Collective/axolotl/" title="" class="quarto-navigation-tool px-1" aria-label=""><i class="bi bi-github"></i></a>
+    <a href="https://discord.gg/7m9sfhzaf3" title="" class="quarto-navigation-tool px-1" aria-label=""><i class="bi bi-discord"></i></a>
+</div>
+          <div id="quarto-search" class="" title="Search"></div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="./index.html">Home</a></li></ol></nav>
+        <a class="flex-grow-1" role="button" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation docked overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./index.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Home</span></a>
+  </div>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" aria-expanded="true">
+ <span class="menu-text">How-To Guides</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./docs/debugging.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Debugging</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./docs/multipack.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Multipack (Sample Packing)</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+ <span class="menu-text">docs/fdsp_qlora.qmd</span>
+  </li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./docs/input_output.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Template-free prompt construction</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./docs/rlhf.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">RLHF (Beta)</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./docs/nccl.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">NCCL</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./docs/mac.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Mac M-series</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./docs/multi-node.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Multi Node</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" aria-expanded="true">
+ <span class="menu-text">Reference</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./docs/config.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Config options</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./docs/faq.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">FAQ</span></a>
+  </div>
+</li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#axolotl" id="toc-axolotl" class="nav-link active" data-scroll-target="#axolotl">Axolotl</a>
+  <ul class="collapse">
+  <li><a href="#axolotl-supports" id="toc-axolotl-supports" class="nav-link" data-scroll-target="#axolotl-supports">Axolotl supports</a></li>
+  <li><a href="#quickstart" id="toc-quickstart" class="nav-link" data-scroll-target="#quickstart">Quickstart ⚡</a>
+  <ul class="collapse">
+  <li><a href="#usage" id="toc-usage" class="nav-link" data-scroll-target="#usage">Usage</a></li>
+  </ul></li>
+  <li><a href="#advanced-setup" id="toc-advanced-setup" class="nav-link" data-scroll-target="#advanced-setup">Advanced Setup</a>
+  <ul class="collapse">
+  <li><a href="#environment" id="toc-environment" class="nav-link" data-scroll-target="#environment">Environment</a></li>
+  <li><a href="#dataset" id="toc-dataset" class="nav-link" data-scroll-target="#dataset">Dataset</a></li>
+  <li><a href="#config" id="toc-config" class="nav-link" data-scroll-target="#config">Config</a></li>
+  <li><a href="#train" id="toc-train" class="nav-link" data-scroll-target="#train">Train</a></li>
+  <li><a href="#inference-playground" id="toc-inference-playground" class="nav-link" data-scroll-target="#inference-playground">Inference Playground</a></li>
+  <li><a href="#merge-lora-to-base" id="toc-merge-lora-to-base" class="nav-link" data-scroll-target="#merge-lora-to-base">Merge LORA to base</a></li>
+  </ul></li>
+  <li><a href="#common-errors" id="toc-common-errors" class="nav-link" data-scroll-target="#common-errors">Common Errors 🧰</a>
+  <ul class="collapse">
+  <li><a href="#tokenization-mismatch-bw-inference-training" id="toc-tokenization-mismatch-bw-inference-training" class="nav-link" data-scroll-target="#tokenization-mismatch-bw-inference-training">Tokenization Mismatch b/w Inference &amp; Training</a></li>
+  </ul></li>
+  <li><a href="#debugging-axolotl" id="toc-debugging-axolotl" class="nav-link" data-scroll-target="#debugging-axolotl">Debugging Axolotl</a></li>
+  <li><a href="#need-help" id="toc-need-help" class="nav-link" data-scroll-target="#need-help">Need help? 🙋</a></li>
+  <li><a href="#badge" id="toc-badge" class="nav-link" data-scroll-target="#badge">Badge ❤🏷️</a></li>
+  <li><a href="#community-showcase" id="toc-community-showcase" class="nav-link" data-scroll-target="#community-showcase">Community Showcase</a></li>
+  <li><a href="#contributing" id="toc-contributing" class="nav-link" data-scroll-target="#contributing">Contributing 🤝</a></li>
+  <li><a href="#sponsors" id="toc-sponsors" class="nav-link" data-scroll-target="#sponsors">Sponsors 🤝❤</a></li>
+  </ul></li>
+  </ul>
+</nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+
+
+
+<section id="axolotl" class="level1">
+<h1>Axolotl</h1>
+<p>Axolotl is a tool designed to streamline the fine-tuning of various AI models, offering support for multiple configurations and architectures.</p>
+<p>Features: - Train various Huggingface models such as llama, pythia, falcon, mpt - Supports fullfinetune, lora, qlora, relora, and gptq - Customize configurations using a simple yaml file or CLI overwrite - Load different dataset formats, use custom formats, or bring your own tokenized datasets - Integrated with xformer, flash attention, rope scaling, and multipacking - Works with single GPU or multiple GPUs via FSDP or Deepspeed - Easily run with Docker locally or on the cloud - Log results and optionally checkpoints to wandb or mlflow - And more!</p>
+<p><a href="https://www.phorm.ai/query?projectId=e315ba4a-4e14-421f-ab05-38a1f9076f25"> <img alt="phorm.ai" src="https://img.shields.io/badge/Phorm-Ask_AI-%23F2777A.svg?&amp;logo=data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNSIgaGVpZ2h0PSI0IiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPgogIDxwYXRoIGQ9Ik00LjQzIDEuODgyYTEuNDQgMS40NCAwIDAgMS0uMDk4LjQyNmMtLjA1LjEyMy0uMTE1LjIzLS4xOTIuMzIyLS4wNzUuMDktLjE2LjE2NS0uMjU1LjIyNmExLjM1MyAxLjM1MyAwIDAgMS0uNTk1LjIxMmMtLjA5OS4wMTItLjE5Mi4wMTQtLjI3OS4wMDZsLTEuNTkzLS4xNHYtLjQwNmgxLjY1OGMuMDkuMDAxLjE3LS4xNjkuMjQ2LS4xOTFhLjYwMy42MDMgMCAwIDAgLjItLjEwNi41MjkuNTI5IDAgMCAwIC4xMzgtLjE3LjY1NC42NTQgMCAwIDAgLjA2NS0uMjRsLjAyOC0uMzJhLjkzLjkzIDAgMCAwLS4wMzYtLjI0OS41NjcuNTY3IDAgMCAwLS4xMDMtLjIuNTAyLjUwMiAwIDAgMC0uMTY4LS4xMzguNjA4LjYwOCAwIDAgMC0uMjQtLjA2N0wyLjQzNy43MjkgMS42MjUuNjcxYS4zMjIuMzIyIDAgMCAwLS4yMzIuMDU4LjM3NS4zNzUgMCAwIDAtLjExNi4yMzJsLS4xMTYgMS40NS0uMDU4LjY5Ny0uMDU4Ljc1NEwuNzA1IDRsLS4zNTctLjA3OUwuNjAyLjkwNkMuNjE3LjcyNi42NjMuNTc0LjczOS40NTRhLjk1OC45NTggMCAwIDEgLjI3NC0uMjg1Ljk3MS45NzEgMCAwIDEgLjMzNy0uMTRjLjExOS0uMDI2LjIyNy0uMDM0LjMyNS0uMDI2TDMuMjMyLjE2Yy4xNTkuMDE0LjMzNi4wMy40NTkuMDgyYTEuMTczIDEuMTczIDAgMCAxIC41NDUuNDQ3Yy4wNi4wOTQuMTA5LjE5Mi4xNDQuMjkzYTEuMzkyIDEuMzkyIDAgMCAxIC4wNzguNThsLS4wMjkuMzJaIiBmaWxsPSIjRjI3NzdBIi8+CiAgPHBhdGggZD0iTTQuMDgyIDIuMDA3YTEuNDU1IDEuNDU1IDAgMCAxLS4wOTguNDI3Yy0uMDUuMTI0LS4xMTQuMjMyLS4xOTIuMzI0YTEuMTMgMS4xMyAwIDAgMS0uMjU0LjIyNyAxLjM1MyAxLjM1MyAwIDAgMS0uNTk1LjIxNGMtLjEuMDEyLS4xOTMuMDE0LS4yOC4wMDZsLTEuNTYtLjEwOC4wMzQtLjQwNi4wMy0uMzQ4IDEuNTU5LjE1NGMuMDkgMCAuMTczLS4wMS4yNDgtLjAzM2EuNjAzLjYwMyAwIDAgMCAuMi0uMTA2LjUzMi41MzIgMCAwIDAgLjEzOS0uMTcyLjY2LjY2IDAgMCAwIC4wNjQtLjI0MWwuMDI5LS4zMjFhLjk0Ljk0IDAgMCAwLS4wMzYtLjI1LjU3LjU3IDAgMCAwLS4xMDMtLjIwMi41MDIuNTAyIDAgMCAwLS4xNjgtLjEzOC42MDUuNjA1IDAgMCAwLS4yNC0uMDY3TDEuMjczLjgyN2MtLjA5NC0uMDA4LS4xNjguMDEtLjIyMS4wNTUtLjA1My4wNDUtLjA4NC4xMTQtLjA5Mi4yMDZMLjcwNSA0IDAgMy45MzhsLjI1NS0yLjkxMUExLjAxIDEuMDEgMCAwIDEgLjM5My41NzIuOTYyLjk2MiAwIDAgMSAuNjY2LjI4NmEuOTcuOTcgMCAwIDEgLjMzOC0uMTRDMS4xMjIuMTIgMS4yMy4xMSAxLjMyOC4xMTlsMS41OTMuMTRjLjE2LjAxNC4zLjA0Ny40MjMuMWExLjE3IDEuMTcgMCAwIDEgLjU0NS40NDhjLjA2MS4wOTUuMTA5LjE5My4xNDQuMjk1YTEuNDA2IDEuNDA2IDAgMCAxIC4wNzcuNTgzbC0uMDI4LjMyMloiIGZpbGw9IndoaXRlIi8+CiAgPHBhdGggZD0iTTQuMDgyIDIuMDA3YTEuNDU1IDEuNDU1IDAgMCAxLS4wOTguNDI3Yy0uMDUuMTI0LS4xMTQuMjMyLS4xOTIuMzI0YTEuMTMgMS4xMyAwIDAgMS0uMjU0LjIyNyAxLjM1MyAxLjM1MyAwIDAgMS0uNTk1LjIxNGMtLjEuMDEyLS4xOTMuMDE0LS4yOC4wMDZsLTEuNTYtLjEwOC4wMzQtLjQwNi4wMy0uMzQ4IDEuNTU5LjE1NGMuMDkgMCAuMTczLS4wMS4yNDgtLjAzM2EuNjAzLjYwMyAwIDAgMCAuMi0uMTA2LjUzMi41MzIgMCAwIDAgLjEzOS0uMTcyLjY2LjY2IDAgMCAwIC4wNjQtLjI0MWwuMDI5LS4zMjFhLjk0Ljk0IDAgMCAwLS4wMzYtLjI1LjU3LjU3IDAgMCAwLS4xMDMtLjIwMi41MDIuNTAyIDAgMCAwLS4xNjgtLjEzOC42MDUuNjA1IDAgMCAwLS4yNC0uMDY3TDEuMjczLjgyN2MtLjA5NC0uMDA4LS4xNjguMDEtLjIyMS4wNTUtLjA1My4wNDUtLjA4NC4xMTQtLjA5Mi4yMDZMLjcwNSA0IDAgMy45MzhsLjI1NS0yLjkxMUExLjAxIDEuMDEgMCAwIDEgLjM5My41NzIuOTYyLjk2MiAwIDAgMSAuNjY2LjI4NmEuOTcuOTcgMCAwIDEgLjMzOC0uMTRDMS4xMjIuMTIgMS4yMy4xMSAxLjMyOC4xMTlsMS41OTMuMTRjLjE2LjAxNC4zLjA0Ny40MjMuMWExLjE3IDEuMTcgMCAwIDEgLjU0NS40NDhjLjA2MS4wOTUuMTA5LjE5My4xNDQuMjk1YTEuNDA2IDEuNDA2IDAgMCAxIC4wNzcuNTgzbC0uMDI4LjMyMloiIGZpbGw9IndoaXRlIi8+Cjwvc3ZnPgo="> </a></p>
+<section id="axolotl-supports" class="level2">
+<h2 class="anchored" data-anchor-id="axolotl-supports">Axolotl supports</h2>
+<table class="table">
+<colgroup>
+<col style="width: 14%">
+<col style="width: 12%">
+<col style="width: 6%">
+<col style="width: 7%">
+<col style="width: 6%">
+<col style="width: 21%">
+<col style="width: 13%">
+<col style="width: 15%">
+</colgroup>
+<thead>
+<tr class="header">
+<th></th>
+<th style="text-align: left;">fp16/fp32</th>
+<th style="text-align: left;">lora</th>
+<th>qlora</th>
+<th>gptq</th>
+<th>gptq w/flash attn</th>
+<th>flash attn</th>
+<th>xformers attn</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>llama</td>
+<td style="text-align: left;">✅</td>
+<td style="text-align: left;">✅</td>
+<td>✅</td>
+<td>✅</td>
+<td>✅</td>
+<td>✅</td>
+<td>✅</td>
+</tr>
+<tr class="even">
+<td>Mistral</td>
+<td style="text-align: left;">✅</td>
+<td style="text-align: left;">✅</td>
+<td>✅</td>
+<td>✅</td>
+<td>✅</td>
+<td>✅</td>
+<td>✅</td>
+</tr>
+<tr class="odd">
+<td>Mixtral-MoE</td>
+<td style="text-align: left;">✅</td>
+<td style="text-align: left;">✅</td>
+<td>✅</td>
+<td>❓</td>
+<td>❓</td>
+<td>❓</td>
+<td>❓</td>
+</tr>
+<tr class="even">
+<td>Pythia</td>
+<td style="text-align: left;">✅</td>
+<td style="text-align: left;">✅</td>
+<td>✅</td>
+<td>❌</td>
+<td>❌</td>
+<td>❌</td>
+<td>❓</td>
+</tr>
+<tr class="odd">
+<td>cerebras</td>
+<td style="text-align: left;">✅</td>
+<td style="text-align: left;">✅</td>
+<td>✅</td>
+<td>❌</td>
+<td>❌</td>
+<td>❌</td>
+<td>❓</td>
+</tr>
+<tr class="even">
+<td>btlm</td>
+<td style="text-align: left;">✅</td>
+<td style="text-align: left;">✅</td>
+<td>✅</td>
+<td>❌</td>
+<td>❌</td>
+<td>❌</td>
+<td>❓</td>
+</tr>
+<tr class="odd">
+<td>mpt</td>
+<td style="text-align: left;">✅</td>
+<td style="text-align: left;">❌</td>
+<td>❓</td>
+<td>❌</td>
+<td>❌</td>
+<td>❌</td>
+<td>❓</td>
+</tr>
+<tr class="even">
+<td>falcon</td>
+<td style="text-align: left;">✅</td>
+<td style="text-align: left;">✅</td>
+<td>✅</td>
+<td>❌</td>
+<td>❌</td>
+<td>❌</td>
+<td>❓</td>
+</tr>
+<tr class="odd">
+<td>gpt-j</td>
+<td style="text-align: left;">✅</td>
+<td style="text-align: left;">✅</td>
+<td>✅</td>
+<td>❌</td>
+<td>❌</td>
+<td>❓</td>
+<td>❓</td>
+</tr>
+<tr class="even">
+<td>XGen</td>
+<td style="text-align: left;">✅</td>
+<td style="text-align: left;">❓</td>
+<td>✅</td>
+<td>❓</td>
+<td>❓</td>
+<td>❓</td>
+<td>✅</td>
+</tr>
+<tr class="odd">
+<td>phi</td>
+<td style="text-align: left;">✅</td>
+<td style="text-align: left;">✅</td>
+<td>✅</td>
+<td>❓</td>
+<td>❓</td>
+<td>❓</td>
+<td>❓</td>
+</tr>
+<tr class="even">
+<td>RWKV</td>
+<td style="text-align: left;">✅</td>
+<td style="text-align: left;">❓</td>
+<td>❓</td>
+<td>❓</td>
+<td>❓</td>
+<td>❓</td>
+<td>❓</td>
+</tr>
+<tr class="odd">
+<td>Qwen</td>
+<td style="text-align: left;">✅</td>
+<td style="text-align: left;">✅</td>
+<td>✅</td>
+<td>❓</td>
+<td>❓</td>
+<td>❓</td>
+<td>❓</td>
+</tr>
+<tr class="even">
+<td>Gemma</td>
+<td style="text-align: left;">✅</td>
+<td style="text-align: left;">✅</td>
+<td>✅</td>
+<td>❓</td>
+<td>❓</td>
+<td>✅</td>
+<td>❓</td>
+</tr>
+</tbody>
+</table>
+<p>✅: supported ❌: not supported ❓: untested</p>
+</section>
+<section id="quickstart" class="level2">
+<h2 class="anchored" data-anchor-id="quickstart">Quickstart ⚡</h2>
+<p>Get started with Axolotl in just a few steps! This quickstart guide will walk you through setting up and running a basic fine-tuning task.</p>
+<p><strong>Requirements</strong>: Python &gt;=3.10 and Pytorch &gt;=2.1.1.</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">git</span> clone https://github.com/OpenAccess-AI-Collective/axolotl</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> axolotl</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="ex">pip3</span> install packaging</span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="ex">pip3</span> install <span class="at">-e</span> <span class="st">'.[flash-attn,deepspeed]'</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<section id="usage" class="level3">
+<h3 class="anchored" data-anchor-id="usage">Usage</h3>
+<div class="sourceCode" id="cb2"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="co"># preprocess datasets - optional but recommended</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="va">CUDA_VISIBLE_DEVICES</span><span class="op">=</span><span class="st">""</span> <span class="ex">python</span> <span class="at">-m</span> axolotl.cli.preprocess examples/openllama-3b/lora.yml</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="co"># finetune lora</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="ex">accelerate</span> launch <span class="at">-m</span> axolotl.cli.train examples/openllama-3b/lora.yml</span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="co"># inference</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a><span class="ex">accelerate</span> launch <span class="at">-m</span> axolotl.cli.inference examples/openllama-3b/lora.yml <span class="dt">\</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>    <span class="at">--lora_model_dir</span><span class="op">=</span><span class="st">"./lora-out"</span></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a><span class="co"># gradio</span></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a><span class="ex">accelerate</span> launch <span class="at">-m</span> axolotl.cli.inference examples/openllama-3b/lora.yml <span class="dt">\</span></span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>    <span class="at">--lora_model_dir</span><span class="op">=</span><span class="st">"./lora-out"</span> <span class="at">--gradio</span></span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a><span class="co"># remote yaml files - the yaml config can be hosted on a public URL</span></span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a><span class="co"># Note: the yaml config must directly link to the **raw** yaml</span></span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a><span class="ex">accelerate</span> launch <span class="at">-m</span> axolotl.cli.train https://raw.githubusercontent.com/OpenAccess-AI-Collective/axolotl/main/examples/openllama-3b/lora.yml</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</section>
+</section>
+<section id="advanced-setup" class="level2">
+<h2 class="anchored" data-anchor-id="advanced-setup">Advanced Setup</h2>
+<section id="environment" class="level3">
+<h3 class="anchored" data-anchor-id="environment">Environment</h3>
+<section id="docker" class="level4">
+<h4 class="anchored" data-anchor-id="docker">Docker</h4>
+<div class="sourceCode" id="cb3"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> run <span class="at">--gpus</span> <span class="st">'"all"'</span> <span class="at">--rm</span> <span class="at">-it</span> winglian/axolotl:main-latest</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Or run on the current files for development:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode sh code-with-copy"><code class="sourceCode bash"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> compose up <span class="at">-d</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<blockquote class="blockquote">
+<p>[!Tip] If you want to debug axolotl or prefer to use Docker as your development environment, see the <a href="./docs/debugging.html#debugging-with-docker">debugging guide’s section on Docker</a>.</p>
+</blockquote>
+<details>
+<summary>
+Docker advanced
+</summary>
+<p>A more powerful Docker command to run would be this:</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> run <span class="at">--privileged</span> <span class="at">--gpus</span> <span class="st">'"all"'</span> <span class="at">--shm-size</span> 10g <span class="at">--rm</span> <span class="at">-it</span> <span class="at">--name</span> axolotl <span class="at">--ipc</span><span class="op">=</span>host <span class="at">--ulimit</span> memlock=-1 <span class="at">--ulimit</span> stack=67108864 <span class="at">--mount</span> type=bind,src=<span class="st">"</span><span class="va">${PWD}</span><span class="st">"</span>,target=/workspace/axolotl <span class="at">-v</span> <span class="va">${HOME}</span>/.cache/huggingface:/root/.cache/huggingface winglian/axolotl:main-latest</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>It additionally: * Prevents memory issues when running e.g.&nbsp;deepspeed (e.g.&nbsp;you could hit SIGBUS/signal 7 error) through <code>--ipc</code> and <code>--ulimit</code> args. * Persists the downloaded HF data (models etc.) and your modifications to axolotl code through <code>--mount</code>/<code>-v</code> args. * The <code>--name</code> argument simply makes it easier to refer to the container in vscode (<code>Dev Containers: Attach to Running Container...</code>) or in your terminal. * The <code>--privileged</code> flag gives all capabilities to the container. * The <code>--shm-size 10g</code> argument increases the shared memory size. Use this if you see <code>exitcode: -7</code> errors using deepspeed.</p>
+<p><a href="https://docs.nvidia.com/deeplearning/frameworks/user-guide/index.html#setincshmem">More information on nvidia website</a></p>
+</details>
+</section>
+<section id="condapip-venv" class="level4">
+<h4 class="anchored" data-anchor-id="condapip-venv">Conda/Pip venv</h4>
+<ol type="1">
+<li><p>Install python &gt;=<strong>3.10</strong></p></li>
+<li><p>Install pytorch stable https://pytorch.org/get-started/locally/</p></li>
+<li><p>Install Axolotl along with python dependencies <code>bash         pip3 install packaging         pip3 install -e '.[flash-attn,deepspeed]'</code></p></li>
+<li><p>(Optional) Login to Huggingface to use gated models/datasets. <code>bash         huggingface-cli login</code> Get the token at huggingface.co/settings/tokens</p></li>
+</ol>
+</section>
+<section id="cloud-gpu" class="level4">
+<h4 class="anchored" data-anchor-id="cloud-gpu">Cloud GPU</h4>
+<p>For cloud GPU providers that support docker images, use <a href="https://hub.docker.com/r/winglian/axolotl-cloud/tags"><code>winglian/axolotl-cloud:main-latest</code></a></p>
+<ul>
+<li>on Latitude.sh use this <a href="https://latitude.sh/blueprint/989e0e79-3bf6-41ea-a46b-1f246e309d5c">direct link</a></li>
+<li>on JarvisLabs.ai use this <a href="https://jarvislabs.ai/templates/axolotl">direct link</a></li>
+<li>on RunPod use this <a href="https://runpod.io/gsc?template=v2ickqhz9s&amp;ref=6i7fkpdz">direct link</a></li>
+</ul>
+</section>
+<section id="bare-metal-cloud-gpu" class="level4">
+<h4 class="anchored" data-anchor-id="bare-metal-cloud-gpu">Bare Metal Cloud GPU</h4>
+<section id="lambdalabs" class="level5">
+<h5 class="anchored" data-anchor-id="lambdalabs">LambdaLabs</h5>
+<details>
+<summary>
+Click to Expand
+</summary>
+<ol type="1">
+<li>Install python</li>
+</ol>
+<div class="sourceCode" id="cb6"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">sudo</span> apt update</span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="fu">sudo</span> apt install <span class="at">-y</span> python3.10</span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a><span class="fu">sudo</span> update-alternatives <span class="at">--install</span> /usr/bin/python python /usr/bin/python3.10 1</span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a><span class="fu">sudo</span> update-alternatives <span class="at">--config</span> python <span class="co"># pick 3.10 if given option</span></span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> <span class="at">-V</span> <span class="co"># should be 3.10</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<ol start="2" type="1">
+<li>Install pip</li>
+</ol>
+<div class="sourceCode" id="cb7"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="fu">wget</span> https://bootstrap.pypa.io/get-pip.py</span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> get-pip.py</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<ol start="3" type="1">
+<li>Install torch</li>
+</ol>
+<div class="sourceCode" id="cb8"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip3</span> install <span class="at">-U</span> torch <span class="at">--index-url</span> https://download.pytorch.org/whl/cu118</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<ol start="4" type="1">
+<li>Axolotl</li>
+</ol>
+<div class="sourceCode" id="cb9"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="fu">git</span> clone https://github.com/OpenAccess-AI-Collective/axolotl</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> axolotl</span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a><span class="ex">pip3</span> install packaging</span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a><span class="ex">pip3</span> install <span class="at">-e</span> <span class="st">'.[flash-attn,deepspeed]'</span></span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a><span class="ex">pip3</span> install protobuf==3.20.3</span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a><span class="ex">pip3</span> install <span class="at">-U</span> <span class="at">--ignore-installed</span> requests Pillow psutil scipy</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<ol start="5" type="1">
+<li>Set path</li>
+</ol>
+<div class="sourceCode" id="cb10"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="bu">export</span> <span class="va">LD_LIBRARY_PATH</span><span class="op">=</span>/usr/lib/x86_64-linux-gnu:<span class="va">$LD_LIBRARY_PATH</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</details>
+</section>
+<section id="gcp" class="level5">
+<h5 class="anchored" data-anchor-id="gcp">GCP</h5>
+<details>
+<summary>
+Click to Expand
+</summary>
+<p>Use a Deeplearning linux OS with cuda and pytorch installed. Then follow instructions on quickstart.</p>
+<p>Make sure to run the below to uninstall xla.</p>
+<div class="sourceCode" id="cb11"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> uninstall <span class="at">-y</span> torch_xla<span class="pp">[</span><span class="ss">tpu</span><span class="pp">]</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</details>
+</section>
+</section>
+<section id="windows" class="level4">
+<h4 class="anchored" data-anchor-id="windows">Windows</h4>
+<p>Please use WSL or Docker!</p>
+</section>
+<section id="mac" class="level4">
+<h4 class="anchored" data-anchor-id="mac">Mac</h4>
+<p>Use the below instead of the install method in QuickStart.</p>
+<pre><code>pip3 install -e '.'</code></pre>
+<p>More info: <a href="./docs/mac.html">mac.md</a></p>
+</section>
+<section id="launching-on-public-clouds-via-skypilot" class="level4">
+<h4 class="anchored" data-anchor-id="launching-on-public-clouds-via-skypilot">Launching on public clouds via SkyPilot</h4>
+<p>To launch on GPU instances (both on-demand and spot instances) on 7+ clouds (GCP, AWS, Azure, OCI, and more), you can use <a href="https://skypilot.readthedocs.io/en/latest/index.html">SkyPilot</a>:</p>
+<div class="sourceCode" id="cb13"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> install <span class="st">"skypilot-nightly[gcp,aws,azure,oci,lambda,kubernetes,ibm,scp]"</span>  <span class="co"># choose your clouds</span></span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a><span class="ex">sky</span> check</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Get the <a href="https://github.com/skypilot-org/skypilot/tree/master/llm/axolotl">example YAMLs</a> of using Axolotl to finetune <code>mistralai/Mistral-7B-v0.1</code>:</p>
+<pre><code>git clone https://github.com/skypilot-org/skypilot.git
+cd skypilot/llm/axolotl</code></pre>
+<p>Use one command to launch:</p>
+<div class="sourceCode" id="cb15"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="co"># On-demand</span></span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a><span class="va">HF_TOKEN</span><span class="op">=</span>xx <span class="ex">sky</span> launch axolotl.yaml <span class="at">--env</span> HF_TOKEN</span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a><span class="co"># Managed spot (auto-recovery on preemption)</span></span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a><span class="va">HF_TOKEN</span><span class="op">=</span>xx <span class="va">BUCKET</span><span class="op">=&lt;</span>unique-name<span class="op">&gt;</span> sky <span class="ex">spot</span> launch axolotl-spot.yaml <span class="at">--env</span> HF_TOKEN <span class="at">--env</span> BUCKET</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</section>
+</section>
+<section id="dataset" class="level3">
+<h3 class="anchored" data-anchor-id="dataset">Dataset</h3>
+<p>Axolotl supports a variety of dataset formats. Below are some of the formats you can use. Have dataset(s) in one of the following format (JSONL recommended):</p>
+<section id="pretraining" class="level4">
+<h4 class="anchored" data-anchor-id="pretraining">Pretraining</h4>
+<ul>
+<li><p><code>completion</code>: raw corpus</p>
+<div class="sourceCode" id="cb16"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"text"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div></li>
+</ul>
+<p>Note: Axolotl usually loads the entire dataset into memory. This will be challenging for large datasets. Use the following config to enable streaming:</p>
+<div class="sourceCode" id="cb17"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="fu">pretraining_dataset</span><span class="kw">:</span><span class="co"> # hf path only</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</section>
+<section id="supervised-finetuning" class="level4">
+<h4 class="anchored" data-anchor-id="supervised-finetuning">Supervised finetuning</h4>
+<section id="instruction" class="level5">
+<h5 class="anchored" data-anchor-id="instruction">Instruction</h5>
+<ul>
+<li><p><code>alpaca</code>: instruction; input(optional)</p>
+<div class="sourceCode" id="cb18"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"instruction"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"input"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"output"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div></li>
+</ul>
+<details>
+<summary>
+See other formats
+</summary>
+<ul>
+<li><p><code>jeopardy</code>: question and answer</p>
+<div class="sourceCode" id="cb19"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"question"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"category"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"answer"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div></li>
+<li><p><code>oasst</code>: instruction</p>
+<div class="sourceCode" id="cb20"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"INSTRUCTION"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"RESPONSE"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div></li>
+<li><p><code>gpteacher</code>: instruction; input(optional)</p>
+<div class="sourceCode" id="cb21"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"instruction"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"input"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"response"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div></li>
+<li><p><code>reflection</code>: instruction with reflect; input(optional)</p>
+<div class="sourceCode" id="cb22"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"instruction"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"input"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"output"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"reflection"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"corrected"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div></li>
+<li><p><code>explainchoice</code>: question, choices, (solution OR explanation)</p>
+<div class="sourceCode" id="cb23"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"question"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"choices"</span><span class="fu">:</span> <span class="ot">[</span><span class="st">"..."</span><span class="ot">]</span><span class="fu">,</span> <span class="dt">"solution"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"explanation"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div></li>
+<li><p><code>concisechoice</code>: question, choices, (solution OR explanation)</p>
+<div class="sourceCode" id="cb24"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"question"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"choices"</span><span class="fu">:</span> <span class="ot">[</span><span class="st">"..."</span><span class="ot">]</span><span class="fu">,</span> <span class="dt">"solution"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"explanation"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div></li>
+<li><p><code>summarizetldr</code>: article and summary</p>
+<div class="sourceCode" id="cb25"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb25-1"><a href="#cb25-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"article"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"summary"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div></li>
+<li><p><code>alpaca_chat</code>: basic instruct for alpaca chat</p>
+<div class="sourceCode" id="cb26"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"instruction"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"input"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"response"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div></li>
+<li><p><code>alpaca_chat.load_qa</code>: question and answer for alpaca chat</p>
+<div class="sourceCode" id="cb27"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb27-1"><a href="#cb27-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"question"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"answer"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div></li>
+<li><p><code>alpaca_chat.load_concise</code>: question and answer for alpaca chat, for concise answers</p>
+<div class="sourceCode" id="cb28"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb28-1"><a href="#cb28-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"instruction"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"input"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"response"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div></li>
+<li><p><code>alpaca_chat.load_camel_ai</code>: question and answer for alpaca chat, for load_camel_ai</p>
+<div class="sourceCode" id="cb29"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb29-1"><a href="#cb29-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"message_1"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"message_2"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div></li>
+<li><p><code>alpaca_w_system.load_open_orca</code>: support for open orca datasets with included system prompts, instruct</p>
+<div class="sourceCode" id="cb30"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb30-1"><a href="#cb30-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"system_prompt"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"question"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"response"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div></li>
+<li><p><code>context_qa</code>: in context question answering from an article</p>
+<div class="sourceCode" id="cb31"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb31-1"><a href="#cb31-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"article"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"question"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"answer"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div></li>
+<li><p><code>context_qa.load_v2</code>: in context question answering (alternate)</p>
+<div class="sourceCode" id="cb32"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb32-1"><a href="#cb32-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"context"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"question"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"answer"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div></li>
+<li><p><code>context_qa.load_404</code>: in context question answering from an article, with default response for no answer from context</p>
+<div class="sourceCode" id="cb33"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb33-1"><a href="#cb33-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"article"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"unanswerable_question"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div></li>
+<li><p><code>creative_acr.load_answer</code>: instruction and revision</p>
+<div class="sourceCode" id="cb34"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb34-1"><a href="#cb34-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"instruction"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"revision"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div></li>
+<li><p><code>creative_acr.load_critique</code>: critique</p>
+<div class="sourceCode" id="cb35"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb35-1"><a href="#cb35-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"scores"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"critiques"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"instruction"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"answer"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div></li>
+<li><p><code>creative_acr.load_revise</code>: critique and revise</p>
+<div class="sourceCode" id="cb36"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb36-1"><a href="#cb36-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"scores"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"critiques"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"instruction"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"answer"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"revision"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div></li>
+<li><p><code>metharme</code>: instruction, adds additional eos tokens</p>
+<div class="sourceCode" id="cb37"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb37-1"><a href="#cb37-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"prompt"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"generation"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div></li>
+</ul>
+</details>
+</section>
+<section id="template-free" class="level5">
+<h5 class="anchored" data-anchor-id="template-free">Template-Free</h5>
+<ul>
+<li><p><code>input_output</code>: template-free prompt construction</p>
+<div class="sourceCode" id="cb38"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb38-1"><a href="#cb38-1" aria-hidden="true" tabindex="-1"></a> <span class="fu">{</span><span class="dt">"segments"</span><span class="fu">:</span> <span class="ot">[</span><span class="fu">{</span><span class="dt">"label"</span><span class="fu">:</span> <span class="kw">true</span><span class="er">|</span><span class="kw">false</span><span class="fu">,</span> <span class="dt">"text"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span><span class="ot">]</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div></li>
+</ul>
+<p>This is a special format that allows you to construct prompts without using templates. This is for advanced users who want more freedom with prompt construction. See <a href="./docs/input_output.html">these docs</a> for more details.</p>
+</section>
+<section id="conversation" class="level5">
+<h5 class="anchored" data-anchor-id="conversation">Conversation</h5>
+<ul>
+<li><p><code>sharegpt</code>: conversations where <code>from</code> is <code>human</code>/<code>gpt</code>. (optional: first row with role <code>system</code> to override default system prompt)</p>
+<div class="sourceCode" id="cb39"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb39-1"><a href="#cb39-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"conversations"</span><span class="fu">:</span> <span class="ot">[</span><span class="fu">{</span><span class="dt">"from"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"value"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span><span class="ot">]</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div></li>
+</ul>
+<details>
+<summary>
+See other formats
+</summary>
+<ul>
+<li><p><code>pygmalion</code>: pygmalion</p>
+<div class="sourceCode" id="cb40"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb40-1"><a href="#cb40-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"conversations"</span><span class="fu">:</span> <span class="ot">[</span><span class="fu">{</span><span class="dt">"role"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"value"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span><span class="ot">]</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div></li>
+<li><p><code>sharegpt.load_role</code>: conversations where <code>role</code> is used instead of <code>from</code></p>
+<div class="sourceCode" id="cb41"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb41-1"><a href="#cb41-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"conversations"</span><span class="fu">:</span> <span class="ot">[</span><span class="fu">{</span><span class="dt">"role"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"value"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span><span class="ot">]</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div></li>
+<li><p><code>sharegpt.load_guanaco</code>: conversations where <code>from</code> is <code>prompter</code>/<code>assistant</code> instead of default sharegpt</p>
+<div class="sourceCode" id="cb42"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb42-1"><a href="#cb42-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"conversations"</span><span class="fu">:</span> <span class="ot">[</span><span class="fu">{</span><span class="dt">"from"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"value"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span><span class="ot">]</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div></li>
+<li><p><code>sharegpt_jokes</code>: creates a chat where bot is asked to tell a joke, then explain why the joke is funny</p>
+<div class="sourceCode" id="cb43"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb43-1"><a href="#cb43-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"conversations"</span><span class="fu">:</span> <span class="ot">[</span><span class="fu">{</span><span class="dt">"title"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"text"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"explanation"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span><span class="ot">]</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div></li>
+</ul>
+</details>
+<p>Note: <code>type: sharegpt</code> opens a special config <code>conversation:</code> that enables conversions to many Conversation types. See dataset section under <a href="#all-yaml-options">all yaml options</a>.</p>
+</section>
+</section>
+<section id="how-to-add-custom-prompts" class="level4">
+<h4 class="anchored" data-anchor-id="how-to-add-custom-prompts">How to add custom prompts</h4>
+<p>For a dataset that is preprocessed for instruction purposes:</p>
+<div class="sourceCode" id="cb44"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb44-1"><a href="#cb44-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"input"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"output"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>You can use this example in your YAML config:</p>
+<div class="sourceCode" id="cb45"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb45-1"><a href="#cb45-1" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
+<span id="cb45-2"><a href="#cb45-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> repo</span></span>
+<span id="cb45-3"><a href="#cb45-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span></span>
+<span id="cb45-4"><a href="#cb45-4" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">system_prompt</span><span class="kw">:</span><span class="at"> </span><span class="st">""</span></span>
+<span id="cb45-5"><a href="#cb45-5" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">field_system</span><span class="kw">:</span><span class="at"> system</span></span>
+<span id="cb45-6"><a href="#cb45-6" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">field_instruction</span><span class="kw">:</span><span class="at"> input</span></span>
+<span id="cb45-7"><a href="#cb45-7" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">field_output</span><span class="kw">:</span><span class="at"> output</span></span>
+<span id="cb45-8"><a href="#cb45-8" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">format</span><span class="kw">:</span><span class="at"> </span><span class="st">"[INST] {instruction} [/INST]"</span></span>
+<span id="cb45-9"><a href="#cb45-9" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">no_input_format</span><span class="kw">:</span><span class="at"> </span><span class="st">"[INST] {instruction} [/INST]"</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>See full config options under <a href="#all-yaml-options">all yaml options</a>.</p>
+</section>
+<section id="how-to-use-your-custom-pretokenized-dataset" class="level4">
+<h4 class="anchored" data-anchor-id="how-to-use-your-custom-pretokenized-dataset">How to use your custom pretokenized dataset</h4>
+<ul>
+<li>Do not pass a <code>type:</code></li>
+<li>Columns in Dataset must be exactly <code>input_ids</code>, <code>attention_mask</code>, <code>labels</code></li>
+</ul>
+<div class="sourceCode" id="cb46"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb46-1"><a href="#cb46-1" aria-hidden="true" tabindex="-1"></a><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> ...</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</section>
+</section>
+<section id="config" class="level3">
+<h3 class="anchored" data-anchor-id="config">Config</h3>
+<p>See <a href="examples">examples</a> for quick start. It is recommended to duplicate and modify to your needs. The most important options are:</p>
+<ul>
+<li><p>model</p>
+<div class="sourceCode" id="cb47"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb47-1"><a href="#cb47-1" aria-hidden="true" tabindex="-1"></a><span class="fu">base_model</span><span class="kw">:</span><span class="at"> ./llama-7b-hf</span><span class="co"> # local or huggingface repo</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Note: The code will load the right architecture.</p></li>
+<li><p>dataset</p>
+<div class="sourceCode" id="cb48"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb48-1"><a href="#cb48-1" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
+<span id="cb48-2"><a href="#cb48-2" aria-hidden="true" tabindex="-1"></a><span class="co">    # huggingface repo</span></span>
+<span id="cb48-3"><a href="#cb48-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> vicgalle/alpaca-gpt4</span></span>
+<span id="cb48-4"><a href="#cb48-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> alpaca</span></span>
+<span id="cb48-5"><a href="#cb48-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb48-6"><a href="#cb48-6" aria-hidden="true" tabindex="-1"></a><span class="co">    # huggingface repo with specific configuration/subset</span></span>
+<span id="cb48-7"><a href="#cb48-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> EleutherAI/pile</span></span>
+<span id="cb48-8"><a href="#cb48-8" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">name</span><span class="kw">:</span><span class="at"> enron_emails</span></span>
+<span id="cb48-9"><a href="#cb48-9" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> completion</span><span class="co"> # format from earlier</span></span>
+<span id="cb48-10"><a href="#cb48-10" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">field</span><span class="kw">:</span><span class="at"> text</span><span class="co"> # Optional[str] default: text, field to use for completion data</span></span>
+<span id="cb48-11"><a href="#cb48-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb48-12"><a href="#cb48-12" aria-hidden="true" tabindex="-1"></a><span class="co">    # huggingface repo with multiple named configurations/subsets</span></span>
+<span id="cb48-13"><a href="#cb48-13" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> bigcode/commitpackft</span></span>
+<span id="cb48-14"><a href="#cb48-14" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">name</span><span class="kw">:</span></span>
+<span id="cb48-15"><a href="#cb48-15" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> ruby</span></span>
+<span id="cb48-16"><a href="#cb48-16" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> python</span></span>
+<span id="cb48-17"><a href="#cb48-17" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> typescript</span></span>
+<span id="cb48-18"><a href="#cb48-18" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> ...</span><span class="co"> # unimplemented custom format</span></span>
+<span id="cb48-19"><a href="#cb48-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb48-20"><a href="#cb48-20" aria-hidden="true" tabindex="-1"></a><span class="co">    # fastchat conversation</span></span>
+<span id="cb48-21"><a href="#cb48-21" aria-hidden="true" tabindex="-1"></a><span class="co">    # See 'conversation' options: https://github.com/lm-sys/FastChat/blob/main/fastchat/conversation.py</span></span>
+<span id="cb48-22"><a href="#cb48-22" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> ...</span></span>
+<span id="cb48-23"><a href="#cb48-23" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> sharegpt</span></span>
+<span id="cb48-24"><a href="#cb48-24" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">conversation</span><span class="kw">:</span><span class="at"> chatml</span><span class="co"> # default: vicuna_v1.1</span></span>
+<span id="cb48-25"><a href="#cb48-25" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb48-26"><a href="#cb48-26" aria-hidden="true" tabindex="-1"></a><span class="co">    # local</span></span>
+<span id="cb48-27"><a href="#cb48-27" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> data.jsonl</span><span class="co"> # or json</span></span>
+<span id="cb48-28"><a href="#cb48-28" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">ds_type</span><span class="kw">:</span><span class="at"> json</span><span class="co"> # see other options below</span></span>
+<span id="cb48-29"><a href="#cb48-29" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> alpaca</span></span>
+<span id="cb48-30"><a href="#cb48-30" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb48-31"><a href="#cb48-31" aria-hidden="true" tabindex="-1"></a><span class="co">    # dataset with splits, but no train split</span></span>
+<span id="cb48-32"><a href="#cb48-32" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> knowrohit07/know_sql</span></span>
+<span id="cb48-33"><a href="#cb48-33" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> context_qa.load_v2</span></span>
+<span id="cb48-34"><a href="#cb48-34" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">train_on_split</span><span class="kw">:</span><span class="at"> validation</span></span>
+<span id="cb48-35"><a href="#cb48-35" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb48-36"><a href="#cb48-36" aria-hidden="true" tabindex="-1"></a><span class="co">    # loading from s3 or gcs</span></span>
+<span id="cb48-37"><a href="#cb48-37" aria-hidden="true" tabindex="-1"></a><span class="co">    # s3 creds will be loaded from the system default and gcs only supports public access</span></span>
+<span id="cb48-38"><a href="#cb48-38" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> s3://path_to_ds</span><span class="co"> # Accepts folder with arrow/parquet or file path like above. Supports s3, gcs.</span></span>
+<span id="cb48-39"><a href="#cb48-39" aria-hidden="true" tabindex="-1"></a><span class="at">    ...</span></span>
+<span id="cb48-40"><a href="#cb48-40" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb48-41"><a href="#cb48-41" aria-hidden="true" tabindex="-1"></a><span class="co">    # Loading Data From a Public URL</span></span>
+<span id="cb48-42"><a href="#cb48-42" aria-hidden="true" tabindex="-1"></a><span class="co">    # - The file format is `json` (which includes `jsonl`) by default. For different formats, adjust the `ds_type` option accordingly.</span></span>
+<span id="cb48-43"><a href="#cb48-43" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> https://some.url.com/yourdata.jsonl</span><span class="co"> # The URL should be a direct link to the file you wish to load. URLs must use HTTPS protocol, not HTTP.</span></span>
+<span id="cb48-44"><a href="#cb48-44" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">ds_type</span><span class="kw">:</span><span class="at"> json</span><span class="co"> # this is the default, see other options below.</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div></li>
+<li><p>loading</p>
+<div class="sourceCode" id="cb49"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb49-1"><a href="#cb49-1" aria-hidden="true" tabindex="-1"></a><span class="fu">load_in_4bit</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb49-2"><a href="#cb49-2" aria-hidden="true" tabindex="-1"></a><span class="fu">load_in_8bit</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb49-3"><a href="#cb49-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb49-4"><a href="#cb49-4" aria-hidden="true" tabindex="-1"></a><span class="fu">bf16</span><span class="kw">:</span><span class="at"> auto</span><span class="co"> # require &gt;=ampere, auto will detect if your GPU supports this and choose automatically.</span></span>
+<span id="cb49-5"><a href="#cb49-5" aria-hidden="true" tabindex="-1"></a><span class="fu">fp16</span><span class="kw">:</span><span class="co"> # leave empty to use fp16 when bf16 is 'auto'. set to false if you want to fallback to fp32</span></span>
+<span id="cb49-6"><a href="#cb49-6" aria-hidden="true" tabindex="-1"></a><span class="fu">tf32</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span><span class="co"> # require &gt;=ampere</span></span>
+<span id="cb49-7"><a href="#cb49-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb49-8"><a href="#cb49-8" aria-hidden="true" tabindex="-1"></a><span class="fu">bfloat16</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span><span class="co"> # require &gt;=ampere, use instead of bf16 when you don't want AMP (automatic mixed precision)</span></span>
+<span id="cb49-9"><a href="#cb49-9" aria-hidden="true" tabindex="-1"></a><span class="fu">float16</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span><span class="co"> # use instead of fp16 when you don't want AMP</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Note: Repo does not do 4-bit quantization.</p></li>
+<li><p>lora</p>
+<div class="sourceCode" id="cb50"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb50-1"><a href="#cb50-1" aria-hidden="true" tabindex="-1"></a><span class="fu">adapter</span><span class="kw">:</span><span class="at"> lora</span><span class="co"> # 'qlora' or leave blank for full finetune</span></span>
+<span id="cb50-2"><a href="#cb50-2" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_r</span><span class="kw">:</span><span class="at"> </span><span class="dv">8</span></span>
+<span id="cb50-3"><a href="#cb50-3" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_alpha</span><span class="kw">:</span><span class="at"> </span><span class="dv">16</span></span>
+<span id="cb50-4"><a href="#cb50-4" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_dropout</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.05</span></span>
+<span id="cb50-5"><a href="#cb50-5" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_target_modules</span><span class="kw">:</span></span>
+<span id="cb50-6"><a href="#cb50-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> q_proj</span></span>
+<span id="cb50-7"><a href="#cb50-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> v_proj</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div></li>
+</ul>
+<details id="all-yaml-options">
+<summary>
+All yaml options (click to expand)
+</summary>
+<div class="sourceCode" id="cb51"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb51-1"><a href="#cb51-1" aria-hidden="true" tabindex="-1"></a><span class="co"># This is the huggingface model that contains *.pt, *.safetensors, or *.bin files</span></span>
+<span id="cb51-2"><a href="#cb51-2" aria-hidden="true" tabindex="-1"></a><span class="co"># This can also be a relative path to a model on disk</span></span>
+<span id="cb51-3"><a href="#cb51-3" aria-hidden="true" tabindex="-1"></a><span class="fu">base_model</span><span class="kw">:</span><span class="at"> ./llama-7b-hf</span></span>
+<span id="cb51-4"><a href="#cb51-4" aria-hidden="true" tabindex="-1"></a><span class="co"># You can specify an ignore pattern if the model repo contains more than 1 model type (*.pt, etc)</span></span>
+<span id="cb51-5"><a href="#cb51-5" aria-hidden="true" tabindex="-1"></a><span class="fu">base_model_ignore_patterns</span><span class="kw">:</span></span>
+<span id="cb51-6"><a href="#cb51-6" aria-hidden="true" tabindex="-1"></a><span class="co"># If the base_model repo on hf hub doesn't include configuration .json files,</span></span>
+<span id="cb51-7"><a href="#cb51-7" aria-hidden="true" tabindex="-1"></a><span class="co"># You can set that here, or leave this empty to default to base_model</span></span>
+<span id="cb51-8"><a href="#cb51-8" aria-hidden="true" tabindex="-1"></a><span class="fu">base_model_config</span><span class="kw">:</span><span class="at"> ./llama-7b-hf</span></span>
+<span id="cb51-9"><a href="#cb51-9" aria-hidden="true" tabindex="-1"></a><span class="co"># You can specify to choose a specific model revision from huggingface hub</span></span>
+<span id="cb51-10"><a href="#cb51-10" aria-hidden="true" tabindex="-1"></a><span class="fu">revision_of_model</span><span class="kw">:</span></span>
+<span id="cb51-11"><a href="#cb51-11" aria-hidden="true" tabindex="-1"></a><span class="co"># Optional tokenizer configuration path in case you want to use a different tokenizer</span></span>
+<span id="cb51-12"><a href="#cb51-12" aria-hidden="true" tabindex="-1"></a><span class="co"># than the one defined in the base model</span></span>
+<span id="cb51-13"><a href="#cb51-13" aria-hidden="true" tabindex="-1"></a><span class="fu">tokenizer_config</span><span class="kw">:</span></span>
+<span id="cb51-14"><a href="#cb51-14" aria-hidden="true" tabindex="-1"></a><span class="co"># If you want to specify the type of model to load, AutoModelForCausalLM is a good choice too</span></span>
+<span id="cb51-15"><a href="#cb51-15" aria-hidden="true" tabindex="-1"></a><span class="fu">model_type</span><span class="kw">:</span><span class="at"> AutoModelForCausalLM</span></span>
+<span id="cb51-16"><a href="#cb51-16" aria-hidden="true" tabindex="-1"></a><span class="co"># Corresponding tokenizer for the model AutoTokenizer is a good choice</span></span>
+<span id="cb51-17"><a href="#cb51-17" aria-hidden="true" tabindex="-1"></a><span class="fu">tokenizer_type</span><span class="kw">:</span><span class="at"> AutoTokenizer</span></span>
+<span id="cb51-18"><a href="#cb51-18" aria-hidden="true" tabindex="-1"></a><span class="co"># Trust remote code for untrusted source</span></span>
+<span id="cb51-19"><a href="#cb51-19" aria-hidden="true" tabindex="-1"></a><span class="fu">trust_remote_code</span><span class="kw">:</span></span>
+<span id="cb51-20"><a href="#cb51-20" aria-hidden="true" tabindex="-1"></a><span class="co"># use_fast option for tokenizer loading from_pretrained, default to True</span></span>
+<span id="cb51-21"><a href="#cb51-21" aria-hidden="true" tabindex="-1"></a><span class="fu">tokenizer_use_fast</span><span class="kw">:</span></span>
+<span id="cb51-22"><a href="#cb51-22" aria-hidden="true" tabindex="-1"></a><span class="co"># Whether to use the legacy tokenizer setting, defaults to True</span></span>
+<span id="cb51-23"><a href="#cb51-23" aria-hidden="true" tabindex="-1"></a><span class="fu">tokenizer_legacy</span><span class="kw">:</span></span>
+<span id="cb51-24"><a href="#cb51-24" aria-hidden="true" tabindex="-1"></a><span class="co"># Resize the model embeddings when new tokens are added to multiples of 32</span></span>
+<span id="cb51-25"><a href="#cb51-25" aria-hidden="true" tabindex="-1"></a><span class="co"># This is reported to improve training speed on some models</span></span>
+<span id="cb51-26"><a href="#cb51-26" aria-hidden="true" tabindex="-1"></a><span class="fu">resize_token_embeddings_to_32x</span><span class="kw">:</span></span>
+<span id="cb51-27"><a href="#cb51-27" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-28"><a href="#cb51-28" aria-hidden="true" tabindex="-1"></a><span class="co"># (Internal use only)</span></span>
+<span id="cb51-29"><a href="#cb51-29" aria-hidden="true" tabindex="-1"></a><span class="co"># Used to identify which the model is based on</span></span>
+<span id="cb51-30"><a href="#cb51-30" aria-hidden="true" tabindex="-1"></a><span class="fu">is_falcon_derived_model</span><span class="kw">:</span></span>
+<span id="cb51-31"><a href="#cb51-31" aria-hidden="true" tabindex="-1"></a><span class="fu">is_llama_derived_model</span><span class="kw">:</span></span>
+<span id="cb51-32"><a href="#cb51-32" aria-hidden="true" tabindex="-1"></a><span class="fu">is_qwen_derived_model</span><span class="kw">:</span></span>
+<span id="cb51-33"><a href="#cb51-33" aria-hidden="true" tabindex="-1"></a><span class="co"># Please note that if you set this to true, `padding_side` will be set to "left" by default</span></span>
+<span id="cb51-34"><a href="#cb51-34" aria-hidden="true" tabindex="-1"></a><span class="fu">is_mistral_derived_model</span><span class="kw">:</span></span>
+<span id="cb51-35"><a href="#cb51-35" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-36"><a href="#cb51-36" aria-hidden="true" tabindex="-1"></a><span class="co"># optional overrides to the base model configuration</span></span>
+<span id="cb51-37"><a href="#cb51-37" aria-hidden="true" tabindex="-1"></a><span class="fu">overrides_of_model_config</span><span class="kw">:</span></span>
+<span id="cb51-38"><a href="#cb51-38" aria-hidden="true" tabindex="-1"></a><span class="co">  # RoPE Scaling https://github.com/huggingface/transformers/pull/24653</span></span>
+<span id="cb51-39"><a href="#cb51-39" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">rope_scaling</span><span class="kw">:</span></span>
+<span id="cb51-40"><a href="#cb51-40" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="co"> # linear | dynamic</span></span>
+<span id="cb51-41"><a href="#cb51-41" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">factor</span><span class="kw">:</span><span class="co"> # float</span></span>
+<span id="cb51-42"><a href="#cb51-42" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-43"><a href="#cb51-43" aria-hidden="true" tabindex="-1"></a><span class="co"># optional overrides to the bnb 4bit quantization configuration</span></span>
+<span id="cb51-44"><a href="#cb51-44" aria-hidden="true" tabindex="-1"></a><span class="co"># https://huggingface.co/docs/transformers/main/main_classes/quantization#transformers.BitsAndBytesConfig</span></span>
+<span id="cb51-45"><a href="#cb51-45" aria-hidden="true" tabindex="-1"></a><span class="fu">bnb_config_kwargs</span><span class="kw">:</span></span>
+<span id="cb51-46"><a href="#cb51-46" aria-hidden="true" tabindex="-1"></a><span class="co">  # These are default values</span></span>
+<span id="cb51-47"><a href="#cb51-47" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">llm_int8_has_fp16_weight</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span>
+<span id="cb51-48"><a href="#cb51-48" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">bnb_4bit_quant_type</span><span class="kw">:</span><span class="at"> nf4</span></span>
+<span id="cb51-49"><a href="#cb51-49" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">bnb_4bit_use_double_quant</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb51-50"><a href="#cb51-50" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-51"><a href="#cb51-51" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-52"><a href="#cb51-52" aria-hidden="true" tabindex="-1"></a><span class="co"># Whether you are training a 4-bit GPTQ quantized model</span></span>
+<span id="cb51-53"><a href="#cb51-53" aria-hidden="true" tabindex="-1"></a><span class="fu">gptq</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb51-54"><a href="#cb51-54" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-55"><a href="#cb51-55" aria-hidden="true" tabindex="-1"></a><span class="co"># This will attempt to quantize the model down to 8 bits and use adam 8 bit optimizer</span></span>
+<span id="cb51-56"><a href="#cb51-56" aria-hidden="true" tabindex="-1"></a><span class="fu">load_in_8bit</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb51-57"><a href="#cb51-57" aria-hidden="true" tabindex="-1"></a><span class="co"># Use bitsandbytes 4 bit</span></span>
+<span id="cb51-58"><a href="#cb51-58" aria-hidden="true" tabindex="-1"></a><span class="fu">load_in_4bit</span><span class="kw">:</span></span>
+<span id="cb51-59"><a href="#cb51-59" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-60"><a href="#cb51-60" aria-hidden="true" tabindex="-1"></a><span class="co"># Use CUDA bf16</span></span>
+<span id="cb51-61"><a href="#cb51-61" aria-hidden="true" tabindex="-1"></a><span class="fu">bf16</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span><span class="co"> # bool or 'full' for `bf16_full_eval`. require &gt;=ampere</span></span>
+<span id="cb51-62"><a href="#cb51-62" aria-hidden="true" tabindex="-1"></a><span class="co"># Use CUDA fp16</span></span>
+<span id="cb51-63"><a href="#cb51-63" aria-hidden="true" tabindex="-1"></a><span class="fu">fp16</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb51-64"><a href="#cb51-64" aria-hidden="true" tabindex="-1"></a><span class="co"># Use CUDA tf32</span></span>
+<span id="cb51-65"><a href="#cb51-65" aria-hidden="true" tabindex="-1"></a><span class="fu">tf32</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span><span class="co"> # require &gt;=ampere</span></span>
+<span id="cb51-66"><a href="#cb51-66" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-67"><a href="#cb51-67" aria-hidden="true" tabindex="-1"></a><span class="co"># No AMP (automatic mixed precision)</span></span>
+<span id="cb51-68"><a href="#cb51-68" aria-hidden="true" tabindex="-1"></a><span class="fu">bfloat16</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span><span class="co"> # require &gt;=ampere</span></span>
+<span id="cb51-69"><a href="#cb51-69" aria-hidden="true" tabindex="-1"></a><span class="fu">float16</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb51-70"><a href="#cb51-70" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-71"><a href="#cb51-71" aria-hidden="true" tabindex="-1"></a><span class="co"># Limit the memory for all available GPUs to this amount (if an integer, expressed in gigabytes); default: unset</span></span>
+<span id="cb51-72"><a href="#cb51-72" aria-hidden="true" tabindex="-1"></a><span class="fu">gpu_memory_limit</span><span class="kw">:</span><span class="at"> 20GiB</span></span>
+<span id="cb51-73"><a href="#cb51-73" aria-hidden="true" tabindex="-1"></a><span class="co"># Do the LoRA/PEFT loading on CPU -- this is required if the base model is so large it takes up most or all of the available GPU VRAM, e.g. during a model and LoRA merge</span></span>
+<span id="cb51-74"><a href="#cb51-74" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_on_cpu</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb51-75"><a href="#cb51-75" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-76"><a href="#cb51-76" aria-hidden="true" tabindex="-1"></a><span class="co"># A list of one or more datasets to finetune the model with</span></span>
+<span id="cb51-77"><a href="#cb51-77" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
+<span id="cb51-78"><a href="#cb51-78" aria-hidden="true" tabindex="-1"></a><span class="co">  # HuggingFace dataset repo | s3://,gs:// path | "json" for local dataset, make sure to fill data_files</span></span>
+<span id="cb51-79"><a href="#cb51-79" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> vicgalle/alpaca-gpt4</span></span>
+<span id="cb51-80"><a href="#cb51-80" aria-hidden="true" tabindex="-1"></a><span class="co">  # The type of prompt to use for training. [alpaca, sharegpt, gpteacher, oasst, reflection]</span></span>
+<span id="cb51-81"><a href="#cb51-81" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> alpaca</span><span class="co"> # format | format:&lt;prompt_style&gt; (chat/instruct) | &lt;prompt_strategies&gt;.load_&lt;load_fn&gt;</span></span>
+<span id="cb51-82"><a href="#cb51-82" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">ds_type</span><span class="kw">:</span><span class="co"> # Optional[str] (json|arrow|parquet|text|csv) defines the datatype when path is a file</span></span>
+<span id="cb51-83"><a href="#cb51-83" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">data_files</span><span class="kw">:</span><span class="co"> # Optional[str] path to source data files</span></span>
+<span id="cb51-84"><a href="#cb51-84" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">shards</span><span class="kw">:</span><span class="co"> # Optional[int] number of shards to split data into</span></span>
+<span id="cb51-85"><a href="#cb51-85" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">name</span><span class="kw">:</span><span class="co"> # Optional[str] name of dataset configuration to load</span></span>
+<span id="cb51-86"><a href="#cb51-86" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">train_on_split</span><span class="kw">:</span><span class="at"> train</span><span class="co"> # Optional[str] name of dataset split to load from</span></span>
+<span id="cb51-87"><a href="#cb51-87" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-88"><a href="#cb51-88" aria-hidden="true" tabindex="-1"></a><span class="co">    # Optional[str] fastchat conversation type, only used with type: sharegpt</span></span>
+<span id="cb51-89"><a href="#cb51-89" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">conversation</span><span class="kw">:</span><span class="co"> # Options (see Conversation 'name'): https://github.com/lm-sys/FastChat/blob/main/fastchat/conversation.py</span></span>
+<span id="cb51-90"><a href="#cb51-90" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">field_human</span><span class="kw">:</span><span class="co"> # Optional[str]. Human key to use for conversation.</span></span>
+<span id="cb51-91"><a href="#cb51-91" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">field_model</span><span class="kw">:</span><span class="co"> # Optional[str]. Assistant key to use for conversation.</span></span>
+<span id="cb51-92"><a href="#cb51-92" aria-hidden="true" tabindex="-1"></a><span class="co">    # Add additional keys from your dataset as input or output roles</span></span>
+<span id="cb51-93"><a href="#cb51-93" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">roles</span><span class="kw">:</span></span>
+<span id="cb51-94"><a href="#cb51-94" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">input</span><span class="kw">:</span><span class="co"> # Optional[List[str]]. These will be masked based on train_on_input</span></span>
+<span id="cb51-95"><a href="#cb51-95" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">output</span><span class="kw">:</span><span class="co"> # Optional[List[str]].</span></span>
+<span id="cb51-96"><a href="#cb51-96" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-97"><a href="#cb51-97" aria-hidden="true" tabindex="-1"></a><span class="co">  # Custom user instruction prompt</span></span>
+<span id="cb51-98"><a href="#cb51-98" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> repo</span></span>
+<span id="cb51-99"><a href="#cb51-99" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span></span>
+<span id="cb51-100"><a href="#cb51-100" aria-hidden="true" tabindex="-1"></a><span class="co">      # The below are defaults. only set what's needed if you use a different column name.</span></span>
+<span id="cb51-101"><a href="#cb51-101" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">system_prompt</span><span class="kw">:</span><span class="at"> </span><span class="st">""</span></span>
+<span id="cb51-102"><a href="#cb51-102" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">system_format</span><span class="kw">:</span><span class="at"> </span><span class="st">"{system}"</span></span>
+<span id="cb51-103"><a href="#cb51-103" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">field_system</span><span class="kw">:</span><span class="at"> system</span></span>
+<span id="cb51-104"><a href="#cb51-104" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">field_instruction</span><span class="kw">:</span><span class="at"> instruction</span></span>
+<span id="cb51-105"><a href="#cb51-105" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">field_input</span><span class="kw">:</span><span class="at"> input</span></span>
+<span id="cb51-106"><a href="#cb51-106" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">field_output</span><span class="kw">:</span><span class="at"> output</span></span>
+<span id="cb51-107"><a href="#cb51-107" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-108"><a href="#cb51-108" aria-hidden="true" tabindex="-1"></a><span class="co">      # Customizable to be single line or multi-line</span></span>
+<span id="cb51-109"><a href="#cb51-109" aria-hidden="true" tabindex="-1"></a><span class="co">      # Use {instruction}/{input} as key to be replaced</span></span>
+<span id="cb51-110"><a href="#cb51-110" aria-hidden="true" tabindex="-1"></a><span class="co">      # 'format' can include {input}</span></span>
+<span id="cb51-111"><a href="#cb51-111" aria-hidden="true" tabindex="-1"></a><span class="fu">      format</span><span class="kw">: </span><span class="ch">|-</span></span>
+<span id="cb51-112"><a href="#cb51-112" aria-hidden="true" tabindex="-1"></a>        User: {instruction} {input}</span>
+<span id="cb51-113"><a href="#cb51-113" aria-hidden="true" tabindex="-1"></a>        Assistant:</span>
+<span id="cb51-114"><a href="#cb51-114" aria-hidden="true" tabindex="-1"></a><span class="co">      # 'no_input_format' cannot include {input}</span></span>
+<span id="cb51-115"><a href="#cb51-115" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">no_input_format</span><span class="kw">:</span><span class="at"> </span><span class="st">"{instruction} "</span></span>
+<span id="cb51-116"><a href="#cb51-116" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-117"><a href="#cb51-117" aria-hidden="true" tabindex="-1"></a><span class="co">      # For `completion` datsets only, uses the provided field instead of `text` column</span></span>
+<span id="cb51-118"><a href="#cb51-118" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">field</span><span class="kw">:</span></span>
+<span id="cb51-119"><a href="#cb51-119" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-120"><a href="#cb51-120" aria-hidden="true" tabindex="-1"></a><span class="co"># If false, the datasets will not be shuffled and will keep their original order in `datasets`.</span></span>
+<span id="cb51-121"><a href="#cb51-121" aria-hidden="true" tabindex="-1"></a><span class="co"># The same applies to the `test_datasets` option and the `pretraining_dataset` option. Default is true.</span></span>
+<span id="cb51-122"><a href="#cb51-122" aria-hidden="true" tabindex="-1"></a><span class="fu">shuffle_merged_datasets</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb51-123"><a href="#cb51-123" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-124"><a href="#cb51-124" aria-hidden="true" tabindex="-1"></a><span class="co"># A list of one or more datasets to eval the model with.</span></span>
+<span id="cb51-125"><a href="#cb51-125" aria-hidden="true" tabindex="-1"></a><span class="co"># You can use either test_datasets, or val_set_size, but not both.</span></span>
+<span id="cb51-126"><a href="#cb51-126" aria-hidden="true" tabindex="-1"></a><span class="fu">test_datasets</span><span class="kw">:</span></span>
+<span id="cb51-127"><a href="#cb51-127" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> /workspace/data/eval.jsonl</span></span>
+<span id="cb51-128"><a href="#cb51-128" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">ds_type</span><span class="kw">:</span><span class="at"> json</span></span>
+<span id="cb51-129"><a href="#cb51-129" aria-hidden="true" tabindex="-1"></a><span class="co">    # You need to specify a split. For "json" datasets the default split is called "train".</span></span>
+<span id="cb51-130"><a href="#cb51-130" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">split</span><span class="kw">:</span><span class="at"> train</span></span>
+<span id="cb51-131"><a href="#cb51-131" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> completion</span></span>
+<span id="cb51-132"><a href="#cb51-132" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">data_files</span><span class="kw">:</span></span>
+<span id="cb51-133"><a href="#cb51-133" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> /workspace/data/eval.jsonl</span></span>
+<span id="cb51-134"><a href="#cb51-134" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-135"><a href="#cb51-135" aria-hidden="true" tabindex="-1"></a><span class="co"># use RL training: 'dpo', 'ipo', 'kto_pair'</span></span>
+<span id="cb51-136"><a href="#cb51-136" aria-hidden="true" tabindex="-1"></a><span class="fu">rl</span><span class="kw">:</span></span>
+<span id="cb51-137"><a href="#cb51-137" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-138"><a href="#cb51-138" aria-hidden="true" tabindex="-1"></a><span class="co"># Saves the desired chat template to the tokenizer_config.json for easier inferencing</span></span>
+<span id="cb51-139"><a href="#cb51-139" aria-hidden="true" tabindex="-1"></a><span class="co"># Currently supports chatml and inst (mistral/mixtral)</span></span>
+<span id="cb51-140"><a href="#cb51-140" aria-hidden="true" tabindex="-1"></a><span class="fu">chat_template</span><span class="kw">:</span><span class="at"> chatml</span></span>
+<span id="cb51-141"><a href="#cb51-141" aria-hidden="true" tabindex="-1"></a><span class="co"># Changes the default system message</span></span>
+<span id="cb51-142"><a href="#cb51-142" aria-hidden="true" tabindex="-1"></a><span class="fu">default_system_message</span><span class="kw">:</span><span class="at"> You are a helpful assistant. Please give a long and detailed answer.</span><span class="co"> # Currently only supports chatml.</span></span>
+<span id="cb51-143"><a href="#cb51-143" aria-hidden="true" tabindex="-1"></a><span class="co"># Axolotl attempts to save the dataset as an arrow after packing the data together so</span></span>
+<span id="cb51-144"><a href="#cb51-144" aria-hidden="true" tabindex="-1"></a><span class="co"># subsequent training attempts load faster, relative path</span></span>
+<span id="cb51-145"><a href="#cb51-145" aria-hidden="true" tabindex="-1"></a><span class="fu">dataset_prepared_path</span><span class="kw">:</span><span class="at"> data/last_run_prepared</span></span>
+<span id="cb51-146"><a href="#cb51-146" aria-hidden="true" tabindex="-1"></a><span class="co"># Push prepared dataset to hub</span></span>
+<span id="cb51-147"><a href="#cb51-147" aria-hidden="true" tabindex="-1"></a><span class="fu">push_dataset_to_hub</span><span class="kw">:</span><span class="co"> # repo path</span></span>
+<span id="cb51-148"><a href="#cb51-148" aria-hidden="true" tabindex="-1"></a><span class="co"># The maximum number of processes to use while preprocessing your input dataset. This defaults to `os.cpu_count()`</span></span>
+<span id="cb51-149"><a href="#cb51-149" aria-hidden="true" tabindex="-1"></a><span class="co"># if not set.</span></span>
+<span id="cb51-150"><a href="#cb51-150" aria-hidden="true" tabindex="-1"></a><span class="fu">dataset_processes</span><span class="kw">:</span><span class="co"> # defaults to os.cpu_count() if not set</span></span>
+<span id="cb51-151"><a href="#cb51-151" aria-hidden="true" tabindex="-1"></a><span class="co"># Keep dataset in memory while preprocessing</span></span>
+<span id="cb51-152"><a href="#cb51-152" aria-hidden="true" tabindex="-1"></a><span class="co"># Only needed if cached dataset is taking too much storage</span></span>
+<span id="cb51-153"><a href="#cb51-153" aria-hidden="true" tabindex="-1"></a><span class="fu">dataset_keep_in_memory</span><span class="kw">:</span></span>
+<span id="cb51-154"><a href="#cb51-154" aria-hidden="true" tabindex="-1"></a><span class="co"># push checkpoints to hub</span></span>
+<span id="cb51-155"><a href="#cb51-155" aria-hidden="true" tabindex="-1"></a><span class="fu">hub_model_id</span><span class="kw">:</span><span class="co"> # private repo path to push finetuned model</span></span>
+<span id="cb51-156"><a href="#cb51-156" aria-hidden="true" tabindex="-1"></a><span class="co"># how to push checkpoints to hub</span></span>
+<span id="cb51-157"><a href="#cb51-157" aria-hidden="true" tabindex="-1"></a><span class="co"># https://huggingface.co/docs/transformers/v4.31.0/en/main_classes/trainer#transformers.TrainingArguments.hub_strategy</span></span>
+<span id="cb51-158"><a href="#cb51-158" aria-hidden="true" tabindex="-1"></a><span class="fu">hub_strategy</span><span class="kw">:</span></span>
+<span id="cb51-159"><a href="#cb51-159" aria-hidden="true" tabindex="-1"></a><span class="co"># Whether to use hf `use_auth_token` for loading datasets. Useful for fetching private datasets</span></span>
+<span id="cb51-160"><a href="#cb51-160" aria-hidden="true" tabindex="-1"></a><span class="co"># Required to be true when used in combination with `push_dataset_to_hub`</span></span>
+<span id="cb51-161"><a href="#cb51-161" aria-hidden="true" tabindex="-1"></a><span class="fu">hf_use_auth_token</span><span class="kw">:</span><span class="co"> # boolean</span></span>
+<span id="cb51-162"><a href="#cb51-162" aria-hidden="true" tabindex="-1"></a><span class="co"># How much of the dataset to set aside as evaluation. 1 = 100%, 0.50 = 50%, etc. 0 for no eval.</span></span>
+<span id="cb51-163"><a href="#cb51-163" aria-hidden="true" tabindex="-1"></a><span class="fu">val_set_size</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.04</span></span>
+<span id="cb51-164"><a href="#cb51-164" aria-hidden="true" tabindex="-1"></a><span class="co"># Num shards for whole dataset</span></span>
+<span id="cb51-165"><a href="#cb51-165" aria-hidden="true" tabindex="-1"></a><span class="fu">dataset_shard_num</span><span class="kw">:</span></span>
+<span id="cb51-166"><a href="#cb51-166" aria-hidden="true" tabindex="-1"></a><span class="co"># Index of shard to use for whole dataset</span></span>
+<span id="cb51-167"><a href="#cb51-167" aria-hidden="true" tabindex="-1"></a><span class="fu">dataset_shard_idx</span><span class="kw">:</span></span>
+<span id="cb51-168"><a href="#cb51-168" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-169"><a href="#cb51-169" aria-hidden="true" tabindex="-1"></a><span class="co"># The maximum length of an input to train with, this should typically be less than 2048</span></span>
+<span id="cb51-170"><a href="#cb51-170" aria-hidden="true" tabindex="-1"></a><span class="co"># as most models have a token/context limit of 2048</span></span>
+<span id="cb51-171"><a href="#cb51-171" aria-hidden="true" tabindex="-1"></a><span class="fu">sequence_len</span><span class="kw">:</span><span class="at"> </span><span class="dv">2048</span></span>
+<span id="cb51-172"><a href="#cb51-172" aria-hidden="true" tabindex="-1"></a><span class="co"># Pad inputs so each step uses constant sized buffers</span></span>
+<span id="cb51-173"><a href="#cb51-173" aria-hidden="true" tabindex="-1"></a><span class="co"># This will reduce memory fragmentation and may prevent OOMs, by re-using memory more efficiently</span></span>
+<span id="cb51-174"><a href="#cb51-174" aria-hidden="true" tabindex="-1"></a><span class="fu">pad_to_sequence_len</span><span class="kw">:</span></span>
+<span id="cb51-175"><a href="#cb51-175" aria-hidden="true" tabindex="-1"></a><span class="co"># Use efficient multi-packing with block diagonal attention and per sequence position_ids. Recommend set to 'true'</span></span>
+<span id="cb51-176"><a href="#cb51-176" aria-hidden="true" tabindex="-1"></a><span class="fu">sample_packing</span><span class="kw">:</span></span>
+<span id="cb51-177"><a href="#cb51-177" aria-hidden="true" tabindex="-1"></a><span class="co"># Set to 'false' if getting errors during eval with sample_packing on.</span></span>
+<span id="cb51-178"><a href="#cb51-178" aria-hidden="true" tabindex="-1"></a><span class="fu">eval_sample_packing</span><span class="kw">:</span></span>
+<span id="cb51-179"><a href="#cb51-179" aria-hidden="true" tabindex="-1"></a><span class="co"># You can set these packing optimizations AFTER starting a training at least once.</span></span>
+<span id="cb51-180"><a href="#cb51-180" aria-hidden="true" tabindex="-1"></a><span class="co"># The trainer will provide recommended values for these values.</span></span>
+<span id="cb51-181"><a href="#cb51-181" aria-hidden="true" tabindex="-1"></a><span class="fu">sample_packing_eff_est</span><span class="kw">:</span></span>
+<span id="cb51-182"><a href="#cb51-182" aria-hidden="true" tabindex="-1"></a><span class="fu">total_num_tokens</span><span class="kw">:</span></span>
+<span id="cb51-183"><a href="#cb51-183" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-184"><a href="#cb51-184" aria-hidden="true" tabindex="-1"></a><span class="co"># Passed through to transformers when loading the model when launched without accelerate</span></span>
+<span id="cb51-185"><a href="#cb51-185" aria-hidden="true" tabindex="-1"></a><span class="co"># Use `sequential` when training w/ model parallelism to limit memory</span></span>
+<span id="cb51-186"><a href="#cb51-186" aria-hidden="true" tabindex="-1"></a><span class="fu">device_map</span><span class="kw">:</span></span>
+<span id="cb51-187"><a href="#cb51-187" aria-hidden="true" tabindex="-1"></a><span class="co"># Defines the max memory usage per gpu on the system. Passed through to transformers when loading the model.</span></span>
+<span id="cb51-188"><a href="#cb51-188" aria-hidden="true" tabindex="-1"></a><span class="fu">max_memory</span><span class="kw">:</span></span>
+<span id="cb51-189"><a href="#cb51-189" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-190"><a href="#cb51-190" aria-hidden="true" tabindex="-1"></a><span class="co"># If you want to use 'lora' or 'qlora' or leave blank to train all parameters in original model</span></span>
+<span id="cb51-191"><a href="#cb51-191" aria-hidden="true" tabindex="-1"></a><span class="fu">adapter</span><span class="kw">:</span><span class="at"> lora</span></span>
+<span id="cb51-192"><a href="#cb51-192" aria-hidden="true" tabindex="-1"></a><span class="co"># If you already have a lora model trained that you want to load, put that here.</span></span>
+<span id="cb51-193"><a href="#cb51-193" aria-hidden="true" tabindex="-1"></a><span class="co"># This means after training, if you want to test the model, you should set this to the value of `output_dir`.</span></span>
+<span id="cb51-194"><a href="#cb51-194" aria-hidden="true" tabindex="-1"></a><span class="co"># Note that if you merge an adapter to the base model, a new subdirectory `merged` will be created under the `output_dir`.</span></span>
+<span id="cb51-195"><a href="#cb51-195" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_model_dir</span><span class="kw">:</span></span>
+<span id="cb51-196"><a href="#cb51-196" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-197"><a href="#cb51-197" aria-hidden="true" tabindex="-1"></a><span class="co"># LoRA hyperparameters</span></span>
+<span id="cb51-198"><a href="#cb51-198" aria-hidden="true" tabindex="-1"></a><span class="co"># For more details about the following options, see:</span></span>
+<span id="cb51-199"><a href="#cb51-199" aria-hidden="true" tabindex="-1"></a><span class="co"># https://www.anyscale.com/blog/fine-tuning-llms-lora-or-full-parameter-an-in-depth-analysis-with-llama-2</span></span>
+<span id="cb51-200"><a href="#cb51-200" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_r</span><span class="kw">:</span><span class="at"> </span><span class="dv">8</span></span>
+<span id="cb51-201"><a href="#cb51-201" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_alpha</span><span class="kw">:</span><span class="at"> </span><span class="dv">16</span></span>
+<span id="cb51-202"><a href="#cb51-202" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_dropout</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.05</span></span>
+<span id="cb51-203"><a href="#cb51-203" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_target_modules</span><span class="kw">:</span></span>
+<span id="cb51-204"><a href="#cb51-204" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> q_proj</span></span>
+<span id="cb51-205"><a href="#cb51-205" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> v_proj</span></span>
+<span id="cb51-206"><a href="#cb51-206" aria-hidden="true" tabindex="-1"></a><span class="co">#  - k_proj</span></span>
+<span id="cb51-207"><a href="#cb51-207" aria-hidden="true" tabindex="-1"></a><span class="co">#  - o_proj</span></span>
+<span id="cb51-208"><a href="#cb51-208" aria-hidden="true" tabindex="-1"></a><span class="co">#  - gate_proj</span></span>
+<span id="cb51-209"><a href="#cb51-209" aria-hidden="true" tabindex="-1"></a><span class="co">#  - down_proj</span></span>
+<span id="cb51-210"><a href="#cb51-210" aria-hidden="true" tabindex="-1"></a><span class="co">#  - up_proj</span></span>
+<span id="cb51-211"><a href="#cb51-211" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_target_linear</span><span class="kw">:</span><span class="co"> # If true, will target all linear modules</span></span>
+<span id="cb51-212"><a href="#cb51-212" aria-hidden="true" tabindex="-1"></a><span class="fu">peft_layers_to_transform</span><span class="kw">:</span><span class="co"> # The layer indices to transform, otherwise, apply to all layers</span></span>
+<span id="cb51-213"><a href="#cb51-213" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-214"><a href="#cb51-214" aria-hidden="true" tabindex="-1"></a><span class="co"># If you added new tokens to the tokenizer, you may need to save some LoRA modules because they need to know the new tokens.</span></span>
+<span id="cb51-215"><a href="#cb51-215" aria-hidden="true" tabindex="-1"></a><span class="co"># For LLaMA and Mistral, you need to save `embed_tokens` and `lm_head`. It may vary for other models.</span></span>
+<span id="cb51-216"><a href="#cb51-216" aria-hidden="true" tabindex="-1"></a><span class="co"># `embed_tokens` converts tokens to embeddings, and `lm_head` converts embeddings to token probabilities.</span></span>
+<span id="cb51-217"><a href="#cb51-217" aria-hidden="true" tabindex="-1"></a><span class="co"># https://github.com/huggingface/peft/issues/334#issuecomment-1561727994</span></span>
+<span id="cb51-218"><a href="#cb51-218" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_modules_to_save</span><span class="kw">:</span></span>
+<span id="cb51-219"><a href="#cb51-219" aria-hidden="true" tabindex="-1"></a><span class="co">#  - embed_tokens</span></span>
+<span id="cb51-220"><a href="#cb51-220" aria-hidden="true" tabindex="-1"></a><span class="co">#  - lm_head</span></span>
+<span id="cb51-221"><a href="#cb51-221" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-222"><a href="#cb51-222" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_fan_in_fan_out</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span>
+<span id="cb51-223"><a href="#cb51-223" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-224"><a href="#cb51-224" aria-hidden="true" tabindex="-1"></a><span class="fu">peft</span><span class="kw">:</span></span>
+<span id="cb51-225"><a href="#cb51-225" aria-hidden="true" tabindex="-1"></a><span class="co">  # Configuration options for loftq initialization for LoRA</span></span>
+<span id="cb51-226"><a href="#cb51-226" aria-hidden="true" tabindex="-1"></a><span class="co">  # https://huggingface.co/docs/peft/developer_guides/quantization#loftq-initialization</span></span>
+<span id="cb51-227"><a href="#cb51-227" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">loftq_config</span><span class="kw">:</span></span>
+<span id="cb51-228"><a href="#cb51-228" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">loftq_bits</span><span class="kw">:</span><span class="co">  # typically 4 bits</span></span>
+<span id="cb51-229"><a href="#cb51-229" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-230"><a href="#cb51-230" aria-hidden="true" tabindex="-1"></a><span class="co"># ReLoRA configuration</span></span>
+<span id="cb51-231"><a href="#cb51-231" aria-hidden="true" tabindex="-1"></a><span class="co"># Must use either 'lora' or 'qlora' adapter, and does not support fsdp or deepspeed</span></span>
+<span id="cb51-232"><a href="#cb51-232" aria-hidden="true" tabindex="-1"></a><span class="fu">relora_steps</span><span class="kw">:</span><span class="co"> # Number of steps per ReLoRA restart</span></span>
+<span id="cb51-233"><a href="#cb51-233" aria-hidden="true" tabindex="-1"></a><span class="fu">relora_warmup_steps</span><span class="kw">:</span><span class="co"> # Number of per-restart warmup steps</span></span>
+<span id="cb51-234"><a href="#cb51-234" aria-hidden="true" tabindex="-1"></a><span class="fu">relora_anneal_steps</span><span class="kw">:</span><span class="co"> # Number of anneal steps for each relora cycle</span></span>
+<span id="cb51-235"><a href="#cb51-235" aria-hidden="true" tabindex="-1"></a><span class="fu">relora_prune_ratio</span><span class="kw">:</span><span class="co"> # threshold for optimizer magnitude when pruning</span></span>
+<span id="cb51-236"><a href="#cb51-236" aria-hidden="true" tabindex="-1"></a><span class="fu">relora_cpu_offload</span><span class="kw">:</span><span class="co"> # True to perform lora weight merges on cpu during restarts, for modest gpu memory savings</span></span>
+<span id="cb51-237"><a href="#cb51-237" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-238"><a href="#cb51-238" aria-hidden="true" tabindex="-1"></a><span class="co"># wandb configuration if you're using it</span></span>
+<span id="cb51-239"><a href="#cb51-239" aria-hidden="true" tabindex="-1"></a><span class="co"># Make sure your `WANDB_API_KEY` environment variable is set (recommended) or you login to wandb with `wandb login`.</span></span>
+<span id="cb51-240"><a href="#cb51-240" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_mode</span><span class="kw">:</span><span class="co"> # "offline" to save run metadata locally and not sync to the server, "disabled" to turn off wandb</span></span>
+<span id="cb51-241"><a href="#cb51-241" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_project</span><span class="kw">:</span><span class="co"> # Your wandb project name</span></span>
+<span id="cb51-242"><a href="#cb51-242" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_entity</span><span class="kw">:</span><span class="co"> # A wandb Team name if using a Team</span></span>
+<span id="cb51-243"><a href="#cb51-243" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_watch</span><span class="kw">:</span></span>
+<span id="cb51-244"><a href="#cb51-244" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_name</span><span class="kw">:</span><span class="co"> # Set the name of your wandb run</span></span>
+<span id="cb51-245"><a href="#cb51-245" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_run_id</span><span class="kw">:</span><span class="co"> # Set the ID of your wandb run</span></span>
+<span id="cb51-246"><a href="#cb51-246" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_log_model</span><span class="kw">:</span><span class="co"> # "checkpoint" to log model to wandb Artifacts every `save_steps` or "end" to log only at the end of training</span></span>
+<span id="cb51-247"><a href="#cb51-247" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-248"><a href="#cb51-248" aria-hidden="true" tabindex="-1"></a><span class="co"># mlflow configuration if you're using it</span></span>
+<span id="cb51-249"><a href="#cb51-249" aria-hidden="true" tabindex="-1"></a><span class="fu">mlflow_tracking_uri</span><span class="kw">:</span><span class="co"> # URI to mlflow</span></span>
+<span id="cb51-250"><a href="#cb51-250" aria-hidden="true" tabindex="-1"></a><span class="fu">mlflow_experiment_name</span><span class="kw">:</span><span class="co"> # Your experiment name</span></span>
+<span id="cb51-251"><a href="#cb51-251" aria-hidden="true" tabindex="-1"></a><span class="fu">hf_mlflow_log_artifacts</span><span class="kw">:</span><span class="co">  # set to true to copy each saved checkpoint on each save to mlflow artifact registry</span></span>
+<span id="cb51-252"><a href="#cb51-252" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-253"><a href="#cb51-253" aria-hidden="true" tabindex="-1"></a><span class="co"># Where to save the full-finetuned model to</span></span>
+<span id="cb51-254"><a href="#cb51-254" aria-hidden="true" tabindex="-1"></a><span class="fu">output_dir</span><span class="kw">:</span><span class="at"> ./completed-model</span></span>
+<span id="cb51-255"><a href="#cb51-255" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-256"><a href="#cb51-256" aria-hidden="true" tabindex="-1"></a><span class="co"># Whether to use torch.compile and which backend to use</span></span>
+<span id="cb51-257"><a href="#cb51-257" aria-hidden="true" tabindex="-1"></a><span class="fu">torch_compile</span><span class="kw">:</span><span class="co">  # bool</span></span>
+<span id="cb51-258"><a href="#cb51-258" aria-hidden="true" tabindex="-1"></a><span class="fu">torch_compile_backend</span><span class="kw">:</span><span class="co">  # Optional[str]</span></span>
+<span id="cb51-259"><a href="#cb51-259" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-260"><a href="#cb51-260" aria-hidden="true" tabindex="-1"></a><span class="co"># Training hyperparameters</span></span>
+<span id="cb51-261"><a href="#cb51-261" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-262"><a href="#cb51-262" aria-hidden="true" tabindex="-1"></a><span class="co"># If greater than 1, backpropagation will be skipped and the gradients will be accumulated for the given number of steps.</span></span>
+<span id="cb51-263"><a href="#cb51-263" aria-hidden="true" tabindex="-1"></a><span class="fu">gradient_accumulation_steps</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span></span>
+<span id="cb51-264"><a href="#cb51-264" aria-hidden="true" tabindex="-1"></a><span class="co"># The number of samples to include in each batch. This is the number of samples sent to each GPU.</span></span>
+<span id="cb51-265"><a href="#cb51-265" aria-hidden="true" tabindex="-1"></a><span class="fu">micro_batch_size</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
+<span id="cb51-266"><a href="#cb51-266" aria-hidden="true" tabindex="-1"></a><span class="fu">eval_batch_size</span><span class="kw">:</span></span>
+<span id="cb51-267"><a href="#cb51-267" aria-hidden="true" tabindex="-1"></a><span class="fu">num_epochs</span><span class="kw">:</span><span class="at"> </span><span class="dv">4</span></span>
+<span id="cb51-268"><a href="#cb51-268" aria-hidden="true" tabindex="-1"></a><span class="fu">warmup_steps</span><span class="kw">:</span><span class="at"> </span><span class="dv">100</span><span class="co">  # cannot use with warmup_ratio</span></span>
+<span id="cb51-269"><a href="#cb51-269" aria-hidden="true" tabindex="-1"></a><span class="fu">warmup_ratio</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.05</span><span class="co">  # cannot use with warmup_steps</span></span>
+<span id="cb51-270"><a href="#cb51-270" aria-hidden="true" tabindex="-1"></a><span class="fu">learning_rate</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.00003</span></span>
+<span id="cb51-271"><a href="#cb51-271" aria-hidden="true" tabindex="-1"></a><span class="fu">lr_quadratic_warmup</span><span class="kw">:</span></span>
+<span id="cb51-272"><a href="#cb51-272" aria-hidden="true" tabindex="-1"></a><span class="fu">logging_steps</span><span class="kw">:</span></span>
+<span id="cb51-273"><a href="#cb51-273" aria-hidden="true" tabindex="-1"></a><span class="fu">eval_steps</span><span class="kw">:</span><span class="co"> # Leave empty to eval at each epoch, integers for every N steps. decimal for fraction of total steps</span></span>
+<span id="cb51-274"><a href="#cb51-274" aria-hidden="true" tabindex="-1"></a><span class="fu">evals_per_epoch</span><span class="kw">:</span><span class="co"> # number of times per epoch to run evals, mutually exclusive with eval_steps</span></span>
+<span id="cb51-275"><a href="#cb51-275" aria-hidden="true" tabindex="-1"></a><span class="fu">save_strategy</span><span class="kw">:</span><span class="co"> # Set to `no` to skip checkpoint saves</span></span>
+<span id="cb51-276"><a href="#cb51-276" aria-hidden="true" tabindex="-1"></a><span class="fu">save_steps</span><span class="kw">:</span><span class="co"> # Leave empty to save at each epoch</span></span>
+<span id="cb51-277"><a href="#cb51-277" aria-hidden="true" tabindex="-1"></a><span class="fu">saves_per_epoch</span><span class="kw">:</span><span class="co"> # number of times per epoch to save a checkpoint, mutually exclusive with save_steps</span></span>
+<span id="cb51-278"><a href="#cb51-278" aria-hidden="true" tabindex="-1"></a><span class="fu">save_total_limit</span><span class="kw">:</span><span class="co"> # Checkpoints saved at a time</span></span>
+<span id="cb51-279"><a href="#cb51-279" aria-hidden="true" tabindex="-1"></a><span class="co"># Maximum number of iterations to train for. It precedes num_epochs which means that</span></span>
+<span id="cb51-280"><a href="#cb51-280" aria-hidden="true" tabindex="-1"></a><span class="co"># if both are set, num_epochs will not be guaranteed.</span></span>
+<span id="cb51-281"><a href="#cb51-281" aria-hidden="true" tabindex="-1"></a><span class="co"># e.g., when 1 epoch is 1000 steps =&gt; `num_epochs: 2` and `max_steps: 100` will train for 100 steps</span></span>
+<span id="cb51-282"><a href="#cb51-282" aria-hidden="true" tabindex="-1"></a><span class="fu">max_steps</span><span class="kw">:</span></span>
+<span id="cb51-283"><a href="#cb51-283" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-284"><a href="#cb51-284" aria-hidden="true" tabindex="-1"></a><span class="fu">eval_table_size</span><span class="kw">:</span><span class="co"> # Approximate number of predictions sent to wandb depending on batch size. Enabled above 0. Default is 0</span></span>
+<span id="cb51-285"><a href="#cb51-285" aria-hidden="true" tabindex="-1"></a><span class="fu">eval_max_new_tokens</span><span class="kw">:</span><span class="co"> # Total number of tokens generated for predictions sent to wandb. Default is 128</span></span>
+<span id="cb51-286"><a href="#cb51-286" aria-hidden="true" tabindex="-1"></a><span class="fu">eval_causal_lm_metrics</span><span class="kw">:</span><span class="co"> # HF evaluate metrics used during evaluation. Default is ["sacrebleu", "comet", "ter", chrf]</span></span>
+<span id="cb51-287"><a href="#cb51-287" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-288"><a href="#cb51-288" aria-hidden="true" tabindex="-1"></a><span class="fu">loss_watchdog_threshold</span><span class="kw">:</span><span class="co"> # High loss value, indicating the learning has broken down (a good estimate is ~2 times the loss at the start of training)</span></span>
+<span id="cb51-289"><a href="#cb51-289" aria-hidden="true" tabindex="-1"></a><span class="fu">loss_watchdog_patience</span><span class="kw">:</span><span class="co"> # Number of high-loss steps in a row before the trainer aborts (default: 3)</span></span>
+<span id="cb51-290"><a href="#cb51-290" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-291"><a href="#cb51-291" aria-hidden="true" tabindex="-1"></a><span class="co"># Save model as safetensors (require safetensors package)</span></span>
+<span id="cb51-292"><a href="#cb51-292" aria-hidden="true" tabindex="-1"></a><span class="fu">save_safetensors</span><span class="kw">:</span></span>
+<span id="cb51-293"><a href="#cb51-293" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-294"><a href="#cb51-294" aria-hidden="true" tabindex="-1"></a><span class="co"># Whether to mask out or include the human's prompt from the training labels</span></span>
+<span id="cb51-295"><a href="#cb51-295" aria-hidden="true" tabindex="-1"></a><span class="fu">train_on_inputs</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span>
+<span id="cb51-296"><a href="#cb51-296" aria-hidden="true" tabindex="-1"></a><span class="co"># Group similarly sized data to minimize padding.</span></span>
+<span id="cb51-297"><a href="#cb51-297" aria-hidden="true" tabindex="-1"></a><span class="co"># May be slower to start, as it must download and sort the entire dataset.</span></span>
+<span id="cb51-298"><a href="#cb51-298" aria-hidden="true" tabindex="-1"></a><span class="co"># Note that training loss may have an oscillating pattern with this enabled.</span></span>
+<span id="cb51-299"><a href="#cb51-299" aria-hidden="true" tabindex="-1"></a><span class="fu">group_by_length</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span>
+<span id="cb51-300"><a href="#cb51-300" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-301"><a href="#cb51-301" aria-hidden="true" tabindex="-1"></a><span class="co"># Whether to use gradient checkpointing https://huggingface.co/docs/transformers/v4.18.0/en/performance#gradient-checkpointing</span></span>
+<span id="cb51-302"><a href="#cb51-302" aria-hidden="true" tabindex="-1"></a><span class="fu">gradient_checkpointing</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span>
+<span id="cb51-303"><a href="#cb51-303" aria-hidden="true" tabindex="-1"></a><span class="co"># additional kwargs to pass to the trainer for gradient checkpointing</span></span>
+<span id="cb51-304"><a href="#cb51-304" aria-hidden="true" tabindex="-1"></a><span class="co"># gradient_checkpointing_kwargs:</span></span>
+<span id="cb51-305"><a href="#cb51-305" aria-hidden="true" tabindex="-1"></a><span class="co">#   use_reentrant: true</span></span>
+<span id="cb51-306"><a href="#cb51-306" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-307"><a href="#cb51-307" aria-hidden="true" tabindex="-1"></a><span class="co"># Stop training after this many evaluation losses have increased in a row</span></span>
+<span id="cb51-308"><a href="#cb51-308" aria-hidden="true" tabindex="-1"></a><span class="co"># https://huggingface.co/transformers/v4.2.2/_modules/transformers/trainer_callback.html#EarlyStoppingCallback</span></span>
+<span id="cb51-309"><a href="#cb51-309" aria-hidden="true" tabindex="-1"></a><span class="fu">early_stopping_patience</span><span class="kw">:</span><span class="at"> </span><span class="dv">3</span></span>
+<span id="cb51-310"><a href="#cb51-310" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-311"><a href="#cb51-311" aria-hidden="true" tabindex="-1"></a><span class="co"># Specify a scheduler and kwargs to use with the optimizer</span></span>
+<span id="cb51-312"><a href="#cb51-312" aria-hidden="true" tabindex="-1"></a><span class="fu">lr_scheduler</span><span class="kw">:</span><span class="co"> # 'one_cycle' | 'log_sweep' | empty for cosine</span></span>
+<span id="cb51-313"><a href="#cb51-313" aria-hidden="true" tabindex="-1"></a><span class="fu">lr_scheduler_kwargs</span><span class="kw">:</span></span>
+<span id="cb51-314"><a href="#cb51-314" aria-hidden="true" tabindex="-1"></a><span class="fu">cosine_min_lr_ratio</span><span class="kw">:</span><span class="co"> # decay lr to some percentage of the peak lr, e.g. cosine_min_lr_ratio=0.1 for 10% of peak lr</span></span>
+<span id="cb51-315"><a href="#cb51-315" aria-hidden="true" tabindex="-1"></a><span class="fu">cosine_constant_lr_ratio</span><span class="kw">:</span><span class="co"> # freeze lr at some percentage of the step, e.g. cosine_constant_lr_ratio=0.8 means start cosine_min_lr at 80% of training step (https://arxiv.org/pdf/2308.04014.pdf)</span></span>
+<span id="cb51-316"><a href="#cb51-316" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-317"><a href="#cb51-317" aria-hidden="true" tabindex="-1"></a><span class="co"># For one_cycle optim</span></span>
+<span id="cb51-318"><a href="#cb51-318" aria-hidden="true" tabindex="-1"></a><span class="fu">lr_div_factor</span><span class="kw">:</span><span class="co"> # Learning rate div factor</span></span>
+<span id="cb51-319"><a href="#cb51-319" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-320"><a href="#cb51-320" aria-hidden="true" tabindex="-1"></a><span class="co"># Specify optimizer</span></span>
+<span id="cb51-321"><a href="#cb51-321" aria-hidden="true" tabindex="-1"></a><span class="co"># Valid values are driven by the Transformers OptimizerNames class, see:</span></span>
+<span id="cb51-322"><a href="#cb51-322" aria-hidden="true" tabindex="-1"></a><span class="co"># https://github.com/huggingface/transformers/blob/95b374952dc27d8511541d6f5a4e22c9ec11fb24/src/transformers/training_args.py#L134</span></span>
+<span id="cb51-323"><a href="#cb51-323" aria-hidden="true" tabindex="-1"></a><span class="co">#</span></span>
+<span id="cb51-324"><a href="#cb51-324" aria-hidden="true" tabindex="-1"></a><span class="co"># Note that not all optimizers may be available in your environment, ex: 'adamw_anyprecision' is part of</span></span>
+<span id="cb51-325"><a href="#cb51-325" aria-hidden="true" tabindex="-1"></a><span class="co"># torchdistx, 'adamw_bnb_8bit' is part of bnb.optim.Adam8bit, etc. When in doubt, it is recommended to start with the optimizer used</span></span>
+<span id="cb51-326"><a href="#cb51-326" aria-hidden="true" tabindex="-1"></a><span class="co"># in the examples/ for your model and fine-tuning use case.</span></span>
+<span id="cb51-327"><a href="#cb51-327" aria-hidden="true" tabindex="-1"></a><span class="co">#</span></span>
+<span id="cb51-328"><a href="#cb51-328" aria-hidden="true" tabindex="-1"></a><span class="co"># Valid values for 'optimizer' include:</span></span>
+<span id="cb51-329"><a href="#cb51-329" aria-hidden="true" tabindex="-1"></a><span class="co"># - adamw_hf</span></span>
+<span id="cb51-330"><a href="#cb51-330" aria-hidden="true" tabindex="-1"></a><span class="co"># - adamw_torch</span></span>
+<span id="cb51-331"><a href="#cb51-331" aria-hidden="true" tabindex="-1"></a><span class="co"># - adamw_torch_fused</span></span>
+<span id="cb51-332"><a href="#cb51-332" aria-hidden="true" tabindex="-1"></a><span class="co"># - adamw_torch_xla</span></span>
+<span id="cb51-333"><a href="#cb51-333" aria-hidden="true" tabindex="-1"></a><span class="co"># - adamw_apex_fused</span></span>
+<span id="cb51-334"><a href="#cb51-334" aria-hidden="true" tabindex="-1"></a><span class="co"># - adafactor</span></span>
+<span id="cb51-335"><a href="#cb51-335" aria-hidden="true" tabindex="-1"></a><span class="co"># - adamw_anyprecision</span></span>
+<span id="cb51-336"><a href="#cb51-336" aria-hidden="true" tabindex="-1"></a><span class="co"># - sgd</span></span>
+<span id="cb51-337"><a href="#cb51-337" aria-hidden="true" tabindex="-1"></a><span class="co"># - adagrad</span></span>
+<span id="cb51-338"><a href="#cb51-338" aria-hidden="true" tabindex="-1"></a><span class="co"># - adamw_bnb_8bit</span></span>
+<span id="cb51-339"><a href="#cb51-339" aria-hidden="true" tabindex="-1"></a><span class="co"># - lion_8bit</span></span>
+<span id="cb51-340"><a href="#cb51-340" aria-hidden="true" tabindex="-1"></a><span class="co"># - lion_32bit</span></span>
+<span id="cb51-341"><a href="#cb51-341" aria-hidden="true" tabindex="-1"></a><span class="co"># - paged_adamw_32bit</span></span>
+<span id="cb51-342"><a href="#cb51-342" aria-hidden="true" tabindex="-1"></a><span class="co"># - paged_adamw_8bit</span></span>
+<span id="cb51-343"><a href="#cb51-343" aria-hidden="true" tabindex="-1"></a><span class="co"># - paged_lion_32bit</span></span>
+<span id="cb51-344"><a href="#cb51-344" aria-hidden="true" tabindex="-1"></a><span class="co"># - paged_lion_8bit</span></span>
+<span id="cb51-345"><a href="#cb51-345" aria-hidden="true" tabindex="-1"></a><span class="co"># - galore_adamw</span></span>
+<span id="cb51-346"><a href="#cb51-346" aria-hidden="true" tabindex="-1"></a><span class="co"># - galore_adamw_8bit</span></span>
+<span id="cb51-347"><a href="#cb51-347" aria-hidden="true" tabindex="-1"></a><span class="co"># - galore_adafactor</span></span>
+<span id="cb51-348"><a href="#cb51-348" aria-hidden="true" tabindex="-1"></a><span class="co"># - galore_adamw_layerwise</span></span>
+<span id="cb51-349"><a href="#cb51-349" aria-hidden="true" tabindex="-1"></a><span class="co"># - galore_adamw_8bit_layerwise</span></span>
+<span id="cb51-350"><a href="#cb51-350" aria-hidden="true" tabindex="-1"></a><span class="co"># - galore_adafactor_layerwise</span></span>
+<span id="cb51-351"><a href="#cb51-351" aria-hidden="true" tabindex="-1"></a><span class="fu">optimizer</span><span class="kw">:</span></span>
+<span id="cb51-352"><a href="#cb51-352" aria-hidden="true" tabindex="-1"></a><span class="co"># Dictionary of arguments to pass to the optimizer</span></span>
+<span id="cb51-353"><a href="#cb51-353" aria-hidden="true" tabindex="-1"></a><span class="fu">optim_args</span><span class="kw">:</span></span>
+<span id="cb51-354"><a href="#cb51-354" aria-hidden="true" tabindex="-1"></a><span class="co"># For Galore Optimizers the following optim_args are available</span></span>
+<span id="cb51-355"><a href="#cb51-355" aria-hidden="true" tabindex="-1"></a><span class="co"># rank:  # type: int</span></span>
+<span id="cb51-356"><a href="#cb51-356" aria-hidden="true" tabindex="-1"></a><span class="co"># update_proj_gap  # type: int</span></span>
+<span id="cb51-357"><a href="#cb51-357" aria-hidden="true" tabindex="-1"></a><span class="co"># scale  # type: float</span></span>
+<span id="cb51-358"><a href="#cb51-358" aria-hidden="true" tabindex="-1"></a><span class="co"># proj_type:  # type: str, default = std</span></span>
+<span id="cb51-359"><a href="#cb51-359" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-360"><a href="#cb51-360" aria-hidden="true" tabindex="-1"></a><span class="co"># The target modules to optimize, i.e. the module names that you would like to train, right now this is used only for GaLore algorithm</span></span>
+<span id="cb51-361"><a href="#cb51-361" aria-hidden="true" tabindex="-1"></a><span class="fu">optim_target_modules</span><span class="kw">:</span></span>
+<span id="cb51-362"><a href="#cb51-362" aria-hidden="true" tabindex="-1"></a><span class="co"># - self_attn  # for llama</span></span>
+<span id="cb51-363"><a href="#cb51-363" aria-hidden="true" tabindex="-1"></a><span class="co"># - mlp</span></span>
+<span id="cb51-364"><a href="#cb51-364" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-365"><a href="#cb51-365" aria-hidden="true" tabindex="-1"></a><span class="co"># Specify weight decay</span></span>
+<span id="cb51-366"><a href="#cb51-366" aria-hidden="true" tabindex="-1"></a><span class="fu">weight_decay</span><span class="kw">:</span></span>
+<span id="cb51-367"><a href="#cb51-367" aria-hidden="true" tabindex="-1"></a><span class="co"># adamw hyperparams</span></span>
+<span id="cb51-368"><a href="#cb51-368" aria-hidden="true" tabindex="-1"></a><span class="fu">adam_beta1</span><span class="kw">:</span></span>
+<span id="cb51-369"><a href="#cb51-369" aria-hidden="true" tabindex="-1"></a><span class="fu">adam_beta2</span><span class="kw">:</span></span>
+<span id="cb51-370"><a href="#cb51-370" aria-hidden="true" tabindex="-1"></a><span class="fu">adam_epsilon</span><span class="kw">:</span></span>
+<span id="cb51-371"><a href="#cb51-371" aria-hidden="true" tabindex="-1"></a><span class="co"># Gradient clipping max norm</span></span>
+<span id="cb51-372"><a href="#cb51-372" aria-hidden="true" tabindex="-1"></a><span class="fu">max_grad_norm</span><span class="kw">:</span></span>
+<span id="cb51-373"><a href="#cb51-373" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-374"><a href="#cb51-374" aria-hidden="true" tabindex="-1"></a><span class="co"># Augmentation techniques</span></span>
+<span id="cb51-375"><a href="#cb51-375" aria-hidden="true" tabindex="-1"></a><span class="co"># NEFT https://arxiv.org/abs/2310.05914, set this to a number (paper default is 5) to add noise to embeddings</span></span>
+<span id="cb51-376"><a href="#cb51-376" aria-hidden="true" tabindex="-1"></a><span class="co"># currently only supported on Llama and Mistral</span></span>
+<span id="cb51-377"><a href="#cb51-377" aria-hidden="true" tabindex="-1"></a><span class="fu">neftune_noise_alpha</span><span class="kw">:</span></span>
+<span id="cb51-378"><a href="#cb51-378" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-379"><a href="#cb51-379" aria-hidden="true" tabindex="-1"></a><span class="co"># Whether to bettertransformers</span></span>
+<span id="cb51-380"><a href="#cb51-380" aria-hidden="true" tabindex="-1"></a><span class="fu">flash_optimum</span><span class="kw">:</span></span>
+<span id="cb51-381"><a href="#cb51-381" aria-hidden="true" tabindex="-1"></a><span class="co"># Whether to use xformers attention patch https://github.com/facebookresearch/xformers:</span></span>
+<span id="cb51-382"><a href="#cb51-382" aria-hidden="true" tabindex="-1"></a><span class="fu">xformers_attention</span><span class="kw">:</span></span>
+<span id="cb51-383"><a href="#cb51-383" aria-hidden="true" tabindex="-1"></a><span class="co"># Whether to use flash attention patch https://github.com/Dao-AILab/flash-attention:</span></span>
+<span id="cb51-384"><a href="#cb51-384" aria-hidden="true" tabindex="-1"></a><span class="fu">flash_attention</span><span class="kw">:</span></span>
+<span id="cb51-385"><a href="#cb51-385" aria-hidden="true" tabindex="-1"></a><span class="fu">flash_attn_cross_entropy</span><span class="kw">:</span><span class="co">  # Whether to use flash-attention cross entropy implementation - advanced use only</span></span>
+<span id="cb51-386"><a href="#cb51-386" aria-hidden="true" tabindex="-1"></a><span class="fu">flash_attn_rms_norm</span><span class="kw">:</span><span class="co">  # Whether to use flash-attention rms norm implementation - advanced use only</span></span>
+<span id="cb51-387"><a href="#cb51-387" aria-hidden="true" tabindex="-1"></a><span class="fu">flash_attn_fuse_qkv</span><span class="kw">:</span><span class="co"> # Whether to fuse QKV into a single operation</span></span>
+<span id="cb51-388"><a href="#cb51-388" aria-hidden="true" tabindex="-1"></a><span class="fu">flash_attn_fuse_mlp</span><span class="kw">:</span><span class="co"> # Whether to fuse part of the MLP into a single operation</span></span>
+<span id="cb51-389"><a href="#cb51-389" aria-hidden="true" tabindex="-1"></a><span class="co"># Whether to use scaled-dot-product attention</span></span>
+<span id="cb51-390"><a href="#cb51-390" aria-hidden="true" tabindex="-1"></a><span class="co"># https://pytorch.org/docs/stable/generated/torch.nn.functional.scaled_dot_product_attention.html</span></span>
+<span id="cb51-391"><a href="#cb51-391" aria-hidden="true" tabindex="-1"></a><span class="fu">sdp_attention</span><span class="kw">:</span></span>
+<span id="cb51-392"><a href="#cb51-392" aria-hidden="true" tabindex="-1"></a><span class="co"># Shifted-sparse attention (only llama) - https://arxiv.org/pdf/2309.12307.pdf</span></span>
+<span id="cb51-393"><a href="#cb51-393" aria-hidden="true" tabindex="-1"></a><span class="fu">s2_attention</span><span class="kw">:</span></span>
+<span id="cb51-394"><a href="#cb51-394" aria-hidden="true" tabindex="-1"></a><span class="co"># Resume from a specific checkpoint dir</span></span>
+<span id="cb51-395"><a href="#cb51-395" aria-hidden="true" tabindex="-1"></a><span class="fu">resume_from_checkpoint</span><span class="kw">:</span></span>
+<span id="cb51-396"><a href="#cb51-396" aria-hidden="true" tabindex="-1"></a><span class="co"># If resume_from_checkpoint isn't set and you simply want it to start where it left off.</span></span>
+<span id="cb51-397"><a href="#cb51-397" aria-hidden="true" tabindex="-1"></a><span class="co"># Be careful with this being turned on between different models.</span></span>
+<span id="cb51-398"><a href="#cb51-398" aria-hidden="true" tabindex="-1"></a><span class="fu">auto_resume_from_checkpoints</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span>
+<span id="cb51-399"><a href="#cb51-399" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-400"><a href="#cb51-400" aria-hidden="true" tabindex="-1"></a><span class="co"># Don't mess with this, it's here for accelerate and torchrun</span></span>
+<span id="cb51-401"><a href="#cb51-401" aria-hidden="true" tabindex="-1"></a><span class="fu">local_rank</span><span class="kw">:</span></span>
+<span id="cb51-402"><a href="#cb51-402" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-403"><a href="#cb51-403" aria-hidden="true" tabindex="-1"></a><span class="co"># Add or change special tokens.</span></span>
+<span id="cb51-404"><a href="#cb51-404" aria-hidden="true" tabindex="-1"></a><span class="co"># If you add tokens here, you don't need to add them to the `tokens` list.</span></span>
+<span id="cb51-405"><a href="#cb51-405" aria-hidden="true" tabindex="-1"></a><span class="fu">special_tokens</span><span class="kw">:</span></span>
+<span id="cb51-406"><a href="#cb51-406" aria-hidden="true" tabindex="-1"></a><span class="co">  # bos_token: "&lt;s&gt;"</span></span>
+<span id="cb51-407"><a href="#cb51-407" aria-hidden="true" tabindex="-1"></a><span class="co">  # eos_token: "&lt;/s&gt;"</span></span>
+<span id="cb51-408"><a href="#cb51-408" aria-hidden="true" tabindex="-1"></a><span class="co">  # unk_token: "&lt;unk&gt;"</span></span>
+<span id="cb51-409"><a href="#cb51-409" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-410"><a href="#cb51-410" aria-hidden="true" tabindex="-1"></a><span class="co"># Add extra tokens.</span></span>
+<span id="cb51-411"><a href="#cb51-411" aria-hidden="true" tabindex="-1"></a><span class="fu">tokens</span><span class="kw">:</span></span>
+<span id="cb51-412"><a href="#cb51-412" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-413"><a href="#cb51-413" aria-hidden="true" tabindex="-1"></a><span class="co"># FSDP</span></span>
+<span id="cb51-414"><a href="#cb51-414" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp</span><span class="kw">:</span></span>
+<span id="cb51-415"><a href="#cb51-415" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp_config</span><span class="kw">:</span></span>
+<span id="cb51-416"><a href="#cb51-416" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-417"><a href="#cb51-417" aria-hidden="true" tabindex="-1"></a><span class="co"># Deepspeed config path. e.g., deepspeed_configs/zero3.json</span></span>
+<span id="cb51-418"><a href="#cb51-418" aria-hidden="true" tabindex="-1"></a><span class="fu">deepspeed</span><span class="kw">:</span></span>
+<span id="cb51-419"><a href="#cb51-419" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-420"><a href="#cb51-420" aria-hidden="true" tabindex="-1"></a><span class="co"># Advanced DDP Arguments</span></span>
+<span id="cb51-421"><a href="#cb51-421" aria-hidden="true" tabindex="-1"></a><span class="fu">ddp_timeout</span><span class="kw">:</span></span>
+<span id="cb51-422"><a href="#cb51-422" aria-hidden="true" tabindex="-1"></a><span class="fu">ddp_bucket_cap_mb</span><span class="kw">:</span></span>
+<span id="cb51-423"><a href="#cb51-423" aria-hidden="true" tabindex="-1"></a><span class="fu">ddp_broadcast_buffers</span><span class="kw">:</span></span>
+<span id="cb51-424"><a href="#cb51-424" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-425"><a href="#cb51-425" aria-hidden="true" tabindex="-1"></a><span class="co"># Path to torch distx for optim 'adamw_anyprecision'</span></span>
+<span id="cb51-426"><a href="#cb51-426" aria-hidden="true" tabindex="-1"></a><span class="fu">torchdistx_path</span><span class="kw">:</span></span>
+<span id="cb51-427"><a href="#cb51-427" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-428"><a href="#cb51-428" aria-hidden="true" tabindex="-1"></a><span class="co"># Set to HF dataset for type: 'completion' for streaming instead of pre-tokenize</span></span>
+<span id="cb51-429"><a href="#cb51-429" aria-hidden="true" tabindex="-1"></a><span class="fu">pretraining_dataset</span><span class="kw">:</span></span>
+<span id="cb51-430"><a href="#cb51-430" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-431"><a href="#cb51-431" aria-hidden="true" tabindex="-1"></a><span class="co"># Debug mode</span></span>
+<span id="cb51-432"><a href="#cb51-432" aria-hidden="true" tabindex="-1"></a><span class="fu">debug</span><span class="kw">:</span></span>
+<span id="cb51-433"><a href="#cb51-433" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-434"><a href="#cb51-434" aria-hidden="true" tabindex="-1"></a><span class="co"># Seed</span></span>
+<span id="cb51-435"><a href="#cb51-435" aria-hidden="true" tabindex="-1"></a><span class="fu">seed</span><span class="kw">:</span></span>
+<span id="cb51-436"><a href="#cb51-436" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-437"><a href="#cb51-437" aria-hidden="true" tabindex="-1"></a><span class="co"># Allow overwrite yml config using from cli</span></span>
+<span id="cb51-438"><a href="#cb51-438" aria-hidden="true" tabindex="-1"></a><span class="fu">strict</span><span class="kw">:</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</details>
+<details>
+<summary>
+Understanding of batch size and gradient accumulation steps
+</summary>
+<p><br> Gradient accumulation means accumulating gradients over several mini-batches and updating the model weights afterward. When the samples in each batch are diverse, this technique doesn’t significantly impact learning.</p>
+<p>This method allows for effective training with larger effective batch sizes without needing proportionally larger memory. Here’s why:</p>
+<ol type="1">
+<li><p><strong>Memory Consumption with Batch Size</strong>: The primary reason increasing the batch size impacts memory is due to the storage requirements for intermediate activations. When you forward propagate a batch through a network, you have to store the activations at each layer for each sample in the batch, because these activations are used during backpropagation to compute gradients. Therefore, larger batches mean more activations, leading to greater GPU memory consumption.</p></li>
+<li><p><strong>Gradient Accumulation</strong>: With gradient accumulation, you’re effectively simulating a larger batch size by accumulating gradients over several smaller batches (or micro-batches). However, at any given time, you’re only forward and backward propagating a micro-batch. This means you only store activations for the micro-batch, not the full accumulated batch. As a result, you can simulate the effect of a larger batch size without the memory cost of storing activations for a large batch.</p></li>
+</ol>
+<p><strong>Example 1:</strong> Micro batch size: 3 Gradient accumulation steps: 2 Number of GPUs: 3 Total batch size = 3 * 2 * 3 = 18</p>
+<pre><code>| GPU 1          | GPU 2          | GPU 3          |
+|----------------|----------------|----------------|
+| S1, S2, S3     | S4, S5, S6     | S7, S8, S9     |
+| e1, e2, e3     | e4, e5, e6     | e7, e8, e9     |
+|----------------|----------------|----------------|
+| → (accumulate) | → (accumulate) | → (accumulate) |
+|----------------|----------------|----------------|
+| S10, S11, S12  | S13, S14, S15  | S16, S17, S18  |
+| e10, e11, e12  | e13, e14, e15  | e16, e17, e18  |
+|----------------|----------------|----------------|
+| → (apply)      | → (apply)      | → (apply)      |
+
+Accumulated gradient for the weight w1 after the second iteration (considering all GPUs):
+Total gradient for w1 = e1 + e2 + e3 + e4 + e5 + e6 + e7 + e8 + e9 + e10 + e11 + e12 + e13 + e14 + e15 + e16 + e17 + e18
+
+Weight update for w1:
+w1_new = w1_old - learning rate x (Total gradient for w1 / 18)</code></pre>
+<p><strong>Example 2:</strong> Micro batch size: 2 Gradient accumulation steps: 1 Number of GPUs: 3 Total batch size = 2 * 1 * 3 = 6</p>
+<pre><code>| GPU 1     | GPU 2     | GPU 3     |
+|-----------|-----------|-----------|
+| S1, S2    | S3, S4    | S5, S6    |
+| e1, e2    | e3, e4    | e5, e6    |
+|-----------|-----------|-----------|
+| → (apply) | → (apply) | → (apply) |
+
+Accumulated gradient for the weight w1 (considering all GPUs):
+Total gradient for w1 = e1 + e2 + e3 + e4 + e5 + e6
+
+Weight update for w1:
+w1_new = w1_old - learning rate × (Total gradient for w1 / 6)</code></pre>
+</details>
+</section>
+<section id="train" class="level3">
+<h3 class="anchored" data-anchor-id="train">Train</h3>
+<p>Run</p>
+<div class="sourceCode" id="cb54"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb54-1"><a href="#cb54-1" aria-hidden="true" tabindex="-1"></a><span class="ex">accelerate</span> launch <span class="at">-m</span> axolotl.cli.train your_config.yml</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<blockquote class="blockquote">
+<p>[!TIP] You can also reference a config file that is hosted on a public URL, for example <code>accelerate launch -m axolotl.cli.train https://yourdomain.com/your_config.yml</code></p>
+</blockquote>
+<section id="preprocess-dataset" class="level4">
+<h4 class="anchored" data-anchor-id="preprocess-dataset">Preprocess dataset</h4>
+<p>You can optionally pre-tokenize dataset with the following before finetuning. This is recommended for large datasets.</p>
+<ul>
+<li>Set <code>dataset_prepared_path:</code> to a local folder for saving and loading pre-tokenized dataset.</li>
+<li>(Optional): Set <code>push_dataset_to_hub: hf_user/repo</code> to push it to Huggingface.</li>
+<li>(Optional): Use <code>--debug</code> to see preprocessed examples.</li>
+</ul>
+<div class="sourceCode" id="cb55"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb55-1"><a href="#cb55-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> <span class="at">-m</span> axolotl.cli.preprocess your_config.yml</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</section>
+<section id="multi-gpu" class="level4">
+<h4 class="anchored" data-anchor-id="multi-gpu">Multi-GPU</h4>
+<p>Below are the options available in axolotl for training with multiple GPUs. Note that DeepSpeed is the recommended multi-GPU option currently because FSDP may experience <a href="https://github.com/huggingface/transformers/issues/26498">loss instability</a>.</p>
+<section id="deepspeed" class="level5">
+<h5 class="anchored" data-anchor-id="deepspeed">DeepSpeed</h5>
+<p>Deepspeed is an optimization suite for multi-gpu systems allowing you to train much larger models than you might typically be able to fit into your GPU’s VRAM. More information about the various optimization types for deepspeed is available at https://huggingface.co/docs/accelerate/main/en/usage_guides/deepspeed#what-is-integrated</p>
+<p>We provide several default deepspeed JSON configurations for ZeRO stage 1, 2, and 3.</p>
+<div class="sourceCode" id="cb56"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb56-1"><a href="#cb56-1" aria-hidden="true" tabindex="-1"></a><span class="fu">deepspeed</span><span class="kw">:</span><span class="at"> deepspeed_configs/zero1.json</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<pre class="shell"><code>accelerate launch -m axolotl.cli.train examples/llama-2/config.py --deepspeed deepspeed_configs/zero1.json</code></pre>
+</section>
+<section id="fsdp" class="level5">
+<h5 class="anchored" data-anchor-id="fsdp">FSDP</h5>
+<ul>
+<li>llama FSDP</li>
+</ul>
+<div class="sourceCode" id="cb58"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb58-1"><a href="#cb58-1" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp</span><span class="kw">:</span></span>
+<span id="cb58-2"><a href="#cb58-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> full_shard</span></span>
+<span id="cb58-3"><a href="#cb58-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> auto_wrap</span></span>
+<span id="cb58-4"><a href="#cb58-4" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp_config</span><span class="kw">:</span></span>
+<span id="cb58-5"><a href="#cb58-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fsdp_offload_params</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb58-6"><a href="#cb58-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fsdp_state_dict_type</span><span class="kw">:</span><span class="at"> FULL_STATE_DICT</span></span>
+<span id="cb58-7"><a href="#cb58-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fsdp_transformer_layer_cls_to_wrap</span><span class="kw">:</span><span class="at"> LlamaDecoderLayer</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</section>
+<section id="fsdp-qlora" class="level5">
+<h5 class="anchored" data-anchor-id="fsdp-qlora">FSDP + QLoRA</h5>
+<p>Axolotl supports training with FSDP and QLoRA, see <a href="./docs/fsdp_qlora.html">these docs</a> for more information.</p>
+</section>
+<section id="weights-biases-logging" class="level5">
+<h5 class="anchored" data-anchor-id="weights-biases-logging">Weights &amp; Biases Logging</h5>
+<p>Make sure your <code>WANDB_API_KEY</code> environment variable is set (recommended) or you login to wandb with <code>wandb login</code>.</p>
+<ul>
+<li>wandb options</li>
+</ul>
+<div class="sourceCode" id="cb59"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb59-1"><a href="#cb59-1" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_mode</span><span class="kw">:</span></span>
+<span id="cb59-2"><a href="#cb59-2" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_project</span><span class="kw">:</span></span>
+<span id="cb59-3"><a href="#cb59-3" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_entity</span><span class="kw">:</span></span>
+<span id="cb59-4"><a href="#cb59-4" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_watch</span><span class="kw">:</span></span>
+<span id="cb59-5"><a href="#cb59-5" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_name</span><span class="kw">:</span></span>
+<span id="cb59-6"><a href="#cb59-6" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_log_model</span><span class="kw">:</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</section>
+<section id="special-tokens" class="level5">
+<h5 class="anchored" data-anchor-id="special-tokens">Special Tokens</h5>
+<p>It is important to have special tokens like delimiters, end-of-sequence, beginning-of-sequence in your tokenizer’s vocabulary. This will help you avoid tokenization issues and help your model train better. You can do this in axolotl like this:</p>
+<div class="sourceCode" id="cb60"><pre class="sourceCode yml code-with-copy"><code class="sourceCode yaml"><span id="cb60-1"><a href="#cb60-1" aria-hidden="true" tabindex="-1"></a><span class="fu">special_tokens</span><span class="kw">:</span></span>
+<span id="cb60-2"><a href="#cb60-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">bos_token</span><span class="kw">:</span><span class="at"> </span><span class="st">"&lt;s&gt;"</span></span>
+<span id="cb60-3"><a href="#cb60-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">eos_token</span><span class="kw">:</span><span class="at"> </span><span class="st">"&lt;/s&gt;"</span></span>
+<span id="cb60-4"><a href="#cb60-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">unk_token</span><span class="kw">:</span><span class="at"> </span><span class="st">"&lt;unk&gt;"</span></span>
+<span id="cb60-5"><a href="#cb60-5" aria-hidden="true" tabindex="-1"></a><span class="fu">tokens</span><span class="kw">:</span><span class="co"> # these are delimiters</span></span>
+<span id="cb60-6"><a href="#cb60-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="st">"&lt;|im_start|&gt;"</span></span>
+<span id="cb60-7"><a href="#cb60-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="st">"&lt;|im_end|&gt;"</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>When you include these tokens in your axolotl config, axolotl adds these tokens to the tokenizer’s vocabulary.</p>
+</section>
+</section>
+</section>
+<section id="inference-playground" class="level3">
+<h3 class="anchored" data-anchor-id="inference-playground">Inference Playground</h3>
+<p>Axolotl allows you to load your model in an interactive terminal playground for quick experimentation. The config file is the same config file used for training.</p>
+<p>Pass the appropriate flag to the inference command, depending upon what kind of model was trained:</p>
+<ul>
+<li><p>Pretrained LORA:</p>
+<div class="sourceCode" id="cb61"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb61-1"><a href="#cb61-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> <span class="at">-m</span> axolotl.cli.inference examples/your_config.yml <span class="at">--lora_model_dir</span><span class="op">=</span><span class="st">"./lora-output-dir"</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div></li>
+<li><p>Full weights finetune:</p>
+<div class="sourceCode" id="cb62"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb62-1"><a href="#cb62-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> <span class="at">-m</span> axolotl.cli.inference examples/your_config.yml <span class="at">--base_model</span><span class="op">=</span><span class="st">"./completed-model"</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div></li>
+<li><p>Full weights finetune w/ a prompt from a text file:</p>
+<div class="sourceCode" id="cb63"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb63-1"><a href="#cb63-1" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span> /tmp/prompt.txt <span class="kw">|</span> <span class="ex">python</span> <span class="at">-m</span> axolotl.cli.inference examples/your_config.yml <span class="dt">\</span></span>
+<span id="cb63-2"><a href="#cb63-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">--base_model</span><span class="op">=</span><span class="st">"./completed-model"</span> <span class="at">--prompter</span><span class="op">=</span>None <span class="at">--load_in_8bit</span><span class="op">=</span>True</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>– With gradio hosting</p>
+<div class="sourceCode" id="cb64"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb64-1"><a href="#cb64-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> <span class="at">-m</span> axolotl.cli.inference examples/your_config.yml <span class="at">--gradio</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div></li>
+</ul>
+<p>Please use <code>--sample_packing False</code> if you have it on and receive the error similar to below:</p>
+<blockquote class="blockquote">
+<p>RuntimeError: stack expects each tensor to be equal size, but got [1, 32, 1, 128] at entry 0 and [1, 32, 8, 128] at entry 1</p>
+</blockquote>
+</section>
+<section id="merge-lora-to-base" class="level3">
+<h3 class="anchored" data-anchor-id="merge-lora-to-base">Merge LORA to base</h3>
+<p>The following command will merge your LORA adapater with your base model. You can optionally pass the argument <code>--lora_model_dir</code> to specify the directory where your LORA adapter was saved, otherwhise, this will be inferred from <code>output_dir</code> in your axolotl config file. The merged model is saved in the sub-directory <code>{lora_model_dir}/merged</code>.</p>
+<div class="sourceCode" id="cb65"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb65-1"><a href="#cb65-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python3</span> <span class="at">-m</span> axolotl.cli.merge_lora your_config.yml <span class="at">--lora_model_dir</span><span class="op">=</span><span class="st">"./completed-model"</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>You may need to use the <code>gpu_memory_limit</code> and/or <code>lora_on_cpu</code> config options to avoid running out of memory. If you still run out of CUDA memory, you can try to merge in system RAM with</p>
+<div class="sourceCode" id="cb66"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb66-1"><a href="#cb66-1" aria-hidden="true" tabindex="-1"></a><span class="va">CUDA_VISIBLE_DEVICES</span><span class="op">=</span><span class="st">""</span> <span class="ex">python3</span> <span class="at">-m</span> axolotl.cli.merge_lora ...</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>although this will be very slow, and using the config options above are recommended instead.</p>
+</section>
+</section>
+<section id="common-errors" class="level2">
+<h2 class="anchored" data-anchor-id="common-errors">Common Errors 🧰</h2>
+<p>See also the <a href="./docs/faq.html">FAQ’s</a> and <a href="./docs/debugging.html">debugging guide</a>.</p>
+<blockquote class="blockquote">
+<p>If you encounter a ‘Cuda out of memory’ error, it means your GPU ran out of memory during the training process. Here’s how to resolve it:</p>
+</blockquote>
+<p>Please reduce any below - <code>micro_batch_size</code> - <code>eval_batch_size</code> - <code>gradient_accumulation_steps</code> - <code>sequence_len</code></p>
+<p>If it does not help, try running without deepspeed and without accelerate (replace “accelerate launch” with “python”) in the command.</p>
+<p>Using adamw_bnb_8bit might also save you some memory.</p>
+<blockquote class="blockquote">
+<p><code>failed (exitcode: -9)</code></p>
+</blockquote>
+<p>Usually means your system has run out of system memory. Similarly, you should consider reducing the same settings as when you run out of VRAM. Additionally, look into upgrading your system RAM which should be simpler than GPU upgrades.</p>
+<blockquote class="blockquote">
+<p>RuntimeError: expected scalar type Float but found Half</p>
+</blockquote>
+<p>Try set <code>fp16: true</code></p>
+<blockquote class="blockquote">
+<p>NotImplementedError: No operator found for <code>memory_efficient_attention_forward</code> …</p>
+</blockquote>
+<p>Try to turn off xformers.</p>
+<blockquote class="blockquote">
+<p>accelerate config missing</p>
+</blockquote>
+<p>It’s safe to ignore it.</p>
+<blockquote class="blockquote">
+<p>NCCL Timeouts during training</p>
+</blockquote>
+<p>See the <a href="./docs/nccl.html">NCCL</a> guide.</p>
+<section id="tokenization-mismatch-bw-inference-training" class="level3">
+<h3 class="anchored" data-anchor-id="tokenization-mismatch-bw-inference-training">Tokenization Mismatch b/w Inference &amp; Training</h3>
+<p>For many formats, Axolotl constructs prompts by concatenating token ids <em>after</em> tokenizing strings. The reason for concatenating token ids rather than operating on strings is to maintain precise accounting for attention masks.</p>
+<p>If you decode a prompt constructed by axolotl, you might see spaces between tokens (or lack thereof) that you do not expect, especially around delimiters and special tokens. When you are starting out with a new format, you should always do the following:</p>
+<ol type="1">
+<li>Materialize some data using <code>python -m axolotl.cli.preprocess your_config.yml --debug</code>, and then decode the first few rows with your model’s tokenizer.</li>
+<li>During inference, right before you pass a tensor of token ids to your model, decode these tokens back into a string.</li>
+<li>Make sure the inference string from #2 looks <strong>exactly</strong> like the data you fine tuned on from #1, including spaces and new lines. If they aren’t the same, adjust your inference server accordingly.</li>
+<li>As an additional troubleshooting step, you can look at the token ids between 1 and 2 to make sure they are identical.</li>
+</ol>
+<p>Having misalignment between your prompts during training and inference can cause models to perform very poorly, so it is worth checking this. See <a href="https://hamel.dev/notes/llm/05_tokenizer_gotchas.html">this blog post</a> for a concrete example.</p>
+</section>
+</section>
+<section id="debugging-axolotl" class="level2">
+<h2 class="anchored" data-anchor-id="debugging-axolotl">Debugging Axolotl</h2>
+<p>See <a href="./docs/debugging.html">this debugging guide</a> for tips on debugging Axolotl, along with an example configuration for debugging with VSCode.</p>
+</section>
+<section id="need-help" class="level2">
+<h2 class="anchored" data-anchor-id="need-help">Need help? 🙋</h2>
+<p>Join our <a href="https://discord.gg/HhrNrHJPRb">Discord server</a> where we our community members can help you.</p>
+<p>Need dedicated support? Please contact us at <a href="mailto:wing@openaccessaicollective.org">✉️wing@openaccessaicollective.org</a> for dedicated support options.</p>
+</section>
+<section id="badge" class="level2">
+<h2 class="anchored" data-anchor-id="badge">Badge ❤🏷️</h2>
+<p>Building something cool with Axolotl? Consider adding a badge to your model card.</p>
+<div class="sourceCode" id="cb67"><pre class="sourceCode markdown code-with-copy"><code class="sourceCode markdown"><span id="cb67-1"><a href="#cb67-1" aria-hidden="true" tabindex="-1"></a><span class="co">[</span><span class="ot">&lt;img src="https://raw.githubusercontent.com/OpenAccess-AI-Collective/axolotl/main/image/axolotl-badge-web.png" alt="Built with Axolotl" width="200" height="32"/&gt;</span><span class="co">](https://github.com/OpenAccess-AI-Collective/axolotl)</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p><a href="https://github.com/OpenAccess-AI-Collective/axolotl"><img src="https://raw.githubusercontent.com/OpenAccess-AI-Collective/axolotl/main/image/axolotl-badge-web.png" alt="Built with Axolotl" width="200" height="32"></a></p>
+</section>
+<section id="community-showcase" class="level2">
+<h2 class="anchored" data-anchor-id="community-showcase">Community Showcase</h2>
+<p>Check out some of the projects and models that have been built using Axolotl! Have a model you’d like to add to our Community Showcase? Open a PR with your model.</p>
+<p>Open Access AI Collective - <a href="https://huggingface.co/openaccess-ai-collective/minotaur-13b-fixed">Minotaur 13b</a> - <a href="https://huggingface.co/openaccess-ai-collective/manticore-13b">Manticore 13b</a> - <a href="https://huggingface.co/openaccess-ai-collective/hippogriff-30b-chat">Hippogriff 30b</a></p>
+<p>PocketDoc Labs - <a href="https://huggingface.co/PocketDoc/Dans-PersonalityEngine-13b-LoRA">Dan’s PersonalityEngine 13b LoRA</a></p>
+</section>
+<section id="contributing" class="level2">
+<h2 class="anchored" data-anchor-id="contributing">Contributing 🤝</h2>
+<p>Please read the <a href="./.github/CONTRIBUTING.md">contributing guide</a></p>
+<p>Bugs? Please check the <a href="https://github.com/OpenAccess-AI-Collective/axolotl/issues/bug">open issues</a> else create a new Issue.</p>
+<p>PRs are <strong>greatly welcome</strong>!</p>
+<p>Please run below to setup env</p>
+<div class="sourceCode" id="cb68"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb68-1"><a href="#cb68-1" aria-hidden="true" tabindex="-1"></a><span class="fu">git</span> clone https://github.com/OpenAccess-AI-Collective/axolotl</span>
+<span id="cb68-2"><a href="#cb68-2" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> axolotl</span>
+<span id="cb68-3"><a href="#cb68-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb68-4"><a href="#cb68-4" aria-hidden="true" tabindex="-1"></a><span class="ex">pip3</span> install packaging</span>
+<span id="cb68-5"><a href="#cb68-5" aria-hidden="true" tabindex="-1"></a><span class="ex">pip3</span> install <span class="at">-e</span> <span class="st">'.[flash-attn,deepspeed]'</span></span>
+<span id="cb68-6"><a href="#cb68-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb68-7"><a href="#cb68-7" aria-hidden="true" tabindex="-1"></a><span class="ex">pip3</span> install <span class="at">-r</span> requirements-dev.txt <span class="at">-r</span> requirements-tests.txt</span>
+<span id="cb68-8"><a href="#cb68-8" aria-hidden="true" tabindex="-1"></a><span class="ex">pre-commit</span> install</span>
+<span id="cb68-9"><a href="#cb68-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb68-10"><a href="#cb68-10" aria-hidden="true" tabindex="-1"></a><span class="co"># test</span></span>
+<span id="cb68-11"><a href="#cb68-11" aria-hidden="true" tabindex="-1"></a><span class="ex">pytest</span> tests/</span>
+<span id="cb68-12"><a href="#cb68-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb68-13"><a href="#cb68-13" aria-hidden="true" tabindex="-1"></a><span class="co"># optional: run against all files</span></span>
+<span id="cb68-14"><a href="#cb68-14" aria-hidden="true" tabindex="-1"></a><span class="ex">pre-commit</span> run <span class="at">--all-files</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Thanks to all of our contributors to date. Help drive open source AI progress forward by contributing to Axolotl.</p>
+<p><a href="https://github.com/openaccess-ai-collective/axolotl/graphs/contributors"> <img src="https://contrib.rocks/image?repo=openaccess-ai-collective/axolotl" alt="contributor chart by https://contrib.rocks"> </a></p>
+</section>
+<section id="sponsors" class="level2">
+<h2 class="anchored" data-anchor-id="sponsors">Sponsors 🤝❤</h2>
+<p>OpenAccess AI Collective is run by volunteer contributors such as <a href="https://github.com/winglian">winglian</a>, <a href="https://github.com/NanoCode012">NanoCode012</a>, <a href="https://github.com/tmm1">tmm1</a>, <a href="https://github.com/mhenrichsen">mhenrichsen</a>, <a href="https://github.com/casper-hansen">casper-hansen</a>, <a href="https://github.com/hamelsmu">hamelsmu</a> and many more who help us accelerate forward by fixing bugs, answering community questions and implementing new features. Axolotl needs donations from sponsors for the compute needed to run our unit &amp; integration tests, troubleshooting community issues, and providing bounties. If you love axolotl, consider sponsoring the project via <a href="https://github.com/sponsors/OpenAccess-AI-Collective">GitHub Sponsors</a>, <a href="https://ko-fi.com/axolotl_ai">Ko-fi</a> or reach out directly to <a href="mailto:wing@openaccessaicollective.org">wing@openaccessaicollective.org</a>.</p>
+<hr>
+<section id="diamond-sponsors---contact-directly" class="level4">
+<h4 class="anchored" data-anchor-id="diamond-sponsors---contact-directly">💎 Diamond Sponsors - <a href="mailto:wing@openaccessaicollective.org">Contact directly</a></h4>
+<hr>
+</section>
+<section id="gold-sponsors---5000mo" class="level4">
+<h4 class="anchored" data-anchor-id="gold-sponsors---5000mo">🥇 Gold Sponsors - $5000/mo</h4>
+<hr>
+</section>
+<section id="silver-sponsors---1000mo" class="level4">
+<h4 class="anchored" data-anchor-id="silver-sponsors---1000mo">🥈 Silver Sponsors - $1000/mo</h4>
+<hr>
+</section>
+<section id="bronze-sponsors---500mo" class="level4">
+<h4 class="anchored" data-anchor-id="bronze-sponsors---500mo">🥉 Bronze Sponsors - $500/mo</h4>
+<ul>
+<li><a href="https://jarvislabs.ai">JarvisLabs.ai</a></li>
+</ul>
+<hr>
+
+
+</section>
+</section>
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+window.document.addEventListener("DOMContentLoaded", function (event) {
+  const toggleBodyColorMode = (bsSheetEl) => {
+    const mode = bsSheetEl.getAttribute("data-mode");
+    const bodyEl = window.document.querySelector("body");
+    if (mode === "dark") {
+      bodyEl.classList.add("quarto-dark");
+      bodyEl.classList.remove("quarto-light");
+    } else {
+      bodyEl.classList.add("quarto-light");
+      bodyEl.classList.remove("quarto-dark");
+    }
+  }
+  const toggleBodyColorPrimary = () => {
+    const bsSheetEl = window.document.querySelector("link#quarto-bootstrap");
+    if (bsSheetEl) {
+      toggleBodyColorMode(bsSheetEl);
+    }
+  }
+  toggleBodyColorPrimary();  
+  const icon = "";
+  const anchorJS = new window.AnchorJS();
+  anchorJS.options = {
+    placement: 'right',
+    icon: icon
+  };
+  anchorJS.add('.anchored');
+  const isCodeAnnotation = (el) => {
+    for (const clz of el.classList) {
+      if (clz.startsWith('code-annotation-')) {                     
+        return true;
+      }
+    }
+    return false;
+  }
+  const clipboard = new window.ClipboardJS('.code-copy-button', {
+    text: function(trigger) {
+      const codeEl = trigger.previousElementSibling.cloneNode(true);
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+  });
+  clipboard.on('success', function(e) {
+    // button target
+    const button = e.trigger;
+    // don't keep focus
+    button.blur();
+    // flash "checked"
+    button.classList.add('code-copy-button-checked');
+    var currentTitle = button.getAttribute("title");
+    button.setAttribute("title", "Copied!");
+    let tooltip;
+    if (window.bootstrap) {
+      button.setAttribute("data-bs-toggle", "tooltip");
+      button.setAttribute("data-bs-placement", "left");
+      button.setAttribute("data-bs-title", "Copied!");
+      tooltip = new bootstrap.Tooltip(button, 
+        { trigger: "manual", 
+          customClass: "code-copy-button-tooltip",
+          offset: [0, -8]});
+      tooltip.show();    
+    }
+    setTimeout(function() {
+      if (tooltip) {
+        tooltip.hide();
+        button.removeAttribute("data-bs-title");
+        button.removeAttribute("data-bs-toggle");
+        button.removeAttribute("data-bs-placement");
+      }
+      button.setAttribute("title", currentTitle);
+      button.classList.remove('code-copy-button-checked');
+    }, 1000);
+    // clear code selection
+    e.clearSelection();
+  });
+  function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+    const config = {
+      allowHTML: true,
+      maxWidth: 500,
+      delay: 100,
+      arrow: false,
+      appendTo: function(el) {
+          return el.parentElement;
+      },
+      interactive: true,
+      interactiveBorder: 10,
+      theme: 'quarto',
+      placement: 'bottom-start',
+    };
+    if (contentFn) {
+      config.content = contentFn;
+    }
+    if (onTriggerFn) {
+      config.onTrigger = onTriggerFn;
+    }
+    if (onUntriggerFn) {
+      config.onUntrigger = onUntriggerFn;
+    }
+    window.tippy(el, config); 
+  }
+  const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+  for (var i=0; i<noterefs.length; i++) {
+    const ref = noterefs[i];
+    tippyHover(ref, function() {
+      // use id or data attribute instead here
+      let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+      try { href = new URL(href).hash; } catch {}
+      const id = href.replace(/^#\/?/, "");
+      const note = window.document.getElementById(id);
+      return note.innerHTML;
+    });
+  }
+  const xrefs = window.document.querySelectorAll('a.quarto-xref');
+  const processXRef = (id, note) => {
+    // Strip column container classes
+    const stripColumnClz = (el) => {
+      el.classList.remove("page-full", "page-columns");
+      if (el.children) {
+        for (const child of el.children) {
+          stripColumnClz(child);
+        }
+      }
+    }
+    stripColumnClz(note)
+    if (id === null || id.startsWith('sec-')) {
+      // Special case sections, only their first couple elements
+      const container = document.createElement("div");
+      if (note.children && note.children.length > 2) {
+        container.appendChild(note.children[0].cloneNode(true));
+        for (let i = 1; i < note.children.length; i++) {
+          const child = note.children[i];
+          if (child.tagName === "P" && child.innerText === "") {
+            continue;
+          } else {
+            container.appendChild(child.cloneNode(true));
+            break;
+          }
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(container);
+        }
+        return container.innerHTML
+      } else {
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        return note.innerHTML;
+      }
+    } else {
+      // Remove any anchor links if they are present
+      const anchorLink = note.querySelector('a.anchorjs-link');
+      if (anchorLink) {
+        anchorLink.remove();
+      }
+      if (window.Quarto?.typesetMath) {
+        window.Quarto.typesetMath(note);
+      }
+      return note.innerHTML;
+    }
+  }
+  for (var i=0; i<xrefs.length; i++) {
+    const xref = xrefs[i];
+    tippyHover(xref, undefined, function(instance) {
+      instance.disable();
+      let url = xref.getAttribute('href');
+      let hash = undefined; 
+      if (url.startsWith('#')) {
+        hash = url;
+      } else {
+        try { hash = new URL(url).hash; } catch {}
+      }
+      if (hash) {
+        const id = hash.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note !== null) {
+          try {
+            const html = processXRef(id, note.cloneNode(true));
+            instance.setContent(html);
+          } finally {
+            instance.enable();
+            instance.show();
+          }
+        } else {
+          // See if we can fetch this
+          fetch(url.split('#')[0])
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.getElementById(id);
+            if (note !== null) {
+              const html = processXRef(id, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      } else {
+        // See if we can fetch a full url (with no hash to target)
+        // This is a special case and we should probably do some content thinning / targeting
+        fetch(url)
+        .then(res => res.text())
+        .then(html => {
+          const parser = new DOMParser();
+          const htmlDoc = parser.parseFromString(html, "text/html");
+          const note = htmlDoc.querySelector('main.content');
+          if (note !== null) {
+            // This should only happen for chapter cross references
+            // (since there is no id in the URL)
+            // remove the first header
+            if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+              note.children[0].remove();
+            }
+            const html = processXRef(null, note);
+            instance.setContent(html);
+          } 
+        }).finally(() => {
+          instance.enable();
+          instance.show();
+        });
+      }
+    }, function(instance) {
+    });
+  }
+      let selectedAnnoteEl;
+      const selectorForAnnotation = ( cell, annotation) => {
+        let cellAttr = 'data-code-cell="' + cell + '"';
+        let lineAttr = 'data-code-annotation="' +  annotation + '"';
+        const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+        return selector;
+      }
+      const selectCodeLines = (annoteEl) => {
+        const doc = window.document;
+        const targetCell = annoteEl.getAttribute("data-target-cell");
+        const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+        const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+        const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+        const lineIds = lines.map((line) => {
+          return targetCell + "-" + line;
+        })
+        let top = null;
+        let height = null;
+        let parent = null;
+        if (lineIds.length > 0) {
+            //compute the position of the single el (top and bottom and make a div)
+            const el = window.document.getElementById(lineIds[0]);
+            top = el.offsetTop;
+            height = el.offsetHeight;
+            parent = el.parentElement.parentElement;
+          if (lineIds.length > 1) {
+            const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+            const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+            height = bottom - top;
+          }
+          if (top !== null && height !== null && parent !== null) {
+            // cook up a div (if necessary) and position it 
+            let div = window.document.getElementById("code-annotation-line-highlight");
+            if (div === null) {
+              div = window.document.createElement("div");
+              div.setAttribute("id", "code-annotation-line-highlight");
+              div.style.position = 'absolute';
+              parent.appendChild(div);
+            }
+            div.style.top = top - 2 + "px";
+            div.style.height = height + 4 + "px";
+            div.style.left = 0;
+            let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+            if (gutterDiv === null) {
+              gutterDiv = window.document.createElement("div");
+              gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+              gutterDiv.style.position = 'absolute';
+              const codeCell = window.document.getElementById(targetCell);
+              const gutter = codeCell.querySelector('.code-annotation-gutter');
+              gutter.appendChild(gutterDiv);
+            }
+            gutterDiv.style.top = top - 2 + "px";
+            gutterDiv.style.height = height + 4 + "px";
+          }
+          selectedAnnoteEl = annoteEl;
+        }
+      };
+      const unselectCodeLines = () => {
+        const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+        elementsIds.forEach((elId) => {
+          const div = window.document.getElementById(elId);
+          if (div) {
+            div.remove();
+          }
+        });
+        selectedAnnoteEl = undefined;
+      };
+        // Handle positioning of the toggle
+    window.addEventListener(
+      "resize",
+      throttle(() => {
+        elRect = undefined;
+        if (selectedAnnoteEl) {
+          selectCodeLines(selectedAnnoteEl);
+        }
+      }, 10)
+    );
+    function throttle(fn, ms) {
+    let throttle = false;
+    let timer;
+      return (...args) => {
+        if(!throttle) { // first call gets through
+            fn.apply(this, args);
+            throttle = true;
+        } else { // all the others get throttled
+            if(timer) clearTimeout(timer); // cancel #2
+            timer = setTimeout(() => {
+              fn.apply(this, args);
+              timer = throttle = false;
+            }, ms);
+        }
+      };
+    }
+      // Attach click handler to the DT
+      const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+      for (const annoteDlNode of annoteDls) {
+        annoteDlNode.addEventListener('click', (event) => {
+          const clickedEl = event.target;
+          if (clickedEl !== selectedAnnoteEl) {
+            unselectCodeLines();
+            const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+            if (activeEl) {
+              activeEl.classList.remove('code-annotation-active');
+            }
+            selectCodeLines(clickedEl);
+            clickedEl.classList.add('code-annotation-active');
+          } else {
+            // Unselect the line
+            unselectCodeLines();
+            clickedEl.classList.remove('code-annotation-active');
+          }
+        });
+      }
+  const findCites = (el) => {
+    const parentEl = el.parentElement;
+    if (parentEl) {
+      const cites = parentEl.dataset.cites;
+      if (cites) {
+        return {
+          el,
+          cites: cites.split(' ')
+        };
+      } else {
+        return findCites(el.parentElement)
+      }
+    } else {
+      return undefined;
+    }
+  };
+  var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+  for (var i=0; i<bibliorefs.length; i++) {
+    const ref = bibliorefs[i];
+    const citeInfo = findCites(ref);
+    if (citeInfo) {
+      tippyHover(citeInfo.el, function() {
+        var popup = window.document.createElement('div');
+        citeInfo.cites.forEach(function(cite) {
+          var citeDiv = window.document.createElement('div');
+          citeDiv.classList.add('hanging-indent');
+          citeDiv.classList.add('csl-entry');
+          var biblioDiv = window.document.getElementById('ref-' + cite);
+          if (biblioDiv) {
+            citeDiv.innerHTML = biblioDiv.innerHTML;
+          }
+          popup.appendChild(citeDiv);
+        });
+        return popup.innerHTML;
+      });
+    }
+  }
+});
+</script>
+</div> <!-- /content -->
+
+
+
+
+</body></html>

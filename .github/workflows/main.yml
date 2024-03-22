@@ -1,0 +1,119 @@
+name: ci-cd
+
+on:
+  push:
+    branches:
+      - "main"
+  workflow_dispatch:
+
+jobs:
+  build-axolotl:
+    if: ${{ ! contains(github.event.commits[0].message, '[skip docker]]') && github.repository_owner == 'OpenAccess-AI-Collective' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - cuda: 118
+            cuda_version: 11.8.0
+            python_version: "3.10"
+            pytorch: 2.1.2
+            axolotl_extras:
+            axolotl_args: "--extra-index-url https://download.pytorch.org/whl/cu118"
+            is_latest: true
+          - cuda: 121
+            cuda_version: 12.1.0
+            python_version: "3.10"
+            pytorch: 2.1.2
+            axolotl_extras:
+          - cuda: 121
+            cuda_version: 12.1.0
+            python_version: "3.11"
+            pytorch: 2.1.2
+            axolotl_extras:
+    runs-on: axolotl-gpu-runner
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Docker metadata
+        id: metadata
+        uses: docker/metadata-action@v5
+        with:
+          images: winglian/axolotl
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      # guidance for testing before pushing: https://docs.docker.com/build/ci/github-actions/test-before-push/
+      - name: Build and export to Docker
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          build-args: |
+            BASE_TAG=${{ github.ref_name }}-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}
+            CUDA=${{ matrix.cuda }}
+            PYTORCH_VERSION=${{ matrix.pytorch }}
+            AXOLOTL_ARGS=${{ matrix.axolotl_args }}
+          file: ./docker/Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: |
+            ${{ steps.metadata.outputs.tags }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
+            ${{ (matrix.is_latest) && format('{0}-latest', steps.metadata.outputs.tags) || '' }}
+          labels: ${{ steps.metadata.outputs.labels }}
+
+  build-axolotl-runpod:
+    needs: build-axolotl
+    if: ${{ ! contains(github.event.commits[0].message, '[skip docker]]') && github.repository_owner == 'OpenAccess-AI-Collective' }}
+    # this job needs to be run on self-hosted GPU runners...
+    strategy:
+      matrix:
+        include:
+          - cuda: 118
+            cuda_version: 11.8.0
+            python_version: "3.10"
+            pytorch: 2.1.2
+            axolotl_extras:
+            is_latest: true
+          - cuda: 121
+            cuda_version: 12.1.0
+            python_version: "3.10"
+            pytorch: 2.1.2
+            axolotl_extras:
+          - cuda: 121
+            cuda_version: 12.1.0
+            python_version: "3.11"
+            pytorch: 2.1.2
+            axolotl_extras:
+    runs-on: axolotl-gpu-runner
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Docker metadata
+        id: metadata
+        uses: docker/metadata-action@v5
+        with:
+          images: winglian/axolotl-cloud
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      - name: Build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          build-args: |
+            BASE_TAG=${{ github.ref_name }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
+            CUDA=${{ matrix.cuda }}
+          file: ./docker/Dockerfile-cloud
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: |
+             ${{ steps.metadata.outputs.tags }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
+             winglian/axolotl-runpod:main-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
+             ${{ (matrix.is_latest) && format('{0}-latest', steps.metadata.outputs.tags) || '' }}
+             ${{ (matrix.is_latest) && format('{0}-latest', 'winglian/axolotl-runpod:main') || '' }}
+          labels: ${{ steps.metadata.outputs.labels }}

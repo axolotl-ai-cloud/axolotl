@@ -1,0 +1,1475 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.4.533">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>Axolotl</title>
+<style>
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.5.1/jquery.min.js" integrity="sha512-bLT0Qm9VnAYZDflyKcBaQ2gg0hSYNQrJ8RilYldYQ1FxQYoCLtUjuuRuZo+fjqhx/qtq/1itJ0C2ejDxltZVFg==" crossorigin="anonymous"></script><script src="../../../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../../../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../../../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../../../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../../../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../../../">
+<link href="../../../favicon.jpg" rel="icon" type="image/jpeg">
+<script src="../../../site_libs/quarto-html/quarto.js"></script>
+<script src="../../../site_libs/quarto-html/popper.min.js"></script>
+<script src="../../../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../../../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../../../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../../../site_libs/quarto-html/quarto-syntax-highlighting.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../../../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../../../site_libs/bootstrap/bootstrap.min.css" rel="stylesheet" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" integrity="sha512-c3Nl8+7g4LMSTdrm621y7kf9v3SDPnhxLNhcjFJbKECVnmZHTdo+IRO05sNLTH/D3vA6u1X32ehoLC7WFVdheg==" crossorigin="anonymous"></script>
+
+<script type="application/javascript">define('jquery', [],function() {return window.jQuery;})</script>
+<script src="https://unpkg.com/@jupyter-widgets/html-manager@*/dist/embed-amd.js" crossorigin="anonymous"></script>
+
+
+<link rel="stylesheet" href="../../../styles.css">
+</head>
+
+<body class="nav-sidebar docked nav-fixed">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="../../../index.html">
+    <span class="navbar-title">Axolotl</span>
+    </a>
+  </div>
+        <div class="quarto-navbar-tools tools-wide">
+    <a href="https://twitter.com/axolotl_ai" title="" class="quarto-navigation-tool px-1" aria-label=""><i class="bi bi-twitter"></i></a>
+    <a href="https://github.com/OpenAccess-AI-Collective/axolotl/" title="" class="quarto-navigation-tool px-1" aria-label=""><i class="bi bi-github"></i></a>
+    <a href="https://discord.gg/7m9sfhzaf3" title="" class="quarto-navigation-tool px-1" aria-label=""><i class="bi bi-discord"></i></a>
+</div>
+          <div id="quarto-search" class="" title="Search"></div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"></ol></nav>
+        <a class="flex-grow-1" role="button" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation docked overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Home</span></a>
+  </div>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" aria-expanded="true">
+ <span class="menu-text">How-To Guides</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../docs/debugging.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Debugging</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../docs/multipack.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Multipack (Sample Packing)</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+ <span class="menu-text">docs/fdsp_qlora.qmd</span>
+  </li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../docs/input_output.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Template-free prompt construction</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../docs/rlhf.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">RLHF (Beta)</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../docs/nccl.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">NCCL</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../docs/mac.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Mac M-series</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../docs/multi-node.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Multi Node</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" aria-expanded="true">
+ <span class="menu-text">Reference</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../docs/config.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Config options</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../docs/faq.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">FAQ</span></a>
+  </div>
+</li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+
+
+
+<div id="3fe31229-8f6b-48bc-a86d-af8e5466d11c" class="cell" data-scrolled="true" data-execution_count="1">
+<div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Check if GPU is available I used 4x NVIDIA GeForce RTX 3090 (rented 2.1.2-cuda12.1-cudnn8-devel)</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> torch</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">'GPU available?'</span>, torch.cuda.is_available())</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">'BF16 is supported?'</span>, torch.cuda.is_bf16_supported())</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>GPU available? True
+BF16 is supported? True</code></pre>
+</div>
+</div>
+<div id="1dee845b-f3cb-4b1e-bdd9-1a918eac140b" class="cell" data-execution_count="2">
+<div class="sourceCode cell-code" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="op">!</span>pip install huggingface_hub</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Collecting huggingface_hub
+  Downloading huggingface_hub-0.20.1-py3-none-any.whl.metadata (12 kB)
+Requirement already satisfied: filelock in /opt/conda/lib/python3.10/site-packages (from huggingface_hub) (3.9.0)
+Requirement already satisfied: fsspec&gt;=2023.5.0 in /opt/conda/lib/python3.10/site-packages (from huggingface_hub) (2023.10.0)
+Requirement already satisfied: requests in /opt/conda/lib/python3.10/site-packages (from huggingface_hub) (2.31.0)
+Requirement already satisfied: tqdm&gt;=4.42.1 in /opt/conda/lib/python3.10/site-packages (from huggingface_hub) (4.65.0)
+Requirement already satisfied: pyyaml&gt;=5.1 in /opt/conda/lib/python3.10/site-packages (from huggingface_hub) (6.0.1)
+Requirement already satisfied: typing-extensions&gt;=3.7.4.3 in /opt/conda/lib/python3.10/site-packages (from huggingface_hub) (4.7.1)
+Requirement already satisfied: packaging&gt;=20.9 in /opt/conda/lib/python3.10/site-packages (from huggingface_hub) (23.1)
+Requirement already satisfied: charset-normalizer&lt;4,&gt;=2 in /opt/conda/lib/python3.10/site-packages (from requests-&gt;huggingface_hub) (2.0.4)
+Requirement already satisfied: idna&lt;4,&gt;=2.5 in /opt/conda/lib/python3.10/site-packages (from requests-&gt;huggingface_hub) (3.4)
+Requirement already satisfied: urllib3&lt;3,&gt;=1.21.1 in /opt/conda/lib/python3.10/site-packages (from requests-&gt;huggingface_hub) (1.26.18)
+Requirement already satisfied: certifi&gt;=2017.4.17 in /opt/conda/lib/python3.10/site-packages (from requests-&gt;huggingface_hub) (2023.7.22)
+Downloading huggingface_hub-0.20.1-py3-none-any.whl (330 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 330.1/330.1 kB 8.8 MB/s eta 0:00:00:00:01
+Installing collected packages: huggingface_hub
+Successfully installed huggingface_hub-0.20.1
+WARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv</code></pre>
+</div>
+</div>
+<div id="88731672-9050-4034-8266-11aaace2a44e" class="cell" data-execution_count="4">
+<div class="sourceCode cell-code" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> huggingface_hub <span class="im">import</span> notebook_login</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+<div id="6b5aa7d7-3b18-4c14-afd4-043c2c545259" class="cell" data-execution_count="5">
+<div class="sourceCode cell-code" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="co">#Login to huggingface so you can push the model to hub later</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> sys</span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>stdout <span class="op">=</span> sys.stdout</span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>notebook_login()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-display">
+<script type="application/vnd.jupyter.widget-view+json">
+{"model_id":"60df98d7b0294289aad8b6c8cd023c3b","version_major":2,"version_minor":0,"quarto_mimetype":"application/vnd.jupyter.widget-view+json"}
+</script>
+</div>
+</div>
+<div id="b74d0635-5033-4494-b7bd-ff6822103d93" class="cell" data-execution_count="6">
+<div class="sourceCode cell-code" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="co">#I noticed that when you use notebook_login() nothing gets printed after so we use sys </span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>sys.stdout <span class="op">=</span> stdout</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+<div id="e3c3b088-45e7-484b-ae39-66beabc48da8" class="cell" data-execution_count="7">
+<div class="sourceCode cell-code" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="co">#axolotl</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="op">!</span>git clone <span class="op">-</span>b main <span class="op">--</span>depth <span class="dv">1</span> https:<span class="op">//</span>github.com<span class="op">/</span>OpenAccess<span class="op">-</span>AI<span class="op">-</span>Collective<span class="op">/</span>axolotl</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Cloning into 'axolotl'...
+remote: Enumerating objects: 235, done.
+remote: Counting objects: 100% (235/235), done.
+remote: Compressing objects: 100% (207/207), done.
+remote: Total 235 (delta 48), reused 123 (delta 13), pack-reused 0
+Receiving objects: 100% (235/235), 1.46 MiB | 11.65 MiB/s, done.
+Resolving deltas: 100% (48/48), done.</code></pre>
+</div>
+</div>
+<div id="66927751-4fd6-4477-97fc-6ab08c9d9a74" class="cell" data-execution_count="8">
+<div class="sourceCode cell-code" id="cb10"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>cd axolotl</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>/axolotl</code></pre>
+</div>
+</div>
+<div id="fcccf8da-353b-4d70-8f55-5cfe08c7e6b9" class="cell" data-execution_count="9">
+<div class="sourceCode cell-code" id="cb12"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="co">#instaling what is needed inside axolotl file</span></span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a><span class="op">!</span>pip install packaging</span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a><span class="op">!</span>pip install <span class="op">-</span>e <span class="st">'.[flash-attn,deepspeed]'</span></span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a><span class="op">!</span>pip install <span class="op">-</span>U git<span class="op">+</span>https:<span class="op">//</span>github.com<span class="op">/</span>huggingface<span class="op">/</span>peft.git</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Requirement already satisfied: packaging in /opt/conda/lib/python3.10/site-packages (23.1)
+WARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv
+Obtaining file:///axolotl
+  Preparing metadata (setup.py) ... done
+Collecting auto-gptq==0.5.1
+  Downloading auto_gptq-0.5.1-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (20 kB)
+Requirement already satisfied: packaging in /opt/conda/lib/python3.10/site-packages (23.1)
+Collecting peft==0.6.0
+  Downloading peft-0.6.0-py3-none-any.whl.metadata (23 kB)
+Collecting transformers==4.36.2
+  Downloading transformers-4.36.2-py3-none-any.whl.metadata (126 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 126.8/126.8 kB 9.1 MB/s eta 0:00:00
+Collecting tokenizers==0.15.0
+  Downloading tokenizers-0.15.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (6.7 kB)
+Collecting bitsandbytes&gt;=0.41.1
+  Downloading bitsandbytes-0.41.3.post2-py3-none-any.whl.metadata (9.8 kB)
+Collecting accelerate==0.24.1
+  Downloading accelerate-0.24.1-py3-none-any.whl.metadata (18 kB)
+Collecting addict
+  Downloading addict-2.4.0-py3-none-any.whl (3.8 kB)
+Collecting fire
+  Downloading fire-0.5.0.tar.gz (88 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 88.3/88.3 kB 28.4 MB/s eta 0:00:00
+  Preparing metadata (setup.py) ... done
+Requirement already satisfied: PyYAML&gt;=6.0 in /opt/conda/lib/python3.10/site-packages (6.0.1)
+Collecting datasets&gt;=2.15.0
+  Downloading datasets-2.16.0-py3-none-any.whl.metadata (20 kB)
+Collecting sentencepiece
+  Downloading sentencepiece-0.1.99-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (1.3 MB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.3/1.3 MB 47.9 MB/s eta 0:00:00
+Collecting wandb
+  Downloading wandb-0.16.1-py3-none-any.whl.metadata (9.8 kB)
+Collecting einops
+  Downloading einops-0.7.0-py3-none-any.whl.metadata (13 kB)
+Collecting optimum==1.13.2
+  Downloading optimum-1.13.2.tar.gz (300 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 301.0/301.0 kB 72.3 MB/s eta 0:00:00
+  Installing build dependencies ... done
+  Getting requirements to build wheel ... done
+  Preparing metadata (pyproject.toml) ... done
+Collecting hf_transfer
+  Downloading hf_transfer-0.1.4-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (1.5 kB)
+Collecting colorama
+  Downloading colorama-0.4.6-py2.py3-none-any.whl (25 kB)
+Collecting numba
+  Downloading numba-0.58.1-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (2.7 kB)
+Requirement already satisfied: numpy&gt;=1.24.4 in /opt/conda/lib/python3.10/site-packages (1.26.0)
+Collecting bert-score==0.3.13
+  Downloading bert_score-0.3.13-py3-none-any.whl (61 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 61.1/61.1 kB 20.1 MB/s eta 0:00:00
+Collecting evaluate==0.4.0
+  Downloading evaluate-0.4.0-py3-none-any.whl (81 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 81.4/81.4 kB 26.0 MB/s eta 0:00:00
+Collecting rouge-score==0.1.2
+  Downloading rouge_score-0.1.2.tar.gz (17 kB)
+  Preparing metadata (setup.py) ... done
+Collecting scipy
+  Downloading scipy-1.11.4-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (60 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 60.4/60.4 kB 17.3 MB/s eta 0:00:00
+Collecting scikit-learn==1.2.2
+  Downloading scikit_learn-1.2.2-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (9.6 MB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 9.6/9.6 MB 83.2 MB/s eta 0:00:0000:0100:01m
+Collecting pynvml
+  Downloading pynvml-11.5.0-py3-none-any.whl (53 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 53.1/53.1 kB 13.6 MB/s eta 0:00:00
+Collecting art
+  Downloading art-6.1-py3-none-any.whl.metadata (69 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 69.9/69.9 kB 21.5 MB/s eta 0:00:00
+Collecting fschat==0.2.34
+  Downloading fschat-0.2.34-py3-none-any.whl.metadata (20 kB)
+Collecting gradio==3.50.2
+  Downloading gradio-3.50.2-py3-none-any.whl.metadata (17 kB)
+Collecting tensorboard
+  Downloading tensorboard-2.15.1-py3-none-any.whl.metadata (1.7 kB)
+Collecting s3fs
+  Downloading s3fs-2023.12.2-py3-none-any.whl.metadata (1.6 kB)
+Collecting gcsfs
+  Downloading gcsfs-2023.12.2.post1-py2.py3-none-any.whl.metadata (1.6 kB)
+Collecting xformers==0.0.23
+  Downloading xformers-0.0.23-cp310-cp310-manylinux2014_x86_64.whl.metadata (1.0 kB)
+Collecting deepspeed
+  Downloading deepspeed-0.12.6.tar.gz (1.2 MB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.2/1.2 MB 109.7 MB/s eta 0:00:00
+  Preparing metadata (setup.py) ... done
+Collecting flash-attn==2.3.3
+  Downloading flash_attn-2.3.3.tar.gz (2.3 MB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2.3/2.3 MB 111.5 MB/s eta 0:00:00
+  Preparing metadata (setup.py) ... done
+Requirement already satisfied: psutil in /opt/conda/lib/python3.10/site-packages (from accelerate==0.24.1) (5.9.0)
+Requirement already satisfied: torch&gt;=1.10.0 in /opt/conda/lib/python3.10/site-packages (from accelerate==0.24.1) (2.1.1)
+Requirement already satisfied: huggingface-hub in /opt/conda/lib/python3.10/site-packages (from accelerate==0.24.1) (0.20.1)
+Collecting rouge (from auto-gptq==0.5.1)
+  Downloading rouge-1.0.1-py3-none-any.whl (13 kB)
+Collecting gekko (from auto-gptq==0.5.1)
+  Downloading gekko-1.0.6-py3-none-any.whl (12.2 MB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 12.2/12.2 MB 77.9 MB/s eta 0:00:0000:010:01
+Collecting safetensors (from auto-gptq==0.5.1)
+  Downloading safetensors-0.4.1-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (3.8 kB)
+Requirement already satisfied: tqdm in /opt/conda/lib/python3.10/site-packages (from auto-gptq==0.5.1) (4.65.0)
+Collecting pandas&gt;=1.0.1 (from bert-score==0.3.13)
+  Downloading pandas-2.1.4-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (18 kB)
+Requirement already satisfied: requests in /opt/conda/lib/python3.10/site-packages (from bert-score==0.3.13) (2.31.0)
+Collecting matplotlib (from bert-score==0.3.13)
+  Downloading matplotlib-3.8.2-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (5.8 kB)
+Collecting dill (from evaluate==0.4.0)
+  Downloading dill-0.3.7-py3-none-any.whl.metadata (9.9 kB)
+Collecting xxhash (from evaluate==0.4.0)
+  Downloading xxhash-3.4.1-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (12 kB)
+Collecting multiprocess (from evaluate==0.4.0)
+  Downloading multiprocess-0.70.15-py310-none-any.whl.metadata (7.2 kB)
+Requirement already satisfied: fsspec&gt;=2021.05.0 in /opt/conda/lib/python3.10/site-packages (from fsspec[http]&gt;=2021.05.0-&gt;evaluate==0.4.0) (2023.10.0)
+Collecting responses&lt;0.19 (from evaluate==0.4.0)
+  Downloading responses-0.18.0-py3-none-any.whl (38 kB)
+Collecting ninja (from flash-attn==2.3.3)
+  Downloading ninja-1.11.1.1-py2.py3-none-manylinux1_x86_64.manylinux_2_5_x86_64.whl.metadata (5.3 kB)
+Collecting aiohttp (from fschat==0.2.34)
+  Downloading aiohttp-3.9.1-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (7.4 kB)
+Collecting fastapi (from fschat==0.2.34)
+  Downloading fastapi-0.108.0-py3-none-any.whl.metadata (24 kB)
+Collecting httpx (from fschat==0.2.34)
+  Downloading httpx-0.26.0-py3-none-any.whl.metadata (7.6 kB)
+Collecting markdown2[all] (from fschat==0.2.34)
+  Downloading markdown2-2.4.12-py2.py3-none-any.whl.metadata (2.0 kB)
+Collecting nh3 (from fschat==0.2.34)
+  Downloading nh3-0.2.15-cp37-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (1.7 kB)
+Requirement already satisfied: prompt-toolkit&gt;=3.0.0 in /opt/conda/lib/python3.10/site-packages (from fschat==0.2.34) (3.0.36)
+Collecting pydantic&lt;2,&gt;=1 (from fschat==0.2.34)
+  Downloading pydantic-1.10.13-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (149 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 149.6/149.6 kB 42.3 MB/s eta 0:00:00
+Collecting rich&gt;=10.0.0 (from fschat==0.2.34)
+  Downloading rich-13.7.0-py3-none-any.whl.metadata (18 kB)
+Collecting shortuuid (from fschat==0.2.34)
+  Downloading shortuuid-1.0.11-py3-none-any.whl (10 kB)
+Collecting tiktoken (from fschat==0.2.34)
+  Downloading tiktoken-0.5.2-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (6.6 kB)
+Collecting uvicorn (from fschat==0.2.34)
+  Downloading uvicorn-0.25.0-py3-none-any.whl.metadata (6.4 kB)
+Collecting aiofiles&lt;24.0,&gt;=22.0 (from gradio==3.50.2)
+  Downloading aiofiles-23.2.1-py3-none-any.whl.metadata (9.7 kB)
+Collecting altair&lt;6.0,&gt;=4.2.0 (from gradio==3.50.2)
+  Downloading altair-5.2.0-py3-none-any.whl.metadata (8.7 kB)
+Collecting ffmpy (from gradio==3.50.2)
+  Downloading ffmpy-0.3.1.tar.gz (5.5 kB)
+  Preparing metadata (setup.py) ... done
+Collecting gradio-client==0.6.1 (from gradio==3.50.2)
+  Downloading gradio_client-0.6.1-py3-none-any.whl.metadata (7.1 kB)
+Collecting importlib-resources&lt;7.0,&gt;=1.3 (from gradio==3.50.2)
+  Downloading importlib_resources-6.1.1-py3-none-any.whl.metadata (4.1 kB)
+Requirement already satisfied: jinja2&lt;4.0 in /opt/conda/lib/python3.10/site-packages (from gradio==3.50.2) (3.1.2)
+Requirement already satisfied: markupsafe~=2.0 in /opt/conda/lib/python3.10/site-packages (from gradio==3.50.2) (2.1.1)
+Collecting orjson~=3.0 (from gradio==3.50.2)
+  Downloading orjson-3.9.10-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (49 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 49.3/49.3 kB 14.0 MB/s eta 0:00:00
+Requirement already satisfied: pillow&lt;11.0,&gt;=8.0 in /opt/conda/lib/python3.10/site-packages (from gradio==3.50.2) (10.0.1)
+Collecting pydub (from gradio==3.50.2)
+  Downloading pydub-0.25.1-py2.py3-none-any.whl (32 kB)
+Collecting python-multipart (from gradio==3.50.2)
+  Downloading python_multipart-0.0.6-py3-none-any.whl (45 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 45.7/45.7 kB 13.5 MB/s eta 0:00:00
+Collecting semantic-version~=2.0 (from gradio==3.50.2)
+  Downloading semantic_version-2.10.0-py2.py3-none-any.whl (15 kB)
+Requirement already satisfied: typing-extensions~=4.0 in /opt/conda/lib/python3.10/site-packages (from gradio==3.50.2) (4.7.1)
+Collecting websockets&lt;12.0,&gt;=10.0 (from gradio==3.50.2)
+  Downloading websockets-11.0.3-cp310-cp310-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl (129 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 129.9/129.9 kB 30.8 MB/s eta 0:00:00
+Collecting coloredlogs (from optimum==1.13.2)
+  Downloading coloredlogs-15.0.1-py2.py3-none-any.whl (46 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 46.0/46.0 kB 11.6 MB/s eta 0:00:00
+Requirement already satisfied: sympy in /opt/conda/lib/python3.10/site-packages (from optimum==1.13.2) (1.11.1)
+Collecting absl-py (from rouge-score==0.1.2)
+  Downloading absl_py-2.0.0-py3-none-any.whl.metadata (2.3 kB)
+Collecting nltk (from rouge-score==0.1.2)
+  Downloading nltk-3.8.1-py3-none-any.whl (1.5 MB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.5/1.5 MB 90.4 MB/s eta 0:00:00
+Requirement already satisfied: six&gt;=1.14.0 in /opt/conda/lib/python3.10/site-packages (from rouge-score==0.1.2) (1.16.0)
+Collecting joblib&gt;=1.1.1 (from scikit-learn==1.2.2)
+  Downloading joblib-1.3.2-py3-none-any.whl.metadata (5.4 kB)
+Collecting threadpoolctl&gt;=2.0.0 (from scikit-learn==1.2.2)
+  Downloading threadpoolctl-3.2.0-py3-none-any.whl.metadata (10.0 kB)
+Requirement already satisfied: filelock in /opt/conda/lib/python3.10/site-packages (from transformers==4.36.2) (3.9.0)
+Collecting regex!=2019.12.17 (from transformers==4.36.2)
+  Downloading regex-2023.12.25-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (40 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 40.9/40.9 kB 12.0 MB/s eta 0:00:00
+Requirement already satisfied: networkx in /opt/conda/lib/python3.10/site-packages (from torch&gt;=1.10.0-&gt;accelerate==0.24.1) (3.1)
+Collecting pyarrow&gt;=8.0.0 (from datasets&gt;=2.15.0)
+  Downloading pyarrow-14.0.2-cp310-cp310-manylinux_2_28_x86_64.whl.metadata (3.0 kB)
+Collecting pyarrow-hotfix (from datasets&gt;=2.15.0)
+  Downloading pyarrow_hotfix-0.6-py3-none-any.whl.metadata (3.6 kB)
+Collecting hjson (from deepspeed)
+  Downloading hjson-3.1.0-py3-none-any.whl (54 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 54.0/54.0 kB 19.4 MB/s eta 0:00:00
+Collecting py-cpuinfo (from deepspeed)
+  Downloading py_cpuinfo-9.0.0-py3-none-any.whl (22 kB)
+Collecting termcolor (from fire)
+  Downloading termcolor-2.4.0-py3-none-any.whl.metadata (6.1 kB)
+Requirement already satisfied: decorator&gt;4.1.2 in /opt/conda/lib/python3.10/site-packages (from gcsfs) (5.1.1)
+INFO: pip is looking at multiple versions of gcsfs to determine which version is compatible with other requirements. This could take a while.
+Collecting gcsfs
+  Downloading gcsfs-2023.12.1-py2.py3-none-any.whl.metadata (1.6 kB)
+  Downloading gcsfs-2023.12.0-py2.py3-none-any.whl.metadata (1.6 kB)
+  Downloading gcsfs-2023.10.0-py2.py3-none-any.whl.metadata (1.6 kB)
+Collecting google-auth&gt;=1.2 (from gcsfs)
+  Downloading google_auth-2.25.2-py2.py3-none-any.whl.metadata (4.7 kB)
+Collecting google-auth-oauthlib (from gcsfs)
+  Downloading google_auth_oauthlib-1.2.0-py2.py3-none-any.whl.metadata (2.7 kB)
+Collecting google-cloud-storage (from gcsfs)
+  Downloading google_cloud_storage-2.14.0-py2.py3-none-any.whl.metadata (6.1 kB)
+Collecting llvmlite&lt;0.42,&gt;=0.41.0dev0 (from numba)
+  Downloading llvmlite-0.41.1-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (4.8 kB)
+Collecting aiobotocore&lt;3.0.0,&gt;=2.5.4 (from s3fs)
+  Downloading aiobotocore-2.9.0-py3-none-any.whl.metadata (20 kB)
+INFO: pip is looking at multiple versions of s3fs to determine which version is compatible with other requirements. This could take a while.
+Collecting s3fs
+  Downloading s3fs-2023.12.1-py3-none-any.whl.metadata (1.6 kB)
+  Downloading s3fs-2023.10.0-py3-none-any.whl.metadata (1.6 kB)
+Collecting aiobotocore~=2.7.0 (from s3fs)
+  Downloading aiobotocore-2.7.0-py3-none-any.whl.metadata (20 kB)
+Collecting grpcio&gt;=1.48.2 (from tensorboard)
+  Downloading grpcio-1.60.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (4.0 kB)
+Collecting markdown&gt;=2.6.8 (from tensorboard)
+  Downloading Markdown-3.5.1-py3-none-any.whl.metadata (7.1 kB)
+Collecting protobuf&lt;4.24,&gt;=3.19.6 (from tensorboard)
+  Downloading protobuf-4.23.4-cp37-abi3-manylinux2014_x86_64.whl.metadata (540 bytes)
+Requirement already satisfied: setuptools&gt;=41.0.0 in /opt/conda/lib/python3.10/site-packages (from tensorboard) (68.0.0)
+Collecting tensorboard-data-server&lt;0.8.0,&gt;=0.7.0 (from tensorboard)
+  Downloading tensorboard_data_server-0.7.2-py3-none-manylinux_2_31_x86_64.whl.metadata (1.1 kB)
+Collecting werkzeug&gt;=1.0.1 (from tensorboard)
+  Downloading werkzeug-3.0.1-py3-none-any.whl.metadata (4.1 kB)
+Requirement already satisfied: Click!=8.0.0,&gt;=7.1 in /opt/conda/lib/python3.10/site-packages (from wandb) (8.1.7)
+Collecting GitPython!=3.1.29,&gt;=1.0.0 (from wandb)
+  Downloading GitPython-3.1.40-py3-none-any.whl.metadata (12 kB)
+Collecting sentry-sdk&gt;=1.0.0 (from wandb)
+  Downloading sentry_sdk-1.39.1-py2.py3-none-any.whl.metadata (9.7 kB)
+Collecting docker-pycreds&gt;=0.4.0 (from wandb)
+  Downloading docker_pycreds-0.4.0-py2.py3-none-any.whl (9.0 kB)
+Collecting setproctitle (from wandb)
+  Downloading setproctitle-1.3.3-cp310-cp310-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (9.9 kB)
+Collecting appdirs&gt;=1.4.3 (from wandb)
+  Downloading appdirs-1.4.4-py2.py3-none-any.whl (9.6 kB)
+Collecting botocore&lt;1.31.65,&gt;=1.31.16 (from aiobotocore~=2.7.0-&gt;s3fs)
+  Downloading botocore-1.31.64-py3-none-any.whl.metadata (6.1 kB)
+Collecting wrapt&lt;2.0.0,&gt;=1.10.10 (from aiobotocore~=2.7.0-&gt;s3fs)
+  Downloading wrapt-1.16.0-cp310-cp310-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (6.6 kB)
+Collecting aioitertools&lt;1.0.0,&gt;=0.5.1 (from aiobotocore~=2.7.0-&gt;s3fs)
+  Downloading aioitertools-0.11.0-py3-none-any.whl (23 kB)
+Requirement already satisfied: attrs&gt;=17.3.0 in /opt/conda/lib/python3.10/site-packages (from aiohttp-&gt;fschat==0.2.34) (23.1.0)
+Collecting multidict&lt;7.0,&gt;=4.5 (from aiohttp-&gt;fschat==0.2.34)
+  Downloading multidict-6.0.4-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (114 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 114.5/114.5 kB 37.1 MB/s eta 0:00:00
+Collecting yarl&lt;2.0,&gt;=1.0 (from aiohttp-&gt;fschat==0.2.34)
+  Downloading yarl-1.9.4-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (31 kB)
+Collecting frozenlist&gt;=1.1.1 (from aiohttp-&gt;fschat==0.2.34)
+  Downloading frozenlist-1.4.1-cp310-cp310-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (12 kB)
+Collecting aiosignal&gt;=1.1.2 (from aiohttp-&gt;fschat==0.2.34)
+  Downloading aiosignal-1.3.1-py3-none-any.whl (7.6 kB)
+Collecting async-timeout&lt;5.0,&gt;=4.0 (from aiohttp-&gt;fschat==0.2.34)
+  Downloading async_timeout-4.0.3-py3-none-any.whl.metadata (4.2 kB)
+Requirement already satisfied: jsonschema&gt;=3.0 in /opt/conda/lib/python3.10/site-packages (from altair&lt;6.0,&gt;=4.2.0-&gt;gradio==3.50.2) (4.20.0)
+Requirement already satisfied: toolz in /opt/conda/lib/python3.10/site-packages (from altair&lt;6.0,&gt;=4.2.0-&gt;gradio==3.50.2) (0.12.0)
+Collecting gitdb&lt;5,&gt;=4.0.1 (from GitPython!=3.1.29,&gt;=1.0.0-&gt;wandb)
+  Downloading gitdb-4.0.11-py3-none-any.whl.metadata (1.2 kB)
+Collecting cachetools&lt;6.0,&gt;=2.0.0 (from google-auth&gt;=1.2-&gt;gcsfs)
+  Downloading cachetools-5.3.2-py3-none-any.whl.metadata (5.2 kB)
+Collecting pyasn1-modules&gt;=0.2.1 (from google-auth&gt;=1.2-&gt;gcsfs)
+  Downloading pyasn1_modules-0.3.0-py2.py3-none-any.whl (181 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 181.3/181.3 kB 59.8 MB/s eta 0:00:00
+Collecting rsa&lt;5,&gt;=3.1.4 (from google-auth&gt;=1.2-&gt;gcsfs)
+  Downloading rsa-4.9-py3-none-any.whl (34 kB)
+Collecting requests-oauthlib&gt;=0.7.0 (from google-auth-oauthlib-&gt;gcsfs)
+  Downloading requests_oauthlib-1.3.1-py2.py3-none-any.whl (23 kB)
+Collecting contourpy&gt;=1.0.1 (from matplotlib-&gt;bert-score==0.3.13)
+  Downloading contourpy-1.2.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (5.8 kB)
+Collecting cycler&gt;=0.10 (from matplotlib-&gt;bert-score==0.3.13)
+  Downloading cycler-0.12.1-py3-none-any.whl.metadata (3.8 kB)
+Collecting fonttools&gt;=4.22.0 (from matplotlib-&gt;bert-score==0.3.13)
+  Downloading fonttools-4.47.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (157 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 157.2/157.2 kB 41.3 MB/s eta 0:00:00
+Collecting kiwisolver&gt;=1.3.1 (from matplotlib-&gt;bert-score==0.3.13)
+  Downloading kiwisolver-1.4.5-cp310-cp310-manylinux_2_12_x86_64.manylinux2010_x86_64.whl.metadata (6.4 kB)
+Collecting pyparsing&gt;=2.3.1 (from matplotlib-&gt;bert-score==0.3.13)
+  Downloading pyparsing-3.1.1-py3-none-any.whl.metadata (5.1 kB)
+Requirement already satisfied: python-dateutil&gt;=2.7 in /opt/conda/lib/python3.10/site-packages (from matplotlib-&gt;bert-score==0.3.13) (2.8.2)
+Requirement already satisfied: pytz&gt;=2020.1 in /opt/conda/lib/python3.10/site-packages (from pandas&gt;=1.0.1-&gt;bert-score==0.3.13) (2023.3.post1)
+Collecting tzdata&gt;=2022.1 (from pandas&gt;=1.0.1-&gt;bert-score==0.3.13)
+  Downloading tzdata-2023.3-py2.py3-none-any.whl (341 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 341.8/341.8 kB 72.5 MB/s eta 0:00:00
+Requirement already satisfied: wcwidth in /opt/conda/lib/python3.10/site-packages (from prompt-toolkit&gt;=3.0.0-&gt;fschat==0.2.34) (0.2.5)
+Requirement already satisfied: charset-normalizer&lt;4,&gt;=2 in /opt/conda/lib/python3.10/site-packages (from requests-&gt;bert-score==0.3.13) (2.0.4)
+Requirement already satisfied: idna&lt;4,&gt;=2.5 in /opt/conda/lib/python3.10/site-packages (from requests-&gt;bert-score==0.3.13) (3.4)
+Requirement already satisfied: urllib3&lt;3,&gt;=1.21.1 in /opt/conda/lib/python3.10/site-packages (from requests-&gt;bert-score==0.3.13) (1.26.18)
+Requirement already satisfied: certifi&gt;=2017.4.17 in /opt/conda/lib/python3.10/site-packages (from requests-&gt;bert-score==0.3.13) (2023.7.22)
+Collecting markdown-it-py&gt;=2.2.0 (from rich&gt;=10.0.0-&gt;fschat==0.2.34)
+  Downloading markdown_it_py-3.0.0-py3-none-any.whl.metadata (6.9 kB)
+Requirement already satisfied: pygments&lt;3.0.0,&gt;=2.13.0 in /opt/conda/lib/python3.10/site-packages (from rich&gt;=10.0.0-&gt;fschat==0.2.34) (2.15.1)
+Collecting h11&gt;=0.8 (from uvicorn-&gt;fschat==0.2.34)
+  Downloading h11-0.14.0-py3-none-any.whl (58 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 58.3/58.3 kB 21.6 MB/s eta 0:00:00
+Collecting humanfriendly&gt;=9.1 (from coloredlogs-&gt;optimum==1.13.2)
+  Downloading humanfriendly-10.0-py2.py3-none-any.whl (86 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 86.8/86.8 kB 27.2 MB/s eta 0:00:00
+Collecting starlette&lt;0.33.0,&gt;=0.29.0 (from fastapi-&gt;fschat==0.2.34)
+  Downloading starlette-0.32.0.post1-py3-none-any.whl.metadata (5.8 kB)
+Collecting typing-extensions~=4.0 (from gradio==3.50.2)
+  Downloading typing_extensions-4.9.0-py3-none-any.whl.metadata (3.0 kB)
+Collecting google-api-core!=2.0.*,!=2.1.*,!=2.2.*,!=2.3.0,&lt;3.0.0dev,&gt;=1.31.5 (from google-cloud-storage-&gt;gcsfs)
+  Downloading google_api_core-2.15.0-py3-none-any.whl.metadata (2.7 kB)
+Collecting google-cloud-core&lt;3.0dev,&gt;=2.3.0 (from google-cloud-storage-&gt;gcsfs)
+  Downloading google_cloud_core-2.4.1-py2.py3-none-any.whl.metadata (2.7 kB)
+Collecting google-resumable-media&gt;=2.6.0 (from google-cloud-storage-&gt;gcsfs)
+  Downloading google_resumable_media-2.7.0-py2.py3-none-any.whl.metadata (2.2 kB)
+Collecting google-crc32c&lt;2.0dev,&gt;=1.0 (from google-cloud-storage-&gt;gcsfs)
+  Downloading google_crc32c-1.5.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (32 kB)
+Requirement already satisfied: anyio in /opt/conda/lib/python3.10/site-packages (from httpx-&gt;fschat==0.2.34) (4.2.0)
+Collecting httpcore==1.* (from httpx-&gt;fschat==0.2.34)
+  Downloading httpcore-1.0.2-py3-none-any.whl.metadata (20 kB)
+Requirement already satisfied: sniffio in /opt/conda/lib/python3.10/site-packages (from httpx-&gt;fschat==0.2.34) (1.3.0)
+Collecting wavedrom (from markdown2[all]-&gt;fschat==0.2.34)
+  Downloading wavedrom-2.0.3.post3.tar.gz (137 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 137.7/137.7 kB 47.1 MB/s eta 0:00:00
+  Preparing metadata (setup.py) ... done
+Requirement already satisfied: mpmath&gt;=0.19 in /opt/conda/lib/python3.10/site-packages (from sympy-&gt;optimum==1.13.2) (1.3.0)
+Collecting jmespath&lt;2.0.0,&gt;=0.7.1 (from botocore&lt;1.31.65,&gt;=1.31.16-&gt;aiobotocore~=2.7.0-&gt;s3fs)
+  Downloading jmespath-1.0.1-py3-none-any.whl (20 kB)
+Collecting smmap&lt;6,&gt;=3.0.1 (from gitdb&lt;5,&gt;=4.0.1-&gt;GitPython!=3.1.29,&gt;=1.0.0-&gt;wandb)
+  Downloading smmap-5.0.1-py3-none-any.whl.metadata (4.3 kB)
+Collecting googleapis-common-protos&lt;2.0.dev0,&gt;=1.56.2 (from google-api-core!=2.0.*,!=2.1.*,!=2.2.*,!=2.3.0,&lt;3.0.0dev,&gt;=1.31.5-&gt;google-cloud-storage-&gt;gcsfs)
+  Downloading googleapis_common_protos-1.62.0-py2.py3-none-any.whl.metadata (1.5 kB)
+Requirement already satisfied: jsonschema-specifications&gt;=2023.03.6 in /opt/conda/lib/python3.10/site-packages (from jsonschema&gt;=3.0-&gt;altair&lt;6.0,&gt;=4.2.0-&gt;gradio==3.50.2) (2023.12.1)
+Requirement already satisfied: referencing&gt;=0.28.4 in /opt/conda/lib/python3.10/site-packages (from jsonschema&gt;=3.0-&gt;altair&lt;6.0,&gt;=4.2.0-&gt;gradio==3.50.2) (0.32.0)
+Requirement already satisfied: rpds-py&gt;=0.7.1 in /opt/conda/lib/python3.10/site-packages (from jsonschema&gt;=3.0-&gt;altair&lt;6.0,&gt;=4.2.0-&gt;gradio==3.50.2) (0.15.2)
+Collecting mdurl~=0.1 (from markdown-it-py&gt;=2.2.0-&gt;rich&gt;=10.0.0-&gt;fschat==0.2.34)
+  Downloading mdurl-0.1.2-py3-none-any.whl (10.0 kB)
+Collecting pyasn1&lt;0.6.0,&gt;=0.4.6 (from pyasn1-modules&gt;=0.2.1-&gt;google-auth&gt;=1.2-&gt;gcsfs)
+  Downloading pyasn1-0.5.1-py2.py3-none-any.whl.metadata (8.6 kB)
+Collecting oauthlib&gt;=3.0.0 (from requests-oauthlib&gt;=0.7.0-&gt;google-auth-oauthlib-&gt;gcsfs)
+  Downloading oauthlib-3.2.2-py3-none-any.whl (151 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 151.7/151.7 kB 50.3 MB/s eta 0:00:00
+Requirement already satisfied: exceptiongroup&gt;=1.0.2 in /opt/conda/lib/python3.10/site-packages (from anyio-&gt;httpx-&gt;fschat==0.2.34) (1.0.4)
+Collecting svgwrite (from wavedrom-&gt;markdown2[all]-&gt;fschat==0.2.34)
+  Downloading svgwrite-1.4.3-py3-none-any.whl (67 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 67.1/67.1 kB 21.8 MB/s eta 0:00:00
+Downloading accelerate-0.24.1-py3-none-any.whl (261 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 261.4/261.4 kB 53.4 MB/s eta 0:00:00
+Downloading auto_gptq-0.5.1-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (4.8 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 4.8/4.8 MB 89.9 MB/s eta 0:00:00ta 0:00:01
+Downloading fschat-0.2.34-py3-none-any.whl (220 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 220.1/220.1 kB 63.9 MB/s eta 0:00:00
+Downloading gradio-3.50.2-py3-none-any.whl (20.3 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 20.3/20.3 MB 82.8 MB/s eta 0:00:00:00:0100:01
+Downloading peft-0.6.0-py3-none-any.whl (134 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 134.9/134.9 kB 40.0 MB/s eta 0:00:00
+Downloading tokenizers-0.15.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (3.8 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 3.8/3.8 MB 87.1 MB/s eta 0:00:00ta 0:00:01
+Downloading transformers-4.36.2-py3-none-any.whl (8.2 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 8.2/8.2 MB 90.1 MB/s eta 0:00:00ta 0:00:01
+Downloading xformers-0.0.23-cp310-cp310-manylinux2014_x86_64.whl (213.0 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 213.0/213.0 MB 36.6 MB/s eta 0:00:0000:0100:01
+Downloading gradio_client-0.6.1-py3-none-any.whl (299 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 299.2/299.2 kB 64.9 MB/s eta 0:00:00
+Downloading bitsandbytes-0.41.3.post2-py3-none-any.whl (92.6 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 92.6/92.6 MB 56.6 MB/s eta 0:00:00:00:0100:01
+Downloading datasets-2.16.0-py3-none-any.whl (507 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 507.1/507.1 kB 87.3 MB/s eta 0:00:00
+Downloading scipy-1.11.4-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (36.4 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 36.4/36.4 MB 77.4 MB/s eta 0:00:00:00:0100:01
+Downloading art-6.1-py3-none-any.whl (599 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 599.8/599.8 kB 96.0 MB/s eta 0:00:00
+Downloading einops-0.7.0-py3-none-any.whl (44 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 44.6/44.6 kB 13.3 MB/s eta 0:00:00
+Downloading gcsfs-2023.10.0-py2.py3-none-any.whl (33 kB)
+Downloading hf_transfer-0.1.4-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (3.9 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 3.9/3.9 MB 99.7 MB/s eta 0:00:00:00:01
+Downloading numba-0.58.1-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (3.6 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 3.6/3.6 MB 100.1 MB/s eta 0:00:0000:01
+Downloading s3fs-2023.10.0-py3-none-any.whl (28 kB)
+Downloading tensorboard-2.15.1-py3-none-any.whl (5.5 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 5.5/5.5 MB 96.9 MB/s eta 0:00:00ta 0:00:01
+Downloading wandb-0.16.1-py3-none-any.whl (2.1 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2.1/2.1 MB 99.4 MB/s eta 0:00:00
+Downloading absl_py-2.0.0-py3-none-any.whl (130 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 130.2/130.2 kB 36.6 MB/s eta 0:00:00
+Downloading aiobotocore-2.7.0-py3-none-any.whl (73 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 73.5/73.5 kB 25.1 MB/s eta 0:00:00
+Downloading aiofiles-23.2.1-py3-none-any.whl (15 kB)
+Downloading aiohttp-3.9.1-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (1.2 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.2/1.2 MB 99.6 MB/s eta 0:00:00
+Downloading altair-5.2.0-py3-none-any.whl (996 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 996.9/996.9 kB 110.4 MB/s eta 0:00:00
+Downloading dill-0.3.7-py3-none-any.whl (115 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 115.3/115.3 kB 34.9 MB/s eta 0:00:00
+Downloading GitPython-3.1.40-py3-none-any.whl (190 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 190.6/190.6 kB 47.0 MB/s eta 0:00:00
+Downloading google_auth-2.25.2-py2.py3-none-any.whl (184 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 184.2/184.2 kB 44.9 MB/s eta 0:00:00
+Downloading google_auth_oauthlib-1.2.0-py2.py3-none-any.whl (24 kB)
+Downloading grpcio-1.60.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (5.4 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 5.4/5.4 MB 102.4 MB/s eta 0:00:00a 0:00:01
+Downloading importlib_resources-6.1.1-py3-none-any.whl (33 kB)
+Downloading joblib-1.3.2-py3-none-any.whl (302 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 302.2/302.2 kB 64.0 MB/s eta 0:00:00
+Downloading llvmlite-0.41.1-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (43.6 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 43.6/43.6 MB 74.3 MB/s eta 0:00:00:00:0100:01
+Downloading Markdown-3.5.1-py3-none-any.whl (102 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 102.2/102.2 kB 34.4 MB/s eta 0:00:00
+Downloading matplotlib-3.8.2-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (11.6 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 11.6/11.6 MB 99.9 MB/s eta 0:00:00:00:010:01
+Downloading orjson-3.9.10-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (138 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 138.7/138.7 kB 38.8 MB/s eta 0:00:00
+Downloading pandas-2.1.4-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (12.3 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 12.3/12.3 MB 96.4 MB/s eta 0:00:00:00:010:01
+Downloading protobuf-4.23.4-cp37-abi3-manylinux2014_x86_64.whl (304 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 304.5/304.5 kB 68.5 MB/s eta 0:00:00
+Downloading pyarrow-14.0.2-cp310-cp310-manylinux_2_28_x86_64.whl (38.0 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 38.0/38.0 MB 78.5 MB/s eta 0:00:00:00:0100:01
+Downloading pydantic-1.10.13-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (3.1 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 3.1/3.1 MB 95.6 MB/s eta 0:00:00
+Downloading regex-2023.12.25-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (773 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 774.0/774.0 kB 116.8 MB/s eta 0:00:00
+Downloading rich-13.7.0-py3-none-any.whl (240 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 240.6/240.6 kB 59.9 MB/s eta 0:00:00
+Downloading safetensors-0.4.1-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (1.3 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.3/1.3 MB 102.1 MB/s eta 0:00:00
+Downloading sentry_sdk-1.39.1-py2.py3-none-any.whl (254 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 254.1/254.1 kB 71.9 MB/s eta 0:00:00
+Downloading tensorboard_data_server-0.7.2-py3-none-manylinux_2_31_x86_64.whl (6.6 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 6.6/6.6 MB 104.2 MB/s eta 0:00:00a 0:00:01
+Downloading threadpoolctl-3.2.0-py3-none-any.whl (15 kB)
+Downloading uvicorn-0.25.0-py3-none-any.whl (60 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 60.3/60.3 kB 19.1 MB/s eta 0:00:00
+Downloading werkzeug-3.0.1-py3-none-any.whl (226 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 226.7/226.7 kB 67.5 MB/s eta 0:00:00
+Downloading fastapi-0.108.0-py3-none-any.whl (92 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 92.0/92.0 kB 33.8 MB/s eta 0:00:00
+Downloading typing_extensions-4.9.0-py3-none-any.whl (32 kB)
+Downloading google_cloud_storage-2.14.0-py2.py3-none-any.whl (121 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 121.6/121.6 kB 36.9 MB/s eta 0:00:00
+Downloading httpx-0.26.0-py3-none-any.whl (75 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 75.9/75.9 kB 24.7 MB/s eta 0:00:00
+Downloading httpcore-1.0.2-py3-none-any.whl (76 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 76.9/76.9 kB 28.4 MB/s eta 0:00:00
+Downloading multiprocess-0.70.15-py310-none-any.whl (134 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 134.8/134.8 kB 48.7 MB/s eta 0:00:00
+Downloading nh3-0.2.15-cp37-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (1.7 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.7/1.7 MB 108.1 MB/s eta 0:00:00
+Downloading ninja-1.11.1.1-py2.py3-none-manylinux1_x86_64.manylinux_2_5_x86_64.whl (307 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 307.2/307.2 kB 66.5 MB/s eta 0:00:00
+Downloading pyarrow_hotfix-0.6-py3-none-any.whl (7.9 kB)
+Downloading setproctitle-1.3.3-cp310-cp310-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl (30 kB)
+Downloading termcolor-2.4.0-py3-none-any.whl (7.7 kB)
+Downloading tiktoken-0.5.2-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (2.0 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2.0/2.0 MB 101.9 MB/s eta 0:00:00
+Downloading xxhash-3.4.1-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (194 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 194.1/194.1 kB 44.4 MB/s eta 0:00:00
+Downloading async_timeout-4.0.3-py3-none-any.whl (5.7 kB)
+Downloading botocore-1.31.64-py3-none-any.whl (11.3 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 11.3/11.3 MB 98.8 MB/s eta 0:00:00:00:010:01
+Downloading cachetools-5.3.2-py3-none-any.whl (9.3 kB)
+Downloading contourpy-1.2.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (310 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 310.7/310.7 kB 69.7 MB/s eta 0:00:00
+Downloading cycler-0.12.1-py3-none-any.whl (8.3 kB)
+Downloading fonttools-4.47.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (4.6 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 4.6/4.6 MB 102.7 MB/s eta 0:00:00a 0:00:01
+Downloading frozenlist-1.4.1-cp310-cp310-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl (239 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 239.5/239.5 kB 71.4 MB/s eta 0:00:00
+Downloading gitdb-4.0.11-py3-none-any.whl (62 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 62.7/62.7 kB 23.3 MB/s eta 0:00:00
+Downloading google_api_core-2.15.0-py3-none-any.whl (121 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 122.0/122.0 kB 32.4 MB/s eta 0:00:00
+Downloading google_cloud_core-2.4.1-py2.py3-none-any.whl (29 kB)
+Downloading google_resumable_media-2.7.0-py2.py3-none-any.whl (80 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 80.6/80.6 kB 22.5 MB/s eta 0:00:00
+Downloading kiwisolver-1.4.5-cp310-cp310-manylinux_2_12_x86_64.manylinux2010_x86_64.whl (1.6 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.6/1.6 MB 102.0 MB/s eta 0:00:00
+Downloading markdown_it_py-3.0.0-py3-none-any.whl (87 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 87.5/87.5 kB 25.0 MB/s eta 0:00:00
+Downloading pyparsing-3.1.1-py3-none-any.whl (103 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 103.1/103.1 kB 32.7 MB/s eta 0:00:00
+Downloading starlette-0.32.0.post1-py3-none-any.whl (70 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 70.0/70.0 kB 19.1 MB/s eta 0:00:00
+Downloading wrapt-1.16.0-cp310-cp310-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl (80 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 80.3/80.3 kB 30.3 MB/s eta 0:00:00
+Downloading yarl-1.9.4-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (301 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 301.6/301.6 kB 80.7 MB/s eta 0:00:00
+Downloading markdown2-2.4.12-py2.py3-none-any.whl (41 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 41.2/41.2 kB 12.5 MB/s eta 0:00:00
+Downloading googleapis_common_protos-1.62.0-py2.py3-none-any.whl (228 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 228.7/228.7 kB 57.7 MB/s eta 0:00:00
+Downloading pyasn1-0.5.1-py2.py3-none-any.whl (84 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 84.9/84.9 kB 30.5 MB/s eta 0:00:00
+Downloading smmap-5.0.1-py3-none-any.whl (24 kB)
+Building wheels for collected packages: flash-attn, optimum, rouge-score, deepspeed, fire, ffmpy, wavedrom
+  Building wheel for flash-attn (setup.py) ... done
+  Created wheel for flash-attn: filename=flash_attn-2.3.3-cp310-cp310-linux_x86_64.whl size=57042553 sha256=b1df92cb5bd7657d38b789dd48e907aa3e0bd2715c817eb85f3c4320bb11fb3f
+  Stored in directory: /root/.cache/pip/wheels/e5/e6/fa/941802ec61d1afd320d27160ab1db98e6dba65381f84b76d4a
+  Building wheel for optimum (pyproject.toml) ... done
+  Created wheel for optimum: filename=optimum-1.13.2-py3-none-any.whl size=395599 sha256=ff3a73120e1b6eeeda28f76e3fc8cd4cd826e5d66c869b7848ba150e7af79c62
+  Stored in directory: /root/.cache/pip/wheels/6e/b7/2c/79405d98f0943373d8546daeae25a3d377f7659ca0cbe48699
+  Building wheel for rouge-score (setup.py) ... done
+  Created wheel for rouge-score: filename=rouge_score-0.1.2-py3-none-any.whl size=24932 sha256=8118ecbbcd3529085e794c803f0ddb182fc6c6d3e8a494103b49a94abf1bec37
+  Stored in directory: /root/.cache/pip/wheels/5f/dd/89/461065a73be61a532ff8599a28e9beef17985c9e9c31e541b4
+  Building wheel for deepspeed (setup.py) ... done
+  Created wheel for deepspeed: filename=deepspeed-0.12.6-py3-none-any.whl size=1306729 sha256=35c46b6f0275b0d3063522e0af4f3cbd9ec1c310114d8917d87cbe2bf43346e2
+  Stored in directory: /root/.cache/pip/wheels/a3/dc/a2/f585faaed4dec84108916dcc8e8a7c129a216df8202ca32984
+  Building wheel for fire (setup.py) ... done
+  Created wheel for fire: filename=fire-0.5.0-py2.py3-none-any.whl size=116934 sha256=e76d5185f237f34ec69bb8aa657497bef07408978e4f7efdaef48663bb8cd4ef
+  Stored in directory: /root/.cache/pip/wheels/90/d4/f7/9404e5db0116bd4d43e5666eaa3e70ab53723e1e3ea40c9a95
+  Building wheel for ffmpy (setup.py) ... done
+  Created wheel for ffmpy: filename=ffmpy-0.3.1-py3-none-any.whl size=5579 sha256=da3b54dc0ac1a825a1a233315970ac80b8b4c53ebd9cb2a2cfdeab118f453a64
+  Stored in directory: /root/.cache/pip/wheels/01/a6/d1/1c0828c304a4283b2c1639a09ad86f83d7c487ef34c6b4a1bf
+  Building wheel for wavedrom (setup.py) ... done
+  Created wheel for wavedrom: filename=wavedrom-2.0.3.post3-py2.py3-none-any.whl size=30052 sha256=7f0cbd15d63ee9c120190bac122ab51bbbfc91ee374bc3c046fadb320816c17e
+  Stored in directory: /root/.cache/pip/wheels/9c/52/8c/38b454b42f712f325e26f633287484c7dc1ad469e1580c5954
+Successfully built flash-attn optimum rouge-score deepspeed fire ffmpy wavedrom
+Installing collected packages: sentencepiece, pydub, py-cpuinfo, ninja, nh3, hjson, ffmpy, bitsandbytes, appdirs, addict, xxhash, wrapt, werkzeug, websockets, tzdata, typing-extensions, threadpoolctl, termcolor, tensorboard-data-server, svgwrite, smmap, shortuuid, setproctitle, sentry-sdk, semantic-version, scipy, safetensors, rouge, regex, python-multipart, pyparsing, pynvml, pyasn1, pyarrow-hotfix, pyarrow, protobuf, orjson, oauthlib, multidict, mdurl, markdown2, markdown, llvmlite, kiwisolver, joblib, jmespath, importlib-resources, humanfriendly, hf_transfer, h11, grpcio, google-crc32c, gekko, frozenlist, fonttools, einops, docker-pycreds, dill, cycler, contourpy, colorama, cachetools, async-timeout, art, aioitertools, aiofiles, absl-py, yarl, wavedrom, uvicorn, tiktoken, scikit-learn, rsa, responses, requests-oauthlib, pydantic, pyasn1-modules, pandas, numba, nltk, multiprocess, matplotlib, markdown-it-py, httpcore, googleapis-common-protos, google-resumable-media, gitdb, fire, coloredlogs, botocore, aiosignal, xformers, tokenizers, starlette, rouge-score, rich, httpx, google-auth, GitPython, flash-attn, deepspeed, aiohttp, accelerate, wandb, transformers, gradio-client, google-auth-oauthlib, google-api-core, fastapi, altair, aiobotocore, tensorboard, s3fs, peft, gradio, google-cloud-core, fschat, datasets, bert-score, optimum, google-cloud-storage, evaluate, auto-gptq, gcsfs, axolotl
+  Attempting uninstall: typing-extensions
+    Found existing installation: typing_extensions 4.7.1
+    Uninstalling typing_extensions-4.7.1:
+      Successfully uninstalled typing_extensions-4.7.1
+  Running setup.py develop for axolotl
+Successfully installed GitPython-3.1.40 absl-py-2.0.0 accelerate-0.24.1 addict-2.4.0 aiobotocore-2.7.0 aiofiles-23.2.1 aiohttp-3.9.1 aioitertools-0.11.0 aiosignal-1.3.1 altair-5.2.0 appdirs-1.4.4 art-6.1 async-timeout-4.0.3 auto-gptq-0.5.1 axolotl-0.3.0 bert-score-0.3.13 bitsandbytes-0.41.3.post2 botocore-1.31.64 cachetools-5.3.2 colorama-0.4.6 coloredlogs-15.0.1 contourpy-1.2.0 cycler-0.12.1 datasets-2.16.0 deepspeed-0.12.6 dill-0.3.7 docker-pycreds-0.4.0 einops-0.7.0 evaluate-0.4.0 fastapi-0.108.0 ffmpy-0.3.1 fire-0.5.0 flash-attn-2.3.3 fonttools-4.47.0 frozenlist-1.4.1 fschat-0.2.34 gcsfs-2023.10.0 gekko-1.0.6 gitdb-4.0.11 google-api-core-2.15.0 google-auth-2.25.2 google-auth-oauthlib-1.2.0 google-cloud-core-2.4.1 google-cloud-storage-2.14.0 google-crc32c-1.5.0 google-resumable-media-2.7.0 googleapis-common-protos-1.62.0 gradio-3.50.2 gradio-client-0.6.1 grpcio-1.60.0 h11-0.14.0 hf_transfer-0.1.4 hjson-3.1.0 httpcore-1.0.2 httpx-0.26.0 humanfriendly-10.0 importlib-resources-6.1.1 jmespath-1.0.1 joblib-1.3.2 kiwisolver-1.4.5 llvmlite-0.41.1 markdown-3.5.1 markdown-it-py-3.0.0 markdown2-2.4.12 matplotlib-3.8.2 mdurl-0.1.2 multidict-6.0.4 multiprocess-0.70.15 nh3-0.2.15 ninja-1.11.1.1 nltk-3.8.1 numba-0.58.1 oauthlib-3.2.2 optimum-1.13.2 orjson-3.9.10 pandas-2.1.4 peft-0.6.0 protobuf-4.23.4 py-cpuinfo-9.0.0 pyarrow-14.0.2 pyarrow-hotfix-0.6 pyasn1-0.5.1 pyasn1-modules-0.3.0 pydantic-1.10.13 pydub-0.25.1 pynvml-11.5.0 pyparsing-3.1.1 python-multipart-0.0.6 regex-2023.12.25 requests-oauthlib-1.3.1 responses-0.18.0 rich-13.7.0 rouge-1.0.1 rouge-score-0.1.2 rsa-4.9 s3fs-2023.10.0 safetensors-0.4.1 scikit-learn-1.2.2 scipy-1.11.4 semantic-version-2.10.0 sentencepiece-0.1.99 sentry-sdk-1.39.1 setproctitle-1.3.3 shortuuid-1.0.11 smmap-5.0.1 starlette-0.32.0.post1 svgwrite-1.4.3 tensorboard-2.15.1 tensorboard-data-server-0.7.2 termcolor-2.4.0 threadpoolctl-3.2.0 tiktoken-0.5.2 tokenizers-0.15.0 transformers-4.36.2 typing-extensions-4.8.0 tzdata-2023.3 uvicorn-0.25.0 wandb-0.16.1 wavedrom-2.0.3.post3 websockets-11.0.3 werkzeug-3.0.1 wrapt-1.16.0 xformers-0.0.23 xxhash-3.4.1 yarl-1.9.4
+WARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv
+Collecting git+https://github.com/huggingface/peft.git
+  Cloning https://github.com/huggingface/peft.git to /tmp/pip-req-build-hka8xgk2
+  Running command git clone --filter=blob:none --quiet https://github.com/huggingface/peft.git /tmp/pip-req-build-hka8xgk2
+  Resolved https://github.com/huggingface/peft.git to commit cf04d0353f0343cbf66627228c4495f51669af34
+  Installing build dependencies ... done
+  Getting requirements to build wheel ... done
+  Preparing metadata (pyproject.toml) ... done
+Requirement already satisfied: numpy&gt;=1.17 in /opt/conda/lib/python3.10/site-packages (from peft==0.7.2.dev0) (1.26.0)
+Requirement already satisfied: packaging&gt;=20.0 in /opt/conda/lib/python3.10/site-packages (from peft==0.7.2.dev0) (23.1)
+Requirement already satisfied: psutil in /opt/conda/lib/python3.10/site-packages (from peft==0.7.2.dev0) (5.9.0)
+Requirement already satisfied: pyyaml in /opt/conda/lib/python3.10/site-packages (from peft==0.7.2.dev0) (6.0.1)
+Requirement already satisfied: torch&gt;=1.13.0 in /opt/conda/lib/python3.10/site-packages (from peft==0.7.2.dev0) (2.1.1)
+Requirement already satisfied: transformers in /opt/conda/lib/python3.10/site-packages (from peft==0.7.2.dev0) (4.36.2)
+Requirement already satisfied: tqdm in /opt/conda/lib/python3.10/site-packages (from peft==0.7.2.dev0) (4.65.0)
+Requirement already satisfied: accelerate&gt;=0.21.0 in /opt/conda/lib/python3.10/site-packages (from peft==0.7.2.dev0) (0.24.1)
+Requirement already satisfied: safetensors in /opt/conda/lib/python3.10/site-packages (from peft==0.7.2.dev0) (0.4.1)
+Requirement already satisfied: huggingface-hub&gt;=0.17.0 in /opt/conda/lib/python3.10/site-packages (from peft==0.7.2.dev0) (0.20.1)
+Requirement already satisfied: filelock in /opt/conda/lib/python3.10/site-packages (from huggingface-hub&gt;=0.17.0-&gt;peft==0.7.2.dev0) (3.9.0)
+Requirement already satisfied: fsspec&gt;=2023.5.0 in /opt/conda/lib/python3.10/site-packages (from huggingface-hub&gt;=0.17.0-&gt;peft==0.7.2.dev0) (2023.10.0)
+Requirement already satisfied: requests in /opt/conda/lib/python3.10/site-packages (from huggingface-hub&gt;=0.17.0-&gt;peft==0.7.2.dev0) (2.31.0)
+Requirement already satisfied: typing-extensions&gt;=3.7.4.3 in /opt/conda/lib/python3.10/site-packages (from huggingface-hub&gt;=0.17.0-&gt;peft==0.7.2.dev0) (4.8.0)
+Requirement already satisfied: sympy in /opt/conda/lib/python3.10/site-packages (from torch&gt;=1.13.0-&gt;peft==0.7.2.dev0) (1.11.1)
+Requirement already satisfied: networkx in /opt/conda/lib/python3.10/site-packages (from torch&gt;=1.13.0-&gt;peft==0.7.2.dev0) (3.1)
+Requirement already satisfied: jinja2 in /opt/conda/lib/python3.10/site-packages (from torch&gt;=1.13.0-&gt;peft==0.7.2.dev0) (3.1.2)
+Requirement already satisfied: regex!=2019.12.17 in /opt/conda/lib/python3.10/site-packages (from transformers-&gt;peft==0.7.2.dev0) (2023.12.25)
+Requirement already satisfied: tokenizers&lt;0.19,&gt;=0.14 in /opt/conda/lib/python3.10/site-packages (from transformers-&gt;peft==0.7.2.dev0) (0.15.0)
+Requirement already satisfied: MarkupSafe&gt;=2.0 in /opt/conda/lib/python3.10/site-packages (from jinja2-&gt;torch&gt;=1.13.0-&gt;peft==0.7.2.dev0) (2.1.1)
+Requirement already satisfied: charset-normalizer&lt;4,&gt;=2 in /opt/conda/lib/python3.10/site-packages (from requests-&gt;huggingface-hub&gt;=0.17.0-&gt;peft==0.7.2.dev0) (2.0.4)
+Requirement already satisfied: idna&lt;4,&gt;=2.5 in /opt/conda/lib/python3.10/site-packages (from requests-&gt;huggingface-hub&gt;=0.17.0-&gt;peft==0.7.2.dev0) (3.4)
+Requirement already satisfied: urllib3&lt;3,&gt;=1.21.1 in /opt/conda/lib/python3.10/site-packages (from requests-&gt;huggingface-hub&gt;=0.17.0-&gt;peft==0.7.2.dev0) (1.26.18)
+Requirement already satisfied: certifi&gt;=2017.4.17 in /opt/conda/lib/python3.10/site-packages (from requests-&gt;huggingface-hub&gt;=0.17.0-&gt;peft==0.7.2.dev0) (2023.7.22)
+Requirement already satisfied: mpmath&gt;=0.19 in /opt/conda/lib/python3.10/site-packages (from sympy-&gt;torch&gt;=1.13.0-&gt;peft==0.7.2.dev0) (1.3.0)
+Building wheels for collected packages: peft
+  Building wheel for peft (pyproject.toml) ... done
+  Created wheel for peft: filename=peft-0.7.2.dev0-py3-none-any.whl size=169456 sha256=4c70d23e759fa6abb3827fb2f3a8683be3b24d78777d0f403bbc2c0548e5dd4b
+  Stored in directory: /tmp/pip-ephem-wheel-cache-my5ncou6/wheels/d7/c7/de/1368fac8590e1b103ddc2ec2a28ad51d83aded1a3830e8a087
+Successfully built peft
+Installing collected packages: peft
+  Attempting uninstall: peft
+    Found existing installation: peft 0.6.0
+    Uninstalling peft-0.6.0:
+      Successfully uninstalled peft-0.6.0
+ERROR: pip's dependency resolver does not currently take into account all the packages that are installed. This behaviour is the source of the following dependency conflicts.
+axolotl 0.3.0 requires peft==0.6.0, but you have peft 0.7.2.dev0 which is incompatible.
+Successfully installed peft-0.7.2.dev0
+WARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv</code></pre>
+</div>
+</div>
+<div id="82d1a380-1e87-48fe-89fe-25331326014d" class="cell" data-execution_count="16">
+<div class="sourceCode cell-code" id="cb14"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="co">"""</span></span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a><span class="co">Training using the config.yml file and using deepspeed:zero3_bf16 the most aggressive optimization out of zero1,zero2,zero3 stages which partitions </span></span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a><span class="co">not only optimizer states but also gradients and parameters across GPUs. The bf16 indicate mixed precision training using bfloat16.</span></span>
+<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a><span class="co">For more information read axolotl's readme</span></span>
+<span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a><span class="co">"""</span></span>
+<span id="cb14-6"><a href="#cb14-6" aria-hidden="true" tabindex="-1"></a><span class="op">!</span>accelerate launch <span class="op">-</span>m axolotl.cli.train <span class="op">/</span>folder<span class="op">/</span>config.yml <span class="op">--</span>deepspeed deepspeed_configs<span class="op">/</span>zero3_bf16.json</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>The following values were not passed to `accelerate launch` and had defaults used instead:
+    `--num_processes` was set to a value of `3`
+        More than one GPU was found, enabling multi-GPU training.
+        If this was unintended please pass in `--num_processes=1`.
+    `--num_machines` was set to a value of `1`
+    `--mixed_precision` was set to a value of `'no'`
+    `--dynamo_backend` was set to a value of `'no'`
+To avoid this warning pass in values for each of the problematic parameters or run `accelerate config`.
+/opt/conda/lib/python3.10/site-packages/transformers/deepspeed.py:23: FutureWarning: transformers.deepspeed module is deprecated and will be removed in a future version. Please import deepspeed modules directly from transformers.integrations
+  warnings.warn(
+[2023-12-28 15:44:09,979] [INFO] [datasets.&lt;module&gt;:58] [PID:2814] PyTorch version 2.1.1 available.
+/opt/conda/lib/python3.10/site-packages/transformers/deepspeed.py:23: FutureWarning: transformers.deepspeed module is deprecated and will be removed in a future version. Please import deepspeed modules directly from transformers.integrations
+  warnings.warn(
+/opt/conda/lib/python3.10/site-packages/transformers/deepspeed.py:23: FutureWarning: transformers.deepspeed module is deprecated and will be removed in a future version. Please import deepspeed modules directly from transformers.integrations
+  warnings.warn(
+[2023-12-28 15:44:10,011] [INFO] [datasets.&lt;module&gt;:58] [PID:2812] PyTorch version 2.1.1 available.
+[2023-12-28 15:44:10,013] [INFO] [datasets.&lt;module&gt;:58] [PID:2813] PyTorch version 2.1.1 available.
+[2023-12-28 15:44:10,805] [INFO] [axolotl.normalize_config:150] [PID:2814] [RANK:2] GPU memory usage baseline: 0.000GB (+0.317GB misc)
+[2023-12-28 15:44:10,830] [INFO] [real_accelerator.py:161:get_accelerator] Setting ds_accelerator to cuda (auto detect)
+[2023-12-28 15:44:10,842] [INFO] [axolotl.normalize_config:150] [PID:2813] [RANK:1] GPU memory usage baseline: 0.000GB (+0.317GB misc)
+[2023-12-28 15:44:10,865] [INFO] [real_accelerator.py:161:get_accelerator] Setting ds_accelerator to cuda (auto detect)
+[2023-12-28 15:44:10,869] [INFO] [axolotl.normalize_config:150] [PID:2812] [RANK:0] GPU memory usage baseline: 0.000GB (+0.351GB misc)
+[2023-12-28 15:44:10,887] [INFO] [real_accelerator.py:161:get_accelerator] Setting ds_accelerator to cuda (auto detect)
+[2023-12-28 15:44:10,961] [INFO] [comm.py:637:init_distributed] cdb=None
+[2023-12-28 15:44:10,994] [INFO] [comm.py:637:init_distributed] cdb=None
+[2023-12-28 15:44:11,015] [INFO] [comm.py:637:init_distributed] cdb=None
+[2023-12-28 15:44:11,015] [INFO] [comm.py:668:init_distributed] Initializing TorchBackend in DeepSpeed with backend nccl
+                                 dP            dP   dP 
+                                 88            88   88 
+      .d8888b. dP.  .dP .d8888b. 88 .d8888b. d8888P 88 
+      88'  `88  `8bd8'  88'  `88 88 88'  `88   88   88 
+      88.  .88  .d88b.  88.  .88 88 88.  .88   88   88 
+      `88888P8 dP'  `dP `88888P' dP `88888P'   dP   dP 
+                                                       
+                                                       
+
+[2023-12-28 15:44:11,412] [DEBUG] [axolotl.load_tokenizer:184] [PID:2812] [RANK:0] EOS: 2 / &lt;/s&gt;
+[2023-12-28 15:44:11,412] [DEBUG] [axolotl.load_tokenizer:185] [PID:2812] [RANK:0] BOS: 1 / &lt;s&gt;
+[2023-12-28 15:44:11,412] [DEBUG] [axolotl.load_tokenizer:186] [PID:2812] [RANK:0] PAD: 2 / &lt;/s&gt;
+[2023-12-28 15:44:11,412] [DEBUG] [axolotl.load_tokenizer:187] [PID:2812] [RANK:0] UNK: 0 / &lt;unk&gt;
+[2023-12-28 15:44:11,413] [INFO] [axolotl.load_tokenized_prepared_datasets:143] [PID:2812] [RANK:0] Loading prepared dataset from disk at tilemachos/GF_new.json/1adc45d2edc1e98ce657814412c6593c...
+[2023-12-28 15:44:11,415] [INFO] [axolotl.load_tokenized_prepared_datasets:145] [PID:2812] [RANK:0] Prepared dataset loaded from disk...
+[2023-12-28 15:44:11,432] [DEBUG] [axolotl.load_tokenizer:184] [PID:2814] [RANK:2] EOS: 2 / &lt;/s&gt;
+[2023-12-28 15:44:11,432] [DEBUG] [axolotl.load_tokenizer:185] [PID:2814] [RANK:2] BOS: 1 / &lt;s&gt;
+[2023-12-28 15:44:11,432] [DEBUG] [axolotl.load_tokenizer:186] [PID:2814] [RANK:2] PAD: 2 / &lt;/s&gt;
+[2023-12-28 15:44:11,432] [DEBUG] [axolotl.load_tokenizer:187] [PID:2814] [RANK:2] UNK: 0 / &lt;unk&gt;
+[2023-12-28 15:44:11,530] [DEBUG] [axolotl.load_tokenizer:184] [PID:2813] [RANK:1] EOS: 2 / &lt;/s&gt;
+[2023-12-28 15:44:11,531] [DEBUG] [axolotl.load_tokenizer:185] [PID:2813] [RANK:1] BOS: 1 / &lt;s&gt;
+[2023-12-28 15:44:11,531] [DEBUG] [axolotl.load_tokenizer:186] [PID:2813] [RANK:1] PAD: 2 / &lt;/s&gt;
+[2023-12-28 15:44:11,531] [DEBUG] [axolotl.load_tokenizer:187] [PID:2813] [RANK:1] UNK: 0 / &lt;unk&gt;
+[2023-12-28 15:44:12,158] [INFO] [axolotl.load_tokenized_prepared_datasets:143] [PID:2813] [RANK:1] Loading prepared dataset from disk at tilemachos/GF_new.json/1adc45d2edc1e98ce657814412c6593c...
+[2023-12-28 15:44:12,158] [INFO] [axolotl.load_tokenized_prepared_datasets:143] [PID:2814] [RANK:2] Loading prepared dataset from disk at tilemachos/GF_new.json/1adc45d2edc1e98ce657814412c6593c...
+[2023-12-28 15:44:12,160] [INFO] [axolotl.load_tokenized_prepared_datasets:145] [PID:2813] [RANK:1] Prepared dataset loaded from disk...
+[2023-12-28 15:44:12,161] [INFO] [axolotl.load_tokenized_prepared_datasets:145] [PID:2814] [RANK:2] Prepared dataset loaded from disk...
+[2023-12-28 15:44:12,236] [DEBUG] [axolotl.log:60] [PID:2812] [RANK:0] total_num_tokens: 28120
+[2023-12-28 15:44:12,238] [DEBUG] [axolotl.log:60] [PID:2812] [RANK:0] `total_supervised_tokens: 7990`
+[2023-12-28 15:44:12,238] [DEBUG] [axolotl.log:60] [PID:2812] [RANK:0] total_num_steps: 6
+[2023-12-28 15:44:12,242] [DEBUG] [axolotl.train.log:60] [PID:2812] [RANK:0] loading tokenizer... mistralai/Mistral-7B-v0.1
+[2023-12-28 15:44:12,518] [DEBUG] [axolotl.load_tokenizer:184] [PID:2812] [RANK:0] EOS: 2 / &lt;/s&gt;
+[2023-12-28 15:44:12,518] [DEBUG] [axolotl.load_tokenizer:185] [PID:2812] [RANK:0] BOS: 1 / &lt;s&gt;
+[2023-12-28 15:44:12,518] [DEBUG] [axolotl.load_tokenizer:186] [PID:2812] [RANK:0] PAD: 2 / &lt;/s&gt;
+[2023-12-28 15:44:12,518] [DEBUG] [axolotl.load_tokenizer:187] [PID:2812] [RANK:0] UNK: 0 / &lt;unk&gt;
+[2023-12-28 15:44:12,518] [DEBUG] [axolotl.train.log:60] [PID:2812] [RANK:0] loading model and peft_config...
+[2023-12-28 15:44:12,589] [DEBUG] [axolotl.load_tokenizer:184] [PID:2814] [RANK:2] EOS: 2 / &lt;/s&gt;
+[2023-12-28 15:44:12,589] [DEBUG] [axolotl.load_tokenizer:185] [PID:2814] [RANK:2] BOS: 1 / &lt;s&gt;
+[2023-12-28 15:44:12,589] [DEBUG] [axolotl.load_tokenizer:186] [PID:2814] [RANK:2] PAD: 2 / &lt;/s&gt;
+[2023-12-28 15:44:12,589] [DEBUG] [axolotl.load_tokenizer:187] [PID:2814] [RANK:2] UNK: 0 / &lt;unk&gt;
+[2023-12-28 15:44:12,599] [DEBUG] [axolotl.load_tokenizer:184] [PID:2813] [RANK:1] EOS: 2 / &lt;/s&gt;
+[2023-12-28 15:44:12,599] [DEBUG] [axolotl.load_tokenizer:185] [PID:2813] [RANK:1] BOS: 1 / &lt;s&gt;
+[2023-12-28 15:44:12,599] [DEBUG] [axolotl.load_tokenizer:186] [PID:2813] [RANK:1] PAD: 2 / &lt;/s&gt;
+[2023-12-28 15:44:12,599] [DEBUG] [axolotl.load_tokenizer:187] [PID:2813] [RANK:1] UNK: 0 / &lt;unk&gt;
+[2023-12-28 15:44:13,049] [INFO] [partition_parameters.py:348:__exit__] finished initializing model - num_params = 291, num_elems = 7.24B
+Loading checkpoint shards: 100%|██████████████████| 2/2 [00:11&lt;00:00,  5.81s/it]
+Loading checkpoint shards: 100%|██████████████████| 2/2 [00:11&lt;00:00,  5.98s/it]
+[2023-12-28 15:44:25,395] [INFO] [axolotl.load_model:503] [PID:2813] [RANK:1] GPU memory usage after model load: 7.576GB (+0.524GB cache, +0.708GB misc)
+[2023-12-28 15:44:25,399] [INFO] [axolotl.load_model:526] [PID:2813] [RANK:1] converting PEFT model w/ prepare_model_for_kbit_training
+[2023-12-28 15:44:25,403] [INFO] [axolotl.load_model:538] [PID:2813] [RANK:1] converting modules to torch.bfloat16 for flash attention
+trainable params: 3,407,872 || all params: 7,245,139,968 || trainable%: 0.04703666202518836
+[2023-12-28 15:44:25,480] [INFO] [axolotl.load_model:568] [PID:2813] [RANK:1] GPU memory usage after adapters: 7.589GB (+1.501GB cache, +0.708GB misc)
+[2023-12-28 15:44:25,572] [INFO] [axolotl.load_model:503] [PID:2814] [RANK:2] GPU memory usage after model load: 7.576GB (+0.410GB cache, +0.708GB misc)
+[2023-12-28 15:44:25,576] [INFO] [axolotl.load_model:526] [PID:2814] [RANK:2] converting PEFT model w/ prepare_model_for_kbit_training
+[2023-12-28 15:44:25,580] [INFO] [axolotl.load_model:538] [PID:2814] [RANK:2] converting modules to torch.bfloat16 for flash attention
+trainable params: 3,407,872 || all params: 7,245,139,968 || trainable%: 0.04703666202518836
+[2023-12-28 15:44:25,660] [INFO] [axolotl.load_model:568] [PID:2814] [RANK:2] GPU memory usage after adapters: 7.589GB (+1.388GB cache, +0.708GB misc)
+Loading checkpoint shards: 100%|██████████████████| 2/2 [00:12&lt;00:00,  6.30s/it]
+[2023-12-28 15:44:26,170] [INFO] [axolotl.load_model:503] [PID:2812] [RANK:0] GPU memory usage after model load: 7.576GB (+0.776GB cache, +0.741GB misc)
+[2023-12-28 15:44:26,177] [INFO] [axolotl.load_model:526] [PID:2812] [RANK:0] converting PEFT model w/ prepare_model_for_kbit_training
+[2023-12-28 15:44:26,181] [INFO] [axolotl.load_model:538] [PID:2812] [RANK:0] converting modules to torch.bfloat16 for flash attention
+trainable params: 3,407,872 || all params: 7,245,139,968 || trainable%: 0.04703666202518836
+[2023-12-28 15:44:26,259] [INFO] [axolotl.load_model:568] [PID:2812] [RANK:0] GPU memory usage after adapters: 7.589GB (+1.753GB cache, +0.741GB misc)
+[2023-12-28 15:44:26,293] [INFO] [axolotl.train.log:60] [PID:2812] [RANK:0] Pre-saving adapter config to ./out
+[2023-12-28 15:44:26,296] [INFO] [axolotl.train.log:60] [PID:2812] [RANK:0] Starting trainer...
+Using /root/.cache/torch_extensions/py310_cu121 as PyTorch extensions root...
+Using /root/.cache/torch_extensions/py310_cu121 as PyTorch extensions root...
+Using /root/.cache/torch_extensions/py310_cu121 as PyTorch extensions root...
+Detected CUDA files, patching ldflags
+Emitting ninja build file /root/.cache/torch_extensions/py310_cu121/fused_adam/build.ninja...
+Building extension module fused_adam...
+Allowing ninja to set a default number of workers... (overridable by setting the environment variable MAX_JOBS=N)
+ninja: no work to do.
+Loading extension module fused_adam...
+Time to load fused_adam op: 0.05891108512878418 seconds
+Loading extension module fused_adam...
+Time to load fused_adam op: 0.10173463821411133 seconds
+Loading extension module fused_adam...
+Time to load fused_adam op: 0.10152459144592285 seconds
+/opt/conda/lib/python3.10/site-packages/deepspeed/ops/adam/fused_adam.py:96: UserWarning: The torch.cuda.*DtypeTensor constructors are no longer recommended. It's best to use methods such as torch.tensor(data, dtype=*, device='cuda') to create tensors. (Triggered internally at /opt/conda/conda-bld/pytorch_1699449201336/work/torch/csrc/tensor/python_tensor.cpp:83.)
+  self._dummy_overflow_buf = get_accelerator().IntTensor([0])
+/opt/conda/lib/python3.10/site-packages/deepspeed/ops/adam/fused_adam.py:96: UserWarning: The torch.cuda.*DtypeTensor constructors are no longer recommended. It's best to use methods such as torch.tensor(data, dtype=*, device='cuda') to create tensors. (Triggered internally at /opt/conda/conda-bld/pytorch_1699449201336/work/torch/csrc/tensor/python_tensor.cpp:83.)
+  self._dummy_overflow_buf = get_accelerator().IntTensor([0])
+/opt/conda/lib/python3.10/site-packages/deepspeed/ops/adam/fused_adam.py:96: UserWarning: The torch.cuda.*DtypeTensor constructors are no longer recommended. It's best to use methods such as torch.tensor(data, dtype=*, device='cuda') to create tensors. (Triggered internally at /opt/conda/conda-bld/pytorch_1699449201336/work/torch/csrc/tensor/python_tensor.cpp:83.)
+  self._dummy_overflow_buf = get_accelerator().IntTensor([0])
+Parameter Offload: Total persistent parameters: 3674112 in 193 params
+  0%|                                                    | 0/17 [00:00&lt;?, ?it/s]/opt/conda/lib/python3.10/site-packages/torch/utils/checkpoint.py:429: UserWarning: torch.utils.checkpoint: please pass in use_reentrant=True or use_reentrant=False explicitly. The default value of use_reentrant will be updated to be False in the future. To maintain current behavior, pass use_reentrant=True. It is recommended that you use use_reentrant=False. Refer to docs for more details on the differences between the two variants.
+  warnings.warn(
+/opt/conda/lib/python3.10/site-packages/torch/utils/checkpoint.py:429: UserWarning: torch.utils.checkpoint: please pass in use_reentrant=True or use_reentrant=False explicitly. The default value of use_reentrant will be updated to be False in the future. To maintain current behavior, pass use_reentrant=True. It is recommended that you use use_reentrant=False. Refer to docs for more details on the differences between the two variants.
+  warnings.warn(
+/opt/conda/lib/python3.10/site-packages/torch/utils/checkpoint.py:429: UserWarning: torch.utils.checkpoint: please pass in use_reentrant=True or use_reentrant=False explicitly. The default value of use_reentrant will be updated to be False in the future. To maintain current behavior, pass use_reentrant=True. It is recommended that you use use_reentrant=False. Refer to docs for more details on the differences between the two variants.
+  warnings.warn(
+/opt/conda/lib/python3.10/site-packages/bitsandbytes/autograd/_functions.py:322: UserWarning: MatMul8bitLt: inputs will be cast from torch.bfloat16 to float16 during quantization
+  warnings.warn(f"MatMul8bitLt: inputs will be cast from {A.dtype} to float16 during quantization")
+/opt/conda/lib/python3.10/site-packages/bitsandbytes/autograd/_functions.py:322: UserWarning: MatMul8bitLt: inputs will be cast from torch.bfloat16 to float16 during quantization
+  warnings.warn(f"MatMul8bitLt: inputs will be cast from {A.dtype} to float16 during quantization")
+/opt/conda/lib/python3.10/site-packages/bitsandbytes/autograd/_functions.py:322: UserWarning: MatMul8bitLt: inputs will be cast from torch.bfloat16 to float16 during quantization
+  warnings.warn(f"MatMul8bitLt: inputs will be cast from {A.dtype} to float16 during quantization")
+{'loss': 2.0448, 'learning_rate': 2e-05, 'epoch': 0.06}                         
+  6%|██▌                                         | 1/17 [00:28&lt;07:32, 28.30s/it]
+  0%|                                                     | 0/3 [00:00&lt;?, ?it/s]
+ 67%|██████████████████████████████               | 2/3 [00:03&lt;00:01,  1.85s/it]
+                                                                                
+{'eval_loss': 1.9694719314575195, 'eval_runtime': 11.391, 'eval_samples_per_second': 1.492, 'eval_steps_per_second': 0.263, 'epoch': 0.06}
+  6%|██▌                                         | 1/17 [00:39&lt;07:32, 28.30s/it]
+100%|█████████████████████████████████████████████| 3/3 [00:07&lt;00:00,  2.65s/it]
+                                                                                [2023-12-28 15:45:35,358] [INFO] [axolotl.callbacks.on_step_end:122] [PID:2812] [RANK:0] GPU memory usage while training: 12.210GB (+4.259GB cache, +0.776GB misc)
+ 12%|█████▏                                      | 2/17 [01:04&lt;08:18, 33.20s/it][2023-12-28 15:45:35,358] [INFO] [axolotl.callbacks.on_step_end:122] [PID:2814] [RANK:2] GPU memory usage while training: 12.269GB (+4.522GB cache, +0.743GB misc)
+[2023-12-28 15:45:35,358] [INFO] [axolotl.callbacks.on_step_end:122] [PID:2813] [RANK:1] GPU memory usage while training: 12.283GB (+4.493GB cache, +0.743GB misc)
+{'loss': 2.0022, 'learning_rate': 4e-05, 'epoch': 0.12}                         
+{'loss': 2.1054, 'learning_rate': 6e-05, 'epoch': 0.17}                         
+{'loss': 1.9004, 'learning_rate': 8e-05, 'epoch': 0.23}                         
+{'loss': 1.8794, 'learning_rate': 0.0001, 'epoch': 0.29}                        
+ 29%|████████████▉                               | 5/17 [02:20&lt;05:23, 26.92s/it]
+  0%|                                                     | 0/3 [00:00&lt;?, ?it/s]
+ 67%|██████████████████████████████               | 2/3 [00:03&lt;00:01,  1.88s/it]
+                                                                                
+{'eval_loss': 1.7912336587905884, 'eval_runtime': 11.3106, 'eval_samples_per_second': 1.503, 'eval_steps_per_second': 0.265, 'epoch': 0.29}
+ 29%|████████████▉                               | 5/17 [02:32&lt;05:23, 26.92s/it]
+100%|█████████████████████████████████████████████| 3/3 [00:07&lt;00:00,  2.67s/it]
+{'loss': 1.7871, 'learning_rate': 0.00012, 'epoch': 0.35}                       
+{'loss': 1.7758, 'learning_rate': 0.00014, 'epoch': 0.4}                        
+{'loss': 1.4645, 'learning_rate': 0.00016, 'epoch': 0.46}                       
+{'loss': 1.4009, 'learning_rate': 0.00018, 'epoch': 0.52}                       
+{'loss': 1.3927, 'learning_rate': 0.0002, 'epoch': 0.58}                        
+ 59%|█████████████████████████▎                 | 10/17 [04:38&lt;03:04, 26.33s/it]
+  0%|                                                     | 0/3 [00:00&lt;?, ?it/s]
+ 67%|██████████████████████████████               | 2/3 [00:03&lt;00:01,  1.89s/it]
+                                                                                
+{'eval_loss': 1.1426481008529663, 'eval_runtime': 11.3344, 'eval_samples_per_second': 1.5, 'eval_steps_per_second': 0.265, 'epoch': 0.58}
+ 59%|█████████████████████████▎                 | 10/17 [04:49&lt;03:04, 26.33s/it]
+100%|█████████████████████████████████████████████| 3/3 [00:07&lt;00:00,  2.68s/it]
+{'loss': 1.0122, 'learning_rate': 0.0001900968867902419, 'epoch': 0.63}         
+{'loss': 1.0019, 'learning_rate': 0.00016234898018587337, 'epoch': 0.69}        
+{'loss': 0.8976, 'learning_rate': 0.00012225209339563145, 'epoch': 0.75}        
+{'loss': 0.9301, 'learning_rate': 7.774790660436858e-05, 'epoch': 0.81}         
+{'loss': 0.8595, 'learning_rate': 3.7651019814126654e-05, 'epoch': 0.87}        
+ 88%|█████████████████████████████████████▉     | 15/17 [06:55&lt;00:52, 26.17s/it]
+  0%|                                                     | 0/3 [00:00&lt;?, ?it/s]
+ 67%|██████████████████████████████               | 2/3 [00:03&lt;00:01,  1.88s/it]
+                                                                                
+{'eval_loss': 0.8175248503684998, 'eval_runtime': 11.2932, 'eval_samples_per_second': 1.505, 'eval_steps_per_second': 0.266, 'epoch': 0.87}
+ 88%|█████████████████████████████████████▉     | 15/17 [07:06&lt;00:52, 26.17s/it]
+100%|█████████████████████████████████████████████| 3/3 [00:07&lt;00:00,  2.67s/it]
+{'loss': 0.7931, 'learning_rate': 9.903113209758096e-06, 'epoch': 0.92}         
+{'loss': 0.6909, 'learning_rate': 0.0, 'epoch': 0.98}                           
+100%|███████████████████████████████████████████| 17/17 [07:56&lt;00:00, 28.03s/it]/opt/conda/lib/python3.10/site-packages/torch/nn/modules/module.py:1879: UserWarning: Positional args are being deprecated, use kwargs instead. Refer to https://pytorch.org/docs/master/generated/torch.nn.Module.html#torch.nn.Module.state_dict for details.
+  warnings.warn(
+/opt/conda/lib/python3.10/site-packages/torch/nn/modules/module.py:1879: UserWarning: Positional args are being deprecated, use kwargs instead. Refer to https://pytorch.org/docs/master/generated/torch.nn.Module.html#torch.nn.Module.state_dict for details.
+  warnings.warn(
+/opt/conda/lib/python3.10/site-packages/torch/nn/modules/module.py:1879: UserWarning: Positional args are being deprecated, use kwargs instead. Refer to https://pytorch.org/docs/master/generated/torch.nn.Module.html#torch.nn.Module.state_dict for details.
+  warnings.warn(
+{'train_runtime': 489.0649, 'train_samples_per_second': 0.63, 'train_steps_per_second': 0.035, 'train_loss': 1.408153467318591, 'epoch': 0.98}
+100%|███████████████████████████████████████████| 17/17 [08:09&lt;00:00, 28.77s/it]
+[2023-12-28 15:52:39,488] [INFO] [axolotl.train.log:60] [PID:2812] [RANK:0] Training Completed!!! Saving pre-trained model to ./out</code></pre>
+</div>
+</div>
+
+
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+window.document.addEventListener("DOMContentLoaded", function (event) {
+  const toggleBodyColorMode = (bsSheetEl) => {
+    const mode = bsSheetEl.getAttribute("data-mode");
+    const bodyEl = window.document.querySelector("body");
+    if (mode === "dark") {
+      bodyEl.classList.add("quarto-dark");
+      bodyEl.classList.remove("quarto-light");
+    } else {
+      bodyEl.classList.add("quarto-light");
+      bodyEl.classList.remove("quarto-dark");
+    }
+  }
+  const toggleBodyColorPrimary = () => {
+    const bsSheetEl = window.document.querySelector("link#quarto-bootstrap");
+    if (bsSheetEl) {
+      toggleBodyColorMode(bsSheetEl);
+    }
+  }
+  toggleBodyColorPrimary();  
+  const icon = "";
+  const anchorJS = new window.AnchorJS();
+  anchorJS.options = {
+    placement: 'right',
+    icon: icon
+  };
+  anchorJS.add('.anchored');
+  const isCodeAnnotation = (el) => {
+    for (const clz of el.classList) {
+      if (clz.startsWith('code-annotation-')) {                     
+        return true;
+      }
+    }
+    return false;
+  }
+  const clipboard = new window.ClipboardJS('.code-copy-button', {
+    text: function(trigger) {
+      const codeEl = trigger.previousElementSibling.cloneNode(true);
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+  });
+  clipboard.on('success', function(e) {
+    // button target
+    const button = e.trigger;
+    // don't keep focus
+    button.blur();
+    // flash "checked"
+    button.classList.add('code-copy-button-checked');
+    var currentTitle = button.getAttribute("title");
+    button.setAttribute("title", "Copied!");
+    let tooltip;
+    if (window.bootstrap) {
+      button.setAttribute("data-bs-toggle", "tooltip");
+      button.setAttribute("data-bs-placement", "left");
+      button.setAttribute("data-bs-title", "Copied!");
+      tooltip = new bootstrap.Tooltip(button, 
+        { trigger: "manual", 
+          customClass: "code-copy-button-tooltip",
+          offset: [0, -8]});
+      tooltip.show();    
+    }
+    setTimeout(function() {
+      if (tooltip) {
+        tooltip.hide();
+        button.removeAttribute("data-bs-title");
+        button.removeAttribute("data-bs-toggle");
+        button.removeAttribute("data-bs-placement");
+      }
+      button.setAttribute("title", currentTitle);
+      button.classList.remove('code-copy-button-checked');
+    }, 1000);
+    // clear code selection
+    e.clearSelection();
+  });
+  function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+    const config = {
+      allowHTML: true,
+      maxWidth: 500,
+      delay: 100,
+      arrow: false,
+      appendTo: function(el) {
+          return el.parentElement;
+      },
+      interactive: true,
+      interactiveBorder: 10,
+      theme: 'quarto',
+      placement: 'bottom-start',
+    };
+    if (contentFn) {
+      config.content = contentFn;
+    }
+    if (onTriggerFn) {
+      config.onTrigger = onTriggerFn;
+    }
+    if (onUntriggerFn) {
+      config.onUntrigger = onUntriggerFn;
+    }
+    window.tippy(el, config); 
+  }
+  const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+  for (var i=0; i<noterefs.length; i++) {
+    const ref = noterefs[i];
+    tippyHover(ref, function() {
+      // use id or data attribute instead here
+      let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+      try { href = new URL(href).hash; } catch {}
+      const id = href.replace(/^#\/?/, "");
+      const note = window.document.getElementById(id);
+      return note.innerHTML;
+    });
+  }
+  const xrefs = window.document.querySelectorAll('a.quarto-xref');
+  const processXRef = (id, note) => {
+    // Strip column container classes
+    const stripColumnClz = (el) => {
+      el.classList.remove("page-full", "page-columns");
+      if (el.children) {
+        for (const child of el.children) {
+          stripColumnClz(child);
+        }
+      }
+    }
+    stripColumnClz(note)
+    if (id === null || id.startsWith('sec-')) {
+      // Special case sections, only their first couple elements
+      const container = document.createElement("div");
+      if (note.children && note.children.length > 2) {
+        container.appendChild(note.children[0].cloneNode(true));
+        for (let i = 1; i < note.children.length; i++) {
+          const child = note.children[i];
+          if (child.tagName === "P" && child.innerText === "") {
+            continue;
+          } else {
+            container.appendChild(child.cloneNode(true));
+            break;
+          }
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(container);
+        }
+        return container.innerHTML
+      } else {
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        return note.innerHTML;
+      }
+    } else {
+      // Remove any anchor links if they are present
+      const anchorLink = note.querySelector('a.anchorjs-link');
+      if (anchorLink) {
+        anchorLink.remove();
+      }
+      if (window.Quarto?.typesetMath) {
+        window.Quarto.typesetMath(note);
+      }
+      return note.innerHTML;
+    }
+  }
+  for (var i=0; i<xrefs.length; i++) {
+    const xref = xrefs[i];
+    tippyHover(xref, undefined, function(instance) {
+      instance.disable();
+      let url = xref.getAttribute('href');
+      let hash = undefined; 
+      if (url.startsWith('#')) {
+        hash = url;
+      } else {
+        try { hash = new URL(url).hash; } catch {}
+      }
+      if (hash) {
+        const id = hash.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note !== null) {
+          try {
+            const html = processXRef(id, note.cloneNode(true));
+            instance.setContent(html);
+          } finally {
+            instance.enable();
+            instance.show();
+          }
+        } else {
+          // See if we can fetch this
+          fetch(url.split('#')[0])
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.getElementById(id);
+            if (note !== null) {
+              const html = processXRef(id, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      } else {
+        // See if we can fetch a full url (with no hash to target)
+        // This is a special case and we should probably do some content thinning / targeting
+        fetch(url)
+        .then(res => res.text())
+        .then(html => {
+          const parser = new DOMParser();
+          const htmlDoc = parser.parseFromString(html, "text/html");
+          const note = htmlDoc.querySelector('main.content');
+          if (note !== null) {
+            // This should only happen for chapter cross references
+            // (since there is no id in the URL)
+            // remove the first header
+            if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+              note.children[0].remove();
+            }
+            const html = processXRef(null, note);
+            instance.setContent(html);
+          } 
+        }).finally(() => {
+          instance.enable();
+          instance.show();
+        });
+      }
+    }, function(instance) {
+    });
+  }
+      let selectedAnnoteEl;
+      const selectorForAnnotation = ( cell, annotation) => {
+        let cellAttr = 'data-code-cell="' + cell + '"';
+        let lineAttr = 'data-code-annotation="' +  annotation + '"';
+        const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+        return selector;
+      }
+      const selectCodeLines = (annoteEl) => {
+        const doc = window.document;
+        const targetCell = annoteEl.getAttribute("data-target-cell");
+        const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+        const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+        const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+        const lineIds = lines.map((line) => {
+          return targetCell + "-" + line;
+        })
+        let top = null;
+        let height = null;
+        let parent = null;
+        if (lineIds.length > 0) {
+            //compute the position of the single el (top and bottom and make a div)
+            const el = window.document.getElementById(lineIds[0]);
+            top = el.offsetTop;
+            height = el.offsetHeight;
+            parent = el.parentElement.parentElement;
+          if (lineIds.length > 1) {
+            const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+            const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+            height = bottom - top;
+          }
+          if (top !== null && height !== null && parent !== null) {
+            // cook up a div (if necessary) and position it 
+            let div = window.document.getElementById("code-annotation-line-highlight");
+            if (div === null) {
+              div = window.document.createElement("div");
+              div.setAttribute("id", "code-annotation-line-highlight");
+              div.style.position = 'absolute';
+              parent.appendChild(div);
+            }
+            div.style.top = top - 2 + "px";
+            div.style.height = height + 4 + "px";
+            div.style.left = 0;
+            let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+            if (gutterDiv === null) {
+              gutterDiv = window.document.createElement("div");
+              gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+              gutterDiv.style.position = 'absolute';
+              const codeCell = window.document.getElementById(targetCell);
+              const gutter = codeCell.querySelector('.code-annotation-gutter');
+              gutter.appendChild(gutterDiv);
+            }
+            gutterDiv.style.top = top - 2 + "px";
+            gutterDiv.style.height = height + 4 + "px";
+          }
+          selectedAnnoteEl = annoteEl;
+        }
+      };
+      const unselectCodeLines = () => {
+        const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+        elementsIds.forEach((elId) => {
+          const div = window.document.getElementById(elId);
+          if (div) {
+            div.remove();
+          }
+        });
+        selectedAnnoteEl = undefined;
+      };
+        // Handle positioning of the toggle
+    window.addEventListener(
+      "resize",
+      throttle(() => {
+        elRect = undefined;
+        if (selectedAnnoteEl) {
+          selectCodeLines(selectedAnnoteEl);
+        }
+      }, 10)
+    );
+    function throttle(fn, ms) {
+    let throttle = false;
+    let timer;
+      return (...args) => {
+        if(!throttle) { // first call gets through
+            fn.apply(this, args);
+            throttle = true;
+        } else { // all the others get throttled
+            if(timer) clearTimeout(timer); // cancel #2
+            timer = setTimeout(() => {
+              fn.apply(this, args);
+              timer = throttle = false;
+            }, ms);
+        }
+      };
+    }
+      // Attach click handler to the DT
+      const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+      for (const annoteDlNode of annoteDls) {
+        annoteDlNode.addEventListener('click', (event) => {
+          const clickedEl = event.target;
+          if (clickedEl !== selectedAnnoteEl) {
+            unselectCodeLines();
+            const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+            if (activeEl) {
+              activeEl.classList.remove('code-annotation-active');
+            }
+            selectCodeLines(clickedEl);
+            clickedEl.classList.add('code-annotation-active');
+          } else {
+            // Unselect the line
+            unselectCodeLines();
+            clickedEl.classList.remove('code-annotation-active');
+          }
+        });
+      }
+  const findCites = (el) => {
+    const parentEl = el.parentElement;
+    if (parentEl) {
+      const cites = parentEl.dataset.cites;
+      if (cites) {
+        return {
+          el,
+          cites: cites.split(' ')
+        };
+      } else {
+        return findCites(el.parentElement)
+      }
+    } else {
+      return undefined;
+    }
+  };
+  var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+  for (var i=0; i<bibliorefs.length; i++) {
+    const ref = bibliorefs[i];
+    const citeInfo = findCites(ref);
+    if (citeInfo) {
+      tippyHover(citeInfo.el, function() {
+        var popup = window.document.createElement('div');
+        citeInfo.cites.forEach(function(cite) {
+          var citeDiv = window.document.createElement('div');
+          citeDiv.classList.add('hanging-indent');
+          citeDiv.classList.add('csl-entry');
+          var biblioDiv = window.document.getElementById('ref-' + cite);
+          if (biblioDiv) {
+            citeDiv.innerHTML = biblioDiv.innerHTML;
+          }
+          popup.appendChild(citeDiv);
+        });
+        return popup.innerHTML;
+      });
+    }
+  }
+});
+</script>
+</div> <!-- /content -->
+
+
+
+
+</body></html>
