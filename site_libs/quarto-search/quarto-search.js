@@ -675,18 +675,6 @@ function showCopyLink(query, options) {
 // create the index
 var fuseIndex = undefined;
 var shownWarning = false;
-
-// fuse index options
-const kFuseIndexOptions = {
-  keys: [
-    { name: "title", weight: 20 },
-    { name: "section", weight: 20 },
-    { name: "text", weight: 10 },
-  ],
-  ignoreLocation: true,
-  threshold: 0.1,
-};
-
 async function readSearchData() {
   // Initialize the search index on demand
   if (fuseIndex === undefined) {
@@ -697,7 +685,17 @@ async function readSearchData() {
       shownWarning = true;
       return;
     }
-    const fuse = new window.Fuse([], kFuseIndexOptions);
+    // create fuse index
+    const options = {
+      keys: [
+        { name: "title", weight: 20 },
+        { name: "section", weight: 20 },
+        { name: "text", weight: 10 },
+      ],
+      ignoreLocation: true,
+      threshold: 0.1,
+    };
+    const fuse = new window.Fuse([], options);
 
     // fetch the main search.json
     const response = await fetch(offsetURL("search.json"));
@@ -1228,34 +1226,8 @@ function algoliaSearch(query, limit, algoliaOptions) {
   });
 }
 
-let subSearchTerm = undefined;
-let subSearchFuse = undefined;
-const kFuseMaxWait = 125;
-
-async function fuseSearch(query, fuse, fuseOptions) {
-  let index = fuse;
-  // Fuse.js using the Bitap algorithm for text matching which runs in
-  // O(nm) time (no matter the structure of the text). In our case this
-  // means that long search terms mixed with large index gets very slow
-  //
-  // This injects a subIndex that will be used once the terms get long enough
-  // Usually making this subindex is cheap since there will typically be
-  // a subset of results matching the existing query
-  if (subSearchFuse !== undefined && query.startsWith(subSearchTerm)) {
-    // Use the existing subSearchFuse
-    index = subSearchFuse;
-  } else if (subSearchFuse !== undefined) {
-    // The term changed, discard the existing fuse
-    subSearchFuse = undefined;
-    subSearchTerm = undefined;
-  }
-
-  // Search using the active fuse
-  const then = performance.now();
-  const resultsRaw = await index.search(query, fuseOptions);
-  const now = performance.now();
-
-  const results = resultsRaw.map((result) => {
+function fuseSearch(query, fuse, fuseOptions) {
+  return fuse.search(query, fuseOptions).map((result) => {
     const addParam = (url, name, value) => {
       const anchorParts = url.split("#");
       const baseUrl = anchorParts[0];
@@ -1272,15 +1244,4 @@ async function fuseSearch(query, fuse, fuseOptions) {
       crumbs: result.item.crumbs,
     };
   });
-
-  // If we don't have a subfuse and the query is long enough, go ahead
-  // and create a subfuse to use for subsequent queries
-  if (now - then > kFuseMaxWait && subSearchFuse === undefined) {
-    subSearchTerm = query;
-    subSearchFuse = new window.Fuse([], kFuseIndexOptions);
-    resultsRaw.forEach((rr) => {
-      subSearchFuse.add(rr.item);
-    });
-  }
-  return results;
 }
