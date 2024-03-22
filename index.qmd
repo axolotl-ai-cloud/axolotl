@@ -1,0 +1,19 @@
+
+
+```{python}
+#|output: asis
+#|echo: false
+
+# This cell steals the README as the home page for now, but excludes the table of contents (quarto adds its own)
+import re
+pattern = re.compile(
+    r"<table>\s*<tr>\s*<td>\s*## Table of Contents.*?</td>\s*</tr>\s*</table>",
+    re.DOTALL | re.IGNORECASE
+)
+
+with open('README.md', 'r') as f:
+    txt = f.read()
+
+cleaned = pattern.sub("", txt)
+print(cleaned)
+```

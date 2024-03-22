@@ -1,4 +1,7 @@
-# Multipack (Sample Packing)
+---
+title: Multipack (Sample Packing)
+description: Multipack is a technique to pack multiple sequences into a single batch to increase training throughput.
+---
 
 ## Visualization of Multipack with Flash Attention
 

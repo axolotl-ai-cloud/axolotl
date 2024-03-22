@@ -2,6 +2,7 @@
 configs
 last_run_prepared/
 .vscode
+_site/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -172,3 +173,5 @@ wandb
 lora-out/*
 qlora-out/*
 mlruns/*
+
+/.quarto/
