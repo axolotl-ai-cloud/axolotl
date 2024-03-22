@@ -1204,7 +1204,7 @@ although this will be very slow, and using the config options above are recommen
 
 ## Common Errors 🧰
 
-See also the [FAQ's](./docs/faq.md) and [debugging guide](docs/debugging.qmd).
+See also the [FAQ's](./docs/faq.qmd) and [debugging guide](docs/debugging.qmd).
 
 > If you encounter a 'Cuda out of memory' error, it means your GPU ran out of memory during the training process. Here's how to resolve it:
 
