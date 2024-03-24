@@ -2,8 +2,8 @@ base_model: mistralai/Mistral-7B-v0.1
 model_type: MistralForCausalLM
 tokenizer_type: LlamaTokenizer
 
-load_in_8bit: false
-load_in_4bit: true
+load_in_8bit: true
+load_in_4bit: false
 strict: false
 
 datasets:
@@ -11,9 +11,9 @@ datasets:
     type: alpaca
 dataset_prepared_path: last_run_prepared
 val_set_size: 0.1
-output_dir: ./qlora-out
+output_dir: ./lora-out
 
-adapter: qlora
+adapter: lora
 lora_model_dir:
 
 sequence_len: 8192
