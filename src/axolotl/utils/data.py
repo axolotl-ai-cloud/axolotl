@@ -134,7 +134,7 @@ def load_tokenized_prepared_datasets(
     split="train",
 ) -> Tuple[DatasetDict, List[Prompter]]:
     cfg_datasets = cfg.test_datasets if split == "test" else cfg.datasets
-    tokenizer_name = tokenizer.__class__.__name__
+    tokenizer_name = cfg.tokenizer_config
     ds_hash = str(
         md5(
             (
