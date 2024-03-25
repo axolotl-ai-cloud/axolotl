@@ -259,6 +259,12 @@ SHAREGPT_ASSERTION_FAILED_ROLE = (
     "Role did not alternate between turns (gpt and human). Please check your data."
 )
 
+CONVERSATION_ROLE_FORMAT = {
+    "chatml": "<|im_start|>{ROLE}",
+    "zephyr": "<|{ROLE}|>",
+    "vicuna_v1.1": "{ROLE}",
+}
+
 
 class ShareGPTPrompter(Prompter):  # pylint: disable=too-few-public-methods
     """
@@ -268,7 +274,9 @@ class ShareGPTPrompter(Prompter):  # pylint: disable=too-few-public-methods
     role_key_human = "human"
     role_key_model = "gpt"
     # Optional, only used for tool usage datasets.
-    role_key_tool = None
+    role_key_tool: Optional[str] = None
+    # Optional, role input/output mapping
+    roles: Optional[dict] = None
 
     def __init__(
         self,
@@ -277,6 +285,7 @@ class ShareGPTPrompter(Prompter):  # pylint: disable=too-few-public-methods
         role_key_human: Optional[str] = None,
         role_key_model: Optional[str] = None,
         role_key_tool: Optional[str] = None,
+        roles: Optional[dict] = None,
     ):
         if conversation:
             if isinstance(conversation, Conversation):
@@ -291,6 +300,8 @@ class ShareGPTPrompter(Prompter):  # pylint: disable=too-few-public-methods
             self.role_key_model = role_key_model
         if role_key_tool:
             self.role_key_tool = role_key_tool
+        if roles:
+            self.roles = roles
 
     def _build_result(self, source):
         if len(source) < 2:
@@ -322,11 +333,23 @@ class ShareGPTPrompter(Prompter):  # pylint: disable=too-few-public-methods
 
         conv.messages = []
         for _, sentence in enumerate(source):
-            role = roles[sentence["from"]]
-            if len(conv.messages) > 0 and (
-                (role == conv.messages[-1][0]) or (role not in conv.roles)
-            ):
+            from_role = sentence["from"]
+            if from_role in roles:
+                role = roles[from_role]
+            else:
+                if self._conversation.name not in CONVERSATION_ROLE_FORMAT:
+                    raise NotImplementedError(
+                        f"Role ({role}) not in default roles, and {self._conversation.name} does not support role remapping yet."
+                        "Please help us by creating an Issue to add support for this conversation type."
+                    )
+
+                role = CONVERSATION_ROLE_FORMAT[self._conversation.name].format(
+                    ROLE=from_role
+                )
+
+            if len(conv.messages) > 0 and ((role == conv.messages[-1][0])):
                 LOG.warning(f"{SHAREGPT_ASSERTION_FAILED_ROLE}: {sentence}")
+
             conv.append_message(role, sentence["value"])
 
         return conv.get_turns()
@@ -354,11 +377,13 @@ class ShareGPTPrompterV2(ShareGPTPrompter):
         conversation: Optional[Union[str, Conversation]] = None,
         role_key_human: Optional[str] = None,
         role_key_model: Optional[str] = None,
+        roles: Optional[dict] = None,
     ):
         super().__init__(
             conversation=conversation,
             role_key_human=role_key_human,
             role_key_model=role_key_model,
+            roles=roles,
         )
 
 

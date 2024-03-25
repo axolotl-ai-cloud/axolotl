@@ -1,4 +1,7 @@
-# RLHF (Beta)
+---
+title: "RLHF (Beta)"
+description: "Reinforcement Learning from Human Feedback is a method whereby a language model is optimized from data using human feedback."
+---
 
 ### Overview
 

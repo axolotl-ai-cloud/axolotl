@@ -34,7 +34,7 @@ jobs:
       fail-fast: false
       matrix:
         python_version: ["3.10", "3.11"]
-    timeout-minutes: 10
+    timeout-minutes: 20
 
     steps:
       - name: Check out repository code

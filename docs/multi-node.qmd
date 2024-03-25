@@ -1,4 +1,7 @@
-# Multi Node
+---
+title: Multi Node
+description: How to use Axolotl on multiple machines
+---
 
 You will need to create a configuration for accelerate, either by using `accelerate config` and follow the instructions or you can use one of the preset below:
 

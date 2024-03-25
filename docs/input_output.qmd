@@ -1,4 +1,7 @@
-# Template-free prompt construction with the `input_output` format
+---
+title: Template-free prompt construction
+description: "Template-free prompt construction with the `input_output` format"
+---
 
 <!-- TOC -->
 

@@ -96,6 +96,8 @@ class SFTDataset(BaseModel):
     field_human: Optional[str] = None
     field_model: Optional[str] = None
 
+    roles: Optional[Dict[str, List[str]]] = None
+
 
 class UserDefinedDPOType(BaseModel):
     """User defined typing for DPO"""
@@ -311,6 +313,15 @@ class HyperparametersConfig(BaseModel):
     learning_rate: Union[str, float]
     weight_decay: Optional[float] = None
     optimizer: Optional[Union[OptimizerNames, Literal["lion_pytorch"]]] = None
+    optim_args: Optional[Union[str, Dict[str, Any]]] = Field(
+        default=None, metadata={"help": "Optional arguments to supply to optimizer."}
+    )
+    optim_target_modules: Optional[Union[List[str], Literal["all_linear"]]] = Field(
+        default=None,
+        metadata={
+            "help": "The target modules to optimize, i.e. the module names that you would like to train."
+        },
+    )
     torchdistx_path: Optional[str] = None
     lr_scheduler: Optional[SchedulerType] = None
     lr_scheduler_kwargs: Optional[Dict[str, Any]] = None
@@ -416,6 +427,7 @@ class AxolotlInputConfig(
 
     datasets: Optional[conlist(Union[SFTDataset, DPODataset], min_length=1)] = None  # type: ignore
     test_datasets: Optional[conlist(Union[SFTDataset, DPODataset], min_length=1)] = None  # type: ignore
+    shuffle_merged_datasets: Optional[bool] = True
     dataset_prepared_path: Optional[str] = None
     dataset_shard_num: Optional[int] = None
     dataset_shard_idx: Optional[int] = None

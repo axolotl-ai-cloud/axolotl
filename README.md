@@ -32,6 +32,7 @@ Features:
   - [Bare Metal Cloud GPU](#bare-metal-cloud-gpu)
   - [Windows](#windows)
   - [Mac](#mac)
+  - [Google Colab](#google-colab)
   - [Launching on public clouds via SkyPilot](#launching-on-public-clouds-via-skypilot)
 - [Dataset](#dataset)
   - [How to Add Custom Prompts](#how-to-add-custom-prompts)
@@ -149,7 +150,7 @@ accelerate launch -m axolotl.cli.train https://raw.githubusercontent.com/OpenAcc
   ```
 
 >[!Tip]
-> If you want to debug axolotl or prefer to use Docker as your development environment, see the [debugging guide's section on Docker](docs/debugging.md#debugging-with-docker).
+> If you want to debug axolotl or prefer to use Docker as your development environment, see the [debugging guide's section on Docker](docs/debugging.qmd#debugging-with-docker).
 
   <details>
 
@@ -267,7 +268,11 @@ Use the below instead of the install method in QuickStart.
 ```
 pip3 install -e '.'
 ```
-More info: [mac.md](/docs/mac.md)
+More info: [mac.md](/docs/mac.qmd)
+
+#### Google Colab
+
+Please use this example [notebook](examples/colab-notebooks/colab-axolotl-example.ipynb).
 
 #### Launching on public clouds via SkyPilot
 To launch on GPU instances (both on-demand and spot instances) on 7+ clouds (GCP, AWS, Azure, OCI, and more), you can use [SkyPilot](https://skypilot.readthedocs.io/en/latest/index.html):
@@ -409,7 +414,7 @@ pretraining_dataset: # hf path only
    {"segments": [{"label": true|false, "text": "..."}]}
   ```
 
-This is a special format that allows you to construct prompts without using templates. This is for advanced users who want more freedom with prompt construction.  See [these docs](docs/input_output.md) for more details.
+This is a special format that allows you to construct prompts without using templates. This is for advanced users who want more freedom with prompt construction.  See [these docs](docs/input_output.qmd) for more details.
 
 ##### Conversation
 
@@ -651,9 +656,13 @@ datasets:
     train_on_split: train # Optional[str] name of dataset split to load from
 
     # Optional[str] fastchat conversation type, only used with type: sharegpt
-    conversation:  # Options (see Conversation 'name'): https://github.com/lm-sys/FastChat/blob/main/fastchat/conversation.py
+    conversation: # Options (see Conversation 'name'): https://github.com/lm-sys/FastChat/blob/main/fastchat/conversation.py
     field_human: # Optional[str]. Human key to use for conversation.
     field_model: # Optional[str]. Assistant key to use for conversation.
+    # Add additional keys from your dataset as input or output roles
+    roles:
+      input: # Optional[List[str]]. These will be masked based on train_on_input
+      output: # Optional[List[str]].
 
   # Custom user instruction prompt
   - path: repo
@@ -677,6 +686,10 @@ datasets:
 
       # For `completion` datsets only, uses the provided field instead of `text` column
       field:
+
+# If false, the datasets will not be shuffled and will keep their original order in `datasets`.
+# The same applies to the `test_datasets` option and the `pretraining_dataset` option. Default is true.
+shuffle_merged_datasets: true
 
 # A list of one or more datasets to eval the model with.
 # You can use either test_datasets, or val_set_size, but not both.
@@ -899,7 +912,26 @@ lr_div_factor: # Learning rate div factor
 # - paged_adamw_8bit
 # - paged_lion_32bit
 # - paged_lion_8bit
+# - galore_adamw
+# - galore_adamw_8bit
+# - galore_adafactor
+# - galore_adamw_layerwise
+# - galore_adamw_8bit_layerwise
+# - galore_adafactor_layerwise
 optimizer:
+# Dictionary of arguments to pass to the optimizer
+optim_args:
+# For Galore Optimizers the following optim_args are available
+# rank:  # type: int
+# update_proj_gap  # type: int
+# scale  # type: float
+# proj_type:  # type: str, default = std
+
+# The target modules to optimize, i.e. the module names that you would like to train, right now this is used only for GaLore algorithm
+optim_target_modules:
+# - self_attn  # for llama
+# - mlp
+
 # Specify weight decay
 weight_decay:
 # adamw hyperparams
@@ -1098,7 +1130,7 @@ fsdp_config:
 
 ##### FSDP + QLoRA
 
-Axolotl supports training with FSDP and QLoRA, see [these docs](docs/fsdp_qlora.md) for more information.
+Axolotl supports training with FSDP and QLoRA, see [these docs](docs/fsdp_qlora.qmd) for more information.
 
 ##### Weights & Biases Logging
 
@@ -1177,7 +1209,7 @@ although this will be very slow, and using the config options above are recommen
 
 ## Common Errors 🧰
 
-See also the [FAQ's](./docs/faq.md) and [debugging guide](docs/debugging.md).
+See also the [FAQ's](./docs/faq.qmd) and [debugging guide](docs/debugging.qmd).
 
 > If you encounter a 'Cuda out of memory' error, it means your GPU ran out of memory during the training process. Here's how to resolve it:
 
@@ -1211,7 +1243,7 @@ It's safe to ignore it.
 
 > NCCL Timeouts during training
 
-See the [NCCL](docs/nccl.md) guide.
+See the [NCCL](docs/nccl.qmd) guide.
 
 
 ### Tokenization Mismatch b/w Inference & Training
@@ -1229,7 +1261,7 @@ Having misalignment between your prompts during training and inference can cause
 
 ## Debugging Axolotl
 
-See [this debugging guide](docs/debugging.md) for tips on debugging Axolotl, along with an example configuration for debugging with VSCode.
+See [this debugging guide](docs/debugging.qmd) for tips on debugging Axolotl, along with an example configuration for debugging with VSCode.
 
 ## Need help? 🙋
 
