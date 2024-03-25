@@ -2,62 +2,58 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://OpenAccess-AI-Collective.github.io/axolotl/TODO.html</loc>
-    <lastmod>2024-03-22T22:23:11.542Z</lastmod>
-  </url>
-  <url>
-    <loc>https://OpenAccess-AI-Collective.github.io/axolotl/examples/mistral/Mistral-7b-example/code.html</loc>
-    <lastmod>2024-03-22T22:23:11.546Z</lastmod>
-  </url>
-  <url>
-    <loc>https://OpenAccess-AI-Collective.github.io/axolotl/docs/multi-node.html</loc>
-    <lastmod>2024-03-22T22:23:11.542Z</lastmod>
-  </url>
-  <url>
-    <loc>https://OpenAccess-AI-Collective.github.io/axolotl/docs/config.html</loc>
-    <lastmod>2024-03-22T22:23:11.542Z</lastmod>
-  </url>
-  <url>
-    <loc>https://OpenAccess-AI-Collective.github.io/axolotl/docs/multipack.html</loc>
-    <lastmod>2024-03-22T22:23:11.542Z</lastmod>
-  </url>
-  <url>
-    <loc>https://OpenAccess-AI-Collective.github.io/axolotl/docs/mac.html</loc>
-    <lastmod>2024-03-22T22:23:11.542Z</lastmod>
-  </url>
-  <url>
-    <loc>https://OpenAccess-AI-Collective.github.io/axolotl/docs/fsdp_qlora.html</loc>
-    <lastmod>2024-03-22T22:23:11.542Z</lastmod>
-  </url>
-  <url>
-    <loc>https://OpenAccess-AI-Collective.github.io/axolotl/FAQS.html</loc>
-    <lastmod>2024-03-22T22:23:11.538Z</lastmod>
-  </url>
-  <url>
-    <loc>https://OpenAccess-AI-Collective.github.io/axolotl/docs/faq.html</loc>
-    <lastmod>2024-03-22T22:23:11.542Z</lastmod>
-  </url>
-  <url>
-    <loc>https://OpenAccess-AI-Collective.github.io/axolotl/docs/rlhf.html</loc>
-    <lastmod>2024-03-22T22:23:11.542Z</lastmod>
-  </url>
-  <url>
-    <loc>https://OpenAccess-AI-Collective.github.io/axolotl/docs/nccl.html</loc>
-    <lastmod>2024-03-22T22:23:11.542Z</lastmod>
-  </url>
-  <url>
-    <loc>https://OpenAccess-AI-Collective.github.io/axolotl/docs/debugging.html</loc>
-    <lastmod>2024-03-22T22:23:11.542Z</lastmod>
-  </url>
-  <url>
-    <loc>https://OpenAccess-AI-Collective.github.io/axolotl/docs/input_output.html</loc>
-    <lastmod>2024-03-22T22:23:11.542Z</lastmod>
+    <lastmod>2024-03-25T03:00:55.201Z</lastmod>
   </url>
   <url>
     <loc>https://OpenAccess-AI-Collective.github.io/axolotl/examples/colab-notebooks/colab-axolotl-example.html</loc>
-    <lastmod>2024-03-22T22:23:11.542Z</lastmod>
+    <lastmod>2024-03-25T03:00:55.205Z</lastmod>
+  </url>
+  <url>
+    <loc>https://OpenAccess-AI-Collective.github.io/axolotl/docs/input_output.html</loc>
+    <lastmod>2024-03-25T03:00:55.201Z</lastmod>
+  </url>
+  <url>
+    <loc>https://OpenAccess-AI-Collective.github.io/axolotl/docs/debugging.html</loc>
+    <lastmod>2024-03-25T03:00:55.201Z</lastmod>
+  </url>
+  <url>
+    <loc>https://OpenAccess-AI-Collective.github.io/axolotl/docs/nccl.html</loc>
+    <lastmod>2024-03-25T03:00:55.201Z</lastmod>
+  </url>
+  <url>
+    <loc>https://OpenAccess-AI-Collective.github.io/axolotl/docs/rlhf.html</loc>
+    <lastmod>2024-03-25T03:00:55.201Z</lastmod>
+  </url>
+  <url>
+    <loc>https://OpenAccess-AI-Collective.github.io/axolotl/docs/faq.html</loc>
+    <lastmod>2024-03-25T03:00:55.201Z</lastmod>
+  </url>
+  <url>
+    <loc>https://OpenAccess-AI-Collective.github.io/axolotl/FAQS.html</loc>
+    <lastmod>2024-03-25T03:00:55.201Z</lastmod>
+  </url>
+  <url>
+    <loc>https://OpenAccess-AI-Collective.github.io/axolotl/docs/fsdp_qlora.html</loc>
+    <lastmod>2024-03-25T03:00:55.201Z</lastmod>
+  </url>
+  <url>
+    <loc>https://OpenAccess-AI-Collective.github.io/axolotl/docs/mac.html</loc>
+    <lastmod>2024-03-25T03:00:55.201Z</lastmod>
+  </url>
+  <url>
+    <loc>https://OpenAccess-AI-Collective.github.io/axolotl/docs/multipack.html</loc>
+    <lastmod>2024-03-25T03:00:55.201Z</lastmod>
+  </url>
+  <url>
+    <loc>https://OpenAccess-AI-Collective.github.io/axolotl/docs/config.html</loc>
+    <lastmod>2024-03-25T03:00:55.201Z</lastmod>
+  </url>
+  <url>
+    <loc>https://OpenAccess-AI-Collective.github.io/axolotl/docs/multi-node.html</loc>
+    <lastmod>2024-03-25T03:00:55.201Z</lastmod>
   </url>
   <url>
     <loc>https://OpenAccess-AI-Collective.github.io/axolotl/index.html</loc>
-    <lastmod>2024-03-22T22:23:11.554Z</lastmod>
+    <lastmod>2024-03-25T03:00:55.213Z</lastmod>
   </url>
 </urlset>
