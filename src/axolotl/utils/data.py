@@ -224,7 +224,7 @@ def load_tokenized_prepared_datasets(
                     token=use_auth_token,
                 )
                 ds_from_hub = True
-            except (FileNotFoundError, ConnectionError, HFValidationError):
+            except (FileNotFoundError, ConnectionError, HFValidationError, ValueError):
                 pass
 
             ds_from_cloud = False
@@ -292,8 +292,9 @@ def load_tokenized_prepared_datasets(
             if local_path.exists():
                 if local_path.is_dir():
                     if config_dataset.data_files:
+                        ds_type = get_ds_type(config_dataset)
                         ds = load_dataset(
-                            config_dataset.path,
+                            ds_type,
                             name=config_dataset.name,
                             data_files=config_dataset.data_files,
                             streaming=False,
