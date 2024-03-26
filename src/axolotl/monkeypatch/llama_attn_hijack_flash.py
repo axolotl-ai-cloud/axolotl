@@ -284,9 +284,7 @@ def flashattn_forward_with_s2attn(
     # [bsz, nh, q_len, hd]
     # pylint: disable=duplicate-code
 
-    cos, sin = self.rotary_emb(
-        value_states, position_ids=position_ids
-    )
+    cos, sin = self.rotary_emb(value_states, position_ids=position_ids)
     query_states, key_states = apply_rotary_pos_emb(
         query_states, key_states, cos, sin, position_ids
     )
@@ -432,9 +430,7 @@ def flashattn_forward(
     # [bsz, q_len, nh, hd]
     # [bsz, nh, q_len, hd]
 
-    cos, sin = self.rotary_emb(
-        value_states, position_ids=position_ids
-    )
+    cos, sin = self.rotary_emb(value_states, position_ids=position_ids)
     query_states, key_states = apply_rotary_pos_emb(
         query_states, key_states, cos, sin, position_ids
     )
