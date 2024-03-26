@@ -129,7 +129,7 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
                 train_dataset = train_dataset.remove_columns("token_type_ids")
             if eval_dataset and "token_type_ids" in eval_dataset.column_names:
                 eval_dataset = eval_dataset.remove_columns("token_type_ids")
-                
+
         train_dataset = train_dataset.filter(
             drop_long,
             num_proc=cfg.dataset_processes,
