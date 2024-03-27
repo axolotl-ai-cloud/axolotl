@@ -6,7 +6,7 @@ Module for pydantic models for configuration
 import logging
 import os
 from enum import Enum
-from typing import Any, Dict, List, Literal, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 from pydantic import BaseModel, Field, conlist, field_validator, model_validator
 from transformers import SchedulerType
@@ -179,7 +179,8 @@ class LoraConfig(BaseModel):
     peft_layers_to_transform: Optional[List[int]] = None
     peft: Optional[PeftConfig] = None
     peft_use_dora: Optional[bool] = None
-    peft_use_relora: Optional[bool] = None
+    peft_use_rslora: Optional[bool] = None
+    peft_layer_replication: Optional[List[Tuple[int, int]]] = None
 
     lora_on_cpu: Optional[bool] = None
     gptq: Optional[bool] = None
