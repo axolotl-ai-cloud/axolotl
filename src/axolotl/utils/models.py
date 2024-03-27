@@ -851,7 +851,7 @@ def load_lora(model, cfg, inference=False, config_only=False):
     if cfg.peft_use_rslora:
         lora_config_kwargs["use_rslora"] = cfg.peft_use_rslora
     if cfg.peft_layer_replication:
-        lora_config_kwargs["peft_layer_replication"] = cfg.peft_layer_replication
+        lora_config_kwargs["layer_replication"] = cfg.peft_layer_replication
 
     lora_config = LoraConfig(
         r=cfg.lora_r,
