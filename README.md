@@ -32,6 +32,7 @@ Features:
   - [Bare Metal Cloud GPU](#bare-metal-cloud-gpu)
   - [Windows](#windows)
   - [Mac](#mac)
+  - [Google Colab](#google-colab)
   - [Launching on public clouds via SkyPilot](#launching-on-public-clouds-via-skypilot)
 - [Dataset](#dataset)
   - [How to Add Custom Prompts](#how-to-add-custom-prompts)
@@ -42,8 +43,8 @@ Features:
   - [Merge LORA to Base](#merge-lora-to-base)
   - [Special Tokens](#special-tokens)
 - Advanced Topics
-  - [Multipack](./docs/multipack.md)<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M17 13.5v6H5v-12h6m3-3h6v6m0-6-9 9" class="icon_svg-stroke" stroke="#666" stroke-width="1.5" fill="none" fill-rule="evenodd" stroke-linecap="round" stroke-linejoin="round"></path></svg>
-  - [RLHF & DPO](./docs/rlhf.md)<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M17 13.5v6H5v-12h6m3-3h6v6m0-6-9 9" class="icon_svg-stroke" stroke="#666" stroke-width="1.5" fill="none" fill-rule="evenodd" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+  - [Multipack](./docs/multipack.qmd)<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M17 13.5v6H5v-12h6m3-3h6v6m0-6-9 9" class="icon_svg-stroke" stroke="#666" stroke-width="1.5" fill="none" fill-rule="evenodd" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+  - [RLHF & DPO](./docs/rlhf.qmd)<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M17 13.5v6H5v-12h6m3-3h6v6m0-6-9 9" class="icon_svg-stroke" stroke="#666" stroke-width="1.5" fill="none" fill-rule="evenodd" stroke-linecap="round" stroke-linejoin="round"></path></svg>
 - [Common Errors](#common-errors-)
   - [Tokenization Mismatch b/w Training & Inference](#tokenization-mismatch-bw-inference--training)
 - [Debugging Axolotl](#debugging-axolotl)
@@ -268,6 +269,10 @@ Use the below instead of the install method in QuickStart.
 pip3 install -e '.'
 ```
 More info: [mac.md](/docs/mac.qmd)
+
+#### Google Colab
+
+Please use this example [notebook](examples/colab-notebooks/colab-axolotl-example.ipynb).
 
 #### Launching on public clouds via SkyPilot
 To launch on GPU instances (both on-demand and spot instances) on 7+ clouds (GCP, AWS, Azure, OCI, and more), you can use [SkyPilot](https://skypilot.readthedocs.io/en/latest/index.html):

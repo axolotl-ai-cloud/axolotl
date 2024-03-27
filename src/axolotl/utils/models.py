@@ -134,9 +134,8 @@ def load_tokenizer(cfg):
     if cfg.tokenizer_type:
         tokenizer_cls = getattr(transformers, cfg.tokenizer_type)
 
-    tokenizer_config = cfg.tokenizer_config or cfg.base_model_config or cfg.base_model
     tokenizer = tokenizer_cls.from_pretrained(
-        tokenizer_config,
+        cfg.tokenizer_config,
         trust_remote_code=cfg.trust_remote_code or False,
         use_fast=use_fast,
         **tokenizer_kwargs,
