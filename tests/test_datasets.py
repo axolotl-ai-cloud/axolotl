@@ -44,6 +44,7 @@ class TestDatasetPreparation(unittest.TestCase):
             prepared_path = Path(tmp_dir) / "prepared"
             cfg = DictDefault(
                 {
+                    "tokenizer_config": "huggyllama/llama-7b",
                     "sequence_len": 1024,
                     "datasets": [
                         {
@@ -80,6 +81,7 @@ class TestDatasetPreparation(unittest.TestCase):
             # how to load it.
             cfg = DictDefault(
                 {
+                    "tokenizer_config": "huggyllama/llama-7b",
                     "sequence_len": 1024,
                     "datasets": [
                         {
@@ -113,6 +115,7 @@ class TestDatasetPreparation(unittest.TestCase):
             prepared_path = Path(tmp_dir) / "prepared"
             cfg = DictDefault(
                 {
+                    "tokenizer_config": "huggyllama/llama-7b",
                     "sequence_len": 256,
                     "datasets": [
                         {
@@ -143,6 +146,7 @@ class TestDatasetPreparation(unittest.TestCase):
             prepared_path: Path = Path(tmp_dir) / "prepared"
             cfg = DictDefault(
                 {
+                    "tokenizer_config": "huggyllama/llama-7b",
                     "sequence_len": 256,
                     "datasets": [
                         {
@@ -178,6 +182,7 @@ class TestDatasetPreparation(unittest.TestCase):
             prepared_path: Path = Path(tmp_dir) / "prepared"
             cfg = DictDefault(
                 {
+                    "tokenizer_config": "huggyllama/llama-7b",
                     "sequence_len": 256,
                     "datasets": [
                         {
@@ -211,6 +216,7 @@ class TestDatasetPreparation(unittest.TestCase):
             prepared_path: Path = Path(tmp_dir) / "prepared"
             cfg = DictDefault(
                 {
+                    "tokenizer_config": "huggyllama/llama-7b",
                     "sequence_len": 256,
                     "datasets": [
                         {
@@ -240,6 +246,7 @@ class TestDatasetPreparation(unittest.TestCase):
             prepared_path: Path = Path(tmp_dir) / "prepared"
             cfg = DictDefault(
                 {
+                    "tokenizer_config": "huggyllama/llama-7b",
                     "sequence_len": 256,
                     "datasets": [
                         {
