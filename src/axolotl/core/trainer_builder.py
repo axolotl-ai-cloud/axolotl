@@ -8,7 +8,6 @@ import importlib
 import importlib.util
 import logging
 import math
-import os
 import sys
 from abc import abstractmethod
 from collections import defaultdict
@@ -19,10 +18,7 @@ from typing import Dict, List, Literal, Optional, Type, Union
 
 import torch
 import transformers
-from accelerate import FullyShardedDataParallelPlugin
-from accelerate.utils import str_to_bool
 from datasets import Dataset
-from torch.distributed.fsdp import MixedPrecision
 from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import BatchSampler, DataLoader, RandomSampler, SequentialSampler
 from transformers import (
@@ -34,8 +30,8 @@ from transformers import (
 from transformers.trainer_utils import seed_worker
 from transformers.utils import is_sagemaker_mp_enabled
 from trl import DPOTrainer
+from trl.trainer.utils import pad_to_length
 
-from axolotl.core.policies.auto_wrap import get_wrapping_policy_factory
 from axolotl.loraplus import create_loraplus_optimizer
 from axolotl.monkeypatch.multipack import SUPPORTED_MULTIPACK_MODEL_TYPES
 from axolotl.monkeypatch.relora import ReLoRACallback, ReLoRAScheduler
@@ -477,6 +473,58 @@ class AxolotlTrainer(Trainer):
             return self.orpo_compute_loss(model, inputs, return_outputs=return_outputs)
         return super().compute_loss(model, inputs, return_outputs=return_outputs)
 
+    @staticmethod
+    def orpo_concatenate_inputs(inputs, label_pad_token=-100, pad_token=0, device=None):
+        concatenated_batch = {}
+
+        max_length = max(
+            inputs["input_ids"].shape[1], inputs["rejected_input_ids"].shape[1]
+        )
+        # Concatenate positive and negative inputs
+        concatenated_batch["input_ids"] = pad_to_length(
+            inputs["input_ids"], max_length, pad_token
+        )
+        concatenated_batch["rejected_input_ids"] = pad_to_length(
+            inputs["rejected_input_ids"], max_length, pad_token
+        )
+        concatenated_batch["labels"] = pad_to_length(
+            inputs["labels"], max_length, label_pad_token
+        )
+        concatenated_batch["rejected_labels"] = pad_to_length(
+            inputs["rejected_labels"], max_length, label_pad_token
+        )
+        concatenated_batch["attention_mask"] = pad_to_length(
+            inputs["attention_mask"], max_length, 0
+        )
+        concatenated_batch["rejected_attention_mask"] = pad_to_length(
+            inputs["rejected_attention_mask"], max_length, 0
+        )
+        concatenated_batch["prompt_attention_mask"] = pad_to_length(
+            inputs["prompt_attention_mask"], max_length, 0
+        ).to(device=device)
+
+        input_ids = torch.cat(
+            [concatenated_batch["input_ids"], concatenated_batch["rejected_input_ids"]],
+            dim=0,
+        ).to(device=device)
+        attention_mask = torch.cat(
+            [
+                concatenated_batch["attention_mask"],
+                concatenated_batch["rejected_attention_mask"],
+            ],
+            dim=0,
+        ).to(device=device)
+        labels = torch.cat(
+            [concatenated_batch["labels"], concatenated_batch["rejected_labels"]], dim=0
+        ).to(device=device)
+
+        return {
+            "input_ids": input_ids,
+            "labels": labels,
+            "attention_mask": attention_mask,
+            "prompt_attention_mask": concatenated_batch["prompt_attention_mask"],
+        }
+
     def orpo_compute_custom_loss(self, logits, labels):
         logits = logits.contiguous()
         loss = 0.0
@@ -517,45 +565,46 @@ class AxolotlTrainer(Trainer):
             dim=2,
             index=(mask * chosen_inputs[:, 1:]).unsqueeze(2),
         ).squeeze(2)
-        return torch.mul(per_token_logps, mask.to(dtype=torch.bfloat16)).sum(dim=1).to(
-            dtype=torch.float64
-        ) / mask.sum(dim=1).to(dtype=torch.float64)
+        return torch.mul(per_token_logps, mask).sum(dim=1) / mask.sum(dim=1)
 
     def orpo_compute_loss(self, model, inputs, return_outputs=False):
-        outputs_neg = model(
+        concat_inputs = AxolotlTrainer.orpo_concatenate_inputs(
+            inputs,
+            label_pad_token=-100,
+            pad_token=self.tokenizer.pad_token_id,
+            device=self.accelerator.device,
+        )
+
+        # Perform a single forward pass
+        outputs = model(
             **{
-                "input_ids": inputs["rejected_input_ids"],
-                "attention_mask": inputs["rejected_attention_mask"],
-                "labels": inputs["rejected_labels"],
+                "input_ids": concat_inputs["input_ids"],
+                "attention_mask": concat_inputs["attention_mask"],
+                "labels": concat_inputs["labels"],
             },
             output_hidden_states=True,
         )
-        outputs_pos = model(
-            **{
-                "input_ids": inputs["input_ids"],
-                "attention_mask": inputs["attention_mask"],
-                "labels": inputs["labels"],
-            },
-            output_hidden_states=True,
-        )
+
+        # Split the outputs for positive and negative examples
+        outputs_pos, outputs_neg = outputs.logits.chunk(2)
 
         # Calculate NLL loss
         pos_loss = self.orpo_compute_custom_loss(
-            logits=outputs_pos.logits, labels=inputs["input_ids"]
+            logits=outputs_pos, labels=concat_inputs["input_ids"].chunk(2)[0]
         )
 
         # Calculate Log Probability
         pos_prob = self.orpo_compute_logps(
-            prompt_attention_mask=inputs["prompt_attention_mask"],
-            chosen_inputs=inputs["input_ids"],
-            chosen_attention_mask=inputs["attention_mask"],
-            logits=outputs_pos.logits,
+            prompt_attention_mask=concat_inputs["prompt_attention_mask"],
+            chosen_inputs=concat_inputs["input_ids"].chunk(2)[0],
+            chosen_attention_mask=concat_inputs["attention_mask"].chunk(2)[0],
+            logits=outputs_pos,
         )
         neg_prob = self.orpo_compute_logps(
-            prompt_attention_mask=inputs["prompt_attention_mask"],
-            chosen_inputs=inputs["rejected_input_ids"],
-            chosen_attention_mask=inputs["rejected_attention_mask"],
-            logits=outputs_neg.logits,
+            prompt_attention_mask=concat_inputs["prompt_attention_mask"],
+            chosen_inputs=concat_inputs["input_ids"].chunk(2)[1],
+            chosen_attention_mask=concat_inputs["attention_mask"].chunk(2)[1],
+            logits=outputs_neg,
         )
 
         # Calculate log odds
@@ -591,51 +640,14 @@ class AxolotlTrainer(Trainer):
 
     @wraps(Trainer.create_accelerator_and_postprocess)
     def create_accelerator_and_postprocess(self):
-        rank = int(os.environ.get("LOCAL_RANK", 0))
         res = super().create_accelerator_and_postprocess()
 
-        if self.args.qlora is False:
-            return res
-
-        # the rest of this method override is specific to fsdp + qlora (for now)
-        sync_module_states = (
-            str_to_bool(os.environ.get("FSDP_SYNC_MODULE_STATES", "True")) == 1
-        )
-
-        mp_policy = None
-        amp = os.environ["ACCELERATE_MIXED_PRECISION"]
-        if amp == "fp16":
-            mp_policy = MixedPrecision(
-                param_dtype=torch.float32,
-                reduce_dtype=torch.float32,
-                buffer_dtype=torch.float32,
-            )
-        elif amp == "bf16":
-            mp_policy = MixedPrecision(
-                param_dtype=torch.float32,
-                reduce_dtype=torch.float32,
-                buffer_dtype=torch.float32,
-            )
-
-        # If somehow we figure out how we want to parameterize we want to autocast buffers...
-        # mp_policy = MixedPrecision(param_dtype=torch.bfloat16, reduce_dtype=torch.bfloat16, buffer_dtype=torch.float32)
-        # load_param_skip_names = ['inv_freq']
-
         if self.is_fsdp_enabled:
-            wrapping_policy = get_wrapping_policy_factory(self.args.model_type)
-            fsdp_plugin = FullyShardedDataParallelPlugin(
-                auto_wrap_policy=wrapping_policy(),
-                cpu_offload=False,
-                use_orig_params=False,
-                limit_all_gathers=True,
-                param_init_fn=lambda module: module.to_empty(
-                    device=torch.device("cuda"), recurse=False
-                )
-                if (rank != 0 and sync_module_states)
-                else None,
-                mixed_precision_policy=mp_policy,
-            )
-            self.accelerator.state.fsdp_plugin = fsdp_plugin
+            if (
+                "limit_all_gathers" in self.args.fsdp_config
+                and self.args.fsdp_config["limit_all_gathers"]
+            ):
+                self.accelerator.state.fsdp_plugin.limit_all_gathers = True
 
         return res
 
@@ -792,6 +804,12 @@ class TrainerBuilderBase(abc.ABC):
         self.cfg = cfg
         self.model = model
         self.tokenizer = tokenizer
+
+        # in case the model supports tagging, add the axolotl tag.
+        # This makes sure the tag is correctly pushed even if a user calls
+        # model.push_to_hub instad of  trainer.push_to_hub.
+        if hasattr(model, "add_model_tags"):
+            model.add_model_tags(["axolotl"])
 
     @property
     def model_ref(self):
@@ -1283,6 +1301,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             train_dataset=self.train_dataset,
             eval_dataset=self.eval_dataset,
             args=training_args,
+            tokenizer=self.tokenizer,
             data_collator=self.build_collator(training_args, **data_collator_kwargs),
             eval_data_collator=self.build_collator(
                 training_args, is_eval=True, **data_collator_kwargs

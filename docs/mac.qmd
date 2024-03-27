@@ -1,8 +1,12 @@
-# Mac M series support
+---
+title: Mac M-series
+description: Mac M-series support
+---
 
 Currently Axolotl on Mac is partially usable, many of the dependencies of Axolotl including Pytorch do not support MPS or have incomplete support.
 
 Current support:
+
 - [x] Support for all models
 - [x] Full training of models
 - [x] LoRA training

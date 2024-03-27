@@ -1,0 +1,17 @@
+---
+title: Config options
+description: A complete list of all configuration options.
+---
+
+```{python}
+#|echo: false
+#|output: asis
+import re
+# Regex pattern to match the YAML block including its code fence
+pattern = r'<details[^>]*id="all-yaml-options"[^>]*>.*?<summary>All yaml options.*?```yaml(.*?)```.*?</details>'
+
+with open('../README.md', 'r') as f:
+    doc = f.read()
+match = re.search(pattern, doc, re.DOTALL)
+print("```yaml", match.group(1).strip(), "```", sep="\n")
+```

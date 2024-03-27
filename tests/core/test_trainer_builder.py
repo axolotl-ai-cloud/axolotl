@@ -1,16 +1,18 @@
 """
 unit tests for axolotl.core.trainer_builder
 """
+
 import pytest
 
 from axolotl.core.trainer_builder import HFDPOTrainerBuilder
+from axolotl.utils.config import normalize_config
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.models import load_model, load_tokenizer
 
 
 @pytest.fixture(name="cfg")
 def fixture_cfg():
-    return DictDefault(
+    cfg = DictDefault(
         {
             "base_model": "TinyLlama/TinyLlama-1.1B-Chat-v0.6",
             "model_type": "AutoModelForCausalLM",
@@ -33,6 +35,10 @@ def fixture_cfg():
             "model_config_type": "llama",
         }
     )
+
+    normalize_config(cfg)
+
+    return cfg
 
 
 @pytest.fixture(name="tokenizer")

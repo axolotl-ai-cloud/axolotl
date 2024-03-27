@@ -11,6 +11,7 @@ import torch.cuda
 from accelerate.logging import get_logger
 from datasets import set_caching_enabled
 from torch.utils.data import DataLoader, RandomSampler
+from transformers.utils import is_torch_bf16_gpu_available
 
 from axolotl.core.trainer_builder import HFCausalTrainerBuilder, HFDPOTrainerBuilder
 from axolotl.utils.distributed import is_main_process, reduce_and_broadcast, zero_first
@@ -124,9 +125,10 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
                 eval_dataset = eval_dataset.remove_columns("attention_mask")
 
         if cfg.model_config_type == "falcon":
-            LOG.info("dropping token_type_ids column")
-            train_dataset = train_dataset.remove_columns("token_type_ids")
-            if eval_dataset:
+            LOG.info("dropping token_type_ids column if it exists")
+            if "token_type_ids" in train_dataset.column_names:
+                train_dataset = train_dataset.remove_columns("token_type_ids")
+            if eval_dataset and "token_type_ids" in eval_dataset.column_names:
                 eval_dataset = eval_dataset.remove_columns("token_type_ids")
 
         train_dataset = train_dataset.filter(
@@ -304,6 +306,10 @@ def setup_fsdp_envs(cfg):
         os.environ["FSDP_OFFLOAD_PARAMS"] = "true"
     if cfg.fsdp_config.fsdp_sync_module_states:
         os.environ["FSDP_SYNC_MODULE_STATES"] = "true"
+    if cfg.fsdp_config.fsdp_cpu_ram_efficient_loading:
+        os.environ["FSDP_CPU_RAM_EFFICIENT_LOADING"] = "true"
+    if cfg.fsdp_config.fsdp_use_orig_params:
+        os.environ["FSDP_USE_ORIG_PARAMS"] = "true"
     if cfg.fsdp_config.fsdp_state_dict_type:
         os.environ["FSDP_STATE_DICT_TYPE"] = cfg.fsdp_config.fsdp_state_dict_type
     if cfg.fsdp_config.fsdp_transformer_layer_cls_to_wrap:
@@ -318,6 +324,11 @@ def prepare_optim_env(cfg):
     elif cfg.deepspeed:
         os.environ["ACCELERATE_USE_DEEPSPEED"] = "true"
         os.environ["ACCELERATE_DEEPSPEED_CONFIG_FILE"] = cfg.deepspeed
+
+    if (cfg.bf16 == "auto" and is_torch_bf16_gpu_available()) or cfg.bf16 is True:
+        os.environ["ACCELERATE_MIXED_PRECISION"] = "bf16"
+    elif cfg.fp16:
+        os.environ["ACCELERATE_MIXED_PRECISION"] = "fp16"
 
 
 def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_steps):

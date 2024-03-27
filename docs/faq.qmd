@@ -1,0 +1,21 @@
+---
+title: FAQ
+description: Frequently asked questions
+---
+
+
+**Q: The trainer stopped and hasn't progressed in several minutes.**
+
+> A: Usually an issue with the GPUs communicating with each other. See the [NCCL doc](nccl.qmd)
+
+**Q: Exitcode -9**
+
+> A: This usually happens when you run out of system RAM.
+
+**Q: Exitcode -7 while using deepspeed**
+
+> A: Try upgrading deepspeed w: `pip install -U deepspeed`
+
+**Q: AttributeError: 'DummyOptim' object has no attribute 'step'**
+
+> A: You may be using deepspeed with single gpu. Please don't set `deepspeed:` in yaml or cli.

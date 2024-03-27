@@ -21,7 +21,8 @@ lora_dropout: 0.05
 lora_target_linear: true
 
 sequence_len: 4096
-sample_packing: false
+sample_packing: true
+eval_sample_packing: false
 pad_to_sequence_len: true
 
 wandb_project:

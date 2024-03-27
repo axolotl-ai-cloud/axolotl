@@ -1,0 +1,51 @@
+project:
+  type: website
+
+website:
+  title: "Axolotl"
+  description: "Fine-tuning"
+  favicon: favicon.jpg
+  navbar:
+    title: Axolotl
+    background: dark
+    pinned: false
+    collapse: false
+    tools:
+    - icon: twitter
+      href: https://twitter.com/axolotl_ai
+    - icon: github
+      href: https://github.com/OpenAccess-AI-Collective/axolotl/
+    - icon: discord
+      href: https://discord.gg/7m9sfhzaf3
+
+  sidebar:
+      pinned: true
+      collapse-level: 2
+      style: docked
+      contents:
+        - text: Home
+          href: index.qmd
+        - section: "How-To Guides"
+          contents:
+          # TODO Edit folder structure after we have more docs.
+            - docs/debugging.qmd
+            - docs/multipack.qmd
+            - docs/fdsp_qlora.qmd
+            - docs/input_output.qmd
+            - docs/rlhf.qmd
+            - docs/nccl.qmd
+            - docs/mac.qmd
+            - docs/multi-node.qmd
+        - section: "Reference"
+          contents:
+            - docs/config.qmd
+        - docs/faq.qmd
+
+
+
+
+format:
+  html:
+    theme: materia
+    css: styles.css
+    toc: true
