@@ -402,7 +402,9 @@ def load_model(
         from accelerate import infer_auto_device_map
 
         with init_empty_weights():
-            model_canvas = AutoModelForCausalLM.from_config(model_config)
+            model_canvas = AutoModelForCausalLM.from_config(
+                model_config, trust_remote_code=cfg.trust_remote_code or False
+            )
         model_canvas.tie_weights()
         device_map = infer_auto_device_map(
             model_canvas,
@@ -501,6 +503,9 @@ def load_model(
     elif cfg.eager_attention:
         model_kwargs["attn_implementation"] = "eager"
         model_config._attn_implementation = "eager"  # pylint: disable=protected-access
+
+    if cfg.low_cpu_mem_usage:
+        model_kwargs["low_cpu_mem_usage"] = True
 
     qlora_fsdp = cfg.fsdp and cfg.adapter == "qlora"
 

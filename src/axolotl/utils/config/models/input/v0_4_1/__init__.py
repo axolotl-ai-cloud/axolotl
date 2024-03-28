@@ -533,6 +533,7 @@ class AxolotlInputConfig(
         Dict[Union[int, Literal["cpu", "disk"]], Union[int, str]]
     ] = None
     gpu_memory_limit: Optional[Union[int, str]] = None
+    low_cpu_mem_usage: Optional[bool] = None
 
     chat_template: Optional[ChatTemplate] = None
     default_system_message: Optional[str] = None
