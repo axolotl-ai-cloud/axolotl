@@ -1,10 +1,9 @@
-name: ci-cd
+name: docker-nightlies
 
 on:
-  push:
-    branches:
-      - "main"
   workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * *'  # Runs at 00:00 UTC every day
 
 jobs:
   build-axolotl:
@@ -39,6 +38,8 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: winglian/axolotl
+          tags: |
+            type=raw,value={{ branch }}-{{ date 'YYYYMMDD' }}
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Login to Docker Hub
@@ -60,7 +61,6 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
             ${{ steps.metadata.outputs.tags }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
-            ${{ (matrix.is_latest) && format('{0}-latest', steps.metadata.outputs.tags) || '' }}
           labels: ${{ steps.metadata.outputs.labels }}
 
   build-axolotl-cloud:
@@ -95,6 +95,8 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: winglian/axolotl-cloud
+          tags: |
+            type=raw,value={{ branch }}-{{ date 'YYYYMMDD' }}
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
@@ -113,5 +115,4 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
              ${{ steps.metadata.outputs.tags }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
-             ${{ (matrix.is_latest) && format('{0}-latest', steps.metadata.outputs.tags) || '' }}
           labels: ${{ steps.metadata.outputs.labels }}
