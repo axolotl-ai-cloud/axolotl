@@ -312,6 +312,8 @@ def setup_fsdp_envs(cfg):
         os.environ["FSDP_USE_ORIG_PARAMS"] = "true"
     if cfg.fsdp_config.fsdp_state_dict_type:
         os.environ["FSDP_STATE_DICT_TYPE"] = cfg.fsdp_config.fsdp_state_dict_type
+    if cfg.fsdp_config.fsdp_auto_wrap_policy:
+        os.environ["FSDP_AUTO_WRAP_POLICY"] = cfg.fsdp_config.fsdp_auto_wrap_policy
     if cfg.fsdp_config.fsdp_transformer_layer_cls_to_wrap:
         os.environ[
             "FSDP_TRANSFORMER_CLS_TO_WRAP"

@@ -78,7 +78,7 @@ setup(
             "deepspeed-kernels",
         ],
         "mamba-ssm": [
-            "mamba-ssm==1.0.1",
+            "mamba-ssm==1.2.0.post1",
         ],
         "auto-gptq": [
             "auto-gptq==0.5.1",

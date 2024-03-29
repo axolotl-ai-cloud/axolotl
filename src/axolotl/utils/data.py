@@ -1,4 +1,5 @@
 """Module containing data utilities"""
+
 import functools
 import hashlib
 import logging
@@ -223,7 +224,7 @@ def load_tokenized_prepared_datasets(
                     token=use_auth_token,
                 )
                 ds_from_hub = True
-            except (FileNotFoundError, ConnectionError, HFValidationError):
+            except (FileNotFoundError, ConnectionError, HFValidationError, ValueError):
                 pass
 
             ds_from_cloud = False
@@ -302,14 +303,17 @@ def load_tokenized_prepared_datasets(
             local_path = Path(config_dataset.path)
             if local_path.exists():
                 if local_path.is_dir():
-                    # TODO dirs with arrow or parquet files could be loaded with `load_from_disk`
-                    ds = load_dataset(
-                        config_dataset.path,
-                        name=config_dataset.name,
-                        data_files=config_dataset.data_files,
-                        streaming=False,
-                        split=None,
-                    )
+                    if config_dataset.data_files:
+                        ds_type = get_ds_type(config_dataset)
+                        ds = load_dataset(
+                            ds_type,
+                            name=config_dataset.name,
+                            data_files=config_dataset.data_files,
+                            streaming=False,
+                            split=None,
+                        )
+                    else:
+                        ds = load_from_disk(config_dataset.path)
                 elif local_path.is_file():
                     ds_type = get_ds_type(config_dataset)
 
