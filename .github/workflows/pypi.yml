@@ -25,7 +25,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip3 install wheel
+          pip3 install wheel packaging
           pip3 install -e .
           pip3 install -r requirements-tests.txt
 

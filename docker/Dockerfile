@@ -20,6 +20,7 @@ RUN git clone --depth=1 https://github.com/OpenAccess-AI-Collective/axolotl.git
 WORKDIR /workspace/axolotl
 
 # If AXOLOTL_EXTRAS is set, append it in brackets
+RUN pip install packaging
 RUN if [ "$AXOLOTL_EXTRAS" != "" ] ; then \
         pip install -e .[deepspeed,flash-attn,mamba-ssm,galore,$AXOLOTL_EXTRAS] $AXOLOTL_ARGS; \
     else \
