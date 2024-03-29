@@ -22,6 +22,7 @@ RUN git fetch origin +$GITHUB_REF && \
     git checkout FETCH_HEAD
 
 # If AXOLOTL_EXTRAS is set, append it in brackets
+RUN pip install causal_conv1d
 RUN if [ "$AXOLOTL_EXTRAS" != "" ] ; then \
         pip install -e .[deepspeed,flash-attn,mamba-ssm,galore,$AXOLOTL_EXTRAS] $AXOLOTL_ARGS; \
     else \
