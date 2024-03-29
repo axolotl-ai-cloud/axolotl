@@ -1,10 +1,9 @@
-name: ci-cd
+name: docker-nightlies
 
 on:
-  push:
-    branches:
-      - "main"
   workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * *'  # Runs at 00:00 UTC every day
 
 jobs:
   build-axolotl:
@@ -59,8 +58,7 @@ jobs:
           file: ./docker/Dockerfile
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
-            ${{ steps.metadata.outputs.tags }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
-            ${{ (matrix.is_latest) && format('{0}-latest', steps.metadata.outputs.tags) || '' }}
+            ${{ steps.metadata.outputs.tags }}-${{ format('{0:yyyyMMdd}', github.event.repository.pushed_at) }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
           labels: ${{ steps.metadata.outputs.labels }}
 
   build-axolotl-cloud:
@@ -112,6 +110,5 @@ jobs:
           file: ./docker/Dockerfile-cloud
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
-             ${{ steps.metadata.outputs.tags }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
-             ${{ (matrix.is_latest) && format('{0}-latest', steps.metadata.outputs.tags) || '' }}
+             ${{ steps.metadata.outputs.tags }}-${{ format('{0:yyyyMMdd}', github.event.repository.pushed_at) }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
           labels: ${{ steps.metadata.outputs.labels }}
