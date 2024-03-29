@@ -38,8 +38,8 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: winglian/axolotl
-        tags: |
-          type=raw,value=mytag-{{branch}}-{{date 'YYYYMMDD'}}
+          tags: |
+            type=raw,value=mytag-{{branch}}-{{date 'YYYYMMDD'}}
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Login to Docker Hub
@@ -95,8 +95,8 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: winglian/axolotl-cloud
-        tags: |
-          type=raw,value=mytag-{{branch}}-{{date 'YYYYMMDD'}}
+          tags: |
+            type=raw,value=mytag-{{branch}}-{{date 'YYYYMMDD'}}
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
