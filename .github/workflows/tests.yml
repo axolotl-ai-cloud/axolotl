@@ -48,6 +48,8 @@ jobs:
 
       - name: Install dependencies
         run: |
+          pip3 install --upgrade pip
+          pip3 install --upgrade packaging
           pip3 install -U -e .
           pip3 install -r requirements-tests.txt
 

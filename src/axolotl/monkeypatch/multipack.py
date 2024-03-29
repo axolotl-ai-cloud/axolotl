@@ -48,14 +48,16 @@ def patch_for_multipack(model_type, model_name=None):
             get_unpad_data
         )
     elif model_type == "gemmoe":
-        model_config = AutoConfig.from_pretrained(model_name, trust_remote_code=True)
-        # we need to load the model here in order for modeling_gemmoe to be available
-        with init_empty_weights():
-            AutoModelForCausalLM.from_pretrained(model_name, trust_remote_code=True)
-        module_name = model_config.__class__.__module__.replace(
-            ".configuration_gemmoe", ".modeling_gemmoe"
-        )
-        modeling_gemmoe = importlib.import_module(module_name)
-        modeling_gemmoe._get_unpad_data = (  # pylint: disable=protected-access
-            get_unpad_data
-        )
+        patch_remote(model_name, ".configuration_gemmoe", ".modeling_gemmoe")
+    elif model_type == "jamba":
+        patch_remote(model_name, ".configuration_jamba", ".modeling_jamba")
+
+
+def patch_remote(model_name, config_name, modeling_name):
+    model_config = AutoConfig.from_pretrained(model_name, trust_remote_code=True)
+    # we need to load the model here in order for modeling_* to be available
+    with init_empty_weights():
+        AutoModelForCausalLM.from_pretrained(model_name, trust_remote_code=True)
+    module_name = model_config.__class__.__module__.replace(config_name, modeling_name)
+    modeling_arch = importlib.import_module(module_name)
+    modeling_arch._get_unpad_data = get_unpad_data  # pylint: disable=protected-access
