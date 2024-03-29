@@ -33,7 +33,6 @@ gradio==3.50.2
 tensorboard
 
 mamba-ssm==1.2.0.post1
-causal-conv1d==1.2.0.post2
 
 # remote filesystems
 s3fs
