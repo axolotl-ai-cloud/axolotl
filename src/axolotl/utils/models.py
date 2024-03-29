@@ -456,6 +456,10 @@ def load_model(
             "bnb_4bit_quant_type": "nf4",
             "bnb_4bit_quant_storage": torch.bfloat16,
         }
+        if cfg.model_config_type == "jamba" and not cfg.deepspeed:
+            # for some reason, this causes the loss to be off by an order of magnitude
+            # but deepspeed needs this still in bfloat16
+            bnb_config["bnb_4bit_quant_storage"] = torch.float32
 
         if cfg.bnb_config_kwargs:
             bnb_config.update(cfg.bnb_config_kwargs)
