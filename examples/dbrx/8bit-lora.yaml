@@ -1,7 +1,7 @@
 base_model: LnL-AI/dbrx-base-converted-v2
 trust_remote_code: true
 
-load_in_8bit: false
+load_in_8bit: true
 load_in_4bit: false
 strict: false
 

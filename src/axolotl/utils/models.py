@@ -471,6 +471,13 @@ def load_model(
         model_kwargs["quantization_config"] = BitsAndBytesConfig(
             **bnb_config,
         )
+    elif cfg.adapter == "lora" and cfg.load_in_8bit:
+        bnb_config = {
+            "load_in_8bit": True,
+        }
+        model_kwargs["quantization_config"] = BitsAndBytesConfig(
+            **bnb_config,
+        )
 
     if cfg.load_in_8bit and cfg.adapter is not None:
         model_kwargs["load_in_8bit"] = True
@@ -520,10 +527,8 @@ def load_model(
     try:
         skip_move_to_device = False
         if (
-            cfg.fsdp
-            and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
-            and not qlora_fsdp
-        ):
+            cfg.fsdp and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
+        ) and not qlora_fsdp:
             model = load_sharded_model(
                 base_model,
                 model_config,
@@ -707,7 +712,8 @@ def load_model(
     if cfg.adapter == "lora" and loftq_bits:
         skip_prepare_model_for_kbit_training = True
 
-    if qlora_fsdp:
+    if qlora_fsdp or (cfg.fsdp and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading):
+        # make sure everything is in the same dtype
         skip_prepare_model_for_kbit_training = True
 
     if cfg.adapter in ["lora", "qlora"]:
@@ -752,13 +758,6 @@ def load_model(
     ):
         # TODO revaldate this conditional
         model.to(f"cuda:{cfg.local_rank}")
-
-    if (
-        cfg.fsdp
-        and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
-        and cfg.local_rank != 0
-    ):
-        setup_quantized_peft_meta_for_training(model)
 
     if torch.cuda.device_count() > 1 and int(os.getenv("WORLD_SIZE", "1")) == 1:
         setattr(model, "is_parallelizable", True)
