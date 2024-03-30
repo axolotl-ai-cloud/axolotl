@@ -1,4 +1,4 @@
-base_model: LnL-AI/dbrx-base-converted
+base_model: LnL-AI/dbrx-base-converted-v2
 trust_remote_code: true
 
 load_in_8bit: false
@@ -29,7 +29,9 @@ lora_alpha: 16
 lora_dropout: 0.05
 # w1, w2, & v1 will hang the trainer
 lora_target_modules:
-  - Wqkv # attn
+  - q_proj # attn
+  - k_proj # attn
+  - v_proj # attn
   - out_proj # attn
   - layer # router
 #  - w1
