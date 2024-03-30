@@ -834,14 +834,19 @@ def wrap_pretraining_dataset(
     else:
         LOG.debug("NOT shuffling merged pretraining datasets")
 
+    # remove all the existing columns after mapping since they end up having
+    # a different length than the encoded/tokenized column
+    # this is empty during streaming/pretraining
+    remove_columns = []
+    if dataset.features is not None:
+      remove_columns = dataset.features.keys()
+
     dataset = dataset.map(
         encode,
         batched=True,
         batch_size=buffer_size,
         # input_columns="text",
-        # remove all the existing columns after mapping since they end up having
-        # a different length than the encoded/tokenized column
-        remove_columns=dataset.features.keys(),
+        remove_columns=remove_columns,
     )
     return dataset
 
