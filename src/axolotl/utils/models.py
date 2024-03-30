@@ -528,6 +528,7 @@ def load_model(
                 base_model,
                 model_config,
                 cfg,
+                torch_dtype=cfg.torch_dtype,
             )
             skip_move_to_device = True
         elif qlora_fsdp and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading:

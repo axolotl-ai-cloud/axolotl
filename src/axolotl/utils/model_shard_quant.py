@@ -152,7 +152,7 @@ def load_sharded_model(
             _attn_implementation=model_config._attn_implementation,  # pylint: disable=protected-access
             trust_remote_code=cfg.trust_remote_code,
         )
-        dtype = torch.bfloat16 if cfg.bf16 else None
+        dtype = torch_dtype if not cfg.float32 else None
         model.to(dtype=dtype, device="cpu" if low_memory else cfg.local_rank)
     else:
         with init_empty_weights():
@@ -161,8 +161,6 @@ def load_sharded_model(
                 torch_dtype=torch_dtype,
                 trust_remote_code=cfg.trust_remote_code,
             )
-        if cfg.bf16:
-            model.to(torch.bfloat16)
     return model
 
 
