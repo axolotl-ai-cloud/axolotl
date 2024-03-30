@@ -82,7 +82,6 @@ def prepare_dataset(cfg, tokenizer):
                 )
     else:
         path = cfg.pretraining_dataset
-        config = "default"
         split = "train"
         name = None
         if isinstance(cfg.pretraining_dataset, list) and isinstance(
@@ -90,8 +89,6 @@ def prepare_dataset(cfg, tokenizer):
         ):
             path = cfg.pretraining_dataset[0]["path"]
             name = cfg.pretraining_dataset[0]["name"]
-            if "config" in cfg.pretraining_dataset[0]:
-              config = cfg.pretraining_dataset[0]["config"]
             if "split" in cfg.pretraining_dataset[0]:
               split = cfg.pretraining_dataset[0]["split"]
 
@@ -104,7 +101,7 @@ def prepare_dataset(cfg, tokenizer):
         )
 
         train_dataset = wrap_pretraining_dataset(
-            load_dataset(path, config, streaming=True, split=split, name=name),
+            load_dataset(path, streaming=True, split=split, name=name),
             tokenizer,
             cfg,
             ds_wrapper_partial,
