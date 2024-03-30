@@ -61,6 +61,7 @@ class RemappedParameters(BaseModel):
 class PretrainingDataset(BaseModel):
     """pretraining dataset configuration subset"""
 
+    config: Optional[str] = "default"
     path: Optional[str] = None
     split: Optional[str] = "train"
     text_column: Optional[str] = "text"
