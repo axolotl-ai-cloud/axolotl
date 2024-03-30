@@ -659,9 +659,13 @@ class AxolotlInputConfig(
     @model_validator(mode="before")
     @classmethod
     def check_sample_packing_wo_flash(cls, data):
-        if data.get("sample_packing") and not data.get("flash_attention"):
+        if (
+            data.get("sample_packing")
+            and not data.get("flash_attention")
+            and not data.get("sdp_attention")
+        ):
             raise ValueError(
-                "sample_packing requires flash_attention to be set to true"
+                "sample_packing requires flash_attention or sdp_attention to be set to true"
             )
 
         return data
