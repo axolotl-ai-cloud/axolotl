@@ -753,6 +753,13 @@ def load_model(
         # TODO revaldate this conditional
         model.to(f"cuda:{cfg.local_rank}")
 
+    if (
+        cfg.fsdp
+        and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
+        and cfg.local_rank != 0
+    ):
+        setup_quantized_peft_meta_for_training(model)
+
     if torch.cuda.device_count() > 1 and int(os.getenv("WORLD_SIZE", "1")) == 1:
         setattr(model, "is_parallelizable", True)
         setattr(model, "model_parallel", True)
@@ -904,7 +911,12 @@ def load_lora(model, cfg, inference=False, config_only=False):
 
     rank = int(os.environ.get("LOCAL_RANK", 0))
 
-    if cfg.fsdp and cfg.adapter == "qlora" and rank != 0:
+    if (
+        cfg.fsdp
+        and cfg.adapter
+        and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
+        and rank != 0
+    ):
         setup_quantized_meta_for_peft(model)
 
     if cfg.lora_model_dir:
@@ -929,7 +941,12 @@ def load_lora(model, cfg, inference=False, config_only=False):
             LOG.warning(
                 "Exception caught during model.print_trainable_parameters(): %s", exc
             )
-    elif cfg.fsdp and cfg.adapter == "qlora":
+    elif (
+        cfg.fsdp
+        and cfg.adapter
+        and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
+        and rank != 0
+    ):
         setup_quantized_peft_meta_for_training(model)
 
     return model, lora_config

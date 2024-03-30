@@ -7,9 +7,10 @@ where the Experts are fused as an `nn.Parameter` rather than a `nn.Linear` layer
 is still a bit buggy and attempting to train a LoRA adapter over those `w1`, `w2` and `v1` layers
 results in the trainer hanging.
 
-We recommend using the [`LnL-AI/dbrx-base-converted-v2`](https://huggingface.co/LnL-AI/dbrx-base-converted-v2) model as your base model for the time being.
 
 ### FSDP
+We've tested using the [`LnL-AI/dbrx-base-converted-v2`](https://huggingface.co/LnL-AI/dbrx-base-converted-v2) model as the base model for FSDP.
+
 The high memory usage seen w/ FSDP is due to FSDP not supporting 8bit optimizers.
 
 - 16-bit LoRA w/ FSDP
