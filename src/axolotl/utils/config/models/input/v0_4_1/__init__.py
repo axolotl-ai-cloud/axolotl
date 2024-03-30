@@ -64,6 +64,7 @@ class PretrainingDataset(BaseModel):
     path: Optional[str] = None
     split: Optional[str] = "train"
     text_column: Optional[str] = "text"
+    type: Optional[str] = "pretrain"
 
 
 class UserDefinedPrompterType(BaseModel):
