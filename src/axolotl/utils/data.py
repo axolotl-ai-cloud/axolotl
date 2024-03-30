@@ -90,7 +90,7 @@ def prepare_dataset(cfg, tokenizer):
             path = cfg.pretraining_dataset[0]["path"]
             name = cfg.pretraining_dataset[0]["name"]
             if "split" in cfg.pretraining_dataset[0]:
-              split = cfg.pretraining_dataset[0]["split"]
+                split = cfg.pretraining_dataset[0]["split"]
 
         ds_wrapper_partial = functools.partial(
             get_dataset_wrapper,
@@ -839,11 +839,11 @@ def wrap_pretraining_dataset(
     # this is empty during streaming/pretraining
     remove_columns = []
     if dataset.features is None:
-      for first_row in dataset:
-        remove_columns = first_row.keys()
-        break
+        for first_row in dataset:
+            remove_columns = first_row.keys()
+            break
     else:
-      remove_columns = dataset.features.keys()
+        remove_columns = dataset.features.keys()
 
     dataset = dataset.map(
         encode,
