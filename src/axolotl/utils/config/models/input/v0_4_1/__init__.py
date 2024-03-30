@@ -62,6 +62,8 @@ class PretrainingDataset(BaseModel):
     """pretraining dataset configuration subset"""
 
     path: Optional[str] = None
+    split: Optional[str] = "train"
+    text_column: Optional[str] = "text"
 
 
 class UserDefinedPrompterType(BaseModel):
@@ -430,7 +432,7 @@ class AxolotlInputConfig(
     dataset_shard_idx: Optional[int] = None
 
     pretraining_dataset: Optional[  # type: ignore
-        conlist(Union[SFTDataset, PretrainingDataset], min_length=1)
+        conlist(Union[PretrainingDataset, SFTDataset], min_length=1)
     ] = Field(
         default=None, metadata={"help": {"streaming dataset to use for pretraining"}}
     )

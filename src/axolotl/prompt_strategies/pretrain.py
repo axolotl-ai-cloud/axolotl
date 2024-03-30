@@ -54,7 +54,7 @@ def load(tokenizer, cfg):
         tokenizer,
         cfg.train_on_inputs,
         cfg.sequence_len,
-        text_column=cfg.pretraining_dataset[0].get("text_column", None),
+        text_column=cfg.pretraining_dataset[0]["text_column"] or "text",
         max_length=cfg.sequence_len * 64,
     )
     return strat
