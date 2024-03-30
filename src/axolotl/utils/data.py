@@ -838,7 +838,11 @@ def wrap_pretraining_dataset(
     # a different length than the encoded/tokenized column
     # this is empty during streaming/pretraining
     remove_columns = []
-    if dataset.features is not None:
+    if dataset.features is None:
+      for first_row in dataset:
+        remove_columns = first_row.keys()
+        break
+    else:
       remove_columns = dataset.features.keys()
 
     dataset = dataset.map(
