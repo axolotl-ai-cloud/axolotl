@@ -45,6 +45,7 @@ from axolotl.utils.chat_templates import chat_templates
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import zero_only
 from axolotl.utils.lora_embeddings import get_linear_embedding_layers
+from axolotl.utils.model_shard_quant import load_sharded_model, load_sharded_model_quant
 
 LOG = logging.getLogger("axolotl")
 
@@ -517,7 +518,26 @@ def load_model(
     qlora_fsdp = cfg.fsdp and cfg.adapter == "qlora"
 
     try:
+        skip_move_to_device = False
         if (
+            cfg.fsdp
+            and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
+            and not qlora_fsdp
+        ):
+            model = load_sharded_model(
+                base_model,
+                model_config,
+                cfg,
+            )
+            skip_move_to_device = True
+        elif qlora_fsdp and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading:
+            model = load_sharded_model_quant(
+                base_model,
+                model_config,
+                cfg,
+            )
+            skip_move_to_device = True
+        elif (
             model_config.model_type == "llama"
             and not cfg.trust_remote_code
             and not cfg.gptq
@@ -727,7 +747,7 @@ def load_model(
         cfg.ddp
         and not load_in_8bit
         and not (cfg.rl and cfg.load_in_4bit)
-        and not qlora_fsdp
+        and not skip_move_to_device
     ):
         # TODO revaldate this conditional
         model.to(f"cuda:{cfg.local_rank}")
