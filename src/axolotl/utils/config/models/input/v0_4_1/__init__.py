@@ -370,6 +370,23 @@ class MLFlowConfig(BaseModel):
     hf_mlflow_log_artifacts: Optional[bool] = None
 
 
+class LISAConfig(BaseModel):
+    """LISA options"""
+
+    lisa_n_layers: Optional[int] = Field(
+        default=None,
+        metadata={"help": "the number of activate layers in LISA"},
+    )
+    lisa_step_interval: Optional[int] = Field(
+        default=None,
+        metadata={"help": "how often to switch layers in LISA"},
+    )
+    lisa_layers_attribute: Optional[str] = Field(
+        default="",
+        metadata={"help": "path under the model to access the layers"},
+    )
+
+
 class WandbConfig(BaseModel):
     """wandb configuration subset"""
 
@@ -404,6 +421,7 @@ class AxolotlInputConfig(
     HyperparametersConfig,
     WandbConfig,
     MLFlowConfig,
+    LISAConfig,
     RemappedParameters,
     DeprecatedParameters,
     BaseModel,

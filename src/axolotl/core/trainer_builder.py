@@ -45,6 +45,7 @@ from axolotl.utils.callbacks import (
     causal_lm_bench_eval_callback_factory,
     log_prediction_callback_factory,
 )
+from axolotl.utils.callbacks.lisa import lisa_callback_factory
 from axolotl.utils.collators import (
     BatchSamplerDataCollatorForSeq2Seq,
     DataCollatorForSeq2Seq,
@@ -199,6 +200,18 @@ class AxolotlTrainingArguments(TrainingArguments):
     )
     orpo_alpha: Optional[float] = field(
         default=None,
+    )
+    lisa_n_layers: Optional[int] = field(
+        default=None,
+        metadata={"help": "the number of activate layers in LISA"},
+    )
+    lisa_step_interval: Optional[int] = field(
+        default=None,
+        metadata={"help": "how often to switch layers in LISA"},
+    )
+    lisa_layers_attribute: Optional[str] = field(
+        default=None,
+        metadata={"help": "path under the model to access the layers"},
     )
 
 
@@ -938,6 +951,8 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             )
             callbacks.append(early_stop_cb)
 
+        if self.cfg.lisa_step_interval and self.cfg.lisa_n_layers:
+            callbacks.append(lisa_callback_factory(trainer))
         return callbacks
 
     def _get_trainer_cls(self):
@@ -1228,6 +1243,15 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 training_arguments_kwargs[
                     "relora_prune_ratio"
                 ] = self.cfg.relora_prune_ratio
+
+        if self.cfg.lisa_step_interval and self.cfg.lisa_n_layers:
+            training_arguments_kwargs["lisa_n_layers"] = self.cfg.lisa_n_layers
+            training_arguments_kwargs[
+                "lisa_step_interval"
+            ] = self.cfg.lisa_step_interval
+            training_arguments_kwargs[
+                "lisa_layers_attribute"
+            ] = self.cfg.lisa_layers_attribute
 
         training_arguments_kwargs = self.hook_pre_create_training_args(
             training_arguments_kwargs
