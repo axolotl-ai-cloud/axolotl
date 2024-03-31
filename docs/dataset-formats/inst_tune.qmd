@@ -1,6 +1,7 @@
 ---
 title: Instruction Tuning
-description: Instruction tuning formats for supervised fine-tuning. 
+description: Instruction tuning formats for supervised fine-tuning.
+order: 2
 ---
 
 ## alpaca
