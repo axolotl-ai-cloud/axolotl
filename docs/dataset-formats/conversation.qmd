@@ -38,7 +38,7 @@ conversations where `from` is `prompter` `assistant` instead of default sharegpt
 {"conversations": [{"from": "...", "value": "..."}]}
 ```
 
-### sharegpt_jokes 
+### sharegpt_jokes
 
 creates a chat where bot is asked to tell a joke, then explain why the joke is funny
 
