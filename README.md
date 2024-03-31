@@ -389,7 +389,7 @@ See [examples](examples) for quick start. It is recommended to duplicate and mod
 
 See [these docs](docs/config.qmd) for all config options.
 
-
+<details>
 <summary> Understanding of batch size and gradient accumulation steps </summary>
 <br/>
 Gradient accumulation means accumulating gradients over several mini-batches and updating the model weights afterward. When the samples in each batch are diverse, this technique doesn't significantly impact learning.
