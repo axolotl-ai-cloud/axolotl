@@ -1,0 +1,6 @@
+---
+title: Template-Free
+description: Construct prompts without a template.
+---
+
+See [these docs](../input_output.qmd).
