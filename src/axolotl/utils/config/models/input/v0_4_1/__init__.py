@@ -382,7 +382,7 @@ class LISAConfig(BaseModel):
         metadata={"help": "how often to switch layers in LISA"},
     )
     lisa_layers_attribute: Optional[str] = Field(
-        default="",
+        default="model.layers",
         metadata={"help": "path under the model to access the layers"},
     )
 
