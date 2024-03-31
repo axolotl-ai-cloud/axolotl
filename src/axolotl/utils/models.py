@@ -50,6 +50,30 @@ from axolotl.utils.model_shard_quant import load_sharded_model, load_sharded_mod
 LOG = logging.getLogger("axolotl")
 
 
+# copied from accelerator.FullyShardedDataParallelPlugin
+def get_module_class_from_name(module, name):
+    """
+    Gets a class from a module by its name.
+
+    Args:
+        module (`torch.nn.Module`): The module to get the class from.
+        name (`str`): The name of the class.
+    """
+    modules_children = list(module.children())
+    if module.__class__.__name__ == name:
+        return module.__class__
+
+    if len(modules_children) == 0:
+        return None
+
+    for child_module in modules_children:
+        module_class = get_module_class_from_name(child_module, name)
+        if module_class is not None:
+            return module_class
+
+    raise ValueError(f"module class {name} not found in {module.__class__.__name__}")
+
+
 def check_model_config(cfg: DictDefault, model_config: Union[AutoConfig, DictDefault]):
     quant_config_exists = (
         hasattr(model_config, "quantization_config")
@@ -696,13 +720,17 @@ def load_model(
     needs_fa2_dtype = cfg.adapter or cfg.fsdp
     skip_prepare_model_for_kbit_training = False
 
-    if cfg.model_config_type == "mixtral" and is_deepspeed_zero3_enabled():
+    if is_deepspeed_zero3_enabled():
         from deepspeed.utils import (  # pylint: disable=no-name-in-module
             set_z3_leaf_modules,
         )
-        from transformers.models.mixtral.modeling_mixtral import MixtralSparseMoeBlock
 
-        set_z3_leaf_modules(model, [MixtralSparseMoeBlock])
+        if cfg.model_config_type == "mixtral":
+            moe_block = get_module_class_from_name(model, "MixtralSparseMoeBlock")
+            set_z3_leaf_modules(model, [moe_block])
+        elif cfg.model_config_type == "dbrx":
+            moe_block = get_module_class_from_name(model, "DbrxFFN")
+            set_z3_leaf_modules(model, [moe_block])
 
     if cfg.model_config_type == "qwen" and cfg.adapter == "lora":
         # Qwen doesn't play nicely with LoRA if this is enabled
