@@ -71,7 +71,7 @@ def get_module_class_from_name(module, name):
         if module_class is not None:
             return module_class
 
-    raise ValueError(f"module class {name} not found in {module.__class__.__name__}")
+    return None
 
 
 def check_model_config(cfg: DictDefault, model_config: Union[AutoConfig, DictDefault]):
