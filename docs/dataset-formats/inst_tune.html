@@ -6,8 +6,9 @@
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
+<meta name="description" content="Instruction tuning formats for supervised fine-tuning.">
 
-<title>Axolotl - Example notebook for running Axolotl on google colab</title>
+<title>Axolotl - Instruction Tuning</title>
 <style>
 code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
@@ -129,7 +130,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
       <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
         <i class="bi bi-layout-text-sidebar-reverse"></i>
       </button>
-        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item">Example notebook for running Axolotl on google colab</li></ol></nav>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../docs/dataset-formats/index.html">Dataset Formats</a></li><li class="breadcrumb-item"><a href="../../docs/dataset-formats/inst_tune.html">Instruction Tuning</a></li></ol></nav>
         <a class="flex-grow-1" role="button" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
         </a>
     </div>
@@ -223,7 +224,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset-formats/inst_tune.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/dataset-formats/inst_tune.html" class="sidebar-item-text sidebar-link active">
  <span class="menu-text">Instruction Tuning</span></a>
   </div>
 </li>
@@ -280,21 +281,42 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#install-axolotl-and-dependencies" id="toc-install-axolotl-and-dependencies" class="nav-link active" data-scroll-target="#install-axolotl-and-dependencies">Install Axolotl and dependencies</a></li>
-  <li><a href="#create-an-yaml-config-file" id="toc-create-an-yaml-config-file" class="nav-link" data-scroll-target="#create-an-yaml-config-file">Create an yaml config file</a></li>
-  <li><a href="#launch-the-training" id="toc-launch-the-training" class="nav-link" data-scroll-target="#launch-the-training">Launch the training</a></li>
-  <li><a href="#play-with-inference" id="toc-play-with-inference" class="nav-link" data-scroll-target="#play-with-inference">Play with inference</a></li>
+  <li><a href="#alpaca" id="toc-alpaca" class="nav-link active" data-scroll-target="#alpaca">alpaca</a></li>
+  <li><a href="#jeopardy" id="toc-jeopardy" class="nav-link" data-scroll-target="#jeopardy">jeopardy</a></li>
+  <li><a href="#oasst" id="toc-oasst" class="nav-link" data-scroll-target="#oasst">oasst</a></li>
+  <li><a href="#gpteacher" id="toc-gpteacher" class="nav-link" data-scroll-target="#gpteacher">gpteacher</a></li>
+  <li><a href="#reflection" id="toc-reflection" class="nav-link" data-scroll-target="#reflection">reflection</a></li>
+  <li><a href="#explainchoice" id="toc-explainchoice" class="nav-link" data-scroll-target="#explainchoice">explainchoice</a></li>
+  <li><a href="#concisechoice" id="toc-concisechoice" class="nav-link" data-scroll-target="#concisechoice">concisechoice</a></li>
+  <li><a href="#summarizetldr" id="toc-summarizetldr" class="nav-link" data-scroll-target="#summarizetldr">summarizetldr</a></li>
+  <li><a href="#alpaca_chat" id="toc-alpaca_chat" class="nav-link" data-scroll-target="#alpaca_chat">alpaca_chat</a></li>
+  <li><a href="#alpaca_chat.load_qa" id="toc-alpaca_chat.load_qa" class="nav-link" data-scroll-target="#alpaca_chat.load_qa">alpaca_chat.load_qa</a></li>
+  <li><a href="#alpaca_chat.load_concise" id="toc-alpaca_chat.load_concise" class="nav-link" data-scroll-target="#alpaca_chat.load_concise">alpaca_chat.load_concise</a></li>
+  <li><a href="#alpaca_chat.load_camel_ai" id="toc-alpaca_chat.load_camel_ai" class="nav-link" data-scroll-target="#alpaca_chat.load_camel_ai">alpaca_chat.load_camel_ai</a></li>
+  <li><a href="#alpaca_w_system.load_open_orca" id="toc-alpaca_w_system.load_open_orca" class="nav-link" data-scroll-target="#alpaca_w_system.load_open_orca">alpaca_w_system.load_open_orca</a></li>
+  <li><a href="#context_qa" id="toc-context_qa" class="nav-link" data-scroll-target="#context_qa">context_qa</a></li>
+  <li><a href="#context_qa.load_v2" id="toc-context_qa.load_v2" class="nav-link" data-scroll-target="#context_qa.load_v2">context_qa.load_v2</a></li>
+  <li><a href="#context_qa.load_404" id="toc-context_qa.load_404" class="nav-link" data-scroll-target="#context_qa.load_404">context_qa.load_404</a></li>
+  <li><a href="#creative_acr.load_answer" id="toc-creative_acr.load_answer" class="nav-link" data-scroll-target="#creative_acr.load_answer">creative_acr.load_answer</a></li>
+  <li><a href="#creative_acr.load_critique" id="toc-creative_acr.load_critique" class="nav-link" data-scroll-target="#creative_acr.load_critique">creative_acr.load_critique</a></li>
+  <li><a href="#creative_acr.load_revise" id="toc-creative_acr.load_revise" class="nav-link" data-scroll-target="#creative_acr.load_revise">creative_acr.load_revise</a></li>
+  <li><a href="#metharme" id="toc-metharme" class="nav-link" data-scroll-target="#metharme">metharme</a></li>
   </ul>
 </nav>
     </div>
 <!-- main -->
 <main class="content" id="quarto-document-content">
 
-<header id="title-block-header" class="quarto-title-block default">
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../docs/dataset-formats/index.html">Dataset Formats</a></li><li class="breadcrumb-item"><a href="../../docs/dataset-formats/inst_tune.html">Instruction Tuning</a></li></ol></nav>
 <div class="quarto-title">
-<h1 class="title">Example notebook for running Axolotl on google colab</h1>
+<h1 class="title">Instruction Tuning</h1>
 </div>
 
+<div>
+  <div class="description">
+    Instruction tuning formats for supervised fine-tuning.
+  </div>
+</div>
 
 
 <div class="quarto-title-meta">
@@ -309,123 +331,204 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </header>
 
 
-<div id="cell-2" class="cell">
-<div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> torch</span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="co"># Check so there is a gpu available, a T4(free tier) is enough to run this notebook</span></span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> (torch.cuda.is_available()<span class="op">==</span><span class="va">True</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<section id="alpaca" class="level2">
+<h2 class="anchored" data-anchor-id="alpaca">alpaca</h2>
+<p>instruction; input(optional)</p>
+<div class="code-with-filename">
+<div class="code-with-filename-file">
+<pre><strong>data.jsonl</strong></pre>
 </div>
-<section id="install-axolotl-and-dependencies" class="level2">
-<h2 class="anchored" data-anchor-id="install-axolotl-and-dependencies">Install Axolotl and dependencies</h2>
-<div id="cell-4" class="cell" data-outputid="e3777b5a-40ef-424f-e181-62dfecd1dd01">
-<div class="sourceCode cell-code" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="op">!</span>pip install torch<span class="op">==</span><span class="st">"2.1.2"</span></span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="op">!</span>pip install <span class="op">-</span>e git<span class="op">+</span>https:<span class="op">//</span>github.com<span class="op">/</span>OpenAccess<span class="op">-</span>AI<span class="op">-</span>Collective<span class="op">/</span>axolotl<span class="co">#egg=axolotl</span></span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="op">!</span>pip install flash<span class="op">-</span>attn<span class="op">==</span><span class="st">"2.5.0"</span></span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="op">!</span>pip install deepspeed<span class="op">==</span><span class="st">"0.13.1"</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb1" data-filename="data.jsonl"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"instruction"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"input"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"output"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
 </section>
-<section id="create-an-yaml-config-file" class="level2">
-<h2 class="anchored" data-anchor-id="create-an-yaml-config-file">Create an yaml config file</h2>
-<div id="cell-6" class="cell">
-<div class="sourceCode cell-code" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> yaml</span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="co"># Your YAML string</span></span>
-<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>yaml_string <span class="op">=</span> <span class="st">"""</span></span>
-<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="st">base_model: TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T</span></span>
-<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="st">model_type: LlamaForCausalLM</span></span>
-<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a><span class="st">tokenizer_type: LlamaTokenizer</span></span>
-<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a><span class="st">is_llama_derived_model: true</span></span>
-<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a><span class="st">load_in_8bit: false</span></span>
-<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a><span class="st">load_in_4bit: true</span></span>
-<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a><span class="st">strict: false</span></span>
-<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a><span class="st">datasets:</span></span>
-<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a><span class="st">  - path: mhenrichsen/alpaca_2k_test</span></span>
-<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a><span class="st">    type: alpaca</span></span>
-<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a><span class="st">dataset_prepared_path:</span></span>
-<span id="cb3-18"><a href="#cb3-18" aria-hidden="true" tabindex="-1"></a><span class="st">val_set_size: 0.05</span></span>
-<span id="cb3-19"><a href="#cb3-19" aria-hidden="true" tabindex="-1"></a><span class="st">output_dir: ./qlora-out</span></span>
-<span id="cb3-20"><a href="#cb3-20" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-21"><a href="#cb3-21" aria-hidden="true" tabindex="-1"></a><span class="st">adapter: qlora</span></span>
-<span id="cb3-22"><a href="#cb3-22" aria-hidden="true" tabindex="-1"></a><span class="st">lora_model_dir:</span></span>
-<span id="cb3-23"><a href="#cb3-23" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-24"><a href="#cb3-24" aria-hidden="true" tabindex="-1"></a><span class="st">sequence_len: 1096</span></span>
-<span id="cb3-25"><a href="#cb3-25" aria-hidden="true" tabindex="-1"></a><span class="st">sample_packing: true</span></span>
-<span id="cb3-26"><a href="#cb3-26" aria-hidden="true" tabindex="-1"></a><span class="st">pad_to_sequence_len: true</span></span>
-<span id="cb3-27"><a href="#cb3-27" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-28"><a href="#cb3-28" aria-hidden="true" tabindex="-1"></a><span class="st">lora_r: 32</span></span>
-<span id="cb3-29"><a href="#cb3-29" aria-hidden="true" tabindex="-1"></a><span class="st">lora_alpha: 16</span></span>
-<span id="cb3-30"><a href="#cb3-30" aria-hidden="true" tabindex="-1"></a><span class="st">lora_dropout: 0.05</span></span>
-<span id="cb3-31"><a href="#cb3-31" aria-hidden="true" tabindex="-1"></a><span class="st">lora_target_modules:</span></span>
-<span id="cb3-32"><a href="#cb3-32" aria-hidden="true" tabindex="-1"></a><span class="st">lora_target_linear: true</span></span>
-<span id="cb3-33"><a href="#cb3-33" aria-hidden="true" tabindex="-1"></a><span class="st">lora_fan_in_fan_out:</span></span>
-<span id="cb3-34"><a href="#cb3-34" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-35"><a href="#cb3-35" aria-hidden="true" tabindex="-1"></a><span class="st">wandb_project:</span></span>
-<span id="cb3-36"><a href="#cb3-36" aria-hidden="true" tabindex="-1"></a><span class="st">wandb_entity:</span></span>
-<span id="cb3-37"><a href="#cb3-37" aria-hidden="true" tabindex="-1"></a><span class="st">wandb_watch:</span></span>
-<span id="cb3-38"><a href="#cb3-38" aria-hidden="true" tabindex="-1"></a><span class="st">wandb_name:</span></span>
-<span id="cb3-39"><a href="#cb3-39" aria-hidden="true" tabindex="-1"></a><span class="st">wandb_log_model:</span></span>
-<span id="cb3-40"><a href="#cb3-40" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-41"><a href="#cb3-41" aria-hidden="true" tabindex="-1"></a><span class="st">mlflow_experiment_name: colab-example</span></span>
-<span id="cb3-42"><a href="#cb3-42" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-43"><a href="#cb3-43" aria-hidden="true" tabindex="-1"></a><span class="st">gradient_accumulation_steps: 1</span></span>
-<span id="cb3-44"><a href="#cb3-44" aria-hidden="true" tabindex="-1"></a><span class="st">micro_batch_size: 1</span></span>
-<span id="cb3-45"><a href="#cb3-45" aria-hidden="true" tabindex="-1"></a><span class="st">num_epochs: 4</span></span>
-<span id="cb3-46"><a href="#cb3-46" aria-hidden="true" tabindex="-1"></a><span class="st">max_steps: 20</span></span>
-<span id="cb3-47"><a href="#cb3-47" aria-hidden="true" tabindex="-1"></a><span class="st">optimizer: paged_adamw_32bit</span></span>
-<span id="cb3-48"><a href="#cb3-48" aria-hidden="true" tabindex="-1"></a><span class="st">lr_scheduler: cosine</span></span>
-<span id="cb3-49"><a href="#cb3-49" aria-hidden="true" tabindex="-1"></a><span class="st">learning_rate: 0.0002</span></span>
-<span id="cb3-50"><a href="#cb3-50" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-51"><a href="#cb3-51" aria-hidden="true" tabindex="-1"></a><span class="st">train_on_inputs: false</span></span>
-<span id="cb3-52"><a href="#cb3-52" aria-hidden="true" tabindex="-1"></a><span class="st">group_by_length: false</span></span>
-<span id="cb3-53"><a href="#cb3-53" aria-hidden="true" tabindex="-1"></a><span class="st">bf16: false</span></span>
-<span id="cb3-54"><a href="#cb3-54" aria-hidden="true" tabindex="-1"></a><span class="st">fp16: true</span></span>
-<span id="cb3-55"><a href="#cb3-55" aria-hidden="true" tabindex="-1"></a><span class="st">tf32: false</span></span>
-<span id="cb3-56"><a href="#cb3-56" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-57"><a href="#cb3-57" aria-hidden="true" tabindex="-1"></a><span class="st">gradient_checkpointing: true</span></span>
-<span id="cb3-58"><a href="#cb3-58" aria-hidden="true" tabindex="-1"></a><span class="st">early_stopping_patience:</span></span>
-<span id="cb3-59"><a href="#cb3-59" aria-hidden="true" tabindex="-1"></a><span class="st">resume_from_checkpoint:</span></span>
-<span id="cb3-60"><a href="#cb3-60" aria-hidden="true" tabindex="-1"></a><span class="st">local_rank:</span></span>
-<span id="cb3-61"><a href="#cb3-61" aria-hidden="true" tabindex="-1"></a><span class="st">logging_steps: 1</span></span>
-<span id="cb3-62"><a href="#cb3-62" aria-hidden="true" tabindex="-1"></a><span class="st">xformers_attention:</span></span>
-<span id="cb3-63"><a href="#cb3-63" aria-hidden="true" tabindex="-1"></a><span class="st">flash_attention: false</span></span>
-<span id="cb3-64"><a href="#cb3-64" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-65"><a href="#cb3-65" aria-hidden="true" tabindex="-1"></a><span class="st">warmup_steps: 10</span></span>
-<span id="cb3-66"><a href="#cb3-66" aria-hidden="true" tabindex="-1"></a><span class="st">evals_per_epoch:</span></span>
-<span id="cb3-67"><a href="#cb3-67" aria-hidden="true" tabindex="-1"></a><span class="st">saves_per_epoch:</span></span>
-<span id="cb3-68"><a href="#cb3-68" aria-hidden="true" tabindex="-1"></a><span class="st">debug:</span></span>
-<span id="cb3-69"><a href="#cb3-69" aria-hidden="true" tabindex="-1"></a><span class="st">deepspeed:</span></span>
-<span id="cb3-70"><a href="#cb3-70" aria-hidden="true" tabindex="-1"></a><span class="st">weight_decay: 0.0</span></span>
-<span id="cb3-71"><a href="#cb3-71" aria-hidden="true" tabindex="-1"></a><span class="st">fsdp:</span></span>
-<span id="cb3-72"><a href="#cb3-72" aria-hidden="true" tabindex="-1"></a><span class="st">fsdp_config:</span></span>
-<span id="cb3-73"><a href="#cb3-73" aria-hidden="true" tabindex="-1"></a><span class="st">special_tokens:</span></span>
-<span id="cb3-74"><a href="#cb3-74" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-75"><a href="#cb3-75" aria-hidden="true" tabindex="-1"></a><span class="st">"""</span></span>
-<span id="cb3-76"><a href="#cb3-76" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-77"><a href="#cb3-77" aria-hidden="true" tabindex="-1"></a><span class="co"># Convert the YAML string to a Python dictionary</span></span>
-<span id="cb3-78"><a href="#cb3-78" aria-hidden="true" tabindex="-1"></a>yaml_dict <span class="op">=</span> yaml.safe_load(yaml_string)</span>
-<span id="cb3-79"><a href="#cb3-79" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-80"><a href="#cb3-80" aria-hidden="true" tabindex="-1"></a><span class="co"># Specify your file path</span></span>
-<span id="cb3-81"><a href="#cb3-81" aria-hidden="true" tabindex="-1"></a>file_path <span class="op">=</span> <span class="st">'test_axolotl.yaml'</span></span>
-<span id="cb3-82"><a href="#cb3-82" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-83"><a href="#cb3-83" aria-hidden="true" tabindex="-1"></a><span class="co"># Write the YAML file</span></span>
-<span id="cb3-84"><a href="#cb3-84" aria-hidden="true" tabindex="-1"></a><span class="cf">with</span> <span class="bu">open</span>(file_path, <span class="st">'w'</span>) <span class="im">as</span> <span class="bu">file</span>:</span>
-<span id="cb3-85"><a href="#cb3-85" aria-hidden="true" tabindex="-1"></a>    yaml.dump(yaml_dict, <span class="bu">file</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<section id="jeopardy" class="level2">
+<h2 class="anchored" data-anchor-id="jeopardy">jeopardy</h2>
+<p>question and answer</p>
+<div class="code-with-filename">
+<div class="code-with-filename-file">
+<pre><strong>data.jsonl</strong></pre>
+</div>
+<div class="sourceCode" id="cb2" data-filename="data.jsonl"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"question"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"category"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"answer"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
 </section>
-<section id="launch-the-training" class="level2">
-<h2 class="anchored" data-anchor-id="launch-the-training">Launch the training</h2>
-<div id="cell-8" class="cell" data-outputid="d6d0df17-4b53-439c-c802-22c0456d301b">
-<div class="sourceCode cell-code" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Buy using the ! the comand will be executed as a bash command</span></span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="op">!</span>accelerate launch <span class="op">-</span>m axolotl.cli.train <span class="op">/</span>content<span class="op">/</span>test_axolotl.yaml</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<section id="oasst" class="level2">
+<h2 class="anchored" data-anchor-id="oasst">oasst</h2>
+<p>instruction</p>
+<div class="code-with-filename">
+<div class="code-with-filename-file">
+<pre><strong>data.jsonl</strong></pre>
+</div>
+<div class="sourceCode" id="cb3" data-filename="data.jsonl"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"INSTRUCTION"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"RESPONSE"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
 </section>
-<section id="play-with-inference" class="level2">
-<h2 class="anchored" data-anchor-id="play-with-inference">Play with inference</h2>
-<div id="cell-10" class="cell">
-<div class="sourceCode cell-code" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Buy using the ! the comand will be executed as a bash command</span></span>
-<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="op">!</span>accelerate launch <span class="op">-</span>m axolotl.cli.inference <span class="op">/</span>content<span class="op">/</span>test_axolotl.yaml <span class="op">\</span></span>
-<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    <span class="op">--</span>qlora_model_dir<span class="op">=</span><span class="st">"./qlora-out"</span> <span class="op">--</span>gradio</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<section id="gpteacher" class="level2">
+<h2 class="anchored" data-anchor-id="gpteacher">gpteacher</h2>
+<p>instruction; input(optional)</p>
+<div class="code-with-filename">
+<div class="code-with-filename-file">
+<pre><strong>data.jsonl</strong></pre>
+</div>
+<div class="sourceCode" id="cb4" data-filename="data.jsonl"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"instruction"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"input"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"response"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+</section>
+<section id="reflection" class="level2">
+<h2 class="anchored" data-anchor-id="reflection">reflection</h2>
+<p>instruction with reflect; input(optional)</p>
+<div class="code-with-filename">
+<div class="code-with-filename-file">
+<pre><strong>data.jsonl</strong></pre>
+</div>
+<div class="sourceCode" id="cb5" data-filename="data.jsonl"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"instruction"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"input"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"output"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"reflection"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"corrected"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+</section>
+<section id="explainchoice" class="level2">
+<h2 class="anchored" data-anchor-id="explainchoice">explainchoice</h2>
+<p>question, choices, (solution OR explanation)</p>
+<div class="code-with-filename">
+<div class="code-with-filename-file">
+<pre><strong>data.jsonl</strong></pre>
+</div>
+<div class="sourceCode" id="cb6" data-filename="data.jsonl"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"question"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"choices"</span><span class="fu">:</span> <span class="ot">[</span><span class="st">"..."</span><span class="ot">]</span><span class="fu">,</span> <span class="dt">"solution"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"explanation"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+</section>
+<section id="concisechoice" class="level2">
+<h2 class="anchored" data-anchor-id="concisechoice">concisechoice</h2>
+<p>question, choices, (solution OR explanation)</p>
+<div class="code-with-filename">
+<div class="code-with-filename-file">
+<pre><strong>data.jsonl</strong></pre>
+</div>
+<div class="sourceCode" id="cb7" data-filename="data.jsonl"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"question"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"choices"</span><span class="fu">:</span> <span class="ot">[</span><span class="st">"..."</span><span class="ot">]</span><span class="fu">,</span> <span class="dt">"solution"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"explanation"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+</section>
+<section id="summarizetldr" class="level2">
+<h2 class="anchored" data-anchor-id="summarizetldr">summarizetldr</h2>
+<p>article and summary</p>
+<div class="code-with-filename">
+<div class="code-with-filename-file">
+<pre><strong>data.jsonl</strong></pre>
+</div>
+<div class="sourceCode" id="cb8" data-filename="data.jsonl"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"article"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"summary"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+</section>
+<section id="alpaca_chat" class="level2">
+<h2 class="anchored" data-anchor-id="alpaca_chat">alpaca_chat</h2>
+<p>basic instruct for alpaca chat</p>
+<div class="code-with-filename">
+<div class="code-with-filename-file">
+<pre><strong>data.jsonl</strong></pre>
+</div>
+<div class="sourceCode" id="cb9" data-filename="data.jsonl"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"instruction"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"input"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"response"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+</section>
+<section id="alpaca_chat.load_qa" class="level2">
+<h2 class="anchored" data-anchor-id="alpaca_chat.load_qa">alpaca_chat.load_qa</h2>
+<p>question and answer for alpaca chat</p>
+<div class="code-with-filename">
+<div class="code-with-filename-file">
+<pre><strong>data.jsonl</strong></pre>
+</div>
+<div class="sourceCode" id="cb10" data-filename="data.jsonl"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"question"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"answer"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+</section>
+<section id="alpaca_chat.load_concise" class="level2">
+<h2 class="anchored" data-anchor-id="alpaca_chat.load_concise">alpaca_chat.load_concise</h2>
+<p>question and answer for alpaca chat, for concise answers</p>
+<div class="code-with-filename">
+<div class="code-with-filename-file">
+<pre><strong>data.jsonl</strong></pre>
+</div>
+<div class="sourceCode" id="cb11" data-filename="data.jsonl"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"instruction"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"input"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"response"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+</section>
+<section id="alpaca_chat.load_camel_ai" class="level2">
+<h2 class="anchored" data-anchor-id="alpaca_chat.load_camel_ai">alpaca_chat.load_camel_ai</h2>
+<p>question and answer for alpaca chat, for load_camel_ai</p>
+<div class="code-with-filename">
+<div class="code-with-filename-file">
+<pre><strong>data.jsonl</strong></pre>
+</div>
+<div class="sourceCode" id="cb12" data-filename="data.jsonl"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"message_1"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"message_2"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+</section>
+<section id="alpaca_w_system.load_open_orca" class="level2">
+<h2 class="anchored" data-anchor-id="alpaca_w_system.load_open_orca">alpaca_w_system.load_open_orca</h2>
+<p>support for open orca datasets with included system prompts, instruct</p>
+<div class="code-with-filename">
+<div class="code-with-filename-file">
+<pre><strong>data.jsonl</strong></pre>
+</div>
+<div class="sourceCode" id="cb13" data-filename="data.jsonl"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"system_prompt"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"question"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"response"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+</section>
+<section id="context_qa" class="level2">
+<h2 class="anchored" data-anchor-id="context_qa">context_qa</h2>
+<p>in context question answering from an article</p>
+<div class="code-with-filename">
+<div class="code-with-filename-file">
+<pre><strong>data.jsonl</strong></pre>
+</div>
+<div class="sourceCode" id="cb14" data-filename="data.jsonl"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"article"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"question"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"answer"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+</section>
+<section id="context_qa.load_v2" class="level2">
+<h2 class="anchored" data-anchor-id="context_qa.load_v2">context_qa.load_v2</h2>
+<p>in context question answering (alternate)</p>
+<div class="code-with-filename">
+<div class="code-with-filename-file">
+<pre><strong>data.jsonl</strong></pre>
+</div>
+<div class="sourceCode" id="cb15" data-filename="data.jsonl"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"context"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"question"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"answer"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+</section>
+<section id="context_qa.load_404" class="level2">
+<h2 class="anchored" data-anchor-id="context_qa.load_404">context_qa.load_404</h2>
+<p>in context question answering from an article, with default response for no answer from context</p>
+<div class="code-with-filename">
+<div class="code-with-filename-file">
+<pre><strong>data.jsonl</strong></pre>
+</div>
+<div class="sourceCode" id="cb16" data-filename="data.jsonl"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"article"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"unanswerable_question"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+</section>
+<section id="creative_acr.load_answer" class="level2">
+<h2 class="anchored" data-anchor-id="creative_acr.load_answer">creative_acr.load_answer</h2>
+<p>instruction and revision</p>
+<div class="code-with-filename">
+<div class="code-with-filename-file">
+<pre><strong>data.jsonl</strong></pre>
+</div>
+<div class="sourceCode" id="cb17" data-filename="data.jsonl"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"instruction"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"revision"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+</section>
+<section id="creative_acr.load_critique" class="level2">
+<h2 class="anchored" data-anchor-id="creative_acr.load_critique">creative_acr.load_critique</h2>
+<p>critique</p>
+<div class="code-with-filename">
+<div class="code-with-filename-file">
+<pre><strong>data.jsonl</strong></pre>
+</div>
+<div class="sourceCode" id="cb18" data-filename="data.jsonl"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"scores"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"critiques"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"instruction"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"answer"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+</section>
+<section id="creative_acr.load_revise" class="level2">
+<h2 class="anchored" data-anchor-id="creative_acr.load_revise">creative_acr.load_revise</h2>
+<p>critique and revise</p>
+<div class="code-with-filename">
+<div class="code-with-filename-file">
+<pre><strong>data.jsonl</strong></pre>
+</div>
+<div class="sourceCode" id="cb19" data-filename="data.jsonl"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"scores"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"critiques"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"instruction"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"answer"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"revision"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+</section>
+<section id="metharme" class="level2">
+<h2 class="anchored" data-anchor-id="metharme">metharme</h2>
+<p>instruction, adds additional eos tokens</p>
+<div class="code-with-filename">
+<div class="code-with-filename-file">
+<pre><strong>data.jsonl</strong></pre>
+</div>
+<div class="sourceCode" id="cb20" data-filename="data.jsonl"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"prompt"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"generation"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
 
 
