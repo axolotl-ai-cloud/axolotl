@@ -91,8 +91,9 @@ format into a jsonl file (below is the first row from the file
 
 ```bash
 $ head -n1 output.jsonl | python -m json.tool
+```
 
-{.cell-output .cell-output-stdout}
+:::{.cell-output .cell-output-stdout}
     {
         "segments": [
             {
@@ -113,7 +114,7 @@ $ head -n1 output.jsonl | python -m json.tool
             }
         ]
     }
-```
+:::
 
 Set `label:false` when you want to mask a segment of text so that the
 model isn't trained on it. Some things to keep in mind:
@@ -238,8 +239,9 @@ version is repeated below for reference):
 
 ```bash
 $ head -n1 output.jsonl | python -m json.tool
+```
 
-{.cell-output .cell-output-stdout}
+:::{.cell-output .cell-output-stdout}
     {
         "segments": [
             {
@@ -260,4 +262,4 @@ $ head -n1 output.jsonl | python -m json.tool
             }
         ]
     }
-```
+:::

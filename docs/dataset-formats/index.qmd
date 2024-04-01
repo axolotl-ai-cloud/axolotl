@@ -1,0 +1,14 @@
+---
+title: Dataset Formats
+description: Supported dataset formats.
+listing:
+  fields: [title, description]
+  type: table
+  sort-ui: false
+  filter-ui: false
+  max-description-length: 250
+---
+
+Axolotl supports a variety of dataset formats.  It is recommended to use a JSONL format.  The schema of the JSONL depends upon the task and the prompt template you wish to use. Instead of a JSONL, you can also use a HuggingFace dataset with columns for each JSONL field.
+
+Below are these various formats organized by task:

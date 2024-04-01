@@ -30,18 +30,18 @@ website:
           # TODO Edit folder structure after we have more docs.
             - docs/debugging.qmd
             - docs/multipack.qmd
-            - docs/fdsp_qlora.qmd
+            - docs/fsdp_qlora.qmd
             - docs/input_output.qmd
             - docs/rlhf.qmd
             - docs/nccl.qmd
             - docs/mac.qmd
             - docs/multi-node.qmd
+        - section: "Dataset Formats"
+          contents: docs/dataset-formats/*
         - section: "Reference"
           contents:
             - docs/config.qmd
         - docs/faq.qmd
-
-
 
 
 format:

@@ -1,0 +1,71 @@
+---
+title: Conversation
+description: Conversation format for supervised fine-tuning.
+order: 1
+---
+
+## Formats
+
+### sharegpt
+
+conversations where `from` is `human`/`gpt`. (optional: first row with role `system` to override default system prompt)
+
+```{.json filename="data.jsonl"}
+{"conversations": [{"from": "...", "value": "..."}]}
+```
+
+Note: `type: sharegpt` opens a special config `conversation:` that enables conversions to many Conversation types. See [the docs](../docs/config.qmd) for all config options.
+
+### pygmalion
+
+```{.json filename="data.jsonl"}
+{"conversations": [{"role": "...", "value": "..."}]}
+```
+
+### sharegpt.load_role
+
+conversations where `role` is used instead of `from`
+
+```{.json filename="data.jsonl"}
+{"conversations": [{"role": "...", "value": "..."}]}
+```
+
+### sharegpt.load_guanaco
+
+conversations where `from` is `prompter` `assistant` instead of default sharegpt
+
+```{.json filename="data.jsonl"}
+{"conversations": [{"from": "...", "value": "..."}]}
+```
+
+### sharegpt_jokes
+
+creates a chat where bot is asked to tell a joke, then explain why the joke is funny
+
+```{.json filename="data.jsonl"}
+{"conversations": [{"title": "...", "text": "...", "explanation": "..."}]}
+```
+
+## How to add custom prompts for instruction-tuning
+
+For a dataset that is preprocessed for instruction purposes:
+
+```{.json filename="data.jsonl"}
+{"input": "...", "output": "..."}
+```
+
+You can use this example in your YAML config:
+
+```{.yaml filename="config.yaml"}
+datasets:
+  - path: repo
+    type:
+      system_prompt: ""
+      field_system: system
+      field_instruction: input
+      field_output: output
+      format: "[INST] {instruction} [/INST]"
+      no_input_format: "[INST] {instruction} [/INST]"
+```
+
+See full config options under [here](../docs/config.qmd).
