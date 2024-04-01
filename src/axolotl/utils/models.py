@@ -43,6 +43,7 @@ from axolotl.prompt_tokenizers import LLAMA_DEFAULT_EOS_TOKEN
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.chat_templates import chat_templates
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.distributed import zero_only
 from axolotl.utils.lora_embeddings import get_linear_embedding_layers
 
 LOG = logging.getLogger("axolotl")
@@ -247,10 +248,11 @@ def load_tokenizer(cfg):
             {"additional_special_tokens": additional_special_tokens}
         )
 
-    LOG.debug(f"EOS: {tokenizer.eos_token_id} / {tokenizer.eos_token}")
-    LOG.debug(f"BOS: {tokenizer.bos_token_id} / {tokenizer.bos_token}")
-    LOG.debug(f"PAD: {tokenizer.pad_token_id} / {tokenizer.pad_token}")
-    LOG.debug(f"UNK: {tokenizer.unk_token_id} / {tokenizer.unk_token}")
+    with zero_only():
+        LOG.debug(f"EOS: {tokenizer.eos_token_id} / {tokenizer.eos_token}")
+        LOG.debug(f"BOS: {tokenizer.bos_token_id} / {tokenizer.bos_token}")
+        LOG.debug(f"PAD: {tokenizer.pad_token_id} / {tokenizer.pad_token}")
+        LOG.debug(f"UNK: {tokenizer.unk_token_id} / {tokenizer.unk_token}")
 
     if cfg.chat_template:
         chat_template_string = chat_templates(cfg.chat_template)
@@ -435,6 +437,7 @@ def load_model(
 
     if cfg.revision_of_model:
         model_kwargs["revision"] = cfg.revision_of_model
+
     if cfg.gptq:
         if not hasattr(model_config, "quantization_config"):
             LOG.warning("model config does not contain quantization_config information")
