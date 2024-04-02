@@ -172,17 +172,21 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
     return train_dataset, eval_dataset
 
 
-def process_pretraining_datasets_for_packing(train_dataset, sequence_len):
+def process_pretraining_datasets_for_packing(
+    train_dataset, sequence_len, skip_position_ids=True
+):
     drop_long = partial(drop_long_seq, sequence_len=sequence_len)
 
     train_dataset = train_dataset.filter(
         drop_long,
         desc="Dropping Long Sequences",
     )
-    train_dataset = train_dataset.map(
-        add_position_ids,
-        desc="Add position_id column (Pretraining Sample Packing)",
-    )
+    if skip_position_ids:
+        train_dataset = train_dataset.map(
+            add_position_ids,
+            desc="Add position_id column (Pretraining Sample Packing)",
+        )
+
     return train_dataset
 
 

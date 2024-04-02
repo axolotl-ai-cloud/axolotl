@@ -40,3 +40,4 @@ gcsfs
 # adlfs
 
 trl @ git+https://github.com/huggingface/trl.git@0ee349dcd43b0f4b3169449f16751c38ac4a609f
+zstandard==0.22.0

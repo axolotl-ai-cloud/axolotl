@@ -511,6 +511,14 @@ class AxolotlInputConfig(
     eval_sample_packing: Optional[bool] = None
     pad_to_sequence_len: Optional[bool] = None
 
+    pretrain_multipack_buffer_size: Optional[int] = 10_000
+    pretrain_multipack_attn: Optional[bool] = Field(
+        default=True,
+        metadata={
+            "help": "whether to prevent cross attention for packed sequences during pretraining",
+        },
+    )
+
     xformers_attention: Optional[bool] = None
     sdp_attention: Optional[bool] = None
     s2_attention: Optional[bool] = None

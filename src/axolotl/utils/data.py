@@ -108,6 +108,7 @@ def prepare_dataset(cfg, tokenizer):
             max_tokens=cfg.sequence_len,
             batch_size=cfg.micro_batch_size,
             seed=cfg.seed or 42,
+            buffer_size=cfg.pretrain_multipack_buffer_size or 10_000,
         )
         # https://discuss.huggingface.co/t/how-to-use-huggingface-trainer-streaming-datasets-without-wrapping-it-with-torchdatas-iterablewrapper/25230
         train_dataset = train_dataset.with_format("torch")
@@ -816,6 +817,7 @@ def wrap_pretraining_dataset(
             return_tensors="pt",
             padding=True,
             pad_to_multiple_of=max_tokens * batch_size,
+            multipack_attn=cfg.pretrain_multipack_attn,
         )
         encode = functools.partial(
             encode_packed_pretraining,
@@ -823,6 +825,7 @@ def wrap_pretraining_dataset(
             ds_wrapper_fn,
             max_seq_length=max_tokens,
             batch_size=batch_size,
+            multipack_attn=cfg.pretrain_multipack_attn,
         )
         # set this to 1 so downstream data_loader doesn't try to increase the batch again
         cfg.micro_batch_size = 1
@@ -861,6 +864,7 @@ def encode_packed_pretraining(
     examples: Dict[str, List],
     max_seq_length: int = 2048,
     batch_size: int = 4,
+    multipack_attn: Optional[bool] = False,
 ) -> Dict[str, List]:
     # pylint: disable=duplicate-code
     # tokenize all the examples
@@ -868,7 +872,9 @@ def encode_packed_pretraining(
     train_dataset = ds_wrapper(Dataset.from_dict(examples))[0]
 
     train_dataset = process_pretraining_datasets_for_packing(
-        train_dataset, max_seq_length
+        train_dataset,
+        max_seq_length,
+        skip_position_ids=not multipack_attn,
     )
 
     sampler = MultipackBatchSampler(
