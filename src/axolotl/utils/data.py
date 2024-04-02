@@ -82,12 +82,15 @@ def prepare_dataset(cfg, tokenizer):
                 )
     else:
         path = cfg.pretraining_dataset
+        split = "train"
         name = None
         if isinstance(cfg.pretraining_dataset, list) and isinstance(
             cfg.pretraining_dataset[0], dict
         ):
             path = cfg.pretraining_dataset[0]["path"]
             name = cfg.pretraining_dataset[0]["name"]
+            if "split" in cfg.pretraining_dataset[0]:
+                split = cfg.pretraining_dataset[0]["split"]
 
         ds_wrapper_partial = functools.partial(
             get_dataset_wrapper,
@@ -98,7 +101,7 @@ def prepare_dataset(cfg, tokenizer):
         )
 
         train_dataset = wrap_pretraining_dataset(
-            load_dataset(path, streaming=True, split="train", name=name),
+            load_dataset(path, streaming=True, split=split, name=name),
             tokenizer,
             cfg,
             ds_wrapper_partial,
@@ -831,14 +834,23 @@ def wrap_pretraining_dataset(
     else:
         LOG.debug("NOT shuffling merged pretraining datasets")
 
+    # remove all the existing columns after mapping since they end up having
+    # a different length than the encoded/tokenized column
+    # this is empty during streaming/pretraining
+    remove_columns = []
+    if dataset.features is None:
+        for first_row in dataset:
+            remove_columns = first_row.keys()
+            break
+    else:
+        remove_columns = dataset.features.keys()
+
     dataset = dataset.map(
         encode,
         batched=True,
         batch_size=buffer_size,
         # input_columns="text",
-        # remove all the existing columns after mapping since they end up having
-        # a different length than the encoded/tokenized column
-        remove_columns=dataset.features.keys(),
+        remove_columns=remove_columns,
     )
     return dataset
 
