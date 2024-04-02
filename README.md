@@ -221,7 +221,7 @@ For cloud GPU providers that support docker images, use [`winglian/axolotl-cloud
   python get-pip.py
   ```
 
-  3. Install torch https://pytorch.org/get-started/locally/
+  3. Install Pytorch https://pytorch.org/get-started/locally/
 
   4. Follow instructions on quickstart.
 
@@ -612,14 +612,8 @@ Bugs? Please check the [open issues](https://github.com/OpenAccess-AI-Collective
 
 PRs are **greatly welcome**!
 
-Please run below to setup env
+Please run the quickstart instructions followed by the below to setup env:
 ```bash
-git clone https://github.com/OpenAccess-AI-Collective/axolotl
-cd axolotl
-
-pip3 install packaging ninja
-pip3 install -e '.[flash-attn,deepspeed]'
-
 pip3 install -r requirements-dev.txt -r requirements-tests.txt
 pre-commit install
 
