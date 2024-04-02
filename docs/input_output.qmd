@@ -43,7 +43,7 @@ labels so that your model can focus on predicting the outputs only.
 ### You may not want prompt templates
 
 However, there are many situations where you don't want to use one of
-these formats or templates (I usually don't!). This is because they can:
+these formats or templates. This is because they can:
 
 -   Add unnecessary boilerplate to your prompts.
 -   Create artifacts like special delimiters `<|im_start|>` that can

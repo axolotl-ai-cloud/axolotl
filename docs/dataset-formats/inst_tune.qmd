@@ -163,3 +163,27 @@ instruction, adds additional eos tokens
 ```{.json filename="data.jsonl"}
 {"prompt": "...", "generation": "..."}
 ```
+
+## How to add custom prompt format
+
+For a dataset that is preprocessed for instruction purposes:
+
+```{.json filename="data.jsonl"}
+{"input": "...", "output": "..."}
+```
+
+You can use this example in your YAML config:
+
+```{.yaml filename="config.yaml"}
+datasets:
+  - path: repo
+    type:
+      system_prompt: ""
+      field_system: system
+      field_instruction: input
+      field_output: output
+      format: "[INST] {instruction} [/INST]"
+      no_input_format: "[INST] {instruction} [/INST]"
+```
+
+See full config options under [here](../config.qmd).
