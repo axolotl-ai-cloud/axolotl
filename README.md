@@ -221,23 +221,17 @@ For cloud GPU providers that support docker images, use [`winglian/axolotl-cloud
   python get-pip.py
   ```
 
-  3. Install torch
-  ```bash
-  pip3 install -U torch --index-url https://download.pytorch.org/whl/cu118
-  ```
+  3. Install torch https://pytorch.org/get-started/locally/
 
-  4. Axolotl
-  ```bash
-  git clone https://github.com/OpenAccess-AI-Collective/axolotl
-  cd axolotl
+  4. Follow instructions on quickstart.
 
-  pip3 install packaging
-  pip3 install -e '.[flash-attn,deepspeed]'
+  5. Run
+  ```bash
   pip3 install protobuf==3.20.3
   pip3 install -U --ignore-installed requests Pillow psutil scipy
   ```
 
-  5. Set path
+  6. Set path
   ```bash
   export LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH
   ```
