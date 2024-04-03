@@ -7,7 +7,7 @@ from axolotl.utils.dict import DictDefault
 
 def setup_mlflow_env_vars(cfg: DictDefault):
     for key in cfg.keys():
-        if key.startswith("mlflow_"):
+        if key.startswith("mlflow_") or key.startswith("hf_mlflow_"):
             value = cfg.get(key, "")
 
             if value and isinstance(value, str) and len(value) > 0:

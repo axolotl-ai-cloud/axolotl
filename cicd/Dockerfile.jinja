@@ -1,14 +1,13 @@
-ARG BASE_TAG=main-base
-FROM winglian/axolotl-base:$BASE_TAG
+FROM winglian/axolotl-base:{{ BASE_TAG }}
 
-ARG TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6+PTX"
-ARG AXOLOTL_EXTRAS=""
-ARG AXOLOTL_ARGS=""
-ARG CUDA="118"
-ENV BNB_CUDA_VERSION=$CUDA
-ARG PYTORCH_VERSION="2.1.2"
-
-ENV PYTORCH_VERSION=$PYTORCH_VERSION
+ENV TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6+PTX"
+ENV AXOLOTL_EXTRAS="{{ AXOLOTL_EXTRAS }}"
+ENV AXOLOTL_ARGS="{{ AXOLOTL_ARGS }}"
+ENV CUDA="{{ CUDA }}"
+ENV BNB_CUDA_VERSION="{{ CUDA }}"
+ENV PYTORCH_VERSION="{{ PYTORCH_VERSION }}"
+ENV GITHUB_REF="{{ GITHUB_REF }}"
+ENV GITHUB_SHA="{{ GITHUB_SHA }}"
 
 RUN apt-get update && \
     apt-get install -y --allow-change-held-packages vim curl nano libnccl2 libnccl-dev
@@ -18,6 +17,9 @@ WORKDIR /workspace
 RUN git clone --depth=1 https://github.com/OpenAccess-AI-Collective/axolotl.git
 
 WORKDIR /workspace/axolotl
+
+RUN git fetch origin +$GITHUB_REF && \
+    git checkout FETCH_HEAD
 
 # If AXOLOTL_EXTRAS is set, append it in brackets
 RUN if [ "$AXOLOTL_EXTRAS" != "" ] ; then \

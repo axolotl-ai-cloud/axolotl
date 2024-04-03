@@ -18,6 +18,7 @@ def parse_requirements():
                 or "flash-attention" in line
                 or "deepspeed" in line
                 or "mamba-ssm" in line
+                or "lion-pytorch" in line
             )
             if line.startswith("--extra-index-url"):
                 # Handle custom index URLs
@@ -73,7 +74,7 @@ setup(
             "fused-dense-lib  @ git+https://github.com/Dao-AILab/flash-attention@v2.3.3#subdirectory=csrc/fused_dense_lib",
         ],
         "deepspeed": [
-            "deepspeed>=0.13.1",
+            "deepspeed==0.13.1",
             "deepspeed-kernels",
         ],
         "mamba-ssm": [
@@ -81,6 +82,12 @@ setup(
         ],
         "auto-gptq": [
             "auto-gptq==0.5.1",
+        ],
+        "mlflow": [
+            "mlflow",
+        ],
+        "lion-pytorch": [
+            "lion-pytorch==0.1.2",
         ],
     },
 )
