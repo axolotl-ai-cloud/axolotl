@@ -1,4 +1,8 @@
-
+---
+toc-location: right-body
+toc-title: Table Of Contents
+toc-expand: 2
+---
 
 ```{python}
 #|output: asis
