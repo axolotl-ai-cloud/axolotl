@@ -957,8 +957,12 @@ def load_prepare_dpo_datasets(cfg):
                     )
                     split_datasets.insert(i, ds)
             else:
+                ds_type = get_ds_type(ds_cfg)
                 ds = load_dataset(  # pylint: disable=invalid-name
-                    ds_cfg["path"],
+                    ds_type,
+                    name=ds_cfg["name"],
+                    data_files=ds_cfg["path"],
+                    streaming=False,
                     split=ds_cfg["split"],
                 )
                 split_datasets.insert(i, ds)
