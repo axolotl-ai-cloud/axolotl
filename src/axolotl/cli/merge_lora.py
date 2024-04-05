@@ -38,6 +38,8 @@ def do_cli(config: Path = Path("examples/"), **kwargs):
     parsed_cfg.load_in_4bit = False
     parsed_cfg.load_in_8bit = False
     parsed_cfg.flash_attention = False
+    parsed_cfg.deepspeed = None
+    parsed_cfg.fsdp = None
 
     do_merge_lora(cfg=parsed_cfg, cli_args=parsed_cli_args)
 
