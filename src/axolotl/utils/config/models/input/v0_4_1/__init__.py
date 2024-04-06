@@ -664,8 +664,8 @@ class AxolotlInputConfig(
             and not data.get("flash_attention")
             and not data.get("sdp_attention")
         ):
-            raise ValueError(
-                "sample_packing requires flash_attention or sdp_attention to be set to true"
+            LOG.warning(
+                "sample_packing without flash_attention or sdp_attention does not handle cross-attention."
             )
 
         return data
