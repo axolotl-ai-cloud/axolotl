@@ -902,7 +902,12 @@ def load_lora(model, cfg, inference=False, config_only=False):
         model = get_peft_model(model, lora_config)
 
     if rank == 0:
-        model.print_trainable_parameters()
+        try:
+            model.print_trainable_parameters()
+        except AttributeError as exc:
+            LOG.warning(
+                "Exception caught during model.print_trainable_parameters(): %s", exc
+            )
     elif cfg.fsdp and cfg.adapter == "qlora":
         setup_quantized_peft_meta_for_training(model)
 
