@@ -68,12 +68,13 @@ def print_axolotl_text_art(suffix=None):
 
 def print_dep_versions():
     packages = ["accelerate", "peft", "transformers", "trl", "torch", "bitsandbytes"]
+    max_len = max(len(pkg) for pkg in packages)
     if is_main_process():
         print("*" * 40)
         print("**** Axolotl Dependency Versions *****")
         for pkg in packages:
             version = _is_package_available(pkg, return_version=True)
-            print(f"{pkg: >18}: {version[1]: <15}")
+            print(f"{pkg: >{max_len}}: {version[1]: <15}")
         print("*" * 40)
 
 
