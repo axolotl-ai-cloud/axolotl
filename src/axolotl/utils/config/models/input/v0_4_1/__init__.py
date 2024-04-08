@@ -98,6 +98,7 @@ class SFTDataset(BaseModel):
     ds_type: Optional[str] = None
     train_on_split: Optional[str] = None
 
+    field: Optional[str] = None
     field_human: Optional[str] = None
     field_model: Optional[str] = None
 
