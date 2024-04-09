@@ -378,7 +378,7 @@ def load_tokenized_prepared_datasets(
                 d_type_split = d_type.split(":")
                 d_base_type = d_type_split[0]
                 d_prompt_style = d_type_split[1] if len(d_type_split) > 1 else None
-            
+
             if isinstance(ds, DatasetDict):
                 if config_dataset.split and config_dataset.split in ds:
                     ds = ds[config_dataset.split]
