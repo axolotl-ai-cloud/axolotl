@@ -600,6 +600,7 @@ class TestValidation(BaseValidation):
                 {
                     "sample_packing": True,
                     "pad_to_sequence_len": None,
+                    "flash_attention": True,
                 }
             )
             | minimal_cfg
@@ -901,6 +902,7 @@ class TestValidation(BaseValidation):
                 {
                     "sample_packing": True,
                     "eval_table_size": 100,
+                    "flash_attention": True,
                 }
             )
             | minimal_cfg
@@ -916,6 +918,7 @@ class TestValidation(BaseValidation):
                 {
                     "sample_packing": True,
                     "eval_sample_packing": False,
+                    "flash_attention": True,
                 }
             )
             | minimal_cfg
@@ -928,6 +931,7 @@ class TestValidation(BaseValidation):
                 {
                     "sample_packing": False,
                     "eval_table_size": 100,
+                    "flash_attention": True,
                 }
             )
             | minimal_cfg
@@ -941,6 +945,7 @@ class TestValidation(BaseValidation):
                     "sample_packing": True,
                     "eval_table_size": 100,
                     "eval_sample_packing": False,
+                    "flash_attention": True,
                 }
             )
             | minimal_cfg

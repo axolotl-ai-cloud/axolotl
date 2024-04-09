@@ -23,6 +23,7 @@ from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import BatchSampler, DataLoader, RandomSampler, SequentialSampler
 from transformers import (
     EarlyStoppingCallback,
+    PreTrainedModel,
     Trainer,
     TrainerCallback,
     TrainingArguments,
@@ -801,6 +802,15 @@ class AxolotlDPOTrainer(DPOTrainer):
         kwargs = _sanitize_kwargs_for_tagging(tag_names=self.tag_names, kwargs=kwargs)
 
         return super().push_to_hub(*args, **kwargs)
+
+    def tokenize_row(
+        self, feature, model: Optional[Union[PreTrainedModel, torch.nn.Module]] = None
+    ) -> Dict:
+        res = super().tokenize_row(feature, model=model)
+        if self.tokenizer.bos_token_id is None and res["prompt_input_ids"][0] is None:
+            for key in res.keys():
+                res[key] = res[key][1:]
+        return res
 
 
 class TrainerBuilderBase(abc.ABC):
