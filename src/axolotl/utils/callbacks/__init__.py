@@ -6,7 +6,7 @@ import logging
 import os
 from shutil import copyfile
 from tempfile import NamedTemporaryFile
-from typing import TYPE_CHECKING, Dict, List
+from typing import TYPE_CHECKING, Any, Dict, List
 
 import evaluate
 import mlflow
@@ -599,7 +599,7 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer, logger: str):
                 return ranges
 
             def log_table_from_dataloader(name: str, table_dataloader):
-                table_data = {
+                table_data: Dict[str, List[Any]] = {
                     "id": [],
                     "Prompt": [],
                     "Correct Completion": [],
@@ -712,14 +712,24 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer, logger: str):
                         table_data["id"].append(row_index)
                         table_data["Prompt"].append(prompt_text)
                         table_data["Correct Completion"].append(completion_text)
-                        table_data["Predicted Completion (model.generate)"].append(prediction_text)
-                        table_data["Predicted Completion (trainer.prediction_step)"].append(pred_step_text)
+                        table_data["Predicted Completion (model.generate)"].append(
+                            prediction_text
+                        )
+                        table_data[
+                            "Predicted Completion (trainer.prediction_step)"
+                        ].append(pred_step_text)
                         row_index += 1
                 if logger == "wandb":
-                    wandb.run.log({f"{name} - Predictions vs Ground Truth": pd.DataFrame(table_data)}) # type: ignore[attr-defined]
+                    wandb.run.log({f"{name} - Predictions vs Ground Truth": pd.DataFrame(table_data)})  # type: ignore[attr-defined]
                 elif logger == "mlflow":
-                    tracking_uri = AxolotlInputConfig(**self.cfg.to_dict()).mlflow_tracking_uri
-                    mlflow.log_table(data=table_data, artifact_file="PredictionsVsGroundTruth.json", tracking_uri = tracking_uri)
+                    tracking_uri = AxolotlInputConfig(
+                        **self.cfg.to_dict()
+                    ).mlflow_tracking_uri
+                    mlflow.log_table(
+                        data=table_data,
+                        artifact_file="PredictionsVsGroundTruth.json",
+                        tracking_uri=tracking_uri,
+                    )
 
             if is_main_process():
                 log_table_from_dataloader("Eval", eval_dataloader)

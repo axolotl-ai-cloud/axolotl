@@ -946,7 +946,11 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 trainer, self.tokenizer, "wandb"
             )
             callbacks.append(LogPredictionCallback(self.cfg))
-        if self.cfg.use_mlflow and is_mlflow_available() and self.cfg.eval_table_size > 0:
+        if (
+            self.cfg.use_mlflow
+            and is_mlflow_available()
+            and self.cfg.eval_table_size > 0
+        ):
             LogPredictionCallback = log_prediction_callback_factory(
                 trainer, self.tokenizer, "mlflow"
             )
