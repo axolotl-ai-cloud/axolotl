@@ -36,6 +36,7 @@ from trl.trainer.utils import pad_to_length
 from axolotl.loraplus import create_loraplus_optimizer
 from axolotl.monkeypatch.multipack import SUPPORTED_MULTIPACK_MODEL_TYPES
 from axolotl.monkeypatch.relora import ReLoRACallback, ReLoRAScheduler
+from axolotl.utils import is_mlflow_available
 from axolotl.utils.callbacks import (
     EvalFirstStepCallback,
     GPUStatsCallback,
@@ -69,10 +70,6 @@ except ImportError:
     pass
 
 LOG = logging.getLogger("axolotl.core.trainer_builder")
-
-
-def is_mlflow_available():
-    return importlib.util.find_spec("mlflow") is not None
 
 
 def _sanitize_kwargs_for_tagging(tag_names, kwargs=None):

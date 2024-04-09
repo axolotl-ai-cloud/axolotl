@@ -27,7 +27,7 @@ from transformers import (
 )
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, IntervalStrategy
 
-from axolotl.core.trainer_builder import is_mlflow_available
+from axolotl.utils import is_mlflow_available
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.config.models.input.v0_4_1 import AxolotlInputConfig
 from axolotl.utils.distributed import (
