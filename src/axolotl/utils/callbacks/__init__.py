@@ -9,7 +9,6 @@ from tempfile import NamedTemporaryFile
 from typing import TYPE_CHECKING, Any, Dict, List
 
 import evaluate
-import mlflow
 import numpy as np
 import pandas as pd
 import torch
@@ -28,6 +27,7 @@ from transformers import (
 )
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, IntervalStrategy
 
+from axolotl.core.trainer_builder import is_mlflow_available
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.config.models.input.v0_4_1 import AxolotlInputConfig
 from axolotl.utils.distributed import (
@@ -721,7 +721,9 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer, logger: str):
                         row_index += 1
                 if logger == "wandb":
                     wandb.run.log({f"{name} - Predictions vs Ground Truth": pd.DataFrame(table_data)})  # type: ignore[attr-defined]
-                elif logger == "mlflow":
+                elif logger == "mlflow" and is_mlflow_available():
+                    import mlflow
+
                     tracking_uri = AxolotlInputConfig(
                         **self.cfg.to_dict()
                     ).mlflow_tracking_uri
