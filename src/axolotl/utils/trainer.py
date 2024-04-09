@@ -198,7 +198,7 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
             .apply(lambda x: len(x))  # pylint: disable=unnecessary-lambda
             .values
         )
-        LOG.debug(f"total_num_tokens: {total_num_tokens}", main_process_only=True)
+        LOG.debug(f"total_num_tokens: {total_num_tokens:_}", main_process_only=True)
         if update:
             cfg.total_num_tokens = total_num_tokens
 
@@ -212,7 +212,7 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
             .sum()
         )
         LOG.debug(
-            f"`total_supervised_tokens: {total_supervised_tokens}`",
+            f"`total_supervised_tokens: {total_supervised_tokens:_}`",
             main_process_only=True,
         )
         if update:
@@ -239,7 +239,7 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                 * cfg.num_epochs
             )
             LOG.debug(
-                f"total_num_tokens: {cfg.total_num_tokens}, total_num_steps: {total_num_steps}",
+                f"total_num_tokens: {cfg.total_num_tokens:_}, total_num_steps: {total_num_steps:_}",
                 main_process_only=True,
             )
         else:
