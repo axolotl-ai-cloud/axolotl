@@ -761,6 +761,11 @@ class SaveAxolotlConfigtoWandBCallback(TrainerCallback):
                     mode="w", delete=False, suffix=".yml", prefix="axolotl_config_"
                 ) as temp_file:
                     copyfile(self.axolotl_config_path, temp_file.name)
+                    artifact = wandb.Artifact(
+                        f"config-{wandb.run.id}", type="axolotl-config"
+                    )
+                    artifact.add_file(temp_file.name)
+                    wandb.log_artifact(artifact)
                     wandb.save(temp_file.name)
                 LOG.info(
                     "The Axolotl config has been saved to the WandB run under files."
