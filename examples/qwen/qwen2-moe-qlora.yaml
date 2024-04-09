@@ -16,7 +16,7 @@ sequence_len: 1024  # supports up to 32k
 sample_packing: false
 pad_to_sequence_len: false
 
-adapter: lora
+adapter: qlora
 lora_model_dir:
 lora_r: 32
 lora_alpha: 16
