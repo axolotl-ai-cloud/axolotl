@@ -355,6 +355,7 @@ class ModelOutputConfig(BaseModel):
     hub_model_id: Optional[str] = None
     hub_strategy: Optional[str] = None
     save_safetensors: Optional[bool] = None
+    save_only_model: Optional[bool] = None
 
 
 class MLFlowConfig(BaseModel):

@@ -1058,6 +1058,9 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         if self.cfg.save_safetensors is not None:
             training_arguments_kwargs["save_safetensors"] = self.cfg.save_safetensors
 
+        if self.cfg.save_only_model is not None:
+            training_arguments_kwargs["save_only_model"] = self.cfg.save_only_model
+
         if self.cfg.sample_packing_eff_est:
             training_arguments_kwargs[
                 "sample_packing_efficiency"
