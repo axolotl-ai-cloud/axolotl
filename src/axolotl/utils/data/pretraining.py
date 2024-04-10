@@ -150,6 +150,8 @@ def wrap_pretraining_dataset(
             max_seq_length=max_tokens,
             batch_size=batch_size,
             multipack_attn=cfg.pretrain_multipack_attn,
+            group_size=cfg.sample_packing_group_size,
+            bin_size=cfg.sample_packing_bin_size,
         )
         # set this to 1 so downstream data_loader doesn't try to increase the batch again
         cfg.micro_batch_size = 1
@@ -189,6 +191,8 @@ def encode_packed_pretraining(
     max_seq_length: int = 2048,
     batch_size: int = 4,
     multipack_attn: Optional[bool] = False,
+    group_size: int = 100000,
+    bin_size: int = 200,
 ) -> Dict[str, List]:
     # pylint: disable=duplicate-code
     # tokenize all the examples
@@ -202,11 +206,13 @@ def encode_packed_pretraining(
     )
 
     sampler = MultipackBatchSampler(
-        RandomSampler(train_dataset),
-        batch_size=1,
-        drop_last=True,
-        batch_max_len=batch_size * max_seq_length,
+        sampler=RandomSampler(train_dataset),
         lengths=get_dataset_lengths(train_dataset),
+        batch_size=1,
+        batch_max_len=batch_size * max_seq_length,
+        group_size=group_size,
+        bin_size=bin_size,
+        drop_last=True,
     )
 
     chunked_data = defaultdict(list)

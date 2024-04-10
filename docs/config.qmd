@@ -186,6 +186,11 @@ eval_sample_packing:
 # The trainer will provide recommended values for these values.
 sample_packing_eff_est:
 total_num_tokens:
+# Increasing the following values helps with packing, but usually only slightly (<%1.)
+# The number of samples packed at a time.
+sample_packing_group_size: 100000
+# The number of samples which can be packed into one sequence. Increase if using a large sequence_len with many short samples.
+sample_packing_bin_size: 200
 
 # Passed through to transformers when loading the model when launched without accelerate
 # Use `sequential` when training w/ model parallelism to limit memory
