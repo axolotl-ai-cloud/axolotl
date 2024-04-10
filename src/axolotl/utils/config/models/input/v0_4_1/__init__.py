@@ -24,16 +24,15 @@ class DeprecatedParameters(BaseModel):
     max_packed_sequence_len: Optional[int] = None
     rope_scaling: Optional[Any] = None
     noisy_embedding_alpha: Optional[float] = None
+    sample_packing_eff_est: Optional[float] = None
 
     @field_validator("max_packed_sequence_len")
-    @classmethod
     def validate_max_packed_sequence_len(cls, max_packed_sequence_len):
         if max_packed_sequence_len:
             raise DeprecationWarning("`max_packed_sequence_len` is no longer supported")
         return max_packed_sequence_len
 
     @field_validator("rope_scaling")
-    @classmethod
     def validate_rope_scaling(cls, rope_scaling):
         if rope_scaling:
             raise DeprecationWarning(
@@ -42,11 +41,16 @@ class DeprecatedParameters(BaseModel):
         return rope_scaling
 
     @field_validator("noisy_embedding_alpha")
-    @classmethod
     def validate_noisy_embedding_alpha(cls, noisy_embedding_alpha):
         if noisy_embedding_alpha:
             LOG.warning("noisy_embedding_alpha is deprecated, use neftune_noise_alpha")
         return noisy_embedding_alpha
+
+    @field_validator("sample_packing_eff_est")
+    def validate_sample_packing_eff_est(cls, sample_packing_eff_est):
+        if sample_packing_eff_est:
+            LOG.warning("sample_packing_eff_est is deprecated and no longer necessary")
+        return sample_packing_eff_est
 
 
 class RemappedParameters(BaseModel):

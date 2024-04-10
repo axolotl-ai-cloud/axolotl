@@ -119,17 +119,21 @@ class AxolotlTrainingArguments(TrainingArguments):
         default=None,
         metadata={"help": "Use sample packing for efficient evals."},
     )
-    sample_packing_efficiency: float = field(
-        default=1.0,
-        metadata={"help": "Sample packing efficiency for calculating batch length."},
+    sample_packing_bin_size: int = field(
+        default=200,
+        metadata={
+            "help": "The max number of samples that packed sample can contain after packing. Increase for better packing."
+        },
+    )
+    sample_packing_group_size: int = field(
+        default=25000,
+        metadata={
+            "help": "The number of samples to group together for packing. Increase for better packing."
+        },
     )
     max_seq_length: int = field(
         default=2048,
         metadata={"help": "The maximum sequence length the model can handle"},
-    )
-    sample_packing_seq_len_multiplier: int = field(
-        default=1,
-        metadata={"help": "the multiplier for the max len for packed sequences"},
     )
     relora_steps: Optional[int] = field(
         default=None,
@@ -340,11 +344,11 @@ class AxolotlTrainer(Trainer):
                 )
             return MultipackBatchSampler(
                 RandomSampler(self.train_dataset),
-                batch_size=batch_size,
-                drop_last=True,
-                batch_max_len=batch_max_len,
                 lengths=get_dataset_lengths(self.train_dataset),
-                packing_efficiency_estimate=self.args.sample_packing_efficiency,
+                batch_max_len=batch_max_len,
+                batch_size=batch_size,
+                group_size=self.args.sample_packing_group_size,
+                bin_size=self.args.sample_packing_bin_size,
             )
         return super()._get_train_sampler()
 
@@ -362,11 +366,11 @@ class AxolotlTrainer(Trainer):
                 )
             return MultipackBatchSampler(
                 SequentialSampler(eval_dataset),
-                batch_size=batch_size,
-                drop_last=True,
+                lengths=get_dataset_lengths(self.eval_dataset),
                 batch_max_len=batch_max_len,
-                lengths=get_dataset_lengths(eval_dataset),
-                packing_efficiency_estimate=self.args.sample_packing_efficiency,
+                batch_size=batch_size,
+                group_size=self.args.sample_packing_group_size,
+                bin_size=self.args.sample_packing_bin_size,
             )
         return super()._get_eval_sampler(eval_dataset)
 
@@ -1062,11 +1066,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         if self.cfg.save_safetensors is not None:
             training_arguments_kwargs["save_safetensors"] = self.cfg.save_safetensors
 
-        if self.cfg.sample_packing_eff_est:
-            training_arguments_kwargs[
-                "sample_packing_efficiency"
-            ] = self.cfg.sample_packing_eff_est
-
         if self.cfg.dataloader_pin_memory is not None:
             training_arguments_kwargs[
                 "dataloader_pin_memory"
@@ -1236,20 +1235,23 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         training_arguments_kwargs["weight_decay"] = (
             self.cfg.weight_decay if self.cfg.weight_decay is not None else 0.0
         )
-        training_arguments_kwargs["sample_packing"] = (
-            self.cfg.sample_packing if self.cfg.sample_packing else False
-        )
-        training_arguments_kwargs["multipack_real_batches"] = (
-            self.cfg.flash_attention is not True
-        )
-        training_arguments_kwargs["eval_sample_packing"] = (
-            self.cfg.sample_packing
-            if self.cfg.eval_sample_packing is not False
-            else False
-        )
+
+        training_arguments_kwargs["sample_packing"] = bool(self.cfg.sample_packing)
         training_arguments_kwargs[
-            "sample_packing_seq_len_multiplier"
-        ] = self.cfg.micro_batch_size
+            "multipack_real_batches"
+        ] = not self.cfg.flash_attention
+        training_arguments_kwargs[
+            "eval_sample_packing"
+        ] = bool(self.cfg.eval_sample_packing)
+        if self.cfg.sample_packing_bin_size is not None:
+            training_arguments_kwargs[
+                "sample_packing_bin_size"
+            ] = self.cfg.sample_packing_bin_size
+        if self.cfg.sample_packing_group_size is not None:
+            training_arguments_kwargs[
+                "sample_packing_group_size"
+            ] = self.cfg.sample_packing_group_size
+
         if self.cfg.relora_steps:
             training_arguments_kwargs["relora_steps"] = self.cfg.relora_steps
             training_arguments_kwargs[

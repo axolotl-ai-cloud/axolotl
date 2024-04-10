@@ -202,11 +202,10 @@ def encode_packed_pretraining(
     )
 
     sampler = MultipackBatchSampler(
-        RandomSampler(train_dataset),
-        batch_size=1,
-        drop_last=True,
-        batch_max_len=batch_size * max_seq_length,
+        sampler=RandomSampler(train_dataset),
         lengths=get_dataset_lengths(train_dataset),
+        batch_size=1,
+        batch_max_len=batch_size * max_seq_length,
     )
 
     chunked_data = defaultdict(list)
