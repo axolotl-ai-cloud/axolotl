@@ -8,6 +8,7 @@ import transformers
 
 from axolotl.cli import do_merge_lora, load_cfg, print_axolotl_text_art
 from axolotl.common.cli import TrainerCliArgs
+from axolotl.utils.dict import DictDefault
 
 
 def do_cli(config: Path = Path("examples/"), **kwargs):
@@ -27,21 +28,26 @@ def do_cli(config: Path = Path("examples/"), **kwargs):
         flash_attention=False,
         **kwargs,
     )
+    cfg = modify_cfg_for_merge(parsed_cfg)
 
-    if not parsed_cfg.lora_model_dir and parsed_cfg.output_dir:
-        parsed_cfg.lora_model_dir = parsed_cfg.output_dir
-    if not Path(parsed_cfg.lora_model_dir).exists():
+    do_merge_lora(cfg=cfg, cli_args=parsed_cli_args)
+
+
+def modify_cfg_for_merge(cfg: DictDefault) -> DictDefault:
+    if not cfg.lora_model_dir and cfg.output_dir:
+        cfg.lora_model_dir = cfg.output_dir
+    if not Path(cfg.lora_model_dir).exists():
         raise ValueError(
-            f"Target directory for merge: `{parsed_cfg.lora_model_dir}` does not exist."
+            f"Target directory for merge: `{cfg.lora_model_dir}` does not exist."
         )
 
-    parsed_cfg.load_in_4bit = False
-    parsed_cfg.load_in_8bit = False
-    parsed_cfg.flash_attention = False
-    parsed_cfg.deepspeed = None
-    parsed_cfg.fsdp = None
+    cfg.load_in_4bit = False
+    cfg.load_in_8bit = False
+    cfg.flash_attention = False
+    cfg.deepspeed = None
+    cfg.fsdp = None
 
-    do_merge_lora(cfg=parsed_cfg, cli_args=parsed_cli_args)
+    return cfg
 
 
 if __name__ == "__main__":
