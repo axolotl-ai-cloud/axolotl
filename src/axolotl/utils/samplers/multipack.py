@@ -2,12 +2,15 @@
 Multipack Batch Sampler
 """
 import logging
+import math
 from concurrent.futures import ProcessPoolExecutor
 from multiprocessing import cpu_count
 
 import numba
 import numpy as np
 from torch.utils.data import BatchSampler
+
+from axolotl.utils.distributed import get_rank, get_world_size, is_main_process
 
 LOG = logging.getLogger("axolotl.utils.samplers.multipack")
 
@@ -44,7 +47,6 @@ def pack_group(items, group_offset, bin_capacity, max_items_per_bin):
 
 
 def pack(items, bin_capacity, group_size, max_items_per_bin):
-    items = np.array(items, dtype=np.int32)
     num_items = len(items)
     num_processes = max(1, min(num_items // group_size, cpu_count()))
     tasks = [
@@ -72,48 +74,50 @@ class MultipackBatchSampler(BatchSampler):
         batch_size,
         group_size,
         bin_size,
-        shuffle=False,
+        drop_last=False,
     ):
         self.sampler = sampler
-        self.sample_idxs = np.arange(len(sampler))
-        self.lengths = (
-            lengths if isinstance(lengths, np.ndarray) else np.array(lengths)
-        )
+        self.lengths = np.array(lengths, dtype=np.int32)
         self.batch_max_len = batch_max_len
         self.batch_size = batch_size
         self.group_size = group_size
         self.bin_size = bin_size
-        self.shuffle = shuffle
+        self.drop_last = drop_last
         self._batches = None
 
     def _pack_batches(self):
-        # Shuffle indices if necessary.
-        idxs = np.copy(self.sample_idxs)
-        if self.shuffle:
-            np.random.shuffle(idxs)
-
-        # Repack based on shuffled indices.
-        shuffled_lengths = self.lengths[idxs]
+        # Initially, calculate packs for all ranks.
         pack_idxs = pack(
-            shuffled_lengths, self.batch_max_len, self.group_size, self.bin_size
+            self.lengths,
+            self.batch_max_len,
+            self.group_size,
+            self.bin_size,
         )
 
-        # Wrap packs into batches.
-        batch_idxs = [
-            pack_idxs[i : i + self.batch_size]
-            for i in range(0, len(pack_idxs), self.batch_size)
-        ]
+        if is_main_process():
+            used_tokens = self.lengths.sum()
+            available_tokens = len(pack_idxs) * self.batch_max_len
+            efficiency = used_tokens / available_tokens
+            LOG.debug(f"Sample packing efficiency: {efficiency * 100:.2f}%")
 
+        # Select pack indices for this rank.
+        world_size = get_world_size()
+        if self.drop_last:
+            batches_per_rank = len(pack_idxs) // world_size
+        else:
+            batches_per_rank = math.ceil(len(pack_idxs) / world_size)
+
+        start_idx = batches_per_rank * get_rank()
+        end_idx = min(start_idx + batches_per_rank, len(pack_idxs))
+
+        batch_idxs = pack_idxs[start_idx:end_idx]
         return batch_idxs
 
     def __iter__(self):
-        if self.shuffle or self._batches is None:
-            self._batches = self._pack_batches()
-
+        self._batches = self._pack_batches()
         return iter(self._batches)
 
     def __len__(self):
         if self._batches is None:
             self._batches = self._pack_batches()
-
         return len(self._batches)

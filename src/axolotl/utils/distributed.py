@@ -36,16 +36,27 @@ def barrier():
 
 def is_main_process():
     """
-    Check if the current process is the main process.
-    If not in distributed mode, always return True.
+    Return whether the current process is on the main rank.
     """
-    if not is_distributed():
-        return True
-    return dist.get_rank() == 0
+    return get_rank() == 0
 
 
 def get_world_size():
+    """
+    Return world size (1 if not distributed.)
+    """
+    if not is_distributed():
+        return 1
     return int(os.getenv("WORLD_SIZE", "1"))
+
+
+def get_rank():
+    """
+    Return rank (0 if not distributed.)
+    """
+    if not is_distributed():
+        return 0
+    return dist.get_rank()
 
 
 @contextmanager
