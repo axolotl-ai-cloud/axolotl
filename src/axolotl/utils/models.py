@@ -653,14 +653,17 @@ def load_model(
                     **model_kwargs,
                 )
             else:
+                if qlora_fsdp and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading:
+                    skip_move_to_device = True
+                    if "device_map" in model_kwargs:
+                        del model_kwargs["device_map"]
+
                 model = AutoModelForCausalLM.from_pretrained(
                     base_model,
                     config=model_config,
                     trust_remote_code=cfg.trust_remote_code or False,
                     **model_kwargs,
                 )
-                if qlora_fsdp and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading:
-                    skip_move_to_device = True
     except Exception as err:  # pylint: disable=broad-exception-caught
         LOG.exception(err)
         raise err
