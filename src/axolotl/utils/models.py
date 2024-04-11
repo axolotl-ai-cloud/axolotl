@@ -560,7 +560,11 @@ def load_model(
                 torch_dtype=cfg.torch_dtype,
             )
             skip_move_to_device = True
-        elif qlora_fsdp and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading:
+        elif (
+            qlora_fsdp
+            and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
+            and cfg.model_config_type == "dbrx"
+        ):
             quant_storage = cfg.torch_dtype
             model = load_sharded_model_quant(
                 base_model,
@@ -655,6 +659,8 @@ def load_model(
                     trust_remote_code=cfg.trust_remote_code or False,
                     **model_kwargs,
                 )
+                if qlora_fsdp and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading:
+                    skip_move_to_device = True
     except Exception as err:  # pylint: disable=broad-exception-caught
         LOG.exception(err)
         raise err
