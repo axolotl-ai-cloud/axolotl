@@ -561,10 +561,12 @@ def load_model(
             )
             skip_move_to_device = True
         elif qlora_fsdp and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading:
+            quant_storage = cfg.torch_dtype
             model = load_sharded_model_quant(
                 base_model,
                 model_config,
                 cfg,
+                quant_storage=quant_storage,
             )
             skip_move_to_device = True
         elif (
