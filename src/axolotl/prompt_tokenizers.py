@@ -340,6 +340,23 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
             self.prompter._conversation.copy()  # pylint: disable=protected-access
         )
         
+        input_roles = {conversation.roles[0]}
+        output_roles = {conversation.roles[1]}
+        
+        # if len(conversation.roles) == 3:
+        #     tool_role_label = conversation.roles[2]
+        #     input_roles.add(tool_role_label)
+
+        # Add roles from the config
+        if self.prompter.roles:
+            if "input" in self.prompter.roles and self.prompter.roles["input"]:
+                for role in self.prompter.roles["input"]:
+                    input_roles.add(role)
+
+            if "output" in self.prompter.roles and self.prompter.roles["output"]:
+                for role in self.prompter.roles["output"]:
+                    output_roles.add(role)
+        
         # support for custom roles from the dataset, only useful for vicuna style prompts/roles
         role_remap = []
         if (
@@ -351,9 +368,6 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
                 {"from": conversation.roles[0], "to": prompt["roles"][0]},
                 {"from": conversation.roles[1], "to": prompt["roles"][1]},
             ]
-
-        LOG.debug(conversation)
-
         
         try:
             for _, part in enumerate(
@@ -362,22 +376,35 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
                 if not isinstance(part, tuple):
                     LOG.warning(f"expected tuple, got {part}")
                     continue
-
-                user, assistant = conversation.roles
+                
                 role, content = part
+                has_system_prompt = False
 
                 # Uses "in" because role contains extra characters
-                if user in role:
+                input_turn = any(r.lower() in role.lower() for r in input_roles)
+                output_turn = any(r.lower() in role.lower() for r in output_roles)
+                empty_role = role.strip() == ""
+                                
+                if not any([input_turn, output_turn, empty_role]):
+                    LOG.warning(f"unhandled role: {role}")
+                    continue
+
+                if input_turn:
                     role = (
                         role.replace(role_remap[0]["from"], role_remap[0]["to"])
                         if role_remap
                         else role
                     )
-                        
+                    turn = role + content
                     # this is still the user query, we should
                     if not content.strip():
                         LOG.warning(f"user turn has empty text: {prompt}")
-                                            
+                    res = self._tokenize(
+                        turn,
+                        add_eos_token=False,
+                        strip_bos_token=True,
+                    )
+                    
                     role_res = self._tokenize(
                         role,
                         add_eos_token=False,
@@ -389,27 +416,17 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
                         LOG.warning(f"Role has {len(role_res['input_ids'])}: {role_res['input_ids']}")
                         # if input ids has 4 tokens, we  want to strip the first one
                         # strip of the tokens after first one
-                        if len(role_res["input_ids"]) > 3:
-                            role_res["input_ids"] = role_res["input_ids"][1:]
-                            role_res["attention_mask"] = role_res["attention_mask"][1:]
-                            LOG.warning(f"Role has {len(role_res['input_ids'])}: {role_res['input_ids']}")
-                        
-                    role_content = self._tokenize(
-                        content,
-                        add_eos_token=False,
-                        strip_bos_token=True,
-                    )
+                        # if len(role_res["input_ids"]) > 3:
+                        #     role_res["input_ids"] = role_res["input_ids"][1:]
+                        #     role_res["attention_mask"] = role_res["attention_mask"][1:]
+                        #     LOG.warning(f"Role has {len(role_res['input_ids'])}: {role_res['input_ids']}")  
                     
-                    # concat the contents of the role and the content
-                    res = {
-                        "input_ids": role_res["input_ids"] + role_content["input_ids"],
-                        "attention_mask": role_res["attention_mask"] + role_content["attention_mask"],
-                    }   
-                    
-                    # everything from this is masked out from the labels
-                    labels = [IGNORE_TOKEN_ID] * len(res["input_ids"])
-                elif assistant in role:
-                    # TODO label assistant token/tokens w/ IGNORE_TOKEN_ID
+                    if self.train_on_inputs:
+                        labels = copy.deepcopy(res["input_ids"])
+                    else:
+                        # everything from this is masked out from the labels
+                        labels = [IGNORE_TOKEN_ID] * len(res["input_ids"])
+                elif output_turn:
                     role = (
                         role.replace(role_remap[1]["from"], role_remap[1]["to"])
                         if role_remap
@@ -419,41 +436,55 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
                     # this should be the assistant response, should end with an eos token
                     if not content.strip():
                         LOG.warning(f"assistant turn has empty text: {prompt}")
+                    add_eos_token = not (
+                        conversation.name == "chatml"
+                        and conversation.sep == self.tokenizer.eos_token
+                    )
                     res = self._tokenize(
                         turn,
-                        add_eos_token=False, # commenting because it is the same as the role.
+                        add_eos_token=add_eos_token,
                         strip_bos_token=True,
                     )
                     role_res = self._tokenize(
-                        role.rstrip(),
+                        role,
                         add_eos_token=False,
                         strip_bos_token=True,
                     )
-                    # not masked out from labels
+                    
+                    # check if it's just a single token
+                    if len(role_res["input_ids"]) > 1:
+                        LOG.warning(f"Role has {len(role_res['input_ids'])}: {role_res['input_ids']}")
+                        # if input ids has 4 tokens, we  want to strip the first one
+                        # strip of the tokens after first one
+                        # if len(role_res["input_ids"]) > 3:
+                        #     role_res["input_ids"] = role_res["input_ids"][1:]
+                        #     role_res["attention_mask"] = role_res["attention_mask"][1:]
+                            # LOG.warning(f"Role has {len(role_res['input_ids'])}: {role_res['input_ids']}")
+                    
                     labels = copy.deepcopy(res["input_ids"])
-                    len_role = len(role_res["input_ids"])
-                    labels[:len_role] = [IGNORE_TOKEN_ID] * min(len_role, len(labels))
-                elif role == "":
-                    turn = "<s>"
-                    # this is only ever the first part, should include the bos token and the user query
-                    res = self._tokenize(
-                        turn, add_eos_token=False, strip_bos_token=True
-                    )
-
-                    # everything from this is masked out from the labels
-                    labels = [IGNORE_TOKEN_ID] * len(res["input_ids"])
-                else:
-                    turn = "<s>"
-                    # this is only ever the first part, should include the bos token and the user query
-                    res = self._tokenize(
-                        turn, add_eos_token=False, strip_bos_token=True
-                    )
-                    # everything from this is masked out from the labels
-                    labels = [IGNORE_TOKEN_ID] * len(res["input_ids"])
-                    # LOG.warning(f"unhandled role: {role}")
-                    continue
+                    if not self.train_on_inputs:
+                        # mask out role tokens from the labels
+                        len_role = len(role_res["input_ids"])
+                        labels[:len_role] = [IGNORE_TOKEN_ID] * min(
+                            len_role, len(labels)
+                        )
+                elif empty_role:
+                    if content != "<|im_start|>system\n<|im_end|>\n":
+                        # LOG.warning(f"System message encountered: {content}")
+                        turn = content
+                        res = self._tokenize(
+                            turn, add_eos_token=False, strip_bos_token=False
+                        )
+                        if self.train_on_inputs:
+                            labels = copy.deepcopy(res["input_ids"])
+                        else:
+                            labels = [IGNORE_TOKEN_ID] * len(res["input_ids"])
+                        has_system_prompt = True
+                        LOG.warning(f"System message encountered: {content}\nResult: {res}\nLabels: {labels}")
+                    else:
+                        res = {"input_ids": [], "attention_mask": []}
+                        labels = []
                 
-                # pylint: disable=duplicate-code
                 result, current_len = parse_tokenized_to_result(
                     result,
                     current_len,
@@ -461,7 +492,8 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
                     labels,
                     pad_token_id=self.tokenizer.pad_token_id,
                 )
-                
+            if has_system_prompt:
+                LOG.warning(f"System prompt detected: {result}")
             return result
         except (KeyError, AssertionError, IndexError) as err:
             raise InvalidDataException(str(err)) from err

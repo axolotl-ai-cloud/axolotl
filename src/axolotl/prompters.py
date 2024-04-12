@@ -255,9 +255,16 @@ class ReflectAlpacaPrompter(Prompter):
         )
 
 
-SHAREGPT_ASSERTION_FAILED_ROLE = (
-    "Role did not alternate between turns (gpt and human). Please check your data."
-)
+# SHAREGPT_ASSERTION_FAILED_ROLE = (
+#     "Role did not alternate between turns (gpt and human). Please check your data."
+# )
+
+CONVERSATION_ROLE_FORMAT = {
+    "chatml": "<|im_start|>{ROLE}",
+    "zephyr": "<|{ROLE}|>",
+    "vicuna_v1.1": "{ROLE}",
+}
+
 
 
 class ShareGPTPrompter(Prompter):  # pylint: disable=too-few-public-methods
@@ -267,6 +274,7 @@ class ShareGPTPrompter(Prompter):  # pylint: disable=too-few-public-methods
 
     role_key_human = "human"
     role_key_model = "gpt"
+    roles: Optional[dict] = None
 
     def __init__(
         self,
@@ -274,6 +282,7 @@ class ShareGPTPrompter(Prompter):  # pylint: disable=too-few-public-methods
         conversation: Optional[Union[str, Conversation]] = None,
         role_key_human: Optional[str] = None,
         role_key_model: Optional[str] = None,
+        roles: Optional[dict] = None
     ):
         if conversation:
             if isinstance(conversation, Conversation):
@@ -282,11 +291,13 @@ class ShareGPTPrompter(Prompter):  # pylint: disable=too-few-public-methods
                 self._conversation = get_conv_template(conversation)
             return conversation
         else:
-            self._conversation = get_conv_template("chatml")
+            self._conversation = get_conv_template("chatml_w_system")
         if role_key_human:
             self.role_key_human = role_key_human
         if role_key_model:
             self.role_key_model = role_key_model
+        if roles:
+            self.roles = roles
 
 
     def _build_result(self, source):
@@ -305,7 +316,9 @@ class ShareGPTPrompter(Prompter):  # pylint: disable=too-few-public-methods
             source.pop(0)
 
         roles = {self.role_key_human: conv.roles[0], self.role_key_model: conv.roles[1]}
-        
+        # if self.role_key_tool:
+        #     roles[self.role_key_tool] = conv.roles[2]
+
         try:
             # Apply prompt templates
             if source[0]["from"] not in roles:
@@ -317,15 +330,64 @@ class ShareGPTPrompter(Prompter):  # pylint: disable=too-few-public-methods
 
         conv.messages = []
         for _, sentence in enumerate(source):
-            role = roles[sentence["from"]]
-            if len(conv.messages) > 0 and (
-                (role == conv.messages[-1][0]) or (role not in conv.roles)
-            ):
-                if conv.name != "conversational_lm":
-                    LOG.warning(f"{SHAREGPT_ASSERTION_FAILED_ROLE}: {sentence}")
+            from_role = sentence["from"]
+            if from_role in roles:
+                role = roles[from_role]
+            else:
+                if self._conversation.name not in CONVERSATION_ROLE_FORMAT:
+                    raise NotImplementedError(
+                        f"Role ({role}) not in default roles, and {self._conversation.name} does not support role remapping yet."
+                        "Please help us by creating an Issue to add support for this conversation type."
+                    )
+
+                role = CONVERSATION_ROLE_FORMAT[self._conversation.name].format(
+                    ROLE=from_role
+                )
+
+            # if len(conv.messages) > 0 and ((role == conv.messages[-1][0])):
+            #     LOG.warning(f"{SHAREGPT_ASSERTION_FAILED_ROLE}: {sentence}")
+
             conv.append_message(role, sentence["value"])
 
         return conv.get_turns()
+    
+    # def _build_result(self, source):
+    #     if len(source) < 2:
+    #         # If there isn't a back and forth conversation, ignore it
+    #         # also happens on the data splitting leaving empty conversations
+    #         raise IndexError(
+    #             f"A conversation entry has less than 2 messages :\n{source}"
+    #         )
+
+    #     conv = self._conversation.copy()
+
+    #     # Add the conversation system prompt if provided, otherwise use the default one
+    #     if source[0]["from"] == "system":
+    #         conv.set_system_message(source[0]["value"])
+    #         source.pop(0)
+
+    #     roles = {self.role_key_human: conv.roles[0], self.role_key_model: conv.roles[1]}
+        
+    #     try:
+    #         # Apply prompt templates
+    #         if source[0]["from"] not in roles:
+    #             # Skip the first one if it is not from human
+    #             source = source[1:]
+    #     except IndexError as err:
+    #         # sometimes there is a bing or system chat
+    #         raise err
+
+    #     conv.messages = []
+    #     for _, sentence in enumerate(source):
+    #         role = roles[sentence["from"]]
+    #         if len(conv.messages) > 0 and (
+    #             (role == conv.messages[-1][0]) or (role not in conv.roles)
+    #         ):
+    #             if conv.name != "conversational_lm":
+    #                 LOG.warning(f"{SHAREGPT_ASSERTION_FAILED_ROLE}: {sentence}")
+    #         conv.append_message(role, sentence["value"])
+
+    #     return conv.get_turns()
 
     def build_prompt(self, source) -> Generator[str, None, None]:
         turns = self._build_result(source)
@@ -350,11 +412,13 @@ class ShareGPTPrompterV2(ShareGPTPrompter):
         conversation: Optional[Union[str, Conversation]] = None,
         role_key_human: Optional[str] = None,
         role_key_model: Optional[str] = None,
+        roles: Optional[dict] = None,
     ):
         super().__init__(
             conversation=conversation,
             role_key_human=role_key_human,
             role_key_model=role_key_model,
+            roles=roles
         )
 
 
