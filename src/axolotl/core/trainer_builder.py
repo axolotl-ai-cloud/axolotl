@@ -918,10 +918,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         ):
             callbacks.append(SaveBetterTransformerModelCallback())
 
-        if self.cfg.use_wandb:
-            callbacks.append(
-                SaveAxolotlConfigtoWandBCallback(self.cfg.axolotl_config_path)
-            )
         if self.cfg.use_mlflow and is_mlflow_available():
             from axolotl.utils.callbacks.mlflow_ import (
                 SaveAxolotlConfigtoMlflowCallback,
