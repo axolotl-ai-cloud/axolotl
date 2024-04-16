@@ -96,6 +96,7 @@ class SFTDataset(BaseModel):
     data_files: Optional[Union[str, List[str]]] = None
     name: Optional[str] = None
     ds_type: Optional[str] = None
+    streaming: Optional[bool] = None
     train_on_split: Optional[str] = None
 
     field: Optional[str] = None

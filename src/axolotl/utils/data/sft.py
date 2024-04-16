@@ -51,6 +51,49 @@ from axolotl.utils.trainer import (
 LOG = logging.getLogger("axolotl")
 
 
+def load_streaming_dataset(config_dataset):
+    """
+    Load a streaming dataset from a remote storage.
+
+    This function initializes a streaming dataset from a remote S3 bucket,
+    wraps the data into a generator, and then converts it into a Hugging Face
+    dataset for compatibility purposes.
+
+    Parameters:
+    - config_dataset (dict): Configuration dictionary that may contain settings necessary for initializing the dataset.
+
+    Returns:
+    - ds (datasets.Dataset): A Hugging Face dataset object that streams data from the specified remote location.
+    """
+    # These imports are local due to the optionality of `mosaicml-streaming`.
+    from streaming import StreamingDataset
+    from datasets import Features, Value, Dataset
+    from functools import partial
+
+    # Initialize the `StreamingDataset` with configurations.
+    streaming_dataset = StreamingDataset(
+        local=None, remote=config_dataset.path, shuffle=True, batch_size=4
+    )
+
+    # Define dataset features according to the axolotl structure.
+    features = Features({"text": Value("string")})
+
+    # Shim between `StreamingDataset` and `Dataset`.
+    def generator_from_streaming_dataset(streaming_dataset):
+        yield from streaming_dataset
+
+    # Create a Hugging Face dataset from the generator.
+    #
+    # This is necessary because downstream functions use a different interface
+    # than `StreamingDataset` (e.g. the `features` attribute).
+    ds = Dataset.from_generator(
+        generator=partial(generator_from_streaming_dataset, streaming_dataset),
+        features=features,
+    )
+
+    return ds
+
+
 def prepare_dataset(cfg, tokenizer):
     prompters = []
     if not cfg.pretraining_dataset:
@@ -317,10 +360,13 @@ def load_tokenized_prepared_datasets(
                 )
             elif ds_from_cloud and remote_file_system:
                 if remote_file_system.isdir(config_dataset.path):
-                    ds = load_from_disk(
-                        config_dataset.path,
-                        storage_options=storage_options,
-                    )
+                    if config_dataset.streaming:
+                        ds = load_streaming_dataset(config_dataset)
+                    else:
+                        ds = load_from_disk(
+                            config_dataset.path,
+                            storage_options=storage_options,
+                        )
                 elif remote_file_system.isfile(config_dataset.path):
                     ds_type = get_ds_type(config_dataset)
                     ds = load_dataset(
