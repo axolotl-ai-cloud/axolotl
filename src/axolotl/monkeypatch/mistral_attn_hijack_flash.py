@@ -516,24 +516,18 @@ def mistral_model_forward(
         past_key_value = past_key_values[idx] if past_key_values is not None else None
 
         if self.gradient_checkpointing and self.training:
-
-            def create_custom_forward(module):
-                def custom_forward(*inputs):
-                    # None for past_key_value
-                    return module(*inputs)
-
-                return custom_forward
-
-            layer_outputs = torch.utils.checkpoint.checkpoint(
-                create_custom_forward(decoder_layer),
-                hidden_states,
-                attention_mask,
-                position_ids,
-                past_key_value,
-                output_attentions,
-                None,
-                cu_seqlens,
-                max_seqlen,
+            layer_outputs = (
+                self._gradient_checkpointing_func(  # pylint: disable=protected-access
+                    decoder_layer.__call__,
+                    hidden_states,
+                    attention_mask,
+                    position_ids,
+                    past_key_value,
+                    output_attentions,
+                    None,
+                    cu_seqlens,
+                    max_seqlen,
+                )
             )
         else:
             layer_outputs = decoder_layer(
