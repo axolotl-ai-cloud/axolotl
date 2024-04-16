@@ -44,6 +44,7 @@ from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.chat_templates import chat_templates
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import zero_only
+from axolotl.utils.gradient_checkpointing import hf_grad_checkpoint_unsloth_wrapper
 from axolotl.utils.lora_embeddings import get_linear_embedding_layers
 from axolotl.utils.model_shard_quant import load_sharded_model, load_sharded_model_quant
 
@@ -684,6 +685,11 @@ def load_model(
     else:
         model.tie_weights()
 
+    if cfg.gradient_checkpointing == "unsloth":
+        model.self._set_gradient_checkpointing(  # pylint: disable=protected-access
+            enable=True, gradient_checkpointing_func=hf_grad_checkpoint_unsloth_wrapper
+        )
+
     if (
         hasattr(model, "config")
         and hasattr(model.config, "max_position_embeddings")
@@ -756,7 +762,12 @@ def load_model(
         skip_prepare_model_for_kbit_training = True
 
     if cfg.adapter in ["lora", "qlora"]:
-        if cfg.gradient_checkpointing:
+        if cfg.gradient_checkpointing == "unsloth":
+            model.self._set_gradient_checkpointing(  # pylint: disable=protected-access
+                enable=True,
+                gradient_checkpointing_func=hf_grad_checkpoint_unsloth_wrapper,
+            )
+        elif cfg.gradient_checkpointing:
             model.gradient_checkpointing_enable(
                 gradient_checkpointing_kwargs=cfg.gradient_checkpointing_kwargs
             )
