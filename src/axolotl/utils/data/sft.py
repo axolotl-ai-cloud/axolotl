@@ -66,9 +66,10 @@ def load_streaming_dataset(config_dataset):
     - ds (datasets.Dataset): A Hugging Face dataset object that streams data from the specified remote location.
     """
     # These imports are local due to the optionality of `mosaicml-streaming`.
-    from streaming import StreamingDataset
-    from datasets import Features, Value, Dataset
     from functools import partial
+
+    from datasets import Features, Value
+    from streaming import StreamingDataset
 
     # Initialize the `StreamingDataset` with configurations.
     streaming_dataset = StreamingDataset(
@@ -86,7 +87,7 @@ def load_streaming_dataset(config_dataset):
     #
     # This is necessary because downstream functions use a different interface
     # than `StreamingDataset` (e.g. the `features` attribute).
-    ds = Dataset.from_generator(
+    ds = Dataset.from_generator(  # pylint: disable=invalid-name
         generator=partial(generator_from_streaming_dataset, streaming_dataset),
         features=features,
     )
