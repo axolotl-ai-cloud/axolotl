@@ -11,6 +11,7 @@ import addict
 import bitsandbytes as bnb
 import torch
 import transformers
+import transformers.modeling_utils
 from accelerate import init_empty_weights
 from bitsandbytes.nn import Params4bit
 from peft import (
@@ -686,7 +687,8 @@ def load_model(
         model.tie_weights()
 
     if cfg.gradient_checkpointing == "unsloth":
-        model.self._set_gradient_checkpointing(  # pylint: disable=protected-access
+        transformers.modeling_utils.checkpoint = hf_grad_checkpoint_unsloth_wrapper
+        model._set_gradient_checkpointing(  # pylint: disable=protected-access
             enable=True, gradient_checkpointing_func=hf_grad_checkpoint_unsloth_wrapper
         )
 
@@ -762,12 +764,7 @@ def load_model(
         skip_prepare_model_for_kbit_training = True
 
     if cfg.adapter in ["lora", "qlora"]:
-        if cfg.gradient_checkpointing == "unsloth":
-            model.self._set_gradient_checkpointing(  # pylint: disable=protected-access
-                enable=True,
-                gradient_checkpointing_func=hf_grad_checkpoint_unsloth_wrapper,
-            )
-        elif cfg.gradient_checkpointing:
+        if cfg.gradient_checkpointing:
             model.gradient_checkpointing_enable(
                 gradient_checkpointing_kwargs=cfg.gradient_checkpointing_kwargs
             )
