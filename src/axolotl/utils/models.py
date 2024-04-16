@@ -312,6 +312,9 @@ def load_model(
     # TODO refactor as a kwarg
     load_in_8bit = cfg.load_in_8bit
 
+    if cfg.gradient_checkpointing == "unsloth":
+        transformers.modeling_utils.checkpoint = hf_grad_checkpoint_unsloth_wrapper
+
     if hasattr(model_config, "model_type") and model_config.model_type == "btlm":
         if cfg.flash_attention:
             from axolotl.monkeypatch.btlm_attn_hijack_flash import (
@@ -685,12 +688,6 @@ def load_model(
         model.resize_token_embeddings(embeddings_len)
     else:
         model.tie_weights()
-
-    if cfg.gradient_checkpointing == "unsloth":
-        transformers.modeling_utils.checkpoint = hf_grad_checkpoint_unsloth_wrapper
-        model._set_gradient_checkpointing(  # pylint: disable=protected-access
-            enable=True, gradient_checkpointing_func=hf_grad_checkpoint_unsloth_wrapper
-        )
 
     if (
         hasattr(model, "config")
