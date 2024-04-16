@@ -92,8 +92,5 @@ setup(
         "galore": [
             "galore_torch",
         ],
-        "mosaicml-streaming": [
-            "mosaicml-streaming",
-        ],
     },
 )
