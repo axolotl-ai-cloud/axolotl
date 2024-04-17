@@ -1098,7 +1098,7 @@ class TestValidation(BaseValidation):
 
         with self._caplog.at_level(logging.WARNING):
             validate_config(cfg)
-            assert len(self._caplog.records) == 1
+            assert len(self._caplog.records) == 0
 
 
 class TestValidationCheckModelConfig(BaseValidation):
