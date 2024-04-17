@@ -1064,11 +1064,11 @@ class TestValidation(BaseValidation):
             DictDefault({"hub_model_id": "test", "save_strategy": "test"}) | minimal_cfg
         )
 
-        with self._caplog.at_level(logging.WARNING):
+        with pytest.raises(
+            ValueError,
+            match=r".*can have unexpected behavior*",
+        ):
             validate_config(cfg)
-            assert (
-            match=r".*hub_model_id is set without any models being saved*",
-            )
 
     def test_hub_model_id_save_value_steps(self, minimal_cfg):
         cfg = (
