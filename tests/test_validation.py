@@ -1053,22 +1053,18 @@ class TestValidation(BaseValidation):
     def test_hub_model_id_save_value_warns_save_stragey_no(self, minimal_cfg):
         cfg = DictDefault({"hub_model_id": "test", "save_strategy": "no"}) | minimal_cfg
 
-        with pytest.raises(
-            ValueError,
-            match=r".*hub_model_id is set without any models being saved*",
-        ):
+        with self._caplog.at_level(logging.WARNING):
             validate_config(cfg)
+            assert len(self._caplog.records) == 1
 
     def test_hub_model_id_save_value_warns_random_value(self, minimal_cfg):
         cfg = (
             DictDefault({"hub_model_id": "test", "save_strategy": "test"}) | minimal_cfg
         )
 
-        with pytest.raises(
-            ValueError,
-            match=r".*can have unexpected behavior*",
-        ):
+        with self._caplog.at_level(logging.WARNING):
             validate_config(cfg)
+            assert len(self._caplog.records) == 1
 
     def test_hub_model_id_save_value_steps(self, minimal_cfg):
         cfg = (
@@ -1093,20 +1089,16 @@ class TestValidation(BaseValidation):
     def test_hub_model_id_save_value_none(self, minimal_cfg):
         cfg = DictDefault({"hub_model_id": "test", "save_strategy": None}) | minimal_cfg
 
-        with pytest.raises(
-            ValueError,
-            match=r".*hub_model_id is set without any models being saved*",
-        ):
+        with self._caplog.at_level(logging.WARNING):
             validate_config(cfg)
+            assert len(self._caplog.records) == 0
 
     def test_hub_model_id_save_value_no_set_save_strategy(self, minimal_cfg):
         cfg = DictDefault({"hub_model_id": "test"}) | minimal_cfg
 
-        with pytest.raises(
-            ValueError,
-            match=r".*hub_model_id is set without any models being saved*",
-        ):
+        with self._caplog.at_level(logging.WARNING):
             validate_config(cfg)
+            assert len(self._caplog.records) == 1
 
 
 class TestValidationCheckModelConfig(BaseValidation):

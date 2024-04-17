@@ -689,7 +689,7 @@ class AxolotlInputConfig(
     @classmethod
     def check_push_save(cls, data):
         if data.get("hub_model_id") and (
-            data.get("save_strategy") not in ["steps", "epoch"]
+            data.get("save_strategy") not in ["steps", "epoch", None]
         ):
             LOG.warning(
                 "hub_model_id is set without any models being saved. To save a model, set save_strategy."
