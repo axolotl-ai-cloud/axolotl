@@ -426,7 +426,7 @@ deepspeed: deepspeed_configs/zero1.json
 ```
 
 ```shell
-accelerate launch -m axolotl.cli.train examples/llama-2/config.py --deepspeed deepspeed_configs/zero1.json
+accelerate launch -m axolotl.cli.train examples/llama-2/config.yml --deepspeed deepspeed_configs/zero1.json
 ```
 
 ##### FSDP
