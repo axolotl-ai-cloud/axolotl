@@ -11,6 +11,7 @@ import addict
 import bitsandbytes as bnb
 import torch
 import transformers
+import transformers.modeling_utils
 from accelerate import init_empty_weights
 from bitsandbytes.nn import Params4bit
 from peft import (
@@ -44,6 +45,7 @@ from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.chat_templates import chat_templates
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import zero_only
+from axolotl.utils.gradient_checkpointing import hf_grad_checkpoint_unsloth_wrapper
 from axolotl.utils.lora_embeddings import get_linear_embedding_layers
 from axolotl.utils.model_shard_quant import load_sharded_model, load_sharded_model_quant
 
@@ -309,6 +311,9 @@ def load_model(
 
     # TODO refactor as a kwarg
     load_in_8bit = cfg.load_in_8bit
+
+    if cfg.gradient_checkpointing == "unsloth":
+        transformers.modeling_utils.checkpoint = hf_grad_checkpoint_unsloth_wrapper
 
     if hasattr(model_config, "model_type") and model_config.model_type == "btlm":
         if cfg.flash_attention:
