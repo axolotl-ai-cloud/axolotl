@@ -259,6 +259,7 @@ class ModelInputConfig(BaseModel):
 
     base_model: str
     base_model_config: Optional[str] = None
+    cls_model_config: Optional[str] = None
     tokenizer_config: Optional[str] = None
     tokenizer_use_fast: Optional[bool] = None
     tokenizer_legacy: Optional[bool] = None
@@ -478,6 +479,7 @@ class AxolotlInputConfig(
     eval_causal_lm_metrics: Optional[List[str]] = None
     do_bench_eval: Optional[bool] = None
     bench_dataset: Optional[str] = None
+    bench_split: Optional[str] = None
     metric_for_best_model: Optional[str] = None
     greater_is_better: Optional[bool] = None
 
@@ -493,7 +495,9 @@ class AxolotlInputConfig(
 
     # torch_dtype: Optional[torch.dtype]
 
-    gradient_checkpointing: Optional[bool] = Field(default=False)
+    gradient_checkpointing: Optional[Union[Literal["unsloth"], bool]] = Field(
+        default=False
+    )
     gradient_checkpointing_kwargs: Optional[Dict[str, Any]] = None
 
     unfrozen_parameters: Optional[List[str]] = None
@@ -971,9 +975,16 @@ class AxolotlInputConfig(
 
     @model_validator(mode="before")
     @classmethod
-    def check_fsdp_w_8bit_optimizer(cls, data):
-        if data.get("fsdp") and "bnb" in data.get("optimizer", ""):
-            raise ValueError(f"FSDP not compatible with {data.get('optimizer')}")
+    def check_fsdp_offload_w_8bit_optimizer(cls, data):
+        if (
+            data.get("fsdp")
+            and "8bit" in data.get("optimizer", "")
+            and data.get("fsdp_config")
+            and data["fsdp_config"].get("fsdp_offload_params")
+        ):
+            raise ValueError(
+                f"FSDP Offload not compatible with {data.get('optimizer')}"
+            )
         return data
 
     @model_validator(mode="before")

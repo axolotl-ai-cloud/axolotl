@@ -39,7 +39,7 @@ wandb_log_model:
 gradient_accumulation_steps: 4
 micro_batch_size: 2
 num_epochs: 1
-optimizer: paged_adamw_8bit
+optimizer: adamw_torch
 lr_scheduler: cosine
 learning_rate: 0.0002
 
@@ -47,7 +47,7 @@ train_on_inputs: false
 group_by_length: false
 bf16: auto
 fp16:
-tf32: false
+tf32: true
 
 gradient_checkpointing: true
 early_stopping_patience:
@@ -69,6 +69,17 @@ debug:
 weight_decay: 0.0
 fsdp:
   - full_shard
+  - auto_wrap
 fsdp_config:
+  fsdp_limit_all_gathers: true
+  fsdp_sync_module_states: true
+  fsdp_offload_params: true
+  fsdp_use_orig_params: false
+  fsdp_cpu_ram_efficient_loading: true
   fsdp_transformer_layer_cls_to_wrap: MixtralSparseMoeBlock
+  fsdp_state_dict_type: FULL_STATE_DICT
+  fsdp_auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  fsdp_sharding_strategy: FULL_SHARD
+  fsdp_forward_prefetch: false
+  fsdp_backward_prefetch: BACKWARD_PRE
 special_tokens:
