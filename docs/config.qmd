@@ -412,6 +412,7 @@ special_tokens:
   # bos_token: "<s>"
   # eos_token: "</s>"
   # unk_token: "<unk>"
+  # pad_token: "[PAD]"
 
 # Add extra tokens.
 tokens:
