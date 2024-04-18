@@ -410,6 +410,16 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <td>❓</td>
 </tr>
 <tr class="even">
+<td>Mixtral8X22</td>
+<td style="text-align: left;">✅</td>
+<td style="text-align: left;">✅</td>
+<td>✅</td>
+<td>❓</td>
+<td>❓</td>
+<td>❓</td>
+<td>❓</td>
+</tr>
+<tr class="odd">
 <td>Pythia</td>
 <td style="text-align: left;">✅</td>
 <td style="text-align: left;">✅</td>
@@ -419,7 +429,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <td>❌</td>
 <td>❓</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td>cerebras</td>
 <td style="text-align: left;">✅</td>
 <td style="text-align: left;">✅</td>
@@ -429,7 +439,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <td>❌</td>
 <td>❓</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td>btlm</td>
 <td style="text-align: left;">✅</td>
 <td style="text-align: left;">✅</td>
@@ -439,7 +449,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <td>❌</td>
 <td>❓</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td>mpt</td>
 <td style="text-align: left;">✅</td>
 <td style="text-align: left;">❌</td>
@@ -449,7 +459,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <td>❌</td>
 <td>❓</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td>falcon</td>
 <td style="text-align: left;">✅</td>
 <td style="text-align: left;">✅</td>
@@ -459,7 +469,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <td>❌</td>
 <td>❓</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td>gpt-j</td>
 <td style="text-align: left;">✅</td>
 <td style="text-align: left;">✅</td>
@@ -469,7 +479,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <td>❓</td>
 <td>❓</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td>XGen</td>
 <td style="text-align: left;">✅</td>
 <td style="text-align: left;">❓</td>
@@ -479,7 +489,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <td>❓</td>
 <td>✅</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td>phi</td>
 <td style="text-align: left;">✅</td>
 <td style="text-align: left;">✅</td>
@@ -489,7 +499,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <td>❓</td>
 <td>❓</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td>RWKV</td>
 <td style="text-align: left;">✅</td>
 <td style="text-align: left;">❓</td>
@@ -499,7 +509,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <td>❓</td>
 <td>❓</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td>Qwen</td>
 <td style="text-align: left;">✅</td>
 <td style="text-align: left;">✅</td>
@@ -509,7 +519,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <td>❓</td>
 <td>❓</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td>Gemma</td>
 <td style="text-align: left;">✅</td>
 <td style="text-align: left;">✅</td>
@@ -777,7 +787,7 @@ cd skypilot/llm/axolotl</code></pre>
 <p>Deepspeed is an optimization suite for multi-gpu systems allowing you to train much larger models than you might typically be able to fit into your GPU’s VRAM. More information about the various optimization types for deepspeed is available at https://huggingface.co/docs/accelerate/main/en/usage_guides/deepspeed#what-is-integrated</p>
 <p>We provide several default deepspeed JSON configurations for ZeRO stage 1, 2, and 3.</p>
 <div class="sourceCode" id="cb21"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a><span class="fu">deepspeed</span><span class="kw">:</span><span class="at"> deepspeed_configs/zero1.json</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<pre class="shell"><code>accelerate launch -m axolotl.cli.train examples/llama-2/config.py --deepspeed deepspeed_configs/zero1.json</code></pre>
+<pre class="shell"><code>accelerate launch -m axolotl.cli.train examples/llama-2/config.yml --deepspeed deepspeed_configs/zero1.json</code></pre>
 </section>
 <section id="fsdp" class="level5">
 <h5 class="anchored" data-anchor-id="fsdp">FSDP</h5>
