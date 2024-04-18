@@ -10,7 +10,7 @@ datasets:
   - path: aaditya/alpaca_subset_1
     type: alpaca
 dataset_prepared_path:
-val_set_size: 0.05
+val_set_size: 0
 output_dir: ./qlora-out
 
 adapter: qlora
@@ -64,3 +64,4 @@ weight_decay: 0.0
 fsdp:
 fsdp_config:
 special_tokens:
+  pad_token: "<|end_of_text|>"
