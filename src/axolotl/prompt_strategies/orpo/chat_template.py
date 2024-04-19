@@ -78,6 +78,47 @@ class ORPODatasetParsingStrategy:
         )
         return MessageList(messages=messages)
 
+    def get_prompt(self, prompt) -> MessageList:
+        """Map the data to extract everything up to the last turn"""
+        total_msg_len = prompt["chosen"]
+        total_msg_turns, remainder = divmod(total_msg_len, 2)
+        assert remainder == 0, "invalid number of turns"
+
+        messages: List[Message] = []
+        if system := prompt.get("system", None):
+            messages.append(Message(role="system", content=system, label=False))
+        for i in range(total_msg_turns):
+            if "prompt" in prompt:
+                messages.append(
+                    Message(role="user", content=prompt["prompt"], label=False)
+                )
+            else:
+                messages.append(
+                    Message(
+                        role="user", content=prompt["chosen"][i]["content"], label=False
+                    )
+                )
+            if i < total_msg_turns - 1:
+                messages.append(
+                    Message(
+                        role="assistant",
+                        content=prompt["chosen"][i]["content"],
+                        label=False,
+                    )
+                )
+
+        return MessageList(messages=messages)
+
+    def get_chosen(self, prompt) -> Message:
+        return Message(
+            role="assistant", content=prompt["chosen"][-1]["content"], label=True
+        )
+
+    def get_rejected(self, prompt) -> Message:
+        return Message(
+            role="assistant", content=prompt["rejected"][-1]["content"], label=True
+        )
+
 
 class ORPOTokenizingStrategy(PromptTokenizingStrategy):
     """
@@ -186,3 +227,19 @@ class ORPOPrompter(Prompter):
                     chat_template=self.chat_template,
                     tokenize=False,
                 ), True
+
+
+def argilla(cfg, **kwargs):  # pylint: disable=possibly-unused-variable,unused-argument
+    dataset_parser = ORPODatasetParsingStrategy()
+
+    def transform_fn(sample, tokenizer=None):
+        sample["prompt"] = tokenizer.apply_chat_template(
+            dataset_parser.get_prompt(sample),
+            add_generation_prompt=False,
+            chat_template=cfg.chat_template,
+            tokenize=False,
+        )
+        sample["chosen"] = dataset_parser.get_chosen(sample)["content"]
+        sample["rejected"] = dataset_parser.get_chosen(sample)["content"]
+
+    return transform_fn

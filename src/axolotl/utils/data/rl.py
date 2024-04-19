@@ -1,6 +1,7 @@
 """data handling specific to DPO"""
-
+import inspect
 import logging
+from functools import partial
 from pathlib import Path
 from typing import Any, List
 
@@ -9,9 +10,11 @@ from datasets import concatenate_datasets, load_dataset, load_from_disk
 
 from axolotl.common.const import DEFAULT_DATASET_PREPARED_PATH
 from axolotl.prompt_strategies.dpo import load as load_dpo
+from axolotl.prompt_strategies.orpo import load as load_orpo
 from axolotl.utils.data.utils import md5
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import is_main_process, zero_first
+from axolotl.utils.models import load_tokenizer
 
 LOG = logging.getLogger("axolotl")
 
@@ -72,12 +75,22 @@ def load_prepare_dpo_datasets(cfg):
                 )
                 split_datasets.insert(i, ds)
 
+        tokenizer = None
         for i, data_set in enumerate(split_datasets):
             _type = dataset_cfgs[i]["type"]
             if _type:
                 if isinstance(_type, DictDefault):
                     _type = "user_defined.default"
-                ds_transform_fn = load_dpo(_type, _cfg, dataset_idx=i)
+                if _cfg.rl == "orpo":
+                    ds_transform_fn = load_orpo(_type, _cfg, dataset_idx=i)
+                else:
+                    ds_transform_fn = load_dpo(_type, _cfg, dataset_idx=i)
+                sig = inspect.signature(ds_transform_fn)
+                if "tokenizer" in sig.parameters:
+                    if not tokenizer:
+                        tokenizer = load_tokenizer(_cfg)
+                    ds_transform_fn = partial(ds_transform_fn, tokenizer=tokenizer)
+
                 split_datasets[i] = data_set.map(
                     ds_transform_fn,
                     desc="Mapping RL Dataset",
