@@ -1,4 +1,5 @@
 """multipack patching for v2 of sample packing"""
+
 import importlib
 
 import transformers
@@ -18,6 +19,7 @@ SUPPORTED_MULTIPACK_MODEL_TYPES = [
     "gemma",
     "gemmoe",
     "starcoder2",
+    "cohere",
 ]
 
 
@@ -56,6 +58,10 @@ def patch_for_multipack(model_type, model_name=None):
         patch_remote(model_name, ".configuration_gemmoe", ".modeling_gemmoe")
     elif model_type == "jamba":
         patch_remote(model_name, ".configuration_jamba", ".modeling_jamba")
+    elif model_type == "cohere":
+        transformers.models.cohere.modeling_cohere._get_unpad_data = (  # pylint: disable=protected-access
+            get_unpad_data
+        )
 
 
 def patch_remote(model_name, config_name, modeling_name):
