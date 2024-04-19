@@ -64,7 +64,11 @@ class DataCollatorForSeq2Seq:
 
         for feature_name, pad_token_id in [
             ("labels", self.label_pad_token_id),
+            ("rejected_labels", self.label_pad_token_id),
+            ("rejected_input_ids", self.tokenizer.pad_token_id),
             ("position_ids", self.position_pad_token_id),
+            ("rejected_attention_mask", 0),
+            ("prompt_attention_mask", 9),
         ]:
             feat = (
                 [feature[feature_name] for feature in features]
