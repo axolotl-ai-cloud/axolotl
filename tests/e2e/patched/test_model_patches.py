@@ -22,7 +22,7 @@ class TestModelPatches(unittest.TestCase):
         cfg = DictDefault(
             {
                 "base_model": "hf-internal-testing/Mixtral-tiny",
-                "tokenizer_config": "mistralai/Mixtral-8x7B-v0.1",
+                "tokenizer_config": "LoneStriker/Mixtral-8x7B-v0.1-HF",
                 "flash_attention": True,
                 "sample_packing": True,
                 "sequence_len": 2048,
