@@ -111,15 +111,23 @@ class ORPODatasetParsingStrategy:
 
         return MessageList(messages=messages)
 
-    def get_chosen(self, prompt) -> Message:
-        return Message(
-            role="assistant", content=prompt["chosen"][-1]["content"], label=True
+    def get_chosen(self, prompt) -> MessageList:
+        res = self.get_prompt(prompt)
+        res.messages.append(
+            Message(
+                role="assistant", content=prompt["chosen"][-1]["content"], label=True
+            )
         )
+        return res
 
-    def get_rejected(self, prompt) -> Message:
-        return Message(
-            role="assistant", content=prompt["rejected"][-1]["content"], label=True
+    def get_rejected(self, prompt) -> MessageList:
+        res = self.get_prompt(prompt)
+        res.messages.append(
+            Message(
+                role="assistant", content=prompt["rejected"][-1]["content"], label=True
+            )
         )
+        return res
 
 
 class ORPOTokenizingStrategy(PromptTokenizingStrategy):
@@ -238,15 +246,27 @@ def argilla(cfg, **kwargs):  # pylint: disable=possibly-unused-variable,unused-a
 
     def transform_fn(sample, tokenizer=None):
         res = {}
-        res["chosen"] = dataset_parser.get_chosen(sample).content
-        res["rejected"] = dataset_parser.get_chosen(sample).content
 
         res["prompt"] = tokenizer.apply_chat_template(
             [msg.model_dump() for msg in dataset_parser.get_prompt(sample).messages],
-            add_generation_prompt=False,
+            add_generation_prompt=True,
             chat_template=chat_template_str,
             tokenize=False,
         )
+        prompt_str_len = len(res["prompt"])
+        res["chosen"] = tokenizer.apply_chat_template(
+            [msg.model_dump() for msg in dataset_parser.get_chosen(sample).messages],
+            add_generation_prompt=False,
+            chat_template=chat_template_str,
+            tokenize=False,
+        )[prompt_str_len:]
+        res["rejected"] = tokenizer.apply_chat_template(
+            [msg.model_dump() for msg in dataset_parser.get_rejected(sample).messages],
+            add_generation_prompt=False,
+            chat_template=chat_template_str,
+            tokenize=False,
+        )[prompt_str_len:]
+
         return res
 
     return transform_fn
