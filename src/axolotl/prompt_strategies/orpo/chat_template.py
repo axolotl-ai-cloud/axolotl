@@ -80,7 +80,7 @@ class ORPODatasetParsingStrategy:
 
     def get_prompt(self, prompt) -> MessageList:
         """Map the data to extract everything up to the last turn"""
-        total_msg_len = prompt["chosen"]
+        total_msg_len = len(prompt["chosen"])
         total_msg_turns, remainder = divmod(total_msg_len, 2)
         assert remainder == 0, "invalid number of turns"
 
@@ -95,14 +95,16 @@ class ORPODatasetParsingStrategy:
             else:
                 messages.append(
                     Message(
-                        role="user", content=prompt["chosen"][i]["content"], label=False
+                        role="user",
+                        content=prompt["chosen"][i * 2]["content"],
+                        label=False,
                     )
                 )
             if i < total_msg_turns - 1:
                 messages.append(
                     Message(
                         role="assistant",
-                        content=prompt["chosen"][i]["content"],
+                        content=prompt["chosen"][i * 2 + 1]["content"],
                         label=False,
                     )
                 )
@@ -233,13 +235,16 @@ def argilla(cfg, **kwargs):  # pylint: disable=possibly-unused-variable,unused-a
     dataset_parser = ORPODatasetParsingStrategy()
 
     def transform_fn(sample, tokenizer=None):
-        sample["prompt"] = tokenizer.apply_chat_template(
+        res = {}
+        res["chosen"] = dataset_parser.get_chosen(sample).content
+        res["rejected"] = dataset_parser.get_chosen(sample).content
+
+        res["prompt"] = tokenizer.apply_chat_template(
             dataset_parser.get_prompt(sample),
             add_generation_prompt=False,
             chat_template=cfg.chat_template,
             tokenize=False,
         )
-        sample["chosen"] = dataset_parser.get_chosen(sample)["content"]
-        sample["rejected"] = dataset_parser.get_chosen(sample)["content"]
+        return res
 
     return transform_fn

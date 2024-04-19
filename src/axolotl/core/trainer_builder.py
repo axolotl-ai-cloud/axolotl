@@ -1549,20 +1549,23 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         if self.cfg.rl in ["dpo", "ipo", "kto_pair"]:
             trainer_cls = AxolotlDPOTrainer
             dpo_trainer_kwargs["beta"] = self.cfg.dpo_beta or 0.1
+            trainer_cls_args = [self.model, self.model_ref]
+
+            # these aren't used for the ORPO trainer
+            dpo_trainer_kwargs["max_length"] = self.cfg.sequence_len
+            dpo_trainer_kwargs["max_target_length"] = None
+            dpo_trainer_kwargs["max_prompt_length"] = self.cfg.sequence_len
+            dpo_trainer_kwargs["generate_during_eval"] = True
         elif self.cfg.rl == "orpo":
             trainer_cls = AxolotlORPOTrainer
+            trainer_cls_args = [self.model]
         else:
             raise ValueError(f"Unsupported RL: {self.cfg.rl}")
         dpo_trainer = trainer_cls(
-            self.model,
-            self.model_ref,
+            *trainer_cls_args,
             args=training_args,
             train_dataset=self.train_dataset,
             tokenizer=self.tokenizer,
-            max_length=self.cfg.sequence_len,
-            max_target_length=None,
-            max_prompt_length=self.cfg.sequence_len,
-            generate_during_eval=True,
             callbacks=self.get_callbacks(),
             **dpo_trainer_kwargs,
         )

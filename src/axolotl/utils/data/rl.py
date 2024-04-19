@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, List
 
 import yaml
-from datasets import concatenate_datasets, load_dataset, load_from_disk
+from datasets import DatasetDict, concatenate_datasets, load_dataset, load_from_disk
 
 from axolotl.common.const import DEFAULT_DATASET_PREPARED_PATH
 from axolotl.prompt_strategies.dpo import load as load_dpo
@@ -91,10 +91,13 @@ def load_prepare_dpo_datasets(cfg):
                         tokenizer = load_tokenizer(_cfg)
                     ds_transform_fn = partial(ds_transform_fn, tokenizer=tokenizer)
 
-                split_datasets[i] = data_set.map(
+                data_set = data_set.map(
                     ds_transform_fn,
                     desc="Mapping RL Dataset",
                 )
+                if isinstance(data_set, DatasetDict):
+                    data_set = data_set["train"]
+                split_datasets[i] = data_set
             else:
                 # If no `type` is provided, assume the dataset is already in the expected format with
                 # "prompt", "chosen" and "rejected" already preprocessed
