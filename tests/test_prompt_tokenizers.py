@@ -454,7 +454,9 @@ class OrpoTokenizationTest(unittest.TestCase):
 
     def setUp(self) -> None:
         # pylint: disable=duplicate-code
-        tokenizer = LlamaTokenizer.from_pretrained("mistralai/Mistral-7B-v0.1")
+        tokenizer = LlamaTokenizer.from_pretrained(
+            "casperhansen/mistral-7b-instruct-v0.1-awq"
+        )
         tokenizer.add_special_tokens(
             {
                 "eos_token": AddedToken(

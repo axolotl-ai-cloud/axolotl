@@ -14,11 +14,13 @@ unfrozen_parameters:
   - model.layers.4[4-9]+.block_sparse_moe.experts
   - model.layers.5[0-5]+.block_sparse_moe.gate
   - model.layers.5[0-5]+.block_sparse_moe.experts
-  
+
 model_config:
   output_router_logits: true
 
-DATA_STUFF_HERE
+datasets:
+  - path: yahma/alpaca-cleaned
+    type: alpaca
 output_dir: ./out
 
 sequence_len: 8000
