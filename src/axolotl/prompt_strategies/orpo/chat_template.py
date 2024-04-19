@@ -234,15 +234,17 @@ class ORPOPrompter(Prompter):
 def argilla(cfg, **kwargs):  # pylint: disable=possibly-unused-variable,unused-argument
     dataset_parser = ORPODatasetParsingStrategy()
 
+    chat_template_str = chat_templates(cfg.chat_template)
+
     def transform_fn(sample, tokenizer=None):
         res = {}
         res["chosen"] = dataset_parser.get_chosen(sample).content
         res["rejected"] = dataset_parser.get_chosen(sample).content
 
         res["prompt"] = tokenizer.apply_chat_template(
-            dataset_parser.get_prompt(sample),
+            [msg.model_dump() for msg in dataset_parser.get_prompt(sample).messages],
             add_generation_prompt=False,
-            chat_template=cfg.chat_template,
+            chat_template=chat_template_str,
             tokenize=False,
         )
         return res
