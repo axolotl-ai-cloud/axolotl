@@ -187,6 +187,13 @@ def load_tokenizer(cfg):
         **tokenizer_kwargs,
     )
 
+    if cfg.tokenizer_overrides:
+        for key, val in cfg.tokenizer_overrides.items():
+            for token in tokenizer.all_special_tokens:
+                if token.id == key:
+                    token.content = val
+                    break
+
     if (
         tokenizer.__class__.__name__
         in [
