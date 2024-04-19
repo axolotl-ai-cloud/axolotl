@@ -1,6 +1,6 @@
-base_model: NousResearch/Llama-2-7b-hf
+base_model: meta-llama/Meta-Llama-3-8B
 model_type: LlamaForCausalLM
-tokenizer_type: LlamaTokenizer
+tokenizer_type: AutoTokenizer
 
 load_in_8bit: true
 load_in_4bit: false
@@ -64,3 +64,4 @@ weight_decay: 0.0
 fsdp:
 fsdp_config:
 special_tokens:
+   pad_token: <|end_of_text|>
