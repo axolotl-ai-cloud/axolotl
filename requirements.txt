@@ -11,7 +11,7 @@ addict
 fire
 PyYAML>=6.0
 requests
-datasets>=2.15.0
+datasets==2.15.0
 flash-attn==2.5.5
 sentencepiece
 wandb
