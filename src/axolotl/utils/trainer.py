@@ -13,7 +13,7 @@ from datasets import set_caching_enabled
 from torch.utils.data import DataLoader, RandomSampler
 from transformers.utils import is_torch_bf16_gpu_available
 
-from axolotl.core.trainer_builder import HFCausalTrainerBuilder, HFDPOTrainerBuilder
+from axolotl.core.trainer_builder import HFCausalTrainerBuilder, HFRLTrainerBuilder
 from axolotl.utils.distributed import is_main_process, reduce_and_broadcast, zero_first
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 
@@ -340,8 +340,8 @@ def prepare_optim_env(cfg):
 
 
 def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_steps):
-    if cfg.rl in ["dpo", "ipo", "kto_pair"]:
-        trainer_builder = HFDPOTrainerBuilder(cfg, model[0], tokenizer)
+    if cfg.rl in ["dpo", "ipo", "kto_pair", "orpo"]:
+        trainer_builder = HFRLTrainerBuilder(cfg, model[0], tokenizer)
         trainer_builder.model_ref = model[1]
         trainer_builder.peft_config = model[2]
     else:

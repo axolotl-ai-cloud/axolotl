@@ -78,6 +78,57 @@ class ORPODatasetParsingStrategy:
         )
         return MessageList(messages=messages)
 
+    def get_prompt(self, prompt) -> MessageList:
+        """Map the data to extract everything up to the last turn"""
+        total_msg_len = len(prompt["chosen"])
+        total_msg_turns, remainder = divmod(total_msg_len, 2)
+        assert remainder == 0, "invalid number of turns"
+
+        messages: List[Message] = []
+        if system := prompt.get("system", None):
+            messages.append(Message(role="system", content=system, label=False))
+        for i in range(total_msg_turns):
+            if "prompt" in prompt:
+                messages.append(
+                    Message(role="user", content=prompt["prompt"], label=False)
+                )
+            else:
+                messages.append(
+                    Message(
+                        role="user",
+                        content=prompt["chosen"][i * 2]["content"],
+                        label=False,
+                    )
+                )
+            if i < total_msg_turns - 1:
+                messages.append(
+                    Message(
+                        role="assistant",
+                        content=prompt["chosen"][i * 2 + 1]["content"],
+                        label=False,
+                    )
+                )
+
+        return MessageList(messages=messages)
+
+    def get_chosen(self, prompt) -> MessageList:
+        res = self.get_prompt(prompt)
+        res.messages.append(
+            Message(
+                role="assistant", content=prompt["chosen"][-1]["content"], label=True
+            )
+        )
+        return res
+
+    def get_rejected(self, prompt) -> MessageList:
+        res = self.get_prompt(prompt)
+        res.messages.append(
+            Message(
+                role="assistant", content=prompt["rejected"][-1]["content"], label=True
+            )
+        )
+        return res
+
 
 class ORPOTokenizingStrategy(PromptTokenizingStrategy):
     """
@@ -186,3 +237,36 @@ class ORPOPrompter(Prompter):
                     chat_template=self.chat_template,
                     tokenize=False,
                 ), True
+
+
+def argilla(cfg, **kwargs):  # pylint: disable=possibly-unused-variable,unused-argument
+    dataset_parser = ORPODatasetParsingStrategy()
+
+    chat_template_str = chat_templates(cfg.chat_template)
+
+    def transform_fn(sample, tokenizer=None):
+        res = {}
+
+        res["prompt"] = tokenizer.apply_chat_template(
+            [msg.model_dump() for msg in dataset_parser.get_prompt(sample).messages],
+            add_generation_prompt=True,
+            chat_template=chat_template_str,
+            tokenize=False,
+        )
+        prompt_str_len = len(res["prompt"])
+        res["chosen"] = tokenizer.apply_chat_template(
+            [msg.model_dump() for msg in dataset_parser.get_chosen(sample).messages],
+            add_generation_prompt=False,
+            chat_template=chat_template_str,
+            tokenize=False,
+        )[prompt_str_len:]
+        res["rejected"] = tokenizer.apply_chat_template(
+            [msg.model_dump() for msg in dataset_parser.get_rejected(sample).messages],
+            add_generation_prompt=False,
+            chat_template=chat_template_str,
+            tokenize=False,
+        )[prompt_str_len:]
+
+        return res
+
+    return transform_fn

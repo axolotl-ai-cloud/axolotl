@@ -30,7 +30,7 @@ from transformers import (
 )
 from transformers.trainer_utils import seed_worker
 from transformers.utils import is_sagemaker_mp_enabled
-from trl import DPOTrainer
+from trl import DPOTrainer, ORPOConfig, ORPOTrainer
 from trl.trainer.utils import pad_to_length
 
 from axolotl.loraplus import create_loraplus_optimizer
@@ -810,6 +810,14 @@ class AxolotlDPOTrainer(DPOTrainer):
         return res
 
 
+class AxolotlORPOTrainer(ORPOTrainer):
+    """
+    Extend the base ORPOTrainer for axolotl helpers
+    """
+
+    tag_names = ["axolotl", "orpo"]
+
+
 class TrainerBuilderBase(abc.ABC):
     """
     Base class for trainer builder
@@ -1404,7 +1412,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         )
 
 
-class HFDPOTrainerBuilder(TrainerBuilderBase):
+class HFRLTrainerBuilder(TrainerBuilderBase):
     """
     Trainer factory class for DPO Trainer
     """
@@ -1497,7 +1505,15 @@ class HFDPOTrainerBuilder(TrainerBuilderBase):
             # default to saving each epoch if not defined
             training_args_kwargs["save_strategy"] = "epoch"
 
-        training_args = TrainingArguments(
+        if self.cfg.orpo_alpha:
+            # trl does some odd mapping of alpha to beta to reuse the beta parameter ???
+            training_args_kwargs["beta"] = self.cfg.orpo_alpha
+
+        training_args_cls = TrainingArguments
+        if self.cfg.rl == "orpo":
+            training_args_cls = ORPOConfig
+
+        training_args = training_args_cls(
             per_device_train_batch_size=self.cfg.micro_batch_size,
             max_steps=self.cfg.max_steps or total_num_steps,
             gradient_accumulation_steps=self.cfg.gradient_accumulation_steps,
@@ -1530,17 +1546,26 @@ class HFDPOTrainerBuilder(TrainerBuilderBase):
             dpo_trainer_kwargs[
                 "precompute_ref_log_probs"
             ] = self.cfg.precompute_ref_log_probs
-        dpo_trainer = AxolotlDPOTrainer(
-            self.model,
-            self.model_ref,
+        if self.cfg.rl in ["dpo", "ipo", "kto_pair"]:
+            trainer_cls = AxolotlDPOTrainer
+            dpo_trainer_kwargs["beta"] = self.cfg.dpo_beta or 0.1
+            trainer_cls_args = [self.model, self.model_ref]
+
+            # these aren't used for the ORPO trainer
+            dpo_trainer_kwargs["max_length"] = self.cfg.sequence_len
+            dpo_trainer_kwargs["max_target_length"] = None
+            dpo_trainer_kwargs["max_prompt_length"] = self.cfg.sequence_len
+            dpo_trainer_kwargs["generate_during_eval"] = True
+        elif self.cfg.rl == "orpo":
+            trainer_cls = AxolotlORPOTrainer
+            trainer_cls_args = [self.model]
+        else:
+            raise ValueError(f"Unsupported RL: {self.cfg.rl}")
+        dpo_trainer = trainer_cls(
+            *trainer_cls_args,
             args=training_args,
-            beta=self.cfg.dpo_beta or 0.1,
             train_dataset=self.train_dataset,
             tokenizer=self.tokenizer,
-            max_length=self.cfg.sequence_len,
-            max_target_length=None,
-            max_prompt_length=self.cfg.sequence_len,
-            generate_during_eval=True,
             callbacks=self.get_callbacks(),
             **dpo_trainer_kwargs,
         )
