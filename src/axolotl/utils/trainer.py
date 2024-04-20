@@ -222,37 +222,76 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
         # we have to drop anything longer then sequence len otherwise
         # flash attention with position ids fails
 
-        if cfg.flash_attention:
-            batch_size = 1
-            batch_max_len = cfg.micro_batch_size * cfg.sequence_len
-        else:
-            batch_size = cfg.micro_batch_size
-            batch_max_len = cfg.sequence_len
-
-        # Estimate steps by packing with reasonable values.
-        sampler = MultipackBatchSampler(
-            sampler=RandomSampler(train_dataset),
-            batch_size=batch_size,
-            batch_max_len=batch_max_len,
-            lengths=get_dataset_lengths(train_dataset),
-            group_size=100000,
-            bin_size=200,
-        )
-
-        data_loader = DataLoader(
-            train_dataset.remove_columns(["length"]),
-            batch_sampler=sampler,
-        )
-        data_loader_len = len(data_loader) // cfg.batch_size
-        LOG.debug(f"data_loader_len: {data_loader_len}", main_process_only=True)
-
-        total_num_steps = int(
-            math.floor(
-                data_loader_len
+        if cfg.sample_packing_eff_est:
+            total_num_steps = (
+                # match count to len est in dataloader
+                (
+                    math.floor(
+                        0.99
+                        * cfg.total_num_tokens
+                        / cfg.sample_packing_eff_est
+                        / cfg.sequence_len
+                        // cfg.batch_size
+                        // int(os.environ.get("WORLD_SIZE", 1))
+                    )
+                    - 1
+                )
                 * cfg.num_epochs
-                / int(os.environ.get("WORLD_SIZE", 1))
             )
-        )
+            LOG.debug(
+                f"total_num_tokens: {cfg.total_num_tokens:_}, total_num_steps: {total_num_steps:_}",
+                main_process_only=True,
+            )
+        else:
+            if cfg.flash_attention:
+                batch_size = 1
+                batch_max_len = cfg.micro_batch_size * cfg.sequence_len
+            else:
+                batch_size = cfg.micro_batch_size
+                batch_max_len = cfg.sequence_len
+            sampler = MultipackBatchSampler(
+                sampler=RandomSampler(train_dataset),
+                lengths=get_dataset_lengths(train_dataset),
+                batch_size=batch_size,
+                batch_max_len=batch_max_len,
+                group_size=cfg.sample_packing_group_size,
+                bin_size=cfg.sample_packing_bin_size,
+                drop_last=True,
+            )
+
+            data_loader = DataLoader(
+                train_dataset.remove_columns(["length"]),
+                batch_sampler=sampler,
+            )
+            data_loader_len = len(data_loader) // cfg.batch_size
+            LOG.debug(f"data_loader_len: {data_loader_len}", main_process_only=True)
+            # FIXME: is there a bug here somewhere? the total num steps depends
+            # on the agreed on value for sample_packing_eff_est
+            total_num_steps = int(
+                math.floor(
+                    data_loader_len
+                    * cfg.num_epochs
+                    / int(os.environ.get("WORLD_SIZE", 1))
+                )
+            )
+
+            def calc_sample_packing_eff_est(estimates: List[float]):
+                LOG.info(f"sample_packing_eff_est across ranks: {repr(estimates)}")
+                return max(estimates)
+
+            sample_packing_actual_eff_all = reduce_and_broadcast(
+                lambda: sampler.efficiency,
+                calc_sample_packing_eff_est,
+            )
+            sample_packing_eff_est = (
+                math.ceil(sample_packing_actual_eff_all * 100.0) / 100.0
+            )
+            if update:
+                cfg.sample_packing_eff_est = sample_packing_eff_est
+            LOG.debug(
+                f"sample_packing_eff_est: {cfg.sample_packing_eff_est}",
+                main_process_only=True,
+            )
     else:
         total_num_steps = int(
             math.ceil(

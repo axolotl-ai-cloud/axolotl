@@ -119,6 +119,10 @@ class AxolotlTrainingArguments(TrainingArguments):
         default=None,
         metadata={"help": "Use sample packing for efficient evals."},
     )
+    sample_packing_efficiency: float = field(
+        default=1.0,
+        metadata={"help": "Sample packing efficiency for calculating batch length."},
+    )
     sample_packing_bin_size: int = field(
         default=200,
         metadata={
@@ -126,7 +130,7 @@ class AxolotlTrainingArguments(TrainingArguments):
         },
     )
     sample_packing_group_size: int = field(
-        default=25000,
+        default=100000,
         metadata={
             "help": "The number of samples to group together for packing. Increase for better packing."
         },
@@ -1240,9 +1244,9 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         training_arguments_kwargs[
             "multipack_real_batches"
         ] = not self.cfg.flash_attention
-        training_arguments_kwargs[
-            "eval_sample_packing"
-        ] = bool(self.cfg.eval_sample_packing)
+        training_arguments_kwargs["eval_sample_packing"] = bool(
+            self.cfg.eval_sample_packing
+        )
         if self.cfg.sample_packing_bin_size is not None:
             training_arguments_kwargs[
                 "sample_packing_bin_size"
@@ -1251,6 +1255,10 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             training_arguments_kwargs[
                 "sample_packing_group_size"
             ] = self.cfg.sample_packing_group_size
+        if self.cfg.sample_packing_eff_est:
+            training_arguments_kwargs[
+                "sample_packing_efficiency"
+            ] = self.cfg.sample_packing_eff_est
 
         if self.cfg.relora_steps:
             training_arguments_kwargs["relora_steps"] = self.cfg.relora_steps
