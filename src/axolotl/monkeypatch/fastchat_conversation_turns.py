@@ -143,7 +143,7 @@ def get_turns(  # pylint: disable=too-many-return-statements
             yield prefix + "<start_of_turn>" + role + "\n", message_str + "<end_of_turn>\n"
         return
     if self.sep_style == SeparatorStyle.CHATGLM:
-        # source: https://huggingface.co/THUDM/chatglm-6b/blob/1d240ba371910e9282298d4592532d7f0f3e9f3e/modeling_chatglm.py#L1302-L1308
+        # source: https://huggingface.co/THUDM/chatglm-6b/blob/1d240ba371910e928298d4592532d7f0f3e9f3e/modeling_chatglm.py#L1302-L1308
         # source2: https://huggingface.co/THUDM/chatglm2-6b/blob/e186c891cf64310ac66ef10a87e6635fa6c2a579/modeling_chatglm.py#L926
         round_add_n = 1 if self.name == "chatglm2" else 0
         if system_prompt:

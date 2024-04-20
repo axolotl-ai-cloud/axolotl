@@ -38,6 +38,21 @@ def register_chatml_template(system_message=None):
         )
     )
 
+def register_llama3_template(system_message=None):
+    system_message = system_message or "You are a helpful assistant."
+    bos_token = "<|start_of_conversation|>"
+    eos_token = "<|end_of_conversation|>"
+    register_conv_template(
+        Conversation(
+            name="llama3",
+            system_template=bos_token + "<|start_header_id|>system<|end_header_id|>\n\n{system_message}" + "<|eot_id|>",
+            system_message=system_message,
+            roles=["<|start_header_id|>user<|end_header_id|>", "<|start_header_id|>assistant<|end_header_id|>"],
+            sep_style=SeparatorStyle.LLAMA3,
+            sep="<|eot_id|>",
+            sep2="<|start_header_id|>",
+        )
+    )
 
 def build_loader(
     tokenization_strategy_cls: Type["ShareGPTPromptTokenizingStrategy"],
