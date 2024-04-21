@@ -421,7 +421,7 @@ def load_tokenized_prepared_datasets(
 
         if cfg.local_rank == 0:
             LOG.info(f"Saving merged prepared dataset to disk... {prepared_ds_path}")
-            dataset.save_to_disk(prepared_ds_path)
+            dataset.save_to_disk(str(prepared_ds_path))
             if cfg.push_dataset_to_hub:
                 LOG.info(
                     f"Saving merged prepared dataset with push_to_hub... {cfg.push_dataset_to_hub}/{ds_hash}"
