@@ -277,7 +277,7 @@ pip uninstall -y torch bitsandbytes xformers
 pip install --pre torch --index-url https://download.pytorch.org/whl/nightly/rocm6.0
 
 # Setup the bitsandbytes fork by arlo-phoenix
-git clone -b rocm https://github.com/arlo-phoenix/bitsandbytes-rocm-5.6.git
+git clone -b rocm https://github.com/arlo-phoenix/bitsandbytes-rocm-5.6.git bitsandbytes
 cd bitsandbytes
 
 # Replace this with the correct folder name if you aren't on ROCm 6.1
