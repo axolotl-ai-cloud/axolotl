@@ -28,7 +28,7 @@ scipy
 scikit-learn==1.2.2
 pynvml
 art
-fschat==0.2.36
+fschat @ git+https://github.com/lm-sys/FastChat.git@5095615810cf613dba7f27dd155f571fcff976d8
 gradio==3.50.2
 tensorboard
 
