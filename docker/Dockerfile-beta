@@ -4,7 +4,10 @@ RUN apt update && apt install -y python3.10-venv git-lfs
 
 RUN python3 -m pip install --upgrade pip && pip install packaging
 
-RUN groupadd axolotl && useradd -m -g axolotl -s /bin/bash axolotl
+RUN groupadd axolotl &&  \
+    useradd -m -g axolotl -s /bin/bash axolotl &&  \
+    mkdir /workspace &&  \
+    chown axolotl:axolotl /workspace
 
 USER axolotl
 
