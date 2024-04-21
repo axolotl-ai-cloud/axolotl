@@ -1,0 +1,40 @@
+FROM nvcr.io/nvidia/pytorch:24.03-py3
+
+RUN python3 -m pip install --upgrade pip
+
+RUN groupadd axolotl && useradd -m -g axolotl -s /bin/bash axolotl
+
+USER axolotl
+
+RUN mkdir -p /home/axolotl/venv
+
+RUN python -m venv /home/axolotl/venv/axolotl
+
+ENV PATH="/home/axolotl/venv/axolotl/bin:$PATH"
+
+RUN echo "source /home/axolotl/venv/axolotl/bin/activate" >> /home/axolotl/.bashrc
+
+RUN git lfs install --skip-repo && \
+    pip3 install awscli
+
+RUN pip install causal_conv1d &&  \
+    pip install -e .[deepspeed,flash-attn,mamba-ssm,galore]
+
+# So we can test the Docker image
+RUN pip install pytest
+
+# fix so that git fetch/pull from remote works
+RUN git config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*" && \
+    git config --get remote.origin.fetch
+
+# helper for huggingface-login cli
+RUN git config --global credential.helper store
+
+
+ENV HF_DATASETS_CACHE="/workspace/data/huggingface-cache/datasets"
+ENV HUGGINGFACE_HUB_CACHE="/workspace/data/huggingface-cache/hub"
+ENV TRANSFORMERS_CACHE="/workspace/data/huggingface-cache/hub"
+ENV HF_HOME="/workspace/data/huggingface-cache/hub"
+ENV HF_HUB_ENABLE_HF_TRANSFER="1"
+
+CMD ["sleep", "infinity"]
