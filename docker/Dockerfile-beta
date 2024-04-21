@@ -10,7 +10,7 @@ USER axolotl
 
 RUN mkdir -p /home/axolotl/venv
 
-RUN python -m venv /home/axolotl/venv/axolotl
+RUN python -m venv --system-site-packages /home/axolotl/venv/axolotl
 
 ENV PATH="/home/axolotl/venv/axolotl/bin:$PATH"
 
