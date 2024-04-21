@@ -1,6 +1,6 @@
 FROM nvcr.io/nvidia/pytorch:24.03-py3
 
-RUN apt update && apt install python3.10-venv
+RUN apt update && apt install -y python3.10-venv
 
 RUN python3 -m pip install --upgrade pip
 
