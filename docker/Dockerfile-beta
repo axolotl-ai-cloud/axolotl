@@ -4,7 +4,9 @@ RUN apt update && apt install -y python3.10-venv git-lfs
 
 RUN python3 -m pip install --upgrade pip &&  \
     pip install packaging && \
-    pip install -U torch==2.2.2
+    pip uninstall torch-tensorrt && \
+    pip install -U torch==2.2.2 && \
+    pip install git+https://github.com/NVIDIA/TransformerEngine.git@stable
 
 RUN groupadd axolotl &&  \
     useradd -m -g axolotl -s /bin/bash axolotl &&  \
@@ -20,8 +22,7 @@ ENV PATH="/home/axolotl/venv/axolotl/bin:$PATH"
 
 RUN echo "source /home/axolotl/venv/axolotl/bin/activate" >> /home/axolotl/.bashrc
 
-RUN git lfs install --skip-repo && \
-    pip3 install awscli
+RUN git lfs install --skip-repo
 
 WORKDIR /workspace
 
