@@ -21,18 +21,18 @@ RUN echo "source /home/axolotl/venv/axolotl/bin/activate" >> /home/axolotl/.bash
 RUN git lfs install --skip-repo && \
     pip3 install awscli
 
+WORKDIR /workspace
+
+RUN git clone --depth=1 https://github.com/OpenAccess-AI-Collective/axolotl.git
+
+WORKDIR /workspace/axolotl
+
 RUN pip install causal_conv1d && \
     cd /workspace/axolotl && \
     pip install -e .[deepspeed,flash-attn,mamba-ssm,galore]
 
 # So we can test the Docker image
 RUN pip install pytest
-
-WORKDIR /workspace
-
-RUN git clone --depth=1 https://github.com/OpenAccess-AI-Collective/axolotl.git
-
-WORKDIR /workspace/axolotl
 
 # fix so that git fetch/pull from remote works
 RUN git config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*" && \
