@@ -475,6 +475,20 @@ tokens: # these are delimiters
 
 When you include these tokens in your axolotl config, axolotl adds these tokens to the tokenizer's vocabulary.
 
+#### Streaming dataset
+
+Use [mosaicml-streaming](https://github.com/mosaicml/streaming?tab=readme-ov-file#quick-start) to prepare your dataset for streaming the data. This allows for using "infinite" data sets. Just add `streaming: true` to your `datasets` entry:
+
+```
+datasets:
+    - ds_type: json
+      path: s3://my-bucket/datasets-path/
+      type: completion
+      streaming: true
+```
+
+Ensure that you have uploaded the dataset according to [mosaicml-streaming](https://github.com/mosaicml/streaming?tab=readme-ov-file#quick-start)'s format beforehand.
+
 ### Inference Playground
 
 Axolotl allows you to load your model in an interactive terminal playground for quick experimentation.
