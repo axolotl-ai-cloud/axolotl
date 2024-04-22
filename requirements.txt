@@ -31,7 +31,7 @@ art
 fschat==0.2.36
 gradio==3.50.2
 tensorboard
-mosaicml-streaming
+mosaicml-streaming==0.7.5
 
 mamba-ssm==1.2.0.post1
 
