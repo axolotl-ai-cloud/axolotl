@@ -54,6 +54,7 @@ from axolotl.utils.collators import (
     MambaDataCollator,
     V2BatchSamplerDataCollatorForSeq2Seq,
 )
+from axolotl.utils.models import ensure_dtype
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 from axolotl.utils.schedulers import (
     get_cosine_schedule_with_min_lr,
@@ -1569,6 +1570,9 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             callbacks=self.get_callbacks(),
             **dpo_trainer_kwargs,
         )
+        if self.cfg.fsdp:
+            ensure_dtype(dpo_trainer.model, dtype=self.cfg.torch_dtype)
+
         dpo_trainer = self.hook_post_create_trainer(dpo_trainer)
         for callback in self.get_post_trainer_create_callbacks(dpo_trainer):
             dpo_trainer.add_callback(callback)
