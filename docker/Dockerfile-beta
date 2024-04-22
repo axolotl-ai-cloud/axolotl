@@ -21,7 +21,8 @@ RUN echo "source /home/axolotl/venv/axolotl/bin/activate" >> /home/axolotl/.bash
 RUN git lfs install --skip-repo && \
     pip3 install awscli
 
-RUN pip install causal_conv1d &&  \
+RUN pip install causal_conv1d && \
+    cd /workspace/axolotl && \
     pip install -e .[deepspeed,flash-attn,mamba-ssm,galore]
 
 # So we can test the Docker image
