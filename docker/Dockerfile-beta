@@ -4,7 +4,7 @@ RUN apt update && apt install -y python3.10-venv git-lfs
 
 RUN python3 -m pip install --upgrade pip &&  \
     pip install packaging && \
-    pip uninstall torch-tensorrt && \
+    pip uninstall -y torch-tensorrt && \
     pip install -U torch==2.2.2 && \
     pip install git+https://github.com/NVIDIA/TransformerEngine.git@stable
 
