@@ -34,6 +34,7 @@ from transformers import (  # noqa: F401
     PreTrainedTokenizerBase,
 )
 from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
+from transformers.quantizers import AutoHfQuantizer
 
 from axolotl.models.mamba import fix_mamba_attn_for_loss
 from axolotl.monkeypatch.multipack import (
@@ -568,7 +569,7 @@ def load_model(
         elif (
             qlora_fsdp
             and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
-            and cfg.model_config_type == "dbrx"
+            and cfg.qlora_fsdp_alt_loader
         ):
             quant_storage = cfg.torch_dtype
             model = load_sharded_model_quant(
@@ -577,6 +578,11 @@ def load_model(
                 cfg,
                 quant_storage=quant_storage,
             )
+            if model_kwargs["quantization_config"]:
+                hf_quantizer = AutoHfQuantizer.from_config(
+                    model_kwargs["quantization_config"]
+                )
+                model.hf_quantizer = hf_quantizer
             skip_move_to_device = True
         elif (
             model_config.model_type == "llama"
@@ -1001,5 +1007,12 @@ def ensure_dtype(model, dtype=torch.bfloat16):
             if module.weight.dtype != dtype:
                 print(f"Converting module {name}: {module.weight.dtype} -> {dtype}")
                 module.to(dtype)
+        except AttributeError:
+            pass
+    for name, param in model.named_parameters():
+        try:
+            if param.data.dtype != dtype:
+                print(f"Converting module {name}: {param.data.dtype} -> {dtype}")
+                param.data = param.data.to(dtype)
         except AttributeError:
             pass

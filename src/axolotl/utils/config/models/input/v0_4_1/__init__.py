@@ -188,6 +188,7 @@ class LoraConfig(BaseModel):
     peft_use_dora: Optional[bool] = None
     peft_use_rslora: Optional[bool] = None
     peft_layer_replication: Optional[List[Tuple[int, int]]] = None
+    qlora_fsdp_alt_loader: Optional[bool] = None
 
     lora_on_cpu: Optional[bool] = None
     gptq: Optional[bool] = None

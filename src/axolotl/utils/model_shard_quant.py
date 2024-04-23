@@ -70,6 +70,7 @@ def load_and_quantize(
     to_meta: bool = False,
     verbose: bool = False,
     quant_method: str = "bnb",
+    is_dora: bool = False,
 ):
     """
     Loads `value` tensor into submodule of `module`, optionally skipping `skip_names` and converting to `dtype`.
@@ -108,6 +109,12 @@ def load_and_quantize(
                 # FSDP only syncs parameters and buffers, so the quant_state isn't copied. This
                 # workaround quantizes Params4bit to initialize quant_state on all ranks, then
                 # replaces Params4bit's data with a meta tensor to free memory on non-rank 0.
+                if is_dora:
+                    setattr(
+                        submodule,
+                        "dora_scale",
+                        value.norm(p=2, dim=1).to(dtype=dtype).to("cpu"),
+                    )
                 value = type(param)(
                     value.to(device=device, dtype=dtype).data, **param.__dict__
                 ).cuda(device)
@@ -177,6 +184,7 @@ def load_sharded_model_quant(
     with init_empty_weights():
         model = AutoModelForCausalLM.from_config(
             model_config,
+            attn_implementation=model_config._attn_implementation,  # pylint: disable=protected-access
             trust_remote_code=cfg.trust_remote_code,
         )
         if hasattr(model, "transformer"):
@@ -249,6 +257,7 @@ def load_sharded_model_quant(
             to_meta=(low_memory and cfg.local_rank != 0),
             verbose=verbose,
             quant_method=quant_method,
+            is_dora=cfg.peft_use_dora,
         )
 
     if cfg.local_rank == 0 and verbose:
