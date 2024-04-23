@@ -1,9 +1,10 @@
 """Module containing the Trainer class and related functions"""
 import math
 import os
+import random
 from contextlib import contextmanager
 from functools import partial
-from typing import List
+from typing import List, Optional
 
 import numpy as np
 import torch
@@ -98,6 +99,64 @@ def add_position_ids(sample):
     return sample
 
 
+def add_pose_position_ids(
+    sample, max_context_len=32768, split_on_token_ids: Optional[List[int]] = None
+):
+    """
+    use the PoSE technique to extend the context length by randomly skipping
+    positions in the context. We only want to skip right before tokens in
+    the split_on_token_ids list. We should attempt to randomly distribute
+    the skips, but we don't need the final position_ids to be the full
+    context_len. There may be multiple turns in the context, so we want to
+    make sure we take into account the maximum possible number of skips
+    remaining in each sample.
+    """
+
+    input_ids = sample["input_ids"]
+    sample_len = len(input_ids)
+    max_skips = max_context_len - sample_len
+
+    if split_on_token_ids is None:
+        split_on_token_ids = []
+
+    split_indices = [
+        i for i, token_id in enumerate(input_ids) if token_id in split_on_token_ids
+    ]
+    if split_indices[0] < 2:
+        # drop the first split index if it's too close to the beginning
+        split_indices = split_indices[1:]
+
+    if len(split_indices) == 0:
+        position_ids = torch.arange(sample_len)
+    else:
+        position_ids = []
+        prev_index = -1
+        total_skips = 0
+
+        for split_index in split_indices:
+            num_skips = (
+                random.randint(0, max_skips)  # nosec B311
+                if prev_index != -1 and max_skips
+                else 0
+            )
+            max_skips -= num_skips
+            total_skips += num_skips
+
+            segment_position_ids = list(
+                range(prev_index + 1 + total_skips, split_index + total_skips)
+            )
+
+            position_ids.extend(segment_position_ids)
+            prev_index = split_index
+
+        position_ids = torch.tensor(position_ids)
+
+    sample["position_ids"] = position_ids
+    sample["length"] = len(position_ids)
+
+    return sample
+
+
 def add_length(sample):
     sample["length"] = len(sample["input_ids"])
     return sample
@@ -153,7 +212,27 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
                 desc="Group By Length",
             )
 
-        if cfg.sample_packing:
+        if cfg.use_pose:
+            pose_fn = partial(
+                add_pose_position_ids,
+                max_context_len=cfg.sequence_len,
+                split_on_token_ids=cfg.pose_split_on_token_ids,
+            )
+            train_dataset = train_dataset.map(
+                pose_fn,
+                num_proc=cfg.dataset_processes,
+                load_from_cache_file=not cfg.is_preprocess,
+                desc="Add position_id column (PoSE)",
+            )
+            if cfg.eval_sample_packing is not False:
+                if eval_dataset:
+                    eval_dataset = eval_dataset.map(
+                        pose_fn,
+                        num_proc=cfg.dataset_processes,
+                        load_from_cache_file=not cfg.is_preprocess,
+                        desc="Add position_id column (PoSE)",
+                    )
+        elif cfg.sample_packing:
             train_dataset = train_dataset.map(
                 add_position_ids,
                 num_proc=cfg.dataset_processes,
