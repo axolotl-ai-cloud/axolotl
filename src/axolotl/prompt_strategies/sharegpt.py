@@ -43,12 +43,12 @@ def register_llama3_template(system_message=None):
     register_conv_template(
         Conversation(
             name="llama3",
-            system_template="<|start_header_id|>system<|end_header_id|>\n\n{system_message}" + "<|eot_id|>",
-            system_message=system_message,
-            roles=["user", "assistant"],
+            system_template="<|start_header_id|>system<|end_header_id|>\n\n{system_message}<|eot_id|>",
+            roles=("user", "assistant"),
             sep_style=SeparatorStyle.LLAMA3,
-            sep="<|eot_id|>",
-            sep2="<|start_header_id|>",
+            sep="",
+            stop_str="<|eot_id|>",
+            stop_token_ids=[128001, 128009],
         )
     )
 
