@@ -330,7 +330,6 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                         / cfg.sample_packing_eff_est
                         / cfg.sequence_len
                         // cfg.batch_size
-                        // int(os.environ.get("WORLD_SIZE", 1))
                     )
                     - 1
                 )
@@ -368,7 +367,6 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                 math.floor(
                     data_loader_len
                     * cfg.num_epochs
-                    / int(os.environ.get("WORLD_SIZE", 1))
                 )
             )
 
@@ -394,7 +392,6 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
             math.ceil(
                 len(train_dataset)
                 * cfg.num_epochs
-                / int(os.environ.get("WORLD_SIZE", 1))
                 / cfg.batch_size
             )
         )
