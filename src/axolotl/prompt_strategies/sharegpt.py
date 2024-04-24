@@ -43,7 +43,7 @@ def register_llama3_template(system_message=None):
     register_conv_template(
         Conversation(
             name="llama3",
-            system_template="<|start_header_id|>system<|end_header_id|>\n{system_message}" + "<|eot_id|>",
+            system_template="<|start_header_id|>system<|end_header_id|>\n\n{system_message}" + "<|eot_id|>",
             system_message=system_message,
             roles=["user", "assistant"],
             sep_style=SeparatorStyle.LLAMA3,
