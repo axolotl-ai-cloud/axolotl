@@ -223,7 +223,7 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
         if cfg.use_pose:
             pose_fn = partial(
                 add_pose_position_ids,
-                max_context_len=cfg.sequence_len,
+                max_context_len=cfg.pose_max_context_len,
                 split_on_token_ids=cfg.pose_split_on_token_ids,
             )
             train_dataset = train_dataset.map(

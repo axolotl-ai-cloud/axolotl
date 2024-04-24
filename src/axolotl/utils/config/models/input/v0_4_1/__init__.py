@@ -510,6 +510,7 @@ class AxolotlInputConfig(
     # for PoSE context length extension
     use_pose: Optional[bool] = None
     pose_split_on_token_ids: Optional[List[int]] = None
+    pose_max_context_len: Optional[int] = None
 
     pretrain_multipack_buffer_size: Optional[int] = 10_000
     pretrain_multipack_attn: Optional[bool] = Field(
