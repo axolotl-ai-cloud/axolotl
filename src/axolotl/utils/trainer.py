@@ -175,7 +175,11 @@ def drop_long_seq(sample, sequence_len=2048, min_sequence_len=2):
 
 
 def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
-    drop_long = partial(drop_long_seq, sequence_len=cfg.sequence_len)
+    drop_long = partial(
+        drop_long_seq,
+        sequence_len=cfg.sequence_len,
+        min_sequence_len=cfg.min_sample_len or 2,
+    )
     with zero_first(is_main_process()):
         if cfg.is_preprocess:
             min_input_len = np.min(get_dataset_lengths(train_dataset))
@@ -221,10 +225,14 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
             )
 
         if cfg.use_pose:
+            pose_kwargs = {}
+            if cfg.pose_num_chunks is not None:
+                pose_kwargs["chunks"] = cfg.pose_num_chunks
             pose_fn = partial(
                 add_pose_position_ids,
                 max_context_len=cfg.pose_max_context_len,
                 split_on_token_ids=cfg.pose_split_on_token_ids,
+                **pose_kwargs,
             )
             train_dataset = train_dataset.map(
                 pose_fn,
