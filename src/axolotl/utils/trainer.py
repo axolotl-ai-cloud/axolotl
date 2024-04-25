@@ -127,7 +127,8 @@ def add_pose_position_ids(
             i for i, token_id in enumerate(input_ids) if token_id in split_on_token_ids
         ]
     else:
-        split_indices = [sample_len // chunks]
+        chunk_len = sample_len // chunks
+        split_indices = [i * chunk_len for i in range(1, chunks)]
     split_indices.append(len(input_ids))  # make sure we go to the end of the sample
     if split_indices[0] < 2:
         # drop the first split index if it's too close to the beginning
