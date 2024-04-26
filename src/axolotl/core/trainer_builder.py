@@ -212,6 +212,10 @@ class AxolotlTrainingArguments(TrainingArguments):
         default=None,
         metadata={"help": "path under the model to access the layers"},
     )
+    curriculum_sampling: Optional[bool] = field(
+        default=None,
+        metadata={"help": "whether to use sequential sampling for curriculum learning"},
+    )
 
 
 class AxolotlTrainer(Trainer):
@@ -347,6 +351,8 @@ class AxolotlTrainer(Trainer):
                 lengths=get_dataset_lengths(self.train_dataset),
                 packing_efficiency_estimate=self.args.sample_packing_efficiency,
             )
+        if self.args.curriculum_sampling:
+            return SequentialSampler(self.train_dataset)
         return super()._get_train_sampler()
 
     def _get_eval_sampler(
@@ -1193,6 +1199,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             False if self.cfg.ddp else None
         )
         training_arguments_kwargs["group_by_length"] = self.cfg.group_by_length
+        training_arguments_kwargs["curriculum_sampling"] = self.cfg.curriculum_sampling
         report_to = None
         if self.cfg.use_wandb:
             report_to = "wandb"

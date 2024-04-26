@@ -241,6 +241,7 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
                 load_from_cache_file=not cfg.is_preprocess,
                 desc="Add position_id column (PoSE)",
             )
+            train_dataset = train_dataset.sort(lambda x: x["position_ids"][-1])
             if cfg.eval_sample_packing is not False:
                 if eval_dataset:
                     eval_dataset = eval_dataset.map(
