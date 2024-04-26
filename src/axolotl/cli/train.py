@@ -20,7 +20,7 @@ from axolotl.cli import (
 )
 from axolotl.common.cli import TrainerCliArgs
 from axolotl.prompt_strategies.sharegpt import (
-    register_chatml_template, 
+    register_chatml_template,
     register_llama3_template,
 )
 from axolotl.train import train
@@ -49,7 +49,7 @@ def do_train(cfg, cli_args) -> Tuple[PreTrainedModel, PreTrainedTokenizer]:
         register_chatml_template(cfg.default_system_message)
     else:
         register_chatml_template()
-    
+
     if cfg.chat_template == "llama3" and cfg.default_system_message:
         LOG.info(
             f"LLaMA-3 set. Adding default system message: {cfg.default_system_message}"

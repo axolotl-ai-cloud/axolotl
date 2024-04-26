@@ -38,6 +38,7 @@ def register_chatml_template(system_message=None):
         )
     )
 
+
 def register_llama3_template(system_message=None):
     system_message = system_message or "You are a helpful assistant."
     register_conv_template(
@@ -51,6 +52,7 @@ def register_llama3_template(system_message=None):
             stop_token_ids=[128001, 128009],
         )
     )
+
 
 def build_loader(
     tokenization_strategy_cls: Type["ShareGPTPromptTokenizingStrategy"],
