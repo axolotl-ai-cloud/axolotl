@@ -19,7 +19,10 @@ from axolotl.cli import (
     print_axolotl_text_art,
 )
 from axolotl.common.cli import TrainerCliArgs
-from axolotl.prompt_strategies.sharegpt import register_chatml_template, register_llama3_template
+from axolotl.prompt_strategies.sharegpt import (
+    register_chatml_template, 
+    register_llama3_template,
+)
 from axolotl.train import train
 
 LOG = logging.getLogger("axolotl.cli.train")

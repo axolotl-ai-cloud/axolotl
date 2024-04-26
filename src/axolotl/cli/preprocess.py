@@ -19,7 +19,10 @@ from axolotl.cli import (
 )
 from axolotl.common.cli import PreprocessCliArgs
 from axolotl.common.const import DEFAULT_DATASET_PREPARED_PATH
-from axolotl.prompt_strategies.sharegpt import register_chatml_template, register_llama3_template
+from axolotl.prompt_strategies.sharegpt import (
+    register_chatml_template, 
+    register_llama3_template,
+)
 
 LOG = logging.getLogger("axolotl.cli.preprocess")
 
