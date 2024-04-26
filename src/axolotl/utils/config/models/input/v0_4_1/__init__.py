@@ -507,6 +507,7 @@ class AxolotlInputConfig(
     sample_packing: Optional[bool] = None
     eval_sample_packing: Optional[bool] = None
     pad_to_sequence_len: Optional[bool] = None
+    curriculum_sampling: Optional[bool] = None
 
     # for PoSE context length extension
     use_pose: Optional[bool] = None
