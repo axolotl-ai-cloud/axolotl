@@ -13,7 +13,7 @@ remove_unused_columns: false
 chat_template: chatml
 datasets:
   - path: argilla/ultrafeedback-binarized-preferences-cleaned
-    type: orpo.chat_template
+    type: chat_template.argilla
 dataset_prepared_path: last_run_prepared
 val_set_size: 0.1
 output_dir: ./mistral-qlora-orpo-out
