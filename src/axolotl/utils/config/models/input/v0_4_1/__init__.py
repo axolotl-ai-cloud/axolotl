@@ -503,9 +503,17 @@ class AxolotlInputConfig(
     unfrozen_parameters: Optional[List[str]] = None
 
     sequence_len: int = Field(default=512)
+    min_sample_len: Optional[int] = None
     sample_packing: Optional[bool] = None
     eval_sample_packing: Optional[bool] = None
     pad_to_sequence_len: Optional[bool] = None
+    curriculum_sampling: Optional[bool] = None
+
+    # for PoSE context length extension
+    use_pose: Optional[bool] = None
+    pose_split_on_token_ids: Optional[List[int]] = None
+    pose_max_context_len: Optional[int] = None
+    pose_num_chunks: Optional[int] = None
 
     pretrain_multipack_buffer_size: Optional[int] = 10_000
     pretrain_multipack_attn: Optional[bool] = Field(
