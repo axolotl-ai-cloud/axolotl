@@ -383,9 +383,9 @@ def legacy_validate_config(cfg):
             "push_to_hub_model_id is deprecated. Please use hub_model_id instead."
         )
 
-    if cfg.hub_model_id and not (cfg.save_steps or cfg.saves_per_epoch):
+    if cfg.hub_model_id and cfg.save_strategy not in ["steps", "epoch", None]:
         LOG.warning(
-            "hub_model_id is set without any models being saved. To save a model, set either save_steps or saves_per_epoch."
+            "hub_model_id is set without any models being saved. To save a model, set save_strategy to steps, epochs or leave empty."
         )
 
     if cfg.gptq and cfg.revision_of_model:
@@ -448,9 +448,13 @@ def legacy_validate_config(cfg):
         raise ValueError(
             "save_steps and saves_per_epoch are mutually exclusive and cannot be used together."
         )
-    if cfg.saves_per_epoch and cfg.save_strategy and cfg.save_strategy != "steps":
+    if cfg.save_strategy and cfg.saves_per_epoch and cfg.save_strategy != "steps":
         raise ValueError(
             "save_strategy must be empty or set to `steps` when used with saves_per_epoch."
+        )
+    if cfg.save_strategy and cfg.save_steps and cfg.save_strategy != "steps":
+        raise ValueError(
+            "save_strategy and save_steps mismatch. Please set save_strategy to 'steps' or remove save_steps."
         )
     if cfg.evals_per_epoch and cfg.eval_steps:
         raise ValueError(
@@ -464,11 +468,6 @@ def legacy_validate_config(cfg):
         raise ValueError(
             "evaluation_strategy must be empty or set to `steps` when used with evals_per_epoch."
         )
-    if cfg.save_strategy and cfg.save_steps and cfg.save_strategy != "steps":
-        raise ValueError(
-            "save_strategy and save_steps mismatch. Please set save_strategy to 'steps' or remove save_steps."
-        )
-
     if (
         cfg.evaluation_strategy
         and cfg.eval_steps
