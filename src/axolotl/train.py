@@ -127,7 +127,7 @@ def train(
 
     # In case we want to stop early with ctrl+c, this is a nice to have to save the pretrained model
     if cfg.local_rank == 0:
-        
+
         def terminate_handler(_, __, model_weakref):
             if model_weakref() is not None:
                 _model = model_weakref()
@@ -140,8 +140,8 @@ def train(
 
         _model_weakref = weakref.ref(model)
         signal.signal(
-            signal.SIGINT, 
-            lambda signum, frame: terminate_handler(signum, frame, _model_weakref)
+            signal.SIGINT,
+            lambda signum, frame: terminate_handler(signum, frame, _model_weakref),
         )
 
     badge_markdown = """[<img src="https://raw.githubusercontent.com/OpenAccess-AI-Collective/axolotl/main/image/axolotl-badge-web.png" alt="Built with Axolotl" width="200" height="32"/>](https://github.com/OpenAccess-AI-Collective/axolotl)"""
