@@ -14,11 +14,11 @@ def check_dataset_labels(
     tokenizer,
     num_examples=5,
     text_only=False,
-    rl=False,
+    rl_mode=False,
 ):
     # the dataset is already shuffled, so let's just check the first 5 elements
     for idx in range(num_examples):
-        if not rl:
+        if not rl_mode:
             check_example_labels(dataset[idx], tokenizer, text_only=text_only)
         else:
             check_rl_example_labels(dataset[idx], tokenizer, text_only=text_only)
