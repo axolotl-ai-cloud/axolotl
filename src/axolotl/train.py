@@ -9,6 +9,7 @@ from typing import Optional, Tuple, Union
 
 import torch
 import transformers.modelcard
+from accelerate import Accelerator
 from accelerate.logging import get_logger
 from datasets import Dataset
 from peft import PeftModel
@@ -81,11 +82,13 @@ def train(
     if cfg.adapter:
         msg += " and peft_config..."
     LOG.debug(msg)
+    # we wait unitl the last possible moment to setup Accelerator
+    Accelerator()
     model, peft_config = load_model(cfg, tokenizer, inference=cli_args.inference)
     model.generation_config.do_sample = True
 
     model_ref = None
-    if cfg.rl:
+    if cfg.rl and cfg.rl != "orpo":
         if cfg.adapter and not cfg.rl_adapter_ref_model:
             # use built-in trl autounwrap
             LOG.debug("Passing model_ref: None to RL trainer")
@@ -109,9 +112,6 @@ def train(
         tokenizer,
         total_num_steps,
     )
-
-    if hasattr(model, "config"):
-        model.config.use_cache = False
 
     # go ahead and presave, so we have the adapter config available to inspect
     if peft_config:

@@ -1,0 +1,31 @@
+name: Publish Docs
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+    contents: write
+    pages: write
+
+jobs:
+    build-deploy:
+        runs-on: ubuntu-latest
+        steps:
+        - name: Check out repository
+          uses: actions/checkout@v4
+        - name: Set up Quarto
+          uses: quarto-dev/quarto-actions/setup@v2
+        - name: Setup Python
+          uses: actions/setup-python@v3
+          with:
+            python-version: '3.10'
+        - name: install dependencies
+          run: |
+            python3 -m pip install jupyter
+        - name: Publish to GitHub Pages (and render)
+          uses: quarto-dev/quarto-actions/publish@v2
+          with:
+            target: gh-pages
+          env:
+            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

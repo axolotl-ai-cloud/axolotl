@@ -5,16 +5,15 @@ import logging
 import math
 import os
 import types
-from typing import Any, Dict, List, Optional, Tuple, Type, Union  # noqa: F401
+from typing import Any, Dict, Optional, Tuple, Union  # noqa: F401
 
 import addict
 import bitsandbytes as bnb
-import safetensors
 import torch
 import transformers
+import transformers.modeling_utils
 from accelerate import init_empty_weights
-from bitsandbytes.nn import Linear4bit, Params4bit
-from fastcore.parallel import parallel
+from bitsandbytes.nn import Params4bit
 from peft import (
     LoftQConfig,
     PeftConfig,
@@ -23,7 +22,7 @@ from peft import (
     prepare_model_for_kbit_training,
 )
 from peft.tuners.lora import QuantLinear
-from torch import Tensor, nn
+from torch import nn
 from transformers import (  # noqa: F401
     AddedToken,
     AutoConfig,
@@ -35,9 +34,7 @@ from transformers import (  # noqa: F401
     PreTrainedTokenizerBase,
 )
 from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
-from transformers.utils import SAFE_WEIGHTS_INDEX_NAME, SAFE_WEIGHTS_NAME, hub
 
-from axolotl.core.policies.auto_wrap import SUPPORTED_AUTO_WRAP_MODEL_TYPES
 from axolotl.models.mamba import fix_mamba_attn_for_loss
 from axolotl.monkeypatch.multipack import (
     SUPPORTED_MULTIPACK_MODEL_TYPES,
@@ -47,9 +44,36 @@ from axolotl.prompt_tokenizers import LLAMA_DEFAULT_EOS_TOKEN
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.chat_templates import chat_templates
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.distributed import zero_only
+from axolotl.utils.gradient_checkpointing import hf_grad_checkpoint_unsloth_wrapper
 from axolotl.utils.lora_embeddings import get_linear_embedding_layers
+from axolotl.utils.model_shard_quant import load_sharded_model, load_sharded_model_quant
 
 LOG = logging.getLogger("axolotl")
+
+
+# copied from accelerator.FullyShardedDataParallelPlugin
+def get_module_class_from_name(module, name):
+    """
+    Gets a class from a module by its name.
+
+    Args:
+        module (`torch.nn.Module`): The module to get the class from.
+        name (`str`): The name of the class.
+    """
+    modules_children = list(module.children())
+    if module.__class__.__name__ == name:
+        return module.__class__
+
+    if len(modules_children) == 0:
+        return None
+
+    for child_module in modules_children:
+        module_class = get_module_class_from_name(child_module, name)
+        if module_class is not None:
+            return module_class
+
+    return None
 
 
 def check_model_config(cfg: DictDefault, model_config: Union[AutoConfig, DictDefault]):
@@ -138,9 +162,8 @@ def load_tokenizer(cfg):
     if cfg.tokenizer_type:
         tokenizer_cls = getattr(transformers, cfg.tokenizer_type)
 
-    tokenizer_config = cfg.tokenizer_config or cfg.base_model_config or cfg.base_model
     tokenizer = tokenizer_cls.from_pretrained(
-        tokenizer_config,
+        cfg.tokenizer_config,
         trust_remote_code=cfg.trust_remote_code or False,
         use_fast=use_fast,
         **tokenizer_kwargs,
@@ -252,10 +275,11 @@ def load_tokenizer(cfg):
             {"additional_special_tokens": additional_special_tokens}
         )
 
-    LOG.debug(f"EOS: {tokenizer.eos_token_id} / {tokenizer.eos_token}")
-    LOG.debug(f"BOS: {tokenizer.bos_token_id} / {tokenizer.bos_token}")
-    LOG.debug(f"PAD: {tokenizer.pad_token_id} / {tokenizer.pad_token}")
-    LOG.debug(f"UNK: {tokenizer.unk_token_id} / {tokenizer.unk_token}")
+    with zero_only():
+        LOG.debug(f"EOS: {tokenizer.eos_token_id} / {tokenizer.eos_token}")
+        LOG.debug(f"BOS: {tokenizer.bos_token_id} / {tokenizer.bos_token}")
+        LOG.debug(f"PAD: {tokenizer.pad_token_id} / {tokenizer.pad_token}")
+        LOG.debug(f"UNK: {tokenizer.unk_token_id} / {tokenizer.unk_token}")
 
     if cfg.chat_template:
         chat_template_string = chat_templates(cfg.chat_template)
@@ -270,117 +294,6 @@ def load_tokenizer(cfg):
             "No Chat template selected. Consider adding a chat template for easier inference."
         )
     return tokenizer
-
-
-def replace_linear(
-    model: nn.Module,
-    linear_replacement: Type[nn.Module],
-    quant_config: Union[dict, None] = None,
-    skip_modules=None,
-    **kwargs,
-):
-    """
-    Replace linear modules with a new Linear module.
-    Parameters:
-        model (`torch.nn.Module`):
-            Input model or `torch.nn.Module` as the function is run recursively.
-        linear_replacement (`torch.nn.Module`):
-            The linear module that replaces the old one. Only expects standard arguments.
-            If other arguments need to be passed, use a lambda.
-        skip_modules (`List[str]`, *optional*, defaults to `lm_head`):
-            List of modules names not to convert. Defaults to `lm_head`.
-    """
-    if skip_modules is None:
-        skip_modules = ["lm_head"]
-    for name, module in model.named_children():
-        if len(list(module.children())) > 0:
-            replace_linear(
-                module, linear_replacement, quant_config, skip_modules, **kwargs
-            )
-
-        if isinstance(module, torch.nn.Linear) and name not in skip_modules:
-            if issubclass(linear_replacement, Linear4bit):
-                model._modules[  # pylint: disable=protected-access
-                    name
-                ] = linear_replacement(
-                    module.in_features,
-                    module.out_features,
-                    module.bias is not None,
-                    **kwargs,
-                )
-            else:
-                raise ValueError(
-                    f"Unsupported linear replacement: {type(linear_replacement)}"
-                )
-    return model
-
-
-def load_and_quantize(
-    module: nn.Module,
-    name: str,
-    value: Tensor,
-    device: torch.device = None,
-    dtype: torch.dtype = None,
-    skip_names: Optional[List[str]] = None,
-    is_meta_rank: bool = False,
-    low_memory: bool = True,
-    verbose: bool = False,
-    quant_method: str = "bnb",
-):
-    """
-    Loads `value` tensor into submodule of `module`, optionally skipping `skip_names` and converting to `dtype`.
-
-    Quantizes `Params4bit` on `device` then places on "cpu" if low_memory=True or "meta" if is_meta_rank=True.
-    """
-
-    if skip_names is None:
-        skip_names = []
-
-    def place_on_device(value):
-        if is_meta_rank:
-            device = "meta"
-        elif low_memory:
-            device = "cpu"
-        else:
-            device = "cuda"
-        return value.to(device=device, dtype=dtype)
-
-    if any(skip_name in name for skip_name in skip_names):
-        if verbose:
-            print(f"Skipping {name} because it is in skip_names")
-        return
-
-    module_key, _, value_key = name.rpartition(".")
-    try:
-        submodule = module.get_submodule(module_key)
-    except AttributeError as exc:
-        print(f"Module {module_key} not found:\n{exc}")
-        return
-
-    try:
-        if quant_method == "bnb":
-            param = submodule.get_parameter(value_key)
-            if isinstance(param, Params4bit):
-                # With `sync_module_states=True`, a meta device Params4bit needs to be the same
-                # shape as the quantized Params4bit with an initialized quant_state. However,
-                # FSDP only syncs parameters and buffers, so the quant_state isn't copied. This
-                # workaround quantizes Params4bit to initialize quant_state on all ranks, then
-                # replaces Params4bit's data with a meta tensor to free memory on non-rank 0.
-                value = type(param)(
-                    value.to(device=device, dtype=dtype).data, **param.__dict__
-                ).cuda(device)
-                if is_meta_rank:
-                    value = type(param)(value.data.to("meta"), **value.__dict__)
-                elif low_memory:
-                    value = type(param)(value.data.to("cpu"), **value.__dict__)
-            else:
-                value = type(param)(place_on_device(value).data)
-
-    except AttributeError:
-        # it's a buffer
-        value = place_on_device(value)
-
-    setattr(submodule, value_key, value)
 
 
 def load_model(
@@ -398,6 +311,9 @@ def load_model(
 
     # TODO refactor as a kwarg
     load_in_8bit = cfg.load_in_8bit
+
+    if cfg.gradient_checkpointing == "unsloth":
+        transformers.modeling_utils.checkpoint = hf_grad_checkpoint_unsloth_wrapper
 
     if hasattr(model_config, "model_type") and model_config.model_type == "btlm":
         if cfg.flash_attention:
@@ -518,7 +434,9 @@ def load_model(
         from accelerate import infer_auto_device_map
 
         with init_empty_weights():
-            model_canvas = AutoModelForCausalLM.from_config(model_config)
+            model_canvas = AutoModelForCausalLM.from_config(
+                model_config, trust_remote_code=cfg.trust_remote_code or False
+            )
         model_canvas.tie_weights()
         device_map = infer_auto_device_map(
             model_canvas,
@@ -549,6 +467,7 @@ def load_model(
 
     if cfg.revision_of_model:
         model_kwargs["revision"] = cfg.revision_of_model
+
     if cfg.gptq:
         if not hasattr(model_config, "quantization_config"):
             LOG.warning("model config does not contain quantization_config information")
@@ -568,11 +487,23 @@ def load_model(
             "bnb_4bit_compute_dtype": cfg.torch_dtype,
             "bnb_4bit_use_double_quant": True,
             "bnb_4bit_quant_type": "nf4",
+            "bnb_4bit_quant_storage": torch.bfloat16,
         }
+        if cfg.model_config_type in ["jamba", "qwen2_moe"] and not cfg.deepspeed:
+            # for some reason, this causes the loss to be off by an order of magnitude
+            # but deepspeed needs this still in bfloat16
+            bnb_config["bnb_4bit_quant_storage"] = torch.float32
 
         if cfg.bnb_config_kwargs:
             bnb_config.update(cfg.bnb_config_kwargs)
 
+        model_kwargs["quantization_config"] = BitsAndBytesConfig(
+            **bnb_config,
+        )
+    elif cfg.adapter == "lora" and cfg.load_in_8bit:
+        bnb_config = {
+            "load_in_8bit": True,
+        }
         model_kwargs["quantization_config"] = BitsAndBytesConfig(
             **bnb_config,
         )
@@ -617,77 +548,36 @@ def load_model(
         model_kwargs["attn_implementation"] = "eager"
         model_config._attn_implementation = "eager"  # pylint: disable=protected-access
 
-    qlora_fsdp = (
-        cfg.fsdp
-        and cfg.adapter == "qlora"
-        and model_config.model_type in SUPPORTED_AUTO_WRAP_MODEL_TYPES
-    )
+    if cfg.low_cpu_mem_usage:
+        model_kwargs["low_cpu_mem_usage"] = True
+
+    qlora_fsdp = cfg.fsdp and cfg.adapter == "qlora"
 
     try:
-        if qlora_fsdp:
-            if cfg.bf16 or cfg.bfloat16:
-                torch_dtype, compute_dtype = torch.float32, torch.bfloat16
-            elif cfg.fp16 or cfg.float16:
-                torch_dtype, compute_dtype = torch.float32, torch.float16
-            else:
-                torch_dtype, compute_dtype = torch.float32, torch.float16
-
-            with init_empty_weights():
-                LOG.info("Loading model with empty weights.")
-                model = AutoModelForCausalLM.from_config(model_config)
-                model.model = replace_linear(
-                    model.model,
-                    Linear4bit,
-                    compute_dtype=compute_dtype,
-                    quant_type="nf4",
-                    quant_storage=torch_dtype,
-                )
-
-            model.is_loaded_in_4bit = True
-
-            # Grab the safetensors files that hold the weights
-            try:
-                idx = hub.cached_file(base_model, SAFE_WEIGHTS_INDEX_NAME)
-                files, _ = hub.get_checkpoint_shard_files(base_model, idx)
-            except OSError:
-                try:
-                    # This means the model doesn't have a model.safetensors.index.json because it is not sharded
-                    files = []
-                    files.append(hub.cached_file(base_model, SAFE_WEIGHTS_NAME))
-                except OSError as exc:
-                    # This means the model probably doesn't have a safetensors file
-                    raise exc
-
-            # Load in the weights, using our custom load_and_quantize method which quantizes Params4bit on the fly
-            # and then places each layer on CPU or meta if using low_memory to minimize GPU memory usage
-            def load_and_quantize_parallel(name_param, model, **kwargs):
-                name, param = name_param
-                load_and_quantize(model, name, param, **kwargs)
-
-            param_count = sum((p.numel() for n, p in model.named_parameters()))
-            for filename in files:
-                weights = safetensors.torch.load_file(filename)
-                quant_method = "bnb"
-                devprops = torch.cuda.get_device_properties(torch.cuda.current_device())
-                left = int(os.cpu_count() / torch.cuda.device_count())
-                right = int(
-                    8 * (devprops.total_memory / 1e9 / 40) * (70 / (param_count / 1e9))
-                )
-                n_workers = min(left, right)
-                parallel(
-                    load_and_quantize_parallel,
-                    weights.items(),
-                    n_workers=n_workers,
-                    threadpool=True,
-                    model=model,
-                    dtype=torch_dtype,
-                    device=cfg.local_rank,
-                    skip_names=[],
-                    is_meta_rank=(cfg.local_rank != 0),
-                    verbose=False,
-                    quant_method=quant_method,
-                )
-
+        skip_move_to_device = False
+        if (
+            cfg.fsdp and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
+        ) and not qlora_fsdp:
+            model = load_sharded_model(
+                base_model,
+                model_config,
+                cfg,
+                torch_dtype=cfg.torch_dtype,
+            )
+            skip_move_to_device = True
+        elif (
+            qlora_fsdp
+            and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
+            and cfg.model_config_type == "dbrx"
+        ):
+            quant_storage = cfg.torch_dtype
+            model = load_sharded_model_quant(
+                base_model,
+                model_config,
+                cfg,
+                quant_storage=quant_storage,
+            )
+            skip_move_to_device = True
         elif (
             model_config.model_type == "llama"
             and not cfg.trust_remote_code
@@ -715,32 +605,6 @@ def load_model(
                 if cfg.flash_attn_fuse_qkv:
                     LOG.info("patching with fused QKV")
                     replace_llama_qkv_with_fused(model)
-        # elif model_type == "GPTNeoXForCausalLM" and cfg.flash_attention:
-        #     This is a WIP, still an issue with the backward pass
-        #     RuntimeError: grad can be implicitly created only for scalar outputs
-        #     TODO: try config.sequence_parallel = False
-        #     # https://github.com/HazyResearch/flash-attention/blob/40a25c8ee7465cf547b929cfa2937034e37bfce9/tests/models/test_gpt_neox.py#L12
-        #     # https://github.com/HazyResearch/flash-attention/tree/main/training#model-components
-        #     # add `**kwargs` to https://github.com/HazyResearch/flash-attention/blob/40a25c8ee7465cf547b929cfa2937034e37bfce9/flash_attn/models/gpt.py#L442
-        #     from flash_attn.utils.pretrained import state_dict_from_pretrained
-        #     from flash_attn.models.gpt import GPTLMHeadModel
-        #     from flash_attn.models.gpt_neox import remap_state_dict_hf_gpt_neox, gpt_neox_config_to_gpt2_config
-        #     from transformers import GPTNeoXConfig
-        #     config = gpt_neox_config_to_gpt2_config(GPTNeoXConfig.from_pretrained(base_model))
-        #     config.use_flash_attn = True
-        #     config.fused_bias_fc = True
-        #     config.fused_mlp = True  # GPT-NeoX-20B uses "gelu_fast"
-        #     config.activation_function = "gelu_fast"
-        #     config.fused_dropout_add_ln = True
-        #     # config.residual_in_fp32 = True
-        #
-        #     model: GPTLMHeadModel = GPTLMHeadModel.from_pretrained(
-        #         base_model,
-        #         config,
-        #         dtype=torch_dtype,
-        #         device=cfg.device,
-        #     )
-        #     model.train() # sets to train instead of eval mode
         elif model_type == "MambaLMHeadModel":
             # FIXME this is janky at best and hacked together to make it work
             MambaLMHeadModel = fix_mamba_attn_for_loss()  # pylint: disable=invalid-name
@@ -794,6 +658,11 @@ def load_model(
                     **model_kwargs,
                 )
             else:
+                if qlora_fsdp and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading:
+                    skip_move_to_device = True
+                    if "device_map" in model_kwargs:
+                        del model_kwargs["device_map"]
+
                 model = AutoModelForCausalLM.from_pretrained(
                     base_model,
                     config=model_config,
@@ -867,13 +736,17 @@ def load_model(
     needs_fa2_dtype = cfg.adapter or cfg.fsdp
     skip_prepare_model_for_kbit_training = False
 
-    if cfg.model_config_type == "mixtral" and is_deepspeed_zero3_enabled():
+    if is_deepspeed_zero3_enabled():
         from deepspeed.utils import (  # pylint: disable=no-name-in-module
             set_z3_leaf_modules,
         )
-        from transformers.models.mixtral.modeling_mixtral import MixtralSparseMoeBlock
 
-        set_z3_leaf_modules(model, [MixtralSparseMoeBlock])
+        if cfg.model_config_type == "mixtral":
+            moe_block = get_module_class_from_name(model, "MixtralSparseMoeBlock")
+            set_z3_leaf_modules(model, [moe_block])
+        elif cfg.model_config_type == "dbrx":
+            moe_block = get_module_class_from_name(model, "DbrxFFN")
+            set_z3_leaf_modules(model, [moe_block])
 
     if cfg.model_config_type == "qwen" and cfg.adapter == "lora":
         # Qwen doesn't play nicely with LoRA if this is enabled
@@ -883,12 +756,15 @@ def load_model(
     if cfg.adapter == "lora" and loftq_bits:
         skip_prepare_model_for_kbit_training = True
 
-    if qlora_fsdp:
+    if qlora_fsdp or (cfg.fsdp and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading):
+        # make sure everything is in the same dtype
         skip_prepare_model_for_kbit_training = True
 
     if cfg.adapter in ["lora", "qlora"]:
         if cfg.gradient_checkpointing:
-            model.gradient_checkpointing_enable()
+            model.gradient_checkpointing_enable(
+                gradient_checkpointing_kwargs=cfg.gradient_checkpointing_kwargs
+            )
         if (
             cfg.load_in_8bit or cfg.load_in_4bit
         ) and not skip_prepare_model_for_kbit_training:
@@ -922,7 +798,7 @@ def load_model(
         cfg.ddp
         and not load_in_8bit
         and not (cfg.rl and cfg.load_in_4bit)
-        and not qlora_fsdp
+        and not skip_move_to_device
     ):
         # TODO revaldate this conditional
         model.to(f"cuda:{cfg.local_rank}")
@@ -1056,7 +932,9 @@ def load_lora(model, cfg, inference=False, config_only=False):
     if cfg.peft_use_dora:
         lora_config_kwargs["use_dora"] = cfg.peft_use_dora
     if cfg.peft_use_rslora:
-        lora_config_kwargs["use_rslora"] = cfg.use_rslora
+        lora_config_kwargs["use_rslora"] = cfg.peft_use_rslora
+    if cfg.peft_layer_replication:
+        lora_config_kwargs["layer_replication"] = cfg.peft_layer_replication
 
     lora_config = LoraConfig(
         r=cfg.lora_r,
@@ -1076,7 +954,12 @@ def load_lora(model, cfg, inference=False, config_only=False):
 
     rank = int(os.environ.get("LOCAL_RANK", 0))
 
-    if cfg.fsdp and cfg.adapter == "qlora" and rank != 0:
+    if (
+        cfg.fsdp
+        and cfg.adapter
+        and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
+        and rank != 0
+    ):
         setup_quantized_meta_for_peft(model)
 
     if cfg.lora_model_dir:
@@ -1095,8 +978,28 @@ def load_lora(model, cfg, inference=False, config_only=False):
         model = get_peft_model(model, lora_config)
 
     if rank == 0:
-        model.print_trainable_parameters()
-    elif cfg.fsdp and cfg.adapter == "qlora":
+        try:
+            model.print_trainable_parameters()
+        except AttributeError as exc:
+            LOG.warning(
+                "Exception caught during model.print_trainable_parameters(): %s", exc
+            )
+    elif (
+        cfg.fsdp
+        and cfg.adapter
+        and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
+        and rank != 0
+    ):
         setup_quantized_peft_meta_for_training(model)
 
     return model, lora_config
+
+
+def ensure_dtype(model, dtype=torch.bfloat16):
+    for name, module in model.named_modules():
+        try:
+            if module.weight.dtype != dtype:
+                print(f"Converting module {name}: {module.weight.dtype} -> {dtype}")
+                module.to(dtype)
+        except AttributeError:
+            pass

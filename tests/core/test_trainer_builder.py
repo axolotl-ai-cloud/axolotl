@@ -1,16 +1,18 @@
 """
 unit tests for axolotl.core.trainer_builder
 """
+
 import pytest
 
-from axolotl.core.trainer_builder import HFDPOTrainerBuilder
+from axolotl.core.trainer_builder import HFRLTrainerBuilder
+from axolotl.utils.config import normalize_config
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.models import load_model, load_tokenizer
 
 
 @pytest.fixture(name="cfg")
 def fixture_cfg():
-    return DictDefault(
+    cfg = DictDefault(
         {
             "base_model": "TinyLlama/TinyLlama-1.1B-Chat-v0.6",
             "model_type": "AutoModelForCausalLM",
@@ -34,6 +36,10 @@ def fixture_cfg():
         }
     )
 
+    normalize_config(cfg)
+
+    return cfg
+
 
 @pytest.fixture(name="tokenizer")
 def fixture_tokenizer(cfg):
@@ -45,13 +51,13 @@ def fixture_model(cfg, tokenizer):
     return load_model(cfg, tokenizer)
 
 
-class TestHFDPOTrainerBuilder:
+class TestHFRLTrainerBuilder:
     """
     TestCase class for DPO trainer builder
     """
 
     def test_build_training_arguments(self, cfg, model, tokenizer):
-        builder = HFDPOTrainerBuilder(cfg, model, tokenizer)
+        builder = HFRLTrainerBuilder(cfg, model, tokenizer)
         training_arguments = builder.build_training_arguments(100)
         assert training_arguments.adam_beta1 == 0.998
         assert training_arguments.adam_beta2 == 0.9

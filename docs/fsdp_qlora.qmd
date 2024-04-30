@@ -1,0 +1,43 @@
+---
+title: "FDSP + QLoRA"
+description: Use FSDP with QLoRA to fine-tune large LLMs on consumer GPUs.
+format:
+  html:
+    toc: true
+---
+
+## Background
+
+Using FSDP with QLoRA is essential for **fine-tuning larger (70b+ parameter) LLMs on consumer GPUs.**  For example, you can use FSDP + QLoRA to train a 70b model on two 24GB GPUs[^1].
+
+Below, we describe how to use this feature in Axolotl.
+
+## Usage
+
+To enable `QLoRA` with `FSDP`, you need to perform the following steps:
+
+> ![Tip]
+> See the [example config](#example-config) file in addition to reading these instructions.
+
+1. Set `adapter: qlora` in your axolotl config file.
+2. Enable FSDP in your axolotl config, as [described here](https://github.com/OpenAccess-AI-Collective/axolotl?tab=readme-ov-file#fsdp).
+3. Use one of the supported model types: `llama`, `mistral` or `mixtral`.
+
+## Example Config
+
+[examples/llama-2/qlora-fsdp.yml](../examples/llama-2/qlora-fsdp.yml) contains an example of how to enable QLoRA + FSDP in axolotl.
+
+## References
+
+- [PR #1378](https://github.com/OpenAccess-AI-Collective/axolotl/pull/1378) enabling QLoRA in FSDP in Axolotl.
+- [Blog Post](https://www.answer.ai/posts/2024-03-06-fsdp-qlora.html) from the [Answer.AI](https://www.answer.ai/) team describing the work that enabled QLoRA in FSDP.
+- Related HuggingFace PRs Enabling FDSP + QLoRA:
+    - Accelerate [PR#2544](https://github.com/huggingface/accelerate/pull/2544 )
+    - Transformers [PR#29587](https://github.com/huggingface/transformers/pull/29587)
+    - TRL [PR#1416](https://github.com/huggingface/trl/pull/1416)
+    - PEFT [PR#1550](https://github.com/huggingface/peft/pull/1550)
+
+
+
+
+[^1]: This was enabled by [this work](https://www.answer.ai/posts/2024-03-06-fsdp-qlora.html) from the Answer.AI team.

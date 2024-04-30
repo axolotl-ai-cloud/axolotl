@@ -1,17 +1,17 @@
 --extra-index-url https://huggingface.github.io/autogptq-index/whl/cu118/
 packaging==23.2
-peft==0.9.0
-transformers==4.38.2
+peft==0.10.0
+transformers @ git+https://github.com/huggingface/transformers.git@43d17c18360ac9c3d3491389328e2fe55fe8f9ce
 tokenizers==0.15.0
-bitsandbytes>=0.43.0
-accelerate==0.26.1
+bitsandbytes==0.43.0
+accelerate==0.28.0
 deepspeed==0.13.1
 pydantic==2.6.3
 addict
 fire
 PyYAML>=6.0
 requests
-datasets>=2.15.0
+datasets==2.15.0
 flash-attn==2.5.5
 sentencepiece
 wandb
@@ -28,16 +28,17 @@ scipy
 scikit-learn==1.2.2
 pynvml
 art
-fschat==0.2.36
+fschat @ git+https://github.com/lm-sys/FastChat.git@5095615810cf613dba7f27dd155f571fcff976d8
 gradio==3.50.2
 tensorboard
 
-mamba-ssm==1.1.1
+mamba-ssm==1.2.0.post1
 
 # remote filesystems
 s3fs
 gcsfs
 # adlfs
 
-trl>=0.7.9
-fastcore>=1.5.29
+trl==0.8.5
+zstandard==0.22.0
+fastcore

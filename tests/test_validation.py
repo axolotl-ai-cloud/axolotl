@@ -54,6 +54,18 @@ class TestValidation(BaseValidation):
     Test the validation module
     """
 
+    def test_defaults(self, minimal_cfg):
+        test_cfg = DictDefault(
+            {
+                "weight_decay": None,
+            }
+            | minimal_cfg
+        )
+        cfg = validate_config(test_cfg)
+
+        assert cfg.train_on_inputs is False
+        assert cfg.weight_decay is None
+
     def test_datasets_min_length(self):
         cfg = DictDefault(
             {
@@ -588,6 +600,7 @@ class TestValidation(BaseValidation):
                 {
                     "sample_packing": True,
                     "pad_to_sequence_len": None,
+                    "flash_attention": True,
                 }
             )
             | minimal_cfg
@@ -889,6 +902,7 @@ class TestValidation(BaseValidation):
                 {
                     "sample_packing": True,
                     "eval_table_size": 100,
+                    "flash_attention": True,
                 }
             )
             | minimal_cfg
@@ -904,6 +918,7 @@ class TestValidation(BaseValidation):
                 {
                     "sample_packing": True,
                     "eval_sample_packing": False,
+                    "flash_attention": True,
                 }
             )
             | minimal_cfg
@@ -916,6 +931,7 @@ class TestValidation(BaseValidation):
                 {
                     "sample_packing": False,
                     "eval_table_size": 100,
+                    "flash_attention": True,
                 }
             )
             | minimal_cfg
@@ -929,6 +945,7 @@ class TestValidation(BaseValidation):
                     "sample_packing": True,
                     "eval_table_size": 100,
                     "eval_sample_packing": False,
+                    "flash_attention": True,
                 }
             )
             | minimal_cfg

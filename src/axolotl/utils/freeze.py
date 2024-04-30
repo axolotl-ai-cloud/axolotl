@@ -3,7 +3,7 @@ module to freeze/unfreeze parameters by name
 """
 import logging
 import re
-from typing import Callable, List, Tuple
+from typing import Callable, List, Tuple, Union
 
 from axolotl.utils.distributed import is_main_process
 
@@ -99,7 +99,7 @@ def _invert_ranges(
 
 
 def _merge_ranges(
-    given_ranges: List[Tuple[int, int | None]], layer_size: int
+    given_ranges: List[Tuple[int, Union[int, None]]], layer_size: int
 ) -> List[Tuple[int, int]]:
     """
     Merges overlapping ranges and sorts the given ranges.
@@ -194,7 +194,9 @@ class LayerNamePattern:
         """
         return self.name_regex.match(name) is not None
 
-    def _parse_pattern(self, pattern: str) -> Tuple[str, Tuple[int, int | None] | None]:
+    def _parse_pattern(
+        self, pattern: str
+    ) -> Tuple[str, Union[Tuple[int, Union[int, None]], None]]:
         """
         Extracts the range pattern from the given pattern.
 

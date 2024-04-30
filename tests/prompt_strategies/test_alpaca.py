@@ -27,7 +27,9 @@ def fixture_alpaca_dataset():
 @pytest.fixture(name="tokenizer")
 def fixture_tokenizer():
     # pylint: disable=all
-    tokenizer = AutoTokenizer.from_pretrained("mistralai/Mistral-7B-v0.1")
+    tokenizer = AutoTokenizer.from_pretrained(
+        "casperhansen/mistral-7b-instruct-v0.1-awq"
+    )
     tokenizer.add_special_tokens(
         {
             "eos_token": AddedToken(

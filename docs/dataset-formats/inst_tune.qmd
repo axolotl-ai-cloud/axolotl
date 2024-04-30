@@ -1,0 +1,189 @@
+---
+title: Instruction Tuning
+description: Instruction tuning formats for supervised fine-tuning.
+order: 2
+---
+
+## alpaca
+
+instruction; input(optional)
+
+```{.json filename="data.jsonl"}
+{"instruction": "...", "input": "...", "output": "..."}
+```
+
+## jeopardy
+
+question and answer
+
+```{.json filename="data.jsonl"}
+{"question": "...", "category": "...", "answer": "..."}
+```
+
+## oasst
+
+instruction
+
+```{.json filename="data.jsonl"}
+{"INSTRUCTION": "...", "RESPONSE": "..."}
+```
+
+## gpteacher
+
+instruction; input(optional)
+
+```{.json filename="data.jsonl"}
+{"instruction": "...", "input": "...", "response": "..."}
+```
+
+## reflection
+
+instruction with reflect; input(optional)
+
+```{.json filename="data.jsonl"}
+{"instruction": "...", "input": "...", "output": "...", "reflection": "...", "corrected": "..."}
+```
+
+## explainchoice
+
+question, choices, (solution OR explanation)
+
+```{.json filename="data.jsonl"}
+{"question": "...", "choices": ["..."], "solution": "...", "explanation": "..."}
+```
+
+## concisechoice
+
+question, choices, (solution OR explanation)
+
+```{.json filename="data.jsonl"}
+{"question": "...", "choices": ["..."], "solution": "...", "explanation": "..."}
+```
+
+## summarizetldr
+
+article and summary
+
+```{.json filename="data.jsonl"}
+{"article": "...", "summary": "..."}
+```
+
+## alpaca_chat
+
+basic instruct for alpaca chat
+
+```{.json filename="data.jsonl"}
+{"instruction": "...", "input": "...", "response": "..."}
+```
+
+## alpaca_chat.load_qa
+
+question and answer for alpaca chat
+
+```{.json filename="data.jsonl"}
+{"question": "...", "answer": "..."}
+```
+
+## alpaca_chat.load_concise
+
+question and answer for alpaca chat, for concise answers
+
+```{.json filename="data.jsonl"}
+{"instruction": "...", "input": "...", "response": "..."}
+```
+
+## alpaca_chat.load_camel_ai
+
+question and answer for alpaca chat, for load_camel_ai
+
+```{.json filename="data.jsonl"}
+{"message_1": "...", "message_2": "..."}
+```
+
+## alpaca_w_system.load_open_orca
+
+support for open orca datasets with included system prompts, instruct
+
+```{.json filename="data.jsonl"}
+{"system_prompt": "...", "question": "...", "response": "..."}
+```
+
+## context_qa
+
+in context question answering from an article
+
+```{.json filename="data.jsonl"}
+{"article": "...", "question": "...", "answer": "..."}
+```
+
+## context_qa.load_v2
+
+in context question answering (alternate)
+
+```{.json filename="data.jsonl"}
+{"context": "...", "question": "...", "answer": "..."}
+```
+
+## context_qa.load_404
+
+in context question answering from an article, with default response for no answer from context
+
+```{.json filename="data.jsonl"}
+{"article": "...", "unanswerable_question": "..."}
+```
+
+## creative_acr.load_answer
+
+instruction and revision
+
+```{.json filename="data.jsonl"}
+{"instruction": "...", "revision": "..."}
+```
+
+## creative_acr.load_critique
+
+critique
+
+```{.json filename="data.jsonl"}
+{"scores": "...", "critiques": "...", "instruction": "...", "answer": "..."}
+```
+
+## creative_acr.load_revise
+
+critique and revise
+
+```{.json filename="data.jsonl"}
+{"scores": "...", "critiques": "...", "instruction": "...", "answer": "...", "revision": "..."}
+```
+
+## metharme
+
+instruction, adds additional eos tokens
+
+```{.json filename="data.jsonl"}
+{"prompt": "...", "generation": "..."}
+```
+
+## How to add custom prompt format
+
+For a dataset that is preprocessed for instruction purposes:
+
+```{.json filename="data.jsonl"}
+{"input": "...", "output": "..."}
+```
+
+You can use this example in your YAML config:
+
+```{.yaml filename="config.yaml"}
+datasets:
+  - path: repo
+    type:
+      system_prompt: ""
+      field_system: system
+      field_instruction: input
+      field_output: output
+      format: "[INST] {instruction} [/INST]"
+      no_input_format: "[INST] {instruction} [/INST]"
+```
+
+See full config options under [here](../config.qmd).

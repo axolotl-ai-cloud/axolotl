@@ -13,6 +13,9 @@ Features:
 - Log results and optionally checkpoints to wandb or mlflow
 - And more!
 
+<a href="https://www.phorm.ai/query?projectId=e315ba4a-4e14-421f-ab05-38a1f9076f25">
+  <img alt="phorm.ai" src="https://img.shields.io/badge/Phorm-Ask_AI-%23F2777A.svg?&logo=data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNSIgaGVpZ2h0PSI0IiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPgogIDxwYXRoIGQ9Ik00LjQzIDEuODgyYTEuNDQgMS40NCAwIDAgMS0uMDk4LjQyNmMtLjA1LjEyMy0uMTE1LjIzLS4xOTIuMzIyLS4wNzUuMDktLjE2LjE2NS0uMjU1LjIyNmExLjM1MyAxLjM1MyAwIDAgMS0uNTk1LjIxMmMtLjA5OS4wMTItLjE5Mi4wMTQtLjI3OS4wMDZsLTEuNTkzLS4xNHYtLjQwNmgxLjY1OGMuMDkuMDAxLjE3LS4xNjkuMjQ2LS4xOTFhLjYwMy42MDMgMCAwIDAgLjItLjEwNi41MjkuNTI5IDAgMCAwIC4xMzgtLjE3LjY1NC42NTQgMCAwIDAgLjA2NS0uMjRsLjAyOC0uMzJhLjkzLjkzIDAgMCAwLS4wMzYtLjI0OS41NjcuNTY3IDAgMCAwLS4xMDMtLjIuNTAyLjUwMiAwIDAgMC0uMTY4LS4xMzguNjA4LjYwOCAwIDAgMC0uMjQtLjA2N0wyLjQzNy43MjkgMS42MjUuNjcxYS4zMjIuMzIyIDAgMCAwLS4yMzIuMDU4LjM3NS4zNzUgMCAwIDAtLjExNi4yMzJsLS4xMTYgMS40NS0uMDU4LjY5Ny0uMDU4Ljc1NEwuNzA1IDRsLS4zNTctLjA3OUwuNjAyLjkwNkMuNjE3LjcyNi42NjMuNTc0LjczOS40NTRhLjk1OC45NTggMCAwIDEgLjI3NC0uMjg1Ljk3MS45NzEgMCAwIDEgLjMzNy0uMTRjLjExOS0uMDI2LjIyNy0uMDM0LjMyNS0uMDI2TDMuMjMyLjE2Yy4xNTkuMDE0LjMzNi4wMy40NTkuMDgyYTEuMTczIDEuMTczIDAgMCAxIC41NDUuNDQ3Yy4wNi4wOTQuMTA5LjE5Mi4xNDQuMjkzYTEuMzkyIDEuMzkyIDAgMCAxIC4wNzguNThsLS4wMjkuMzJaIiBmaWxsPSIjRjI3NzdBIi8+CiAgPHBhdGggZD0iTTQuMDgyIDIuMDA3YTEuNDU1IDEuNDU1IDAgMCAxLS4wOTguNDI3Yy0uMDUuMTI0LS4xMTQuMjMyLS4xOTIuMzI0YTEuMTMgMS4xMyAwIDAgMS0uMjU0LjIyNyAxLjM1MyAxLjM1MyAwIDAgMS0uNTk1LjIxNGMtLjEuMDEyLS4xOTMuMDE0LS4yOC4wMDZsLTEuNTYtLjEwOC4wMzQtLjQwNi4wMy0uMzQ4IDEuNTU5LjE1NGMuMDkgMCAuMTczLS4wMS4yNDgtLjAzM2EuNjAzLjYwMyAwIDAgMCAuMi0uMTA2LjUzMi41MzIgMCAwIDAgLjEzOS0uMTcyLjY2LjY2IDAgMCAwIC4wNjQtLjI0MWwuMDI5LS4zMjFhLjk0Ljk0IDAgMCAwLS4wMzYtLjI1LjU3LjU3IDAgMCAwLS4xMDMtLjIwMi41MDIuNTAyIDAgMCAwLS4xNjgtLjEzOC42MDUuNjA1IDAgMCAwLS4yNC0uMDY3TDEuMjczLjgyN2MtLjA5NC0uMDA4LS4xNjguMDEtLjIyMS4wNTUtLjA1My4wNDUtLjA4NC4xMTQtLjA5Mi4yMDZMLjcwNSA0IDAgMy45MzhsLjI1NS0yLjkxMUExLjAxIDEuMDEgMCAwIDEgLjM5My41NzIuOTYyLjk2MiAwIDAgMSAuNjY2LjI4NmEuOTcuOTcgMCAwIDEgLjMzOC0uMTRDMS4xMjIuMTIgMS4yMy4xMSAxLjMyOC4xMTlsMS41OTMuMTRjLjE2LjAxNC4zLjA0Ny40MjMuMWExLjE3IDEuMTcgMCAwIDEgLjU0NS40NDhjLjA2MS4wOTUuMTA5LjE5My4xNDQuMjk1YTEuNDA2IDEuNDA2IDAgMCAxIC4wNzcuNTgzbC0uMDI4LjMyMloiIGZpbGw9IndoaXRlIi8+CiAgPHBhdGggZD0iTTQuMDgyIDIuMDA3YTEuNDU1IDEuNDU1IDAgMCAxLS4wOTguNDI3Yy0uMDUuMTI0LS4xMTQuMjMyLS4xOTIuMzI0YTEuMTMgMS4xMyAwIDAgMS0uMjU0LjIyNyAxLjM1MyAxLjM1MyAwIDAgMS0uNTk1LjIxNGMtLjEuMDEyLS4xOTMuMDE0LS4yOC4wMDZsLTEuNTYtLjEwOC4wMzQtLjQwNi4wMy0uMzQ4IDEuNTU5LjE1NGMuMDkgMCAuMTczLS4wMS4yNDgtLjAzM2EuNjAzLjYwMyAwIDAgMCAuMi0uMTA2LjUzMi41MzIgMCAwIDAgLjEzOS0uMTcyLjY2LjY2IDAgMCAwIC4wNjQtLjI0MWwuMDI5LS4zMjFhLjk0Ljk0IDAgMCAwLS4wMzYtLjI1LjU3LjU3IDAgMCAwLS4xMDMtLjIwMi41MDIuNTAyIDAgMCAwLS4xNjgtLjEzOC42MDUuNjA1IDAgMCAwLS4yNC0uMDY3TDEuMjczLjgyN2MtLjA5NC0uMDA4LS4xNjguMDEtLjIyMS4wNTUtLjA1My4wNDUtLjA4NC4xMTQtLjA5Mi4yMDZMLjcwNSA0IDAgMy45MzhsLjI1NS0yLjkxMUExLjAxIDEuMDEgMCAwIDEgLjM5My41NzIuOTYyLjk2MiAwIDAgMSAuNjY2LjI4NmEuOTcuOTcgMCAwIDEgLjMzOC0uMTRDMS4xMjIuMTIgMS4yMy4xMSAxLjMyOC4xMTlsMS41OTMuMTRjLjE2LjAxNC4zLjA0Ny40MjMuMWExLjE3IDEuMTcgMCAwIDEgLjU0NS40NDhjLjA2MS4wOTUuMTA5LjE5My4xNDQuMjk1YTEuNDA2IDEuNDA2IDAgMCAxIC4wNzcuNTgzbC0uMDI4LjMyMloiIGZpbGw9IndoaXRlIi8+Cjwvc3ZnPgo=">
+</a>
 
 <table>
 <tr>
@@ -28,18 +31,20 @@ Features:
   - [Cloud GPU](#cloud-gpu) - Latitude.sh, JarvisLabs, RunPod
   - [Bare Metal Cloud GPU](#bare-metal-cloud-gpu)
   - [Windows](#windows)
+  - [Mac](#mac)
+  - [Google Colab](#google-colab)
   - [Launching on public clouds via SkyPilot](#launching-on-public-clouds-via-skypilot)
 - [Dataset](#dataset)
-  - [How to Add Custom Prompts](#how-to-add-custom-prompts)
-  - [How to Use Custom Pretokenized Dataset](#how-to-use-your-custom-pretokenized-dataset)
 - [Config](#config)
   - [Train](#train)
   - [Inference](#inference-playground)
   - [Merge LORA to Base](#merge-lora-to-base)
   - [Special Tokens](#special-tokens)
+  - [All Config Options](#all-config-options)
 - Advanced Topics
-  - [Multipack](./docs/multipack.md)<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M17 13.5v6H5v-12h6m3-3h6v6m0-6-9 9" class="icon_svg-stroke" stroke="#666" stroke-width="1.5" fill="none" fill-rule="evenodd" stroke-linecap="round" stroke-linejoin="round"></path></svg>
-  - [RLHF & DPO](./docs/rlhf.md)<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M17 13.5v6H5v-12h6m3-3h6v6m0-6-9 9" class="icon_svg-stroke" stroke="#666" stroke-width="1.5" fill="none" fill-rule="evenodd" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+  - [Multipack](./docs/multipack.qmd)<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M17 13.5v6H5v-12h6m3-3h6v6m0-6-9 9" class="icon_svg-stroke" stroke="#666" stroke-width="1.5" fill="none" fill-rule="evenodd" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+  - [RLHF & DPO](./docs/rlhf.qmd)<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M17 13.5v6H5v-12h6m3-3h6v6m0-6-9 9" class="icon_svg-stroke" stroke="#666" stroke-width="1.5" fill="none" fill-rule="evenodd" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+  - [Dataset Pre-Processing](./docs/dataset_preprocessing.qmd)<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M17 13.5v6H5v-12h6m3-3h6v6m0-6-9 9" class="icon_svg-stroke" stroke="#666" stroke-width="1.5" fill="none" fill-rule="evenodd" stroke-linecap="round" stroke-linejoin="round"></path></svg>
 - [Common Errors](#common-errors-)
   - [Tokenization Mismatch b/w Training & Inference](#tokenization-mismatch-bw-inference--training)
 - [Debugging Axolotl](#debugging-axolotl)
@@ -77,6 +82,7 @@ Features:
 | llama       | ✅         | ✅    | ✅     | ✅             | ✅                 | ✅          | ✅            |
 | Mistral     | ✅         | ✅    | ✅     | ✅             | ✅                 | ✅          | ✅            |
 | Mixtral-MoE | ✅         | ✅    | ✅     | ❓             | ❓                 | ❓          | ❓            |
+| Mixtral8X22 | ✅         | ✅    | ✅     | ❓             | ❓                 | ❓          | ❓            |
 | Pythia      | ✅         | ✅    | ✅     | ❌             | ❌                 | ❌          | ❓            |
 | cerebras    | ✅         | ✅    | ✅     | ❌             | ❌                 | ❌          | ❓            |
 | btlm        | ✅         | ✅    | ✅     | ❌             | ❌                 | ❌          | ❓            |
@@ -99,22 +105,12 @@ Get started with Axolotl in just a few steps! This quickstart guide will walk yo
 
 **Requirements**: Python >=3.10 and Pytorch >=2.1.1.
 
-### For developers
 ```bash
 git clone https://github.com/OpenAccess-AI-Collective/axolotl
 cd axolotl
 
-pip3 install packaging
-```
-
-General case:
-```
+pip3 install packaging ninja
 pip3 install -e '.[flash-attn,deepspeed]'
-```
-
-Mac: see https://github.com/OpenAccess-AI-Collective/axolotl/blob/13199f678b9aab39e92961323bdbce3234ee4b2b/docs/mac.md
-```
-pip3 install -e '.'
 ```
 
 ### Usage
@@ -155,7 +151,7 @@ accelerate launch -m axolotl.cli.train https://raw.githubusercontent.com/OpenAcc
   ```
 
 >[!Tip]
-> If you want to debug axolotl or prefer to use Docker as your development environment, see the [debugging guide's section on Docker](docs/debugging.md#debugging-with-docker).
+> If you want to debug axolotl or prefer to use Docker as your development environment, see the [debugging guide's section on Docker](docs/debugging.qmd#debugging-with-docker).
 
   <details>
 
@@ -227,31 +223,51 @@ For cloud GPU providers that support docker images, use [`winglian/axolotl-cloud
   python get-pip.py
   ```
 
-  3. Install torch
-  ```bash
-  pip3 install -U torch --index-url https://download.pytorch.org/whl/cu118
-  ```
+  3. Install Pytorch https://pytorch.org/get-started/locally/
 
-  4. Axolotl
-  ```bash
-  git clone https://github.com/OpenAccess-AI-Collective/axolotl
-  cd axolotl
+  4. Follow instructions on quickstart.
 
-  pip3 install packaging
-  pip3 install -e '.[flash-attn,deepspeed]'
+  5. Run
+  ```bash
   pip3 install protobuf==3.20.3
   pip3 install -U --ignore-installed requests Pillow psutil scipy
   ```
 
-  5. Set path
+  6. Set path
   ```bash
   export LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH
   ```
   </details>
 
+##### GCP
+
+<details>
+
+<summary>Click to Expand</summary>
+
+Use a Deeplearning linux OS with cuda and pytorch installed. Then follow instructions on quickstart.
+
+Make sure to run the below to uninstall xla.
+```bash
+pip uninstall -y torch_xla[tpu]
+```
+
+</details>
+
 #### Windows
 Please use WSL or Docker!
 
+#### Mac
+
+Use the below instead of the install method in QuickStart.
+```
+pip3 install -e '.'
+```
+More info: [mac.md](/docs/mac.qmd)
+
+#### Google Colab
+
+Please use this example [notebook](examples/colab-notebooks/colab-axolotl-example.ipynb).
 
 #### Launching on public clouds via SkyPilot
 To launch on GPU instances (both on-demand and spot instances) on 7+ clouds (GCP, AWS, Azure, OCI, and more), you can use [SkyPilot](https://skypilot.readthedocs.io/en/latest/index.html):
@@ -278,186 +294,9 @@ HF_TOKEN=xx BUCKET=<unique-name> sky spot launch axolotl-spot.yaml --env HF_TOKE
 
 ### Dataset
 
-Axolotl supports a variety of dataset formats. Below are some of the formats you can use.
-Have dataset(s) in one of the following format (JSONL recommended):
+Axolotl supports a variety of dataset formats.  It is recommended to use a JSONL.  The schema of the JSONL depends upon the task and the prompt template you wish to use.  Instead of a JSONL, you can also use a HuggingFace dataset with columns for each JSONL field.
 
-#### Pretraining
-
-- `completion`: raw corpus
-  ```json
-  {"text": "..."}
-  ```
-
-Note: Axolotl usually loads the entire dataset into memory. This will be challenging for large datasets. Use the following config to enable streaming:
-
-```yaml
-pretraining_dataset: # hf path only
-```
-
-#### Supervised finetuning
-
-##### Instruction
-
-- `alpaca`: instruction; input(optional)
-  ```json
-  {"instruction": "...", "input": "...", "output": "..."}
-  ```
-
-<details>
-
-<summary>See other formats</summary>
-
-- `jeopardy`: question and answer
-  ```json
-  {"question": "...", "category": "...", "answer": "..."}
-  ```
-- `oasst`: instruction
-  ```json
-  {"INSTRUCTION": "...", "RESPONSE": "..."}
-  ```
-- `gpteacher`: instruction; input(optional)
-  ```json
-  {"instruction": "...", "input": "...", "response": "..."}
-  ```
-- `reflection`: instruction with reflect; input(optional)
-  ```json
-  {"instruction": "...", "input": "...", "output": "...", "reflection": "...", "corrected": "..."}
-  ```
-- `explainchoice`: question, choices, (solution OR explanation)
-  ```json
-  {"question": "...", "choices": ["..."], "solution": "...", "explanation": "..."}
-  ```
-- `concisechoice`: question, choices, (solution OR explanation)
-  ```json
-  {"question": "...", "choices": ["..."], "solution": "...", "explanation": "..."}
-  ```
-- `summarizetldr`: article and summary
-  ```json
-  {"article": "...", "summary": "..."}
-  ```
-- `alpaca_chat`: basic instruct for alpaca chat
-  ```json
-  {"instruction": "...", "input": "...", "response": "..."}
-  ```
-- `alpaca_chat.load_qa`: question and answer for alpaca chat
-  ```json
-  {"question": "...", "answer": "..."}
-  ```
-- `alpaca_chat.load_concise`: question and answer for alpaca chat, for concise answers
-  ```json
-  {"instruction": "...", "input": "...", "response": "..."}
-  ```
-- `alpaca_chat.load_camel_ai`: question and answer for alpaca chat, for load_camel_ai
-  ```json
-  {"message_1": "...", "message_2": "..."}
-  ```
-- `alpaca_w_system.load_open_orca`: support for open orca datasets with included system prompts, instruct
-  ```json
-  {"system_prompt": "...", "question": "...", "response": "..."}
-  ```
-- `context_qa`: in context question answering from an article
-  ```json
-  {"article": "...", "question": "...", "answer": "..."}
-  ```
-- `context_qa.load_v2`: in context question answering (alternate)
-  ```json
-  {"context": "...", "question": "...", "answer": "..."}
-  ```
-- `context_qa.load_404`: in context question answering from an article, with default response for no answer from context
-  ```json
-  {"article": "...", "unanswerable_question": "..."}
-  ```
-- `creative_acr.load_answer`: instruction and revision
-  ```json
-  {"instruction": "...", "revision": "..."}
-  ```
-- `creative_acr.load_critique`: critique
-  ```json
-  {"scores": "...", "critiques": "...", "instruction": "...", "answer": "..."}
-  ```
-- `creative_acr.load_revise`: critique and revise
-  ```json
-  {"scores": "...", "critiques": "...", "instruction": "...", "answer": "...", "revision": "..."}
-  ```
-- `metharme`: instruction, adds additional eos tokens
-  ```json
-  {"prompt": "...", "generation": "..."}
-  ```
-
-</details>
-
-##### Template-Free
-
-- `input_output`: template-free prompt construction
-  ```json
-   {"segments": [{"label": true|false, "text": "..."}]}
-  ```
-
-This is a special format that allows you to construct prompts without using templates. This is for advanced users who want more freedom with prompt construction.  See [these docs](docs/input_output.md) for more details.
-
-##### Conversation
-
-- `sharegpt`: conversations where `from` is `human`/`gpt`. (optional: first row with role `system` to override default system prompt)
-  ```json
-  {"conversations": [{"from": "...", "value": "..."}]}
-  ```
-
-<details>
-
-<summary>See other formats</summary>
-
-- `pygmalion`: pygmalion
-  ```json
-  {"conversations": [{"role": "...", "value": "..."}]}
-  ```
-- `sharegpt.load_role`: conversations where `role` is used instead of `from`
-  ```json
-  {"conversations": [{"role": "...", "value": "..."}]}
-  ```
-- `sharegpt.load_guanaco`: conversations where `from` is `prompter`/`assistant` instead of default sharegpt
-  ```json
-  {"conversations": [{"from": "...", "value": "..."}]}
-  ```
-- `sharegpt_jokes`: creates a chat where bot is asked to tell a joke, then explain why the joke is funny
-  ```json
-  {"conversations": [{"title": "...", "text": "...", "explanation": "..."}]}
-  ```
-
-</details>
-
-Note: `type: sharegpt` opens a special config `conversation:` that enables conversions to many Conversation types. See dataset section under [all yaml options](#all-yaml-options).
-
-#### How to add custom prompts
-
-For a dataset that is preprocessed for instruction purposes:
-
-```json
-{"input": "...", "output": "..."}
-```
-
-You can use this example in your YAML config:
-
-```yaml
-datasets:
-  - path: repo
-    type:
-      system_prompt: ""
-      field_system: system
-      field_instruction: input
-      field_output: output
-      format: "[INST] {instruction} [/INST]"
-      no_input_format: "[INST] {instruction} [/INST]"
-```
-See full config options under [all yaml options](#all-yaml-options).
-
-#### How to use your custom pretokenized dataset
-
-- Do not pass a `type:`
-- Columns in Dataset must be exactly `input_ids`, `attention_mask`, `labels`
-
-```yaml
-- path: ...
-```
+See [these docs](https://openaccess-ai-collective.github.io/axolotl/docs/dataset-formats/) for more information on how to use different dataset formats.
 
 ### Config
 
@@ -542,485 +381,9 @@ See [examples](examples) for quick start. It is recommended to duplicate and mod
     - v_proj
   ```
 
-<details id="all-yaml-options">
+#### All Config Options
 
-<summary>All yaml options (click to expand)</summary>
-
-```yaml
-# This is the huggingface model that contains *.pt, *.safetensors, or *.bin files
-# This can also be a relative path to a model on disk
-base_model: ./llama-7b-hf
-# You can specify an ignore pattern if the model repo contains more than 1 model type (*.pt, etc)
-base_model_ignore_patterns:
-# If the base_model repo on hf hub doesn't include configuration .json files,
-# You can set that here, or leave this empty to default to base_model
-base_model_config: ./llama-7b-hf
-# You can specify to choose a specific model revision from huggingface hub
-revision_of_model:
-# Optional tokenizer configuration path in case you want to use a different tokenizer
-# than the one defined in the base model
-tokenizer_config:
-# If you want to specify the type of model to load, AutoModelForCausalLM is a good choice too
-model_type: AutoModelForCausalLM
-# Corresponding tokenizer for the model AutoTokenizer is a good choice
-tokenizer_type: AutoTokenizer
-# Trust remote code for untrusted source
-trust_remote_code:
-# use_fast option for tokenizer loading from_pretrained, default to True
-tokenizer_use_fast:
-# Whether to use the legacy tokenizer setting, defaults to True
-tokenizer_legacy:
-# Resize the model embeddings when new tokens are added to multiples of 32
-# This is reported to improve training speed on some models
-resize_token_embeddings_to_32x:
-
-# (Internal use only)
-# Used to identify which the model is based on
-is_falcon_derived_model:
-is_llama_derived_model:
-is_qwen_derived_model:
-# Please note that if you set this to true, `padding_side` will be set to "left" by default
-is_mistral_derived_model:
-
-# optional overrides to the base model configuration
-overrides_of_model_config:
-  # RoPE Scaling https://github.com/huggingface/transformers/pull/24653
-  rope_scaling:
-    type: # linear | dynamic
-    factor: # float
-
-# optional overrides to the bnb 4bit quantization configuration
-# https://huggingface.co/docs/transformers/main/main_classes/quantization#transformers.BitsAndBytesConfig
-bnb_config_kwargs:
-  # These are default values
-  llm_int8_has_fp16_weight: false
-  bnb_4bit_quant_type: nf4
-  bnb_4bit_use_double_quant: true
-
-
-# Whether you are training a 4-bit GPTQ quantized model
-gptq: true
-
-# This will attempt to quantize the model down to 8 bits and use adam 8 bit optimizer
-load_in_8bit: true
-# Use bitsandbytes 4 bit
-load_in_4bit:
-
-# Use CUDA bf16
-bf16: true # bool or 'full' for `bf16_full_eval`. require >=ampere
-# Use CUDA fp16
-fp16: true
-# Use CUDA tf32
-tf32: true # require >=ampere
-
-# No AMP (automatic mixed precision)
-bfloat16: true # require >=ampere
-float16: true
-
-# Limit the memory for all available GPUs to this amount (if an integer, expressed in gigabytes); default: unset
-gpu_memory_limit: 20GiB
-# Do the LoRA/PEFT loading on CPU -- this is required if the base model is so large it takes up most or all of the available GPU VRAM, e.g. during a model and LoRA merge
-lora_on_cpu: true
-
-# A list of one or more datasets to finetune the model with
-datasets:
-  # HuggingFace dataset repo | s3://,gs:// path | "json" for local dataset, make sure to fill data_files
-  - path: vicgalle/alpaca-gpt4
-  # The type of prompt to use for training. [alpaca, sharegpt, gpteacher, oasst, reflection]
-    type: alpaca # format | format:<prompt_style> (chat/instruct) | <prompt_strategies>.load_<load_fn>
-    ds_type: # Optional[str] (json|arrow|parquet|text|csv) defines the datatype when path is a file
-    data_files: # Optional[str] path to source data files
-    shards: # Optional[int] number of shards to split data into
-    name: # Optional[str] name of dataset configuration to load
-    train_on_split: train # Optional[str] name of dataset split to load from
-
-    # Optional[str] fastchat conversation type, only used with type: sharegpt
-    conversation:  # Options (see Conversation 'name'): https://github.com/lm-sys/FastChat/blob/main/fastchat/conversation.py
-    field_human: # Optional[str]. Human key to use for conversation.
-    field_model: # Optional[str]. Assistant key to use for conversation.
-
-  # Custom user instruction prompt
-  - path: repo
-    type:
-      # The below are defaults. only set what's needed if you use a different column name.
-      system_prompt: ""
-      system_format: "{system}"
-      field_system: system
-      field_instruction: instruction
-      field_input: input
-      field_output: output
-
-      # Customizable to be single line or multi-line
-      # Use {instruction}/{input} as key to be replaced
-      # 'format' can include {input}
-      format: |-
-        User: {instruction} {input}
-        Assistant:
-      # 'no_input_format' cannot include {input}
-      no_input_format: "{instruction} "
-
-      # For `completion` datsets only, uses the provided field instead of `text` column
-      field:
-
-# A list of one or more datasets to eval the model with.
-# You can use either test_datasets, or val_set_size, but not both.
-test_datasets:
-  - path: /workspace/data/eval.jsonl
-    ds_type: json
-    # You need to specify a split. For "json" datasets the default split is called "train".
-    split: train
-    type: completion
-    data_files:
-      - /workspace/data/eval.jsonl
-
-# use RL training: 'dpo', 'ipo', 'kto_pair'
-rl:
-
-# Saves the desired chat template to the tokenizer_config.json for easier inferencing
-# Currently supports chatml and inst (mistral/mixtral)
-chat_template: chatml
-# Changes the default system message
-default_system_message: You are a helpful assistant. Please give a long and detailed answer. # Currently only supports chatml.
-# Axolotl attempts to save the dataset as an arrow after packing the data together so
-# subsequent training attempts load faster, relative path
-dataset_prepared_path: data/last_run_prepared
-# Push prepared dataset to hub
-push_dataset_to_hub: # repo path
-# The maximum number of processes to use while preprocessing your input dataset. This defaults to `os.cpu_count()`
-# if not set.
-dataset_processes: # defaults to os.cpu_count() if not set
-# Keep dataset in memory while preprocessing
-# Only needed if cached dataset is taking too much storage
-dataset_keep_in_memory:
-# push checkpoints to hub
-hub_model_id: # private repo path to push finetuned model
-# how to push checkpoints to hub
-# https://huggingface.co/docs/transformers/v4.31.0/en/main_classes/trainer#transformers.TrainingArguments.hub_strategy
-hub_strategy:
-# Whether to use hf `use_auth_token` for loading datasets. Useful for fetching private datasets
-# Required to be true when used in combination with `push_dataset_to_hub`
-hf_use_auth_token: # boolean
-# How much of the dataset to set aside as evaluation. 1 = 100%, 0.50 = 50%, etc. 0 for no eval.
-val_set_size: 0.04
-# Num shards for whole dataset
-dataset_shard_num:
-# Index of shard to use for whole dataset
-dataset_shard_idx:
-
-# The maximum length of an input to train with, this should typically be less than 2048
-# as most models have a token/context limit of 2048
-sequence_len: 2048
-# Pad inputs so each step uses constant sized buffers
-# This will reduce memory fragmentation and may prevent OOMs, by re-using memory more efficiently
-pad_to_sequence_len:
-# Use efficient multi-packing with block diagonal attention and per sequence position_ids. Recommend set to 'true'
-sample_packing:
-# Set to 'false' if getting errors during eval with sample_packing on.
-eval_sample_packing:
-# You can set these packing optimizations AFTER starting a training at least once.
-# The trainer will provide recommended values for these values.
-sample_packing_eff_est:
-total_num_tokens:
-
-# Passed through to transformers when loading the model when launched without accelerate
-# Use `sequential` when training w/ model parallelism to limit memory
-device_map:
-# Defines the max memory usage per gpu on the system. Passed through to transformers when loading the model.
-max_memory:
-
-# If you want to use 'lora' or 'qlora' or leave blank to train all parameters in original model
-adapter: lora
-# If you already have a lora model trained that you want to load, put that here.
-# This means after training, if you want to test the model, you should set this to the value of `output_dir`.
-# Note that if you merge an adapter to the base model, a new subdirectory `merged` will be created under the `output_dir`.
-lora_model_dir:
-
-# LoRA hyperparameters
-# For more details about the following options, see:
-# https://www.anyscale.com/blog/fine-tuning-llms-lora-or-full-parameter-an-in-depth-analysis-with-llama-2
-lora_r: 8
-lora_alpha: 16
-lora_dropout: 0.05
-lora_target_modules:
-  - q_proj
-  - v_proj
-#  - k_proj
-#  - o_proj
-#  - gate_proj
-#  - down_proj
-#  - up_proj
-lora_target_linear: # If true, will target all linear modules
-peft_layers_to_transform: # The layer indices to transform, otherwise, apply to all layers
-
-# If you added new tokens to the tokenizer, you may need to save some LoRA modules because they need to know the new tokens.
-# For LLaMA and Mistral, you need to save `embed_tokens` and `lm_head`. It may vary for other models.
-# `embed_tokens` converts tokens to embeddings, and `lm_head` converts embeddings to token probabilities.
-# https://github.com/huggingface/peft/issues/334#issuecomment-1561727994
-lora_modules_to_save:
-#  - embed_tokens
-#  - lm_head
-
-lora_fan_in_fan_out: false
-
-peft:
-  # Configuration options for loftq initialization for LoRA
-  # https://huggingface.co/docs/peft/developer_guides/quantization#loftq-initialization
-  loftq_config:
-    loftq_bits:  # typically 4 bits
-
-# ReLoRA configuration
-# Must use either 'lora' or 'qlora' adapter, and does not support fsdp or deepspeed
-relora_steps: # Number of steps per ReLoRA restart
-relora_warmup_steps: # Number of per-restart warmup steps
-relora_anneal_steps: # Number of anneal steps for each relora cycle
-relora_prune_ratio: # threshold for optimizer magnitude when pruning
-relora_cpu_offload: # True to perform lora weight merges on cpu during restarts, for modest gpu memory savings
-
-# wandb configuration if you're using it
-# Make sure your `WANDB_API_KEY` environment variable is set (recommended) or you login to wandb with `wandb login`.
-wandb_mode: # "offline" to save run metadata locally and not sync to the server, "disabled" to turn off wandb
-wandb_project: # Your wandb project name
-wandb_entity: # A wandb Team name if using a Team
-wandb_watch:
-wandb_name: # Set the name of your wandb run
-wandb_run_id: # Set the ID of your wandb run
-wandb_log_model: # "checkpoint" to log model to wandb Artifacts every `save_steps` or "end" to log only at the end of training
-
-# mlflow configuration if you're using it
-mlflow_tracking_uri: # URI to mlflow
-mlflow_experiment_name: # Your experiment name
-hf_mlflow_log_artifacts:  # set to true to copy each saved checkpoint on each save to mlflow artifact registry
-
-# Where to save the full-finetuned model to
-output_dir: ./completed-model
-
-# Whether to use torch.compile and which backend to use
-torch_compile:  # bool
-torch_compile_backend:  # Optional[str]
-
-# Training hyperparameters
-
-# If greater than 1, backpropagation will be skipped and the gradients will be accumulated for the given number of steps.
-gradient_accumulation_steps: 1
-# The number of samples to include in each batch. This is the number of samples sent to each GPU.
-micro_batch_size: 2
-eval_batch_size:
-num_epochs: 4
-warmup_steps: 100  # cannot use with warmup_ratio
-warmup_ratio: 0.05  # cannot use with warmup_steps
-learning_rate: 0.00003
-lr_quadratic_warmup:
-logging_steps:
-eval_steps: # Leave empty to eval at each epoch, integers for every N steps. decimal for fraction of total steps
-evals_per_epoch: # number of times per epoch to run evals, mutually exclusive with eval_steps
-save_strategy: # Set to `no` to skip checkpoint saves
-save_steps: # Leave empty to save at each epoch
-saves_per_epoch: # number of times per epoch to save a checkpoint, mutually exclusive with save_steps
-save_total_limit: # Checkpoints saved at a time
-# Maximum number of iterations to train for. It precedes num_epochs which means that
-# if both are set, num_epochs will not be guaranteed.
-# e.g., when 1 epoch is 1000 steps => `num_epochs: 2` and `max_steps: 100` will train for 100 steps
-max_steps:
-
-eval_table_size: # Approximate number of predictions sent to wandb depending on batch size. Enabled above 0. Default is 0
-eval_max_new_tokens: # Total number of tokens generated for predictions sent to wandb. Default is 128
-eval_causal_lm_metrics: # HF evaluate metrics used during evaluation. Default is ["sacrebleu", "comet", "ter", chrf]
-
-loss_watchdog_threshold: # High loss value, indicating the learning has broken down (a good estimate is ~2 times the loss at the start of training)
-loss_watchdog_patience: # Number of high-loss steps in a row before the trainer aborts (default: 3)
-
-# Save model as safetensors (require safetensors package)
-save_safetensors:
-
-# Whether to mask out or include the human's prompt from the training labels
-train_on_inputs: false
-# Group similarly sized data to minimize padding.
-# May be slower to start, as it must download and sort the entire dataset.
-# Note that training loss may have an oscillating pattern with this enabled.
-group_by_length: false
-
-# Whether to use gradient checkpointing https://huggingface.co/docs/transformers/v4.18.0/en/performance#gradient-checkpointing
-gradient_checkpointing: false
-# additional kwargs to pass to the trainer for gradient checkpointing
-# gradient_checkpointing_kwargs:
-#   use_reentrant: false
-
-# Stop training after this many evaluation losses have increased in a row
-# https://huggingface.co/transformers/v4.2.2/_modules/transformers/trainer_callback.html#EarlyStoppingCallback
-early_stopping_patience: 3
-
-# Specify a scheduler and kwargs to use with the optimizer
-lr_scheduler: # 'one_cycle' | 'log_sweep' | empty for cosine
-lr_scheduler_kwargs:
-cosine_min_lr_ratio: # decay lr to some percentage of the peak lr, e.g. cosine_min_lr_ratio=0.1 for 10% of peak lr
-cosine_constant_lr_ratio: # freeze lr at some percentage of the step, e.g. cosine_constant_lr_ratio=0.8 means start cosine_min_lr at 80% of training step (https://arxiv.org/pdf/2308.04014.pdf)
-
-# For one_cycle optim
-lr_div_factor: # Learning rate div factor
-
-# Specify optimizer
-# Valid values are driven by the Transformers OptimizerNames class, see:
-# https://github.com/huggingface/transformers/blob/95b374952dc27d8511541d6f5a4e22c9ec11fb24/src/transformers/training_args.py#L134
-#
-# Note that not all optimizers may be available in your environment, ex: 'adamw_anyprecision' is part of
-# torchdistx, 'adamw_bnb_8bit' is part of bnb.optim.Adam8bit, etc. When in doubt, it is recommended to start with the optimizer used
-# in the examples/ for your model and fine-tuning use case.
-#
-# Valid values for 'optimizer' include:
-# - adamw_hf
-# - adamw_torch
-# - adamw_torch_fused
-# - adamw_torch_xla
-# - adamw_apex_fused
-# - adafactor
-# - adamw_anyprecision
-# - sgd
-# - adagrad
-# - adamw_bnb_8bit
-# - lion_8bit
-# - lion_32bit
-# - paged_adamw_32bit
-# - paged_adamw_8bit
-# - paged_lion_32bit
-# - paged_lion_8bit
-optimizer:
-# Specify weight decay
-weight_decay:
-# adamw hyperparams
-adam_beta1:
-adam_beta2:
-adam_epsilon:
-# Gradient clipping max norm
-max_grad_norm:
-
-# Augmentation techniques
-# NEFT https://arxiv.org/abs/2310.05914, set this to a number (paper default is 5) to add noise to embeddings
-# currently only supported on Llama and Mistral
-neftune_noise_alpha:
-
-# Whether to bettertransformers
-flash_optimum:
-# Whether to use xformers attention patch https://github.com/facebookresearch/xformers:
-xformers_attention:
-# Whether to use flash attention patch https://github.com/Dao-AILab/flash-attention:
-flash_attention:
-flash_attn_cross_entropy:  # Whether to use flash-attention cross entropy implementation - advanced use only
-flash_attn_rms_norm:  # Whether to use flash-attention rms norm implementation - advanced use only
-flash_attn_fuse_qkv: # Whether to fuse QKV into a single operation
-flash_attn_fuse_mlp: # Whether to fuse part of the MLP into a single operation
-# Whether to use scaled-dot-product attention
-# https://pytorch.org/docs/stable/generated/torch.nn.functional.scaled_dot_product_attention.html
-sdp_attention:
-# Shifted-sparse attention (only llama) - https://arxiv.org/pdf/2309.12307.pdf
-s2_attention:
-# Resume from a specific checkpoint dir
-resume_from_checkpoint:
-# If resume_from_checkpoint isn't set and you simply want it to start where it left off.
-# Be careful with this being turned on between different models.
-auto_resume_from_checkpoints: false
-
-# Don't mess with this, it's here for accelerate and torchrun
-local_rank:
-
-# Add or change special tokens.
-# If you add tokens here, you don't need to add them to the `tokens` list.
-special_tokens:
-  # bos_token: "<s>"
-  # eos_token: "</s>"
-  # unk_token: "<unk>"
-
-# Add extra tokens.
-tokens:
-
-# FSDP
-fsdp:
-fsdp_config:
-
-# Deepspeed config path. e.g., deepspeed_configs/zero3.json
-deepspeed:
-
-# Advanced DDP Arguments
-ddp_timeout:
-ddp_bucket_cap_mb:
-ddp_broadcast_buffers:
-
-# Path to torch distx for optim 'adamw_anyprecision'
-torchdistx_path:
-
-# Set to HF dataset for type: 'completion' for streaming instead of pre-tokenize
-pretraining_dataset:
-
-# Debug mode
-debug:
-
-# Seed
-seed:
-
-# Allow overwrite yml config using from cli
-strict:
-```
-
-</details>
-
-<details>
-<summary> Understanding of batch size and gradient accumulation steps </summary>
-<br/>
-Gradient accumulation means accumulating gradients over several mini-batches and updating the model weights afterward. When the samples in each batch are diverse, this technique doesn't significantly impact learning.
-
-This method allows for effective training with larger effective batch sizes without needing proportionally larger memory. Here's why:
-
-1. **Memory Consumption with Batch Size**: The primary reason increasing the batch size impacts memory is due to the storage requirements for intermediate activations. When you forward propagate a batch through a network, you have to store the activations at each layer for each sample in the batch, because these activations are used during backpropagation to compute gradients. Therefore, larger batches mean more activations, leading to greater GPU memory consumption.
-
-2. **Gradient Accumulation**: With gradient accumulation, you're effectively simulating a larger batch size by accumulating gradients over several smaller batches (or micro-batches). However, at any given time, you're only forward and backward propagating a micro-batch. This means you only store activations for the micro-batch, not the full accumulated batch. As a result, you can simulate the effect of a larger batch size without the memory cost of storing activations for a large batch.
-
-**Example 1:**
-Micro batch size: 3
-Gradient accumulation steps: 2
-Number of GPUs: 3
-Total batch size = 3 * 2 * 3 = 18
-
-```
-| GPU 1          | GPU 2          | GPU 3          |
-|----------------|----------------|----------------|
-| S1, S2, S3     | S4, S5, S6     | S7, S8, S9     |
-| e1, e2, e3     | e4, e5, e6     | e7, e8, e9     |
-|----------------|----------------|----------------|
-| → (accumulate) | → (accumulate) | → (accumulate) |
-|----------------|----------------|----------------|
-| S10, S11, S12  | S13, S14, S15  | S16, S17, S18  |
-| e10, e11, e12  | e13, e14, e15  | e16, e17, e18  |
-|----------------|----------------|----------------|
-| → (apply)      | → (apply)      | → (apply)      |
-
-Accumulated gradient for the weight w1 after the second iteration (considering all GPUs):
-Total gradient for w1 = e1 + e2 + e3 + e4 + e5 + e6 + e7 + e8 + e9 + e10 + e11 + e12 + e13 + e14 + e15 + e16 + e17 + e18
-
-Weight update for w1:
-w1_new = w1_old - learning rate x (Total gradient for w1 / 18)
-```
-
-**Example 2:**
-Micro batch size: 2
-Gradient accumulation steps: 1
-Number of GPUs: 3
-Total batch size = 2 * 1 * 3 = 6
-
-```
-| GPU 1     | GPU 2     | GPU 3     |
-|-----------|-----------|-----------|
-| S1, S2    | S3, S4    | S5, S6    |
-| e1, e2    | e3, e4    | e5, e6    |
-|-----------|-----------|-----------|
-| → (apply) | → (apply) | → (apply) |
-
-Accumulated gradient for the weight w1 (considering all GPUs):
-Total gradient for w1 = e1 + e2 + e3 + e4 + e5 + e6
-
-Weight update for w1:
-w1_new = w1_old - learning rate × (Total gradient for w1 / 6)
-```
-
-</details>
+See [these docs](docs/config.qmd) for all config options.
 
 ### Train
 
@@ -1064,7 +427,7 @@ deepspeed: deepspeed_configs/zero1.json
 ```
 
 ```shell
-accelerate launch -m axolotl.cli.train examples/llama-2/config.py --deepspeed deepspeed_configs/zero1.json
+accelerate launch -m axolotl.cli.train examples/llama-2/config.yml --deepspeed deepspeed_configs/zero1.json
 ```
 
 ##### FSDP
@@ -1082,7 +445,7 @@ fsdp_config:
 
 ##### FSDP + QLoRA
 
-Axolotl supports training with FSDP and QLoRA, see [these docs](docs/fsdp_qlora.md) for more information.
+Axolotl supports training with FSDP and QLoRA, see [these docs](docs/fsdp_qlora.qmd) for more information.
 
 ##### Weights & Biases Logging
 
@@ -1161,7 +524,7 @@ although this will be very slow, and using the config options above are recommen
 
 ## Common Errors 🧰
 
-See also the [FAQ's](./docs/faq.md) and [debugging guide](docs/debugging.md).
+See also the [FAQ's](./docs/faq.qmd) and [debugging guide](docs/debugging.qmd).
 
 > If you encounter a 'Cuda out of memory' error, it means your GPU ran out of memory during the training process. Here's how to resolve it:
 
@@ -1195,7 +558,7 @@ It's safe to ignore it.
 
 > NCCL Timeouts during training
 
-See the [NCCL](docs/nccl.md) guide.
+See the [NCCL](docs/nccl.qmd) guide.
 
 
 ### Tokenization Mismatch b/w Inference & Training
@@ -1213,7 +576,7 @@ Having misalignment between your prompts during training and inference can cause
 
 ## Debugging Axolotl
 
-See [this debugging guide](docs/debugging.md) for tips on debugging Axolotl, along with an example configuration for debugging with VSCode.
+See [this debugging guide](docs/debugging.qmd) for tips on debugging Axolotl, along with an example configuration for debugging with VSCode.
 
 ## Need help? 🙋
 
@@ -1251,14 +614,8 @@ Bugs? Please check the [open issues](https://github.com/OpenAccess-AI-Collective
 
 PRs are **greatly welcome**!
 
-Please run below to setup env
+Please run the quickstart instructions followed by the below to setup env:
 ```bash
-git clone https://github.com/OpenAccess-AI-Collective/axolotl
-cd axolotl
-
-pip3 install packaging
-pip3 install -e '.[flash-attn,deepspeed]'
-
 pip3 install -r requirements-dev.txt -r requirements-tests.txt
 pre-commit install
 

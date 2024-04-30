@@ -1,0 +1,12 @@
+---
+title: Custom Pre-Tokenized Dataset
+description: How to use a custom pre-tokenized dataset.
+order: 5
+---
+
+- Do not pass a `type:` in your axolotl config.
+- Columns in Dataset must be exactly `input_ids`, `attention_mask`, `labels`
+
+```{.yaml filename="config.yml"}
+- path: ...
+```
