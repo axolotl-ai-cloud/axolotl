@@ -133,12 +133,15 @@ def train(
                 _model = model_weakref()
                 if cfg.flash_optimum and BetterTransformer:
                     _model = BetterTransformer.reverse(_model)
-                _model.save_pretrained(cfg.output_dir, safe_serialization=safe_serialization)
+                _model.save_pretrained(
+                    cfg.output_dir, safe_serialization=safe_serialization
+                )
             sys.exit(0)
 
         _model_weakref = weakref.ref(model)
         signal.signal(
-            signal.SIGINT, lambda signum, frame: terminate_handler(signum, frame, _model_weakref)
+            signal.SIGINT, 
+            lambda signum, frame: terminate_handler(signum, frame, _model_weakref)
         )
 
     badge_markdown = """[<img src="https://raw.githubusercontent.com/OpenAccess-AI-Collective/axolotl/main/image/axolotl-badge-web.png" alt="Built with Axolotl" width="200" height="32"/>](https://github.com/OpenAccess-AI-Collective/axolotl)"""
