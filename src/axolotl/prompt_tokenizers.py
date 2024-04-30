@@ -11,7 +11,7 @@ from transformers import BatchEncoding, PreTrainedTokenizer
 from axolotl.monkeypatch.fastchat_conversation_turns import (
     add_get_turns_to_conversation,
 )
-from axolotl.prompters import IGNORE_TOKEN_ID
+from axolotl.prompters import IGNORE_TOKEN_ID, Prompter
 
 LOG = logging.getLogger("axolotl")
 
@@ -37,7 +37,7 @@ class PromptTokenizingStrategy(abc.ABC):
 
     def __init__(
         self,
-        prompter,
+        prompter: Prompter,
         tokenizer,
         train_on_inputs: bool = False,
         sequence_len: int = 2048,
@@ -340,6 +340,23 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
             self.prompter._conversation.copy()  # pylint: disable=protected-access
         )
 
+        input_roles = {conversation.roles[0]}
+        output_roles = {conversation.roles[1]}
+
+        if len(conversation.roles) == 3:
+            tool_role_label = conversation.roles[2]
+            input_roles.add(tool_role_label)
+
+        # Add roles from the config
+        if self.prompter.roles:
+            if "input" in self.prompter.roles and self.prompter.roles["input"]:
+                for role in self.prompter.roles["input"]:
+                    input_roles.add(role)
+
+            if "output" in self.prompter.roles and self.prompter.roles["output"]:
+                for role in self.prompter.roles["output"]:
+                    output_roles.add(role)
+
         # support for custom roles from the dataset, only useful for vicuna style prompts/roles
         role_remap = []
         if (
@@ -360,11 +377,18 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
                     LOG.warning(f"expected tuple, got {part}")
                     continue
 
-                user, assistant = conversation.roles
                 role, content = part
 
                 # Uses "in" because role contains extra characters
-                if user in role:
+                input_turn = any(r.lower() in role.lower() for r in input_roles)
+                output_turn = any(r.lower() in role.lower() for r in output_roles)
+                empty_role = role.strip() == ""
+
+                if not any([input_turn, output_turn, empty_role]):
+                    LOG.warning(f"unhandled role: {role}")
+                    continue
+
+                if input_turn:
                     role = (
                         role.replace(role_remap[0]["from"], role_remap[0]["to"])
                         if role_remap
@@ -384,7 +408,7 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
                     else:
                         # everything from this is masked out from the labels
                         labels = [IGNORE_TOKEN_ID] * len(res["input_ids"])
-                elif assistant in role:
+                elif output_turn:
                     role = (
                         role.replace(role_remap[1]["from"], role_remap[1]["to"])
                         if role_remap
@@ -415,7 +439,7 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
                         labels[:len_role] = [IGNORE_TOKEN_ID] * min(
                             len_role, len(labels)
                         )
-                elif role == "":
+                elif empty_role:
                     turn = content
                     # this is only ever the first part, should include the bos token and the user query
                     res = self._tokenize(
@@ -426,9 +450,6 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
                     else:
                         # everything from this is masked out from the labels
                         labels = [IGNORE_TOKEN_ID] * len(res["input_ids"])
-                else:
-                    LOG.warning(f"unhandled role: {role}")
-                    continue
 
                 # pylint: disable=duplicate-code
                 result, current_len = parse_tokenized_to_result(

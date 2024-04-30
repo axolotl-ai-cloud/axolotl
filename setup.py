@@ -68,7 +68,7 @@ setup(
     dependency_links=dependency_links,
     extras_require={
         "flash-attn": [
-            "flash-attn==2.5.0",
+            "flash-attn==2.5.5",
         ],
         "fused-dense-lib": [
             "fused-dense-lib  @ git+https://github.com/Dao-AILab/flash-attention@v2.3.3#subdirectory=csrc/fused_dense_lib",
@@ -78,7 +78,7 @@ setup(
             "deepspeed-kernels",
         ],
         "mamba-ssm": [
-            "mamba-ssm==1.0.1",
+            "mamba-ssm==1.2.0.post1",
         ],
         "auto-gptq": [
             "auto-gptq==0.5.1",
@@ -88,6 +88,9 @@ setup(
         ],
         "lion-pytorch": [
             "lion-pytorch==0.1.2",
+        ],
+        "galore": [
+            "galore_torch",
         ],
     },
 )

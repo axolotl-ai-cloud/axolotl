@@ -1,0 +1,22 @@
+---
+title: Mac M-series
+description: Mac M-series support
+---
+
+Currently Axolotl on Mac is partially usable, many of the dependencies of Axolotl including Pytorch do not support MPS or have incomplete support.
+
+Current support:
+
+- [x] Support for all models
+- [x] Full training of models
+- [x] LoRA training
+- [x] Sample packing
+- [ ] FP16 and BF16 (awaiting AMP support for MPS in Pytorch)
+- [ ] Tri-dao's flash-attn (until it is supported use spd_attention as an alternative)
+- [ ] xformers
+- [ ] bitsandbytes (meaning no 4/8 bits loading and bnb optimizers)
+- [ ] qlora
+- [ ] DeepSpeed
+
+Untested:
+- FSDP

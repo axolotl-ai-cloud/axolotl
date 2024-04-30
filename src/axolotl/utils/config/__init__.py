@@ -119,6 +119,10 @@ def normalize_config(cfg):
     model_config = load_model_config(cfg)
     cfg.model_config_type = model_config.model_type
 
+    cfg.tokenizer_config = (
+        cfg.tokenizer_config or cfg.base_model_config or cfg.base_model
+    )
+
     # figure out if the model is llama
     cfg.is_llama_derived_model = (
         (hasattr(model_config, "model_type") and model_config.model_type == "llama")
@@ -191,6 +195,11 @@ def normalize_cfg_datasets(cfg):
                         f"updating dataset {ds_cfg.path} with `conversation: chatml` to match your chat_template"
                     )
                     cfg.datasets[idx].conversation = "chatml"
+                if ds_cfg.type == "orpo.chat_template" and not ds_cfg.chat_template:
+                    LOG.info(
+                        f"updating dataset {ds_cfg.path} with `chat_template: chatml` to match your chat_template"
+                    )
+                    cfg.datasets[idx].chat_template = "chatml"
 
 
 def validate_config(cfg: DictDefault, capabilities: Optional[dict] = None):
@@ -199,11 +208,11 @@ def validate_config(cfg: DictDefault, capabilities: Optional[dict] = None):
             dict(
                 AxolotlConfigWCapabilities(
                     **cfg.to_dict(), capabilities=capabilities
-                ).model_dump(exclude_unset=True)
+                ).model_dump(exclude_none=True)
             )
         )
     return DictDefault(
-        dict(AxolotlInputConfig(**cfg.to_dict()).model_dump(exclude_unset=True))
+        dict(AxolotlInputConfig(**cfg.to_dict()).model_dump(exclude_none=True))
     )
 
 

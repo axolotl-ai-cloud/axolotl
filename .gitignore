@@ -2,6 +2,7 @@
 configs
 last_run_prepared/
 .vscode
+_site/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -132,6 +133,7 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+venv3.10/
 
 # Spyder project settings
 .spyderproject
@@ -172,3 +174,5 @@ wandb
 lora-out/*
 qlora-out/*
 mlruns/*
+
+/.quarto/

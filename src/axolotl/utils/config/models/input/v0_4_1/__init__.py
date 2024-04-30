@@ -2,10 +2,12 @@
 Module for pydantic models for configuration
 """
 
+# pylint: disable=too-many-lines
+
 import logging
 import os
 from enum import Enum
-from typing import Any, Dict, List, Literal, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 from pydantic import BaseModel, Field, conlist, field_validator, model_validator
 from transformers import SchedulerType
@@ -60,7 +62,11 @@ class RemappedParameters(BaseModel):
 class PretrainingDataset(BaseModel):
     """pretraining dataset configuration subset"""
 
+    name: Optional[str] = None
     path: Optional[str] = None
+    split: Optional[str] = "train"
+    text_column: Optional[str] = "text"
+    type: Optional[str] = "pretrain"
 
 
 class UserDefinedPrompterType(BaseModel):
@@ -92,8 +98,11 @@ class SFTDataset(BaseModel):
     ds_type: Optional[str] = None
     train_on_split: Optional[str] = None
 
+    field: Optional[str] = None
     field_human: Optional[str] = None
     field_model: Optional[str] = None
+
+    roles: Optional[Dict[str, List[str]]] = None
 
 
 class UserDefinedDPOType(BaseModel):
@@ -123,13 +132,17 @@ class RLType(str, Enum):
     dpo = "dpo"  # pylint: disable=invalid-name
     ipo = "ipo"  # pylint: disable=invalid-name
     kto_pair = "kto_pair"  # pylint: disable=invalid-name
+    orpo = "orpo"  # pylint: disable=invalid-name
 
 
 class ChatTemplate(str, Enum):
     """Chat templates configuration subset"""
 
+    alpaca = "alpaca"  # pylint: disable=invalid-name
     chatml = "chatml"  # pylint: disable=invalid-name
     inst = "inst"  # pylint: disable=invalid-name
+    gemma = "gemma"  # pylint: disable=invalid-name
+    cohere = "cohere"  # pylint: disable=invalid-name
 
 
 class LoftQConfig(BaseModel):
@@ -143,12 +156,6 @@ class PeftConfig(BaseModel):
     """peftq configuration subset"""
 
     loftq_config: Optional[LoftQConfig] = None
-
-
-class AutoType(str, Enum):
-    """auto type string configuration subset - used for bf16"""
-
-    AUTO = "auto"
 
 
 class SpecialTokensConfig(BaseModel):
@@ -178,10 +185,24 @@ class LoraConfig(BaseModel):
     lora_dropout: Optional[float] = None
     peft_layers_to_transform: Optional[List[int]] = None
     peft: Optional[PeftConfig] = None
+    peft_use_dora: Optional[bool] = None
+    peft_use_rslora: Optional[bool] = None
+    peft_layer_replication: Optional[List[Tuple[int, int]]] = None
 
     lora_on_cpu: Optional[bool] = None
     gptq: Optional[bool] = None
     bnb_config_kwargs: Optional[Dict[str, Any]] = None
+
+    loraplus_lr_ratio: Optional[float] = Field(
+        default=None,
+        metadata={
+            "help": "loraplus learning rate ratio lr_B / lr_A. Recommended value is 2^4."
+        },
+    )
+    loraplus_lr_embedding: Optional[float] = Field(
+        default=1e-6,
+        metadata={"help": "loraplus learning rate for lora embedding layers."},
+    )
 
     merge_lora: Optional[bool] = None
 
@@ -238,6 +259,7 @@ class ModelInputConfig(BaseModel):
 
     base_model: str
     base_model_config: Optional[str] = None
+    cls_model_config: Optional[str] = None
     tokenizer_config: Optional[str] = None
     tokenizer_use_fast: Optional[bool] = None
     tokenizer_legacy: Optional[bool] = None
@@ -277,14 +299,25 @@ class HyperparametersConfig(BaseModel):
         },
     )
 
-    train_on_inputs: Optional[bool] = None
+    train_on_inputs: Optional[bool] = False
     group_by_length: Optional[bool] = None
 
     learning_rate: Union[str, float]
-    weight_decay: Optional[float] = None
-    optimizer: Optional[Union[OptimizerNames, Literal["lion_pytorch"]]] = None
+    weight_decay: Optional[float] = 0.0
+    optimizer: Optional[
+        Union[OptimizerNames, Literal["lion_pytorch"]]
+    ] = OptimizerNames.ADAMW_HF.value
+    optim_args: Optional[Union[str, Dict[str, Any]]] = Field(
+        default=None, metadata={"help": "Optional arguments to supply to optimizer."}
+    )
+    optim_target_modules: Optional[Union[List[str], Literal["all_linear"]]] = Field(
+        default=None,
+        metadata={
+            "help": "The target modules to optimize, i.e. the module names that you would like to train."
+        },
+    )
     torchdistx_path: Optional[str] = None
-    lr_scheduler: Optional[SchedulerType] = None
+    lr_scheduler: Optional[SchedulerType] = "cosine"
     lr_scheduler_kwargs: Optional[Dict[str, Any]] = None
     lr_quadratic_warmup: Optional[bool] = None
     cosine_min_lr_ratio: Optional[float] = None
@@ -334,6 +367,23 @@ class MLFlowConfig(BaseModel):
     hf_mlflow_log_artifacts: Optional[bool] = None
 
 
+class LISAConfig(BaseModel):
+    """LISA options"""
+
+    lisa_n_layers: Optional[int] = Field(
+        default=None,
+        metadata={"help": "the number of activate layers in LISA"},
+    )
+    lisa_step_interval: Optional[int] = Field(
+        default=None,
+        metadata={"help": "how often to switch layers in LISA"},
+    )
+    lisa_layers_attribute: Optional[str] = Field(
+        default="model.layers",
+        metadata={"help": "path under the model to access the layers"},
+    )
+
+
 class WandbConfig(BaseModel):
     """wandb configuration subset"""
 
@@ -368,6 +418,7 @@ class AxolotlInputConfig(
     HyperparametersConfig,
     WandbConfig,
     MLFlowConfig,
+    LISAConfig,
     RemappedParameters,
     DeprecatedParameters,
     BaseModel,
@@ -388,12 +439,13 @@ class AxolotlInputConfig(
 
     datasets: Optional[conlist(Union[SFTDataset, DPODataset], min_length=1)] = None  # type: ignore
     test_datasets: Optional[conlist(Union[SFTDataset, DPODataset], min_length=1)] = None  # type: ignore
+    shuffle_merged_datasets: Optional[bool] = True
     dataset_prepared_path: Optional[str] = None
     dataset_shard_num: Optional[int] = None
     dataset_shard_idx: Optional[int] = None
 
     pretraining_dataset: Optional[  # type: ignore
-        conlist(Union[SFTDataset, PretrainingDataset], min_length=1)
+        conlist(Union[PretrainingDataset, SFTDataset], min_length=1)
     ] = Field(
         default=None, metadata={"help": {"streaming dataset to use for pretraining"}}
     )
@@ -403,6 +455,8 @@ class AxolotlInputConfig(
     dataloader_num_workers: Optional[int] = None
     dataloader_prefetch_factor: Optional[int] = None
     dataloader_drop_last: Optional[bool] = None
+
+    remove_unused_columns: Optional[bool] = None
 
     push_dataset_to_hub: Optional[str] = None
     hf_use_auth_token: Optional[bool] = None
@@ -425,13 +479,14 @@ class AxolotlInputConfig(
     eval_causal_lm_metrics: Optional[List[str]] = None
     do_bench_eval: Optional[bool] = None
     bench_dataset: Optional[str] = None
+    bench_split: Optional[str] = None
     metric_for_best_model: Optional[str] = None
     greater_is_better: Optional[bool] = None
 
     loss_watchdog_threshold: Optional[float] = None
     loss_watchdog_patience: Optional[int] = None
 
-    bf16: Optional[Union[AutoType, bool]] = AutoType.AUTO
+    bf16: Optional[Union[Literal["auto"], bool]] = "auto"
     fp16: Optional[bool] = None
     bfloat16: Optional[bool] = None  # for non-AMP cases
     float16: Optional[bool] = None  # for non-AMP cases
@@ -440,15 +495,33 @@ class AxolotlInputConfig(
 
     # torch_dtype: Optional[torch.dtype]
 
-    gradient_checkpointing: Optional[bool] = Field(default=False)
+    gradient_checkpointing: Optional[Union[Literal["unsloth"], bool]] = Field(
+        default=False
+    )
     gradient_checkpointing_kwargs: Optional[Dict[str, Any]] = None
 
     unfrozen_parameters: Optional[List[str]] = None
 
-    sequence_len: int = Field(default=1024)
+    sequence_len: int = Field(default=512)
+    min_sample_len: Optional[int] = None
     sample_packing: Optional[bool] = None
     eval_sample_packing: Optional[bool] = None
     pad_to_sequence_len: Optional[bool] = None
+    curriculum_sampling: Optional[bool] = None
+
+    # for PoSE context length extension
+    use_pose: Optional[bool] = None
+    pose_split_on_token_ids: Optional[List[int]] = None
+    pose_max_context_len: Optional[int] = None
+    pose_num_chunks: Optional[int] = None
+
+    pretrain_multipack_buffer_size: Optional[int] = 10_000
+    pretrain_multipack_attn: Optional[bool] = Field(
+        default=True,
+        metadata={
+            "help": "whether to prevent cross attention for packed sequences during pretraining",
+        },
+    )
 
     xformers_attention: Optional[bool] = None
     sdp_attention: Optional[bool] = None
@@ -488,10 +561,15 @@ class AxolotlInputConfig(
 
     neftune_noise_alpha: Optional[float] = None
 
-    max_memory: Optional[Union[int, str]] = None
-    gpu_memory_limit: Optional[Union[int, str]] = None
+    orpo_alpha: Optional[float] = None
 
-    chat_template: Optional[Union[Literal["chatml", "inst"], ChatTemplate]] = None
+    max_memory: Optional[
+        Dict[Union[int, Literal["cpu", "disk"]], Union[int, str]]
+    ] = None
+    gpu_memory_limit: Optional[Union[int, str]] = None
+    low_cpu_mem_usage: Optional[bool] = None
+
+    chat_template: Optional[ChatTemplate] = None
     default_system_message: Optional[str] = None
 
     # INTERNALS - document for now, generally not set externally
@@ -502,10 +580,10 @@ class AxolotlInputConfig(
     sample_packing_eff_est: Optional[float] = None
     axolotl_config_path: Optional[str] = None
 
-    is_falcon_derived_model: Optional[bool] = Field(default=False)
-    is_llama_derived_model: Optional[bool] = Field(default=False)
-    is_mistral_derived_model: Optional[bool] = Field(default=False)
-    is_qwen_derived_model: Optional[bool] = Field(default=False)
+    is_falcon_derived_model: Optional[bool] = Field(default=None)
+    is_llama_derived_model: Optional[bool] = Field(default=None)
+    is_mistral_derived_model: Optional[bool] = Field(default=None)
+    is_qwen_derived_model: Optional[bool] = Field(default=None)
 
     @field_validator("datasets", mode="before")
     @classmethod
@@ -576,6 +654,20 @@ class AxolotlInputConfig(
         if data.get("sample_packing") and data.get("xformers_attention"):
             raise ValueError(
                 "sample_packing not compatible with xformers_attention. Use flash_attention"
+            )
+
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_sample_packing_wo_flash(cls, data):
+        if (
+            data.get("sample_packing")
+            and not data.get("flash_attention")
+            and not data.get("sdp_attention")
+        ):
+            LOG.warning(
+                "sample_packing without flash_attention or sdp_attention does not handle cross-attention."
             )
 
         return data
@@ -822,7 +914,7 @@ class AxolotlInputConfig(
     @model_validator(mode="after")
     def check_early_stopping(self):
         if self.early_stopping_patience:
-            if not self.save_steps or self.eval_steps:
+            if not self.save_steps or not self.eval_steps:
                 raise ValueError(
                     "`early_stopping_patience` requires save_steps and eval_steps to be set. eval_steps should evenly divide save_steps."
                 )
@@ -891,9 +983,16 @@ class AxolotlInputConfig(
 
     @model_validator(mode="before")
     @classmethod
-    def check_fsdp_w_8bit_optimizer(cls, data):
-        if data.get("fsdp") and "bnb" in data.get("optimizer", ""):
-            raise ValueError(f"FSDP not compatible with {data.get('optimizer')}")
+    def check_fsdp_offload_w_8bit_optimizer(cls, data):
+        if (
+            data.get("fsdp")
+            and "8bit" in data.get("optimizer", "")
+            and data.get("fsdp_config")
+            and data["fsdp_config"].get("fsdp_offload_params")
+        ):
+            raise ValueError(
+                f"FSDP Offload not compatible with {data.get('optimizer')}"
+            )
         return data
 
     @model_validator(mode="before")
@@ -965,4 +1064,11 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 "This may work on H100s."
             )
 
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_fsdp_deepspeed(cls, data):
+        if data.get("deepspeed") and data.get("fsdp"):
+            raise ValueError("deepspeed and fsdp cannot be used together.")
         return data

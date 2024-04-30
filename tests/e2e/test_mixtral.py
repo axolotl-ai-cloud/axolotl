@@ -33,7 +33,7 @@ class TestMixtral(unittest.TestCase):
         cfg = DictDefault(
             {
                 "base_model": "hf-internal-testing/Mixtral-tiny",
-                "tokenizer_config": "mistralai/Mixtral-8x7B-v0.1",
+                "tokenizer_config": "LoneStriker/Mixtral-8x7B-v0.1-HF",
                 "flash_attention": True,
                 "sequence_len": 1024,
                 "load_in_4bit": True,
@@ -77,7 +77,7 @@ class TestMixtral(unittest.TestCase):
         model, _ = train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
         assert (
             model.base_model.model.model.layers[0].block_sparse_moe.gate.weight.dtype
-            == torch.uint8
+            == torch.float32
         )
         assert (Path(temp_dir) / "adapter_model.bin").exists()
 
@@ -87,7 +87,7 @@ class TestMixtral(unittest.TestCase):
         cfg = DictDefault(
             {
                 "base_model": "hf-internal-testing/Mixtral-tiny",
-                "tokenizer_config": "mistralai/Mixtral-8x7B-v0.1",
+                "tokenizer_config": "LoneStriker/Mixtral-8x7B-v0.1-HF",
                 "flash_attention": False,
                 "sequence_len": 1024,
                 "load_in_4bit": True,
@@ -131,7 +131,7 @@ class TestMixtral(unittest.TestCase):
         model, _ = train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
         assert (
             model.base_model.model.model.layers[0].block_sparse_moe.gate.weight.dtype
-            == torch.uint8
+            == torch.float32
         )
         assert (Path(temp_dir) / "adapter_model.bin").exists()
 
@@ -141,7 +141,7 @@ class TestMixtral(unittest.TestCase):
         cfg = DictDefault(
             {
                 "base_model": "hf-internal-testing/Mixtral-tiny",
-                "tokenizer_config": "mistralai/Mixtral-8x7B-v0.1",
+                "tokenizer_config": "LoneStriker/Mixtral-8x7B-v0.1-HF",
                 "flash_attention": True,
                 "sequence_len": 1024,
                 "adapter": "lora",
@@ -198,7 +198,7 @@ class TestMixtral(unittest.TestCase):
         cfg = DictDefault(
             {
                 "base_model": "hf-internal-testing/Mixtral-tiny",
-                "tokenizer_config": "mistralai/Mixtral-8x7B-v0.1",
+                "tokenizer_config": "LoneStriker/Mixtral-8x7B-v0.1-HF",
                 "flash_attention": False,
                 "sequence_len": 1024,
                 "adapter": "lora",
@@ -255,7 +255,7 @@ class TestMixtral(unittest.TestCase):
         cfg = DictDefault(
             {
                 "base_model": "hf-internal-testing/Mixtral-tiny",
-                "tokenizer_config": "mistralai/Mixtral-8x7B-v0.1",
+                "tokenizer_config": "LoneStriker/Mixtral-8x7B-v0.1-HF",
                 "flash_attention": True,
                 "sequence_len": 1024,
                 "val_set_size": 0.1,

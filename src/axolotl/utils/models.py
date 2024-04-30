@@ -1,13 +1,19 @@
 """Module for models and model loading"""
+# pylint: disable=too-many-lines
+
 import logging
 import math
 import os
+import types
 from typing import Any, Dict, Optional, Tuple, Union  # noqa: F401
 
 import addict
 import bitsandbytes as bnb
 import torch
 import transformers
+import transformers.modeling_utils
+from accelerate import init_empty_weights
+from bitsandbytes.nn import Params4bit
 from peft import (
     LoftQConfig,
     PeftConfig,
@@ -16,6 +22,7 @@ from peft import (
     prepare_model_for_kbit_training,
 )
 from peft.tuners.lora import QuantLinear
+from torch import nn
 from transformers import (  # noqa: F401
     AddedToken,
     AutoConfig,
@@ -37,9 +44,36 @@ from axolotl.prompt_tokenizers import LLAMA_DEFAULT_EOS_TOKEN
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.chat_templates import chat_templates
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.distributed import zero_only
+from axolotl.utils.gradient_checkpointing import hf_grad_checkpoint_unsloth_wrapper
 from axolotl.utils.lora_embeddings import get_linear_embedding_layers
+from axolotl.utils.model_shard_quant import load_sharded_model, load_sharded_model_quant
 
 LOG = logging.getLogger("axolotl")
+
+
+# copied from accelerator.FullyShardedDataParallelPlugin
+def get_module_class_from_name(module, name):
+    """
+    Gets a class from a module by its name.
+
+    Args:
+        module (`torch.nn.Module`): The module to get the class from.
+        name (`str`): The name of the class.
+    """
+    modules_children = list(module.children())
+    if module.__class__.__name__ == name:
+        return module.__class__
+
+    if len(modules_children) == 0:
+        return None
+
+    for child_module in modules_children:
+        module_class = get_module_class_from_name(child_module, name)
+        if module_class is not None:
+            return module_class
+
+    return None
 
 
 def check_model_config(cfg: DictDefault, model_config: Union[AutoConfig, DictDefault]):
@@ -128,9 +162,8 @@ def load_tokenizer(cfg):
     if cfg.tokenizer_type:
         tokenizer_cls = getattr(transformers, cfg.tokenizer_type)
 
-    tokenizer_config = cfg.tokenizer_config or cfg.base_model_config or cfg.base_model
     tokenizer = tokenizer_cls.from_pretrained(
-        tokenizer_config,
+        cfg.tokenizer_config,
         trust_remote_code=cfg.trust_remote_code or False,
         use_fast=use_fast,
         **tokenizer_kwargs,
@@ -242,10 +275,11 @@ def load_tokenizer(cfg):
             {"additional_special_tokens": additional_special_tokens}
         )
 
-    LOG.debug(f"EOS: {tokenizer.eos_token_id} / {tokenizer.eos_token}")
-    LOG.debug(f"BOS: {tokenizer.bos_token_id} / {tokenizer.bos_token}")
-    LOG.debug(f"PAD: {tokenizer.pad_token_id} / {tokenizer.pad_token}")
-    LOG.debug(f"UNK: {tokenizer.unk_token_id} / {tokenizer.unk_token}")
+    with zero_only():
+        LOG.debug(f"EOS: {tokenizer.eos_token_id} / {tokenizer.eos_token}")
+        LOG.debug(f"BOS: {tokenizer.bos_token_id} / {tokenizer.bos_token}")
+        LOG.debug(f"PAD: {tokenizer.pad_token_id} / {tokenizer.pad_token}")
+        LOG.debug(f"UNK: {tokenizer.unk_token_id} / {tokenizer.unk_token}")
 
     if cfg.chat_template:
         chat_template_string = chat_templates(cfg.chat_template)
@@ -278,6 +312,9 @@ def load_model(
     # TODO refactor as a kwarg
     load_in_8bit = cfg.load_in_8bit
 
+    if cfg.gradient_checkpointing == "unsloth":
+        transformers.modeling_utils.checkpoint = hf_grad_checkpoint_unsloth_wrapper
+
     if hasattr(model_config, "model_type") and model_config.model_type == "btlm":
         if cfg.flash_attention:
             from axolotl.monkeypatch.btlm_attn_hijack_flash import (
@@ -308,7 +345,7 @@ def load_model(
         and cfg.flash_attention
         and cfg.sample_packing
     ):
-        patch_for_multipack(cfg.model_config_type)
+        patch_for_multipack(cfg.model_config_type, model_name=cfg.base_model)
     elif cfg.is_llama_derived_model:
         # Modify all llama derived models in one block
 
@@ -394,10 +431,12 @@ def load_model(
 
     if max_memory is not None:
         # Based on https://github.com/togethercomputer/OpenChatKit/blob/main/inference/bot.py
-        from accelerate import infer_auto_device_map, init_empty_weights
+        from accelerate import infer_auto_device_map
 
         with init_empty_weights():
-            model_canvas = AutoModelForCausalLM.from_config(model_config)
+            model_canvas = AutoModelForCausalLM.from_config(
+                model_config, trust_remote_code=cfg.trust_remote_code or False
+            )
         model_canvas.tie_weights()
         device_map = infer_auto_device_map(
             model_canvas,
@@ -428,6 +467,7 @@ def load_model(
 
     if cfg.revision_of_model:
         model_kwargs["revision"] = cfg.revision_of_model
+
     if cfg.gptq:
         if not hasattr(model_config, "quantization_config"):
             LOG.warning("model config does not contain quantization_config information")
@@ -447,11 +487,23 @@ def load_model(
             "bnb_4bit_compute_dtype": cfg.torch_dtype,
             "bnb_4bit_use_double_quant": True,
             "bnb_4bit_quant_type": "nf4",
+            "bnb_4bit_quant_storage": torch.bfloat16,
         }
+        if cfg.model_config_type in ["jamba", "qwen2_moe"] and not cfg.deepspeed:
+            # for some reason, this causes the loss to be off by an order of magnitude
+            # but deepspeed needs this still in bfloat16
+            bnb_config["bnb_4bit_quant_storage"] = torch.float32
 
         if cfg.bnb_config_kwargs:
             bnb_config.update(cfg.bnb_config_kwargs)
 
+        model_kwargs["quantization_config"] = BitsAndBytesConfig(
+            **bnb_config,
+        )
+    elif cfg.adapter == "lora" and cfg.load_in_8bit:
+        bnb_config = {
+            "load_in_8bit": True,
+        }
         model_kwargs["quantization_config"] = BitsAndBytesConfig(
             **bnb_config,
         )
@@ -496,8 +548,37 @@ def load_model(
         model_kwargs["attn_implementation"] = "eager"
         model_config._attn_implementation = "eager"  # pylint: disable=protected-access
 
+    if cfg.low_cpu_mem_usage:
+        model_kwargs["low_cpu_mem_usage"] = True
+
+    qlora_fsdp = cfg.fsdp and cfg.adapter == "qlora"
+
     try:
+        skip_move_to_device = False
         if (
+            cfg.fsdp and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
+        ) and not qlora_fsdp:
+            model = load_sharded_model(
+                base_model,
+                model_config,
+                cfg,
+                torch_dtype=cfg.torch_dtype,
+            )
+            skip_move_to_device = True
+        elif (
+            qlora_fsdp
+            and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
+            and cfg.model_config_type == "dbrx"
+        ):
+            quant_storage = cfg.torch_dtype
+            model = load_sharded_model_quant(
+                base_model,
+                model_config,
+                cfg,
+                quant_storage=quant_storage,
+            )
+            skip_move_to_device = True
+        elif (
             model_config.model_type == "llama"
             and not cfg.trust_remote_code
             and not cfg.gptq
@@ -524,32 +605,6 @@ def load_model(
                 if cfg.flash_attn_fuse_qkv:
                     LOG.info("patching with fused QKV")
                     replace_llama_qkv_with_fused(model)
-        # elif model_type == "GPTNeoXForCausalLM" and cfg.flash_attention:
-        #     This is a WIP, still an issue with the backward pass
-        #     RuntimeError: grad can be implicitly created only for scalar outputs
-        #     TODO: try config.sequence_parallel = False
-        #     # https://github.com/HazyResearch/flash-attention/blob/40a25c8ee7465cf547b929cfa2937034e37bfce9/tests/models/test_gpt_neox.py#L12
-        #     # https://github.com/HazyResearch/flash-attention/tree/main/training#model-components
-        #     # add `**kwargs` to https://github.com/HazyResearch/flash-attention/blob/40a25c8ee7465cf547b929cfa2937034e37bfce9/flash_attn/models/gpt.py#L442
-        #     from flash_attn.utils.pretrained import state_dict_from_pretrained
-        #     from flash_attn.models.gpt import GPTLMHeadModel
-        #     from flash_attn.models.gpt_neox import remap_state_dict_hf_gpt_neox, gpt_neox_config_to_gpt2_config
-        #     from transformers import GPTNeoXConfig
-        #     config = gpt_neox_config_to_gpt2_config(GPTNeoXConfig.from_pretrained(base_model))
-        #     config.use_flash_attn = True
-        #     config.fused_bias_fc = True
-        #     config.fused_mlp = True  # GPT-NeoX-20B uses "gelu_fast"
-        #     config.activation_function = "gelu_fast"
-        #     config.fused_dropout_add_ln = True
-        #     # config.residual_in_fp32 = True
-        #
-        #     model: GPTLMHeadModel = GPTLMHeadModel.from_pretrained(
-        #         base_model,
-        #         config,
-        #         dtype=torch_dtype,
-        #         device=cfg.device,
-        #     )
-        #     model.train() # sets to train instead of eval mode
         elif model_type == "MambaLMHeadModel":
             # FIXME this is janky at best and hacked together to make it work
             MambaLMHeadModel = fix_mamba_attn_for_loss()  # pylint: disable=invalid-name
@@ -603,6 +658,11 @@ def load_model(
                     **model_kwargs,
                 )
             else:
+                if qlora_fsdp and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading:
+                    skip_move_to_device = True
+                    if "device_map" in model_kwargs:
+                        del model_kwargs["device_map"]
+
                 model = AutoModelForCausalLM.from_pretrained(
                     base_model,
                     config=model_config,
@@ -613,7 +673,7 @@ def load_model(
         LOG.exception(err)
         raise err
 
-    if isinstance(model, (PeftModel, PeftModelForCausalLM)):
+    if isinstance(model, (PeftModel, PeftModelForCausalLM)) and not qlora_fsdp:
         model = model.merge_and_unload()
 
     embeddings_len = (
@@ -676,13 +736,17 @@ def load_model(
     needs_fa2_dtype = cfg.adapter or cfg.fsdp
     skip_prepare_model_for_kbit_training = False
 
-    if cfg.model_config_type == "mixtral" and is_deepspeed_zero3_enabled():
+    if is_deepspeed_zero3_enabled():
         from deepspeed.utils import (  # pylint: disable=no-name-in-module
             set_z3_leaf_modules,
         )
-        from transformers.models.mixtral.modeling_mixtral import MixtralSparseMoeBlock
 
-        set_z3_leaf_modules(model, [MixtralSparseMoeBlock])
+        if cfg.model_config_type == "mixtral":
+            moe_block = get_module_class_from_name(model, "MixtralSparseMoeBlock")
+            set_z3_leaf_modules(model, [moe_block])
+        elif cfg.model_config_type == "dbrx":
+            moe_block = get_module_class_from_name(model, "DbrxFFN")
+            set_z3_leaf_modules(model, [moe_block])
 
     if cfg.model_config_type == "qwen" and cfg.adapter == "lora":
         # Qwen doesn't play nicely with LoRA if this is enabled
@@ -692,9 +756,15 @@ def load_model(
     if cfg.adapter == "lora" and loftq_bits:
         skip_prepare_model_for_kbit_training = True
 
+    if qlora_fsdp or (cfg.fsdp and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading):
+        # make sure everything is in the same dtype
+        skip_prepare_model_for_kbit_training = True
+
     if cfg.adapter in ["lora", "qlora"]:
         if cfg.gradient_checkpointing:
-            model.gradient_checkpointing_enable()
+            model.gradient_checkpointing_enable(
+                gradient_checkpointing_kwargs=cfg.gradient_checkpointing_kwargs
+            )
         if (
             cfg.load_in_8bit or cfg.load_in_4bit
         ) and not skip_prepare_model_for_kbit_training:
@@ -706,7 +776,7 @@ def load_model(
 
     # LlamaRMSNorm layers are in fp32 after kbit_training or full finetune, so we need to
     # convert them back to fp16/bf16 for flash-attn compatibility.
-    if needs_fa2_dtype or cfg.flash_attention:
+    if (needs_fa2_dtype or cfg.flash_attention) and not qlora_fsdp:
         LOG.info("converting modules to %s for flash attention", cfg.torch_dtype)
         for name, module in model.named_modules():
             if "norm" in name:
@@ -724,7 +794,12 @@ def load_model(
         else:
             model, lora_config = load_adapter(model, cfg, cfg.adapter)
 
-    if cfg.ddp and not load_in_8bit and not (cfg.rl and cfg.load_in_4bit):
+    if (
+        cfg.ddp
+        and not load_in_8bit
+        and not (cfg.rl and cfg.load_in_4bit)
+        and not skip_move_to_device
+    ):
         # TODO revaldate this conditional
         model.to(f"cuda:{cfg.local_rank}")
 
@@ -813,6 +888,30 @@ def find_all_linear_names(model):
     return list(lora_module_names)
 
 
+def setup_quantized_meta_for_peft(model: nn.Module):
+    """Replaces `quant_state.to` with a dummy function to prevent PEFT from moving `quant_state` to meta device"""
+
+    def temp_to_method(self, *args, **kwargs):  # pylint: disable=unused-argument
+        return self
+
+    for param in model.parameters():
+        if isinstance(param, Params4bit):
+            param.quant_state._orig_to = (  # pylint: disable=protected-access
+                param.quant_state.to
+            )
+            param.quant_state.to = types.MethodType(temp_to_method, param.quant_state)
+
+
+def setup_quantized_peft_meta_for_training(model: nn.Module):
+    """Replaces dummy `quant_state.to` method with the original function to allow training to continue"""
+    for param in model.parameters():
+        if isinstance(param, Params4bit) and hasattr(param.quant_state, "_orig_to"):
+            param.quant_state.to = (
+                param.quant_state._orig_to  # pylint: disable=protected-access
+            )
+            param.quant_state._orig_to = None  # pylint: disable=protected-access
+
+
 def load_lora(model, cfg, inference=False, config_only=False):
     # type: (PreTrainedModel, DictDefault, bool, bool) -> Tuple[Optional[PreTrainedModel], Optional[PeftConfig]]
 
@@ -830,6 +929,12 @@ def load_lora(model, cfg, inference=False, config_only=False):
     if loftq_bits:
         lora_config_kwargs["loftq_config"] = LoftQConfig(loftq_bits=loftq_bits)
         lora_config_kwargs["init_lora_weights"] = "loftq"
+    if cfg.peft_use_dora:
+        lora_config_kwargs["use_dora"] = cfg.peft_use_dora
+    if cfg.peft_use_rslora:
+        lora_config_kwargs["use_rslora"] = cfg.peft_use_rslora
+    if cfg.peft_layer_replication:
+        lora_config_kwargs["layer_replication"] = cfg.peft_layer_replication
 
     lora_config = LoraConfig(
         r=cfg.lora_r,
@@ -847,6 +952,16 @@ def load_lora(model, cfg, inference=False, config_only=False):
     if config_only:
         return None, lora_config
 
+    rank = int(os.environ.get("LOCAL_RANK", 0))
+
+    if (
+        cfg.fsdp
+        and cfg.adapter
+        and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
+        and rank != 0
+    ):
+        setup_quantized_meta_for_peft(model)
+
     if cfg.lora_model_dir:
         LOG.debug("Loading pretrained PEFT - LoRA")
         model_kwargs: Any = {}
@@ -862,6 +977,29 @@ def load_lora(model, cfg, inference=False, config_only=False):
     else:
         model = get_peft_model(model, lora_config)
 
-    model.print_trainable_parameters()
+    if rank == 0:
+        try:
+            model.print_trainable_parameters()
+        except AttributeError as exc:
+            LOG.warning(
+                "Exception caught during model.print_trainable_parameters(): %s", exc
+            )
+    elif (
+        cfg.fsdp
+        and cfg.adapter
+        and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
+        and rank != 0
+    ):
+        setup_quantized_peft_meta_for_training(model)
 
     return model, lora_config
+
+
+def ensure_dtype(model, dtype=torch.bfloat16):
+    for name, module in model.named_modules():
+        try:
+            if module.weight.dtype != dtype:
+                print(f"Converting module {name}: {module.weight.dtype} -> {dtype}")
+                module.to(dtype)
+        except AttributeError:
+            pass

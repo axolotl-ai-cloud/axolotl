@@ -1,0 +1,63 @@
+base_model: mistral-community/Mixtral-8x22B-v0.1
+model_type: AutoModelForCausalLM
+tokenizer_type: LlamaTokenizer
+trust_remote_code: true
+
+load_in_8bit: false
+load_in_4bit: false
+strict: false
+
+unfrozen_parameters:
+  - ^lm_head.weight$
+  - ^model.embed_tokens.weight$
+  - model.layers.4[4-9]+.block_sparse_moe.gate
+  - model.layers.4[4-9]+.block_sparse_moe.experts
+  - model.layers.5[0-5]+.block_sparse_moe.gate
+  - model.layers.5[0-5]+.block_sparse_moe.experts
+
+model_config:
+  output_router_logits: true
+
+datasets:
+  - path: tatsu-lab/alpaca
+    type: alpaca
+dataset_prepared_path: last_run_prepared
+val_set_size: 0.05
+output_dir: ./out
+
+sequence_len: 2048
+sample_packing: true
+pad_to_sequence_len: true
+
+gradient_accumulation_steps: 1
+micro_batch_size: 1
+num_epochs: 3
+optimizer: adamw_bnb_8bit
+lr_scheduler: cosine
+learning_rate: 0.0001
+
+train_on_inputs: false
+group_by_length: false
+bf16: auto
+fp16:
+tf32: false
+
+gradient_checkpointing: true
+early_stopping_patience:
+resume_from_checkpoint:
+local_rank:
+logging_steps: 1
+xformers_attention:
+flash_attention: true
+
+save_total_limit: 1
+save_steps:
+debug:
+deepspeed: deepspeed_configs/zero3_bf16_cpuoffload_params.json
+weight_decay: 0.0
+fsdp:
+fsdp_config:
+special_tokens:
+  eos_token: "<|im_end|>"
+tokens:
+  - "<|im_start|>"

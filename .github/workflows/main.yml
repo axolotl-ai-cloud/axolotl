@@ -28,7 +28,7 @@ jobs:
           - cuda: 121
             cuda_version: 12.1.0
             python_version: "3.11"
-            pytorch: 2.1.2
+            pytorch: 2.2.1
             axolotl_extras:
     runs-on: axolotl-gpu-runner
     steps:
@@ -63,7 +63,7 @@ jobs:
             ${{ (matrix.is_latest) && format('{0}-latest', steps.metadata.outputs.tags) || '' }}
           labels: ${{ steps.metadata.outputs.labels }}
 
-  build-axolotl-runpod:
+  build-axolotl-cloud:
     needs: build-axolotl
     if: ${{ ! contains(github.event.commits[0].message, '[skip docker]]') && github.repository_owner == 'OpenAccess-AI-Collective' }}
     # this job needs to be run on self-hosted GPU runners...
@@ -84,7 +84,7 @@ jobs:
           - cuda: 121
             cuda_version: 12.1.0
             python_version: "3.11"
-            pytorch: 2.1.2
+            pytorch: 2.2.1
             axolotl_extras:
     runs-on: axolotl-gpu-runner
     steps:
@@ -113,7 +113,5 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
              ${{ steps.metadata.outputs.tags }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
-             winglian/axolotl-runpod:main-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
              ${{ (matrix.is_latest) && format('{0}-latest', steps.metadata.outputs.tags) || '' }}
-             ${{ (matrix.is_latest) && format('{0}-latest', 'winglian/axolotl-runpod:main') || '' }}
           labels: ${{ steps.metadata.outputs.labels }}

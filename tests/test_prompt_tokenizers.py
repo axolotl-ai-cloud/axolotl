@@ -1,4 +1,5 @@
 """Module for testing prompt tokenizers."""
+
 import json
 import logging
 import unittest
@@ -7,7 +8,8 @@ from pathlib import Path
 from typing import Optional
 
 import pytest
-from transformers import AutoTokenizer, LlamaTokenizer
+from datasets import load_dataset
+from transformers import AddedToken, AutoTokenizer, LlamaTokenizer
 
 from axolotl.prompt_strategies.alpaca_chat import NoSystemPrompter
 from axolotl.prompt_strategies.alpaca_w_system import (
@@ -18,11 +20,14 @@ from axolotl.prompt_strategies.llama2_chat import (
     Llama2ChatPrompter,
     LLama2ChatTokenizingStrategy,
 )
+from axolotl.prompt_strategies.orpo.chat_template import load
+from axolotl.prompt_strategies.sharegpt import GlaiveShareGPTPromptTokenizingStrategy
 from axolotl.prompt_tokenizers import (
     AlpacaPromptTokenizingStrategy,
     ShareGPTPromptTokenizingStrategy,
 )
 from axolotl.prompters import AlpacaPrompter, PromptStyle, ShareGPTPrompterV2
+from axolotl.utils.dict import DictDefault
 
 LOG = logging.getLogger("axolotl")
 
@@ -266,6 +271,23 @@ class TestPromptTokenizationStrategies(unittest.TestCase):
             idx = res["input_ids"].index(20255)  # assistant token
             assert res["labels"][idx] == -100
 
+    def test_glaive_tool_label_ignore(self):
+        conversation = {
+            "system": "SYSTEM: This is a system prompt",
+            "chat": "USER: Can you book a flight for me from New York to London? ASSISTANT: I'm sorry, but I don't have the capability to book flights.  <|endoftext|>",
+        }
+        prompter = ShareGPTPrompterV2()
+        strat = GlaiveShareGPTPromptTokenizingStrategy(
+            prompter,
+            self.tokenizer,
+            False,
+            2048,
+        )
+        with self._caplog.at_level(logging.WARNING):
+            res = strat.tokenize_prompt(conversation)
+            idx = res["input_ids"].index(13566)  # assistant token
+            assert res["labels"][idx] == -100
+
     def test_no_sys_prompt(self):
         """
         tests the interface between the user and assistant parts
@@ -425,6 +447,60 @@ If a question does not make any sense, or is not factually coherent, explain why
         self.assertEqual(
             hf_tokens, tokenized_conversation["input_ids"][: len(hf_tokens)]
         )
+
+
+class OrpoTokenizationTest(unittest.TestCase):
+    """test case for the ORPO tokenization"""
+
+    def setUp(self) -> None:
+        # pylint: disable=duplicate-code
+        tokenizer = LlamaTokenizer.from_pretrained(
+            "casperhansen/mistral-7b-instruct-v0.1-awq"
+        )
+        tokenizer.add_special_tokens(
+            {
+                "eos_token": AddedToken(
+                    "<|im_end|>", rstrip=False, lstrip=False, normalized=False
+                )
+            }
+        )
+        tokenizer.add_tokens(
+            [
+                AddedToken(
+                    "<|im_start|>", rstrip=False, lstrip=False, normalized=False
+                ),
+            ]
+        )
+        self.tokenizer = tokenizer
+        self.dataset = load_dataset(
+            "argilla/ultrafeedback-binarized-preferences-cleaned", split="train"
+        ).select([0])
+
+    def test_orpo_integration(self):
+        strat = load(
+            self.tokenizer,
+            DictDefault({"train_on_inputs": False}),
+            DictDefault({"chat_template": "chatml"}),
+        )
+        res = strat.tokenize_prompt(self.dataset[0])
+        assert "rejected_input_ids" in res
+        assert "rejected_labels" in res
+        assert "input_ids" in res
+        assert "labels" in res
+        assert "prompt_attention_mask" in res
+
+        assert len(res["rejected_input_ids"]) == len(res["rejected_labels"])
+        assert len(res["input_ids"]) == len(res["labels"])
+        assert len(res["input_ids"]) == len(res["prompt_attention_mask"])
+
+        assert res["rejected_labels"][0] == -100
+        assert res["rejected_input_ids"][-1] == res["rejected_labels"][-1]
+
+        assert res["labels"][0] == -100
+        assert res["input_ids"][-1] == res["labels"][-1]
+
+        assert res["prompt_attention_mask"][0] == 1
+        assert res["prompt_attention_mask"][-1] == 0
 
 
 if __name__ == "__main__":

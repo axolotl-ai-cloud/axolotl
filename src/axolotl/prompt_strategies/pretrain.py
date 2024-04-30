@@ -20,10 +20,11 @@ class PretrainTokenizationStrategy(PromptTokenizingStrategy):
     def supports_batched(self):
         return True
 
-    def __init__(self, *args, max_length=None, **kwargs):
+    def __init__(self, *args, max_length=None, text_column="text", **kwargs):
         super().__init__(*args, **kwargs)
         if max_length:
             self.max_length = max_length
+        self.text_column = text_column
 
     def _tokenize(
         self, prompt: str, add_eos_token: bool = True, strip_bos_token: bool = False
@@ -44,7 +45,7 @@ class PretrainTokenizationStrategy(PromptTokenizingStrategy):
         return res
 
     def tokenize_prompt(self, prompt):
-        return self._tokenize(prompt["text"])
+        return self._tokenize(prompt[self.text_column])
 
 
 def load(tokenizer, cfg):
@@ -53,6 +54,7 @@ def load(tokenizer, cfg):
         tokenizer,
         cfg.train_on_inputs,
         cfg.sequence_len,
+        text_column=cfg.pretraining_dataset[0]["text_column"] or "text",
         max_length=cfg.sequence_len * 64,
     )
     return strat

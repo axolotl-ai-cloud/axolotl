@@ -1,20 +1,8 @@
 """
 module for DPO style dataset transform strategies
 """
+from functools import partial
 
-import importlib
-import logging
+from ..base import load as load_base
 
-LOG = logging.getLogger("axolotl")
-
-
-def load(strategy, cfg, **kwargs):
-    try:
-        load_fn = strategy.split(".")[-1]
-        strategy = ".".join(strategy.split(".")[:-1])
-        mod = importlib.import_module(f".{strategy}", "axolotl.prompt_strategies.dpo")
-        func = getattr(mod, load_fn)
-        return func(cfg, **kwargs)
-    except Exception:  # pylint: disable=broad-exception-caught
-        LOG.warning(f"unable to load strategy {strategy}")
-        return None
+load = partial(load_base, module_base="axolotl.prompt_strategies.dpo")
