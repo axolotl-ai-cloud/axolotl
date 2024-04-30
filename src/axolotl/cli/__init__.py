@@ -447,7 +447,7 @@ def load_rl_datasets(
             tokenizer,
             num_examples=cli_args.debug_num_examples,
             text_only=cli_args.debug_text_only,
-            rl=True,
+            rl_mode=True,
         )
 
     return TrainDatasetMeta(
