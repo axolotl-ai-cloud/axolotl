@@ -176,3 +176,9 @@ qlora-out/*
 mlruns/*
 
 /.quarto/
+prepared-datasets/
+submit.sh
+*.out*
+
+typings/
+out/
