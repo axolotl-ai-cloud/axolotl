@@ -390,6 +390,10 @@ def load_model(
                 "Shifted-sparse attention not currently implemented without flash attention."
             )
 
+        if cfg.unsloth_cross_entropy_loss:
+            from axolotl.monkeypatch.unsloth import integrate_cross_entropy_loss_patch
+            integrate_cross_entropy_loss_patch()
+
     # Modify mistral derived models
     if (
         cfg.model_config_type == "mistral"
@@ -827,6 +831,10 @@ def load_model(
 
     if cfg.adapter is not None:
         log_gpu_memory_usage(LOG, "after adapters", model.device)
+
+    # if cfg.unsloth_lora_mlp:
+    #     from axolotl.monkeypatch.unsloth import integrate_lora_mlp_patch
+    #     integrate_lora_mlp_patch(model)
 
     # TODO resume_from_checkpoint handling
     return model, lora_config
