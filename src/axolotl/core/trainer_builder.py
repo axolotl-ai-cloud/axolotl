@@ -1523,7 +1523,7 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             training_args_cls = ORPOConfig
             training_args_kwargs["dataset_num_proc"] = self.cfg.dataset_processes
             training_args_kwargs["max_length"] = self.cfg.sequence_len
-            training_args_kwargs["max_prompt_length"] = self.cfg.sequence_len
+            training_args_kwargs["max_prompt_length"] = self.cfg.sequence_len//4
 
         training_args = training_args_cls(
             per_device_train_batch_size=self.cfg.micro_batch_size,
