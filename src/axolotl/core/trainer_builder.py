@@ -30,7 +30,7 @@ from transformers import (
 )
 from transformers.trainer_utils import seed_worker
 from transformers.utils import is_sagemaker_mp_enabled
-from trl import DPOTrainer, ORPOConfig, ORPOTrainer
+from trl import DPOConfig, DPOTrainer, ORPOConfig, ORPOTrainer
 from trl.trainer.utils import pad_to_length
 
 from axolotl.loraplus import create_loraplus_optimizer
@@ -1525,6 +1525,9 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         training_args_cls = TrainingArguments
         if self.cfg.rl == "orpo":
             training_args_cls = ORPOConfig
+            training_args_kwargs["dataset_num_proc"] = self.cfg.dataset_processes
+        elif self.cfg.rl in ["dpo", "ipo", "kto_pair", "sppo"]:
+            training_args_cls = DPOConfig
             training_args_kwargs["dataset_num_proc"] = self.cfg.dataset_processes
 
         training_args = training_args_cls(
