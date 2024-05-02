@@ -64,7 +64,8 @@ def integrate_cross_entropy_loss_patch():
     for item in dir(transformers.models.llama.modeling_llama):
         if item in forward:
             items_to_import.append(item)
-    from unsloth.kernels.cross_entropy_loss import fast_cross_entropy_loss
+
+    exec("from unsloth.kernels.cross_entropy_loss import fast_cross_entropy_loss", globals())
 
     exec(
         "from transformers.models.llama.modeling_llama import ("
