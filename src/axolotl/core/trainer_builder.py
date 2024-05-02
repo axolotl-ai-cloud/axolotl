@@ -1536,7 +1536,6 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             logging_steps=1,
             optim=self.cfg.optimizer,
             save_total_limit=self.cfg.save_total_limit or 5,
-            dataset_num_proc=self.cfg.dataset_processes,
             **training_args_kwargs,
         )
 
