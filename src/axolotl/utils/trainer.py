@@ -438,7 +438,7 @@ def prepare_optim_env(cfg):
 
 
 def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_steps):
-    if cfg.rl in ["dpo", "ipo", "kto_pair", "orpo"]:
+    if cfg.rl in ["dpo", "ipo", "kto_pair", "orpo", "sppo"]:
         trainer_builder = HFRLTrainerBuilder(cfg, model[0], tokenizer)
         trainer_builder.model_ref = model[1]
         trainer_builder.peft_config = model[2]
