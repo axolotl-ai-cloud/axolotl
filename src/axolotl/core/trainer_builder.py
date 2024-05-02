@@ -1518,8 +1518,9 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             training_args_kwargs["beta"] = self.cfg.orpo_alpha
 
         training_args_cls = TrainingArguments
-        if self.cfg.rl == "orpo":
+        if self.cfg.rl in ["cpo", "kto_pair", "orpo"]:
             training_args_cls = ORPOConfig
+            training_args_kwargs["dataset_num_proc"] = self.cfg.dataset_processes
 
         training_args = training_args_cls(
             per_device_train_batch_size=self.cfg.micro_batch_size,
@@ -1532,7 +1533,6 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             logging_steps=1,
             optim=self.cfg.optimizer,
             save_total_limit=self.cfg.save_total_limit or 5,
-            dataset_num_proc=self.cfg.dataset_processes,
             **training_args_kwargs,
         )
 
@@ -1565,6 +1565,8 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             dpo_trainer_kwargs["max_target_length"] = None
             dpo_trainer_kwargs["max_prompt_length"] = self.cfg.sequence_len
             dpo_trainer_kwargs["generate_during_eval"] = True
+            if self.cfg.rl == "dpo":
+                dpo_trainer_kwargs["dataset_num_proc"] = self.cfg.dataset_processes
         elif self.cfg.rl == "orpo":
             trainer_cls = AxolotlORPOTrainer
             trainer_cls_args = [self.model]
