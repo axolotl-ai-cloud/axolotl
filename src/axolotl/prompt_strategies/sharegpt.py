@@ -79,13 +79,28 @@ def load_ultrachat(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
     return strategy
 
 
-def load_role(tokenizer, cfg):
-    return SimpleRoleShareGPTPromptTokenizingStrategy(
-        ShareGPTPrompterV2(),
+def load_role(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
+    """use when your dataset has a role field instead of a from field in the conversation"""
+    conversation = (
+        ds_cfg["conversation"] if ds_cfg and "conversation" in ds_cfg else None
+    )
+    field_human = ds_cfg["field_human"] if ds_cfg and "field_human" in ds_cfg else None
+    field_model = ds_cfg["field_model"] if ds_cfg and "field_model" in ds_cfg else None
+    roles = ds_cfg["roles"].to_dict() if ds_cfg and "roles" in ds_cfg else None
+    strategy = SimpleRoleShareGPTPromptTokenizingStrategy(
+        ShareGPTPrompterV2(
+            conversation=conversation,
+            role_key_model=field_model,
+            role_key_human=field_human,
+            roles=roles,
+        ),
         tokenizer,
         cfg.train_on_inputs,
         cfg.sequence_len,
     )
+    if ds_cfg and "strict" in ds_cfg:
+        strategy.strict = ds_cfg["strict"]
+    return strategy
 
 
 def load_guanaco(tokenizer, cfg):
@@ -158,7 +173,9 @@ class SimpleShareGPTPromptTokenizingStrategy(ShareGPTPromptTokenizingStrategy):
         return turns
 
 
-class SimpleRoleShareGPTPromptTokenizingStrategy(ShareGPTPromptTokenizingStrategy):
+class SimpleRoleShareGPTPromptTokenizingStrategy(
+    SimpleShareGPTPromptTokenizingStrategy
+):
     """
     basic sharegpt strategy to grab conversations from the sample row, but uses role instead of from
     """
