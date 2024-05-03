@@ -575,6 +575,7 @@ class AxolotlInputConfig(
     neftune_noise_alpha: Optional[float] = None
 
     orpo_alpha: Optional[float] = None
+    dpo_beta: Optional[float] = None
 
     max_memory: Optional[
         Dict[Union[int, Literal["cpu", "disk"]], Union[int, str]]
