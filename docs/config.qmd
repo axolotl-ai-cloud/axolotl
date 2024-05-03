@@ -138,7 +138,7 @@ test_datasets:
     data_files:
       - /workspace/data/eval.jsonl
 
-# use RL training: 'dpo', 'ipo', 'kto_pair', 'orpo', 'sppo'
+# use RL training: 'dpo', 'ipo', 'kto_pair', 'orpo', 'sppo_hard'
 rl:
 
 # Saves the desired chat template to the tokenizer_config.json for easier inferencing

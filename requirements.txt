@@ -39,6 +39,6 @@ s3fs
 gcsfs
 # adlfs
 
-trl @ git+https://github.com/huggingface/trl.git@7075cec94df1a0c5be90e75214e996efaf9a6c0b
+trl @ git+https://github.com/huggingface/trl.git@75de236c09bd5846f79c24d9bf371481b0b7582c
 zstandard==0.22.0
 fastcore

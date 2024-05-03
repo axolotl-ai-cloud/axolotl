@@ -791,7 +791,7 @@ def load_model(
         # then the dpo trainer doesn't want the peft model loaded over it, it just wants the lora/peft config
         if (
             cfg.adapter
-            and cfg.rl in ["dpo", "ipo", "kto_pair", "sppo"]
+            and cfg.rl in ["dpo", "ipo", "kto_pair", "sppo_hard"]
             and not cfg.merge_lora
         ):
             _, lora_config = load_lora(model, cfg, inference=False, config_only=True)
