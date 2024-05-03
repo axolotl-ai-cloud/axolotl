@@ -1462,6 +1462,7 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             training_args_kwargs["eval_steps"] = self.cfg.eval_steps
         else:
             training_args_kwargs["evaluation_strategy"] = "no"
+
         if self.cfg.bf16 or self.cfg.bfloat16:
             training_args_kwargs["bf16"] = True
 
@@ -1518,7 +1519,7 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             training_args_kwargs["beta"] = self.cfg.orpo_alpha
 
         training_args_cls = TrainingArguments
-        if self.cfg.rl in ["cpo", "kto_pair", "orpo"]:
+        if self.cfg.rl == "orpo":
             training_args_cls = ORPOConfig
             training_args_kwargs["dataset_num_proc"] = self.cfg.dataset_processes
 
