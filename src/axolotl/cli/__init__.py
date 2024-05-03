@@ -300,7 +300,8 @@ def do_inference_gradio(
         outputs="text",
         title=cfg.get("gradio_title", "Axolotl Gradio Interface"),
     )
-    demo.queue().launch(show_api=False, share=True)
+
+    demo.queue().launch(show_api=False, share=cfg.share or True, server_name=cfg.server_name or "0.0.0.0", server_port=cfg.server_port)
 
 
 def choose_config(path: Path):

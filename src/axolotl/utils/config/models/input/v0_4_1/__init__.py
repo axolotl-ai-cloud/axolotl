@@ -408,6 +408,13 @@ class WandbConfig(BaseModel):
 
         return data
 
+class GradioConfig(BaseModel):
+    """Gradio configuration subset"""
+
+    share: Optional[bool] = None
+    server_name: Optional[str] = None
+    port: Optional[int] = None
+
 
 # pylint: disable=too-many-public-methods,too-many-ancestors
 class AxolotlInputConfig(
@@ -419,6 +426,7 @@ class AxolotlInputConfig(
     WandbConfig,
     MLFlowConfig,
     LISAConfig,
+    GradioConfig,
     RemappedParameters,
     DeprecatedParameters,
     BaseModel,
