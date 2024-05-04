@@ -35,7 +35,7 @@ PATCHED_CEL_CODE = """
         loss = FusedCrossEntropyLossFunction.apply(
                 hidden_states,
                 self.lm_head.weight,
-                targ,
+                labels,
                 8,
                 -100,
                 "mean",
