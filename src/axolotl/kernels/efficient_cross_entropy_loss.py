@@ -164,7 +164,16 @@ class FusedCrossEntropyLossFunction(torch.autograd.Function):
 
             # Compute loss
             loss_chunk = loss[token_start_idx:token_end_idx]
-            targ_chunk = targ[token_start_idx:token_end_idx]
+            targ_chunk = torch.zeros(
+                loop_chunk_size, dtype=targ.dtype, device=targ.device
+            )
+            targ_chunk[: loop_chunk_size - 1] = targ[
+                token_start_idx + 1 : token_end_idx
+            ]
+            if i == n_loop_iters - 1:
+                targ_chunk[-1] = -100
+            else:
+                targ_chunk[-1] = targ[token_end_idx + 1]
 
             n_tokens_chunk = logits_chunk.shape[0]
             grad_logits_chunk = (

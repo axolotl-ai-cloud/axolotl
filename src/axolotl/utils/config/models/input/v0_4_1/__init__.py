@@ -533,6 +533,8 @@ class AxolotlInputConfig(
     flash_attn_fuse_mlp: Optional[bool] = None
     flash_optimum: Optional[bool] = None
 
+    patch_fused_cel: Optional[bool] = None
+
     deepspeed: Optional[Union[str, Dict[str, Any]]] = None
     fsdp: Optional[List[str]] = None
     fsdp_config: Optional[Dict[str, Any]] = None
@@ -1019,6 +1021,20 @@ class AxolotlInputConfig(
     def check_dataset_or_pretraining_dataset(cls, data):
         if data.get("datasets") is None and data.get("pretraining_dataset") is None:
             raise ValueError("either datasets or pretraining_dataset is required")
+        return data
+
+    @model_validator(mode="after")
+    @classmethod
+    def check_patch_fused_cel(cls, data):
+        if data.get("patch_fused_cel"):
+            if (
+                data.get("micro_batch_size") > 1
+                and not data.get("sample_packing")
+                and not data.get("flash_attention")
+            ):
+                raise ValueError(
+                    "`patch_fused_cel` requires `sample_packing` w/ `flash_attention` w/ batch size > 1"
+                )
         return data
 
 

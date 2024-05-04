@@ -389,11 +389,12 @@ def load_model(
                 "Shifted-sparse attention not currently implemented without flash attention."
             )
 
-        from axolotl.monkeypatch.llama_fused_cross_entropy_loss import (
-            integrate_cross_entropy_loss_patch,
-        )
+        if cfg.patch_fused_cel:
+            from axolotl.monkeypatch.llama_fused_cross_entropy_loss import (
+                integrate_cross_entropy_loss_patch,
+            )
 
-        integrate_cross_entropy_loss_patch()
+            integrate_cross_entropy_loss_patch()
 
     # Modify mistral derived models
     if (

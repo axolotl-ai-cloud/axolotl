@@ -33,9 +33,9 @@ ORIGINAL_CEL_CODE = """
 PATCHED_CEL_CODE = """
     if self.training:
         loss = FusedCrossEntropyLossFunction.apply(
-                hidden_states,
+                hidden_states[0],
                 self.lm_head.weight,
-                labels,
+                labels[0],
                 8,
                 -100,
                 "mean",
