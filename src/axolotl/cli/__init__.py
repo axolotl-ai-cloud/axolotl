@@ -233,12 +233,6 @@ def do_inference_gradio(
 
     model, tokenizer = load_model_and_tokenizer(cfg=cfg, cli_args=cli_args)
     prompter = cli_args.prompter
-    default_tokens = {"unk_token": "<unk>", "bos_token": "<s>", "eos_token": "</s>"}
-
-    for token, symbol in default_tokens.items():
-        # If the token isn't already specified in the config, add it
-        if not (cfg.special_tokens and token in cfg.special_tokens):
-            tokenizer.add_special_tokens({token: symbol})
 
     prompter_module = None
     if prompter:
