@@ -416,7 +416,7 @@ class GradioConfig(BaseModel):
     gradio_server_name: Optional[str] = None
     gradio_port: Optional[int] = None
     gradio_max_new_tokens: Optional[int] = None
-    gradio_temperature: Optional[int] = None
+    gradio_temperature: Optional[float] = None
     
 # pylint: disable=too-many-public-methods,too-many-ancestors
 class AxolotlInputConfig(
