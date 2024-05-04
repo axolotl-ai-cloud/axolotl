@@ -31,15 +31,37 @@ ORIGINAL_CEL_CODE = """
 )
 
 PATCHED_CEL_CODE = """
-    loss = FusedCrossEntropyLossFunction.apply(
-            hidden_states,
-            self.lm_head.weight,
-            targ,
-            8,
-            -100,
-            "mean",
-        )
-    logits = None
+    if self.training:
+        loss = FusedCrossEntropyLossFunction.apply(
+                hidden_states,
+                self.lm_head.weight,
+                targ,
+                8,
+                -100,
+                "mean",
+            )
+        logits = None
+    else:
+        if self.config.pretraining_tp > 1:
+            lm_head_slices = self.lm_head.weight.split(self.vocab_size // self.config.pretraining_tp, dim=0)
+            logits = [F.linear(hidden_states, lm_head_slices[i]) for i in range(self.config.pretraining_tp)]
+            logits = torch.cat(logits, dim=-1)
+        else:
+            logits = self.lm_head(hidden_states)
+        logits = logits.float()
+
+        loss = None
+        if labels is not None:
+            # Shift so that tokens < n predict n
+            shift_logits = logits[..., :-1, :].contiguous()
+            shift_labels = labels[..., 1:].contiguous()
+            # Flatten the tokens
+            loss_fct = CrossEntropyLoss()
+            shift_logits = shift_logits.view(-1, self.config.vocab_size)
+            shift_labels = shift_labels.view(-1)
+            # Enable model parallelism
+            shift_labels = shift_labels.to(shift_logits.device)
+            loss = loss_fct(shift_logits, shift_labels)
 """.lstrip(
     "\n"
 )
@@ -84,7 +106,7 @@ def integrate_cross_entropy_loss_patch():
             items_to_import.append(item)
 
     exec(  # pylint: disable=exec-used  # nosec B102
-        "from axolotl.kernels.efficient_cross_entropy_loss import fast_cross_entropy_loss",
+        "from axolotl.kernels.efficient_cross_entropy_loss import FusedCrossEntropyLossFunction",
         globals(),
     )
 
