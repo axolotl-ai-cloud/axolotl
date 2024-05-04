@@ -411,11 +411,13 @@ class WandbConfig(BaseModel):
 class GradioConfig(BaseModel):
     """Gradio configuration subset"""
 
-    share: Optional[bool] = None
-    server_name: Optional[str] = None
-    port: Optional[int] = None
-
-
+    gradio_title: Optional[str] = None
+    gradio_share: Optional[bool] = None
+    gradio_server_name: Optional[str] = None
+    gradio_port: Optional[int] = None
+    gradio_max_new_tokens: Optional[int] = None
+    gradio_temperature: Optional[int] = None
+    
 # pylint: disable=too-many-public-methods,too-many-ancestors
 class AxolotlInputConfig(
     ModelInputConfig,
