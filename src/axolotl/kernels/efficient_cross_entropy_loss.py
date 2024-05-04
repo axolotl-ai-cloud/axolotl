@@ -171,7 +171,7 @@ class FusedCrossEntropyLossFunction(torch.autograd.Function):
                 token_start_idx + 1 : token_end_idx
             ]
             if i == n_loop_iters - 1:
-                targ_chunk[-1] = -100
+                targ_chunk[-1] = ignore_index
             else:
                 targ_chunk[-1] = targ[token_end_idx + 1]
 

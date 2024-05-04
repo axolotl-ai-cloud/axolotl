@@ -33,9 +33,9 @@ ORIGINAL_CEL_CODE = """
 PATCHED_CEL_CODE = """
     if self.training:
         loss = FusedCrossEntropyLossFunction.apply(
-                hidden_states[0],
+                rearrange(hidden_states, 'b s d -> (b s) d'),
                 self.lm_head.weight,
-                labels[0],
+                rearrange(labels, 'b s -> (b s)'),
                 8,
                 -100,
                 "mean",
@@ -106,7 +106,8 @@ def integrate_cross_entropy_loss_patch():
             items_to_import.append(item)
 
     exec(  # pylint: disable=exec-used  # nosec B102
-        "from axolotl.kernels.efficient_cross_entropy_loss import FusedCrossEntropyLossFunction",
+        "from axolotl.kernels.efficient_cross_entropy_loss import FusedCrossEntropyLossFunction\n"
+        + "from einops import rearrange",
         globals(),
     )
 
