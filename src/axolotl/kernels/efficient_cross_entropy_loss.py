@@ -219,6 +219,8 @@ class FusedCrossEntropyLossFunction(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_output):
+        grad_in_feat = None
+        grad_proj_weight = None
         if ctx.in_feat_requires_grad and ctx.proj_weight_requires_grad:
             grad_in_feat, grad_proj_weight = ctx.saved_tensors
         elif not ctx.in_feat_requires_grad and ctx.proj_weight_requires_grad:
@@ -227,8 +229,10 @@ class FusedCrossEntropyLossFunction(torch.autograd.Function):
             (grad_in_feat,) = ctx.saved_tensors
 
         assert grad_output.shape == tuple(), grad_output.shape
-        grad_in_feat *= grad_output
-        grad_proj_weight *= grad_output
+        if grad_in_feat:
+            grad_in_feat *= grad_output
+        if grad_proj_weight:
+            grad_proj_weight *= grad_output
 
         return grad_in_feat, grad_proj_weight, None, None, None, None
 
