@@ -773,3 +773,13 @@ class SaveAxolotlConfigtoWandBCallback(TrainerCallback):
             except (FileNotFoundError, ConnectionError) as err:
                 LOG.warning(f"Error while saving Axolotl config to WandB: {err}")
         return control
+
+
+class SaveModelOnTrainEndCallback(TrainerCallback):
+    """Callback to save model on train end"""
+
+    def on_train_end(  # pylint: disable=unused-argument
+        self, args, state, control, **kwargs
+    ):
+        control.should_save = True
+        return control

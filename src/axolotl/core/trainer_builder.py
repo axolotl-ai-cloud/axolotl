@@ -43,6 +43,7 @@ from axolotl.utils.callbacks import (
     LossWatchDogCallback,
     SaveAxolotlConfigtoWandBCallback,
     SaveBetterTransformerModelCallback,
+    SaveModelOnTrainEndCallback,
     bench_eval_callback_factory,
     causal_lm_bench_eval_callback_factory,
     log_prediction_callback_factory,
@@ -888,6 +889,14 @@ class TrainerBuilderBase(abc.ABC):
             callbacks.append(
                 SaveAxolotlConfigtoWandBCallback(self.cfg.axolotl_config_path)
             )
+        if self.cfg.use_mlflow and is_mlflow_available():
+            from axolotl.utils.callbacks.mlflow_ import (
+                SaveAxolotlConfigtoMlflowCallback,
+            )
+
+            callbacks.append(
+                SaveAxolotlConfigtoMlflowCallback(self.cfg.axolotl_config_path)
+            )
 
         return callbacks
 
@@ -933,17 +942,10 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         ):
             callbacks.append(SaveBetterTransformerModelCallback())
 
-        if self.cfg.use_mlflow and is_mlflow_available():
-            from axolotl.utils.callbacks.mlflow_ import (
-                SaveAxolotlConfigtoMlflowCallback,
-            )
-
-            callbacks.append(
-                SaveAxolotlConfigtoMlflowCallback(self.cfg.axolotl_config_path)
-            )
-
         if self.cfg.loss_watchdog_threshold is not None:
             callbacks.append(LossWatchDogCallback(self.cfg))
+
+        callbacks.append(SaveModelOnTrainEndCallback())
 
         return callbacks
 
@@ -1427,6 +1429,8 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
 
     def get_callbacks(self):
         callbacks = super().get_callbacks()
+        callbacks.append(SaveModelOnTrainEndCallback())
+
         return callbacks
 
     def get_post_trainer_create_callbacks(self, trainer):
