@@ -39,7 +39,7 @@ class Perplexity:
         """
         Compute perplexity in a fixed length sliding window across the sequence.
         """
-        assert references, "Missing parameter: references"
+        assert references is not None, "Missing parameter: references"
 
         references_tokenized = self.tokenizer(
             references, return_tensors="pt", padding=True, truncation=True
