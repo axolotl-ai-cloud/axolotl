@@ -1,3 +1,4 @@
+"""unit tests for perplexity eval callback"""
 # pylint: disable=redefined-outer-name
 
 from pytest import fixture

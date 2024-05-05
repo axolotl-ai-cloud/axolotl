@@ -527,7 +527,7 @@ def get_dataset_wrapper(
     cfg,
     d_base_type,
     dataset,
-    d_prompt_style: Optional[str] = None,
+    d_prompt_style=None,
 ):
     dataset_wrapper = None
     dataset_prompter = None

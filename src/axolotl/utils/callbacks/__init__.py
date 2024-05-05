@@ -428,7 +428,11 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
                 metric_score = None
                 try:
                     # Only pass the kwargs that are in the metric's feature list
-                    metric_kwargs = {k: kwargs[k] for k in metric._feature_names() if k in kwargs}
+                    metric_kwargs = {
+                        k: kwargs[k]
+                        for k in metric._feature_names()  # pylint: disable=protected-access
+                        if k in kwargs
+                    }
                     metric_score = metric.compute(**metric_kwargs)
                     return (
                         metric_score["score"]
