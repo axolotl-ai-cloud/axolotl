@@ -264,8 +264,8 @@ def do_inference_gradio(
         with torch.no_grad():
             generation_config = GenerationConfig(
                 repetition_penalty=1.1,
-                max_new_tokens=1024,
-                temperature=0.9,
+                max_new_tokens=cfg.get("gradio_max_new_tokens", 1024),
+                temperature=cfg.get("gradio_temperature", 0.9),
                 top_p=0.95,
                 top_k=40,
                 bos_token_id=tokenizer.bos_token_id,
@@ -300,7 +300,13 @@ def do_inference_gradio(
         outputs="text",
         title=cfg.get("gradio_title", "Axolotl Gradio Interface"),
     )
-    demo.queue().launch(show_api=False, share=True)
+
+    demo.queue().launch(
+        show_api=False,
+        share=cfg.get("gradio_share", True),
+        server_name=cfg.get("gradio_server_name", "127.0.0.1"),
+        server_port=cfg.get("gradio_server_port", None),
+    )
 
 
 def choose_config(path: Path):
