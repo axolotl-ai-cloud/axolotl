@@ -433,6 +433,23 @@ def load_rl_datasets(
         math.ceil(len(train_dataset) * cfg.num_epochs / cfg.batch_size)
     )
 
+    if cli_args.debug or cfg.debug:
+        LOG.info("check_dataset_labels...")
+
+        tokenizer = load_tokenizer(cfg)
+        check_dataset_labels(
+            train_dataset.select(
+                [
+                    random.randrange(0, len(train_dataset) - 1)  # nosec
+                    for _ in range(cli_args.debug_num_examples)
+                ]
+            ),
+            tokenizer,
+            num_examples=cli_args.debug_num_examples,
+            text_only=cli_args.debug_text_only,
+            rl_mode=True,
+        )
+
     return TrainDatasetMeta(
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,

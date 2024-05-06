@@ -780,11 +780,11 @@ class AxolotlInputConfig(
     @model_validator(mode="before")
     @classmethod
     def check_push_save(cls, data):
-        if data.get("hub_model_id") and not (
-            data.get("save_steps") or data.get("saves_per_epoch")
+        if data.get("hub_model_id") and (
+            data.get("save_strategy") not in ["steps", "epoch", None]
         ):
             LOG.warning(
-                "hub_model_id is set without any models being saved. To save a model, set either save_steps or saves_per_epoch."
+                "hub_model_id is set without any models being saved. To save a model, set save_strategy."
             )
         return data
 
