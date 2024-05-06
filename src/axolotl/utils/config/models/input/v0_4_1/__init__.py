@@ -134,6 +134,7 @@ class RLType(str, Enum):
     kto_pair = "kto_pair"  # pylint: disable=invalid-name
     orpo = "orpo"  # pylint: disable=invalid-name
     sppo_hard = "sppo_hard"  # pylint: disable=invalid-name
+    nca_pair = "nca_pair"  # pylint: disable=invalid-name
 
 
 class ChatTemplate(str, Enum):
