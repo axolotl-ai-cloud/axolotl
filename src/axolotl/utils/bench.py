@@ -20,12 +20,13 @@ def check_cuda_device(default_value):
             device = kwargs.get("device", args[0] if args else None)
 
             if (
-                not torch.cuda.is_available()
+                device is None
+                or not torch.cuda.is_available()
                 or device == "auto"
                 or torch.device(device).type == "cpu"
+                or torch.device(device).type == "meta"
             ):
                 return default_value
-
             return func(*args, **kwargs)
 
         return wrapper
@@ -46,6 +47,12 @@ def gpu_memory_usage_all(device=0):
     return usage, reserved - usage, max(0, smi - reserved)
 
 
+def mps_memory_usage_all():
+    usage = torch.mps.current_allocated_memory() / 1024.0**3
+    reserved = torch.mps.driver_allocated_memory() / 1024.0**3
+    return usage, reserved - usage, 0
+
+
 @check_cuda_device(0.0)
 def gpu_memory_usage_smi(device=0):
     if isinstance(device, torch.device):
@@ -62,7 +69,10 @@ def gpu_memory_usage_smi(device=0):
 
 
 def log_gpu_memory_usage(log, msg, device):
-    usage, cache, misc = gpu_memory_usage_all(device)
+    if torch.backends.mps.is_available():
+        usage, cache, misc = mps_memory_usage_all()
+    else:
+        usage, cache, misc = gpu_memory_usage_all(device)
     extras = []
     if cache > 0:
         extras.append(f"+{cache:.03f}GB cache")

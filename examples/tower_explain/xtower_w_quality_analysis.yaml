@@ -1,0 +1,79 @@
+base_model: /mnt/data/cache/13B_all_mc4_parallel_eos_20b_20b_ckpt
+model_type: AutoModelForCausalLM
+tokenizer_type: LlamaTokenizer
+# is_llama_derived_model: true
+
+load_in_8bit: false
+load_in_4bit: false
+strict: false
+
+datasets:
+  - path: Unbabel/xTower-ErrorExplain-w-APE
+    type: sharegpt
+    conversation: chatml_w_system
+
+dataset_prepared_path: 
+val_set_size: 0
+output_dir: /mnt/data/nunomg/axolotl/Tower_QE_Explain/xTower_w_quality_analysis/
+
+sequence_len: 4096
+sample_packing: true
+pad_to_sequence_len: true
+
+adapter:
+lora_model_dir:
+lora_r:
+lora_alpha:
+lora_dropout:
+lora_target_linear:
+lora_fan_in_fan_out:
+
+wandb_project: translation-llm
+wandb_entity:
+wandb_watch:
+wandb_name:
+wandb_log_model:
+
+gradient_accumulation_steps: 8
+micro_batch_size: 4
+eval_batch_size: 1
+num_epochs: 2
+optimizer: adamw_torch
+lr_scheduler: cosine
+learning_rate: 7e-6
+
+train_on_inputs: false
+group_by_length: false
+bf16: true
+fp16: false
+tf32: false
+
+gradient_checkpointing: true
+early_stopping_patience:
+resume_from_checkpoint: /mnt/data/nunomg/axolotl/Tower_QE_Explain/xTower_w_quality_analysis/checkpoint-163
+local_rank:
+logging_steps:
+xformers_attention:
+flash_attention: true
+flash_attn_cross_entropy: false
+flash_attn_rms_norm: true
+flash_attn_fuse_qkv: false
+flash_attn_fuse_mlp: false
+
+warmup_steps: 100
+eval_steps:
+eval_sample_packing: False
+eval_table_size:
+save_steps:
+save_total_limit:
+debug:
+deepspeed: /mnt/data/nunomg/axolotl/deepspeed/zero3.json # multi-gpu only
+weight_decay: 0.01
+fsdp:
+fsdp_config:
+tokens:
+  - <|im_start|>
+special_tokens:
+  bos_token: "<s>"
+  eos_token: "<|im_end|>"
+  unk_token: "<unk>"

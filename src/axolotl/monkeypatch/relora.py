@@ -4,14 +4,16 @@ import json
 import logging
 import os.path
 import shutil
+from functools import partial
 from pathlib import Path
-from typing import Dict, List, Sequence
+from typing import Dict, List, Sequence, Union
 
 import bitsandbytes as bnb
 import peft
 import safetensors.torch as st
 import torch
 from huggingface_hub import snapshot_download
+from torch.distributed.optim import ZeroRedundancyOptimizer
 from torch.optim.lr_scheduler import LRScheduler
 from torch.optim.optimizer import Optimizer
 from transformers import (
@@ -23,23 +25,51 @@ from transformers import (
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR
 
 from axolotl.utils.dict import DictDefault
-from axolotl.utils.distributed import is_main_process
+from axolotl.utils.distributed import barrier, is_main_process
 
 LOG = logging.getLogger("axolotl.relora")
 
 
-def reset_optimizer(optimizer: torch.optim.Optimizer):
-    for group in optimizer.param_groups:
-        for param in group["params"]:
-            param_state = optimizer.state[param]
-            for key in param_state:
-                if "qmap" in key:
-                    continue
+@torch.no_grad()
+def magnitude_pruning_(tensor, prune_ratio):
+    tensor_magnitude = torch.abs(tensor)
+    threshold = torch.quantile(
+        tensor_magnitude.flatten().to(dtype=torch.float32), prune_ratio
+    ).to(dtype=tensor.dtype)
 
-                if key == "step" and isinstance(param_state[key], int):
-                    param_state[key] = 0
-                else:
-                    param_state[key] = torch.zeros_like(param_state[key])
+    mask = tensor_magnitude > threshold
+    tensor.mul_(mask.to(dtype=tensor.dtype))
+
+
+def reset_optimizer(
+    optimizer: torch.optim.Optimizer,
+    *,
+    reset_params: list[str],  # where str is the key to a torch.nn.Parameter
+    optimizer_state_keys: list[str],
+    prune_ratio: float = 0.9,
+):
+    pruning_fn = partial(magnitude_pruning_, prune_ratio=prune_ratio)
+    n_zeros = 0
+    n_total = 0
+
+    optimizer_state = optimizer.state
+    if isinstance(optimizer, ZeroRedundancyOptimizer):
+        optimizer_state = optimizer.optim.state
+
+    for param in reset_params:
+        param_state = optimizer_state[param]
+        if len(param_state) == 0:  # no state for this param, happens for ZeRo optimizer
+            continue
+        for key in optimizer_state_keys:
+            pruning_fn(
+                param_state[key]
+            )  # pruning fn has to be inplace to keep the same keys in the dict
+            n_total += param_state[key].numel()
+            n_zeros += torch.sum(param_state[key] == 0).item()
+
+    _zeroed = n_zeros / (1e-7 + n_total) * 100
+    LOG.info(f"Percent of optimizer states zeroed: {_zeroed:.2f}")
+    LOG.info(f"absolute n of optimizer states zeroed: {n_zeros}")
 
 
 class ReLoRACallback(TrainerCallback):
@@ -97,6 +127,25 @@ class ReLoRACallback(TrainerCallback):
                 "relora",
             )
 
+            if "adam" in args.optim.lower():
+                optimizer_state_keys = ["exp_avg", "exp_avg_sq"]
+            else:
+                raise ValueError(f"Optimizer {args.optim} not supported with ReLoRA")
+
+            lora_params = [
+                n
+                for n, p in model.named_parameters()
+                if p.requires_grad and "lora_" in n
+            ]
+
+            model.save_pretrained(
+                os.path.join(
+                    args.output_dir,
+                    f"{PREFIX_CHECKPOINT_DIR}-{state.global_step}",
+                    "adapter",
+                ),
+                safe_serialization=True,
+            )
             with torch.no_grad():
                 merge_and_save(
                     model,
@@ -107,7 +156,12 @@ class ReLoRACallback(TrainerCallback):
                     actually_save=is_main_process(),
                     cpu_offload=self.cpu_offload,
                 )
-                reset_optimizer(optimizer)
+                reset_optimizer(
+                    optimizer,
+                    reset_params=lora_params,
+                    optimizer_state_keys=optimizer_state_keys,
+                    prune_ratio=args.relora_prune_ratio,
+                )
 
             if self.quantized:
                 self.last_full_model = checkpoint_folder
@@ -197,11 +251,13 @@ class ReLoRAScheduler(LRScheduler):
         inner_schedule: LRScheduler,
         relora_steps: int,
         warmup_steps: int,
+        anneal_steps: int = 1,
         min_lr_scale: float = 0.001,
     ) -> None:
         self.inner_schedule = inner_schedule
         self.relora_steps = relora_steps
         self.warmup_steps = warmup_steps
+        self.anneal_steps = anneal_steps
         self.min_lr_scale = min_lr_scale
         super().__init__(optimizer, inner_schedule.last_epoch, inner_schedule.verbose)
 
@@ -210,10 +266,20 @@ class ReLoRAScheduler(LRScheduler):
 
         original = self.inner_schedule.get_lr()
         step = self.last_epoch
-        if step < self.relora_steps:
+
+        if step < self.relora_steps - self.warmup_steps:
             scale = 1
         else:
-            cycle_t = min(1.0, (step % self.relora_steps) / self.warmup_steps)
+            per_relora_progress = step % self.relora_steps
+            if per_relora_progress < self.warmup_steps:
+                cycle_t = min(1.0, (per_relora_progress) / self.warmup_steps)
+            elif per_relora_progress > (self.relora_steps - self.anneal_steps):
+                cycle_t = min(
+                    1.0,
+                    (self.relora_steps - per_relora_progress) / self.anneal_steps,
+                )
+            else:
+                cycle_t = 1
             scale = cycle_t * (1 - self.min_lr_scale) + self.min_lr_scale
 
         if isinstance(original, Sequence):
@@ -238,7 +304,11 @@ def sharded_paths(path: str, module_names: List[str]) -> Dict[str, str]:
 
 def lora_delta_weight(layer: peft.tuners.lora.LoraLayer, device) -> torch.Tensor:
     if isinstance(layer, (peft.tuners.lora.Linear8bitLt, peft.tuners.lora.Linear4bit)):
-        adapter = layer.active_adapter
+        adapter: Union[List[str], str] = layer.active_adapter
+        if isinstance(adapter, list):
+            if len(adapter) > 1:
+                raise ValueError("unhandled relora for multiple adapters")
+            adapter = adapter[0]
         return (
             peft.utils.transpose(
                 layer.lora_B[adapter].weight.detach().to(device)
@@ -248,7 +318,7 @@ def lora_delta_weight(layer: peft.tuners.lora.LoraLayer, device) -> torch.Tensor
             * layer.scaling[adapter]
         )
 
-    return layer.get_delta_weight().to(device)
+    raise ValueError("unhandled lora layer type")
 
 
 def find_lora_modules(model: peft.LoraModel) -> Dict[str, peft.tuners.lora.LoraLayer]:
@@ -273,9 +343,9 @@ def update_weights(
 ):
     if reinit:
         for adapter_name in target.lora_A:
-            target.reset_lora_parameters(adapter_name)
+            target.reset_lora_parameters(adapter_name, True)
         for adapter_name in target.lora_embedding_A:
-            target.reset_lora_parameters(adapter_name)
+            target.reset_lora_parameters(adapter_name, True)
 
     if isinstance(target, peft.tuners.lora.Linear4bit):
         # This could be faster, but the quantization of Linear4bit weights occurs
@@ -286,7 +356,9 @@ def update_weights(
         target.weight.data = new_weight.cpu()
         target.to(device)
     elif isinstance(target, peft.tuners.lora.Linear8bitLt):
-        target.weight = bnb.nn.Int8Params(new_weight, requires_grad=False).to(device)
+        target.weight.data = (
+            bnb.nn.Int8Params(new_weight, requires_grad=False).to(device).data
+        )
     else:
         target.weight.data = new_weight.to(device)
 
@@ -304,14 +376,17 @@ def merge_and_save(
 
     if not quantized:
         for module_name, target in modules.items():
-            update = target.get_delta_weight(target.active_adapter).detach()
+            active_adapter = target.active_adapter
+            if isinstance(active_adapter, list):
+                active_adapter = active_adapter[0]
+            update = target.get_delta_weight(active_adapter).detach()
             target.weight.data += update
 
             if reinit:
                 for adapter_name in target.lora_A:
-                    target.reset_lora_parameters(adapter_name)
+                    target.reset_lora_parameters(adapter_name, True)
                 for adapter_name in target.lora_embedding_A:
-                    target.reset_lora_parameters(adapter_name)
+                    target.reset_lora_parameters(adapter_name, True)
         return
 
     os.makedirs(model_dst, exist_ok=True)
@@ -363,6 +438,7 @@ def merge_and_save(
             LOG.info(f"saving tensors to {shard_fn}")
             st.save_file(out_tensors, shard_fn, metadata={"format": "pt"})
 
+        barrier()
         del in_tensors
         del out_tensors
         torch.cuda.empty_cache()

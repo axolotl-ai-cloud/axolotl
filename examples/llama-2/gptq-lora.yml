@@ -1,5 +1,4 @@
 base_model: TheBloke/Llama-2-7B-GPTQ
-is_llama_derived_model: false
 gptq: true
 gptq_disable_exllama: true
 model_type: AutoModelForCausalLM

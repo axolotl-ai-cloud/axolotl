@@ -7,8 +7,8 @@ FROM nvidia/cuda:$CUDA_VERSION-cudnn$CUDNN_VERSION-devel-ubuntu$UBUNTU_VERSION a
 
 ENV PATH="/root/miniconda3/bin:${PATH}"
 
-ARG PYTHON_VERSION="3.9"
-ARG PYTORCH_VERSION="2.0.1"
+ARG PYTHON_VERSION="3.10"
+ARG PYTORCH_VERSION="2.1.2"
 ARG CUDA="118"
 ARG TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6 9.0+PTX"
 
@@ -29,7 +29,7 @@ ENV PATH="/root/miniconda3/envs/py${PYTHON_VERSION}/bin:${PATH}"
 WORKDIR /workspace
 
 RUN python3 -m pip install --upgrade pip && pip3 install packaging && \
-    python3 -m pip install --no-cache-dir -U torch==${PYTORCH_VERSION}+cu${CUDA} deepspeed-kernels --extra-index-url https://download.pytorch.org/whl/cu$CUDA
+    python3 -m pip install --no-cache-dir -U torch==${PYTORCH_VERSION}+cu${CUDA} --extra-index-url https://download.pytorch.org/whl/cu$CUDA
 
 RUN git lfs install --skip-repo && \
     pip3 install awscli && \

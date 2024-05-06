@@ -90,9 +90,43 @@ def get_turns(  # pylint: disable=too-many-return-statements
             yield "", "[INST] "
         for i, (role, message) in enumerate(self.messages[1:]):
             if message:
-                yield role + " ", message + seps[i % 2]
+                if (i % 2 == 0 and not self.system_message) or (
+                    i % 2 != 0 and self.system_message
+                ):
+                    role = "<s> " + role
+                yield role + " ", message
             else:
                 yield role, ""
+        return
+    if self.sep_style == SeparatorStyle.LLAMA2 and self.name == "mistral":
+        contains_sys_msg = False
+        if self.system_message:
+            contains_sys_msg = True
+            if self.messages:
+                # There is no clear guidance on how to handle system messages in Mistral so we just prepend it to the first human instruction separated by a newline
+                first_role, first_msg = self.messages[0]
+                if first_role == self.roles[0]:
+                    system_prompt = self.system_template.format(
+                        system_message=" " + self.system_message
+                    )
+                    system_prompt += first_msg
+                    self.messages.pop(0)
+            yield "", system_prompt
+        for i, (role, message) in enumerate(self.messages):
+            if message and i == 0 and not contains_sys_msg:
+                yield "", system_prompt.strip() + " " + message  # if there is no system message, we need to make sure there is the a `<s> [INST]` at the beginning of the first instruction.
+            elif message:
+                yield role + " ", message
+            else:
+                yield role, ""
+        return
+    if self.sep_style == SeparatorStyle.GEMMA:
+        if self.system_message:
+            raise ValueError("Gemma chat template does not support system messages")
+        for i, (role, message) in enumerate(self.messages):
+            prefix = "<bos>" if i == 0 else ""
+            message_str = message if message else ""
+            yield prefix + "<start_of_turn>" + role + "\n", message_str + "<end_of_turn>\n"
         return
     if self.sep_style == SeparatorStyle.CHATGLM:
         # source: https://huggingface.co/THUDM/chatglm-6b/blob/1d240ba371910e9282298d4592532d7f0f3e9f3e/modeling_chatglm.py#L1302-L1308

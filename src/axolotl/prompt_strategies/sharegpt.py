@@ -1,4 +1,6 @@
 """Module containing the SimpleShareGPTPromptTokenizingStrategy class"""
+
+import logging
 from typing import Any, Dict, Optional
 
 from fastchat.conversation import Conversation, SeparatorStyle, register_conv_template
@@ -80,6 +82,20 @@ def load_guanaco(tokenizer, cfg):
     )
 
 
+def load_glaive(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
+    conversation = (
+        ds_cfg["conversation"]
+        if ds_cfg and "conversation" in ds_cfg
+        else "chatml_glaive"
+    )
+    return GlaiveShareGPTPromptTokenizingStrategy(
+        ShareGPTPrompterV2(conversation=conversation),
+        tokenizer,
+        cfg.train_on_inputs,
+        cfg.sequence_len,
+    )
+
+
 class SimpleShareGPTPromptTokenizingStrategy(ShareGPTPromptTokenizingStrategy):
     """
     basic sharegpt strategy to grab conversations from the sample row
@@ -152,3 +168,29 @@ class GuanacoShareGPTPromptTokenizingStrategy(ShareGPTPromptTokenizingStrategy):
             {"from": role_map[t["role"]], "value": t["text"]} for t in conversations
         ]
         return turns
+
+
+class UltrachatShareGPTPromptTokenizingStrategy(SimpleShareGPTPromptTokenizingStrategy):
+    """
+    sharegpt strategy that remaps ultrachat data to sharegpt format
+    """
+
+    def get_conversation_thread(self, prompt):
+        conversations = prompt["messages"]
+        role_map = {"user": "human", "assistant": "gpt"}
+        turns = [
+            {"from": role_map[t["role"]], "value": t["content"]} for t in conversations
+        ]
+        return turns
+
+
+class GlaiveShareGPTPromptTokenizingStrategy(SimpleShareGPTPromptTokenizingStrategy):
+    """
+    sharegpt strategy that remaps glaive data to sharegpt format
+    """
+
+    def get_conversation_thread(self, prompt):
+        conversation = chatml_to_conversation(prompt)
+        conversation = merge_consecutive_messages(conversation)
+
+        return conversation

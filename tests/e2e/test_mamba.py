@@ -7,6 +7,8 @@ import os
 import unittest
 from pathlib import Path
 
+import pytest
+
 from axolotl.cli import load_datasets
 from axolotl.common.cli import TrainerCliArgs
 from axolotl.train import train
@@ -19,9 +21,10 @@ LOG = logging.getLogger("axolotl.tests.e2e")
 os.environ["WANDB_DISABLED"] = "true"
 
 
-class TestMistral(unittest.TestCase):
+@pytest.mark.skip(reason="skipping until upstreamed into transformers")
+class TestMamba(unittest.TestCase):
     """
-    Test case for Llama models using LoRA
+    Test case for Mamba models
     """
 
     @with_temp_dir

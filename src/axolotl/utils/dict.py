@@ -12,4 +12,4 @@ class DictDefault(Dict):
         return None
 
     def __or__(self, other):
-        return DictDefault(super().__or__(other))
+        return DictDefault(super().__ror__(other))

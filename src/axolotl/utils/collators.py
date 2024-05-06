@@ -132,24 +132,55 @@ class BatchSamplerDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):
     """
 
     def __call__(self, features, return_tensors=None):
-        chunked_data = {}
-        for feature in features[0].keys():
-            if feature == "length":
-                continue
-            if feature == "attention_mask":
-                arrays = [
-                    (1) * np.array(item[feature])
-                    for item in features
-                    if feature in item
-                ]
-                chunked_data[feature] = np.concatenate(arrays)
-            else:
-                arrays = [
-                    np.array(item[feature]) for item in features if feature in item
-                ]
-                chunked_data[feature] = np.concatenate(arrays)
-        features = [chunked_data]
-        return super().__call__(features, return_tensors=return_tensors)
+        if not isinstance(features[0], list):
+            features = [features]
+        out_features = [{} for _ in features]
+        for i, features_ in enumerate(features):
+            for feature in features_[0].keys():
+                if feature == "length":
+                    continue
+                if feature == "attention_mask":
+                    arrays = [
+                        (1) * np.array(item[feature])
+                        for i, item in enumerate(features_)
+                        if feature in item
+                    ]
+                    out_features[i][feature] = np.concatenate(arrays)
+                else:
+                    arrays = [
+                        np.array(item[feature]) for item in features_ if feature in item
+                    ]
+                    out_features[i][feature] = np.concatenate(arrays)
+        return super().__call__(out_features, return_tensors=return_tensors)
+
+
+@dataclass
+class V2BatchSamplerDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):
+    """
+    Collator for multipack specific to the using the BatchSampler
+    """
+
+    def __call__(self, features, return_tensors=None):
+        if not isinstance(features[0], list):
+            features = [features]
+        out_features = [{} for _ in features]
+        for i, features_ in enumerate(features):
+            for feature in features_[0].keys():
+                if feature == "length":
+                    continue
+                if feature == "attention_mask":
+                    arrays = [
+                        (i + 1) * np.array(item[feature])
+                        for i, item in enumerate(features_)
+                        if feature in item
+                    ]
+                    out_features[i][feature] = np.concatenate(arrays)
+                else:
+                    arrays = [
+                        np.array(item[feature]) for item in features_ if feature in item
+                    ]
+                    out_features[i][feature] = np.concatenate(arrays)
+        return super().__call__(out_features, return_tensors=return_tensors)
 
 
 @dataclass
@@ -178,3 +209,35 @@ class MambaDataCollator:
             "input_ids": input_ids,
             "labels": labels,
         }
+
+
+@dataclass
+class PretrainingBatchSamplerDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):
+    """
+    Collator for multipack specific to the using the BatchSampler
+    """
+
+    def __init__(self, *args, multipack_attn=True, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.multipack_attn = multipack_attn
+
+    def __call__(self, features, return_tensors=None):
+        chunked_data = {}
+        for feature in features.keys():
+            if feature == "length":
+                continue
+            if feature == "attention_mask":
+                if self.multipack_attn:
+                    arrays = [
+                        (i + 1) * np.array(item[feature])
+                        for i, item in enumerate(features[feature])
+                        if feature in item
+                    ]
+                else:
+                    arrays = [(1) * np.array(item) for item in features[feature]]
+                chunked_data[feature] = np.concatenate(arrays)
+            else:
+                arrays = [np.array(item) for item in features[feature]]
+                chunked_data[feature] = np.concatenate(arrays)
+        features = [chunked_data]
+        return super().__call__(features, return_tensors=return_tensors)

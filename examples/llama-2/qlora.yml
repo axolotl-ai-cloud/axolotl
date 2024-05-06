@@ -1,7 +1,6 @@
 base_model: NousResearch/Llama-2-7b-hf
 model_type: LlamaForCausalLM
 tokenizer_type: LlamaTokenizer
-is_llama_derived_model: true
 
 load_in_8bit: false
 load_in_4bit: true
@@ -43,8 +42,8 @@ learning_rate: 0.0002
 
 train_on_inputs: false
 group_by_length: false
-bf16: true
-fp16: false
+bf16: auto
+fp16:
 tf32: false
 
 gradient_checkpointing: true
@@ -65,6 +64,3 @@ weight_decay: 0.0
 fsdp:
 fsdp_config:
 special_tokens:
-  bos_token: "<s>"
-  eos_token: "</s>"
-  unk_token: "<unk>"

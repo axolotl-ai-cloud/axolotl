@@ -1,0 +1,26 @@
+---
+title: Pre-training
+description: Data format for a pre-training completion task.
+order: 1
+---
+
+For pretraining, there is no prompt template or roles.  The only required field is `text`:
+
+```{.json filename="data.jsonl"}
+{"text": "first row"}
+{"text": "second row"}
+...
+```
+
+:::{.callout-note}
+
+### Streaming is recommended for large datasets
+
+Axolotl usually loads the entire dataset into memory. This will be challenging for large datasets. Use the following config to enable streaming:
+
+```{.yaml filename="config.yaml"}
+pretraining_dataset: # hf path only
+...
+```
+
+:::

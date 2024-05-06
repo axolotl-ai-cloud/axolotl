@@ -1,0 +1,27 @@
+ARG BASE_TAG=main
+FROM winglian/axolotl:$BASE_TAG
+
+ENV HF_DATASETS_CACHE="/workspace/data/huggingface-cache/datasets"
+ENV HUGGINGFACE_HUB_CACHE="/workspace/data/huggingface-cache/hub"
+ENV TRANSFORMERS_CACHE="/workspace/data/huggingface-cache/hub"
+ENV HF_HOME="/workspace/data/huggingface-cache/hub"
+ENV HF_HUB_ENABLE_HF_TRANSFER="1"
+
+EXPOSE 8888
+EXPOSE 22
+
+COPY scripts/cloud-entrypoint.sh /root/cloud-entrypoint.sh
+COPY scripts/motd /etc/motd
+
+RUN pip install jupyterlab notebook ipywidgets && \
+    jupyter lab clean
+RUN apt install --yes --no-install-recommends openssh-server tmux && \
+    mkdir -p ~/.ssh && \
+    chmod 700 ~/.ssh && \
+    printf "\n[[ -z \"\$TMUX\"  ]] && { tmux attach-session -t ssh_tmux || tmux new-session -s ssh_tmux; exit; }\n" >> ~/.bashrc && \
+    printf "[ ! -z \"\$TERM\" -a -r /etc/motd ] && cat /etc/motd\n" >> ~/.bashrc && \
+    chmod +x /workspace/axolotl/scripts/cloud-entrypoint.sh && \
+    chmod +x /root/cloud-entrypoint.sh
+
+ENTRYPOINT ["/root/cloud-entrypoint.sh"]
+CMD ["sleep", "infinity"]

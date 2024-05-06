@@ -1,14 +1,13 @@
 base_model: 01-ai/Yi-34B-Chat
 model_type: LlamaForCausalLM
 tokenizer_type: LlamaTokenizer
-is_mistral_derived_model: false
-is_llama_derived_model: true
+
 load_in_8bit: false
 load_in_4bit: true
 strict: false
 sequence_len: 1024
-bf16: true
-fp16: false
+bf16: auto
+fp16:
 tf32: false
 flash_attention: true
 special_tokens:
@@ -29,7 +28,7 @@ num_epochs: 1
 val_set_size: 0.1
 evals_per_epoch: 5
 eval_table_size:
-eval_table_max_new_tokens: 128
+eval_max_new_tokens: 128
 eval_sample_packing: false
 eval_batch_size: 1
 

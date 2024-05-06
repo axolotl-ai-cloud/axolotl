@@ -11,7 +11,7 @@ from transformers import BatchEncoding, PreTrainedTokenizer
 from axolotl.monkeypatch.fastchat_conversation_turns import (
     add_get_turns_to_conversation,
 )
-from axolotl.prompters import IGNORE_TOKEN_ID
+from axolotl.prompters import IGNORE_TOKEN_ID, Prompter
 
 LOG = logging.getLogger("axolotl")
 
@@ -37,7 +37,7 @@ class PromptTokenizingStrategy(abc.ABC):
 
     def __init__(
         self,
-        prompter,
+        prompter: Prompter,
         tokenizer,
         train_on_inputs: bool = False,
         sequence_len: int = 2048,
@@ -339,13 +339,13 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
         conversation: Conversation = (
             self.prompter._conversation.copy()  # pylint: disable=protected-access
         )
-        
+
         input_roles = {conversation.roles[0]}
         output_roles = {conversation.roles[1]}
-        
-        # if len(conversation.roles) == 3:
-        #     tool_role_label = conversation.roles[2]
-        #     input_roles.add(tool_role_label)
+
+        if len(conversation.roles) == 3:
+            tool_role_label = conversation.roles[2]
+            input_roles.add(tool_role_label)
 
         # Add roles from the config
         if self.prompter.roles:
@@ -356,7 +356,6 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
             if "output" in self.prompter.roles and self.prompter.roles["output"]:
                 for role in self.prompter.roles["output"]:
                     output_roles.add(role)
-        
         # support for custom roles from the dataset, only useful for vicuna style prompts/roles
         role_remap = []
         if (
@@ -376,7 +375,6 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
                 if not isinstance(part, tuple):
                     LOG.warning(f"expected tuple, got {part}")
                     continue
-                
                 role, content = part
                 has_system_prompt = False
 
@@ -384,7 +382,6 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
                 input_turn = any(r.lower() in role.lower() for r in input_roles)
                 output_turn = any(r.lower() in role.lower() for r in output_roles)
                 empty_role = role.strip() == ""
-                                
                 if not any([input_turn, output_turn, empty_role]):
                     LOG.warning(f"unhandled role: {role}")
                     continue

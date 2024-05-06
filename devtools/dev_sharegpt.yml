@@ -1,0 +1,48 @@
+# Example config for debugging the sharegpt prompt format
+base_model: TinyLlama/TinyLlama-1.1B-Chat-v1.0
+model_type: LlamaForCausalLM
+tokenizer_type: LlamaTokenizer
+
+load_in_8bit: true
+load_in_4bit: false
+
+datasets:
+  - path: philschmid/guanaco-sharegpt-style
+    type: sharegpt
+    shards: 10
+val_set_size: 0
+output_dir: temp_debug/axolotl_outputs/model
+dataset_prepared_path: temp_debug/axolotl_outputs/data
+dataset_processes: 1
+
+sequence_len: 4096
+sample_packing: false
+pad_to_sequence_len: true
+
+adapter: lora
+lora_model_dir:
+lora_r: 32
+lora_alpha: 16
+lora_dropout: 0.05
+lora_target_linear: true
+lora_fan_in_fan_out:
+
+micro_batch_size: 1
+num_epochs: 1
+max_steps: 10
+optimizer: adamw_bnb_8bit
+lr_scheduler: cosine
+learning_rate: 0.0002
+
+train_on_inputs: false
+group_by_length: false
+bf16: false
+fp16: true
+tf32: false
+
+gradient_checkpointing: true
+logging_steps: 1
+flash_attention: true
+
+warmup_steps: 10
+weight_decay: 0.0

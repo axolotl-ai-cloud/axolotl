@@ -34,8 +34,8 @@ learning_rate: 5e-5
 train_on_inputs: false
 group_by_length: true
 
-bf16: true
-fp16: false
+bf16: auto
+fp16:
 tf32: true
 
 gradient_checkpointing: false
@@ -49,7 +49,7 @@ flash_attention:
 warmup_steps: 10
 evals_per_epoch: 4
 eval_table_size:
-eval_table_max_new_tokens: 128
+eval_max_new_tokens: 128
 saves_per_epoch: 1
 debug:
 deepspeed:

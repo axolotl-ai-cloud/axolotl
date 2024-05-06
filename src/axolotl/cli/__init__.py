@@ -1,15 +1,18 @@
 """Prepare and train a model on a dataset. Can also infer from a model or merge lora"""
 
 import importlib
+import json
 import logging
 import os
 import random
 import sys
+import tempfile
 from pathlib import Path
 from threading import Thread
 from typing import Any, Dict, List, Optional, Union
+from urllib.parse import urlparse
 
-import gradio as gr
+import requests
 import torch
 import yaml
 
@@ -19,14 +22,21 @@ from art import text2art
 from huggingface_hub import HfApi
 from huggingface_hub.utils import LocalTokenNotFoundError
 from transformers import GenerationConfig, TextIteratorStreamer, TextStreamer
+from transformers.utils import is_torch_bf16_gpu_available
+from transformers.utils.import_utils import _is_package_available
 
 from axolotl.common.cli import TrainerCliArgs, load_model_and_tokenizer
 from axolotl.logging_config import configure_logging
 from axolotl.train import TrainDatasetMeta
-from axolotl.utils.config import normalize_config, validate_config
-from axolotl.utils.data import prepare_dataset
+from axolotl.utils.config import (
+    normalize_cfg_datasets,
+    normalize_config,
+    validate_config,
+)
+from axolotl.utils.data import load_prepare_dpo_datasets, prepare_dataset
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import is_main_process
+from axolotl.utils.mlflow_ import setup_mlflow_env_vars
 from axolotl.utils.models import load_tokenizer
 from axolotl.utils.tokenization import check_dataset_labels
 from axolotl.utils.trainer import prepare_optim_env
@@ -52,6 +62,66 @@ def print_axolotl_text_art(suffix=None):
     if is_main_process():
         print(ascii_art)
 
+    print_dep_versions()
+
+
+def print_dep_versions():
+    packages = ["accelerate", "peft", "transformers", "trl", "torch", "bitsandbytes"]
+    max_len = max(len(pkg) for pkg in packages)
+    if is_main_process():
+        print("*" * 40)
+        print("**** Axolotl Dependency Versions *****")
+        for pkg in packages:
+            version = _is_package_available(pkg, return_version=True)
+            print(f"{pkg: >{max_len}}: {version[1]: <15}")
+        print("*" * 40)
+
+
+def check_remote_config(config: Union[str, Path]):
+    # Check if the config is a valid HTTPS URL to a .yml or .yaml file
+    if not (isinstance(config, str) and config.startswith("https://")):
+        return config  # Return the original value if it's not a valid URL
+
+    filename = os.path.basename(urlparse(config).path)
+    temp_dir = tempfile.mkdtemp()
+
+    try:
+        response = requests.get(config, timeout=30)
+        response.raise_for_status()  # Check for HTTP errors
+
+        content = response.content
+        try:
+            # Try parsing as JSON first to catch cases where JSON content is mistakenly considered YAML
+            json.loads(content)
+            # Log a warning but do not raise an error; JSON is technically valid YAML - this can happen when you forget to point to a raw github link
+            LOG.warning(
+                f"Warning: The content of the file at {config} is JSON, which is technically valid YAML but might not be intended."
+            )
+        except json.JSONDecodeError:
+            # If it's not valid JSON, verify it's valid YAML
+            try:
+                yaml.safe_load(content)
+            except yaml.YAMLError as err:
+                raise ValueError(
+                    f"Failed to parse the content at {config} as YAML: {err}"
+                ) from err
+
+        # Write the content to a file if it's valid YAML (or JSON treated as YAML)
+        output_path = Path(temp_dir) / filename
+        with open(output_path, "wb") as file:
+            file.write(content)
+        LOG.info(
+            f"Using the following config obtained from {config}:\n\n{content.decode('utf-8')}\n"
+        )
+        return output_path
+
+    except requests.RequestException as err:
+        # This catches all requests-related exceptions including HTTPError
+        raise RuntimeError(f"Failed to download {config}: {err}") from err
+    except Exception as err:
+        # Catch-all for any other exceptions
+        raise err
+
 
 def get_multi_line_input() -> Optional[str]:
     print("Give me an instruction (Ctrl + D to submit): ")
@@ -71,6 +141,12 @@ def do_merge_lora(
     safe_serialization = cfg.save_safetensors is True
 
     LOG.info("running merge of LoRA with base model")
+    model = model.merge_and_unload(progressbar=True)
+    try:
+        model.to(dtype=cfg.torch_dtype)
+    except RuntimeError:
+        pass
+    model.generation_config.do_sample = True
     model = model.merge_and_unload()
     model.to(dtype=cfg.torch_dtype)
 
@@ -161,6 +237,8 @@ def do_inference_gradio(
     cfg: DictDefault,
     cli_args: TrainerCliArgs,
 ):
+    import gradio as gr
+
     model, tokenizer = load_model_and_tokenizer(cfg=cfg, cli_args=cli_args)
     prompter = cli_args.prompter
     default_tokens = {"unk_token": "<unk>", "bos_token": "<s>", "eos_token": "</s>"}
@@ -275,14 +353,14 @@ def check_not_in(list1: List[str], list2: Union[Dict[str, Any], List[str]]) -> b
     return not any(el in list2 for el in list1)
 
 
-def load_cfg(config: Path = Path("examples/"), **kwargs):
+def load_cfg(config: Union[str, Path] = Path("examples/"), **kwargs):
+    config = check_remote_config(config)
     if Path(config).is_dir():
-        config = choose_config(config)
+        config = choose_config(Path(config))
 
     # load the config from the yaml file
     with open(config, encoding="utf-8") as file:
         cfg: DictDefault = DictDefault(yaml.safe_load(file))
-    cfg.axolotl_config_path = config
     # if there are any options passed in the cli, if it is something that seems valid from the yaml,
     # then overwrite the value
     cfg_keys = cfg.keys()
@@ -295,13 +373,33 @@ def load_cfg(config: Path = Path("examples/"), **kwargs):
             else:
                 cfg[k] = kwargs[k]
 
-    validate_config(cfg)
+    cfg.axolotl_config_path = config
+
+    try:
+        device_props = torch.cuda.get_device_properties("cuda")
+        gpu_version = "sm_" + str(device_props.major) + str(device_props.minor)
+    except:  # pylint: disable=bare-except # noqa: E722
+        gpu_version = None
+
+    cfg = validate_config(
+        cfg,
+        capabilities={
+            "bf16": is_torch_bf16_gpu_available(),
+            "n_gpu": os.environ.get("WORLD_SIZE", 1),
+            "compute_capability": gpu_version,
+        },
+    )
 
     prepare_optim_env(cfg)
 
     normalize_config(cfg)
 
+    normalize_cfg_datasets(cfg)
+
     setup_wandb_env_vars(cfg)
+
+    setup_mlflow_env_vars(cfg)
+
     return cfg
 
 
@@ -341,6 +439,40 @@ def load_datasets(
     )
 
 
+def load_rl_datasets(
+    *,
+    cfg: DictDefault,
+    cli_args: TrainerCliArgs,  # pylint: disable=unused-argument
+) -> TrainDatasetMeta:
+    train_dataset, eval_dataset = load_prepare_dpo_datasets(cfg)
+    total_num_steps = int(
+        math.ceil(len(train_dataset) * cfg.num_epochs / cfg.batch_size)
+    )
+
+    if cli_args.debug or cfg.debug:
+        LOG.info("check_dataset_labels...")
+
+        tokenizer = load_tokenizer(cfg)
+        check_dataset_labels(
+            train_dataset.select(
+                [
+                    random.randrange(0, len(train_dataset) - 1)  # nosec
+                    for _ in range(cli_args.debug_num_examples)
+                ]
+            ),
+            tokenizer,
+            num_examples=cli_args.debug_num_examples,
+            text_only=cli_args.debug_text_only,
+            rl_mode=True,
+        )
+
+    return TrainDatasetMeta(
+        train_dataset=train_dataset,
+        eval_dataset=eval_dataset,
+        total_num_steps=total_num_steps,
+    )
+
+
 def check_accelerate_default_config():
     if Path(config_args.default_yaml_config_file).exists():
         LOG.warning(
@@ -349,6 +481,13 @@ def check_accelerate_default_config():
 
 
 def check_user_token():
+    # Skip check if HF_HUB_OFFLINE is set to True
+    if os.getenv("HF_HUB_OFFLINE") == "1":
+        LOG.info(
+            "Skipping HuggingFace token verification because HF_HUB_OFFLINE is set to True. Only local files will be used."
+        )
+        return True
+
     # Verify if token is valid
     api = HfApi()
     try:

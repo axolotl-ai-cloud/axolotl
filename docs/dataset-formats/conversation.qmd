@@ -1,0 +1,63 @@
+---
+title: Conversation
+description: Conversation format for supervised fine-tuning.
+order: 3
+---
+
+## sharegpt
+
+conversations where `from` is `human`/`gpt`. (optional: first row with role `system` to override default system prompt)
+
+```{.json filename="data.jsonl"}
+{"conversations": [{"from": "...", "value": "..."}]}
+```
+
+Note: `type: sharegpt` opens special configs:
+- `conversation`: enables conversions to many Conversation types. Refer to the 'name' [here](https://github.com/lm-sys/FastChat/blob/main/fastchat/conversation.py) for options.
+- `roles`: allows you to specify the roles for input and output. This is useful for datasets with custom roles such as `tool` etc to support masking.
+- `field_human`: specify the key to use instead of `human` in the conversation.
+- `field_model`: specify the key to use instead of `gpt` in the conversation.
+
+```yaml
+datasets:
+    path: ...
+    type: sharegpt
+
+    conversation: # Options (see Conversation 'name'): https://github.com/lm-sys/FastChat/blob/main/fastchat/conversation.py
+    field_human: # Optional[str]. Human key to use for conversation.
+    field_model: # Optional[str]. Assistant key to use for conversation.
+    # Add additional keys from your dataset as input or output roles
+    roles:
+      input: # Optional[List[str]]. These will be masked based on train_on_input
+      output: # Optional[List[str]].
+```
+
+## pygmalion
+
+```{.json filename="data.jsonl"}
+{"conversations": [{"role": "...", "value": "..."}]}
+```
+
+## sharegpt.load_role
+
+conversations where `role` is used instead of `from`
+
+```{.json filename="data.jsonl"}
+{"conversations": [{"role": "...", "value": "..."}]}
+```
+
+## sharegpt.load_guanaco
+
+conversations where `from` is `prompter` `assistant` instead of default sharegpt
+
+```{.json filename="data.jsonl"}
+{"conversations": [{"from": "...", "value": "..."}]}
+```
+
+## sharegpt_jokes
+
+creates a chat where bot is asked to tell a joke, then explain why the joke is funny
+
+```{.json filename="data.jsonl"}
+{"conversations": [{"title": "...", "text": "...", "explanation": "..."}]}
+```
