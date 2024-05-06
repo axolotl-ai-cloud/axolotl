@@ -233,6 +233,12 @@ def do_inference_gradio(
 
     model, tokenizer = load_model_and_tokenizer(cfg=cfg, cli_args=cli_args)
     prompter = cli_args.prompter
+    default_tokens = {"unk_token": "<unk>", "bos_token": "<s>", "eos_token": "</s>"}
+
+    for token, symbol in default_tokens.items():
+        # If the token isn't already specified in the config, add it
+        if not (cfg.special_tokens and token in cfg.special_tokens):
+            tokenizer.add_special_tokens({token: symbol})
 
     prompter_module = None
     if prompter:
@@ -295,7 +301,12 @@ def do_inference_gradio(
         title=cfg.get("gradio_title", "Axolotl Gradio Interface"),
     )
 
-    demo.queue().launch(show_api=False, share=cfg.get("gradio_share", True), server_name=cfg.get("gradio_server_name", "127.0.0.1"), server_port=cfg.get("gradio_server_port", None))
+    demo.queue().launch(
+        show_api=False,
+        share=cfg.get("gradio_share", True),
+        server_name=cfg.get("gradio_server_name", "127.0.0.1"),
+        server_port=cfg.get("gradio_server_port", None),
+    )
 
 
 def choose_config(path: Path):
