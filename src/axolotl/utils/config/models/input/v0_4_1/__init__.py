@@ -504,6 +504,9 @@ class AxolotlInputConfig(
 
     sequence_len: int = Field(default=512)
     min_sample_len: Optional[int] = None
+    max_prompt_len: int = Field(
+        default=512, metadata={"help": "maximum prompt length for RL training"}
+    )
     sample_packing: Optional[bool] = None
     eval_sample_packing: Optional[bool] = None
     pad_to_sequence_len: Optional[bool] = None
