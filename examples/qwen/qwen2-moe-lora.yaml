@@ -23,8 +23,6 @@ lora_alpha: 16
 lora_dropout: 0.05
 lora_target_linear: true
 lora_fan_in_fan_out:
-# uncomment `loraplus_lr_ratio` to enable LoRA+
-# loraplus_lr_ratio: 16
 
 wandb_project:
 wandb_entity:
