@@ -348,7 +348,10 @@ class ShareGPTPrompter(Prompter):  # pylint: disable=too-few-public-methods
                 )
 
             if len(conv.messages) > 0 and ((role == conv.messages[-1][0])):
-                LOG.warning(f"{SHAREGPT_ASSERTION_FAILED_ROLE}: {sentence}")
+                if (
+                    role != "assistant"
+                ):  # back to back assistant calls may be okay for tool calls
+                    LOG.warning(f"{SHAREGPT_ASSERTION_FAILED_ROLE}: {sentence}")
 
             conv.append_message(role, sentence["value"])
 
