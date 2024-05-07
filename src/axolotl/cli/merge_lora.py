@@ -25,6 +25,8 @@ def do_cli(config: Path = Path("examples/"), **kwargs):
         load_in_8bit=False,
         load_in_4bit=False,
         flash_attention=False,
+        deepspeed=None,
+        fsdp=None,
         **kwargs,
     )
 
