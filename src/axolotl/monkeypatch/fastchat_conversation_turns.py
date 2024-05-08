@@ -124,7 +124,7 @@ def get_turns(  # pylint: disable=too-many-return-statements
                 yield role, ""
         return
     if self.sep_style == SeparatorStyle.LLAMA3 and self.name != "mistral":
-        yield "<|begin_of_text|>", ""
+        yield "", "<|begin_of_text|>"
         if self.system_message:
             yield "", system_prompt
         else:
