@@ -123,6 +123,18 @@ def get_turns(  # pylint: disable=too-many-return-statements
             else:
                 yield role, ""
         return
+    if self.sep_style == SeparatorStyle.LLAMA3 and self.name != "mistral":
+        yield "", "<|begin_of_text|>"
+        if self.system_message:
+            yield "", system_prompt
+        else:
+            yield "", ""
+        for i, (role, message) in enumerate(self.messages):
+            if message:
+                yield f"<|start_header_id|>{role}<|end_header_id|>\n\n", f"{message.strip()}<|eot_id|>"
+            else:
+                yield f"<|start_header_id|>{role}<|end_header_id|>\n\n", ""
+        return
     if self.sep_style == SeparatorStyle.GEMMA:
         if self.system_message:
             raise ValueError("Gemma chat template does not support system messages")
