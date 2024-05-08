@@ -1023,7 +1023,7 @@ class AxolotlInputConfig(
             raise ValueError("either datasets or pretraining_dataset is required")
         return data
 
-    @model_validator(mode="after")
+    @model_validator(mode="before")
     @classmethod
     def check_patch_fused_cel(cls, data):
         if data.get("patch_fused_cel"):
