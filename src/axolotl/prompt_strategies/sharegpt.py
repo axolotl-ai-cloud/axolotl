@@ -22,7 +22,7 @@ def register_chatml_template(system_message=None):
             name="chatml",
             system_template="<|im_start|>system\n{system_message}",
             system_message=system_message,
-            roles=["<|im_start|>user", "<|im_start|>assistant"],
+            roles=("<|im_start|>user", "<|im_start|>assistant"),
             sep_style=SeparatorStyle.CHATML,
             sep="<|im_end|>",
         )
@@ -32,7 +32,7 @@ def register_chatml_template(system_message=None):
             name="chatml_glaive",
             system_template="<|im_start|>system\n{system_message}",
             system_message=system_message,
-            roles=["<|im_start|>user", "<|im_start|>assistant", "<|im_start|>tool"],
+            roles=("<|im_start|>user", "<|im_start|>assistant", "<|im_start|>tool"),
             sep_style=SeparatorStyle.CHATML,
             sep="<|im_end|>",
         )
@@ -45,6 +45,7 @@ def register_llama3_template(system_message=None):
         Conversation(
             name="llama3",
             system_template="<|start_header_id|>system<|end_header_id|>\n\n{system_message}<|eot_id|>",
+            system_message=system_message,
             roles=("user", "assistant"),
             sep_style=SeparatorStyle.LLAMA3,
             sep="",
