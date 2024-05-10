@@ -123,12 +123,13 @@ def get_turns(  # pylint: disable=too-many-return-statements
             else:
                 yield role, ""
         return
-    if self.sep_style == SeparatorStyle.LLAMA3 and self.name != "mistral":
+    if self.sep_style == SeparatorStyle.LLAMA3:
         yield "", "<|begin_of_text|>"
         if self.system_message:
+            # For llama3, the system message is NOT incorporated into the first human instruction
+            # All messages follow <|start_header_id|>' + role + '<|end_header_id|>\n\n'+ message + '<|eot_id|>
             yield "", system_prompt
-        else:
-            yield "", ""
+
         for i, (role, message) in enumerate(self.messages):
             if message:
                 yield f"<|start_header_id|>{role}<|end_header_id|>\n\n", f"{message.strip()}<|eot_id|>"
