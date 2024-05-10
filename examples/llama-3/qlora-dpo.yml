@@ -6,9 +6,17 @@ load_in_8bit: false
 load_in_4bit: true
 strict: false
 
+dpo_beta: 0.1
+rl: dpo
+
+# Data
 datasets:
-  - path: aaditya/alpaca_subset_1
-    type: alpaca
+  - ds_type: json
+    data_files:
+      - mlabonne/orpo-dpo-mix-40k
+    split: train
+    type: llama3.argilla_chat
+
 dataset_prepared_path:
 val_set_size: 0
 output_dir: ./qlora-out
@@ -17,7 +25,7 @@ adapter: qlora
 lora_model_dir:
 
 sequence_len: 4096
-sample_packing: true
+sample_packing: false
 pad_to_sequence_len: true
 
 lora_r: 32
