@@ -391,7 +391,8 @@ def load_model(
             )
 
         if cfg.unsloth_cross_entropy_loss:
-            from axolotl.monkeypatch.unsloth import integrate_cross_entropy_loss_patch
+            from axolotl.monkeypatch.unsloth_ import integrate_cross_entropy_loss_patch
+
             integrate_cross_entropy_loss_patch()
 
     # Modify mistral derived models
@@ -832,9 +833,18 @@ def load_model(
     if cfg.adapter is not None:
         log_gpu_memory_usage(LOG, "after adapters", model.device)
 
-    # if cfg.unsloth_lora_mlp:
-    #     from axolotl.monkeypatch.unsloth import integrate_lora_mlp_patch
-    #     integrate_lora_mlp_patch(model)
+    if cfg.unsloth_lora_mlp:
+        from axolotl.monkeypatch.unsloth_ import integrate_lora_mlp_patch
+
+        integrate_lora_mlp_patch(model)
+    if cfg.unsloth_lora_qkv:
+        from axolotl.monkeypatch.unsloth_ import integrate_lora_qkv_patch
+
+        integrate_lora_qkv_patch(model)
+    if cfg.unsloth_lora_o:
+        from axolotl.monkeypatch.unsloth_ import integrate_lora_o_patch
+
+        integrate_lora_o_patch(model)
 
     # TODO resume_from_checkpoint handling
     return model, lora_config
