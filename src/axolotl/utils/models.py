@@ -395,6 +395,11 @@ def load_model(
 
             integrate_cross_entropy_loss_patch()
 
+        if cfg.unsloth_lora_qkv or cfg.unsloth_lora_o:
+            from axolotl.monkeypatch.unsloth_ import patch_self_attn_lora
+
+            patch_self_attn_lora()
+
     # Modify mistral derived models
     if (
         cfg.model_config_type == "mistral"
@@ -837,14 +842,10 @@ def load_model(
         from axolotl.monkeypatch.unsloth_ import integrate_lora_mlp_patch
 
         integrate_lora_mlp_patch(model)
-    if cfg.unsloth_lora_qkv:
-        from axolotl.monkeypatch.unsloth_ import integrate_lora_qkv_patch
+    if cfg.unsloth_lora_qkv or cfg.unsloth_lora_o:
+        from axolotl.monkeypatch.unsloth_ import integrate_lora_patch
 
-        integrate_lora_qkv_patch(model)
-    if cfg.unsloth_lora_o:
-        from axolotl.monkeypatch.unsloth_ import integrate_lora_o_patch
-
-        integrate_lora_o_patch(model)
+        integrate_lora_patch(model, cfg)
 
     # TODO resume_from_checkpoint handling
     return model, lora_config
