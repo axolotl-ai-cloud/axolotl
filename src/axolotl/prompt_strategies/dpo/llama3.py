@@ -17,8 +17,8 @@ def argilla(
             sample[
                 "prompt"
             ] = f"<|start_header_id|>user<|end_header_id|>\n\n{sample['instruction']}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
-        sample["chosen"] = f"{sample['chosen_response']}<|eot_id|><|end_of_text|>"
-        sample["rejected"] = f"{sample['rejected_response']}<|eot_id|><|end_of_text|>"
+        sample["chosen"] = f"{sample['chosen_response']}<|eot_id|>"
+        sample["rejected"] = f"{sample['rejected_response']}<|eot_id|>"
         return sample
 
     return transform_fn
@@ -36,10 +36,8 @@ def argilla_chat(
         sample[
             "prompt"
         ] = f"<|start_header_id|>user<|end_header_id|>\n\n{sample['chosen'][0]['content']}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
-        sample["chosen"] = f"{sample['chosen'][1]['content']}<|eot_id|><|end_of_text|>"
-        sample[
-            "rejected"
-        ] = f"{sample['rejected'][1]['content']}<|eot_id|><|end_of_text|>"
+        sample["chosen"] = f"{sample['chosen'][1]['content']}<|eot_id|>"
+        sample["rejected"] = f"{sample['rejected'][1]['content']}<|eot_id|>"
         return sample
 
     return transform_fn
@@ -64,8 +62,8 @@ def icr(
             sample[
                 "prompt"
             ] = f"<|start_header_id|>user<|end_header_id|>\n\n{sample['input']}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
-        sample["chosen"] = f"{sample['chosen']}<|eot_id|><|end_of_text|>"
-        sample["rejected"] = f"{sample['rejected']}<|eot_id|><|end_of_text|>"
+        sample["chosen"] = f"{sample['chosen']}<|eot_id|>"
+        sample["rejected"] = f"{sample['rejected']}<|eot_id|>"
         return sample
 
     return transform_fn
@@ -86,8 +84,8 @@ def intel(cfg, **kwargs):  # pylint: disable=possibly-unused-variable,unused-arg
             sample[
                 "prompt"
             ] = f"<|start_header_id|>user<|end_header_id|>\n\n{sample['question']}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
-        sample["chosen"] = f"{sample['chosen']}<|eot_id|><|end_of_text|>"
-        sample["rejected"] = f"{sample['rejected']}<|eot_id|><|end_of_text|>"
+        sample["chosen"] = f"{sample['chosen']}<|eot_id|>"
+        sample["rejected"] = f"{sample['rejected']}<|eot_id|>"
         return sample
 
     return transform_fn
@@ -106,8 +104,8 @@ def prompt_pairs(
             sample[
                 "prompt"
             ] = f"<|start_header_id|>user<|end_header_id|>\n\n{sample['prompt']}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
-        sample["chosen"] = f"{sample['chosen']}<|eot_id|><|end_of_text|>"
-        sample["rejected"] = f"{sample['rejected']}<|eot_id|><|end_of_text|>"
+        sample["chosen"] = f"{sample['chosen']}<|eot_id|>"
+        sample["rejected"] = f"{sample['rejected']}<|eot_id|>"
         return sample
 
     return transform_fn
@@ -128,10 +126,8 @@ def ultra(cfg, **kwargs):  # pylint: disable=possibly-unused-variable,unused-arg
             sample[
                 "prompt"
             ] = f"<|start_header_id|>user<|end_header_id|>\n\n{sample['prompt']}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
-        sample["chosen"] = f"{sample['chosen'][1]['content']}<|eot_id|><|end_of_text|>"
-        sample[
-            "rejected"
-        ] = f"{sample['rejected'][1]['content']}<|eot_id|><|end_of_text|>"
+        sample["chosen"] = f"{sample['chosen'][1]['content']}<|eot_id|>"
+        sample["rejected"] = f"{sample['rejected'][1]['content']}<|eot_id|>"
         return sample
 
     return transform_fn
