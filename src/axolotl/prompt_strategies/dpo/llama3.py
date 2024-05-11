@@ -1,5 +1,5 @@
 """
-DPO strategies for chatml
+DPO strategies for llama-3 chat template
 """
 
 
@@ -10,13 +10,13 @@ def argilla(
     def transform_fn(sample):
         if "system" in sample and sample["system"]:
             sample["prompt"] = (
-                f"<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n{sample['system']}<|eot_id|>"
+                f"<|start_header_id|>system<|end_header_id|>\n\n{sample['system']}<|eot_id|>"
                 f"<|start_header_id|>user<|end_header_id|>\n\n{sample['instruction']}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
             )
         else:
             sample[
                 "prompt"
-            ] = f"<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\n{sample['instruction']}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+            ] = f"<|start_header_id|>user<|end_header_id|>\n\n{sample['instruction']}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
         sample["chosen"] = f"{sample['chosen_response']}<|eot_id|><|end_of_text|>"
         sample["rejected"] = f"{sample['rejected_response']}<|eot_id|><|end_of_text|>"
         return sample
@@ -35,9 +35,11 @@ def argilla_chat(
     def transform_fn(sample):
         sample[
             "prompt"
-        ] = f"<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\n{sample['chosen'][0]['content']}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+        ] = f"<|start_header_id|>user<|end_header_id|>\n\n{sample['chosen'][0]['content']}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
         sample["chosen"] = f"{sample['chosen'][1]['content']}<|eot_id|><|end_of_text|>"
-        sample["rejected"] = f"{sample['rejected'][1]['content']}<|eot_id|><|end_of_text|>"
+        sample[
+            "rejected"
+        ] = f"{sample['rejected'][1]['content']}<|eot_id|><|end_of_text|>"
         return sample
 
     return transform_fn
@@ -55,13 +57,13 @@ def icr(
     def transform_fn(sample):
         if "system" in sample and sample["system"]:
             sample["prompt"] = (
-                f"<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n{sample['system']}<|eot_id|>"
+                f"<|start_header_id|>system<|end_header_id|>\n\n{sample['system']}<|eot_id|>"
                 f"<|start_header_id|>user<|end_header_id|>\n\n{sample['input']}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
             )
         else:
             sample[
                 "prompt"
-            ] = f"<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\n{sample['input']}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+            ] = f"<|start_header_id|>user<|end_header_id|>\n\n{sample['input']}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
         sample["chosen"] = f"{sample['chosen']}<|eot_id|><|end_of_text|>"
         sample["rejected"] = f"{sample['rejected']}<|eot_id|><|end_of_text|>"
         return sample
@@ -77,13 +79,13 @@ def intel(cfg, **kwargs):  # pylint: disable=possibly-unused-variable,unused-arg
     def transform_fn(sample):
         if "system" in sample and sample["system"]:
             sample["prompt"] = (
-                f"<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n{sample['system']}<|eot_id|>"
+                f"<|start_header_id|>system<|end_header_id|>\n\n{sample['system']}<|eot_id|>"
                 f"<|start_header_id|>user<|end_header_id|>\n\n{sample['question']}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
             )
         else:
             sample[
                 "prompt"
-            ] = f"<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\n{sample['question']}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+            ] = f"<|start_header_id|>user<|end_header_id|>\n\n{sample['question']}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
         sample["chosen"] = f"{sample['chosen']}<|eot_id|><|end_of_text|>"
         sample["rejected"] = f"{sample['rejected']}<|eot_id|><|end_of_text|>"
         return sample
@@ -97,13 +99,13 @@ def prompt_pairs(
     def transform_fn(sample):
         if "system" in sample and sample["system"]:
             sample["prompt"] = (
-                f"<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n{sample['system']}<|eot_id|>"
+                f"<|start_header_id|>system<|end_header_id|>\n\n{sample['system']}<|eot_id|>"
                 f"<|start_header_id|>user<|end_header_id|>\n\n{sample['prompt']}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
             )
         else:
             sample[
                 "prompt"
-            ] = f"<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\n{sample['prompt']}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+            ] = f"<|start_header_id|>user<|end_header_id|>\n\n{sample['prompt']}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
         sample["chosen"] = f"{sample['chosen']}<|eot_id|><|end_of_text|>"
         sample["rejected"] = f"{sample['rejected']}<|eot_id|><|end_of_text|>"
         return sample
@@ -119,15 +121,17 @@ def ultra(cfg, **kwargs):  # pylint: disable=possibly-unused-variable,unused-arg
     def transform_fn(sample):
         if "system" in sample and sample["system"]:
             sample["prompt"] = (
-                f"<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n{sample['system']}<|eot_id|>"
+                f"<|start_header_id|>system<|end_header_id|>\n\n{sample['system']}<|eot_id|>"
                 f"<|start_header_id|>user<|end_header_id|>\n\n{sample['prompt']}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
             )
         else:
             sample[
                 "prompt"
-            ] = f"<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\n{sample['prompt']}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+            ] = f"<|start_header_id|>user<|end_header_id|>\n\n{sample['prompt']}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
         sample["chosen"] = f"{sample['chosen'][1]['content']}<|eot_id|><|end_of_text|>"
-        sample["rejected"] = f"{sample['rejected'][1]['content']}<|eot_id|><|end_of_text|>"
+        sample[
+            "rejected"
+        ] = f"{sample['rejected'][1]['content']}<|eot_id|><|end_of_text|>"
         return sample
 
     return transform_fn
