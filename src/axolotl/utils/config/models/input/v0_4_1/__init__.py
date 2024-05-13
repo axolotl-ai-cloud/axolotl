@@ -133,6 +133,7 @@ class RLType(str, Enum):
     ipo = "ipo"  # pylint: disable=invalid-name
     kto_pair = "kto_pair"  # pylint: disable=invalid-name
     orpo = "orpo"  # pylint: disable=invalid-name
+    sppo_hard = "sppo_hard"  # pylint: disable=invalid-name
 
 
 class ChatTemplate(str, Enum):
@@ -575,6 +576,7 @@ class AxolotlInputConfig(
     neftune_noise_alpha: Optional[float] = None
 
     orpo_alpha: Optional[float] = None
+    dpo_beta: Optional[float] = None
 
     max_memory: Optional[
         Dict[Union[int, Literal["cpu", "disk"]], Union[int, str]]
