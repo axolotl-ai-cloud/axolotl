@@ -7,14 +7,14 @@ load_in_4bit: false
 strict: false
 
 datasets:
-  - path: aaditya/alpaca_subset_1
+  - path: mhenrichsen/alpaca_2k_test
     type: alpaca
 
 dataset_prepared_path:
 val_set_size: 0
 output_dir: ./phi-sft-out
 
-sequence_len: 4000
+sequence_len: 4096
 sample_packing: true
 pad_to_sequence_len: true
 trust_remote_code: true
@@ -51,7 +51,7 @@ tf32: true
 
 gradient_checkpointing: true
 gradient_checkpointing_kwargs:
-  use_reentrant: True
+  use_reentrant: true
 early_stopping_patience:
 resume_from_checkpoint:
 local_rank:
