@@ -139,6 +139,7 @@ def do_merge_lora(
 ):
     model, tokenizer = load_model_and_tokenizer(cfg=cfg, cli_args=cli_args)
     safe_serialization = cfg.save_safetensors is True
+    breakpoint()
 
     LOG.info("running merge of LoRA with base model")
     model = model.merge_and_unload(progressbar=True)
@@ -147,7 +148,7 @@ def do_merge_lora(
     except RuntimeError:
         pass
     model.generation_config.do_sample = True
-    model = model.merge_and_unload()
+    # model = model.merge_and_unload()
     model.to(dtype=cfg.torch_dtype)
 
     if cfg.local_rank == 0:

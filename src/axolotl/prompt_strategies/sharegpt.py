@@ -8,38 +8,30 @@ from fastchat.conversation import Conversation, SeparatorStyle, register_conv_te
 from axolotl.prompt_tokenizers import ShareGPTPromptTokenizingStrategy
 from axolotl.prompters import ShareGPTPrompterV2
 
-register_conv_template(
-    Conversation(
-        name="chatml",
-        # system_template="<|im_start|>system\n{system_message}",
-        # system_message="You are Tower, an expert multilingual large language model trained by Unbabel. You will always provide human-like responses to the user.",
-        roles=["<|im_start|>user", "<|im_start|>assistant"],
-        sep_style=SeparatorStyle.CHATML,
-        sep="<|im_end|>",
+def register_chatml_template(system_message=None):
+    system_message = system_message or "You are a helpful assistant."
+    register_conv_template(
+        Conversation(
+            name="chatml",
+            system_template="<|im_start|>system\n{system_message}",
+            system_message="",
+            roles=["<|im_start|>user", "<|im_start|>assistant"],
+            sep_style=SeparatorStyle.CHATML,
+            sep="<|im_end|>",
+        )
     )
-)
-
-register_conv_template(
-    Conversation(
-        name="chatml_w_system",
-        system_template="<|im_start|>system\n{system_message}",
-        system_message="You are Tower, an expert multilingual large language model trained by Unbabel. You will always provide human-like responses to the user.",
-        roles=["<|im_start|>user", "<|im_start|>assistant"],
-        sep_style=SeparatorStyle.CHATML,
-        sep="<|im_end|>",
-    )
-)
-
-register_conv_template(
-    Conversation(
-        name="conversational_lm",
-        # system_template="<|im_start|>system\n{system_message}",
-        # system_message="",
-        roles=["<|im_start|>user", "<|im_start|>assistant"],
-        sep_style=SeparatorStyle.CONVERSATIONAL_LM,
-        sep="</s>",
-    )
-)
+    register_conv_template(
+        Conversation(
+            name="llama-3",
+            system_template="<|start_header_id|>system<|end_header_id|>\n\n{system_message}<|eot_id|>",
+            system_message="",
+            roles=("user", "assistant"),
+            sep_style=SeparatorStyle.LLAMA3,
+            sep="",
+            # stop_str="<|eot_id|>",
+            # stop_token_ids=[128001, 128009],
+        )
+    )   
 
 def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
     conversation = (

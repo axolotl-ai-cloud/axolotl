@@ -6,16 +6,16 @@ from fastchat.conversation import Conversation, SeparatorStyle, register_conv_te
 from axolotl.prompt_tokenizers import ShareGPTPromptTokenizingStrategy
 from axolotl.prompters import ShareGPTPrompterV2
 
-register_conv_template(
-    Conversation(
-        name="conversational_lm",
-        # system_template="<|im_start|>system\n{system_message}",
-        # system_message="",
-        roles=["<|im_start|>user", "<|im_start|>assistant"],
-        sep_style=SeparatorStyle.CONVERSATIONAL_LM,
-        sep="</s>",
-    )
-)
+# register_conv_template(
+#     Conversation(
+#         name="conversational_lm",
+#         # system_template="<|im_start|>system\n{system_message}",
+#         # system_message="",
+#         roles=["<|im_start|>user", "<|im_start|>assistant"],
+#         sep_style=SeparatorStyle.CONVERSATIONAL_LM,
+#         sep="</s>",
+#     )
+# )
 
 def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
     conversation = (

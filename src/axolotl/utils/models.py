@@ -41,8 +41,8 @@ from axolotl.monkeypatch.multipack import (
     patch_for_multipack,
 )
 from axolotl.prompt_tokenizers import LLAMA_DEFAULT_EOS_TOKEN
-from axolotl.utils.chat_templates import chat_templates
 from axolotl.utils.bench import log_gpu_memory_usage
+from axolotl.utils.chat_templates import chat_templates
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import zero_only
 from axolotl.utils.gradient_checkpointing import hf_grad_checkpoint_unsloth_wrapper
@@ -116,6 +116,8 @@ def check_model_config(cfg: DictDefault, model_config: Union[AutoConfig, DictDef
 
 def load_model_config(cfg):
     model_config_name = cfg.base_model_config or cfg.base_model
+    if not model_config_name and cfg.tokenizer_config:
+        model_config_name = cfg.tokenizer_config
     trust_remote_code = cfg.trust_remote_code is True
     config_kwargs = {}
     if cfg.revision_of_model:
@@ -134,7 +136,7 @@ def load_model_config(cfg):
                     "model_type": "mamba",
                 }
             )
-            raise err
+        raise err
 
     if cfg.overrides_of_model_config:
         for key, val in cfg.overrides_of_model_config.items():
@@ -146,6 +148,7 @@ def load_model_config(cfg):
 
 
 def load_tokenizer(cfg):
+    model_config = load_model_config(cfg)
     tokenizer_kwargs = {}
     use_fast = True  # this is the default
 
@@ -156,8 +159,8 @@ def load_tokenizer(cfg):
         tokenizer_kwargs["legacy"] = cfg.tokenizer_legacy
 
     tokenizer_cls = AutoTokenizer
-    # if cfg.tokenizer_type:
-    #     tokenizer_cls = getattr(transformers, cfg.tokenizer_type)
+    if cfg.tokenizer_type:
+        tokenizer_cls = getattr(transformers, cfg.tokenizer_type)
 
     tokenizer = tokenizer_cls.from_pretrained(
         cfg.tokenizer_config,
@@ -179,7 +182,6 @@ def load_tokenizer(cfg):
     ):
         # set a pad_token, but use eos_token so we don't add a new token
         tokenizer.pad_token = LLAMA_DEFAULT_EOS_TOKEN
-        tokenizer.chat_template = "{% for message in messages %}{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>' + '\n'}}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}"
 
     if tokenizer.__class__.__name__ == "GPTNeoXTokenizerFast":
         tokenizer.add_special_tokens({"pad_token": "[PAD]"})
@@ -257,11 +259,6 @@ def load_tokenizer(cfg):
                 for token in cfg.tokens
             ]
         )
-        
-    if additional_special_tokens is not None:
-        tokenizer.add_special_tokens(
-            {"additional_special_tokens": additional_special_tokens}
-        )
 
     # Additional special tokens are a List, and need to be treated differently than regular special
     # tokens. We add them after we have called `add_tokens` in case these additional special tokens
@@ -303,6 +300,7 @@ def load_model(
     cfg: DictDefault,
     tokenizer: PreTrainedTokenizerBase,
     inference: bool = False,
+    reference_model: bool = False,
 ) -> Tuple[PreTrainedModel, Optional[PeftConfig]]:
     """
     Load a model for a given configuration and tokenizer.
@@ -500,12 +498,7 @@ def load_model(
             bnb_config.update(cfg.bnb_config_kwargs)
 
         model_kwargs["quantization_config"] = BitsAndBytesConfig(
-            load_in_4bit=True,
-            llm_int8_threshold=6.0,
-            llm_int8_has_fp16_weight=False,
-            bnb_4bit_compute_dtype=cfg.torch_dtype,
-            bnb_4bit_use_double_quant=True,
-            bnb_4bit_quant_type="nf4",
+            **bnb_config,
         )
     elif cfg.adapter == "lora" and cfg.load_in_8bit:
         bnb_config = {
@@ -592,13 +585,11 @@ def load_model(
         ):
             from transformers import LlamaForCausalLM
 
-            print("Base model:", base_model)
             model = LlamaForCausalLM.from_pretrained(
                 base_model,
                 config=model_config,
                 **model_kwargs,
             )
-            print(model)
 
             if cfg.flash_attention and not inference:
                 from axolotl.monkeypatch.llama_attn_hijack_flash import (
@@ -622,7 +613,6 @@ def load_model(
             model_kwargs["device"] = torch.cuda.current_device()
             del model_kwargs["torch_dtype"]
             del model_kwargs["device_map"]
-            del model_kwargs["max_memory"]
 
             model = MambaLMHeadModel.from_pretrained(
                 base_model,
@@ -982,6 +972,7 @@ def load_lora(model, cfg, inference=False, config_only=False):
             model,
             cfg.lora_model_dir,
             is_trainable=(not inference),
+            **model_kwargs,
         )
     else:
         model = get_peft_model(model, lora_config)

@@ -447,7 +447,7 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
                         add_eos_token=False,
                         strip_bos_token=True,
                     )
-                    
+                                        
                     # check if it's just a single token
                     if len(role_res["input_ids"]) > 1:
                         LOG.warning(f"Role has {len(role_res['input_ids'])}: {role_res['input_ids']}")
@@ -466,7 +466,8 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
                             len_role, len(labels)
                         )
                 elif empty_role:
-                    if content != "<|im_start|>system\n<|im_end|>\n":
+                    # if content != "<|im_start|>system\n<|im_end|>\n":
+                    if content != "<|start_header_id|>system<|end_header_id|>\n\n<|eot_id|>":
                         # LOG.warning(f"System message encountered: {content}")
                         turn = content
                         res = self._tokenize(
@@ -477,7 +478,7 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
                         else:
                             labels = [IGNORE_TOKEN_ID] * len(res["input_ids"])
                         has_system_prompt = True
-                        LOG.warning(f"System message encountered: {content}\nResult: {res}\nLabels: {labels}")
+                        # LOG.warning(f"System message encountered: {content}\nResult: {res}\nLabels: {labels}")
                     else:
                         res = {"input_ids": [], "attention_mask": []}
                         labels = []

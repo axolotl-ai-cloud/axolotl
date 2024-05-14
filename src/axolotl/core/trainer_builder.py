@@ -12,7 +12,7 @@ import sys
 from abc import abstractmethod
 from collections import defaultdict
 from dataclasses import dataclass, field
-from functools import partial
+from functools import wraps
 from pathlib import Path
 from typing import Dict, List, Literal, Optional, Type, Union
 
@@ -51,6 +51,7 @@ from axolotl.utils.callbacks import (
 from axolotl.utils.callbacks.lisa import lisa_callback_factory
 from axolotl.utils.collators import (
     BatchSamplerDataCollatorForSeq2Seq,
+    DataCollatorForSeq2Seq,
     MambaDataCollator,
     V2BatchSamplerDataCollatorForSeq2Seq,
 )
@@ -101,6 +102,12 @@ class AxolotlTrainingArguments(TrainingArguments):
     lr_quadratic_warmup: bool = field(
         default=False,
         metadata={"help": "Use quadratic warmup for cosine scheduling."},
+    )
+    pretraining: bool = field(
+        default=False,
+        metadata={
+            "help": "Indicates to trainer whether we are doing continued pretraining."
+        },
     )
     sample_packing: bool = field(
         default=False,
@@ -218,6 +225,7 @@ class AxolotlTrainer(Trainer):
     """
 
     args = None  # type: AxolotlTrainingArguments
+    tag_names = ["axolotl"]
 
     def __init__(
         self,
@@ -371,7 +379,7 @@ class AxolotlTrainer(Trainer):
         return super()._get_eval_sampler(eval_dataset)
 
     def get_train_dataloader(self) -> DataLoader:
-        if self.args.sample_packing:
+        if self.args.sample_packing and not self.args.pretraining:
             train_dataset = self.train_dataset
             if "length" in train_dataset.features.keys():
                 train_dataset = train_dataset.remove_columns(["length"])
@@ -690,6 +698,8 @@ class AxolotlMambaTrainer(AxolotlTrainer):
     Mamba specific trainer to handle loss calculation
     """
 
+    tag_names = ["axolotl", "mamba"]
+
     def compute_loss(
         self,
         model,
@@ -715,6 +725,8 @@ class OneCycleLRSchedulerTrainer(AxolotlTrainer):
     """
     Trainer subclass that uses the OneCycleLR scheduler
     """
+
+    tag_names = ["axolotl", "onecycle"]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -744,6 +756,8 @@ class ReLoRATrainer(AxolotlTrainer):
     """
     Trainer subclass that uses the OneCycleLR scheduler
     """
+
+    tag_names = ["axolotl", "relora"]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -832,6 +846,14 @@ class TrainerBuilderBase(abc.ABC):
         # model.push_to_hub instad of  trainer.push_to_hub.
         if hasattr(model, "add_model_tags"):
             model.add_model_tags(["axolotl"])
+
+    @property
+    def model_ref(self):
+        return self._model_ref
+
+    @model_ref.setter
+    def model_ref(self, model):
+        self._model_ref = model
 
     @property
     def train_dataset(self):
@@ -1041,6 +1063,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             training_arguments_kwargs["hub_model_id"] = self.cfg.hub_model_id
             training_arguments_kwargs["push_to_hub"] = True
             training_arguments_kwargs["hub_private_repo"] = True
+            training_arguments_kwargs["hub_always_push"] = True
 
             if self.cfg.hub_strategy:
                 training_arguments_kwargs["hub_strategy"] = self.cfg.hub_strategy
@@ -1322,27 +1345,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             # A100 is best at 64, while others at 8. Let's use the larger so we don't have to check
             # https://docs.nvidia.com/deeplearning/performance/dl-performance-matrix-multiplication/index.html
             data_collator_kwargs["pad_to_multiple_of"] = 64
-
-        if self.cfg.is_llama_derived_model and self.cfg.landmark_attention:
-            from axolotl.monkeypatch.llama_landmark_attn import (
-                add_mem_tokens,
-                get_mem_id,
-                set_model_mem_id,
-            )
-
-            set_model_mem_id(self.model, self.tokenizer)
-
-            LOG.info("Adding landmark attention tokens to dataset")
-
-            for dataset in [self.train_dataset, self.eval_dataset]:
-                dataset = dataset.map(
-                    partial(
-                        add_mem_tokens, mem_freq=50, mem_id=get_mem_id(self.tokenizer)
-                    ),
-                    batched=False,
-                    num_proc=32,
-                )
-        
 
         trainer_cls = self._get_trainer_cls()
         trainer_kwargs, trainer_cls = self.hook_pre_create_trainer(
