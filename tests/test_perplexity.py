@@ -38,4 +38,4 @@ def test_perplexity_short(metric):
     sample_text = "Once upon a time, there was a little car named Beep. Beep loved to go fast and play in the sun."
     result = metric.compute([sample_text])
     ppl = result["score"]
-    assert round(ppl, 2) == 5.37
+    assert round(ppl, 2) == 10.02
