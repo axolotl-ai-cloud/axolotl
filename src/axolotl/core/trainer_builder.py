@@ -993,6 +993,9 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             return ReLoRATrainer
         if self.cfg.model_config_type == "mamba":
             return AxolotlMambaTrainer
+        if self.cfg.custom_trainer_cls:
+            _module, _cls = self.cfg.custom_trainer_cls.rsplit(".", 1)
+            return importlib.import_module(_module, _cls)
         return AxolotlTrainer
 
     def build(self, total_num_steps):

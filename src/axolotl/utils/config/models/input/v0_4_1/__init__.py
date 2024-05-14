@@ -561,6 +561,8 @@ class AxolotlInputConfig(
     torch_compile: Optional[bool] = None
     torch_compile_backend: Optional[str] = None
 
+    custom_trainer_cls: Optional[str] = None
+
     max_steps: Optional[int] = None
     warmup_steps: Optional[int] = None
     warmup_ratio: Optional[float] = None
