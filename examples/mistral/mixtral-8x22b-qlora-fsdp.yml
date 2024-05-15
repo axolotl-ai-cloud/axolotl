@@ -11,7 +11,7 @@ datasets:
     type: alpaca
 dataset_prepared_path: last_run_prepared
 val_set_size: 0.02
-output_dir: ./qlora-out
+output_dir: ./outputs/qlora-out
 
 model_config:
   output_router_logits: true

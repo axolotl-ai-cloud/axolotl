@@ -21,7 +21,9 @@ RUN apt install --yes --no-install-recommends openssh-server tmux && \
     printf "\n[[ -z \"\$TMUX\"  ]] && { tmux attach-session -t ssh_tmux || tmux new-session -s ssh_tmux; exit; }\n" >> ~/.bashrc && \
     printf "[ ! -z \"\$TERM\" -a -r /etc/motd ] && cat /etc/motd\n" >> ~/.bashrc && \
     chmod +x /workspace/axolotl/scripts/cloud-entrypoint.sh && \
-    chmod +x /root/cloud-entrypoint.sh
+    chmod +x /root/cloud-entrypoint.sh && \
+    mkdir -p /workspace/data/axolotl-artifacts && \
+    ln -sf /workspace/axolotl/outputs /workspace/data/axolotl-artifacts
 
 ENTRYPOINT ["/root/cloud-entrypoint.sh"]
 CMD ["sleep", "infinity"]

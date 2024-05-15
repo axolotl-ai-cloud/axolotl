@@ -12,7 +12,7 @@ datasets:
     type: alpaca
 dataset_prepared_path:
 val_set_size: 0.05
-output_dir: ./relora-out
+output_dir: ./outputs/relora-out
 
 adapter: qlora
 lora_model_dir:

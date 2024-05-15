@@ -11,7 +11,7 @@ datasets:
 
 dataset_prepared_path:
 val_set_size: 0.2
-output_dir: ./qlora
+output_dir: ./outputs/qlora
 
 adapter: qlora
 lora_model_dir:
