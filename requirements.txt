@@ -1,22 +1,22 @@
 --extra-index-url https://huggingface.github.io/autogptq-index/whl/cu118/
 packaging==23.2
 peft==0.10.0
-transformers @ git+https://github.com/huggingface/transformers.git@43d17c18360ac9c3d3491389328e2fe55fe8f9ce
-tokenizers==0.15.0
-bitsandbytes==0.43.0
-accelerate==0.28.0
-deepspeed==0.13.1
+transformers==4.40.2
+tokenizers==0.19.1
+bitsandbytes==0.43.1
+accelerate==0.30.1
+deepspeed==0.14.2
 pydantic==2.6.3
 addict
 fire
 PyYAML>=6.0
 requests
-datasets==2.15.0
-flash-attn==2.5.5
+datasets==2.19.1
+flash-attn==2.5.8
 sentencepiece
 wandb
 einops
-xformers==0.0.22
+xformers==0.0.23.post1
 optimum==1.16.2
 hf_transfer
 colorama
