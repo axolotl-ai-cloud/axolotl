@@ -22,8 +22,7 @@ def pack_group(items, group_offset, bin_capacity, max_items_per_bin):
     bin_counts = np.zeros(num_bins, dtype=np.int32)
     group_packing = np.full((num_bins, max_items_per_bin), -1, dtype=np.int32)
 
-    for idx in range(len(sorted_items)):
-        item = sorted_items[idx]
+    for idx, item in enumerate(sorted_items):
         global_idx = idxs[idx] + group_offset
 
         placed = False
@@ -63,6 +62,10 @@ def pack(items, bin_capacity, group_size, max_items_per_bin):
 
 
 class MultipackBatchSampler(BatchSampler):
+    """
+    Batch Sampler class for multipack
+    """
+
     def __init__(
         self,
         sampler,

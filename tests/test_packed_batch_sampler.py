@@ -90,8 +90,8 @@ class TestBatchedSamplerPacking:
                 batch_idxs.extend(pack)
 
         for batch in loader:
-            assert len(batch['input_ids']) <= batch_size * max_seq_length
-            assert batch['input_ids'].shape[1] == max_seq_length
+            assert len(batch["input_ids"]) <= batch_size * max_seq_length
+            assert batch["input_ids"].shape[1] == max_seq_length
 
         original_idxs = set(range(len(train_dataset)))
         assert original_idxs == set(batch_idxs)
