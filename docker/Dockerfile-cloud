@@ -23,7 +23,7 @@ RUN apt install --yes --no-install-recommends openssh-server tmux && \
     chmod +x /workspace/axolotl/scripts/cloud-entrypoint.sh && \
     chmod +x /root/cloud-entrypoint.sh && \
     mkdir -p /workspace/data/axolotl-artifacts && \
-    ln -sf /workspace/axolotl/outputs /workspace/data/axolotl-artifacts
+    ln -sf /workspace/data/axolotl-artifacts /workspace/axolotl/outputs
 
 ENTRYPOINT ["/root/cloud-entrypoint.sh"]
 CMD ["sleep", "infinity"]
