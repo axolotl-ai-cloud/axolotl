@@ -42,6 +42,8 @@ class TestPretrainingPacking(unittest.TestCase):
                 "pad_to_sequence_len": True,
                 "sequence_len": 2048,
                 "micro_batch_size": 2,
+                "sample_packing_group_size": 100000,
+                "sample_packing_bin_size": 200,
             }
         )
 
