@@ -302,7 +302,7 @@ Write a job description in YAML as below:
 # dstack.yaml
 type: task
 
-image: winglian/axolotl-cloud:main-20240429-py3.11-cu121-2.2.1
+image: winglian/axolotl-cloud:main-20240429-py3.11-cu121-2.2.2
 
 env:
   - HUGGING_FACE_HUB_TOKEN
