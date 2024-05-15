@@ -36,5 +36,12 @@ if [ "$JUPYTER_DISABLE" != "1" ]; then
     jupyter lab --port=8888 --ip=* --allow-root --ServerApp.allow_origin=* &
 fi
 
+if [ ! -d "/workspace/data/axolotl-artifacts" ]; then
+    mkdir -p /workspace/data/axolotl-artifacts
+fi
+if [ ! -L "/workspace/axolotl/outputs" ]; then
+    ln -sf /workspace/data/axolotl-artifacts /workspace/axolotl/outputs
+fi
+
 # Execute the passed arguments (CMD)
 exec "$@"
