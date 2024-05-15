@@ -16,7 +16,7 @@ datasets:
     type: chat_template.argilla
 dataset_prepared_path: last_run_prepared
 val_set_size: 0.1
-output_dir: ./mistral-qlora-orpo-out
+output_dir: ./outputs/mistral-qlora-orpo-out
 
 adapter: qlora
 lora_model_dir:

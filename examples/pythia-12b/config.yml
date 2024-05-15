@@ -26,7 +26,7 @@ wandb_entity:
 wandb_watch:
 wandb_name:
 wandb_log_model:
-output_dir: ./pythia-12b
+output_dir: ./outputs/pythia-12b
 gradient_accumulation_steps: 1
 micro_batch_size: 1
 num_epochs: 5

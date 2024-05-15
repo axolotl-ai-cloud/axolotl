@@ -11,7 +11,7 @@ datasets:
     type: alpaca
 dataset_prepared_path: last_run_prepared
 val_set_size: 0.05
-output_dir: ./out/qlora-llama3-70b
+output_dir: ./outputs/out/qlora-llama3-70b
 
 adapter: qlora
 lora_model_dir:

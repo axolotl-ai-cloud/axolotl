@@ -14,7 +14,7 @@ pretraining_dataset:
   type: pretrain
 dataset_prepared_path:
 val_set_size: 0.0
-output_dir: ./model-out
+output_dir: ./outputs/model-out
 
 sequence_len: 2048
 sample_packing: true

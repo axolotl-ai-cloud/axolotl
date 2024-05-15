@@ -12,7 +12,7 @@ datasets:
     type: alpaca
 dataset_prepared_path: last_run_prepared
 val_set_size: 0.0
-output_dir: ./qlora-out
+output_dir: ./outputs/qlora-out
 
 ## You can optionally freeze the entire model and unfreeze a subset of parameters
 unfrozen_parameters:

@@ -23,7 +23,7 @@ wandb_entity:
 wandb_watch:
 wandb_name:
 wandb_log_model:
-output_dir: ./qlora-out
+output_dir: ./outputs/qlora-out
 gradient_accumulation_steps: 2
 micro_batch_size: 2
 num_epochs: 2

@@ -33,7 +33,7 @@ eval_sample_packing: false
 eval_batch_size: 1
 
 # LoRA
-output_dir: ./qlora-out
+output_dir: ./outputs/qlora-out
 adapter: qlora
 lora_model_dir:
 lora_r: 32
