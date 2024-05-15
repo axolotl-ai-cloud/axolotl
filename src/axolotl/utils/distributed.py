@@ -4,27 +4,25 @@ utility helpers for distributed checks
 import os
 import pickle  # nosec
 from contextlib import contextmanager
+from datetime import timedelta
 
 import torch
 import torch.distributed as dist
-from accelerate import Accelerator
+from accelerate import PartialState
 
-accelerate = None  # pylint: disable=invalid-name
-
-
-def load_accelerate():
-    global accelerate  # pylint: disable=global-statement
-    accelerate = Accelerator()
+distributed_state = None  # pylint: disable=invalid-name
 
 
 def is_distributed():
     """
     Check if distributed training is initialized.
     """
-    global accelerate  # pylint: disable=global-statement
-    if not accelerate:
-        accelerate = Accelerator()
-    return dist.is_available() and dist.is_initialized()
+    global distributed_state  # pylint: disable=global-statement
+    if not distributed_state:
+        timeout = int(os.environ.get("AXOLOTL_NCCL_TIMEOUT", 1800))
+        distributed_state = PartialState(timeout=timedelta(seconds=timeout))
+
+    return distributed_state.use_distributed and distributed_state.initialized
 
 
 def barrier():
