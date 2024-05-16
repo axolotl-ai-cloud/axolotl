@@ -10,12 +10,13 @@ ENV HF_HUB_ENABLE_HF_TRANSFER="1"
 EXPOSE 8888
 EXPOSE 22
 
-COPY scripts/cloud-entrypoint.sh /root/cloud-entrypoint.sh
+COPY scripts/cloud-entrypoint-term.sh /root/cloud-entrypoint.sh
 COPY scripts/motd /etc/motd
 
 RUN pip install jupyterlab notebook ipywidgets && \
     jupyter lab clean
-RUN apt install --yes --no-install-recommends openssh-server tmux && \
+RUN apt install --yes --no-install-recommends openssh-server tmux sudo && \
+    pip3 install -U --no-cache-dir grpcio ray==2.9.3 && \
     mkdir -p ~/.ssh && \
     chmod 700 ~/.ssh && \
     printf "[ ! -z \"\$TERM\" -a -r /etc/motd ] && cat /etc/motd\n" >> ~/.bashrc && \
