@@ -31,7 +31,8 @@ def register_chatml_template(system_message=None):
             # stop_str="<|eot_id|>",
             # stop_token_ids=[128001, 128009],
         )
-    )   
+    )
+
 
 def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
     conversation = (

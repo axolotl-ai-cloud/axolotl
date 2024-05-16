@@ -62,6 +62,8 @@ class TokenizedPromptDataset(Dataset):
             **map_kwargs,
         )
         print(mapped[0])
+        # print the decoding
+        print(self.prompt_tokenizer.tokenizer.decode(mapped[0]["input_ids"]))
         return mapped
 
 
