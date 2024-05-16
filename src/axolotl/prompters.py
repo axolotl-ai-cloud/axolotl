@@ -20,6 +20,7 @@ class PromptStyle(Enum):
     INSTRUCT = "instruct"
     CHAT = "chat"
     CHATML = "chatml"
+    PHI = "phi"
 
 
 class Prompter:
@@ -38,9 +39,9 @@ class AlpacaPrompter(Prompter):
     system_format: str = "{system}"
     turn_format: str
     turn_no_input_format: str
-    prompt_style: Optional[PromptStyle] = None
+    prompt_style: Optional[str] = None
 
-    def __init__(self, prompt_style=PromptStyle.INSTRUCT.value):
+    def __init__(self, prompt_style: Optional[str] = PromptStyle.INSTRUCT.value):
         self.prompt_style = prompt_style if prompt_style else PromptStyle.INSTRUCT.value
         self.match_prompt_style()
 
@@ -52,16 +53,20 @@ class AlpacaPrompter(Prompter):
                 "### Instruction:\n{instruction}\n\n### Response:\n"
             )
             self.system_format = "{system}\n\n"
-        if self.prompt_style == PromptStyle.CHAT.value:
+        elif self.prompt_style == PromptStyle.CHAT.value:
             self.turn_format = "USER: {instruction}\n{input}\nASSISTANT:"
             self.turn_no_input_format = "USER: {instruction}\nASSISTANT:"
             self.system_format = "SYSTEM: {system}\n"
-        if self.prompt_style == PromptStyle.CHATML.value:
+        elif self.prompt_style == PromptStyle.CHATML.value:
             self.turn_format = "<|im_start|>user\n{instruction}\n{input}<|im_end|>\n<|im_start|>assistant\n"
             self.turn_no_input_format = (
                 "<|im_start|>user\n{instruction}<|im_end|>\n<|im_start|>assistant\n"
             )
             self.system_format = "<|im_start|>system\n{system}<|im_end|>\n"
+        elif self.prompt_style == PromptStyle.PHI.value:
+            self.turn_format = "<|user|>\n{instruction}<|end|>{input}<|assistant|>"
+            self.turn_no_input_format = "<|user|>\n{instruction}<|end|><|assistant|>"
+            self.system_format = "<|system|>{system}\n"
 
     def _build_result(self, instruction, input_text, output):
         # returns the full prompt from instruction and optional input
@@ -381,12 +386,14 @@ class ShareGPTPrompterV2(ShareGPTPrompter):
         conversation: Optional[Union[str, Conversation]] = None,
         role_key_human: Optional[str] = None,
         role_key_model: Optional[str] = None,
+        role_key_tool: Optional[str] = None,
         roles: Optional[dict] = None,
     ):
         super().__init__(
             conversation=conversation,
             role_key_human=role_key_human,
             role_key_model=role_key_model,
+            role_key_tool=role_key_tool,
             roles=roles,
         )
 

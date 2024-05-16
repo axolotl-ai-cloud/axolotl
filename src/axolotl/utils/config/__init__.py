@@ -10,6 +10,7 @@ from transformers.utils import is_torch_bf16_gpu_available
 
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.config.models.input.v0_4_1 import (
+    SUPPORTED_METRICS,
     AxolotlConfigWCapabilities,
     AxolotlInputConfig,
 )
@@ -583,13 +584,12 @@ def legacy_validate_config(cfg):
         )
 
     if cfg.eval_causal_lm_metrics:
-        supported_metrics = ["sacrebleu", "comet", "ter", "chrf"]
         if not isinstance(cfg.eval_causal_lm_metrics, list):
             raise ValueError("eval_causal_lm_metrics must be a list")
         # only ["sacrebleu", "comet", "ter", "chrf"] supported
-        if set(cfg.eval_causal_lm_metrics) - set(supported_metrics):
+        if set(cfg.eval_causal_lm_metrics) - SUPPORTED_METRICS:
             raise ValueError(
-                f"eval_causal_lm_metrics must be one of {supported_metrics}"
+                f"eval_causal_lm_metrics must be one of {SUPPORTED_METRICS}"
             )
 
     # TODO

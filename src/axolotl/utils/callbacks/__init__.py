@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import traceback
 from shutil import copyfile
 from tempfile import NamedTemporaryFile
 from typing import TYPE_CHECKING, Any, Dict, List
@@ -29,6 +30,7 @@ from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, IntervalStrategy
 
 from axolotl.utils import is_mlflow_available
 from axolotl.utils.bench import log_gpu_memory_usage
+from axolotl.utils.callbacks.perplexity import Perplexity
 from axolotl.utils.config.models.input.v0_4_1 import AxolotlInputConfig
 from axolotl.utils.distributed import (
     barrier,
@@ -373,10 +375,14 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
         def __maybe_load_metrics(self):
             metrics = {}
             for metric in self.cfg.eval_causal_lm_metrics:
-                try:
-                    metrics[metric] = evaluate.load(metric)
-                except Exception as exc:  # pylint: disable=broad-exception-caught
-                    LOG.warning(f"{metric}: {exc.args}")
+                if metric == "perplexity":
+                    max_seq_len = self.cfg.eval_max_new_tokens
+                    metrics[metric] = Perplexity(trainer.model, tokenizer, max_seq_len)
+                else:
+                    try:
+                        metrics[metric] = evaluate.load(metric)
+                    except Exception as exc:  # pylint: disable=broad-exception-caught
+                        LOG.warning(f"{metric}: {exc.args}")
             return metrics
 
         def on_evaluate(
@@ -420,13 +426,20 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
                 # safely compute a metric and return the score if the format is correct
                 metric_score = None
                 try:
-                    metric_score = metric.compute(**kwargs)
+                    # Only pass the kwargs that are in the metric's feature list
+                    metric_kwargs = {
+                        k: kwargs[k]
+                        for k in metric._feature_names()  # pylint: disable=protected-access
+                        if k in kwargs
+                    }
+                    metric_score = metric.compute(**metric_kwargs)
                     return (
                         metric_score["score"]
                         if "score" in metric_score
                         else metric_score["mean_score"]
                     )
                 except Exception:  # pylint: disable=broad-exception-caught
+                    traceback.print_exc()
                     LOG.debug(
                         f"Failed to compute metric {metric.name} with kwargs {kwargs.keys()}"
                     )
@@ -442,11 +455,12 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
                         predictions=predictions,
                         sources=sources,
                     )
-                    score = score or compute(
-                        metric,
-                        references=[[r] for r in references],
-                        predictions=predictions,
-                    )
+                    if score is None:
+                        score = compute(
+                            metric,
+                            references=[[r] for r in references],
+                            predictions=predictions,
+                        )
                     scores[metric_name] = score
                 return scores
 
