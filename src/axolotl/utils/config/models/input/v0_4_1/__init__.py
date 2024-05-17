@@ -570,6 +570,7 @@ class AxolotlInputConfig(
     logging_steps: Optional[int] = None
     early_stopping_patience: Optional[int] = None
     load_best_model_at_end: Optional[bool] = False
+    save_only_model: Optional[bool] = False
 
     neftune_noise_alpha: Optional[float] = None
 

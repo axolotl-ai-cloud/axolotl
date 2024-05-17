@@ -1123,6 +1123,8 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             # default to saving each epoch if not defined
             training_arguments_kwargs["save_strategy"] = "epoch"
 
+        training_arguments_kwargs["save_only_model"] = self.cfg.save_only_model
+
         if self.cfg.do_bench_eval:
             training_arguments_kwargs["do_bench_eval"] = self.cfg.do_bench_eval
             if self.cfg.bench_dataset:
