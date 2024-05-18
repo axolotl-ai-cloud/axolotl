@@ -828,7 +828,7 @@ class AxolotlORPOTrainer(ORPOTrainer):
 
 class AxolotlKTOTrainer(KTOTrainer):
     """
-    Extend the base ORPOTrainer for axolotl helpers
+    Extend the base KTOTrainer for axolotl helpers
     """
 
     tag_names = ["axolotl", "kto"]
