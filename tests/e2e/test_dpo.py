@@ -21,7 +21,7 @@ LOG = logging.getLogger("axolotl.tests.e2e")
 os.environ["WANDB_DISABLED"] = "true"
 
 
-# @pytest.mark.skip(reason="doesn't seem to work on modal")
+@pytest.mark.skip(reason="doesn't seem to work on modal")
 class TestDPOLlamaLora(unittest.TestCase):
     """
     Test case for DPO Llama models using LoRA
@@ -242,11 +242,11 @@ class TestDPOLlamaLora(unittest.TestCase):
                     #     "type": "llama3.argilla_chat",
                     #     "split": "train",
                     # },
-                    # {
-                    #     "path": "argilla/ultrafeedback-binarized-preferences-cleaned-kto",
-                    #     "type": "llama3.ultra",
-                    #     "split": "train",
-                    # },
+                    {
+                        "path": "argilla/ultrafeedback-binarized-preferences-cleaned-kto",
+                        "type": "llama3.ultra",
+                        "split": "train",
+                    },
                 ],
                 "num_epochs": 1,
                 "micro_batch_size": 4,
