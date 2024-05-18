@@ -30,7 +30,7 @@ from transformers import (
 )
 from transformers.trainer_utils import seed_worker
 from transformers.utils import is_sagemaker_mp_enabled
-from trl import DPOTrainer, ORPOConfig, ORPOTrainer
+from trl import DPOTrainer, ORPOConfig, ORPOTrainer, KTOConfig, KTOTrainer
 from trl.trainer.utils import pad_to_length
 
 from axolotl.loraplus import create_loraplus_optimizer
@@ -826,6 +826,13 @@ class AxolotlORPOTrainer(ORPOTrainer):
     tag_names = ["axolotl", "orpo"]
 
 
+class AxolotlKTOTrainer(KTOTrainer):
+    """
+    Extend the base ORPOTrainer for axolotl helpers
+    """
+
+    tag_names = ["axolotl", "kto"]
+
 class TrainerBuilderBase(abc.ABC):
     """
     Base class for trainer builder
@@ -1532,6 +1539,18 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             if self.cfg.max_prompt_len:
                 training_args_kwargs["max_prompt_length"] = self.cfg.max_prompt_len
 
+        if self.cfg.rl == "kto":
+            training_args_cls = KTOConfig
+
+            training_args_kwargs["beta"] = self.cfg.dpo_beta or 0.1
+            training_args_kwargs["desirable_weight"] = self.cfg.kto_desirable_weight or 1.0
+            training_args_kwargs["undesirable_weight"] = self.cfg.kto_undesirable_weight or 1.0
+
+            training_args_kwargs["dataset_num_proc"] = self.cfg.dataset_processes
+            training_args_kwargs["max_length"] = self.cfg.sequence_len
+            if self.cfg.max_prompt_len:
+                training_args_kwargs["max_prompt_length"] = self.cfg.max_prompt_len
+
         training_args = training_args_cls(
             per_device_train_batch_size=self.cfg.micro_batch_size,
             max_steps=self.cfg.max_steps or total_num_steps,
@@ -1579,6 +1598,9 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
                 dpo_trainer_kwargs["dataset_num_proc"] = self.cfg.dataset_processes
         elif self.cfg.rl == "orpo":
             trainer_cls = AxolotlORPOTrainer
+            trainer_cls_args = [self.model]
+        elif self.cfg.rl == "kto":
+            trainer_cls = AxolotlKTOTrainer
             trainer_cls_args = [self.model]
         else:
             raise ValueError(f"Unsupported RL: {self.cfg.rl}")
