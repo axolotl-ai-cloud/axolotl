@@ -3,6 +3,7 @@
 import os
 import signal
 import sys
+import weakref
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Tuple, Union
@@ -127,14 +128,20 @@ def train(
     # In case we want to stop early with ctrl+c, this is a nice to have to save the pretrained model
     if cfg.local_rank == 0:
 
-        def terminate_handler(_, __, model):
-            if cfg.flash_optimum and BetterTransformer:
-                model = BetterTransformer.reverse(model)
-            model.save_pretrained(cfg.output_dir, safe_serialization=safe_serialization)
+        def terminate_handler(_, __, model_weakref):
+            if model_weakref() is not None:
+                _model = model_weakref()
+                if cfg.flash_optimum and BetterTransformer:
+                    _model = BetterTransformer.reverse(_model)
+                _model.save_pretrained(
+                    cfg.output_dir, safe_serialization=safe_serialization
+                )
             sys.exit(0)
 
+        _model_weakref = weakref.ref(model)
         signal.signal(
-            signal.SIGINT, lambda signum, frame: terminate_handler(signum, frame, model)
+            signal.SIGINT,
+            lambda signum, frame: terminate_handler(signum, frame, _model_weakref),
         )
 
     badge_markdown = """[<img src="https://raw.githubusercontent.com/OpenAccess-AI-Collective/axolotl/main/image/axolotl-badge-web.png" alt="Built with Axolotl" width="200" height="32"/>](https://github.com/OpenAccess-AI-Collective/axolotl)"""
@@ -205,6 +212,10 @@ def train(
         if cfg.flash_optimum and BetterTransformer:
             model = BetterTransformer.reverse(model)
 
+        if cfg.rl and cfg.adapter and not cfg.rl_adapter_ref_model:
+            trainer.model.save_pretrained(
+                cfg.output_dir, safe_serialization=safe_serialization
+            )
         model.save_pretrained(cfg.output_dir, safe_serialization=safe_serialization)
 
     if not cfg.hub_model_id:

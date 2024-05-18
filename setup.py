@@ -30,7 +30,7 @@ def parse_requirements():
 
     try:
         if "Darwin" in platform.system():
-            _install_requires.pop(_install_requires.index("xformers==0.0.22"))
+            _install_requires.pop(_install_requires.index("xformers==0.0.23.post1"))
         else:
             torch_version = version("torch")
             _install_requires.append(f"torch=={torch_version}")
@@ -45,9 +45,12 @@ def parse_requirements():
             else:
                 raise ValueError("Invalid version format")
 
-            if (major, minor) >= (2, 1):
-                _install_requires.pop(_install_requires.index("xformers==0.0.22"))
-                _install_requires.append("xformers>=0.0.23")
+            if (major, minor) >= (2, 3):
+                _install_requires.pop(_install_requires.index("xformers==0.0.23.post1"))
+                _install_requires.append("xformers>=0.0.26.post1")
+            elif (major, minor) >= (2, 2):
+                _install_requires.pop(_install_requires.index("xformers==0.0.23.post1"))
+                _install_requires.append("xformers>=0.0.25.post1")
     except PackageNotFoundError:
         pass
 
@@ -68,13 +71,13 @@ setup(
     dependency_links=dependency_links,
     extras_require={
         "flash-attn": [
-            "flash-attn==2.5.5",
+            "flash-attn==2.5.8",
         ],
         "fused-dense-lib": [
-            "fused-dense-lib  @ git+https://github.com/Dao-AILab/flash-attention@v2.3.3#subdirectory=csrc/fused_dense_lib",
+            "fused-dense-lib  @ git+https://github.com/Dao-AILab/flash-attention@v2.5.8#subdirectory=csrc/fused_dense_lib",
         ],
         "deepspeed": [
-            "deepspeed==0.13.1",
+            "deepspeed==0.14.2",
             "deepspeed-kernels",
         ],
         "mamba-ssm": [

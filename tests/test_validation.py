@@ -1067,17 +1067,51 @@ class TestValidation(BaseValidation):
         ):
             validate_config(cfg)
 
-    def test_hub_model_id_save_value_warns(self, minimal_cfg):
-        cfg = DictDefault({"hub_model_id": "test"}) | minimal_cfg
+    def test_hub_model_id_save_value_warns_save_stragey_no(self, minimal_cfg):
+        cfg = DictDefault({"hub_model_id": "test", "save_strategy": "no"}) | minimal_cfg
 
         with self._caplog.at_level(logging.WARNING):
             validate_config(cfg)
-            assert (
-                "set without any models being saved" in self._caplog.records[0].message
-            )
+            assert len(self._caplog.records) == 1
 
-    def test_hub_model_id_save_value(self, minimal_cfg):
-        cfg = DictDefault({"hub_model_id": "test", "saves_per_epoch": 4}) | minimal_cfg
+    def test_hub_model_id_save_value_warns_random_value(self, minimal_cfg):
+        cfg = (
+            DictDefault({"hub_model_id": "test", "save_strategy": "test"}) | minimal_cfg
+        )
+
+        with self._caplog.at_level(logging.WARNING):
+            validate_config(cfg)
+            assert len(self._caplog.records) == 1
+
+    def test_hub_model_id_save_value_steps(self, minimal_cfg):
+        cfg = (
+            DictDefault({"hub_model_id": "test", "save_strategy": "steps"})
+            | minimal_cfg
+        )
+
+        with self._caplog.at_level(logging.WARNING):
+            validate_config(cfg)
+            assert len(self._caplog.records) == 0
+
+    def test_hub_model_id_save_value_epochs(self, minimal_cfg):
+        cfg = (
+            DictDefault({"hub_model_id": "test", "save_strategy": "epoch"})
+            | minimal_cfg
+        )
+
+        with self._caplog.at_level(logging.WARNING):
+            validate_config(cfg)
+            assert len(self._caplog.records) == 0
+
+    def test_hub_model_id_save_value_none(self, minimal_cfg):
+        cfg = DictDefault({"hub_model_id": "test", "save_strategy": None}) | minimal_cfg
+
+        with self._caplog.at_level(logging.WARNING):
+            validate_config(cfg)
+            assert len(self._caplog.records) == 0
+
+    def test_hub_model_id_save_value_no_set_save_strategy(self, minimal_cfg):
+        cfg = DictDefault({"hub_model_id": "test"}) | minimal_cfg
 
         with self._caplog.at_level(logging.WARNING):
             validate_config(cfg)

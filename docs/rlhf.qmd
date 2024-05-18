@@ -49,7 +49,7 @@ remove_unused_columns: false
 chat_template: chatml
 datasets:
   - path: argilla/ultrafeedback-binarized-preferences-cleaned
-    type: orpo.chat_template
+    type: chat_template.argilla
 ```
 
 #### Using local dataset files

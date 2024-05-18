@@ -3,6 +3,8 @@
 # Export specific ENV variables to /etc/rp_environment
 echo "Exporting environment variables..."
 printenv | grep -E '^RUNPOD_|^PATH=|^_=' | sed 's/^\(.*\)=\(.*\)$/export \1="\2"/' >> /etc/rp_environment
+conda init
+# this needs to come after conda init
 echo 'source /etc/rp_environment' >> ~/.bashrc
 
 add_keys_to_authorized() {

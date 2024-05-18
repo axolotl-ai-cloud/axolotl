@@ -227,6 +227,12 @@ lora_modules_to_save:
 
 lora_fan_in_fan_out: false
 
+# LoRA+ hyperparameters
+# For more details about the following options, see:
+# https://arxiv.org/abs/2402.12354  and `src/axolotl/core/train_builder.py`
+loraplus_lr_ratio: # loraplus learning rate ratio lr_B / lr_A. Recommended value is 2^4.
+loraplus_lr_embedding: #  loraplus learning rate for lora embedding layers. Default value is 1e-6.
+
 peft:
   # Configuration options for loftq initialization for LoRA
   # https://huggingface.co/docs/peft/developer_guides/quantization#loftq-initialization
@@ -268,6 +274,7 @@ torch_compile_backend:  # Optional[str]
 # If greater than 1, backpropagation will be skipped and the gradients will be accumulated for the given number of steps.
 gradient_accumulation_steps: 1
 # The number of samples to include in each batch. This is the number of samples sent to each GPU.
+# Batch size per gpu = micro_batch_size * gradient_accumulation_steps
 micro_batch_size: 2
 eval_batch_size:
 num_epochs: 4

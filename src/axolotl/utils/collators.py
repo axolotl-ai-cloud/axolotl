@@ -229,9 +229,8 @@ class PretrainingBatchSamplerDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):
             if feature == "attention_mask":
                 if self.multipack_attn:
                     arrays = [
-                        (i + 1) * np.array(item[feature])
+                        (i + 1) * np.array(item)
                         for i, item in enumerate(features[feature])
-                        if feature in item
                     ]
                 else:
                     arrays = [(1) * np.array(item) for item in features[feature]]

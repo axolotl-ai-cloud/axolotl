@@ -1,11 +1,11 @@
 """
 Data processing modules
 """
-from axolotl.utils.data.dpo import load_prepare_dpo_datasets  # noqa: F401
 from axolotl.utils.data.pretraining import (  # noqa: F401
     encode_pretraining,
     wrap_pretraining_dataset,
 )
+from axolotl.utils.data.rl import load_prepare_dpo_datasets  # noqa: F401
 from axolotl.utils.data.sft import (  # noqa: F401
     get_dataset_wrapper,
     load_prepare_datasets,

@@ -110,7 +110,7 @@ class TestDatasetPreparation(unittest.TestCase):
         """Usual use case.  Verify datasets saved via `save_to_disk` can be loaded."""
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_ds_name = Path(tmp_dir) / "tmp_dataset"
-            self.dataset.save_to_disk(tmp_ds_name)
+            self.dataset.save_to_disk(str(tmp_ds_name))
 
             prepared_path = Path(tmp_dir) / "prepared"
             cfg = DictDefault(

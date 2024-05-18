@@ -30,7 +30,12 @@ jobs:
           - cuda: "121"
             cuda_version: 12.1.0
             python_version: "3.11"
-            pytorch: 2.2.1
+            pytorch: 2.2.2
+            torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
+          - cuda: "121"
+            cuda_version: 12.1.0
+            python_version: "3.11"
+            pytorch: 2.3.0
             torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
     steps:
       - name: Checkout

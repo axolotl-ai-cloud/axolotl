@@ -31,7 +31,7 @@ wandb_entity:
 wandb_watch:
 wandb_name:
 wandb_log_model:
-output_dir: ./lora-out
+output_dir: ./outputs/lora-out
 gradient_accumulation_steps: 1
 micro_batch_size: 2
 num_epochs: 4

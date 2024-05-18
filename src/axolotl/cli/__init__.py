@@ -264,8 +264,8 @@ def do_inference_gradio(
         with torch.no_grad():
             generation_config = GenerationConfig(
                 repetition_penalty=1.1,
-                max_new_tokens=1024,
-                temperature=0.9,
+                max_new_tokens=cfg.get("gradio_max_new_tokens", 1024),
+                temperature=cfg.get("gradio_temperature", 0.9),
                 top_p=0.95,
                 top_k=40,
                 bos_token_id=tokenizer.bos_token_id,
@@ -300,7 +300,13 @@ def do_inference_gradio(
         outputs="text",
         title=cfg.get("gradio_title", "Axolotl Gradio Interface"),
     )
-    demo.queue().launch(show_api=False, share=True)
+
+    demo.queue().launch(
+        show_api=False,
+        share=cfg.get("gradio_share", True),
+        server_name=cfg.get("gradio_server_name", "127.0.0.1"),
+        server_port=cfg.get("gradio_server_port", None),
+    )
 
 
 def choose_config(path: Path):
@@ -432,6 +438,23 @@ def load_rl_datasets(
     total_num_steps = int(
         math.ceil(len(train_dataset) * cfg.num_epochs / cfg.batch_size)
     )
+
+    if cli_args.debug or cfg.debug:
+        LOG.info("check_dataset_labels...")
+
+        tokenizer = load_tokenizer(cfg)
+        check_dataset_labels(
+            train_dataset.select(
+                [
+                    random.randrange(0, len(train_dataset) - 1)  # nosec
+                    for _ in range(cli_args.debug_num_examples)
+                ]
+            ),
+            tokenizer,
+            num_examples=cli_args.debug_num_examples,
+            text_only=cli_args.debug_text_only,
+            rl_mode=True,
+        )
 
     return TrainDatasetMeta(
         train_dataset=train_dataset,

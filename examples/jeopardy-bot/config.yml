@@ -21,7 +21,7 @@ wandb_entity:
 wandb_watch:
 wandb_name:
 wandb_log_model:
-output_dir: ./jeopardy-bot-7b
+output_dir: ./outputs/jeopardy-bot-7b
 gradient_accumulation_steps: 1
 micro_batch_size: 1
 num_epochs: 4
