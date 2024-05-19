@@ -98,7 +98,7 @@ def ultra(cfg, **kwargs):  # pylint: disable=possibly-unused-variable,unused-arg
             sample[
                 "prompt"
             ] = f"<|start_header_id|>user<|end_header_id|>\n\n{sample['prompt']}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
-        sample["completion"] = f"{sample['completion'][1]['content']}<|eot_id|>"
+        sample["completion"] = f"{sample['completion']}<|eot_id|>"
         return sample
 
     return transform_fn
