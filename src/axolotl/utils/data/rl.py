@@ -10,6 +10,7 @@ from datasets import DatasetDict, concatenate_datasets, load_dataset, load_from_
 
 from axolotl.common.const import DEFAULT_DATASET_PREPARED_PATH
 from axolotl.prompt_strategies.dpo import load as load_dpo
+from axolotl.prompt_strategies.kto import load as load_kto
 from axolotl.prompt_strategies.orpo import load as load_orpo
 from axolotl.utils.data.utils import md5
 from axolotl.utils.dict import DictDefault
@@ -55,6 +56,22 @@ def _save_preprocessed_ds(cfg, sub_cfg, dataset):
         dataset.save_to_disk(str(prepared_ds_path))
 
 
+def map_dataset(cfg, data_set, ds_transform_fn, tokenizer):
+    sig = inspect.signature(ds_transform_fn)
+    if "tokenizer" in sig.parameters:
+        if not tokenizer:
+            tokenizer = load_tokenizer(cfg)
+        ds_transform_fn = partial(ds_transform_fn, tokenizer=tokenizer)
+
+    data_set = data_set.map(
+        ds_transform_fn,
+        desc="Mapping RL Dataset",
+    )
+    if isinstance(data_set, DatasetDict):
+        data_set = data_set["train"]
+    return data_set
+
+
 def load_prepare_dpo_datasets(cfg):
     def load_split(dataset_cfgs, _cfg):
         split_datasets: List[Any] = []
@@ -76,6 +93,7 @@ def load_prepare_dpo_datasets(cfg):
                 split_datasets.insert(i, ds)
 
         tokenizer = None
+
         for i, data_set in enumerate(split_datasets):
             _type = dataset_cfgs[i]["type"]
             if _type:
@@ -83,21 +101,19 @@ def load_prepare_dpo_datasets(cfg):
                     _type = "user_defined.default"
                 if _cfg.rl == "orpo":
                     ds_transform_fn = load_orpo(_type, _cfg, dataset_idx=i)
+                elif _cfg.rl == "kto":
+                    ds_transform_fn = load_kto(_type, _cfg, dataset_idx=i)
                 else:
                     ds_transform_fn = load_dpo(_type, _cfg, dataset_idx=i)
-                sig = inspect.signature(ds_transform_fn)
-                if "tokenizer" in sig.parameters:
-                    if not tokenizer:
-                        tokenizer = load_tokenizer(_cfg)
-                    ds_transform_fn = partial(ds_transform_fn, tokenizer=tokenizer)
 
-                data_set = data_set.map(
-                    ds_transform_fn,
-                    desc="Mapping RL Dataset",
+                split_datasets[i] = map_dataset(
+                    cfg, data_set, ds_transform_fn, tokenizer
                 )
-                if isinstance(data_set, DatasetDict):
-                    data_set = data_set["train"]
-                split_datasets[i] = data_set
+            elif _cfg.rl == "kto":
+                ds_transform_fn = load_kto(_type, _cfg, dataset_idx=i)
+                split_datasets[i] = map_dataset(
+                    cfg, data_set, ds_transform_fn, tokenizer
+                )
             else:
                 # If no `type` is provided, assume the dataset is already in the expected format with
                 # "prompt", "chosen" and "rejected" already preprocessed
