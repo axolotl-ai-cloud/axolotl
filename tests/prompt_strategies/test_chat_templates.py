@@ -16,6 +16,7 @@ from axolotl.utils.chat_templates import chat_templates
 
 @pytest.fixture(name="sharegpt_dataset")
 def fixture_sharegpt_dataset():
+    # pylint: disable=duplicate-code
     return Dataset.from_list(
         [
             {
@@ -56,6 +57,7 @@ class TestSharegptChatTemplateLlama3:
     """
 
     def test_llama3(self, llama3_tokenizer, sharegpt_dataset):
+        # pylint: disable=duplicate-code
         strategy = ChatTemplateStrategy(
             ChatTemplatePrompter(llama3_tokenizer, chat_templates("llama3")),
             llama3_tokenizer,
