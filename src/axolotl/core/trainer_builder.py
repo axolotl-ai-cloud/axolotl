@@ -1543,7 +1543,7 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         if self.cfg.rl == "kto":
             training_args_cls = KTOConfig
 
-            training_args_kwargs["beta"] = self.cfg.dpo_beta or 0.1
+            training_args_kwargs["beta"] = self.cfg.rl_beta or 0.1
             training_args_kwargs["desirable_weight"] = (
                 self.cfg.kto_desirable_weight or 1.0
             )
@@ -1591,7 +1591,7 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             ] = self.cfg.precompute_ref_log_probs
         if self.cfg.rl in ["dpo", "ipo", "kto_pair"]:
             trainer_cls = AxolotlDPOTrainer
-            dpo_trainer_kwargs["beta"] = self.cfg.dpo_beta or 0.1
+            dpo_trainer_kwargs["beta"] = self.cfg.rl_beta or 0.1
             trainer_cls_args = [self.model, self.model_ref]
 
             # these aren't used for the ORPO trainer

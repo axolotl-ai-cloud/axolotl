@@ -24,6 +24,7 @@ class DeprecatedParameters(BaseModel):
     max_packed_sequence_len: Optional[int] = None
     rope_scaling: Optional[Any] = None
     noisy_embedding_alpha: Optional[float] = None
+    dpo_beta: Optional[float] = None
 
     @field_validator("max_packed_sequence_len")
     @classmethod
@@ -47,6 +48,13 @@ class DeprecatedParameters(BaseModel):
         if noisy_embedding_alpha:
             LOG.warning("noisy_embedding_alpha is deprecated, use neftune_noise_alpha")
         return noisy_embedding_alpha
+
+    @field_validator("dpo_beta")
+    @classmethod
+    def validate_dpo_beta(cls, dpo_beta):
+        if dpo_beta is not None:
+            LOG.warning("dpo_beta is deprecated, use rl_beta instead")
+        return dpo_beta
 
 
 class RemappedParameters(BaseModel):
@@ -603,6 +611,7 @@ class AxolotlInputConfig(
 
     kto_desirable_weight: Optional[float] = None
     kto_undesirable_weight: Optional[float] = None
+    rl_beta: Optional[float] = None
 
     max_memory: Optional[
         Dict[Union[int, Literal["cpu", "disk"]], Union[int, str]]
@@ -902,6 +911,13 @@ class AxolotlInputConfig(
         if neftune_noise_alpha is not None and neftune_noise_alpha <= 0.0:
             raise ValueError("neftune_noise_alpha must be > 0.0")
         return neftune_noise_alpha
+
+    @model_validator(mode="after")
+    def check(self):
+        if self.dpo_beta and not self.rl_beta:
+            self.rl_beta = self.dpo_beta
+            del self.dpo_beta
+        return self
 
     @model_validator(mode="before")
     @classmethod

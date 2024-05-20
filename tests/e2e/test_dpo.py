@@ -222,7 +222,7 @@ class TestDPOLlamaLora(unittest.TestCase):
                 "lora_target_linear": True,
                 "special_tokens": {},
                 "rl": "kto",
-                "dpo_beta": 0.5,
+                "rl_beta": 0.5,
                 "kto_desirable_weight": 1.0,
                 "kto_undesirable_weight": 1.0,
                 "remove_unused_columns": False,
