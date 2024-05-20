@@ -1,6 +1,7 @@
 """
 KTO strategies for chatml
 """
+# pylint: disable=duplicate-code
 
 
 def argilla(

@@ -1,6 +1,7 @@
 """
 User-defined KTO strategies
 """
+# pylint: disable=duplicate-code
 
 
 def default(cfg, dataset_idx=0, **kwargs):  # pylint: disable=unused-argument

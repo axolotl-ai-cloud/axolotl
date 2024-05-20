@@ -30,7 +30,7 @@ from transformers import (
 )
 from transformers.trainer_utils import seed_worker
 from transformers.utils import is_sagemaker_mp_enabled
-from trl import DPOTrainer, ORPOConfig, ORPOTrainer, KTOConfig, KTOTrainer
+from trl import DPOTrainer, KTOConfig, KTOTrainer, ORPOConfig, ORPOTrainer
 from trl.trainer.utils import pad_to_length
 
 from axolotl.loraplus import create_loraplus_optimizer
@@ -833,6 +833,7 @@ class AxolotlKTOTrainer(KTOTrainer):
 
     tag_names = ["axolotl", "kto"]
 
+
 class TrainerBuilderBase(abc.ABC):
     """
     Base class for trainer builder
@@ -1543,8 +1544,12 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             training_args_cls = KTOConfig
 
             training_args_kwargs["beta"] = self.cfg.dpo_beta or 0.1
-            training_args_kwargs["desirable_weight"] = self.cfg.kto_desirable_weight or 1.0
-            training_args_kwargs["undesirable_weight"] = self.cfg.kto_undesirable_weight or 1.0
+            training_args_kwargs["desirable_weight"] = (
+                self.cfg.kto_desirable_weight or 1.0
+            )
+            training_args_kwargs["undesirable_weight"] = (
+                self.cfg.kto_undesirable_weight or 1.0
+            )
 
             training_args_kwargs["dataset_num_proc"] = self.cfg.dataset_processes
             training_args_kwargs["max_length"] = self.cfg.sequence_len

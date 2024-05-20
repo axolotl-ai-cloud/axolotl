@@ -1,6 +1,7 @@
 """
 KTO strategies for llama-3 chat template
 """
+# pylint: disable=duplicate-code
 
 
 def argilla(

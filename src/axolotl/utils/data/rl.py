@@ -10,8 +10,8 @@ from datasets import DatasetDict, concatenate_datasets, load_dataset, load_from_
 
 from axolotl.common.const import DEFAULT_DATASET_PREPARED_PATH
 from axolotl.prompt_strategies.dpo import load as load_dpo
-from axolotl.prompt_strategies.orpo import load as load_orpo
 from axolotl.prompt_strategies.kto import load as load_kto
+from axolotl.prompt_strategies.orpo import load as load_orpo
 from axolotl.utils.data.utils import md5
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import is_main_process, zero_first
@@ -106,10 +106,14 @@ def load_prepare_dpo_datasets(cfg):
                 else:
                     ds_transform_fn = load_dpo(_type, _cfg, dataset_idx=i)
 
-                split_datasets[i] = map_dataset(cfg, data_set, ds_transform_fn, tokenizer)
+                split_datasets[i] = map_dataset(
+                    cfg, data_set, ds_transform_fn, tokenizer
+                )
             elif _cfg.rl == "kto":
                 ds_transform_fn = load_kto(_type, _cfg, dataset_idx=i)
-                split_datasets[i] = map_dataset(cfg, data_set, ds_transform_fn, tokenizer)
+                split_datasets[i] = map_dataset(
+                    cfg, data_set, ds_transform_fn, tokenizer
+                )
             else:
                 # If no `type` is provided, assume the dataset is already in the expected format with
                 # "prompt", "chosen" and "rejected" already preprocessed
