@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import os
 from shutil import copyfile
 from tempfile import NamedTemporaryFile
@@ -775,7 +776,7 @@ class SaveAxolotlConfigtoWandBCallback(TrainerCallback):
         return control
 
 
-class SaveModelOnTrainEndCallback(TrainerCallback):
+class SaveModelCallback(TrainerCallback):
     """Callback to save model on train end"""
 
     def on_step_end(  # pylint: disable=unused-argument
@@ -787,6 +788,13 @@ class SaveModelOnTrainEndCallback(TrainerCallback):
     ):
         # Save
         if state.global_step >= state.max_steps:
+            control.should_save = True
+        elif (
+            args.save_strategy == IntervalStrategy.STEPS
+            and state.save_steps < 1.0
+            and state.global_step % math.ceil(state.save_steps * state.max_steps) == 0
+        ):
+            # workaround to save model on fractional save_steps
             control.should_save = True
 
     def on_train_end(  # pylint: disable=unused-argument
