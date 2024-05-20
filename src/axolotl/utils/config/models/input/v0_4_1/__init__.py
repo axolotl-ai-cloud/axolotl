@@ -549,6 +549,11 @@ class AxolotlInputConfig(
     flash_attn_fuse_mlp: Optional[bool] = None
     flash_optimum: Optional[bool] = None
 
+    unsloth_cross_entropy_loss: Optional[bool] = None
+    unsloth_lora_mlp: Optional[bool] = None
+    unsloth_lora_qkv: Optional[bool] = None
+    unsloth_lora_o: Optional[bool] = None
+
     deepspeed: Optional[Union[str, Dict[str, Any]]] = None
     fsdp: Optional[List[str]] = None
     fsdp_config: Optional[Dict[str, Any]] = None
