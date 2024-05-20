@@ -43,7 +43,7 @@ from axolotl.utils.callbacks import (
     LossWatchDogCallback,
     SaveAxolotlConfigtoWandBCallback,
     SaveBetterTransformerModelCallback,
-    SaveModelOnTrainEndCallback,
+    SaveModelCallback,
     bench_eval_callback_factory,
     causal_lm_bench_eval_callback_factory,
     log_prediction_callback_factory,
@@ -945,7 +945,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         if self.cfg.loss_watchdog_threshold is not None:
             callbacks.append(LossWatchDogCallback(self.cfg))
 
-        callbacks.append(SaveModelOnTrainEndCallback())
+        callbacks.append(SaveModelCallback())
 
         return callbacks
 
@@ -1431,7 +1431,7 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
 
     def get_callbacks(self):
         callbacks = super().get_callbacks()
-        callbacks.append(SaveModelOnTrainEndCallback())
+        callbacks.append(SaveModelCallback())
 
         return callbacks
 
