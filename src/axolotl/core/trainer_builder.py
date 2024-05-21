@@ -798,6 +798,40 @@ class AxolotlDPOTrainer(DPOTrainer):
 
     tag_names = ["axolotl", "dpo"]
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.optimizer = None
+
+    def create_optimizer(self):
+        if self.args.loraplus_lr_ratio is None:
+            return super().create_optimizer()
+
+        opt_model = self.model_wrapped if is_sagemaker_mp_enabled() else self.model
+        if self.optimizer is None:  # pylint: disable=access-member-before-definition
+            optimizer_cls, optimizer_kwargs = Trainer.get_optimizer_cls_and_kwargs(
+                self.args,
+                opt_model,
+            )
+
+            loraplus_lr_ratio = getattr(self.args, "loraplus_lr_ratio", None)
+            if loraplus_lr_ratio:
+                print("Using lora+")
+            loraplus_lr_embedding = getattr(self.args, "loraplus_lr_embedding", None)
+            self.optimizer = create_loraplus_optimizer(  # pylint: disable=attribute-defined-outside-init
+                opt_model,
+                optimizer_cls,
+                optimizer_kwargs,
+                loraplus_lr_ratio,
+                loraplus_lr_embedding,
+            )
+
+        if is_sagemaker_mp_enabled():
+            self.optimizer = smp.DistributedOptimizer(  # pylint: disable=attribute-defined-outside-init
+                self.optimizer
+            )
+
+        return self.optimizer
+
     @wraps(DPOTrainer.push_to_hub)
     def push_to_hub(self, *args, **kwargs) -> str:
         """
@@ -1480,6 +1514,8 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         if self.cfg.bf16 or self.cfg.bfloat16:
             training_args_kwargs["bf16"] = True
 
+        training_args_kwargs["loraplus_lr_ratio"] = self.cfg.loraplus_lr_ratio
+        training_args_kwargs["loraplus_lr_embedding"] = self.cfg.loraplus_lr_embedding
         training_args_kwargs["lr_scheduler_type"] = (
             self.cfg.lr_scheduler if self.cfg.lr_scheduler else "cosine"
         )
@@ -1532,7 +1568,7 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             # trl does some odd mapping of alpha to beta to reuse the beta parameter ???
             training_args_kwargs["beta"] = self.cfg.orpo_alpha
 
-        training_args_cls = TrainingArguments
+        training_args_cls = AxolotlTrainingArguments
         if self.cfg.rl == "orpo":
             training_args_cls = ORPOConfig
             training_args_kwargs["dataset_num_proc"] = self.cfg.dataset_processes
