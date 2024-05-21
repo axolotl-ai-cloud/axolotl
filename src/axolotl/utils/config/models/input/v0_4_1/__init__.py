@@ -212,7 +212,7 @@ class LoraConfig(BaseModel):
     lora_target_modules: Optional[List[str]] = None
     lora_target_linear: Optional[bool] = None
     lora_modules_to_save: Optional[List[str]] = None
-    lora_dropout: Optional[float] = None
+    lora_dropout: Optional[float] = 0.0
     peft_layers_to_transform: Optional[List[int]] = None
     peft: Optional[PeftConfig] = None
     peft_use_dora: Optional[bool] = None
@@ -609,6 +609,7 @@ class AxolotlInputConfig(
     early_stopping_patience: Optional[int] = None
     load_best_model_at_end: Optional[bool] = False
     save_only_model: Optional[bool] = False
+    use_tensorboard: Optional[bool] = None
 
     neftune_noise_alpha: Optional[float] = None
 

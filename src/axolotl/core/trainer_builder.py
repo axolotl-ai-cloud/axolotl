@@ -1212,11 +1212,14 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         )
         training_arguments_kwargs["group_by_length"] = self.cfg.group_by_length
         training_arguments_kwargs["curriculum_sampling"] = self.cfg.curriculum_sampling
-        report_to = None
+        report_to = []
         if self.cfg.use_wandb:
-            report_to = "wandb"
+            report_to.append("wandb")
         if self.cfg.use_mlflow:
-            report_to = "mlflow"
+            report_to.append("mlflow")
+        if self.cfg.use_tensorboard:
+            report_to.append("tensorboard")
+
         training_arguments_kwargs["report_to"] = report_to
         training_arguments_kwargs["run_name"] = (
             self.cfg.wandb_name if self.cfg.use_wandb else None
