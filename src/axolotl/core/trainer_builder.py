@@ -30,7 +30,7 @@ from transformers import (
 )
 from transformers.trainer_utils import seed_worker
 from transformers.utils import is_sagemaker_mp_enabled
-from trl import DPOTrainer, ORPOConfig, ORPOTrainer
+from trl import DPOTrainer, KTOConfig, KTOTrainer, ORPOConfig, ORPOTrainer
 from trl.trainer.utils import pad_to_length
 
 from axolotl.loraplus import create_loraplus_optimizer
@@ -43,7 +43,7 @@ from axolotl.utils.callbacks import (
     LossWatchDogCallback,
     SaveAxolotlConfigtoWandBCallback,
     SaveBetterTransformerModelCallback,
-    SaveModelOnTrainEndCallback,
+    SaveModelCallback,
     bench_eval_callback_factory,
     causal_lm_bench_eval_callback_factory,
     log_prediction_callback_factory,
@@ -826,6 +826,14 @@ class AxolotlORPOTrainer(ORPOTrainer):
     tag_names = ["axolotl", "orpo"]
 
 
+class AxolotlKTOTrainer(KTOTrainer):
+    """
+    Extend the base KTOTrainer for axolotl helpers
+    """
+
+    tag_names = ["axolotl", "kto"]
+
+
 class TrainerBuilderBase(abc.ABC):
     """
     Base class for trainer builder
@@ -945,7 +953,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         if self.cfg.loss_watchdog_threshold is not None:
             callbacks.append(LossWatchDogCallback(self.cfg))
 
-        callbacks.append(SaveModelOnTrainEndCallback())
+        callbacks.append(SaveModelCallback())
 
         return callbacks
 
@@ -1431,7 +1439,7 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
 
     def get_callbacks(self):
         callbacks = super().get_callbacks()
-        callbacks.append(SaveModelOnTrainEndCallback())
+        callbacks.append(SaveModelCallback())
 
         return callbacks
 
@@ -1532,6 +1540,22 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             if self.cfg.max_prompt_len:
                 training_args_kwargs["max_prompt_length"] = self.cfg.max_prompt_len
 
+        if self.cfg.rl == "kto":
+            training_args_cls = KTOConfig
+
+            training_args_kwargs["beta"] = self.cfg.rl_beta or 0.1
+            training_args_kwargs["desirable_weight"] = (
+                self.cfg.kto_desirable_weight or 1.0
+            )
+            training_args_kwargs["undesirable_weight"] = (
+                self.cfg.kto_undesirable_weight or 1.0
+            )
+
+            training_args_kwargs["dataset_num_proc"] = self.cfg.dataset_processes
+            training_args_kwargs["max_length"] = self.cfg.sequence_len
+            if self.cfg.max_prompt_len:
+                training_args_kwargs["max_prompt_length"] = self.cfg.max_prompt_len
+
         training_args = training_args_cls(
             per_device_train_batch_size=self.cfg.micro_batch_size,
             max_steps=self.cfg.max_steps or total_num_steps,
@@ -1567,7 +1591,7 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             ] = self.cfg.precompute_ref_log_probs
         if self.cfg.rl in ["dpo", "ipo", "kto_pair"]:
             trainer_cls = AxolotlDPOTrainer
-            dpo_trainer_kwargs["beta"] = self.cfg.dpo_beta or 0.1
+            dpo_trainer_kwargs["beta"] = self.cfg.rl_beta or 0.1
             trainer_cls_args = [self.model, self.model_ref]
 
             # these aren't used for the ORPO trainer
@@ -1579,6 +1603,9 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
                 dpo_trainer_kwargs["dataset_num_proc"] = self.cfg.dataset_processes
         elif self.cfg.rl == "orpo":
             trainer_cls = AxolotlORPOTrainer
+            trainer_cls_args = [self.model]
+        elif self.cfg.rl == "kto":
+            trainer_cls = AxolotlKTOTrainer
             trainer_cls_args = [self.model]
         else:
             raise ValueError(f"Unsupported RL: {self.cfg.rl}")
