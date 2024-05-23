@@ -72,8 +72,8 @@ class MultipackBatchSampler(BatchSampler):
         lengths,
         batch_max_len,
         batch_size,
-        group_size,
-        bin_size,
+        group_size=100_000,
+        bin_size=200,
         drop_last=False,
     ):
         self.sampler = sampler
