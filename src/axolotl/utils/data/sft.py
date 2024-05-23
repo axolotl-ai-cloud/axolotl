@@ -308,12 +308,16 @@ def load_tokenized_prepared_datasets(
                         "unhandled dataset load: local path exists, but is neither a directory or a file"
                     )
             elif ds_from_hub:
+                load_ds_kwargs = {}
+                if config_dataset.split:
+                    load_ds_kwargs = {"split": config_dataset.split}
                 ds = load_dataset(
                     config_dataset.path,
                     name=config_dataset.name,
                     streaming=False,
                     data_files=config_dataset.data_files,
                     token=use_auth_token,
+                    **load_ds_kwargs,
                 )
             elif ds_from_cloud and remote_file_system:
                 if remote_file_system.isdir(config_dataset.path):
