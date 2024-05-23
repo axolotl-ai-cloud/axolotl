@@ -10,7 +10,7 @@ strict: false
 datasets:
   - path: Unbabel/TowerBlocks-v1-MT-only
     type: sharegpt
-    conversation: chatml_w_system
+    conversation: chatml
 
 dataset_prepared_path: 
 val_set_size: 0

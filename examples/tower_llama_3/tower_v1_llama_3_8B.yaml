@@ -1,6 +1,6 @@
-base_model: /mnt/cephfs-nvme/nunomg/Meta-Llama-3-8B
+base_model: Unbabel/llama3_porfirio
 model_type: AutoModelForCausalLM
-tokenizer_type: LlamaTokenizer
+tokenizer_type: AutoTokenizer
 # is_llama_derived_model: true
 
 load_in_8bit: false
@@ -10,23 +10,28 @@ strict: false
 datasets:
   - path: Unbabel/Tower-v1-2703-w-OHCPT
     type: sharegpt
-    conversation: chatml_w_system
+    conversation: llama-3
+
+# chat_template: chatml
 
 dataset_prepared_path: 
 val_set_size: 0
-output_dir: /mnt/cephfs-nvme/nunomg/axolotl/Tower_Llama3_v1_ckpts/Blocks_v1/
+output_dir: /mnt/cephfs-nvme/nunomg/axolotl/Tower_Llama3_v1_8B_ckpts/porfirio_lowlr/
 
 sequence_len: 4096
 sample_packing: true
 pad_to_sequence_len: true
 
-adapter:
-lora_model_dir:
-lora_r:
-lora_alpha:
-lora_dropout:
-lora_target_linear:
-lora_fan_in_fan_out:
+# adapter: lora
+# lora_model_dir:
+# lora_r: 16
+# lora_alpha: 32
+# lora_dropout: 0.05
+# lora_target_linear: false
+# lora_fan_in_fan_out:
+# lora_modules_to_save: ['embed_tokens', 'lm_head']
+# lora_target_modules:
+#   - down_proj
 
 wandb_project: translation-llm
 wandb_entity:
@@ -34,13 +39,13 @@ wandb_watch:
 wandb_name:
 wandb_log_model:
 
-gradient_accumulation_steps: 4
-micro_batch_size: 4
+gradient_accumulation_steps: 16
+micro_batch_size: 2
 eval_batch_size: 1
-num_epochs: 2
+num_epochs: 4
 optimizer: adamw_torch
 lr_scheduler: cosine
-learning_rate: 7e-6
+learning_rate: 2e-5
 
 # neftune_noise_alpha: 5
 
@@ -53,7 +58,7 @@ tf32: false
 gradient_checkpointing: true
 early_stopping_patience:
 local_rank:
-logging_steps:
+logging_steps: 5
 xformers_attention:
 flash_attention: true
 flash_attn_cross_entropy: false
@@ -61,7 +66,7 @@ flash_attn_rms_norm: true
 flash_attn_fuse_qkv: false
 flash_attn_fuse_mlp: false
 
-warmup_steps: 125
+warmup_steps: 100
 eval_steps:
 eval_sample_packing: False
 eval_table_size:
@@ -72,9 +77,10 @@ deepspeed: /mnt/cephfs-nvme/nunomg/axolotl/deepspeed_configs/zero3.json # multi-
 weight_decay: 0.01
 fsdp:
 fsdp_config:
-tokens:
-  - <|im_start|>
+# tokens:
+#   - <|im_start|>
 special_tokens:
-  bos_token: "<s>"
-  eos_token: "<|im_end|>"
-  unk_token: "<unk>"
+#   # bos_token: "<s>"
+#   eos_token: "<|im_end|>"
+#   # unk_token: "<unk>"
+  pad_token: "<|end_of_text|>"

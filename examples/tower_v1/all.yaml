@@ -1,6 +1,6 @@
-base_model: /mnt/data/nunomg/7B_mistral_all_mc4_parallel_eos_20b_20b_ckpt
+base_model: Unbabel/mistral_flavio_pre_annealing
 model_type: AutoModelForCausalLM
-tokenizer_type: LlamaTokenizer
+tokenizer_type: AutoTokenizer
 # is_llama_derived_model: true
 
 load_in_8bit: false
@@ -8,13 +8,15 @@ load_in_4bit: false
 strict: false
 #Unbabel/TowerBlocks-v1-MT-only
 datasets:
-  - path: Unbabel/Tower-v1-2703-w-OHCPT
+  - path: Unbabel/Tower-v1-1905
     type: sharegpt
-    conversation: chatml_w_system
+    conversation: chatml
+
+chat_template: chatml
 
 dataset_prepared_path: 
 val_set_size: 0
-output_dir: /mnt/data/nunomg/axolotl/Tower_v1_ckpts/all_2703_OHwCPT_2epochs_w_sys/
+output_dir: /mnt/cephfs-nvme/nunomg/axolotl/Tower_v1_ckpts/mistral_flavio_pre_annealing/
 
 sequence_len: 4096
 sample_packing: true
@@ -34,7 +36,7 @@ wandb_watch:
 wandb_name:
 wandb_log_model:
 
-gradient_accumulation_steps: 8
+gradient_accumulation_steps: 4
 micro_batch_size: 8
 eval_batch_size: 1
 num_epochs: 2
@@ -53,7 +55,7 @@ tf32: false
 gradient_checkpointing: true
 early_stopping_patience:
 local_rank:
-logging_steps:
+logging_steps: 10
 xformers_attention:
 flash_attention: true
 flash_attn_cross_entropy: false
@@ -68,7 +70,7 @@ eval_table_size:
 save_steps:
 save_total_limit:
 debug:
-deepspeed: /mnt/data/nunomg/axolotl/deepspeed/zero3.json # multi-gpu only
+deepspeed: /mnt/cephfs-nvme/nunomg/axolotl/deepspeed/zero3.json # multi-gpu only
 weight_decay: 0.01
 fsdp:
 fsdp_config:
