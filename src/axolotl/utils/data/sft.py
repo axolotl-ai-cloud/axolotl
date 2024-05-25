@@ -161,7 +161,7 @@ def load_tokenized_prepared_datasets(
     try:
         if cfg.push_dataset_to_hub:
             LOG.info(
-                f"Attempting to load prepared dataset from Huggingface hub at {cfg.push_dataset_to_hub} with configuration name {ds_hash}..."
+                f"Attempting to load prepared dataset from Huggingface hub at {cfg.push_dataset_to_hub} (version {ds_hash})..."
             )
             dataset = load_dataset(
                 cfg.push_dataset_to_hub,
@@ -186,7 +186,7 @@ def load_tokenized_prepared_datasets(
     else:
         if cfg.push_dataset_to_hub:
             LOG.info("Unable to find prepared dataset in Huggingface hub")
-        LOG.info("Unable to find prepared dataset in {prepared_ds_path}")
+        LOG.info(f"Unable to find prepared dataset in {prepared_ds_path}")
         LOG.info("Loading raw datasets...")
         if not cfg.is_preprocess:
             LOG.warning(
@@ -430,7 +430,7 @@ def load_tokenized_prepared_datasets(
             dataset.save_to_disk(str(prepared_ds_path))
             if cfg.push_dataset_to_hub:
                 LOG.info(
-                    f"Pushing merged prepared dataset to Huggingface hub at {cfg.push_dataset_to_hub} with configuration name {ds_hash}..."
+                    f"Pushing merged prepared dataset to Huggingface hub at {cfg.push_dataset_to_hub} (version {ds_hash})..."
                 )
                 dataset.push_to_hub(
                     cfg.push_dataset_to_hub,
