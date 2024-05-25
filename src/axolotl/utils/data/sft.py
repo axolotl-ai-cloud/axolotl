@@ -161,7 +161,8 @@ def load_tokenized_prepared_datasets(
     try:
         if cfg.push_dataset_to_hub:
             dataset = load_dataset(
-                f"{cfg.push_dataset_to_hub}/{ds_hash}",
+                cfg.push_dataset_to_hub,
+                ds_hash,
                 token=use_auth_token,
             )
             dataset = dataset[split]
@@ -424,10 +425,12 @@ def load_tokenized_prepared_datasets(
             dataset.save_to_disk(str(prepared_ds_path))
             if cfg.push_dataset_to_hub:
                 LOG.info(
-                    f"Saving merged prepared dataset with push_to_hub... {cfg.push_dataset_to_hub}/{ds_hash}"
+                    f"Saving merged prepared dataset with push_to_hub... {cfg.push_dataset_to_hub}"
                 )
                 dataset.push_to_hub(
-                    f"{cfg.push_dataset_to_hub}/{ds_hash}", private=True
+                    cfg.push_dataset_to_hub,
+                    ds_hash,
+                    private=True,
                 )
 
     return dataset, prompters
