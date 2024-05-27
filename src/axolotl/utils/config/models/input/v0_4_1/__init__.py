@@ -110,6 +110,8 @@ class SFTDataset(BaseModel):
     field_human: Optional[str] = None
     field_model: Optional[str] = None
     field_messages: Optional[str] = None
+    message_field_role: Optional[str] = None
+    message_field_content: Optional[str] = None
 
     roles: Optional[Dict[str, List[str]]] = None
 
