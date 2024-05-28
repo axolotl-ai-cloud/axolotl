@@ -7,16 +7,6 @@ from importlib.metadata import PackageNotFoundError, version
 from setuptools import find_packages, setup
 
 
-def extract_requirements_info(requirement_line):
-    pattern = r"(?P<egg>\w+) @ git\+https://github.com/(?P<namespace>[\w-]+)/(?P<repo>[\w-]+)\.git@(?P<gitsha>[a-f0-9]{40})"
-    match = re.match(pattern, requirement_line)
-    if match:
-        info = match.groupdict()
-        info["namespace/repo"] = f"{info.pop('namespace')}/{info.pop('repo')}"
-        return info
-    raise ValueError("The requirement line is not in the expected format")
-
-
 def parse_requirements():
     _install_requires = []
     _dependency_links = []
@@ -35,14 +25,8 @@ def parse_requirements():
                 _, url = line.split()
                 _dependency_links.append(url)
             elif not is_extras and line and line[0] != "#":
-                if " @ " in line:
-                    req_data = extract_requirements_info(line)
-                    _dependency_links.append(
-                        f"git+https://github.com/{req_data['namespace/repo']}.git@{req_data['gitsha']}#egg={req_data['egg']}"
-                    )
-                else:
-                    # Handle standard packages
-                    _install_requires.append(line)
+                # Handle standard packages
+                _install_requires.append(line)
 
     try:
         if "Darwin" in platform.system():
