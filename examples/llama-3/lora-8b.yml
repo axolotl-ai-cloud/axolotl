@@ -24,6 +24,9 @@ lora_alpha: 16
 lora_dropout: 0.05
 lora_target_linear: true
 lora_fan_in_fan_out:
+lora_modules_to_save: 
+  - embed_tokens
+  - lm_head
 
 wandb_project:
 wandb_entity:
