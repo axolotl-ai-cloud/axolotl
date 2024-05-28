@@ -30,8 +30,11 @@ def parse_requirements():
 
     try:
         if "Darwin" in platform.system():
-            _install_requires.pop(_install_requires.index("xformers==0.0.23.post1"))
+            # don't install xformers on MacOS
+            _install_requires.pop(_install_requires.index("xformers==0.0.26.post1"))
         else:
+            # detect the version of torch already installed
+            # and set it so dependencies don't clobber the torch version
             torch_version = version("torch")
             _install_requires.append(f"torch=={torch_version}")
 
@@ -46,11 +49,14 @@ def parse_requirements():
                 raise ValueError("Invalid version format")
 
             if (major, minor) >= (2, 3):
-                _install_requires.pop(_install_requires.index("xformers==0.0.23.post1"))
-                _install_requires.append("xformers>=0.0.26.post1")
+                pass
             elif (major, minor) >= (2, 2):
-                _install_requires.pop(_install_requires.index("xformers==0.0.23.post1"))
+                _install_requires.pop(_install_requires.index("xformers==0.0.26.post1"))
                 _install_requires.append("xformers>=0.0.25.post1")
+            else:
+                _install_requires.pop(_install_requires.index("xformers==0.0.26.post1"))
+                _install_requires.append("xformers>=0.0.23.post1")
+
     except PackageNotFoundError:
         pass
 
@@ -62,7 +68,7 @@ install_requires, dependency_links = parse_requirements()
 
 setup(
     name="axolotl",
-    version="0.4.0",
+    version="0.4.1",
     description="LLM Trainer",
     long_description="Axolotl is a tool designed to streamline the fine-tuning of various AI models, offering support for multiple configurations and architectures.",
     package_dir={"": "src"},

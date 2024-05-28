@@ -1,4 +1,4 @@
-base_model: meta-llama/Meta-Llama-3-8B
+base_model: meta-llama/Meta-Llama-3-8B-Instruct
 model_type: LlamaForCausalLM
 tokenizer_type: AutoTokenizer
 
@@ -6,15 +6,26 @@ load_in_8bit: true
 load_in_4bit: false
 strict: false
 
+chat_template: llama3
 datasets:
-  - path: mhenrichsen/alpaca_2k_test
-    type: alpaca
+  - path: fozziethebeat/alpaca_messages_2k_test
+    type: chat_template
+    chat_template: llama3
+    field_messages: messages
+    message_field_role: role
+    message_field_content: content
+    roles:
+      user:
+        - user
+      assistant:
+        - assistant
+
 dataset_prepared_path:
 val_set_size: 0.05
 output_dir: ./outputs/lora-out
 
 sequence_len: 4096
-sample_packing: true
+sample_packing: false
 pad_to_sequence_len: true
 
 adapter: lora
@@ -24,9 +35,6 @@ lora_alpha: 16
 lora_dropout: 0.05
 lora_target_linear: true
 lora_fan_in_fan_out:
-lora_modules_to_save:
-  - embed_tokens
-  - lm_head
 
 wandb_project:
 wandb_entity:
@@ -66,5 +74,3 @@ deepspeed:
 weight_decay: 0.0
 fsdp:
 fsdp_config:
-special_tokens:
-   pad_token: <|end_of_text|>
