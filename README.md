@@ -124,11 +124,11 @@ accelerate launch -m axolotl.cli.train examples/openllama-3b/lora.yml
 
 # inference
 accelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \
-    --lora_model_dir="./lora-out"
+    --lora_model_dir="./outputs/lora-out"
 
 # gradio
 accelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \
-    --lora_model_dir="./lora-out" --gradio
+    --lora_model_dir="./outputs/lora-out" --gradio
 
 # remote yaml files - the yaml config can be hosted on a public URL
 # Note: the yaml config must directly link to the **raw** yaml
