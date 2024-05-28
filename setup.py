@@ -7,6 +7,16 @@ from importlib.metadata import PackageNotFoundError, version
 from setuptools import find_packages, setup
 
 
+def extract_requirements_info(requirement_line):
+    pattern = r"(?P<egg>\w+) @ git\+https://github.com/(?P<namespace>[\w-]+)/(?P<repo>[\w-]+)\.git@(?P<gitsha>[a-f0-9]{40})"
+    match = re.match(pattern, requirement_line)
+    if match:
+        info = match.groupdict()
+        info["namespace/repo"] = f"{info.pop('namespace')}/{info.pop('repo')}"
+        return info
+    raise ValueError("The requirement line is not in the expected format")
+
+
 def parse_requirements():
     _install_requires = []
     _dependency_links = []
@@ -25,13 +35,22 @@ def parse_requirements():
                 _, url = line.split()
                 _dependency_links.append(url)
             elif not is_extras and line and line[0] != "#":
-                # Handle standard packages
-                _install_requires.append(line)
+                if " @ " in line:
+                    req_data = extract_requirements_info(line)
+                    _dependency_links.append(
+                        f"https://github.com/{req_data['namespace/repo']}/tarball/{req_data['gitsha']}#egg={req_data['egg']}"
+                    )
+                else:
+                    # Handle standard packages
+                    _install_requires.append(line)
 
     try:
         if "Darwin" in platform.system():
-            _install_requires.pop(_install_requires.index("xformers==0.0.23.post1"))
+            # don't install xformers on MacOS
+            _install_requires.pop(_install_requires.index("xformers==0.0.26.post1"))
         else:
+            # detect the version of torch already installed
+            # and set it so dependencies don't clobber the torch version
             torch_version = version("torch")
             _install_requires.append(f"torch=={torch_version}")
 
@@ -46,11 +65,14 @@ def parse_requirements():
                 raise ValueError("Invalid version format")
 
             if (major, minor) >= (2, 3):
-                _install_requires.pop(_install_requires.index("xformers==0.0.23.post1"))
-                _install_requires.append("xformers>=0.0.26.post1")
+                pass
             elif (major, minor) >= (2, 2):
-                _install_requires.pop(_install_requires.index("xformers==0.0.23.post1"))
+                _install_requires.pop(_install_requires.index("xformers==0.0.26.post1"))
                 _install_requires.append("xformers>=0.0.25.post1")
+            else:
+                _install_requires.pop(_install_requires.index("xformers==0.0.26.post1"))
+                _install_requires.append("xformers>=0.0.23.post1")
+
     except PackageNotFoundError:
         pass
 
@@ -62,7 +84,7 @@ install_requires, dependency_links = parse_requirements()
 
 setup(
     name="axolotl",
-    version="0.4.0",
+    version="0.4.1",
     description="LLM Trainer",
     long_description="Axolotl is a tool designed to streamline the fine-tuning of various AI models, offering support for multiple configurations and architectures.",
     package_dir={"": "src"},
