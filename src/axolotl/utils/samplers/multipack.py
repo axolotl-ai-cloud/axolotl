@@ -80,8 +80,8 @@ class MultipackBatchSampler(BatchSampler):
         self.lengths = np.array(lengths, dtype=np.int32)
         self.batch_max_len = batch_max_len
         self.batch_size = batch_size
-        self.group_size = group_size
-        self.bin_size = bin_size
+        self.group_size = group_size if group_size is not None else 100_000
+        self.bin_size = bin_size if bin_size is not None else 200
         self.drop_last = drop_last
 
         self._efficiency = None
