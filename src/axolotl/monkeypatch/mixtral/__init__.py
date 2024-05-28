@@ -42,9 +42,9 @@ def patch_mixtral_moe_forward_zero3() -> None:
         return final_hidden_states, router_logits
 
     from transformers.models.mixtral.modeling_mixtral import (
-        MixtralBLockSparseTop2MLP,
+        MixtralBlockSparseTop2MLP,
         MixtralSparseMoeBlock,
     )
 
-    MixtralBLockSparseTop2MLP.forward = mlp_forward
+    MixtralBlockSparseTop2MLP.forward = mlp_forward
     MixtralSparseMoeBlock.forward = moe_forward
