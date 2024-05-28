@@ -187,17 +187,20 @@ def normalize_cfg_datasets(cfg):
     helpers for mapping chat_template to various dataset configurations as necessary
     """
 
-    if cfg.chat_template and cfg.chat_template == "chatml":
+    if cfg.chat_template:
         if cfg.datasets:
             for idx, ds_cfg in enumerate(cfg.datasets):
                 if ds_cfg.type == "sharegpt" and not ds_cfg.conversation:
                     LOG.info(
-                        f"updating dataset {ds_cfg.path} with `conversation: chatml` to match your chat_template"
+                        f"updating dataset {ds_cfg.path} with `conversation: {cfg.chat_template}` to match your chat_template"
                     )
                     cfg.datasets[idx].conversation = "chatml"
-                if ds_cfg.type == "orpo.chat_template" and not ds_cfg.chat_template:
+                if (
+                    ds_cfg.type in ["orpo.chat_template", "chat_template"]
+                    and not ds_cfg.chat_template
+                ):
                     LOG.info(
-                        f"updating dataset {ds_cfg.path} with `chat_template: chatml` to match your chat_template"
+                        f"updating dataset {ds_cfg.path} with `chat_template: {cfg.chat_template}` to match your chat_template"
                     )
                     cfg.datasets[idx].chat_template = "chatml"
 
