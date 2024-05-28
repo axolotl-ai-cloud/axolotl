@@ -194,7 +194,7 @@ def normalize_cfg_datasets(cfg):
                     LOG.info(
                         f"updating dataset {ds_cfg.path} with `conversation: {cfg.chat_template}` to match your chat_template"
                     )
-                    cfg.datasets[idx].conversation = "chatml"
+                    cfg.datasets[idx].conversation = cfg.chat_template
                 if (
                     ds_cfg.type in ["orpo.chat_template", "chat_template"]
                     and not ds_cfg.chat_template
@@ -202,7 +202,7 @@ def normalize_cfg_datasets(cfg):
                     LOG.info(
                         f"updating dataset {ds_cfg.path} with `chat_template: {cfg.chat_template}` to match your chat_template"
                     )
-                    cfg.datasets[idx].chat_template = "chatml"
+                    cfg.datasets[idx].chat_template = cfg.chat_template
 
 
 def validate_config(cfg: DictDefault, capabilities: Optional[dict] = None):
