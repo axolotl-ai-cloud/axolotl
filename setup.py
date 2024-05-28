@@ -38,7 +38,7 @@ def parse_requirements():
                 if " @ " in line:
                     req_data = extract_requirements_info(line)
                     _dependency_links.append(
-                        f"https://github.com/{req_data['namespace/repo']}/tarball/{req_data['gitsha']}#egg={req_data['egg']}"
+                        f"git+https://github.com/{req_data['namespace/repo']}.git@{req_data['gitsha']}#egg={req_data['egg']}"
                     )
                 else:
                     # Handle standard packages
