@@ -246,7 +246,7 @@ class AxolotlORPOConfig(AxolotlTrainingMixins, ORPOConfig):
 
 
 @dataclass
-class AxolotlKTOConfig(AxolotlTrainingMixins, KTOConfig):
+class AxolotlKTOConfig(KTOConfig, AxolotlTrainingMixins):
     """
     KTO config for KTO training
     """
@@ -1633,7 +1633,6 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
                 training_args_kwargs["max_prompt_length"] = self.cfg.max_prompt_len
 
         training_args = training_args_cls(  # pylint: disable=unexpected-keyword-arg
-            output_dir=self.cfg.output_dir,
             per_device_train_batch_size=self.cfg.micro_batch_size,
             max_steps=self.cfg.max_steps or total_num_steps,
             gradient_accumulation_steps=self.cfg.gradient_accumulation_steps,
