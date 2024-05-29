@@ -32,6 +32,7 @@ class ChatTemplatePrompter(Prompter):
                 "user": "user",
                 "assistant": "assistant",
                 "gpt": "assistant",
+                "system": "system",
             }
         self.message_field_role = message_field_role
         self.message_field_content = message_field_content
