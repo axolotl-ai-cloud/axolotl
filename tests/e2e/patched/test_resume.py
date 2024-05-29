@@ -62,6 +62,7 @@ class TestResumeLlama(unittest.TestCase):
                 "save_steps": 10,
                 "save_total_limit": 5,
                 "max_steps": 40,
+                "use_tensorboard": True,
             }
         )
         if is_torch_bf16_gpu_available():
