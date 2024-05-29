@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 
 pytest --ignore=tests/e2e/ /workspace/axolotl/tests/
 pytest /workspace/axolotl/tests/e2e/patched/
