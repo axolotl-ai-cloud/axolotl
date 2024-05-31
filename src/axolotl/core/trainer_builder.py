@@ -384,6 +384,7 @@ class AxolotlTrainer(Trainer):
                 batch_size=batch_size,
                 group_size=self.args.sample_packing_group_size,
                 bin_size=self.args.sample_packing_bin_size,
+                drop_last=True,
             )
         if self.args.curriculum_sampling:
             return SequentialSampler(self.train_dataset)
@@ -408,6 +409,7 @@ class AxolotlTrainer(Trainer):
                 batch_size=batch_size,
                 group_size=self.args.sample_packing_group_size,
                 bin_size=self.args.sample_packing_bin_size,
+                drop_last=True,
             )
         return super()._get_eval_sampler(eval_dataset)
 
