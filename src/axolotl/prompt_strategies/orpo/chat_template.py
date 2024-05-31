@@ -56,7 +56,9 @@ class ORPODatasetParsingStrategy:
         messages: List[Message] = []
         if system := prompt.get("system", None):
             messages.append(Message(role="system", content=system, label=False))
-        messages.append(Message(role="user", content=prompt["prompt"], label=False))
+        messages.append(
+            Message(role="user", content=prompt["chosen"][0]["content"], label=False)
+        )
         messages.append(
             Message(
                 role="assistant", content=prompt["chosen"][1]["content"], label=True
@@ -70,7 +72,9 @@ class ORPODatasetParsingStrategy:
         messages: List[Message] = []
         if system := prompt.get("system", None):
             messages.append(Message(role="system", content=system, label=False))
-        messages.append(Message(role="user", content=prompt["prompt"], label=False))
+        messages.append(
+            Message(role="user", content=prompt["rejected"][0]["content"], label=False)
+        )
         messages.append(
             Message(
                 role="assistant", content=prompt["rejected"][1]["content"], label=True
@@ -152,8 +156,8 @@ class ORPOTokenizingStrategy(PromptTokenizingStrategy):
     def tokenize_prompt(self, prompt):
         # pass the rejected prompt/row to the Prompter to get the formatted prompt
         prompt_len = 0
-        rejected_message_list = self.dataset_parser.get_rejected_conversation_thread(
-            prompt
+        rejected_message_list: MessageList = (
+            self.dataset_parser.get_rejected_conversation_thread(prompt)
         )
         input_ids = []
         labels = []
@@ -174,7 +178,9 @@ class ORPOTokenizingStrategy(PromptTokenizingStrategy):
         rejected_input_ids = input_ids
         rejected_labels = labels
         # pass the chosen prompt/row to the Prompter to get the formatted prompt
-        chosen_message_list = self.dataset_parser.get_chosen_conversation_thread(prompt)
+        chosen_message_list: MessageList = (
+            self.dataset_parser.get_chosen_conversation_thread(prompt)
+        )
         input_ids = []
         labels = []
         for _, (part, label) in enumerate(
