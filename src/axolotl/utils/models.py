@@ -953,6 +953,8 @@ def load_lora(model, cfg, inference=False, config_only=False):
 
     lora_config_kwargs = {}
     loftq_bits = cfg.peft and cfg.peft.loftq_config and cfg.peft.loftq_config.loftq_bits
+    if cfg.lora_alpha:
+        lora_config_kwargs["lora_alpha"] = cfg.lora_alpha
     if loftq_bits:
         lora_config_kwargs["loftq_config"] = LoftQConfig(loftq_bits=loftq_bits)
         lora_config_kwargs["init_lora_weights"] = "loftq"
@@ -960,12 +962,14 @@ def load_lora(model, cfg, inference=False, config_only=False):
         lora_config_kwargs["use_dora"] = cfg.peft_use_dora
     if cfg.peft_use_rslora:
         lora_config_kwargs["use_rslora"] = cfg.peft_use_rslora
+    if cfg.peft_use_mora and cfg.peft_mora_type is not None:
+        lora_config_kwargs["use_mora"] = cfg.peft_use_mora
+        lora_config_kwargs["mora_type"] = cfg.peft_mora_type
     if cfg.peft_layer_replication:
         lora_config_kwargs["layer_replication"] = cfg.peft_layer_replication
 
     lora_config = LoraConfig(
         r=cfg.lora_r,
-        lora_alpha=cfg.lora_alpha,
         target_modules=lora_target_modules,
         layers_to_transform=cfg.peft_layers_to_transform,
         lora_dropout=cfg.lora_dropout,

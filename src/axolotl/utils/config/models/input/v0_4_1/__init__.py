@@ -219,6 +219,8 @@ class LoraConfig(BaseModel):
     peft_layers_to_transform: Optional[List[int]] = None
     peft: Optional[PeftConfig] = None
     peft_use_dora: Optional[bool] = None
+    peft_use_mora: Optional[bool] = None
+    peft_mora_type: Optional[int] = None
     peft_use_rslora: Optional[bool] = None
     peft_layer_replication: Optional[List[Tuple[int, int]]] = None
 
