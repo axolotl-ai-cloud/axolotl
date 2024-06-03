@@ -7,6 +7,7 @@ from transformers.trainer import Trainer
 from axolotl.integrations.base import PluginManager
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schedulers import (
+    JaggedLRRestartScheduler,
     RexLR,
     get_cosine_schedule_with_min_lr,
     get_cosine_schedule_with_quadratic_warmup,
@@ -113,7 +114,7 @@ class SchedulerMixin(Trainer):
                     min_lr_ratio=self.args.cosine_min_lr_ratio,
                 )
             else:
-                return super().create_scheduler(num_training_steps, optimizer=optimizer)
+                super().create_scheduler(num_training_steps, optimizer=optimizer)
         else:
             if use_cosine_quadratic:
                 LOG.warning(
@@ -122,5 +123,22 @@ class SchedulerMixin(Trainer):
             if use_cosine_min_lr:
                 LOG.warning(
                     "axolotl's cosine scheduler with min lr not used (e.g., because of deepspeed).")
+
+        if self.args.jagged_restart_steps:
+            warmup_steps = (
+                self.args.jagged_restarts_warmup_steps or 10
+            )
+            anneal_steps = (
+                self.args.jagged_restarts_anneal_steps or 1
+            )
+            if not self.lr_scheduler:
+                super().create_scheduler(num_training_steps, optimizer)
+            self.lr_scheduler = JaggedLRRestartScheduler(  # pylint: disable=attribute-defined-outside-init
+                optimizer,
+                self.lr_scheduler,
+                self.args.jagged_restart_steps,
+                warmup_steps,
+                anneal_steps,
+            )
 
         return self.lr_scheduler  # type: ignore
