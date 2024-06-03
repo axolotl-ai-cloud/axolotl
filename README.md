@@ -609,7 +609,7 @@ If you decode a prompt constructed by axolotl, you might see spaces between toke
 3. Make sure the inference string from #2 looks **exactly** like the data you fine tuned on from #1, including spaces and new lines.  If they aren't the same, adjust your inference server accordingly.
 4. As an additional troubleshooting step, you can look at the token ids between 1 and 2 to make sure they are identical.
 
-Having misalignment between your prompts during training and inference can cause models to perform very poorly, so it is worth checking this.  See [this blog post](https://hamel.dev/notes/llm/05_tokenizer_gotchas.html) for a concrete example.
+Having misalignment between your prompts during training and inference can cause models to perform very poorly, so it is worth checking this.  See [this blog post](https://hamel.dev/notes/llm/finetuning/05_tokenizer_gotchas.html) for a concrete example.
 
 ## Debugging Axolotl
 
