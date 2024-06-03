@@ -231,6 +231,7 @@ class JaggedLRRestartScheduler(LRScheduler):
         jagged_restarts_anneal_steps: int = 1,
         min_lr_scale: float = 0.001,
     ) -> None:
+        # pylint: disable=duplicate-code
         self.inner_schedule = inner_schedule
         self.restarts_steps = jagged_restarts_steps
         self.warmup_steps = jagged_restarts_warmup_steps
