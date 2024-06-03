@@ -619,6 +619,7 @@ class AxolotlInputConfig(
     neftune_noise_alpha: Optional[float] = None
 
     orpo_alpha: Optional[float] = None
+    rpo_alpha: Optional[float] = None
 
     kto_desirable_weight: Optional[float] = None
     kto_undesirable_weight: Optional[float] = None

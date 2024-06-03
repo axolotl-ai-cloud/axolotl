@@ -30,7 +30,7 @@ from transformers import (
 )
 from transformers.trainer_utils import seed_worker
 from transformers.utils import is_sagemaker_mp_enabled
-from trl import DPOTrainer, KTOConfig, KTOTrainer, ORPOConfig, ORPOTrainer
+from trl import DPOConfig, DPOTrainer, KTOConfig, KTOTrainer, ORPOConfig, ORPOTrainer
 from trl.trainer.utils import pad_to_length
 
 from axolotl.loraplus import create_loraplus_optimizer
@@ -235,6 +235,13 @@ class AxolotlTrainingArguments(AxolotlTrainingMixins, TrainingArguments):
 
     This code is duplicated due to HF TrainingArguments not setting output_dir with a defaujlt value
     so it can't be used as a mixin.
+    """
+
+
+@dataclass
+class AxolotlDPOConfig(AxolotlTrainingMixins, DPOConfig):
+    """
+    DPO config for DPO training
     """
 
 
@@ -1608,7 +1615,9 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             # trl does some odd mapping of alpha to beta to reuse the beta parameter ???
             training_args_kwargs["beta"] = self.cfg.orpo_alpha
 
-        training_args_cls = AxolotlTrainingArguments
+        training_args_cls = AxolotlDPOConfig
+        if self.cfg.rpo_alpha is not None:
+            training_args_kwargs["rpo_alpha"] = self.cfg.rpo_alpha
         if self.cfg.rl == "orpo":
             training_args_cls = AxolotlORPOConfig
             training_args_kwargs["dataset_num_proc"] = self.cfg.dataset_processes
