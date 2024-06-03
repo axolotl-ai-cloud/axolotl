@@ -217,3 +217,48 @@ def get_cosine_schedule_with_warmup_decay_constant(
         num_cycles=num_cycles,
     )
     return LambdaLR(optimizer, lr_lambda, last_epoch)
+
+
+class JaggedLRRestartScheduler(LRScheduler):
+    """Wraps another scheduler to apply per-lora-restart learning rate warmups."""
+
+    def __init__(
+        self,
+        optimizer: Optimizer,
+        inner_schedule: LRScheduler,
+        jagged_restarts_steps: int,
+        jagged_restarts_warmup_steps: int,
+        jagged_restarts_anneal_steps: int = 1,
+        min_lr_scale: float = 0.001,
+    ) -> None:
+        self.inner_schedule = inner_schedule
+        self.restarts_steps = jagged_restarts_steps
+        self.warmup_steps = jagged_restarts_warmup_steps
+        self.anneal_steps = jagged_restarts_anneal_steps
+        self.min_lr_scale = min_lr_scale
+        super().__init__(optimizer, inner_schedule.last_epoch, inner_schedule.verbose)
+
+    def get_lr(self) -> float:
+        self.inner_schedule.last_epoch = self.last_epoch
+
+        original = self.inner_schedule.get_lr()
+        step = self.last_epoch
+
+        if step < self.restarts_steps:
+            scale = 1
+        else:
+            per_relora_progress = step % self.restarts_steps
+            if per_relora_progress < self.warmup_steps:
+                cycle_t = min(1.0, (per_relora_progress) / self.warmup_steps)
+            elif per_relora_progress > (self.restarts_steps - self.anneal_steps):
+                cycle_t = min(
+                    1.0,
+                    (self.restarts_steps - per_relora_progress) / self.anneal_steps,
+                )
+            else:
+                cycle_t = 1
+            scale = cycle_t * (1 - self.min_lr_scale) + self.min_lr_scale
+
+        # if isinstance(original, Sequence):
+        #     return [lr * scale for lr in original]
+        return original * scale
