@@ -248,13 +248,13 @@ class JaggedLRRestartScheduler(LRScheduler):
         if step < self.restarts_steps:
             scale = 1
         else:
-            per_relora_progress = step % self.restarts_steps
-            if per_relora_progress < self.warmup_steps:
-                cycle_t = min(1.0, (per_relora_progress) / self.warmup_steps)
-            elif per_relora_progress > (self.restarts_steps - self.anneal_steps):
+            per_restart_progress = step % self.restarts_steps
+            if per_restart_progress < self.warmup_steps:
+                cycle_t = min(1.0, (per_restart_progress) / self.warmup_steps)
+            elif per_restart_progress > (self.restarts_steps - self.anneal_steps):
                 cycle_t = min(
                     1.0,
-                    (self.restarts_steps - per_relora_progress) / self.anneal_steps,
+                    (self.restarts_steps - per_restart_progress) / self.anneal_steps,
                 )
             else:
                 cycle_t = 1
