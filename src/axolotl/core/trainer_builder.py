@@ -75,6 +75,7 @@ from axolotl.utils.collators.mm_chat import MultiModalChatDataCollator
 from axolotl.utils.models import ensure_dtype
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 from axolotl.utils.schedulers import (
+    JaggedLRRestartScheduler,
     get_cosine_schedule_with_min_lr,
     get_cosine_schedule_with_quadratic_warmup,
     get_cosine_schedule_with_warmup_decay_constant,
@@ -190,6 +191,22 @@ class AxolotlTrainingMixins:
     relora_prune_ratio: Optional[float] = field(
         default=0.9,
         metadata={"help": "prune ratio for magnitude pruning of the optimizer"},
+    )
+    jagged_restart_steps: Optional[int] = field(
+        default=None,
+        metadata={"help": "how often to reset for jagged restarts"},
+    )
+    jagged_restarts_warmup_steps: Optional[int] = field(
+        default=None,
+        metadata={
+            "help": "how many warmup steps to take after reset for jagged restarts"
+        },
+    )
+    jagged_restarts_anneal_steps: Optional[int] = field(
+        default=None,
+        metadata={
+            "help": "how many anneal steps to take before reset for jagged restarts"
+        },
     )
     bench_split: Optional[str] = field(
         default="eval", metadata={"help": "The benchmark split to run on"}
@@ -412,6 +429,21 @@ class SchedulerMixin(Trainer):
             else:
                 return super().create_scheduler(num_training_steps, optimizer=optimizer)
         else:
+            if self.args.jagged_restart_steps:
+                warmup_steps = (
+                    self.args.jagged_restarts_warmup_steps or 10
+                )
+                anneal_steps = (
+                    self.args.jagged_restarts_anneal_steps or 1
+                )
+                self.lr_scheduler = JaggedLRRestartScheduler(  # pylint: disable=attribute-defined-outside-init
+                    optimizer,
+                    self.lr_scheduler,
+                    self.args.jagged_restart_steps,
+                    warmup_steps,
+                    anneal_steps,
+                )
+
             if use_cosine_quadratic:
                 LOG.warning("axolotl's cosine scheduler with quadratic warmup not used (e.g., because of deepspeed).")
 
