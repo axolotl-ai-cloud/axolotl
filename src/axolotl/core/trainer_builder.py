@@ -1416,17 +1416,15 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
 
         if not self.cfg.test_datasets and self.cfg.val_set_size == 0:
             # no eval set, so don't eval
-            training_arguments_kwargs["evaluation_strategy"] = "no"
+            training_arguments_kwargs["eval_strategy"] = "no"
         elif self.cfg.eval_steps:
-            training_arguments_kwargs["evaluation_strategy"] = "steps"
+            training_arguments_kwargs["eval_strategy"] = "steps"
             training_arguments_kwargs["eval_steps"] = self.cfg.eval_steps
-        elif self.cfg.evaluation_strategy:
-            training_arguments_kwargs[
-                "evaluation_strategy"
-            ] = self.cfg.evaluation_strategy
+        elif self.cfg.eval_strategy:
+            training_arguments_kwargs["eval_strategy"] = self.cfg.eval_strategy
         else:
             # we have an eval set, but no steps defined, default to use epoch
-            training_arguments_kwargs["evaluation_strategy"] = "epoch"
+            training_arguments_kwargs["eval_strategy"] = "epoch"
 
         if self.cfg.save_steps:
             training_arguments_kwargs["save_strategy"] = "steps"
@@ -1860,10 +1858,10 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             training_args_kwargs["save_safetensors"] = self.cfg.save_safetensors
 
         if self.eval_dataset:
-            training_args_kwargs["evaluation_strategy"] = "steps"
+            training_args_kwargs["eval_strategy"] = "steps"
             training_args_kwargs["eval_steps"] = self.cfg.eval_steps
         else:
-            training_args_kwargs["evaluation_strategy"] = "no"
+            training_args_kwargs["eval_strategy"] = "no"
 
         if self.cfg.bf16 or self.cfg.bfloat16:
             training_args_kwargs["bf16"] = True

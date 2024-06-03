@@ -68,6 +68,7 @@ class DeprecatedParameters(BaseModel):
     rope_scaling: Optional[Any] = None
     noisy_embedding_alpha: Optional[float] = None
     dpo_beta: Optional[float] = None
+    evaluation_strategy: Optional[str] = None
 
     @field_validator("max_packed_sequence_len")
     @classmethod
@@ -98,6 +99,13 @@ class DeprecatedParameters(BaseModel):
         if dpo_beta is not None:
             LOG.warning("dpo_beta is deprecated, use rl_beta instead")
         return dpo_beta
+
+    @field_validator("evaluation_strategy")
+    @classmethod
+    def validate_evaluation_strategy(cls, evaluation_strategy):
+        if evaluation_strategy is not None:
+            LOG.warning("evaluation_strategy is deprecated, use eval_strategy instead")
+        return evaluation_strategy
 
 
 class RemappedParameters(BaseModel):
@@ -731,7 +739,7 @@ class AxolotlInputConfig(
     warmup_ratio: Optional[float] = None
     eval_steps: Optional[Union[int, float]] = None
     evals_per_epoch: Optional[Union[int]] = None
-    evaluation_strategy: Optional[str] = None
+    eval_strategy: Optional[str] = None
     save_steps: Optional[Union[int, float]] = None
     saves_per_epoch: Optional[int] = None
     save_strategy: Optional[str] = None
@@ -1033,21 +1041,21 @@ class AxolotlInputConfig(
     @classmethod
     def check_evals(cls, data):
         if (
-            data.get("evaluation_strategy")
+            data.get("eval_strategy")
             and data.get("eval_steps")
-            and data.get("evaluation_strategy") != "steps"
+            and data.get("eval_strategy") != "steps"
         ):
             raise ValueError(
-                "evaluation_strategy and eval_steps mismatch. Please set evaluation_strategy to 'steps' or remove eval_steps."
+                "eval_strategy and eval_steps mismatch. Please set eval_strategy to 'steps' or remove eval_steps."
             )
 
         if (
             data.get("val_set_size") == 0
-            and (data.get("eval_steps") or data.get("evaluation_strategy"))
+            and (data.get("eval_steps") or data.get("eval_strategy"))
             and not data.get("test_datasets")
         ):
             raise ValueError(
-                "eval_steps and evaluation_strategy are not supported with val_set_size == 0"
+                "eval_steps and eval_strategy are not supported with val_set_size == 0"
             )
         if data.get("evals_per_epoch") and data.get("eval_steps"):
             raise ValueError(
@@ -1055,11 +1063,11 @@ class AxolotlInputConfig(
             )
         if (
             data.get("evals_per_epoch")
-            and data.get("evaluation_strategy")
-            and data.get("evaluation_strategy") != "steps"
+            and data.get("eval_strategy")
+            and data.get("eval_strategy") != "steps"
         ):
             raise ValueError(
-                "evaluation_strategy must be empty or set to `steps` when used with evals_per_epoch."
+                "eval_strategy must be empty or set to `steps` when used with evals_per_epoch."
             )
 
         if data.get("do_bench_eval") and not (

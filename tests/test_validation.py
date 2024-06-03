@@ -726,7 +726,7 @@ class TestValidation(BaseValidation):
         cfg = (
             DictDefault(
                 {
-                    "evaluation_strategy": "epoch",
+                    "eval_strategy": "epoch",
                     "eval_steps": 10,
                 }
             )
@@ -734,14 +734,14 @@ class TestValidation(BaseValidation):
         )
 
         with pytest.raises(
-            ValueError, match=r".*evaluation_strategy and eval_steps mismatch.*"
+            ValueError, match=r".*eval_strategy and eval_steps mismatch.*"
         ):
             validate_config(cfg)
 
         cfg = (
             DictDefault(
                 {
-                    "evaluation_strategy": "no",
+                    "eval_strategy": "no",
                     "eval_steps": 10,
                 }
             )
@@ -749,14 +749,14 @@ class TestValidation(BaseValidation):
         )
 
         with pytest.raises(
-            ValueError, match=r".*evaluation_strategy and eval_steps mismatch.*"
+            ValueError, match=r".*eval_strategy and eval_steps mismatch.*"
         ):
             validate_config(cfg)
 
         cfg = (
             DictDefault(
                 {
-                    "evaluation_strategy": "steps",
+                    "eval_strategy": "steps",
                 }
             )
             | minimal_cfg
@@ -767,7 +767,7 @@ class TestValidation(BaseValidation):
         cfg = (
             DictDefault(
                 {
-                    "evaluation_strategy": "steps",
+                    "eval_strategy": "steps",
                     "eval_steps": 10,
                 }
             )
@@ -790,7 +790,7 @@ class TestValidation(BaseValidation):
         cfg = (
             DictDefault(
                 {
-                    "evaluation_strategy": "no",
+                    "eval_strategy": "no",
                 }
             )
             | minimal_cfg
@@ -801,7 +801,7 @@ class TestValidation(BaseValidation):
         cfg = (
             DictDefault(
                 {
-                    "evaluation_strategy": "epoch",
+                    "eval_strategy": "epoch",
                     "val_set_size": 0,
                 }
             )
@@ -810,7 +810,7 @@ class TestValidation(BaseValidation):
 
         with pytest.raises(
             ValueError,
-            match=r".*eval_steps and evaluation_strategy are not supported with val_set_size == 0.*",
+            match=r".*eval_steps and eval_strategy are not supported with val_set_size == 0.*",
         ):
             validate_config(cfg)
 
@@ -826,7 +826,7 @@ class TestValidation(BaseValidation):
 
         with pytest.raises(
             ValueError,
-            match=r".*eval_steps and evaluation_strategy are not supported with val_set_size == 0.*",
+            match=r".*eval_steps and eval_strategy are not supported with val_set_size == 0.*",
         ):
             validate_config(cfg)
 
@@ -856,7 +856,7 @@ class TestValidation(BaseValidation):
         cfg = (
             DictDefault(
                 {
-                    "evaluation_strategy": "epoch",
+                    "eval_strategy": "epoch",
                     "val_set_size": 0.01,
                 }
             )
