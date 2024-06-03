@@ -436,6 +436,7 @@ class SchedulerMixin(Trainer):
                 anneal_steps = (
                     self.args.jagged_restarts_anneal_steps or 1
                 )
+                super().create_scheduler(num_training_steps, optimizer)
                 self.lr_scheduler = JaggedLRRestartScheduler(  # pylint: disable=attribute-defined-outside-init
                     optimizer,
                     self.lr_scheduler,
