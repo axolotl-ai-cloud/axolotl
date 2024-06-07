@@ -1,4 +1,3 @@
-```markdown
 ---
 title: Multi Node
 description: How to use Axolotl on multiple machines
