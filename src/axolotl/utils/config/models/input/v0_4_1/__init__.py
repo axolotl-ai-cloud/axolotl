@@ -908,6 +908,17 @@ class AxolotlInputConfig(
                 "explicitly setting `eval_sample_packing` to match `sample_packing`"
             )
             data["eval_sample_packing"] = True
+
+        if (
+            data.get("sample_packing")
+            and data.get("eval_sample_packing") is False
+            and data.get("remove_unused_columns") is None
+        ):
+            LOG.info(
+                "setting `remove_unused_columns: false` for when sample_packing and eval_sample_packing don't match"
+            )
+            data["remove_unused_columns"] = False
+
         return data
 
     @model_validator(mode="before")
