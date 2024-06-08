@@ -387,6 +387,7 @@ class AxolotlTrainer(Trainer):
             return MultipackBatchSampler(
                 RandomSampler(self.train_dataset),
                 lengths=get_dataset_lengths(self.train_dataset),
+                packing_efficiency_estimate=self.args.sample_packing_efficiency,
                 batch_max_len=batch_max_len,
                 batch_size=batch_size,
                 group_size=self.args.sample_packing_group_size,
@@ -412,6 +413,7 @@ class AxolotlTrainer(Trainer):
             return MultipackBatchSampler(
                 SequentialSampler(eval_dataset),
                 lengths=get_dataset_lengths(self.eval_dataset),
+                packing_efficiency_estimate=self.args.sample_packing_efficiency,
                 batch_max_len=batch_max_len,
                 batch_size=batch_size,
                 group_size=self.args.sample_packing_group_size,
