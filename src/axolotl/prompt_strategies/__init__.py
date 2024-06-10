@@ -2,8 +2,11 @@
 
 import importlib
 import inspect
+import logging
 
 from axolotl.prompt_strategies.user_defined import UserDefinedDatasetConfig
+
+LOG = logging.getLogger("axolotl.prompt_strategies")
 
 
 def load(strategy, tokenizer, cfg, ds_cfg):
@@ -22,5 +25,8 @@ def load(strategy, tokenizer, cfg, ds_cfg):
             if "ds_cfg" in sig.parameters:
                 load_kwargs["ds_cfg"] = ds_cfg
         return func(tokenizer, cfg, **load_kwargs)
-    except Exception:  # pylint: disable=broad-exception-caught
+    except ModuleNotFoundError:
+        return None
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        LOG.error(f"Failed to load prompt strategy `{strategy}`: {str(exc)}")
         return None
