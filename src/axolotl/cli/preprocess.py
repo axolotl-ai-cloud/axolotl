@@ -7,7 +7,9 @@ from typing import Union
 
 import fire
 import transformers
+from accelerate import init_empty_weights
 from colorama import Fore
+from transformers import AutoModelForCausalLM
 
 from axolotl.cli import (
     check_accelerate_default_config,
@@ -70,6 +72,11 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
         load_rl_datasets(cfg=parsed_cfg, cli_args=parsed_cli_args)
     else:
         load_datasets(cfg=parsed_cfg, cli_args=parsed_cli_args)
+
+    if parsed_cli_args.download:
+        model_name = parsed_cfg.base_model
+        with init_empty_weights():
+            AutoModelForCausalLM.from_pretrained(model_name, trust_remote_code=True)
 
     LOG.info(
         Fore.GREEN
