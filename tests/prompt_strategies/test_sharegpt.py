@@ -24,10 +24,22 @@ def fixture_sharegpt_dataset():
                     {
                         "from": "human",
                         "value": "hello",
+                        "weight": 1,
                     },
                     {
                         "from": "gpt",
                         "value": "hello",
+                        "weight": 0,
+                    },
+                    {
+                        "from": "human",
+                        "value": "rehello",
+                        "weight": 0,
+                    },
+                    {
+                        "from": "gpt",
+                        "value": "rehello",
+                        "weight": 1,
                     },
                     {
                         "from": "human",
@@ -36,12 +48,12 @@ def fixture_sharegpt_dataset():
                     {
                         "from": "gpt",
                         "value": "goodbye",
+                        "weight": 0,
                     },
                 ]
             }
         ]
     )
-
 
 @pytest.fixture(name="tokenizer")
 def fixture_tokenizer():
@@ -91,12 +103,14 @@ class TestSharegpt:
             32001, 1587, 13, 25997, 32000, 28705, 13,  # system
             32001, 2188, 13, 21558, 32000, 28705, 13,  # human
             32001, 13892, 13, 21558, 32000, 28705, 13,  # gpt
+            32001, 2188, 13, 267, 21558, 32000, 28705, 13, # human
+            32001, 13892, 13, 267, 21558, 32000, 28705, 13, # gpt
             32001, 2188, 13, 12684, 17664, 32000, 28705, 13,   # human
             32001, 13892, 13, 12684, 17664, 32000, 28705, 13,  # gpt
         ]
         # fmt: on
 
-    def test_w_train_on_input(self, sharegpt_dataset, tokenizer):
+    def test_no_train_on_input(self, sharegpt_dataset, tokenizer):
         strategy = SimpleShareGPTPromptTokenizingStrategy(
             ShareGPTPrompterV2(
                 conversation="chatml",
@@ -118,13 +132,17 @@ class TestSharegpt:
             -100,   # bos
             -100, -100, -100, -100, -100, -100, -100,  # system
             -100, -100, -100, -100, -100, -100, -100,  # human
-            -100, -100, 13, 21558, 32000, 28705, 13,  # gpt
+            # -100, -100, 13, 21558, 32000, 28705, 13,  # gpt 
+            -100, -100, -100, -100, -100, -100, -100,  # gpt with weight zero
+            -100, -100, -100, -100, -100, -100, -100, -100,  # human
+            -100, -100, 13, 267, 21558, 32000, 28705, 13,  # gpt
             -100, -100, -100, -100, -100, -100, -100, -100,   # human
-            -100, -100, 13, 12684, 17664, 32000, 28705, 13,  # gpt
+            # -100, -100, 13, 12684, 17664, 32000, 28705, 13,  # gpt
+            -100, -100, -100, -100, -100, -100, -100, -100  # gpt with weight zero
         ]
         # fmt: on
 
-    def test_no_train_on_input(self, sharegpt_dataset, tokenizer):
+    def test_w_train_on_input(self, sharegpt_dataset, tokenizer):
         strategy = SimpleShareGPTPromptTokenizingStrategy(
             ShareGPTPrompterV2(
                 conversation="chatml",
@@ -146,8 +164,13 @@ class TestSharegpt:
             1,   # bos
             32001, 1587, 13, 25997, 32000, 28705, 13,  # system
             32001, 2188, 13, 21558, 32000, 28705, 13,  # human
-            32001, 13892, 13, 21558, 32000, 28705, 13,  # gpt
-            32001, 2188, 13, 12684, 17664, 32000, 28705, 13,   # human
-            32001, 13892, 13, 12684, 17664, 32000, 28705, 13,  # gpt
+            # 32001, 13892, 13, 21558, 32000, 28705, 13,  # gpt
+            -100, -100, -100, -100, -100, -100,- 100,  # gpt with weight 0
+            # 32001, 2188, 13, 267, 21558, 32000, 28705, 13,  # human
+            -100, -100, -100, -100, -100, -100, -100, -100,  # human with weight 0
+            32001, 13892, 13, 267, 21558, 32000, 28705, 13,  # gpt
+            32001, 2188, 13, 12684, 17664, 32000, 28705, 13,  # human
+            # 32001, 13892, 13, 12684, 17664, 32000, 28705, 13,  # gpt
+            -100, -100, -100, -100, -100, -100, -100, -100  # gpt with weight 0
         ]
         # fmt: on

@@ -361,7 +361,11 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
                     continue
 
                 user, assistant = conversation.roles
-                role, content = part
+                if len(part) <= 2:
+                    role, content = part
+                    weight = 1
+                else: 
+                    role, content, weight = part
 
                 # Uses "in" because role contains extra characters
                 if user in role:
@@ -379,7 +383,7 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
                         add_eos_token=False,
                         strip_bos_token=True,
                     )
-                    if self.train_on_inputs:
+                    if self.train_on_inputs and weight == 1:
                         labels = copy.deepcopy(res["input_ids"])
                     else:
                         # everything from this is masked out from the labels
@@ -415,13 +419,18 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
                         labels[:len_role] = [IGNORE_TOKEN_ID] * min(
                             len_role, len(labels)
                         )
+                    if weight == 0:
+                        # everything from this is masked out from the labels 
+                        # (role is masked out too because it makes no sense if contents is masked out)
+                        labels = [IGNORE_TOKEN_ID] * len(res["input_ids"])
+
                 elif role == "":
                     turn = content
                     # this is only ever the first part, should include the bos token and the user query
                     res = self._tokenize(
                         turn, add_eos_token=False, strip_bos_token=False
                     )
-                    if self.train_on_inputs:
+                    if self.train_on_inputs and weight == 1:
                         labels = copy.deepcopy(res["input_ids"])
                     else:
                         # everything from this is masked out from the labels
