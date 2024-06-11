@@ -47,7 +47,7 @@ All you have to do now is launch using accelerate as you would usually do on eac
 
 --------------------------------------------------------------------------------------------------------------------------------------
 
-# Distributed Finetuning For Multi-Node with Axolotl and Deepspeed
+# Distributed Finetuning For Multi-Node with Axolotl and Deepspeed On AWS EC2 Instances
 This guide explains how to set up a distributed finetuning environment using Axolotl, a framework for finetuning large language models. The setup involves configuring SSH for passwordless access, generating public keys, and configuring Axolotl and Accelerate for multi-node training.
 
 ## Prerequisites
