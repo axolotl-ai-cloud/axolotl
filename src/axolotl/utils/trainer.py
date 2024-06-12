@@ -204,19 +204,35 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
             if eval_dataset and "token_type_ids" in eval_dataset.column_names:
                 eval_dataset = eval_dataset.remove_columns("token_type_ids")
 
+        _len_pre_drop = len(train_dataset)
         train_dataset = train_dataset.filter(
             drop_long,
             num_proc=cfg.dataset_processes,
             load_from_cache_file=not cfg.is_preprocess,
-            desc="Dropping Long Sequences",
+            desc="Dropping Long Sequences From Train Dataset",
         )
+        _dropped_rows = _len_pre_drop - len(train_dataset)
+        LOG.warning(f"Dropped {_dropped_rows} rows from train dataset")
+        if not cfg.drop_long_sequences and _dropped_rows > 0:
+            raise ValueError(
+                f"Found {_dropped_rows} longer than {cfg.sequence_len} tokens in train dataset. "
+                f"Please either increase --sequence_len or set --drop_long_sequences to True to drop and ignore such sequences."
+            )
         if eval_dataset:
+            _len_pre_drop = len(eval_dataset)
             eval_dataset = eval_dataset.filter(
                 drop_long,
                 num_proc=cfg.dataset_processes,
                 load_from_cache_file=not cfg.is_preprocess,
-                desc="Dropping Long Sequences",
+                desc="Dropping Long Sequences From Eval Dataset",
             )
+            _dropped_rows = _len_pre_drop - len(eval_dataset)
+            LOG.warning(f"Dropped {_dropped_rows} rows")
+            if not cfg.drop_long_sequences and _dropped_rows > 0:
+                raise ValueError(
+                    f"Found {_dropped_rows} longer than {cfg.sequence_len} tokens in eval dataset. "
+                    f"Please either increase --sequence_len or set --drop_long_sequences to True to drop and ignore such sequences."
+                )
 
         if cfg.group_by_length:
             train_dataset = train_dataset.map(
@@ -267,6 +283,15 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
                         desc="Add position_id column (Sample Packing)",
                     )
 
+        if len(train_dataset) == 0:
+            raise ValueError(
+                "No samples left in train data after loading and processing. "
+            )
+
+        if (cfg.val_set_size or cfg.test_datasets) and len(eval_dataset) == 0:
+            raise ValueError(
+                "No samples left in eval data after loading and processing. "
+            )
     return train_dataset, eval_dataset
 
 
@@ -275,14 +300,22 @@ def process_pretraining_datasets_for_packing(
 ):
     drop_long = partial(drop_long_seq, sequence_len=sequence_len)
 
+    _len_pre_drop = len(train_dataset)
     train_dataset = train_dataset.filter(
         drop_long,
-        desc="Dropping Long Sequences",
+        desc="Dropping Long Sequences From Train Dataset",
     )
+    LOG.warning(f"Dropped {_len_pre_drop - len(train_dataset)} rows")
+
     if skip_position_ids:
         train_dataset = train_dataset.map(
             add_position_ids,
             desc="Add position_id column (Pretraining Sample Packing)",
+        )
+
+    if len(train_dataset) == 0:
+        raise ValueError(
+            "No samples left in Train Dataset after loading and processing. "
         )
 
     return train_dataset
