@@ -18,6 +18,7 @@ SUPPORTED_MULTIPACK_MODEL_TYPES = [
     "gemma",
     "gemmoe",
     "starcoder2",
+    "deepseek_v2",
 ]
 
 
@@ -56,6 +57,8 @@ def patch_for_multipack(model_type, model_name=None):
         patch_remote(model_name, ".configuration_gemmoe", ".modeling_gemmoe")
     elif model_type == "jamba":
         patch_remote(model_name, ".configuration_jamba", ".modeling_jamba")
+    elif model_type == "deepseek_v2":
+        patch_remote(model_name, ".configuration_deepseek", ".modeling_deepseek")
 
 
 def patch_remote(model_name, config_name, modeling_name):
