@@ -274,7 +274,7 @@ pip install -e '.[deepspeed]'
 
 # Remove PyTorch, bitsandbytes, & xformers so we can replace them with ROCm versions (no xformers though)
 pip uninstall -y torch bitsandbytes xformers
-pip install --pre torch --index-url https://download.pytorch.org/whl/nightly/rocm6.0
+pip install torch --index-url https://download.pytorch.org/whl/rocm6.0
 
 # Setup the bitsandbytes fork by arlo-phoenix
 git clone -b rocm https://github.com/arlo-phoenix/bitsandbytes-rocm-5.6.git bitsandbytes
@@ -289,7 +289,7 @@ pip install .
 
 # Completely optional; You can uninstall nvidia related packages to save space
 cd ..
-pip uninstall -y nvidia-cublas-cu11 nvidia-cuda-cupti-cu11 nvidia-cuda-nvrtc-cu11 nvidia-cuda-runtime-cu11 nvidia-cudnn-cu11 nvidia-cufft-cu11 nvidia-curand-cu11 nvidia-cusolver-cu11 nvidia-cusparse-cu11 nvidia-nccl-cu11 nvidia-nvtx-cu11
+pip uninstall -y nvidia-cublas-cu12 nvidia-cuda-cupti-cu12 nvidia-cuda-nvrtc-cu12 nvidia-cuda-runtime-cu12 nvidia-cudnn-cu12 nvidia-cufft-cu12 nvidia-curand-cu12 nvidia-cusolver-cu12 nvidia-cusparse-cu12 nvidia-nccl-cu12 nvidia-nvjitlink-cu12 nvidia-nvtx-cu12
 ```
 
 </details>
