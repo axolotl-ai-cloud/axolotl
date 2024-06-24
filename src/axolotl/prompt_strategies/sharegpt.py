@@ -20,18 +20,18 @@ def register_chatml_template(system_message=None):
             sep="<|im_end|>",
         )
     )
-    register_conv_template(
-        Conversation(
-            name="llama-3",
-            system_template="<|start_header_id|>system<|end_header_id|>\n\n{system_message}<|eot_id|>",
-            system_message="",
-            roles=("user", "assistant"),
-            sep_style=SeparatorStyle.LLAMA3,
-            sep="",
-            # stop_str="<|eot_id|>",
-            # stop_token_ids=[128001, 128009],
-        )
-    )
+    # register_conv_template(
+    #     Conversation(
+    #         name="llama-3",
+    #         system_template="<|start_header_id|>system<|end_header_id|>\n\n{system_message}<|eot_id|>",
+    #         system_message="",
+    #         roles=("user", "assistant"),
+    #         sep_style=SeparatorStyle.LLAMA3,
+    #         sep="",
+    #         # stop_str="<|eot_id|>",
+    #         # stop_token_ids=[128001, 128009],
+    #     )
+    # )
 
 
 def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
