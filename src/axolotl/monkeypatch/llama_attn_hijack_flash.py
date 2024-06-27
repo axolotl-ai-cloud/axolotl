@@ -112,7 +112,7 @@ def replace_llama_attn_with_flash_attn(
                 CrossEntropyLoss, inplace_backward=True
             )
         except ImportError:
-            LOG.info(
+            LOG.warning(
                 "optimized flash-attention CrossEntropyLoss not found (run `pip install 'git+https://github.com/Dao-AILab/flash-attention.git#egg=xentropy_cuda_lib&subdirectory=csrc/xentropy'`)"
             )
 
@@ -130,7 +130,7 @@ def replace_llama_attn_with_flash_attn(
             LOG.info("patching with flash_attn.ops.rms_norm")
             transformers.models.llama.modeling_llama.LlamaRMSNorm = LlamaRMSNorm
         except ImportError:
-            LOG.info(
+            LOG.warning(
                 "optimized flash-attention RMSNorm not found (run `pip install 'git+https://github.com/Dao-AILab/flash-attention.git#egg=dropout_layer_norm&subdirectory=csrc/layer_norm'`)"
             )
 
@@ -826,7 +826,6 @@ def llama_model_forward(
                 past_key_value=past_key_value,
                 output_attentions=output_attentions,
                 use_cache=use_cache,
-                padding_mask=padding_mask,
                 cu_seqlens=cu_seqlens,
                 max_seqlen=max_seqlen,
             )
