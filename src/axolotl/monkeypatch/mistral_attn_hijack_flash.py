@@ -422,6 +422,9 @@ def mistral_model_forward(
     output_attentions: Optional[bool] = None,
     output_hidden_states: Optional[bool] = None,
     return_dict: Optional[bool] = None,
+    cache_position: Optional[  # pylint: disable=unused-argument
+        torch.LongTensor
+    ] = None,
 ) -> Union[Tuple, BaseModelOutputWithPast]:
     output_attentions = (
         output_attentions
