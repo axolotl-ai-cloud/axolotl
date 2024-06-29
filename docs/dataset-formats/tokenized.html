@@ -2,7 +2,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
 
 <meta charset="utf-8">
-<meta name="generator" content="quarto-1.4.555">
+<meta name="generator" content="quarto-1.4.557">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
@@ -34,7 +34,7 @@ div.sourceCode { overflow: auto; }
 }
 @media print {
 pre > code.sourceCode { white-space: pre-wrap; }
-pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+pre > code.sourceCode > span { display: inline-block; text-indent: -5em; padding-left: 5em; }
 }
 pre.numberSource code
   { counter-reset: source-line 0; }
@@ -307,15 +307,26 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 
 
 <ul>
-<li>Do not pass a <code>type:</code> in your axolotl config.</li>
+<li>Pass an empty <code>type:</code> in your axolotl config.</li>
 <li>Columns in Dataset must be exactly <code>input_ids</code>, <code>attention_mask</code>, <code>labels</code></li>
+<li>To indicate that a token should be ignored during training, set its corresponding label to <code>-100</code>.</li>
+<li>Do not add BOS/EOS. Axolotl will add them for you based on the default tokenizer for the model you’re using.</li>
+<li>For pretraining, do not truncate/pad documents to the context window length.</li>
+<li>For instruction training, documents must be truncated/padded as desired.</li>
 </ul>
+<p>Sample config:</p>
 <div class="code-with-filename">
 <div class="code-with-filename-file">
 <pre><strong>config.yml</strong></pre>
 </div>
-<div class="sourceCode" id="cb1" data-filename="config.yml"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> ...</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb1" data-filename="config.yml"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> /path/to/your/file.jsonl</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">ds_type</span><span class="kw">:</span><span class="at"> json</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
+<p>Sample jsonl:</p>
+<pre class="jsonl"><code>{"input_ids":[271,299,99],"attention_mask":[1,1,1],"labels":[271,-100,99]}
+{"input_ids":[87,227,8383,12],"attention_mask":[1,1,1,1],"labels":[87,227,8383,12]}</code></pre>
 
 
 
