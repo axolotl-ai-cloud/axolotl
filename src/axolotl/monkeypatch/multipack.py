@@ -16,6 +16,7 @@ SUPPORTED_MULTIPACK_MODEL_TYPES = [
     "falcon",
     "phi",
     "gemma",
+    "gemma2",
     "gemmoe",
     "starcoder2",
     "deepseek_v2",
@@ -47,6 +48,10 @@ def patch_for_multipack(model_type, model_name=None):
         )
     elif model_type == "gemma":
         transformers.models.gemma.modeling_gemma._get_unpad_data = (  # pylint: disable=protected-access
+            get_unpad_data
+        )
+    elif model_type == "gemma2":
+        transformers.models.gemma2.modeling_gemma2._get_unpad_data = (  # pylint: disable=protected-access
             get_unpad_data
         )
     elif model_type == "starcoder2":

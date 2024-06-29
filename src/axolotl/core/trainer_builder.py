@@ -1091,6 +1091,8 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             warmup_steps = max(int(self.cfg.warmup_ratio * total_num_steps), 0)
         else:
             warmup_steps = min(int(0.03 * total_num_steps), 100)
+        if warmup_steps == 1:
+            warmup_steps = 2
 
         logging_steps = (
             self.cfg.logging_steps
