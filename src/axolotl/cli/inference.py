@@ -5,6 +5,7 @@ from pathlib import Path
 
 import fire
 import transformers
+from dotenv import load_dotenv
 
 from axolotl.cli import (
     do_inference,
@@ -33,4 +34,5 @@ def do_cli(config: Path = Path("examples/"), gradio=False, **kwargs):
 
 
 if __name__ == "__main__":
+    load_dotenv()
     fire.Fire(do_cli)
