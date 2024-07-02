@@ -1,3 +1,7 @@
+"""
+DPO prompt strategies for using tokenizer chat templates.
+"""
+
 from axolotl.utils.chat_templates import chat_templates
 
 
@@ -29,17 +33,17 @@ def default(
         messages = sample[field_messages]
         messages = [
             {
-                "role": m[field_message_role],
+                "role": role_map[m[field_message_role]],
                 "content": m[field_message_content],
             }
             for m in messages
         ]
         chosen = {
-            "role": sample[field_chosen][field_message_role],
+            "role": role_map[sample[field_chosen][field_message_role]],
             "content": sample[field_chosen][field_message_content],
         }
         rejected = {
-            "role": sample[field_rejected][field_message_role],
+            "role": role_map[sample[field_rejected][field_message_role]],
             "content": sample[field_rejected][field_message_content],
         }
 
