@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Tuple, Union
 
 import fire
+from dotenv import load_dotenv
 from transformers.hf_argparser import HfArgumentParser
 from transformers.modeling_utils import PreTrainedModel
 from transformers.tokenization_utils import PreTrainedTokenizer
@@ -67,4 +68,5 @@ def do_train(cfg, cli_args) -> Tuple[PreTrainedModel, PreTrainedTokenizer]:
 
 
 if __name__ == "__main__":
+    load_dotenv()
     fire.Fire(do_cli)
