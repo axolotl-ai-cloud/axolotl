@@ -459,6 +459,8 @@ class AxolotlTrainer(Trainer):
             self.data_collator = (  # pylint: disable=attribute-defined-outside-init
                 self.eval_data_collator
             )
+            if eval_dataset:
+                eval_dataset = eval_dataset.remove_columns(["length"])
             dataloader = super().get_eval_dataloader(eval_dataset)
             self.data_collator = (  # pylint: disable=attribute-defined-outside-init
                 self.train_data_collator
@@ -1089,6 +1091,8 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             warmup_steps = max(int(self.cfg.warmup_ratio * total_num_steps), 0)
         else:
             warmup_steps = min(int(0.03 * total_num_steps), 100)
+        if warmup_steps == 1:
+            warmup_steps = 2
 
         logging_steps = (
             self.cfg.logging_steps

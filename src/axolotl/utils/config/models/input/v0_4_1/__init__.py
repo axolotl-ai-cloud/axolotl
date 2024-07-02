@@ -116,6 +116,7 @@ class SFTDataset(BaseModel):
     message_field_content: Optional[str] = None
 
     roles: Optional[Dict[str, List[str]]] = None
+    drop_system_message: Optional[bool] = None
 
 
 class UserDefinedDPOType(BaseModel):

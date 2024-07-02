@@ -143,6 +143,9 @@ class SimpleShareGPTPromptTokenizingStrategy(ShareGPTPromptTokenizingStrategy):
                     role_map[t[role_key]] if t[role_key] in role_map else t[role_key]
                 ),
                 "value": t[value_key],
+                "weight": 1
+                if "weight" not in t or t["weight"] is None
+                else t["weight"],
             }
             for t in conversations
         ]
