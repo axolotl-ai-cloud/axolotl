@@ -580,6 +580,7 @@ class AxolotlInputConfig(
     xformers_attention: Optional[bool] = None
     sdp_attention: Optional[bool] = None
     s2_attention: Optional[bool] = None
+    eager_attention: Optional[bool] = None
     flash_attention: Optional[bool] = None
     flash_attn_cross_entropy: Optional[bool] = None
     flash_attn_rms_norm: Optional[bool] = None
