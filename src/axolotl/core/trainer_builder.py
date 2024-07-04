@@ -226,6 +226,12 @@ class AxolotlTrainingMixins:
         default=None,
         metadata={"help": "whether to use sequential sampling for curriculum learning"},
     )
+    alternate_optimizer: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "workaround to pass an alternate optimizer to the HF trainer"
+        },
+    )
 
 
 @dataclass
@@ -285,7 +291,10 @@ class AxolotlTrainer(Trainer):
             self.loss_fct = torch.nn.CrossEntropyLoss(reduction="none")
 
     def create_optimizer(self):
-        if self.args.loraplus_lr_ratio is None:
+        if (
+            self.args.loraplus_lr_ratio is None
+            and self.args.alternate_optimizer is None
+        ):
             return super().create_optimizer()
 
         opt_model = self.model_wrapped if is_sagemaker_mp_enabled() else self.model
@@ -295,15 +304,24 @@ class AxolotlTrainer(Trainer):
                 opt_model,
             )
 
-            loraplus_lr_ratio = getattr(self.args, "loraplus_lr_ratio", None)
-            loraplus_lr_embedding = getattr(self.args, "loraplus_lr_embedding", None)
-            self.optimizer = create_loraplus_optimizer(  # pylint: disable=attribute-defined-outside-init
-                opt_model,
-                optimizer_cls,
-                optimizer_kwargs,
-                loraplus_lr_ratio,
-                loraplus_lr_embedding,
-            )
+            if self.args.loraplus_lr_ratio is not None:
+                loraplus_lr_ratio = getattr(self.args, "loraplus_lr_ratio", None)
+                loraplus_lr_embedding = getattr(
+                    self.args, "loraplus_lr_embedding", None
+                )
+                self.optimizer = create_loraplus_optimizer(  # pylint: disable=attribute-defined-outside-init
+                    opt_model,
+                    optimizer_cls,
+                    optimizer_kwargs,
+                    loraplus_lr_ratio,
+                    loraplus_lr_embedding,
+                )
+            else:
+                from optimi import AdamW
+
+                self.optimizer = (  # pylint: disable=attribute-defined-outside-init
+                    AdamW(opt_model.parameters(), **optimizer_kwargs)
+                )
 
         if is_sagemaker_mp_enabled():
             self.optimizer = smp.DistributedOptimizer(  # pylint: disable=attribute-defined-outside-init
@@ -1397,29 +1415,9 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         trainer_kwargs = {}
 
         if self.cfg.optimizer == "optimi_adamw":
-            from optimi import AdamW
-
-            optimi_kwargs = {"lr": training_arguments_kwargs["learning_rate"]}
-            if "weight_decay" in training_arguments_kwargs:
-                optimi_kwargs["weight_decay"] = training_arguments_kwargs[
-                    "weight_decay"
-                ]
-
-            if (
-                "adam_beta1" in training_arguments_kwargs
-                and "adam_beta2" in training_arguments_kwargs
-            ):
-                optimi_kwargs["betas"] = (
-                    training_arguments_kwargs["adam_beta1"],
-                    training_arguments_kwargs["adam_beta2"],
-                )
-
-            trainer_kwargs["optimizers"] = (
-                AdamW(params=self.model.parameters(), **optimi_kwargs),
-                None,
-            )
             # Set default so transformers doesn't throw
             training_arguments_kwargs["optim"] = "adamw_hf"
+            training_arguments_kwargs["alternate_optimizer"] = self.cfg.optimizer
 
         if self.cfg.optimizer == "lion_pytorch":
             from lion_pytorch import Lion
