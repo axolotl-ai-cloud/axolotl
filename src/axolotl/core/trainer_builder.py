@@ -1396,6 +1396,31 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
 
         trainer_kwargs = {}
 
+        if self.cfg.optimizer == "optimi_adamw":
+            from optimi import AdamW
+
+            optimi_kwargs = {"lr": training_arguments_kwargs["learning_rate"]}
+            if "weight_decay" in training_arguments_kwargs:
+                optimi_kwargs["weight_decay"] = training_arguments_kwargs[
+                    "weight_decay"
+                ]
+
+            if (
+                "adam_beta1" in training_arguments_kwargs
+                and "adam_beta2" in training_arguments_kwargs
+            ):
+                optimi_kwargs["betas"] = (
+                    training_arguments_kwargs["adam_beta1"],
+                    training_arguments_kwargs["adam_beta2"],
+                )
+
+            trainer_kwargs["optimizers"] = (
+                AdamW(params=self.model.parameters(), **optimi_kwargs),
+                None,
+            )
+            # Set default so transformers doesn't throw
+            training_arguments_kwargs["optim"] = "adamw_hf"
+
         if self.cfg.optimizer == "lion_pytorch":
             from lion_pytorch import Lion
 
