@@ -104,5 +104,11 @@ setup(
         "galore": [
             "galore_torch",
         ],
+        "optimizers": [
+            "galore_torch",
+            "lion-pytorch==0.1.2",
+            "lomo-optim==0.1.1",
+            "torch-optimi==0.2.1",
+        ],
     },
 )
