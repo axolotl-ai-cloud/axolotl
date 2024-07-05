@@ -86,7 +86,7 @@ def fixture_llama3_tokenizer():
     return tokenizer
 
 
-class TestAssistantChatTemplateLlama3:
+class TestAssistantDPOChatTemplateLlama3:
     """
     Test class for assistant style datasets with llama-3 prompts using the chat_template strategy.
     """
