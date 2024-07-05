@@ -1,5 +1,5 @@
 ---
-title: Multi Node
+title: Distributed Finetuning For Multi-Node with Axolotl and FSDP
 description: How to use Axolotl on multiple machines
 ---
 # Distributed Finetuning For Multi-Node with Axolotl and FSDP
