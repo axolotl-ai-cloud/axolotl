@@ -569,9 +569,11 @@ def load_model(
 
     try:
         skip_move_to_device = False
-        if (
-            cfg.fsdp and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
-        ) and not qlora_fsdp:
+        if (  # pylint: disable=condition-evals-to-constant)
+            (cfg.fsdp and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading)
+            and not qlora_fsdp
+            and False
+        ):
             model = load_sharded_model(
                 base_model,
                 model_config,
