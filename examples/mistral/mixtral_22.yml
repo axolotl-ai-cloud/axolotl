@@ -21,7 +21,7 @@ model_config:
 datasets:
   - path: yahma/alpaca-cleaned
     type: alpaca
-output_dir: ./out
+output_dir: ./outputs/out
 
 sequence_len: 8000
 sample_packing: true

@@ -20,6 +20,7 @@ class PromptStyle(Enum):
     INSTRUCT = "instruct"
     CHAT = "chat"
     CHATML = "chatml"
+    PHI = "phi"
 
 
 class Prompter:
@@ -38,9 +39,9 @@ class AlpacaPrompter(Prompter):
     system_format: str = "{system}"
     turn_format: str
     turn_no_input_format: str
-    prompt_style: Optional[PromptStyle] = None
+    prompt_style: Optional[str] = None
 
-    def __init__(self, prompt_style=PromptStyle.INSTRUCT.value):
+    def __init__(self, prompt_style: Optional[str] = PromptStyle.INSTRUCT.value):
         self.prompt_style = prompt_style if prompt_style else PromptStyle.INSTRUCT.value
         self.match_prompt_style()
 
@@ -52,16 +53,20 @@ class AlpacaPrompter(Prompter):
                 "### Instruction:\n{instruction}\n\n### Response:\n"
             )
             self.system_format = "{system}\n\n"
-        if self.prompt_style == PromptStyle.CHAT.value:
+        elif self.prompt_style == PromptStyle.CHAT.value:
             self.turn_format = "USER: {instruction}\n{input}\nASSISTANT:"
             self.turn_no_input_format = "USER: {instruction}\nASSISTANT:"
             self.system_format = "SYSTEM: {system}\n"
-        if self.prompt_style == PromptStyle.CHATML.value:
+        elif self.prompt_style == PromptStyle.CHATML.value:
             self.turn_format = "<|im_start|>user\n{instruction}\n{input}<|im_end|>\n<|im_start|>assistant\n"
             self.turn_no_input_format = (
                 "<|im_start|>user\n{instruction}<|im_end|>\n<|im_start|>assistant\n"
             )
             self.system_format = "<|im_start|>system\n{system}<|im_end|>\n"
+        elif self.prompt_style == PromptStyle.PHI.value:
+            self.turn_format = "<|user|>\n{instruction}<|end|>{input}<|assistant|>"
+            self.turn_no_input_format = "<|user|>\n{instruction}<|end|><|assistant|>"
+            self.system_format = "<|system|>{system}\n"
 
     def _build_result(self, instruction, input_text, output):
         # returns the full prompt from instruction and optional input
@@ -270,6 +275,7 @@ CONVERSATION_ROLE_FORMAT = {
     "chatml": "<|im_start|>{ROLE}",
     "zephyr": "<|{ROLE}|>",
     "vicuna_v1.1": "{ROLE}",
+    "llama3": "<|start_header_id|>{ROLE}<|end_header_id|>",
 }
 
 
@@ -316,6 +322,7 @@ class ShareGPTPrompter(Prompter):  # pylint: disable=too-few-public-methods
 
         conv = self._conversation.copy()
 
+        original_source = source.copy()
         # Add the conversation system prompt if provided, otherwise use the default one
         if source[0]["from"] == "system":
             conv.set_system_message(source[0]["value"])
@@ -350,50 +357,34 @@ class ShareGPTPrompter(Prompter):  # pylint: disable=too-few-public-methods
                     ROLE=from_role
                 )
 
-            # if len(conv.messages) > 0 and ((role == conv.messages[-1][0])):
-            #     LOG.warning(f"{SHAREGPT_ASSERTION_FAILED_ROLE}: {sentence}")
+            if len(conv.messages) > 0 and ((role == conv.messages[-1][0])):
+                if (
+                    role != "assistant"
+                ):  # back to back assistant calls may be okay for tool calls
+                    LOG.warning(f"{SHAREGPT_ASSERTION_FAILED_ROLE}: {sentence}")
 
             conv.append_message(role, sentence["value"])
-
-        return conv.get_turns()
-    
-    # def _build_result(self, source):
-    #     if len(source) < 2:
-    #         # If there isn't a back and forth conversation, ignore it
-    #         # also happens on the data splitting leaving empty conversations
-    #         raise IndexError(
-    #             f"A conversation entry has less than 2 messages :\n{source}"
-    #         )
-
-    #     conv = self._conversation.copy()
-
-    #     # Add the conversation system prompt if provided, otherwise use the default one
-    #     if source[0]["from"] == "system":
-    #         conv.set_system_message(source[0]["value"])
-    #         source.pop(0)
-
-    #     roles = {self.role_key_human: conv.roles[0], self.role_key_model: conv.roles[1]}
-        
-    #     try:
-    #         # Apply prompt templates
-    #         if source[0]["from"] not in roles:
-    #             # Skip the first one if it is not from human
-    #             source = source[1:]
-    #     except IndexError as err:
-    #         # sometimes there is a bing or system chat
-    #         raise err
-
-    #     conv.messages = []
-    #     for _, sentence in enumerate(source):
-    #         role = roles[sentence["from"]]
-    #         if len(conv.messages) > 0 and (
-    #             (role == conv.messages[-1][0]) or (role not in conv.roles)
-    #         ):
-    #             if conv.name != "conversational_lm":
-    #                 LOG.warning(f"{SHAREGPT_ASSERTION_FAILED_ROLE}: {sentence}")
-    #         conv.append_message(role, sentence["value"])
-
-    #     return conv.get_turns()
+        turns = list(conv.get_turns())
+        original_source_length = len(original_source)
+        assert len(turns) in [
+            original_source_length - 1,
+            original_source_length,
+            original_source_length + 1,
+        ]
+        if len(turns) == original_source_length + 1:
+            original_source = [{"weight": None}] + original_source
+        elif len(turns) == original_source_length - 1:
+            original_source = original_source[1:]
+        return [
+            (*turn, weight)
+            for turn, weight in zip(
+                turns,
+                [
+                    1 if "weight" not in e or e["weight"] is None else e["weight"]
+                    for e in original_source
+                ],
+            )
+        ]
 
     def build_prompt(self, source) -> Generator[str, None, None]:
         turns = self._build_result(source)
@@ -418,6 +409,7 @@ class ShareGPTPrompterV2(ShareGPTPrompter):
         conversation: Optional[Union[str, Conversation]] = None,
         role_key_human: Optional[str] = None,
         role_key_model: Optional[str] = None,
+        role_key_tool: Optional[str] = None,
         roles: Optional[dict] = None,
     ):
         super().__init__(

@@ -1117,6 +1117,15 @@ class TestValidation(BaseValidation):
             validate_config(cfg)
             assert len(self._caplog.records) == 0
 
+    def test_dpo_beta_deprecation(self, minimal_cfg):
+        cfg = DictDefault({"dpo_beta": 0.2}) | minimal_cfg
+
+        with self._caplog.at_level(logging.WARNING):
+            new_cfg = validate_config(cfg)
+            assert new_cfg["rl_beta"] == 0.2
+            assert new_cfg["dpo_beta"] is None
+            assert len(self._caplog.records) == 1
+
 
 class TestValidationCheckModelConfig(BaseValidation):
     """

@@ -182,3 +182,16 @@ Tower_QE_Explain/
 Tower_for_Scaling_ckpts/
 Tower_v1_ckpts/
 requirements_h100.txt
+
+# Runs
+lora-out/*
+qlora-out/*
+mlruns/*
+
+/.quarto/
+prepared-datasets/
+submit.sh
+*.out*
+
+typings/
+out/

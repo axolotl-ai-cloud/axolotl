@@ -5,6 +5,7 @@ from pathlib import Path
 
 import fire
 import transformers
+from dotenv import load_dotenv
 
 from axolotl.cli import do_merge_lora, load_cfg, print_axolotl_text_art
 from axolotl.common.cli import TrainerCliArgs
@@ -25,9 +26,11 @@ def do_cli(config: Path = Path("examples/"), **kwargs):
     parsed_cfg.flash_attention = False
     parsed_cfg.deepspeed = None
     parsed_cfg.fsdp = None
+    parsed_cfg.fsdp_config = None
 
     do_merge_lora(cfg=parsed_cfg, cli_args=parsed_cli_args)
 
 
 if __name__ == "__main__":
+    load_dotenv()
     fire.Fire(do_cli)

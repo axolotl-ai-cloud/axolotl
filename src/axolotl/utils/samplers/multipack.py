@@ -111,10 +111,11 @@ class MultipackBatchSampler(BatchSampler):
         self,
         sampler: Union[Sampler[int], Iterable[int]],
         batch_size: int,
-        drop_last: bool,
         batch_max_len: int,
         lengths: np.ndarray,
         packing_efficiency_estimate: float = 1.0,
+        drop_last: bool = False,
+        **kwargs,
     ):
         super().__init__(sampler, batch_size, drop_last)
         self.batch_size = batch_size

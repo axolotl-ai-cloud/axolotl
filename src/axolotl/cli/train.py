@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Tuple, Union
 
 import fire
+from dotenv import load_dotenv
 from transformers.hf_argparser import HfArgumentParser
 from transformers.modeling_utils import PreTrainedModel
 from transformers.tokenization_utils import PreTrainedTokenizer
@@ -18,7 +19,10 @@ from axolotl.cli import (
     print_axolotl_text_art,
 )
 from axolotl.common.cli import TrainerCliArgs
-from axolotl.prompt_strategies.sharegpt import register_chatml_template
+from axolotl.prompt_strategies.sharegpt import (
+    register_chatml_template,
+    register_llama3_template,
+)
 from axolotl.train import train
 
 LOG = logging.getLogger("axolotl.cli.train")
@@ -46,6 +50,14 @@ def do_train(cfg, cli_args) -> Tuple[PreTrainedModel, PreTrainedTokenizer]:
     else:
         register_chatml_template()
 
+    if cfg.chat_template == "llama3" and cfg.default_system_message:
+        LOG.info(
+            f"LLaMA-3 set. Adding default system message: {cfg.default_system_message}"
+        )
+        register_llama3_template(cfg.default_system_message)
+    else:
+        register_llama3_template()
+
     if cfg.rl:  # and cfg.rl != "orpo":
         dataset_meta = load_rl_datasets(cfg=cfg, cli_args=cli_args)
     else:
@@ -55,4 +67,5 @@ def do_train(cfg, cli_args) -> Tuple[PreTrainedModel, PreTrainedTokenizer]:
 
 
 if __name__ == "__main__":
+    load_dotenv()
     fire.Fire(do_cli)

@@ -28,12 +28,12 @@ def parse_requirements():
                 # Handle standard packages
                 _install_requires.append(line)
 
-    # try:
-    #     if "Darwin" in platform.system():
-    #         _install_requires.pop(_install_requires.index("xformers==0.0.22"))
-    #     else:
-    #         torch_version = version("torch")
-    #         _install_requires.append(f"torch=={torch_version}")
+    try:
+        if "Darwin" in platform.system():
+            _install_requires.pop(_install_requires.index("xformers==0.0.22"))
+        else:
+            torch_version = version("torch")
+            _install_requires.append(f"torch=={torch_version}")
 
     #         version_match = re.match(r"^(\d+)\.(\d+)(?:\.(\d+))?", torch_version)
     #         if version_match:
@@ -45,11 +45,17 @@ def parse_requirements():
     #         else:
     #             raise ValueError("Invalid version format")
 
-    #         if (major, minor) >= (2, 1):
-    #             _install_requires.pop(_install_requires.index("xformers==0.0.22"))
-    #             _install_requires.append("xformers>=0.0.23")
-    # except PackageNotFoundError:
-    #     pass
+            if (major, minor) >= (2, 3):
+                pass
+            elif (major, minor) >= (2, 2):
+                _install_requires.pop(_install_requires.index("xformers==0.0.26.post1"))
+                _install_requires.append("xformers>=0.0.25.post1")
+            else:
+                _install_requires.pop(_install_requires.index("xformers==0.0.26.post1"))
+                _install_requires.append("xformers>=0.0.23.post1")
+
+    except PackageNotFoundError:
+        pass
 
     return _install_requires, _dependency_links
 
@@ -59,7 +65,7 @@ install_requires, dependency_links = parse_requirements()
 
 setup(
     name="axolotl",
-    version="0.4.0",
+    version="0.4.1",
     description="LLM Trainer",
     long_description="Axolotl is a tool designed to streamline the fine-tuning of various AI models, offering support for multiple configurations and architectures.",
     package_dir={"": "src"},
@@ -68,13 +74,13 @@ setup(
     dependency_links=dependency_links,
     extras_require={
         "flash-attn": [
-            "flash-attn==2.5.5",
+            "flash-attn==2.5.8",
         ],
         "fused-dense-lib": [
-            "fused-dense-lib  @ git+https://github.com/Dao-AILab/flash-attention@v2.3.3#subdirectory=csrc/fused_dense_lib",
+            "fused-dense-lib  @ git+https://github.com/Dao-AILab/flash-attention@v2.5.8#subdirectory=csrc/fused_dense_lib",
         ],
         "deepspeed": [
-            "deepspeed==0.13.1",
+            "deepspeed @ git+https://github.com/microsoft/DeepSpeed.git@bc48371c5e1fb8fd70fc79285e66201dbb65679b",
             "deepspeed-kernels",
         ],
         "mamba-ssm": [

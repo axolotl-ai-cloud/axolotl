@@ -28,7 +28,7 @@ wandb_entity:
 wandb_watch:
 wandb_name:
 wandb_log_model:
-output_dir: ./falcon-7b
+output_dir: ./outputs/falcon-7b
 batch_size: 2
 micro_batch_size: 1
 num_epochs: 4

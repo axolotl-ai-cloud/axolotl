@@ -11,7 +11,7 @@ ARG PYTORCH_VERSION="2.1.2"
 ENV PYTORCH_VERSION=$PYTORCH_VERSION
 
 RUN apt-get update && \
-    apt-get install -y --allow-change-held-packages vim curl nano libnccl2 libnccl-dev
+    apt-get install -y --allow-change-held-packages vim curl nano libnccl2 libnccl-dev rsync s3fs
 
 WORKDIR /workspace
 

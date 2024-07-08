@@ -310,12 +310,16 @@ def load_tokenized_prepared_datasets(
                         "unhandled dataset load: local path exists, but is neither a directory or a file"
                     )
             elif ds_from_hub:
+                load_ds_kwargs = {}
+                if config_dataset.split:
+                    load_ds_kwargs = {"split": config_dataset.split}
                 ds = load_dataset(
                     config_dataset.path,
                     name=config_dataset.name,
                     streaming=False,
                     data_files=config_dataset.data_files,
                     token=use_auth_token,
+                    **load_ds_kwargs,
                 )
             elif ds_from_cloud and remote_file_system:
                 if remote_file_system.isdir(config_dataset.path):
@@ -472,12 +476,16 @@ def load_prepare_datasets(
             index=cfg.dataset_shard_idx,
         )
 
-    if split == "train" and cfg.val_set_size:
+    val_set_size = (
+        int(cfg.val_set_size) if cfg.val_set_size > 1 else float(cfg.val_set_size)
+    )
+
+    if split == "train" and val_set_size:
         # ensure we end up with the same fingerprint by doing rank0 first and being able to cache
         to_hash_train = (
             dataset._fingerprint  # pylint: disable=protected-access
             + "|"
-            + str(cfg.val_set_size)
+            + str(val_set_size)
             + "|"
             + "train"
             + "|"
@@ -486,7 +494,7 @@ def load_prepare_datasets(
         to_hash_test = (
             dataset._fingerprint  # pylint: disable=protected-access
             + "|"
-            + str(cfg.val_set_size)
+            + str(val_set_size)
             + "|"
             + "test"
             + "|"
@@ -496,7 +504,7 @@ def load_prepare_datasets(
         test_fingerprint = md5(to_hash_test)
 
         dataset = dataset.train_test_split(
-            test_size=cfg.val_set_size,
+            test_size=val_set_size,
             shuffle=False,
             seed=cfg.seed or 42,
             train_new_fingerprint=train_fingerprint,
@@ -530,6 +538,10 @@ def get_dataset_wrapper(
         "process_count": cfg.dataset_processes,
         "keep_in_memory": cfg.dataset_keep_in_memory is True,
     }
+
+    LOG.info(
+        f"Loading dataset with base_type: {d_base_type} and prompt_style: {d_prompt_style}"
+    )
 
     if (
         isinstance(dataset, Dataset)
