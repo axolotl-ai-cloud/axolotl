@@ -8,7 +8,7 @@ on:
 
 jobs:
   build-axolotl:
-    if: ${{ ! contains(github.event.commits[0].message, '[skip docker]]') && github.repository_owner == 'OpenAccess-AI-Collective' }}
+    if: ${{ ! contains(github.event.commits[0].message, '[skip docker]]') && github.repository_owner == 'axolotl-ai-cloud' }}
     strategy:
       fail-fast: false
       matrix:
@@ -70,7 +70,7 @@ jobs:
 
   build-axolotl-cloud:
     needs: build-axolotl
-    if: ${{ ! contains(github.event.commits[0].message, '[skip docker]]') && github.repository_owner == 'OpenAccess-AI-Collective' }}
+    if: ${{ ! contains(github.event.commits[0].message, '[skip docker]]') && github.repository_owner == 'axolotl-ai-cloud' }}
     # this job needs to be run on self-hosted GPU runners...
     strategy:
       matrix:
@@ -128,7 +128,7 @@ jobs:
 
   build-axolotl-cloud-no-tmux:
     needs: build-axolotl
-    if: ${{ ! contains(github.event.commits[0].message, '[skip docker]]') && github.repository_owner == 'OpenAccess-AI-Collective' }}
+    if: ${{ ! contains(github.event.commits[0].message, '[skip docker]]') && github.repository_owner == 'axolotl-ai-cloud' }}
     # this job needs to be run on self-hosted GPU runners...
     strategy:
       matrix:
