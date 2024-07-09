@@ -293,12 +293,32 @@ class AxolotlTrainer(Trainer):
     def create_optimizer(self):
         if (
             self.args.loraplus_lr_ratio is None
-            and self.args.alternate_optimizer is None
+            and self.args.alternate_optimizer != "optimi_adamw"
         ):
             return super().create_optimizer()
 
         opt_model = self.model_wrapped if is_sagemaker_mp_enabled() else self.model
         if self.optimizer is None:  # pylint: disable=access-member-before-definition
+            decay_parameters = self.get_decay_parameter_names(opt_model)
+            optimizer_grouped_parameters = [
+                {
+                    "params": [
+                        p
+                        for n, p in opt_model.named_parameters()
+                        if (n in decay_parameters and p.requires_grad)
+                    ],
+                    "weight_decay": self.args.weight_decay,
+                },
+                {
+                    "params": [
+                        p
+                        for n, p in opt_model.named_parameters()
+                        if (n not in decay_parameters and p.requires_grad)
+                    ],
+                    "weight_decay": 0.0,
+                },
+            ]
+
             optimizer_cls, optimizer_kwargs = Trainer.get_optimizer_cls_and_kwargs(
                 self.args,
                 opt_model,
@@ -316,11 +336,11 @@ class AxolotlTrainer(Trainer):
                     loraplus_lr_ratio,
                     loraplus_lr_embedding,
                 )
-            else:
+            elif self.args.alternate_optimizer == "optimi_adamw":
                 from optimi import AdamW
 
                 self.optimizer = (  # pylint: disable=attribute-defined-outside-init
-                    AdamW(opt_model.parameters(), **optimizer_kwargs)
+                    AdamW(optimizer_grouped_parameters, **optimizer_kwargs)
                 )
 
         if is_sagemaker_mp_enabled():
