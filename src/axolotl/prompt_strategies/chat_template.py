@@ -122,10 +122,13 @@ def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
         else False
     )
 
+    chat_template_str = chat_templates(chat_template, tokenizer=tokenizer)
+    LOG.info(f"Using chat template:\n---\n{chat_template_str!s}\n---")
+
     strategy = ChatTemplateStrategy(
         ChatTemplatePrompter(
             tokenizer,
-            chat_templates(chat_template),
+            chat_template_str,
             message_field_role=message_field_role,
             message_field_content=message_field_content,
             roles=roles,

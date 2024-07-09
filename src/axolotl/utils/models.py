@@ -283,7 +283,7 @@ def load_tokenizer(cfg):
         LOG.debug(f"UNK: {tokenizer.unk_token_id} / {tokenizer.unk_token}")
 
     if cfg.chat_template:
-        chat_template_string = chat_templates(cfg.chat_template)
+        chat_template_string = chat_templates(cfg.chat_template, tokenizer=tokenizer)
         if cfg.default_system_message and cfg.chat_template == "chatml":
             chat_template_string = chat_template_string.replace(
                 "You are a helpful assistant.", cfg.default_system_message

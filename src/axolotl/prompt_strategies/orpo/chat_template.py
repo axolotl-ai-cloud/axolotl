@@ -33,7 +33,7 @@ def load(
     if ds_cfg and "chat_template" in ds_cfg:
         chat_template = ds_cfg["chat_template"]
         try:
-            chat_template = chat_templates(chat_template)
+            chat_template = chat_templates(chat_template, tokenizer=tokenizer)
         except ValueError:
             pass
     tokenizer.chat_template = chat_template
@@ -248,10 +248,10 @@ class ORPOPrompter(Prompter):
 def argilla(cfg, **kwargs):  # pylint: disable=possibly-unused-variable,unused-argument
     dataset_parser = ORPODatasetParsingStrategy()
 
-    chat_template_str = chat_templates(cfg.chat_template)
-
     def transform_fn(sample, tokenizer=None):
         res = {}
+
+        chat_template_str = chat_templates(cfg.chat_template, tokenizer=tokenizer)
 
         res["prompt"] = tokenizer.apply_chat_template(
             [msg.model_dump() for msg in dataset_parser.get_prompt(sample).messages],
