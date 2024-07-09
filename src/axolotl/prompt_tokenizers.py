@@ -68,7 +68,7 @@ class PromptTokenizingStrategy(abc.ABC):
 
         result = self.tokenizer(
             prompt,
-            truncation=True,
+            truncation=False,
             max_length=self.max_length,
             padding=False,
             return_tensors=None,
@@ -293,7 +293,7 @@ class ReflectionPromptTokenizingStrategy(PromptTokenizingStrategy):
     def _tokenize(self, prompt, add_eos_token=True, strip_bos_token=False):
         result = self.tokenizer(
             prompt,
-            truncation=True,
+            truncation=False,
             max_length=self.sequence_len,
             padding=False,
             return_tensors=None,

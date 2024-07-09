@@ -15,3 +15,24 @@ def get_dataset_lengths(dataset):
         lengths = np.vectorize(len)(np.array(input_ids, dtype=object))
         return lengths
     return lengths
+
+
+def plot_ascii_lengths_histogram(data, title, logger):
+    max_value = max(data)
+    bucket_width = 512
+    bins = np.arange(0, max_value + bucket_width, bucket_width)
+    histogram, _ = np.histogram(data, bins=bins)
+    top = " ".join(("-" * 10, title, "-" * 10))
+    bottom = "-" * len(top)
+    logger.info(top)
+    scale_factor = 40 / max(histogram)
+    for i, value in enumerate(histogram):
+        lower_bound = i * bucket_width
+        upper_bound = (i + 1) * bucket_width - 1
+        if value:
+            hist_bar = "□" * int(value * scale_factor)
+        else:
+            hist_bar = "x"
+        logger.info(f"{hist_bar} ({lower_bound}-{upper_bound} tokens, Count: {value})")
+    logger.info(bottom)
+    logger.info("\n")

@@ -96,7 +96,7 @@ class LLama2ChatTokenizingStrategy(PromptTokenizingStrategy):
             return_tensors="pt",
             padding="max_length",
             max_length=self.sequence_len,
-            truncation=True,
+            truncation=False,
         ).input_ids[0]
         target = input_ids.clone()
 

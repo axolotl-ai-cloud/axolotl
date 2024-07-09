@@ -56,7 +56,7 @@ class ChatTemplatePrompter(Prompter):
 
         return self.tokenizer.apply_chat_template(
             turns,
-            truncation=True,
+            truncation=False,
             max_length=self.max_length,
             add_generation_prompt=add_generation_prompt,
             chat_template=self.chat_template,

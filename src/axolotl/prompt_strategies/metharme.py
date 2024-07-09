@@ -30,7 +30,7 @@ class MetharmePromptTokenizingStrategy(InstructionPromptTokenizingStrategy):
     ):
         result = self.tokenizer(
             prompt,
-            truncation=True,
+            truncation=False,
             max_length=self.sequence_len,
             padding=False,
             return_tensors=None,

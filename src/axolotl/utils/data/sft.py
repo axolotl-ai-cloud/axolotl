@@ -66,6 +66,20 @@ def prepare_dataset(cfg, tokenizer):
                 train_dataset, eval_dataset, prompters = load_prepare_datasets(
                     tokenizer, cfg, DEFAULT_DATASET_PREPARED_PATH
                 )
+
+            if len(train_dataset) == 0:
+                raise ValueError(
+                    "No samples left in train data after loading and processing. "
+                )
+
+            if (
+                eval_dataset is not None
+                and (cfg.val_set_size or cfg.test_datasets)
+                and len(eval_dataset) == 0
+            ):
+                raise ValueError(
+                    "No samples left in eval data after loading and processing"
+                )
     else:
         path = cfg.pretraining_dataset
         split = "train"
@@ -99,6 +113,10 @@ def prepare_dataset(cfg, tokenizer):
         # https://discuss.huggingface.co/t/how-to-use-huggingface-trainer-streaming-datasets-without-wrapping-it-with-torchdatas-iterablewrapper/25230
         train_dataset = train_dataset.with_format("torch")
         eval_dataset = None
+        if len(train_dataset) == 0:
+            raise ValueError(
+                "No samples left in train data after loading and processing"
+            )
         return train_dataset, eval_dataset, cfg.max_steps, prompters
 
     if eval_dataset and cfg.sample_packing and cfg.eval_sample_packing is not False:

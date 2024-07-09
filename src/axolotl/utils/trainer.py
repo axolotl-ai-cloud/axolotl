@@ -15,8 +15,9 @@ from torch.utils.data import DataLoader, RandomSampler
 from transformers.utils import is_torch_bf16_gpu_available
 
 from axolotl.core.trainer_builder import HFCausalTrainerBuilder, HFRLTrainerBuilder
-from axolotl.utils.distributed import is_main_process, reduce_and_broadcast, zero_first
+from axolotl.utils.distributed import reduce_and_broadcast
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
+from axolotl.utils.samplers.utils import plot_ascii_lengths_histogram
 
 LOG = get_logger("axolotl")
 
@@ -169,6 +170,10 @@ def add_length(sample):
     return sample
 
 
+def drop_samples_with_no_outputs(sample):
+    return any(v != -100 for v in sample["labels"])
+
+
 def drop_long_seq(sample, sequence_len=2048, min_sequence_len=2):
     return (
         len(sample["input_ids"]) <= sequence_len
@@ -176,96 +181,155 @@ def drop_long_seq(sample, sequence_len=2048, min_sequence_len=2):
     )
 
 
-def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
+def _maybe_drop_sequences(
+    dataset,
+    ds_split_name: str,
+    sequence_len: int,
+    min_sample_len: int = 2,
+    ignore_long_sequences: bool = False,
+    drop_no_outputs: bool = False,
+    dataset_processes: Optional[int] = None,
+    load_from_cache_file: bool = True,
+    show_lengths_summary: bool = False,
+):
+    max_len = None
+    if show_lengths_summary:
+        _ds_lens = get_dataset_lengths(dataset)
+        plot_ascii_lengths_histogram(
+            data=_ds_lens, title=f"{ds_split_name} Dataset Lengths", logger=LOG
+        )
+        min_len, max_len = np.min(_ds_lens), np.max(_ds_lens)
+        LOG.debug(f"min_input_len: {min_len}", main_process_only=True)
+        LOG.debug(f"max_input_len: {max_len}", main_process_only=True)
     drop_long = partial(
         drop_long_seq,
-        sequence_len=cfg.sequence_len,
-        min_sequence_len=cfg.min_sample_len or 2,
+        sequence_len=sequence_len,
+        min_sequence_len=min_sample_len or 2,
     )
-    with zero_first(is_main_process()):
-        if cfg.is_preprocess:
-            min_input_len = np.min(get_dataset_lengths(train_dataset))
-            LOG.debug(f"min_input_len: {min_input_len}", main_process_only=True)
-            max_input_len = np.max(get_dataset_lengths(train_dataset))
-            LOG.debug(f"max_input_len: {max_input_len}", main_process_only=True)
+    len_pre_drop = len(dataset)
+    dataset = dataset.filter(
+        drop_long,
+        num_proc=dataset_processes,
+        load_from_cache_file=load_from_cache_file,
+        desc=f"Dropping Long Sequences From {ds_split_name} Dataset",
+    )
+    dropped_rows = len_pre_drop - len(dataset)
+    if dropped_rows > 0:
+        LOG.warning(f"Dropped {dropped_rows} rows from {ds_split_name} dataset")
+        if not ignore_long_sequences:
+            error_message = (
+                f"Found {dropped_rows} sequences longer than {sequence_len} tokens in {ds_split_name} Dataset. "
+                f"Please either increase --sequence_len or set --drop_long_sequences to True to drop and ignore such sequences."
+            )
+            if max_len is not None:
+                error_message += f" Longest sequence is {max_len} tokens."
+            raise ValueError(error_message)
 
-        if (
-            cfg.is_mistral_derived_model and cfg.flash_attention
-        ) or cfg.model_config_type == "mamba":
-            LOG.info("dropping attention_mask column")
-            train_dataset = train_dataset.remove_columns("attention_mask")
-            if eval_dataset:
-                eval_dataset = eval_dataset.remove_columns("attention_mask")
+    if drop_no_outputs:
+        len_pre_drop = len(dataset)
+        dataset = dataset.filter(
+            drop_samples_with_no_outputs,
+            num_proc=dataset_processes,
+            load_from_cache_file=load_from_cache_file,
+            desc="Dropping Sequences Without Outputs",
+        )
+        dropped_rows = len_pre_drop - len(dataset)
+        if dropped_rows > 0:
+            LOG.warning(
+                f"Dropped {dropped_rows} rows with no outputs from {ds_split_name} Dataset"
+            )
+    return dataset
 
-        if cfg.model_config_type == "falcon":
-            LOG.info("dropping token_type_ids column if it exists")
-            if "token_type_ids" in train_dataset.column_names:
-                train_dataset = train_dataset.remove_columns("token_type_ids")
-            if eval_dataset and "token_type_ids" in eval_dataset.column_names:
-                eval_dataset = eval_dataset.remove_columns("token_type_ids")
 
-        train_dataset = train_dataset.filter(
-            drop_long,
+def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
+    if (
+        cfg.is_mistral_derived_model and cfg.flash_attention
+    ) or cfg.model_config_type == "mamba":
+        LOG.info("dropping attention_mask column")
+        train_dataset = train_dataset.remove_columns("attention_mask")
+        if eval_dataset:
+            eval_dataset = eval_dataset.remove_columns("attention_mask")
+
+    if cfg.model_config_type == "falcon":
+        LOG.info("dropping token_type_ids column if it exists")
+        if "token_type_ids" in train_dataset.column_names:
+            train_dataset = train_dataset.remove_columns("token_type_ids")
+        if eval_dataset and "token_type_ids" in eval_dataset.column_names:
+            eval_dataset = eval_dataset.remove_columns("token_type_ids")
+
+    train_dataset = _maybe_drop_sequences(
+        dataset=train_dataset,
+        ds_split_name="Train",
+        sequence_len=cfg.sequence_len,
+        min_sample_len=cfg.min_sample_len or 2,
+        ignore_long_sequences=cfg.drop_long_sequences,
+        drop_no_outputs=True,
+        dataset_processes=cfg.dataset_processes,
+        load_from_cache_file=not cfg.is_preprocess,
+        show_lengths_summary=True,
+    )
+
+    if eval_dataset:
+        eval_dataset = _maybe_drop_sequences(
+            dataset=eval_dataset,
+            ds_split_name="Eval",
+            sequence_len=cfg.sequence_len,
+            min_sample_len=cfg.min_sample_len or 2,
+            ignore_long_sequences=cfg.drop_long_sequences,
+            drop_no_outputs=True,
+            dataset_processes=cfg.dataset_processes,
+            load_from_cache_file=not cfg.is_preprocess,
+            show_lengths_summary=True,
+        )
+
+    if cfg.group_by_length:
+        train_dataset = train_dataset.map(
+            add_length,
             num_proc=cfg.dataset_processes,
             load_from_cache_file=not cfg.is_preprocess,
-            desc="Dropping Long Sequences",
+            desc="Group By Length",
         )
-        if eval_dataset:
-            eval_dataset = eval_dataset.filter(
-                drop_long,
-                num_proc=cfg.dataset_processes,
-                load_from_cache_file=not cfg.is_preprocess,
-                desc="Dropping Long Sequences",
-            )
 
-        if cfg.group_by_length:
-            train_dataset = train_dataset.map(
-                add_length,
-                num_proc=cfg.dataset_processes,
-                load_from_cache_file=not cfg.is_preprocess,
-                desc="Group By Length",
-            )
-
-        if cfg.use_pose:
-            pose_kwargs = {}
-            if cfg.pose_num_chunks is not None:
-                pose_kwargs["chunks"] = cfg.pose_num_chunks
-            pose_fn = partial(
-                add_pose_position_ids,
-                max_context_len=cfg.pose_max_context_len,
-                split_on_token_ids=cfg.pose_split_on_token_ids,
-                **pose_kwargs,
-            )
-            train_dataset = train_dataset.map(
-                pose_fn,
-                num_proc=cfg.dataset_processes,
-                load_from_cache_file=not cfg.is_preprocess,
-                desc="Add position_id column (PoSE)",
-            )
-            train_dataset = train_dataset.sort("sequence_len")
-            if cfg.eval_sample_packing is not False:
-                if eval_dataset:
-                    eval_dataset = eval_dataset.map(
-                        pose_fn,
-                        num_proc=cfg.dataset_processes,
-                        load_from_cache_file=not cfg.is_preprocess,
-                        desc="Add position_id column (PoSE)",
-                    )
-        elif cfg.sample_packing:
-            train_dataset = train_dataset.map(
-                add_position_ids,
-                num_proc=cfg.dataset_processes,
-                load_from_cache_file=not cfg.is_preprocess,
-                desc="Add position_id column (Sample Packing)",
-            )
-            if cfg.eval_sample_packing is not False:
-                if eval_dataset:
-                    eval_dataset = eval_dataset.map(
-                        add_position_ids,
-                        num_proc=cfg.dataset_processes,
-                        load_from_cache_file=not cfg.is_preprocess,
-                        desc="Add position_id column (Sample Packing)",
-                    )
+    if cfg.use_pose:
+        pose_kwargs = {}
+        if cfg.pose_num_chunks is not None:
+            pose_kwargs["chunks"] = cfg.pose_num_chunks
+        pose_fn = partial(
+            add_pose_position_ids,
+            max_context_len=cfg.pose_max_context_len,
+            split_on_token_ids=cfg.pose_split_on_token_ids,
+            **pose_kwargs,
+        )
+        train_dataset = train_dataset.map(
+            pose_fn,
+            num_proc=cfg.dataset_processes,
+            load_from_cache_file=not cfg.is_preprocess,
+            desc="Add position_id column (PoSE)",
+        )
+        train_dataset = train_dataset.sort("sequence_len")
+        if cfg.eval_sample_packing is not False:
+            if eval_dataset:
+                eval_dataset = eval_dataset.map(
+                    pose_fn,
+                    num_proc=cfg.dataset_processes,
+                    load_from_cache_file=not cfg.is_preprocess,
+                    desc="Add position_id column (PoSE)",
+                )
+    elif cfg.sample_packing:
+        train_dataset = train_dataset.map(
+            add_position_ids,
+            num_proc=cfg.dataset_processes,
+            load_from_cache_file=not cfg.is_preprocess,
+            desc="Add position_id column (Sample Packing)",
+        )
+        if cfg.eval_sample_packing is not False:
+            if eval_dataset:
+                eval_dataset = eval_dataset.map(
+                    add_position_ids,
+                    num_proc=cfg.dataset_processes,
+                    load_from_cache_file=not cfg.is_preprocess,
+                    desc="Add position_id column (Sample Packing)",
+                )
 
     return train_dataset, eval_dataset
 
@@ -273,12 +337,14 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
 def process_pretraining_datasets_for_packing(
     train_dataset, sequence_len, skip_position_ids=True
 ):
-    drop_long = partial(drop_long_seq, sequence_len=sequence_len)
-
-    train_dataset = train_dataset.filter(
-        drop_long,
-        desc="Dropping Long Sequences",
+    train_dataset = _maybe_drop_sequences(
+        dataset=train_dataset,
+        ds_split_name="Train",
+        sequence_len=sequence_len,
+        ignore_long_sequences=True,  # TODO (chiragjn): Pass via cfg here
+        show_lengths_summary=False,
     )
+
     if skip_position_ids:
         train_dataset = train_dataset.map(
             add_position_ids,
