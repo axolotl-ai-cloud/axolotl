@@ -1670,8 +1670,6 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             dpo_trainer_kwargs["loss_type"] = "ipo"
             if self.cfg.dpo_label_smoothing:
                 dpo_trainer_kwargs["label_smoothing"] = self.cfg.dpo_label_smoothing
-        elif self.cfg.rl == "kto_pair":
-            dpo_trainer_kwargs["loss_type"] = "kto_pair"
         if self.eval_dataset:
             dpo_trainer_kwargs["eval_dataset"] = self.eval_dataset
         if self.cfg.adapter and self.peft_config:
@@ -1680,7 +1678,7 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             dpo_trainer_kwargs[
                 "precompute_ref_log_probs"
             ] = self.cfg.precompute_ref_log_probs
-        if self.cfg.rl in ["dpo", "ipo", "kto_pair"]:
+        if self.cfg.rl in ["dpo", "ipo"]:
             trainer_cls = AxolotlDPOTrainer
             dpo_trainer_kwargs["beta"] = self.cfg.rl_beta or 0.1
             trainer_cls_args = [self.model, self.model_ref]
@@ -1695,7 +1693,7 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         elif self.cfg.rl == "orpo":
             trainer_cls = AxolotlORPOTrainer
             trainer_cls_args = [self.model]
-        elif self.cfg.rl == "kto":
+        elif self.cfg.rl in ["kto"]:
             trainer_cls = AxolotlKTOTrainer
             trainer_cls_args = [self.model]
         else:

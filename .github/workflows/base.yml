@@ -5,7 +5,7 @@ on:
 
 jobs:
   build-base:
-    if: github.repository_owner == 'OpenAccess-AI-Collective'
+    if: github.repository_owner == 'axolotl-ai-cloud'
     # this job needs to be run on self-hosted GPU runners...
     runs-on: axolotl-gpu-runner
     strategy:
