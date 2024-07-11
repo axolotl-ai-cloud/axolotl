@@ -15,7 +15,7 @@ body:
       label: "Please check that this issue hasn't been reported before."
       description: "The **Label filters** may help make your search more focussed."
       options:
-        - label: "I searched previous [Bug Reports](https://github.com/OpenAccess-AI-Collective/axolotl/labels/bug) didn't find any similar reports."
+        - label: "I searched previous [Bug Reports](https://github.com/axolotl-ai-cloud/axolotl/labels/bug) didn't find any similar reports."
           required: true
 
   - type: textarea
