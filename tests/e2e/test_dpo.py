@@ -115,6 +115,7 @@ class TestDPOLlamaLora(unittest.TestCase):
         train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
         assert (Path(temp_dir) / "checkpoint-20/adapter_model.safetensors").exists()
 
+    @pytest.mark.skip("kto_pair no longer supported in trl")
     @with_temp_dir
     def test_kto_pair_lora(self, temp_dir):
         # pylint: disable=duplicate-code

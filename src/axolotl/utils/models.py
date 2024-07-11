@@ -569,9 +569,11 @@ def load_model(
 
     try:
         skip_move_to_device = False
-        if (
-            cfg.fsdp and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
-        ) and not qlora_fsdp:
+        if (  # pylint: disable=condition-evals-to-constant)
+            (cfg.fsdp and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading)
+            and not qlora_fsdp
+            and False
+        ):
             model = load_sharded_model(
                 base_model,
                 model_config,
@@ -803,11 +805,7 @@ def load_model(
     if not reference_model or cfg.lora_model_dir:
         # if we're not loading the reference model, then we're loading the model for training
         # then the dpo trainer doesn't want the peft model loaded over it, it just wants the lora/peft config
-        if (
-            cfg.adapter
-            and cfg.rl in ["dpo", "ipo", "kto_pair", "kto"]
-            and not cfg.merge_lora
-        ):
+        if cfg.adapter and cfg.rl in ["dpo", "ipo", "kto"] and not cfg.merge_lora:
             _, lora_config = load_lora(model, cfg, inference=False, config_only=True)
         else:
             model, lora_config = load_adapter(model, cfg, cfg.adapter)

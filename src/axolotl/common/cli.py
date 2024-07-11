@@ -40,6 +40,7 @@ class PreprocessCliArgs:
     debug_text_only: bool = field(default=False)
     debug_num_examples: int = field(default=1)
     prompter: Optional[str] = field(default=None)
+    download: Optional[bool] = field(default=True)
 
 
 def load_model_and_tokenizer(

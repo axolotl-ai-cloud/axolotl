@@ -23,6 +23,7 @@ class ChatTemplatePrompter(Prompter):
         message_field_role: str = "from",
         message_field_content: str = "value",
         roles: Optional[Dict[str, List[str]]] = None,
+        drop_system_message: bool = False,
     ):
         if roles:
             self.roles = {s: t for t, sources in roles.items() for s in sources}
@@ -39,6 +40,7 @@ class ChatTemplatePrompter(Prompter):
         self.tokenizer = tokenizer
         self.chat_template = chat_template
         self.max_length = max_length
+        self.drop_system_message = drop_system_message
 
     def build_prompt(self, conversation, add_generation_prompt=False):
         turns = [
@@ -48,6 +50,9 @@ class ChatTemplatePrompter(Prompter):
             }
             for t in conversation
         ]
+
+        if self.drop_system_message and turns[0]["role"] == "system":
+            turns = turns[1:]
 
         return self.tokenizer.apply_chat_template(
             turns,
@@ -111,6 +116,11 @@ def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
         else "value"
     )
     roles = ds_cfg["roles"] if ds_cfg and "roles" in ds_cfg else None
+    drop_system_message = (
+        ds_cfg["drop_system_message"]
+        if ds_cfg and "drop_system_message" in ds_cfg
+        else False
+    )
 
     strategy = ChatTemplateStrategy(
         ChatTemplatePrompter(
@@ -119,6 +129,7 @@ def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
             message_field_role=message_field_role,
             message_field_content=message_field_content,
             roles=roles,
+            drop_system_message=drop_system_message,
         ),
         tokenizer,
         cfg.train_on_inputs,

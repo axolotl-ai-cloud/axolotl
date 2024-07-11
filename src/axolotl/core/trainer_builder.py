@@ -387,6 +387,7 @@ class AxolotlTrainer(Trainer):
             return MultipackBatchSampler(
                 RandomSampler(self.train_dataset),
                 lengths=get_dataset_lengths(self.train_dataset),
+                packing_efficiency_estimate=self.args.sample_packing_efficiency,
                 batch_max_len=batch_max_len,
                 batch_size=batch_size,
                 group_size=self.args.sample_packing_group_size,
@@ -412,6 +413,7 @@ class AxolotlTrainer(Trainer):
             return MultipackBatchSampler(
                 SequentialSampler(eval_dataset),
                 lengths=get_dataset_lengths(self.eval_dataset),
+                packing_efficiency_estimate=self.args.sample_packing_efficiency,
                 batch_max_len=batch_max_len,
                 batch_size=batch_size,
                 group_size=self.args.sample_packing_group_size,
@@ -457,6 +459,8 @@ class AxolotlTrainer(Trainer):
             self.data_collator = (  # pylint: disable=attribute-defined-outside-init
                 self.eval_data_collator
             )
+            if eval_dataset:
+                eval_dataset = eval_dataset.remove_columns(["length"])
             dataloader = super().get_eval_dataloader(eval_dataset)
             self.data_collator = (  # pylint: disable=attribute-defined-outside-init
                 self.train_data_collator
@@ -1087,6 +1091,8 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             warmup_steps = max(int(self.cfg.warmup_ratio * total_num_steps), 0)
         else:
             warmup_steps = min(int(0.03 * total_num_steps), 100)
+        if warmup_steps == 1:
+            warmup_steps = 2
 
         logging_steps = (
             self.cfg.logging_steps
@@ -1664,8 +1670,6 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             dpo_trainer_kwargs["loss_type"] = "ipo"
             if self.cfg.dpo_label_smoothing:
                 dpo_trainer_kwargs["label_smoothing"] = self.cfg.dpo_label_smoothing
-        elif self.cfg.rl == "kto_pair":
-            dpo_trainer_kwargs["loss_type"] = "kto_pair"
         if self.eval_dataset:
             dpo_trainer_kwargs["eval_dataset"] = self.eval_dataset
         if self.cfg.adapter and self.peft_config:
@@ -1674,7 +1678,7 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             dpo_trainer_kwargs[
                 "precompute_ref_log_probs"
             ] = self.cfg.precompute_ref_log_probs
-        if self.cfg.rl in ["dpo", "ipo", "kto_pair"]:
+        if self.cfg.rl in ["dpo", "ipo"]:
             trainer_cls = AxolotlDPOTrainer
             dpo_trainer_kwargs["beta"] = self.cfg.rl_beta or 0.1
             trainer_cls_args = [self.model, self.model_ref]
@@ -1689,7 +1693,7 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         elif self.cfg.rl == "orpo":
             trainer_cls = AxolotlORPOTrainer
             trainer_cls_args = [self.model]
-        elif self.cfg.rl == "kto":
+        elif self.cfg.rl in ["kto"]:
             trainer_cls = AxolotlKTOTrainer
             trainer_cls_args = [self.model]
         else:

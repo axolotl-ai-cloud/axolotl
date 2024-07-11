@@ -116,6 +116,7 @@ class SFTDataset(BaseModel):
     message_field_content: Optional[str] = None
 
     roles: Optional[Dict[str, List[str]]] = None
+    drop_system_message: Optional[bool] = None
 
 
 class UserDefinedDPOType(BaseModel):
@@ -164,7 +165,6 @@ class RLType(str, Enum):
 
     dpo = "dpo"  # pylint: disable=invalid-name
     ipo = "ipo"  # pylint: disable=invalid-name
-    kto_pair = "kto_pair"  # pylint: disable=invalid-name
     orpo = "orpo"  # pylint: disable=invalid-name
     kto = "kto"  # pylint: disable=invalid-name
 
@@ -899,6 +899,26 @@ class AxolotlInputConfig(
             raise ValueError(
                 "eval_table_size and eval_sample_packing are not supported together with sample_packing. Please set 'eval_sample_packing' to false."
             )
+        if (
+            data.get("sample_packing")
+            and data.get("eval_sample_packing") is None
+            and not data.get("eval_table_size")
+        ):
+            LOG.info(
+                "explicitly setting `eval_sample_packing` to match `sample_packing`"
+            )
+            data["eval_sample_packing"] = True
+
+        if (
+            data.get("sample_packing")
+            and data.get("eval_sample_packing") is False
+            and data.get("remove_unused_columns") is None
+        ):
+            LOG.info(
+                "setting `remove_unused_columns: false` for when sample_packing and eval_sample_packing don't match"
+            )
+            data["remove_unused_columns"] = False
+
         return data
 
     @model_validator(mode="before")
