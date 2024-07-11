@@ -12,7 +12,7 @@ fire
 PyYAML>=6.0
 requests
 datasets==2.19.1
-flash-attn==2.5.8
+flash-attn==2.6.1
 sentencepiece
 wandb
 einops
