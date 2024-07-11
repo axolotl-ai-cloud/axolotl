@@ -8,9 +8,9 @@ body:
       label: "⚠️ Please check that this feature request hasn't been suggested before."
       description: "There are two locations for previous feature requests. Please search in both. Thank you. The **Label filters** may help make your search more focussed."
       options:
-        - label: "I searched previous [Ideas in Discussions](https://github.com/OpenAccess-AI-Collective/axolotl/discussions/categories/ideas) didn't find any similar feature requests."
+        - label: "I searched previous [Ideas in Discussions](https://github.com/axolotl-ai-cloud/axolotl/discussions/categories/ideas) didn't find any similar feature requests."
           required: true
-        - label: "I searched previous [Issues](https://github.com/OpenAccess-AI-Collective/axolotl/labels/enhancement) didn't find any similar feature requests."
+        - label: "I searched previous [Issues](https://github.com/axolotl-ai-cloud/axolotl/labels/enhancement) didn't find any similar feature requests."
           required: true
 
   - type: textarea

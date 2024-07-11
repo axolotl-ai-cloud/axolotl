@@ -10,7 +10,7 @@ body:
       value: |
         * Ask questions in [Discord](https://discord.gg/HhrNrHJPRb).
         * Before you file an issue read the [Contributing guide](./CONTRIBUTING.md).
-        * Check to make sure someone hasn't already opened a [similar issue](https://github.com/OpenAccess-AI-Collective/axolotl/issues).
+        * Check to make sure someone hasn't already opened a [similar issue](https://github.com/axolotl-ai-cloud/axolotl/issues).
   - type: textarea
     attributes:
       label: What piece of documentation is affected?

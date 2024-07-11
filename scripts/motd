@@ -11,7 +11,7 @@ Welcome to the axolotl cloud image! If the you've mounted a disk to /workspace a
 ```
 cd /workspace
 rm -rf /workspace/axolotl
-git clone https://github.com/OpenAccess-AI-Collective/axolotl.git
+git clone https://github.com/axolotl-ai-cloud/axolotl.git
 cd axolotl
 pip install --no-deps -e .
 ```

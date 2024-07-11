@@ -192,7 +192,7 @@ Using [official Axolotl Docker images](https://hub.docker.com/r/winglian/axolotl
 On the host that is running axolotl (ex: if you are using a remote host), clone the axolotl repo and change your current directory to the root:
 
 ```bash
-git clone https://github.com/OpenAccess-AI-Collective/axolotl
+git clone https://github.com/axolotl-ai-cloud/axolotl
 cd axolotl
 ```
 
