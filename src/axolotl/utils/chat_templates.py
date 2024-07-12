@@ -59,7 +59,7 @@ def chat_templates(user_choice: str, tokenizer=None):
             len(_DEFAULT_FALLBACK_CHATML_TEMPLATE_CHOICE_PREFIX) :
         ]
         LOG.warning(
-            f"No chat template found on tokenizer, falling back to {user_choice}"
+            f"No chat template found on tokenizer, falling back to {user_choice}. It is recommended to set --train_on_inputs to True for the model to learn this chat template."
         )
 
     if user_choice in templates:
