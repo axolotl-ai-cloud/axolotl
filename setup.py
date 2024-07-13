@@ -83,7 +83,7 @@ setup(
             "flash-attn==2.6.1",
         ],
         "fused-dense-lib": [
-            "fused-dense-lib  @ git+https://github.com/Dao-AILab/flash-attention@v2.5.8#subdirectory=csrc/fused_dense_lib",
+            "fused-dense-lib  @ git+https://github.com/Dao-AILab/flash-attention@v2.6.1#subdirectory=csrc/fused_dense_lib",
         ],
         "deepspeed": [
             "deepspeed @ git+https://github.com/microsoft/DeepSpeed.git@bc48371c5e1fb8fd70fc79285e66201dbb65679b",
