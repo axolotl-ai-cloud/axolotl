@@ -5,7 +5,7 @@ transformers==4.42.3
 tokenizers==0.19.1
 bitsandbytes==0.43.1
 accelerate==0.32.0
-deepspeed @ git+https://github.com/microsoft/DeepSpeed.git@bc48371c5e1fb8fd70fc79285e66201dbb65679b
+deepspeed==0.14.4
 pydantic==2.6.3
 addict
 fire
