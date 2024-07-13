@@ -413,14 +413,14 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <section id="launch-the-training" class="level2">
 <h2 class="anchored" data-anchor-id="launch-the-training">Launch the training</h2>
 <div id="cell-8" class="cell" data-outputid="d6d0df17-4b53-439c-c802-22c0456d301b">
-<div class="sourceCode cell-code" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Buy using the ! the comand will be executed as a bash command</span></span>
+<div class="sourceCode cell-code" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="co"># By using the ! the comand will be executed as a bash command</span></span>
 <span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="op">!</span>accelerate launch <span class="op">-</span>m axolotl.cli.train <span class="op">/</span>content<span class="op">/</span>test_axolotl.yaml</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
 </section>
 <section id="play-with-inference" class="level2">
 <h2 class="anchored" data-anchor-id="play-with-inference">Play with inference</h2>
 <div id="cell-10" class="cell">
-<div class="sourceCode cell-code" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Buy using the ! the comand will be executed as a bash command</span></span>
+<div class="sourceCode cell-code" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="co"># By using the ! the comand will be executed as a bash command</span></span>
 <span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="op">!</span>accelerate launch <span class="op">-</span>m axolotl.cli.inference <span class="op">/</span>content<span class="op">/</span>test_axolotl.yaml <span class="op">\</span></span>
 <span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    <span class="op">--</span>qlora_model_dir<span class="op">=</span><span class="st">"./qlora-out"</span> <span class="op">--</span>gradio</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>

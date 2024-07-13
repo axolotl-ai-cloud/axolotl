@@ -515,14 +515,14 @@
     "href": "examples/colab-notebooks/colab-axolotl-example.html#launch-the-training",
     "title": "Example notebook for running Axolotl on google colab",
     "section": "Launch the training",
-    "text": "Launch the training\n\n# Buy using the ! the comand will be executed as a bash command\n!accelerate launch -m axolotl.cli.train /content/test_axolotl.yaml"
+    "text": "Launch the training\n\n# By using the ! the comand will be executed as a bash command\n!accelerate launch -m axolotl.cli.train /content/test_axolotl.yaml"
   },
   {
     "objectID": "examples/colab-notebooks/colab-axolotl-example.html#play-with-inference",
     "href": "examples/colab-notebooks/colab-axolotl-example.html#play-with-inference",
     "title": "Example notebook for running Axolotl on google colab",
     "section": "Play with inference",
-    "text": "Play with inference\n\n# Buy using the ! the comand will be executed as a bash command\n!accelerate launch -m axolotl.cli.inference /content/test_axolotl.yaml \\\n    --qlora_model_dir=\"./qlora-out\" --gradio"
+    "text": "Play with inference\n\n# By using the ! the comand will be executed as a bash command\n!accelerate launch -m axolotl.cli.inference /content/test_axolotl.yaml \\\n    --qlora_model_dir=\"./qlora-out\" --gradio"
   },
   {
     "objectID": "TODO.html",
