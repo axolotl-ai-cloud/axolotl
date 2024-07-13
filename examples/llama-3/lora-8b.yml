@@ -15,6 +15,7 @@ output_dir: ./outputs/lora-out
 
 sequence_len: 4096
 sample_packing: true
+eval_sample_packing: false
 pad_to_sequence_len: true
 
 adapter: lora
