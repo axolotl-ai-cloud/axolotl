@@ -29,9 +29,10 @@ def parse_requirements():
                 _install_requires.append(line)
 
     try:
+        xformers_version = [req for req in _install_requires if "xformers" in req][0]
         if "Darwin" in platform.system():
             # don't install xformers on MacOS
-            _install_requires.pop(_install_requires.index("xformers==0.0.26.post1"))
+            _install_requires.pop(_install_requires.index(xformers_version))
         else:
             # detect the version of torch already installed
             # and set it so dependencies don't clobber the torch version
@@ -51,10 +52,10 @@ def parse_requirements():
             if (major, minor) >= (2, 3):
                 pass
             elif (major, minor) >= (2, 2):
-                _install_requires.pop(_install_requires.index("xformers==0.0.26.post1"))
+                _install_requires.pop(_install_requires.index(xformers_version))
                 _install_requires.append("xformers>=0.0.25.post1")
             else:
-                _install_requires.pop(_install_requires.index("xformers==0.0.26.post1"))
+                _install_requires.pop(_install_requires.index(xformers_version))
                 _install_requires.append("xformers>=0.0.23.post1")
 
     except PackageNotFoundError:
