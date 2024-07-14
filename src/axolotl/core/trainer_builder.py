@@ -293,7 +293,8 @@ class AxolotlTrainer(Trainer):
     def create_optimizer(self):
         if (
             self.args.loraplus_lr_ratio is None
-            and self.args.alternate_optimizer != "optimi_adamw"
+            and self.args.alternate_optimizer
+            not in ["optimi_adamw", "q_galore_adamw8bit"]
         ):
             return super().create_optimizer()
 
@@ -343,6 +344,12 @@ class AxolotlTrainer(Trainer):
                     AdamW(
                         optimizer_grouped_parameters, foreach=False, **optimizer_kwargs
                     )
+                )
+            elif self.args.alternate_optimizer == "q_galore_adamw8bit":
+                from q_galore_torch import QGaLoreAdamW8bit
+
+                self.optimizer = (  # pylint: disable=attribute-defined-outside-init
+                    QGaLoreAdamW8bit(optimizer_grouped_parameters, **optimizer_kwargs)
                 )
 
         if is_sagemaker_mp_enabled():
@@ -1436,7 +1443,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
 
         trainer_kwargs = {}
 
-        if self.cfg.optimizer == "optimi_adamw":
+        if self.cfg.optimizer in ["optimi_adamw", "q_galore_adamw8bit"]:
             # Set default so transformers doesn't throw
             training_arguments_kwargs["optim"] = "adamw_hf"
             training_arguments_kwargs["alternate_optimizer"] = self.cfg.optimizer
