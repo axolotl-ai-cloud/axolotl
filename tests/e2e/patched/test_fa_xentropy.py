@@ -7,8 +7,7 @@ import os
 import unittest
 from pathlib import Path
 
-import pytest
-from transformers.utils import is_auto_gptq_available, is_torch_bf16_gpu_available
+from transformers.utils import is_torch_bf16_gpu_available
 
 from axolotl.cli import load_datasets
 from axolotl.common.cli import TrainerCliArgs
@@ -22,13 +21,13 @@ LOG = logging.getLogger("axolotl.tests.e2e")
 os.environ["WANDB_DISABLED"] = "true"
 
 
-class TestLoraLlama(unittest.TestCase):
+class TestFAXentropyLlama(unittest.TestCase):
     """
     Test case for Llama models using LoRA w multipack
     """
 
     @with_temp_dir
-    def test_lora_packing(self, temp_dir):
+    def test_lora_packing_fa_cross_entropy(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
@@ -37,6 +36,7 @@ class TestLoraLlama(unittest.TestCase):
                 "sequence_len": 1024,
                 "sample_packing": True,
                 "flash_attention": True,
+                "flash_attn_cross_entropy": True,
                 "load_in_8bit": True,
                 "adapter": "lora",
                 "lora_r": 32,
@@ -55,7 +55,7 @@ class TestLoraLlama(unittest.TestCase):
                         "type": "alpaca",
                     },
                 ],
-                "num_epochs": 2,
+                "num_epochs": 1,
                 "micro_batch_size": 8,
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
@@ -69,55 +69,6 @@ class TestLoraLlama(unittest.TestCase):
         else:
             cfg.fp16 = True
 
-        normalize_config(cfg)
-        cli_args = TrainerCliArgs()
-        dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
-
-        train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-        assert (Path(temp_dir) / "adapter_model.bin").exists()
-
-    @pytest.mark.skipif(not is_auto_gptq_available(), reason="auto-gptq not available")
-    @with_temp_dir
-    def test_lora_gptq_packed(self, temp_dir):
-        # pylint: disable=duplicate-code
-        cfg = DictDefault(
-            {
-                "base_model": "TheBlokeAI/jackfram_llama-68m-GPTQ",
-                "model_type": "AutoModelForCausalLM",
-                "tokenizer_type": "LlamaTokenizer",
-                "sequence_len": 1024,
-                "sample_packing": True,
-                "flash_attention": True,
-                "load_in_8bit": True,
-                "adapter": "lora",
-                "gptq": True,
-                "gptq_disable_exllama": True,
-                "lora_r": 32,
-                "lora_alpha": 64,
-                "lora_dropout": 0.05,
-                "lora_target_linear": True,
-                "val_set_size": 0.1,
-                "special_tokens": {
-                    "unk_token": "<unk>",
-                    "bos_token": "<s>",
-                    "eos_token": "</s>",
-                },
-                "datasets": [
-                    {
-                        "path": "mhenrichsen/alpaca_2k_test",
-                        "type": "alpaca",
-                    },
-                ],
-                "num_epochs": 2,
-                "save_steps": 0.5,
-                "micro_batch_size": 8,
-                "gradient_accumulation_steps": 1,
-                "output_dir": temp_dir,
-                "learning_rate": 0.00001,
-                "optimizer": "adamw_torch",
-                "lr_scheduler": "cosine",
-            }
-        )
         normalize_config(cfg)
         cli_args = TrainerCliArgs()
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
