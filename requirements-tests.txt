@@ -1,2 +1,2 @@
 pytest
-pytest-forked
+pytest-xdist
