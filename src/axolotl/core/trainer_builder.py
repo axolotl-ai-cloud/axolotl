@@ -340,7 +340,9 @@ class AxolotlTrainer(Trainer):
                 from optimi import AdamW
 
                 self.optimizer = (  # pylint: disable=attribute-defined-outside-init
-                    AdamW(optimizer_grouped_parameters, **optimizer_kwargs)
+                    AdamW(
+                        optimizer_grouped_parameters, foreach=False, **optimizer_kwargs
+                    )
                 )
 
         if is_sagemaker_mp_enabled():
