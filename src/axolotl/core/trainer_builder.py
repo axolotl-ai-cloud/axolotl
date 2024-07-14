@@ -226,6 +226,12 @@ class AxolotlTrainingMixins:
         default=None,
         metadata={"help": "whether to use sequential sampling for curriculum learning"},
     )
+    alternate_optimizer: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "workaround to pass an alternate optimizer to the HF trainer"
+        },
+    )
 
 
 @dataclass
@@ -285,25 +291,59 @@ class AxolotlTrainer(Trainer):
             self.loss_fct = torch.nn.CrossEntropyLoss(reduction="none")
 
     def create_optimizer(self):
-        if self.args.loraplus_lr_ratio is None:
+        if (
+            self.args.loraplus_lr_ratio is None
+            and self.args.alternate_optimizer != "optimi_adamw"
+        ):
             return super().create_optimizer()
 
         opt_model = self.model_wrapped if is_sagemaker_mp_enabled() else self.model
         if self.optimizer is None:  # pylint: disable=access-member-before-definition
+            decay_parameters = self.get_decay_parameter_names(opt_model)
+            optimizer_grouped_parameters = [
+                {
+                    "params": [
+                        p
+                        for n, p in opt_model.named_parameters()
+                        if (n in decay_parameters and p.requires_grad)
+                    ],
+                    "weight_decay": self.args.weight_decay,
+                },
+                {
+                    "params": [
+                        p
+                        for n, p in opt_model.named_parameters()
+                        if (n not in decay_parameters and p.requires_grad)
+                    ],
+                    "weight_decay": 0.0,
+                },
+            ]
+
             optimizer_cls, optimizer_kwargs = Trainer.get_optimizer_cls_and_kwargs(
                 self.args,
                 opt_model,
             )
 
-            loraplus_lr_ratio = getattr(self.args, "loraplus_lr_ratio", None)
-            loraplus_lr_embedding = getattr(self.args, "loraplus_lr_embedding", None)
-            self.optimizer = create_loraplus_optimizer(  # pylint: disable=attribute-defined-outside-init
-                opt_model,
-                optimizer_cls,
-                optimizer_kwargs,
-                loraplus_lr_ratio,
-                loraplus_lr_embedding,
-            )
+            if self.args.loraplus_lr_ratio is not None:
+                loraplus_lr_ratio = getattr(self.args, "loraplus_lr_ratio", None)
+                loraplus_lr_embedding = getattr(
+                    self.args, "loraplus_lr_embedding", None
+                )
+                self.optimizer = create_loraplus_optimizer(  # pylint: disable=attribute-defined-outside-init
+                    opt_model,
+                    optimizer_cls,
+                    optimizer_kwargs,
+                    loraplus_lr_ratio,
+                    loraplus_lr_embedding,
+                )
+            elif self.args.alternate_optimizer == "optimi_adamw":
+                from optimi import AdamW
+
+                self.optimizer = (  # pylint: disable=attribute-defined-outside-init
+                    AdamW(
+                        optimizer_grouped_parameters, foreach=False, **optimizer_kwargs
+                    )
+                )
 
         if is_sagemaker_mp_enabled():
             self.optimizer = smp.DistributedOptimizer(  # pylint: disable=attribute-defined-outside-init
@@ -1395,6 +1435,11 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             ] = self.cfg.neftune_noise_alpha
 
         trainer_kwargs = {}
+
+        if self.cfg.optimizer == "optimi_adamw":
+            # Set default so transformers doesn't throw
+            training_arguments_kwargs["optim"] = "adamw_hf"
+            training_arguments_kwargs["alternate_optimizer"] = self.cfg.optimizer
 
         if self.cfg.optimizer == "lion_pytorch":
             from lion_pytorch import Lion
