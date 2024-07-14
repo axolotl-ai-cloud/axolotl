@@ -104,7 +104,7 @@ def replace_llama_attn_with_flash_attn(
 
     # skip only if explicitly disabled
     if cross_entropy:
-        from axolotl.integrations.flash_attn_ import CrossEntropyLoss
+        from flash_attn.losses.cross_entropy import CrossEntropyLoss
 
         LOG.info("patching with flash_attn.losses.cross_entropy")
         transformers.models.llama.modeling_llama.CrossEntropyLoss = partial(
