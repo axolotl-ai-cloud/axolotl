@@ -5,8 +5,10 @@ E2E tests for lora llama
 import logging
 import os
 import unittest
+from importlib import reload
 from pathlib import Path
 
+import pytest
 from transformers.utils import is_torch_bf16_gpu_available
 
 from axolotl.cli import load_datasets
@@ -19,6 +21,14 @@ from ..utils import with_temp_dir
 
 LOG = logging.getLogger("axolotl.tests.e2e")
 os.environ["WANDB_DISABLED"] = "true"
+
+
+@pytest.fixture(autouse=True)
+def reload_transformers():
+    import transformers.models.llama.modeling_llama
+
+    yield
+    reload(transformers.models.llama.modeling_llama)
 
 
 class TestFAXentropyLlama(unittest.TestCase):
