@@ -27,4 +27,6 @@ class CrossEntropyLoss(nn.CrossEntropyLoss):
             self.ignore_index,
             self.inplace_backward,
             self.process_group,
-        )
+        )[
+            0
+        ]  # first element of tuple is the loss, second is the z-loss
