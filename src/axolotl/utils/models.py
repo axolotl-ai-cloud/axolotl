@@ -371,6 +371,12 @@ def load_model(
                     rms_norm=cfg.flash_attn_rms_norm,
                     use_shifted_sparse_attn=True,
                 )
+            elif cfg.flash_attn_cross_entropy or cfg.flash_attn_rms_norm:
+                replace_llama_attn_with_flash_attn(
+                    packed=False,
+                    cross_entropy=cfg.flash_attn_cross_entropy,
+                    rms_norm=cfg.flash_attn_rms_norm,
+                )
         elif cfg.xformers_attention:
             from axolotl.monkeypatch.llama_attn_hijack_xformers import (
                 hijack_llama_attention,
