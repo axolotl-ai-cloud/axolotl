@@ -1,4 +1,4 @@
-base_model: casperhansen/llama-3-70b-fp16
+base_model: NousResearch/Meta-Llama-3-70B
 model_type: LlamaForCausalLM
 tokenizer_type: AutoTokenizer  # PreTrainedTokenizerFast
 
