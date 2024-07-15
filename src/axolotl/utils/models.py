@@ -358,6 +358,16 @@ def load_model(
                 patch_llama_cross_entropy()
             if cfg.flash_attn_rms_norm:
                 patch_llama_rms_norm()
+            if cfg.unsloth_cross_entropy_loss:
+                from axolotl.monkeypatch.unsloth_ import (
+                    integrate_cross_entropy_loss_patch,
+                )
+
+                integrate_cross_entropy_loss_patch()
+            if cfg.unsloth_lora_qkv or cfg.unsloth_lora_o:
+                from axolotl.monkeypatch.unsloth_ import patch_self_attn_lora
+
+                patch_self_attn_lora()
     elif cfg.is_llama_derived_model:
         # Modify all llama derived models in one block
 

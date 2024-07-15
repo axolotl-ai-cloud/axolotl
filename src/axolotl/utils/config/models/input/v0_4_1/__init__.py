@@ -1112,6 +1112,15 @@ class AxolotlInputConfig(
             raise ValueError("either datasets or pretraining_dataset is required")
         return data
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_xentropy_patch_conflicts(cls, data):
+        if data.get("flash_attn_rms_norm") and data.get("unsloth_cross_entropy_loss"):
+            raise ValueError(
+                "flash_attn_rms_norm and unsloth_cross_entropy_loss cannot be both enabled"
+            )
+        return data
+
 
 class AxolotlConfigWCapabilities(AxolotlInputConfig):
     """wrapper to valdiate gpu capabilities with the configured options"""
