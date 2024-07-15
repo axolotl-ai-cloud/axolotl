@@ -1135,6 +1135,7 @@ class AxolotlInputConfig(
                 raise ValueError(
                     "unsloth_lora_mlp, unsloth_lora_qkv, and unsloth_lora_o are not compatible with 8-bit LoRA"
                 )
+        return data
 
 
 class AxolotlConfigWCapabilities(AxolotlInputConfig):
