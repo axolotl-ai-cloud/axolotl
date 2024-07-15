@@ -165,7 +165,6 @@ class RLType(str, Enum):
 
     dpo = "dpo"  # pylint: disable=invalid-name
     ipo = "ipo"  # pylint: disable=invalid-name
-    kto_pair = "kto_pair"  # pylint: disable=invalid-name
     orpo = "orpo"  # pylint: disable=invalid-name
     kto = "kto"  # pylint: disable=invalid-name
 
@@ -342,7 +341,7 @@ class HyperparametersConfig(BaseModel):
     learning_rate: Union[str, float]
     weight_decay: Optional[float] = 0.0
     optimizer: Optional[
-        Union[OptimizerNames, Literal["lion_pytorch"]]
+        Union[OptimizerNames, Literal["lion_pytorch", "optimi_adamw"]]
     ] = OptimizerNames.ADAMW_HF.value
     optim_args: Optional[Union[str, Dict[str, Any]]] = Field(
         default=None, metadata={"help": "Optional arguments to supply to optimizer."}

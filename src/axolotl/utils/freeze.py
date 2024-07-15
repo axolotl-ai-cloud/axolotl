@@ -120,6 +120,9 @@ def _merge_ranges(
     processed_ranges = [
         (start, end if end is not None else layer_size) for start, end in given_ranges
     ]
+    for start, end in processed_ranges:
+        if start < 0 or end > layer_size > 0 or start >= end:
+            raise ValueError(f"invalid unfreeze range: start={start}, end={end}")
 
     # No need to merge if there's only one or no ranges
     if len(processed_ranges) <= 1:

@@ -104,17 +104,12 @@ def replace_llama_attn_with_flash_attn(
 
     # skip only if explicitly disabled
     if cross_entropy:
-        try:
-            from flash_attn.losses.cross_entropy import CrossEntropyLoss
+        from flash_attn.losses.cross_entropy import CrossEntropyLoss
 
-            LOG.info("patching with flash_attn.losses.cross_entropy")
-            transformers.models.llama.modeling_llama.CrossEntropyLoss = partial(
-                CrossEntropyLoss, inplace_backward=True
-            )
-        except ImportError:
-            LOG.warning(
-                "optimized flash-attention CrossEntropyLoss not found (run `pip install 'git+https://github.com/Dao-AILab/flash-attention.git#egg=xentropy_cuda_lib&subdirectory=csrc/xentropy'`)"
-            )
+        LOG.info("patching with flash_attn.losses.cross_entropy")
+        transformers.models.llama.modeling_llama.CrossEntropyLoss = partial(
+            CrossEntropyLoss, inplace_backward=True
+        )
 
     # skip only if explicitly disabled
     if rms_norm:

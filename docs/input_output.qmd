@@ -25,7 +25,7 @@ description: "Template-free prompt construction with the `input_output` format"
 ### Masking Inputs
 
 One of the most popular features of
-[axolotl](https://github.com/OpenAccess-AI-Collective/axolotl) is
+[axolotl](https://github.com/axolotl-ai-cloud/axolotl) is
 setting the following configuration value:
 
 
@@ -33,7 +33,7 @@ setting the following configuration value:
 train_on_inputs: false
 ```
 
-If you declare a [dataset formats](https://github.com/OpenAccess-AI-Collective/axolotl?tab=readme-ov-file#dataset)
+If you declare a [dataset formats](https://github.com/axolotl-ai-cloud/axolotl?tab=readme-ov-file#dataset)
 such as `alpaca` or `chatml`, axolotl knows what is an input
 (i.e. human) vs. an output (i.e. the assistant) and masks the input
 labels so that your model can focus on predicting the outputs only.

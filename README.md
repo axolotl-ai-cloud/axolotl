@@ -67,8 +67,8 @@ Features:
     <p>
       Go ahead and Axolotl questions!!
     </p>
-    <img src="https://github.com/OpenAccess-AI-Collective/axolotl/actions/workflows/pre-commit.yml/badge.svg?branch=main" alt="pre-commit">
-    <img alt="PyTest Status" src="https://github.com/OpenAccess-AI-Collective/axolotl/actions/workflows/tests.yml/badge.svg?branch=main">
+    <img src="https://github.com/axolotl-ai-cloud/axolotl/actions/workflows/pre-commit.yml/badge.svg?branch=main" alt="pre-commit">
+    <img alt="PyTest Status" src="https://github.com/axolotl-ai-cloud/axolotl/actions/workflows/tests.yml/badge.svg?branch=main">
   </div>
 </div>
 
@@ -107,7 +107,7 @@ Get started with Axolotl in just a few steps! This quickstart guide will walk yo
 **Requirements**: Python >=3.10 and Pytorch >=2.1.1.
 
 ```bash
-git clone https://github.com/OpenAccess-AI-Collective/axolotl
+git clone https://github.com/axolotl-ai-cloud/axolotl
 cd axolotl
 
 pip3 install packaging ninja
@@ -132,7 +132,7 @@ accelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \
 
 # remote yaml files - the yaml config can be hosted on a public URL
 # Note: the yaml config must directly link to the **raw** yaml
-accelerate launch -m axolotl.cli.train https://raw.githubusercontent.com/OpenAccess-AI-Collective/axolotl/main/examples/openllama-3b/lora.yml
+accelerate launch -m axolotl.cli.train https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/main/examples/openllama-3b/lora.yml
 ```
 
 ## Advanced Setup
@@ -333,7 +333,7 @@ For further and fine-grained use cases, please refer to the official [dstack doc
 
 Axolotl supports a variety of dataset formats.  It is recommended to use a JSONL.  The schema of the JSONL depends upon the task and the prompt template you wish to use.  Instead of a JSONL, you can also use a HuggingFace dataset with columns for each JSONL field.
 
-See [these docs](https://openaccess-ai-collective.github.io/axolotl/docs/dataset-formats/) for more information on how to use different dataset formats.
+See [these docs](https://axolotl-ai-cloud.github.io/axolotl/docs/dataset-formats/) for more information on how to use different dataset formats.
 
 ### Config
 
@@ -626,10 +626,10 @@ Need dedicated support? Please contact us at [✉️wing@openaccessaicollective.
 Building something cool with Axolotl? Consider adding a badge to your model card.
 
 ```markdown
-[<img src="https://raw.githubusercontent.com/OpenAccess-AI-Collective/axolotl/main/image/axolotl-badge-web.png" alt="Built with Axolotl" width="200" height="32"/>](https://github.com/OpenAccess-AI-Collective/axolotl)
+[<img src="https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/main/image/axolotl-badge-web.png" alt="Built with Axolotl" width="200" height="32"/>](https://github.com/axolotl-ai-cloud/axolotl)
 ```
 
-[<img src="https://raw.githubusercontent.com/OpenAccess-AI-Collective/axolotl/main/image/axolotl-badge-web.png" alt="Built with Axolotl" width="200" height="32"/>](https://github.com/OpenAccess-AI-Collective/axolotl)
+[<img src="https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/main/image/axolotl-badge-web.png" alt="Built with Axolotl" width="200" height="32"/>](https://github.com/axolotl-ai-cloud/axolotl)
 
 ## Community Showcase
 
@@ -647,7 +647,7 @@ PocketDoc Labs
 
 Please read the [contributing guide](./.github/CONTRIBUTING.md)
 
-Bugs? Please check the [open issues](https://github.com/OpenAccess-AI-Collective/axolotl/issues/bug) else create a new Issue.
+Bugs? Please check the [open issues](https://github.com/axolotl-ai-cloud/axolotl/issues/bug) else create a new Issue.
 
 PRs are **greatly welcome**!
 
@@ -665,7 +665,7 @@ pre-commit run --all-files
 
 Thanks to all of our contributors to date. Help drive open source AI progress forward by contributing to Axolotl.
 
-<a href="https://github.com/openaccess-ai-collective/axolotl/graphs/contributors">
+<a href="https://github.com/axolotl-ai-cloud/axolotl/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=openaccess-ai-collective/axolotl" alt="contributor chart by https://contrib.rocks"/>
 </a>
 

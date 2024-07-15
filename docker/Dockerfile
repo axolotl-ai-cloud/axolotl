@@ -15,16 +15,16 @@ RUN apt-get update && \
 
 WORKDIR /workspace
 
-RUN git clone --depth=1 https://github.com/OpenAccess-AI-Collective/axolotl.git
+RUN git clone --depth=1 https://github.com/axolotl-ai-cloud/axolotl.git
 
 WORKDIR /workspace/axolotl
 
 # If AXOLOTL_EXTRAS is set, append it in brackets
 RUN pip install causal_conv1d
 RUN if [ "$AXOLOTL_EXTRAS" != "" ] ; then \
-        pip install -e .[deepspeed,flash-attn,mamba-ssm,galore,$AXOLOTL_EXTRAS] $AXOLOTL_ARGS; \
+        pip install -e .[deepspeed,flash-attn,mamba-ssm,optimizers,$AXOLOTL_EXTRAS] $AXOLOTL_ARGS; \
     else \
-        pip install -e .[deepspeed,flash-attn,mamba-ssm,galore] $AXOLOTL_ARGS; \
+        pip install -e .[deepspeed,flash-attn,mamba-ssm,optimizers] $AXOLOTL_ARGS; \
     fi
 
 # So we can test the Docker image

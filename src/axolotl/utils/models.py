@@ -371,6 +371,12 @@ def load_model(
                     rms_norm=cfg.flash_attn_rms_norm,
                     use_shifted_sparse_attn=True,
                 )
+            elif cfg.flash_attn_cross_entropy or cfg.flash_attn_rms_norm:
+                replace_llama_attn_with_flash_attn(
+                    packed=False,
+                    cross_entropy=cfg.flash_attn_cross_entropy,
+                    rms_norm=cfg.flash_attn_rms_norm,
+                )
         elif cfg.xformers_attention:
             from axolotl.monkeypatch.llama_attn_hijack_xformers import (
                 hijack_llama_attention,
@@ -569,9 +575,11 @@ def load_model(
 
     try:
         skip_move_to_device = False
-        if (
-            cfg.fsdp and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
-        ) and not qlora_fsdp:
+        if (  # pylint: disable=condition-evals-to-constant)
+            (cfg.fsdp and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading)
+            and not qlora_fsdp
+            and False
+        ):
             model = load_sharded_model(
                 base_model,
                 model_config,
@@ -597,9 +605,12 @@ def load_model(
             and not cfg.trust_remote_code
             and not cfg.gptq
         ):
-            from transformers import LlamaForCausalLM
+            if qlora_fsdp and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading:
+                skip_move_to_device = True
+                if "device_map" in model_kwargs:
+                    del model_kwargs["device_map"]
 
-            model = LlamaForCausalLM.from_pretrained(
+            model = AutoModelForCausalLM.from_pretrained(
                 base_model,
                 config=model_config,
                 **model_kwargs,
@@ -632,7 +643,11 @@ def load_model(
                 base_model,
                 **model_kwargs,
             )
-        elif model_type and not cfg.trust_remote_code:
+        elif (
+            model_type
+            and model_type != "AutoModelForCausalLM"
+            and not cfg.trust_remote_code
+        ):
             if cfg.gptq:
                 model = AutoModelForCausalLM.from_pretrained(
                     base_model,
@@ -673,6 +688,7 @@ def load_model(
                 )
             else:
                 if qlora_fsdp and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading:
+                    # disabling either of these two still leads to VRAM spike before setting back down
                     skip_move_to_device = True
                     if "device_map" in model_kwargs:
                         del model_kwargs["device_map"]
@@ -803,11 +819,7 @@ def load_model(
     if not reference_model or cfg.lora_model_dir:
         # if we're not loading the reference model, then we're loading the model for training
         # then the dpo trainer doesn't want the peft model loaded over it, it just wants the lora/peft config
-        if (
-            cfg.adapter
-            and cfg.rl in ["dpo", "ipo", "kto_pair", "kto"]
-            and not cfg.merge_lora
-        ):
+        if cfg.adapter and cfg.rl in ["dpo", "ipo", "kto"] and not cfg.merge_lora:
             _, lora_config = load_lora(model, cfg, inference=False, config_only=True)
         else:
             model, lora_config = load_adapter(model, cfg, cfg.adapter)
