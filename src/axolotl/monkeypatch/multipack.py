@@ -10,6 +10,7 @@ from axolotl.monkeypatch.mixtral import patch_mixtral_moe_forward_zero3
 from axolotl.monkeypatch.utils import get_unpad_data
 
 SUPPORTED_MULTIPACK_MODEL_TYPES = [
+    "llama",
     "mixtral",
     "qwen2",
     "qwen2_moe",
@@ -30,6 +31,10 @@ def patch_for_multipack(model_type, model_name=None):
         )
         if is_deepspeed_zero3_enabled():
             patch_mixtral_moe_forward_zero3()
+    elif model_type == "llama":
+        transformers.models.llama.modeling_llama._get_unpad_data = (  # pylint: disable=protected-access
+            get_unpad_data
+        )
     elif model_type == "qwen2":
         transformers.models.qwen2.modeling_qwen2._get_unpad_data = (  # pylint: disable=protected-access
             get_unpad_data

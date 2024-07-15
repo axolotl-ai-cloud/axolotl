@@ -347,6 +347,17 @@ def load_model(
         and cfg.sample_packing
     ):
         patch_for_multipack(cfg.model_config_type, model_name=cfg.base_model)
+
+        if cfg.is_llama_derived_model:
+            from axolotl.monkeypatch.llama_attn_hijack_flash import (
+                patch_llama_cross_entropy,
+                patch_llama_rms_norm,
+            )
+
+            if cfg.flash_attn_cross_entropy:
+                patch_llama_cross_entropy()
+            if cfg.flash_attn_rms_norm:
+                patch_llama_rms_norm()
     elif cfg.is_llama_derived_model:
         # Modify all llama derived models in one block
 
