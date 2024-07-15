@@ -1123,6 +1123,19 @@ class AxolotlInputConfig(
             )
         return data
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_qlora_unsloth(cls, data):
+        if (
+            data.get("unsloth_lora_mlp")
+            or data.get("unsloth_lora_qkv")
+            or data.get("unsloth_lora_o")
+        ):
+            if data.get("adapter") == "lora" or data.get("load_in_8bit"):
+                raise ValueError(
+                    "unsloth_lora_mlp, unsloth_lora_qkv, and unsloth_lora_o are not compatible with 8-bit LoRA"
+                )
+
 
 class AxolotlConfigWCapabilities(AxolotlInputConfig):
     """wrapper to valdiate gpu capabilities with the configured options"""
@@ -1174,3 +1187,17 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
         if data.get("deepspeed") and data.get("fsdp"):
             raise ValueError("deepspeed and fsdp cannot be used together.")
         return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_multigpu_unsloth(cls, data):
+        if (
+            data.get("unsloth_lora_mlp")
+            or data.get("unsloth_lora_qkv")
+            or data.get("unsloth_lora_o")
+        ):
+            capabilities = data.get("capabilities")
+            if capabilities and capabilities.get("num_gpus") > 1:
+                raise ValueError(
+                    "unsloth_lora_mlp, unsloth_lora_qkv, and unsloth_lora_o are not compatible with multi-GPU training."
+                )
