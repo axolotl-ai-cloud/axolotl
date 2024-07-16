@@ -78,6 +78,33 @@ def replace_llama_qkv_with_fused(model):
             set_module_name(model, name, qkv)
 
 
+def patch_llama_cross_entropy():
+    from flash_attn.losses.cross_entropy import CrossEntropyLoss
+
+    LOG.info("patching with flash_attn.losses.cross_entropy")
+    transformers.models.llama.modeling_llama.CrossEntropyLoss = partial(
+        CrossEntropyLoss, inplace_backward=True
+    )
+
+
+def patch_llama_rms_norm():
+    try:
+        from flash_attn.ops.rms_norm import RMSNorm
+
+        class LlamaRMSNorm(RMSNorm):
+            """Patched LLamaRMSNorm"""
+
+            def __init__(self, hidden_size, eps=1e-6):
+                super().__init__(hidden_size, eps=eps)
+
+        LOG.info("patching with flash_attn.ops.rms_norm")
+        transformers.models.llama.modeling_llama.LlamaRMSNorm = LlamaRMSNorm
+    except ImportError:
+        LOG.warning(
+            "optimized flash-attention RMSNorm not found (run `pip install 'git+https://github.com/Dao-AILab/flash-attention.git#egg=dropout_layer_norm&subdirectory=csrc/layer_norm'`)"
+        )
+
+
 def replace_llama_attn_with_flash_attn(
     packed: Optional[bool] = False,
     cross_entropy: Optional[bool] = False,
@@ -104,30 +131,11 @@ def replace_llama_attn_with_flash_attn(
 
     # skip only if explicitly disabled
     if cross_entropy:
-        from flash_attn.losses.cross_entropy import CrossEntropyLoss
-
-        LOG.info("patching with flash_attn.losses.cross_entropy")
-        transformers.models.llama.modeling_llama.CrossEntropyLoss = partial(
-            CrossEntropyLoss, inplace_backward=True
-        )
+        patch_llama_cross_entropy()
 
     # skip only if explicitly disabled
     if rms_norm:
-        try:
-            from flash_attn.ops.rms_norm import RMSNorm
-
-            class LlamaRMSNorm(RMSNorm):
-                """Patched LLamaRMSNorm"""
-
-                def __init__(self, hidden_size, eps=1e-6):
-                    super().__init__(hidden_size, eps=eps)
-
-            LOG.info("patching with flash_attn.ops.rms_norm")
-            transformers.models.llama.modeling_llama.LlamaRMSNorm = LlamaRMSNorm
-        except ImportError:
-            LOG.warning(
-                "optimized flash-attention RMSNorm not found (run `pip install 'git+https://github.com/Dao-AILab/flash-attention.git#egg=dropout_layer_norm&subdirectory=csrc/layer_norm'`)"
-            )
+        patch_llama_rms_norm()
 
 
 class FusedAttention(LlamaAttention):
