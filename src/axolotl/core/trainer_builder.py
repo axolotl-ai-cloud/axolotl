@@ -1481,6 +1481,11 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 sys.path.append(self.cfg.torchdistx_path)
                 importlib.import_module("torchdistx")
 
+        if self.cfg.accelerator_config:
+            training_arguments_kwargs[
+                "accelerator_config"
+            ] = self.cfg.accelerator_config
+
         training_args = (
             AxolotlTrainingArguments(  # pylint: disable=unexpected-keyword-arg
                 **training_arguments_kwargs,
