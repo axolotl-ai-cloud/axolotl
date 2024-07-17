@@ -47,6 +47,7 @@ class TestPretrainLlama(unittest.TestCase):
                     }
                 ],
                 "max_steps": 5,
+                "num_epochs": 1,
                 "micro_batch_size": 1,
                 "gradient_accumulation_steps": 1,
                 "val_set_size": 0.0,
