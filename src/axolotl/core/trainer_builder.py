@@ -30,6 +30,7 @@ from transformers import (
 )
 from transformers.trainer_utils import seed_worker
 from transformers.utils import is_sagemaker_mp_enabled
+from axolotl.custom.trainers.SPPOTrainer import SPPOTrainer
 from trl import DPOConfig, DPOTrainer, KTOConfig, KTOTrainer, ORPOConfig, ORPOTrainer
 from trl.trainer.utils import pad_to_length
 
@@ -250,6 +251,11 @@ class AxolotlDPOConfig(AxolotlTrainingMixins, DPOConfig):
     DPO config for DPO training
     """
 
+@dataclass
+class AxolotlSPPOConfig(AxolotlTrainingMixins, DPOConfig):
+    """
+    DPO config for DPO training
+    """
 
 @dataclass
 class AxolotlORPOConfig(AxolotlTrainingMixins, ORPOConfig):
@@ -949,6 +955,65 @@ class AxolotlDPOTrainer(DPOTrainer):
                 res[key] = res[key][1:]
         return res
 
+class AxolotlSPPOTrainer(SPPOTrainer):
+    """
+    Extend the base SPPOTrainer for axolotl helpers
+    """
+
+    tag_names = ["axolotl", "sppo"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.optimizer = None
+
+    def create_optimizer(self):
+        if self.args.loraplus_lr_ratio is None:
+            return super().create_optimizer()
+
+        opt_model = self.model_wrapped if is_sagemaker_mp_enabled() else self.model
+        if self.optimizer is None:  # pylint: disable=access-member-before-definition
+            optimizer_cls, optimizer_kwargs = Trainer.get_optimizer_cls_and_kwargs(
+                self.args,
+                opt_model,
+            )
+
+            loraplus_lr_ratio = getattr(self.args, "loraplus_lr_ratio", None)
+            if loraplus_lr_ratio:
+                print("Using lora+")
+            loraplus_lr_embedding = getattr(self.args, "loraplus_lr_embedding", None)
+            self.optimizer = create_loraplus_optimizer(  # pylint: disable=attribute-defined-outside-init
+                opt_model,
+                optimizer_cls,
+                optimizer_kwargs,
+                loraplus_lr_ratio,
+                loraplus_lr_embedding,
+            )
+
+        if is_sagemaker_mp_enabled():
+            self.optimizer = smp.DistributedOptimizer(  # pylint: disable=attribute-defined-outside-init
+                self.optimizer
+            )
+
+        return self.optimizer
+
+    @wraps(DPOTrainer.push_to_hub)
+    def push_to_hub(self, *args, **kwargs) -> str:
+        """
+        Overwrite the `push_to_hub` method in order to force-add the tags when pushing the
+        model on the Hub. Please refer to `~transformers.Trainer.push_to_hub` for more details.
+        """
+        kwargs = _sanitize_kwargs_for_tagging(tag_names=self.tag_names, kwargs=kwargs)
+
+        return super().push_to_hub(*args, **kwargs)
+
+    def tokenize_row(
+        self, feature, model: Optional[Union[PreTrainedModel, torch.nn.Module]] = None
+    ) -> Dict:
+        res = super().tokenize_row(feature, model=model)
+        if self.tokenizer.bos_token_id is None and res["prompt_input_ids"][0] is None:
+            for key in res.keys():
+                res[key] = res[key][1:]
+        return res
 
 class AxolotlORPOTrainer(ORPOTrainer):
     """
@@ -1583,7 +1648,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
 
 class HFRLTrainerBuilder(TrainerBuilderBase):
     """
-    Trainer factory class for DPO Trainer
+    Trainer factory class for DPO/SPPO Trainer
     """
 
     def get_callbacks(self):
@@ -1752,6 +1817,15 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             dpo_trainer_kwargs["generate_during_eval"] = True
             if self.cfg.rl == "dpo":
                 dpo_trainer_kwargs["dataset_num_proc"] = self.cfg.dataset_processes
+        if self.cfg.rl in ["sppo"]:
+            trainer_cls = AxolotlSPPOTrainer
+            dpo_trainer_kwargs["beta"] = self.cfg.rl_beta or 0.1
+            trainer_cls_args = [self.model, self.model_ref]
+            dpo_trainer_kwargs["max_length"] = self.cfg.sequence_len
+            dpo_trainer_kwargs["max_target_length"] = None
+            dpo_trainer_kwargs["max_prompt_length"] = self.cfg.sequence_len
+            dpo_trainer_kwargs["generate_during_eval"] = True
+            dpo_trainer_kwargs["dataset_num_proc"] = self.cfg.dataset_processes
         elif self.cfg.rl == "orpo":
             trainer_cls = AxolotlORPOTrainer
             trainer_cls_args = [self.model]

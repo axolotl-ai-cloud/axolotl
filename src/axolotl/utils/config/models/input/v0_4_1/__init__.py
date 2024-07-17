@@ -170,6 +170,7 @@ class RLType(str, Enum):
     dpo = "dpo"  # pylint: disable=invalid-name
     ipo = "ipo"  # pylint: disable=invalid-name
     orpo = "orpo"  # pylint: disable=invalid-name
+    sppo = "sppo"  # pylint: disable=invalid-name
     kto = "kto"  # pylint: disable=invalid-name
 
 

@@ -42,6 +42,26 @@ def argilla_chat(
 
     return transform_fn
 
+def sppo_argilla_chat(
+    cfg,
+    **kwargs,
+):  # pylint: disable=possibly-unused-variable,unused-argument
+    """
+    for argilla/dpo-mix-7k conversations
+    """
+
+    def transform_fn(sample):
+        sample[
+            "prompt"
+        ] = f"<|im_start|>user\n{sample['chosen'][0]['content']}<|im_end|>\n<|im_start|>assistant\n"
+        sample["chosen"] = f"{sample['chosen'][1]['content']}<|im_end|>"
+        sample["rejected"] = f"{sample['rejected'][1]['content']}<|im_end|>"
+        sample["chosen_probs"] = sample['chosen_probs']
+        sample["chosen_probs_lose"] = sample['chosen_probs_lose']
+        sample["chosen_probs_win"] = sample['chosen_probs_win']
+        return sample
+
+    return transform_fn
 
 def icr(
     cfg,
