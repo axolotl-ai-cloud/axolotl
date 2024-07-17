@@ -375,7 +375,7 @@ def load_cfg(config: Union[str, Path] = Path("examples/"), **kwargs):
         cfg,
         capabilities={
             "bf16": is_torch_bf16_gpu_available(),
-            "n_gpu": os.environ.get("WORLD_SIZE", 1),
+            "n_gpu": int(os.environ.get("WORLD_SIZE", 1)),
             "compute_capability": gpu_version,
         },
     )
