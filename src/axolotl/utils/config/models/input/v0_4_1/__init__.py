@@ -504,6 +504,8 @@ class AxolotlInputConfig(
     dataloader_prefetch_factor: Optional[int] = None
     dataloader_drop_last: Optional[bool] = None
 
+    accelerator_config: Optional[Dict[str, Any]] = None
+
     remove_unused_columns: Optional[bool] = None
 
     push_dataset_to_hub: Optional[str] = None
@@ -700,6 +702,17 @@ class AxolotlInputConfig(
             LOG.warning(
                 "You probably want to disable group_by_length as it will force a streamed dataset to download completely."
             )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_pretraining_dispatch_batches_accelerate(cls, data):
+        if data.get("pretraining_dataset"):
+            accelerator_config = data.get("accelerator_config", {})
+            if not accelerator_config:
+                data["accelerator_config"] = {"dispatch_batches": True}
+            elif accelerator_config.get("dispatch_batches") is not False:
+                data["accelerator_config"]["dispatch_batches"] = True
         return data
 
     @model_validator(mode="before")
