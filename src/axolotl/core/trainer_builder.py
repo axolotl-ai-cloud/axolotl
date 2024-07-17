@@ -1287,6 +1287,10 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                     training_arguments_kwargs[
                         "torch_compile_backend"
                     ] = self.cfg.torch_compile_backend
+                if self.cfg.torch_compile_mode:
+                    training_arguments_kwargs[
+                        "torch_compile_mode"
+                    ] = self.cfg.torch_compile_mode
 
         # DDP Config
         if self.cfg.ddp_timeout:
