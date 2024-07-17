@@ -1198,7 +1198,7 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             or data.get("unsloth_lora_o")
         ):
             capabilities = data.get("capabilities")
-            if capabilities and capabilities.get("num_gpus") > 1:
+            if capabilities and capabilities.get("n_gpu", 0) > 1:
                 raise ValueError(
                     "unsloth_lora_mlp, unsloth_lora_qkv, and unsloth_lora_o are not compatible with multi-GPU training."
                 )
