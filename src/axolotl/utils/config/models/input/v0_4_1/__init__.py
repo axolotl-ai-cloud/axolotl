@@ -608,6 +608,9 @@ class AxolotlInputConfig(
 
     torch_compile: Optional[bool] = None
     torch_compile_backend: Optional[str] = None
+    torch_compile_mode: Optional[
+        Literal["default", "reduce-overhead", "max-autotune"]
+    ] = None
 
     max_steps: Optional[int] = None
     warmup_steps: Optional[int] = None
@@ -1159,6 +1162,15 @@ class AxolotlInputConfig(
                 raise ValueError(
                     "unsloth_lora_mlp, unsloth_lora_qkv, and unsloth_lora_o are not compatible with 8-bit LoRA"
                 )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_torch_compile_deepspeed(cls, data):
+        if data.get("deepspeed") and data.get("torch_compile"):
+            raise ValueError(
+                "torch_compile should be set within your deepspeed config file"
+            )
         return data
 
 
