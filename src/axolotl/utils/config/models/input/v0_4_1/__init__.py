@@ -706,13 +706,14 @@ class AxolotlInputConfig(
 
     @model_validator(mode="before")
     @classmethod
-    def check_pretraining_dispatch_batches_accelerate(cls, data):
+    def check_pretraining_split_batches_accelerate(cls, data):
+        # alternatively set ACCELERATE_SPLIT_BATCHES=True
         if data.get("pretraining_dataset"):
             accelerator_config = data.get("accelerator_config", {})
             if not accelerator_config:
-                data["accelerator_config"] = {"dispatch_batches": True}
-            elif accelerator_config.get("dispatch_batches") is not False:
-                data["accelerator_config"]["dispatch_batches"] = True
+                data["accelerator_config"] = {"split_batches": True}
+            elif accelerator_config.get("split_batches") is None:
+                data["accelerator_config"]["split_batches"] = True
         return data
 
     @model_validator(mode="before")
