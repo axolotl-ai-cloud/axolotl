@@ -711,7 +711,7 @@ class AxolotlInputConfig(
     @model_validator(mode="before")
     @classmethod
     def check_pretraining_split_batches_accelerate(cls, data):
-        # alternatively set ACCELERATE_SPLIT_BATCHES=True
+        # alternatively set ACCELERATE_SPLIT_BATCHES=False
         if data.get("pretraining_dataset"):
             accelerator_config = data.get("accelerator_config", {})
             if not accelerator_config:
