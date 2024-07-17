@@ -49,11 +49,13 @@ class TestPretrainLlama(unittest.TestCase):
                 "max_steps": 5,
                 "micro_batch_size": 1,
                 "gradient_accumulation_steps": 1,
+                "val_set_size": 0.0,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_torch",
                 "lr_scheduler": "cosine",
                 "save_safetensors": True,
+                "bf16": "auto",
             }
         )
         normalize_config(cfg)
