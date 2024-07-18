@@ -358,6 +358,10 @@ def load_model(
                 patch_llama_cross_entropy()
             if cfg.flash_attn_rms_norm:
                 patch_llama_rms_norm()
+            elif cfg.unsloth_rms_norm:
+                from axolotl.monkeypatch.unsloth_ import patch_unsloth_layernorm
+
+                patch_unsloth_layernorm()
             if cfg.unsloth_cross_entropy_loss:
                 from axolotl.monkeypatch.unsloth_ import (
                     integrate_cross_entropy_loss_patch,

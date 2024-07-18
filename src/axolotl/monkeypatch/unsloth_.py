@@ -5,8 +5,10 @@ import re
 import types
 from typing import Tuple
 
+import torch
 from accelerate.logging import get_logger
 from peft import PeftModelForCausalLM
+from torch import nn
 from transformers.models.llama.modeling_llama import (
     LlamaFlashAttention2,
     LlamaForCausalLM,
@@ -283,3 +285,30 @@ def integrate_lora_patch(peft_model: PeftModelForCausalLM, cfg):
                 LOG.warning(
                     "unable to apply unsloth lora o_proj patch to layer %d", idx
                 )
+
+
+def patch_unsloth_layernorm():
+    try:
+        import transformers.models.llama.modeling_llama
+        from unsloth.kernels.rms_layernorm import Fast_RMS_Layernorm
+
+        class LlamaRMSNorm(nn.Module):
+            """LlamaRMSNorm"""
+
+            def __init__(self, hidden_size, eps=1e-6):
+                """
+                LlamaRMSNorm is equivalent to T5LayerNorm
+                """
+                super().__init__()
+                self.weight = nn.Parameter(torch.ones(hidden_size))
+                self.variance_epsilon = eps
+
+            def forward(self, hidden_states):
+                return Fast_RMS_Layernorm.apply(
+                    hidden_states, self.weight, self.variance_epsilon, False
+                )
+
+        LOG.info("patching with unsloth.kernels.rms_layernorm")
+        transformers.models.llama.modeling_llama.LlamaRMSNorm = LlamaRMSNorm
+    except ImportError:
+        LOG.warning("missing unsloth library")
