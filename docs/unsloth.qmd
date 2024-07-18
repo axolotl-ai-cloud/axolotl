@@ -19,6 +19,26 @@ pip install --no-deps "unsloth @ git+https://github.com/unslothai/unsloth.git"
 pip install --no-deps --force-reinstall xformers==0.0.26.post1
 ```
 
+### Using unsloth w Axolotl
+
+Axolotl exposes a few configuration options to try out unsloth and get most of the performance gains.
+
+Our unsloth integration is currently limited to the following model architectures:
+ - llama
+
+These options are specific to LoRA finetuning and cannot be used for multi-GPU finetuning
+```yaml
+unsloth_lora_mlp: true
+unsloth_lora_qkv: true
+unsloth_lora_o: true
+```
+
+These options are composable and can be used with multi-gpu finetuning
+```
+unsloth_cross_entropy_loss: true
+unsloth_rms_norm: true
+unsloth_rope: true
+```
 
 ### Limitations
 
