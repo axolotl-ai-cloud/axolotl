@@ -105,14 +105,322 @@
     ]
   },
   {
-    "objectID": "docs/rlhf.html",
-    "href": "docs/rlhf.html",
-    "title": "RLHF (Beta)",
+    "objectID": "docs/unsloth.html",
+    "href": "docs/unsloth.html",
+    "title": "Unsloth",
     "section": "",
-    "text": "Overview\nReinforcement Learning from Human Feedback is a method whereby a language model is optimized from data using human feedback. Various methods include, but not limited to:\n\nProximal Policy Optimization (PPO) (not yet supported in axolotl)\nDirect Preference Optimization (DPO)\nIdentity Preference Optimization (IPO)\n\n\n\nRLHF using Axolotl\n\n[!IMPORTANT] This is a BETA feature and many features are not fully implemented. You are encouraged to open new PRs to improve the integration and functionality.\n\nThe various RL training methods are implemented in trl and wrapped via axolotl. Below are various examples with how you can use various preference datasets to train models that use ChatML\n\nDPO\nrl: dpo\ndatasets:\n  - path: Intel/orca_dpo_pairs\n    split: train\n    type: chatml.intel\n  - path: argilla/ultrafeedback-binarized-preferences\n    split: train\n    type: chatml.argilla\n\n\nIPO\nrl: ipo\n\n\nORPO\nPaper: https://arxiv.org/abs/2403.07691\nrl: orpo\norpo_alpha: 0.1\nremove_unused_columns: false\n\nchat_template: chatml\ndatasets:\n  - path: argilla/ultrafeedback-binarized-preferences-cleaned\n    type: chat_template.argilla\n\n\nUsing local dataset files\ndatasets:\n  - ds_type: json\n    data_files:\n      - orca_rlhf.jsonl\n    split: train\n    type: chatml.intel\n\n\nTrl autounwrap for peft\nTrl supports autounwrapping peft models, so that a ref model does not need to be additionally loaded, leading to less VRAM needed. This is on by default. To turn it off, pass the following config.\n# load ref model when adapter training.\nrl_adapter_ref_model: true",
+    "text": "Overview\nUnsloth provides hand-written optimized kernels for LLM finetuning that slightly improve speed and VRAM over standard industry baselines.\n\n\nInstallation\nThe following will install unsloth from source and downgrade xformers as unsloth is incompatible with the most up to date libraries.\npip install --no-deps \"unsloth @ git+https://github.com/unslothai/unsloth.git\"\npip install --no-deps --force-reinstall xformers==0.0.26.post1\n\n\nUsing unsloth w Axolotl\nAxolotl exposes a few configuration options to try out unsloth and get most of the performance gains.\nOur unsloth integration is currently limited to the following model architectures: - llama\nThese options are specific to LoRA finetuning and cannot be used for multi-GPU finetuning\nunsloth_lora_mlp: true\nunsloth_lora_qkv: true\nunsloth_lora_o: true\nThese options are composable and can be used with multi-gpu finetuning\nunsloth_cross_entropy_loss: true\nunsloth_rms_norm: true\nunsloth_rope: true\n\n\nLimitations\n\nSingle GPU only; e.g. no multi-gpu support\nNo deepspeed or FSDP support (requires multi-gpu)\nLoRA + QLoRA support only. No full fine tunes or fp8 support.\nLimited model architecture support. Llama, Phi, Gemma, Mistral only\nNo MoE support.",
     "crumbs": [
       "How-To Guides",
-      "RLHF (Beta)"
+      "Unsloth"
+    ]
+  },
+  {
+    "objectID": "docs/dataset-formats/index.html",
+    "href": "docs/dataset-formats/index.html",
+    "title": "Dataset Formats",
+    "section": "",
+    "text": "Axolotl supports a variety of dataset formats. It is recommended to use a JSONL format. The schema of the JSONL depends upon the task and the prompt template you wish to use. Instead of a JSONL, you can also use a HuggingFace dataset with columns for each JSONL field.\nBelow are these various formats organized by task:\n\n\n\n\n\n\n\n\n\nTitle\n\n\nDescription\n\n\n\n\n\n\nPre-training\n\n\nData format for a pre-training completion task.\n\n\n\n\nInstruction Tuning\n\n\nInstruction tuning formats for supervised fine-tuning.\n\n\n\n\nConversation\n\n\nConversation format for supervised fine-tuning.\n\n\n\n\nTemplate-Free\n\n\nConstruct prompts without a template.\n\n\n\n\nCustom Pre-Tokenized Dataset\n\n\nHow to use a custom pre-tokenized dataset.\n\n\n\n\n\nNo matching items",
+    "crumbs": [
+      "Dataset Formats"
+    ]
+  },
+  {
+    "objectID": "docs/dataset-formats/conversation.html",
+    "href": "docs/dataset-formats/conversation.html",
+    "title": "Conversation",
+    "section": "",
+    "text": "conversations where from is human/gpt. (optional: first row with role system to override default system prompt)\n\n\ndata.jsonl\n\n{\"conversations\": [{\"from\": \"...\", \"value\": \"...\"}]}\n\nNote: type: sharegpt opens special configs: - conversation: enables conversions to many Conversation types. Refer to the ‘name’ here for options. - roles: allows you to specify the roles for input and output. This is useful for datasets with custom roles such as tool etc to support masking. - field_human: specify the key to use instead of human in the conversation. - field_model: specify the key to use instead of gpt in the conversation.\ndatasets:\n    path: ...\n    type: sharegpt\n\n    conversation: # Options (see Conversation 'name'): https://github.com/lm-sys/FastChat/blob/main/fastchat/conversation.py\n    field_human: # Optional[str]. Human key to use for conversation.\n    field_model: # Optional[str]. Assistant key to use for conversation.\n    # Add additional keys from your dataset as input or output roles\n    roles:\n      input: # Optional[List[str]]. These will be masked based on train_on_input\n      output: # Optional[List[str]].",
+    "crumbs": [
+      "Dataset Formats",
+      "Conversation"
+    ]
+  },
+  {
+    "objectID": "docs/dataset-formats/conversation.html#sharegpt",
+    "href": "docs/dataset-formats/conversation.html#sharegpt",
+    "title": "Conversation",
+    "section": "",
+    "text": "conversations where from is human/gpt. (optional: first row with role system to override default system prompt)\n\n\ndata.jsonl\n\n{\"conversations\": [{\"from\": \"...\", \"value\": \"...\"}]}\n\nNote: type: sharegpt opens special configs: - conversation: enables conversions to many Conversation types. Refer to the ‘name’ here for options. - roles: allows you to specify the roles for input and output. This is useful for datasets with custom roles such as tool etc to support masking. - field_human: specify the key to use instead of human in the conversation. - field_model: specify the key to use instead of gpt in the conversation.\ndatasets:\n    path: ...\n    type: sharegpt\n\n    conversation: # Options (see Conversation 'name'): https://github.com/lm-sys/FastChat/blob/main/fastchat/conversation.py\n    field_human: # Optional[str]. Human key to use for conversation.\n    field_model: # Optional[str]. Assistant key to use for conversation.\n    # Add additional keys from your dataset as input or output roles\n    roles:\n      input: # Optional[List[str]]. These will be masked based on train_on_input\n      output: # Optional[List[str]].",
+    "crumbs": [
+      "Dataset Formats",
+      "Conversation"
+    ]
+  },
+  {
+    "objectID": "docs/dataset-formats/conversation.html#pygmalion",
+    "href": "docs/dataset-formats/conversation.html#pygmalion",
+    "title": "Conversation",
+    "section": "pygmalion",
+    "text": "pygmalion\n\n\ndata.jsonl\n\n{\"conversations\": [{\"role\": \"...\", \"value\": \"...\"}]}",
+    "crumbs": [
+      "Dataset Formats",
+      "Conversation"
+    ]
+  },
+  {
+    "objectID": "docs/dataset-formats/conversation.html#sharegpt.load_role",
+    "href": "docs/dataset-formats/conversation.html#sharegpt.load_role",
+    "title": "Conversation",
+    "section": "sharegpt.load_role",
+    "text": "sharegpt.load_role\nconversations where role is used instead of from\n\n\ndata.jsonl\n\n{\"conversations\": [{\"role\": \"...\", \"value\": \"...\"}]}",
+    "crumbs": [
+      "Dataset Formats",
+      "Conversation"
+    ]
+  },
+  {
+    "objectID": "docs/dataset-formats/conversation.html#sharegpt.load_guanaco",
+    "href": "docs/dataset-formats/conversation.html#sharegpt.load_guanaco",
+    "title": "Conversation",
+    "section": "sharegpt.load_guanaco",
+    "text": "sharegpt.load_guanaco\nconversations where from is prompter assistant instead of default sharegpt\n\n\ndata.jsonl\n\n{\"conversations\": [{\"from\": \"...\", \"value\": \"...\"}]}",
+    "crumbs": [
+      "Dataset Formats",
+      "Conversation"
+    ]
+  },
+  {
+    "objectID": "docs/dataset-formats/conversation.html#sharegpt_jokes",
+    "href": "docs/dataset-formats/conversation.html#sharegpt_jokes",
+    "title": "Conversation",
+    "section": "sharegpt_jokes",
+    "text": "sharegpt_jokes\ncreates a chat where bot is asked to tell a joke, then explain why the joke is funny\n\n\ndata.jsonl\n\n{\"conversations\": [{\"title\": \"...\", \"text\": \"...\", \"explanation\": \"...\"}]}",
+    "crumbs": [
+      "Dataset Formats",
+      "Conversation"
+    ]
+  },
+  {
+    "objectID": "docs/dataset-formats/template_free.html",
+    "href": "docs/dataset-formats/template_free.html",
+    "title": "Template-Free",
+    "section": "",
+    "text": "See these docs.",
+    "crumbs": [
+      "Dataset Formats",
+      "Template-Free"
+    ]
+  },
+  {
+    "objectID": "docs/multipack.html",
+    "href": "docs/multipack.html",
+    "title": "Multipack (Sample Packing)",
+    "section": "",
+    "text": "Because Flash Attention simply drops the attention mask, we do not need to construct a 4d attention mask. We only need to concatenate the sequences into a single batch and let flash attention know where each new sequence begins.\n4k context, bsz =4, each character represents 256 tokens X represents a padding token\n   0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5\n[[ A A A A A A A A A A A ]\n   B B B B B B ]\n   C C C C C C C ]\n   D D D D ]]\n\n[[ E E E E E E E E ]\n [ F F F F ]\n [ G G G ]\n [ H H H H ]]\n\n[[ I I I ]\n [ J J J ]\n [ K K K K K]\n [ L L L ]]\nafter padding to longest input in each step\n   0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5\n[[ A A A A A A A A A A A ]\n   B B B B B B X X X X X X ]\n   C C C C C C C X X X X ]\n   D D D D X X X X X X X ]]\n\n[[ E E E E E E E E ]\n [ F F F F X X X X ]\n [ G G G X X X X X ]\n [ H H H H X X X X ]]\n\n[[ I I I X X ]\n [ J J J X X ]\n [ K K K K K ]\n [ L L L X X ]]\nw packing ( note it’s the same effective number of tokens per step, but a true bsz of 1)\n   0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5\n[[ A A A A A A A A A A A B B B B B\n   B C C C C C C C D D D D E E E E\n   E E E E F F F F F G G G H H H H\n   I I I J J J J K K K K K L L L X ]]\ncu_seqlens: [[ 0, 11, 17, 24, 28, 36, 41 44, 48, 51, 55, 60, 64]]",
+    "crumbs": [
+      "How-To Guides",
+      "Multipack (Sample Packing)"
+    ]
+  },
+  {
+    "objectID": "docs/multipack.html#visualization-of-multipack-with-flash-attention",
+    "href": "docs/multipack.html#visualization-of-multipack-with-flash-attention",
+    "title": "Multipack (Sample Packing)",
+    "section": "",
+    "text": "Because Flash Attention simply drops the attention mask, we do not need to construct a 4d attention mask. We only need to concatenate the sequences into a single batch and let flash attention know where each new sequence begins.\n4k context, bsz =4, each character represents 256 tokens X represents a padding token\n   0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5\n[[ A A A A A A A A A A A ]\n   B B B B B B ]\n   C C C C C C C ]\n   D D D D ]]\n\n[[ E E E E E E E E ]\n [ F F F F ]\n [ G G G ]\n [ H H H H ]]\n\n[[ I I I ]\n [ J J J ]\n [ K K K K K]\n [ L L L ]]\nafter padding to longest input in each step\n   0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5\n[[ A A A A A A A A A A A ]\n   B B B B B B X X X X X X ]\n   C C C C C C C X X X X ]\n   D D D D X X X X X X X ]]\n\n[[ E E E E E E E E ]\n [ F F F F X X X X ]\n [ G G G X X X X X ]\n [ H H H H X X X X ]]\n\n[[ I I I X X ]\n [ J J J X X ]\n [ K K K K K ]\n [ L L L X X ]]\nw packing ( note it’s the same effective number of tokens per step, but a true bsz of 1)\n   0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5\n[[ A A A A A A A A A A A B B B B B\n   B C C C C C C C D D D D E E E E\n   E E E E F F F F F G G G H H H H\n   I I I J J J J K K K K K L L L X ]]\ncu_seqlens: [[ 0, 11, 17, 24, 28, 36, 41 44, 48, 51, 55, 60, 64]]",
+    "crumbs": [
+      "How-To Guides",
+      "Multipack (Sample Packing)"
+    ]
+  },
+  {
+    "objectID": "docs/multipack.html#multipack-without-flash-attention",
+    "href": "docs/multipack.html#multipack-without-flash-attention",
+    "title": "Multipack (Sample Packing)",
+    "section": "Multipack without Flash Attention",
+    "text": "Multipack without Flash Attention\nMultipack can still be achieved without Flash attention, but with lower packing efficiency as we are not able to join multiple batches into a single batch due to context length limits without flash attention. We can use either Pytorch’s Scaled Dot Product Attention implementation or native Pytorch attention implementation along with 4d attention masks to pack sequences together and avoid cross attention.",
+    "crumbs": [
+      "How-To Guides",
+      "Multipack (Sample Packing)"
+    ]
+  },
+  {
+    "objectID": "FAQS.html",
+    "href": "FAQS.html",
+    "title": "FAQs",
+    "section": "",
+    "text": "FAQs\n\nCan you train StableLM with this? Yes, but only with a single GPU atm. Multi GPU support is coming soon! Just waiting on this PR\nWill this work with Deepspeed? That’s still a WIP, but setting export ACCELERATE_USE_DEEPSPEED=true should work in some cases\nError invalid argument at line 359 in file /workspace/bitsandbytes/csrc/pythonInterface.c /arrow/cpp/src/arrow/filesystem/s3fs.cc:2598:  arrow::fs::FinalizeS3 was not called even though S3 was initialized. This could lead to a segmentation fault at exit. Try reinstalling bitsandbytes and transformers from source."
+  },
+  {
+    "objectID": "TODO.html",
+    "href": "TODO.html",
+    "title": "todo list",
+    "section": "",
+    "text": "[] Validation of parameters for combinations that won’t work\n\n\n\n\nFSDP offload and gradient_checkpointing - https://github.com/pytorch/pytorch/issues/82203\nadamw_bnb_8bit doesn’t play well with FSDP offload"
+  },
+  {
+    "objectID": "TODO.html#things-that-are-known-not-to-work",
+    "href": "TODO.html#things-that-are-known-not-to-work",
+    "title": "todo list",
+    "section": "",
+    "text": "FSDP offload and gradient_checkpointing - https://github.com/pytorch/pytorch/issues/82203\nadamw_bnb_8bit doesn’t play well with FSDP offload"
+  },
+  {
+    "objectID": "examples/colab-notebooks/colab-axolotl-example.html",
+    "href": "examples/colab-notebooks/colab-axolotl-example.html",
+    "title": "Example notebook for running Axolotl on google colab",
+    "section": "",
+    "text": "import torch\n# Check so there is a gpu available, a T4(free tier) is enough to run this notebook\nassert (torch.cuda.is_available()==True)"
+  },
+  {
+    "objectID": "examples/colab-notebooks/colab-axolotl-example.html#install-axolotl-and-dependencies",
+    "href": "examples/colab-notebooks/colab-axolotl-example.html#install-axolotl-and-dependencies",
+    "title": "Example notebook for running Axolotl on google colab",
+    "section": "Install Axolotl and dependencies",
+    "text": "Install Axolotl and dependencies\n\n!pip install torch==\"2.1.2\"\n!pip install -e git+https://github.com/axolotl-ai-cloud/axolotl#egg=axolotl\n!pip install flash-attn==\"2.5.0\"\n!pip install deepspeed==\"0.13.1\"!pip install mlflow==\"2.13.0\""
+  },
+  {
+    "objectID": "examples/colab-notebooks/colab-axolotl-example.html#create-an-yaml-config-file",
+    "href": "examples/colab-notebooks/colab-axolotl-example.html#create-an-yaml-config-file",
+    "title": "Example notebook for running Axolotl on google colab",
+    "section": "Create an yaml config file",
+    "text": "Create an yaml config file\n\nimport yaml\n\n# Your YAML string\nyaml_string = \"\"\"\nbase_model: TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T\nmodel_type: LlamaForCausalLM\ntokenizer_type: LlamaTokenizer\n\nload_in_8bit: false\nload_in_4bit: true\nstrict: false\n\ndatasets:\n  - path: mhenrichsen/alpaca_2k_test\n    type: alpaca\ndataset_prepared_path:\nval_set_size: 0.05\noutput_dir: ./outputs/qlora-out\n\nadapter: qlora\nlora_model_dir:\n\nsequence_len: 4096\nsample_packing: true\neval_sample_packing: false\npad_to_sequence_len: true\n\nlora_r: 32\nlora_alpha: 16\nlora_dropout: 0.05\nlora_target_modules:\nlora_target_linear: true\nlora_fan_in_fan_out:\n\nwandb_project:\nwandb_entity:\nwandb_watch:\nwandb_name:\nwandb_log_model:\n\ngradient_accumulation_steps: 4\nmicro_batch_size: 2\nnum_epochs: 4\noptimizer: paged_adamw_32bit\nlr_scheduler: cosine\nlearning_rate: 0.0002\n\ntrain_on_inputs: false\ngroup_by_length: false\nbf16: auto\nfp16:\ntf32: false\n\ngradient_checkpointing: true\nearly_stopping_patience:\nresume_from_checkpoint:\nlocal_rank:\nlogging_steps: 1\nxformers_attention:\nflash_attention: true\n\nwarmup_steps: 10\nevals_per_epoch: 4\nsaves_per_epoch: 1\ndebug:\ndeepspeed:\nweight_decay: 0.0\nfsdp:\nfsdp_config:\nspecial_tokens:\n\n\"\"\"\n\n# Convert the YAML string to a Python dictionary\nyaml_dict = yaml.safe_load(yaml_string)\n\n# Specify your file path\nfile_path = 'test_axolotl.yaml'\n\n# Write the YAML file\nwith open(file_path, 'w') as file:\n    yaml.dump(yaml_dict, file)"
+  },
+  {
+    "objectID": "examples/colab-notebooks/colab-axolotl-example.html#launch-the-training",
+    "href": "examples/colab-notebooks/colab-axolotl-example.html#launch-the-training",
+    "title": "Example notebook for running Axolotl on google colab",
+    "section": "Launch the training",
+    "text": "Launch the training\n\n# By using the ! the comand will be executed as a bash command\n!accelerate launch -m axolotl.cli.train /content/test_axolotl.yaml"
+  },
+  {
+    "objectID": "examples/colab-notebooks/colab-axolotl-example.html#play-with-inference",
+    "href": "examples/colab-notebooks/colab-axolotl-example.html#play-with-inference",
+    "title": "Example notebook for running Axolotl on google colab",
+    "section": "Play with inference",
+    "text": "Play with inference\n\n# By using the ! the comand will be executed as a bash command\n!accelerate launch -m axolotl.cli.inference /content/test_axolotl.yaml \\\n    --qlora_model_dir=\"./qlora-out\" --gradio"
+  },
+  {
+    "objectID": "index.html",
+    "href": "index.html",
+    "title": "Axolotl",
+    "section": "",
+    "text": "Axolotl\n  \n  Axolotl supports\n  Quickstart ⚡\n  \n  Usage\n  \n  Advanced Setup\n  \n  Environment\n  Dataset\n  Config\n  Train\n  Inference Playground\n  Merge LORA to base\n  \n  Common Errors 🧰\n  \n  Tokenization Mismatch b/w Inference & Training\n  \n  Debugging Axolotl\n  Need help? 🙋\n  Badge ❤🏷️\n  Community Showcase\n  Contributing 🤝\n  Sponsors 🤝❤",
+    "crumbs": [
+      "Home"
+    ]
+  },
+  {
+    "objectID": "index.html#axolotl-supports",
+    "href": "index.html#axolotl-supports",
+    "title": "Axolotl",
+    "section": "Axolotl supports",
+    "text": "Axolotl supports\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nfp16/fp32\nlora\nqlora\ngptq\ngptq w/flash attn\nflash attn\nxformers attn\n\n\n\n\nllama\n✅\n✅\n✅\n✅\n✅\n✅\n✅\n\n\nMistral\n✅\n✅\n✅\n✅\n✅\n✅\n✅\n\n\nMixtral-MoE\n✅\n✅\n✅\n❓\n❓\n❓\n❓\n\n\nMixtral8X22\n✅\n✅\n✅\n❓\n❓\n❓\n❓\n\n\nPythia\n✅\n✅\n✅\n❌\n❌\n❌\n❓\n\n\ncerebras\n✅\n✅\n✅\n❌\n❌\n❌\n❓\n\n\nbtlm\n✅\n✅\n✅\n❌\n❌\n❌\n❓\n\n\nmpt\n✅\n❌\n❓\n❌\n❌\n❌\n❓\n\n\nfalcon\n✅\n✅\n✅\n❌\n❌\n❌\n❓\n\n\ngpt-j\n✅\n✅\n✅\n❌\n❌\n❓\n❓\n\n\nXGen\n✅\n❓\n✅\n❓\n❓\n❓\n✅\n\n\nphi\n✅\n✅\n✅\n❓\n❓\n❓\n❓\n\n\nRWKV\n✅\n❓\n❓\n❓\n❓\n❓\n❓\n\n\nQwen\n✅\n✅\n✅\n❓\n❓\n❓\n❓\n\n\nGemma\n✅\n✅\n✅\n❓\n❓\n✅\n❓\n\n\n\n✅: supported ❌: not supported ❓: untested",
+    "crumbs": [
+      "Home"
+    ]
+  },
+  {
+    "objectID": "index.html#quickstart",
+    "href": "index.html#quickstart",
+    "title": "Axolotl",
+    "section": "Quickstart ⚡",
+    "text": "Quickstart ⚡\nGet started with Axolotl in just a few steps! This quickstart guide will walk you through setting up and running a basic fine-tuning task.\nRequirements: Python &gt;=3.10 and Pytorch &gt;=2.1.1.\ngit clone https://github.com/axolotl-ai-cloud/axolotl\ncd axolotl\n\npip3 install packaging ninja\npip3 install -e '.[flash-attn,deepspeed]'\n\nUsage\n# preprocess datasets - optional but recommended\nCUDA_VISIBLE_DEVICES=\"\" python -m axolotl.cli.preprocess examples/openllama-3b/lora.yml\n\n# finetune lora\naccelerate launch -m axolotl.cli.train examples/openllama-3b/lora.yml\n\n# inference\naccelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \\\n    --lora_model_dir=\"./outputs/lora-out\"\n\n# gradio\naccelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \\\n    --lora_model_dir=\"./outputs/lora-out\" --gradio\n\n# remote yaml files - the yaml config can be hosted on a public URL\n# Note: the yaml config must directly link to the **raw** yaml\naccelerate launch -m axolotl.cli.train https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/main/examples/openllama-3b/lora.yml",
+    "crumbs": [
+      "Home"
+    ]
+  },
+  {
+    "objectID": "index.html#advanced-setup",
+    "href": "index.html#advanced-setup",
+    "title": "Axolotl",
+    "section": "Advanced Setup",
+    "text": "Advanced Setup\n\nEnvironment\n\nDocker\ndocker run --gpus '\"all\"' --rm -it winglian/axolotl:main-latest\nOr run on the current files for development:\ndocker compose up -d\n\n[!Tip] If you want to debug axolotl or prefer to use Docker as your development environment, see the debugging guide’s section on Docker.\n\n\n\nDocker advanced\n\nA more powerful Docker command to run would be this:\ndocker run --privileged --gpus '\"all\"' --shm-size 10g --rm -it --name axolotl --ipc=host --ulimit memlock=-1 --ulimit stack=67108864 --mount type=bind,src=\"${PWD}\",target=/workspace/axolotl -v ${HOME}/.cache/huggingface:/root/.cache/huggingface winglian/axolotl:main-latest\nIt additionally: * Prevents memory issues when running e.g. deepspeed (e.g. you could hit SIGBUS/signal 7 error) through --ipc and --ulimit args. * Persists the downloaded HF data (models etc.) and your modifications to axolotl code through --mount/-v args. * The --name argument simply makes it easier to refer to the container in vscode (Dev Containers: Attach to Running Container...) or in your terminal. * The --privileged flag gives all capabilities to the container. * The --shm-size 10g argument increases the shared memory size. Use this if you see exitcode: -7 errors using deepspeed.\nMore information on nvidia website\n\n\n\nConda/Pip venv\n\nInstall python &gt;=3.10\nInstall pytorch stable https://pytorch.org/get-started/locally/\nInstall Axolotl along with python dependencies bash         pip3 install packaging         pip3 install -e '.[flash-attn,deepspeed]'\n(Optional) Login to Huggingface to use gated models/datasets. bash         huggingface-cli login Get the token at huggingface.co/settings/tokens\n\n\n\nCloud GPU\nFor cloud GPU providers that support docker images, use winglian/axolotl-cloud:main-latest\n\non Latitude.sh use this direct link\non JarvisLabs.ai use this direct link\non RunPod use this direct link\n\n\n\nBare Metal Cloud GPU\n\nLambdaLabs\n\n\nClick to Expand\n\n\nInstall python\n\nsudo apt update\nsudo apt install -y python3.10\n\nsudo update-alternatives --install /usr/bin/python python /usr/bin/python3.10 1\nsudo update-alternatives --config python # pick 3.10 if given option\npython -V # should be 3.10\n\nInstall pip\n\nwget https://bootstrap.pypa.io/get-pip.py\npython get-pip.py\n\nInstall Pytorch https://pytorch.org/get-started/locally/\nFollow instructions on quickstart.\nRun\n\npip3 install protobuf==3.20.3\npip3 install -U --ignore-installed requests Pillow psutil scipy\n\nSet path\n\nexport LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH\n\n\n\nGCP\n\n\nClick to Expand\n\nUse a Deeplearning linux OS with cuda and pytorch installed. Then follow instructions on quickstart.\nMake sure to run the below to uninstall xla.\npip uninstall -y torch_xla[tpu]\n\n\n\n\nWindows\nPlease use WSL or Docker!\n\n\nMac\nUse the below instead of the install method in QuickStart.\npip3 install -e '.'\nMore info: mac.md\n\n\nGoogle Colab\nPlease use this example notebook.\n\n\nLaunching on public clouds via SkyPilot\nTo launch on GPU instances (both on-demand and spot instances) on 7+ clouds (GCP, AWS, Azure, OCI, and more), you can use SkyPilot:\npip install \"skypilot-nightly[gcp,aws,azure,oci,lambda,kubernetes,ibm,scp]\"  # choose your clouds\nsky check\nGet the example YAMLs of using Axolotl to finetune mistralai/Mistral-7B-v0.1:\ngit clone https://github.com/skypilot-org/skypilot.git\ncd skypilot/llm/axolotl\nUse one command to launch:\n# On-demand\nHF_TOKEN=xx sky launch axolotl.yaml --env HF_TOKEN\n\n# Managed spot (auto-recovery on preemption)\nHF_TOKEN=xx BUCKET=&lt;unique-name&gt; sky spot launch axolotl-spot.yaml --env HF_TOKEN --env BUCKET\n\n\nLaunching on public clouds via dstack\nTo launch on GPU instance (both on-demand and spot instances) on public clouds (GCP, AWS, Azure, Lambda Labs, TensorDock, Vast.ai, and CUDO), you can use dstack.\nWrite a job description in YAML as below:\n# dstack.yaml\ntype: task\n\nimage: winglian/axolotl-cloud:main-20240429-py3.11-cu121-2.2.2\n\nenv:\n  - HUGGING_FACE_HUB_TOKEN\n  - WANDB_API_KEY\n\ncommands:\n  - accelerate launch -m axolotl.cli.train config.yaml\n\nports:\n  - 6006\n\nresources:\n  gpu:\n    memory: 24GB..\n    count: 2\nthen, simply run the job with dstack run command. Append --spot option if you want spot instance. dstack run command will show you the instance with cheapest price across multi cloud services:\npip install dstack\nHUGGING_FACE_HUB_TOKEN=xxx WANDB_API_KEY=xxx dstack run . -f dstack.yaml # --spot\nFor further and fine-grained use cases, please refer to the official dstack documents and the detailed description of axolotl example on the official repository.\n\n\n\nDataset\nAxolotl supports a variety of dataset formats. It is recommended to use a JSONL. The schema of the JSONL depends upon the task and the prompt template you wish to use. Instead of a JSONL, you can also use a HuggingFace dataset with columns for each JSONL field.\nSee these docs for more information on how to use different dataset formats.\n\n\nConfig\nSee examples for quick start. It is recommended to duplicate and modify to your needs. The most important options are:\n\nmodel\nbase_model: ./llama-7b-hf # local or huggingface repo\nNote: The code will load the right architecture.\ndataset\ndatasets:\n    # huggingface repo\n  - path: vicgalle/alpaca-gpt4\n    type: alpaca\n\n    # huggingface repo with specific configuration/subset\n  - path: EleutherAI/pile\n    name: enron_emails\n    type: completion # format from earlier\n    field: text # Optional[str] default: text, field to use for completion data\n\n    # huggingface repo with multiple named configurations/subsets\n  - path: bigcode/commitpackft\n    name:\n      - ruby\n      - python\n      - typescript\n    type: ... # unimplemented custom format\n\n    # fastchat conversation\n    # See 'conversation' options: https://github.com/lm-sys/FastChat/blob/main/fastchat/conversation.py\n  - path: ...\n    type: sharegpt\n    conversation: chatml # default: vicuna_v1.1\n\n    # local\n  - path: data.jsonl # or json\n    ds_type: json # see other options below\n    type: alpaca\n\n    # dataset with splits, but no train split\n  - path: knowrohit07/know_sql\n    type: context_qa.load_v2\n    train_on_split: validation\n\n    # loading from s3 or gcs\n    # s3 creds will be loaded from the system default and gcs only supports public access\n  - path: s3://path_to_ds # Accepts folder with arrow/parquet or file path like above. Supports s3, gcs.\n    ...\n\n    # Loading Data From a Public URL\n    # - The file format is `json` (which includes `jsonl`) by default. For different formats, adjust the `ds_type` option accordingly.\n  - path: https://some.url.com/yourdata.jsonl # The URL should be a direct link to the file you wish to load. URLs must use HTTPS protocol, not HTTP.\n    ds_type: json # this is the default, see other options below.\nloading\nload_in_4bit: true\nload_in_8bit: true\n\nbf16: auto # require &gt;=ampere, auto will detect if your GPU supports this and choose automatically.\nfp16: # leave empty to use fp16 when bf16 is 'auto'. set to false if you want to fallback to fp32\ntf32: true # require &gt;=ampere\n\nbfloat16: true # require &gt;=ampere, use instead of bf16 when you don't want AMP (automatic mixed precision)\nfloat16: true # use instead of fp16 when you don't want AMP\nNote: Repo does not do 4-bit quantization.\nlora\nadapter: lora # 'qlora' or leave blank for full finetune\nlora_r: 8\nlora_alpha: 16\nlora_dropout: 0.05\nlora_target_modules:\n  - q_proj\n  - v_proj\n\n\nAll Config Options\nSee these docs for all config options.\n\n\n\nTrain\nRun\naccelerate launch -m axolotl.cli.train your_config.yml\n\n[!TIP] You can also reference a config file that is hosted on a public URL, for example accelerate launch -m axolotl.cli.train https://yourdomain.com/your_config.yml\n\n\nPreprocess dataset\nYou can optionally pre-tokenize dataset with the following before finetuning. This is recommended for large datasets.\n\nSet dataset_prepared_path: to a local folder for saving and loading pre-tokenized dataset.\n(Optional): Set push_dataset_to_hub: hf_user/repo to push it to Huggingface.\n(Optional): Use --debug to see preprocessed examples.\n\npython -m axolotl.cli.preprocess your_config.yml\n\n\nMulti-GPU\nBelow are the options available in axolotl for training with multiple GPUs. Note that DeepSpeed is the recommended multi-GPU option currently because FSDP may experience loss instability.\n\nDeepSpeed\nDeepspeed is an optimization suite for multi-gpu systems allowing you to train much larger models than you might typically be able to fit into your GPU’s VRAM. More information about the various optimization types for deepspeed is available at https://huggingface.co/docs/accelerate/main/en/usage_guides/deepspeed#what-is-integrated\nWe provide several default deepspeed JSON configurations for ZeRO stage 1, 2, and 3.\ndeepspeed: deepspeed_configs/zero1.json\naccelerate launch -m axolotl.cli.train examples/llama-2/config.yml --deepspeed deepspeed_configs/zero1.json\n\n\nFSDP\n\nllama FSDP\n\nfsdp:\n  - full_shard\n  - auto_wrap\nfsdp_config:\n  fsdp_offload_params: true\n  fsdp_state_dict_type: FULL_STATE_DICT\n  fsdp_transformer_layer_cls_to_wrap: LlamaDecoderLayer\n\n\nFSDP + QLoRA\nAxolotl supports training with FSDP and QLoRA, see these docs for more information.\n\n\nWeights & Biases Logging\nMake sure your WANDB_API_KEY environment variable is set (recommended) or you login to wandb with wandb login.\n\nwandb options\n\nwandb_mode:\nwandb_project:\nwandb_entity:\nwandb_watch:\nwandb_name:\nwandb_log_model:\n\n\nSpecial Tokens\nIt is important to have special tokens like delimiters, end-of-sequence, beginning-of-sequence in your tokenizer’s vocabulary. This will help you avoid tokenization issues and help your model train better. You can do this in axolotl like this:\nspecial_tokens:\n  bos_token: \"&lt;s&gt;\"\n  eos_token: \"&lt;/s&gt;\"\n  unk_token: \"&lt;unk&gt;\"\ntokens: # these are delimiters\n  - \"&lt;|im_start|&gt;\"\n  - \"&lt;|im_end|&gt;\"\nWhen you include these tokens in your axolotl config, axolotl adds these tokens to the tokenizer’s vocabulary.\n\n\n\n\nInference Playground\nAxolotl allows you to load your model in an interactive terminal playground for quick experimentation. The config file is the same config file used for training.\nPass the appropriate flag to the inference command, depending upon what kind of model was trained:\n\nPretrained LORA:\npython -m axolotl.cli.inference examples/your_config.yml --lora_model_dir=\"./lora-output-dir\"\nFull weights finetune:\npython -m axolotl.cli.inference examples/your_config.yml --base_model=\"./completed-model\"\nFull weights finetune w/ a prompt from a text file:\ncat /tmp/prompt.txt | python -m axolotl.cli.inference examples/your_config.yml \\\n  --base_model=\"./completed-model\" --prompter=None --load_in_8bit=True\n– With gradio hosting\npython -m axolotl.cli.inference examples/your_config.yml --gradio\n\nPlease use --sample_packing False if you have it on and receive the error similar to below:\n\nRuntimeError: stack expects each tensor to be equal size, but got [1, 32, 1, 128] at entry 0 and [1, 32, 8, 128] at entry 1\n\n\n\nMerge LORA to base\nThe following command will merge your LORA adapater with your base model. You can optionally pass the argument --lora_model_dir to specify the directory where your LORA adapter was saved, otherwhise, this will be inferred from output_dir in your axolotl config file. The merged model is saved in the sub-directory {lora_model_dir}/merged.\npython3 -m axolotl.cli.merge_lora your_config.yml --lora_model_dir=\"./completed-model\"\nYou may need to use the gpu_memory_limit and/or lora_on_cpu config options to avoid running out of memory. If you still run out of CUDA memory, you can try to merge in system RAM with\nCUDA_VISIBLE_DEVICES=\"\" python3 -m axolotl.cli.merge_lora ...\nalthough this will be very slow, and using the config options above are recommended instead.",
+    "crumbs": [
+      "Home"
+    ]
+  },
+  {
+    "objectID": "index.html#common-errors",
+    "href": "index.html#common-errors",
+    "title": "Axolotl",
+    "section": "Common Errors 🧰",
+    "text": "Common Errors 🧰\nSee also the FAQ’s and debugging guide.\n\nIf you encounter a ‘Cuda out of memory’ error, it means your GPU ran out of memory during the training process. Here’s how to resolve it:\n\nPlease reduce any below - micro_batch_size - eval_batch_size - gradient_accumulation_steps - sequence_len\nIf it does not help, try running without deepspeed and without accelerate (replace “accelerate launch” with “python”) in the command.\nUsing adamw_bnb_8bit might also save you some memory.\n\nfailed (exitcode: -9)\n\nUsually means your system has run out of system memory. Similarly, you should consider reducing the same settings as when you run out of VRAM. Additionally, look into upgrading your system RAM which should be simpler than GPU upgrades.\n\nRuntimeError: expected scalar type Float but found Half\n\nTry set fp16: true\n\nNotImplementedError: No operator found for memory_efficient_attention_forward …\n\nTry to turn off xformers.\n\naccelerate config missing\n\nIt’s safe to ignore it.\n\nNCCL Timeouts during training\n\nSee the NCCL guide.\n\nTokenization Mismatch b/w Inference & Training\nFor many formats, Axolotl constructs prompts by concatenating token ids after tokenizing strings. The reason for concatenating token ids rather than operating on strings is to maintain precise accounting for attention masks.\nIf you decode a prompt constructed by axolotl, you might see spaces between tokens (or lack thereof) that you do not expect, especially around delimiters and special tokens. When you are starting out with a new format, you should always do the following:\n\nMaterialize some data using python -m axolotl.cli.preprocess your_config.yml --debug, and then decode the first few rows with your model’s tokenizer.\nDuring inference, right before you pass a tensor of token ids to your model, decode these tokens back into a string.\nMake sure the inference string from #2 looks exactly like the data you fine tuned on from #1, including spaces and new lines. If they aren’t the same, adjust your inference server accordingly.\nAs an additional troubleshooting step, you can look at the token ids between 1 and 2 to make sure they are identical.\n\nHaving misalignment between your prompts during training and inference can cause models to perform very poorly, so it is worth checking this. See this blog post for a concrete example.",
+    "crumbs": [
+      "Home"
+    ]
+  },
+  {
+    "objectID": "index.html#debugging-axolotl",
+    "href": "index.html#debugging-axolotl",
+    "title": "Axolotl",
+    "section": "Debugging Axolotl",
+    "text": "Debugging Axolotl\nSee this debugging guide for tips on debugging Axolotl, along with an example configuration for debugging with VSCode.",
+    "crumbs": [
+      "Home"
+    ]
+  },
+  {
+    "objectID": "index.html#need-help",
+    "href": "index.html#need-help",
+    "title": "Axolotl",
+    "section": "Need help? 🙋",
+    "text": "Need help? 🙋\nJoin our Discord server where we our community members can help you.\nNeed dedicated support? Please contact us at ✉️wing@openaccessaicollective.org for dedicated support options.",
+    "crumbs": [
+      "Home"
+    ]
+  },
+  {
+    "objectID": "index.html#badge",
+    "href": "index.html#badge",
+    "title": "Axolotl",
+    "section": "Badge ❤🏷️",
+    "text": "Badge ❤🏷️\nBuilding something cool with Axolotl? Consider adding a badge to your model card.\n[&lt;img src=\"https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/main/image/axolotl-badge-web.png\" alt=\"Built with Axolotl\" width=\"200\" height=\"32\"/&gt;](https://github.com/axolotl-ai-cloud/axolotl)",
+    "crumbs": [
+      "Home"
+    ]
+  },
+  {
+    "objectID": "index.html#community-showcase",
+    "href": "index.html#community-showcase",
+    "title": "Axolotl",
+    "section": "Community Showcase",
+    "text": "Community Showcase\nCheck out some of the projects and models that have been built using Axolotl! Have a model you’d like to add to our Community Showcase? Open a PR with your model.\nOpen Access AI Collective - Minotaur 13b - Manticore 13b - Hippogriff 30b\nPocketDoc Labs - Dan’s PersonalityEngine 13b LoRA",
+    "crumbs": [
+      "Home"
+    ]
+  },
+  {
+    "objectID": "index.html#contributing",
+    "href": "index.html#contributing",
+    "title": "Axolotl",
+    "section": "Contributing 🤝",
+    "text": "Contributing 🤝\nPlease read the contributing guide\nBugs? Please check the open issues else create a new Issue.\nPRs are greatly welcome!\nPlease run the quickstart instructions followed by the below to setup env:\npip3 install -r requirements-dev.txt -r requirements-tests.txt\npre-commit install\n\n# test\npytest tests/\n\n# optional: run against all files\npre-commit run --all-files\nThanks to all of our contributors to date. Help drive open source AI progress forward by contributing to Axolotl.",
+    "crumbs": [
+      "Home"
+    ]
+  },
+  {
+    "objectID": "index.html#sponsors",
+    "href": "index.html#sponsors",
+    "title": "Axolotl",
+    "section": "Sponsors 🤝❤",
+    "text": "Sponsors 🤝❤\nOpenAccess AI Collective is run by volunteer contributors such as winglian, NanoCode012, tmm1, mhenrichsen, casper-hansen, hamelsmu and many more who help us accelerate forward by fixing bugs, answering community questions and implementing new features. Axolotl needs donations from sponsors for the compute needed to run our unit & integration tests, troubleshooting community issues, and providing bounties. If you love axolotl, consider sponsoring the project via GitHub Sponsors, Ko-fi or reach out directly to wing@openaccessaicollective.org.\n\n\n💎 Diamond Sponsors - Contact directly\n\n\n\n🥇 Gold Sponsors - $5000/mo\n\n\n\n🥈 Silver Sponsors - $1000/mo\n\n\n\n🥉 Bronze Sponsors - $500/mo\n\nJarvisLabs.ai",
+    "crumbs": [
+      "Home"
+    ]
+  },
+  {
+    "objectID": "docs/dataset-formats/pretraining.html",
+    "href": "docs/dataset-formats/pretraining.html",
+    "title": "Pre-training",
+    "section": "",
+    "text": "For pretraining, there is no prompt template or roles. The only required field is text:\n\n\ndata.jsonl\n\n{\"text\": \"first row\"}\n{\"text\": \"second row\"}\n...\n\n\n\n\n\n\n\nStreaming is recommended for large datasets\n\n\n\nAxolotl usually loads the entire dataset into memory. This will be challenging for large datasets. Use the following config to enable streaming:\n\n\nconfig.yaml\n\npretraining_dataset: # hf path only\n...",
+    "crumbs": [
+      "Dataset Formats",
+      "Pre-training"
+    ]
+  },
+  {
+    "objectID": "docs/dataset-formats/tokenized.html",
+    "href": "docs/dataset-formats/tokenized.html",
+    "title": "Custom Pre-Tokenized Dataset",
+    "section": "",
+    "text": "Pass an empty type: in your axolotl config.\nColumns in Dataset must be exactly input_ids, attention_mask, labels\nTo indicate that a token should be ignored during training, set its corresponding label to -100.\nDo not add BOS/EOS. Axolotl will add them for you based on the default tokenizer for the model you’re using.\nFor pretraining, do not truncate/pad documents to the context window length.\nFor instruction training, documents must be truncated/padded as desired.\n\nSample config:\n\n\nconfig.yml\n\ndatasets:\n  - path: /path/to/your/file.jsonl\n    ds_type: json\n    type:\n\nSample jsonl:\n{\"input_ids\":[271,299,99],\"attention_mask\":[1,1,1],\"labels\":[271,-100,99]}\n{\"input_ids\":[87,227,8383,12],\"attention_mask\":[1,1,1,1],\"labels\":[87,227,8383,12]}",
+    "crumbs": [
+      "Dataset Formats",
+      "Custom Pre-Tokenized Dataset"
     ]
   },
   {
@@ -358,311 +666,14 @@
     ]
   },
   {
-    "objectID": "docs/dataset-formats/tokenized.html",
-    "href": "docs/dataset-formats/tokenized.html",
-    "title": "Custom Pre-Tokenized Dataset",
+    "objectID": "docs/rlhf.html",
+    "href": "docs/rlhf.html",
+    "title": "RLHF (Beta)",
     "section": "",
-    "text": "Pass an empty type: in your axolotl config.\nColumns in Dataset must be exactly input_ids, attention_mask, labels\nTo indicate that a token should be ignored during training, set its corresponding label to -100.\nDo not add BOS/EOS. Axolotl will add them for you based on the default tokenizer for the model you’re using.\nFor pretraining, do not truncate/pad documents to the context window length.\nFor instruction training, documents must be truncated/padded as desired.\n\nSample config:\n\n\nconfig.yml\n\ndatasets:\n  - path: /path/to/your/file.jsonl\n    ds_type: json\n    type:\n\nSample jsonl:\n{\"input_ids\":[271,299,99],\"attention_mask\":[1,1,1],\"labels\":[271,-100,99]}\n{\"input_ids\":[87,227,8383,12],\"attention_mask\":[1,1,1,1],\"labels\":[87,227,8383,12]}",
-    "crumbs": [
-      "Dataset Formats",
-      "Custom Pre-Tokenized Dataset"
-    ]
-  },
-  {
-    "objectID": "docs/dataset-formats/pretraining.html",
-    "href": "docs/dataset-formats/pretraining.html",
-    "title": "Pre-training",
-    "section": "",
-    "text": "For pretraining, there is no prompt template or roles. The only required field is text:\n\n\ndata.jsonl\n\n{\"text\": \"first row\"}\n{\"text\": \"second row\"}\n...\n\n\n\n\n\n\n\nStreaming is recommended for large datasets\n\n\n\nAxolotl usually loads the entire dataset into memory. This will be challenging for large datasets. Use the following config to enable streaming:\n\n\nconfig.yaml\n\npretraining_dataset: # hf path only\n...",
-    "crumbs": [
-      "Dataset Formats",
-      "Pre-training"
-    ]
-  },
-  {
-    "objectID": "index.html",
-    "href": "index.html",
-    "title": "Axolotl",
-    "section": "",
-    "text": "Axolotl\n  \n  Axolotl supports\n  Quickstart ⚡\n  \n  Usage\n  \n  Advanced Setup\n  \n  Environment\n  Dataset\n  Config\n  Train\n  Inference Playground\n  Merge LORA to base\n  \n  Common Errors 🧰\n  \n  Tokenization Mismatch b/w Inference & Training\n  \n  Debugging Axolotl\n  Need help? 🙋\n  Badge ❤🏷️\n  Community Showcase\n  Contributing 🤝\n  Sponsors 🤝❤",
-    "crumbs": [
-      "Home"
-    ]
-  },
-  {
-    "objectID": "index.html#axolotl-supports",
-    "href": "index.html#axolotl-supports",
-    "title": "Axolotl",
-    "section": "Axolotl supports",
-    "text": "Axolotl supports\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nfp16/fp32\nlora\nqlora\ngptq\ngptq w/flash attn\nflash attn\nxformers attn\n\n\n\n\nllama\n✅\n✅\n✅\n✅\n✅\n✅\n✅\n\n\nMistral\n✅\n✅\n✅\n✅\n✅\n✅\n✅\n\n\nMixtral-MoE\n✅\n✅\n✅\n❓\n❓\n❓\n❓\n\n\nMixtral8X22\n✅\n✅\n✅\n❓\n❓\n❓\n❓\n\n\nPythia\n✅\n✅\n✅\n❌\n❌\n❌\n❓\n\n\ncerebras\n✅\n✅\n✅\n❌\n❌\n❌\n❓\n\n\nbtlm\n✅\n✅\n✅\n❌\n❌\n❌\n❓\n\n\nmpt\n✅\n❌\n❓\n❌\n❌\n❌\n❓\n\n\nfalcon\n✅\n✅\n✅\n❌\n❌\n❌\n❓\n\n\ngpt-j\n✅\n✅\n✅\n❌\n❌\n❓\n❓\n\n\nXGen\n✅\n❓\n✅\n❓\n❓\n❓\n✅\n\n\nphi\n✅\n✅\n✅\n❓\n❓\n❓\n❓\n\n\nRWKV\n✅\n❓\n❓\n❓\n❓\n❓\n❓\n\n\nQwen\n✅\n✅\n✅\n❓\n❓\n❓\n❓\n\n\nGemma\n✅\n✅\n✅\n❓\n❓\n✅\n❓\n\n\n\n✅: supported ❌: not supported ❓: untested",
-    "crumbs": [
-      "Home"
-    ]
-  },
-  {
-    "objectID": "index.html#quickstart",
-    "href": "index.html#quickstart",
-    "title": "Axolotl",
-    "section": "Quickstart ⚡",
-    "text": "Quickstart ⚡\nGet started with Axolotl in just a few steps! This quickstart guide will walk you through setting up and running a basic fine-tuning task.\nRequirements: Python &gt;=3.10 and Pytorch &gt;=2.1.1.\ngit clone https://github.com/axolotl-ai-cloud/axolotl\ncd axolotl\n\npip3 install packaging ninja\npip3 install -e '.[flash-attn,deepspeed]'\n\nUsage\n# preprocess datasets - optional but recommended\nCUDA_VISIBLE_DEVICES=\"\" python -m axolotl.cli.preprocess examples/openllama-3b/lora.yml\n\n# finetune lora\naccelerate launch -m axolotl.cli.train examples/openllama-3b/lora.yml\n\n# inference\naccelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \\\n    --lora_model_dir=\"./outputs/lora-out\"\n\n# gradio\naccelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \\\n    --lora_model_dir=\"./outputs/lora-out\" --gradio\n\n# remote yaml files - the yaml config can be hosted on a public URL\n# Note: the yaml config must directly link to the **raw** yaml\naccelerate launch -m axolotl.cli.train https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/main/examples/openllama-3b/lora.yml",
-    "crumbs": [
-      "Home"
-    ]
-  },
-  {
-    "objectID": "index.html#advanced-setup",
-    "href": "index.html#advanced-setup",
-    "title": "Axolotl",
-    "section": "Advanced Setup",
-    "text": "Advanced Setup\n\nEnvironment\n\nDocker\ndocker run --gpus '\"all\"' --rm -it winglian/axolotl:main-latest\nOr run on the current files for development:\ndocker compose up -d\n\n[!Tip] If you want to debug axolotl or prefer to use Docker as your development environment, see the debugging guide’s section on Docker.\n\n\n\nDocker advanced\n\nA more powerful Docker command to run would be this:\ndocker run --privileged --gpus '\"all\"' --shm-size 10g --rm -it --name axolotl --ipc=host --ulimit memlock=-1 --ulimit stack=67108864 --mount type=bind,src=\"${PWD}\",target=/workspace/axolotl -v ${HOME}/.cache/huggingface:/root/.cache/huggingface winglian/axolotl:main-latest\nIt additionally: * Prevents memory issues when running e.g. deepspeed (e.g. you could hit SIGBUS/signal 7 error) through --ipc and --ulimit args. * Persists the downloaded HF data (models etc.) and your modifications to axolotl code through --mount/-v args. * The --name argument simply makes it easier to refer to the container in vscode (Dev Containers: Attach to Running Container...) or in your terminal. * The --privileged flag gives all capabilities to the container. * The --shm-size 10g argument increases the shared memory size. Use this if you see exitcode: -7 errors using deepspeed.\nMore information on nvidia website\n\n\n\nConda/Pip venv\n\nInstall python &gt;=3.10\nInstall pytorch stable https://pytorch.org/get-started/locally/\nInstall Axolotl along with python dependencies bash         pip3 install packaging         pip3 install -e '.[flash-attn,deepspeed]'\n(Optional) Login to Huggingface to use gated models/datasets. bash         huggingface-cli login Get the token at huggingface.co/settings/tokens\n\n\n\nCloud GPU\nFor cloud GPU providers that support docker images, use winglian/axolotl-cloud:main-latest\n\non Latitude.sh use this direct link\non JarvisLabs.ai use this direct link\non RunPod use this direct link\n\n\n\nBare Metal Cloud GPU\n\nLambdaLabs\n\n\nClick to Expand\n\n\nInstall python\n\nsudo apt update\nsudo apt install -y python3.10\n\nsudo update-alternatives --install /usr/bin/python python /usr/bin/python3.10 1\nsudo update-alternatives --config python # pick 3.10 if given option\npython -V # should be 3.10\n\nInstall pip\n\nwget https://bootstrap.pypa.io/get-pip.py\npython get-pip.py\n\nInstall Pytorch https://pytorch.org/get-started/locally/\nFollow instructions on quickstart.\nRun\n\npip3 install protobuf==3.20.3\npip3 install -U --ignore-installed requests Pillow psutil scipy\n\nSet path\n\nexport LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH\n\n\n\nGCP\n\n\nClick to Expand\n\nUse a Deeplearning linux OS with cuda and pytorch installed. Then follow instructions on quickstart.\nMake sure to run the below to uninstall xla.\npip uninstall -y torch_xla[tpu]\n\n\n\n\nWindows\nPlease use WSL or Docker!\n\n\nMac\nUse the below instead of the install method in QuickStart.\npip3 install -e '.'\nMore info: mac.md\n\n\nGoogle Colab\nPlease use this example notebook.\n\n\nLaunching on public clouds via SkyPilot\nTo launch on GPU instances (both on-demand and spot instances) on 7+ clouds (GCP, AWS, Azure, OCI, and more), you can use SkyPilot:\npip install \"skypilot-nightly[gcp,aws,azure,oci,lambda,kubernetes,ibm,scp]\"  # choose your clouds\nsky check\nGet the example YAMLs of using Axolotl to finetune mistralai/Mistral-7B-v0.1:\ngit clone https://github.com/skypilot-org/skypilot.git\ncd skypilot/llm/axolotl\nUse one command to launch:\n# On-demand\nHF_TOKEN=xx sky launch axolotl.yaml --env HF_TOKEN\n\n# Managed spot (auto-recovery on preemption)\nHF_TOKEN=xx BUCKET=&lt;unique-name&gt; sky spot launch axolotl-spot.yaml --env HF_TOKEN --env BUCKET\n\n\nLaunching on public clouds via dstack\nTo launch on GPU instance (both on-demand and spot instances) on public clouds (GCP, AWS, Azure, Lambda Labs, TensorDock, Vast.ai, and CUDO), you can use dstack.\nWrite a job description in YAML as below:\n# dstack.yaml\ntype: task\n\nimage: winglian/axolotl-cloud:main-20240429-py3.11-cu121-2.2.2\n\nenv:\n  - HUGGING_FACE_HUB_TOKEN\n  - WANDB_API_KEY\n\ncommands:\n  - accelerate launch -m axolotl.cli.train config.yaml\n\nports:\n  - 6006\n\nresources:\n  gpu:\n    memory: 24GB..\n    count: 2\nthen, simply run the job with dstack run command. Append --spot option if you want spot instance. dstack run command will show you the instance with cheapest price across multi cloud services:\npip install dstack\nHUGGING_FACE_HUB_TOKEN=xxx WANDB_API_KEY=xxx dstack run . -f dstack.yaml # --spot\nFor further and fine-grained use cases, please refer to the official dstack documents and the detailed description of axolotl example on the official repository.\n\n\n\nDataset\nAxolotl supports a variety of dataset formats. It is recommended to use a JSONL. The schema of the JSONL depends upon the task and the prompt template you wish to use. Instead of a JSONL, you can also use a HuggingFace dataset with columns for each JSONL field.\nSee these docs for more information on how to use different dataset formats.\n\n\nConfig\nSee examples for quick start. It is recommended to duplicate and modify to your needs. The most important options are:\n\nmodel\nbase_model: ./llama-7b-hf # local or huggingface repo\nNote: The code will load the right architecture.\ndataset\ndatasets:\n    # huggingface repo\n  - path: vicgalle/alpaca-gpt4\n    type: alpaca\n\n    # huggingface repo with specific configuration/subset\n  - path: EleutherAI/pile\n    name: enron_emails\n    type: completion # format from earlier\n    field: text # Optional[str] default: text, field to use for completion data\n\n    # huggingface repo with multiple named configurations/subsets\n  - path: bigcode/commitpackft\n    name:\n      - ruby\n      - python\n      - typescript\n    type: ... # unimplemented custom format\n\n    # fastchat conversation\n    # See 'conversation' options: https://github.com/lm-sys/FastChat/blob/main/fastchat/conversation.py\n  - path: ...\n    type: sharegpt\n    conversation: chatml # default: vicuna_v1.1\n\n    # local\n  - path: data.jsonl # or json\n    ds_type: json # see other options below\n    type: alpaca\n\n    # dataset with splits, but no train split\n  - path: knowrohit07/know_sql\n    type: context_qa.load_v2\n    train_on_split: validation\n\n    # loading from s3 or gcs\n    # s3 creds will be loaded from the system default and gcs only supports public access\n  - path: s3://path_to_ds # Accepts folder with arrow/parquet or file path like above. Supports s3, gcs.\n    ...\n\n    # Loading Data From a Public URL\n    # - The file format is `json` (which includes `jsonl`) by default. For different formats, adjust the `ds_type` option accordingly.\n  - path: https://some.url.com/yourdata.jsonl # The URL should be a direct link to the file you wish to load. URLs must use HTTPS protocol, not HTTP.\n    ds_type: json # this is the default, see other options below.\nloading\nload_in_4bit: true\nload_in_8bit: true\n\nbf16: auto # require &gt;=ampere, auto will detect if your GPU supports this and choose automatically.\nfp16: # leave empty to use fp16 when bf16 is 'auto'. set to false if you want to fallback to fp32\ntf32: true # require &gt;=ampere\n\nbfloat16: true # require &gt;=ampere, use instead of bf16 when you don't want AMP (automatic mixed precision)\nfloat16: true # use instead of fp16 when you don't want AMP\nNote: Repo does not do 4-bit quantization.\nlora\nadapter: lora # 'qlora' or leave blank for full finetune\nlora_r: 8\nlora_alpha: 16\nlora_dropout: 0.05\nlora_target_modules:\n  - q_proj\n  - v_proj\n\n\nAll Config Options\nSee these docs for all config options.\n\n\n\nTrain\nRun\naccelerate launch -m axolotl.cli.train your_config.yml\n\n[!TIP] You can also reference a config file that is hosted on a public URL, for example accelerate launch -m axolotl.cli.train https://yourdomain.com/your_config.yml\n\n\nPreprocess dataset\nYou can optionally pre-tokenize dataset with the following before finetuning. This is recommended for large datasets.\n\nSet dataset_prepared_path: to a local folder for saving and loading pre-tokenized dataset.\n(Optional): Set push_dataset_to_hub: hf_user/repo to push it to Huggingface.\n(Optional): Use --debug to see preprocessed examples.\n\npython -m axolotl.cli.preprocess your_config.yml\n\n\nMulti-GPU\nBelow are the options available in axolotl for training with multiple GPUs. Note that DeepSpeed is the recommended multi-GPU option currently because FSDP may experience loss instability.\n\nDeepSpeed\nDeepspeed is an optimization suite for multi-gpu systems allowing you to train much larger models than you might typically be able to fit into your GPU’s VRAM. More information about the various optimization types for deepspeed is available at https://huggingface.co/docs/accelerate/main/en/usage_guides/deepspeed#what-is-integrated\nWe provide several default deepspeed JSON configurations for ZeRO stage 1, 2, and 3.\ndeepspeed: deepspeed_configs/zero1.json\naccelerate launch -m axolotl.cli.train examples/llama-2/config.yml --deepspeed deepspeed_configs/zero1.json\n\n\nFSDP\n\nllama FSDP\n\nfsdp:\n  - full_shard\n  - auto_wrap\nfsdp_config:\n  fsdp_offload_params: true\n  fsdp_state_dict_type: FULL_STATE_DICT\n  fsdp_transformer_layer_cls_to_wrap: LlamaDecoderLayer\n\n\nFSDP + QLoRA\nAxolotl supports training with FSDP and QLoRA, see these docs for more information.\n\n\nWeights & Biases Logging\nMake sure your WANDB_API_KEY environment variable is set (recommended) or you login to wandb with wandb login.\n\nwandb options\n\nwandb_mode:\nwandb_project:\nwandb_entity:\nwandb_watch:\nwandb_name:\nwandb_log_model:\n\n\nSpecial Tokens\nIt is important to have special tokens like delimiters, end-of-sequence, beginning-of-sequence in your tokenizer’s vocabulary. This will help you avoid tokenization issues and help your model train better. You can do this in axolotl like this:\nspecial_tokens:\n  bos_token: \"&lt;s&gt;\"\n  eos_token: \"&lt;/s&gt;\"\n  unk_token: \"&lt;unk&gt;\"\ntokens: # these are delimiters\n  - \"&lt;|im_start|&gt;\"\n  - \"&lt;|im_end|&gt;\"\nWhen you include these tokens in your axolotl config, axolotl adds these tokens to the tokenizer’s vocabulary.\n\n\n\n\nInference Playground\nAxolotl allows you to load your model in an interactive terminal playground for quick experimentation. The config file is the same config file used for training.\nPass the appropriate flag to the inference command, depending upon what kind of model was trained:\n\nPretrained LORA:\npython -m axolotl.cli.inference examples/your_config.yml --lora_model_dir=\"./lora-output-dir\"\nFull weights finetune:\npython -m axolotl.cli.inference examples/your_config.yml --base_model=\"./completed-model\"\nFull weights finetune w/ a prompt from a text file:\ncat /tmp/prompt.txt | python -m axolotl.cli.inference examples/your_config.yml \\\n  --base_model=\"./completed-model\" --prompter=None --load_in_8bit=True\n– With gradio hosting\npython -m axolotl.cli.inference examples/your_config.yml --gradio\n\nPlease use --sample_packing False if you have it on and receive the error similar to below:\n\nRuntimeError: stack expects each tensor to be equal size, but got [1, 32, 1, 128] at entry 0 and [1, 32, 8, 128] at entry 1\n\n\n\nMerge LORA to base\nThe following command will merge your LORA adapater with your base model. You can optionally pass the argument --lora_model_dir to specify the directory where your LORA adapter was saved, otherwhise, this will be inferred from output_dir in your axolotl config file. The merged model is saved in the sub-directory {lora_model_dir}/merged.\npython3 -m axolotl.cli.merge_lora your_config.yml --lora_model_dir=\"./completed-model\"\nYou may need to use the gpu_memory_limit and/or lora_on_cpu config options to avoid running out of memory. If you still run out of CUDA memory, you can try to merge in system RAM with\nCUDA_VISIBLE_DEVICES=\"\" python3 -m axolotl.cli.merge_lora ...\nalthough this will be very slow, and using the config options above are recommended instead.",
-    "crumbs": [
-      "Home"
-    ]
-  },
-  {
-    "objectID": "index.html#common-errors",
-    "href": "index.html#common-errors",
-    "title": "Axolotl",
-    "section": "Common Errors 🧰",
-    "text": "Common Errors 🧰\nSee also the FAQ’s and debugging guide.\n\nIf you encounter a ‘Cuda out of memory’ error, it means your GPU ran out of memory during the training process. Here’s how to resolve it:\n\nPlease reduce any below - micro_batch_size - eval_batch_size - gradient_accumulation_steps - sequence_len\nIf it does not help, try running without deepspeed and without accelerate (replace “accelerate launch” with “python”) in the command.\nUsing adamw_bnb_8bit might also save you some memory.\n\nfailed (exitcode: -9)\n\nUsually means your system has run out of system memory. Similarly, you should consider reducing the same settings as when you run out of VRAM. Additionally, look into upgrading your system RAM which should be simpler than GPU upgrades.\n\nRuntimeError: expected scalar type Float but found Half\n\nTry set fp16: true\n\nNotImplementedError: No operator found for memory_efficient_attention_forward …\n\nTry to turn off xformers.\n\naccelerate config missing\n\nIt’s safe to ignore it.\n\nNCCL Timeouts during training\n\nSee the NCCL guide.\n\nTokenization Mismatch b/w Inference & Training\nFor many formats, Axolotl constructs prompts by concatenating token ids after tokenizing strings. The reason for concatenating token ids rather than operating on strings is to maintain precise accounting for attention masks.\nIf you decode a prompt constructed by axolotl, you might see spaces between tokens (or lack thereof) that you do not expect, especially around delimiters and special tokens. When you are starting out with a new format, you should always do the following:\n\nMaterialize some data using python -m axolotl.cli.preprocess your_config.yml --debug, and then decode the first few rows with your model’s tokenizer.\nDuring inference, right before you pass a tensor of token ids to your model, decode these tokens back into a string.\nMake sure the inference string from #2 looks exactly like the data you fine tuned on from #1, including spaces and new lines. If they aren’t the same, adjust your inference server accordingly.\nAs an additional troubleshooting step, you can look at the token ids between 1 and 2 to make sure they are identical.\n\nHaving misalignment between your prompts during training and inference can cause models to perform very poorly, so it is worth checking this. See this blog post for a concrete example.",
-    "crumbs": [
-      "Home"
-    ]
-  },
-  {
-    "objectID": "index.html#debugging-axolotl",
-    "href": "index.html#debugging-axolotl",
-    "title": "Axolotl",
-    "section": "Debugging Axolotl",
-    "text": "Debugging Axolotl\nSee this debugging guide for tips on debugging Axolotl, along with an example configuration for debugging with VSCode.",
-    "crumbs": [
-      "Home"
-    ]
-  },
-  {
-    "objectID": "index.html#need-help",
-    "href": "index.html#need-help",
-    "title": "Axolotl",
-    "section": "Need help? 🙋",
-    "text": "Need help? 🙋\nJoin our Discord server where we our community members can help you.\nNeed dedicated support? Please contact us at ✉️wing@openaccessaicollective.org for dedicated support options.",
-    "crumbs": [
-      "Home"
-    ]
-  },
-  {
-    "objectID": "index.html#badge",
-    "href": "index.html#badge",
-    "title": "Axolotl",
-    "section": "Badge ❤🏷️",
-    "text": "Badge ❤🏷️\nBuilding something cool with Axolotl? Consider adding a badge to your model card.\n[&lt;img src=\"https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/main/image/axolotl-badge-web.png\" alt=\"Built with Axolotl\" width=\"200\" height=\"32\"/&gt;](https://github.com/axolotl-ai-cloud/axolotl)",
-    "crumbs": [
-      "Home"
-    ]
-  },
-  {
-    "objectID": "index.html#community-showcase",
-    "href": "index.html#community-showcase",
-    "title": "Axolotl",
-    "section": "Community Showcase",
-    "text": "Community Showcase\nCheck out some of the projects and models that have been built using Axolotl! Have a model you’d like to add to our Community Showcase? Open a PR with your model.\nOpen Access AI Collective - Minotaur 13b - Manticore 13b - Hippogriff 30b\nPocketDoc Labs - Dan’s PersonalityEngine 13b LoRA",
-    "crumbs": [
-      "Home"
-    ]
-  },
-  {
-    "objectID": "index.html#contributing",
-    "href": "index.html#contributing",
-    "title": "Axolotl",
-    "section": "Contributing 🤝",
-    "text": "Contributing 🤝\nPlease read the contributing guide\nBugs? Please check the open issues else create a new Issue.\nPRs are greatly welcome!\nPlease run the quickstart instructions followed by the below to setup env:\npip3 install -r requirements-dev.txt -r requirements-tests.txt\npre-commit install\n\n# test\npytest tests/\n\n# optional: run against all files\npre-commit run --all-files\nThanks to all of our contributors to date. Help drive open source AI progress forward by contributing to Axolotl.",
-    "crumbs": [
-      "Home"
-    ]
-  },
-  {
-    "objectID": "index.html#sponsors",
-    "href": "index.html#sponsors",
-    "title": "Axolotl",
-    "section": "Sponsors 🤝❤",
-    "text": "Sponsors 🤝❤\nOpenAccess AI Collective is run by volunteer contributors such as winglian, NanoCode012, tmm1, mhenrichsen, casper-hansen, hamelsmu and many more who help us accelerate forward by fixing bugs, answering community questions and implementing new features. Axolotl needs donations from sponsors for the compute needed to run our unit & integration tests, troubleshooting community issues, and providing bounties. If you love axolotl, consider sponsoring the project via GitHub Sponsors, Ko-fi or reach out directly to wing@openaccessaicollective.org.\n\n\n💎 Diamond Sponsors - Contact directly\n\n\n\n🥇 Gold Sponsors - $5000/mo\n\n\n\n🥈 Silver Sponsors - $1000/mo\n\n\n\n🥉 Bronze Sponsors - $500/mo\n\nJarvisLabs.ai",
-    "crumbs": [
-      "Home"
-    ]
-  },
-  {
-    "objectID": "examples/colab-notebooks/colab-axolotl-example.html",
-    "href": "examples/colab-notebooks/colab-axolotl-example.html",
-    "title": "Example notebook for running Axolotl on google colab",
-    "section": "",
-    "text": "import torch\n# Check so there is a gpu available, a T4(free tier) is enough to run this notebook\nassert (torch.cuda.is_available()==True)"
-  },
-  {
-    "objectID": "examples/colab-notebooks/colab-axolotl-example.html#install-axolotl-and-dependencies",
-    "href": "examples/colab-notebooks/colab-axolotl-example.html#install-axolotl-and-dependencies",
-    "title": "Example notebook for running Axolotl on google colab",
-    "section": "Install Axolotl and dependencies",
-    "text": "Install Axolotl and dependencies\n\n!pip install torch==\"2.1.2\"\n!pip install -e git+https://github.com/axolotl-ai-cloud/axolotl#egg=axolotl\n!pip install flash-attn==\"2.5.0\"\n!pip install deepspeed==\"0.13.1\"!pip install mlflow==\"2.13.0\""
-  },
-  {
-    "objectID": "examples/colab-notebooks/colab-axolotl-example.html#create-an-yaml-config-file",
-    "href": "examples/colab-notebooks/colab-axolotl-example.html#create-an-yaml-config-file",
-    "title": "Example notebook for running Axolotl on google colab",
-    "section": "Create an yaml config file",
-    "text": "Create an yaml config file\n\nimport yaml\n\n# Your YAML string\nyaml_string = \"\"\"\nbase_model: TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T\nmodel_type: LlamaForCausalLM\ntokenizer_type: LlamaTokenizer\n\nload_in_8bit: false\nload_in_4bit: true\nstrict: false\n\ndatasets:\n  - path: mhenrichsen/alpaca_2k_test\n    type: alpaca\ndataset_prepared_path:\nval_set_size: 0.05\noutput_dir: ./outputs/qlora-out\n\nadapter: qlora\nlora_model_dir:\n\nsequence_len: 4096\nsample_packing: true\neval_sample_packing: false\npad_to_sequence_len: true\n\nlora_r: 32\nlora_alpha: 16\nlora_dropout: 0.05\nlora_target_modules:\nlora_target_linear: true\nlora_fan_in_fan_out:\n\nwandb_project:\nwandb_entity:\nwandb_watch:\nwandb_name:\nwandb_log_model:\n\ngradient_accumulation_steps: 4\nmicro_batch_size: 2\nnum_epochs: 4\noptimizer: paged_adamw_32bit\nlr_scheduler: cosine\nlearning_rate: 0.0002\n\ntrain_on_inputs: false\ngroup_by_length: false\nbf16: auto\nfp16:\ntf32: false\n\ngradient_checkpointing: true\nearly_stopping_patience:\nresume_from_checkpoint:\nlocal_rank:\nlogging_steps: 1\nxformers_attention:\nflash_attention: true\n\nwarmup_steps: 10\nevals_per_epoch: 4\nsaves_per_epoch: 1\ndebug:\ndeepspeed:\nweight_decay: 0.0\nfsdp:\nfsdp_config:\nspecial_tokens:\n\n\"\"\"\n\n# Convert the YAML string to a Python dictionary\nyaml_dict = yaml.safe_load(yaml_string)\n\n# Specify your file path\nfile_path = 'test_axolotl.yaml'\n\n# Write the YAML file\nwith open(file_path, 'w') as file:\n    yaml.dump(yaml_dict, file)"
-  },
-  {
-    "objectID": "examples/colab-notebooks/colab-axolotl-example.html#launch-the-training",
-    "href": "examples/colab-notebooks/colab-axolotl-example.html#launch-the-training",
-    "title": "Example notebook for running Axolotl on google colab",
-    "section": "Launch the training",
-    "text": "Launch the training\n\n# By using the ! the comand will be executed as a bash command\n!accelerate launch -m axolotl.cli.train /content/test_axolotl.yaml"
-  },
-  {
-    "objectID": "examples/colab-notebooks/colab-axolotl-example.html#play-with-inference",
-    "href": "examples/colab-notebooks/colab-axolotl-example.html#play-with-inference",
-    "title": "Example notebook for running Axolotl on google colab",
-    "section": "Play with inference",
-    "text": "Play with inference\n\n# By using the ! the comand will be executed as a bash command\n!accelerate launch -m axolotl.cli.inference /content/test_axolotl.yaml \\\n    --qlora_model_dir=\"./qlora-out\" --gradio"
-  },
-  {
-    "objectID": "TODO.html",
-    "href": "TODO.html",
-    "title": "todo list",
-    "section": "",
-    "text": "[] Validation of parameters for combinations that won’t work\n\n\n\n\nFSDP offload and gradient_checkpointing - https://github.com/pytorch/pytorch/issues/82203\nadamw_bnb_8bit doesn’t play well with FSDP offload"
-  },
-  {
-    "objectID": "TODO.html#things-that-are-known-not-to-work",
-    "href": "TODO.html#things-that-are-known-not-to-work",
-    "title": "todo list",
-    "section": "",
-    "text": "FSDP offload and gradient_checkpointing - https://github.com/pytorch/pytorch/issues/82203\nadamw_bnb_8bit doesn’t play well with FSDP offload"
-  },
-  {
-    "objectID": "FAQS.html",
-    "href": "FAQS.html",
-    "title": "FAQs",
-    "section": "",
-    "text": "FAQs\n\nCan you train StableLM with this? Yes, but only with a single GPU atm. Multi GPU support is coming soon! Just waiting on this PR\nWill this work with Deepspeed? That’s still a WIP, but setting export ACCELERATE_USE_DEEPSPEED=true should work in some cases\nError invalid argument at line 359 in file /workspace/bitsandbytes/csrc/pythonInterface.c /arrow/cpp/src/arrow/filesystem/s3fs.cc:2598:  arrow::fs::FinalizeS3 was not called even though S3 was initialized. This could lead to a segmentation fault at exit. Try reinstalling bitsandbytes and transformers from source."
-  },
-  {
-    "objectID": "docs/multipack.html",
-    "href": "docs/multipack.html",
-    "title": "Multipack (Sample Packing)",
-    "section": "",
-    "text": "Because Flash Attention simply drops the attention mask, we do not need to construct a 4d attention mask. We only need to concatenate the sequences into a single batch and let flash attention know where each new sequence begins.\n4k context, bsz =4, each character represents 256 tokens X represents a padding token\n   0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5\n[[ A A A A A A A A A A A ]\n   B B B B B B ]\n   C C C C C C C ]\n   D D D D ]]\n\n[[ E E E E E E E E ]\n [ F F F F ]\n [ G G G ]\n [ H H H H ]]\n\n[[ I I I ]\n [ J J J ]\n [ K K K K K]\n [ L L L ]]\nafter padding to longest input in each step\n   0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5\n[[ A A A A A A A A A A A ]\n   B B B B B B X X X X X X ]\n   C C C C C C C X X X X ]\n   D D D D X X X X X X X ]]\n\n[[ E E E E E E E E ]\n [ F F F F X X X X ]\n [ G G G X X X X X ]\n [ H H H H X X X X ]]\n\n[[ I I I X X ]\n [ J J J X X ]\n [ K K K K K ]\n [ L L L X X ]]\nw packing ( note it’s the same effective number of tokens per step, but a true bsz of 1)\n   0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5\n[[ A A A A A A A A A A A B B B B B\n   B C C C C C C C D D D D E E E E\n   E E E E F F F F F G G G H H H H\n   I I I J J J J K K K K K L L L X ]]\ncu_seqlens: [[ 0, 11, 17, 24, 28, 36, 41 44, 48, 51, 55, 60, 64]]",
+    "text": "Overview\nReinforcement Learning from Human Feedback is a method whereby a language model is optimized from data using human feedback. Various methods include, but not limited to:\n\nProximal Policy Optimization (PPO) (not yet supported in axolotl)\nDirect Preference Optimization (DPO)\nIdentity Preference Optimization (IPO)\n\n\n\nRLHF using Axolotl\n\n[!IMPORTANT] This is a BETA feature and many features are not fully implemented. You are encouraged to open new PRs to improve the integration and functionality.\n\nThe various RL training methods are implemented in trl and wrapped via axolotl. Below are various examples with how you can use various preference datasets to train models that use ChatML\n\nDPO\nrl: dpo\ndatasets:\n  - path: Intel/orca_dpo_pairs\n    split: train\n    type: chatml.intel\n  - path: argilla/ultrafeedback-binarized-preferences\n    split: train\n    type: chatml.argilla\n\n\nIPO\nrl: ipo\n\n\nORPO\nPaper: https://arxiv.org/abs/2403.07691\nrl: orpo\norpo_alpha: 0.1\nremove_unused_columns: false\n\nchat_template: chatml\ndatasets:\n  - path: argilla/ultrafeedback-binarized-preferences-cleaned\n    type: chat_template.argilla\n\n\nUsing local dataset files\ndatasets:\n  - ds_type: json\n    data_files:\n      - orca_rlhf.jsonl\n    split: train\n    type: chatml.intel\n\n\nTrl autounwrap for peft\nTrl supports autounwrapping peft models, so that a ref model does not need to be additionally loaded, leading to less VRAM needed. This is on by default. To turn it off, pass the following config.\n# load ref model when adapter training.\nrl_adapter_ref_model: true",
     "crumbs": [
       "How-To Guides",
-      "Multipack (Sample Packing)"
-    ]
-  },
-  {
-    "objectID": "docs/multipack.html#visualization-of-multipack-with-flash-attention",
-    "href": "docs/multipack.html#visualization-of-multipack-with-flash-attention",
-    "title": "Multipack (Sample Packing)",
-    "section": "",
-    "text": "Because Flash Attention simply drops the attention mask, we do not need to construct a 4d attention mask. We only need to concatenate the sequences into a single batch and let flash attention know where each new sequence begins.\n4k context, bsz =4, each character represents 256 tokens X represents a padding token\n   0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5\n[[ A A A A A A A A A A A ]\n   B B B B B B ]\n   C C C C C C C ]\n   D D D D ]]\n\n[[ E E E E E E E E ]\n [ F F F F ]\n [ G G G ]\n [ H H H H ]]\n\n[[ I I I ]\n [ J J J ]\n [ K K K K K]\n [ L L L ]]\nafter padding to longest input in each step\n   0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5\n[[ A A A A A A A A A A A ]\n   B B B B B B X X X X X X ]\n   C C C C C C C X X X X ]\n   D D D D X X X X X X X ]]\n\n[[ E E E E E E E E ]\n [ F F F F X X X X ]\n [ G G G X X X X X ]\n [ H H H H X X X X ]]\n\n[[ I I I X X ]\n [ J J J X X ]\n [ K K K K K ]\n [ L L L X X ]]\nw packing ( note it’s the same effective number of tokens per step, but a true bsz of 1)\n   0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5\n[[ A A A A A A A A A A A B B B B B\n   B C C C C C C C D D D D E E E E\n   E E E E F F F F F G G G H H H H\n   I I I J J J J K K K K K L L L X ]]\ncu_seqlens: [[ 0, 11, 17, 24, 28, 36, 41 44, 48, 51, 55, 60, 64]]",
-    "crumbs": [
-      "How-To Guides",
-      "Multipack (Sample Packing)"
-    ]
-  },
-  {
-    "objectID": "docs/multipack.html#multipack-without-flash-attention",
-    "href": "docs/multipack.html#multipack-without-flash-attention",
-    "title": "Multipack (Sample Packing)",
-    "section": "Multipack without Flash Attention",
-    "text": "Multipack without Flash Attention\nMultipack can still be achieved without Flash attention, but with lower packing efficiency as we are not able to join multiple batches into a single batch due to context length limits without flash attention. We can use either Pytorch’s Scaled Dot Product Attention implementation or native Pytorch attention implementation along with 4d attention masks to pack sequences together and avoid cross attention.",
-    "crumbs": [
-      "How-To Guides",
-      "Multipack (Sample Packing)"
-    ]
-  },
-  {
-    "objectID": "docs/dataset-formats/template_free.html",
-    "href": "docs/dataset-formats/template_free.html",
-    "title": "Template-Free",
-    "section": "",
-    "text": "See these docs.",
-    "crumbs": [
-      "Dataset Formats",
-      "Template-Free"
-    ]
-  },
-  {
-    "objectID": "docs/dataset-formats/conversation.html",
-    "href": "docs/dataset-formats/conversation.html",
-    "title": "Conversation",
-    "section": "",
-    "text": "conversations where from is human/gpt. (optional: first row with role system to override default system prompt)\n\n\ndata.jsonl\n\n{\"conversations\": [{\"from\": \"...\", \"value\": \"...\"}]}\n\nNote: type: sharegpt opens special configs: - conversation: enables conversions to many Conversation types. Refer to the ‘name’ here for options. - roles: allows you to specify the roles for input and output. This is useful for datasets with custom roles such as tool etc to support masking. - field_human: specify the key to use instead of human in the conversation. - field_model: specify the key to use instead of gpt in the conversation.\ndatasets:\n    path: ...\n    type: sharegpt\n\n    conversation: # Options (see Conversation 'name'): https://github.com/lm-sys/FastChat/blob/main/fastchat/conversation.py\n    field_human: # Optional[str]. Human key to use for conversation.\n    field_model: # Optional[str]. Assistant key to use for conversation.\n    # Add additional keys from your dataset as input or output roles\n    roles:\n      input: # Optional[List[str]]. These will be masked based on train_on_input\n      output: # Optional[List[str]].",
-    "crumbs": [
-      "Dataset Formats",
-      "Conversation"
-    ]
-  },
-  {
-    "objectID": "docs/dataset-formats/conversation.html#sharegpt",
-    "href": "docs/dataset-formats/conversation.html#sharegpt",
-    "title": "Conversation",
-    "section": "",
-    "text": "conversations where from is human/gpt. (optional: first row with role system to override default system prompt)\n\n\ndata.jsonl\n\n{\"conversations\": [{\"from\": \"...\", \"value\": \"...\"}]}\n\nNote: type: sharegpt opens special configs: - conversation: enables conversions to many Conversation types. Refer to the ‘name’ here for options. - roles: allows you to specify the roles for input and output. This is useful for datasets with custom roles such as tool etc to support masking. - field_human: specify the key to use instead of human in the conversation. - field_model: specify the key to use instead of gpt in the conversation.\ndatasets:\n    path: ...\n    type: sharegpt\n\n    conversation: # Options (see Conversation 'name'): https://github.com/lm-sys/FastChat/blob/main/fastchat/conversation.py\n    field_human: # Optional[str]. Human key to use for conversation.\n    field_model: # Optional[str]. Assistant key to use for conversation.\n    # Add additional keys from your dataset as input or output roles\n    roles:\n      input: # Optional[List[str]]. These will be masked based on train_on_input\n      output: # Optional[List[str]].",
-    "crumbs": [
-      "Dataset Formats",
-      "Conversation"
-    ]
-  },
-  {
-    "objectID": "docs/dataset-formats/conversation.html#pygmalion",
-    "href": "docs/dataset-formats/conversation.html#pygmalion",
-    "title": "Conversation",
-    "section": "pygmalion",
-    "text": "pygmalion\n\n\ndata.jsonl\n\n{\"conversations\": [{\"role\": \"...\", \"value\": \"...\"}]}",
-    "crumbs": [
-      "Dataset Formats",
-      "Conversation"
-    ]
-  },
-  {
-    "objectID": "docs/dataset-formats/conversation.html#sharegpt.load_role",
-    "href": "docs/dataset-formats/conversation.html#sharegpt.load_role",
-    "title": "Conversation",
-    "section": "sharegpt.load_role",
-    "text": "sharegpt.load_role\nconversations where role is used instead of from\n\n\ndata.jsonl\n\n{\"conversations\": [{\"role\": \"...\", \"value\": \"...\"}]}",
-    "crumbs": [
-      "Dataset Formats",
-      "Conversation"
-    ]
-  },
-  {
-    "objectID": "docs/dataset-formats/conversation.html#sharegpt.load_guanaco",
-    "href": "docs/dataset-formats/conversation.html#sharegpt.load_guanaco",
-    "title": "Conversation",
-    "section": "sharegpt.load_guanaco",
-    "text": "sharegpt.load_guanaco\nconversations where from is prompter assistant instead of default sharegpt\n\n\ndata.jsonl\n\n{\"conversations\": [{\"from\": \"...\", \"value\": \"...\"}]}",
-    "crumbs": [
-      "Dataset Formats",
-      "Conversation"
-    ]
-  },
-  {
-    "objectID": "docs/dataset-formats/conversation.html#sharegpt_jokes",
-    "href": "docs/dataset-formats/conversation.html#sharegpt_jokes",
-    "title": "Conversation",
-    "section": "sharegpt_jokes",
-    "text": "sharegpt_jokes\ncreates a chat where bot is asked to tell a joke, then explain why the joke is funny\n\n\ndata.jsonl\n\n{\"conversations\": [{\"title\": \"...\", \"text\": \"...\", \"explanation\": \"...\"}]}",
-    "crumbs": [
-      "Dataset Formats",
-      "Conversation"
-    ]
-  },
-  {
-    "objectID": "docs/dataset-formats/index.html",
-    "href": "docs/dataset-formats/index.html",
-    "title": "Dataset Formats",
-    "section": "",
-    "text": "Axolotl supports a variety of dataset formats. It is recommended to use a JSONL format. The schema of the JSONL depends upon the task and the prompt template you wish to use. Instead of a JSONL, you can also use a HuggingFace dataset with columns for each JSONL field.\nBelow are these various formats organized by task:\n\n\n\n\n\n\n\n\n\nTitle\n\n\nDescription\n\n\n\n\n\n\nPre-training\n\n\nData format for a pre-training completion task.\n\n\n\n\nInstruction Tuning\n\n\nInstruction tuning formats for supervised fine-tuning.\n\n\n\n\nConversation\n\n\nConversation format for supervised fine-tuning.\n\n\n\n\nTemplate-Free\n\n\nConstruct prompts without a template.\n\n\n\n\nCustom Pre-Tokenized Dataset\n\n\nHow to use a custom pre-tokenized dataset.\n\n\n\n\n\nNo matching items",
-    "crumbs": [
-      "Dataset Formats"
+      "RLHF (Beta)"
     ]
   },
   {
