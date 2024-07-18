@@ -305,7 +305,8 @@ class AxolotlTrainer(Trainer):
     def create_optimizer(self):
         if (
             self.args.loraplus_lr_ratio is None
-            and self.args.alternate_optimizer != "optimi_adamw"
+            and self.args.alternate_optimizer
+            not in ["optimi_adamw", "ao_adamw_8bit", "ao_adamw_4bit", "ao_adamw_fp8"]
         ):
             return super().create_optimizer()
 

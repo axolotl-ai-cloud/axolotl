@@ -1,4 +1,4 @@
-base_model: meta-llama/Meta-Llama-3-8B
+base_model: NousResearch/Meta-Llama-3-8B
 model_type: AutoModelForCausalLM
 tokenizer_type: AutoTokenizer
 
