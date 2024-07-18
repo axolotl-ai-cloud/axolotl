@@ -57,7 +57,9 @@ def train(
     torch_major, torch_minor = int(torch_version[0]), int(torch_version[1])
     if torch_major == 2 and torch_minor >= 2:
         if os.getenv("PYTORCH_CUDA_ALLOC_CONF") is None:
-            os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+            os.environ[
+                "PYTORCH_CUDA_ALLOC_CONF"
+            ] = "expandable_segments:True,roundup_power2_divisions:16"
 
     # load the tokenizer first
     LOG.debug(
