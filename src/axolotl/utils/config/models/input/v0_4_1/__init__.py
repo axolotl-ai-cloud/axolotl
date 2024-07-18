@@ -596,6 +596,7 @@ class AxolotlInputConfig(
     unsloth_lora_mlp: Optional[bool] = None
     unsloth_lora_qkv: Optional[bool] = None
     unsloth_lora_o: Optional[bool] = None
+    unsloth_rope: Optional[bool] = None
 
     deepspeed: Optional[Union[str, Dict[str, Any]]] = None
     fsdp: Optional[List[str]] = None

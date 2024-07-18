@@ -185,6 +185,23 @@ def patch_self_attn_lora():
     )
 
 
+def integrate_rope_embeddings():
+    import transformers.models.llama.modeling_llama
+    from unsloth.kernels.rope_embedding import fast_rope_embedding
+
+    def apply_rotary_pos_emb(  # pylint: disable=unused-argument
+        q,  # pylint: disable=invalid-name
+        k,  # pylint: disable=invalid-name
+        cos,
+        sin,
+        position_ids=None,
+        unsqueeze_dim=1,
+    ):
+        return fast_rope_embedding(q, k, cos, sin)
+
+    transformers.models.llama.modeling_llama.apply_rotary_pos_emb = apply_rotary_pos_emb
+
+
 def integrate_lora_mlp_patch(peft_model: PeftModelForCausalLM):
     if peft_model.base_model.config.model_type in ["llama", "mistral"]:
         from unsloth.kernels import apply_lora_mlp_swiglu

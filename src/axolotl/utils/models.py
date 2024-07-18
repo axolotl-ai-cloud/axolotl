@@ -884,6 +884,11 @@ def load_model(
 
         integrate_lora_patch(model, cfg)
 
+    if cfg.unsloth_rope:
+        from axolotl.monkeypatch.unsloth_ import integrate_rope_embeddings
+
+        integrate_rope_embeddings()
+
     # TODO resume_from_checkpoint handling
     return model, lora_config
 
