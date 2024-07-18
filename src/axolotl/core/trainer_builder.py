@@ -1471,7 +1471,12 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
 
         trainer_kwargs = {}
 
-        if self.cfg.optimizer in ["optimi_adamw", "ao_adamw_4bit", "ao_adamw_8bit"]:
+        if self.cfg.optimizer in [
+            "optimi_adamw",
+            "ao_adamw_4bit",
+            "ao_adamw_8bit",
+            "ao_adamw_fp8",
+        ]:
             # Set default so transformers doesn't throw
             training_arguments_kwargs["optim"] = "adamw_hf"
             training_arguments_kwargs["alternate_optimizer"] = self.cfg.optimizer
