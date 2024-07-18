@@ -1,18 +1,18 @@
 """module for patching with unsloth optimizations"""
 
 import inspect
-import logging
 import re
 import types
 from typing import Tuple
 
+from accelerate.logging import get_logger
 from peft import PeftModelForCausalLM
 from transformers.models.llama.modeling_llama import (
     LlamaFlashAttention2,
     LlamaForCausalLM,
 )
 
-LOG = logging.getLogger("axolotl.monkeypatch.unsloth")
+LOG = get_logger("axolotl.monkeypatch.unsloth")
 
 ORIGINAL_CEL_CODE = """    if labels is not None:
         # Shift so that tokens < n predict n
