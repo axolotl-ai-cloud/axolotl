@@ -77,6 +77,7 @@ class PretrainingDataset(BaseModel):
     split: Optional[str] = "train"
     text_column: Optional[str] = "text"
     type: Optional[str] = "pretrain"
+    trust_remote_code: Optional[bool] = False
 
 
 class UserDefinedPrompterType(BaseModel):
@@ -118,6 +119,8 @@ class SFTDataset(BaseModel):
     roles: Optional[Dict[str, List[str]]] = None
     drop_system_message: Optional[bool] = None
 
+    trust_remote_code: Optional[bool] = False
+
 
 class UserDefinedDPOType(BaseModel):
     """User defined typing for DPO"""
@@ -158,6 +161,7 @@ class KTODataset(BaseModel):
     split: Optional[str] = None
     type: Optional[Union[UserDefinedKTOType, str]] = None
     data_files: Optional[List[str]] = None
+    trust_remote_code: Optional[bool] = False
 
 
 class RLType(str, Enum):
@@ -504,6 +508,8 @@ class AxolotlInputConfig(
     dataloader_prefetch_factor: Optional[int] = None
     dataloader_drop_last: Optional[bool] = None
 
+    accelerator_config: Optional[Dict[str, Any]] = None
+
     remove_unused_columns: Optional[bool] = None
 
     push_dataset_to_hub: Optional[str] = None
@@ -602,6 +608,9 @@ class AxolotlInputConfig(
 
     torch_compile: Optional[bool] = None
     torch_compile_backend: Optional[str] = None
+    torch_compile_mode: Optional[
+        Literal["default", "reduce-overhead", "max-autotune"]
+    ] = None
 
     max_steps: Optional[int] = None
     warmup_steps: Optional[int] = None
@@ -700,6 +709,24 @@ class AxolotlInputConfig(
             LOG.warning(
                 "You probably want to disable group_by_length as it will force a streamed dataset to download completely."
             )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_pretraining_split_batches_accelerate(cls, data):
+        # alternatively set ACCELERATE_SPLIT_BATCHES=False
+        if data.get("pretraining_dataset"):
+            accelerator_config = data.get("accelerator_config", {})
+            if not accelerator_config:
+                data["accelerator_config"] = {
+                    "split_batches": False,
+                    "dispatch_batches": False,
+                }
+            else:
+                if accelerator_config.get("split_batches") is None:
+                    data["accelerator_config"]["split_batches"] = False
+                if accelerator_config.get("dispatch_batches") is None:
+                    data["accelerator_config"]["dispatch_batches"] = False
         return data
 
     @model_validator(mode="before")
@@ -1112,6 +1139,40 @@ class AxolotlInputConfig(
             raise ValueError("either datasets or pretraining_dataset is required")
         return data
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_xentropy_patch_conflicts(cls, data):
+        if data.get("flash_attn_cross_entropy") and data.get(
+            "unsloth_cross_entropy_loss"
+        ):
+            raise ValueError(
+                "flash_attn_cross_entropy and unsloth_cross_entropy_loss cannot be both enabled"
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_qlora_unsloth(cls, data):
+        if (
+            data.get("unsloth_lora_mlp")
+            or data.get("unsloth_lora_qkv")
+            or data.get("unsloth_lora_o")
+        ):
+            if data.get("adapter") == "lora" or data.get("load_in_8bit"):
+                raise ValueError(
+                    "unsloth_lora_mlp, unsloth_lora_qkv, and unsloth_lora_o are not compatible with 8-bit LoRA"
+                )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_torch_compile_deepspeed(cls, data):
+        if data.get("deepspeed") and data.get("torch_compile"):
+            raise ValueError(
+                "torch_compile should be set within your deepspeed config file"
+            )
+        return data
+
 
 class AxolotlConfigWCapabilities(AxolotlInputConfig):
     """wrapper to valdiate gpu capabilities with the configured options"""
@@ -1162,4 +1223,19 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
     def check_fsdp_deepspeed(cls, data):
         if data.get("deepspeed") and data.get("fsdp"):
             raise ValueError("deepspeed and fsdp cannot be used together.")
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_multigpu_unsloth(cls, data):
+        if (
+            data.get("unsloth_lora_mlp")
+            or data.get("unsloth_lora_qkv")
+            or data.get("unsloth_lora_o")
+        ):
+            capabilities = data.get("capabilities")
+            if capabilities and capabilities.get("n_gpu", 0) > 1:
+                raise ValueError(
+                    "unsloth_lora_mlp, unsloth_lora_qkv, and unsloth_lora_o are not compatible with multi-GPU training."
+                )
         return data
