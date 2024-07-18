@@ -137,7 +137,7 @@ def integrate_cross_entropy_loss_patch():
         globals(),
     )
     exec(forward, globals())  # pylint: disable=exec-used  # nosec B102
-    print("patching unsloth fast_cross_entropy_loss")
+    LOG.info("patching unsloth fast_cross_entropy_loss", main_process_only=True)
     LlamaForCausalLM.forward = fast_cross_entropy_loss_forward  # pylint: disable=undefined-variable  # noqa: F821
 
 
@@ -179,7 +179,7 @@ def patch_self_attn_lora():
         globals(),
     )
     exec(self_attn_forward, globals())  # pylint: disable=exec-used  # nosec B102
-    print("patching unsloth attn lora")
+    LOG.info("patching unsloth attn lora", main_process_only=True)
     LlamaFlashAttention2.forward = (
         unsloth_attn_forward  # pylint: disable=undefined-variable  # noqa: F821
     )
@@ -199,6 +199,7 @@ def integrate_rope_embeddings():
     ):
         return fast_rope_embedding(q, k, cos, sin)
 
+    LOG.info("patching unsloth RoPE embeddings", main_process_only=True)
     transformers.models.llama.modeling_llama.apply_rotary_pos_emb = apply_rotary_pos_emb
 
 
@@ -234,7 +235,7 @@ def integrate_lora_mlp_patch(peft_model: PeftModelForCausalLM):
         if is_mlp_lora and mlp_no_bias and mlp_not_dora:
             layer.mlp.forward = types.MethodType(apply_lora_mlp, layer.mlp)
         else:
-            logging.warning("unable to apply unsloth lora mlp patch to layer %d", idx)
+            LOG.warning("unable to apply unsloth lora mlp patch to layer %d", idx)
 
 
 def integrate_lora_patch(peft_model: PeftModelForCausalLM, cfg):
@@ -260,9 +261,7 @@ def integrate_lora_patch(peft_model: PeftModelForCausalLM, cfg):
                 layer.self_attn.apply_qkv = apply_lora_qkv
             else:
                 layer.self_attn.apply_qkv = original_apply_qkv
-                logging.warning(
-                    "unable to apply unsloth lora qkv patch to layer %d", idx
-                )
+                LOG.warning("unable to apply unsloth lora qkv patch to layer %d", idx)
         if cfg.unsloth_lora_o:
             layer_modules = [
                 getattr(layer.self_attn, linear_proj) for linear_proj in ["o_proj"]
@@ -281,6 +280,6 @@ def integrate_lora_patch(peft_model: PeftModelForCausalLM, cfg):
                 layer.self_attn.apply_o = apply_lora_o
             else:
                 layer.self_attn.apply_o = original_apply_o
-                logging.warning(
+                LOG.warning(
                     "unable to apply unsloth lora o_proj patch to layer %d", idx
                 )
