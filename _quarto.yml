@@ -36,6 +36,7 @@ website:
             - docs/nccl.qmd
             - docs/mac.qmd
             - docs/multi-node.qmd
+            - docs/unsloth.qmd
         - section: "Dataset Formats"
           contents: docs/dataset-formats/*
         - section: "Reference"
