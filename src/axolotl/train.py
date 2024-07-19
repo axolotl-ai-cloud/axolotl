@@ -126,9 +126,7 @@ def train(
 
     if cfg.fix_untrained_tokens:
         fix_untrained_tokens(model, tokenizer, train_dataset)
-        if cfg.fsdp:
-            trainer.save_model()
-        elif cfg.local_rank == 0:
+        if cfg.local_rank == 0:
             model.save_pretrained(
                 str(Path(cfg.output_dir)), safe_serialization=safe_serialization
             )
