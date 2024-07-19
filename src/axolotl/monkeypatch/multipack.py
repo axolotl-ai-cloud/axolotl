@@ -11,6 +11,7 @@ from axolotl.monkeypatch.utils import get_unpad_data
 
 SUPPORTED_MULTIPACK_MODEL_TYPES = [
     "llama",
+    "mistral",
     "mixtral",
     "qwen2",
     "qwen2_moe",
@@ -33,6 +34,10 @@ def patch_for_multipack(model_type, model_name=None):
             patch_mixtral_moe_forward_zero3()
     elif model_type == "llama":
         transformers.models.llama.modeling_llama._get_unpad_data = (  # pylint: disable=protected-access
+            get_unpad_data
+        )
+    elif model_type == "mistral":
+        transformers.models.mistral.modeling_mistral._get_unpad_data = (  # pylint: disable=protected-access
             get_unpad_data
         )
     elif model_type == "qwen2":
