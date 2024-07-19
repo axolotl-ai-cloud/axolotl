@@ -37,7 +37,7 @@ def patch_for_multipack(model_type, model_name=None):
             get_unpad_data
         )
     elif model_type == "mistral":
-        transformers.models.mistral.modeling_mistral._get_unpad_data = (  # pylint: disable=protected-access
+        transformers.modeling_flash_attention_utils._get_unpad_data = (  # pylint: disable=protected-access
             get_unpad_data
         )
     elif model_type == "qwen2":
