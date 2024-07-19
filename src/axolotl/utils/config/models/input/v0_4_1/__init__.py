@@ -658,6 +658,8 @@ class AxolotlInputConfig(
     chat_template: Optional[ChatTemplate] = None
     default_system_message: Optional[str] = None
 
+    fix_untrained_tokens: Optional[bool] = None
+
     # INTERNALS - document for now, generally not set externally
     is_preprocess: Optional[bool] = None
 
