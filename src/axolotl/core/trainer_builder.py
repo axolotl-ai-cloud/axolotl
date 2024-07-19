@@ -30,7 +30,16 @@ from transformers import (
 )
 from transformers.trainer_utils import seed_worker
 from transformers.utils import is_sagemaker_mp_enabled
-from trl import DPOConfig, DPOTrainer, KTOConfig, KTOTrainer, ORPOConfig, ORPOTrainer
+from trl import (
+    CPOConfig,
+    CPOTrainer,
+    DPOConfig,
+    DPOTrainer,
+    KTOConfig,
+    KTOTrainer,
+    ORPOConfig,
+    ORPOTrainer,
+)
 from trl.trainer.utils import pad_to_length
 
 from axolotl.loraplus import create_loraplus_optimizer
@@ -263,6 +272,18 @@ class AxolotlKTOConfig(AxolotlTrainingMixins, KTOConfig):
     """
     KTO config for KTO training
     """
+
+
+@dataclass
+class AxolotlCPOConfig(AxolotlTrainingMixins, CPOConfig):
+    """
+    CPO config for CPO training
+    """
+
+    simpo_gamma: Optional[float] = field(
+        default=None,
+        metadata={"help": "simpo gamma parameter"},
+    )
 
 
 class AxolotlTrainer(Trainer):
@@ -983,6 +1004,14 @@ class AxolotlKTOTrainer(KTOTrainer):
     """
 
     tag_names = ["axolotl", "kto"]
+
+
+class AxolotlCPOTrainer(CPOTrainer):
+    """
+    Extend the base CPOTrainer for axolotl helpers
+    """
+
+    tag_names = ["axolotl", "cpo"]
 
 
 class TrainerBuilderBase(abc.ABC):
@@ -1707,6 +1736,8 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             # default to saving each epoch if not defined
             training_args_kwargs["save_strategy"] = "epoch"
 
+        if self.cfg.rl_beta:
+            training_args_kwargs["beta"] = self.cfg.rl_beta
         if self.cfg.orpo_alpha:
             # trl does some odd mapping of alpha to beta to reuse the beta parameter ???
             training_args_kwargs["beta"] = self.cfg.orpo_alpha
@@ -1715,9 +1746,14 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         training_args_cls = AxolotlDPOConfig
         if self.cfg.rpo_alpha is not None:
             training_args_kwargs["rpo_alpha"] = self.cfg.rpo_alpha
+
+        if self.cfg.rl == "simpo":
+            training_args_cls = AxolotlCPOConfig
+            training_args_kwargs["loss_type"] = "simpo"
+            training_args_kwargs["simpo_gamma"] = self.cfg.simpo_gamma
+
         if self.cfg.rl == "orpo":
             training_args_cls = AxolotlORPOConfig
-            training_args_kwargs["dataset_num_proc"] = self.cfg.dataset_processes
             training_args_kwargs["max_length"] = self.cfg.sequence_len
             if self.cfg.max_prompt_len:
                 training_args_kwargs["max_prompt_length"] = self.cfg.max_prompt_len
@@ -1725,7 +1761,6 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         if self.cfg.rl == "kto":
             training_args_cls = AxolotlKTOConfig
 
-            training_args_kwargs["beta"] = self.cfg.rl_beta or 0.1
             training_args_kwargs["desirable_weight"] = (
                 self.cfg.kto_desirable_weight or 1.0
             )
@@ -1771,7 +1806,6 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             ] = self.cfg.precompute_ref_log_probs
         if self.cfg.rl in ["dpo", "ipo"]:
             trainer_cls = AxolotlDPOTrainer
-            dpo_trainer_kwargs["beta"] = self.cfg.rl_beta or 0.1
             trainer_cls_args = [self.model, self.model_ref]
 
             # these aren't used for the ORPO trainer
@@ -1784,6 +1818,9 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             trainer_cls_args = [self.model]
         elif self.cfg.rl in ["kto"]:
             trainer_cls = AxolotlKTOTrainer
+            trainer_cls_args = [self.model]
+        elif self.cfg.rl in ["simpo"]:
+            trainer_cls = AxolotlCPOTrainer
             trainer_cls_args = [self.model]
         else:
             raise ValueError(f"Unsupported RL: {self.cfg.rl}")
