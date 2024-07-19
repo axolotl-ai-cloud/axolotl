@@ -1751,6 +1751,8 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             training_args_cls = AxolotlCPOConfig
             training_args_kwargs["loss_type"] = "simpo"
             training_args_kwargs["simpo_gamma"] = self.cfg.simpo_gamma
+            if self.cfg.cpo_alpha is not None:
+                training_args_kwargs["cpo_alpha"] = self.cfg.cpo_alpha
 
         if self.cfg.rl == "orpo":
             training_args_cls = AxolotlORPOConfig
