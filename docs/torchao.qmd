@@ -1,0 +1,19 @@
+---
+title: "PyTorch ao"
+description: "Custom data types and layouts for training and inference"
+---
+
+### Installation
+
+Stable Release from the PyTorch index
+
+```bash
+pip install torchao --extra-index-url https://download.pytorch.org/whl/cu121 # full options are cpu/cu118/cu121/cu124
+```
+
+
+Nightly release
+
+```bash
+pip install --pre torchao-nightly --index-url https://download.pytorch.org/whl/nightly/cu121 # full options are cpu/cu118/cu121/cu124
+```

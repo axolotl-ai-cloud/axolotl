@@ -305,7 +305,8 @@ class AxolotlTrainer(Trainer):
     def create_optimizer(self):
         if (
             self.args.loraplus_lr_ratio is None
-            and self.args.alternate_optimizer != "optimi_adamw"
+            and self.args.alternate_optimizer
+            not in ["optimi_adamw", "ao_adamw_8bit", "ao_adamw_4bit", "ao_adamw_fp8"]
         ):
             return super().create_optimizer()
 
@@ -355,6 +356,24 @@ class AxolotlTrainer(Trainer):
                     AdamW(
                         optimizer_grouped_parameters, foreach=False, **optimizer_kwargs
                     )
+                )
+            elif self.args.alternate_optimizer == "ao_adamw_4bit":
+                from torchao.prototype.low_bit_optim import AdamW4bit
+
+                self.optimizer = (  # pylint: disable=attribute-defined-outside-init
+                    AdamW4bit(optimizer_grouped_parameters, **optimizer_kwargs)
+                )
+            elif self.args.alternate_optimizer == "ao_adamw_8bit":
+                from torchao.prototype.low_bit_optim import AdamW8bit
+
+                self.optimizer = (  # pylint: disable=attribute-defined-outside-init
+                    AdamW8bit(optimizer_grouped_parameters, **optimizer_kwargs)
+                )
+            elif self.args.alternate_optimizer == "ao_adamw_fp8":
+                from torchao.prototype.low_bit_optim import AdamWFp8
+
+                self.optimizer = (  # pylint: disable=attribute-defined-outside-init
+                    AdamWFp8(optimizer_grouped_parameters, **optimizer_kwargs)
                 )
 
         if is_sagemaker_mp_enabled():
@@ -1452,7 +1471,12 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
 
         trainer_kwargs = {}
 
-        if self.cfg.optimizer == "optimi_adamw":
+        if self.cfg.optimizer in [
+            "optimi_adamw",
+            "ao_adamw_4bit",
+            "ao_adamw_8bit",
+            "ao_adamw_fp8",
+        ]:
             # Set default so transformers doesn't throw
             training_arguments_kwargs["optim"] = "adamw_hf"
             training_arguments_kwargs["alternate_optimizer"] = self.cfg.optimizer
