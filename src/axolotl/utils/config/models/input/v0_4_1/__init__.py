@@ -859,7 +859,7 @@ class AxolotlInputConfig(
     @model_validator(mode="after")
     def check_adamw_optimizer_params(self):
         if any([self.adam_beta1, self.adam_beta2, self.adam_epsilon]) and (
-            not self.optimizer or "adamw" not in self.optimizer.value
+            not self.optimizer or "adamw" not in str(self.optimizer).lower()
         ):
             LOG.warning("adamw hyperparameters found, but no adamw optimizer set")
         return self
