@@ -93,5 +93,5 @@ class TestModelPatches(unittest.TestCase):
 
         assert (
             "torch.jit"
-            in transformers.models.mistral.modeling_mistral._get_unpad_data.__module__  # pylint: disable=protected-access
+            in transformers.modeling_flash_attention_utils._get_unpad_data.__module__  # pylint: disable=protected-access
         )
