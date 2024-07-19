@@ -33,7 +33,6 @@ from transformers.utils import is_sagemaker_mp_enabled
 from trl import DPOConfig, DPOTrainer, KTOConfig, KTOTrainer, ORPOConfig, ORPOTrainer
 from trl.trainer.utils import pad_to_length
 
-from axolotl.core.tokenizer_utils import fix_untrained_tokens
 from axolotl.loraplus import create_loraplus_optimizer
 from axolotl.monkeypatch.multipack import SUPPORTED_MULTIPACK_MODEL_TYPES
 from axolotl.monkeypatch.relora import ReLoRACallback, ReLoRAScheduler
@@ -598,11 +597,6 @@ class AxolotlTrainer(Trainer):
 
         return DataLoader(bench_dataset, **dataloader_params)
         # return self.accelerator.prepare(DataLoader(bench_dataset, **dataloader_params))
-
-    def train(self, *args, **kwargs) -> None:
-        fix_untrained_tokens(self.model, self.tokenizer, self.train_dataset)
-
-        return super().train(*args, **kwargs)
 
     def compute_loss(self, model, inputs, return_outputs=False):
         # use one's weighted cross entropy loss calc

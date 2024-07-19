@@ -40,7 +40,7 @@ def fix_untrained_tokens(model, tokenizer, train_dataset, eps=1e-16):
     # Get set and actual tokens
     where_untrained = where_untrained.tolist()
     if len(where_untrained) == 0:
-        return
+        return False
 
     # Remove untrained indices where it's longer
 
@@ -83,7 +83,7 @@ def fix_untrained_tokens(model, tokenizer, train_dataset, eps=1e-16):
 
     # Check if bad tokens exists!
     if not if_bad_first and not if_bad_second:
-        return
+        return False
 
     # Count all the possible bad tokens
     final_counts = np.zeros(
@@ -146,3 +146,5 @@ def fix_untrained_tokens(model, tokenizer, train_dataset, eps=1e-16):
     for _ in range(3):
         gc.collect()
         torch.cuda.empty_cache()
+
+    return True

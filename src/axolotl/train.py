@@ -19,6 +19,7 @@ from transformers import PreTrainedModel, PreTrainedTokenizer
 from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
 
 from axolotl.common.cli import TrainerCliArgs
+from axolotl.core.tokenizer_utils import fix_untrained_tokens
 from axolotl.logging_config import configure_logging
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.freeze import freeze_layers_except
@@ -122,6 +123,15 @@ def train(
         tokenizer,
         total_num_steps,
     )
+
+    if cfg.fix_untrained_tokens:
+        fix_untrained_tokens(model, tokenizer, train_dataset)
+        if cfg.fsdp:
+            trainer.save_model()
+        elif cfg.local_rank == 0:
+            model.save_pretrained(
+                str(Path(cfg.output_dir)), safe_serialization=safe_serialization
+            )
 
     # go ahead and presave, so we have the adapter config available to inspect
     if peft_config:
