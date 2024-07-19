@@ -24,7 +24,7 @@ class TestPretrainingPacking(unittest.TestCase):
     def test_packing_stream_dataset(self):
         # pylint: disable=duplicate-code
         dataset = load_dataset(
-            "c4",
+            "allenai/c4",
             "en",
             streaming=True,
         )["train"]
@@ -33,7 +33,7 @@ class TestPretrainingPacking(unittest.TestCase):
             {
                 "pretraining_dataset": [
                     {
-                        "path": "c4",
+                        "path": "allenai/c4",
                         "name": "en",
                         "type": "pretrain",
                     }

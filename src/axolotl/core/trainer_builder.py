@@ -290,10 +290,23 @@ class AxolotlTrainer(Trainer):
         if self.args.orpo_alpha:
             self.loss_fct = torch.nn.CrossEntropyLoss(reduction="none")
 
+    def _wrap_model(self, model, training=True, dataloader=None):
+        if self.args.torch_compile:
+            torch._dynamo.config.accumulated_cache_size_limit = (  # pylint: disable=protected-access
+                256
+            )
+            model = torch.compile(
+                model,
+                backend=self.args.torch_compile_backend,
+                mode=self.args.torch_compile_mode,
+            )
+        return super()._wrap_model(model, training=training, dataloader=dataloader)
+
     def create_optimizer(self):
         if (
             self.args.loraplus_lr_ratio is None
-            and self.args.alternate_optimizer != "optimi_adamw"
+            and self.args.alternate_optimizer
+            not in ["optimi_adamw", "ao_adamw_8bit", "ao_adamw_4bit", "ao_adamw_fp8"]
         ):
             return super().create_optimizer()
 
@@ -343,6 +356,24 @@ class AxolotlTrainer(Trainer):
                     AdamW(
                         optimizer_grouped_parameters, foreach=False, **optimizer_kwargs
                     )
+                )
+            elif self.args.alternate_optimizer == "ao_adamw_4bit":
+                from torchao.prototype.low_bit_optim import AdamW4bit
+
+                self.optimizer = (  # pylint: disable=attribute-defined-outside-init
+                    AdamW4bit(optimizer_grouped_parameters, **optimizer_kwargs)
+                )
+            elif self.args.alternate_optimizer == "ao_adamw_8bit":
+                from torchao.prototype.low_bit_optim import AdamW8bit
+
+                self.optimizer = (  # pylint: disable=attribute-defined-outside-init
+                    AdamW8bit(optimizer_grouped_parameters, **optimizer_kwargs)
+                )
+            elif self.args.alternate_optimizer == "ao_adamw_fp8":
+                from torchao.prototype.low_bit_optim import AdamWFp8
+
+                self.optimizer = (  # pylint: disable=attribute-defined-outside-init
+                    AdamWFp8(optimizer_grouped_parameters, **optimizer_kwargs)
                 )
 
         if is_sagemaker_mp_enabled():
@@ -1275,6 +1306,10 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                     training_arguments_kwargs[
                         "torch_compile_backend"
                     ] = self.cfg.torch_compile_backend
+                if self.cfg.torch_compile_mode:
+                    training_arguments_kwargs[
+                        "torch_compile_mode"
+                    ] = self.cfg.torch_compile_mode
 
         # DDP Config
         if self.cfg.ddp_timeout:
@@ -1436,7 +1471,12 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
 
         trainer_kwargs = {}
 
-        if self.cfg.optimizer == "optimi_adamw":
+        if self.cfg.optimizer in [
+            "optimi_adamw",
+            "ao_adamw_4bit",
+            "ao_adamw_8bit",
+            "ao_adamw_fp8",
+        ]:
             # Set default so transformers doesn't throw
             training_arguments_kwargs["optim"] = "adamw_hf"
             training_arguments_kwargs["alternate_optimizer"] = self.cfg.optimizer
@@ -1468,6 +1508,11 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             if Path(self.cfg.torchdistx_path).exists():
                 sys.path.append(self.cfg.torchdistx_path)
                 importlib.import_module("torchdistx")
+
+        if self.cfg.accelerator_config:
+            training_arguments_kwargs[
+                "accelerator_config"
+            ] = self.cfg.accelerator_config
 
         training_args = (
             AxolotlTrainingArguments(  # pylint: disable=unexpected-keyword-arg
@@ -1666,6 +1711,7 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             # trl does some odd mapping of alpha to beta to reuse the beta parameter ???
             training_args_kwargs["beta"] = self.cfg.orpo_alpha
 
+        training_args_kwargs["dataset_num_proc"] = self.cfg.dataset_processes
         training_args_cls = AxolotlDPOConfig
         if self.cfg.rpo_alpha is not None:
             training_args_kwargs["rpo_alpha"] = self.cfg.rpo_alpha
@@ -1733,8 +1779,6 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             dpo_trainer_kwargs["max_target_length"] = None
             dpo_trainer_kwargs["max_prompt_length"] = self.cfg.sequence_len
             dpo_trainer_kwargs["generate_during_eval"] = True
-            if self.cfg.rl == "dpo":
-                dpo_trainer_kwargs["dataset_num_proc"] = self.cfg.dataset_processes
         elif self.cfg.rl == "orpo":
             trainer_cls = AxolotlORPOTrainer
             trainer_cls_args = [self.model]
