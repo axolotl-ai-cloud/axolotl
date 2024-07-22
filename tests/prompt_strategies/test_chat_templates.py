@@ -75,7 +75,7 @@ def fixture_basic_dataset():
 
 @pytest.fixture(name="llama3_tokenizer")
 def fixture_llama3_tokenizer():
-    tokenizer = AutoTokenizer.from_pretrained("meta-llama/Meta-Llama-3-8B-Instruct")
+    tokenizer = AutoTokenizer.from_pretrained("NousResearch/Meta-Llama-3-8B-Instruct")
 
     return tokenizer
 
