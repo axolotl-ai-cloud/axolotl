@@ -2,6 +2,7 @@
 # pylint: disable=duplicate-code
 
 import logging
+from functools import partial
 from typing import List, Optional, Tuple, Union
 
 import torch
@@ -43,6 +44,15 @@ def replace_mistral_attn_with_flash_attn(
         transformers.models.mistral.modeling_mistral.MistralModel.forward = (
             mistral_model_forward
         )
+
+
+def patch_mistral_cross_entropy():
+    from flash_attn.losses.cross_entropy import CrossEntropyLoss
+
+    LOG.info("patching with flash_attn.losses.cross_entropy")
+    transformers.models.mistral.modeling_mistral.CrossEntropyLoss = partial(
+        CrossEntropyLoss, inplace_backward=True
+    )
 
 
 @torch.jit.script

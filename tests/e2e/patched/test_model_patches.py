@@ -4,6 +4,8 @@ E2E smoke tests to check that the monkeypatches are in place for certain configu
 
 import unittest
 
+import transformers
+
 from axolotl.common.cli import TrainerCliArgs
 from axolotl.utils.config import normalize_config
 from axolotl.utils.dict import DictDefault
@@ -87,9 +89,9 @@ class TestModelPatches(unittest.TestCase):
         normalize_config(cfg)
         cli_args = TrainerCliArgs()
         tokenizer = load_tokenizer(cfg)
-        model, _ = load_model(cfg, tokenizer, inference=cli_args.inference)
+        load_model(cfg, tokenizer, inference=cli_args.inference)
 
         assert (
-            "axolotl.monkeypatch.mistral_attn_hijack_flash"
-            in model.model.layers[0].self_attn.forward.__module__
+            "torch.jit"
+            in transformers.modeling_flash_attention_utils._get_unpad_data.__module__  # pylint: disable=protected-access
         )
