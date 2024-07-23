@@ -99,48 +99,51 @@ def check_self_attn_is_patchable() -> bool:
     return ORIGINAL_QKV_CODE in qkv and ORIGINAL_O_CODE in qkv
 
 
-def integrate_cross_entropy_loss_patch():
-    forward = get_forward_code()
-    LlamaForCausalLM._original_forward = forward  # pylint: disable=protected-access
-    forward, _ = detab_code(forward)
-    assert ORIGINAL_CEL_CODE in forward, "Original forward code not found"
+def integrate_cross_entropy_loss_patch(model_type: str = "llama") -> None:
+    if model_type == "llama":
+        forward = get_forward_code()
+        LlamaForCausalLM._original_forward = forward  # pylint: disable=protected-access
+        forward, _ = detab_code(forward)
+        assert ORIGINAL_CEL_CODE in forward, "Original forward code not found"
 
-    forward = forward.replace(
-        "@add_start_docstrings_to_model_forward(LLAMA_INPUTS_DOCSTRING)", ""
-    )
-    forward = forward.replace(
-        "@replace_return_docstrings(output_type=CausalLMOutputWithPast, config_class=_CONFIG_FOR_DOC)",
-        "",
-    )
-    forward = forward.replace(ORIGINAL_CEL_CODE, PATCHED_CEL_CODE)
-    forward = forward.replace(
-        "def forward(",
-        "def fast_cross_entropy_loss_forward(",
-        1,
-    )
+        forward = forward.replace(
+            "@add_start_docstrings_to_model_forward(LLAMA_INPUTS_DOCSTRING)", ""
+        )
+        forward = forward.replace(
+            "@replace_return_docstrings(output_type=CausalLMOutputWithPast, config_class=_CONFIG_FOR_DOC)",
+            "",
+        )
+        forward = forward.replace(ORIGINAL_CEL_CODE, PATCHED_CEL_CODE)
+        forward = forward.replace(
+            "def forward(",
+            "def fast_cross_entropy_loss_forward(",
+            1,
+        )
 
-    # load imports necessary
-    import transformers.models.llama.modeling_llama
+        # load imports necessary
+        import transformers.models.llama.modeling_llama
 
-    items_to_import = []
-    for item in dir(transformers.models.llama.modeling_llama):
-        if item in forward:
-            items_to_import.append(item)
+        items_to_import = []
+        for item in dir(transformers.models.llama.modeling_llama):
+            if item in forward:
+                items_to_import.append(item)
 
-    exec(  # pylint: disable=exec-used  # nosec B102
-        "from unsloth.kernels.cross_entropy_loss import fast_cross_entropy_loss",
-        globals(),
-    )
+        exec(  # pylint: disable=exec-used  # nosec B102
+            "from unsloth.kernels.cross_entropy_loss import fast_cross_entropy_loss",
+            globals(),
+        )
 
-    exec(  # pylint: disable=exec-used  # nosec B102
-        "from transformers.models.llama.modeling_llama import ("
-        + ", ".join(x for x in items_to_import)
-        + ")",
-        globals(),
-    )
-    exec(forward, globals())  # pylint: disable=exec-used  # nosec B102
-    LOG.info("patching unsloth fast_cross_entropy_loss", main_process_only=True)
-    LlamaForCausalLM.forward = fast_cross_entropy_loss_forward  # pylint: disable=undefined-variable  # noqa: F821
+        exec(  # pylint: disable=exec-used  # nosec B102
+            "from transformers.models.llama.modeling_llama import ("
+            + ", ".join(x for x in items_to_import)
+            + ")",
+            globals(),
+        )
+        exec(forward, globals())  # pylint: disable=exec-used  # nosec B102
+        LOG.info("patching unsloth fast_cross_entropy_loss", main_process_only=True)
+        LlamaForCausalLM.forward = fast_cross_entropy_loss_forward  # pylint: disable=undefined-variable  # noqa: F821
+    else:
+        raise ValueError("Unsupported model type")
 
 
 def detab_code(code: str) -> Tuple[str, str]:

@@ -189,9 +189,7 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
             max_input_len = np.max(get_dataset_lengths(train_dataset))
             LOG.debug(f"max_input_len: {max_input_len}", main_process_only=True)
 
-        if (
-            cfg.is_mistral_derived_model and cfg.flash_attention
-        ) or cfg.model_config_type == "mamba":
+        if cfg.model_config_type == "mamba":
             LOG.info("dropping attention_mask column")
             train_dataset = train_dataset.remove_columns("attention_mask")
             if eval_dataset:

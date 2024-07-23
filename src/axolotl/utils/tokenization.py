@@ -62,7 +62,7 @@ def process_tokens_for_rl_debug(tokens, color, tokenizer, text_only):
     """Helper function to process and color tokens."""
     colored_tokens = [
         color_token_for_rl_debug(tokenizer.decode(token), token, color, text_only)
-        for token in tokenizer.encode(tokens)
+        for token in tokenizer.encode(tokens, add_special_tokens=False)
     ]
     return colored_tokens
 
