@@ -1068,6 +1068,9 @@ class AxolotlDPOTrainer(SchedulerMixin, DPOTrainer):
                 res["rejected_input_ids"] = res["rejected_input_ids"][1:]
                 res["rejected_labels"] = res["rejected_labels"][1:]
                 res["rejected_attention_mask"] = res["rejected_attention_mask"][1:]
+            if res["prompt_input_ids"][0] == self.tokenizer.bos_token_id:
+                res["prompt_input_ids"] = res["prompt_input_ids"][1:]
+                res["prompt_attention_mask"] = res["prompt_attention_mask"][1:]
 
         return res
 
