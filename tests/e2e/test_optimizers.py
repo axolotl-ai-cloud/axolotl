@@ -1,5 +1,5 @@
 """
-E2E tests for lora llama
+E2E tests for custom optimizers using Llama
 """
 
 import logging
@@ -19,13 +19,13 @@ LOG = logging.getLogger("axolotl.tests.e2e")
 os.environ["WANDB_DISABLED"] = "true"
 
 
-class TestLoraLlama(unittest.TestCase):
+class TestCustomOptimizers(unittest.TestCase):
     """
     Test case for Llama models using LoRA
     """
 
     @with_temp_dir
-    def test_lora(self, temp_dir):
+    def test_optimi_adamw(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
@@ -55,7 +55,7 @@ class TestLoraLlama(unittest.TestCase):
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
-                "optimizer": "adamw_torch",
+                "optimizer": "optimi_adamw",
                 "lr_scheduler": "cosine",
             }
         )

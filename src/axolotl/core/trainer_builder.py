@@ -226,6 +226,12 @@ class AxolotlTrainingMixins:
         default=None,
         metadata={"help": "whether to use sequential sampling for curriculum learning"},
     )
+    alternate_optimizer: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "workaround to pass an alternate optimizer to the HF trainer"
+        },
+    )
 
 
 @dataclass
@@ -284,26 +290,91 @@ class AxolotlTrainer(Trainer):
         if self.args.orpo_alpha:
             self.loss_fct = torch.nn.CrossEntropyLoss(reduction="none")
 
+    def _wrap_model(self, model, training=True, dataloader=None):
+        if self.args.torch_compile:
+            torch._dynamo.config.accumulated_cache_size_limit = (  # pylint: disable=protected-access
+                256
+            )
+            model = torch.compile(
+                model,
+                backend=self.args.torch_compile_backend,
+                mode=self.args.torch_compile_mode,
+            )
+        return super()._wrap_model(model, training=training, dataloader=dataloader)
+
     def create_optimizer(self):
-        if self.args.loraplus_lr_ratio is None:
+        if (
+            self.args.loraplus_lr_ratio is None
+            and self.args.alternate_optimizer
+            not in ["optimi_adamw", "ao_adamw_8bit", "ao_adamw_4bit", "ao_adamw_fp8"]
+        ):
             return super().create_optimizer()
 
         opt_model = self.model_wrapped if is_sagemaker_mp_enabled() else self.model
         if self.optimizer is None:  # pylint: disable=access-member-before-definition
+            decay_parameters = self.get_decay_parameter_names(opt_model)
+            optimizer_grouped_parameters = [
+                {
+                    "params": [
+                        p
+                        for n, p in opt_model.named_parameters()
+                        if (n in decay_parameters and p.requires_grad)
+                    ],
+                    "weight_decay": self.args.weight_decay,
+                },
+                {
+                    "params": [
+                        p
+                        for n, p in opt_model.named_parameters()
+                        if (n not in decay_parameters and p.requires_grad)
+                    ],
+                    "weight_decay": 0.0,
+                },
+            ]
+
             optimizer_cls, optimizer_kwargs = Trainer.get_optimizer_cls_and_kwargs(
                 self.args,
                 opt_model,
             )
 
-            loraplus_lr_ratio = getattr(self.args, "loraplus_lr_ratio", None)
-            loraplus_lr_embedding = getattr(self.args, "loraplus_lr_embedding", None)
-            self.optimizer = create_loraplus_optimizer(  # pylint: disable=attribute-defined-outside-init
-                opt_model,
-                optimizer_cls,
-                optimizer_kwargs,
-                loraplus_lr_ratio,
-                loraplus_lr_embedding,
-            )
+            if self.args.loraplus_lr_ratio is not None:
+                loraplus_lr_ratio = getattr(self.args, "loraplus_lr_ratio", None)
+                loraplus_lr_embedding = getattr(
+                    self.args, "loraplus_lr_embedding", None
+                )
+                self.optimizer = create_loraplus_optimizer(  # pylint: disable=attribute-defined-outside-init
+                    opt_model,
+                    optimizer_cls,
+                    optimizer_kwargs,
+                    loraplus_lr_ratio,
+                    loraplus_lr_embedding,
+                )
+            elif self.args.alternate_optimizer == "optimi_adamw":
+                from optimi import AdamW
+
+                self.optimizer = (  # pylint: disable=attribute-defined-outside-init
+                    AdamW(
+                        optimizer_grouped_parameters, foreach=False, **optimizer_kwargs
+                    )
+                )
+            elif self.args.alternate_optimizer == "ao_adamw_4bit":
+                from torchao.prototype.low_bit_optim import AdamW4bit
+
+                self.optimizer = (  # pylint: disable=attribute-defined-outside-init
+                    AdamW4bit(optimizer_grouped_parameters, **optimizer_kwargs)
+                )
+            elif self.args.alternate_optimizer == "ao_adamw_8bit":
+                from torchao.prototype.low_bit_optim import AdamW8bit
+
+                self.optimizer = (  # pylint: disable=attribute-defined-outside-init
+                    AdamW8bit(optimizer_grouped_parameters, **optimizer_kwargs)
+                )
+            elif self.args.alternate_optimizer == "ao_adamw_fp8":
+                from torchao.prototype.low_bit_optim import AdamWFp8
+
+                self.optimizer = (  # pylint: disable=attribute-defined-outside-init
+                    AdamWFp8(optimizer_grouped_parameters, **optimizer_kwargs)
+                )
 
         if is_sagemaker_mp_enabled():
             self.optimizer = smp.DistributedOptimizer(  # pylint: disable=attribute-defined-outside-init
@@ -1235,6 +1306,10 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                     training_arguments_kwargs[
                         "torch_compile_backend"
                     ] = self.cfg.torch_compile_backend
+                if self.cfg.torch_compile_mode:
+                    training_arguments_kwargs[
+                        "torch_compile_mode"
+                    ] = self.cfg.torch_compile_mode
 
         # DDP Config
         if self.cfg.ddp_timeout:
@@ -1396,6 +1471,16 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
 
         trainer_kwargs = {}
 
+        if self.cfg.optimizer in [
+            "optimi_adamw",
+            "ao_adamw_4bit",
+            "ao_adamw_8bit",
+            "ao_adamw_fp8",
+        ]:
+            # Set default so transformers doesn't throw
+            training_arguments_kwargs["optim"] = "adamw_hf"
+            training_arguments_kwargs["alternate_optimizer"] = self.cfg.optimizer
+
         if self.cfg.optimizer == "lion_pytorch":
             from lion_pytorch import Lion
 
@@ -1423,6 +1508,11 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             if Path(self.cfg.torchdistx_path).exists():
                 sys.path.append(self.cfg.torchdistx_path)
                 importlib.import_module("torchdistx")
+
+        if self.cfg.accelerator_config:
+            training_arguments_kwargs[
+                "accelerator_config"
+            ] = self.cfg.accelerator_config
 
         training_args = (
             AxolotlTrainingArguments(  # pylint: disable=unexpected-keyword-arg
@@ -1621,6 +1711,7 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             # trl does some odd mapping of alpha to beta to reuse the beta parameter ???
             training_args_kwargs["beta"] = self.cfg.orpo_alpha
 
+        training_args_kwargs["dataset_num_proc"] = self.cfg.dataset_processes
         training_args_cls = AxolotlDPOConfig
         if self.cfg.rpo_alpha is not None:
             training_args_kwargs["rpo_alpha"] = self.cfg.rpo_alpha
@@ -1688,8 +1779,6 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             dpo_trainer_kwargs["max_target_length"] = None
             dpo_trainer_kwargs["max_prompt_length"] = self.cfg.sequence_len
             dpo_trainer_kwargs["generate_during_eval"] = True
-            if self.cfg.rl == "dpo":
-                dpo_trainer_kwargs["dataset_num_proc"] = self.cfg.dataset_processes
         elif self.cfg.rl == "orpo":
             trainer_cls = AxolotlORPOTrainer
             trainer_cls_args = [self.model]
