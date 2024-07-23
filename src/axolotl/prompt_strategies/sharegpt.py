@@ -72,12 +72,14 @@ def build_loader(
         field_model = (
             ds_cfg["field_model"] if ds_cfg and "field_model" in ds_cfg else None
         )
+        field_tool = ds_cfg["field_tool"] if ds_cfg and "field_tool" in ds_cfg else None
         roles = ds_cfg["roles"].to_dict() if ds_cfg and "roles" in ds_cfg else None
         strategy = tokenization_strategy_cls(
             prompter_cls(
                 conversation=conversation,
                 role_key_model=field_model,
                 role_key_human=field_human,
+                role_key_tool=field_tool,
                 roles=roles,
             ),
             tokenizer,
@@ -136,6 +138,7 @@ class SimpleShareGPTPromptTokenizingStrategy(ShareGPTPromptTokenizingStrategy):
             "assistant": "gpt",
             "gpt": "gpt",
             "system": "system",
+            "tool": "tool",
         }
         turns = [
             {

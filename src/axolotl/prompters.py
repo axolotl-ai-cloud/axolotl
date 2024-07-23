@@ -280,7 +280,7 @@ class ShareGPTPrompter(Prompter):  # pylint: disable=too-few-public-methods
     role_key_human = "human"
     role_key_model = "gpt"
     # Optional, only used for tool usage datasets.
-    role_key_tool: Optional[str] = None
+    role_key_tool: Optional[str] = "tool"
     # Optional, role input/output mapping
     roles: Optional[dict] = None
 

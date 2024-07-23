@@ -113,6 +113,7 @@ class SFTDataset(BaseModel):
     field: Optional[str] = None
     field_human: Optional[str] = None
     field_model: Optional[str] = None
+    field_tool: Optional[str] = None
     field_messages: Optional[str] = None
     message_field_role: Optional[str] = None
     message_field_content: Optional[str] = None
