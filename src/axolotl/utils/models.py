@@ -825,6 +825,9 @@ def load_model(
         # make sure everything is in the same dtype
         skip_prepare_model_for_kbit_training = True
 
+    if is_deepspeed_zero3_enabled():
+        skip_prepare_model_for_kbit_training = True
+
     if cfg.adapter in ["lora", "qlora"]:
         if cfg.gradient_checkpointing:
             model.gradient_checkpointing_enable(
