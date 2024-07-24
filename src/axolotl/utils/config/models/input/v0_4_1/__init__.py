@@ -172,6 +172,7 @@ class RLType(str, Enum):
     ipo = "ipo"  # pylint: disable=invalid-name
     orpo = "orpo"  # pylint: disable=invalid-name
     kto = "kto"  # pylint: disable=invalid-name
+    simpo = "simpo"  # pylint: disable=invalid-name
 
 
 class ChatTemplate(str, Enum):
@@ -644,6 +645,8 @@ class AxolotlInputConfig(
 
     orpo_alpha: Optional[float] = None
     rpo_alpha: Optional[float] = None
+    simpo_gamma: Optional[float] = None
+    cpo_alpha: Optional[float] = None
 
     kto_desirable_weight: Optional[float] = None
     kto_undesirable_weight: Optional[float] = None
