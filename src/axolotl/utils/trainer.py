@@ -1,4 +1,5 @@
 """Module containing the Trainer class and related functions"""
+import json
 import math
 import os
 import random
@@ -389,6 +390,13 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
     return total_num_steps
 
 
+def setup_deepspeed_env(cfg, is_zero3=False):
+    os.environ["ACCELERATE_USE_DEEPSPEED"] = "true"
+    os.environ["ACCELERATE_DEEPSPEED_CONFIG_FILE"] = cfg.deepspeed
+    if is_zero3:
+        os.environ["ACCELERATE_DEEPSPEED_ZERO3_INIT"] = "true"
+
+
 def setup_fsdp_envs(cfg):
     os.environ["ACCELERATE_USE_FSDP"] = "true"
     if cfg.fsdp_config.fsdp_activation_checkpointing:
@@ -415,8 +423,15 @@ def prepare_optim_env(cfg):
     if cfg.fsdp:
         setup_fsdp_envs(cfg)
     elif cfg.deepspeed:
-        os.environ["ACCELERATE_USE_DEEPSPEED"] = "true"
-        os.environ["ACCELERATE_DEEPSPEED_CONFIG_FILE"] = cfg.deepspeed
+        is_zero3 = False
+        # check if the cfg.deepspeed is a file
+        if os.path.isfile(cfg.deepspeed):
+            # parse with json
+            with open(cfg.deepspeed, "r", encoding="utf-8") as fin:
+                deepspeed_config = json.load(fin)
+            if deepspeed_config.get("zero_optimization", {}).get("stage", None) == 3:
+                is_zero3 = True
+        setup_deepspeed_env(cfg, is_zero3=is_zero3)
 
     if (cfg.bf16 == "auto" and is_torch_bf16_gpu_available()) or cfg.bf16 is True:
         os.environ["ACCELERATE_MIXED_PRECISION"] = "bf16"

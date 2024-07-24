@@ -8,6 +8,7 @@ import importlib
 import importlib.util
 import logging
 import math
+import os
 import sys
 from abc import abstractmethod
 from collections import defaultdict
@@ -28,7 +29,7 @@ from transformers import (
     TrainerCallback,
     TrainingArguments,
 )
-from transformers.trainer_utils import seed_worker
+from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, seed_worker
 from transformers.utils import is_sagemaker_mp_enabled
 from trl import (
     CPOConfig,
@@ -286,7 +287,77 @@ class AxolotlCPOConfig(AxolotlTrainingMixins, CPOConfig):
     )
 
 
-class AxolotlTrainer(Trainer):
+class SchedulerMixin(Trainer):
+    """
+    Mixin class for scheduler setup in CausalTrainer.
+    """
+
+    args = None  # type: AxolotlTrainingArguments
+
+    def create_scheduler(
+        self, num_training_steps: int, optimizer: torch.optim.Optimizer = None
+    ):
+        """
+        Setup the scheduler. The optimizer of the trainer must have been set up either before this method is called or
+        passed as an argument.
+
+        Args:
+            num_training_steps (int): The number of training steps to do.
+            optimizer (torch.optim.Optimizer): The training optimizer
+        """
+        use_cosine_quadratic = (
+            self.args.lr_scheduler_type == "cosine"
+            and self.args.lr_quadratic_warmup is True
+        )
+
+        use_cosine_min_lr = (
+            self.args.lr_scheduler_type == "cosine"
+            and self.args.cosine_min_lr_ratio is not None
+        )
+
+        # fmt: off
+        if self.lr_scheduler is None:  # type: ignore  # pylint: disable=access-member-before-definition
+            # fmt: on
+            if use_cosine_quadratic:
+                if use_cosine_min_lr:
+                    LOG.warning("Both cosine quadratic warmup and min lr detected. Using quadratic warmup.")
+
+                self.lr_scheduler = get_cosine_schedule_with_quadratic_warmup(  # pylint: disable=attribute-defined-outside-init
+                    optimizer,
+                    num_warmup_steps=self.args.get_warmup_steps(num_training_steps),
+                    num_training_steps=num_training_steps,
+                )
+            elif self.args.cosine_min_lr_ratio and self.args.cosine_constant_lr_ratio and use_cosine_min_lr:
+                assert 0 <= self.args.cosine_min_lr_ratio <= 1.0, "cosine_min_lr_ratio must be between 0.0 and 1.0"
+                assert 0 <= self.args.cosine_constant_lr_ratio <= 1.0, "cosine_constant_lr_ratio must be between 0.0 and 1.0"
+                self.lr_scheduler = get_cosine_schedule_with_warmup_decay_constant(  # pylint: disable=attribute-defined-outside-init
+                    optimizer,
+                    num_warmup_steps=self.args.get_warmup_steps(num_training_steps),
+                    num_training_steps=num_training_steps,
+                    min_lr_ratio=self.args.cosine_min_lr_ratio,
+                    constant_lr_ratio=self.args.cosine_constant_lr_ratio,
+                )
+            elif self.args.cosine_min_lr_ratio and use_cosine_min_lr:
+                assert 0 <= self.args.cosine_min_lr_ratio <= 1.0, "cosine_min_lr_ratio must be between 0.0 and 1.0"
+                self.lr_scheduler = get_cosine_schedule_with_min_lr(  # pylint: disable=attribute-defined-outside-init
+                    optimizer,
+                    num_warmup_steps=self.args.get_warmup_steps(num_training_steps),
+                    num_training_steps=num_training_steps,
+                    min_lr_ratio=self.args.cosine_min_lr_ratio,
+                )
+            else:
+                return super().create_scheduler(num_training_steps, optimizer)
+        else:
+            if use_cosine_quadratic:
+                LOG.warning("axolotl's cosine scheduler with quadratic warmup not used (e.g., because of deepspeed).")
+
+            if use_cosine_min_lr:
+                LOG.warning("axolotl's cosine scheduler with min lr not used (e.g., because of deepspeed).")
+
+        return self.lr_scheduler
+
+
+class AxolotlTrainer(SchedulerMixin, Trainer):
     """
     Extend the base Trainer for axolotl helpers
     """
@@ -403,68 +474,6 @@ class AxolotlTrainer(Trainer):
             )
 
         return self.optimizer
-
-    def create_scheduler(
-        self, num_training_steps: int, optimizer: torch.optim.Optimizer = None
-    ):
-        """
-        Setup the scheduler. The optimizer of the trainer must have been set up either before this method is called or
-        passed as an argument.
-
-        Args:
-            num_training_steps (int): The number of training steps to do.
-            optimizer (torch.optim.Optimizer): The training optimizer
-        """
-        use_cosine_quadratic = (
-            self.args.lr_scheduler_type == "cosine"
-            and self.args.lr_quadratic_warmup is True
-        )
-
-        use_cosine_min_lr = (
-            self.args.lr_scheduler_type == "cosine"
-            and self.args.cosine_min_lr_ratio is not None
-        )
-
-        # fmt: off
-        if self.lr_scheduler is None:  # type: ignore  # pylint: disable=access-member-before-definition
-            # fmt: on
-            if use_cosine_quadratic:
-                if use_cosine_min_lr:
-                    LOG.warning("Both cosine quadratic warmup and min lr detected. Using quadratic warmup.")
-
-                self.lr_scheduler = get_cosine_schedule_with_quadratic_warmup(  # pylint: disable=attribute-defined-outside-init
-                    optimizer,
-                    num_warmup_steps=self.args.get_warmup_steps(num_training_steps),
-                    num_training_steps=num_training_steps,
-                )
-            elif self.args.cosine_min_lr_ratio and self.args.cosine_constant_lr_ratio and use_cosine_min_lr:
-                assert 0 <= self.args.cosine_min_lr_ratio <= 1.0, "cosine_min_lr_ratio must be between 0.0 and 1.0"
-                assert 0 <= self.args.cosine_constant_lr_ratio <= 1.0, "cosine_constant_lr_ratio must be between 0.0 and 1.0"
-                self.lr_scheduler = get_cosine_schedule_with_warmup_decay_constant(  # pylint: disable=attribute-defined-outside-init
-                    optimizer,
-                    num_warmup_steps=self.args.get_warmup_steps(num_training_steps),
-                    num_training_steps=num_training_steps,
-                    min_lr_ratio=self.args.cosine_min_lr_ratio,
-                    constant_lr_ratio=self.args.cosine_constant_lr_ratio,
-                )
-            elif self.args.cosine_min_lr_ratio and use_cosine_min_lr:
-                assert 0 <= self.args.cosine_min_lr_ratio <= 1.0, "cosine_min_lr_ratio must be between 0.0 and 1.0"
-                self.lr_scheduler = get_cosine_schedule_with_min_lr(  # pylint: disable=attribute-defined-outside-init
-                    optimizer,
-                    num_warmup_steps=self.args.get_warmup_steps(num_training_steps),
-                    num_training_steps=num_training_steps,
-                    min_lr_ratio=self.args.cosine_min_lr_ratio,
-                )
-            else:
-                return super().create_scheduler(num_training_steps, optimizer)
-        else:
-            if use_cosine_quadratic:
-                LOG.warning("axolotl's cosine scheduler with quadratic warmup not used (e.g., because of deepspeed).")
-
-            if use_cosine_min_lr:
-                LOG.warning("axolotl's cosine scheduler with min lr not used (e.g., because of deepspeed).")
-
-        return self.lr_scheduler
 
     def _get_train_sampler(self) -> Optional[torch.utils.data.Sampler]:
         if self.args.sample_packing and not self.args.pretraining:
@@ -830,6 +839,14 @@ class AxolotlTrainer(Trainer):
         for key, value in metrics.items():
             self._stored_metrics[train_eval][key].append(value)
 
+    def _save_checkpoint(self, model, trial, metrics=None):
+        # make sure the checkpoint dir exists, since trainer is flakey
+        checkpoint_folder = f"{PREFIX_CHECKPOINT_DIR}-{self.state.global_step}"
+        run_dir = self._get_output_dir(trial=trial)
+        output_dir = os.path.join(run_dir, checkpoint_folder)
+        os.makedirs(output_dir, exist_ok=True)
+        return super()._save_checkpoint(model, trial, metrics=metrics)
+
 
 class AxolotlMambaTrainer(AxolotlTrainer):
     """
@@ -929,7 +946,7 @@ class ReLoRATrainer(AxolotlTrainer):
         return self.lr_scheduler
 
 
-class AxolotlDPOTrainer(DPOTrainer):
+class AxolotlDPOTrainer(SchedulerMixin, DPOTrainer):
     """
     Extend the base DPOTrainer for axolotl helpers
     """
@@ -990,7 +1007,7 @@ class AxolotlDPOTrainer(DPOTrainer):
         return res
 
 
-class AxolotlORPOTrainer(ORPOTrainer):
+class AxolotlORPOTrainer(SchedulerMixin, ORPOTrainer):
     """
     Extend the base ORPOTrainer for axolotl helpers
     """
@@ -998,7 +1015,7 @@ class AxolotlORPOTrainer(ORPOTrainer):
     tag_names = ["axolotl", "orpo"]
 
 
-class AxolotlKTOTrainer(KTOTrainer):
+class AxolotlKTOTrainer(SchedulerMixin, KTOTrainer):
     """
     Extend the base KTOTrainer for axolotl helpers
     """
@@ -1006,7 +1023,7 @@ class AxolotlKTOTrainer(KTOTrainer):
     tag_names = ["axolotl", "kto"]
 
 
-class AxolotlCPOTrainer(CPOTrainer):
+class AxolotlCPOTrainer(SchedulerMixin, CPOTrainer):
     """
     Extend the base CPOTrainer for axolotl helpers
     """
@@ -1750,6 +1767,7 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         if self.cfg.rl == "simpo":
             training_args_cls = AxolotlCPOConfig
             training_args_kwargs["loss_type"] = "simpo"
+            training_args_kwargs["max_length"] = self.cfg.sequence_len
             training_args_kwargs["simpo_gamma"] = self.cfg.simpo_gamma
             if self.cfg.cpo_alpha is not None:
                 training_args_kwargs["cpo_alpha"] = self.cfg.cpo_alpha

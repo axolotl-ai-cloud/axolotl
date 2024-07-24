@@ -2,6 +2,7 @@
 CLI to run training on a model
 """
 import logging
+import warnings
 from pathlib import Path
 from typing import Union
 
@@ -76,8 +77,12 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
 
     if parsed_cli_args.download:
         model_name = parsed_cfg.base_model
-        with init_empty_weights():
-            AutoModelForCausalLM.from_pretrained(model_name, trust_remote_code=True)
+        with warnings.catch_warnings():
+            # there are a bunch of useless UserWarnings about
+            # "copying from a non-meta parameter in the checkpoint to a meta parameter in the current model"
+            warnings.simplefilter("ignore")
+            with init_empty_weights():
+                AutoModelForCausalLM.from_pretrained(model_name, trust_remote_code=True)
 
     LOG.info(
         Fore.GREEN
