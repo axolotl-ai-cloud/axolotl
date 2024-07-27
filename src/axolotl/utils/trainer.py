@@ -393,9 +393,14 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
 def setup_deepspeed_env(cfg, stage=None):
     os.environ["ACCELERATE_USE_DEEPSPEED"] = "true"
     os.environ["ACCELERATE_DEEPSPEED_CONFIG_FILE"] = cfg.deepspeed
-    os.environ["ACCELERATE_DEEPSPEED_ZERO_STAGE"] = str(stage)
-    if stage == 3:
-        os.environ["ACCELERATE_DEEPSPEED_ZERO3_INIT"] = "true"
+    if cfg.bf16:
+        os.environ["ACCELERATE_MIXED_PRECISION"] = "bf16"
+    elif cfg.fp16:
+        os.environ["ACCELERATE_MIXED_PRECISION"] = "fp16"
+    if stage:
+        os.environ["ACCELERATE_DEEPSPEED_ZERO_STAGE"] = str(stage)
+        if stage == 3:
+            os.environ["ACCELERATE_DEEPSPEED_ZERO3_INIT"] = "true"
 
 
 def setup_fsdp_envs(cfg):

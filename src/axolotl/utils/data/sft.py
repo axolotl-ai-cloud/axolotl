@@ -42,7 +42,7 @@ from axolotl.prompters import (
 from axolotl.utils.data.pretraining import wrap_pretraining_dataset
 from axolotl.utils.data.utils import md5
 from axolotl.utils.dict import DictDefault
-from axolotl.utils.distributed import is_main_process, zero_first
+from axolotl.utils.distributed import is_local_main_process, zero_first
 from axolotl.utils.trainer import (
     calculate_total_num_steps,
     process_datasets_for_packing,
@@ -54,7 +54,7 @@ LOG = logging.getLogger("axolotl")
 def prepare_dataset(cfg, tokenizer):
     prompters = []
     if not cfg.pretraining_dataset:
-        with zero_first(is_main_process()):
+        with zero_first(is_local_main_process()):
             if cfg.test_datasets:
                 train_dataset, _, prompters = load_prepare_datasets(
                     tokenizer, cfg, DEFAULT_DATASET_PREPARED_PATH, split="train"
