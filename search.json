@@ -1,76 +1,89 @@
 [
   {
-    "objectID": "docs/debugging.html",
-    "href": "docs/debugging.html",
-    "title": "Debugging",
+    "objectID": "FAQS.html",
+    "href": "FAQS.html",
+    "title": "FAQs",
     "section": "",
-    "text": "This document provides some tips and tricks for debugging Axolotl. It also provides an example configuration for debugging with VSCode. A good debugging setup is essential to understanding how Axolotl code works behind the scenes.",
-    "crumbs": [
-      "How-To Guides",
-      "Debugging"
-    ]
+    "text": "FAQs\n\nCan you train StableLM with this? Yes, but only with a single GPU atm. Multi GPU support is coming soon! Just waiting on this PR\nWill this work with Deepspeed? That’s still a WIP, but setting export ACCELERATE_USE_DEEPSPEED=true should work in some cases\nError invalid argument at line 359 in file /workspace/bitsandbytes/csrc/pythonInterface.c /arrow/cpp/src/arrow/filesystem/s3fs.cc:2598:  arrow::fs::FinalizeS3 was not called even though S3 was initialized. This could lead to a segmentation fault at exit. Try reinstalling bitsandbytes and transformers from source."
   },
   {
-    "objectID": "docs/debugging.html#table-of-contents",
-    "href": "docs/debugging.html#table-of-contents",
-    "title": "Debugging",
-    "section": "Table of Contents",
-    "text": "Table of Contents\n\nGeneral Tips\nDebugging with VSCode\n\nBackground\nConfiguration\nCustomizing your debugger\nVideo Tutorial\n\nDebugging With Docker\n\nSetup\nAttach To Container\nVideo - Attaching To Docker On Remote Host",
-    "crumbs": [
-      "How-To Guides",
-      "Debugging"
-    ]
-  },
-  {
-    "objectID": "docs/debugging.html#general-tips",
-    "href": "docs/debugging.html#general-tips",
-    "title": "Debugging",
-    "section": "General Tips",
-    "text": "General Tips\nWhile debugging it’s helpful to simplify your test scenario as much as possible. Here are some tips for doing so:\n\n[!Important] All of these tips are incorporated into the example configuration for debugging with VSCode below.\n\n\nMake sure you are using the latest version of axolotl: This project changes often and bugs get fixed fast. Check your git branch and make sure you have pulled the latest changes from main.\nEliminate concurrency: Restrict the number of processes to 1 for both training and data preprocessing:\n\nSet CUDA_VISIBLE_DEVICES to a single GPU, ex: export CUDA_VISIBLE_DEVICES=0.\nSet dataset_processes: 1 in your axolotl config or run the training command with --dataset_processes=1.\n\nUse a small dataset: Construct or use a small dataset from HF Hub. When using a small dataset, you will often have to make sure sample_packing: False and eval_sample_packing: False to avoid errors. If you are in a pinch and don’t have time to construct a small dataset but want to use from the HF Hub, you can shard the data (this will still tokenize the entire dataset, but will only use a fraction of the data for training. For example, to shard the dataset into 20 pieces, add the following to your axolotl config): yaml     dataset:         ...         shards: 20\nUse a small model: A good example of a small model is TinyLlama/TinyLlama-1.1B-Chat-v1.0.\nMinimize iteration time: Make sure the training loop finishes as fast as possible, with these settings.\n\nmicro_batch_size: 1\nmax_steps: 1\nval_set_size: 0\n\nClear Caches: Axolotl caches certain steps and so does the underlying HuggingFace trainer. You may want to clear some of these caches when debugging.\n\nData preprocessing: When debugging data preprocessing, which includes prompt template formation, you may want to delete the directory set in dataset_prepared_path: in your axolotl config. If you didn’t set this value, the default is last_run_prepared.\nHF Hub: If you are debugging data preprocessing, you should clear the relevant HF cache HuggingFace cache, by deleting the appropriate ~/.cache/huggingface/datasets/... folder(s).\nThe recommended approach is to redirect all outputs and caches to a temporary folder and delete selected subfolders before each run. This is demonstrated in the example configuration below.",
-    "crumbs": [
-      "How-To Guides",
-      "Debugging"
-    ]
-  },
-  {
-    "objectID": "docs/debugging.html#debugging-with-vscode",
-    "href": "docs/debugging.html#debugging-with-vscode",
-    "title": "Debugging",
-    "section": "Debugging with VSCode",
-    "text": "Debugging with VSCode\n\nBackground\nThe below example shows how to configure VSCode to debug data preprocessing of the sharegpt format. This is the format used when you have the following in your axolotl config:\ndatasets:\n  - path: &lt;path to your sharegpt formatted dataset&gt; # example on HF Hub: philschmid/guanaco-sharegpt-style\n    type: sharegpt\n\n[!Important] If you are already familiar with advanced VSCode debugging, you can skip the below explanation and look at the files .vscode/launch.json and .vscode/tasks.json for an example configuration.\n\n\n[!Tip] If you prefer to watch a video, rather than read, you can skip to the video tutorial below (but doing both is recommended).\n\n\n\nSetup\nMake sure you have an editable install of Axolotl, which ensures that changes you make to the code are reflected at runtime. Run the following commands from the root of this project:\npip3 install packaging\npip3 install -e '.[flash-attn,deepspeed]'\n\nRemote Hosts\nIf you developing on a remote host, you can easily use VSCode to debug remotely. To do so, you will need to follow this remote - SSH guide. You can also see the video below on Docker and Remote SSH debugging.\n\n\n\nConfiguration\nThe easiest way to get started is to modify the .vscode/launch.json file in this project. This is just an example configuration, so you may need to modify or copy it to suit your needs.\nFor example, to mimic the command cd devtools && CUDA_VISIBLE_DEVICES=0 accelerate launch -m axolotl.cli.train dev_sharegpt.yml, you would use the below configuration1. Note that we add additional flags that override the axolotl config and incorporate the tips above (see the comments). We also set the working directory to devtools and set the env variable HF_HOME to a temporary folder that is later partially deleted. This is because we want to delete the HF dataset cache before each run in order to ensure that the data preprocessing code is run from scratch.\n// .vscode/launch.json\n{\n    \"version\": \"0.2.0\",\n    \"configurations\": [\n        {\n            \"name\": \"Debug axolotl prompt - sharegpt\",\n            \"type\": \"python\",\n            \"module\": \"accelerate.commands.launch\",\n            \"request\": \"launch\",\n            \"args\": [\n                \"-m\", \"axolotl.cli.train\", \"dev_sharegpt.yml\",\n                // The flags below simplify debugging by overriding the axolotl config\n                // with the debugging tips above.  Modify as needed.\n                \"--dataset_processes=1\",      // limits data preprocessing to one process\n                \"--max_steps=1\",              // limits training to just one step\n                \"--batch_size=1\",             // minimizes batch size\n                \"--micro_batch_size=1\",       // minimizes batch size\n                \"--val_set_size=0\",           // disables validation\n                \"--sample_packing=False\",     // disables sample packing which is necessary for small datasets\n                \"--eval_sample_packing=False\",// disables sample packing on eval set\n                \"--dataset_prepared_path=temp_debug/axolotl_outputs/data\", // send data outputs to a temp folder\n                \"--output_dir=temp_debug/axolotl_outputs/model\" // send model outputs to a temp folder\n                ],\n            \"console\": \"integratedTerminal\",      // show output in the integrated terminal\n            \"cwd\": \"${workspaceFolder}/devtools\", // set working directory to devtools from the root of the project\n            \"justMyCode\": true,                   // step through only axolotl code\n            \"env\": {\"CUDA_VISIBLE_DEVICES\": \"0\",  // Since we aren't doing distributed training, we need to limit to one GPU\n                    \"HF_HOME\": \"${workspaceFolder}/devtools/temp_debug/.hf-cache\"}, // send HF cache to a temp folder\n            \"preLaunchTask\": \"cleanup-for-dataprep\", // delete temp folders (see below)\n        }\n    ]\n}\nAdditional notes about this configuration:\n\nThe argument justMyCode is set to true such that you step through only the axolotl code. If you want to step into dependencies, set this to false.\nThe preLaunchTask: cleanup-for-dataprep is defined in .vscode/tasks.json and is used to delete the following folders before debugging, which is essential to ensure that the data pre-processing code is run from scratch:\n\n./devtools/temp_debug/axolotl_outputs\n./devtools/temp_debug/.hf-cache/datasets\n\n\n\n[!Tip] You may not want to delete these folders. For example, if you are debugging model training instead of data pre-processing, you may NOT want to delete the cache or output folders. You may also need to add additional tasks to the tasks.json file depending on your use case.\n\nBelow is the ./vscode/tasks.json file that defines the cleanup-for-dataprep task. This task is run before each debugging session when you use the above configuration. Note how there are two tasks that delete the two folders mentioned above. The third task cleanup-for-dataprep is a composite task that combines the two tasks. A composite task is necessary because VSCode does not allow you to specify multiple tasks in the preLaunchTask argument of the launch.json file.\n// .vscode/tasks.json\n// this file is used by launch.json\n{\n    \"version\": \"2.0.0\",\n    \"tasks\": [\n      // this task changes into the devtools directory and deletes the temp_debug/axolotl_outputs folder\n      {\n        \"label\": \"delete-outputs\",\n        \"type\": \"shell\",\n        \"command\": \"rm -rf temp_debug/axolotl_outputs\",\n        \"options\":{ \"cwd\": \"${workspaceFolder}/devtools\"},\n        \"problemMatcher\": []\n      },\n      // this task changes into the devtools directory and deletes the `temp_debug/.hf-cache/datasets` folder\n      {\n        \"label\": \"delete-temp-hf-dataset-cache\",\n        \"type\": \"shell\",\n        \"command\": \"rm -rf temp_debug/.hf-cache/datasets\",\n        \"options\":{ \"cwd\": \"${workspaceFolder}/devtools\"},\n        \"problemMatcher\": []\n      },\n        // this task combines the two tasks above\n      {\n       \"label\": \"cleanup-for-dataprep\",\n       \"dependsOn\": [\"delete-outputs\", \"delete-temp-hf-dataset-cache\"],\n      }\n    ]\n}\n\n\nCustomizing your debugger\nYour debugging use case may differ from the example above. The easiest thing to do is to put your own axolotl config in the devtools folder and modify the launch.json file to use your config. You may also want to modify the preLaunchTask to delete different folders or not delete anything at all.\n\n\nVideo Tutorial\nThe following video tutorial walks through the above configuration and demonstrates how to debug with VSCode, (click the image below to watch):\n\n\n\nHamel Husain’s tutorial: Debugging Axolotl w/VSCode",
-    "crumbs": [
-      "How-To Guides",
-      "Debugging"
-    ]
-  },
-  {
-    "objectID": "docs/debugging.html#debugging-with-docker",
-    "href": "docs/debugging.html#debugging-with-docker",
-    "title": "Debugging",
-    "section": "Debugging With Docker",
-    "text": "Debugging With Docker\nUsing official Axolotl Docker images is a great way to debug your code, and is a very popular way to use Axolotl. Attaching VSCode to Docker takes a few more steps.\n\nSetup\nOn the host that is running axolotl (ex: if you are using a remote host), clone the axolotl repo and change your current directory to the root:\ngit clone https://github.com/axolotl-ai-cloud/axolotl\ncd axolotl\n\n[!Tip] If you already have axolotl cloned on your host, make sure you have the latest changes and change into the root of the project.\n\nNext, run the desired docker image and mount the current directory. Below is a docker command you can run to do this:2\ndocker run --privileged --gpus '\"all\"' --shm-size 10g --rm -it --name axolotl --ipc=host --ulimit memlock=-1 --ulimit stack=67108864 --mount type=bind,src=\"${PWD}\",target=/workspace/axolotl -v ${HOME}/.cache/huggingface:/root/.cache/huggingface winglian/axolotl:main-py3.10-cu118-2.0.1\n\n[!Tip] To understand which containers are available, see the Docker section of the README and the DockerHub repo. For details of how the Docker containers are built, see axolotl’s Docker CI builds.\n\nYou will now be in the container. Next, perform an editable install of Axolotl:\npip3 install packaging\npip3 install -e '.[flash-attn,deepspeed]'\n\n\nAttach To Container\nNext, if you are using a remote host, Remote into this host with VSCode. If you are using a local host, you can skip this step.\nNext, select Dev Containers: Attach to Running Container... using the command palette (CMD + SHIFT + P) in VSCode. You will be prompted to select a container to attach to. Select the container you just created. You will now be in the container with a working directory that is at the root of the project. Any changes you make to the code will be reflected both in the container and on the host.\nNow you are ready to debug as described above (see Debugging with VSCode).\n\n\nVideo - Attaching To Docker On Remote Host\nHere is a short video that demonstrates how to attach to a Docker container on a remote host:\n\n\n\nHamel Husain’s tutorial: Debugging Axolotl Part 2: Attaching to Docker on a Remote Host",
-    "crumbs": [
-      "How-To Guides",
-      "Debugging"
-    ]
-  },
-  {
-    "objectID": "docs/debugging.html#footnotes",
-    "href": "docs/debugging.html#footnotes",
-    "title": "Debugging",
-    "section": "Footnotes",
-    "text": "Footnotes\n\n\nThe config actually mimics the command CUDA_VISIBLE_DEVICES=0 python -m accelerate.commands.launch -m axolotl.cli.train devtools/sharegpt.yml, but this is the same thing.↩︎\nMany of the below flags are recommended best practices by Nvidia when using nvidia-container-toolkit. You can read more about these flags here.↩︎",
-    "crumbs": [
-      "How-To Guides",
-      "Debugging"
-    ]
-  },
-  {
-    "objectID": "docs/torchao.html",
-    "href": "docs/torchao.html",
-    "title": "PyTorch ao",
+    "objectID": "TODO.html",
+    "href": "TODO.html",
+    "title": "todo list",
     "section": "",
-    "text": "Installation\nStable Release from the PyTorch index\npip install torchao --extra-index-url https://download.pytorch.org/whl/cu121 # full options are cpu/cu118/cu121/cu124\nNightly release\npip install --pre torchao-nightly --index-url https://download.pytorch.org/whl/nightly/cu121 # full options are cpu/cu118/cu121/cu124"
+    "text": "[] Validation of parameters for combinations that won’t work\n\n\n\n\nFSDP offload and gradient_checkpointing - https://github.com/pytorch/pytorch/issues/82203\nadamw_bnb_8bit doesn’t play well with FSDP offload"
+  },
+  {
+    "objectID": "TODO.html#things-that-are-known-not-to-work",
+    "href": "TODO.html#things-that-are-known-not-to-work",
+    "title": "todo list",
+    "section": "",
+    "text": "FSDP offload and gradient_checkpointing - https://github.com/pytorch/pytorch/issues/82203\nadamw_bnb_8bit doesn’t play well with FSDP offload"
+  },
+  {
+    "objectID": "docs/rlhf.html",
+    "href": "docs/rlhf.html",
+    "title": "RLHF (Beta)",
+    "section": "",
+    "text": "Overview\nReinforcement Learning from Human Feedback is a method whereby a language model is optimized from data using human feedback. Various methods include, but not limited to:\n\nProximal Policy Optimization (PPO) (not yet supported in axolotl)\nDirect Preference Optimization (DPO)\nIdentity Preference Optimization (IPO)\n\n\n\nRLHF using Axolotl\n\n[!IMPORTANT] This is a BETA feature and many features are not fully implemented. You are encouraged to open new PRs to improve the integration and functionality.\n\nThe various RL training methods are implemented in trl and wrapped via axolotl. Below are various examples with how you can use various preference datasets to train models that use ChatML\n\nDPO\nrl: dpo\ndatasets:\n  - path: Intel/orca_dpo_pairs\n    split: train\n    type: chatml.intel\n  - path: argilla/ultrafeedback-binarized-preferences\n    split: train\n    type: chatml.argilla\n\n\nIPO\nrl: ipo\n\n\nORPO\nPaper: https://arxiv.org/abs/2403.07691\nrl: orpo\norpo_alpha: 0.1\nremove_unused_columns: false\n\nchat_template: chatml\ndatasets:\n  - path: argilla/ultrafeedback-binarized-preferences-cleaned\n    type: chat_template.argilla\n\n\nUsing local dataset files\ndatasets:\n  - ds_type: json\n    data_files:\n      - orca_rlhf.jsonl\n    split: train\n    type: chatml.intel\n\n\nTrl autounwrap for peft\nTrl supports autounwrapping peft models, so that a ref model does not need to be additionally loaded, leading to less VRAM needed. This is on by default. To turn it off, pass the following config.\n# load ref model when adapter training.\nrl_adapter_ref_model: true",
+    "crumbs": [
+      "How-To Guides",
+      "RLHF (Beta)"
+    ]
+  },
+  {
+    "objectID": "docs/faq.html",
+    "href": "docs/faq.html",
+    "title": "FAQ",
+    "section": "",
+    "text": "Q: The trainer stopped and hasn’t progressed in several minutes.\n\nA: Usually an issue with the GPUs communicating with each other. See the NCCL doc\n\nQ: Exitcode -9\n\nA: This usually happens when you run out of system RAM.\n\nQ: Exitcode -7 while using deepspeed\n\nA: Try upgrading deepspeed w: pip install -U deepspeed\n\nQ: AttributeError: ‘DummyOptim’ object has no attribute ‘step’\n\nA: You may be using deepspeed with single gpu. Please don’t set deepspeed: in yaml or cli.",
+    "crumbs": [
+      "FAQ"
+    ]
+  },
+  {
+    "objectID": "docs/input_output.html",
+    "href": "docs/input_output.html",
+    "title": "Template-free prompt construction",
+    "section": "",
+    "text": "Background\n\nMasking Inputs\nYou may not want prompt templates\nThe input_output format\n\nUsage\n\n1. Prepare Data\n2. Use type: input_output\n3. Check the prompts",
+    "crumbs": [
+      "How-To Guides",
+      "Template-free prompt construction"
+    ]
+  },
+  {
+    "objectID": "docs/input_output.html#background",
+    "href": "docs/input_output.html#background",
+    "title": "Template-free prompt construction",
+    "section": "Background",
+    "text": "Background\n\n\nMasking Inputs\nOne of the most popular features of axolotl is setting the following configuration value:\ntrain_on_inputs: false\nIf you declare a dataset formats such as alpaca or chatml, axolotl knows what is an input (i.e. human) vs. an output (i.e. the assistant) and masks the input labels so that your model can focus on predicting the outputs only.\n\n\n\nYou may not want prompt templates\nHowever, there are many situations where you don’t want to use one of these formats or templates. This is because they can:\n\nAdd unnecessary boilerplate to your prompts.\nCreate artifacts like special delimiters &lt;|im_start|&gt; that can quickly become footguns if you don’t include them correctly at inference time.\nEnforce a chat interface when you do not want one. Sometimes you just want to fine-tune a model to a very specific task and do NOT want multi-turn conversations, roles, etc.\nLimit you to only certain roles that the template allows.\n\n\n\n\nThe input_output format\nYou can construct your prompts without a template by using the input_output format, by setting type: input_output in your configuration file like this:\nconfig.yml\ntrain_on_inputs: false # Mask segments of your data\ndatasets:\n  - path: output.jsonl\n    type: input_output  # use template free prompt construction\nUnlike type: completion, which is also template-free, type: input_output allows you to mask segments of your text. More details on how this works are described below.",
+    "crumbs": [
+      "How-To Guides",
+      "Template-free prompt construction"
+    ]
+  },
+  {
+    "objectID": "docs/input_output.html#usage",
+    "href": "docs/input_output.html#usage",
+    "title": "Template-free prompt construction",
+    "section": "Usage",
+    "text": "Usage\nThis is how you can use the input_output format:\n\n\n1. Prepare Data\nTo use the input_output format, collect your data in the following format into a jsonl file (below is the first row from the file output.jsonl` pretty printed):\n$ head -n1 output.jsonl | python -m json.tool\n\n{\n    \"segments\": [\n        {\n            \"label\": true,\n            \"text\": \"&lt;s&gt;Hello\\n\"\n        },\n        {\n            \"label\": true,\n            \"text\": \"hi there!. \"\n        },\n        {\n            \"label\": false,\n            \"text\": \"goodbye \"\n        },\n        {\n            \"label\": true,\n            \"text\": \"farewell&lt;/s&gt;\"\n        }\n    ]\n}\n\nSet label:false when you want to mask a segment of text so that the model isn’t trained on it. Some things to keep in mind:\n\n[!IMPORTANT] 1. EOS, BOS, spaces, newlines etc. are entirely up to you. Axolotl concatenates all the segments as-is. The tokenizer doesn’t add anything additional. Notice how I added spaces, newlines, &lt;s&gt; (BOS), and &lt;/s&gt; (EOS) myself. 2. Make sure you check the materialized output to validate that the prompt is getting assembled how you like.\n\n\n\n\n2. Use type: input_output\nLet’s materialize data with our output.jsonl file by setting type: input_output in our axolotl config:\n# training_config.yaml\nbase_model: mistralai/Mistral-7B-v0.1\ndata_seed: 49\nseed: 49\n\ndatasets:\n  - path: output.jsonl\n    type: input_output\nval_set_size: 0.1\n\nsequence_len: 896\nsample_packing: false\n\nmicro_batch_size: 2\ngradient_accumulation_steps: 3\neval_batch_size: 2\nnum_epochs: 1\nlearning_rate: 0.0002\n\ntrain_on_inputs: false\nspecial_tokens:\n  bos_token: \"&lt;s&gt;\"\n  eos_token: \"&lt;/s&gt;\"\n  unk_token: \"&lt;unk&gt;\"\nYou can use the following command to materialize your data. The --debug flag will print the tokens, along with the labels so you can verify that the correct items are being ignored:\n$ python -m axolotl.cli.preprocess training_config.yaml --debug\n\n...\n[2024-03-05 23:36:46,969] [INFO] [axolotl.check_example_labels:35] [PID:607731] [RANK:0] &lt;s&gt;(1, 1) Hello(22557, 22557)\n(13, 13) hi(12014, 12014) there(736, 736) !(28808, 28808) .(28723, 28723) (28705, 28705) good(-100, 1179) bye(-100, 17664) (-100, 28705) fare(19111, 19111) well(5458, 5458) &lt;/s&gt;(2, 2)\nThe format is decoded_token(label, token_id), for example, &lt;s&gt;(1, 1) means that the token is &lt;s&gt;, the label is 1 and the token_id is 1. When the label is -100 then that token is ignored for training.\n\n\n\n3. Check the prompts\nHere is another way to check the materialized output:\nfrom transformers import AutoTokenizer\nfrom datasets import load_from_disk\nimport yaml\n\ndirectory = !ls last_run_prepared/\nwith open('training_config.yaml', 'r') as f:\n    cfg = yaml.safe_load(f)\nmodel_id = cfg['base_model']\ntok = AutoTokenizer.from_pretrained(model_id)\nds = load_from_disk(f'last_run_prepared/{directory[0]}/')\n&gt;&gt;&gt; row = ds[0]\n&gt;&gt;&gt; print(tok.decode(row['input_ids']))\n&lt;s&gt; Hello\n    hi there!.  goodbye  farewell&lt;/s&gt;\nWe can check that the right tokens are ingored by comparing the labels to each token:\nimport pandas as pd\npd.DataFrame([{'token': tok.decode(i), 'label': l, 'id':i} for i,l in\n              zip(row['input_ids'], row['labels'])])\n\n\n\ntoken\nlabel\nid\n\n\n\n\n0\n&lt;s&gt;\n1\n\n\n1\nHello\n22557\n\n\n2\n\\n\n13\n\n\n3\nhi\n12014\n\n\n4\nthere\n736\n\n\n5\n!\n28808\n\n\n6\n.\n28723\n\n\n7\n\n28705\n\n\n8\ngood\n-100\n\n\n9\nbye\n-100\n\n\n10\n\n-100\n\n\n11\nfare\n19111\n\n\n12\nwell\n5458\n\n\n13\n&lt;/s&gt;\n2\n\n\n\nIf we look at the input data, the above table seems correct! (The jsonl version is repeated below for reference):\n$ head -n1 output.jsonl | python -m json.tool\n\n{\n    \"segments\": [\n        {\n            \"label\": true,\n            \"text\": \"&lt;s&gt;Hello\\n\"\n        },\n        {\n            \"label\": true,\n            \"text\": \"hi there!. \"\n        },\n        {\n            \"label\": false,\n            \"text\": \"goodbye \"\n        },\n        {\n            \"label\": true,\n            \"text\": \"farewell&lt;/s&gt;\"\n        }\n    ]\n}",
+    "crumbs": [
+      "How-To Guides",
+      "Template-free prompt construction"
+    ]
+  },
+  {
+    "objectID": "docs/config.html",
+    "href": "docs/config.html",
+    "title": "Config options",
+    "section": "",
+    "text": "# This is the huggingface model that contains *.pt, *.safetensors, or *.bin files\n# This can also be a relative path to a model on disk\nbase_model: ./llama-7b-hf\n# You can specify an ignore pattern if the model repo contains more than 1 model type (*.pt, etc)\nbase_model_ignore_patterns:\n# If the base_model repo on hf hub doesn't include configuration .json files,\n# You can set that here, or leave this empty to default to base_model\nbase_model_config: ./llama-7b-hf\n# You can specify to choose a specific model revision from huggingface hub\nrevision_of_model:\n# Optional tokenizer configuration path in case you want to use a different tokenizer\n# than the one defined in the base model\ntokenizer_config:\n# If you want to specify the type of model to load, AutoModelForCausalLM is a good choice too\nmodel_type: AutoModelForCausalLM\n# Corresponding tokenizer for the model AutoTokenizer is a good choice\ntokenizer_type: AutoTokenizer\n# Trust remote code for untrusted source\ntrust_remote_code:\n# use_fast option for tokenizer loading from_pretrained, default to True\ntokenizer_use_fast:\n# Whether to use the legacy tokenizer setting, defaults to True\ntokenizer_legacy:\n# Resize the model embeddings when new tokens are added to multiples of 32\n# This is reported to improve training speed on some models\nresize_token_embeddings_to_32x:\n\n# (Internal use only)\n# Used to identify which the model is based on\nis_falcon_derived_model:\nis_llama_derived_model:\nis_qwen_derived_model:\n# Please note that if you set this to true, `padding_side` will be set to \"left\" by default\nis_mistral_derived_model:\n\n# optional overrides to the base model configuration\noverrides_of_model_config:\n  # RoPE Scaling https://github.com/huggingface/transformers/pull/24653\n  rope_scaling:\n    type: # linear | dynamic\n    factor: # float\n\n# optional overrides to the bnb 4bit quantization configuration\n# https://huggingface.co/docs/transformers/main/main_classes/quantization#transformers.BitsAndBytesConfig\nbnb_config_kwargs:\n  # These are default values\n  llm_int8_has_fp16_weight: false\n  bnb_4bit_quant_type: nf4\n  bnb_4bit_use_double_quant: true\n\n\n# Whether you are training a 4-bit GPTQ quantized model\ngptq: true\n\n# This will attempt to quantize the model down to 8 bits and use adam 8 bit optimizer\nload_in_8bit: true\n# Use bitsandbytes 4 bit\nload_in_4bit:\n\n# Use CUDA bf16\nbf16: true # bool or 'full' for `bf16_full_eval`. require &gt;=ampere\n# Use CUDA fp16\nfp16: true\n# Use CUDA tf32\ntf32: true # require &gt;=ampere\n\n# No AMP (automatic mixed precision)\nbfloat16: true # require &gt;=ampere\nfloat16: true\n\n# Limit the memory for all available GPUs to this amount (if an integer, expressed in gigabytes); default: unset\ngpu_memory_limit: 20GiB\n# Do the LoRA/PEFT loading on CPU -- this is required if the base model is so large it takes up most or all of the available GPU VRAM, e.g. during a model and LoRA merge\nlora_on_cpu: true\n\n# A list of one or more datasets to finetune the model with\ndatasets:\n  # HuggingFace dataset repo | s3://,gs:// path | \"json\" for local dataset, make sure to fill data_files\n  - path: vicgalle/alpaca-gpt4\n  # The type of prompt to use for training. [alpaca, sharegpt, gpteacher, oasst, reflection]\n    type: alpaca # format | format:&lt;prompt_style&gt; (chat/instruct) | &lt;prompt_strategies&gt;.load_&lt;load_fn&gt;\n    ds_type: # Optional[str] (json|arrow|parquet|text|csv) defines the datatype when path is a file\n    data_files: # Optional[str] path to source data files\n    shards: # Optional[int] number of shards to split data into\n    name: # Optional[str] name of dataset configuration to load\n    train_on_split: train # Optional[str] name of dataset split to load from\n\n    # Optional[str] fastchat conversation type, only used with type: sharegpt\n    conversation: # Options (see Conversation 'name'): https://github.com/lm-sys/FastChat/blob/main/fastchat/conversation.py\n    field_human: # Optional[str]. Human key to use for conversation.\n    field_model: # Optional[str]. Assistant key to use for conversation.\n    # Add additional keys from your dataset as input or output roles\n    roles:\n      input: # Optional[List[str]]. These will be masked based on train_on_input\n      output: # Optional[List[str]].\n\n  # Custom user instruction prompt\n  - path: repo\n    type:\n      # The below are defaults. only set what's needed if you use a different column name.\n      system_prompt: \"\"\n      system_format: \"{system}\"\n      field_system: system\n      field_instruction: instruction\n      field_input: input\n      field_output: output\n\n      # Customizable to be single line or multi-line\n      # Use {instruction}/{input} as key to be replaced\n      # 'format' can include {input}\n      format: |-\n        User: {instruction} {input}\n        Assistant:\n      # 'no_input_format' cannot include {input}\n      no_input_format: \"{instruction} \"\n\n      # For `completion` datsets only, uses the provided field instead of `text` column\n      field:\n\n# If false, the datasets will not be shuffled and will keep their original order in `datasets`.\n# The same applies to the `test_datasets` option and the `pretraining_dataset` option. Default is true.\nshuffle_merged_datasets: true\n\n# A list of one or more datasets to eval the model with.\n# You can use either test_datasets, or val_set_size, but not both.\ntest_datasets:\n  - path: /workspace/data/eval.jsonl\n    ds_type: json\n    # You need to specify a split. For \"json\" datasets the default split is called \"train\".\n    split: train\n    type: completion\n    data_files:\n      - /workspace/data/eval.jsonl\n\n# use RL training: 'dpo', 'ipo', 'kto'\nrl:\n\n# Saves the desired chat template to the tokenizer_config.json for easier inferencing\n# Currently supports chatml and inst (mistral/mixtral)\nchat_template: chatml\n# Changes the default system message\ndefault_system_message: You are a helpful assistant. Please give a long and detailed answer. # Currently only supports chatml.\n# Axolotl attempts to save the dataset as an arrow after packing the data together so\n# subsequent training attempts load faster, relative path\ndataset_prepared_path: data/last_run_prepared\n# Push prepared dataset to hub\npush_dataset_to_hub: # repo path\n# The maximum number of processes to use while preprocessing your input dataset. This defaults to `os.cpu_count()`\n# if not set.\ndataset_processes: # defaults to os.cpu_count() if not set\n# Keep dataset in memory while preprocessing\n# Only needed if cached dataset is taking too much storage\ndataset_keep_in_memory:\n# push checkpoints to hub\nhub_model_id: # private repo path to push finetuned model\n# how to push checkpoints to hub\n# https://huggingface.co/docs/transformers/v4.31.0/en/main_classes/trainer#transformers.TrainingArguments.hub_strategy\nhub_strategy:\n# Whether to use hf `use_auth_token` for loading datasets. Useful for fetching private datasets\n# Required to be true when used in combination with `push_dataset_to_hub`\nhf_use_auth_token: # boolean\n# How much of the dataset to set aside as evaluation. 1 = 100%, 0.50 = 50%, etc. 0 for no eval.\nval_set_size: 0.04\n# Num shards for whole dataset\ndataset_shard_num:\n# Index of shard to use for whole dataset\ndataset_shard_idx:\n\n# The maximum length of an input to train with, this should typically be less than 2048\n# as most models have a token/context limit of 2048\nsequence_len: 2048\n# Pad inputs so each step uses constant sized buffers\n# This will reduce memory fragmentation and may prevent OOMs, by re-using memory more efficiently\npad_to_sequence_len:\n# Use efficient multi-packing with block diagonal attention and per sequence position_ids. Recommend set to 'true'\nsample_packing:\n# Set to 'false' if getting errors during eval with sample_packing on.\neval_sample_packing:\n# You can set these packing optimizations AFTER starting a training at least once.\n# The trainer will provide recommended values for these values.\nsample_packing_eff_est:\ntotal_num_tokens:\n# Increasing the following values helps with packing, but usually only slightly (&lt;%1.)\n# The number of samples packed at a time.\nsample_packing_group_size: 100000\n# The number of samples which can be packed into one sequence. Increase if using a large sequence_len with many short samples.\nsample_packing_bin_size: 200\n\n# Passed through to transformers when loading the model when launched without accelerate\n# Use `sequential` when training w/ model parallelism to limit memory\ndevice_map:\n# Defines the max memory usage per gpu on the system. Passed through to transformers when loading the model.\nmax_memory:\n\n# If you want to use 'lora' or 'qlora' or leave blank to train all parameters in original model\nadapter: lora\n# If you already have a lora model trained that you want to load, put that here.\n# This means after training, if you want to test the model, you should set this to the value of `output_dir`.\n# Note that if you merge an adapter to the base model, a new subdirectory `merged` will be created under the `output_dir`.\nlora_model_dir:\n\n# LoRA hyperparameters\n# For more details about the following options, see:\n# https://www.anyscale.com/blog/fine-tuning-llms-lora-or-full-parameter-an-in-depth-analysis-with-llama-2\nlora_r: 8\nlora_alpha: 16\nlora_dropout: 0.05\nlora_target_modules:\n  - q_proj\n  - v_proj\n#  - k_proj\n#  - o_proj\n#  - gate_proj\n#  - down_proj\n#  - up_proj\nlora_target_linear: # If true, will target all linear modules\npeft_layers_to_transform: # The layer indices to transform, otherwise, apply to all layers\n\n# If you added new tokens to the tokenizer, you may need to save some LoRA modules because they need to know the new tokens.\n# For LLaMA and Mistral, you need to save `embed_tokens` and `lm_head`. It may vary for other models.\n# `embed_tokens` converts tokens to embeddings, and `lm_head` converts embeddings to token probabilities.\n# https://github.com/huggingface/peft/issues/334#issuecomment-1561727994\nlora_modules_to_save:\n#  - embed_tokens\n#  - lm_head\n\nlora_fan_in_fan_out: false\n\n# LoRA+ hyperparameters\n# For more details about the following options, see:\n# https://arxiv.org/abs/2402.12354  and `src/axolotl/core/train_builder.py`\nloraplus_lr_ratio: # loraplus learning rate ratio lr_B / lr_A. Recommended value is 2^4.\nloraplus_lr_embedding: #  loraplus learning rate for lora embedding layers. Default value is 1e-6.\n\npeft:\n  # Configuration options for loftq initialization for LoRA\n  # https://huggingface.co/docs/peft/developer_guides/quantization#loftq-initialization\n  loftq_config:\n    loftq_bits:  # typically 4 bits\n\n# ReLoRA configuration\n# Must use either 'lora' or 'qlora' adapter, and does not support fsdp or deepspeed\nrelora_steps: # Number of steps per ReLoRA restart\nrelora_warmup_steps: # Number of per-restart warmup steps\nrelora_anneal_steps: # Number of anneal steps for each relora cycle\nrelora_prune_ratio: # threshold for optimizer magnitude when pruning\nrelora_cpu_offload: # True to perform lora weight merges on cpu during restarts, for modest gpu memory savings\n\n# wandb configuration if you're using it\n# Make sure your `WANDB_API_KEY` environment variable is set (recommended) or you login to wandb with `wandb login`.\nwandb_mode: # \"offline\" to save run metadata locally and not sync to the server, \"disabled\" to turn off wandb\nwandb_project: # Your wandb project name\nwandb_entity: # A wandb Team name if using a Team\nwandb_watch:\nwandb_name: # Set the name of your wandb run\nwandb_run_id: # Set the ID of your wandb run\nwandb_log_model: # \"checkpoint\" to log model to wandb Artifacts every `save_steps` or \"end\" to log only at the end of training\n\n# mlflow configuration if you're using it\nmlflow_tracking_uri: # URI to mlflow\nmlflow_experiment_name: # Your experiment name\nhf_mlflow_log_artifacts:  # set to true to copy each saved checkpoint on each save to mlflow artifact registry\n\n# Where to save the full-finetuned model to\noutput_dir: ./completed-model\n\n# Whether to use torch.compile and which backend to use\ntorch_compile:  # bool\ntorch_compile_backend:  # Optional[str]\n\n# Training hyperparameters\n\n# If greater than 1, backpropagation will be skipped and the gradients will be accumulated for the given number of steps.\ngradient_accumulation_steps: 1\n# The number of samples to include in each batch. This is the number of samples sent to each GPU.\n# Batch size per gpu = micro_batch_size * gradient_accumulation_steps\nmicro_batch_size: 2\neval_batch_size:\nnum_epochs: 4\nwarmup_steps: 100  # cannot use with warmup_ratio\nwarmup_ratio: 0.05  # cannot use with warmup_steps\nlearning_rate: 0.00003\nlr_quadratic_warmup:\nlogging_steps:\neval_steps: # Leave empty to eval at each epoch, integers for every N steps. decimal for fraction of total steps\nevals_per_epoch: # number of times per epoch to run evals, mutually exclusive with eval_steps\nsave_strategy: # Set to `\"no\"` to skip checkpoint saves\nsave_steps: # Leave empty to save at each epoch\nsaves_per_epoch: # number of times per epoch to save a checkpoint, mutually exclusive with save_steps\nsave_total_limit: # Checkpoints saved at a time\n# Maximum number of iterations to train for. It precedes num_epochs which means that\n# if both are set, num_epochs will not be guaranteed.\n# e.g., when 1 epoch is 1000 steps =&gt; `num_epochs: 2` and `max_steps: 100` will train for 100 steps\nmax_steps:\n\neval_table_size: # Approximate number of predictions sent to wandb depending on batch size. Enabled above 0. Default is 0\neval_max_new_tokens: # Total number of tokens generated for predictions sent to wandb. Default is 128\neval_causal_lm_metrics: # HF evaluate metrics used during evaluation. Default is [\"sacrebleu\", \"comet\", \"ter\", chrf]\n\nloss_watchdog_threshold: # High loss value, indicating the learning has broken down (a good estimate is ~2 times the loss at the start of training)\nloss_watchdog_patience: # Number of high-loss steps in a row before the trainer aborts (default: 3)\n\n# Save model as safetensors (require safetensors package)\nsave_safetensors:\n\n# Whether to mask out or include the human's prompt from the training labels\ntrain_on_inputs: false\n# Group similarly sized data to minimize padding.\n# May be slower to start, as it must download and sort the entire dataset.\n# Note that training loss may have an oscillating pattern with this enabled.\ngroup_by_length: false\n\n# Whether to use gradient checkpointing https://huggingface.co/docs/transformers/v4.18.0/en/performance#gradient-checkpointing\ngradient_checkpointing: false\n# additional kwargs to pass to the trainer for gradient checkpointing\n# gradient_checkpointing_kwargs:\n#   use_reentrant: true\n\n# Stop training after this many evaluation losses have increased in a row\n# https://huggingface.co/transformers/v4.2.2/_modules/transformers/trainer_callback.html#EarlyStoppingCallback\nearly_stopping_patience: 3\n\n# Specify a scheduler and kwargs to use with the optimizer\nlr_scheduler: # 'one_cycle' | 'log_sweep' | empty for cosine\nlr_scheduler_kwargs:\ncosine_min_lr_ratio: # decay lr to some percentage of the peak lr, e.g. cosine_min_lr_ratio=0.1 for 10% of peak lr\ncosine_constant_lr_ratio: # freeze lr at some percentage of the step, e.g. cosine_constant_lr_ratio=0.8 means start cosine_min_lr at 80% of training step (https://arxiv.org/pdf/2308.04014.pdf)\n\n# For one_cycle optim\nlr_div_factor: # Learning rate div factor\n\n# Specify optimizer\n# Valid values are driven by the Transformers OptimizerNames class, see:\n# https://github.com/huggingface/transformers/blob/95b374952dc27d8511541d6f5a4e22c9ec11fb24/src/transformers/training_args.py#L134\n#\n# Note that not all optimizers may be available in your environment, ex: 'adamw_anyprecision' is part of\n# torchdistx, 'adamw_bnb_8bit' is part of bnb.optim.Adam8bit, etc. When in doubt, it is recommended to start with the optimizer used\n# in the examples/ for your model and fine-tuning use case.\n#\n# Valid values for 'optimizer' include:\n# - adamw_hf\n# - adamw_torch\n# - adamw_torch_fused\n# - adamw_torch_xla\n# - adamw_apex_fused\n# - adafactor\n# - adamw_anyprecision\n# - sgd\n# - adagrad\n# - adamw_bnb_8bit\n# - lion_8bit\n# - lion_32bit\n# - paged_adamw_32bit\n# - paged_adamw_8bit\n# - paged_lion_32bit\n# - paged_lion_8bit\n# - galore_adamw\n# - galore_adamw_8bit\n# - galore_adafactor\n# - galore_adamw_layerwise\n# - galore_adamw_8bit_layerwise\n# - galore_adafactor_layerwise\noptimizer:\n# Dictionary of arguments to pass to the optimizer\noptim_args:\n# For Galore Optimizers the following optim_args are available\n# rank:  # type: int\n# update_proj_gap  # type: int\n# scale  # type: float\n# proj_type:  # type: str, default = std\n\n# The target modules to optimize, i.e. the module names that you would like to train, right now this is used only for GaLore algorithm\noptim_target_modules:\n# - self_attn  # for llama\n# - mlp\n\n# Specify weight decay\nweight_decay:\n# adamw hyperparams\nadam_beta1:\nadam_beta2:\nadam_epsilon:\n# Gradient clipping max norm\nmax_grad_norm:\n\n# Augmentation techniques\n# NEFT https://arxiv.org/abs/2310.05914, set this to a number (paper default is 5) to add noise to embeddings\n# currently only supported on Llama and Mistral\nneftune_noise_alpha:\n\n# Whether to bettertransformers\nflash_optimum:\n# Whether to use xformers attention patch https://github.com/facebookresearch/xformers:\nxformers_attention:\n# Whether to use flash attention patch https://github.com/Dao-AILab/flash-attention:\nflash_attention:\nflash_attn_cross_entropy:  # Whether to use flash-attention cross entropy implementation - advanced use only\nflash_attn_rms_norm:  # Whether to use flash-attention rms norm implementation - advanced use only\nflash_attn_fuse_qkv: # Whether to fuse QKV into a single operation\nflash_attn_fuse_mlp: # Whether to fuse part of the MLP into a single operation\n# Whether to use scaled-dot-product attention\n# https://pytorch.org/docs/stable/generated/torch.nn.functional.scaled_dot_product_attention.html\nsdp_attention:\n# Shifted-sparse attention (only llama) - https://arxiv.org/pdf/2309.12307.pdf\ns2_attention:\n# Resume from a specific checkpoint dir\nresume_from_checkpoint:\n# If resume_from_checkpoint isn't set and you simply want it to start where it left off.\n# Be careful with this being turned on between different models.\nauto_resume_from_checkpoints: false\n\n# Don't mess with this, it's here for accelerate and torchrun\nlocal_rank:\n\n# Add or change special tokens.\n# If you add tokens here, you don't need to add them to the `tokens` list.\nspecial_tokens:\n  # bos_token: \"&lt;s&gt;\"\n  # eos_token: \"&lt;/s&gt;\"\n  # unk_token: \"&lt;unk&gt;\"\n  # pad_token: \"[PAD]\"\n\n# Add extra tokens.\ntokens:\n\n# FSDP\nfsdp:\nfsdp_config:\n\n# Deepspeed config path. e.g., deepspeed_configs/zero3.json\ndeepspeed:\n\n# Advanced DDP Arguments\nddp_timeout:\nddp_bucket_cap_mb:\nddp_broadcast_buffers:\n\n# Path to torch distx for optim 'adamw_anyprecision'\ntorchdistx_path:\n\n# Set to HF dataset for type: 'completion' for streaming instead of pre-tokenize\npretraining_dataset:\n\n# Debug mode\ndebug:\n\n# Seed\nseed:\n\n# Allow overwrite yml config using from cli\nstrict:",
+    "crumbs": [
+      "Reference",
+      "Config options"
+    ]
   },
   {
     "objectID": "docs/multi-node.html",
@@ -95,99 +108,11 @@
     ]
   },
   {
-    "objectID": "docs/dataset_preprocessing.html",
-    "href": "docs/dataset_preprocessing.html",
-    "title": "Dataset Preprocessing",
+    "objectID": "docs/batch_vs_grad.html",
+    "href": "docs/batch_vs_grad.html",
+    "title": "Batch size vs Gradient accumulation",
     "section": "",
-    "text": "Dataset pre-processing is the step where Axolotl takes each dataset you’ve configured alongside the (dataset format)[../dataset-formats/] and prompt strategies to: - parse the dataset based on the dataset format - transform the dataset to how you would interact with the model based on the prompt strategy - tokenize the dataset based on the configured model & tokenizer - shuffle and merge multiple datasets together if using more than one\nThe processing of the datasets can happen one of two ways:\n\nBefore kicking off training by calling python -m axolotl.cli.preprocess /path/to/your.yaml --debug\nWhen training is started\n\nWhat are the benefits of pre-processing? When training interactively or for sweeps (e.g. you are restarting the trainer often), processing the datasets can oftentimes be frustratingly slow. Pre-processing will cache the tokenized/formatted datasets according to a hash of dependent training parameters so that it will intelligently pull from its cache when possible.\nThe path of the cache is controlled by dataset_prepared_path: and is often left blank in example YAMLs as this leads to a more robust solution that prevents unexpectedly reusing cached data.\nIf dataset_prepared_path: is left empty, when training, the processed dataset will be cached in a default path of ./last_run_prepared/, but will ignore anything already cached there. By explicitly setting dataset_prepared_path: ./last_run_prepared, the trainer will use whatever pre-processed data is in the cache.\nWhat are the edge cases? Let’s say you are writing a custom prompt strategy or using a user-defined prompt template. Because the trainer cannot readily detect these changes, we cannot change the calculated hash value for the pre-processed dataset. If you have dataset_prepared_path: ... set and change your prompt templating logic, it may not pick up the changes you made and you will be training over the old prompt."
-  },
-  {
-    "objectID": "docs/nccl.html",
-    "href": "docs/nccl.html",
-    "title": "NCCL",
-    "section": "",
-    "text": "NVIDIA NCCL is a library to facilitate and optimize multi-GPU communication operations, such as broadcast, all-gather, reduce, all-reduce, etc. Broadly, NCCL configuration is highly environment-specific and is configured via several environment variables. A common NCCL-related problem occurs when a long-running operation times out causing the training process to abort:\nWatchdog caught collective operation timeout: WorkNCCL(SeqNum=42, OpType=ALLGATHER, Timeout(ms)=1800000) ran for 1806948 milliseconds before timing out.\nOften, this timeout will happen after 30 minutes (the default setting) and is accompanied by below-average power consumption with near 100% GPU utilization before the error is raised. Nvidia recommends disabling PCI access control services (ACS) as a possible solution if this is available to you.\nForcing cross-GPU communication via NVLink may help without increasing timeouts. To verify that your configuration is leveraging NVLink run the following command:\nnvidia-smi nvlink --status\nTo force NCCL to use NVLink, simply set this in the environment:\nexport NCCL_P2P_LEVEL=NVL\nIf NVLink is not available in your environment there are other options for NCCL_P2P_LEVEL in the table below:\n\n\n\n\n\n\n\nNCCL_P2P_LEVEL\nDescription\n\n\n\n\nPIX\nP2P data transfers through no more than a single PCIe bridge. Faster data transfer rates vs to paths involving multiple bridges, but slower compared to direct GPU-to-GPU communication.\n\n\nPXB\nP2P data transfers through multiple PCIe bridges but not going through the PCIe Host Bridge; this path involves a complex routing process, potentially incurring a moderate level of latency.\n\n\nPHB\nP2P data transfers occur over the PCIe and through a PCIe Host Bridge, typically involving the CPU, which can facilitate direct memory access but might introduce additional latency compared to more direct paths (ex PIX, NVL)\n\n\n\nTo validate that acceptable data transfer speeds exist for your training job, running NCCL Tests can help pinpoint bottlenecks, for example:\n./build/all_reduce_perf -b 8 -e 128M -f 2 -g 3\nIt can be useful when debugging NCCL communication timeouts to activate additional logging in both PyTorch and NCCL:\nexport NCCL_DEBUG=INFO\nexport NCCL_DEBUG_SUBSYS=ALL\nexport TORCH_DISTRIBUTED_DEBUG=INFO\nexport TORCHELASTIC_ERROR_FILE=/PATH/TO/torcherror.log\nFinally, if you believe your training job needs more time you can increase the timeout past 30 minutes by setting the ddp_timeout value in the Axolotl configuration. See PyTorch init_process_group for documentation on this value.",
-    "crumbs": [
-      "How-To Guides",
-      "NCCL"
-    ]
-  },
-  {
-    "objectID": "docs/fsdp_qlora.html",
-    "href": "docs/fsdp_qlora.html",
-    "title": "FDSP + QLoRA",
-    "section": "",
-    "text": "Using FSDP with QLoRA is essential for fine-tuning larger (70b+ parameter) LLMs on consumer GPUs. For example, you can use FSDP + QLoRA to train a 70b model on two 24GB GPUs1.\nBelow, we describe how to use this feature in Axolotl.",
-    "crumbs": [
-      "How-To Guides",
-      "FDSP + QLoRA"
-    ]
-  },
-  {
-    "objectID": "docs/fsdp_qlora.html#background",
-    "href": "docs/fsdp_qlora.html#background",
-    "title": "FDSP + QLoRA",
-    "section": "",
-    "text": "Using FSDP with QLoRA is essential for fine-tuning larger (70b+ parameter) LLMs on consumer GPUs. For example, you can use FSDP + QLoRA to train a 70b model on two 24GB GPUs1.\nBelow, we describe how to use this feature in Axolotl.",
-    "crumbs": [
-      "How-To Guides",
-      "FDSP + QLoRA"
-    ]
-  },
-  {
-    "objectID": "docs/fsdp_qlora.html#usage",
-    "href": "docs/fsdp_qlora.html#usage",
-    "title": "FDSP + QLoRA",
-    "section": "Usage",
-    "text": "Usage\nTo enable QLoRA with FSDP, you need to perform the following steps:\n\n![Tip] See the example config file in addition to reading these instructions.\n\n\nSet adapter: qlora in your axolotl config file.\nEnable FSDP in your axolotl config, as described here.\nUse one of the supported model types: llama, mistral or mixtral.",
-    "crumbs": [
-      "How-To Guides",
-      "FDSP + QLoRA"
-    ]
-  },
-  {
-    "objectID": "docs/fsdp_qlora.html#example-config",
-    "href": "docs/fsdp_qlora.html#example-config",
-    "title": "FDSP + QLoRA",
-    "section": "Example Config",
-    "text": "Example Config\nexamples/llama-2/qlora-fsdp.yml contains an example of how to enable QLoRA + FSDP in axolotl.",
-    "crumbs": [
-      "How-To Guides",
-      "FDSP + QLoRA"
-    ]
-  },
-  {
-    "objectID": "docs/fsdp_qlora.html#references",
-    "href": "docs/fsdp_qlora.html#references",
-    "title": "FDSP + QLoRA",
-    "section": "References",
-    "text": "References\n\nPR #1378 enabling QLoRA in FSDP in Axolotl.\nBlog Post from the Answer.AI team describing the work that enabled QLoRA in FSDP.\nRelated HuggingFace PRs Enabling FDSP + QLoRA:\n\nAccelerate PR#2544\nTransformers PR#29587\nTRL PR#1416\nPEFT PR#1550",
-    "crumbs": [
-      "How-To Guides",
-      "FDSP + QLoRA"
-    ]
-  },
-  {
-    "objectID": "docs/fsdp_qlora.html#footnotes",
-    "href": "docs/fsdp_qlora.html#footnotes",
-    "title": "FDSP + QLoRA",
-    "section": "Footnotes",
-    "text": "Footnotes\n\n\nThis was enabled by this work from the Answer.AI team.↩︎",
-    "crumbs": [
-      "How-To Guides",
-      "FDSP + QLoRA"
-    ]
-  },
-  {
-    "objectID": "docs/rlhf.html",
-    "href": "docs/rlhf.html",
-    "title": "RLHF (Beta)",
-    "section": "",
-    "text": "Overview\nReinforcement Learning from Human Feedback is a method whereby a language model is optimized from data using human feedback. Various methods include, but not limited to:\n\nProximal Policy Optimization (PPO) (not yet supported in axolotl)\nDirect Preference Optimization (DPO)\nIdentity Preference Optimization (IPO)\n\n\n\nRLHF using Axolotl\n\n[!IMPORTANT] This is a BETA feature and many features are not fully implemented. You are encouraged to open new PRs to improve the integration and functionality.\n\nThe various RL training methods are implemented in trl and wrapped via axolotl. Below are various examples with how you can use various preference datasets to train models that use ChatML\n\nDPO\nrl: dpo\ndatasets:\n  - path: Intel/orca_dpo_pairs\n    split: train\n    type: chatml.intel\n  - path: argilla/ultrafeedback-binarized-preferences\n    split: train\n    type: chatml.argilla\n\n\nIPO\nrl: ipo\n\n\nORPO\nPaper: https://arxiv.org/abs/2403.07691\nrl: orpo\norpo_alpha: 0.1\nremove_unused_columns: false\n\nchat_template: chatml\ndatasets:\n  - path: argilla/ultrafeedback-binarized-preferences-cleaned\n    type: chat_template.argilla\n\n\nUsing local dataset files\ndatasets:\n  - ds_type: json\n    data_files:\n      - orca_rlhf.jsonl\n    split: train\n    type: chatml.intel\n\n\nTrl autounwrap for peft\nTrl supports autounwrapping peft models, so that a ref model does not need to be additionally loaded, leading to less VRAM needed. This is on by default. To turn it off, pass the following config.\n# load ref model when adapter training.\nrl_adapter_ref_model: true",
-    "crumbs": [
-      "How-To Guides",
-      "RLHF (Beta)"
-    ]
+    "text": "Gradient accumulation means accumulating gradients over several mini-batches and updating the model weights afterward. When the samples in each batch are diverse, this technique doesn’t significantly impact learning.\nThis method allows for effective training with larger effective batch sizes without needing proportionally larger memory. Here’s why:\n\nMemory Consumption with Batch Size: The primary reason increasing the batch size impacts memory is due to the storage requirements for intermediate activations. When you forward propagate a batch through a network, you have to store the activations at each layer for each sample in the batch, because these activations are used during backpropagation to compute gradients. Therefore, larger batches mean more activations, leading to greater GPU memory consumption.\nGradient Accumulation: With gradient accumulation, you’re effectively simulating a larger batch size by accumulating gradients over several smaller batches (or micro-batches). However, at any given time, you’re only forward and backward propagating a micro-batch. This means you only store activations for the micro-batch, not the full accumulated batch. As a result, you can simulate the effect of a larger batch size without the memory cost of storing activations for a large batch.\n\nExample 1: Micro batch size: 3 Gradient accumulation steps: 2 Number of GPUs: 3 Total batch size = 3 * 2 * 3 = 18\n| GPU 1          | GPU 2          | GPU 3          |\n|----------------|----------------|----------------|\n| S1, S2, S3     | S4, S5, S6     | S7, S8, S9     |\n| e1, e2, e3     | e4, e5, e6     | e7, e8, e9     |\n|----------------|----------------|----------------|\n| → (accumulate) | → (accumulate) | → (accumulate) |\n|----------------|----------------|----------------|\n| S10, S11, S12  | S13, S14, S15  | S16, S17, S18  |\n| e10, e11, e12  | e13, e14, e15  | e16, e17, e18  |\n|----------------|----------------|----------------|\n| → (apply)      | → (apply)      | → (apply)      |\n\nAccumulated gradient for the weight w1 after the second iteration (considering all GPUs):\nTotal gradient for w1 = e1 + e2 + e3 + e4 + e5 + e6 + e7 + e8 + e9 + e10 + e11 + e12 + e13 + e14 + e15 + e16 + e17 + e18\n\nWeight update for w1:\nw1_new = w1_old - learning rate x (Total gradient for w1 / 18)\nExample 2: Micro batch size: 2 Gradient accumulation steps: 1 Number of GPUs: 3 Total batch size = 2 * 1 * 3 = 6\n| GPU 1     | GPU 2     | GPU 3     |\n|-----------|-----------|-----------|\n| S1, S2    | S3, S4    | S5, S6    |\n| e1, e2    | e3, e4    | e5, e6    |\n|-----------|-----------|-----------|\n| → (apply) | → (apply) | → (apply) |\n\nAccumulated gradient for the weight w1 (considering all GPUs):\nTotal gradient for w1 = e1 + e2 + e3 + e4 + e5 + e6\n\nWeight update for w1:\nw1_new = w1_old - learning rate × (Total gradient for w1 / 6)"
   },
   {
     "objectID": "docs/dataset-formats/inst_tune.html",
@@ -432,14 +357,13 @@
     ]
   },
   {
-    "objectID": "docs/dataset-formats/tokenized.html",
-    "href": "docs/dataset-formats/tokenized.html",
-    "title": "Custom Pre-Tokenized Dataset",
+    "objectID": "docs/dataset-formats/index.html",
+    "href": "docs/dataset-formats/index.html",
+    "title": "Dataset Formats",
     "section": "",
-    "text": "Pass an empty type: in your axolotl config.\nColumns in Dataset must be exactly input_ids, attention_mask, labels\nTo indicate that a token should be ignored during training, set its corresponding label to -100.\nDo not add BOS/EOS. Axolotl will add them for you based on the default tokenizer for the model you’re using.\nFor pretraining, do not truncate/pad documents to the context window length.\nFor instruction training, documents must be truncated/padded as desired.\n\nSample config:\n\n\nconfig.yml\n\ndatasets:\n  - path: /path/to/your/file.jsonl\n    ds_type: json\n    type:\n\nSample jsonl:\n{\"input_ids\":[271,299,99],\"attention_mask\":[1,1,1],\"labels\":[271,-100,99]}\n{\"input_ids\":[87,227,8383,12],\"attention_mask\":[1,1,1,1],\"labels\":[87,227,8383,12]}",
+    "text": "Axolotl supports a variety of dataset formats. It is recommended to use a JSONL format. The schema of the JSONL depends upon the task and the prompt template you wish to use. Instead of a JSONL, you can also use a HuggingFace dataset with columns for each JSONL field.\nBelow are these various formats organized by task:\n\n\n\n\n\n\n\n\n\nTitle\n\n\nDescription\n\n\n\n\n\n\nPre-training\n\n\nData format for a pre-training completion task.\n\n\n\n\nInstruction Tuning\n\n\nInstruction tuning formats for supervised fine-tuning.\n\n\n\n\nConversation\n\n\nConversation format for supervised fine-tuning.\n\n\n\n\nTemplate-Free\n\n\nConstruct prompts without a template.\n\n\n\n\nCustom Pre-Tokenized Dataset\n\n\nHow to use a custom pre-tokenized dataset.\n\n\n\n\n\nNo matching items",
     "crumbs": [
-      "Dataset Formats",
-      "Custom Pre-Tokenized Dataset"
+      "Dataset Formats"
     ]
   },
   {
@@ -452,6 +376,341 @@
       "Dataset Formats",
       "Pre-training"
     ]
+  },
+  {
+    "objectID": "docs/unsloth.html",
+    "href": "docs/unsloth.html",
+    "title": "Unsloth",
+    "section": "",
+    "text": "Overview\nUnsloth provides hand-written optimized kernels for LLM finetuning that slightly improve speed and VRAM over standard industry baselines.\n\n\nInstallation\nThe following will install unsloth from source and downgrade xformers as unsloth is incompatible with the most up to date libraries.\npip install --no-deps \"unsloth @ git+https://github.com/unslothai/unsloth.git\"\npip install --no-deps --force-reinstall xformers==0.0.26.post1\n\n\nUsing unsloth w Axolotl\nAxolotl exposes a few configuration options to try out unsloth and get most of the performance gains.\nOur unsloth integration is currently limited to the following model architectures: - llama\nThese options are specific to LoRA finetuning and cannot be used for multi-GPU finetuning\nunsloth_lora_mlp: true\nunsloth_lora_qkv: true\nunsloth_lora_o: true\nThese options are composable and can be used with multi-gpu finetuning\nunsloth_cross_entropy_loss: true\nunsloth_rms_norm: true\nunsloth_rope: true\n\n\nLimitations\n\nSingle GPU only; e.g. no multi-gpu support\nNo deepspeed or FSDP support (requires multi-gpu)\nLoRA + QLoRA support only. No full fine tunes or fp8 support.\nLimited model architecture support. Llama, Phi, Gemma, Mistral only\nNo MoE support.",
+    "crumbs": [
+      "How-To Guides",
+      "Unsloth"
+    ]
+  },
+  {
+    "objectID": "docs/torchao.html",
+    "href": "docs/torchao.html",
+    "title": "PyTorch ao",
+    "section": "",
+    "text": "Installation\nStable Release from the PyTorch index\npip install torchao --extra-index-url https://download.pytorch.org/whl/cu121 # full options are cpu/cu118/cu121/cu124\nNightly release\npip install --pre torchao-nightly --index-url https://download.pytorch.org/whl/nightly/cu121 # full options are cpu/cu118/cu121/cu124"
+  },
+  {
+    "objectID": "docs/dataset-formats/conversation.html",
+    "href": "docs/dataset-formats/conversation.html",
+    "title": "Conversation",
+    "section": "",
+    "text": "conversations where from is human/gpt. (optional: first row with role system to override default system prompt)\n\n\ndata.jsonl\n\n{\"conversations\": [{\"from\": \"...\", \"value\": \"...\"}]}\n\nNote: type: sharegpt opens special configs: - conversation: enables conversions to many Conversation types. Refer to the ‘name’ here for options. - roles: allows you to specify the roles for input and output. This is useful for datasets with custom roles such as tool etc to support masking. - field_human: specify the key to use instead of human in the conversation. - field_model: specify the key to use instead of gpt in the conversation.\ndatasets:\n    path: ...\n    type: sharegpt\n\n    conversation: # Options (see Conversation 'name'): https://github.com/lm-sys/FastChat/blob/main/fastchat/conversation.py\n    field_human: # Optional[str]. Human key to use for conversation.\n    field_model: # Optional[str]. Assistant key to use for conversation.\n    # Add additional keys from your dataset as input or output roles\n    roles:\n      input: # Optional[List[str]]. These will be masked based on train_on_input\n      output: # Optional[List[str]].",
+    "crumbs": [
+      "Dataset Formats",
+      "Conversation"
+    ]
+  },
+  {
+    "objectID": "docs/dataset-formats/conversation.html#sharegpt",
+    "href": "docs/dataset-formats/conversation.html#sharegpt",
+    "title": "Conversation",
+    "section": "",
+    "text": "conversations where from is human/gpt. (optional: first row with role system to override default system prompt)\n\n\ndata.jsonl\n\n{\"conversations\": [{\"from\": \"...\", \"value\": \"...\"}]}\n\nNote: type: sharegpt opens special configs: - conversation: enables conversions to many Conversation types. Refer to the ‘name’ here for options. - roles: allows you to specify the roles for input and output. This is useful for datasets with custom roles such as tool etc to support masking. - field_human: specify the key to use instead of human in the conversation. - field_model: specify the key to use instead of gpt in the conversation.\ndatasets:\n    path: ...\n    type: sharegpt\n\n    conversation: # Options (see Conversation 'name'): https://github.com/lm-sys/FastChat/blob/main/fastchat/conversation.py\n    field_human: # Optional[str]. Human key to use for conversation.\n    field_model: # Optional[str]. Assistant key to use for conversation.\n    # Add additional keys from your dataset as input or output roles\n    roles:\n      input: # Optional[List[str]]. These will be masked based on train_on_input\n      output: # Optional[List[str]].",
+    "crumbs": [
+      "Dataset Formats",
+      "Conversation"
+    ]
+  },
+  {
+    "objectID": "docs/dataset-formats/conversation.html#pygmalion",
+    "href": "docs/dataset-formats/conversation.html#pygmalion",
+    "title": "Conversation",
+    "section": "pygmalion",
+    "text": "pygmalion\n\n\ndata.jsonl\n\n{\"conversations\": [{\"role\": \"...\", \"value\": \"...\"}]}",
+    "crumbs": [
+      "Dataset Formats",
+      "Conversation"
+    ]
+  },
+  {
+    "objectID": "docs/dataset-formats/conversation.html#sharegpt.load_role",
+    "href": "docs/dataset-formats/conversation.html#sharegpt.load_role",
+    "title": "Conversation",
+    "section": "sharegpt.load_role",
+    "text": "sharegpt.load_role\nconversations where role is used instead of from\n\n\ndata.jsonl\n\n{\"conversations\": [{\"role\": \"...\", \"value\": \"...\"}]}",
+    "crumbs": [
+      "Dataset Formats",
+      "Conversation"
+    ]
+  },
+  {
+    "objectID": "docs/dataset-formats/conversation.html#sharegpt.load_guanaco",
+    "href": "docs/dataset-formats/conversation.html#sharegpt.load_guanaco",
+    "title": "Conversation",
+    "section": "sharegpt.load_guanaco",
+    "text": "sharegpt.load_guanaco\nconversations where from is prompter assistant instead of default sharegpt\n\n\ndata.jsonl\n\n{\"conversations\": [{\"from\": \"...\", \"value\": \"...\"}]}",
+    "crumbs": [
+      "Dataset Formats",
+      "Conversation"
+    ]
+  },
+  {
+    "objectID": "docs/dataset-formats/conversation.html#sharegpt_jokes",
+    "href": "docs/dataset-formats/conversation.html#sharegpt_jokes",
+    "title": "Conversation",
+    "section": "sharegpt_jokes",
+    "text": "sharegpt_jokes\ncreates a chat where bot is asked to tell a joke, then explain why the joke is funny\n\n\ndata.jsonl\n\n{\"conversations\": [{\"title\": \"...\", \"text\": \"...\", \"explanation\": \"...\"}]}",
+    "crumbs": [
+      "Dataset Formats",
+      "Conversation"
+    ]
+  },
+  {
+    "objectID": "docs/dataset-formats/tokenized.html",
+    "href": "docs/dataset-formats/tokenized.html",
+    "title": "Custom Pre-Tokenized Dataset",
+    "section": "",
+    "text": "Pass an empty type: in your axolotl config.\nColumns in Dataset must be exactly input_ids, attention_mask, labels\nTo indicate that a token should be ignored during training, set its corresponding label to -100.\nDo not add BOS/EOS. Axolotl will add them for you based on the default tokenizer for the model you’re using.\nFor pretraining, do not truncate/pad documents to the context window length.\nFor instruction training, documents must be truncated/padded as desired.\n\nSample config:\n\n\nconfig.yml\n\ndatasets:\n  - path: /path/to/your/file.jsonl\n    ds_type: json\n    type:\n\nSample jsonl:\n{\"input_ids\":[271,299,99],\"attention_mask\":[1,1,1],\"labels\":[271,-100,99]}\n{\"input_ids\":[87,227,8383,12],\"attention_mask\":[1,1,1,1],\"labels\":[87,227,8383,12]}",
+    "crumbs": [
+      "Dataset Formats",
+      "Custom Pre-Tokenized Dataset"
+    ]
+  },
+  {
+    "objectID": "docs/dataset-formats/template_free.html",
+    "href": "docs/dataset-formats/template_free.html",
+    "title": "Template-Free",
+    "section": "",
+    "text": "See these docs.",
+    "crumbs": [
+      "Dataset Formats",
+      "Template-Free"
+    ]
+  },
+  {
+    "objectID": "docs/mac.html",
+    "href": "docs/mac.html",
+    "title": "Mac M-series",
+    "section": "",
+    "text": "Currently Axolotl on Mac is partially usable, many of the dependencies of Axolotl including Pytorch do not support MPS or have incomplete support.\nCurrent support:\n\nSupport for all models\nFull training of models\nLoRA training\nSample packing\nFP16 and BF16 (awaiting AMP support for MPS in Pytorch)\nTri-dao’s flash-attn (until it is supported use spd_attention as an alternative)\nxformers\nbitsandbytes (meaning no 4/8 bits loading and bnb optimizers)\nqlora\nDeepSpeed\n\nUntested: - FSDP",
+    "crumbs": [
+      "How-To Guides",
+      "Mac M-series"
+    ]
+  },
+  {
+    "objectID": "docs/debugging.html",
+    "href": "docs/debugging.html",
+    "title": "Debugging",
+    "section": "",
+    "text": "This document provides some tips and tricks for debugging Axolotl. It also provides an example configuration for debugging with VSCode. A good debugging setup is essential to understanding how Axolotl code works behind the scenes.",
+    "crumbs": [
+      "How-To Guides",
+      "Debugging"
+    ]
+  },
+  {
+    "objectID": "docs/debugging.html#table-of-contents",
+    "href": "docs/debugging.html#table-of-contents",
+    "title": "Debugging",
+    "section": "Table of Contents",
+    "text": "Table of Contents\n\nGeneral Tips\nDebugging with VSCode\n\nBackground\nConfiguration\nCustomizing your debugger\nVideo Tutorial\n\nDebugging With Docker\n\nSetup\nAttach To Container\nVideo - Attaching To Docker On Remote Host",
+    "crumbs": [
+      "How-To Guides",
+      "Debugging"
+    ]
+  },
+  {
+    "objectID": "docs/debugging.html#general-tips",
+    "href": "docs/debugging.html#general-tips",
+    "title": "Debugging",
+    "section": "General Tips",
+    "text": "General Tips\nWhile debugging it’s helpful to simplify your test scenario as much as possible. Here are some tips for doing so:\n\n[!Important] All of these tips are incorporated into the example configuration for debugging with VSCode below.\n\n\nMake sure you are using the latest version of axolotl: This project changes often and bugs get fixed fast. Check your git branch and make sure you have pulled the latest changes from main.\nEliminate concurrency: Restrict the number of processes to 1 for both training and data preprocessing:\n\nSet CUDA_VISIBLE_DEVICES to a single GPU, ex: export CUDA_VISIBLE_DEVICES=0.\nSet dataset_processes: 1 in your axolotl config or run the training command with --dataset_processes=1.\n\nUse a small dataset: Construct or use a small dataset from HF Hub. When using a small dataset, you will often have to make sure sample_packing: False and eval_sample_packing: False to avoid errors. If you are in a pinch and don’t have time to construct a small dataset but want to use from the HF Hub, you can shard the data (this will still tokenize the entire dataset, but will only use a fraction of the data for training. For example, to shard the dataset into 20 pieces, add the following to your axolotl config): yaml     dataset:         ...         shards: 20\nUse a small model: A good example of a small model is TinyLlama/TinyLlama-1.1B-Chat-v1.0.\nMinimize iteration time: Make sure the training loop finishes as fast as possible, with these settings.\n\nmicro_batch_size: 1\nmax_steps: 1\nval_set_size: 0\n\nClear Caches: Axolotl caches certain steps and so does the underlying HuggingFace trainer. You may want to clear some of these caches when debugging.\n\nData preprocessing: When debugging data preprocessing, which includes prompt template formation, you may want to delete the directory set in dataset_prepared_path: in your axolotl config. If you didn’t set this value, the default is last_run_prepared.\nHF Hub: If you are debugging data preprocessing, you should clear the relevant HF cache HuggingFace cache, by deleting the appropriate ~/.cache/huggingface/datasets/... folder(s).\nThe recommended approach is to redirect all outputs and caches to a temporary folder and delete selected subfolders before each run. This is demonstrated in the example configuration below.",
+    "crumbs": [
+      "How-To Guides",
+      "Debugging"
+    ]
+  },
+  {
+    "objectID": "docs/debugging.html#debugging-with-vscode",
+    "href": "docs/debugging.html#debugging-with-vscode",
+    "title": "Debugging",
+    "section": "Debugging with VSCode",
+    "text": "Debugging with VSCode\n\nBackground\nThe below example shows how to configure VSCode to debug data preprocessing of the sharegpt format. This is the format used when you have the following in your axolotl config:\ndatasets:\n  - path: &lt;path to your sharegpt formatted dataset&gt; # example on HF Hub: philschmid/guanaco-sharegpt-style\n    type: sharegpt\n\n[!Important] If you are already familiar with advanced VSCode debugging, you can skip the below explanation and look at the files .vscode/launch.json and .vscode/tasks.json for an example configuration.\n\n\n[!Tip] If you prefer to watch a video, rather than read, you can skip to the video tutorial below (but doing both is recommended).\n\n\n\nSetup\nMake sure you have an editable install of Axolotl, which ensures that changes you make to the code are reflected at runtime. Run the following commands from the root of this project:\npip3 install packaging\npip3 install -e '.[flash-attn,deepspeed]'\n\nRemote Hosts\nIf you developing on a remote host, you can easily use VSCode to debug remotely. To do so, you will need to follow this remote - SSH guide. You can also see the video below on Docker and Remote SSH debugging.\n\n\n\nConfiguration\nThe easiest way to get started is to modify the .vscode/launch.json file in this project. This is just an example configuration, so you may need to modify or copy it to suit your needs.\nFor example, to mimic the command cd devtools && CUDA_VISIBLE_DEVICES=0 accelerate launch -m axolotl.cli.train dev_sharegpt.yml, you would use the below configuration1. Note that we add additional flags that override the axolotl config and incorporate the tips above (see the comments). We also set the working directory to devtools and set the env variable HF_HOME to a temporary folder that is later partially deleted. This is because we want to delete the HF dataset cache before each run in order to ensure that the data preprocessing code is run from scratch.\n// .vscode/launch.json\n{\n    \"version\": \"0.2.0\",\n    \"configurations\": [\n        {\n            \"name\": \"Debug axolotl prompt - sharegpt\",\n            \"type\": \"python\",\n            \"module\": \"accelerate.commands.launch\",\n            \"request\": \"launch\",\n            \"args\": [\n                \"-m\", \"axolotl.cli.train\", \"dev_sharegpt.yml\",\n                // The flags below simplify debugging by overriding the axolotl config\n                // with the debugging tips above.  Modify as needed.\n                \"--dataset_processes=1\",      // limits data preprocessing to one process\n                \"--max_steps=1\",              // limits training to just one step\n                \"--batch_size=1\",             // minimizes batch size\n                \"--micro_batch_size=1\",       // minimizes batch size\n                \"--val_set_size=0\",           // disables validation\n                \"--sample_packing=False\",     // disables sample packing which is necessary for small datasets\n                \"--eval_sample_packing=False\",// disables sample packing on eval set\n                \"--dataset_prepared_path=temp_debug/axolotl_outputs/data\", // send data outputs to a temp folder\n                \"--output_dir=temp_debug/axolotl_outputs/model\" // send model outputs to a temp folder\n                ],\n            \"console\": \"integratedTerminal\",      // show output in the integrated terminal\n            \"cwd\": \"${workspaceFolder}/devtools\", // set working directory to devtools from the root of the project\n            \"justMyCode\": true,                   // step through only axolotl code\n            \"env\": {\"CUDA_VISIBLE_DEVICES\": \"0\",  // Since we aren't doing distributed training, we need to limit to one GPU\n                    \"HF_HOME\": \"${workspaceFolder}/devtools/temp_debug/.hf-cache\"}, // send HF cache to a temp folder\n            \"preLaunchTask\": \"cleanup-for-dataprep\", // delete temp folders (see below)\n        }\n    ]\n}\nAdditional notes about this configuration:\n\nThe argument justMyCode is set to true such that you step through only the axolotl code. If you want to step into dependencies, set this to false.\nThe preLaunchTask: cleanup-for-dataprep is defined in .vscode/tasks.json and is used to delete the following folders before debugging, which is essential to ensure that the data pre-processing code is run from scratch:\n\n./devtools/temp_debug/axolotl_outputs\n./devtools/temp_debug/.hf-cache/datasets\n\n\n\n[!Tip] You may not want to delete these folders. For example, if you are debugging model training instead of data pre-processing, you may NOT want to delete the cache or output folders. You may also need to add additional tasks to the tasks.json file depending on your use case.\n\nBelow is the ./vscode/tasks.json file that defines the cleanup-for-dataprep task. This task is run before each debugging session when you use the above configuration. Note how there are two tasks that delete the two folders mentioned above. The third task cleanup-for-dataprep is a composite task that combines the two tasks. A composite task is necessary because VSCode does not allow you to specify multiple tasks in the preLaunchTask argument of the launch.json file.\n// .vscode/tasks.json\n// this file is used by launch.json\n{\n    \"version\": \"2.0.0\",\n    \"tasks\": [\n      // this task changes into the devtools directory and deletes the temp_debug/axolotl_outputs folder\n      {\n        \"label\": \"delete-outputs\",\n        \"type\": \"shell\",\n        \"command\": \"rm -rf temp_debug/axolotl_outputs\",\n        \"options\":{ \"cwd\": \"${workspaceFolder}/devtools\"},\n        \"problemMatcher\": []\n      },\n      // this task changes into the devtools directory and deletes the `temp_debug/.hf-cache/datasets` folder\n      {\n        \"label\": \"delete-temp-hf-dataset-cache\",\n        \"type\": \"shell\",\n        \"command\": \"rm -rf temp_debug/.hf-cache/datasets\",\n        \"options\":{ \"cwd\": \"${workspaceFolder}/devtools\"},\n        \"problemMatcher\": []\n      },\n        // this task combines the two tasks above\n      {\n       \"label\": \"cleanup-for-dataprep\",\n       \"dependsOn\": [\"delete-outputs\", \"delete-temp-hf-dataset-cache\"],\n      }\n    ]\n}\n\n\nCustomizing your debugger\nYour debugging use case may differ from the example above. The easiest thing to do is to put your own axolotl config in the devtools folder and modify the launch.json file to use your config. You may also want to modify the preLaunchTask to delete different folders or not delete anything at all.\n\n\nVideo Tutorial\nThe following video tutorial walks through the above configuration and demonstrates how to debug with VSCode, (click the image below to watch):\n\n\n\nHamel Husain’s tutorial: Debugging Axolotl w/VSCode",
+    "crumbs": [
+      "How-To Guides",
+      "Debugging"
+    ]
+  },
+  {
+    "objectID": "docs/debugging.html#debugging-with-docker",
+    "href": "docs/debugging.html#debugging-with-docker",
+    "title": "Debugging",
+    "section": "Debugging With Docker",
+    "text": "Debugging With Docker\nUsing official Axolotl Docker images is a great way to debug your code, and is a very popular way to use Axolotl. Attaching VSCode to Docker takes a few more steps.\n\nSetup\nOn the host that is running axolotl (ex: if you are using a remote host), clone the axolotl repo and change your current directory to the root:\ngit clone https://github.com/axolotl-ai-cloud/axolotl\ncd axolotl\n\n[!Tip] If you already have axolotl cloned on your host, make sure you have the latest changes and change into the root of the project.\n\nNext, run the desired docker image and mount the current directory. Below is a docker command you can run to do this:2\ndocker run --privileged --gpus '\"all\"' --shm-size 10g --rm -it --name axolotl --ipc=host --ulimit memlock=-1 --ulimit stack=67108864 --mount type=bind,src=\"${PWD}\",target=/workspace/axolotl -v ${HOME}/.cache/huggingface:/root/.cache/huggingface winglian/axolotl:main-py3.10-cu118-2.0.1\n\n[!Tip] To understand which containers are available, see the Docker section of the README and the DockerHub repo. For details of how the Docker containers are built, see axolotl’s Docker CI builds.\n\nYou will now be in the container. Next, perform an editable install of Axolotl:\npip3 install packaging\npip3 install -e '.[flash-attn,deepspeed]'\n\n\nAttach To Container\nNext, if you are using a remote host, Remote into this host with VSCode. If you are using a local host, you can skip this step.\nNext, select Dev Containers: Attach to Running Container... using the command palette (CMD + SHIFT + P) in VSCode. You will be prompted to select a container to attach to. Select the container you just created. You will now be in the container with a working directory that is at the root of the project. Any changes you make to the code will be reflected both in the container and on the host.\nNow you are ready to debug as described above (see Debugging with VSCode).\n\n\nVideo - Attaching To Docker On Remote Host\nHere is a short video that demonstrates how to attach to a Docker container on a remote host:\n\n\n\nHamel Husain’s tutorial: Debugging Axolotl Part 2: Attaching to Docker on a Remote Host",
+    "crumbs": [
+      "How-To Guides",
+      "Debugging"
+    ]
+  },
+  {
+    "objectID": "docs/debugging.html#footnotes",
+    "href": "docs/debugging.html#footnotes",
+    "title": "Debugging",
+    "section": "Footnotes",
+    "text": "Footnotes\n\n\nThe config actually mimics the command CUDA_VISIBLE_DEVICES=0 python -m accelerate.commands.launch -m axolotl.cli.train devtools/sharegpt.yml, but this is the same thing.↩︎\nMany of the below flags are recommended best practices by Nvidia when using nvidia-container-toolkit. You can read more about these flags here.↩︎",
+    "crumbs": [
+      "How-To Guides",
+      "Debugging"
+    ]
+  },
+  {
+    "objectID": "docs/nccl.html",
+    "href": "docs/nccl.html",
+    "title": "NCCL",
+    "section": "",
+    "text": "NVIDIA NCCL is a library to facilitate and optimize multi-GPU communication operations, such as broadcast, all-gather, reduce, all-reduce, etc. Broadly, NCCL configuration is highly environment-specific and is configured via several environment variables. A common NCCL-related problem occurs when a long-running operation times out causing the training process to abort:\nWatchdog caught collective operation timeout: WorkNCCL(SeqNum=42, OpType=ALLGATHER, Timeout(ms)=1800000) ran for 1806948 milliseconds before timing out.\nOften, this timeout will happen after 30 minutes (the default setting) and is accompanied by below-average power consumption with near 100% GPU utilization before the error is raised. Nvidia recommends disabling PCI access control services (ACS) as a possible solution if this is available to you.\nForcing cross-GPU communication via NVLink may help without increasing timeouts. To verify that your configuration is leveraging NVLink run the following command:\nnvidia-smi nvlink --status\nTo force NCCL to use NVLink, simply set this in the environment:\nexport NCCL_P2P_LEVEL=NVL\nIf NVLink is not available in your environment there are other options for NCCL_P2P_LEVEL in the table below:\n\n\n\n\n\n\n\nNCCL_P2P_LEVEL\nDescription\n\n\n\n\nPIX\nP2P data transfers through no more than a single PCIe bridge. Faster data transfer rates vs to paths involving multiple bridges, but slower compared to direct GPU-to-GPU communication.\n\n\nPXB\nP2P data transfers through multiple PCIe bridges but not going through the PCIe Host Bridge; this path involves a complex routing process, potentially incurring a moderate level of latency.\n\n\nPHB\nP2P data transfers occur over the PCIe and through a PCIe Host Bridge, typically involving the CPU, which can facilitate direct memory access but might introduce additional latency compared to more direct paths (ex PIX, NVL)\n\n\n\nTo validate that acceptable data transfer speeds exist for your training job, running NCCL Tests can help pinpoint bottlenecks, for example:\n./build/all_reduce_perf -b 8 -e 128M -f 2 -g 3\nIt can be useful when debugging NCCL communication timeouts to activate additional logging in both PyTorch and NCCL:\nexport NCCL_DEBUG=INFO\nexport NCCL_DEBUG_SUBSYS=ALL\nexport TORCH_DISTRIBUTED_DEBUG=INFO\nexport TORCHELASTIC_ERROR_FILE=/PATH/TO/torcherror.log\nFinally, if you believe your training job needs more time you can increase the timeout past 30 minutes by setting the ddp_timeout value in the Axolotl configuration. See PyTorch init_process_group for documentation on this value.",
+    "crumbs": [
+      "How-To Guides",
+      "NCCL"
+    ]
+  },
+  {
+    "objectID": "docs/dataset_preprocessing.html",
+    "href": "docs/dataset_preprocessing.html",
+    "title": "Dataset Preprocessing",
+    "section": "",
+    "text": "Dataset pre-processing is the step where Axolotl takes each dataset you’ve configured alongside the (dataset format)[../dataset-formats/] and prompt strategies to: - parse the dataset based on the dataset format - transform the dataset to how you would interact with the model based on the prompt strategy - tokenize the dataset based on the configured model & tokenizer - shuffle and merge multiple datasets together if using more than one\nThe processing of the datasets can happen one of two ways:\n\nBefore kicking off training by calling python -m axolotl.cli.preprocess /path/to/your.yaml --debug\nWhen training is started\n\nWhat are the benefits of pre-processing? When training interactively or for sweeps (e.g. you are restarting the trainer often), processing the datasets can oftentimes be frustratingly slow. Pre-processing will cache the tokenized/formatted datasets according to a hash of dependent training parameters so that it will intelligently pull from its cache when possible.\nThe path of the cache is controlled by dataset_prepared_path: and is often left blank in example YAMLs as this leads to a more robust solution that prevents unexpectedly reusing cached data.\nIf dataset_prepared_path: is left empty, when training, the processed dataset will be cached in a default path of ./last_run_prepared/, but will ignore anything already cached there. By explicitly setting dataset_prepared_path: ./last_run_prepared, the trainer will use whatever pre-processed data is in the cache.\nWhat are the edge cases? Let’s say you are writing a custom prompt strategy or using a user-defined prompt template. Because the trainer cannot readily detect these changes, we cannot change the calculated hash value for the pre-processed dataset. If you have dataset_prepared_path: ... set and change your prompt templating logic, it may not pick up the changes you made and you will be training over the old prompt."
+  },
+  {
+    "objectID": "docs/multipack.html",
+    "href": "docs/multipack.html",
+    "title": "Multipack (Sample Packing)",
+    "section": "",
+    "text": "Because Flash Attention simply drops the attention mask, we do not need to construct a 4d attention mask. We only need to concatenate the sequences into a single batch and let flash attention know where each new sequence begins.\n4k context, bsz =4, each character represents 256 tokens X represents a padding token\n   0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5\n[[ A A A A A A A A A A A ]\n   B B B B B B ]\n   C C C C C C C ]\n   D D D D ]]\n\n[[ E E E E E E E E ]\n [ F F F F ]\n [ G G G ]\n [ H H H H ]]\n\n[[ I I I ]\n [ J J J ]\n [ K K K K K]\n [ L L L ]]\nafter padding to longest input in each step\n   0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5\n[[ A A A A A A A A A A A ]\n   B B B B B B X X X X X X ]\n   C C C C C C C X X X X ]\n   D D D D X X X X X X X ]]\n\n[[ E E E E E E E E ]\n [ F F F F X X X X ]\n [ G G G X X X X X ]\n [ H H H H X X X X ]]\n\n[[ I I I X X ]\n [ J J J X X ]\n [ K K K K K ]\n [ L L L X X ]]\nw packing ( note it’s the same effective number of tokens per step, but a true bsz of 1)\n   0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5\n[[ A A A A A A A A A A A B B B B B\n   B C C C C C C C D D D D E E E E\n   E E E E F F F F F G G G H H H H\n   I I I J J J J K K K K K L L L X ]]\ncu_seqlens: [[ 0, 11, 17, 24, 28, 36, 41 44, 48, 51, 55, 60, 64]]",
+    "crumbs": [
+      "How-To Guides",
+      "Multipack (Sample Packing)"
+    ]
+  },
+  {
+    "objectID": "docs/multipack.html#visualization-of-multipack-with-flash-attention",
+    "href": "docs/multipack.html#visualization-of-multipack-with-flash-attention",
+    "title": "Multipack (Sample Packing)",
+    "section": "",
+    "text": "Because Flash Attention simply drops the attention mask, we do not need to construct a 4d attention mask. We only need to concatenate the sequences into a single batch and let flash attention know where each new sequence begins.\n4k context, bsz =4, each character represents 256 tokens X represents a padding token\n   0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5\n[[ A A A A A A A A A A A ]\n   B B B B B B ]\n   C C C C C C C ]\n   D D D D ]]\n\n[[ E E E E E E E E ]\n [ F F F F ]\n [ G G G ]\n [ H H H H ]]\n\n[[ I I I ]\n [ J J J ]\n [ K K K K K]\n [ L L L ]]\nafter padding to longest input in each step\n   0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5\n[[ A A A A A A A A A A A ]\n   B B B B B B X X X X X X ]\n   C C C C C C C X X X X ]\n   D D D D X X X X X X X ]]\n\n[[ E E E E E E E E ]\n [ F F F F X X X X ]\n [ G G G X X X X X ]\n [ H H H H X X X X ]]\n\n[[ I I I X X ]\n [ J J J X X ]\n [ K K K K K ]\n [ L L L X X ]]\nw packing ( note it’s the same effective number of tokens per step, but a true bsz of 1)\n   0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5\n[[ A A A A A A A A A A A B B B B B\n   B C C C C C C C D D D D E E E E\n   E E E E F F F F F G G G H H H H\n   I I I J J J J K K K K K L L L X ]]\ncu_seqlens: [[ 0, 11, 17, 24, 28, 36, 41 44, 48, 51, 55, 60, 64]]",
+    "crumbs": [
+      "How-To Guides",
+      "Multipack (Sample Packing)"
+    ]
+  },
+  {
+    "objectID": "docs/multipack.html#multipack-without-flash-attention",
+    "href": "docs/multipack.html#multipack-without-flash-attention",
+    "title": "Multipack (Sample Packing)",
+    "section": "Multipack without Flash Attention",
+    "text": "Multipack without Flash Attention\nMultipack can still be achieved without Flash attention, but with lower packing efficiency as we are not able to join multiple batches into a single batch due to context length limits without flash attention. We can use either Pytorch’s Scaled Dot Product Attention implementation or native Pytorch attention implementation along with 4d attention masks to pack sequences together and avoid cross attention.",
+    "crumbs": [
+      "How-To Guides",
+      "Multipack (Sample Packing)"
+    ]
+  },
+  {
+    "objectID": "docs/fsdp_qlora.html",
+    "href": "docs/fsdp_qlora.html",
+    "title": "FDSP + QLoRA",
+    "section": "",
+    "text": "Using FSDP with QLoRA is essential for fine-tuning larger (70b+ parameter) LLMs on consumer GPUs. For example, you can use FSDP + QLoRA to train a 70b model on two 24GB GPUs1.\nBelow, we describe how to use this feature in Axolotl.",
+    "crumbs": [
+      "How-To Guides",
+      "FDSP + QLoRA"
+    ]
+  },
+  {
+    "objectID": "docs/fsdp_qlora.html#background",
+    "href": "docs/fsdp_qlora.html#background",
+    "title": "FDSP + QLoRA",
+    "section": "",
+    "text": "Using FSDP with QLoRA is essential for fine-tuning larger (70b+ parameter) LLMs on consumer GPUs. For example, you can use FSDP + QLoRA to train a 70b model on two 24GB GPUs1.\nBelow, we describe how to use this feature in Axolotl.",
+    "crumbs": [
+      "How-To Guides",
+      "FDSP + QLoRA"
+    ]
+  },
+  {
+    "objectID": "docs/fsdp_qlora.html#usage",
+    "href": "docs/fsdp_qlora.html#usage",
+    "title": "FDSP + QLoRA",
+    "section": "Usage",
+    "text": "Usage\nTo enable QLoRA with FSDP, you need to perform the following steps:\n\n![Tip] See the example config file in addition to reading these instructions.\n\n\nSet adapter: qlora in your axolotl config file.\nEnable FSDP in your axolotl config, as described here.\nUse one of the supported model types: llama, mistral or mixtral.",
+    "crumbs": [
+      "How-To Guides",
+      "FDSP + QLoRA"
+    ]
+  },
+  {
+    "objectID": "docs/fsdp_qlora.html#example-config",
+    "href": "docs/fsdp_qlora.html#example-config",
+    "title": "FDSP + QLoRA",
+    "section": "Example Config",
+    "text": "Example Config\nexamples/llama-2/qlora-fsdp.yml contains an example of how to enable QLoRA + FSDP in axolotl.",
+    "crumbs": [
+      "How-To Guides",
+      "FDSP + QLoRA"
+    ]
+  },
+  {
+    "objectID": "docs/fsdp_qlora.html#references",
+    "href": "docs/fsdp_qlora.html#references",
+    "title": "FDSP + QLoRA",
+    "section": "References",
+    "text": "References\n\nPR #1378 enabling QLoRA in FSDP in Axolotl.\nBlog Post from the Answer.AI team describing the work that enabled QLoRA in FSDP.\nRelated HuggingFace PRs Enabling FDSP + QLoRA:\n\nAccelerate PR#2544\nTransformers PR#29587\nTRL PR#1416\nPEFT PR#1550",
+    "crumbs": [
+      "How-To Guides",
+      "FDSP + QLoRA"
+    ]
+  },
+  {
+    "objectID": "docs/fsdp_qlora.html#footnotes",
+    "href": "docs/fsdp_qlora.html#footnotes",
+    "title": "FDSP + QLoRA",
+    "section": "Footnotes",
+    "text": "Footnotes\n\n\nThis was enabled by this work from the Answer.AI team.↩︎",
+    "crumbs": [
+      "How-To Guides",
+      "FDSP + QLoRA"
+    ]
+  },
+  {
+    "objectID": "examples/colab-notebooks/colab-axolotl-example.html",
+    "href": "examples/colab-notebooks/colab-axolotl-example.html",
+    "title": "Example notebook for running Axolotl on google colab",
+    "section": "",
+    "text": "import torch\n# Check so there is a gpu available, a T4(free tier) is enough to run this notebook\nassert (torch.cuda.is_available()==True)"
+  },
+  {
+    "objectID": "examples/colab-notebooks/colab-axolotl-example.html#install-axolotl-and-dependencies",
+    "href": "examples/colab-notebooks/colab-axolotl-example.html#install-axolotl-and-dependencies",
+    "title": "Example notebook for running Axolotl on google colab",
+    "section": "Install Axolotl and dependencies",
+    "text": "Install Axolotl and dependencies\n\n!pip install torch==\"2.1.2\"\n!pip install -e git+https://github.com/axolotl-ai-cloud/axolotl#egg=axolotl\n!pip install flash-attn==\"2.5.0\"\n!pip install deepspeed==\"0.13.1\"!pip install mlflow==\"2.13.0\""
+  },
+  {
+    "objectID": "examples/colab-notebooks/colab-axolotl-example.html#create-an-yaml-config-file",
+    "href": "examples/colab-notebooks/colab-axolotl-example.html#create-an-yaml-config-file",
+    "title": "Example notebook for running Axolotl on google colab",
+    "section": "Create an yaml config file",
+    "text": "Create an yaml config file\n\nimport yaml\n\n# Your YAML string\nyaml_string = \"\"\"\nbase_model: TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T\nmodel_type: LlamaForCausalLM\ntokenizer_type: LlamaTokenizer\n\nload_in_8bit: false\nload_in_4bit: true\nstrict: false\n\ndatasets:\n  - path: mhenrichsen/alpaca_2k_test\n    type: alpaca\ndataset_prepared_path:\nval_set_size: 0.05\noutput_dir: ./outputs/qlora-out\n\nadapter: qlora\nlora_model_dir:\n\nsequence_len: 4096\nsample_packing: true\neval_sample_packing: false\npad_to_sequence_len: true\n\nlora_r: 32\nlora_alpha: 16\nlora_dropout: 0.05\nlora_target_modules:\nlora_target_linear: true\nlora_fan_in_fan_out:\n\nwandb_project:\nwandb_entity:\nwandb_watch:\nwandb_name:\nwandb_log_model:\n\ngradient_accumulation_steps: 4\nmicro_batch_size: 2\nnum_epochs: 4\noptimizer: paged_adamw_32bit\nlr_scheduler: cosine\nlearning_rate: 0.0002\n\ntrain_on_inputs: false\ngroup_by_length: false\nbf16: auto\nfp16:\ntf32: false\n\ngradient_checkpointing: true\nearly_stopping_patience:\nresume_from_checkpoint:\nlocal_rank:\nlogging_steps: 1\nxformers_attention:\nflash_attention: true\n\nwarmup_steps: 10\nevals_per_epoch: 4\nsaves_per_epoch: 1\ndebug:\ndeepspeed:\nweight_decay: 0.0\nfsdp:\nfsdp_config:\nspecial_tokens:\n\n\"\"\"\n\n# Convert the YAML string to a Python dictionary\nyaml_dict = yaml.safe_load(yaml_string)\n\n# Specify your file path\nfile_path = 'test_axolotl.yaml'\n\n# Write the YAML file\nwith open(file_path, 'w') as file:\n    yaml.dump(yaml_dict, file)"
+  },
+  {
+    "objectID": "examples/colab-notebooks/colab-axolotl-example.html#launch-the-training",
+    "href": "examples/colab-notebooks/colab-axolotl-example.html#launch-the-training",
+    "title": "Example notebook for running Axolotl on google colab",
+    "section": "Launch the training",
+    "text": "Launch the training\n\n# By using the ! the comand will be executed as a bash command\n!accelerate launch -m axolotl.cli.train /content/test_axolotl.yaml"
+  },
+  {
+    "objectID": "examples/colab-notebooks/colab-axolotl-example.html#play-with-inference",
+    "href": "examples/colab-notebooks/colab-axolotl-example.html#play-with-inference",
+    "title": "Example notebook for running Axolotl on google colab",
+    "section": "Play with inference",
+    "text": "Play with inference\n\n# By using the ! the comand will be executed as a bash command\n!accelerate launch -m axolotl.cli.inference /content/test_axolotl.yaml \\\n    --qlora_model_dir=\"./qlora-out\" --gradio"
   },
   {
     "objectID": "index.html",
@@ -561,265 +820,6 @@
     "text": "Sponsors 🤝❤\nOpenAccess AI Collective is run by volunteer contributors such as winglian, NanoCode012, tmm1, mhenrichsen, casper-hansen, hamelsmu and many more who help us accelerate forward by fixing bugs, answering community questions and implementing new features. Axolotl needs donations from sponsors for the compute needed to run our unit & integration tests, troubleshooting community issues, and providing bounties. If you love axolotl, consider sponsoring the project via GitHub Sponsors, Ko-fi or reach out directly to wing@openaccessaicollective.org.\n\n\n💎 Diamond Sponsors - Contact directly\n\n\n\n🥇 Gold Sponsors - $5000/mo\n\n\n\n🥈 Silver Sponsors - $1000/mo\n\n\n\n🥉 Bronze Sponsors - $500/mo\n\nJarvisLabs.ai",
     "crumbs": [
       "Home"
-    ]
-  },
-  {
-    "objectID": "examples/colab-notebooks/colab-axolotl-example.html",
-    "href": "examples/colab-notebooks/colab-axolotl-example.html",
-    "title": "Example notebook for running Axolotl on google colab",
-    "section": "",
-    "text": "import torch\n# Check so there is a gpu available, a T4(free tier) is enough to run this notebook\nassert (torch.cuda.is_available()==True)"
-  },
-  {
-    "objectID": "examples/colab-notebooks/colab-axolotl-example.html#install-axolotl-and-dependencies",
-    "href": "examples/colab-notebooks/colab-axolotl-example.html#install-axolotl-and-dependencies",
-    "title": "Example notebook for running Axolotl on google colab",
-    "section": "Install Axolotl and dependencies",
-    "text": "Install Axolotl and dependencies\n\n!pip install torch==\"2.1.2\"\n!pip install -e git+https://github.com/axolotl-ai-cloud/axolotl#egg=axolotl\n!pip install flash-attn==\"2.5.0\"\n!pip install deepspeed==\"0.13.1\"!pip install mlflow==\"2.13.0\""
-  },
-  {
-    "objectID": "examples/colab-notebooks/colab-axolotl-example.html#create-an-yaml-config-file",
-    "href": "examples/colab-notebooks/colab-axolotl-example.html#create-an-yaml-config-file",
-    "title": "Example notebook for running Axolotl on google colab",
-    "section": "Create an yaml config file",
-    "text": "Create an yaml config file\n\nimport yaml\n\n# Your YAML string\nyaml_string = \"\"\"\nbase_model: TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T\nmodel_type: LlamaForCausalLM\ntokenizer_type: LlamaTokenizer\n\nload_in_8bit: false\nload_in_4bit: true\nstrict: false\n\ndatasets:\n  - path: mhenrichsen/alpaca_2k_test\n    type: alpaca\ndataset_prepared_path:\nval_set_size: 0.05\noutput_dir: ./outputs/qlora-out\n\nadapter: qlora\nlora_model_dir:\n\nsequence_len: 4096\nsample_packing: true\neval_sample_packing: false\npad_to_sequence_len: true\n\nlora_r: 32\nlora_alpha: 16\nlora_dropout: 0.05\nlora_target_modules:\nlora_target_linear: true\nlora_fan_in_fan_out:\n\nwandb_project:\nwandb_entity:\nwandb_watch:\nwandb_name:\nwandb_log_model:\n\ngradient_accumulation_steps: 4\nmicro_batch_size: 2\nnum_epochs: 4\noptimizer: paged_adamw_32bit\nlr_scheduler: cosine\nlearning_rate: 0.0002\n\ntrain_on_inputs: false\ngroup_by_length: false\nbf16: auto\nfp16:\ntf32: false\n\ngradient_checkpointing: true\nearly_stopping_patience:\nresume_from_checkpoint:\nlocal_rank:\nlogging_steps: 1\nxformers_attention:\nflash_attention: true\n\nwarmup_steps: 10\nevals_per_epoch: 4\nsaves_per_epoch: 1\ndebug:\ndeepspeed:\nweight_decay: 0.0\nfsdp:\nfsdp_config:\nspecial_tokens:\n\n\"\"\"\n\n# Convert the YAML string to a Python dictionary\nyaml_dict = yaml.safe_load(yaml_string)\n\n# Specify your file path\nfile_path = 'test_axolotl.yaml'\n\n# Write the YAML file\nwith open(file_path, 'w') as file:\n    yaml.dump(yaml_dict, file)"
-  },
-  {
-    "objectID": "examples/colab-notebooks/colab-axolotl-example.html#launch-the-training",
-    "href": "examples/colab-notebooks/colab-axolotl-example.html#launch-the-training",
-    "title": "Example notebook for running Axolotl on google colab",
-    "section": "Launch the training",
-    "text": "Launch the training\n\n# By using the ! the comand will be executed as a bash command\n!accelerate launch -m axolotl.cli.train /content/test_axolotl.yaml"
-  },
-  {
-    "objectID": "examples/colab-notebooks/colab-axolotl-example.html#play-with-inference",
-    "href": "examples/colab-notebooks/colab-axolotl-example.html#play-with-inference",
-    "title": "Example notebook for running Axolotl on google colab",
-    "section": "Play with inference",
-    "text": "Play with inference\n\n# By using the ! the comand will be executed as a bash command\n!accelerate launch -m axolotl.cli.inference /content/test_axolotl.yaml \\\n    --qlora_model_dir=\"./qlora-out\" --gradio"
-  },
-  {
-    "objectID": "TODO.html",
-    "href": "TODO.html",
-    "title": "todo list",
-    "section": "",
-    "text": "[] Validation of parameters for combinations that won’t work\n\n\n\n\nFSDP offload and gradient_checkpointing - https://github.com/pytorch/pytorch/issues/82203\nadamw_bnb_8bit doesn’t play well with FSDP offload"
-  },
-  {
-    "objectID": "TODO.html#things-that-are-known-not-to-work",
-    "href": "TODO.html#things-that-are-known-not-to-work",
-    "title": "todo list",
-    "section": "",
-    "text": "FSDP offload and gradient_checkpointing - https://github.com/pytorch/pytorch/issues/82203\nadamw_bnb_8bit doesn’t play well with FSDP offload"
-  },
-  {
-    "objectID": "FAQS.html",
-    "href": "FAQS.html",
-    "title": "FAQs",
-    "section": "",
-    "text": "FAQs\n\nCan you train StableLM with this? Yes, but only with a single GPU atm. Multi GPU support is coming soon! Just waiting on this PR\nWill this work with Deepspeed? That’s still a WIP, but setting export ACCELERATE_USE_DEEPSPEED=true should work in some cases\nError invalid argument at line 359 in file /workspace/bitsandbytes/csrc/pythonInterface.c /arrow/cpp/src/arrow/filesystem/s3fs.cc:2598:  arrow::fs::FinalizeS3 was not called even though S3 was initialized. This could lead to a segmentation fault at exit. Try reinstalling bitsandbytes and transformers from source."
-  },
-  {
-    "objectID": "docs/multipack.html",
-    "href": "docs/multipack.html",
-    "title": "Multipack (Sample Packing)",
-    "section": "",
-    "text": "Because Flash Attention simply drops the attention mask, we do not need to construct a 4d attention mask. We only need to concatenate the sequences into a single batch and let flash attention know where each new sequence begins.\n4k context, bsz =4, each character represents 256 tokens X represents a padding token\n   0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5\n[[ A A A A A A A A A A A ]\n   B B B B B B ]\n   C C C C C C C ]\n   D D D D ]]\n\n[[ E E E E E E E E ]\n [ F F F F ]\n [ G G G ]\n [ H H H H ]]\n\n[[ I I I ]\n [ J J J ]\n [ K K K K K]\n [ L L L ]]\nafter padding to longest input in each step\n   0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5\n[[ A A A A A A A A A A A ]\n   B B B B B B X X X X X X ]\n   C C C C C C C X X X X ]\n   D D D D X X X X X X X ]]\n\n[[ E E E E E E E E ]\n [ F F F F X X X X ]\n [ G G G X X X X X ]\n [ H H H H X X X X ]]\n\n[[ I I I X X ]\n [ J J J X X ]\n [ K K K K K ]\n [ L L L X X ]]\nw packing ( note it’s the same effective number of tokens per step, but a true bsz of 1)\n   0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5\n[[ A A A A A A A A A A A B B B B B\n   B C C C C C C C D D D D E E E E\n   E E E E F F F F F G G G H H H H\n   I I I J J J J K K K K K L L L X ]]\ncu_seqlens: [[ 0, 11, 17, 24, 28, 36, 41 44, 48, 51, 55, 60, 64]]",
-    "crumbs": [
-      "How-To Guides",
-      "Multipack (Sample Packing)"
-    ]
-  },
-  {
-    "objectID": "docs/multipack.html#visualization-of-multipack-with-flash-attention",
-    "href": "docs/multipack.html#visualization-of-multipack-with-flash-attention",
-    "title": "Multipack (Sample Packing)",
-    "section": "",
-    "text": "Because Flash Attention simply drops the attention mask, we do not need to construct a 4d attention mask. We only need to concatenate the sequences into a single batch and let flash attention know where each new sequence begins.\n4k context, bsz =4, each character represents 256 tokens X represents a padding token\n   0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5\n[[ A A A A A A A A A A A ]\n   B B B B B B ]\n   C C C C C C C ]\n   D D D D ]]\n\n[[ E E E E E E E E ]\n [ F F F F ]\n [ G G G ]\n [ H H H H ]]\n\n[[ I I I ]\n [ J J J ]\n [ K K K K K]\n [ L L L ]]\nafter padding to longest input in each step\n   0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5\n[[ A A A A A A A A A A A ]\n   B B B B B B X X X X X X ]\n   C C C C C C C X X X X ]\n   D D D D X X X X X X X ]]\n\n[[ E E E E E E E E ]\n [ F F F F X X X X ]\n [ G G G X X X X X ]\n [ H H H H X X X X ]]\n\n[[ I I I X X ]\n [ J J J X X ]\n [ K K K K K ]\n [ L L L X X ]]\nw packing ( note it’s the same effective number of tokens per step, but a true bsz of 1)\n   0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5\n[[ A A A A A A A A A A A B B B B B\n   B C C C C C C C D D D D E E E E\n   E E E E F F F F F G G G H H H H\n   I I I J J J J K K K K K L L L X ]]\ncu_seqlens: [[ 0, 11, 17, 24, 28, 36, 41 44, 48, 51, 55, 60, 64]]",
-    "crumbs": [
-      "How-To Guides",
-      "Multipack (Sample Packing)"
-    ]
-  },
-  {
-    "objectID": "docs/multipack.html#multipack-without-flash-attention",
-    "href": "docs/multipack.html#multipack-without-flash-attention",
-    "title": "Multipack (Sample Packing)",
-    "section": "Multipack without Flash Attention",
-    "text": "Multipack without Flash Attention\nMultipack can still be achieved without Flash attention, but with lower packing efficiency as we are not able to join multiple batches into a single batch due to context length limits without flash attention. We can use either Pytorch’s Scaled Dot Product Attention implementation or native Pytorch attention implementation along with 4d attention masks to pack sequences together and avoid cross attention.",
-    "crumbs": [
-      "How-To Guides",
-      "Multipack (Sample Packing)"
-    ]
-  },
-  {
-    "objectID": "docs/dataset-formats/template_free.html",
-    "href": "docs/dataset-formats/template_free.html",
-    "title": "Template-Free",
-    "section": "",
-    "text": "See these docs.",
-    "crumbs": [
-      "Dataset Formats",
-      "Template-Free"
-    ]
-  },
-  {
-    "objectID": "docs/dataset-formats/conversation.html",
-    "href": "docs/dataset-formats/conversation.html",
-    "title": "Conversation",
-    "section": "",
-    "text": "conversations where from is human/gpt. (optional: first row with role system to override default system prompt)\n\n\ndata.jsonl\n\n{\"conversations\": [{\"from\": \"...\", \"value\": \"...\"}]}\n\nNote: type: sharegpt opens special configs: - conversation: enables conversions to many Conversation types. Refer to the ‘name’ here for options. - roles: allows you to specify the roles for input and output. This is useful for datasets with custom roles such as tool etc to support masking. - field_human: specify the key to use instead of human in the conversation. - field_model: specify the key to use instead of gpt in the conversation.\ndatasets:\n    path: ...\n    type: sharegpt\n\n    conversation: # Options (see Conversation 'name'): https://github.com/lm-sys/FastChat/blob/main/fastchat/conversation.py\n    field_human: # Optional[str]. Human key to use for conversation.\n    field_model: # Optional[str]. Assistant key to use for conversation.\n    # Add additional keys from your dataset as input or output roles\n    roles:\n      input: # Optional[List[str]]. These will be masked based on train_on_input\n      output: # Optional[List[str]].",
-    "crumbs": [
-      "Dataset Formats",
-      "Conversation"
-    ]
-  },
-  {
-    "objectID": "docs/dataset-formats/conversation.html#sharegpt",
-    "href": "docs/dataset-formats/conversation.html#sharegpt",
-    "title": "Conversation",
-    "section": "",
-    "text": "conversations where from is human/gpt. (optional: first row with role system to override default system prompt)\n\n\ndata.jsonl\n\n{\"conversations\": [{\"from\": \"...\", \"value\": \"...\"}]}\n\nNote: type: sharegpt opens special configs: - conversation: enables conversions to many Conversation types. Refer to the ‘name’ here for options. - roles: allows you to specify the roles for input and output. This is useful for datasets with custom roles such as tool etc to support masking. - field_human: specify the key to use instead of human in the conversation. - field_model: specify the key to use instead of gpt in the conversation.\ndatasets:\n    path: ...\n    type: sharegpt\n\n    conversation: # Options (see Conversation 'name'): https://github.com/lm-sys/FastChat/blob/main/fastchat/conversation.py\n    field_human: # Optional[str]. Human key to use for conversation.\n    field_model: # Optional[str]. Assistant key to use for conversation.\n    # Add additional keys from your dataset as input or output roles\n    roles:\n      input: # Optional[List[str]]. These will be masked based on train_on_input\n      output: # Optional[List[str]].",
-    "crumbs": [
-      "Dataset Formats",
-      "Conversation"
-    ]
-  },
-  {
-    "objectID": "docs/dataset-formats/conversation.html#pygmalion",
-    "href": "docs/dataset-formats/conversation.html#pygmalion",
-    "title": "Conversation",
-    "section": "pygmalion",
-    "text": "pygmalion\n\n\ndata.jsonl\n\n{\"conversations\": [{\"role\": \"...\", \"value\": \"...\"}]}",
-    "crumbs": [
-      "Dataset Formats",
-      "Conversation"
-    ]
-  },
-  {
-    "objectID": "docs/dataset-formats/conversation.html#sharegpt.load_role",
-    "href": "docs/dataset-formats/conversation.html#sharegpt.load_role",
-    "title": "Conversation",
-    "section": "sharegpt.load_role",
-    "text": "sharegpt.load_role\nconversations where role is used instead of from\n\n\ndata.jsonl\n\n{\"conversations\": [{\"role\": \"...\", \"value\": \"...\"}]}",
-    "crumbs": [
-      "Dataset Formats",
-      "Conversation"
-    ]
-  },
-  {
-    "objectID": "docs/dataset-formats/conversation.html#sharegpt.load_guanaco",
-    "href": "docs/dataset-formats/conversation.html#sharegpt.load_guanaco",
-    "title": "Conversation",
-    "section": "sharegpt.load_guanaco",
-    "text": "sharegpt.load_guanaco\nconversations where from is prompter assistant instead of default sharegpt\n\n\ndata.jsonl\n\n{\"conversations\": [{\"from\": \"...\", \"value\": \"...\"}]}",
-    "crumbs": [
-      "Dataset Formats",
-      "Conversation"
-    ]
-  },
-  {
-    "objectID": "docs/dataset-formats/conversation.html#sharegpt_jokes",
-    "href": "docs/dataset-formats/conversation.html#sharegpt_jokes",
-    "title": "Conversation",
-    "section": "sharegpt_jokes",
-    "text": "sharegpt_jokes\ncreates a chat where bot is asked to tell a joke, then explain why the joke is funny\n\n\ndata.jsonl\n\n{\"conversations\": [{\"title\": \"...\", \"text\": \"...\", \"explanation\": \"...\"}]}",
-    "crumbs": [
-      "Dataset Formats",
-      "Conversation"
-    ]
-  },
-  {
-    "objectID": "docs/dataset-formats/index.html",
-    "href": "docs/dataset-formats/index.html",
-    "title": "Dataset Formats",
-    "section": "",
-    "text": "Axolotl supports a variety of dataset formats. It is recommended to use a JSONL format. The schema of the JSONL depends upon the task and the prompt template you wish to use. Instead of a JSONL, you can also use a HuggingFace dataset with columns for each JSONL field.\nBelow are these various formats organized by task:\n\n\n\n\n\n\n\n\n\nTitle\n\n\nDescription\n\n\n\n\n\n\nPre-training\n\n\nData format for a pre-training completion task.\n\n\n\n\nInstruction Tuning\n\n\nInstruction tuning formats for supervised fine-tuning.\n\n\n\n\nConversation\n\n\nConversation format for supervised fine-tuning.\n\n\n\n\nTemplate-Free\n\n\nConstruct prompts without a template.\n\n\n\n\nCustom Pre-Tokenized Dataset\n\n\nHow to use a custom pre-tokenized dataset.\n\n\n\n\n\nNo matching items",
-    "crumbs": [
-      "Dataset Formats"
-    ]
-  },
-  {
-    "objectID": "docs/unsloth.html",
-    "href": "docs/unsloth.html",
-    "title": "Unsloth",
-    "section": "",
-    "text": "Overview\nUnsloth provides hand-written optimized kernels for LLM finetuning that slightly improve speed and VRAM over standard industry baselines.\n\n\nInstallation\nThe following will install unsloth from source and downgrade xformers as unsloth is incompatible with the most up to date libraries.\npip install --no-deps \"unsloth @ git+https://github.com/unslothai/unsloth.git\"\npip install --no-deps --force-reinstall xformers==0.0.26.post1\n\n\nUsing unsloth w Axolotl\nAxolotl exposes a few configuration options to try out unsloth and get most of the performance gains.\nOur unsloth integration is currently limited to the following model architectures: - llama\nThese options are specific to LoRA finetuning and cannot be used for multi-GPU finetuning\nunsloth_lora_mlp: true\nunsloth_lora_qkv: true\nunsloth_lora_o: true\nThese options are composable and can be used with multi-gpu finetuning\nunsloth_cross_entropy_loss: true\nunsloth_rms_norm: true\nunsloth_rope: true\n\n\nLimitations\n\nSingle GPU only; e.g. no multi-gpu support\nNo deepspeed or FSDP support (requires multi-gpu)\nLoRA + QLoRA support only. No full fine tunes or fp8 support.\nLimited model architecture support. Llama, Phi, Gemma, Mistral only\nNo MoE support.",
-    "crumbs": [
-      "How-To Guides",
-      "Unsloth"
-    ]
-  },
-  {
-    "objectID": "docs/config.html",
-    "href": "docs/config.html",
-    "title": "Config options",
-    "section": "",
-    "text": "# This is the huggingface model that contains *.pt, *.safetensors, or *.bin files\n# This can also be a relative path to a model on disk\nbase_model: ./llama-7b-hf\n# You can specify an ignore pattern if the model repo contains more than 1 model type (*.pt, etc)\nbase_model_ignore_patterns:\n# If the base_model repo on hf hub doesn't include configuration .json files,\n# You can set that here, or leave this empty to default to base_model\nbase_model_config: ./llama-7b-hf\n# You can specify to choose a specific model revision from huggingface hub\nrevision_of_model:\n# Optional tokenizer configuration path in case you want to use a different tokenizer\n# than the one defined in the base model\ntokenizer_config:\n# If you want to specify the type of model to load, AutoModelForCausalLM is a good choice too\nmodel_type: AutoModelForCausalLM\n# Corresponding tokenizer for the model AutoTokenizer is a good choice\ntokenizer_type: AutoTokenizer\n# Trust remote code for untrusted source\ntrust_remote_code:\n# use_fast option for tokenizer loading from_pretrained, default to True\ntokenizer_use_fast:\n# Whether to use the legacy tokenizer setting, defaults to True\ntokenizer_legacy:\n# Resize the model embeddings when new tokens are added to multiples of 32\n# This is reported to improve training speed on some models\nresize_token_embeddings_to_32x:\n\n# (Internal use only)\n# Used to identify which the model is based on\nis_falcon_derived_model:\nis_llama_derived_model:\nis_qwen_derived_model:\n# Please note that if you set this to true, `padding_side` will be set to \"left\" by default\nis_mistral_derived_model:\n\n# optional overrides to the base model configuration\noverrides_of_model_config:\n  # RoPE Scaling https://github.com/huggingface/transformers/pull/24653\n  rope_scaling:\n    type: # linear | dynamic\n    factor: # float\n\n# optional overrides to the bnb 4bit quantization configuration\n# https://huggingface.co/docs/transformers/main/main_classes/quantization#transformers.BitsAndBytesConfig\nbnb_config_kwargs:\n  # These are default values\n  llm_int8_has_fp16_weight: false\n  bnb_4bit_quant_type: nf4\n  bnb_4bit_use_double_quant: true\n\n\n# Whether you are training a 4-bit GPTQ quantized model\ngptq: true\n\n# This will attempt to quantize the model down to 8 bits and use adam 8 bit optimizer\nload_in_8bit: true\n# Use bitsandbytes 4 bit\nload_in_4bit:\n\n# Use CUDA bf16\nbf16: true # bool or 'full' for `bf16_full_eval`. require &gt;=ampere\n# Use CUDA fp16\nfp16: true\n# Use CUDA tf32\ntf32: true # require &gt;=ampere\n\n# No AMP (automatic mixed precision)\nbfloat16: true # require &gt;=ampere\nfloat16: true\n\n# Limit the memory for all available GPUs to this amount (if an integer, expressed in gigabytes); default: unset\ngpu_memory_limit: 20GiB\n# Do the LoRA/PEFT loading on CPU -- this is required if the base model is so large it takes up most or all of the available GPU VRAM, e.g. during a model and LoRA merge\nlora_on_cpu: true\n\n# A list of one or more datasets to finetune the model with\ndatasets:\n  # HuggingFace dataset repo | s3://,gs:// path | \"json\" for local dataset, make sure to fill data_files\n  - path: vicgalle/alpaca-gpt4\n  # The type of prompt to use for training. [alpaca, sharegpt, gpteacher, oasst, reflection]\n    type: alpaca # format | format:&lt;prompt_style&gt; (chat/instruct) | &lt;prompt_strategies&gt;.load_&lt;load_fn&gt;\n    ds_type: # Optional[str] (json|arrow|parquet|text|csv) defines the datatype when path is a file\n    data_files: # Optional[str] path to source data files\n    shards: # Optional[int] number of shards to split data into\n    name: # Optional[str] name of dataset configuration to load\n    train_on_split: train # Optional[str] name of dataset split to load from\n\n    # Optional[str] fastchat conversation type, only used with type: sharegpt\n    conversation: # Options (see Conversation 'name'): https://github.com/lm-sys/FastChat/blob/main/fastchat/conversation.py\n    field_human: # Optional[str]. Human key to use for conversation.\n    field_model: # Optional[str]. Assistant key to use for conversation.\n    # Add additional keys from your dataset as input or output roles\n    roles:\n      input: # Optional[List[str]]. These will be masked based on train_on_input\n      output: # Optional[List[str]].\n\n  # Custom user instruction prompt\n  - path: repo\n    type:\n      # The below are defaults. only set what's needed if you use a different column name.\n      system_prompt: \"\"\n      system_format: \"{system}\"\n      field_system: system\n      field_instruction: instruction\n      field_input: input\n      field_output: output\n\n      # Customizable to be single line or multi-line\n      # Use {instruction}/{input} as key to be replaced\n      # 'format' can include {input}\n      format: |-\n        User: {instruction} {input}\n        Assistant:\n      # 'no_input_format' cannot include {input}\n      no_input_format: \"{instruction} \"\n\n      # For `completion` datsets only, uses the provided field instead of `text` column\n      field:\n\n# If false, the datasets will not be shuffled and will keep their original order in `datasets`.\n# The same applies to the `test_datasets` option and the `pretraining_dataset` option. Default is true.\nshuffle_merged_datasets: true\n\n# A list of one or more datasets to eval the model with.\n# You can use either test_datasets, or val_set_size, but not both.\ntest_datasets:\n  - path: /workspace/data/eval.jsonl\n    ds_type: json\n    # You need to specify a split. For \"json\" datasets the default split is called \"train\".\n    split: train\n    type: completion\n    data_files:\n      - /workspace/data/eval.jsonl\n\n# use RL training: 'dpo', 'ipo', 'kto'\nrl:\n\n# Saves the desired chat template to the tokenizer_config.json for easier inferencing\n# Currently supports chatml and inst (mistral/mixtral)\nchat_template: chatml\n# Changes the default system message\ndefault_system_message: You are a helpful assistant. Please give a long and detailed answer. # Currently only supports chatml.\n# Axolotl attempts to save the dataset as an arrow after packing the data together so\n# subsequent training attempts load faster, relative path\ndataset_prepared_path: data/last_run_prepared\n# Push prepared dataset to hub\npush_dataset_to_hub: # repo path\n# The maximum number of processes to use while preprocessing your input dataset. This defaults to `os.cpu_count()`\n# if not set.\ndataset_processes: # defaults to os.cpu_count() if not set\n# Keep dataset in memory while preprocessing\n# Only needed if cached dataset is taking too much storage\ndataset_keep_in_memory:\n# push checkpoints to hub\nhub_model_id: # private repo path to push finetuned model\n# how to push checkpoints to hub\n# https://huggingface.co/docs/transformers/v4.31.0/en/main_classes/trainer#transformers.TrainingArguments.hub_strategy\nhub_strategy:\n# Whether to use hf `use_auth_token` for loading datasets. Useful for fetching private datasets\n# Required to be true when used in combination with `push_dataset_to_hub`\nhf_use_auth_token: # boolean\n# How much of the dataset to set aside as evaluation. 1 = 100%, 0.50 = 50%, etc. 0 for no eval.\nval_set_size: 0.04\n# Num shards for whole dataset\ndataset_shard_num:\n# Index of shard to use for whole dataset\ndataset_shard_idx:\n\n# The maximum length of an input to train with, this should typically be less than 2048\n# as most models have a token/context limit of 2048\nsequence_len: 2048\n# Pad inputs so each step uses constant sized buffers\n# This will reduce memory fragmentation and may prevent OOMs, by re-using memory more efficiently\npad_to_sequence_len:\n# Use efficient multi-packing with block diagonal attention and per sequence position_ids. Recommend set to 'true'\nsample_packing:\n# Set to 'false' if getting errors during eval with sample_packing on.\neval_sample_packing:\n# You can set these packing optimizations AFTER starting a training at least once.\n# The trainer will provide recommended values for these values.\nsample_packing_eff_est:\ntotal_num_tokens:\n# Increasing the following values helps with packing, but usually only slightly (&lt;%1.)\n# The number of samples packed at a time.\nsample_packing_group_size: 100000\n# The number of samples which can be packed into one sequence. Increase if using a large sequence_len with many short samples.\nsample_packing_bin_size: 200\n\n# Passed through to transformers when loading the model when launched without accelerate\n# Use `sequential` when training w/ model parallelism to limit memory\ndevice_map:\n# Defines the max memory usage per gpu on the system. Passed through to transformers when loading the model.\nmax_memory:\n\n# If you want to use 'lora' or 'qlora' or leave blank to train all parameters in original model\nadapter: lora\n# If you already have a lora model trained that you want to load, put that here.\n# This means after training, if you want to test the model, you should set this to the value of `output_dir`.\n# Note that if you merge an adapter to the base model, a new subdirectory `merged` will be created under the `output_dir`.\nlora_model_dir:\n\n# LoRA hyperparameters\n# For more details about the following options, see:\n# https://www.anyscale.com/blog/fine-tuning-llms-lora-or-full-parameter-an-in-depth-analysis-with-llama-2\nlora_r: 8\nlora_alpha: 16\nlora_dropout: 0.05\nlora_target_modules:\n  - q_proj\n  - v_proj\n#  - k_proj\n#  - o_proj\n#  - gate_proj\n#  - down_proj\n#  - up_proj\nlora_target_linear: # If true, will target all linear modules\npeft_layers_to_transform: # The layer indices to transform, otherwise, apply to all layers\n\n# If you added new tokens to the tokenizer, you may need to save some LoRA modules because they need to know the new tokens.\n# For LLaMA and Mistral, you need to save `embed_tokens` and `lm_head`. It may vary for other models.\n# `embed_tokens` converts tokens to embeddings, and `lm_head` converts embeddings to token probabilities.\n# https://github.com/huggingface/peft/issues/334#issuecomment-1561727994\nlora_modules_to_save:\n#  - embed_tokens\n#  - lm_head\n\nlora_fan_in_fan_out: false\n\n# LoRA+ hyperparameters\n# For more details about the following options, see:\n# https://arxiv.org/abs/2402.12354  and `src/axolotl/core/train_builder.py`\nloraplus_lr_ratio: # loraplus learning rate ratio lr_B / lr_A. Recommended value is 2^4.\nloraplus_lr_embedding: #  loraplus learning rate for lora embedding layers. Default value is 1e-6.\n\npeft:\n  # Configuration options for loftq initialization for LoRA\n  # https://huggingface.co/docs/peft/developer_guides/quantization#loftq-initialization\n  loftq_config:\n    loftq_bits:  # typically 4 bits\n\n# ReLoRA configuration\n# Must use either 'lora' or 'qlora' adapter, and does not support fsdp or deepspeed\nrelora_steps: # Number of steps per ReLoRA restart\nrelora_warmup_steps: # Number of per-restart warmup steps\nrelora_anneal_steps: # Number of anneal steps for each relora cycle\nrelora_prune_ratio: # threshold for optimizer magnitude when pruning\nrelora_cpu_offload: # True to perform lora weight merges on cpu during restarts, for modest gpu memory savings\n\n# wandb configuration if you're using it\n# Make sure your `WANDB_API_KEY` environment variable is set (recommended) or you login to wandb with `wandb login`.\nwandb_mode: # \"offline\" to save run metadata locally and not sync to the server, \"disabled\" to turn off wandb\nwandb_project: # Your wandb project name\nwandb_entity: # A wandb Team name if using a Team\nwandb_watch:\nwandb_name: # Set the name of your wandb run\nwandb_run_id: # Set the ID of your wandb run\nwandb_log_model: # \"checkpoint\" to log model to wandb Artifacts every `save_steps` or \"end\" to log only at the end of training\n\n# mlflow configuration if you're using it\nmlflow_tracking_uri: # URI to mlflow\nmlflow_experiment_name: # Your experiment name\nhf_mlflow_log_artifacts:  # set to true to copy each saved checkpoint on each save to mlflow artifact registry\n\n# Where to save the full-finetuned model to\noutput_dir: ./completed-model\n\n# Whether to use torch.compile and which backend to use\ntorch_compile:  # bool\ntorch_compile_backend:  # Optional[str]\n\n# Training hyperparameters\n\n# If greater than 1, backpropagation will be skipped and the gradients will be accumulated for the given number of steps.\ngradient_accumulation_steps: 1\n# The number of samples to include in each batch. This is the number of samples sent to each GPU.\n# Batch size per gpu = micro_batch_size * gradient_accumulation_steps\nmicro_batch_size: 2\neval_batch_size:\nnum_epochs: 4\nwarmup_steps: 100  # cannot use with warmup_ratio\nwarmup_ratio: 0.05  # cannot use with warmup_steps\nlearning_rate: 0.00003\nlr_quadratic_warmup:\nlogging_steps:\neval_steps: # Leave empty to eval at each epoch, integers for every N steps. decimal for fraction of total steps\nevals_per_epoch: # number of times per epoch to run evals, mutually exclusive with eval_steps\nsave_strategy: # Set to `\"no\"` to skip checkpoint saves\nsave_steps: # Leave empty to save at each epoch\nsaves_per_epoch: # number of times per epoch to save a checkpoint, mutually exclusive with save_steps\nsave_total_limit: # Checkpoints saved at a time\n# Maximum number of iterations to train for. It precedes num_epochs which means that\n# if both are set, num_epochs will not be guaranteed.\n# e.g., when 1 epoch is 1000 steps =&gt; `num_epochs: 2` and `max_steps: 100` will train for 100 steps\nmax_steps:\n\neval_table_size: # Approximate number of predictions sent to wandb depending on batch size. Enabled above 0. Default is 0\neval_max_new_tokens: # Total number of tokens generated for predictions sent to wandb. Default is 128\neval_causal_lm_metrics: # HF evaluate metrics used during evaluation. Default is [\"sacrebleu\", \"comet\", \"ter\", chrf]\n\nloss_watchdog_threshold: # High loss value, indicating the learning has broken down (a good estimate is ~2 times the loss at the start of training)\nloss_watchdog_patience: # Number of high-loss steps in a row before the trainer aborts (default: 3)\n\n# Save model as safetensors (require safetensors package)\nsave_safetensors:\n\n# Whether to mask out or include the human's prompt from the training labels\ntrain_on_inputs: false\n# Group similarly sized data to minimize padding.\n# May be slower to start, as it must download and sort the entire dataset.\n# Note that training loss may have an oscillating pattern with this enabled.\ngroup_by_length: false\n\n# Whether to use gradient checkpointing https://huggingface.co/docs/transformers/v4.18.0/en/performance#gradient-checkpointing\ngradient_checkpointing: false\n# additional kwargs to pass to the trainer for gradient checkpointing\n# gradient_checkpointing_kwargs:\n#   use_reentrant: true\n\n# Stop training after this many evaluation losses have increased in a row\n# https://huggingface.co/transformers/v4.2.2/_modules/transformers/trainer_callback.html#EarlyStoppingCallback\nearly_stopping_patience: 3\n\n# Specify a scheduler and kwargs to use with the optimizer\nlr_scheduler: # 'one_cycle' | 'log_sweep' | empty for cosine\nlr_scheduler_kwargs:\ncosine_min_lr_ratio: # decay lr to some percentage of the peak lr, e.g. cosine_min_lr_ratio=0.1 for 10% of peak lr\ncosine_constant_lr_ratio: # freeze lr at some percentage of the step, e.g. cosine_constant_lr_ratio=0.8 means start cosine_min_lr at 80% of training step (https://arxiv.org/pdf/2308.04014.pdf)\n\n# For one_cycle optim\nlr_div_factor: # Learning rate div factor\n\n# Specify optimizer\n# Valid values are driven by the Transformers OptimizerNames class, see:\n# https://github.com/huggingface/transformers/blob/95b374952dc27d8511541d6f5a4e22c9ec11fb24/src/transformers/training_args.py#L134\n#\n# Note that not all optimizers may be available in your environment, ex: 'adamw_anyprecision' is part of\n# torchdistx, 'adamw_bnb_8bit' is part of bnb.optim.Adam8bit, etc. When in doubt, it is recommended to start with the optimizer used\n# in the examples/ for your model and fine-tuning use case.\n#\n# Valid values for 'optimizer' include:\n# - adamw_hf\n# - adamw_torch\n# - adamw_torch_fused\n# - adamw_torch_xla\n# - adamw_apex_fused\n# - adafactor\n# - adamw_anyprecision\n# - sgd\n# - adagrad\n# - adamw_bnb_8bit\n# - lion_8bit\n# - lion_32bit\n# - paged_adamw_32bit\n# - paged_adamw_8bit\n# - paged_lion_32bit\n# - paged_lion_8bit\n# - galore_adamw\n# - galore_adamw_8bit\n# - galore_adafactor\n# - galore_adamw_layerwise\n# - galore_adamw_8bit_layerwise\n# - galore_adafactor_layerwise\noptimizer:\n# Dictionary of arguments to pass to the optimizer\noptim_args:\n# For Galore Optimizers the following optim_args are available\n# rank:  # type: int\n# update_proj_gap  # type: int\n# scale  # type: float\n# proj_type:  # type: str, default = std\n\n# The target modules to optimize, i.e. the module names that you would like to train, right now this is used only for GaLore algorithm\noptim_target_modules:\n# - self_attn  # for llama\n# - mlp\n\n# Specify weight decay\nweight_decay:\n# adamw hyperparams\nadam_beta1:\nadam_beta2:\nadam_epsilon:\n# Gradient clipping max norm\nmax_grad_norm:\n\n# Augmentation techniques\n# NEFT https://arxiv.org/abs/2310.05914, set this to a number (paper default is 5) to add noise to embeddings\n# currently only supported on Llama and Mistral\nneftune_noise_alpha:\n\n# Whether to bettertransformers\nflash_optimum:\n# Whether to use xformers attention patch https://github.com/facebookresearch/xformers:\nxformers_attention:\n# Whether to use flash attention patch https://github.com/Dao-AILab/flash-attention:\nflash_attention:\nflash_attn_cross_entropy:  # Whether to use flash-attention cross entropy implementation - advanced use only\nflash_attn_rms_norm:  # Whether to use flash-attention rms norm implementation - advanced use only\nflash_attn_fuse_qkv: # Whether to fuse QKV into a single operation\nflash_attn_fuse_mlp: # Whether to fuse part of the MLP into a single operation\n# Whether to use scaled-dot-product attention\n# https://pytorch.org/docs/stable/generated/torch.nn.functional.scaled_dot_product_attention.html\nsdp_attention:\n# Shifted-sparse attention (only llama) - https://arxiv.org/pdf/2309.12307.pdf\ns2_attention:\n# Resume from a specific checkpoint dir\nresume_from_checkpoint:\n# If resume_from_checkpoint isn't set and you simply want it to start where it left off.\n# Be careful with this being turned on between different models.\nauto_resume_from_checkpoints: false\n\n# Don't mess with this, it's here for accelerate and torchrun\nlocal_rank:\n\n# Add or change special tokens.\n# If you add tokens here, you don't need to add them to the `tokens` list.\nspecial_tokens:\n  # bos_token: \"&lt;s&gt;\"\n  # eos_token: \"&lt;/s&gt;\"\n  # unk_token: \"&lt;unk&gt;\"\n  # pad_token: \"[PAD]\"\n\n# Add extra tokens.\ntokens:\n\n# FSDP\nfsdp:\nfsdp_config:\n\n# Deepspeed config path. e.g., deepspeed_configs/zero3.json\ndeepspeed:\n\n# Advanced DDP Arguments\nddp_timeout:\nddp_bucket_cap_mb:\nddp_broadcast_buffers:\n\n# Path to torch distx for optim 'adamw_anyprecision'\ntorchdistx_path:\n\n# Set to HF dataset for type: 'completion' for streaming instead of pre-tokenize\npretraining_dataset:\n\n# Debug mode\ndebug:\n\n# Seed\nseed:\n\n# Allow overwrite yml config using from cli\nstrict:",
-    "crumbs": [
-      "Reference",
-      "Config options"
-    ]
-  },
-  {
-    "objectID": "docs/mac.html",
-    "href": "docs/mac.html",
-    "title": "Mac M-series",
-    "section": "",
-    "text": "Currently Axolotl on Mac is partially usable, many of the dependencies of Axolotl including Pytorch do not support MPS or have incomplete support.\nCurrent support:\n\nSupport for all models\nFull training of models\nLoRA training\nSample packing\nFP16 and BF16 (awaiting AMP support for MPS in Pytorch)\nTri-dao’s flash-attn (until it is supported use spd_attention as an alternative)\nxformers\nbitsandbytes (meaning no 4/8 bits loading and bnb optimizers)\nqlora\nDeepSpeed\n\nUntested: - FSDP",
-    "crumbs": [
-      "How-To Guides",
-      "Mac M-series"
-    ]
-  },
-  {
-    "objectID": "docs/batch_vs_grad.html",
-    "href": "docs/batch_vs_grad.html",
-    "title": "Batch size vs Gradient accumulation",
-    "section": "",
-    "text": "Gradient accumulation means accumulating gradients over several mini-batches and updating the model weights afterward. When the samples in each batch are diverse, this technique doesn’t significantly impact learning.\nThis method allows for effective training with larger effective batch sizes without needing proportionally larger memory. Here’s why:\n\nMemory Consumption with Batch Size: The primary reason increasing the batch size impacts memory is due to the storage requirements for intermediate activations. When you forward propagate a batch through a network, you have to store the activations at each layer for each sample in the batch, because these activations are used during backpropagation to compute gradients. Therefore, larger batches mean more activations, leading to greater GPU memory consumption.\nGradient Accumulation: With gradient accumulation, you’re effectively simulating a larger batch size by accumulating gradients over several smaller batches (or micro-batches). However, at any given time, you’re only forward and backward propagating a micro-batch. This means you only store activations for the micro-batch, not the full accumulated batch. As a result, you can simulate the effect of a larger batch size without the memory cost of storing activations for a large batch.\n\nExample 1: Micro batch size: 3 Gradient accumulation steps: 2 Number of GPUs: 3 Total batch size = 3 * 2 * 3 = 18\n| GPU 1          | GPU 2          | GPU 3          |\n|----------------|----------------|----------------|\n| S1, S2, S3     | S4, S5, S6     | S7, S8, S9     |\n| e1, e2, e3     | e4, e5, e6     | e7, e8, e9     |\n|----------------|----------------|----------------|\n| → (accumulate) | → (accumulate) | → (accumulate) |\n|----------------|----------------|----------------|\n| S10, S11, S12  | S13, S14, S15  | S16, S17, S18  |\n| e10, e11, e12  | e13, e14, e15  | e16, e17, e18  |\n|----------------|----------------|----------------|\n| → (apply)      | → (apply)      | → (apply)      |\n\nAccumulated gradient for the weight w1 after the second iteration (considering all GPUs):\nTotal gradient for w1 = e1 + e2 + e3 + e4 + e5 + e6 + e7 + e8 + e9 + e10 + e11 + e12 + e13 + e14 + e15 + e16 + e17 + e18\n\nWeight update for w1:\nw1_new = w1_old - learning rate x (Total gradient for w1 / 18)\nExample 2: Micro batch size: 2 Gradient accumulation steps: 1 Number of GPUs: 3 Total batch size = 2 * 1 * 3 = 6\n| GPU 1     | GPU 2     | GPU 3     |\n|-----------|-----------|-----------|\n| S1, S2    | S3, S4    | S5, S6    |\n| e1, e2    | e3, e4    | e5, e6    |\n|-----------|-----------|-----------|\n| → (apply) | → (apply) | → (apply) |\n\nAccumulated gradient for the weight w1 (considering all GPUs):\nTotal gradient for w1 = e1 + e2 + e3 + e4 + e5 + e6\n\nWeight update for w1:\nw1_new = w1_old - learning rate × (Total gradient for w1 / 6)"
-  },
-  {
-    "objectID": "docs/faq.html",
-    "href": "docs/faq.html",
-    "title": "FAQ",
-    "section": "",
-    "text": "Q: The trainer stopped and hasn’t progressed in several minutes.\n\nA: Usually an issue with the GPUs communicating with each other. See the NCCL doc\n\nQ: Exitcode -9\n\nA: This usually happens when you run out of system RAM.\n\nQ: Exitcode -7 while using deepspeed\n\nA: Try upgrading deepspeed w: pip install -U deepspeed\n\nQ: AttributeError: ‘DummyOptim’ object has no attribute ‘step’\n\nA: You may be using deepspeed with single gpu. Please don’t set deepspeed: in yaml or cli.",
-    "crumbs": [
-      "FAQ"
-    ]
-  },
-  {
-    "objectID": "docs/input_output.html",
-    "href": "docs/input_output.html",
-    "title": "Template-free prompt construction",
-    "section": "",
-    "text": "Background\n\nMasking Inputs\nYou may not want prompt templates\nThe input_output format\n\nUsage\n\n1. Prepare Data\n2. Use type: input_output\n3. Check the prompts",
-    "crumbs": [
-      "How-To Guides",
-      "Template-free prompt construction"
-    ]
-  },
-  {
-    "objectID": "docs/input_output.html#background",
-    "href": "docs/input_output.html#background",
-    "title": "Template-free prompt construction",
-    "section": "Background",
-    "text": "Background\n\n\nMasking Inputs\nOne of the most popular features of axolotl is setting the following configuration value:\ntrain_on_inputs: false\nIf you declare a dataset formats such as alpaca or chatml, axolotl knows what is an input (i.e. human) vs. an output (i.e. the assistant) and masks the input labels so that your model can focus on predicting the outputs only.\n\n\n\nYou may not want prompt templates\nHowever, there are many situations where you don’t want to use one of these formats or templates. This is because they can:\n\nAdd unnecessary boilerplate to your prompts.\nCreate artifacts like special delimiters &lt;|im_start|&gt; that can quickly become footguns if you don’t include them correctly at inference time.\nEnforce a chat interface when you do not want one. Sometimes you just want to fine-tune a model to a very specific task and do NOT want multi-turn conversations, roles, etc.\nLimit you to only certain roles that the template allows.\n\n\n\n\nThe input_output format\nYou can construct your prompts without a template by using the input_output format, by setting type: input_output in your configuration file like this:\nconfig.yml\ntrain_on_inputs: false # Mask segments of your data\ndatasets:\n  - path: output.jsonl\n    type: input_output  # use template free prompt construction\nUnlike type: completion, which is also template-free, type: input_output allows you to mask segments of your text. More details on how this works are described below.",
-    "crumbs": [
-      "How-To Guides",
-      "Template-free prompt construction"
-    ]
-  },
-  {
-    "objectID": "docs/input_output.html#usage",
-    "href": "docs/input_output.html#usage",
-    "title": "Template-free prompt construction",
-    "section": "Usage",
-    "text": "Usage\nThis is how you can use the input_output format:\n\n\n1. Prepare Data\nTo use the input_output format, collect your data in the following format into a jsonl file (below is the first row from the file output.jsonl` pretty printed):\n$ head -n1 output.jsonl | python -m json.tool\n\n{\n    \"segments\": [\n        {\n            \"label\": true,\n            \"text\": \"&lt;s&gt;Hello\\n\"\n        },\n        {\n            \"label\": true,\n            \"text\": \"hi there!. \"\n        },\n        {\n            \"label\": false,\n            \"text\": \"goodbye \"\n        },\n        {\n            \"label\": true,\n            \"text\": \"farewell&lt;/s&gt;\"\n        }\n    ]\n}\n\nSet label:false when you want to mask a segment of text so that the model isn’t trained on it. Some things to keep in mind:\n\n[!IMPORTANT] 1. EOS, BOS, spaces, newlines etc. are entirely up to you. Axolotl concatenates all the segments as-is. The tokenizer doesn’t add anything additional. Notice how I added spaces, newlines, &lt;s&gt; (BOS), and &lt;/s&gt; (EOS) myself. 2. Make sure you check the materialized output to validate that the prompt is getting assembled how you like.\n\n\n\n\n2. Use type: input_output\nLet’s materialize data with our output.jsonl file by setting type: input_output in our axolotl config:\n# training_config.yaml\nbase_model: mistralai/Mistral-7B-v0.1\ndata_seed: 49\nseed: 49\n\ndatasets:\n  - path: output.jsonl\n    type: input_output\nval_set_size: 0.1\n\nsequence_len: 896\nsample_packing: false\n\nmicro_batch_size: 2\ngradient_accumulation_steps: 3\neval_batch_size: 2\nnum_epochs: 1\nlearning_rate: 0.0002\n\ntrain_on_inputs: false\nspecial_tokens:\n  bos_token: \"&lt;s&gt;\"\n  eos_token: \"&lt;/s&gt;\"\n  unk_token: \"&lt;unk&gt;\"\nYou can use the following command to materialize your data. The --debug flag will print the tokens, along with the labels so you can verify that the correct items are being ignored:\n$ python -m axolotl.cli.preprocess training_config.yaml --debug\n\n...\n[2024-03-05 23:36:46,969] [INFO] [axolotl.check_example_labels:35] [PID:607731] [RANK:0] &lt;s&gt;(1, 1) Hello(22557, 22557)\n(13, 13) hi(12014, 12014) there(736, 736) !(28808, 28808) .(28723, 28723) (28705, 28705) good(-100, 1179) bye(-100, 17664) (-100, 28705) fare(19111, 19111) well(5458, 5458) &lt;/s&gt;(2, 2)\nThe format is decoded_token(label, token_id), for example, &lt;s&gt;(1, 1) means that the token is &lt;s&gt;, the label is 1 and the token_id is 1. When the label is -100 then that token is ignored for training.\n\n\n\n3. Check the prompts\nHere is another way to check the materialized output:\nfrom transformers import AutoTokenizer\nfrom datasets import load_from_disk\nimport yaml\n\ndirectory = !ls last_run_prepared/\nwith open('training_config.yaml', 'r') as f:\n    cfg = yaml.safe_load(f)\nmodel_id = cfg['base_model']\ntok = AutoTokenizer.from_pretrained(model_id)\nds = load_from_disk(f'last_run_prepared/{directory[0]}/')\n&gt;&gt;&gt; row = ds[0]\n&gt;&gt;&gt; print(tok.decode(row['input_ids']))\n&lt;s&gt; Hello\n    hi there!.  goodbye  farewell&lt;/s&gt;\nWe can check that the right tokens are ingored by comparing the labels to each token:\nimport pandas as pd\npd.DataFrame([{'token': tok.decode(i), 'label': l, 'id':i} for i,l in\n              zip(row['input_ids'], row['labels'])])\n\n\n\ntoken\nlabel\nid\n\n\n\n\n0\n&lt;s&gt;\n1\n\n\n1\nHello\n22557\n\n\n2\n\\n\n13\n\n\n3\nhi\n12014\n\n\n4\nthere\n736\n\n\n5\n!\n28808\n\n\n6\n.\n28723\n\n\n7\n\n28705\n\n\n8\ngood\n-100\n\n\n9\nbye\n-100\n\n\n10\n\n-100\n\n\n11\nfare\n19111\n\n\n12\nwell\n5458\n\n\n13\n&lt;/s&gt;\n2\n\n\n\nIf we look at the input data, the above table seems correct! (The jsonl version is repeated below for reference):\n$ head -n1 output.jsonl | python -m json.tool\n\n{\n    \"segments\": [\n        {\n            \"label\": true,\n            \"text\": \"&lt;s&gt;Hello\\n\"\n        },\n        {\n            \"label\": true,\n            \"text\": \"hi there!. \"\n        },\n        {\n            \"label\": false,\n            \"text\": \"goodbye \"\n        },\n        {\n            \"label\": true,\n            \"text\": \"farewell&lt;/s&gt;\"\n        }\n    ]\n}",
-    "crumbs": [
-      "How-To Guides",
-      "Template-free prompt construction"
     ]
   }
 ]
