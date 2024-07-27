@@ -513,9 +513,10 @@ def load_model(
                 **model_config.quantization_config
             )
     if (
-        cfg.adapter == "qlora"
-        and cfg.load_in_4bit
+        cfg.adapter in ["qlora", "lora"]
         and hasattr(model_config, "quantization_config")
+        and model_config.quantization_config["quant_method"]
+        in ["gptq", "awq", "bitsandbytes"]
     ):
         if model_config.quantization_config["quant_method"] == "gptq":
             model_kwargs["quantization_config"] = GPTQConfig(
@@ -525,7 +526,7 @@ def load_model(
             model_kwargs["quantization_config"] = AwqConfig(
                 **model_config.quantization_config
             )
-        else:
+        elif model_config.quantization_config["quant_method"] == "bitsandbytes":
             model_kwargs["quantization_config"] = BitsAndBytesConfig(
                 **model_config.quantization_config
             )
