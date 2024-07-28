@@ -262,6 +262,8 @@ def load_sharded_model_quant(
             quant_method=quant_method,
         )
 
+    model.is_quantized = True
+    model.quantization_method = "bitsandbytes"
     if cfg.local_rank == 0 and verbose:
         print(f"Loaded model weights in {time.time()-start:.3f} seconds")
     # cleanup any extra memory usage from parallel loading
