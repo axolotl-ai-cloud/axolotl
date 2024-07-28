@@ -945,6 +945,8 @@ class AxolotlInputConfig(
     @model_validator(mode="before")
     @classmethod
     def check_eval_packing(cls, data):
+        # TODO also should check test_datasets and val_set_size as we can skip
+        # if there are no eval datasets/splits
         if (
             data.get("sample_packing")
             and data.get("eval_table_size")
