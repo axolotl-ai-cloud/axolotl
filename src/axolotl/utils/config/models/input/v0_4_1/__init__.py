@@ -235,6 +235,12 @@ class LoraConfig(BaseModel):
     peft_use_rslora: Optional[bool] = None
     peft_layer_replication: Optional[List[Tuple[int, int]]] = None
 
+    qlora_sharded_model_loading: Optional[bool] = Field(
+        default=False,
+        metadata={
+            "help": "load qlora model in sharded format for FSDP using answer.ai technique."
+        },
+    )
     lora_on_cpu: Optional[bool] = None
     gptq: Optional[bool] = None
     bnb_config_kwargs: Optional[Dict[str, Any]] = None

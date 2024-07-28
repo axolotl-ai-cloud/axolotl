@@ -189,12 +189,20 @@ def load_sharded_model_quant(
             )
         else:
             # this is the more common case with HF transformers
+            # TODO can we detect the model arch and dynamically set skip_modules
             model.model = _replace_linear(
                 model.model,
                 Linear4bit,
                 compute_dtype=compute_dtype,
                 quant_type="nf4",
                 quant_storage=quant_storage,
+                skip_modules=[
+                    "lm_head",
+                    "embed_tokens",
+                    "embed_in",
+                    "embed_out",
+                    "word_embeddings",
+                ],
             )
     model.is_loaded_in_4bit = True
 

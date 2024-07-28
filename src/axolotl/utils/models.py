@@ -624,7 +624,7 @@ def load_model(
         elif (
             qlora_fsdp
             and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
-            and cfg.model_config_type == "dbrx"
+            and (cfg.model_config_type == "dbrx" or cfg.qlora_sharded_model_loading)
         ):
             quant_storage = cfg.torch_dtype
             model = load_sharded_model_quant(
