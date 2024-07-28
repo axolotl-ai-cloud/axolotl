@@ -81,7 +81,7 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
             # there are a bunch of useless UserWarnings about
             # "copying from a non-meta parameter in the checkpoint to a meta parameter in the current model"
             warnings.simplefilter("ignore")
-            with init_empty_weights():
+            with init_empty_weights(include_buffers=True):
                 AutoModelForCausalLM.from_pretrained(model_name, trust_remote_code=True)
 
     LOG.info(
