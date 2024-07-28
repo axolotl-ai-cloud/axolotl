@@ -186,6 +186,11 @@ def load_sharded_model_quant(
                 compute_dtype=compute_dtype,
                 quant_type="nf4",
                 quant_storage=quant_storage,
+                compress_statistics=True,  # bnb_4bit_use_double_quant
+                skip_modules=[
+                    "lm_head",
+                    "embed_out",
+                ],
             )
         else:
             # this is the more common case with HF transformers
@@ -196,12 +201,10 @@ def load_sharded_model_quant(
                 compute_dtype=compute_dtype,
                 quant_type="nf4",
                 quant_storage=quant_storage,
+                compress_statistics=True,  # bnb_4bit_use_double_quant
                 skip_modules=[
                     "lm_head",
-                    "embed_tokens",
-                    "embed_in",
                     "embed_out",
-                    "word_embeddings",
                 ],
             )
     model.is_loaded_in_4bit = True
