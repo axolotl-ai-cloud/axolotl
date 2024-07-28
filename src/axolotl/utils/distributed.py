@@ -44,6 +44,10 @@ def is_main_process():
     return dist.get_rank() == 0
 
 
+def is_local_main_process():
+    return PartialState().is_main_process
+
+
 def get_world_size():
     return int(os.getenv("WORLD_SIZE", "1"))
 
