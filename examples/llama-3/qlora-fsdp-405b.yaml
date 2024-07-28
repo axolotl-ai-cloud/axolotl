@@ -1,4 +1,4 @@
-base_model: meta-llama/Meta-Llama-3.1-405B
+base_model: hugging-quants/Meta-Llama-3.1-405B-BNB-NF4-BF16
 tokenizer_type: AutoTokenizer
 
 load_in_4bit: true
@@ -13,7 +13,6 @@ output_dir: ./outputs/out/qlora-llama3_1-405b
 save_safetensors: true
 
 adapter: qlora
-qlora_sharded_model_loading: true
 
 sequence_len: 2048
 sample_packing: true
