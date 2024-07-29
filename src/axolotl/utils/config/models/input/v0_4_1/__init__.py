@@ -116,6 +116,10 @@ class SFTDataset(BaseModel):
     field_messages: Optional[str] = None
     message_field_role: Optional[str] = None
     message_field_content: Optional[str] = None
+    message_field_training: Optional[str] = None
+    message_field_training_detail: Optional[str] = None
+    roles_to_train: Optional[List[str]] = None
+    train_on_eos: Optional[str] = None
 
     roles: Optional[Dict[str, List[str]]] = None
     drop_system_message: Optional[bool] = None
