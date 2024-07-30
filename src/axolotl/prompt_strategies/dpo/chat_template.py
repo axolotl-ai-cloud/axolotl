@@ -62,7 +62,7 @@ def default(
             tokenize=False,
         )
         chosen_strip_index = result["chosen"].find(chosen["content"])
-        result["chosen"] = result["chosen"][chosen_strip_index:]
+        result["chosen"] = result["chosen"][chosen_strip_index:].rstrip()
 
         result["rejected"] = tokenizer.apply_chat_template(
             [rejected],
@@ -71,7 +71,7 @@ def default(
             tokenize=False,
         )
         rejected_strip_index = result["rejected"].find(rejected["content"])
-        result["rejected"] = result["rejected"][rejected_strip_index:]
+        result["rejected"] = result["rejected"][rejected_strip_index:].rstrip()
 
         return result
 

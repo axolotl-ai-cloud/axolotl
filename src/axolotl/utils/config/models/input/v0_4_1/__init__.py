@@ -123,6 +123,10 @@ class SFTDataset(BaseModel):
     field_messages: Optional[str] = None
     message_field_role: Optional[str] = None
     message_field_content: Optional[str] = None
+    message_field_training: Optional[str] = None
+    message_field_training_detail: Optional[str] = None
+    roles_to_train: Optional[List[str]] = None
+    train_on_eos: Optional[str] = None
 
     roles: Optional[Dict[str, List[str]]] = None
     drop_system_message: Optional[bool] = None
@@ -179,6 +183,7 @@ class RLType(str, Enum):
     ipo = "ipo"  # pylint: disable=invalid-name
     orpo = "orpo"  # pylint: disable=invalid-name
     kto = "kto"  # pylint: disable=invalid-name
+    simpo = "simpo"  # pylint: disable=invalid-name
 
 
 class ChatTemplate(str, Enum):
@@ -653,6 +658,8 @@ class AxolotlInputConfig(
 
     orpo_alpha: Optional[float] = None
     rpo_alpha: Optional[float] = None
+    simpo_gamma: Optional[float] = None
+    cpo_alpha: Optional[float] = None
 
     kto_desirable_weight: Optional[float] = None
     kto_undesirable_weight: Optional[float] = None

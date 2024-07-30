@@ -72,27 +72,24 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - cuda: 118
-            cuda_version: 11.8.0
+          - cuda: 121
+            cuda_version: 12.1.1
             python_version: "3.10"
-            pytorch: 2.1.2
-            axolotl_args: "--extra-index-url https://download.pytorch.org/whl/cu118"
+            pytorch: 2.3.1
             num_gpus: 1
+            axolotl_extras: mamba-ssm
           - cuda: 121
-            cuda_version: 12.1.0
-            python_version: "3.10"
-            pytorch: 2.1.2
-            num_gpus: 1
-          - cuda: 121
-            cuda_version: 12.1.0
-            python_version: "3.11"
-            pytorch: 2.2.2
-            num_gpus: 1
-          - cuda: 121
-            cuda_version: 12.1.0
+            cuda_version: 12.1.1
             python_version: "3.11"
             pytorch: 2.3.1
             num_gpus: 1
+            axolotl_extras: mamba-ssm
+          - cuda: 124
+            cuda_version: 12.4.1
+            python_version: "3.11"
+            pytorch: 2.4.0
+            num_gpus: 1
+            axolotl_extras:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -109,6 +106,7 @@ jobs:
           echo "BASE_TAG=main-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}" >> $GITHUB_ENV
           echo "PYTORCH_VERSION=${{ matrix.pytorch}}" >> $GITHUB_ENV
           echo "AXOLOTL_ARGS=${{ matrix.axolotl_args}}" >> $GITHUB_ENV
+          echo "AXOLOTL_EXTRAS=${{ matrix.axolotl_extras}}" >> $GITHUB_ENV
           echo "CUDA=${{ matrix.cuda }}" >> $GITHUB_ENV
           echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
       - name: Run tests job on Modal

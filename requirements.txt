@@ -1,18 +1,18 @@
 --extra-index-url https://huggingface.github.io/autogptq-index/whl/cu118/
 packaging==23.2
 peft==0.11.1
-transformers @ git+https://github.com/huggingface/transformers.git@0fdea8607d7e01eb0e38a1ebeb7feee30a22f0cf
+transformers==4.43.3
 tokenizers==0.19.1
 bitsandbytes==0.43.1
 accelerate==0.32.0
-deepspeed @ git+https://github.com/microsoft/DeepSpeed.git@bc48371c5e1fb8fd70fc79285e66201dbb65679b
+deepspeed==0.14.4
 pydantic==2.6.3
 addict
 fire
 PyYAML>=6.0
 requests
 datasets==2.19.1
-flash-attn==2.6.1
+flash-attn==2.6.2
 sentencepiece
 wandb
 einops
@@ -32,6 +32,7 @@ fschat @ git+https://github.com/lm-sys/FastChat.git@27a05b04a35510afb1d767ae7e59
 gradio==3.50.2
 tensorboard
 python-dotenv==1.0.1
+autoawq>=0.2.5
 
 mamba-ssm==1.2.0.post1
 

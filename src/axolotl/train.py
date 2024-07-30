@@ -212,26 +212,23 @@ def train(
     elif cfg.deepspeed and is_deepspeed_zero3_enabled():
         # Copied over from: https://github.com/huggingface/accelerate/blob/5ae611118057232f441055f7ef9ba0b0f2b8d533/docs/source/usage_guides/deepspeed.md#saving-and-loading
         trainer.accelerator.wait_for_everyone()
-        unwrapped_model = trainer.accelerator.unwrap_model(trainer.model_wrapped)
+        trainer.save_model(cfg.output_dir)
 
         # the trainer saved a model.safetensors file in the output directory,
-        # but it is a proxy model and should be deleted
-        if os.path.exists(os.path.join(cfg.output_dir, "model.safetensors")):
+        # but it is most likely a proxy model and if so, should be deleted
+        maybe_proxy = os.path.exists(os.path.join(cfg.output_dir, "model.safetensors"))
+        maybe_sharded = os.path.exists(
+            os.path.join(cfg.output_dir, "model.safetensors.index.json")
+        )
+
+        if maybe_proxy and maybe_sharded:
             LOG.info(f"Deleting {os.path.join(cfg.output_dir, 'model.safetensors')}")
             LOG.info("This is a proxy model and should be deleted")
-            os.remove(os.path.join(cfg.output_dir, "model.safetensors"))
+            try:
+                os.remove(os.path.join(cfg.output_dir, "model.safetensors"))
+            except FileNotFoundError:
+                pass
 
-        # Saves the whole/unpartitioned fp16 model when in ZeRO Stage-3 to the output directory if
-        # `stage3_gather_16bit_weights_on_model_save` is True in DeepSpeed Config file or
-        # `zero3_save_16bit_model` is True in DeepSpeed Plugin.
-        # For Zero Stages 1 and 2, models are saved as usual in the output directory.
-        # The model name saved is `pytorch_model.bin`
-        unwrapped_model.save_pretrained(
-            cfg.output_dir,
-            is_main_process=trainer.accelerator.is_main_process,
-            save_function=trainer.accelerator.save,
-            state_dict=trainer.accelerator.get_state_dict(trainer.model_wrapped),
-        )
     elif cfg.local_rank == 0:
         if cfg.flash_optimum and BetterTransformer:
             model = BetterTransformer.reverse(model)

@@ -29,6 +29,7 @@ from transformers import (  # noqa: F401
     AutoConfig,
     AutoModelForCausalLM,
     AutoTokenizer,
+    AwqConfig,
     BitsAndBytesConfig,
     GPTQConfig,
     PreTrainedModel,
@@ -36,6 +37,7 @@ from transformers import (  # noqa: F401
 )
 from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
 
+from axolotl.common.architectures import MOE_ARCH_BLOCK
 from axolotl.models.mamba import fix_mamba_attn_for_loss
 from axolotl.monkeypatch.multipack import (
     SUPPORTED_MULTIPACK_MODEL_TYPES,
@@ -510,7 +512,25 @@ def load_model(
             model_kwargs["quantization_config"] = GPTQConfig(
                 **model_config.quantization_config
             )
-    if cfg.adapter == "qlora" and cfg.load_in_4bit:
+    if (
+        cfg.adapter in ["qlora", "lora"]
+        and hasattr(model_config, "quantization_config")
+        and model_config.quantization_config["quant_method"]
+        in ["gptq", "awq", "bitsandbytes"]
+    ):
+        if model_config.quantization_config["quant_method"] == "gptq":
+            model_kwargs["quantization_config"] = GPTQConfig(
+                **model_config.quantization_config
+            )
+        elif model_config.quantization_config["quant_method"] == "awq":
+            model_kwargs["quantization_config"] = AwqConfig(
+                **model_config.quantization_config
+            )
+        elif model_config.quantization_config["quant_method"] == "bitsandbytes":
+            model_kwargs["quantization_config"] = BitsAndBytesConfig(
+                **model_config.quantization_config
+            )
+    elif cfg.adapter == "qlora" and cfg.load_in_4bit:
         bnb_config = {
             "load_in_4bit": True,
             "llm_int8_threshold": 6.0,
@@ -619,7 +639,7 @@ def load_model(
             and not cfg.trust_remote_code
             and not cfg.gptq
         ):
-            if qlora_fsdp and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading:
+            if cfg.fsdp and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading:
                 skip_move_to_device = True
                 if "device_map" in model_kwargs:
                     del model_kwargs["device_map"]
@@ -701,7 +721,7 @@ def load_model(
                     **model_kwargs,
                 )
             else:
-                if qlora_fsdp and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading:
+                if cfg.fsdp and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading:
                     # disabling either of these two still leads to VRAM spike before setting back down
                     skip_move_to_device = True
                     if "device_map" in model_kwargs:
@@ -785,12 +805,14 @@ def load_model(
             set_z3_leaf_modules,
         )
 
-        if cfg.model_config_type == "mixtral":
-            moe_block = get_module_class_from_name(model, "MixtralSparseMoeBlock")
-            set_z3_leaf_modules(model, [moe_block])
-        elif cfg.model_config_type == "dbrx":
-            moe_block = get_module_class_from_name(model, "DbrxFFN")
-            set_z3_leaf_modules(model, [moe_block])
+        if cfg.model_config_type in MOE_ARCH_BLOCK:
+            set_z3_leaf_modules(
+                model,
+                [
+                    get_module_class_from_name(model, module_name)
+                    for module_name in MOE_ARCH_BLOCK[cfg.model_config_type]
+                ],
+            )
 
     if cfg.model_config_type == "qwen" and cfg.adapter == "lora":
         # Qwen doesn't play nicely with LoRA if this is enabled
@@ -802,6 +824,9 @@ def load_model(
 
     if qlora_fsdp or (cfg.fsdp and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading):
         # make sure everything is in the same dtype
+        skip_prepare_model_for_kbit_training = True
+
+    if is_deepspeed_zero3_enabled():
         skip_prepare_model_for_kbit_training = True
 
     if cfg.adapter in ["lora", "qlora"]:
@@ -837,6 +862,9 @@ def load_model(
             _, lora_config = load_lora(model, cfg, inference=False, config_only=True)
         else:
             model, lora_config = load_adapter(model, cfg, cfg.adapter)
+
+    if is_deepspeed_zero3_enabled():
+        skip_move_to_device = True
 
     if (
         cfg.ddp

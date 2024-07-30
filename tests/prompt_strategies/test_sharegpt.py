@@ -192,6 +192,7 @@ class TestSharegptLlama3:
         input_ids = dataset_wrapper[0]["input_ids"]
 
         # fmt: off
+        # pylint: disable=duplicate-code
         assert input_ids == [
             128000,  # bos
             128006, 9125, 128007,  # system header
@@ -228,6 +229,7 @@ class TestSharegptLlama3:
         input_ids = dataset_wrapper[0]["input_ids"]
 
         # fmt: off
+        # pylint: disable=duplicate-code
         assert input_ids == [
             128000,  # bos
             128006, 9125, 128007,  # system header
