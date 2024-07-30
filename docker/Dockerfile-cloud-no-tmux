@@ -3,7 +3,6 @@ FROM winglian/axolotl:$BASE_TAG
 
 ENV HF_DATASETS_CACHE="/workspace/data/huggingface-cache/datasets"
 ENV HUGGINGFACE_HUB_CACHE="/workspace/data/huggingface-cache/hub"
-ENV TRANSFORMERS_CACHE="/workspace/data/huggingface-cache/hub"
 ENV HF_HOME="/workspace/data/huggingface-cache/hub"
 ENV HF_HUB_ENABLE_HF_TRANSFER="1"
 

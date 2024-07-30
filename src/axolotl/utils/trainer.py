@@ -393,10 +393,6 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
 def setup_deepspeed_env(cfg, stage=None):
     os.environ["ACCELERATE_USE_DEEPSPEED"] = "true"
     os.environ["ACCELERATE_DEEPSPEED_CONFIG_FILE"] = cfg.deepspeed
-    if cfg.bf16:
-        os.environ["ACCELERATE_MIXED_PRECISION"] = "bf16"
-    elif cfg.fp16:
-        os.environ["ACCELERATE_MIXED_PRECISION"] = "fp16"
     if stage:
         os.environ["ACCELERATE_DEEPSPEED_ZERO_STAGE"] = str(stage)
         if stage == 3:
@@ -442,6 +438,12 @@ def prepare_optim_env(cfg):
         os.environ["ACCELERATE_MIXED_PRECISION"] = "bf16"
     elif cfg.fp16:
         os.environ["ACCELERATE_MIXED_PRECISION"] = "fp16"
+
+
+def prepare_opinionated_env(cfg):
+    if cfg.qlora_sharded_model_loading:
+        # model loading is forked after the tokenizer
+        os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
 def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_steps):

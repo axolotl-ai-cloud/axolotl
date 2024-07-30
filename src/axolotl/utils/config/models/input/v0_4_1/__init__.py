@@ -235,6 +235,12 @@ class LoraConfig(BaseModel):
     peft_use_rslora: Optional[bool] = None
     peft_layer_replication: Optional[List[Tuple[int, int]]] = None
 
+    qlora_sharded_model_loading: Optional[bool] = Field(
+        default=False,
+        metadata={
+            "help": "load qlora model in sharded format for FSDP using answer.ai technique."
+        },
+    )
     lora_on_cpu: Optional[bool] = None
     gptq: Optional[bool] = None
     bnb_config_kwargs: Optional[Dict[str, Any]] = None
@@ -939,6 +945,8 @@ class AxolotlInputConfig(
     @model_validator(mode="before")
     @classmethod
     def check_eval_packing(cls, data):
+        # TODO also should check test_datasets and val_set_size as we can skip
+        # if there are no eval datasets/splits
         if (
             data.get("sample_packing")
             and data.get("eval_table_size")
