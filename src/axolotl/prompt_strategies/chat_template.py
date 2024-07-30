@@ -341,10 +341,10 @@ def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
     chat_template = ds_cfg.get("chat_template", "chatml")
     chat_template_str = chat_templates(chat_template, tokenizer=tokenizer)
     LOG.info(f"Using chat template:\n---\n{chat_template_str!s}\n---")
-    
+
     prompter_params = {
         "tokenizer": tokenizer,
-        "chat_template": chat_templates(ds_cfg.get("chat_template", "chatml")),
+        "chat_template": chat_template_str,
         "message_field_role": ds_cfg.get("message_field_role", "from"),
         "message_field_content": ds_cfg.get("message_field_content", "value"),
         "message_field_training": ds_cfg.get("message_field_training", "training"),

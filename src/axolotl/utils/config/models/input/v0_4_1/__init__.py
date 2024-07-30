@@ -7,9 +7,9 @@ Module for pydantic models for configuration
 import logging
 import os
 from enum import Enum
+from importlib.metadata import version
 from typing import Annotated, Any, Dict, List, Literal, Optional, Tuple, Union
 
-from importlib.metadata import version
 from pydantic import (
     BaseModel,
     Field,

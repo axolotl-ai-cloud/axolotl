@@ -720,7 +720,6 @@ class TestChatTemplateConfigurations:
         LOG.debug(f"Final input_ids: {input_ids}")
 
 
-
 class TestAssistantChatTemplateLlama3:
     """
     Test class for assistant style datasets with llama-3 prompts using the chat_template strategy.
