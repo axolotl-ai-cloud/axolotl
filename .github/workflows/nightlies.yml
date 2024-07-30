@@ -12,28 +12,22 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - cuda: 118
-            cuda_version: 11.8.0
+          - cuda: 121
+            cuda_version: 12.1.1
             python_version: "3.10"
-            pytorch: 2.1.2
-            axolotl_extras:
-            axolotl_args: "--extra-index-url https://download.pytorch.org/whl/cu118"
-          - cuda: 121
-            cuda_version: 12.1.0
-            python_version: "3.10"
-            pytorch: 2.1.2
+            pytorch: 2.3.1
             axolotl_extras:
           - cuda: 121
-            cuda_version: 12.1.0
-            python_version: "3.11"
-            pytorch: 2.2.2
-            axolotl_extras:
-          - cuda: 121
-            cuda_version: 12.1.0
+            cuda_version: 12.1.1
             python_version: "3.11"
             pytorch: 2.3.1
             axolotl_extras:
             is_latest: true
+          - cuda: 124
+            cuda_version: 12.4.1
+            python_version: "3.11"
+            pytorch: 2.4.0
+            axolotl_extras:
     runs-on: axolotl-gpu-runner
     steps:
       - name: Checkout
@@ -75,27 +69,22 @@ jobs:
     strategy:
       matrix:
         include:
-          - cuda: 118
-            cuda_version: 11.8.0
+          - cuda: 121
+            cuda_version: 12.1.1
             python_version: "3.10"
-            pytorch: 2.1.2
+            pytorch: 2.3.1
             axolotl_extras:
           - cuda: 121
-            cuda_version: 12.1.0
-            python_version: "3.10"
-            pytorch: 2.1.2
-            axolotl_extras:
-          - cuda: 121
-            cuda_version: 12.1.0
-            python_version: "3.11"
-            pytorch: 2.2.2
-            axolotl_extras:
-          - cuda: 121
-            cuda_version: 12.1.0
+            cuda_version: 12.1.1
             python_version: "3.11"
             pytorch: 2.3.1
             axolotl_extras:
             is_latest: true
+          - cuda: 124
+            cuda_version: 12.4.1
+            python_version: "3.11"
+            pytorch: 2.4.0
+            axolotl_extras:
     runs-on: axolotl-gpu-runner
     steps:
       - name: Checkout
