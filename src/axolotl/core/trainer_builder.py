@@ -327,12 +327,17 @@ class SchedulerMixin(Trainer):
             if self.args.alternate_lr_scheduler_type == "one_cycle":
                 num_warmup_steps = self.args.get_warmup_steps(num_training_steps)
                 pct_start = num_warmup_steps / num_training_steps
+                extra_lr_kwargs = {}
+                if "pct_start" not in self.args.lr_scheduler_kwargs:
+                    extra_lr_kwargs["pct_start"] = pct_start
+                if "anneal_strategy" not in self.args.lr_scheduler_kwargs:
+                    extra_lr_kwargs["anneal_strategy"] = "cosine"
 
                 self.lr_scheduler = OneCycleLR(
                     optimizer,
                     max_lr=self.args.learning_rate,
                     total_steps=num_training_steps,
-                    pct_start=pct_start,
+                    **extra_lr_kwargs,
                     **self.args.lr_scheduler_kwargs,
                 )
             elif use_cosine_quadratic:
