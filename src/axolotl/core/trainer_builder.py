@@ -331,7 +331,7 @@ class SchedulerMixin(Trainer):
                 if "pct_start" not in self.args.lr_scheduler_kwargs:
                     extra_lr_kwargs["pct_start"] = pct_start
                 if "anneal_strategy" not in self.args.lr_scheduler_kwargs:
-                    extra_lr_kwargs["anneal_strategy"] = "cosine"
+                    extra_lr_kwargs["anneal_strategy"] = "cos"
 
                 self.lr_scheduler = OneCycleLR(
                     optimizer,
