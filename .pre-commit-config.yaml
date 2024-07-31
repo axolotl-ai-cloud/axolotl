@@ -8,6 +8,8 @@ repos:
     -   id: check-yaml
     -   id: end-of-file-fixer
     -   id: trailing-whitespace
+    -   id: no-commit-to-branch
+        args: ['--branch', 'main']
 -   repo: https://github.com/psf/black
     rev: 23.3.0
     hooks:

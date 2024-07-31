@@ -242,6 +242,12 @@ class AxolotlTrainingMixins:
             "help": "workaround to pass an alternate optimizer to the HF trainer"
         },
     )
+    alternate_lr_scheduler_type: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "workaround to pass an alternate lr scheduler to the HF trainer"
+        },
+    )
 
 
 @dataclass
@@ -318,7 +324,18 @@ class SchedulerMixin(Trainer):
         # fmt: off
         if self.lr_scheduler is None:  # type: ignore  # pylint: disable=access-member-before-definition
             # fmt: on
-            if use_cosine_quadratic:
+            if self.args.alternate_lr_scheduler_type == "one_cycle":
+                num_warmup_steps = self.args.get_warmup_steps(num_training_steps)
+                pct_start = num_warmup_steps / num_training_steps
+
+                self.lr_scheduler = OneCycleLR(
+                    optimizer,
+                    max_lr=self.args.learning_rate,
+                    total_steps=num_training_steps,
+                    pct_start=pct_start,
+                    **self.args.lr_scheduler_kwargs,
+                )
+            elif use_cosine_quadratic:
                 if use_cosine_min_lr:
                     LOG.warning("Both cosine quadratic warmup and min lr detected. Using quadratic warmup.")
 
@@ -876,37 +893,6 @@ class AxolotlMambaTrainer(AxolotlTrainer):
         return lm_loss
 
 
-class OneCycleLRSchedulerTrainer(AxolotlTrainer):
-    """
-    Trainer subclass that uses the OneCycleLR scheduler
-    """
-
-    tag_names = ["axolotl", "onecycle"]
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.lr_scheduler = None
-
-    def create_scheduler(
-        self,
-        num_training_steps: int,
-        optimizer: Optional[torch.optim.Optimizer] = None,
-    ):
-        optimizer = self.optimizer if optimizer is None else optimizer
-        num_warmup_steps = self.args.get_warmup_steps(num_training_steps)
-        pct_start = num_warmup_steps / num_training_steps
-
-        self.lr_scheduler = OneCycleLR(
-            optimizer,
-            max_lr=self.args.learning_rate,
-            total_steps=num_training_steps,
-            pct_start=pct_start,
-            div_factor=6,
-        )
-
-        return self.lr_scheduler
-
-
 class ReLoRATrainer(AxolotlTrainer):
     """
     Trainer subclass that uses the OneCycleLR scheduler
@@ -1190,10 +1176,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         return callbacks
 
     def _get_trainer_cls(self):
-        if self.cfg.lr_scheduler == "one_cycle" and (
-            self.cfg.fsdp or self.cfg.adapter == "qlora"
-        ):
-            return OneCycleLRSchedulerTrainer
         if self.cfg.relora_steps:
             return ReLoRATrainer
         if self.cfg.model_config_type == "mamba":
@@ -1443,12 +1425,15 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         training_arguments_kwargs[
             "loraplus_lr_embedding"
         ] = self.cfg.loraplus_lr_embedding
-        training_arguments_kwargs["lr_scheduler_type"] = (
-            self.cfg.lr_scheduler
-            if self.cfg.lr_scheduler
-            and self.cfg.lr_scheduler not in ("one_cycle", "log_sweep")
-            else "cosine"
-        )
+        if self.cfg.lr_scheduler in ["one_cycle", "log_sweep"]:
+            training_arguments_kwargs["lr_scheduler_type"] = "cosine"
+            training_arguments_kwargs[
+                "alternate_lr_scheduler_type"
+            ] = self.cfg.lr_scheduler
+        else:
+            training_arguments_kwargs["lr_scheduler_type"] = (
+                self.cfg.lr_scheduler if self.cfg.lr_scheduler else "cosine"
+            )
         training_arguments_kwargs["lr_scheduler_kwargs"] = (
             self.cfg.lr_scheduler_kwargs if self.cfg.lr_scheduler_kwargs else {}
         )
