@@ -10,8 +10,8 @@ from axolotl.prompters import IGNORE_TOKEN_ID, Prompter
 from axolotl.utils.chat_templates import chat_templates
 
 # Configure the logger
-logging.basicConfig(level=logging.DEBUG)
 LOG = logging.getLogger("axolotl")
+LOG.setLevel(logging.INFO)
 
 
 class ChatTemplatePrompter(Prompter):
@@ -355,7 +355,7 @@ def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
     strategy_params = {
         "train_on_inputs": cfg.train_on_inputs,
         "sequence_len": cfg.sequence_len,
-        "roles_to_train": ds_cfg.get("roles_to_train"),
+        "roles_to_train": ds_cfg.get("roles_to_train", ["gpt", "assistant"]),
         "train_on_eos": ds_cfg.get("train_on_eos", "last"),
     }
 
