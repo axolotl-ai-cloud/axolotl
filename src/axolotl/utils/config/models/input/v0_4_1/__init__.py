@@ -7,6 +7,7 @@ Module for pydantic models for configuration
 import logging
 import os
 from enum import Enum
+from importlib.metadata import version
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 from pydantic import BaseModel, Field, conlist, field_validator, model_validator
@@ -77,6 +78,7 @@ class PretrainingDataset(BaseModel):
     split: Optional[str] = "train"
     text_column: Optional[str] = "text"
     type: Optional[str] = "pretrain"
+    trust_remote_code: Optional[bool] = False
 
 
 class UserDefinedPrompterType(BaseModel):
@@ -114,9 +116,15 @@ class SFTDataset(BaseModel):
     field_messages: Optional[str] = None
     message_field_role: Optional[str] = None
     message_field_content: Optional[str] = None
+    message_field_training: Optional[str] = None
+    message_field_training_detail: Optional[str] = None
+    roles_to_train: Optional[List[str]] = None
+    train_on_eos: Optional[str] = None
 
     roles: Optional[Dict[str, List[str]]] = None
     drop_system_message: Optional[bool] = None
+
+    trust_remote_code: Optional[bool] = False
 
 
 class UserDefinedDPOType(BaseModel):
@@ -158,6 +166,7 @@ class KTODataset(BaseModel):
     split: Optional[str] = None
     type: Optional[Union[UserDefinedKTOType, str]] = None
     data_files: Optional[List[str]] = None
+    trust_remote_code: Optional[bool] = False
 
 
 class RLType(str, Enum):
@@ -165,9 +174,9 @@ class RLType(str, Enum):
 
     dpo = "dpo"  # pylint: disable=invalid-name
     ipo = "ipo"  # pylint: disable=invalid-name
-    kto_pair = "kto_pair"  # pylint: disable=invalid-name
     orpo = "orpo"  # pylint: disable=invalid-name
     kto = "kto"  # pylint: disable=invalid-name
+    simpo = "simpo"  # pylint: disable=invalid-name
 
 
 class ChatTemplate(str, Enum):
@@ -178,7 +187,7 @@ class ChatTemplate(str, Enum):
     inst = "inst"  # pylint: disable=invalid-name
     gemma = "gemma"  # pylint: disable=invalid-name
     cohere = "cohere"  # pylint: disable=invalid-name
-    llama3 = "llama-3" # pylint: disable=invalid-name
+    llama3 = "llama3"  # pylint: disable=invalid-name
     phi_3 = "phi_3"  # pylint: disable=invalid-name
 
 
@@ -226,6 +235,12 @@ class LoraConfig(BaseModel):
     peft_use_rslora: Optional[bool] = None
     peft_layer_replication: Optional[List[Tuple[int, int]]] = None
 
+    qlora_sharded_model_loading: Optional[bool] = Field(
+        default=False,
+        metadata={
+            "help": "load qlora model in sharded format for FSDP using answer.ai technique."
+        },
+    )
     lora_on_cpu: Optional[bool] = None
     gptq: Optional[bool] = None
     bnb_config_kwargs: Optional[Dict[str, Any]] = None
@@ -342,7 +357,16 @@ class HyperparametersConfig(BaseModel):
     learning_rate: Union[str, float]
     weight_decay: Optional[float] = 0.0
     optimizer: Optional[
-        Union[OptimizerNames, Literal["lion_pytorch"]]
+        Union[
+            OptimizerNames,
+            Literal[
+                "lion_pytorch",
+                "optimi_adamw",
+                "ao_adamw_4bit",
+                "ao_adamw_8bit",
+                "ao_adamw_fp8",
+            ],
+        ]
     ] = OptimizerNames.ADAMW_HF.value
     optim_args: Optional[Union[str, Dict[str, Any]]] = Field(
         default=None, metadata={"help": "Optional arguments to supply to optimizer."}
@@ -505,6 +529,8 @@ class AxolotlInputConfig(
     dataloader_prefetch_factor: Optional[int] = None
     dataloader_drop_last: Optional[bool] = None
 
+    accelerator_config: Optional[Dict[str, Any]] = None
+
     remove_unused_columns: Optional[bool] = None
 
     push_dataset_to_hub: Optional[str] = None
@@ -591,6 +617,8 @@ class AxolotlInputConfig(
     unsloth_lora_mlp: Optional[bool] = None
     unsloth_lora_qkv: Optional[bool] = None
     unsloth_lora_o: Optional[bool] = None
+    unsloth_rms_norm: Optional[bool] = None
+    unsloth_rope: Optional[bool] = None
 
     deepspeed: Optional[Union[str, Dict[str, Any]]] = None
     fsdp: Optional[List[str]] = None
@@ -603,6 +631,9 @@ class AxolotlInputConfig(
 
     torch_compile: Optional[bool] = None
     torch_compile_backend: Optional[str] = None
+    torch_compile_mode: Optional[
+        Literal["default", "reduce-overhead", "max-autotune"]
+    ] = None
 
     max_steps: Optional[int] = None
     warmup_steps: Optional[int] = None
@@ -624,6 +655,8 @@ class AxolotlInputConfig(
 
     orpo_alpha: Optional[float] = None
     rpo_alpha: Optional[float] = None
+    simpo_gamma: Optional[float] = None
+    cpo_alpha: Optional[float] = None
 
     kto_desirable_weight: Optional[float] = None
     kto_undesirable_weight: Optional[float] = None
@@ -637,6 +670,8 @@ class AxolotlInputConfig(
 
     chat_template: Optional[ChatTemplate] = None
     default_system_message: Optional[str] = None
+
+    fix_untrained_tokens: Optional[bool] = None
 
     # INTERNALS - document for now, generally not set externally
     is_preprocess: Optional[bool] = None
@@ -701,6 +736,24 @@ class AxolotlInputConfig(
             LOG.warning(
                 "You probably want to disable group_by_length as it will force a streamed dataset to download completely."
             )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_pretraining_split_batches_accelerate(cls, data):
+        # alternatively set ACCELERATE_SPLIT_BATCHES=False
+        if data.get("pretraining_dataset"):
+            accelerator_config = data.get("accelerator_config", {})
+            if not accelerator_config:
+                data["accelerator_config"] = {
+                    "split_batches": False,
+                    "dispatch_batches": False,
+                }
+            else:
+                if accelerator_config.get("split_batches") is None:
+                    data["accelerator_config"]["split_batches"] = False
+                if accelerator_config.get("dispatch_batches") is None:
+                    data["accelerator_config"]["dispatch_batches"] = False
         return data
 
     @model_validator(mode="before")
@@ -821,7 +874,7 @@ class AxolotlInputConfig(
     @model_validator(mode="after")
     def check_adamw_optimizer_params(self):
         if any([self.adam_beta1, self.adam_beta2, self.adam_epsilon]) and (
-            not self.optimizer or "adamw" not in self.optimizer.value
+            not self.optimizer or "adamw" not in str(self.optimizer).lower()
         ):
             LOG.warning("adamw hyperparameters found, but no adamw optimizer set")
         return self
@@ -892,6 +945,8 @@ class AxolotlInputConfig(
     @model_validator(mode="before")
     @classmethod
     def check_eval_packing(cls, data):
+        # TODO also should check test_datasets and val_set_size as we can skip
+        # if there are no eval datasets/splits
         if (
             data.get("sample_packing")
             and data.get("eval_table_size")
@@ -1113,6 +1168,55 @@ class AxolotlInputConfig(
             raise ValueError("either datasets or pretraining_dataset is required")
         return data
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_xentropy_patch_conflicts(cls, data):
+        if data.get("flash_attn_cross_entropy") and data.get(
+            "unsloth_cross_entropy_loss"
+        ):
+            raise ValueError(
+                "flash_attn_cross_entropy and unsloth_cross_entropy_loss cannot be both enabled"
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_qlora_unsloth(cls, data):
+        if (
+            data.get("unsloth_lora_mlp")
+            or data.get("unsloth_lora_qkv")
+            or data.get("unsloth_lora_o")
+        ):
+            if data.get("adapter") == "lora" or data.get("load_in_8bit"):
+                raise ValueError(
+                    "unsloth_lora_mlp, unsloth_lora_qkv, and unsloth_lora_o are not compatible with 8-bit LoRA"
+                )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_unsloth_xformers_version(cls, data):
+        if (
+            data.get("unsloth_lora_mlp")
+            or data.get("unsloth_lora_qkv")
+            or data.get("unsloth_lora_o")
+        ):
+            xformers_version = version("xformers")
+            if xformers_version == "0.0.27":
+                raise ValueError(
+                    "xformers version 0.0.27 is not supported with unsloth. Please downgrade to 0.0.26.post1"
+                )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_torch_compile_deepspeed(cls, data):
+        if data.get("deepspeed") and data.get("torch_compile"):
+            raise ValueError(
+                "torch_compile should be set within your deepspeed config file"
+            )
+        return data
+
 
 class AxolotlConfigWCapabilities(AxolotlInputConfig):
     """wrapper to valdiate gpu capabilities with the configured options"""
@@ -1163,4 +1267,19 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
     def check_fsdp_deepspeed(cls, data):
         if data.get("deepspeed") and data.get("fsdp"):
             raise ValueError("deepspeed and fsdp cannot be used together.")
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_multigpu_unsloth(cls, data):
+        if (
+            data.get("unsloth_lora_mlp")
+            or data.get("unsloth_lora_qkv")
+            or data.get("unsloth_lora_o")
+        ):
+            capabilities = data.get("capabilities")
+            if capabilities and capabilities.get("n_gpu", 0) > 1:
+                raise ValueError(
+                    "unsloth_lora_mlp, unsloth_lora_qkv, and unsloth_lora_o are not compatible with multi-GPU training."
+                )
         return data

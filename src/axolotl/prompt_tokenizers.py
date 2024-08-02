@@ -407,6 +407,7 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
                         add_eos_token=False,
                         strip_bos_token=True,
                     )
+                    
                     if self.train_on_inputs and weight == 1:
                         labels = copy.deepcopy(res["input_ids"])
                     else:
@@ -431,6 +432,7 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
                         add_eos_token=add_eos_token,
                         strip_bos_token=True,
                     )
+                    
                     role_res = self._tokenize(
                         role.rstrip(),
                         add_eos_token=False,
@@ -454,6 +456,7 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
                     res = self._tokenize(
                         turn, add_eos_token=False, strip_bos_token=False
                     )
+                    
                     if self.train_on_inputs and weight == 1:
                         labels = copy.deepcopy(res["input_ids"])
                     else:

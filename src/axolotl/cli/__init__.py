@@ -3,6 +3,7 @@
 import importlib
 import json
 import logging
+import math
 import os
 import random
 import sys
@@ -39,7 +40,7 @@ from axolotl.utils.distributed import is_main_process
 from axolotl.utils.mlflow_ import setup_mlflow_env_vars
 from axolotl.utils.models import load_tokenizer
 from axolotl.utils.tokenization import check_dataset_labels
-from axolotl.utils.trainer import prepare_optim_env
+from axolotl.utils.trainer import prepare_opinionated_env, prepare_optim_env
 from axolotl.utils.wandb_ import setup_wandb_env_vars
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -139,7 +140,6 @@ def do_merge_lora(
 ):
     model, tokenizer = load_model_and_tokenizer(cfg=cfg, cli_args=cli_args)
     safe_serialization = cfg.save_safetensors is True
-    breakpoint()
 
     LOG.info("running merge of LoRA with base model")
     model = model.merge_and_unload(progressbar=True)
@@ -148,14 +148,13 @@ def do_merge_lora(
     except RuntimeError:
         pass
     model.generation_config.do_sample = True
-    # model = model.merge_and_unload()
-    model.to(dtype=cfg.torch_dtype)
 
     if cfg.local_rank == 0:
         LOG.info(f"saving merged model to: {str(Path(cfg.output_dir) / 'merged')}")
         model.save_pretrained(
             str(Path(cfg.output_dir) / "merged"),
             safe_serialization=safe_serialization,
+            progressbar=True,
         )
         tokenizer.save_pretrained(str(Path(cfg.output_dir) / "merged"))
 
@@ -180,15 +179,7 @@ def do_inference(
             importlib.import_module("axolotl.prompters"), prompter
         )
 
-    if cfg.landmark_attention:
-        from axolotl.monkeypatch.llama_landmark_attn import set_model_mem_id
-
-        set_model_mem_id(model, tokenizer)
-        model.set_mem_cache_args(
-            max_seq_len=255, mem_freq=50, top_k=5, max_cache_size=None
-        )
-
-    model = model.to(cfg.device)
+    model = model.to(cfg.device, dtype=cfg.torch_dtype)
 
     while True:
         print("=" * 80)
@@ -255,15 +246,7 @@ def do_inference_gradio(
             importlib.import_module("axolotl.prompters"), prompter
         )
 
-    if cfg.landmark_attention:
-        from axolotl.monkeypatch.llama_landmark_attn import set_model_mem_id
-
-        set_model_mem_id(model, tokenizer)
-        model.set_mem_cache_args(
-            max_seq_len=255, mem_freq=50, top_k=5, max_cache_size=None
-        )
-
-    model = model.to(cfg.device)
+    model = model.to(cfg.device, dtype=cfg.torch_dtype)
 
     def generate(instruction):
         if not instruction:
@@ -392,12 +375,14 @@ def load_cfg(config: Union[str, Path] = Path("examples/"), **kwargs):
         cfg,
         capabilities={
             "bf16": is_torch_bf16_gpu_available(),
-            "n_gpu": os.environ.get("WORLD_SIZE", 1),
+            "n_gpu": int(os.environ.get("WORLD_SIZE", 1)),
             "compute_capability": gpu_version,
         },
     )
 
     prepare_optim_env(cfg)
+
+    prepare_opinionated_env(cfg)
 
     normalize_config(cfg)
 

@@ -3,8 +3,7 @@
 import logging
 import os
 import re
-import time
-import random
+import random, time
 from typing import List, Optional
 
 import torch
@@ -20,6 +19,71 @@ from .prompt_tokenizers import PromptTokenizingStrategy
 
 LOG = logging.getLogger("axolotl")
 
+def colorize_special_tokens_text(decoded_text, special_tokens):
+    color_map = {
+        'bos_token': '\033[1;95m',  # Bold Magenta
+        'eos_token': '\033[1;94m',  # Bold Blue
+        'unk_token': '\033[1;91m',  # Bold Red
+        'pad_token': '\033[1;92m',  # Bold Green
+        'chat_placeholder_token': '\033[1;96m',  # Bold Cyan
+    }
+    
+    additional_colors = ['\033[1;93m', '\033[1;90m', '\033[1;97m']  # Bold Yellow, Bold Dark Grey, Bold White
+    additional_special_tokens = special_tokens.get('additional_special_tokens', [])
+    
+    for idx, token in enumerate(additional_special_tokens):
+        color_map[f'additional_special_token_{idx}'] = additional_colors[idx % len(additional_colors)]
+
+    end_color = '\033[0m'  # Reset to default color
+
+    for token_type, token_value in special_tokens.items():
+        color = color_map.get(token_type, '')
+        if isinstance(token_value, list):
+            for value in token_value:
+                decoded_text = re.sub(re.escape(value), f"{color}{value}{end_color}", decoded_text)
+        else:
+            decoded_text = re.sub(re.escape(token_value), f"{color}{token_value}{end_color}", decoded_text)
+    
+    return decoded_text
+
+def colorize_special_tokens(decoded_text, special_tokens):
+    # Temporarily replace <bos> with <"bos"> to avoid HTML tag interpretation
+    bos_token = special_tokens.get('bos_token', '<bos>')
+    temp_bos_token = '<"bos">'
+    decoded_text = decoded_text.replace(bos_token, temp_bos_token)
+
+    color_map = {
+        'bos_token': 'color: magenta; font-weight: bold;',  # Bold Magenta
+        'eos_token': 'color: orange; font-weight: bold;',     # Bold Blue
+        'unk_token': 'color: red; font-weight: bold;',      # Bold Red
+        'pad_token': 'color: green; font-weight: bold;',    # Bold Green
+        'chat_placeholder_token': 'color: cyan; font-weight: bold;',  # Bold Cyan
+    }
+    
+    additional_colors = [
+        'color: yellow; font-weight: bold;',   # Bold Yellow
+        'color: darkgray; font-weight: bold;', # Bold Dark Grey
+        'color: white; font-weight: bold;'     # Bold White
+    ]
+    additional_special_tokens = special_tokens.get('additional_special_tokens', [])
+    
+    for idx, token in enumerate(additional_special_tokens):
+        color_map[f'additional_special_token_{idx}'] = additional_colors[idx % len(additional_colors)]
+
+    for token_type, token_value in special_tokens.items():
+        if token_type == 'bos_token':
+            continue  # Skip <bos> since it was handled separately
+        color = color_map.get(token_type, '')
+        if isinstance(token_value, list):
+            for value in token_value:
+                decoded_text = re.sub(re.escape(value), f'<span style="{color}">{value}</span>', decoded_text)
+        else:
+            decoded_text = re.sub(re.escape(token_value), f'<span style="{color}">{token_value}</span>', decoded_text)
+    
+    # Replace the temporary <"bos"> back to <bos> with styling
+    decoded_text = decoded_text.replace(temp_bos_token, f'<span style="{color_map["bos_token"]}">&lt;bos&gt;</span>')
+
+    return decoded_text
 
 class TokenizedPromptDataset(Dataset):
     """
@@ -55,7 +119,7 @@ class TokenizedPromptDataset(Dataset):
         if self.prompt_tokenizer.supports_batched:
             map_kwargs["batched"] = True
             map_kwargs["batch_size"] = 100
-        
+
         mapped = dataset.map(
             self.prompt_tokenizer.tokenize_prompt,
             num_proc=num_proc,
@@ -69,16 +133,16 @@ class TokenizedPromptDataset(Dataset):
         special_tokens = self.prompt_tokenizer.tokenizer.special_tokens_map
         chat_template = self.prompt_tokenizer.tokenizer.chat_template
         
-        special_tokens['chat_placeholder_token'] = '<|im_start|>'
+        special_tokens['chat_placeholder_token'] = '<|im_start|>' 
 
         # Debug: Print special tokens and the first mapped item
         print("Special Tokens:", special_tokens)
         print("First Mapped Item:", mapped[0])
         decoded_text = self.prompt_tokenizer.tokenizer.decode(mapped[0]["input_ids"])
-        print("Decoded Text:", decoded_text)
+        # print("Decoded Text:", decoded_text)
         
         # Print the decoding with colored special tokens
-        print(self.colorize_special_tokens_text(decoded_text, special_tokens))
+        print(colorize_special_tokens_text(decoded_text, special_tokens))
 
         # Sample 10 random items
         random_indices = random.sample(range(len(mapped)), 10)
@@ -94,77 +158,12 @@ class TokenizedPromptDataset(Dataset):
             f.write('<html><body><pre>\n')
             for sample in samples:
                 decoded_text = self.prompt_tokenizer.tokenizer.decode(sample["input_ids"])
-                colorized_text = self.colorize_special_tokens(decoded_text, special_tokens)
+                colorized_text = colorize_special_tokens(decoded_text, special_tokens)
                 f.write(colorized_text + '\n\n\n')
             f.write('</pre></body></html>')
 
         return mapped
 
-    def colorize_special_tokens_text(self, decoded_text, special_tokens):
-        color_map = {
-            'bos_token': '\033[1;95m',  # Bold Magenta
-            'eos_token': '\033[1;94m',  # Bold Blue
-            'unk_token': '\033[1;91m',  # Bold Red
-            'pad_token': '\033[1;92m',  # Bold Green
-            'chat_placeholder_token': '\033[1;96m',  # Bold Cyan
-        }
-        
-        additional_colors = ['\033[1;93m', '\033[1;90m', '\033[1;97m']  # Bold Yellow, Bold Dark Grey, Bold White
-        additional_special_tokens = special_tokens.get('additional_special_tokens', [])
-        
-        for idx, token in enumerate(additional_special_tokens):
-            color_map[f'additional_special_token_{idx}'] = additional_colors[idx % len(additional_colors)]
-
-        end_color = '\033[0m'  # Reset to default color
-
-        for token_type, token_value in special_tokens.items():
-            color = color_map.get(token_type, '')
-            if isinstance(token_value, list):
-                for value in token_value:
-                    decoded_text = re.sub(re.escape(value), f"{color}{value}{end_color}", decoded_text)
-            else:
-                decoded_text = re.sub(re.escape(token_value), f"{color}{token_value}{end_color}", decoded_text)
-        
-        return decoded_text
-
-    def colorize_special_tokens(self, decoded_text, special_tokens):
-        # Temporarily replace <bos> with <"bos"> to avoid HTML tag interpretation
-        bos_token = special_tokens.get('bos_token', '<bos>')
-        temp_bos_token = '<"bos">'
-        decoded_text = decoded_text.replace(bos_token, temp_bos_token)
-
-        color_map = {
-            'bos_token': 'color: magenta; font-weight: bold;',  # Bold Magenta
-            'eos_token': 'color: orange; font-weight: bold;',     # Bold Blue
-            'unk_token': 'color: red; font-weight: bold;',      # Bold Red
-            'pad_token': 'color: green; font-weight: bold;',    # Bold Green
-            'chat_placeholder_token': 'color: cyan; font-weight: bold;',  # Bold Cyan
-        }
-        
-        additional_colors = [
-            'color: yellow; font-weight: bold;',   # Bold Yellow
-            'color: darkgray; font-weight: bold;', # Bold Dark Grey
-            'color: white; font-weight: bold;'     # Bold White
-        ]
-        additional_special_tokens = special_tokens.get('additional_special_tokens', [])
-        
-        for idx, token in enumerate(additional_special_tokens):
-            color_map[f'additional_special_token_{idx}'] = additional_colors[idx % len(additional_colors)]
-
-        for token_type, token_value in special_tokens.items():
-            if token_type == 'bos_token':
-                continue  # Skip <bos> since it was handled separately
-            color = color_map.get(token_type, '')
-            if isinstance(token_value, list):
-                for value in token_value:
-                    decoded_text = re.sub(re.escape(value), f'<span style="{color}">{value}</span>', decoded_text)
-            else:
-                decoded_text = re.sub(re.escape(token_value), f'<span style="{color}">{token_value}</span>', decoded_text)
-        
-        # Replace the temporary <"bos"> back to <bos> with styling
-        decoded_text = decoded_text.replace(temp_bos_token, f'<span style="{color_map["bos_token"]}">&lt;bos&gt;</span>')
-
-        return decoded_text
 
 # TODO this isn't the best since it can't interleave datasets
 class ConstantLengthDataset(IterableDataset):

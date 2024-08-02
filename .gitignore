@@ -169,19 +169,11 @@ cython_debug/
 # WandB
 # wandb creates a folder to store logs for training runs
 wandb
-croissantllm-0301
 out-w-*
-last_run_prepared
-examples/llama-2/*
-deepspeed/zero3_croissant.json
+last_run_prepared/
 axolotl-env/
 *.ipynb
 SFT_Gemma/
-Tower_Llama3_v1_70B_PagedAdam/
-Tower_QE_Explain/
-Tower_for_Scaling_ckpts/
-Tower_v1_ckpts/
-requirements_h100.txt
 
 # Runs
 lora-out/*
@@ -195,3 +187,6 @@ submit.sh
 
 typings/
 out/
+checkpoints/
+examples/
+requirements*

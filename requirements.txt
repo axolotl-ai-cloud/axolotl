@@ -1,22 +1,22 @@
-# --extra-index-url https://huggingface.github.io/autogptq-index/whl/cu118/
-# packaging==23.2
-peft==0.10.0
-transformers @ git+https://github.com/huggingface/transformers.git@43d17c18360ac9c3d3491389328e2fe55fe8f9ce
-tokenizers==0.15.0
-bitsandbytes==0.43.0
-accelerate==0.28.0
-# deepspeed==0.13.1
+--extra-index-url https://huggingface.github.io/autogptq-index/whl/cu118/
+packaging==23.2
+peft==0.11.1
+transformers==4.44.0.dev0
+tokenizers==0.19.1
+bitsandbytes==0.43.3
+accelerate==0.32.0
+deepspeed==0.14.4
 pydantic==2.6.3
 addict
 fire
 PyYAML>=6.0
 requests
-datasets==2.15.0
-flash-attn==2.5.5
+datasets==2.19.1
+flash-attn==2.6.3
 sentencepiece
 wandb
 einops
-xformers==0.0.22
+xformers==0.0.27
 optimum==1.16.2
 hf_transfer
 colorama
@@ -32,6 +32,7 @@ fschat @ git+https://github.com/lm-sys/FastChat.git@27a05b04a35510afb1d767ae7e59
 gradio==3.50.2
 tensorboard
 python-dotenv==1.0.1
+autoawq>=0.2.5
 
 mamba-ssm==1.2.0.post1
 
@@ -40,6 +41,6 @@ s3fs
 gcsfs
 # adlfs
 
-trl @ git+https://github.com/huggingface/trl.git@f18253bf2d747f68acc9cd89da95c85ebf59dbb9
+trl==0.9.6
 zstandard==0.22.0
 fastcore

@@ -7,6 +7,13 @@ from fastchat.conversation import Conversation, SeparatorStyle, register_conv_te
 
 from axolotl.prompt_tokenizers import ShareGPTPromptTokenizingStrategy
 from axolotl.prompters import ShareGPTPrompterV2
+from axolotl.utils.tokenization import (
+    chatml_to_conversation,
+    merge_consecutive_messages,
+)
+
+LOG = logging.getLogger("axolotl")
+
 
 def register_chatml_template(system_message=None):
     system_message = system_message or "You are a helpful assistant."
@@ -14,24 +21,22 @@ def register_chatml_template(system_message=None):
         Conversation(
             name="chatml",
             system_template="<|im_start|>system\n{system_message}",
-            system_message="",
-            roles=["<|im_start|>user", "<|im_start|>assistant"],
+            system_message=system_message,
+            roles=("<|im_start|>user", "<|im_start|>assistant"),
             sep_style=SeparatorStyle.CHATML,
             sep="<|im_end|>",
         )
     )
-    # register_conv_template(
-    #     Conversation(
-    #         name="llama-3",
-    #         system_template="<|start_header_id|>system<|end_header_id|>\n\n{system_message}<|eot_id|>",
-    #         system_message="",
-    #         roles=("user", "assistant"),
-    #         sep_style=SeparatorStyle.LLAMA3,
-    #         sep="",
-    #         # stop_str="<|eot_id|>",
-    #         # stop_token_ids=[128001, 128009],
-    #     )
-    # )
+    register_conv_template(
+        Conversation(
+            name="chatml_glaive",
+            system_template="<|im_start|>system\n{system_message}",
+            system_message=system_message,
+            roles=("<|im_start|>user", "<|im_start|>assistant", "<|im_start|>tool"),
+            sep_style=SeparatorStyle.CHATML,
+            sep="<|im_end|>",
+        )
+    )
 
 
 def register_llama3_template(system_message=None):
@@ -85,54 +90,7 @@ def build_loader(
             strategy.messages = ds_cfg["field_messages"]
         return strategy
 
-
-def load_ultrachat(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
-    conversation = (
-        ds_cfg["conversation"] if ds_cfg and "conversation" in ds_cfg else None
-    )
-    strategy = UltrachatShareGPTPromptTokenizingStrategy(
-        ShareGPTPrompterV2(
-            conversation=conversation,
-        ),
-        tokenizer,
-        cfg.train_on_inputs,
-        cfg.sequence_len,
-    )
-    if ds_cfg and "strict" in ds_cfg:
-        strategy.strict = ds_cfg["strict"]
-    return strategy
-
-
-def load_role(tokenizer, cfg):
-    return SimpleRoleShareGPTPromptTokenizingStrategy(
-        ShareGPTPrompterV2(),
-        tokenizer,
-        cfg.train_on_inputs,
-        cfg.sequence_len,
-    )
-
-
-def load_guanaco(tokenizer, cfg):
-    return GuanacoShareGPTPromptTokenizingStrategy(
-        ShareGPTPrompterV2(),
-        tokenizer,
-        cfg.train_on_inputs,
-        cfg.sequence_len,
-    )
-
-
-def load_glaive(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
-    conversation = (
-        ds_cfg["conversation"]
-        if ds_cfg and "conversation" in ds_cfg
-        else "chatml_glaive"
-    )
-    return GlaiveShareGPTPromptTokenizingStrategy(
-        ShareGPTPrompterV2(conversation=conversation),
-        tokenizer,
-        cfg.train_on_inputs,
-        cfg.sequence_len,
-    )
+    return _load
 
 
 class SimpleShareGPTPromptTokenizingStrategy(ShareGPTPromptTokenizingStrategy):

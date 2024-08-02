@@ -2,6 +2,7 @@
 # pylint: disable=duplicate-code
 
 import logging
+from functools import partial
 from typing import List, Optional, Tuple, Union
 
 import torch
@@ -43,6 +44,15 @@ def replace_mistral_attn_with_flash_attn(
         transformers.models.mistral.modeling_mistral.MistralModel.forward = (
             mistral_model_forward
         )
+
+
+def patch_mistral_cross_entropy():
+    from flash_attn.losses.cross_entropy import CrossEntropyLoss
+
+    LOG.info("patching with flash_attn.losses.cross_entropy")
+    transformers.models.mistral.modeling_mistral.CrossEntropyLoss = partial(
+        CrossEntropyLoss, inplace_backward=True
+    )
 
 
 @torch.jit.script
@@ -96,10 +106,6 @@ def _prepare_decoder_attention_mask(
     # [bsz, seq_len]
     if attention_mask is None or sliding_window is None:
         return attention_mask
-
-    if sliding_window is None:
-        return attention_mask
-        
 
     # NOTE: attention mask and sliding masks are only broadcastable in certain scenarios.
     # Without attention_mask.shape[0] == 1, error will trigger after eval loss but only when wandb is enabled.
@@ -158,8 +164,7 @@ def flashattn_forward(
         getattr(self.config, "sliding_window") is not None
         and kv_seq_len > self.config.sliding_window
     )
-    
-    
+
     if use_sliding_windows:
         window_size = (self.config.sliding_window, self.config.sliding_window)
     else:

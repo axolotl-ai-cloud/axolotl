@@ -1,4 +1,5 @@
 """Module containing the Trainer class and related functions"""
+import json
 import math
 import os
 import random
@@ -189,9 +190,7 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
             max_input_len = np.max(get_dataset_lengths(train_dataset))
             LOG.debug(f"max_input_len: {max_input_len}", main_process_only=True)
 
-        if (
-            cfg.is_mistral_derived_model and cfg.flash_attention
-        ) or cfg.model_config_type == "mamba":
+        if cfg.model_config_type == "mamba":
             LOG.info("dropping attention_mask column")
             train_dataset = train_dataset.remove_columns("attention_mask")
             if eval_dataset:
@@ -391,6 +390,15 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
     return total_num_steps
 
 
+def setup_deepspeed_env(cfg, stage=None):
+    os.environ["ACCELERATE_USE_DEEPSPEED"] = "true"
+    os.environ["ACCELERATE_DEEPSPEED_CONFIG_FILE"] = cfg.deepspeed
+    if stage:
+        os.environ["ACCELERATE_DEEPSPEED_ZERO_STAGE"] = str(stage)
+        if stage == 3:
+            os.environ["ACCELERATE_DEEPSPEED_ZERO3_INIT"] = "true"
+
+
 def setup_fsdp_envs(cfg):
     os.environ["ACCELERATE_USE_FSDP"] = "true"
     if cfg.fsdp_config.fsdp_activation_checkpointing:
@@ -417,8 +425,14 @@ def prepare_optim_env(cfg):
     if cfg.fsdp:
         setup_fsdp_envs(cfg)
     elif cfg.deepspeed:
-        os.environ["ACCELERATE_USE_DEEPSPEED"] = "true"
-        os.environ["ACCELERATE_DEEPSPEED_CONFIG_FILE"] = cfg.deepspeed
+        stage = None
+        # check if the cfg.deepspeed is a file
+        if os.path.isfile(cfg.deepspeed):
+            # parse with json
+            with open(cfg.deepspeed, "r", encoding="utf-8") as fin:
+                deepspeed_config = json.load(fin)
+            stage = deepspeed_config.get("zero_optimization", {}).get("stage", None)
+        setup_deepspeed_env(cfg, stage=stage)
 
     if (cfg.bf16 == "auto" and is_torch_bf16_gpu_available()) or cfg.bf16 is True:
         os.environ["ACCELERATE_MIXED_PRECISION"] = "bf16"
@@ -426,8 +440,14 @@ def prepare_optim_env(cfg):
         os.environ["ACCELERATE_MIXED_PRECISION"] = "fp16"
 
 
+def prepare_opinionated_env(cfg):
+    if cfg.qlora_sharded_model_loading:
+        # model loading is forked after the tokenizer
+        os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+
 def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_steps):
-    if cfg.rl in ["dpo", "ipo", "kto_pair", "orpo", "kto"]:
+    if cfg.rl in ["dpo", "ipo", "orpo", "kto", "simpo"]:
         trainer_builder = HFRLTrainerBuilder(cfg, model[0], tokenizer)
         trainer_builder.model_ref = model[1]
         trainer_builder.peft_config = model[2]

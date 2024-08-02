@@ -16,6 +16,7 @@ from axolotl.cli import (
     check_user_token,
     load_cfg,
     load_datasets,
+    load_rl_datasets,
     print_axolotl_text_art,
 )
 from axolotl.common.cli import TrainerCliArgs

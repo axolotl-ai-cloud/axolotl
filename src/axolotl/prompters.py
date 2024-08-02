@@ -34,8 +34,8 @@ class AlpacaPrompter(Prompter):
     Base class for alpaca prompters
     """
 
-    system_prompt = "Below is an instruction that describes a task, paired with an input that provides further context. Write a response that appropriately completes the request.\n\n"
-    system_no_input_prompt = "Below is an instruction that describes a task. Write a response that appropriately completes the request.\n\n"
+    system_prompt = "Below is an instruction that describes a task, paired with an input that provides further context. Write a response that appropriately completes the request."
+    system_no_input_prompt = "Below is an instruction that describes a task. Write a response that appropriately completes the request."
     system_format: str = "{system}"
     turn_format: str
     turn_no_input_format: str
@@ -260,16 +260,9 @@ class ReflectAlpacaPrompter(Prompter):
         )
 
 
-# SHAREGPT_ASSERTION_FAILED_ROLE = (
-#     "Role did not alternate between turns (gpt and human). Please check your data."
-# )
-
-CONVERSATION_ROLE_FORMAT = {
-    "chatml": "<|im_start|>{ROLE}",
-    "zephyr": "<|{ROLE}|>",
-    "vicuna_v1.1": "{ROLE}",
-}
-
+SHAREGPT_ASSERTION_FAILED_ROLE = (
+    "Role did not alternate between turns (gpt and human). Please check your data."
+)
 
 CONVERSATION_ROLE_FORMAT = {
     "chatml": "<|im_start|>{ROLE}",
@@ -286,6 +279,9 @@ class ShareGPTPrompter(Prompter):  # pylint: disable=too-few-public-methods
 
     role_key_human = "human"
     role_key_model = "gpt"
+    # Optional, only used for tool usage datasets.
+    role_key_tool: Optional[str] = None
+    # Optional, role input/output mapping
     roles: Optional[dict] = None
 
     def __init__(
@@ -294,23 +290,24 @@ class ShareGPTPrompter(Prompter):  # pylint: disable=too-few-public-methods
         conversation: Optional[Union[str, Conversation]] = None,
         role_key_human: Optional[str] = None,
         role_key_model: Optional[str] = None,
-        roles: Optional[dict] = None
+        role_key_tool: Optional[str] = None,
+        roles: Optional[dict] = None,
     ):
         if conversation:
             if isinstance(conversation, Conversation):
                 self._conversation = conversation
             else:
                 self._conversation = get_conv_template(conversation)
-            return conversation
         else:
-            self._conversation = get_conv_template("chatml")
+            self._conversation = get_conv_template("vicuna_v1.1")
         if role_key_human:
             self.role_key_human = role_key_human
         if role_key_model:
             self.role_key_model = role_key_model
+        if role_key_tool:
+            self.role_key_tool = role_key_tool
         if roles:
             self.roles = roles
-
 
     def _build_result(self, source):
         if len(source) < 2:
@@ -329,8 +326,8 @@ class ShareGPTPrompter(Prompter):  # pylint: disable=too-few-public-methods
             source.pop(0)
 
         roles = {self.role_key_human: conv.roles[0], self.role_key_model: conv.roles[1]}
-        # if self.role_key_tool:
-        #     roles[self.role_key_tool] = conv.roles[2]
+        if self.role_key_tool:
+            roles[self.role_key_tool] = conv.roles[2]
 
         try:
             # Apply prompt templates
@@ -416,7 +413,8 @@ class ShareGPTPrompterV2(ShareGPTPrompter):
             conversation=conversation,
             role_key_human=role_key_human,
             role_key_model=role_key_model,
-            roles=roles
+            role_key_tool=role_key_tool,
+            roles=roles,
         )
 
 

@@ -82,13 +82,16 @@ def get_turns(  # pylint: disable=too-many-return-statements
             else:
                 yield role + ":", ""
         return
-    if self.sep_style == SeparatorStyle.LLAMA2:
-        seps = [self.sep, self.sep2]
+    if self.sep_style == SeparatorStyle.LLAMA2 and self.name != "mistral":
         if self.system_message:
+            if self.messages:
+                # For llama, the system message is incorporated into the first human instruction
+                first_role, first_msg = self.messages[0]
+                if first_role == self.roles[0]:
+                    system_prompt += first_msg
+                    self.messages.pop(0)
             yield "", system_prompt
-        else:
-            yield "", "[INST] "
-        for i, (role, message) in enumerate(self.messages[1:]):
+        for i, (role, message) in enumerate(self.messages):
             if message:
                 if (i % 2 == 0 and not self.system_message) or (
                     i % 2 != 0 and self.system_message
@@ -163,22 +166,15 @@ def get_turns(  # pylint: disable=too-many-return-statements
             else:
                 yield role + "\n", ""
         return
-    if self.sep_style == SeparatorStyle.LLAMA3:
-        yield "", "" if system_prompt == "" else system_prompt
+    if self.sep_style == SeparatorStyle.CHATGLM3:
+        if self.system_message:
+            yield "", system_prompt
         for role, message in self.messages:
-            yield f"<|start_header_id|>{role}<|end_header_id|>\n\n", message.strip() + "<|eot_id|>" if message else ""
-    # if self.sep_style == SeparatorStyle.CONVERSATIONAL_LM:
-    #     yield "", "" if system_prompt == "" else system_prompt + self.sep + "\n"
-    #     for role, message in self.messages:
-    #         # if it's the last message
-    #         if message == self.messages[-1][1]:
-    #             yield role, message + self.sep + "\n"
-    #             continue
-    #         if message:
-    #             yield role + "\n", message + "\n"
-    #         else:
-    #             yield role + "\n", ""
-    #     return
+            if message:
+                yield role + "\n", " " + message
+            else:
+                yield role
+        return
     if self.sep_style == SeparatorStyle.CHATINTERN:
         # source: https://huggingface.co/internlm/internlm-chat-7b-8k/blob/bd546fa984b4b0b86958f56bf37f94aa75ab8831/modeling_internlm.py#L771
         seps = [self.sep, self.sep2]
@@ -224,8 +220,8 @@ def get_turns(  # pylint: disable=too-many-return-statements
                 yield role + ": ", message + self.sep
             else:
                 yield role + ":", ""
-    # else:
-    #     raise ValueError(f"Invalid style: {self.sep_style}")
+    else:
+        raise ValueError(f"Invalid style: {self.sep_style}")
 
 
 def add_get_turns_to_conversation():
