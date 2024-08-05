@@ -291,6 +291,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <li><a href="#pygmalion" id="toc-pygmalion" class="nav-link" data-scroll-target="#pygmalion">pygmalion</a></li>
   <li><a href="#sharegpt.load_role" id="toc-sharegpt.load_role" class="nav-link" data-scroll-target="#sharegpt.load_role">sharegpt.load_role</a></li>
   <li><a href="#sharegpt.load_guanaco" id="toc-sharegpt.load_guanaco" class="nav-link" data-scroll-target="#sharegpt.load_guanaco">sharegpt.load_guanaco</a></li>
+  <li><a href="#sharegpt.load_ultrachat" id="toc-sharegpt.load_ultrachat" class="nav-link" data-scroll-target="#sharegpt.load_ultrachat">sharegpt.load_ultrachat</a></li>
   <li><a href="#sharegpt_jokes" id="toc-sharegpt_jokes" class="nav-link" data-scroll-target="#sharegpt_jokes">sharegpt_jokes</a></li>
   </ul>
 </nav>
@@ -373,6 +374,16 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <div class="sourceCode" id="cb5" data-filename="data.jsonl"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"conversations"</span><span class="fu">:</span> <span class="ot">[</span><span class="fu">{</span><span class="dt">"from"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"value"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span><span class="ot">]</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
 </section>
+<section id="sharegpt.load_ultrachat" class="level2">
+<h2 class="anchored" data-anchor-id="sharegpt.load_ultrachat">sharegpt.load_ultrachat</h2>
+<p>conversations where the turns field is ‘messages’, human is ‘user’ and gpt is ‘assistant’.</p>
+<div class="code-with-filename">
+<div class="code-with-filename-file">
+<pre><strong>data.jsonl</strong></pre>
+</div>
+<div class="sourceCode" id="cb6" data-filename="data.jsonl"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"messages"</span><span class="fu">:</span> <span class="ot">[</span><span class="fu">{</span><span class="dt">"user"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"assistant"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span><span class="ot">]</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+</section>
 <section id="sharegpt_jokes" class="level2">
 <h2 class="anchored" data-anchor-id="sharegpt_jokes">sharegpt_jokes</h2>
 <p>creates a chat where bot is asked to tell a joke, then explain why the joke is funny</p>
@@ -380,7 +391,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <div class="code-with-filename-file">
 <pre><strong>data.jsonl</strong></pre>
 </div>
-<div class="sourceCode" id="cb6" data-filename="data.jsonl"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"conversations"</span><span class="fu">:</span> <span class="ot">[</span><span class="fu">{</span><span class="dt">"title"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"text"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"explanation"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span><span class="ot">]</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb7" data-filename="data.jsonl"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"conversations"</span><span class="fu">:</span> <span class="ot">[</span><span class="fu">{</span><span class="dt">"title"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"text"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"explanation"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span><span class="ot">]</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
 
 

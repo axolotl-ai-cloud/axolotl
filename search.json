@@ -99,6 +99,17 @@
     ]
   },
   {
+    "objectID": "docs/dataset-formats/conversation.html#sharegpt.load_ultrachat",
+    "href": "docs/dataset-formats/conversation.html#sharegpt.load_ultrachat",
+    "title": "Conversation",
+    "section": "sharegpt.load_ultrachat",
+    "text": "sharegpt.load_ultrachat\nconversations where the turns field is ‘messages’, human is ‘user’ and gpt is ‘assistant’.\n\n\ndata.jsonl\n\n{\"messages\": [{\"user\": \"...\", \"assistant\": \"...\"}]}",
+    "crumbs": [
+      "Dataset Formats",
+      "Conversation"
+    ]
+  },
+  {
     "objectID": "docs/dataset-formats/conversation.html#sharegpt_jokes",
     "href": "docs/dataset-formats/conversation.html#sharegpt_jokes",
     "title": "Conversation",
