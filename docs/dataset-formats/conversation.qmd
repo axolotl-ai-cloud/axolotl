@@ -54,6 +54,14 @@ conversations where `from` is `prompter` `assistant` instead of default sharegpt
 {"conversations": [{"from": "...", "value": "..."}]}
 ```
 
+## sharegpt.load_ultrachat
+
+conversations where the turns field is 'messages', human is 'user' and gpt is 'assistant'.
+
+```{.json filename="data.jsonl"}
+{"messages": [{"user": "...", "assistant": "..."}]}
+```
+
 ## sharegpt_jokes
 
 creates a chat where bot is asked to tell a joke, then explain why the joke is funny
