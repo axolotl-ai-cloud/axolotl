@@ -1018,7 +1018,7 @@ def load_lora(model, cfg, inference=False, config_only=False):
 
     if cfg.lora_target_linear:
         linear_names = find_all_linear_names(model)
-        LOG.info(f"found linear modules: {repr(linear_names)}")
+        LOG.info(f"found linear modules: {repr(linear_names.sort())}")
         lora_target_modules = list(set(lora_target_modules + linear_names))
 
     lora_config_kwargs = {}

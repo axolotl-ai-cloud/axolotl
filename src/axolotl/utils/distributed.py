@@ -153,11 +153,11 @@ def compute_and_broadcast(fn):  # pylint: disable=invalid-name
     if is_main_process():
         value_scalar = fn()
         value_tensor = torch.tensor(
-            value_scalar, device=torch.cuda.current_device()
-        ).float()
+            value_scalar, device=torch.cuda.current_device(), dtype=torch.float32
+        )
     else:
         value_tensor = torch.tensor(
-            0.0, device=torch.cuda.current_device()
+            0.0, device=torch.cuda.current_device(), dtype=torch.float32
         )  # Placeholder tensor
 
     # Broadcast the tensor to all processes.
