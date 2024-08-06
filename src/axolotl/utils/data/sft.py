@@ -187,7 +187,12 @@ def load_tokenized_prepared_datasets(
     else:
         if cfg.push_dataset_to_hub:
             LOG.info("Unable to find prepared dataset in Huggingface hub")
-        LOG.info(f"Unable to find prepared dataset in {prepared_ds_path}")
+        if cfg.is_preprocess:
+            LOG.info(
+                f"Skipping prepared dataset in {prepared_ds_path} for pre-processing..."
+            )
+        else:
+            LOG.info(f"Unable to find prepared dataset in {prepared_ds_path}")
         LOG.info("Loading raw datasets...")
         if not cfg.is_preprocess:
             LOG.warning(
