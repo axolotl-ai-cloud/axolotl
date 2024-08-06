@@ -1,4 +1,4 @@
-base_model: meta-llama/Meta-Llama-3.1-405B
+base_model: hugging-quants/Meta-Llama-3.1-405B-BNB-NF4-BF16
 tokenizer_type: AutoTokenizer
 
 load_in_4bit: true
@@ -10,10 +10,11 @@ datasets:
 dataset_prepared_path: last_run_prepared
 val_set_size: 0.0
 output_dir: ./outputs/out/qlora-llama3_1-405b
+save_safetensors: true
 
 adapter: qlora
 
-sequence_len: 1024
+sequence_len: 2048
 sample_packing: true
 pad_to_sequence_len: true
 
@@ -25,7 +26,7 @@ lora_target_linear: true
 
 gradient_accumulation_steps: 4
 micro_batch_size: 1
-num_epochs: 4
+num_epochs: 2
 optimizer: adamw_torch
 lr_scheduler: cosine
 learning_rate: 0.00001

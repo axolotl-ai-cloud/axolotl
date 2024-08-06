@@ -351,7 +351,11 @@ def load_model(
         and cfg.flash_attention
         and cfg.sample_packing
     ):
-        patch_for_multipack(cfg.model_config_type, model_name=cfg.base_model)
+        patch_for_multipack(
+            cfg.model_config_type,
+            model_name=cfg.base_model,
+            is_remote_code=cfg.trust_remote_code,
+        )
 
         if cfg.is_llama_derived_model:
             from axolotl.monkeypatch.llama_attn_hijack_flash import (
@@ -627,14 +631,21 @@ def load_model(
         elif (
             qlora_fsdp
             and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
-            and cfg.model_config_type == "dbrx"
+            and (cfg.model_config_type == "dbrx" or cfg.qlora_sharded_model_loading)
         ):
             quant_storage = cfg.torch_dtype
+            quantization_config = hasattr(
+                model_config, "quantization_config"
+            ) and getattr(model_config, "quantization_config")
+            quantization_config = (
+                quantization_config or model_kwargs["quantization_config"]
+            )
             model = load_sharded_model_quant(
                 base_model,
                 model_config,
                 cfg,
                 quant_storage=quant_storage,
+                quantization_config=quantization_config,
             )
             skip_move_to_device = True
         elif (
@@ -1014,7 +1025,7 @@ def load_lora(model, cfg, inference=False, config_only=False):
 
     if cfg.lora_target_linear:
         linear_names = find_all_linear_names(model)
-        LOG.info(f"found linear modules: {repr(linear_names)}")
+        LOG.info(f"found linear modules: {repr(sorted(linear_names))}")
         lora_target_modules = list(set(lora_target_modules + linear_names))
 
     lora_config_kwargs = {}

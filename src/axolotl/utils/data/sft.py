@@ -160,8 +160,12 @@ def load_tokenized_prepared_datasets(
     use_auth_token = cfg.hf_use_auth_token
     try:
         if cfg.push_dataset_to_hub:
+            LOG.info(
+                f"Attempting to load prepared dataset from Huggingface hub at {cfg.push_dataset_to_hub} (version {ds_hash})..."
+            )
             dataset = load_dataset(
-                f"{cfg.push_dataset_to_hub}/{ds_hash}",
+                cfg.push_dataset_to_hub,
+                ds_hash,
                 token=use_auth_token,
             )
             dataset = dataset[split]
@@ -181,7 +185,14 @@ def load_tokenized_prepared_datasets(
         dataset = load_from_disk(str(prepared_ds_path))
         LOG.info("Prepared dataset loaded from disk...")
     else:
-        LOG.info(f"Unable to find prepared dataset in {prepared_ds_path}")
+        if cfg.push_dataset_to_hub:
+            LOG.info("Unable to find prepared dataset in Huggingface hub")
+        if cfg.is_preprocess:
+            LOG.info(
+                f"Skipping prepared dataset in {prepared_ds_path} for pre-processing..."
+            )
+        else:
+            LOG.info(f"Unable to find prepared dataset in {prepared_ds_path}")
         LOG.info("Loading raw datasets...")
         if not cfg.is_preprocess:
             LOG.warning(
@@ -433,10 +444,12 @@ def load_tokenized_prepared_datasets(
             dataset.save_to_disk(str(prepared_ds_path))
             if cfg.push_dataset_to_hub:
                 LOG.info(
-                    f"Saving merged prepared dataset with push_to_hub... {cfg.push_dataset_to_hub}/{ds_hash}"
+                    f"Pushing merged prepared dataset to Huggingface hub at {cfg.push_dataset_to_hub} (version {ds_hash})..."
                 )
                 dataset.push_to_hub(
-                    f"{cfg.push_dataset_to_hub}/{ds_hash}", private=True
+                    cfg.push_dataset_to_hub,
+                    ds_hash,
+                    private=True,
                 )
 
     return dataset, prompters

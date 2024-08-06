@@ -13,6 +13,7 @@ from fastcore.parallel import parallel
 from torch import Tensor, nn
 from tqdm import tqdm
 from transformers import AutoModelForCausalLM
+from transformers.quantizers import AutoHfQuantizer
 from transformers.utils import SAFE_WEIGHTS_INDEX_NAME, SAFE_WEIGHTS_NAME, hub
 
 
@@ -173,6 +174,7 @@ def load_sharded_model_quant(
     low_memory=True,
     verbose=False,
     loading_workers=2,
+    quantization_config=None,
 ):
     with init_empty_weights():
         model = AutoModelForCausalLM.from_config(
@@ -186,15 +188,26 @@ def load_sharded_model_quant(
                 compute_dtype=compute_dtype,
                 quant_type="nf4",
                 quant_storage=quant_storage,
+                compress_statistics=True,  # bnb_4bit_use_double_quant
+                skip_modules=[
+                    "lm_head",
+                    "embed_out",
+                ],
             )
         else:
             # this is the more common case with HF transformers
+            # TODO can we detect the model arch and dynamically set skip_modules
             model.model = _replace_linear(
                 model.model,
                 Linear4bit,
                 compute_dtype=compute_dtype,
                 quant_type="nf4",
                 quant_storage=quant_storage,
+                compress_statistics=True,  # bnb_4bit_use_double_quant
+                skip_modules=[
+                    "lm_head",
+                    "embed_out",
+                ],
             )
     model.is_loaded_in_4bit = True
 
@@ -250,6 +263,11 @@ def load_sharded_model_quant(
             verbose=verbose,
             quant_method=quant_method,
         )
+
+    # these attributes are needed to inform transformers/peft of the quantization
+    model.is_quantized = True
+    model.quantization_method = "bitsandbytes"
+    model.hf_quantizer = AutoHfQuantizer.from_config(quantization_config)
 
     if cfg.local_rank == 0 and verbose:
         print(f"Loaded model weights in {time.time()-start:.3f} seconds")

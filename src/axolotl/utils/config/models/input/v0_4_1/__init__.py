@@ -39,6 +39,7 @@ class ChatTemplate(str, Enum):
     cohere = "cohere"  # pylint: disable=invalid-name
     llama3 = "llama3"  # pylint: disable=invalid-name
     phi_3 = "phi_3"  # pylint: disable=invalid-name
+    deepseek_v2 = "deepseek_v2"  # pylint: disable=invalid-name
     mistral = "mistral"  # pylint: disable=invalid-name
     tokenizer_default = "tokenizer_default"  # pylint: disable=invalid-name
 
@@ -258,6 +259,12 @@ class LoraConfig(BaseModel):
     peft_use_rslora: Optional[bool] = None
     peft_layer_replication: Optional[List[Tuple[int, int]]] = None
 
+    qlora_sharded_model_loading: Optional[bool] = Field(
+        default=False,
+        metadata={
+            "help": "load qlora model in sharded format for FSDP using answer.ai technique."
+        },
+    )
     lora_on_cpu: Optional[bool] = None
     gptq: Optional[bool] = None
     bnb_config_kwargs: Optional[Dict[str, Any]] = None
@@ -395,7 +402,7 @@ class HyperparametersConfig(BaseModel):
         },
     )
     torchdistx_path: Optional[str] = None
-    lr_scheduler: Optional[SchedulerType] = "cosine"
+    lr_scheduler: Optional[Union[SchedulerType, Literal["one_cycle"]]] = "cosine"
     lr_scheduler_kwargs: Optional[Dict[str, Any]] = None
     lr_quadratic_warmup: Optional[bool] = None
     cosine_min_lr_ratio: Optional[float] = None
@@ -978,6 +985,8 @@ class AxolotlInputConfig(
     @model_validator(mode="before")
     @classmethod
     def check_eval_packing(cls, data):
+        # TODO also should check test_datasets and val_set_size as we can skip
+        # if there are no eval datasets/splits
         if (
             data.get("sample_packing")
             and data.get("eval_table_size")
