@@ -62,7 +62,7 @@ class TestMultiGPULlama(unittest.TestCase):
         # write cfg to yaml file
         Path(temp_dir).mkdir(parents=True, exist_ok=True)
         with open(Path(temp_dir) / "config.yaml", "w", encoding="utf-8") as fout:
-            fout.write(yaml.dump(dict(cfg), Dumper=yaml.Dumper))
+            fout.write(yaml.dump(cfg.to_dict(), Dumper=yaml.Dumper))
 
         execute_subprocess_async(
             [
