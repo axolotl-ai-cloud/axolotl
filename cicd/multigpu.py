@@ -49,8 +49,8 @@ cicd_image = (
 stub = Stub("Axolotl CI/CD", secrets=[])
 
 
-N_GPUS = int(os.environ.get("N_GPUS", 1))
-GPU_CONFIG = modal.gpu.A10G(count=N_GPUS)
+N_GPUS = int(os.environ.get("N_GPUS", 2))
+GPU_CONFIG = modal.gpu.H100(count=N_GPUS)
 
 
 def run_cmd(cmd: str, run_folder: str):
@@ -66,10 +66,10 @@ def run_cmd(cmd: str, run_folder: str):
     gpu=GPU_CONFIG,
     timeout=45 * 60,
     cpu=8.0,
-    memory=131072,
+    memory=131072 * N_GPUS,
 )
 def cicd_pytest():
-    run_cmd("./cicd/cicd.sh", "/workspace/axolotl")
+    run_cmd("./cicd/multigpu.sh", "/workspace/axolotl")
 
 
 @stub.local_entrypoint()
