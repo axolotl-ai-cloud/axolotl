@@ -817,11 +817,13 @@ def load_model(
         )
 
         if cfg.model_config_type in MOE_ARCH_BLOCK:
+            moe_blocks = MOE_ARCH_BLOCK[cfg.model_config_type]
+            moe_blocks = [moe_blocks] if isinstance(moe_blocks, str) else moe_blocks
             set_z3_leaf_modules(
                 model,
                 [
                     get_module_class_from_name(model, module_name)
-                    for module_name in MOE_ARCH_BLOCK[cfg.model_config_type]
+                    for module_name in moe_blocks
                 ],
             )
 
