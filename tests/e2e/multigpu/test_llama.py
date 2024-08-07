@@ -31,7 +31,6 @@ class TestMultiGPULlama(unittest.TestCase):
                 "base_model": "TinyLlama/TinyLlama_v1.1",
                 "tokenizer_type": "LlamaTokenizer",
                 "sequence_len": 1024,
-                "load_in_8bit": True,
                 "adapter": "lora",
                 "lora_r": 8,
                 "lora_alpha": 16,
@@ -54,8 +53,9 @@ class TestMultiGPULlama(unittest.TestCase):
                 "gradient_accumulation_steps": 2,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
-                "optimizer": "adamw_torch",
+                "optimizer": "adamw_8bit",
                 "lr_scheduler": "cosine",
+                "flash_attention": True,
             }
         )
 
