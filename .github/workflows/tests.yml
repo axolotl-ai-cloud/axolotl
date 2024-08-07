@@ -150,4 +150,4 @@ jobs:
           echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
       - name: Run tests job on Modal
         run: |
-          modal run multigpu.tests
+          modal run cicd.multigpu
