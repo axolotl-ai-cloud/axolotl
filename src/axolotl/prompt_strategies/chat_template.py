@@ -350,6 +350,7 @@ def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
         ),
         "roles": ds_cfg.get("roles"),
         "drop_system_message": ds_cfg.get("drop_system_message", False),
+        "max_length": cfg.sequence_len,
     }
 
     strategy_params = {
