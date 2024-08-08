@@ -7,6 +7,7 @@ import os
 import unittest
 from pathlib import Path
 
+import pytest
 import yaml
 from accelerate.test_utils import execute_subprocess_async
 
@@ -69,6 +70,8 @@ class TestMultiGPULlama(unittest.TestCase):
             [
                 "accelerate",
                 "launch",
+                "--num-processes",
+                "2",
                 "-m",
                 "axolotl.cli.train",
                 str(Path(temp_dir) / "config.yaml"),
@@ -124,6 +127,8 @@ class TestMultiGPULlama(unittest.TestCase):
             [
                 "accelerate",
                 "launch",
+                "--num-processes",
+                "2",
                 "-m",
                 "axolotl.cli.train",
                 str(Path(temp_dir) / "config.yaml"),
@@ -185,6 +190,8 @@ class TestMultiGPULlama(unittest.TestCase):
             [
                 "accelerate",
                 "launch",
+                "--num-processes",
+                "2",
                 "-m",
                 "axolotl.cli.train",
                 str(Path(temp_dir) / "config.yaml"),
@@ -249,39 +256,45 @@ class TestMultiGPULlama(unittest.TestCase):
             [
                 "accelerate",
                 "launch",
+                "--num-processes",
+                "2",
                 "-m",
                 "axolotl.cli.train",
                 str(Path(temp_dir) / "config.yaml"),
             ]
         )
 
+    @pytest.mark.skip("disabled due to upstream issue")
     @with_temp_dir
     def test_fsdp_qlora_prequant_packed(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "axolotl-ai-co/TinyLlama_v1.1-bnb-nf4-bf16",
-                "tokenizer_type": "LlamaTokenizer",
+                "tokenizer_type": "AutoTokenizer",
                 "adapter": "qlora",
                 "load_in_4bit": True,
                 "lora_r": 8,
                 "lora_alpha": 16,
                 "lora_dropout": 0.05,
                 "lora_target_linear": True,
+                "lora_modules_to_save": [
+                    "embed_tokens",
+                    "lm_head",
+                ],
                 "sample_packing": True,
                 "eval_sample_packing": False,
                 "pad_to_sequence_len": True,
                 "sequence_len": 2048,
                 "val_set_size": 0.05,
                 "special_tokens": {
-                    "unk_token": "<unk>",
-                    "bos_token": "<s>",
-                    "eos_token": "</s>",
+                    "pad_token": "<|end_of_text|>",
                 },
                 "datasets": [
                     {
                         "path": "tatsu-lab/alpaca",
                         "type": "alpaca",
+                        "split": "train[:25%]",
                     },
                 ],
                 "num_epochs": 1,
@@ -302,7 +315,7 @@ class TestMultiGPULlama(unittest.TestCase):
                     "fsdp_offload_params": False,
                     "fsdp_sync_module_states": True,
                     "fsdp_use_orig_params": False,
-                    "fsdp_cpu_ram_efficient_loading": False,
+                    "fsdp_cpu_ram_efficient_loading": True,
                     "fsdp_transformer_layer_cls_to_wrap": "LlamaDecoderLayer",
                     "fsdp_state_dict_type": "SHARDED_STATE_DICT",
                     "fsdp_auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
@@ -319,6 +332,8 @@ class TestMultiGPULlama(unittest.TestCase):
             [
                 "accelerate",
                 "launch",
+                "--num-processes",
+                "2",
                 "-m",
                 "axolotl.cli.train",
                 str(Path(temp_dir) / "config.yaml"),
