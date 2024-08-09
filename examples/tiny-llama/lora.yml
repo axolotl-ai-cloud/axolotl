@@ -1,6 +1,5 @@
-base_model: TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T
-model_type: LlamaForCausalLM
-tokenizer_type: LlamaTokenizer
+base_model: TinyLlama/TinyLlama_v1.1
+tokenizer_type: AutoTokenizer
 
 load_in_8bit: true
 load_in_4bit: false
