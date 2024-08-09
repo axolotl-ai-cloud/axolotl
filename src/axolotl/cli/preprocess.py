@@ -82,7 +82,14 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
             # "copying from a non-meta parameter in the checkpoint to a meta parameter in the current model"
             warnings.simplefilter("ignore")
             with init_empty_weights(include_buffers=True):
-                AutoModelForCausalLM.from_pretrained(model_name, trust_remote_code=True)
+                # fmt: off
+                try:
+                    AutoModelForCausalLM.from_pretrained(
+                        model_name, trust_remote_code=True
+                    )
+                except Exception as exc:  # pylint: disable=broad-exception-caught,unused-variable  # nosec B110  # noqa F841
+                    pass
+                # fmt: on
 
     LOG.info(
         Fore.GREEN

@@ -25,7 +25,7 @@ numpy>=1.24.4
 # qlora things
 evaluate==0.4.1
 scipy
-scikit-learn==1.2.2
+scikit-learn==1.4.2
 pynvml
 art
 fschat @ git+https://github.com/lm-sys/FastChat.git@27a05b04a35510afb1d767ae7e5990cbd278f8fe
