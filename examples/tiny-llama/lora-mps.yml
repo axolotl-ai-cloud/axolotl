@@ -1,4 +1,4 @@
-base_model: TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T
+base_model: TinyLlama/TinyLlama_v1.1
 model_type: LlamaForCausalLM
 tokenizer_type: LlamaTokenizer
 
