@@ -291,6 +291,12 @@ def load_tokenizer(cfg):
                 "You are a helpful assistant.", cfg.default_system_message
             )
 
+        if tokenizer.chat_template and tokenizer.chat_template != chat_template_string:
+            LOG.warning(
+                "The chat template is being overridden by the one in the config. "
+                "This may cause a mismatch with the existing chat template in the base model. "
+                "Please verify that this override is intended and compatible."
+            )
         tokenizer.chat_template = chat_template_string
     else:
         LOG.info(
