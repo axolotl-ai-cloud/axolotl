@@ -38,6 +38,7 @@ from transformers import (  # noqa: F401
 from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
 
 from axolotl.common.architectures import MOE_ARCH_BLOCK
+from axolotl.integrations.base import PluginManager
 from axolotl.models.mamba import fix_mamba_attn_for_loss
 from axolotl.monkeypatch.multipack import (
     SUPPORTED_MULTIPACK_MODEL_TYPES,
@@ -311,6 +312,10 @@ def load_model(
     base_model = cfg.base_model
     model_type = cfg.type_of_model
     model_config = load_model_config(cfg)
+
+    # load any patches from plugins
+    plugin_manager = PluginManager.get_instance()
+    plugin_manager.pre_model_load(cfg)
 
     # TODO refactor as a kwarg
     load_in_8bit = cfg.load_in_8bit

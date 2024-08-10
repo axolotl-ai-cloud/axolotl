@@ -33,6 +33,8 @@ gradio==3.50.2
 tensorboard
 python-dotenv==1.0.1
 autoawq>=0.2.5
+triton>=2.3.0
+liger-kernel
 
 mamba-ssm==1.2.0.post1
 
