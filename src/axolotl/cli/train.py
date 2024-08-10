@@ -20,7 +20,6 @@ from axolotl.cli import (
     print_axolotl_text_art,
 )
 from axolotl.common.cli import TrainerCliArgs
-from axolotl.integrations.base import PluginManager
 from axolotl.prompt_strategies.sharegpt import (
     register_chatml_template,
     register_llama3_template,
@@ -42,10 +41,6 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
 
 def do_train(cfg, cli_args) -> Tuple[PreTrainedModel, PreTrainedTokenizer]:
     print_axolotl_text_art()
-    if cfg.plugins:
-        plugin_manager = PluginManager.get_instance()
-        for plugin in cfg.plugins:
-            plugin_manager.register(plugin)
     check_accelerate_default_config()
     check_user_token()
     if cfg.chat_template == "chatml" and cfg.default_system_message:

@@ -24,11 +24,16 @@ from liger_kernel.transformers.swiglu import LigerSwiGLUMLP
 
 from axolotl.integrations.base import BasePlugin
 
+from .args import LigerArgs  # pylint: disable=unused-import. # noqa: F401
+
 
 class LigerPlugin(BasePlugin):
     """
     Plugin for LIGER integraton with Axolotl.
     """
+
+    def get_input_args(self):
+        return "axolotl.integrations.liger.LigerArgs"
 
     def pre_model_load(self, cfg):
         if cfg.model_config_type == "llama":

@@ -58,6 +58,11 @@ class BasePlugin:
         None
         """
 
+    def get_input_args(self):
+        """
+        Returns a pydantic model for the plugin's input arguments.
+        """
+
     def pre_model_load(self, cfg):
         """
         Performs actions before the model is loaded.
@@ -213,14 +218,14 @@ class PluginManager:
         return cls._instance
 
     @staticmethod
-    def get_instance():
+    def get_instance() -> "PluginManager":
         """
         Returns the singleton instance of PluginManager.
         If the instance doesn't exist, it creates a new one.
         """
         if PluginManager._instance is None:
             PluginManager()
-        return PluginManager._instance
+        return PluginManager._instance  # type: ignore
 
     def register(self, plugin_name: str):
         """
@@ -240,6 +245,20 @@ class PluginManager:
             self.plugins.append(plugin)
         except ImportError:
             logging.error(f"Failed to load plugin: {plugin_name}")
+
+    def get_input_args(self):
+        """
+        Returns a list of Pydantic classes for all registered plugins' input arguments.'
+
+        Returns:
+        list[str]: A list of Pydantic classes for all registered plugins' input arguments.'
+        """
+        input_args = []
+        for plugin in self.plugins:
+            input_args_from_plugin = plugin.get_input_args()
+            if input_args_from_plugin is not None:
+                input_args.extend(input_args_from_plugin)
+        return input_args
 
     def pre_model_load(self, cfg):
         """
