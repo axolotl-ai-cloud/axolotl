@@ -2,7 +2,7 @@
 packaging==23.2
 peft==0.12.0
 transformers==4.44.0
-tokenizers==0.20.0
+tokenizers>=0.19.1
 bitsandbytes==0.43.3
 accelerate==0.33.0
 datasets==2.20.0
