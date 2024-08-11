@@ -3,7 +3,7 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 import torch
 from transformers.utils import is_torch_bf16_gpu_available
@@ -210,6 +210,9 @@ def normalize_cfg_datasets(cfg):
 
 
 def validate_config(cfg: DictDefault, capabilities: Optional[dict] = None):
+    AxolotlConfigWCapabilities = AxolotlConfigWCapabilitiesBase
+    AxolotlInputConfig = AxolotlInputConfigBase
+
     if cfg.plugins:
         plugin_manager = PluginManager.get_instance()
         input_args: List[str] = plugin_manager.get_input_args()
@@ -220,12 +223,19 @@ def validate_config(cfg: DictDefault, capabilities: Optional[dict] = None):
             dynamic_input += f"from {plugin_module} import {plugin_cls}\n"
             plugin_classes.append(plugin_cls)
         if dynamic_input:
-            dynamic_input += f"class AxolotlConfigWCapabilities(AxolotlConfigWCapabilitiesBase, {', '.join(plugin_classes)}):\n\n"
-            dynamic_input += f"class AxolotlInputConfig(AxolotlInputConfigBase, {', '.join(plugin_classes)}):\n\n"
-            exec(dynamic_input)  # pylint: disable=exec-used  # nosec B102
-        else:
-            AxolotlConfigWCapabilities = AxolotlConfigWCapabilitiesBase
-            AxolotlInputConfig = AxolotlInputConfigBase
+            dynamic_input += f"class AxolotlConfigWCapabilities(AxolotlConfigWCapabilitiesBase, {', '.join(plugin_classes)}):\n    pass\n"
+            dynamic_input += f"class AxolotlInputConfig(AxolotlInputConfigBase, {', '.join(plugin_classes)}):\n    pass\n"
+
+            namespace: Dict[Any, Any] = {}
+            exec(  # pylint: disable=exec-used  # nosec B102
+                dynamic_input, globals(), namespace
+            )
+            AxolotlInputConfig = namespace[  # pylint: disable=invalid-name
+                "AxolotlInputConfig"
+            ]
+            AxolotlConfigWCapabilities = namespace[  # pylint: disable=invalid-name
+                "AxolotlConfigWCapabilities"
+            ]
 
     if capabilities:
         return DictDefault(

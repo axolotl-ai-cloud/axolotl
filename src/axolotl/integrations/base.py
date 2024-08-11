@@ -257,7 +257,7 @@ class PluginManager:
         for plugin in self.plugins:
             input_args_from_plugin = plugin.get_input_args()
             if input_args_from_plugin is not None:
-                input_args.extend(input_args_from_plugin)
+                input_args.append(input_args_from_plugin)
         return input_args
 
     def pre_model_load(self, cfg):
