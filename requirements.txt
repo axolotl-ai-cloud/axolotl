@@ -1,18 +1,18 @@
 --extra-index-url https://huggingface.github.io/autogptq-index/whl/cu118/
 packaging==23.2
 peft==0.12.0
-transformers==4.43.4
-tokenizers==0.19.1
+transformers==4.44.0
+tokenizers>=0.19.1
 bitsandbytes==0.43.3
-accelerate==0.32.0
+accelerate==0.33.0
+datasets==2.20.0
 deepspeed==0.14.4
 pydantic==2.6.3
 addict
 fire
 PyYAML>=6.0
 requests
-datasets==2.19.1
-flash-attn==2.6.2
+flash-attn==2.6.3
 sentencepiece
 wandb
 einops
@@ -37,8 +37,8 @@ autoawq>=0.2.5
 mamba-ssm==1.2.0.post1
 
 # remote filesystems
-s3fs
-gcsfs
+s3fs>=2024.5.0
+gcsfs>=2024.5.0
 # adlfs
 
 trl==0.9.6
