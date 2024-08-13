@@ -20,7 +20,7 @@ To create a new plugin, you need to inherit from the BasePlugin class and implem
 """
 import importlib
 import logging
-from typing import Any, Dict, List
+from typing import List
 
 
 class BasePlugin:
@@ -381,47 +381,3 @@ class PluginManager:
         for plugin in self.plugins:
             callbacks.extend(plugin.add_callbacks_post_trainer(cfg, trainer))
         return callbacks
-
-
-def merge_input_args(  # pylint: disable=unused-argument,invalid-name
-    AxolotlConfigWCapabilitiesBase, AxolotlInputConfigBase
-):
-    """
-    Merges input arguments from registered plugins with the base configurations.
-
-    This function retrieves the input arguments from registered plugins using the PluginManager.
-    It then dynamically creates new classes, AxolotlConfigWCapabilities and AxolotlInputConfig,
-    that inherit from the base configurations and include the input arguments from the plugins.
-
-    Parameters:
-    AxolotlConfigWCapabilitiesBase (class): The base class for the AxolotlConfigWCapabilities configuration.
-    AxolotlInputConfigBase (class): The base class for the AxolotlInputConfig configuration.
-
-    Returns:
-    tuple: A tuple containing the newly created classes, AxolotlConfigWCapabilities and AxolotlInputConfig.
-    """
-
-    plugin_manager = PluginManager.get_instance()
-    input_args: List[str] = plugin_manager.get_input_args()
-    plugin_classes = []
-    dynamic_input = ""
-    for plugin_args in input_args:
-        plugin_module, plugin_cls = plugin_args.rsplit(".", 1)
-        dynamic_input += f"from {plugin_module} import {plugin_cls}\n"
-        plugin_classes.append(plugin_cls)
-    if dynamic_input:
-        dynamic_input += f"class AxolotlConfigWCapabilities(AxolotlConfigWCapabilitiesBase, {', '.join(plugin_classes)}):\n    pass\n"
-        dynamic_input += f"class AxolotlInputConfig(AxolotlInputConfigBase, {', '.join(plugin_classes)}):\n    pass\n"
-
-        namespace: Dict[Any, Any] = {}
-        exec(  # pylint: disable=exec-used  # nosec B102
-            dynamic_input, globals(), namespace
-        )
-        AxolotlInputConfig = namespace[  # pylint: disable=invalid-name
-            "AxolotlInputConfig"
-        ]
-        AxolotlConfigWCapabilities = namespace[  # pylint: disable=invalid-name
-            "AxolotlConfigWCapabilities"
-        ]
-        return AxolotlConfigWCapabilities, AxolotlInputConfig
-    return AxolotlConfigWCapabilitiesBase, AxolotlInputConfigBase

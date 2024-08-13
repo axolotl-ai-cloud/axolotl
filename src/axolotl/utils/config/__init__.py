@@ -8,7 +8,7 @@ from typing import Optional
 import torch
 from transformers.utils import is_torch_bf16_gpu_available
 
-from axolotl.integrations.base import merge_input_args
+from axolotl.integrations.config import merge_input_args
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.config.models.input.v0_4_1 import SUPPORTED_METRICS
 from axolotl.utils.config.models.input.v0_4_1 import (
@@ -217,7 +217,7 @@ def validate_config(cfg: DictDefault, capabilities: Optional[dict] = None):
         (
             AxolotlConfigWCapabilities,  # pylint: disable=invalid-name
             AxolotlInputConfig,  # pylint: disable=invalid-name
-        ) = merge_input_args(AxolotlConfigWCapabilities, AxolotlInputConfig)
+        ) = merge_input_args()
 
     if capabilities:
         return DictDefault(
