@@ -3,12 +3,12 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Optional
 
 import torch
 from transformers.utils import is_torch_bf16_gpu_available
 
-from axolotl.integrations.base import PluginManager
+from axolotl.integrations.base import merge_input_args
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.config.models.input.v0_4_1 import SUPPORTED_METRICS
 from axolotl.utils.config.models.input.v0_4_1 import (
@@ -214,28 +214,10 @@ def validate_config(cfg: DictDefault, capabilities: Optional[dict] = None):
     AxolotlInputConfig = AxolotlInputConfigBase
 
     if cfg.plugins:
-        plugin_manager = PluginManager.get_instance()
-        input_args: List[str] = plugin_manager.get_input_args()
-        plugin_classes = []
-        dynamic_input = ""
-        for plugin_args in input_args:
-            plugin_module, plugin_cls = plugin_args.rsplit(".", 1)
-            dynamic_input += f"from {plugin_module} import {plugin_cls}\n"
-            plugin_classes.append(plugin_cls)
-        if dynamic_input:
-            dynamic_input += f"class AxolotlConfigWCapabilities(AxolotlConfigWCapabilitiesBase, {', '.join(plugin_classes)}):\n    pass\n"
-            dynamic_input += f"class AxolotlInputConfig(AxolotlInputConfigBase, {', '.join(plugin_classes)}):\n    pass\n"
-
-            namespace: Dict[Any, Any] = {}
-            exec(  # pylint: disable=exec-used  # nosec B102
-                dynamic_input, globals(), namespace
-            )
-            AxolotlInputConfig = namespace[  # pylint: disable=invalid-name
-                "AxolotlInputConfig"
-            ]
-            AxolotlConfigWCapabilities = namespace[  # pylint: disable=invalid-name
-                "AxolotlConfigWCapabilities"
-            ]
+        (
+            AxolotlConfigWCapabilities,  # pylint: disable=invalid-name
+            AxolotlInputConfig,  # pylint: disable=invalid-name
+        ) = merge_input_args(AxolotlConfigWCapabilities, AxolotlInputConfig)
 
     if capabilities:
         return DictDefault(
