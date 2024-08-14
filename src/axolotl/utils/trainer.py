@@ -219,7 +219,7 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
 
     # drop samples with where the number of elements with labels not equal to -100 is zero
     def drop_no_trainable_tokens(sample):
-        return torch.sum(sample["labels"] != -100).item() > 0
+        return np.sum(np.array(sample["labels"]) != -100) > 0
 
     train_dataset = train_dataset.filter(
         drop_no_trainable_tokens,
