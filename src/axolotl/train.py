@@ -10,7 +10,7 @@ from typing import Optional, Tuple, Union
 
 import torch
 import transformers.modelcard
-from accelerate import Accelerator
+from accelerate import Accelerator, PartialState
 from accelerate.logging import get_logger
 from datasets import Dataset
 from peft import PeftModel
@@ -213,7 +213,8 @@ def train(
     # only save on rank 0, otherwise it corrupts output on multi-GPU when multiple processes attempt to write the same file
     if cfg.fsdp:
         if state_dict_type == "FULL_STATE_DICT" and cfg.fsdp_save_efficient:
-            save_sharded_fsdp_model(trainer.model, cfg.output_dir)
+            if PartialState().is_main_process:
+                save_sharded_fsdp_model(trainer.model, cfg.output_dir)
         else:
             trainer.save_model(cfg.output_dir)
     elif cfg.deepspeed and is_deepspeed_zero3_enabled():
