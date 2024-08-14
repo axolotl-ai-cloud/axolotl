@@ -614,6 +614,8 @@ class AxolotlInputConfig(
     flash_attn_fuse_mlp: Optional[bool] = None
     flash_optimum: Optional[bool] = None
 
+    eager_attention: Optional[bool] = None
+
     unsloth_cross_entropy_loss: Optional[bool] = None
     unsloth_lora_mlp: Optional[bool] = None
     unsloth_lora_qkv: Optional[bool] = None
