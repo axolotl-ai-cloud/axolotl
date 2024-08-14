@@ -71,16 +71,21 @@ def save_sharded_fsdp_model(model, output_dir, chunk_size=1024 * 1024 * 1024):
         print(f"Saved final chunk {chunk_id} to {chunk_file}")
 
     # go back and rename weight_map files to model-{chunk_id:05d}-of-{num_chunks:05d}.safetensors
+    print(metadata["weight_map"])
     for name, filename in metadata["weight_map"].items():
         chunk_id = int(filename.split("-")[1].split(".")[0])
         metadata["weight_map"][
             name
         ] = f"model-{chunk_id:05d}-of-{metadata['metadata']['num_chunks']:05d}.safetensors"
         # rename the files already saved to disk in the output directory
-        os.rename(
-            os.path.join(output_dir, filename),
-            os.path.join(output_dir, metadata["weight_map"][name]),
-        )
+        print(f"Renaming {filename} to {metadata['weight_map'][name]}")
+        try:
+            os.rename(
+                os.path.join(output_dir, filename),
+                os.path.join(output_dir, metadata["weight_map"][name]),
+            )
+        except FileNotFoundError:
+            print(f"File {filename} not found, skipping rename")
 
     with open(
         os.path.join(output_dir, "model.safetensors.metadata.json"),
