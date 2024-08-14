@@ -626,6 +626,10 @@ class AxolotlInputConfig(
     deepspeed: Optional[Union[str, Dict[str, Any]]] = None
     fsdp: Optional[List[str]] = None
     fsdp_config: Optional[Dict[str, Any]] = None
+    fsdp_final_state_dict_type: Optional[
+        Literal["FULL_STATE_DICT", "LOCAL_STATE_DICT", "SHARDED_STATE_DICT"]
+    ] = None
+    fsdp_save_efficient: Optional[bool] = None
 
     val_set_size: Optional[float] = Field(default=0.0)
 

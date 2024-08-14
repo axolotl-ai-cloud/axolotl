@@ -24,6 +24,7 @@ from axolotl.logging_config import configure_logging
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.freeze import freeze_layers_except
 from axolotl.utils.models import load_model, load_tokenizer
+from axolotl.utils.save import save_sharded_fsdp_model
 from axolotl.utils.trainer import setup_trainer
 
 try:
@@ -194,9 +195,12 @@ def train(
         if hasattr(module, "_post_training"):
             module._post_training(model, name)  # pylint: disable=protected-access
 
+    state_dict_type = "FULL_STATE_DICT"
     if trainer.is_fsdp_enabled:
-        trainer.accelerator.state.fsdp_plugin.set_state_dict_type("FULL_STATE_DICT")
-        LOG.info("Set FSDP state dict type to FULL_STATE_DICT for saving.")
+        if cfg.fsdp_final_state_dict_type:
+            state_dict_type = cfg.fsdp_final_state_dict_type
+        trainer.accelerator.state.fsdp_plugin.set_state_dict_type(state_dict_type)
+        LOG.info(f"Set FSDP state dict type to {state_dict_type} for saving.")
 
     if cfg.relora_steps:
         if cfg.adapter == "lora" and not (cfg.load_in_4bit or cfg.load_in_8bit):
@@ -208,7 +212,10 @@ def train(
     # TODO do we need this fix? https://huggingface.co/docs/accelerate/usage_guides/fsdp#saving-and-loading
     # only save on rank 0, otherwise it corrupts output on multi-GPU when multiple processes attempt to write the same file
     if cfg.fsdp:
-        trainer.save_model(cfg.output_dir)
+        if state_dict_type == "FULL_STATE_DICT" and cfg.fsdp_save_efficient:
+            save_sharded_fsdp_model(trainer.model, cfg.output_dir)
+        else:
+            trainer.save_model(cfg.output_dir)
     elif cfg.deepspeed and is_deepspeed_zero3_enabled():
         # Copied over from: https://github.com/huggingface/accelerate/blob/5ae611118057232f441055f7ef9ba0b0f2b8d533/docs/source/usage_guides/deepspeed.md#saving-and-loading
         trainer.accelerator.wait_for_everyone()
