@@ -17,7 +17,7 @@ def save_sharded_fsdp_model(model, output_dir, chunk_size=1024 * 1024 * 1024):
         "chunks": [],
     }
 
-    chunk_id = 0
+    chunk_id = 1
     buffer = {}
     buffer_size = 0
     chunk_tensor_count = 0
@@ -72,7 +72,7 @@ def save_sharded_fsdp_model(model, output_dir, chunk_size=1024 * 1024 * 1024):
 
     # go back and rename weight_map files to model-{chunk_id:05d}-of-{num_chunks:05d}.safetensors
     for name, filename in metadata["weight_map"].items():
-        chunk_id = int(filename.split("-")[1])
+        chunk_id = int(filename.split("-")[1].split(".")[0])
         metadata["weight_map"][
             name
         ] = f"model-{chunk_id:05d}-of-{metadata['metadata']['num_chunks']:05d}.safetensors"
