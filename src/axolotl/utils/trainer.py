@@ -442,8 +442,7 @@ def prepare_optim_env(cfg):
             stage = deepspeed_config.get("zero_optimization", {}).get("stage", None)
         setup_deepspeed_env(cfg, stage=stage)
 
-    if cfg.torch_compile:
-        setup_torch_compile_env(cfg)
+    setup_torch_compile_env(cfg)
 
     if (cfg.bf16 == "auto" and is_torch_bf16_gpu_available()) or cfg.bf16 is True:
         os.environ["ACCELERATE_MIXED_PRECISION"] = "bf16"
