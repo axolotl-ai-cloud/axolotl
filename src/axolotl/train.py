@@ -10,11 +10,13 @@ from typing import Optional, Tuple, Union
 
 import torch
 import transformers.modelcard
-from accelerate import Accelerator, PartialState
+from accelerate import Accelerator
 from accelerate.logging import get_logger
 from datasets import Dataset
 from peft import PeftModel
 from pkg_resources import get_distribution  # type: ignore
+from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+from torch.distributed.fsdp import StateDictType
 from transformers import PreTrainedModel, PreTrainedTokenizer
 from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
 
@@ -24,7 +26,6 @@ from axolotl.logging_config import configure_logging
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.freeze import freeze_layers_except
 from axolotl.utils.models import load_model, load_tokenizer
-from axolotl.utils.save import save_sharded_fsdp_model
 from axolotl.utils.trainer import setup_trainer
 
 try:
@@ -212,10 +213,14 @@ def train(
     # TODO do we need this fix? https://huggingface.co/docs/accelerate/usage_guides/fsdp#saving-and-loading
     # only save on rank 0, otherwise it corrupts output on multi-GPU when multiple processes attempt to write the same file
     if cfg.fsdp:
-        if state_dict_type == "FULL_STATE_DICT" and cfg.fsdp_save_efficient:
-            if PartialState().is_main_process:
-                save_sharded_fsdp_model(trainer.model, cfg.output_dir)
-        else:
+        if state_dict_type == "SHARDED_STATE_DICT":
+            with FSDP.state_dict_type(model, StateDictType.SHARDED_STATE_DICT):
+                state_dict = trainer.accelerator.get_state_dict(trainer.model)
+                if trainer.args.should_save:
+                    trainer._save(  # pylint: disable=protected-access
+                        cfg.output_dir, state_dict=state_dict
+                    )
+        elif state_dict_type == "FULL_STATE_DICT":
             trainer.save_model(cfg.output_dir)
     elif cfg.deepspeed and is_deepspeed_zero3_enabled():
         # Copied over from: https://github.com/huggingface/accelerate/blob/5ae611118057232f441055f7ef9ba0b0f2b8d533/docs/source/usage_guides/deepspeed.md#saving-and-loading
