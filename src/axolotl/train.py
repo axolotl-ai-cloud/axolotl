@@ -215,7 +215,7 @@ def train(
     if cfg.fsdp:
         if state_dict_type == "SHARDED_STATE_DICT":
             with FSDP.state_dict_type(model, StateDictType.SHARDED_STATE_DICT):
-                state_dict = trainer.accelerator.get_state_dict(trainer.model)
+                state_dict = trainer.model.state_dict()
                 if trainer.args.should_save:
                     trainer._save(  # pylint: disable=protected-access
                         cfg.output_dir, state_dict=state_dict
