@@ -628,6 +628,9 @@ class AxolotlInputConfig(
     deepspeed: Optional[Union[str, Dict[str, Any]]] = None
     fsdp: Optional[List[str]] = None
     fsdp_config: Optional[Dict[str, Any]] = None
+    fsdp_final_state_dict_type: Optional[
+        Literal["FULL_STATE_DICT", "LOCAL_STATE_DICT", "SHARDED_STATE_DICT"]
+    ] = None
 
     val_set_size: Optional[float] = Field(default=0.0)
 
@@ -1145,6 +1148,20 @@ class AxolotlInputConfig(
         ):
             raise ValueError(
                 f"FSDP Offload not compatible with {data.get('optimizer')}"
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_fsdp_sharded_state_dict_w_safetensors(cls, data):
+        if (
+            data.get("fsdp")
+            and data.get("save_safetensors")
+            and data.get("fsdp_config")
+            and data["fsdp_config"].get("fsdp_state_dict_type") == "SHARDED_STATE_DICT"
+        ):
+            raise ValueError(
+                "FSDP SHARDED_STATE_DICT not compatible with save_safetensors"
             )
         return data
 
