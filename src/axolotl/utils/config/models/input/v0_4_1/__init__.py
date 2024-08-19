@@ -1151,6 +1151,20 @@ class AxolotlInputConfig(
 
     @model_validator(mode="before")
     @classmethod
+    def check_fsdp_sharded_state_dict_w_safetensors(cls, data):
+        if (
+            data.get("fsdp")
+            and data.get("save_safetensors")
+            and data.get("fsdp_config")
+            and data["fsdp_config"].get("fsdp_state_dict_type") == "SHARDED_STATE_DICT"
+        ):
+            raise ValueError(
+                "FSDP SHARDED_STATE_DICT not compatible with save_safetensors"
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def check_causal_lm_evals(cls, data):
         if data.get("do_causal_lm_eval") and data.get("eval_sample_packing"):
             raise ValueError(
