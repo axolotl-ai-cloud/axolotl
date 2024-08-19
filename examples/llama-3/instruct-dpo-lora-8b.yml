@@ -6,7 +6,6 @@ load_in_8bit: true
 load_in_4bit: false
 strict: false
 
-chat_template: llama3
 rl: dpo
 datasets:
   - path: fozziethebeat/alpaca_messages_2k_dpo_test
