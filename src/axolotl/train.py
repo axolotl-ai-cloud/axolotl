@@ -12,11 +12,10 @@ import torch
 import transformers.modelcard
 from accelerate import Accelerator
 from accelerate.logging import get_logger
+from accelerate.utils import save_fsdp_model
 from datasets import Dataset
 from peft import PeftModel
 from pkg_resources import get_distribution  # type: ignore
-from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
-from torch.distributed.fsdp import StateDictType
 from transformers import PreTrainedModel, PreTrainedTokenizer
 from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
 
@@ -213,13 +212,16 @@ def train(
     # TODO do we need this fix? https://huggingface.co/docs/accelerate/usage_guides/fsdp#saving-and-loading
     # only save on rank 0, otherwise it corrupts output on multi-GPU when multiple processes attempt to write the same file
     if cfg.fsdp:
-        if state_dict_type == "SHARDED_STATE_DICT":
-            with FSDP.state_dict_type(model, StateDictType.SHARDED_STATE_DICT):
-                state_dict = trainer.model.state_dict()
-                if trainer.args.should_save:
-                    trainer._save(  # pylint: disable=protected-access
-                        cfg.output_dir, state_dict=state_dict
-                    )
+        if (
+            state_dict_type == "SHARDED_STATE_DICT"
+            and cfg.fsdp_config.fsdp_state_dict_type == "SHARDED_STATE_DICT"
+        ):
+            save_fsdp_model(
+                trainer.accelerator.state.fsdp_plugin,
+                trainer.accelerator,
+                trainer.model,
+                cfg.output_dir,
+            )
         elif state_dict_type == "FULL_STATE_DICT":
             trainer.save_model(cfg.output_dir)
     elif cfg.deepspeed and is_deepspeed_zero3_enabled():

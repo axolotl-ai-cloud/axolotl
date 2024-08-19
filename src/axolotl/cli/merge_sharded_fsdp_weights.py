@@ -1,27 +1,56 @@
 """
 This module provides a CLI to merge sharded FSDP model checkpoints into a single combined checkpoint
 """
+import json
 import logging
+import os
 import shutil
 from pathlib import Path
 from typing import Dict, Union
 
-from accelerate.utils import SAFE_WEIGHTS_NAME, WEIGHTS_NAME, is_torch_version, save
+import fire
+import torch
+import torch.distributed.checkpoint as dist_cp
+import torch.distributed.checkpoint.format_utils as dist_cp_format_utils
+import transformers
+from accelerate.utils import (
+    SAFE_WEIGHTS_INDEX_NAME,
+    SAFE_WEIGHTS_NAME,
+    WEIGHTS_INDEX_NAME,
+    WEIGHTS_NAME,
+    is_torch_version,
+)
+from dotenv import load_dotenv
+from huggingface_hub import split_torch_state_dict_into_shards
+from safetensors.torch import save_file as safe_save_file
+from torch.distributed.checkpoint.format_utils import _EmptyStateDictLoadPlanner
+
+from axolotl.cli import load_cfg, print_axolotl_text_art
+from axolotl.common.cli import TrainerCliArgs
 
 LOG = logging.getLogger("axolotl.cli.merge_sharded_fsdp_weights")
 
 
+class BFloat16CastPlanner(_EmptyStateDictLoadPlanner):
+    """
+    A custom planner to cast tensors to bfloat16 on the fly during loading.
+    """
+
+    def commit_tensor(self, read_item, tensor):  # pylint: disable=unused-argument
+        tensor.copy_(tensor.to(torch.bfloat16))
+
+
 def _distributed_checkpoint_to_merged_weights(
-    checkpoint_dir: Union[str, Path], save_path: str, safe_serialization: bool = True
+    checkpoint_dir: Union[str, Path],
+    save_path: str,
+    safe_serialization: bool = False,
+    max_shard_size: str = "5GB",
 ):
     """
     Passthrough to `torch.distributed.checkpoint.format_utils.dcp_to_torch_save`
 
     Will save under `save_path` as either `model.safetensors` or `pytorch_model.bin`.
     """
-    # Note: We import here to reduce import time from general modules, and isolate outside dependencies
-    import torch.distributed.checkpoint as dist_cp
-    import torch.distributed.checkpoint.format_utils as dist_cp_format_utils
 
     state_dict: Dict = {}
     save_path_ = Path(save_path)
@@ -29,26 +58,65 @@ def _distributed_checkpoint_to_merged_weights(
     dist_cp_format_utils._load_state_dict(  # pylint: disable=protected-access
         state_dict,
         storage_reader=dist_cp.FileSystemReader(checkpoint_dir),
-        planner=dist_cp_format_utils._EmptyStateDictLoadPlanner(),  # pylint: disable=protected-access
+        planner=BFloat16CastPlanner(),  # pylint: disable=protected-access
         no_dist=True,
-    )
-    save_path_ = (
-        save_path_ / SAFE_WEIGHTS_NAME
-        if safe_serialization
-        else save_path_ / WEIGHTS_NAME
     )
 
     # To handle if state is a dict like {model: {...}}
     if len(state_dict.keys()) == 1:
         state_dict = state_dict[list(state_dict)[0]]
-    save(state_dict, save_path_, safe_serialization=safe_serialization)
+
+    # Ensure all tensors are in bfloat16
+    for key, value in state_dict.items():
+        if isinstance(value, torch.Tensor) and value.dtype != torch.bfloat16:
+            state_dict[key] = value.to(torch.bfloat16)
+
+    weights_name = SAFE_WEIGHTS_NAME if safe_serialization else WEIGHTS_NAME
+
+    filename_pattern = weights_name.replace(".bin", "{suffix}.bin").replace(
+        ".safetensors", "{suffix}.safetensors"
+    )
+    state_dict_split = split_torch_state_dict_into_shards(
+        state_dict, filename_pattern=filename_pattern, max_shard_size=max_shard_size
+    )
+    # Save index if sharded
+    index = None
+    if state_dict_split.is_sharded:
+        index = {
+            "metadata": state_dict_split.metadata,
+            "weight_map": state_dict_split.tensor_to_filename,
+        }
+
+    # Save the model
+    filename_to_tensors = state_dict_split.filename_to_tensors.items()
+
+    for shard_file, tensors in filename_to_tensors:
+        shard = {tensor: state_dict[tensor] for tensor in tensors}
+
+        if safe_serialization:
+            safe_save_file(
+                shard, os.path.join(save_path_, shard_file), metadata={"format": "pt"}
+            )
+        else:
+            torch.save(shard, os.path.join(save_path_, shard_file))
+
+    if index is not None:
+        save_index_file = (
+            SAFE_WEIGHTS_INDEX_NAME if safe_serialization else WEIGHTS_INDEX_NAME
+        )
+        save_index_file = os.path.join(save_path_, save_index_file)
+        # Save the index as well
+        with open(save_index_file, "w", encoding="utf-8") as fout:
+            content = json.dumps(index, indent=2, sort_keys=True) + "\n"
+            fout.write(content)
+
     return save_path_
 
 
 def merge_fsdp_weights(
     checkpoint_dir: str,
     output_path: str,
-    safe_serialization: bool = True,
+    safe_serialization: bool = False,
     remove_checkpoint_dir: bool = False,
 ):
     """
@@ -107,3 +175,30 @@ def merge_fsdp_weights(
             LOG.info(f"Removing old checkpoint directory {checkpoint_dir_}")
             shutil.rmtree(checkpoint_dir_)
     state.wait_for_everyone()
+
+
+def do_cli(config: Path = Path("examples/"), **kwargs):
+    # pylint: disable=duplicate-code
+    print_axolotl_text_art()
+    parser = transformers.HfArgumentParser((TrainerCliArgs))
+    parsed_cli_args, _ = parser.parse_args_into_dataclasses(
+        return_remaining_strings=True
+    )
+    parsed_cli_args.merge_lora = True
+
+    parsed_cfg = load_cfg(
+        config,
+        **kwargs,
+    )
+
+    fsdp_dir = Path(parsed_cfg.output_dir) / "pytorch_model_fsdp_0"
+    merge_fsdp_weights(
+        checkpoint_dir=str(fsdp_dir),
+        output_path=str(Path(parsed_cfg.output_dir) / "merged"),
+        safe_serialization=True,
+    )
+
+
+if __name__ == "__main__":
+    load_dotenv()
+    fire.Fire(do_cli)
