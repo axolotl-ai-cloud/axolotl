@@ -344,6 +344,8 @@ class ModelInputConfig(BaseModel):
     )
     trust_remote_code: Optional[bool] = None
 
+    model_kwargs: Optional[Dict[str, Any]] = None
+
     @field_validator("trust_remote_code")
     @classmethod
     def hint_trust_remote_code(cls, trust_remote_code):
@@ -636,6 +638,8 @@ class AxolotlInputConfig(
     flash_attn_fuse_qkv: Optional[bool] = None
     flash_attn_fuse_mlp: Optional[bool] = None
     flash_optimum: Optional[bool] = None
+
+    eager_attention: Optional[bool] = None
 
     unsloth_cross_entropy_loss: Optional[bool] = None
     unsloth_lora_mlp: Optional[bool] = None
@@ -1299,6 +1303,19 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 "sample_packing & torch sdpa with bf16 is unsupported may results in 0.0 loss. "
                 "This may work on H100s."
             )
+
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_hopper_8bit_lora(cls, data):
+        is_sm_90: bool = (
+            data["capabilities"]
+            and data["capabilities"].get("compute_capability") == "sm_90"
+        )
+        if data.get("adapter") and data.get("load_in_8bit") and is_sm_90:
+            # see https://github.com/bitsandbytes-foundation/bitsandbytes/issues/538#issuecomment-2262945464
+            raise ValueError("8-bit LoRA is not supported on Hopper GPUs")
 
         return data
 
