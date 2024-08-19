@@ -323,8 +323,10 @@ class LoraConfig(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def validate_adapter(cls, data):
-        if not data.get("adapter") and (
-            data.get("load_in_8bit") or data.get("load_in_4bit")
+        if (
+            not data.get("adapter")
+            and not data.get("inference")
+            and (data.get("load_in_8bit") or data.get("load_in_4bit"))
         ):
             raise ValueError(
                 "load_in_8bit and load_in_4bit are not supported without setting an adapter."
