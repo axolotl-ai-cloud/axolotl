@@ -30,6 +30,7 @@ Features:
   - [Conda/Pip venv](#condapip-venv)
   - [Cloud GPU](#cloud-gpu) - Latitude.sh, JarvisLabs, RunPod
   - [Bare Metal Cloud GPU](#bare-metal-cloud-gpu)
+  - [ROCm (Experimental)](#rocm-experimental)
   - [Windows](#windows)
   - [Mac](#mac)
   - [Google Colab](#google-colab)
@@ -252,6 +253,45 @@ Use a Deeplearning linux OS with cuda and pytorch installed. Then follow instruc
 Make sure to run the below to uninstall xla.
 ```bash
 pip uninstall -y torch_xla[tpu]
+```
+
+</details>
+
+#### ROCm (Experimental)
+
+<details>
+
+<summary>Click to Expand</summary>
+
+**Axolotl is *not* maintained for ROCm use.**
+
+This is an experimental setup guide for RDNA3 on ROCm 6.1 which has been tested by one person Ubuntu 22.04.4 with an RX 7900 XTX. *Your results may vary.*
+
+There is no Flash Attention support except on [MI200 & MI300 GPUs using the ROCm fork](https://github.com/ROCm/flash-attention), so will need to use `sdp_attention: true` if you wish to use sample packing during training.
+
+```bash
+# Initial setup for axolotl
+pip install packaging ninja
+pip install -e '.[deepspeed]'
+
+# Remove PyTorch, bitsandbytes, & xformers so we can replace them with ROCm versions (no xformers though)
+pip uninstall -y torch bitsandbytes xformers
+pip install torch --index-url https://download.pytorch.org/whl/rocm6.0
+
+# Setup the bitsandbytes fork by arlo-phoenix
+git clone -b rocm https://github.com/arlo-phoenix/bitsandbytes-rocm-5.6.git bitsandbytes
+cd bitsandbytes
+
+# Replace this with the correct folder name if you aren't on ROCm 6.1
+export ROCM_HOME=/opt/rocm-6.1.0
+
+# Replace this with the correct target if you aren't using an RDNA3 GPU
+make hip ROCM_TARGET=gfx1100
+pip install .
+
+# Completely optional; You can uninstall nvidia related packages to save space
+cd ..
+pip uninstall -y nvidia-cublas-cu12 nvidia-cuda-cupti-cu12 nvidia-cuda-nvrtc-cu12 nvidia-cuda-runtime-cu12 nvidia-cudnn-cu12 nvidia-cufft-cu12 nvidia-curand-cu12 nvidia-cusolver-cu12 nvidia-cusparse-cu12 nvidia-nccl-cu12 nvidia-nvjitlink-cu12 nvidia-nvtx-cu12
 ```
 
 </details>
