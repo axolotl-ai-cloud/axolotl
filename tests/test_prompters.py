@@ -47,7 +47,7 @@ class AlpacaPrompterTest(unittest.TestCase):
         res = next(
             prompter.build_prompt("tell me a joke about the following", "alpacas")
         )
-        assert """<|system|>Below is an instruction that describes a task, paired with an input that provides further context. Write a response that appropriately completes the request.<|end|>"""
+        assert """<|system|>Below is an instruction that describes a task, paired with an input that provides further context. Write a response that appropriately completes the request.<|end|>""" in res
     
 
     def test_prompt_style_w_chat(self):
