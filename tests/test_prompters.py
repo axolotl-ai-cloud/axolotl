@@ -44,11 +44,16 @@ class AlpacaPrompterTest(unittest.TestCase):
 
     def test_prompt_style_w_phi(self):
         prompter = AlpacaPrompter(prompt_style=PromptStyle.PHI.value)
-        res = next(
-            prompter.build_prompt("tell me a joke about the following", "alpacas")
+        res = next(prompter.build_prompt("tell me a joke about the following"))
+        assert (
+            """<|system|>
+Below is an instruction that describes a task. Write a response that appropriately completes the request.<|end|>
+<|user|>
+tell me a joke about the following<|end|>
+<|assistant|>
+"""
+            == res
         )
-        assert """<|system|>Below is an instruction that describes a task, paired with an input that provides further context. Write a response that appropriately completes the request.<|end|>""" in res
-    
 
     def test_prompt_style_w_chat(self):
         prompter = AlpacaPrompter(prompt_style=PromptStyle.CHAT.value)
