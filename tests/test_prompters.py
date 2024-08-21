@@ -42,6 +42,14 @@ class AlpacaPrompterTest(unittest.TestCase):
         assert "USER:" not in res
         assert "ASSISTANT:" not in res
 
+    def test_prompt_style_w_phi(self):
+        prompter = AlpacaPrompter(prompt_style=PromptStyle.PHI.value)
+        res = next(
+            prompter.build_prompt("tell me a joke about the following", "alpacas")
+        )
+        assert """<|system|>Below is an instruction that describes a task, paired with an input that provides further context. Write a response that appropriately completes the request.<|end|>"""
+    
+
     def test_prompt_style_w_chat(self):
         prompter = AlpacaPrompter(prompt_style=PromptStyle.CHAT.value)
         res = next(
