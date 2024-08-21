@@ -35,7 +35,7 @@ class TestEncodePretraining(unittest.TestCase):
                 "hello, hello",
             ]
         }
-        result = encode_pretraining(self.tokenizer, self.max_tokens, examples["text"])
+        result = encode_pretraining(self.tokenizer, self.max_tokens, examples)
 
         self.assertEqual(len(result["input_ids"]), 3)
 

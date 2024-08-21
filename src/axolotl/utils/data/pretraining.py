@@ -18,10 +18,10 @@ LOG = logging.getLogger("axolotl")
 
 
 def encode_pretraining(
-    tokenizer: PreTrainedTokenizerBase, max_tokens: int, examples: List[str]
+    tokenizer: PreTrainedTokenizerBase, max_tokens: int, examples: Dict[str, List]
 ) -> Dict[str, List]:
     res = tokenizer(
-        examples,
+        examples["text"],
         truncation=True,
         max_length=max_tokens - 2,
         add_special_tokens=True,
