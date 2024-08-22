@@ -357,7 +357,7 @@ def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
         "train_on_inputs": cfg.train_on_inputs,
         "sequence_len": cfg.sequence_len,
         "roles_to_train": ds_cfg.get("roles_to_train", ["gpt", "assistant"]),
-        "train_on_eos": ds_cfg.get("train_on_eos", "last"),
+        "train_on_eos": ds_cfg.get("train_on_eos", "turn"),
     }
 
     strategy = ChatTemplateStrategy(
