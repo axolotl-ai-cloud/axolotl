@@ -591,16 +591,10 @@ def load_model(
                 "flash_attention_2"
             )
         else:
-            if model_config.model_type in SUPPORTED_MULTIPACK_MODEL_TYPES:
-                model_kwargs["attn_implementation"] = "flash_attention_2"
-                model_config._attn_implementation = (  # pylint: disable=protected-access
-                    "flash_attention_2"
-                )
-            else:
-                model_kwargs["attn_implementation"] = "eager"
-                model_config._attn_implementation = (  # pylint: disable=protected-access
-                    "eager"
-                )
+            model_kwargs["attn_implementation"] = "flash_attention_2"
+            model_config._attn_implementation = (  # pylint: disable=protected-access
+                "flash_attention_2"
+            )
     elif cfg.sdp_attention:
         model_kwargs["attn_implementation"] = "sdpa"
         model_config._attn_implementation = "sdpa"  # pylint: disable=protected-access
