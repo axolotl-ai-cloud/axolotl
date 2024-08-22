@@ -6,5 +6,5 @@
 - ✅ qlora w/ deepspeed Zero-3 needs at least 2x GPUs and 67GiB VRAM (wtf?)
 - ✅ qlora single-gpu, ~51GiB VRAM
 - ✅ multipack
-- ❓ FSDP
+- ✅ FSDP
 - ❓ 8-bit LoRA

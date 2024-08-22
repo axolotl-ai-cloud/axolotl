@@ -1846,6 +1846,8 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         )
         if self.cfg.fsdp:
             ensure_dtype(dpo_trainer.model, dtype=self.cfg.torch_dtype)
+            if self.cfg.rl in ["dpo", "ipo"] and dpo_trainer.ref_model:
+                ensure_dtype(dpo_trainer.ref_model, dtype=self.cfg.torch_dtype)
 
         dpo_trainer = self.hook_post_create_trainer(dpo_trainer)
         for callback in self.get_post_trainer_create_callbacks(dpo_trainer):

@@ -1,0 +1,116 @@
+name: Tests Nightly against upstream main
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * *'  # Runs at 00:00 UTC every day
+
+jobs:
+  pre-commit:
+    name: pre-commit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+          cache: 'pip' # caching pip dependencies
+      - uses: pre-commit/action@v3.0.0
+        env:
+          SKIP: no-commit-to-branch
+
+  pytest:
+    name: PyTest
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python_version: ["3.10", "3.11"]
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python_version }}
+          cache: 'pip' # caching pip dependencies
+
+      - name: Update requirements.txt
+        run: |
+          sed -i 's#^transformers.*#transformers @ git+https://github.com/huggingface/transformers.git@main#' requirements.txt
+          sed -i 's#^peft.*#peft @ git+https://github.com/huggingface/peft.git@main#' requirements.txt
+          sed -i 's#^accelerate.*#accelerate @ git+https://github.com/huggingface/accelerate.git@main#' requirements.txt
+          sed -i 's#^bitsandbytes.*#bitsandbytes @ git+https://github.com/bitsandbytes-foundation/bitsandbytes.git@main#' requirements.txt
+
+      - name: Install dependencies
+        run: |
+          pip3 install --upgrade pip
+          pip3 install --upgrade packaging
+          pip3 install -U -e .
+          pip3 install -r requirements-tests.txt
+
+      - name: Run tests
+        run: |
+          pytest --ignore=tests/e2e/ tests/
+
+      - name: cleanup pip cache
+        run: |
+          find "$(pip cache dir)/http-v2" -type f -mtime +14 -exec rm {} \;
+
+  docker-e2e-tests:
+    if: github.repository_owner == 'axolotl-ai-cloud'
+    # this job needs to be run on self-hosted GPU runners...
+    runs-on: [self-hosted, modal]
+    timeout-minutes: 60
+    needs: [pre-commit, pytest]
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - cuda: 121
+            cuda_version: 12.1.1
+            python_version: "3.10"
+            pytorch: 2.3.1
+            num_gpus: 1
+            axolotl_extras: mamba-ssm
+            nightly_build: "true"
+          - cuda: 121
+            cuda_version: 12.1.1
+            python_version: "3.11"
+            pytorch: 2.3.1
+            num_gpus: 1
+            axolotl_extras: mamba-ssm
+            nightly_build: "true"
+          - cuda: 124
+            cuda_version: 12.4.1
+            python_version: "3.11"
+            pytorch: 2.4.0
+            num_gpus: 1
+            axolotl_extras:
+            nightly_build: "true"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Install Modal
+        run: |
+          python -m pip install --upgrade pip
+          pip install modal==0.63.64 jinja2
+      - name: Update env vars
+        run: |
+          echo "BASE_TAG=main-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}" >> $GITHUB_ENV
+          echo "PYTORCH_VERSION=${{ matrix.pytorch}}" >> $GITHUB_ENV
+          echo "AXOLOTL_ARGS=${{ matrix.axolotl_args}}" >> $GITHUB_ENV
+          echo "AXOLOTL_EXTRAS=${{ matrix.axolotl_extras}}" >> $GITHUB_ENV
+          echo "CUDA=${{ matrix.cuda }}" >> $GITHUB_ENV
+          echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
+          echo "NIGHTLY_BUILD=${{ matrix.nightly_build }}" >> $GITHUB_ENV
+      - name: Run tests job on Modal
+        run: |
+          modal run cicd.tests

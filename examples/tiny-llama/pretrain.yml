@@ -9,9 +9,9 @@ strict: false
 
 max_steps: 200
 pretraining_dataset:
-  path: c4
-  name: en
-  type: pretrain
+  - path: allenai/c4
+    name: en
+    type: pretrain
 dataset_prepared_path:
 val_set_size: 0.0
 output_dir: ./outputs/model-out

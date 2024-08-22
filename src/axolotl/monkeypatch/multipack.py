@@ -17,6 +17,7 @@ SUPPORTED_MULTIPACK_MODEL_TYPES = [
     "qwen2_moe",
     "falcon",
     "phi",
+    "phi3",
     "gemma",
     "gemma2",
     "gemmoe",
