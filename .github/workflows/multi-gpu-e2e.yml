@@ -18,6 +18,13 @@ jobs:
             pytorch: 2.3.1
             axolotl_extras:
             num_gpus: 2
+          - cuda: 121
+            cuda_version: 12.1.1
+            python_version: "3.11"
+            pytorch: 2.3.1
+            axolotl_extras:
+            num_gpus: 2
+            nightly_build: "true"
     runs-on: [self-hosted, modal]
     timeout-minutes: 120
     steps:
@@ -39,6 +46,7 @@ jobs:
           echo "AXOLOTL_EXTRAS=${{ matrix.axolotl_extras}}" >> $GITHUB_ENV
           echo "CUDA=${{ matrix.cuda }}" >> $GITHUB_ENV
           echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
+          echo "NIGHTLY_BUILD=${{ matrix.nightly_build }}" >> $GITHUB_ENV
       - name: Run tests job on Modal
         run: |
           modal run cicd.multigpu

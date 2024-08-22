@@ -1,5 +1,8 @@
 # Axolotl
 
+![tests](https://github.com/axolotl-ai-cloud/axolotl/actions/workflows/tests.yml/badge.svg)
+![multigpu-semi-weekly tests](https://github.com/axolotl-ai-cloud/axolotl/actions/workflows/multi-gpu-e2e.yml/badge.svg)
+
 Axolotl is a tool designed to streamline the fine-tuning of various AI models, offering support for multiple configurations and architectures.
 
 Features:

@@ -28,6 +28,7 @@ df_args = {
     "CUDA": os.environ.get("CUDA", "121"),
     "GITHUB_REF": os.environ.get("GITHUB_REF", "refs/heads/main"),
     "GITHUB_SHA": os.environ.get("GITHUB_SHA", ""),
+    "NIGHTLY_BUILD": os.environ.get("NIGHTLY_BUILD", ""),
 }
 
 dockerfile_contents = df_template.render(**df_args)
