@@ -80,7 +80,7 @@ setup(
     dependency_links=dependency_links,
     extras_require={
         "flash-attn": [
-            "flash-attn==2.6.2",
+            "flash-attn==2.6.3",
         ],
         "fused-dense-lib": [
             "fused-dense-lib  @ git+https://github.com/Dao-AILab/flash-attention@v2.6.2#subdirectory=csrc/fused_dense_lib",
