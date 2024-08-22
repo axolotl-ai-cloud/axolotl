@@ -14,7 +14,7 @@
     "href": "index.html#axolotl-supports",
     "title": "Axolotl",
     "section": "Axolotl supports",
-    "text": "Axolotl supports\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nfp16/fp32\nlora\nqlora\ngptq\ngptq w/flash attn\nflash attn\nxformers attn\n\n\n\n\nllama\n✅\n✅\n✅\n✅\n✅\n✅\n✅\n\n\nMistral\n✅\n✅\n✅\n✅\n✅\n✅\n✅\n\n\nMixtral-MoE\n✅\n✅\n✅\n❓\n❓\n❓\n❓\n\n\nMixtral8X22\n✅\n✅\n✅\n❓\n❓\n❓\n❓\n\n\nPythia\n✅\n✅\n✅\n❌\n❌\n❌\n❓\n\n\ncerebras\n✅\n✅\n✅\n❌\n❌\n❌\n❓\n\n\nbtlm\n✅\n✅\n✅\n❌\n❌\n❌\n❓\n\n\nmpt\n✅\n❌\n❓\n❌\n❌\n❌\n❓\n\n\nfalcon\n✅\n✅\n✅\n❌\n❌\n❌\n❓\n\n\ngpt-j\n✅\n✅\n✅\n❌\n❌\n❓\n❓\n\n\nXGen\n✅\n❓\n✅\n❓\n❓\n❓\n✅\n\n\nphi\n✅\n✅\n✅\n❓\n❓\n❓\n❓\n\n\nRWKV\n✅\n❓\n❓\n❓\n❓\n❓\n❓\n\n\nQwen\n✅\n✅\n✅\n❓\n❓\n❓\n❓\n\n\nGemma\n✅\n✅\n✅\n❓\n❓\n✅\n❓\n\n\n\n✅: supported ❌: not supported ❓: untested",
+    "text": "Axolotl supports\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nfp16/fp32\nlora\nqlora\ngptq\ngptq w/flash attn\nflash attn\nxformers attn\n\n\n\n\nllama\n✅\n✅\n✅\n✅\n✅\n✅\n✅\n\n\nMistral\n✅\n✅\n✅\n✅\n✅\n✅\n✅\n\n\nMixtral-MoE\n✅\n✅\n✅\n❓\n❓\n❓\n❓\n\n\nMixtral8X22\n✅\n✅\n✅\n❓\n❓\n❓\n❓\n\n\nPythia\n✅\n✅\n✅\n❌\n❌\n❌\n❓\n\n\ncerebras\n✅\n✅\n✅\n❌\n❌\n❌\n❓\n\n\nbtlm\n✅\n✅\n✅\n❌\n❌\n❌\n❓\n\n\nmpt\n✅\n❌\n❓\n❌\n❌\n❌\n❓\n\n\nfalcon\n✅\n✅\n✅\n❌\n❌\n❌\n❓\n\n\ngpt-j\n✅\n✅\n✅\n❌\n❌\n❓\n❓\n\n\nXGen\n✅\n❓\n✅\n❓\n❓\n❓\n✅\n\n\nphi\n✅\n✅\n✅\n❓\n❓\n❓\n❓\n\n\nRWKV\n✅\n❓\n❓\n❓\n❓\n❓\n❓\n\n\nQwen\n✅\n✅\n✅\n❓\n❓\n❓\n❓\n\n\nGemma\n✅\n✅\n✅\n❓\n❓\n✅\n❓\n\n\nJamba\n✅\n✅\n✅\n❓\n❓\n✅\n❓\n\n\n\n✅: supported ❌: not supported ❓: untested",
     "crumbs": [
       "Home"
     ]
