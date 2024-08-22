@@ -21,7 +21,7 @@ optimum==1.16.2
 hf_transfer
 colorama
 numba
-numpy>=1.24.4
+numpy>=1.24.4,<=2.0.1
 # qlora things
 evaluate==0.4.1
 scipy
