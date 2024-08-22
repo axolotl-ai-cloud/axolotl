@@ -34,7 +34,7 @@ unsloth_lora_o: true
 ```
 
 These options are composable and can be used with multi-gpu finetuning
-```
+```yaml
 unsloth_cross_entropy_loss: true
 unsloth_rms_norm: true
 unsloth_rope: true
