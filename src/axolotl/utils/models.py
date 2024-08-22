@@ -285,13 +285,16 @@ def load_tokenizer(cfg):
         LOG.debug(f"UNK: {tokenizer.unk_token_id} / {tokenizer.unk_token}")
 
     if cfg.chat_template:
-        chat_template_string = chat_templates(cfg.chat_template)
-        if cfg.default_system_message and cfg.chat_template == "chatml":
-            chat_template_string = chat_template_string.replace(
-                "You are a helpful assistant.", cfg.default_system_message
-            )
+        # "tokenizer" means using the tokenizer default chat template (the one loaded from tokenizer_config.json of the base
+        # model). In this case, we don't want to modify tokenizer.chat_template
+        if cfg.chat_template != "tokenizer":
+            chat_template_string = chat_templates(cfg.chat_template)
+            if cfg.default_system_message and cfg.chat_template == "chatml":
+                chat_template_string = chat_template_string.replace(
+                    "You are a helpful assistant.", cfg.default_system_message
+                )
 
-        tokenizer.chat_template = chat_template_string
+            tokenizer.chat_template = chat_template_string
     else:
         LOG.info(
             "No Chat template selected. Consider adding a chat template for easier inference."
