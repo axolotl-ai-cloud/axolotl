@@ -1102,9 +1102,20 @@ def load_lora(model, cfg, inference=False, config_only=False):
 
 def ensure_dtype(model, dtype=torch.bfloat16):
     for name, module in model.named_modules():
+        weight_mismatch = False
+        bias_mismatch = False
         try:
-            if module.weight.dtype != dtype:
-                print(f"Converting module {name}: {module.weight.dtype} -> {dtype}")
-                module.to(dtype)
+            weight_mismatch = module.weight.dtype != dtype
         except AttributeError:
             pass
+        try:
+            bias_mismatch = module.bias.dtype != dtype
+        except AttributeError:
+            pass
+
+        if weight_mismatch:
+            print(f"Converting module {name}.weight: {module.weight.dtype} -> {dtype}")
+        if bias_mismatch:
+            print(f"Converting module {name}.bias: {module.bias.dtype} -> {dtype}")
+        if weight_mismatch or bias_mismatch:
+            module.to(dtype)
