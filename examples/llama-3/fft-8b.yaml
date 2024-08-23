@@ -1,6 +1,4 @@
-base_model: NousResearch/Meta-Llama-3-8B
-model_type: LlamaForCausalLM
-tokenizer_type: AutoTokenizer
+base_model: NousResearch/Meta-Llama-3.1-8B
 
 load_in_8bit: false
 load_in_4bit: false
