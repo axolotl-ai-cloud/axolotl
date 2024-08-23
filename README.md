@@ -55,6 +55,7 @@ Features:
         - [FSDP + QLoRA](#fsdp--qlora)
         - [Weights \& Biases Logging](#weights--biases-logging)
         - [Special Tokens](#special-tokens)
+      - [Liger Kernel](#liger-kernel)
     - [Inference Playground](#inference-playground)
     - [Merge LORA to base](#merge-lora-to-base)
   - [Common Errors 🧰](#common-errors-)
@@ -529,6 +530,25 @@ tokens: # these are delimiters
 ```
 
 When you include these tokens in your axolotl config, axolotl adds these tokens to the tokenizer's vocabulary.
+
+##### Liger Kernel
+
+Liger Kernel: Efficient Triton Kernels for LLM Training
+
+https://github.com/linkedin/Liger-Kernel
+
+Liger (LinkedIn GPU Efficient Runtime) Kernel is a collection of Triton kernels designed specifically for LLM training.
+It can effectively increase multi-GPU training throughput by 20% and reduces memory usage by 60%. The Liger Kernel
+composes well and is compatible with both FSDP and Deepspeed.
+
+```yaml
+plugins:
+  - axolotl.integrations.liger.LigerPlugin
+liger_rope: true
+liger_rms_norm: true
+liger_swiglu: true
+liger_fused_linear_cross_entropy: true
+```
 
 ### Inference Playground
 
