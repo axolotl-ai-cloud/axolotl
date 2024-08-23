@@ -1003,8 +1003,8 @@ class AxolotlDPOTrainer(SchedulerMixin, DPOTrainer):
         self, model: nn.Module, inputs: Dict[str, Union[torch.Tensor, Any]]
     ) -> torch.Tensor:
         loss: torch.Tensor = super().training_step(model, inputs)
-        torch.cuda.empty_cache()
         gc.collect()
+        torch.cuda.empty_cache()
         return loss
 
 
