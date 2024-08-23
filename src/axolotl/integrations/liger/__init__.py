@@ -86,3 +86,19 @@ class LigerPlugin(BasePlugin):
                 logging.warning(
                     "Fused linear cross entropy is not supported for Gemma."
                 )
+
+        elif cfg.model_config_type == "jamba":
+            from transformers.models.jamba import modeling_jamba
+
+            from .models.jamba import lce_forward as jamba_lce_forward
+
+            if cfg.liger_rope:
+                modeling_jamba.apply_rotary_pos_emb = liger_rotary_pos_emb
+            if cfg.liger_rms_norm:
+                modeling_jamba.JambaRMSNorm = LigerRMSNorm
+            if cfg.liger_swiglu:
+                modeling_jamba.JambaMLP = LigerSwiGLUMLP
+            if cfg.liger_cross_entropy:
+                modeling_jamba.CrossEntropyLoss = LigerCrossEntropyLoss
+            if cfg.liger_fused_linear_cross_entropy:
+                modeling_jamba.JambaForCausalLM.forward = jamba_lce_forward
