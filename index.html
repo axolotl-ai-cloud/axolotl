@@ -876,6 +876,18 @@ cd skypilot/llm/axolotl</code></pre>
 <span id="cb27-7"><a href="#cb27-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="st">"&lt;|im_end|&gt;"</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>When you include these tokens in your axolotl config, axolotl adds these tokens to the tokenizer’s vocabulary.</p>
 </section>
+<section id="liger-kernel" class="level5">
+<h5 class="anchored" data-anchor-id="liger-kernel">Liger Kernel</h5>
+<p>Liger Kernel: Efficient Triton Kernels for LLM Training</p>
+<p>https://github.com/linkedin/Liger-Kernel</p>
+<p>Liger (LinkedIn GPU Efficient Runtime) Kernel is a collection of Triton kernels designed specifically for LLM training. It can effectively increase multi-GPU training throughput by 20% and reduces memory usage by 60%. The Liger Kernel composes well and is compatible with both FSDP and Deepspeed.</p>
+<div class="sourceCode" id="cb28"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb28-1"><a href="#cb28-1" aria-hidden="true" tabindex="-1"></a><span class="fu">plugins</span><span class="kw">:</span></span>
+<span id="cb28-2"><a href="#cb28-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> axolotl.integrations.liger.LigerPlugin</span></span>
+<span id="cb28-3"><a href="#cb28-3" aria-hidden="true" tabindex="-1"></a><span class="fu">liger_rope</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb28-4"><a href="#cb28-4" aria-hidden="true" tabindex="-1"></a><span class="fu">liger_rms_norm</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb28-5"><a href="#cb28-5" aria-hidden="true" tabindex="-1"></a><span class="fu">liger_swiglu</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb28-6"><a href="#cb28-6" aria-hidden="true" tabindex="-1"></a><span class="fu">liger_fused_linear_cross_entropy</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</section>
 </section>
 </section>
 <section id="inference-playground" class="level3">
@@ -884,14 +896,14 @@ cd skypilot/llm/axolotl</code></pre>
 <p>Pass the appropriate flag to the inference command, depending upon what kind of model was trained:</p>
 <ul>
 <li><p>Pretrained LORA:</p>
-<div class="sourceCode" id="cb28"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb28-1"><a href="#cb28-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> <span class="at">-m</span> axolotl.cli.inference examples/your_config.yml <span class="at">--lora_model_dir</span><span class="op">=</span><span class="st">"./lora-output-dir"</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div></li>
+<div class="sourceCode" id="cb29"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb29-1"><a href="#cb29-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> <span class="at">-m</span> axolotl.cli.inference examples/your_config.yml <span class="at">--lora_model_dir</span><span class="op">=</span><span class="st">"./lora-output-dir"</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div></li>
 <li><p>Full weights finetune:</p>
-<div class="sourceCode" id="cb29"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb29-1"><a href="#cb29-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> <span class="at">-m</span> axolotl.cli.inference examples/your_config.yml <span class="at">--base_model</span><span class="op">=</span><span class="st">"./completed-model"</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div></li>
+<div class="sourceCode" id="cb30"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb30-1"><a href="#cb30-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> <span class="at">-m</span> axolotl.cli.inference examples/your_config.yml <span class="at">--base_model</span><span class="op">=</span><span class="st">"./completed-model"</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div></li>
 <li><p>Full weights finetune w/ a prompt from a text file:</p>
-<div class="sourceCode" id="cb30"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb30-1"><a href="#cb30-1" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span> /tmp/prompt.txt <span class="kw">|</span> <span class="ex">python</span> <span class="at">-m</span> axolotl.cli.inference examples/your_config.yml <span class="dt">\</span></span>
-<span id="cb30-2"><a href="#cb30-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">--base_model</span><span class="op">=</span><span class="st">"./completed-model"</span> <span class="at">--prompter</span><span class="op">=</span>None <span class="at">--load_in_8bit</span><span class="op">=</span>True</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb31"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb31-1"><a href="#cb31-1" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span> /tmp/prompt.txt <span class="kw">|</span> <span class="ex">python</span> <span class="at">-m</span> axolotl.cli.inference examples/your_config.yml <span class="dt">\</span></span>
+<span id="cb31-2"><a href="#cb31-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">--base_model</span><span class="op">=</span><span class="st">"./completed-model"</span> <span class="at">--prompter</span><span class="op">=</span>None <span class="at">--load_in_8bit</span><span class="op">=</span>True</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>– With gradio hosting</p>
-<div class="sourceCode" id="cb31"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb31-1"><a href="#cb31-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> <span class="at">-m</span> axolotl.cli.inference examples/your_config.yml <span class="at">--gradio</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div></li>
+<div class="sourceCode" id="cb32"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb32-1"><a href="#cb32-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> <span class="at">-m</span> axolotl.cli.inference examples/your_config.yml <span class="at">--gradio</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div></li>
 </ul>
 <p>Please use <code>--sample_packing False</code> if you have it on and receive the error similar to below:</p>
 <blockquote class="blockquote">
@@ -901,9 +913,9 @@ cd skypilot/llm/axolotl</code></pre>
 <section id="merge-lora-to-base" class="level3">
 <h3 class="anchored" data-anchor-id="merge-lora-to-base">Merge LORA to base</h3>
 <p>The following command will merge your LORA adapater with your base model. You can optionally pass the argument <code>--lora_model_dir</code> to specify the directory where your LORA adapter was saved, otherwhise, this will be inferred from <code>output_dir</code> in your axolotl config file. The merged model is saved in the sub-directory <code>{lora_model_dir}/merged</code>.</p>
-<div class="sourceCode" id="cb32"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb32-1"><a href="#cb32-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python3</span> <span class="at">-m</span> axolotl.cli.merge_lora your_config.yml <span class="at">--lora_model_dir</span><span class="op">=</span><span class="st">"./completed-model"</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb33"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb33-1"><a href="#cb33-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python3</span> <span class="at">-m</span> axolotl.cli.merge_lora your_config.yml <span class="at">--lora_model_dir</span><span class="op">=</span><span class="st">"./completed-model"</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>You may need to use the <code>gpu_memory_limit</code> and/or <code>lora_on_cpu</code> config options to avoid running out of memory. If you still run out of CUDA memory, you can try to merge in system RAM with</p>
-<div class="sourceCode" id="cb33"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb33-1"><a href="#cb33-1" aria-hidden="true" tabindex="-1"></a><span class="va">CUDA_VISIBLE_DEVICES</span><span class="op">=</span><span class="st">""</span> <span class="ex">python3</span> <span class="at">-m</span> axolotl.cli.merge_lora ...</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb34"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb34-1"><a href="#cb34-1" aria-hidden="true" tabindex="-1"></a><span class="va">CUDA_VISIBLE_DEVICES</span><span class="op">=</span><span class="st">""</span> <span class="ex">python3</span> <span class="at">-m</span> axolotl.cli.merge_lora ...</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>although this will be very slow, and using the config options above are recommended instead.</p>
 </section>
 </section>
@@ -961,7 +973,7 @@ cd skypilot/llm/axolotl</code></pre>
 <section id="badge" class="level2">
 <h2 class="anchored" data-anchor-id="badge">Badge ❤🏷️</h2>
 <p>Building something cool with Axolotl? Consider adding a badge to your model card.</p>
-<div class="sourceCode" id="cb34"><pre class="sourceCode markdown code-with-copy"><code class="sourceCode markdown"><span id="cb34-1"><a href="#cb34-1" aria-hidden="true" tabindex="-1"></a><span class="co">[</span><span class="ot">&lt;img src="https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/main/image/axolotl-badge-web.png" alt="Built with Axolotl" width="200" height="32"/&gt;</span><span class="co">](https://github.com/axolotl-ai-cloud/axolotl)</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb35"><pre class="sourceCode markdown code-with-copy"><code class="sourceCode markdown"><span id="cb35-1"><a href="#cb35-1" aria-hidden="true" tabindex="-1"></a><span class="co">[</span><span class="ot">&lt;img src="https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/main/image/axolotl-badge-web.png" alt="Built with Axolotl" width="200" height="32"/&gt;</span><span class="co">](https://github.com/axolotl-ai-cloud/axolotl)</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p><a href="https://github.com/axolotl-ai-cloud/axolotl"><img src="https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/main/image/axolotl-badge-web.png" alt="Built with Axolotl" width="200" height="32"></a></p>
 </section>
 <section id="community-showcase" class="level2">
@@ -976,14 +988,14 @@ cd skypilot/llm/axolotl</code></pre>
 <p>Bugs? Please check the <a href="https://github.com/axolotl-ai-cloud/axolotl/issues/bug">open issues</a> else create a new Issue.</p>
 <p>PRs are <strong>greatly welcome</strong>!</p>
 <p>Please run the quickstart instructions followed by the below to setup env:</p>
-<div class="sourceCode" id="cb35"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb35-1"><a href="#cb35-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip3</span> install <span class="at">-r</span> requirements-dev.txt <span class="at">-r</span> requirements-tests.txt</span>
-<span id="cb35-2"><a href="#cb35-2" aria-hidden="true" tabindex="-1"></a><span class="ex">pre-commit</span> install</span>
-<span id="cb35-3"><a href="#cb35-3" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb35-4"><a href="#cb35-4" aria-hidden="true" tabindex="-1"></a><span class="co"># test</span></span>
-<span id="cb35-5"><a href="#cb35-5" aria-hidden="true" tabindex="-1"></a><span class="ex">pytest</span> tests/</span>
-<span id="cb35-6"><a href="#cb35-6" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb35-7"><a href="#cb35-7" aria-hidden="true" tabindex="-1"></a><span class="co"># optional: run against all files</span></span>
-<span id="cb35-8"><a href="#cb35-8" aria-hidden="true" tabindex="-1"></a><span class="ex">pre-commit</span> run <span class="at">--all-files</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb36"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb36-1"><a href="#cb36-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip3</span> install <span class="at">-r</span> requirements-dev.txt <span class="at">-r</span> requirements-tests.txt</span>
+<span id="cb36-2"><a href="#cb36-2" aria-hidden="true" tabindex="-1"></a><span class="ex">pre-commit</span> install</span>
+<span id="cb36-3"><a href="#cb36-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb36-4"><a href="#cb36-4" aria-hidden="true" tabindex="-1"></a><span class="co"># test</span></span>
+<span id="cb36-5"><a href="#cb36-5" aria-hidden="true" tabindex="-1"></a><span class="ex">pytest</span> tests/</span>
+<span id="cb36-6"><a href="#cb36-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb36-7"><a href="#cb36-7" aria-hidden="true" tabindex="-1"></a><span class="co"># optional: run against all files</span></span>
+<span id="cb36-8"><a href="#cb36-8" aria-hidden="true" tabindex="-1"></a><span class="ex">pre-commit</span> run <span class="at">--all-files</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Thanks to all of our contributors to date. Help drive open source AI progress forward by contributing to Axolotl.</p>
 <p><a href="https://github.com/axolotl-ai-cloud/axolotl/graphs/contributors"> <img src="https://contrib.rocks/image?repo=openaccess-ai-collective/axolotl" alt="contributor chart by https://contrib.rocks"> </a></p>
 </section>
