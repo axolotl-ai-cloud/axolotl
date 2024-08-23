@@ -16,8 +16,7 @@ from transformers.models.llama.modeling_llama import (
 
 LOG = get_logger("axolotl.monkeypatch.unsloth")
 
-ORIGINAL_CEL_CODE = """    if labels is not None:
-        # Shift so that tokens < n predict n
+ORIGINAL_CEL_CODE = """# Shift so that tokens < n predict n
         shift_logits = logits[..., :-1, :].contiguous()
         shift_labels = labels[..., 1:].contiguous()
         # Flatten the tokens
@@ -29,8 +28,7 @@ ORIGINAL_CEL_CODE = """    if labels is not None:
         loss = loss_fct(shift_logits, shift_labels)
 """
 
-PATCHED_CEL_CODE = """    if labels is not None:
-        shift_logits = logits[..., :-1, :].contiguous()
+PATCHED_CEL_CODE = """shift_logits = logits[..., :-1, :].contiguous()
         shift_labels = labels[..., 1:].contiguous()
         loss = fast_cross_entropy_loss(
             logits = shift_logits,
