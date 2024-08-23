@@ -217,6 +217,24 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
             desc="Dropping Long Sequences",
         )
 
+    # drop samples with where the number of elements with labels not equal to -100 is zero
+    def drop_no_trainable_tokens(sample):
+        return np.sum(np.array(sample["labels"]) != -100) > 0
+
+    train_dataset = train_dataset.filter(
+        drop_no_trainable_tokens,
+        num_proc=cfg.dataset_processes,
+        load_from_cache_file=not cfg.is_preprocess,
+        desc="Drop Samples with Zero Trainable Tokens",
+    )
+    if eval_dataset:
+        eval_dataset = eval_dataset.filter(
+            drop_no_trainable_tokens,
+            num_proc=cfg.dataset_processes,
+            load_from_cache_file=not cfg.is_preprocess,
+            desc="Drop Samples with Zero Trainable Tokens",
+        )
+
     if cfg.group_by_length:
         train_dataset = train_dataset.map(
             add_length,

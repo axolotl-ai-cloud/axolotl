@@ -27,6 +27,7 @@ from transformers.utils import is_torch_bf16_gpu_available
 from transformers.utils.import_utils import _is_package_available
 
 from axolotl.common.cli import TrainerCliArgs, load_model_and_tokenizer
+from axolotl.integrations.base import PluginManager
 from axolotl.logging_config import configure_logging
 from axolotl.train import TrainDatasetMeta
 from axolotl.utils.config import (
@@ -364,6 +365,11 @@ def load_cfg(config: Union[str, Path] = Path("examples/"), **kwargs):
                 cfg[k] = kwargs[k]
 
     cfg.axolotl_config_path = config
+
+    if cfg.get("plugins"):
+        plugin_manager = PluginManager.get_instance()
+        for plugin_name in cfg["plugins"]:
+            plugin_manager.register(plugin_name)
 
     try:
         device_props = torch.cuda.get_device_properties("cuda")

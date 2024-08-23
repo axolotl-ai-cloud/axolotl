@@ -8,11 +8,14 @@ from typing import Optional
 import torch
 from transformers.utils import is_torch_bf16_gpu_available
 
+from axolotl.integrations.config import merge_input_args
 from axolotl.utils.bench import log_gpu_memory_usage
+from axolotl.utils.config.models.input.v0_4_1 import SUPPORTED_METRICS
 from axolotl.utils.config.models.input.v0_4_1 import (
-    SUPPORTED_METRICS,
-    AxolotlConfigWCapabilities,
-    AxolotlInputConfig,
+    AxolotlConfigWCapabilities as AxolotlConfigWCapabilitiesBase,
+)
+from axolotl.utils.config.models.input.v0_4_1 import (
+    AxolotlInputConfig as AxolotlInputConfigBase,
 )
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.models import load_model_config
@@ -207,6 +210,15 @@ def normalize_cfg_datasets(cfg):
 
 
 def validate_config(cfg: DictDefault, capabilities: Optional[dict] = None):
+    AxolotlConfigWCapabilities = AxolotlConfigWCapabilitiesBase
+    AxolotlInputConfig = AxolotlInputConfigBase
+
+    if cfg.plugins:
+        (
+            AxolotlConfigWCapabilities,  # pylint: disable=invalid-name
+            AxolotlInputConfig,  # pylint: disable=invalid-name
+        ) = merge_input_args()
+
     if capabilities:
         return DictDefault(
             dict(
