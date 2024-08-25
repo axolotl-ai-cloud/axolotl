@@ -57,6 +57,9 @@ class SpectrumPlugin(BasePlugin):
     base_path = "./model_snr_results/"
     snr_file_template = "snr_results_{model_name_slug}.json"
 
+    def get_input_args(self):
+        return "axolotl.integrations.spectrum.SpectrumArgs"
+
     def pre_model_load(self, cfg):
         if cfg.get("spectrum_model_name"):
             model_name = cfg["spectrum_model_name"]
