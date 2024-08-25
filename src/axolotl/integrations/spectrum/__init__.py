@@ -23,6 +23,8 @@ import requests
 
 from axolotl.integrations.base import BasePlugin
 
+from .args import SpectrumArgs  # pylint: disable=unused-import. # noqa: F401
+
 
 def _generate_unfrozen_params_yaml(snr_data, top_fraction=0.5):
     unfrozen_parameters = {}
