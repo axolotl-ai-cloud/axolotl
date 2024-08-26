@@ -130,7 +130,7 @@ class SFTDataset(BaseModel):
     chat_template: Union[
         ChatTemplate,
         Annotated[str, StringConstraints(pattern="^tokenizer_default_fallback_")],
-    ] = ChatTemplate.chatml
+    ] = ChatTemplate.tokenizer_default
     chat_template_jinja: Optional[str] = None
     data_files: Optional[Union[str, List[str]]] = None
     name: Optional[str] = None
@@ -153,12 +153,17 @@ class SFTDataset(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def check_chat_template_config(cls, data):
+        # if chat_template is set to jinja, chat_template_jinja is required
         if data.get("chat_template") == ChatTemplate.jinja and not data.get(
             "chat_template_jinja"
         ):
             raise ValueError(
                 "chat_template_jinja is required when chat_template is set to jinja"
             )
+
+        # If chat_template_jinja is set, set chat_template to jinja
+        if data.get("chat_template_jinja") and not data.get("chat_template"):
+            data["chat_template"] = ChatTemplate.jinja
 
         return data
 
@@ -815,12 +820,17 @@ class AxolotlInputConfig(
     @model_validator(mode="before")
     @classmethod
     def check_chat_template_config(cls, data):
+        # if chat_template is set to jinja, chat_template_jinja is required
         if data.get("chat_template") == ChatTemplate.jinja and not data.get(
             "chat_template_jinja"
         ):
             raise ValueError(
                 "chat_template_jinja is required when chat_template is set to jinja"
             )
+
+        # If chat_template_jinja is set, set chat_template to jinja
+        if data.get("chat_template_jinja") and not data.get("chat_template"):
+            data["chat_template"] = ChatTemplate.jinja
 
         return data
 

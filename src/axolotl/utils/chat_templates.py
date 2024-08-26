@@ -14,7 +14,7 @@ _JINJA_TEMPALTE_CHOICE = "jinja"
 _DEFAULT_TEMPLATE_CHOICE = "tokenizer_default"
 _DEFAULT_FALLBACK_CHATML_TEMPLATE_CHOICE_PREFIX = "tokenizer_default_fallback_"
 
-_TEMPLATES = {
+_CHAT_TEMPLATES = {
     "alpaca": "{% for message in messages %}{% if message['role'] == 'user' %}{{ '### Instruction: ' + message['content'] + '\n\n' }}{% elif message['role'] == 'assistant' %}{{ '### Response: ' + message['content'] + eos_token}}{% endif %}{% endfor %}",
     "inst": "{{ bos_token }}{% for message in messages %}{% if (message['role'] == 'user') != (loop.index0 % 2 == 0) %}{{ raise_exception('Conversation roles must alternate user/assistant/user/assistant/...') }}{% endif %}{% if message['role'] == 'user' %}{{ '[INST] ' + message['content'] + ' [/INST]' }}{% elif message['role'] == 'assistant' %}{{ message['content'] + eos_token}}{% else %}{{ raise_exception('Only user and assistant roles are supported!') }}{% endif %}{% endfor %}",  # I don't know what this one is called. Used by Mistral/Mixtral.
     "chatml": "{% if not add_generation_prompt is defined %}{% set add_generation_prompt = false %}{% endif %}{% for message in messages %}{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>' + '\n'}}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}",
@@ -78,18 +78,18 @@ def get_chat_template(
             f"No chat template found on tokenizer, falling back to {user_choice}. It is recommended to set --train_on_inputs to True for the model to learn this chat template."
         )
 
-    if user_choice in _TEMPLATES:
-        return _TEMPLATES[user_choice]
+    if user_choice in _CHAT_TEMPLATES:
+        return _CHAT_TEMPLATES[user_choice]
 
     raise ValueError(f"Template '{user_choice}' not found.")
 
 
 def extract_chat_template_args(cfg, ds_cfg: Optional[Dict[str, Any]] = None):
     if ds_cfg and ds_cfg.get("chat_template"):
-        chat_template_choice = ds_cfg.get("chat_template") or "chatml"
+        chat_template_choice = ds_cfg.get("chat_template") or "tokenizer_default"
         chat_template_jinja = ds_cfg.get("chat_template_jinja")
     else:
-        chat_template_choice = cfg.get("chat_template") or "chatml"
+        chat_template_choice = cfg.get("chat_template") or "tokenizer_default"
         chat_template_jinja = cfg.get("chat_template_jinja")
     return chat_template_choice, chat_template_jinja
 
@@ -99,7 +99,6 @@ def get_chat_template_from_config(
     ds_cfg: Optional[Dict[str, Any]] = None,
     tokenizer: Optional["PreTrainedTokenizerBase"] = None,
 ) -> str:
-    ds_cfg = ds_cfg or {}
     chat_template_choice, chat_template_jinja = extract_chat_template_args(
         cfg=cfg, ds_cfg=ds_cfg
     )
