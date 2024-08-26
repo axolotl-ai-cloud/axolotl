@@ -1,6 +1,6 @@
 ## Spectrum: Targeted Training on Signal to Noise Ratio
 
-by Eric Hartford, Lucas Atkins, et al.
+by Eric Hartford, Lucas Atkins, Fernando Fernandes, David Golchinfar
 
 This plugin contains code to freeze the bottom fraction of modules in a model, based on the Signal-to-Noise Ratio (SNR).
 
