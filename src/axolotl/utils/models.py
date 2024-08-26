@@ -311,9 +311,16 @@ def load_model(
     """
     Load a model for a given configuration and tokenizer.
     """
+
     base_model = cfg.base_model
     model_type = cfg.type_of_model
     model_config = load_model_config(cfg)
+
+    # load any patches from plugins
+    from axolotl.integrations.base import PluginManager
+
+    plugin_manager = PluginManager.get_instance()
+    plugin_manager.pre_model_load(cfg)
 
     # TODO refactor as a kwarg
     load_in_8bit = cfg.load_in_8bit
@@ -585,19 +592,12 @@ def load_model(
 
     # sample packing uses custom FA2 patch
     if cfg.flash_attention:
-        if not cfg.sample_packing:
-            if cfg.s2_attention:
-                pass
-            # most other models support flash attention, we can define exceptions as they come up
-            model_kwargs["attn_implementation"] = "flash_attention_2"
-            model_config._attn_implementation = (  # pylint: disable=protected-access
-                "flash_attention_2"
-            )
-        else:
-            model_kwargs["attn_implementation"] = "flash_attention_2"
-            model_config._attn_implementation = (  # pylint: disable=protected-access
-                "flash_attention_2"
-            )
+        if not cfg.sample_packing and cfg.s2_attention:
+            pass
+        model_kwargs["attn_implementation"] = "flash_attention_2"
+        model_config._attn_implementation = (  # pylint: disable=protected-access
+            "flash_attention_2"
+        )
     elif cfg.sdp_attention:
         model_kwargs["attn_implementation"] = "sdpa"
         model_config._attn_implementation = "sdpa"  # pylint: disable=protected-access

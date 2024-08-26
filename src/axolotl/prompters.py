@@ -352,9 +352,12 @@ class ShareGPTPrompter(Prompter):  # pylint: disable=too-few-public-methods
                         "Please help us by creating an Issue to add support for this conversation type."
                     )
 
-                role = CONVERSATION_ROLE_FORMAT[self._conversation.name].format(
-                    ROLE=from_role
-                )
+                if self._conversation.name in ["llama3"]:
+                    role = from_role
+                else:
+                    role = CONVERSATION_ROLE_FORMAT[self._conversation.name].format(
+                        ROLE=from_role
+                    )
 
             if len(conv.messages) > 0 and ((role == conv.messages[-1][0])):
                 if (

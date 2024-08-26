@@ -9,18 +9,18 @@ from axolotl.monkeypatch.utils import (
 
 
 def hijack_llama_prepare_4d_mask():
-    import transformers.modeling_attn_mask_utils
-    import transformers.models.llama.modeling_llama
+    from transformers import modeling_attn_mask_utils
+    from transformers.models.llama import modeling_llama
 
-    transformers.models.llama.modeling_llama._prepare_4d_causal_attention_mask_for_sdpa = (  # pylint: disable=protected-access
+    modeling_llama._prepare_4d_causal_attention_mask_for_sdpa = (  # pylint: disable=protected-access
         patched_prepare_4d_causal_attention_mask_for_sdpa
     )
-    transformers.modeling_attn_mask_utils._prepare_4d_causal_attention_mask_for_sdpa = (  # pylint: disable=protected-access
+    modeling_attn_mask_utils._prepare_4d_causal_attention_mask_for_sdpa = (  # pylint: disable=protected-access
         patched_prepare_4d_causal_attention_mask_for_sdpa
     )
-    transformers.models.llama.modeling_llama._prepare_4d_causal_attention_mask = (  # pylint: disable=protected-access
+    modeling_llama._prepare_4d_causal_attention_mask = (  # pylint: disable=protected-access
         patched_prepare_4d_causal_attention_mask
     )
-    transformers.modeling_attn_mask_utils._prepare_4d_causal_attention_mask = (  # pylint: disable=protected-access
+    modeling_attn_mask_utils._prepare_4d_causal_attention_mask = (  # pylint: disable=protected-access
         patched_prepare_4d_causal_attention_mask
     )

@@ -28,7 +28,6 @@ RUN if [ "$NIGHTLY_BUILD" = "true" ] ; then \
         sed -i 's#^transformers.*#transformers @ git+https://github.com/huggingface/transformers.git@main#' requirements.txt; \
         sed -i 's#^peft.*#peft @ git+https://github.com/huggingface/peft.git@main#' requirements.txt; \
         sed -i 's#^accelerate.*#accelerate @ git+https://github.com/huggingface/accelerate.git@main#' requirements.txt; \
-        sed -i 's#^bitsandbytes.*#bitsandbytes @ git+https://github.com/bitsandbytes-foundation/bitsandbytes.git@main#' requirements.txt; \
     fi
 
 RUN if [ "$AXOLOTL_EXTRAS" != "" ] ; then \
