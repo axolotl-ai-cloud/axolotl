@@ -350,7 +350,8 @@ def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
         ),
         "roles": ds_cfg.get("roles"),
         "drop_system_message": ds_cfg.get("drop_system_message", False),
-        "max_length": cfg.sequence_len,
+        # we need to add one for detecting sequences with exceeding the `sequence_len` limit.
+        "max_length": cfg.sequence_len + 1,
     }
 
     strategy_params = {
