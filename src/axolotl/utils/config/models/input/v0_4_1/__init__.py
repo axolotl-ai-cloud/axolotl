@@ -551,6 +551,7 @@ class AxolotlInputConfig(
     resize_token_embeddings_to_32x: Optional[bool] = None
 
     rl: Optional[RLType] = None
+    reward_model: Optional[bool] = None
 
     datasets: Optional[conlist(Union[SFTDataset, DPODataset, KTODataset], min_length=1)] = None  # type: ignore
     test_datasets: Optional[conlist(Union[SFTDataset, DPODataset, KTODataset], min_length=1)] = None  # type: ignore

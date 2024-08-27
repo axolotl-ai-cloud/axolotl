@@ -43,8 +43,10 @@ from trl import (
     KTOTrainer,
     ORPOConfig,
     ORPOTrainer,
+    RewardConfig,
+    RewardTrainer,
 )
-from trl.trainer.utils import pad_to_length
+from trl.trainer.utils import RewardDataCollatorWithPadding, pad_to_length
 
 from axolotl.monkeypatch.multipack import SUPPORTED_MULTIPACK_MODEL_TYPES
 from axolotl.monkeypatch.relora import ReLoRACallback, ReLoRAScheduler
@@ -301,6 +303,13 @@ class AxolotlCPOConfig(AxolotlTrainingMixins, CPOConfig):
     )
 
 
+@dataclass
+class AxolotlRewardConfig(AxolotlTrainingMixins, RewardConfig):
+    """
+    Reward config for Reward training
+    """
+
+
 class SchedulerMixin(Trainer):
     """
     Mixin class for scheduler setup in CausalTrainer.
@@ -398,12 +407,10 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
     def __init__(
         self,
         *_args,
-        num_epochs=1,
         bench_data_collator=None,
         eval_data_collator=None,
         **kwargs,
     ):
-        self.num_epochs = num_epochs
         self.bench_data_collator = bench_data_collator
         self.eval_data_collator = eval_data_collator
         super().__init__(*_args, **kwargs)
@@ -1039,6 +1046,14 @@ class AxolotlCPOTrainer(SchedulerMixin, CPOTrainer):
     tag_names = ["axolotl", "cpo"]
 
 
+class AxolotlRewardTrainer(SchedulerMixin, RewardTrainer):
+    """
+    Extend the base RewardTrainer for axolotl helpers
+    """
+
+    tag_names = ["axolotl", "reward"]
+
+
 class TrainerBuilderBase(abc.ABC):
     """
     Base class for trainer builder
@@ -1214,6 +1229,8 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             return ReLoRATrainer
         if self.cfg.model_config_type == "mamba":
             return AxolotlMambaTrainer
+        if self.cfg.reward_model:
+            return AxolotlRewardTrainer
         return AxolotlTrainer
 
     def build(self, total_num_steps):
@@ -1596,10 +1613,13 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 "accelerator_config"
             ] = self.cfg.accelerator_config
 
-        training_args = (
-            AxolotlTrainingArguments(  # pylint: disable=unexpected-keyword-arg
-                **training_arguments_kwargs,
-            )
+        training_args_cls = (
+            AxolotlTrainingArguments
+            if not self.cfg.reward_model
+            else AxolotlRewardConfig
+        )
+        training_args = training_args_cls(  # pylint: disable=unexpected-keyword-arg
+            **training_arguments_kwargs,
         )
         training_args = self.hook_post_create_training_args(training_args)
 
@@ -1625,6 +1645,16 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         trainer_kwargs, trainer_cls = self.hook_pre_create_trainer(
             trainer_kwargs, trainer_cls
         )
+        if eval_data_collator := self.build_collator(
+            training_args, is_eval=True, **data_collator_kwargs
+        ):
+            trainer_kwargs["eval_data_collator"] = eval_data_collator
+        if not self.cfg.reward_model:
+            trainer_kwargs["bench_data_collator"] = transformers.DataCollatorForSeq2Seq(
+                self.tokenizer,
+                return_tensors="pt",
+                **data_collator_kwargs,
+            )
         trainer = trainer_cls(
             model=self.model,
             train_dataset=self.train_dataset,
@@ -1632,16 +1662,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             args=training_args,
             tokenizer=self.tokenizer,
             data_collator=self.build_collator(training_args, **data_collator_kwargs),
-            eval_data_collator=self.build_collator(
-                training_args, is_eval=True, **data_collator_kwargs
-            ),
-            bench_data_collator=transformers.DataCollatorForSeq2Seq(
-                self.tokenizer,
-                return_tensors="pt",
-                **data_collator_kwargs,
-            ),
             callbacks=self.get_callbacks(),
-            num_epochs=self.cfg.num_epochs,
             **trainer_kwargs,
         )
         trainer = self.hook_post_create_trainer(trainer)
@@ -1661,6 +1682,9 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         if training_args.pretraining:
             return None
 
+        if self.cfg.reward_model:
+            return None
+
         if self.cfg.model_config_type == "mamba":
             return MambaDataCollator(tokenizer=self.tokenizer)
 
@@ -1677,7 +1701,9 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 DataCollatorForSeq2Seq,
             ]
         ]
-        if use_batch_sampler_collator:
+        if self.cfg.reward_model:
+            collator = RewardDataCollatorWithPadding
+        elif use_batch_sampler_collator:
             if self.cfg.model_config_type in SUPPORTED_MULTIPACK_MODEL_TYPES:
                 collator = V2BatchSamplerDataCollatorForSeq2Seq
             elif (
