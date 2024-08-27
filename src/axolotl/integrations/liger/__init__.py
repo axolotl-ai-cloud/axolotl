@@ -23,6 +23,7 @@ import logging
 from liger_kernel.transformers.cross_entropy import LigerCrossEntropyLoss
 from liger_kernel.transformers.geglu import LigerGEGLUMLP
 from liger_kernel.transformers.model.llama import lce_forward
+from liger_kernel.transformers.model.qwen2 import lce_forward as qwen2_lce_forward
 from liger_kernel.transformers.rms_norm import LigerRMSNorm
 from liger_kernel.transformers.rope import liger_rotary_pos_emb
 from liger_kernel.transformers.swiglu import LigerSwiGLUMLP
@@ -102,3 +103,17 @@ class LigerPlugin(BasePlugin):
                 modeling_jamba.CrossEntropyLoss = LigerCrossEntropyLoss
             if cfg.liger_fused_linear_cross_entropy:
                 modeling_jamba.JambaForCausalLM.forward = jamba_lce_forward
+
+        elif cfg.model_config_type == "qwen2":
+            from transformers.models.qwen2 import modeling_qwen2
+
+            if cfg.liger_rope:
+                modeling_qwen2.apply_rotary_pos_emb = liger_rotary_pos_emb
+            if cfg.liger_rms_norm:
+                modeling_qwen2.Qwen2RMSNorm = LigerRMSNorm
+            if cfg.liger_swiglu:
+                modeling_qwen2.Qwen2MLP = LigerSwiGLUMLP
+            if cfg.liger_cross_entropy:
+                modeling_qwen2.CrossEntropyLoss = LigerCrossEntropyLoss
+            if cfg.liger_fused_linear_cross_entropy:
+                modeling_qwen2.Qwen2ForCausalLM.forward = qwen2_lce_forward
