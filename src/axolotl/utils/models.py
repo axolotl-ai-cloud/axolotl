@@ -5,6 +5,7 @@ import gc
 import logging
 import math
 import os
+import sys
 import types
 from typing import Any, Dict, Optional, Tuple, Union  # noqa: F401
 
@@ -43,6 +44,7 @@ from axolotl.monkeypatch.multipack import (
     SUPPORTED_MULTIPACK_MODEL_TYPES,
     patch_for_multipack,
 )
+from axolotl.monkeypatch.utils import get_unpad_data
 from axolotl.prompt_tokenizers import LLAMA_DEFAULT_EOS_TOKEN
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.chat_templates import chat_templates
@@ -743,6 +745,13 @@ def load_model(
     except Exception as err:  # pylint: disable=broad-exception-caught
         LOG.exception(err)
         raise err
+
+    # restore multipack patch if previously applied
+    # needed for remotely loaded models using trust_remote_code=True
+    if cfg.trust_remote_code:
+        model_module = sys.modules[model.__class__.__module__]
+        if hasattr(model_module, "_axolotl_multipack_patch"):
+            model_module._get_unpad_data = get_unpad_data
 
     if isinstance(model, (PeftModel, PeftModelForCausalLM)) and not qlora_fsdp:
         model = model.merge_and_unload()
