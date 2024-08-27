@@ -94,5 +94,3 @@ def patch_remote(model_name, config_name, modeling_name):
     module_name = model_config.__class__.__module__.replace(config_name, modeling_name)
     modeling_arch = importlib.import_module(module_name)
     modeling_arch._get_unpad_data = get_unpad_data  # pylint: disable=protected-access
-    # workaround to make the patch stick
-    modeling_arch._axolotl_multipack_patch = True  # pylint: disable=protected-access
