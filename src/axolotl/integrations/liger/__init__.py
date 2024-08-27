@@ -132,6 +132,8 @@ class LigerPlugin(BasePlugin):
             from .models.deepseekv2 import lce_forward as deepseekv2_lce_forward
 
             if cfg.liger_rope:
+                # The DeepseekV2 version of RoPE is different than upstream LLaMA.
+                # See https://github.com/linkedin/Liger-Kernel/issues/129#issuecomment-2313763528
                 logging.warning("Fused liger_rope is not supported for DeepseekV2.")
             if cfg.liger_rms_norm:
                 modeling_mod.DeepseekV2RMSNorm = LigerRMSNorm
