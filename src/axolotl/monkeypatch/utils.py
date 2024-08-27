@@ -17,11 +17,9 @@ def get_max_seqlen_in_batch(attention_mask: torch.Tensor) -> torch.Tensor:
     max_num = int(torch.max(attention_mask).item())
     batch_size, _ = attention_mask.shape
     counts = torch.zeros((batch_size, max_num), dtype=torch.int32)
-
     for i in range(1, max_num + 1):
         mask = attention_mask == i
         counts[:, i - 1] = torch.sum(mask, dim=-1).to(dtype=torch.int32)
-
     result = counts.flatten()
     nonzero_indices = torch.nonzero(result).squeeze(-1)
     return result[nonzero_indices]
