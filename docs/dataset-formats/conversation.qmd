@@ -78,7 +78,7 @@ Chat Template strategy uses a jinja2 template that converts a list of messages i
 Conversational data would normally look like follows:
 
 ```{.json filename="data.jsonl"}
-{"messages": [{"role": "...", "content": "..."}]}
+{"conversations": [{"from": "...", "value": "..."}]}
 ```
 
 with roles usually being system, user, assistant, etc.
