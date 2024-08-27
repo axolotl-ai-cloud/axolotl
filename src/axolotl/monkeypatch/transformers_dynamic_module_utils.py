@@ -40,6 +40,12 @@ def _patched_get_class_in_module(
 
 
 def patch_transformers_dynamic_module_utils():
+    """
+    Recently, transformers started reloading modeling code from disk for models marked trust_remote_code=True.
+    This causes monkey-patches for multipack and liger to be removed.
+    We replace the original function with a version that does not reload the module from disk.
+    See https://github.com/huggingface/transformers/pull/30370#pullrequestreview-2264361581
+    """
     import transformers
 
     transformers.dynamic_module_utils.get_class_in_module = _patched_get_class_in_module
