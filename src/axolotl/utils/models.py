@@ -751,7 +751,7 @@ def load_model(
     if cfg.trust_remote_code:
         model_module = sys.modules[model.__class__.__module__]
         if hasattr(model_module, "_axolotl_multipack_patch"):
-            model_module._get_unpad_data = get_unpad_data
+            setattr(model_module, "_get_unpad_data", get_unpad_data)
 
     if isinstance(model, (PeftModel, PeftModelForCausalLM)) and not qlora_fsdp:
         model = model.merge_and_unload()
