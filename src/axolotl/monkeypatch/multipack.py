@@ -1,13 +1,18 @@
 """multipack patching for v2 of sample packing"""
 import importlib
+import sys
+from pathlib import Path
 
 import transformers
-from accelerate import init_empty_weights
+from accelerate import PartialState, init_empty_weights
 from transformers import AutoConfig, AutoModelForCausalLM
+from transformers.dynamic_module_utils import get_cached_module_file
 from transformers.integrations import is_deepspeed_zero3_enabled
+from transformers.utils import HF_MODULES_CACHE
 
 from axolotl.monkeypatch.mixtral import patch_mixtral_moe_forward_zero3
 from axolotl.monkeypatch.utils import get_unpad_data
+from axolotl.utils.distributed import zero_only
 
 SUPPORTED_MULTIPACK_MODEL_TYPES = [
     "llama",
@@ -91,6 +96,23 @@ def patch_remote(model_name, config_name, modeling_name):
     # we need to load the model here in order for modeling_* to be available
     with init_empty_weights():
         AutoModelForCausalLM.from_pretrained(model_name, trust_remote_code=True)
+    module_file = get_cached_module_file(model_name, modeling_name.lstrip(".") + ".py")
+    with zero_only():
+        # read the file and see if it has been patched, look for the string "axolotl.monkeypatch.utils" in the contents
+        patched = False
+        with open(Path(HF_MODULES_CACHE) / module_file, "r", encoding="utf-8") as fin:
+            contents = fin.read()
+            if "axolotl.monkeypatch.utils" in contents:
+                patched = True
+        if not patched:
+            with open(
+                Path(HF_MODULES_CACHE) / module_file, "a", encoding="utf-8"
+            ) as fout:
+                fout.write(
+                    "\nfrom axolotl.monkeypatch.utils import get_unpad_data as _get_unpad_data\n"
+                )
+    PartialState().wait_for_everyone()
     module_name = model_config.__class__.__module__.replace(config_name, modeling_name)
-    modeling_arch = importlib.import_module(module_name)
-    modeling_arch._get_unpad_data = get_unpad_data  # pylint: disable=protected-access
+    if module_name in sys.modules:
+        del sys.modules[module_name]
+    importlib.import_module(module_name)
