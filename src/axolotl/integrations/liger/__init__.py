@@ -167,6 +167,9 @@ class LigerPlugin(BasePlugin):
                 )
 
         elif cfg.model_config_type == "phi3":
+            from liger_kernel.transformers.model.phi3 import (
+                lce_forward as phi3_lce_forward,
+            )
             from transformers.models.phi3 import modeling_phi3
 
             if cfg.liger_rope:
@@ -178,6 +181,4 @@ class LigerPlugin(BasePlugin):
             if cfg.liger_cross_entropy:
                 modeling_phi3.CrossEntropyLoss = LigerCrossEntropyLoss
             if cfg.liger_fused_linear_cross_entropy:
-                logging.warning(
-                    "Fused linear cross entropy is not supported for Phi 3."
-                )
+                modeling_phi3.Phi3ForCausalLM.forward = phi3_lce_forward
