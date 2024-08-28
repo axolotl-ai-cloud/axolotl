@@ -19,10 +19,11 @@ Liger Kernel is the collection of Triton-native kernels for LLM Training.
 It is designed to be performant, correct, and light-weight.
 """
 import logging
+import sys
 
 from liger_kernel.transformers.cross_entropy import LigerCrossEntropyLoss
 from liger_kernel.transformers.geglu import LigerGEGLUMLP
-from liger_kernel.transformers.model.llama import lce_forward
+from liger_kernel.transformers.model.llama import lce_forward as llama_lce_forward
 from liger_kernel.transformers.rms_norm import LigerRMSNorm
 from liger_kernel.transformers.rope import liger_rotary_pos_emb
 from liger_kernel.transformers.swiglu import LigerSwiGLUMLP
@@ -53,7 +54,7 @@ class LigerPlugin(BasePlugin):
             if cfg.liger_cross_entropy:
                 modeling_llama.CrossEntropyLoss = LigerCrossEntropyLoss
             elif cfg.liger_fused_linear_cross_entropy:
-                modeling_llama.LlamaForCausalLM.forward = lce_forward
+                modeling_llama.LlamaForCausalLM.forward = llama_lce_forward
 
         elif cfg.model_config_type == "mistral":
             from transformers.models.mistral import modeling_mistral
@@ -102,3 +103,45 @@ class LigerPlugin(BasePlugin):
                 modeling_jamba.CrossEntropyLoss = LigerCrossEntropyLoss
             if cfg.liger_fused_linear_cross_entropy:
                 modeling_jamba.JambaForCausalLM.forward = jamba_lce_forward
+
+        elif cfg.model_config_type == "qwen2":
+            from liger_kernel.transformers.model.qwen2 import (
+                lce_forward as qwen2_lce_forward,
+            )
+            from transformers.models.qwen2 import modeling_qwen2
+
+            if cfg.liger_rope:
+                modeling_qwen2.apply_rotary_pos_emb = liger_rotary_pos_emb
+            if cfg.liger_rms_norm:
+                modeling_qwen2.Qwen2RMSNorm = LigerRMSNorm
+            if cfg.liger_swiglu:
+                modeling_qwen2.Qwen2MLP = LigerSwiGLUMLP
+            if cfg.liger_cross_entropy:
+                modeling_qwen2.CrossEntropyLoss = LigerCrossEntropyLoss
+            if cfg.liger_fused_linear_cross_entropy:
+                modeling_qwen2.Qwen2ForCausalLM.forward = qwen2_lce_forward
+
+        elif cfg.model_config_type == "deepseek_v2":
+            from accelerate import init_empty_weights
+            from transformers import AutoModelForCausalLM
+
+            with init_empty_weights():
+                model = AutoModelForCausalLM.from_pretrained(
+                    cfg.base_model, trust_remote_code=cfg.trust_remote_code or False
+                )
+                modeling_mod = sys.modules[model.__class__.__module__]
+
+            from .models.deepseekv2 import lce_forward as deepseekv2_lce_forward
+
+            if cfg.liger_rope:
+                # The DeepseekV2 version of RoPE is different than upstream LLaMA.
+                # See https://github.com/linkedin/Liger-Kernel/issues/129#issuecomment-2313763528
+                logging.warning("Fused liger_rope is not supported for DeepseekV2.")
+            if cfg.liger_rms_norm:
+                modeling_mod.DeepseekV2RMSNorm = LigerRMSNorm
+            if cfg.liger_swiglu:
+                modeling_mod.DeepseekV2MLP.forward = LigerSwiGLUMLP.forward
+            if cfg.liger_cross_entropy:
+                modeling_mod.CrossEntropyLoss = LigerCrossEntropyLoss
+            if cfg.liger_fused_linear_cross_entropy:
+                modeling_mod.DeepseekV2ForCausalLM.forward = deepseekv2_lce_forward
