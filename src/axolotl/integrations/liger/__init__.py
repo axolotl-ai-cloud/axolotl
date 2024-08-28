@@ -23,9 +23,6 @@ import sys
 
 from liger_kernel.transformers.cross_entropy import LigerCrossEntropyLoss
 from liger_kernel.transformers.geglu import LigerGEGLUMLP
-from liger_kernel.transformers.model.llama import lce_forward as llama_lce_forward
-from liger_kernel.transformers.model.mistral import lce_forward as mistral_lce_forward
-from liger_kernel.transformers.model.gemma import lce_forward as gemma_lce_forward
 from liger_kernel.transformers.rms_norm import LigerRMSNorm
 from liger_kernel.transformers.rope import liger_rotary_pos_emb
 from liger_kernel.transformers.swiglu import LigerSwiGLUMLP
@@ -45,6 +42,9 @@ class LigerPlugin(BasePlugin):
 
     def pre_model_load(self, cfg):
         if cfg.model_config_type == "llama":
+            from liger_kernel.transformers.model.llama import (
+                lce_forward as llama_lce_forward,
+            )
             from transformers.models.llama import modeling_llama
 
             if cfg.liger_rope:
@@ -59,6 +59,9 @@ class LigerPlugin(BasePlugin):
                 modeling_llama.LlamaForCausalLM.forward = llama_lce_forward
 
         elif cfg.model_config_type == "mistral":
+            from liger_kernel.transformers.model.mistral import (
+                lce_forward as mistral_lce_forward,
+            )
             from transformers.models.mistral import modeling_mistral
 
             if cfg.liger_rope:
@@ -73,6 +76,9 @@ class LigerPlugin(BasePlugin):
                 modeling_mistral.MistralForCausalLM.forward = mistral_lce_forward
 
         elif cfg.model_config_type == "gemma":
+            from liger_kernel.transformers.model.gemma import (
+                lce_forward as gemma_lce_forward,
+            )
             from transformers.models.gemma import modeling_gemma
 
             if cfg.liger_rope:
