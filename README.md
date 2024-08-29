@@ -11,7 +11,7 @@ Features:
 - Supports fullfinetune, lora, qlora, relora, and gptq
 - Customize configurations using a simple yaml file or CLI overwrite
 - Load different dataset formats, use custom formats, or bring your own tokenized datasets
-- Integrated with xformer, flash attention, rope scaling, and multipacking
+- Integrated with xformer, flash attention, [liger kernel](https://github.com/linkedin/Liger-Kernel), rope scaling, and multipacking
 - Works with single GPU or multiple GPUs via FSDP or Deepspeed
 - Easily run with Docker locally or on the cloud
 - Log results and optionally checkpoints to wandb or mlflow
