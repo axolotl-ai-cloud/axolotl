@@ -108,7 +108,3 @@ class LigerIntegrationTestCase(unittest.TestCase):
 
         train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
         assert (Path(temp_dir) / "model.safetensors").exists()
-
-
-if __name__ == "__main__":
-    unittest.main()
