@@ -355,6 +355,8 @@ class HyperparametersConfig(BaseModel):
         },
     )
 
+    auto_find_batch_size: Optional[bool] = None
+
     train_on_inputs: Optional[bool] = False
     group_by_length: Optional[bool] = None
 
@@ -837,6 +839,32 @@ class AxolotlInputConfig(
                 "eval_batch_size != micro_batch_size. This can lead to VRAM instability."
             )
         return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_auto_find_batch_size_w_multipack(cls, data):
+        if (
+            data.get("auto_find_batch_size")
+            and data.get("sample_packing")
+            and not data.get("multipack_real_batches")
+        ):
+            raise ValueError(
+                "auto_find_batch_size requires multipack_real_batches when using sample_packing"
+            )
+
+    @model_validator(mode="before")
+    @classmethod
+    def hint_auto_find_batch_size_w_multipack_pad_max(cls, data):
+        if (
+            data.get("auto_find_batch_size")
+            and data.get("sample_packing")
+            and data.get("multipack_real_batches")
+            and data.get("pad_to_sequence_len")
+        ):
+            LOG.warning(
+                "pad_to_sequence_len with auto_find_batch_size may lead "
+                "to inefficient training with extra padding tokens"
+            )
 
     @model_validator(mode="before")
     @classmethod
