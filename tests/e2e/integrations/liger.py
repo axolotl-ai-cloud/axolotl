@@ -5,13 +5,13 @@ Simple end-to-end test for Liger integration
 import unittest
 from pathlib import Path
 
-from tests.e2e.utils import with_temp_dir
-
 from axolotl.cli import load_datasets
 from axolotl.common.cli import TrainerCliArgs
 from axolotl.train import train
 from axolotl.utils.config import normalize_config
 from axolotl.utils.dict import DictDefault
+
+from ..utils import with_temp_dir
 
 
 class LigerIntegrationTestCase(unittest.TestCase):
