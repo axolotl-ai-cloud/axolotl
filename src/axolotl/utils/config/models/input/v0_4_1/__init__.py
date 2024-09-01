@@ -851,6 +851,7 @@ class AxolotlInputConfig(
             raise ValueError(
                 "auto_find_batch_size requires multipack_real_batches when using sample_packing"
             )
+        return data
 
     @model_validator(mode="before")
     @classmethod
