@@ -25,6 +25,7 @@ jobs:
       fail-fast: false
       matrix:
         python_version: ["3.10", "3.11"]
+        pytorch_version: ["2.3.1", "2.4.0"]
     timeout-minutes: 20
 
     steps:
@@ -36,6 +37,10 @@ jobs:
         with:
           python-version: ${{ matrix.python_version }}
           cache: 'pip' # caching pip dependencies
+
+      - name: Install PyTorch
+        run: |
+          pip3 install torch==${{ matrix.pytorch_version }} --index-url https://download.pytorch.org/whl/cpu
 
       - name: Update requirements.txt
         run: |
