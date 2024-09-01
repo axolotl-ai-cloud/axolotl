@@ -865,6 +865,7 @@ class AxolotlInputConfig(
                 "pad_to_sequence_len with auto_find_batch_size may lead "
                 "to inefficient training with extra padding tokens"
             )
+        return data
 
     @model_validator(mode="before")
     @classmethod
