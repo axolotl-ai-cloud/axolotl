@@ -178,21 +178,32 @@ class MultipackBatchSampler(BatchSampler):
 
     def gather_efficiency(self):
         def calc_sample_packing_eff_est(estimates: List[float]):
-            LOG.info(f"sample_packing_eff_est across ranks: {repr(estimates)}")
-            return max(estimates)
+            LOG.debug(f"sample_packing_eff_est across ranks: {repr(estimates)}")
+            return math.floor(0.997 * max(estimates))
 
         sample_packing_actual_eff_all = reduce_and_broadcast(
             lambda: self.efficiency(),  # pylint: disable=unnecessary-lambda
             calc_sample_packing_eff_est,
         )
         sample_packing_eff_est = (
-            math.ceil(sample_packing_actual_eff_all * 100.0) / 100.0
+            math.ceil(sample_packing_actual_eff_all * 200.0) / 200.0
         )
         return sample_packing_eff_est
 
+    def gather_len_batches(self, num):
+        def calc_min_len(estimates: list[(int, float)]):
+            LOG.info(f"gather_len_batches: {repr(estimates)}")
+            return math.floor(0.998 * min(estimates))
+
+        min_len_batches = reduce_and_broadcast(
+            lambda: num,
+            calc_min_len,
+        )
+        return min_len_batches
+
     def __len__(self):
-        self.num_batches()
-        return self._len_est()
+        len_batches = self.num_batches()
+        return self.gather_len_batches(len_batches)
 
     def _len_est(self):
         efficiency = (

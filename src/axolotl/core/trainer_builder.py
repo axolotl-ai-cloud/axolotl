@@ -502,13 +502,11 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
     def _get_train_sampler(self) -> Optional[torch.utils.data.Sampler]:
         if self.args.sample_packing and not self.args.pretraining:
             if self.args.multipack_real_batches:
-                batch_size = self.args.per_device_train_batch_size
+                batch_size = self.state.per_device_train_batch_size
                 batch_max_len = self.args.max_seq_length
             else:
                 batch_size = 1
-                batch_max_len = (
-                    self.args.per_device_train_batch_size * self.args.max_seq_length
-                )
+                batch_max_len = self.state.train_batch_size * self.args.max_seq_length
             return MultipackBatchSampler(
                 RandomSampler(self.train_dataset),
                 lengths=get_dataset_lengths(self.train_dataset),

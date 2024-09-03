@@ -843,34 +843,6 @@ class AxolotlInputConfig(
 
     @model_validator(mode="before")
     @classmethod
-    def check_auto_find_batch_size_w_multipack(cls, data):
-        if (
-            data.get("auto_find_batch_size")
-            and data.get("sample_packing")
-            and not data.get("multipack_real_batches")
-        ):
-            raise ValueError(
-                "auto_find_batch_size requires multipack_real_batches when using sample_packing"
-            )
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def hint_auto_find_batch_size_w_multipack_pad_max(cls, data):
-        if (
-            data.get("auto_find_batch_size")
-            and data.get("sample_packing")
-            and data.get("multipack_real_batches")
-            and data.get("pad_to_sequence_len")
-        ):
-            LOG.warning(
-                "pad_to_sequence_len with auto_find_batch_size may lead "
-                "to inefficient training with extra padding tokens"
-            )
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
     def check_push_ds_auth(cls, data):
         if (
             data.get("push_dataset_to_hub")
