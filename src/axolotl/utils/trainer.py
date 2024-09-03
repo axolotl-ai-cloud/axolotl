@@ -16,7 +16,8 @@ from torch.utils.data import DataLoader, RandomSampler
 from transformers.utils import is_torch_bf16_gpu_available
 
 from axolotl.core.trainer_builder import HFCausalTrainerBuilder, HFRLTrainerBuilder
-from axolotl.utils.distributed import reduce_and_broadcast
+
+# from axolotl.utils.distributed import reduce_and_broadcast
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 
 LOG = get_logger("axolotl")
@@ -383,23 +384,23 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
             # on the agreed on value for sample_packing_eff_est
             total_num_steps = int(math.floor(data_loader_len * cfg.num_epochs))
 
-            def calc_sample_packing_eff_est(estimates: List[float]):
-                LOG.info(f"sample_packing_eff_est across ranks: {repr(estimates)}")
-                return max(estimates)
-
-            sample_packing_actual_eff_all = reduce_and_broadcast(
-                lambda: sampler.efficiency(),  # pylint: disable=unnecessary-lambda
-                calc_sample_packing_eff_est,
-            )
-            sample_packing_eff_est = (
-                math.ceil(sample_packing_actual_eff_all * 100.0) / 100.0
-            )
-            if update:
-                cfg.sample_packing_eff_est = sample_packing_eff_est
-            LOG.debug(
-                f"sample_packing_eff_est: {cfg.sample_packing_eff_est}",
-                main_process_only=True,
-            )
+            # def calc_sample_packing_eff_est(estimates: List[float]):
+            #     LOG.info(f"sample_packing_eff_est across ranks: {repr(estimates)}")
+            #     return max(estimates)
+            #
+            # sample_packing_actual_eff_all = reduce_and_broadcast(
+            #     lambda: sampler.efficiency(),  # pylint: disable=unnecessary-lambda
+            #     calc_sample_packing_eff_est,
+            # )
+            # sample_packing_eff_est = (
+            #     math.ceil(sample_packing_actual_eff_all * 100.0) / 100.0
+            # )
+            # if update:
+            #     cfg.sample_packing_eff_est = sample_packing_eff_est
+            # LOG.debug(
+            #     f"sample_packing_eff_est: {cfg.sample_packing_eff_est}",
+            #     main_process_only=True,
+            # )
     else:
         total_num_steps = int(
             math.ceil(len(train_dataset) * cfg.num_epochs / cfg.batch_size)
