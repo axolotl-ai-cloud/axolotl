@@ -11,6 +11,8 @@ import numba
 import numpy as np
 from torch.utils.data import BatchSampler, Sampler
 
+from axolotl.utils.distributed import reduce_and_broadcast
+
 LOG = logging.getLogger("axolotl.utils.samplers.multipack")
 
 
@@ -174,16 +176,46 @@ class MultipackBatchSampler(BatchSampler):
     def efficiency(self):
         return self.eff_total_used / self.eff_total_slots
 
+    def gather_efficiency(self):
+        def calc_sample_packing_eff_est(estimates: List[float]):
+            LOG.debug(f"sample_packing_eff_est across ranks: {repr(estimates)}")
+            return math.floor(0.997 * max(estimates))
+
+        sample_packing_actual_eff_all = reduce_and_broadcast(
+            lambda: self.efficiency(),  # pylint: disable=unnecessary-lambda
+            calc_sample_packing_eff_est,
+        )
+        sample_packing_eff_est = (
+            math.ceil(sample_packing_actual_eff_all * 200.0) / 200.0
+        )
+        return sample_packing_eff_est
+
+    def gather_len_batches(self, num):
+        def calc_min_len(estimates: list[(int, float)]):
+            LOG.info(f"gather_len_batches: {repr(estimates)}")
+            return math.floor(0.998 * min(estimates))
+
+        min_len_batches = reduce_and_broadcast(
+            lambda: num,
+            calc_min_len,
+        )
+        return min_len_batches
+
     def __len__(self):
-        self.num_batches()
-        return self._len_est()
+        len_batches = self.num_batches()
+        return self.gather_len_batches(len_batches)
 
     def _len_est(self):
+        efficiency = (
+            self.packing_efficiency_estimate
+            if self.packing_efficiency_estimate
+            else self.gather_efficiency()
+        )
         world_size = int(os.getenv("WORLD_SIZE", "1"))
         lengths_sum = np.sum(self.lengths)
         lengths_sum_per_device = lengths_sum // world_size
         LOG.info(
-            f"packing_efficiency_estimate: {self.packing_efficiency_estimate} "
+            f"packing_efficiency_estimate: {efficiency} "
             f"total_num_tokens per device: {lengths_sum_per_device}"
         )
 
@@ -195,7 +227,7 @@ class MultipackBatchSampler(BatchSampler):
                 * math.floor(
                     0.99
                     * lengths_sum_per_device
-                    / self.packing_efficiency_estimate
+                    / efficiency
                     // (self.batch_max_len * self.batch_size)
                 )
                 - 1
