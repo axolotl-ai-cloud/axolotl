@@ -322,7 +322,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <li>Pass an empty <code>type:</code> in your axolotl config.</li>
 <li>Columns in Dataset must be exactly <code>input_ids</code>, <code>attention_mask</code>, <code>labels</code></li>
 <li>To indicate that a token should be ignored during training, set its corresponding label to <code>-100</code>.</li>
-<li>Do not add BOS/EOS. Axolotl will add them for you based on the default tokenizer for the model you’re using.</li>
+<li>You must add BOS and EOS, and make sure that you are training on EOS by not setting its label to -100.</li>
 <li>For pretraining, do not truncate/pad documents to the context window length.</li>
 <li>For instruction training, documents must be truncated/padded as desired.</li>
 </ul>
