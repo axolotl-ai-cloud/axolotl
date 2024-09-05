@@ -1,4 +1,4 @@
-base_model: /mnt/cephfs-nvme/nunomg/gemma-2-2b
+base_model: /mnt/cephfs-nvme/nunomg/gemma-2-2B-porfirao
 model_type: AutoModelForCausalLM
 tokenizer_type: AutoTokenizer
 # is_llama_derived_model: true
@@ -9,14 +9,14 @@ strict: false
 #Unbabel/TowerBlocks-v1-MT-only
 datasets:
   - path: Unbabel/Tower-v1-2106
-    type: sharegpt
-    conversation: chatml
+    type: chat_template
+    conversation: gemma
 
-chat_template: chatml
+chat_template: gemma
 
 dataset_prepared_path: 
 val_set_size: 0
-output_dir: /mnt/cephfs-nvme/nunomg/axolotl/Tower_Gemma2_2B/Base_2106/
+output_dir: /mnt/cephfs-nvme/nunomg/axolotl/Tower_Gemma2_2B/Porfirao_2106_v2_chattemplate/
 
 sequence_len: 4096
 sample_packing: true
@@ -36,8 +36,8 @@ wandb_watch:
 wandb_name:
 wandb_log_model:
 
-gradient_accumulation_steps: 32
-micro_batch_size: 1
+gradient_accumulation_steps: 16
+micro_batch_size: 2
 eval_batch_size: 1
 num_epochs: 2
 optimizer: adamw_torch
@@ -70,13 +70,13 @@ eval_table_size:
 save_steps:
 save_total_limit:
 debug:
-deepspeed: /mnt/cephfs-nvme/nunomg/axolotl/deepspeed/zero3.json # multi-gpu only
+deepspeed: /mnt/cephfs-nvme/nunomg/axolotl/deepspeed_configs/zero3.json # multi-gpu only
 weight_decay: 0.01
 fsdp:
 fsdp_config:
 tokens:
-  - <|im_start|>
+  # - <|im_start|>
 special_tokens:
   # bos_token: "<s>"
-  eos_token: "<|im_end|>"
+  eos_token: "<end_of_turn>"
   # unk_token: "<unk>"

@@ -58,6 +58,11 @@ class ChatTemplatePrompter(Prompter):
             for t in conversation
         ]
 
+        # break if turns contains an empty message
+        if any(not t["content"] for t in turns):
+            print("Empty message detected in conversation")
+            return None
+
         if self.drop_system_message and turns[0]["role"] == "system":
             turns = turns[1:]
 
@@ -202,11 +207,24 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
     def tokenize_prompt(self, prompt):
         turns = prompt[self.messages]
-        input_ids = self.prompter.build_prompt(turns)
+    
+        # Filter out turns with empty messages
+        valid_turns = [turn for turn in turns if turn.get(self.prompter.message_field_content)]
+        
+        if not valid_turns:
+            # If all turns are empty, return None or a default value
+            return None
+        
+        input_ids = self.prompter.build_prompt(valid_turns)
+        
+        if input_ids is None:
+            # If build_prompt returns None (which it does when it detects an empty message), return None or a default value
+            return None
+    
         labels = [IGNORE_TOKEN_ID] * len(input_ids)
 
         last_eos_idx = -1
-        for index, turn in enumerate(turns):
+        for index, turn in enumerate(valid_turns):
             role = turn.get(self.prompter.message_field_role)
             content = turn.get(self.prompter.message_field_content)
             train_turn = turn.get(self.prompter.message_field_training)

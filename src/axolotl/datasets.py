@@ -153,6 +153,9 @@ class TokenizedPromptDataset(Dataset):
         # find current time
         current_time = time.strftime("%Y%m%d-%H%M%S")
 
+        # Create directory if it doesn't exist
+        if not os.path.exists(main_dir + '/axolotl/last_run_prepared'):
+            os.makedirs(main_dir + '/axolotl/last_run_prepared')
         # Colorize and save to an HTML file
         with open(main_dir + '/axolotl/last_run_prepared/colorized_samples' + current_time + '.html', 'w') as f:
             f.write('<html><body><pre>\n')

@@ -135,12 +135,22 @@ def get_turns(  # pylint: disable=too-many-return-statements
                 yield f"<|start_header_id|>{role}<|end_header_id|>\n\n", ""
         return
     if self.sep_style == SeparatorStyle.GEMMA:
-        if self.system_message:
-            raise ValueError("Gemma chat template does not support system messages")
+        system_message = self.system_message if self.system_message else ""
+        first_user_message_processed = False
+        
         for i, (role, message) in enumerate(self.messages):
             prefix = "<bos>" if i == 0 else ""
             message_str = message if message else ""
-            yield prefix + "<start_of_turn>" + role + "\n", message_str + "<end_of_turn>\n"
+            
+            if role == "user" and not first_user_message_processed:
+                if system_message:
+                    message_str = f"{system_message}\n\n{message_str}"
+                first_user_message_processed = True
+            
+            if message:
+                yield prefix + "<start_of_turn>" + role + "\n", message_str + self.sep
+            else:
+                yield "<start_of_turn>" + role + "\n", ""
         return
     if self.sep_style == SeparatorStyle.CHATGLM:
         # source: https://huggingface.co/THUDM/chatglm-6b/blob/1d240ba371910e9282298d4592532d7f0f3e9f3e/modeling_chatglm.py#L1302-L1308
