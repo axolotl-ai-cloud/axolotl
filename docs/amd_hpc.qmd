@@ -93,6 +93,8 @@ huggingface-cli download meta-llama/Meta-Llama-3.1-8B --local-dir ~/hfdata/llama
 
 Create an Axolotl configuration file (YAML format) tailored to your specific training requirements and dataset. Use FSDP for multi-node training.
 
+Note: Deepspeed did not work at the time of testing. However, if anyone managed to get it working, please let us know.
+
 ### 11. Preprocess Data
 
 Run preprocessing on the login node:
