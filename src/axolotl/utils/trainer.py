@@ -425,7 +425,8 @@ def setup_deepspeed_env(cfg, stage=None):
         os.environ["ACCELERATE_DEEPSPEED_ZERO_STAGE"] = str(stage)
         if stage == 3:
             os.environ["ACCELERATE_DEEPSPEED_ZERO3_INIT"] = "true"
-    HfTrainerDeepSpeedConfig(cfg.deepspeed)
+    # If we don't assign this, it doesn't actually get set in the accelerate weakref
+    _ = HfTrainerDeepSpeedConfig(cfg.deepspeed)
 
 
 def setup_fsdp_envs(cfg):
