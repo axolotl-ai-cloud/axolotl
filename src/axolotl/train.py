@@ -206,11 +206,7 @@ def train(
     if trainer.is_fsdp_enabled:
         if cfg.fsdp_final_state_dict_type:
             state_dict_type = cfg.fsdp_final_state_dict_type
-        try:
-            trainer.accelerator.state.fsdp_plugin.set_state_dict_type(state_dict_type)
-        except TypeError:
-            trainer.accelerator.state.fsdp_plugin.state_dict_type = state_dict_type
-            trainer.accelerator.state.fsdp_plugin.set_state_dict_type()
+        trainer.accelerator.state.fsdp_plugin.set_state_dict_type(state_dict_type)
         LOG.info(f"Set FSDP state dict type to {state_dict_type} for saving.")
 
     if cfg.relora_steps:
