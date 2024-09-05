@@ -6,9 +6,9 @@
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
-<meta name="description" content="Troubleshooting NCCL issues">
+<meta name="description" content="A comprehensive guide for using Axolotl on distributed systems with AMD GPUs">
 
-<title>NCCL – Axolotl</title>
+<title>Training with AMD GPUs on HPC Systems – Axolotl</title>
 <style>
 code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
@@ -20,6 +20,40 @@ ul.task-list li input[type="checkbox"] {
   width: 0.8em;
   margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
   vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { display: inline-block; text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
 }
 </style>
 
@@ -96,7 +130,7 @@ ul.task-list li input[type="checkbox"] {
       <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
         <i class="bi bi-layout-text-sidebar-reverse"></i>
       </button>
-        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/debugging.html">How-To Guides</a></li><li class="breadcrumb-item"><a href="../docs/nccl.html">NCCL</a></li></ol></nav>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/debugging.html">How-To Guides</a></li><li class="breadcrumb-item"><a href="../docs/amd_hpc.html">Training with AMD GPUs on HPC Systems</a></li></ol></nav>
         <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
         </a>
     </div>
@@ -155,7 +189,7 @@ ul.task-list li input[type="checkbox"] {
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/nccl.html" class="sidebar-item-text sidebar-link active">
+  <a href="../docs/nccl.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">NCCL</span></a>
   </div>
 </li>
@@ -179,7 +213,7 @@ ul.task-list li input[type="checkbox"] {
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/amd_hpc.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/amd_hpc.html" class="sidebar-item-text sidebar-link active">
  <span class="menu-text">Training with AMD GPUs on HPC Systems</span></a>
   </div>
 </li>
@@ -254,20 +288,40 @@ ul.task-list li input[type="checkbox"] {
 </nav>
 <div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
 <!-- margin-sidebar -->
-    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar zindex-bottom">
-        
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#setup" id="toc-setup" class="nav-link active" data-scroll-target="#setup">Setup</a>
+  <ul class="collapse">
+  <li><a href="#install-python" id="toc-install-python" class="nav-link" data-scroll-target="#install-python">1. Install Python</a></li>
+  <li><a href="#configure-python-environment" id="toc-configure-python-environment" class="nav-link" data-scroll-target="#configure-python-environment">2. Configure Python Environment</a></li>
+  <li><a href="#load-amd-gpu-software" id="toc-load-amd-gpu-software" class="nav-link" data-scroll-target="#load-amd-gpu-software">3. Load AMD GPU Software</a></li>
+  <li><a href="#install-pytorch" id="toc-install-pytorch" class="nav-link" data-scroll-target="#install-pytorch">4. Install PyTorch</a></li>
+  <li><a href="#install-flash-attention" id="toc-install-flash-attention" class="nav-link" data-scroll-target="#install-flash-attention">5. Install Flash Attention</a></li>
+  <li><a href="#install-axolotl" id="toc-install-axolotl" class="nav-link" data-scroll-target="#install-axolotl">6. Install Axolotl</a></li>
+  <li><a href="#apply-xformers-workaround" id="toc-apply-xformers-workaround" class="nav-link" data-scroll-target="#apply-xformers-workaround">7. Apply xformers Workaround</a></li>
+  <li><a href="#prepare-job-submission-script" id="toc-prepare-job-submission-script" class="nav-link" data-scroll-target="#prepare-job-submission-script">8. Prepare Job Submission Script</a></li>
+  <li><a href="#download-base-model" id="toc-download-base-model" class="nav-link" data-scroll-target="#download-base-model">9. Download Base Model</a></li>
+  <li><a href="#create-axolotl-configuration" id="toc-create-axolotl-configuration" class="nav-link" data-scroll-target="#create-axolotl-configuration">10. Create Axolotl Configuration</a></li>
+  <li><a href="#preprocess-data" id="toc-preprocess-data" class="nav-link" data-scroll-target="#preprocess-data">11. Preprocess Data</a></li>
+  <li><a href="#train" id="toc-train" class="nav-link" data-scroll-target="#train">12. Train</a></li>
+  </ul></li>
+  </ul>
+</nav>
     </div>
 <!-- main -->
 <main class="content" id="quarto-document-content">
 
-<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/debugging.html">How-To Guides</a></li><li class="breadcrumb-item"><a href="../docs/nccl.html">NCCL</a></li></ol></nav>
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/debugging.html">How-To Guides</a></li><li class="breadcrumb-item"><a href="../docs/amd_hpc.html">Training with AMD GPUs on HPC Systems</a></li></ol></nav>
 <div class="quarto-title">
-<h1 class="title">NCCL</h1>
+<h1 class="title">Training with AMD GPUs on HPC Systems</h1>
 </div>
 
 <div>
   <div class="description">
-    Troubleshooting NCCL issues
+    A comprehensive guide for using Axolotl on distributed systems with AMD GPUs
   </div>
 </div>
 
@@ -284,50 +338,82 @@ ul.task-list li input[type="checkbox"] {
 </header>
 
 
-<p>NVIDIA NCCL is a library to facilitate and optimize multi-GPU communication operations, such as broadcast, all-gather, reduce, all-reduce, etc. Broadly, NCCL configuration is highly environment-specific and is configured via several <a href="https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/env.html">environment variables</a>. A common NCCL-related problem occurs when a long-running operation times out causing the training process to abort:</p>
-<pre class="text"><code>Watchdog caught collective operation timeout: WorkNCCL(SeqNum=42, OpType=ALLGATHER, Timeout(ms)=1800000) ran for 1806948 milliseconds before timing out.</code></pre>
-<p>Often, this timeout will happen after 30 minutes (the default setting) and is accompanied by below-average power consumption with near 100% GPU utilization before the error is raised. Nvidia recommends <a href="https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/troubleshooting.html#pci-access-control-services-acs">disabling PCI access control services (ACS)</a> as a possible solution if this is available to you.</p>
-<p>Forcing cross-GPU communication via <a href="https://en.wikipedia.org/wiki/NVLink">NVLink</a> may help without increasing timeouts. To verify that your configuration is leveraging NVLink run the following command:</p>
-<pre class="shell"><code>nvidia-smi nvlink --status</code></pre>
-<p>To force NCCL to use NVLink, simply set this in the environment:</p>
-<pre class="shell"><code>export NCCL_P2P_LEVEL=NVL</code></pre>
-<p>If NVLink is not available in your environment there are other options for <code>NCCL_P2P_LEVEL</code> in the table below:</p>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 56%">
-<col style="width: 44%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>NCCL_P2P_LEVEL</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>PIX</td>
-<td>P2P data transfers through no more than a single PCIe bridge. Faster data transfer rates vs to paths involving multiple bridges, but slower compared to direct GPU-to-GPU communication.</td>
-</tr>
-<tr class="even">
-<td>PXB</td>
-<td>P2P data transfers through multiple PCIe bridges but not going through the PCIe Host Bridge; this path involves a complex routing process, potentially incurring a moderate level of latency.</td>
-</tr>
-<tr class="odd">
-<td>PHB</td>
-<td>P2P data transfers occur over the PCIe and through a PCIe Host Bridge, typically involving the CPU, which can facilitate direct memory access but might introduce additional latency compared to more direct paths (ex PIX, NVL)</td>
-</tr>
-</tbody>
-</table>
-<p>To validate that acceptable data transfer speeds exist for your training job, running <a href="https://github.com/NVIDIA/nccl-tests/blob/master/README.md">NCCL Tests</a> can help pinpoint bottlenecks, for example:</p>
-<pre class="shell"><code>./build/all_reduce_perf -b 8 -e 128M -f 2 -g 3</code></pre>
-<p>It can be useful when debugging NCCL communication timeouts to activate additional logging in both PyTorch and NCCL:</p>
-<pre class="shell"><code>export NCCL_DEBUG=INFO
-export NCCL_DEBUG_SUBSYS=ALL
-export TORCH_DISTRIBUTED_DEBUG=INFO
-export TORCHELASTIC_ERROR_FILE=/PATH/TO/torcherror.log</code></pre>
-<p>Finally, if you believe your training job needs more time you can increase the timeout past 30 minutes by setting the <code>ddp_timeout</code> value in the Axolotl configuration. See <a href="https://pytorch.org/docs/stable/distributed.html#torch.distributed.init_process_group">PyTorch init_process_group</a> for documentation on this value.</p>
+<p>This guide provides step-by-step instructions for installing and configuring Axolotl on a High-Performance Computing (HPC) environment equipped with AMD GPUs.</p>
+<section id="setup" class="level2">
+<h2 class="anchored" data-anchor-id="setup">Setup</h2>
+<section id="install-python" class="level3">
+<h3 class="anchored" data-anchor-id="install-python">1. Install Python</h3>
+<p>We recommend using Miniforge, a minimal conda-based Python distribution:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">curl</span> <span class="at">-L</span> <span class="at">-O</span> <span class="st">"https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-</span><span class="va">$(</span><span class="fu">uname</span><span class="va">)</span><span class="st">-</span><span class="va">$(</span><span class="fu">uname</span> <span class="at">-m</span><span class="va">)</span><span class="st">.sh"</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="fu">bash</span> Miniforge3-<span class="va">$(</span><span class="fu">uname</span><span class="va">)</span>-<span class="va">$(</span><span class="fu">uname</span> <span class="at">-m</span><span class="va">)</span>.sh</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</section>
+<section id="configure-python-environment" class="level3">
+<h3 class="anchored" data-anchor-id="configure-python-environment">2. Configure Python Environment</h3>
+<p>Add Python to your PATH and ensure it’s available at login:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="bu">echo</span> <span class="st">'export PATH=~/miniforge3/bin:$PATH'</span> <span class="op">&gt;&gt;</span> ~/.bashrc</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="bu">echo</span> <span class="st">'if [ -f ~/.bashrc ]; then . ~/.bashrc; fi'</span> <span class="op">&gt;&gt;</span> ~/.bash_profile</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</section>
+<section id="load-amd-gpu-software" class="level3">
+<h3 class="anchored" data-anchor-id="load-amd-gpu-software">3. Load AMD GPU Software</h3>
+<p>Load the ROCm module:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">module</span> load rocm/5.7.1</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Note: The specific module name and version may vary depending on your HPC system. Consult your system documentation for the correct module name.</p>
+</section>
+<section id="install-pytorch" class="level3">
+<h3 class="anchored" data-anchor-id="install-pytorch">4. Install PyTorch</h3>
+<p>Install PyTorch with ROCm support:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> install <span class="at">-U</span> torch torchvision torchaudio <span class="at">--index-url</span> https://download.pytorch.org/whl/rocm5.7 <span class="at">--force-reinstall</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</section>
+<section id="install-flash-attention" class="level3">
+<h3 class="anchored" data-anchor-id="install-flash-attention">5. Install Flash Attention</h3>
+<p>Clone and install the Flash Attention repository:</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="fu">git</span> clone <span class="at">--recursive</span> https://github.com/ROCmSoftwarePlatform/flash-attention.git</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="bu">export</span> <span class="va">GPU_ARCHS</span><span class="op">=</span><span class="st">"gfx90a"</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> flash-attention</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a><span class="bu">export</span> <span class="va">PYTHON_SITE_PACKAGES</span><span class="op">=</span><span class="va">$(</span><span class="ex">python</span> <span class="at">-c</span> <span class="st">'import site; print(site.getsitepackages()[0])'</span><span class="va">)</span></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a><span class="fu">patch</span> <span class="st">"</span><span class="va">${PYTHON_SITE_PACKAGES}</span><span class="st">/torch/utils/hipify/hipify_python.py"</span> hipify_patch.patch</span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> install .</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</section>
+<section id="install-axolotl" class="level3">
+<h3 class="anchored" data-anchor-id="install-axolotl">6. Install Axolotl</h3>
+<p>Clone and install Axolotl:</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">git</span> clone https://github.com/axolotl-ai-cloud/axolotl</span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> axolotl</span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> install packaging ninja</span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> install <span class="at">-e</span> .</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</section>
+<section id="apply-xformers-workaround" class="level3">
+<h3 class="anchored" data-anchor-id="apply-xformers-workaround">7. Apply xformers Workaround</h3>
+<p>xformers appears to be incompatible with ROCm. Apply the following workarounds: - Edit $HOME/packages/axolotl/src/axolotl/monkeypatch/llama_attn_hijack_flash.py modifying the code to always return <code>False</code> for SwiGLU availability from xformers. - Edit $HOME/miniforge3/lib/python3.10/site-packages/xformers/ops/swiglu_op.py replacing the “SwiGLU” function with a pass statement.</p>
+</section>
+<section id="prepare-job-submission-script" class="level3">
+<h3 class="anchored" data-anchor-id="prepare-job-submission-script">8. Prepare Job Submission Script</h3>
+<p>Create a script for job submission using your HPC’s particular software (e.g.&nbsp;Slurm, PBS). Include necessary environment setup and the command to run Axolotl training. If the compute node(s) do(es) not have internet access, it is recommended to include</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="bu">export</span> <span class="va">TRANSFORMERS_OFFLINE</span><span class="op">=</span>1</span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="bu">export</span> <span class="va">HF_DATASETS_OFFLINE</span><span class="op">=</span>1</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</section>
+<section id="download-base-model" class="level3">
+<h3 class="anchored" data-anchor-id="download-base-model">9. Download Base Model</h3>
+<p>Download a base model using the Hugging Face CLI:</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="ex">huggingface-cli</span> download meta-llama/Meta-Llama-3.1-8B <span class="at">--local-dir</span> ~/hfdata/llama3.1-8B</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</section>
+<section id="create-axolotl-configuration" class="level3">
+<h3 class="anchored" data-anchor-id="create-axolotl-configuration">10. Create Axolotl Configuration</h3>
+<p>Create an Axolotl configuration file (YAML format) tailored to your specific training requirements and dataset. Use FSDP for multi-node training.</p>
+<p>Note: Deepspeed did not work at the time of testing. However, if anyone managed to get it working, please let us know.</p>
+</section>
+<section id="preprocess-data" class="level3">
+<h3 class="anchored" data-anchor-id="preprocess-data">11. Preprocess Data</h3>
+<p>Run preprocessing on the login node:</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="va">CUDA_VISIBLE_DEVICES</span><span class="op">=</span><span class="st">""</span> <span class="ex">python</span> <span class="at">-m</span> axolotl.cli.preprocess /path/to/your/config.yaml</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</section>
+<section id="train" class="level3">
+<h3 class="anchored" data-anchor-id="train">12. Train</h3>
+<p>You are now ready to submit your previously prepared job script. 🚂</p>
 
 
+</section>
+</section>
 
 </main> <!-- /main -->
 <script id="quarto-html-after-body" type="application/javascript">
