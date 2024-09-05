@@ -37,6 +37,7 @@ website:
             - docs/mac.qmd
             - docs/multi-node.qmd
             - docs/unsloth.qmd
+            - docs/amd_hpc.qmd
         - section: "Dataset Formats"
           contents: docs/dataset-formats/*
         - section: "Reference"
