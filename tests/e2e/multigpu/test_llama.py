@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 import yaml
 from accelerate.test_utils import execute_subprocess_async
+from huggingface_hub import snapshot_download
 
 from axolotl.utils.dict import DictDefault
 
@@ -24,8 +25,15 @@ class TestMultiGPULlama(unittest.TestCase):
     Test case for Llama models using LoRA
     """
 
+    @pytest.fixture(scope="session")
+    def download_model(self):
+        # download the model
+        snapshot_download("TinyLlama/TinyLlama_v1.1")
+
     @with_temp_dir
-    def test_lora_ddp(self, temp_dir):
+    def test_lora_ddp(
+        self, download_model, temp_dir  # pylint: disable=unused-argument
+    ):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
@@ -79,7 +87,9 @@ class TestMultiGPULlama(unittest.TestCase):
         )
 
     @with_temp_dir
-    def test_lora_ddp_packed(self, temp_dir):
+    def test_lora_ddp_packed(
+        self, download_model, temp_dir  # pylint: disable=unused-argument
+    ):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
@@ -136,7 +146,7 @@ class TestMultiGPULlama(unittest.TestCase):
         )
 
     @with_temp_dir
-    def test_fsdp(self, temp_dir):
+    def test_fsdp(self, download_model, temp_dir):  # pylint: disable=unused-argument
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
@@ -199,7 +209,9 @@ class TestMultiGPULlama(unittest.TestCase):
         )
 
     @with_temp_dir
-    def test_fsdp_packed(self, temp_dir):
+    def test_fsdp_packed(
+        self, download_model, temp_dir  # pylint: disable=unused-argument
+    ):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
@@ -266,7 +278,9 @@ class TestMultiGPULlama(unittest.TestCase):
 
     @pytest.mark.skip("disabled due to upstream issue")
     @with_temp_dir
-    def test_fsdp_qlora_prequant_packed(self, temp_dir):
+    def test_fsdp_qlora_prequant_packed(
+        self, download_model, temp_dir  # pylint: disable=unused-argument
+    ):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
