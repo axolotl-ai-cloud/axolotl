@@ -1,6 +1,9 @@
 name: docker-multigpu-tests-biweekly
 
 on:
+  pull_request:
+    paths:
+      - 'tests/e2e/multigpu/*.py'
   workflow_dispatch:
   schedule:
     - cron: '0 0 * * 1,4'  # Runs at 00:00 UTC every monday & thursday
