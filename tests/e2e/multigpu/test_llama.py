@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 import yaml
 from accelerate.test_utils import execute_subprocess_async
+from huggingface_hub import snapshot_download
 
 from axolotl.utils.dict import DictDefault
 
@@ -17,6 +18,12 @@ from ..utils import with_temp_dir
 
 LOG = logging.getLogger("axolotl.tests.e2e.multigpu")
 os.environ["WANDB_DISABLED"] = "true"
+
+
+@pytest.fixture(scope="session", autouse=True)
+def download_model():
+    # download the model
+    snapshot_download("TinyLlama/TinyLlama_v1.1")
 
 
 class TestMultiGPULlama(unittest.TestCase):
