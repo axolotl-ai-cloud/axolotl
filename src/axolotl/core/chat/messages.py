@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Callable, List, Optional, Union
 
+from transformers import PreTrainedTokenizer
+
 
 class MessageRoles(str, Enum):
     system = "system"  # pylint: disable=invalid-name
@@ -90,14 +92,13 @@ class Messages:
         return "".join(str(c) for c in self.content)
 
     def tokenized(
-        self, tokenizer: Callable[[str], dict[str, List[int]]], ignore_index=-100
+        self, tokenizer: PreTrainedTokenizer, ignore_index=-100
     ) -> dict[str, List[int]]:
         # iterate over the contents, tokenizing the concatenated string values up to the current MessageContents
         # returns a dictionary mapping w input_ids, attention_mask, and labels
-        input_ids = []
-        attention_mask = []
-        labels = []
-        pending_input_ids = []
+        input_ids: List[int] = []
+        labels: List[int] = []
+        pending_input_ids: List[int] = []
         pending_train = self.train
         running_content = ""
         for _, msg_content in enumerate(self.content):
