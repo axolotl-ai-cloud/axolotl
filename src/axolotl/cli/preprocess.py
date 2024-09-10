@@ -24,6 +24,7 @@ from axolotl.cli import (
 from axolotl.common.cli import PreprocessCliArgs
 from axolotl.common.const import DEFAULT_DATASET_PREPARED_PATH
 from axolotl.prompt_strategies.sharegpt import register_chat_template
+
 LOG = logging.getLogger("axolotl.cli.preprocess")
 
 
@@ -38,9 +39,11 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
     parsed_cli_args, _ = parser.parse_args_into_dataclasses(
         return_remaining_strings=True
     )
-    
+
     if parsed_cfg.chat_template:
-        register_chat_template(parsed_cfg.chat_template, parsed_cfg.default_system_message)
+        register_chat_template(
+            parsed_cfg.chat_template, parsed_cfg.default_system_message
+        )
 
     if not parsed_cfg.dataset_prepared_path:
         msg = (

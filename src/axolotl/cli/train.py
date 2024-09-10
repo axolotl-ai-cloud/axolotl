@@ -40,7 +40,7 @@ def do_train(cfg, cli_args) -> Tuple[PreTrainedModel, PreTrainedTokenizer]:
     print_axolotl_text_art()
     check_accelerate_default_config()
     check_user_token()
-    
+
     if cfg.chat_template:
         register_chat_template(cfg.chat_template, cfg.default_system_message)
 
