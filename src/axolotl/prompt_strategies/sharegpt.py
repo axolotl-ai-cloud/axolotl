@@ -39,12 +39,18 @@ def register_chatml_template(system_message=None):
     )
 
 
-def register_llama3x_template(version, system_message=None):
-    extra_system_content_to_insert = "Cutting Knowledge Date: December 2023\nToday Date: 26 Jul 2024\n\n" if version == "3.1" else ""
+def register_llama3x_template(version="", system_message=None):
+    extra_system_content_to_insert = (
+        "Cutting Knowledge Date: December 2023\nToday Date: 26 Jul 2024\n\n"
+        if version == "3.1"
+        else ""
+    )
     register_conv_template(
         Conversation(
             name=f"llama{version.replace('.', '')}",
-            system_template="<|start_header_id|>system<|end_header_id|>\n\n{extra_system_content_to_insert}{system_message}<|eot_id|>",
+            system_template="<|start_header_id|>system<|end_header_id|>\n\n"
+            + extra_system_content_to_insert
+            + "{system_message}<|eot_id|>",
             system_message=system_message,
             roles=("user", "assistant"),
             sep_style=SeparatorStyle.LLAMA3,
@@ -95,6 +101,7 @@ def build_loader(
 
     return _load
 
+
 def register_chat_template(chat_template, default_system_message=None):
     if chat_template == "chatml" or chat_template.startswith("llama"):
         if default_system_message:
@@ -102,11 +109,13 @@ def register_chat_template(chat_template, default_system_message=None):
 
         if chat_template == "chatml":
             register_chatml_template(default_system_message)
-            LOG.info(f"Using ChatML template")
+            LOG.info("Using ChatML template")
         else:
             version = ".".join(list(chat_template.split("llama"))[1])
             if version not in ["3", "3.1"]:
-                raise ValueError(f"Invalid name for Llama 3x template: {chat_template}, only llama3 and llama31 are supported")
+                raise ValueError(
+                    f"Invalid name for Llama 3x template: {chat_template}, only llama3 and llama31 are supported"
+                )
             LOG.info(f"Using Llama {version} template")
             register_llama3x_template(version, default_system_message)
 

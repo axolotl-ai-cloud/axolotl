@@ -42,7 +42,9 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
     )
 
     if parsed_cfg.chat_template:
-        register_chat_template(parsed_cfg.chat_template, parsed_cfg.default_system_message)
+        register_chat_template(
+            parsed_cfg.chat_template, parsed_cfg.default_system_message
+        )
 
     if not parsed_cfg.dataset_prepared_path:
         msg = (
