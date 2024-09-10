@@ -39,7 +39,7 @@ def register_chatml_template(system_message=None):
     )
 
 
-def register_llama3x_template(version="", system_message=None):
+def register_llama3x_template(version="3", system_message=None):
     extra_system_content_to_insert = (
         "Cutting Knowledge Date: December 2023\nToday Date: 26 Jul 2024\n\n"
         if version == "3.1"
