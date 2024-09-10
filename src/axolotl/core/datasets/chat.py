@@ -1,8 +1,9 @@
-from typing import Callable
+from typing import Callable, Optional, Union
 
 from attr.validators import is_callable
 from dacite import from_dict
 from torch.utils.data import Dataset
+from transformers import PreTrainedTokenizer
 
 from axolotl.core.chat.messages import ChatFormattedChats, Chats
 
@@ -12,8 +13,8 @@ class ChatDataset(Dataset):
         self,
         data: Dataset,
         *args,
-        message_transform: Callable = None,
-        model_transform=None,
+        message_transform: Optional[Callable] = None,
+        model_transform: Optional[Union[PreTrainedTokenizer, Callable]] = None,
         formatter=None,
         **kwargs,
     ):
