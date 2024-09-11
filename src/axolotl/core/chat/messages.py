@@ -5,6 +5,7 @@ from enum import Enum
 from typing import Any, Callable, List, Optional, Union
 
 from transformers import PreTrainedTokenizer
+from transformers import PreTrainedTokenizer
 
 
 class MessageRoles(str, Enum):
@@ -69,7 +70,7 @@ class MessageContents:
     type: Union[str, MessageContentTypes]
     value: Union[str, ToolCallContents, ToolResponseContents]
     meta: Optional[dict[str, Any]] = None  # support additional arbitrary metadata
-    train: Optional[bool] = None
+    weight: Optional[int | float] = None
     has_newline: bool = False
     eoc: bool = False  # end of contents
 
@@ -85,7 +86,7 @@ class Messages:
     role: Union[MessageRoles, str]  # allows for arbitrary roles
     content: List["MessageContents"]
     meta: Optional[dict[str, Any]] = None  # support additional arbitrary metadata
-    train: bool = False
+    weight: Optional[int | float] = 0
     is_chat_formatted: bool = False
 
     def __str__(self) -> str:
@@ -99,7 +100,7 @@ class Messages:
         input_ids: List[int] = []
         labels: List[int] = []
         pending_input_ids: List[int] = []
-        pending_train = self.train
+        pending_weight = self.weight
         running_content = ""
         for _, msg_content in enumerate(self.content):
             # TODO also handle non-text content types
@@ -118,14 +119,14 @@ class Messages:
                     if new_pending_inputs != pending_input_ids:
                         logging.warning("tokenization mismatch from concatenation.")
                     input_ids.extend(pending_input_ids)
-                    if pending_train:
+                    if pending_weight:
                         labels.extend(pending_input_ids)
                     else:
                         labels.extend([ignore_index] * len(pending_input_ids))
                 pending_input_ids = tok_results["input_ids"][len(input_ids) :]
-                pending_train = self.train and msg_content.train is not False
+                pending_weight = self.weight and msg_content.weight not in [0, 0.0]
         input_ids.extend(pending_input_ids)
-        if pending_train:
+        if pending_weight:
             labels.extend(pending_input_ids)
         else:
             labels.extend([ignore_index] * len(pending_input_ids))
@@ -171,7 +172,7 @@ class ChatFormattedChats(Chats):
         for i, msg in enumerate(self.conversation):
             self.conversation[i] = self.formatter(msg)
             if self.train_on_inputs:
-                self.conversation[i].train = True
+                self.conversation[i].weight = 1
 
 
 @dataclass
