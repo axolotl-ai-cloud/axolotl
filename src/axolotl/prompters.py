@@ -21,6 +21,7 @@ class PromptStyle(Enum):
     CHAT = "chat"
     CHATML = "chatml"
     PHI = "phi"
+    EXAONE = "exaone"
 
 
 class Prompter:
@@ -69,6 +70,10 @@ class AlpacaPrompter(Prompter):
                 "<|user|>\n{instruction}<|end|>\n<|assistant|>\n"
             )
             self.system_format = "<|system|>\n{system}<|end|>\n"
+        elif self.prompt_style == PromptStyle.EXAONE.value:
+            self.turn_format = "[|user|]{instruction}\n{input}\n[|assistant|]"
+            self.turn_no_input_format = "[|user|]{instruction}\n[|assistant|]"
+            self.system_format = "[|system|]{system}[|endofturn|]\n"
 
     def _build_result(self, instruction, input_text, output):
         # returns the full prompt from instruction and optional input
@@ -271,6 +276,7 @@ CONVERSATION_ROLE_FORMAT = {
     "zephyr": "<|{ROLE}|>",
     "vicuna_v1.1": "{ROLE}",
     "llama3": "<|start_header_id|>{ROLE}<|end_header_id|>",
+    "exaone": "[|{ROLE}|]",
 }
 
 
