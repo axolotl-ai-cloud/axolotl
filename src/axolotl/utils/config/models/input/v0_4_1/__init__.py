@@ -106,6 +106,7 @@ class SFTDataset(BaseModel):
     conversation: Optional[str] = None
     chat_template: Optional[str] = None
     data_files: Optional[Union[str, List[str]]] = None
+    input_format: Optional[str] = None
     name: Optional[str] = None
     ds_type: Optional[str] = None
     train_on_split: Optional[str] = None
