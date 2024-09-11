@@ -19,11 +19,18 @@ class MessageRoles(str, Enum):
 
 
 class MessageContentTypes(str, Enum):
+    special_token = "special_token"  # pylint: disable=invalid-name
     text = "text"  # pylint: disable=invalid-name
     image = "image"  # pylint: disable=invalid-name
     audio = "audio"  # pylint: disable=invalid-name
     tool_call = "tool_call"  # pylint: disable=invalid-name  # to differentiate regular responses from tool calls from the assistant
     tool_response = "tool_response"  # pylint: disable=invalid-name
+
+
+@dataclass
+class SpecialToken(str, Enum):
+    bos_token = "bos_token"  # pylint: disable=invalid-name
+    eos_token = "eos_token"  # pylint: disable=invalid-name
 
 
 @dataclass
@@ -68,9 +75,9 @@ class ToolResponseContents:
 @dataclass
 class MessageContents:
     type: Union[str, MessageContentTypes]
-    value: Union[str, ToolCallContents, ToolResponseContents]
+    value: Union[str, ToolCallContents, ToolResponseContents, SpecialToken]
     meta: Optional[dict[str, Any]] = None  # support additional arbitrary metadata
-    weight: Optional[int | float] = None
+    weight: Optional[Union[int, float]] = None
     has_newline: bool = False
     eoc: bool = False  # end of contents
 
@@ -86,7 +93,7 @@ class Messages:
     role: Union[MessageRoles, str]  # allows for arbitrary roles
     content: List["MessageContents"]
     meta: Optional[dict[str, Any]] = None  # support additional arbitrary metadata
-    weight: Optional[int | float] = 0
+    weight: Optional[Union[int, float]] = 0
     is_chat_formatted: bool = False
 
     def __str__(self) -> str:
@@ -117,7 +124,8 @@ class Messages:
                         len(input_ids) : len(input_ids) + len(pending_input_ids)
                     ]
                     if new_pending_inputs != pending_input_ids:
-                        logging.warning("tokenization mismatch from concatenation.")
+                        # logging.warning("tokenization mismatch from concatenation.")
+                        pending_input_ids = new_pending_inputs
                     input_ids.extend(pending_input_ids)
                     if pending_weight:
                         labels.extend(pending_input_ids)
@@ -165,12 +173,12 @@ class Chats:
 
 @dataclass
 class ChatFormattedChats(Chats):
-    formatter: Callable[[Chats], Chats]
+    formatter: Callable # [[Union[dict, Chats]], Chats]
     train_on_inputs: bool = False
 
     def __post_init__(self):
         for i, msg in enumerate(self.conversation):
-            self.conversation[i] = self.formatter(msg)
+            self.conversation[i] = self.formatter(msg, message_index=i)
             if self.train_on_inputs:
                 self.conversation[i].weight = 1
 
