@@ -1,50 +1,44 @@
+import os
 from typing import Callable, Optional, Union
 
-from attr.validators import is_callable
 from dacite import from_dict
-from torch.utils.data import Dataset
+from datasets import Dataset
 from transformers import PreTrainedTokenizer
 
 from axolotl.core.chat.messages import ChatFormattedChats, Chats
 
 
-class ChatDataset(Dataset):
+class TokenizedChatDataset(Dataset):
     def __init__(
         self,
         data: Dataset,
+        model_transform: Union[PreTrainedTokenizer, Callable],
         *args,
         message_transform: Optional[Callable] = None,
-        model_transform: Optional[Union[PreTrainedTokenizer, Callable]] = None,
         formatter=None,
+        process_count: Optional[int] = None,
+        keep_in_memory: Optional[bool] = False,
         **kwargs,
     ):
-        super().__init__(*args, **kwargs)
-        self._data = data
-        if message_transform is not None and not is_callable(message_transform):
-            raise ValueError("message_transform must be a callable function")
-        self.message_transform = message_transform
-        if model_transform is not None and not is_callable(model_transform):
-            raise ValueError("model_transform must be a callable function")
-        self.model_transform = model_transform
-        self.formatter = formatter
+        def map_fn(ex):
+            if message_transform is not None:
+                ex = message_transform(ex)
+            if formatter is not None:
+                ex = from_dict(
+                    data_class=ChatFormattedChats,
+                    data={**ex, "formatter": formatter},
+                )
+            else:
+                ex = from_dict(
+                    data_class=ChatFormattedChats,
+                    data=ex,
+                )
+            return ex.tokenized(model_transform)
 
-    def __getitem__(self, idx):
-        sample = self._data[idx]
-        if self.message_transform is not None:
-            sample = self.message_transform(sample)
-        if self.formatter is not None:
-            return from_dict(
-                data_class=ChatFormattedChats,
-                data={**sample, "formatter": self.formatter},
-            )
-        return from_dict(data_class=Chats, data=sample)
-
-    def __len__(self):
-        return len(self._data)
-
-    def __iter__(self):
-        for i in range(len(self)):
-            yield self[i]
-
-    def __repr__(self):
-        return f"ChatDataset({len(self)} examples)"
+        num_proc = min(64, process_count if process_count else os.cpu_count())
+        tokenized_data = data.map(
+            map_fn,
+            num_proc=num_proc,
+            keep_in_memory=keep_in_memory,
+        )
+        super().__init__(tokenized_data.data, *args, **kwargs)

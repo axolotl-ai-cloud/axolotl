@@ -31,4 +31,5 @@ def load(strategy, tokenizer, cfg, ds_cfg, processor=None):
         return None
     except Exception as exc:  # pylint: disable=broad-exception-caught
         LOG.error(f"Failed to load prompt strategy `{strategy}`: {str(exc)}")
+        raise exc
         return None

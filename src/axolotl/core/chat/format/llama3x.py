@@ -7,19 +7,22 @@ def format_message(message: Messages, message_index: Optional[int] = None) -> Me
     if message.is_chat_formatted:
         return message
 
+    message_role = message.role
+    if message.role == "tool":
+        message_role = "ipython"
+
     # prepend the role prefix within a MessageContents to message.content
     message.content.insert(
         0,
         MessageContents(
             type="text",
-            value=f"<|im_start|>{message.role}\n",
+            value=f"<|start_header_id|>{message_role}<|end_header_id|>\n\n",
             weight=0,
         ),
     )
     message.content.append(
-        MessageContents(type="text", value="<|im_end|>", weight=message.weight)
+        MessageContents(type="text", value="<|eot_id|>", weight=message.weight)
     )
-    message.content.append(MessageContents(type="text", value="\n", weight=0))
 
     # loop over message.content by index to find tool calls, we need to wrap each with tags,
     # so be wary of indexing issues when changing the list while iterating
@@ -53,5 +56,16 @@ def format_message(message: Messages, message_index: Optional[int] = None) -> Me
             message.content.insert(
                 i, MessageContents(type="text", value="<tool_response>\n", weight=message.weight)
             )
+
+    if message_index == 0:
+        message.content.insert(
+            0,
+            MessageContents(
+                type="special_token",
+                value="bos_token",
+                weight=0,
+            ),
+        )
+
     message.is_chat_formatted = True
     return message

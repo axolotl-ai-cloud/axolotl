@@ -1,12 +1,12 @@
-from typing import Mapping
+from typing import Mapping, Union
 
 
 def chat_message_transform_builder(
     train_on_inputs=False,
     conversations_field: str = "conversations",
-    message_field_role: str | list[str] = "role",  # commonly ["role", "from"]
-    message_field_content: str | list[str] = "content",  # also ["value", "text", "content"]
-    message_field_training: str | list[str] = "weight",  # also ["train", "weight"]
+    message_field_role: Union[str, list[str]] = ["role", "from"],  # commonly "role"
+    message_field_content: Union[str, list[str]] = ["value", "text", "content"],  # commonly "content"
+    message_field_training: Union[str, list[str]] = ["train", "weight"],  # commonly "weight"
 ):
     """Builds a transform that takes a row from the dataset and converts it to a Chat
 
@@ -84,7 +84,9 @@ def chat_message_transform_builder(
             role = role_value_mappings[message[role_field]]
             weight = int(message[message_weight_field]) if message_weight_field else role_default_weights_mappings[role]
 
-            messages.extend({
+            # TODO if "tool_calls" in message[message_content_field]: then convert tool call to ToolCallContents
+
+            messages.append({
                 "role": role,
                 "content": [{
                     "type": "text",
@@ -93,6 +95,6 @@ def chat_message_transform_builder(
                 "weight": weight,
             })
 
-        return messages
+        return {"conversation": messages}
 
     return transform_builder
