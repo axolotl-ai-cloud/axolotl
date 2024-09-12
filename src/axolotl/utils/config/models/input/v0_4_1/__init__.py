@@ -8,9 +8,16 @@ import logging
 import os
 from enum import Enum
 from importlib.metadata import version
-from typing import Any, Dict, List, Literal, Optional, Tuple, Union
+from typing import Annotated, Any, Dict, List, Literal, Optional, Tuple, Union
 
-from pydantic import BaseModel, Field, conlist, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    StringConstraints,
+    conlist,
+    field_validator,
+    model_validator,
+)
 from transformers import SchedulerType
 from transformers.training_args import OptimizerNames
 
@@ -19,6 +26,22 @@ from axolotl.utils.config.models.internals import GPUCapabilities
 LOG = logging.getLogger("axolotl.utils.config.models.input")
 
 SUPPORTED_METRICS = {"sacrebleu", "comet", "ter", "chrf", "perplexity"}
+
+
+class ChatTemplate(str, Enum):
+    """Chat templates configuration subset"""
+
+    jinja = "jinja"  # pylint: disable=invalid-name
+    alpaca = "alpaca"  # pylint: disable=invalid-name
+    chatml = "chatml"  # pylint: disable=invalid-name
+    inst = "inst"  # pylint: disable=invalid-name
+    gemma = "gemma"  # pylint: disable=invalid-name
+    cohere = "cohere"  # pylint: disable=invalid-name
+    llama3 = "llama3"  # pylint: disable=invalid-name
+    phi_3 = "phi_3"  # pylint: disable=invalid-name
+    deepseek_v2 = "deepseek_v2"  # pylint: disable=invalid-name
+    jamba = "jamba"  # pylint: disable=invalid-name
+    tokenizer_default = "tokenizer_default"  # pylint: disable=invalid-name
 
 
 class DeprecatedParameters(BaseModel):
@@ -104,12 +127,15 @@ class SFTDataset(BaseModel):
     type: Optional[Union[str, UserDefinedPrompterType]] = None
     shards: Optional[int] = None
     conversation: Optional[str] = None
-    chat_template: Optional[str] = None
+    chat_template: Union[
+        ChatTemplate,
+        Annotated[str, StringConstraints(pattern="^tokenizer_default_fallback_")],
+    ] = ChatTemplate.tokenizer_default
+    chat_template_jinja: Optional[str] = None
     data_files: Optional[Union[str, List[str]]] = None
     name: Optional[str] = None
     ds_type: Optional[str] = None
     train_on_split: Optional[str] = None
-
     field: Optional[str] = None
     field_human: Optional[str] = None
     field_model: Optional[str] = None
@@ -120,11 +146,26 @@ class SFTDataset(BaseModel):
     message_field_training_detail: Optional[str] = None
     roles_to_train: Optional[List[str]] = None
     train_on_eos: Optional[str] = None
-
     roles: Optional[Dict[str, List[str]]] = None
     drop_system_message: Optional[bool] = None
-
     trust_remote_code: Optional[bool] = False
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_chat_template_config(cls, data):
+        # if chat_template is set to jinja, chat_template_jinja is required
+        if data.get("chat_template") == ChatTemplate.jinja and not data.get(
+            "chat_template_jinja"
+        ):
+            raise ValueError(
+                "chat_template_jinja is required when chat_template is set to jinja"
+            )
+
+        # If chat_template_jinja is set, set chat_template to jinja
+        if data.get("chat_template_jinja") and not data.get("chat_template"):
+            data["chat_template"] = ChatTemplate.jinja
+
+        return data
 
 
 class UserDefinedDPOType(BaseModel):
@@ -177,20 +218,6 @@ class RLType(str, Enum):
     orpo = "orpo"  # pylint: disable=invalid-name
     kto = "kto"  # pylint: disable=invalid-name
     simpo = "simpo"  # pylint: disable=invalid-name
-
-
-class ChatTemplate(str, Enum):
-    """Chat templates configuration subset"""
-
-    alpaca = "alpaca"  # pylint: disable=invalid-name
-    chatml = "chatml"  # pylint: disable=invalid-name
-    inst = "inst"  # pylint: disable=invalid-name
-    gemma = "gemma"  # pylint: disable=invalid-name
-    cohere = "cohere"  # pylint: disable=invalid-name
-    llama3 = "llama3"  # pylint: disable=invalid-name
-    phi_3 = "phi_3"  # pylint: disable=invalid-name
-    deepseek_v2 = "deepseek_v2"  # pylint: disable=invalid-name
-    jamba = "jamba"  # pylint: disable=invalid-name
 
 
 class LoftQConfig(BaseModel):
@@ -680,7 +707,11 @@ class AxolotlInputConfig(
     gpu_memory_limit: Optional[Union[int, str]] = None
     low_cpu_mem_usage: Optional[bool] = None
 
-    chat_template: Optional[ChatTemplate] = None
+    chat_template: Union[
+        ChatTemplate,
+        Annotated[str, StringConstraints(pattern="^tokenizer_default_fallback_")],
+    ] = ChatTemplate.chatml
+    chat_template_jinja: Optional[str] = None
     default_system_message: Optional[str] = None
 
     fix_untrained_tokens: Optional[bool] = None
@@ -786,6 +817,23 @@ class AxolotlInputConfig(
             raise ValueError(
                 "sample_packing not compatible with xformers_attention. Use flash_attention"
             )
+
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_chat_template_config(cls, data):
+        # if chat_template is set to jinja, chat_template_jinja is required
+        if data.get("chat_template") == ChatTemplate.jinja and not data.get(
+            "chat_template_jinja"
+        ):
+            raise ValueError(
+                "chat_template_jinja is required when chat_template is set to jinja"
+            )
+
+        # If chat_template_jinja is set, set chat_template to jinja
+        if data.get("chat_template_jinja") and not data.get("chat_template"):
+            data["chat_template"] = ChatTemplate.jinja
 
         return data
 

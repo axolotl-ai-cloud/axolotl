@@ -2,15 +2,16 @@
 DPO prompt strategies for using tokenizer chat templates.
 """
 
-from axolotl.utils.chat_templates import chat_templates
+from axolotl.utils.chat_templates import extract_chat_template_args, get_chat_template
 
 
 def default(
     cfg, dataset_idx=0, **kwargs
 ):  # pylint: disable=possibly-unused-variable,unused-argument
     ds_cfg = cfg["datasets"][dataset_idx]
-    chat_template_str = chat_templates(cfg.chat_template)
-
+    chat_template_choice, chat_template_jinja = extract_chat_template_args(
+        cfg=cfg, ds_cfg=ds_cfg
+    )
     field_messages = ds_cfg.get("field_messages", "messages")
     field_chosen = ds_cfg.get("field_chosen", "chosen")
     field_rejected = ds_cfg.get("field_rejected", "rejected")
@@ -30,6 +31,12 @@ def default(
             role_map[source] = target
 
     def transform_fn(sample, tokenizer=None):
+        chat_template_string = get_chat_template(
+            user_choice=chat_template_choice,
+            jinja_template=chat_template_jinja,
+            tokenizer=tokenizer,
+        )
+
         messages = sample[field_messages]
         messages = [
             {
@@ -51,14 +58,14 @@ def default(
         result["prompt"] = tokenizer.apply_chat_template(
             messages,
             add_generation_prompt=True,
-            chat_template=chat_template_str,
+            chat_template=chat_template_string,
             tokenize=False,
         )
 
         result["chosen"] = tokenizer.apply_chat_template(
             [chosen],
             add_generation_prompt=False,
-            chat_template=chat_template_str,
+            chat_template=chat_template_string,
             tokenize=False,
         )
         chosen_strip_index = result["chosen"].find(chosen["content"])
@@ -67,7 +74,7 @@ def default(
         result["rejected"] = tokenizer.apply_chat_template(
             [rejected],
             add_generation_prompt=False,
-            chat_template=chat_template_str,
+            chat_template=chat_template_string,
             tokenize=False,
         )
         rejected_strip_index = result["rejected"].find(rejected["content"])
