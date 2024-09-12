@@ -1,0 +1,108 @@
+---
+title: Training with AMD GPUs on HPC Systems
+description: A comprehensive guide for using Axolotl on distributed systems with AMD GPUs
+---
+
+This guide provides step-by-step instructions for installing and configuring Axolotl on a High-Performance Computing (HPC) environment equipped with AMD GPUs.
+
+## Setup
+
+### 1. Install Python
+
+We recommend using Miniforge, a minimal conda-based Python distribution:
+
+```bash
+curl -L -O "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-$(uname)-$(uname -m).sh"
+bash Miniforge3-$(uname)-$(uname -m).sh
+```
+
+### 2. Configure Python Environment
+Add Python to your PATH and ensure it's available at login:
+
+```bash
+echo 'export PATH=~/miniforge3/bin:$PATH' >> ~/.bashrc
+echo 'if [ -f ~/.bashrc ]; then . ~/.bashrc; fi' >> ~/.bash_profile
+```
+
+### 3. Load AMD GPU Software
+
+Load the ROCm module:
+
+```bash
+module load rocm/5.7.1
+```
+
+Note: The specific module name and version may vary depending on your HPC system. Consult your system documentation for the correct module name.
+
+### 4. Install PyTorch
+
+Install PyTorch with ROCm support:
+
+```bash
+pip install -U torch torchvision torchaudio --index-url https://download.pytorch.org/whl/rocm5.7 --force-reinstall
+```
+
+### 5. Install Flash Attention
+
+Clone and install the Flash Attention repository:
+
+```bash
+git clone --recursive https://github.com/ROCmSoftwarePlatform/flash-attention.git
+export GPU_ARCHS="gfx90a"
+cd flash-attention
+export PYTHON_SITE_PACKAGES=$(python -c 'import site; print(site.getsitepackages()[0])')
+patch "${PYTHON_SITE_PACKAGES}/torch/utils/hipify/hipify_python.py" hipify_patch.patch
+pip install .
+```
+
+### 6. Install Axolotl
+
+Clone and install Axolotl:
+
+```bash
+git clone https://github.com/axolotl-ai-cloud/axolotl
+cd axolotl
+pip install packaging ninja
+pip install -e .
+```
+
+### 7. Apply xformers Workaround
+
+xformers appears to be incompatible with ROCm. Apply the following workarounds:
+ - Edit $HOME/packages/axolotl/src/axolotl/monkeypatch/llama_attn_hijack_flash.py modifying the code to always return `False` for SwiGLU availability from xformers.
+ - Edit $HOME/miniforge3/lib/python3.10/site-packages/xformers/ops/swiglu_op.py replacing the "SwiGLU" function with a pass statement.
+
+### 8. Prepare Job Submission Script
+
+Create a script for job submission using your HPC's particular software (e.g. Slurm, PBS). Include necessary environment setup and the command to run Axolotl training. If the compute node(s) do(es) not have internet access, it is recommended to include
+
+```bash
+export TRANSFORMERS_OFFLINE=1
+export HF_DATASETS_OFFLINE=1
+```
+
+### 9. Download Base Model
+
+Download a base model using the Hugging Face CLI:
+
+```bash
+huggingface-cli download meta-llama/Meta-Llama-3.1-8B --local-dir ~/hfdata/llama3.1-8B
+```
+
+### 10. Create Axolotl Configuration
+
+Create an Axolotl configuration file (YAML format) tailored to your specific training requirements and dataset. Use FSDP for multi-node training.
+
+Note: Deepspeed did not work at the time of testing. However, if anyone managed to get it working, please let us know.
+
+### 11. Preprocess Data
+
+Run preprocessing on the login node:
+
+```bash
+CUDA_VISIBLE_DEVICES="" python -m axolotl.cli.preprocess /path/to/your/config.yaml
+```
+
+### 12. Train
+
+You are now ready to submit your previously prepared job script. 🚂

@@ -7,7 +7,7 @@ order: 5
 - Pass an empty `type:` in your axolotl config.
 - Columns in Dataset must be exactly `input_ids`, `attention_mask`, `labels`
 - To indicate that a token should be ignored during training, set its corresponding label to `-100`.
-- Do not add BOS/EOS. Axolotl will add them for you based on the default tokenizer for the model you're using.
+- You must add BOS and EOS, and make sure that you are training on EOS by not setting its label to -100.
 - For pretraining, do not truncate/pad documents to the context window length.
 - For instruction training, documents must be truncated/padded as desired.
 

@@ -382,6 +382,8 @@ class HyperparametersConfig(BaseModel):
         },
     )
 
+    auto_find_batch_size: Optional[bool] = None
+
     train_on_inputs: Optional[bool] = False
     group_by_length: Optional[bool] = None
 
@@ -619,6 +621,7 @@ class AxolotlInputConfig(
     eval_sample_packing: Optional[bool] = None
     pad_to_sequence_len: Optional[bool] = None
     curriculum_sampling: Optional[bool] = None
+    multipack_real_batches: Optional[bool] = None
 
     # for PoSE context length extension
     use_pose: Optional[bool] = None

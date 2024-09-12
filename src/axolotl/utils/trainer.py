@@ -357,7 +357,7 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                 main_process_only=True,
             )
         else:
-            if cfg.flash_attention:
+            if cfg.flash_attention and not cfg.multipack_real_batches:
                 sampler_batch_size = 1
                 batch_max_len = cfg.micro_batch_size * cfg.sequence_len
             else:
@@ -425,7 +425,8 @@ def setup_deepspeed_env(cfg, stage=None):
         os.environ["ACCELERATE_DEEPSPEED_ZERO_STAGE"] = str(stage)
         if stage == 3:
             os.environ["ACCELERATE_DEEPSPEED_ZERO3_INIT"] = "true"
-    HfTrainerDeepSpeedConfig(cfg.deepspeed)
+    # If we don't assign this, it doesn't actually get set in the accelerate weakref
+    _ = HfTrainerDeepSpeedConfig(cfg.deepspeed)
 
 
 def setup_fsdp_envs(cfg):
