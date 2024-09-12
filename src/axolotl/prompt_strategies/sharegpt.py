@@ -62,7 +62,7 @@ def register_exaone_template(system_message=None):
             system_template="[|system|]{system_message}[|endofturn|]\n",
             system_message=system_message,
             roles=("[|user|]", "[|assistant|]"),
-            sep_style=SeparatorStyle.CHATML,
+            sep_style=SeparatorStyle.EXAONE,
             sep="[|endofturn|]\n",
         )
     )
@@ -72,7 +72,7 @@ def register_exaone_template(system_message=None):
             system_template="[|system|]{system_message}[|endofturn|]\n",
             system_message=system_message,
             roles=("[|user|]", "[|assistant|]", "[|tool|]"),
-            sep_style=SeparatorStyle.CHATML,
+            sep_style=SeparatorStyle.EXAONE,
             sep="[|endofturn|]\n",
         )
     )
