@@ -229,6 +229,7 @@ def load_tokenized_prepared_datasets(
                     name=config_dataset.name,
                     streaming=True,
                     token=use_auth_token,
+                    revision=config_dataset.revision,
                 )
                 ds_from_hub = True
             except (FileNotFoundError, ConnectionError, HFValidationError, ValueError):
@@ -306,6 +307,7 @@ def load_tokenized_prepared_datasets(
                             data_files=config_dataset.data_files,
                             streaming=False,
                             split=None,
+                            revision=config_dataset.revision,
                         )
                     else:
                         ds = load_from_disk(config_dataset.path)
@@ -318,6 +320,7 @@ def load_tokenized_prepared_datasets(
                         data_files=config_dataset.path,
                         streaming=False,
                         split=None,
+                        revision=config_dataset.revision,
                     )
                 else:
                     raise ValueError(
@@ -333,6 +336,7 @@ def load_tokenized_prepared_datasets(
                     streaming=False,
                     data_files=config_dataset.data_files,
                     token=use_auth_token,
+                    revision=config_dataset.revision,
                     **load_ds_kwargs,
                 )
             elif ds_from_cloud and remote_file_system:
@@ -350,6 +354,7 @@ def load_tokenized_prepared_datasets(
                         streaming=False,
                         split=None,
                         storage_options=storage_options,
+                        revision=config_dataset.revision,
                     )
             elif config_dataset.path.startswith("https://"):
                 ds_type = get_ds_type(config_dataset)
@@ -360,6 +365,7 @@ def load_tokenized_prepared_datasets(
                     streaming=False,
                     split=None,
                     storage_options=storage_options,
+                    revision=config_dataset.revision,
                 )
             else:
                 if isinstance(config_dataset.data_files, str):
@@ -367,6 +373,7 @@ def load_tokenized_prepared_datasets(
                         repo_id=config_dataset.path,
                         repo_type="dataset",
                         filename=config_dataset.data_files,
+                        revision=config_dataset.revision,
                     )
                 elif isinstance(config_dataset.data_files, list):
                     fp = []
@@ -376,6 +383,7 @@ def load_tokenized_prepared_datasets(
                                 repo_id=config_dataset.path,
                                 repo_type="dataset",
                                 filename=file,
+                                revision=config_dataset.revision,
                             )
                         )
                 else:
@@ -420,8 +428,8 @@ def load_tokenized_prepared_datasets(
                 config_dataset=config_dataset,
                 tokenizer=tokenizer,
                 cfg=cfg,
-                dataset=ds,
                 d_base_type=d_base_type,
+                dataset=ds,
                 d_prompt_style=d_prompt_style,
             )
             datasets.append(dataset_wrapper)

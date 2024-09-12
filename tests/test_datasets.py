@@ -267,6 +267,73 @@ class TestDatasetPreparation(unittest.TestCase):
             assert "attention_mask" in dataset.features
             assert "labels" in dataset.features
 
+    def test_load_hub_with_revision(self):
+        """Verify that processing data from the hub works with a specific revision"""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            prepared_path = Path(tmp_dir) / "prepared"
+            cfg = DictDefault(
+                {
+                    "tokenizer_config": "huggyllama/llama-7b",
+                    "sequence_len": 1024,
+                    "datasets": [
+                        {
+                            "path": "mhenrichsen/alpaca_2k_test",
+                            "type": "alpaca",
+                            "revision": "foo",
+                        },
+                    ],
+                }
+            )
+
+            dataset, _ = load_tokenized_prepared_datasets(
+                self.tokenizer, cfg, prepared_path
+            )
+
+            assert len(dataset) == 2000
+            assert "input_ids" in dataset.features
+            assert "attention_mask" in dataset.features
+            assert "labels" in dataset.features
+
+    def test_load_local_hub_with_revision(self):
+        """Verify that a local copy of a hub dataset can be loaded with a specific revision"""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_ds_path = Path("mhenrichsen/alpaca_2k_test")
+            tmp_ds_path.mkdir(parents=True, exist_ok=True)
+            snapshot_download(
+                repo_id="mhenrichsen/alpaca_2k_test",
+                repo_type="dataset",
+                local_dir=tmp_ds_path,
+                revision="foo",
+            )
+
+            prepared_path = Path(tmp_dir) / "prepared"
+            cfg = DictDefault(
+                {
+                    "tokenizer_config": "huggyllama/llama-7b",
+                    "sequence_len": 1024,
+                    "datasets": [
+                        {
+                            "path": "mhenrichsen/alpaca_2k_test",
+                            "ds_type": "parquet",
+                            "type": "alpaca",
+                            "data_files": [
+                                "mhenrichsen/alpaca_2k_test/alpaca_2000.parquet",
+                            ],
+                            "revision": "foo",
+                        },
+                    ],
+                }
+            )
+
+            dataset, _ = load_tokenized_prepared_datasets(
+                self.tokenizer, cfg, prepared_path
+            )
+
+            assert len(dataset) == 2000
+            assert "input_ids" in dataset.features
+            assert "attention_mask" in dataset.features
+            assert "labels" in dataset.features
+            shutil.rmtree(tmp_ds_path)
 
 if __name__ == "__main__":
     unittest.main()
