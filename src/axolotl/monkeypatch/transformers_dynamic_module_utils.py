@@ -10,7 +10,10 @@ from transformers.file_utils import HF_MODULES_CACHE
 
 
 def _patched_get_class_in_module(
-    class_name: str, module_path: typing.Union[str, os.PathLike]
+    class_name: str,
+    module_path: typing.Union[str, os.PathLike],
+    *,
+    force_reload: bool = False,  # pylint: disable=unused-argument
 ) -> typing.Type:
     """
     Import a module on the cache directory for modules and extract a class from it.
