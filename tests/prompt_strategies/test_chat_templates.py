@@ -80,6 +80,12 @@ def fixture_llama3_tokenizer():
     return tokenizer
 
 
+@pytest.fixture(name="phi35_tokenizer")
+def fixture_phi35_tokenizer():
+    tokenizer = AutoTokenizer.from_pretrained("microsoft/Phi-3.5-mini-instruct")
+    return tokenizer
+
+
 class TestChatTemplateConfigurations:
     """
     Test class for various configurations of ChatTemplateStrategy.
@@ -740,7 +746,6 @@ class TestAssistantChatTemplateLlama3:
             tokenizer=llama3_tokenizer,
             train_on_inputs=False,
             sequence_len=512,
-            roles_to_train=["assistant"],
         )
         strategy.messages = "messages"
         res = strategy.tokenize_prompt(assistant_dataset[0])
@@ -763,6 +768,64 @@ class TestAssistantChatTemplateLlama3:
         assert (
             input_ids == expected_input_ids
         ), f"Input IDs mismatch: {input_ids} != {expected_input_ids}"
+
+    def test_phi35(self, phi35_tokenizer, assistant_dataset):
+        LOG.info("Testing phi-3.5 with assistant dataset")
+        strategy = ChatTemplateStrategy(
+            ChatTemplatePrompter(
+                phi35_tokenizer,
+                chat_templates("phi_35"),
+                message_field_role="role",
+                message_field_content="content",
+                roles={
+                    "user": ["user"],
+                    "assistant": ["assistant"],
+                    "system": ["system"],
+                },
+            ),
+            tokenizer=phi35_tokenizer,
+            train_on_inputs=False,
+            sequence_len=512,
+        )
+        strategy.messages = "messages"
+        res = strategy.tokenize_prompt(assistant_dataset[0])
+        input_ids = res["input_ids"]
+        labels = res["labels"]
+        # fmt: off
+        expected_input_ids = [
+            32010,  # user
+            22172, 32007,  # user eot
+            32001,  # assistant
+            22172, 32007,  # assistant eot
+            32010,  # user
+            1781, 26966, 32007,  # user eot
+            32001,  # assistant
+            1781, 26966, 32007,  # assistant eot
+            32000,  # eos
+        ]
+        expected_labels = [
+            -100,  # user
+            -100, -100,  # user eot
+            -100,  # assistant
+            -100, -100,  # assistant eot,
+            -100,  # user
+            -100, -100, -100,  # user eot
+            -100,  # assistant
+            1781, 26966, 32007,  # assistant eot
+            32000,  # eos
+        ]
+        # fmt: on
+        LOG.debug(f"Expected input_ids: {expected_input_ids}")
+        LOG.debug(f"Actual input_ids: {input_ids}")
+        assert (
+            input_ids == expected_input_ids
+        ), f"Input IDs mismatch: {input_ids} != {expected_input_ids}"
+
+        LOG.debug(f"Expected labels : {expected_labels}")
+        LOG.debug(f"Actual labels : {labels}")
+        assert (
+            labels == expected_labels
+        ), f"Input IDs mismatch: {labels} != {expected_labels}"
 
     def test_llama3_with_training_data(self, llama3_tokenizer, assistant_dataset):
         LOG.info("Testing llama-3 with assistant dataset including training data")
