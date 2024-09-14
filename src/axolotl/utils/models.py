@@ -43,9 +43,6 @@ from axolotl.monkeypatch.multipack import (
     SUPPORTED_MULTIPACK_MODEL_TYPES,
     patch_for_multipack,
 )
-from axolotl.monkeypatch.transformers_dynamic_module_utils import (
-    patch_transformers_dynamic_module_utils,
-)
 from axolotl.prompt_tokenizers import LLAMA_DEFAULT_EOS_TOKEN
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.chat_templates import chat_templates
@@ -56,8 +53,6 @@ from axolotl.utils.lora_embeddings import get_linear_embedding_layers
 from axolotl.utils.model_shard_quant import load_sharded_model, load_sharded_model_quant
 
 LOG = logging.getLogger("axolotl")
-
-patch_transformers_dynamic_module_utils()
 
 
 # copied from accelerator.FullyShardedDataParallelPlugin
