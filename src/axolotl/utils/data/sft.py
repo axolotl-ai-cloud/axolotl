@@ -320,7 +320,6 @@ def load_tokenized_prepared_datasets(
                             data_files=config_dataset.data_files,
                             streaming=False,
                             split=None,
-                            revision=config_dataset.revision,
                         )
                     else:
                         ds = load_from_disk(config_dataset.path)
@@ -333,7 +332,6 @@ def load_tokenized_prepared_datasets(
                         data_files=config_dataset.path,
                         streaming=False,
                         split=None,
-                        revision=config_dataset.revision,
                     )
                 else:
                     raise ValueError(
@@ -367,7 +365,6 @@ def load_tokenized_prepared_datasets(
                         streaming=False,
                         split=None,
                         storage_options=storage_options,
-                        revision=config_dataset.revision,
                     )
             elif config_dataset.path.startswith("https://"):
                 ds_type = get_ds_type(config_dataset)
@@ -378,7 +375,6 @@ def load_tokenized_prepared_datasets(
                     streaming=False,
                     split=None,
                     storage_options=storage_options,
-                    revision=config_dataset.revision,
                 )
             else:
                 if isinstance(config_dataset.data_files, str):
