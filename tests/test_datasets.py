@@ -279,7 +279,7 @@ class TestDatasetPreparation(unittest.TestCase):
                         {
                             "path": "mhenrichsen/alpaca_2k_test",
                             "type": "alpaca",
-                            "revision": "foo",
+                            "revision": "d05c1cb",
                         },
                     ],
                 }
@@ -319,7 +319,7 @@ class TestDatasetPreparation(unittest.TestCase):
                             "data_files": [
                                 "mhenrichsen/alpaca_2k_test/alpaca_2000.parquet",
                             ],
-                            "revision": "foo",
+                            "revision": "d05c1cb",
                         },
                     ],
                 }
@@ -334,6 +334,7 @@ class TestDatasetPreparation(unittest.TestCase):
             assert "attention_mask" in dataset.features
             assert "labels" in dataset.features
             shutil.rmtree(tmp_ds_path)
+
 
 if __name__ == "__main__":
     unittest.main()
