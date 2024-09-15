@@ -303,7 +303,7 @@ class TestDatasetPreparation(unittest.TestCase):
                 repo_id="mhenrichsen/alpaca_2k_test",
                 repo_type="dataset",
                 local_dir=tmp_ds_path,
-                revision="foo",
+                revision="d05c1cb",
             )
 
             prepared_path = Path(tmp_dir) / "prepared"
