@@ -4,6 +4,7 @@ Grokfast plugin for Axolotl
 from transformers.trainer_callback import CallbackHandler
 
 from ..base import BasePlugin
+from .args import GrokfastArgs  # pylint: disable=unused-import. # noqa: F401
 from .optimizer import gradfilter_ema
 
 
