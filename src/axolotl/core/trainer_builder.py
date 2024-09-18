@@ -539,7 +539,7 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
 
                 distributed_config = None
                 if self.args.world_size > 1:
-                    if self.args.fsdp_config:
+                    if self.args.fsdp and self.args.fsdp_config:
                         distributed_config = FSDPShampooConfig(
                             param_to_metadata=compile_fsdp_parameter_metadata(
                                 self.model_wrapped
@@ -547,7 +547,7 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
                         )
                     else:
                         distributed_config = DDPShampooConfig(
-                            communication_dtype=CommunicationDType.BFLOAT16,
+                            communication_dtype=CommunicationDType.BF16,
                             num_trainers_per_group=self.args.world_size,
                             communicate_params=False,
                         )
