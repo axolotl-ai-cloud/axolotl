@@ -10,8 +10,8 @@ optim_args:
     max_preconditioner_dim: 8192
     precondition_frequency: 100
     use_decoupled_weight_decay: true
-    optim_shampoo_grafting_config_type: adam
-    optim_shampoo_grafting_config_kwargs:
-        beta2: 0.999
-        epsilon: 1e-12
+optim_shampoo_grafting_config_type: adam
+optim_shampoo_grafting_config_kwargs:
+    beta2: 0.999
+    epsilon: 1e-12
 ```

@@ -498,6 +498,8 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
                         optim_args[key] = value
 
                 optim_args["betas"] = self.args.optim_shampoo_betas
+                if isinstance(optim_args["epsilon"], str):
+                    optim_args["epsilon"] = float(optim_args["epsilon"])
                 optim_args["lr"] = self.args.learning_rate
                 optim_args["weight_decay"] = self.args.weight_decay
                 optim_args["use_decoupled_weight_decay"] = bool(
@@ -506,15 +508,15 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
 
                 if self.args.optim_shampoo_grafting_config_type == "adam":
                     grafting_config = AdamGraftingConfig(
-                        self.args.optim_shampoo_grafting_config_kwargs
+                        **self.args.optim_shampoo_grafting_config_kwargs
                     )
                 elif self.args.optim_shampoo_grafting_config_type == "sgd":
                     grafting_config = SGDGraftingConfig(
-                        self.args.optim_shampoo_grafting_config_kwargs
+                        **self.args.optim_shampoo_grafting_config_kwargs
                     )
                 elif self.args.optim_shampoo_grafting_config_type == "adagrad":
                     grafting_config = AdaGradGraftingConfig(
-                        self.args.optim_shampoo_grafting_config_kwargs
+                        **self.args.optim_shampoo_grafting_config_kwargs
                     )
 
                 distributed_config = None
