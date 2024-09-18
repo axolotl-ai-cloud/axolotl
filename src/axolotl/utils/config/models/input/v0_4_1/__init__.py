@@ -777,7 +777,6 @@ class AxolotlInputConfig(
         return data
 
     @model_validator(mode="before")
-    @model_validator(mode="before")
     @classmethod
     def check_gptq_w_revision(cls, data):
         if data.get("gptq") and data.get("revision_of_model"):
