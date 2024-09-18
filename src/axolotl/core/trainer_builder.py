@@ -479,10 +479,12 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
             elif self.args.alternate_optimizer == "shampoo":
                 from distributed_shampoo.distributed_shampoo import DistributedShampoo
                 from distributed_shampoo.shampoo_types import (
+                    AdaGradGraftingConfig,
                     AdamGraftingConfig,
                     CommunicationDType,
                     DDPShampooConfig,
                     FSDPShampooConfig,
+                    SGDGraftingConfig,
                 )
                 from distributed_shampoo.utils.shampoo_fsdp_utils import (
                     compile_fsdp_parameter_metadata,
@@ -502,8 +504,16 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
                     optim_args.get("use_decoupled_weight_decay")
                 )
 
-                if self.args.optim_shampoo_grafting_config_type in ["adam", "adamw"]:
+                if self.args.optim_shampoo_grafting_config_type == "adam":
                     grafting_config = AdamGraftingConfig(
+                        self.args.optim_shampoo_grafting_config_kwargs
+                    )
+                elif self.args.optim_shampoo_grafting_config_type == "sgd":
+                    grafting_config = SGDGraftingConfig(
+                        self.args.optim_shampoo_grafting_config_kwargs
+                    )
+                elif self.args.optim_shampoo_grafting_config_type == "adagrad":
+                    grafting_config = AdaGradGraftingConfig(
                         self.args.optim_shampoo_grafting_config_kwargs
                     )
 
