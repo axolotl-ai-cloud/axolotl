@@ -279,6 +279,7 @@ CONVERSATION_ROLE_FORMAT = {
     "zephyr": "<|{ROLE}|>",
     "vicuna_v1.1": "{ROLE}",
     "llama3": "<|start_header_id|>{ROLE}<|end_header_id|>",
+    "exaone": "[|{ROLE}|]",
 }
 
 

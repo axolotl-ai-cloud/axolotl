@@ -26,6 +26,7 @@ from axolotl.common.const import DEFAULT_DATASET_PREPARED_PATH
 from axolotl.prompt_strategies.sharegpt import (
     register_chatml_template,
     register_llama3_template,
+    register_exaone_template,
 )
 
 LOG = logging.getLogger("axolotl.cli.preprocess")
@@ -59,6 +60,14 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
             register_llama3_template(parsed_cfg.default_system_message)
         else:
             register_llama3_template()
+    elif parsed_cfg.chat_template == "exaone":
+        if parsed_cfg.default_system_message:
+            LOG.info(
+                f"EXAONE 3.0 set. Adding default system message: {parsed_cfg.default_system_message}"
+            )
+            register_exaone_template(parsed_cfg.default_system_message)
+        else:
+            register_exaone_template()
 
     if not parsed_cfg.dataset_prepared_path:
         msg = (
