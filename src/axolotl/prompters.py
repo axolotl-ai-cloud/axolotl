@@ -92,9 +92,6 @@ class AlpacaPrompter(Prompter):
             ) + self.turn_no_input_format.format(instruction=instruction)
         if output:
             res = f"{res}{output}"
-            
-        if self.prompt_style == PromptStyle.EXAONE.value and output:
-            res += "[|endofturn|]\n"
         
         return res
 
