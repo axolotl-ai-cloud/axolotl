@@ -24,8 +24,8 @@ class ChatTemplatePrompter(Prompter):
         max_length=2048,
         message_field_role: str = "from",
         message_field_content: str = "value",
-        message_field_training: str = "train",
-        message_field_training_detail: str = "train_detail",
+        message_field_training: Optional[str] = None,
+        message_field_training_detail: Optional[str] = None,
         roles: Optional[Dict[str, List[str]]] = None,
         drop_system_message: bool = False,
     ):
@@ -186,7 +186,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         train_on_inputs,
         sequence_len,
         roles_to_train=None,
-        train_on_eos="last",
+        train_on_eos=None,
     ):
         super().__init__(prompter, tokenizer, train_on_inputs, sequence_len)
         self.roles_to_train = roles_to_train if roles_to_train is not None else []
@@ -201,6 +201,37 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         self._messages = messages
 
     def tokenize_prompt(self, prompt):
+        # Old simple legacy behavior that works reliably.
+        if (
+            not self.roles_to_train
+            and not self.train_on_eos
+            and not self.prompter.message_field_training
+            and not self.prompter.message_field_training_detail
+        ):
+            turns = self.get_conversation_thread(prompt)
+            prompt_ids = self.prompter.build_prompt(
+                turns[:-1], add_generation_prompt=True
+            )
+            input_ids = self.prompter.build_prompt(turns)
+
+            if not self.train_on_inputs:
+                user_prompt_len = len(prompt_ids)
+                labels = [-100] * user_prompt_len + input_ids[user_prompt_len:]
+            else:
+                labels = input_ids
+
+            tokenized_prompt = {
+                "input_ids": input_ids,
+                "labels": labels,
+                "attention_mask": [1] * len(input_ids),
+            }
+
+            return tokenized_prompt
+        LOG.info(self.roles_to_train)
+        LOG.info(self.train_on_eos)
+        LOG.info(self.prompter.message_field_training)
+        LOG.info(self.prompter.message_field_training_detail)
+
         turns = prompt[self.messages]
         input_ids = self.prompter.build_prompt(turns)
         labels = [IGNORE_TOKEN_ID] * len(input_ids)
@@ -219,9 +250,11 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             should_train = (
                 train_turn
                 if train_turn is not None
-                else bool(train_detail is not None)
-                if train_detail is not None
-                else self.train_on_inputs or role in self.roles_to_train
+                else (
+                    bool(train_detail is not None)
+                    if train_detail is not None
+                    else self.train_on_inputs or role in self.roles_to_train
+                )
             )
 
             LOG.debug(f"Should train: {should_train}")
@@ -344,9 +377,10 @@ def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
         "chat_template": chat_templates(ds_cfg.get("chat_template", "chatml")),
         "message_field_role": ds_cfg.get("message_field_role", "from"),
         "message_field_content": ds_cfg.get("message_field_content", "value"),
-        "message_field_training": ds_cfg.get("message_field_training", "training"),
+        "message_field_training": ds_cfg.get("message_field_training", None),
         "message_field_training_detail": ds_cfg.get(
-            "message_field_training_detail", "train_detail"
+            "message_field_training_detail",
+            None,
         ),
         "roles": ds_cfg.get("roles"),
         "drop_system_message": ds_cfg.get("drop_system_message", False),
@@ -357,8 +391,8 @@ def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
     strategy_params = {
         "train_on_inputs": cfg.train_on_inputs,
         "sequence_len": cfg.sequence_len,
-        "roles_to_train": ds_cfg.get("roles_to_train", ["gpt", "assistant"]),
-        "train_on_eos": ds_cfg.get("train_on_eos", "turn"),
+        "roles_to_train": ds_cfg.get("roles_to_train", []),
+        "train_on_eos": ds_cfg.get("train_on_eos", None),
     }
 
     strategy = ChatTemplateStrategy(
