@@ -977,7 +977,11 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
         run_dir = self._get_output_dir(trial=trial)
         output_dir = os.path.join(run_dir, checkpoint_folder)
         os.makedirs(output_dir, exist_ok=True)
-        return super()._save_checkpoint(model, trial, metrics=metrics)
+        try:
+            return super()._save_checkpoint(model, trial, metrics=metrics)
+        except NotImplementedError as exc:
+            LOG.warning(f"Failed to save checkpoint: {exc}")
+            return None
 
 
 class AxolotlMambaTrainer(AxolotlTrainer):
