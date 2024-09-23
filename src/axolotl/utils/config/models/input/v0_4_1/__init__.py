@@ -1017,10 +1017,18 @@ class AxolotlInputConfig(
         return neftune_noise_alpha
 
     @model_validator(mode="after")
-    def check(self):
+    def check_rl_beta(self):
         if self.dpo_beta and not self.rl_beta:
             self.rl_beta = self.dpo_beta
             del self.dpo_beta
+        return self
+
+    @model_validator(mode="after")
+    def check_simpo_warmup(self):
+        if self.rl == "simpo" and self.warmup_ratio:
+            raise ValueError(
+                "warmup_ratio is not supported with the simpo trainer. Please use `warmup_steps` instead"
+            )
         return self
 
     @model_validator(mode="before")
