@@ -46,3 +46,8 @@ gcsfs>=2024.5.0
 trl==0.9.6
 zstandard==0.22.0
 fastcore
+
+# lm eval harness
+lm_eval==0.4.4
+langdetect==1.0.9
+immutabledict==4.2.0
