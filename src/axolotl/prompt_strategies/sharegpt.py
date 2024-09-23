@@ -16,7 +16,7 @@ LOG = logging.getLogger("axolotl")
 
 
 def register_chatml_template(system_message=None):
-    system_message = system_message or "You are a helpful assistant."
+    system_message = system_message or ""
     register_conv_template(
         Conversation(
             name="chatml",
