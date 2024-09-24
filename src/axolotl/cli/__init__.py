@@ -30,6 +30,7 @@ from axolotl.common.cli import TrainerCliArgs, load_model_and_tokenizer
 from axolotl.integrations.base import PluginManager
 from axolotl.logging_config import configure_logging
 from axolotl.train import TrainDatasetMeta
+from axolotl.utils.chat_templates import chat_templates
 from axolotl.utils.config import (
     normalize_cfg_datasets,
     normalize_config,
@@ -234,7 +235,8 @@ def do_inference_gradio(
 
     model, tokenizer = load_model_and_tokenizer(cfg=cfg, cli_args=cli_args)
     prompter = cli_args.prompter
-    default_tokens = {"unk_token": "<unk>", "bos_token": "<s>", "eos_token": "</s>"}
+    # default_tokens = {"unk_token": "<unk>", "bos_token": "<s>", "eos_token": "</s>"}
+    default_tokens: Dict[str, str] = {}
 
     for token, symbol in default_tokens.items():
         # If the token isn't already specified in the config, add it
@@ -242,10 +244,13 @@ def do_inference_gradio(
             tokenizer.add_special_tokens({token: symbol})
 
     prompter_module = None
+    chat_template_str = None
     if prompter:
         prompter_module = getattr(
             importlib.import_module("axolotl.prompters"), prompter
         )
+    elif cfg.chat_template:
+        chat_template_str = chat_templates(cfg.chat_template)
 
     model = model.to(cfg.device, dtype=cfg.torch_dtype)
 
@@ -259,7 +264,24 @@ def do_inference_gradio(
             )
         else:
             prompt = instruction.strip()
-        batch = tokenizer(prompt, return_tensors="pt", add_special_tokens=True)
+
+        if chat_template_str:
+            batch = tokenizer.apply_chat_template(
+                [
+                    {
+                        "role": "user",
+                        "content": prompt,
+                    }
+                ],
+                return_tensors="pt",
+                add_special_tokens=True,
+                add_generation_prompt=True,
+                chat_template=chat_template_str,
+                tokenize=True,
+                return_dict=True,
+            )
+        else:
+            batch = tokenizer(prompt, return_tensors="pt", add_special_tokens=True)
 
         model.eval()
         with torch.no_grad():
@@ -282,6 +304,7 @@ def do_inference_gradio(
             streamer = TextIteratorStreamer(tokenizer)
             generation_kwargs = {
                 "inputs": batch["input_ids"].to(cfg.device),
+                "attention_mask": batch["attention_mask"].to(cfg.device),
                 "generation_config": generation_config,
                 "streamer": streamer,
             }

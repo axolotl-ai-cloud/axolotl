@@ -375,8 +375,8 @@ def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
     prompter_params = {
         "tokenizer": tokenizer,
         "chat_template": chat_templates(ds_cfg.get("chat_template", "chatml")),
-        "message_field_role": ds_cfg.get("message_field_role", "from"),
-        "message_field_content": ds_cfg.get("message_field_content", "value"),
+        "message_field_role": ds_cfg.get("message_field_role", "role"),
+        "message_field_content": ds_cfg.get("message_field_content", "content"),
         "message_field_training": ds_cfg.get("message_field_training", None),
         "message_field_training_detail": ds_cfg.get(
             "message_field_training_detail",
