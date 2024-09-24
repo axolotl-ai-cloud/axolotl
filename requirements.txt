@@ -51,3 +51,4 @@ fastcore
 lm_eval==0.4.4
 langdetect==1.0.9
 immutabledict==4.2.0
+antlr4-python3-runtime==4.13.2
