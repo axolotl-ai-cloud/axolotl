@@ -35,6 +35,7 @@ python-dotenv==1.0.1
 autoawq>=0.2.5
 triton>=2.3.0
 liger-kernel==0.2.1
+distributed_shampoo @ git+https://github.com/facebookresearch/optimizers.git@main
 
 mamba-ssm==1.2.0.post1
 

@@ -372,6 +372,7 @@ class HyperparametersConfig(BaseModel):
                 "ao_adamw_4bit",
                 "ao_adamw_8bit",
                 "ao_adamw_fp8",
+                "shampoo",
             ],
         ]
     ] = OptimizerNames.ADAMW_HF.value
@@ -384,6 +385,12 @@ class HyperparametersConfig(BaseModel):
             "help": "The target modules to optimize, i.e. the module names that you would like to train."
         },
     )
+    optim_shampoo_grafting_config_type: Optional[
+        Literal["adam", "sgd", "adagrad"]
+    ] = None
+    optim_shampoo_grafting_config_kwargs: Optional[Dict[str, Any]] = None
+    optim_shampoo_betas: Optional[Tuple[float, float]] = None
+
     torchdistx_path: Optional[str] = None
     lr_scheduler: Optional[Union[SchedulerType, Literal["one_cycle"]]] = "cosine"
     lr_scheduler_kwargs: Optional[Dict[str, Any]] = None
