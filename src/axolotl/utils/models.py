@@ -28,7 +28,8 @@ from transformers import (  # noqa: F401
     AddedToken,
     AutoConfig,
     AutoModelForCausalLM,
-    LlavaForConditionalGeneration
+    LlavaForConditionalGeneration,
+    MllamaForConditionalGeneration,
     AutoTokenizer,
     AutoProcessor,
     AwqConfig,
@@ -83,6 +84,9 @@ def get_module_class_from_name(module, name):
 
 
 def check_model_config(cfg: DictDefault, model_config: Union[AutoConfig, DictDefault]):
+    if cfg.is_multimodal:
+        model_config = model_config.text_config
+
     quant_config_exists = (
         hasattr(model_config, "quantization_config")
         and model_config.quantization_config
@@ -302,7 +306,7 @@ def load_tokenizer(cfg):
     return tokenizer
 
 def load_processor(cfg: DictDefault, tokenizer: PreTrainedTokenizerBase):
-    model_config = load_model_config(cfg)
+    #model_config = load_model_config(cfg)
     processor_kwargs = {} #do we actually need this?
 
     processor_cls = AutoProcessor
@@ -340,13 +344,18 @@ def load_model(
     plugin_manager = PluginManager.get_instance()
     plugin_manager.pre_model_load(cfg)
 
+    
+    if cfg.is_multimodal:
+        text_model_config = model_config.text_config
+    else: text_model_config = model_config
+
     # TODO refactor as a kwarg
     load_in_8bit = cfg.load_in_8bit
 
     if cfg.gradient_checkpointing == "unsloth":
         transformers.modeling_utils.checkpoint = hf_grad_checkpoint_unsloth_wrapper
 
-    if hasattr(model_config, "model_type") and model_config.model_type == "btlm":
+    if hasattr(text_model_config, "model_type") and text_model_config.model_type == "btlm":
         if cfg.flash_attention:
             from axolotl.monkeypatch.btlm_attn_hijack_flash import (
                 replace_btlm_attn_with_flash_attn,
@@ -355,8 +364,8 @@ def load_model(
             replace_btlm_attn_with_flash_attn(cfg.base_model)
 
     if (
-        hasattr(model_config, "model_type")
-        and model_config.model_type == "stablelm_epoch"
+        hasattr(text_model_config, "model_type")
+        and text_model_config.model_type == "stablelm_epoch"
     ):
         if cfg.flash_attention and cfg.sample_packing:
             from axolotl.monkeypatch.stablelm_attn_hijack_flash import (
@@ -482,6 +491,14 @@ def load_model(
     max_memory = cfg.max_memory
     device_map = cfg.device_map
 
+    if cfg.is_multimodal:
+        if model_config.model_type == "llava":
+            Auto = LlavaForConditionalGeneration
+        elif model_config.model_type == "mllama":
+            Auto = MllamaForConditionalGeneration
+    else:
+        Auto = AutoModelForCausalLM
+
     if cfg.gpu_memory_limit:
         gpu_memory_limit = (
             str(cfg.gpu_memory_limit) + "GiB"
@@ -499,7 +516,7 @@ def load_model(
         from accelerate import infer_auto_device_map
 
         with init_empty_weights():
-            model_canvas = AutoModelForCausalLM.from_config(
+            model_canvas = Auto.from_config(
                 model_config, trust_remote_code=cfg.trust_remote_code or False
             )
         model_canvas.tie_weights()
@@ -654,6 +671,7 @@ def load_model(
             quantization_config = (
                 quantization_config or model_kwargs["quantization_config"]
             )
+            if cfg.is_multimodal: model_config.text_config = text_model_config
             model = load_sharded_model_quant(
                 base_model,
                 model_config,
@@ -663,7 +681,7 @@ def load_model(
             )
             skip_move_to_device = True
         elif (
-            model_config.model_type == "llama"
+            text_model_config.model_type == "llama"
             and not cfg.trust_remote_code
             and not cfg.gptq
         ):
@@ -672,7 +690,9 @@ def load_model(
                 if "device_map" in model_kwargs:
                     del model_kwargs["device_map"]
 
-            model = AutoModelForCausalLM.from_pretrained(
+            
+            if cfg.is_multimodal: model_config.text_config = text_model_config
+            model = Auto.from_pretrained(
                 base_model,
                 config=model_config,
                 **model_kwargs,
@@ -711,13 +731,16 @@ def load_model(
             and not cfg.trust_remote_code
         ):
             if cfg.gptq:
-                model = AutoModelForCausalLM.from_pretrained(
+                if cfg.is_multimodal: model_config.text_config = text_model_config
+                model = Auto.from_pretrained(
                     base_model,
                     config=model_config,
                     trust_remote_code=cfg.trust_remote_code or False,
                     **model_kwargs,
                 )
             else:
+
+                if cfg.is_multimodal: model_config.text_config = text_model_config
                 model = getattr(transformers, model_type).from_pretrained(
                     base_model,
                     config=model_config,
@@ -728,21 +751,23 @@ def load_model(
             # Shouldn't be a problem most of the time. will obviously error if the model doesn't support this
             # when training starts
             if (
-                hasattr(model_config, "max_seq_len")
-                and model_config.max_seq_len
+                hasattr(text_model_config, "max_seq_len")
+                and text_model_config.max_seq_len
                 and cfg.sequence_len > model_config.max_seq_len
             ):
-                model_config.max_seq_len = cfg.sequence_len
+                text_model_config.max_seq_len = cfg.sequence_len
                 LOG.warning(f"increasing context length to {cfg.sequence_len}")
             elif (
-                hasattr(model_config, "max_sequence_length")
-                and model_config.max_sequence_length
-                and cfg.sequence_len > model_config.max_sequence_length
+                hasattr(text_model_config, "max_sequence_length")
+                and text_model_config.max_sequence_length
+                and cfg.sequence_len > text_model_config.max_sequence_length
             ):
-                model_config.max_sequence_length = cfg.sequence_len
+                text_model_config.max_sequence_length = cfg.sequence_len
                 LOG.warning(f"increasing context length to {cfg.sequence_len}")
             if cfg.gptq:
-                model = AutoModelForCausalLM.from_pretrained(
+
+                if cfg.is_multimodal: model_config.text_config = text_model_config
+                model = Auto.from_pretrained(
                     base_model,
                     config=model_config,
                     trust_remote_code=cfg.trust_remote_code or False,
@@ -755,7 +780,8 @@ def load_model(
                     if "device_map" in model_kwargs:
                         del model_kwargs["device_map"]
 
-                model = AutoModelForCausalLM.from_pretrained(
+                if cfg.is_multimodal: model_config.text_config = text_model_config
+                model = Auto.from_pretrained(
                     base_model,
                     config=model_config,
                     trust_remote_code=cfg.trust_remote_code or False,
