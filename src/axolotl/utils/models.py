@@ -28,12 +28,15 @@ from transformers import (  # noqa: F401
     AddedToken,
     AutoConfig,
     AutoModelForCausalLM,
+    LlavaForConditionalGeneration
     AutoTokenizer,
+    AutoProcessor,
     AwqConfig,
     BitsAndBytesConfig,
     GPTQConfig,
     PreTrainedModel,
     PreTrainedTokenizerBase,
+    ProcessorMixin,
 )
 from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
 
@@ -298,10 +301,28 @@ def load_tokenizer(cfg):
         )
     return tokenizer
 
+def load_processor(cfg: DictDefault, tokenizer: PreTrainedTokenizerBase):
+    model_config = load_model_config(cfg)
+    processor_kwargs = {} #do we actually need this?
+
+    processor_cls = AutoProcessor
+    if cfg.processor_type:
+        processor_cls = getattr(transformers, cfg.processor_type)
+
+    processor = processor_cls.from_pretrained(
+        cfg.processor_config,
+        trust_remote_code=cfg.trust_remote_code or False,
+        tokenizer=tokenizer,
+        **processor_kwargs,
+    )
+
+    return processor
+
 
 def load_model(
     cfg: DictDefault,
     tokenizer: PreTrainedTokenizerBase,
+    processor: ProcessorMixin = None, 
     inference: bool = False,
     reference_model: bool = False,
 ) -> Tuple[PreTrainedModel, Optional[PeftConfig]]:
