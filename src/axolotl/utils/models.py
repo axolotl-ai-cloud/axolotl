@@ -28,6 +28,7 @@ from transformers import (  # noqa: F401
     AddedToken,
     AutoConfig,
     AutoModelForCausalLM,
+    AutoModelForPreTraining,
     LlavaForConditionalGeneration,
     MllamaForConditionalGeneration,
     AutoTokenizer,
@@ -337,6 +338,7 @@ def load_model(
     base_model = cfg.base_model
     model_type = cfg.type_of_model
     model_config = load_model_config(cfg)
+    is_multimodal = cfg.is_multimodal
 
     # load any patches from plugins
     from axolotl.integrations.base import PluginManager
@@ -344,10 +346,16 @@ def load_model(
     plugin_manager = PluginManager.get_instance()
     plugin_manager.pre_model_load(cfg)
 
-    
-    if cfg.is_multimodal:
+
+    if is_multimodal:
         text_model_config = model_config.text_config
     else: text_model_config = model_config
+
+    def update_model_config(is_multimodal, text_model_config, model_config):
+        if is_multimodal:
+            model_config.text_config = text_model_config
+        else:
+            model_config = text_model_config
 
     # TODO refactor as a kwarg
     load_in_8bit = cfg.load_in_8bit
@@ -492,10 +500,11 @@ def load_model(
     device_map = cfg.device_map
 
     if cfg.is_multimodal:
-        if model_config.model_type == "llava":
-            Auto = LlavaForConditionalGeneration
-        elif model_config.model_type == "mllama":
-            Auto = MllamaForConditionalGeneration
+        Auto = AutoModelForPreTraining
+        #if model_config.model_type == "llava":
+        #    Auto = LlavaForConditionalGeneration
+        #elif model_config.model_type == "mllama":
+        #    Auto = MllamaForConditionalGeneration
     else:
         Auto = AutoModelForCausalLM
 
@@ -671,7 +680,8 @@ def load_model(
             quantization_config = (
                 quantization_config or model_kwargs["quantization_config"]
             )
-            if cfg.is_multimodal: model_config.text_config = text_model_config
+        
+            update_model_config(is_multimodal, text_model_config, model_config)
             model = load_sharded_model_quant(
                 base_model,
                 model_config,
@@ -690,8 +700,7 @@ def load_model(
                 if "device_map" in model_kwargs:
                     del model_kwargs["device_map"]
 
-            
-            if cfg.is_multimodal: model_config.text_config = text_model_config
+            update_model_config(is_multimodal, text_model_config, model_config)
             model = Auto.from_pretrained(
                 base_model,
                 config=model_config,
@@ -731,7 +740,7 @@ def load_model(
             and not cfg.trust_remote_code
         ):
             if cfg.gptq:
-                if cfg.is_multimodal: model_config.text_config = text_model_config
+                update_model_config(is_multimodal, text_model_config, model_config)
                 model = Auto.from_pretrained(
                     base_model,
                     config=model_config,
@@ -740,7 +749,7 @@ def load_model(
                 )
             else:
 
-                if cfg.is_multimodal: model_config.text_config = text_model_config
+                update_model_config(is_multimodal, text_model_config, model_config)
                 model = getattr(transformers, model_type).from_pretrained(
                     base_model,
                     config=model_config,
@@ -766,7 +775,7 @@ def load_model(
                 LOG.warning(f"increasing context length to {cfg.sequence_len}")
             if cfg.gptq:
 
-                if cfg.is_multimodal: model_config.text_config = text_model_config
+                update_model_config(is_multimodal, text_model_config, model_config)
                 model = Auto.from_pretrained(
                     base_model,
                     config=model_config,
@@ -780,7 +789,7 @@ def load_model(
                     if "device_map" in model_kwargs:
                         del model_kwargs["device_map"]
 
-                if cfg.is_multimodal: model_config.text_config = text_model_config
+                update_model_config(is_multimodal, text_model_config, model_config)
                 model = Auto.from_pretrained(
                     base_model,
                     config=model_config,
@@ -807,32 +816,63 @@ def load_model(
     else:
         model.tie_weights()
 
+    ###we need to generalize model attributing for multmodal alongside pure language model
+    def setattr_model_text_config(is_multimodal, model, attr_name, attr_val):
+        if is_multimodal:
+            setattr(model.config.text_config, attr_name, attr_val)
+        else:
+            setattr(model.config, attr_name, attr_val)
+
+    def hasattr_model_text_config(is_multimodal, model, attr_name):
+        if is_multimodal:
+            return hasattr(model.config.text_config, attr_name)
+        else:
+            return hasattr(model.config, attr_name)
+        
+    def getattr_model_text_config(is_multimodal, model, attr_name):
+        if is_multimodal:
+            return getattr(model.config.text_config, attr_name)
+        else:
+            return getattr(model.config, attr_name)
+    
     if (
         hasattr(model, "config")
-        and hasattr(model.config, "max_position_embeddings")
-        and model.config.max_position_embeddings
-        and cfg.sequence_len > model.config.max_position_embeddings
+        # generalize # and hasattr(model.config, "max_position_embeddings")
+        and hasattr_model_text_config(is_multimodal, model, "max_position_embeddings")
+        # generalize # and model.config.max_position_embeddings
+        and getattr_model_text_config(is_multimodal, model, "max_position_embeddings")
+        # generalize # and cfg.sequence_len > model.config.max_position_embeddings
+        and cfg.sequence_len > getattr_model_text_config(is_multimodal, model, "max_position_embeddings")
     ):
         LOG.warning(
             f"increasing model.config.max_position_embeddings from {model.config.max_position_embeddings} to {cfg.sequence_len}"
         )
-        model.config.max_position_embeddings = cfg.sequence_len
+
+        setattr_model_text_config(is_multimodal, model, "max_position_embeddings", cfg.sequence_len)
+        
+    if (
+        hasattr(model, "config")
+        # generalize # and ( hasattr(model.config, "bos_token_id") or hasattr(model.config.text_config, "bos_token_id") )
+        and hasattr_model_text_config(is_multimodal, model, "bos_token_id")
+        # generalize # and model.config.bos_token_id
+        and getattr_model_text_config(is_multimodal, model, "bos_token_id")
+        # generalize # and model.config.bos_token_id != tokenizer.bos_token_id
+        and getattr_model_text_config(is_multimodal, model, "bos_token_id") != tokenizer.bos_token_id
+    ):
+        # to replace model.config.bos_token_id = tokenizer.bos_token_id
+        setattr_model_text_config(is_multimodal, model, "bos_token_id", tokenizer.bos_token_id)
 
     if (
         hasattr(model, "config")
-        and hasattr(model.config, "bos_token_id")
-        and model.config.bos_token_id
-        and model.config.bos_token_id != tokenizer.bos_token_id
+        # generalize # and hasattr(model.config, "eos_token_id")
+        and hasattr_model_text_config(is_multimodal, model, "eos_token_id")
+        # generalize # and model.config.eos_token_id
+        and getattr_model_text_config(is_multimodal, model, "eos_token_id")
+        # generalize # and model.config.eos_token_id != tokenizer.eos_token_id
+        and getattr_model_text_config(is_multimodal, model, "eos_token_id") != tokenizer.eos_token_id
     ):
-        model.config.bos_token_id = tokenizer.bos_token_id
-
-    if (
-        hasattr(model, "config")
-        and hasattr(model.config, "eos_token_id")
-        and model.config.eos_token_id
-        and model.config.eos_token_id != tokenizer.eos_token_id
-    ):
-        model.config.eos_token_id = tokenizer.eos_token_id
+        # to replace model.config.eos_token_id = tokenizer.eos_token_id
+        setattr_model_text_config(is_multimodal, model, "eos_token_id", tokenizer.eos_token_id)
 
     if hasattr(model, "device") and model.device.type in ("cuda", "mps"):
         log_gpu_memory_usage(LOG, "after model load", model.device)
