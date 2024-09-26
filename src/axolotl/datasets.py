@@ -139,8 +139,7 @@ class TokenizedPromptDataset(Dataset):
         print("Special Tokens:", special_tokens)
         print("First Mapped Item:", mapped[0])
         decoded_text = self.prompt_tokenizer.tokenizer.decode(mapped[0]["input_ids"])
-        # print("Decoded Text:", decoded_text)
-        
+        print("Decoded Text:", decoded_text)
         # Print the decoding with colored special tokens
         print(colorize_special_tokens_text(decoded_text, special_tokens))
 
