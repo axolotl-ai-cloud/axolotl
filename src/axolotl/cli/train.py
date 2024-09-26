@@ -63,14 +63,14 @@ def do_train(cfg, cli_args) -> Tuple[PreTrainedModel, PreTrainedTokenizer]:
     else:
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
-    from transformers import AutoTokenizer
-    tokenizer = AutoTokenizer.from_pretrained("/home/lzc/MyData/models/Qwen2.5-72B-Instruct")
-    sample = dataset_meta.train_dataset[0]
-    print(f"Sample ids:\n{sample}")
-    sample_ids = sample['input_ids']
-    sample_text = tokenizer.decode(sample_ids, skip_special_tokens=False)
-    print(f"Sample text:\n{sample_text}")
-    exit(0)
+    # from transformers import AutoTokenizer
+    # tokenizer = AutoTokenizer.from_pretrained("/home/lzc/MyData/models/Qwen2.5-72B-Instruct")
+    # sample = dataset_meta.train_dataset[0]
+    # print(f"Sample ids:\n{sample}")
+    # sample_ids = sample['input_ids']
+    # sample_text = tokenizer.decode(sample_ids, skip_special_tokens=False)
+    # print(f"Sample text:\n{sample_text}")
+    # exit(0)
 
     return train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
 
