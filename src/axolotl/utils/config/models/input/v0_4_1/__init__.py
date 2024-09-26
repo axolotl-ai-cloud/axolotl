@@ -328,6 +328,9 @@ class ModelInputConfig(BaseModel):
     tokenizer_type: Optional[str] = Field(
         default=None, metadata={"help": "transformers tokenizer class"}
     )
+    processor_type: Optional[str] = Field(
+        default=None, metadata={"help": "transformers processor class"}
+    )
     trust_remote_code: Optional[bool] = None
 
     model_kwargs: Optional[Dict[str, Any]] = None
