@@ -9,7 +9,7 @@ from axolotl.prompt_strategies.user_defined import UserDefinedDatasetConfig
 LOG = logging.getLogger("axolotl.prompt_strategies")
 
 
-def load(strategy, tokenizer, cfg, ds_cfg):
+def load(strategy, tokenizer, cfg, ds_cfg, processor=None):
     try:
         load_fn = "load"
         if strategy.split(".")[-1].startswith("load_"):
@@ -24,6 +24,8 @@ def load(strategy, tokenizer, cfg, ds_cfg):
             sig = inspect.signature(func)
             if "ds_cfg" in sig.parameters:
                 load_kwargs["ds_cfg"] = ds_cfg
+            if "processor" in sig.parameters:
+                load_kwargs["processor"] = processor
         return func(tokenizer, cfg, **load_kwargs)
     except ModuleNotFoundError:
         return None

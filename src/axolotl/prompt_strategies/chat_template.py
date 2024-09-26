@@ -20,6 +20,7 @@ class ChatTemplatePrompter(Prompter):
     def __init__(
         self,
         tokenizer,
+        processor=None,
         chat_template=None,
         max_length=2048,
         message_field_role: str = "from",
@@ -44,11 +45,12 @@ class ChatTemplatePrompter(Prompter):
         self.message_field_training = message_field_training
         self.message_field_training_detail = message_field_training_detail
         self.tokenizer = tokenizer
+        self.processor = processor
         self.chat_template = chat_template
         self.max_length = max_length
         self.drop_system_message = drop_system_message
 
-    def build_prompt(self, conversation, add_generation_prompt=False):
+    def build_prompt(self, conversation, add_generation_prompt=False, images=None):
         turns = [
             {
                 "role": self.roles[t[self.message_field_role]],
@@ -60,6 +62,21 @@ class ChatTemplatePrompter(Prompter):
 
         if self.drop_system_message and turns[0]["role"] == "system":
             turns = turns[1:]
+
+        if self.processor:
+            text = self.processor.apply_chat_template(
+                text=turns,
+                tokenize=False,
+                chat_template=self.chat_template,
+                add_generation_prompt=add_generation_prompt,
+            )
+            return self.processor(
+                text=text,
+                images=images,
+                return_tensors="pt",
+                truncation=True,
+                max_length=self.max_length,
+            )
 
         return self.tokenizer.apply_chat_template(
             turns,
@@ -191,6 +208,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         super().__init__(prompter, tokenizer, train_on_inputs, sequence_len)
         self.roles_to_train = roles_to_train if roles_to_train is not None else []
         self.train_on_eos = train_on_eos
+        self.images = "images"
 
     @property
     def messages(self):
@@ -209,10 +227,13 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             and not self.prompter.message_field_training_detail
         ):
             turns = self.get_conversation_thread(prompt)
+            images = self.get_images(prompt)
             prompt_ids = self.prompter.build_prompt(
-                turns[:-1], add_generation_prompt=True
+                turns[:-1],
+                add_generation_prompt=True,
+                images=images,
             )
-            input_ids = self.prompter.build_prompt(turns)
+            input_ids = self.prompter.build_prompt(turns, images=images)
 
             if not self.train_on_inputs:
                 user_prompt_len = len(prompt_ids)
@@ -368,8 +389,11 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
     def get_conversation_thread(self, prompt):
         return prompt[self.messages]
 
+    def get_images(self, prompt):
+        return prompt.get(self.images, None)
 
-def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
+
+def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None, processor=None):
     ds_cfg = ds_cfg or {}
 
     prompter_params = {
@@ -386,6 +410,7 @@ def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
         "drop_system_message": ds_cfg.get("drop_system_message", False),
         # we need to add one for detecting sequences with exceeding the `sequence_len` limit.
         "max_length": cfg.sequence_len + 1,
+        "processor": processor,
     }
 
     strategy_params = {

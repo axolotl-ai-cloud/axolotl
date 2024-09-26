@@ -28,13 +28,13 @@ from transformers import (  # noqa: F401
     AddedToken,
     AutoConfig,
     AutoModelForCausalLM,
-    LlavaForConditionalGeneration,
-    MllamaForConditionalGeneration,
-    AutoTokenizer,
     AutoProcessor,
+    AutoTokenizer,
     AwqConfig,
     BitsAndBytesConfig,
     GPTQConfig,
+    LlavaForConditionalGeneration,
+    MllamaForConditionalGeneration,
     PreTrainedModel,
     PreTrainedTokenizerBase,
     ProcessorMixin,
@@ -305,9 +305,9 @@ def load_tokenizer(cfg):
         )
     return tokenizer
 
+
 def load_processor(cfg: DictDefault, tokenizer: PreTrainedTokenizerBase):
-    #model_config = load_model_config(cfg)
-    processor_kwargs = {} #do we actually need this?
+    processor_kwargs: Dict[str, Any] = {}  # do we actually need this?
 
     processor_cls = AutoProcessor
     if cfg.processor_type:
@@ -326,9 +326,11 @@ def load_processor(cfg: DictDefault, tokenizer: PreTrainedTokenizerBase):
 def load_model(
     cfg: DictDefault,
     tokenizer: PreTrainedTokenizerBase,
-    processor: ProcessorMixin = None, 
+    *,
+    processor: ProcessorMixin = None,  # pylint: disable=unused-argument
     inference: bool = False,
     reference_model: bool = False,
+    **kwargs,  # pylint: disable=unused-argument
 ) -> Tuple[PreTrainedModel, Optional[PeftConfig]]:
     """
     Load a model for a given configuration and tokenizer.
@@ -344,10 +346,10 @@ def load_model(
     plugin_manager = PluginManager.get_instance()
     plugin_manager.pre_model_load(cfg)
 
-    
     if cfg.is_multimodal:
         text_model_config = model_config.text_config
-    else: text_model_config = model_config
+    else:
+        text_model_config = model_config
 
     # TODO refactor as a kwarg
     load_in_8bit = cfg.load_in_8bit
@@ -355,7 +357,10 @@ def load_model(
     if cfg.gradient_checkpointing == "unsloth":
         transformers.modeling_utils.checkpoint = hf_grad_checkpoint_unsloth_wrapper
 
-    if hasattr(text_model_config, "model_type") and text_model_config.model_type == "btlm":
+    if (
+        hasattr(text_model_config, "model_type")
+        and text_model_config.model_type == "btlm"
+    ):
         if cfg.flash_attention:
             from axolotl.monkeypatch.btlm_attn_hijack_flash import (
                 replace_btlm_attn_with_flash_attn,
@@ -491,13 +496,16 @@ def load_model(
     max_memory = cfg.max_memory
     device_map = cfg.device_map
 
+    AutoModelLoader = AutoModelForCausalLM  # pylint: disable=invalid-name
     if cfg.is_multimodal:
         if model_config.model_type == "llava":
-            Auto = LlavaForConditionalGeneration
+            AutoModelLoader = (  # pylint: disable=invalid-name
+                LlavaForConditionalGeneration
+            )
         elif model_config.model_type == "mllama":
-            Auto = MllamaForConditionalGeneration
-    else:
-        Auto = AutoModelForCausalLM
+            AutoModelLoader = (  # pylint: disable=invalid-name
+                MllamaForConditionalGeneration
+            )
 
     if cfg.gpu_memory_limit:
         gpu_memory_limit = (
@@ -516,7 +524,7 @@ def load_model(
         from accelerate import infer_auto_device_map
 
         with init_empty_weights():
-            model_canvas = Auto.from_config(
+            model_canvas = AutoModelLoader.from_config(
                 model_config, trust_remote_code=cfg.trust_remote_code or False
             )
         model_canvas.tie_weights()
@@ -671,7 +679,8 @@ def load_model(
             quantization_config = (
                 quantization_config or model_kwargs["quantization_config"]
             )
-            if cfg.is_multimodal: model_config.text_config = text_model_config
+            if cfg.is_multimodal:
+                model_config.text_config = text_model_config
             model = load_sharded_model_quant(
                 base_model,
                 model_config,
@@ -690,9 +699,9 @@ def load_model(
                 if "device_map" in model_kwargs:
                     del model_kwargs["device_map"]
 
-            
-            if cfg.is_multimodal: model_config.text_config = text_model_config
-            model = Auto.from_pretrained(
+            if cfg.is_multimodal:
+                model_config.text_config = text_model_config
+            model = AutoModelLoader.from_pretrained(
                 base_model,
                 config=model_config,
                 **model_kwargs,
@@ -731,16 +740,17 @@ def load_model(
             and not cfg.trust_remote_code
         ):
             if cfg.gptq:
-                if cfg.is_multimodal: model_config.text_config = text_model_config
-                model = Auto.from_pretrained(
+                if cfg.is_multimodal:
+                    model_config.text_config = text_model_config
+                model = AutoModelLoader.from_pretrained(
                     base_model,
                     config=model_config,
                     trust_remote_code=cfg.trust_remote_code or False,
                     **model_kwargs,
                 )
             else:
-
-                if cfg.is_multimodal: model_config.text_config = text_model_config
+                if cfg.is_multimodal:
+                    model_config.text_config = text_model_config
                 model = getattr(transformers, model_type).from_pretrained(
                     base_model,
                     config=model_config,
@@ -765,9 +775,9 @@ def load_model(
                 text_model_config.max_sequence_length = cfg.sequence_len
                 LOG.warning(f"increasing context length to {cfg.sequence_len}")
             if cfg.gptq:
-
-                if cfg.is_multimodal: model_config.text_config = text_model_config
-                model = Auto.from_pretrained(
+                if cfg.is_multimodal:
+                    model_config.text_config = text_model_config
+                model = AutoModelLoader.from_pretrained(
                     base_model,
                     config=model_config,
                     trust_remote_code=cfg.trust_remote_code or False,
@@ -780,8 +790,9 @@ def load_model(
                     if "device_map" in model_kwargs:
                         del model_kwargs["device_map"]
 
-                if cfg.is_multimodal: model_config.text_config = text_model_config
-                model = Auto.from_pretrained(
+                if cfg.is_multimodal:
+                    model_config.text_config = text_model_config
+                model = AutoModelLoader.from_pretrained(
                     base_model,
                     config=model_config,
                     trust_remote_code=cfg.trust_remote_code or False,
