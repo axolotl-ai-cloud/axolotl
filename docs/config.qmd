@@ -31,7 +31,17 @@ tokenizer_legacy:
 # This is reported to improve training speed on some models
 resize_token_embeddings_to_32x:
 
+# Optional processor configuration path in case you want to use a different processor
+# than the one defined in the base model
+processor_config: 
+# Corresponding processor for the model AutoProcessor is a good choice
+processor_type: AutoProcessor
+
+
 # (Internal use only)
+# To identify whether the model is multimodal
+is_multimodal: 
+
 # Used to identify which the model is based on
 is_falcon_derived_model:
 is_llama_derived_model:

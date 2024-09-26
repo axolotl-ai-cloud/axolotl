@@ -321,6 +321,10 @@ class ModelInputConfig(BaseModel):
     tokenizer_type: Optional[str] = Field(
         default=None, metadata={"help": "transformers tokenizer class"}
     )
+    processor_config: Optional[str] = None
+    processor_type: Optional[str] = Field(
+        default=None, metadata={"help": "transformers processor class"}
+    )
     trust_remote_code: Optional[bool] = None
 
     model_kwargs: Optional[Dict[str, Any]] = None
@@ -694,6 +698,8 @@ class AxolotlInputConfig(
     sample_packing_eff_est: Optional[float] = None
     axolotl_config_path: Optional[str] = None
 
+    is_multimodal: Optional[bool] = Field(default=None)
+    
     is_falcon_derived_model: Optional[bool] = Field(default=None)
     is_llama_derived_model: Optional[bool] = Field(default=None)
     is_mistral_derived_model: Optional[bool] = Field(default=None)
