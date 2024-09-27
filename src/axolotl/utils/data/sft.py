@@ -440,8 +440,11 @@ def load_tokenized_prepared_datasets(
             datasets.append(dataset_wrapper)
             prompters.append(dataset_prompter)
 
-        LOG.info("merging datasets")
-        dataset = concatenate_datasets(datasets)
+        if len(datasets) == 1:
+            dataset = datasets[0]
+        else:
+            LOG.info("merging datasets")
+            dataset = concatenate_datasets(datasets)
 
         if len(datasets) > 1:
             if cfg.shuffle_merged_datasets:

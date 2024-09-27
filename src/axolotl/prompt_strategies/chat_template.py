@@ -5,6 +5,8 @@ HF Chat Templates prompt strategy
 import logging
 from typing import Any, Dict, List, Optional
 
+from transformers import ProcessorMixin
+
 from axolotl.prompt_tokenizers import PromptTokenizingStrategy
 from axolotl.prompters import IGNORE_TOKEN_ID, Prompter
 from axolotl.utils.chat_templates import chat_templates
@@ -45,7 +47,7 @@ class ChatTemplatePrompter(Prompter):
         self.message_field_training = message_field_training
         self.message_field_training_detail = message_field_training_detail
         self.tokenizer = tokenizer
-        self.processor = processor
+        self.processor: ProcessorMixin = processor
         self.chat_template = chat_template
         self.max_length = max_length
         self.drop_system_message = drop_system_message
@@ -65,18 +67,25 @@ class ChatTemplatePrompter(Prompter):
 
         if self.processor:
             text = self.processor.apply_chat_template(
-                text=turns,
-                tokenize=False,
+                turns,
                 chat_template=self.chat_template,
+                tokenize=False,
                 add_generation_prompt=add_generation_prompt,
             )
-            return self.processor(
+            batch = self.processor(
                 text=text,
                 images=images,
                 return_tensors="pt",
                 truncation=True,
                 max_length=self.max_length,
             )
+            # workaround since processor works in batches instead of single examples
+            for k, val in batch.items():
+                if k in ["pixel_values"]:
+                    batch[k] = val.tolist()
+                else:
+                    batch[k] = val.squeeze().tolist()
+            return batch
 
         return self.tokenizer.apply_chat_template(
             turns,
@@ -233,7 +242,15 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                 add_generation_prompt=True,
                 images=images,
             )
-            input_ids = self.prompter.build_prompt(turns, images=images)
+            tokenized_res = self.prompter.build_prompt(turns, images=images)
+            tokenized_prompt = {}
+            if isinstance(tokenized_res, list):
+                input_ids = prompt_ids + tokenized_res
+                tokenized_prompt["input_ids"] = input_ids
+                tokenized_prompt["attention_mask"] = [1] * len(input_ids)
+            else:
+                input_ids = tokenized_res["input_ids"]
+                tokenized_prompt = tokenized_res
 
             if not self.train_on_inputs:
                 user_prompt_len = len(prompt_ids)
@@ -241,17 +258,13 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             else:
                 labels = input_ids
 
-            tokenized_prompt = {
-                "input_ids": input_ids,
-                "labels": labels,
-                "attention_mask": [1] * len(input_ids),
-            }
+            tokenized_prompt["labels"] = labels
 
             return tokenized_prompt
-        LOG.info(self.roles_to_train)
-        LOG.info(self.train_on_eos)
-        LOG.info(self.prompter.message_field_training)
-        LOG.info(self.prompter.message_field_training_detail)
+        # LOG.info(self.roles_to_train)
+        # LOG.info(self.train_on_eos)
+        # LOG.info(self.prompter.message_field_training)
+        # LOG.info(self.prompter.message_field_training_detail)
 
         turns = prompt[self.messages]
         input_ids = self.prompter.build_prompt(turns)
