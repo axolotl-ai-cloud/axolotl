@@ -54,6 +54,7 @@ from axolotl.utils.callbacks import (
     GPUStatsCallback,
     LossWatchDogCallback,
     SaveAxolotlConfigtoWandBCallback,
+    SaveAxolotlConfigtoCometCallback,
     SaveBetterTransformerModelCallback,
     SaveModelCallback,
     bench_eval_callback_factory,
@@ -1104,6 +1105,10 @@ class TrainerBuilderBase(abc.ABC):
             callbacks.append(
                 SaveAxolotlConfigtoMlflowCallback(self.cfg.axolotl_config_path)
             )
+        if self.cfg.use_comet:
+            callbacks.append(
+                SaveAxolotlConfigtoCometCallback(self.cfg.axolotl_config_path)
+            )
 
         return callbacks
 
@@ -1170,6 +1175,11 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         ):
             LogPredictionCallback = log_prediction_callback_factory(
                 trainer, self.tokenizer, "mlflow"
+            )
+            callbacks.append(LogPredictionCallback(self.cfg))
+        if self.cfg.use_comet and self.cfg.eval_table_size > 0:
+            LogPredictionCallback = log_prediction_callback_factory(
+                trainer, self.tokenizer, "comet_ml"
             )
             callbacks.append(LogPredictionCallback(self.cfg))
 
@@ -1423,6 +1433,8 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             report_to.append("mlflow")
         if self.cfg.use_tensorboard:
             report_to.append("tensorboard")
+        if self.cfg.use_comet:
+            report_to.append("comet_ml")
 
         training_arguments_kwargs["report_to"] = report_to
         training_arguments_kwargs["run_name"] = (

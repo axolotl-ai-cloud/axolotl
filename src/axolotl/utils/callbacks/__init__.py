@@ -16,6 +16,7 @@ import pandas as pd
 import torch
 import torch.distributed as dist
 import wandb
+import comet_ml
 from datasets import load_dataset
 from optimum.bettertransformer import BetterTransformer
 from tqdm import tqdm
@@ -747,6 +748,10 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer, logger: str):
                         artifact_file="PredictionsVsGroundTruth.json",
                         tracking_uri=tracking_uri,
                     )
+                elif logger == "comet_ml":
+                    experiment = comet_ml.get_running_experiment()
+                    if experiment:
+                        experiment.log_table(f"{name} - Predictions vs Ground Truth.csv", pd.DataFrame(table_data))
 
             if is_main_process():
                 log_table_from_dataloader("Eval", eval_dataloader)
@@ -787,6 +792,31 @@ class SaveAxolotlConfigtoWandBCallback(TrainerCallback):
                 )
             except (FileNotFoundError, ConnectionError) as err:
                 LOG.warning(f"Error while saving Axolotl config to WandB: {err}")
+        return control
+
+
+class SaveAxolotlConfigtoCometCallback(TrainerCallback):
+    """Callback to save axolotl config to comet"""
+
+    def __init__(self, axolotl_config_path):
+        self.axolotl_config_path = axolotl_config_path
+
+    def on_train_begin(
+        self,
+        args: AxolotlTrainingArguments,  # pylint: disable=unused-argument
+        state: TrainerState,  # pylint: disable=unused-argument
+        control: TrainerControl,
+        **kwargs,  # pylint: disable=unused-argument
+    ):
+        if is_main_process():
+            try:
+                comet_experiment = comet_ml.start(source="axolotl")
+                comet_experiment._log_asset(self.axolotl_config_path, file_name="axolotl-config", framework="axolotl")
+                LOG.info(
+                    "The Axolotl config has been saved to the Comet Experiment under assets."
+                )
+            except (FileNotFoundError, ConnectionError) as err:
+                LOG.warning(f"Error while saving Axolotl config to Comet: {err}")
         return control
 
 
