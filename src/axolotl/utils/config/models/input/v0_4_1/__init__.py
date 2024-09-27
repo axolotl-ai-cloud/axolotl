@@ -298,6 +298,13 @@ class LoraConfig(BaseModel):
                     raise ValueError("Require cfg.load_in_4bit to be True for qlora")
         return self
 
+    @field_validator("loraplus_lr_embedding")
+    @classmethod
+    def convert_loraplus_lr_embedding(cls, loraplus_lr_embedding):
+        if loraplus_lr_embedding and isinstance(loraplus_lr_embedding, str):
+            loraplus_lr_embedding = float(loraplus_lr_embedding)
+        return loraplus_lr_embedding
+
 
 class ReLoRAConfig(BaseModel):
     """ReLoRA configuration subset"""

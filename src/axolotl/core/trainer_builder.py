@@ -456,7 +456,7 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
             if self.args.loraplus_lr_ratio is not None:
                 loraplus_lr_ratio = getattr(self.args, "loraplus_lr_ratio", None)
                 loraplus_lr_embedding = getattr(
-                    self.args, "loraplus_lr_embedding", None
+                    self.args, "loraplus_lr_embedding", 1e-6
                 )
                 self.optimizer = create_loraplus_optimizer(  # pylint: disable=attribute-defined-outside-init
                     opt_model,
