@@ -327,7 +327,7 @@ def load_processor(cfg: DictDefault, tokenizer: PreTrainedTokenizerBase):
 def load_model(
     cfg: DictDefault,
     tokenizer: PreTrainedTokenizerBase,
-    processor: ProcessorMixin = None, 
+    #processor: ProcessorMixin = None, 
     inference: bool = False,
     reference_model: bool = False,
 ) -> Tuple[PreTrainedModel, Optional[PeftConfig]]:
@@ -348,14 +348,14 @@ def load_model(
 
 
     if is_multimodal:
-        text_model_config = model_config.text_config
-    else: text_model_config = model_config
+        model_text_config = model_config.text_config
+    else: model_text_config = model_config
 
-    def update_model_config(is_multimodal, text_model_config, model_config):
+    def update_model_config(is_multimodal, model_text_config, model_config):
         if is_multimodal:
-            model_config.text_config = text_model_config
+            model_config.text_config = model_text_config
         else:
-            model_config = text_model_config
+            model_config = model_text_config
 
     # TODO refactor as a kwarg
     load_in_8bit = cfg.load_in_8bit
@@ -363,7 +363,7 @@ def load_model(
     if cfg.gradient_checkpointing == "unsloth":
         transformers.modeling_utils.checkpoint = hf_grad_checkpoint_unsloth_wrapper
 
-    if hasattr(text_model_config, "model_type") and text_model_config.model_type == "btlm":
+    if hasattr(model_text_config, "model_type") and model_text_config.model_type == "btlm":
         if cfg.flash_attention:
             from axolotl.monkeypatch.btlm_attn_hijack_flash import (
                 replace_btlm_attn_with_flash_attn,
@@ -372,8 +372,8 @@ def load_model(
             replace_btlm_attn_with_flash_attn(cfg.base_model)
 
     if (
-        hasattr(text_model_config, "model_type")
-        and text_model_config.model_type == "stablelm_epoch"
+        hasattr(model_text_config, "model_type")
+        and model_text_config.model_type == "stablelm_epoch"
     ):
         if cfg.flash_attention and cfg.sample_packing:
             from axolotl.monkeypatch.stablelm_attn_hijack_flash import (
@@ -681,7 +681,7 @@ def load_model(
                 quantization_config or model_kwargs["quantization_config"]
             )
         
-            update_model_config(is_multimodal, text_model_config, model_config)
+            update_model_config(is_multimodal, model_text_config, model_config)
             model = load_sharded_model_quant(
                 base_model,
                 model_config,
@@ -691,7 +691,7 @@ def load_model(
             )
             skip_move_to_device = True
         elif (
-            text_model_config.model_type == "llama"
+            model_text_config.model_type == "llama"
             and not cfg.trust_remote_code
             and not cfg.gptq
         ):
@@ -700,7 +700,7 @@ def load_model(
                 if "device_map" in model_kwargs:
                     del model_kwargs["device_map"]
 
-            update_model_config(is_multimodal, text_model_config, model_config)
+            update_model_config(is_multimodal, model_text_config, model_config)
             model = Auto.from_pretrained(
                 base_model,
                 config=model_config,
@@ -740,7 +740,7 @@ def load_model(
             and not cfg.trust_remote_code
         ):
             if cfg.gptq:
-                update_model_config(is_multimodal, text_model_config, model_config)
+                update_model_config(is_multimodal, model_text_config, model_config)
                 model = Auto.from_pretrained(
                     base_model,
                     config=model_config,
@@ -749,7 +749,7 @@ def load_model(
                 )
             else:
 
-                update_model_config(is_multimodal, text_model_config, model_config)
+                update_model_config(is_multimodal, model_text_config, model_config)
                 model = getattr(transformers, model_type).from_pretrained(
                     base_model,
                     config=model_config,
@@ -760,22 +760,22 @@ def load_model(
             # Shouldn't be a problem most of the time. will obviously error if the model doesn't support this
             # when training starts
             if (
-                hasattr(text_model_config, "max_seq_len")
-                and text_model_config.max_seq_len
+                hasattr(model_text_config, "max_seq_len")
+                and model_text_config.max_seq_len
                 and cfg.sequence_len > model_config.max_seq_len
             ):
-                text_model_config.max_seq_len = cfg.sequence_len
+                model_text_config.max_seq_len = cfg.sequence_len
                 LOG.warning(f"increasing context length to {cfg.sequence_len}")
             elif (
-                hasattr(text_model_config, "max_sequence_length")
-                and text_model_config.max_sequence_length
-                and cfg.sequence_len > text_model_config.max_sequence_length
+                hasattr(model_text_config, "max_sequence_length")
+                and model_text_config.max_sequence_length
+                and cfg.sequence_len > model_text_config.max_sequence_length
             ):
-                text_model_config.max_sequence_length = cfg.sequence_len
+                model_text_config.max_sequence_length = cfg.sequence_len
                 LOG.warning(f"increasing context length to {cfg.sequence_len}")
             if cfg.gptq:
 
-                update_model_config(is_multimodal, text_model_config, model_config)
+                update_model_config(is_multimodal, model_text_config, model_config)
                 model = Auto.from_pretrained(
                     base_model,
                     config=model_config,
@@ -789,7 +789,7 @@ def load_model(
                     if "device_map" in model_kwargs:
                         del model_kwargs["device_map"]
 
-                update_model_config(is_multimodal, text_model_config, model_config)
+                update_model_config(is_multimodal, model_text_config, model_config)
                 model = Auto.from_pretrained(
                     base_model,
                     config=model_config,

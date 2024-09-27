@@ -478,13 +478,13 @@ def prepare_opinionated_env(cfg):
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
-def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_steps):
+def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer_processor, total_num_steps):
     if cfg.rl in ["dpo", "ipo", "orpo", "kto", "simpo"]:
-        trainer_builder = HFRLTrainerBuilder(cfg, model[0], tokenizer)
+        trainer_builder = HFRLTrainerBuilder(cfg, model[0], tokenizer_processor)
         trainer_builder.model_ref = model[1]
         trainer_builder.peft_config = model[2]
     else:
-        trainer_builder = HFCausalTrainerBuilder(cfg, model[0], tokenizer)
+        trainer_builder = HFCausalTrainerBuilder(cfg, model[0], tokenizer_processor)
 
     trainer_builder.train_dataset = train_dataset
     trainer_builder.eval_dataset = eval_dataset
