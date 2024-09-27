@@ -1043,10 +1043,14 @@ class TrainerBuilderBase(abc.ABC):
     _model_ref = None
     _peft_config = None
 
-    def __init__(self, cfg, model, tokenizer):
+    def __init__(self, cfg, model, tokenizer_processor):
         self.cfg = cfg
         self.model = model
-        self.tokenizer = tokenizer
+        if cfg.is_multimodal:
+            self.processor = tokenizer_processor
+            self.tokenizer = tokenizer_processor.tokenizer
+        else:
+            self.tokenizer = tokenizer_processor
 
         # in case the model supports tagging, add the axolotl tag.
         # This makes sure the tag is correctly pushed even if a user calls
@@ -1887,3 +1891,534 @@ class HFPPOTrainerBuilder(TrainerBuilderBase):
     def build(self, total_num_steps):
         # build PPOConfig
         pass
+
+class HFConditionalGenTrainerBuilder(TrainerBuilderBase):
+    """
+    Build the HuggingFace training args/trainer for Conditional Generation models
+    """
+    
+    def get_callbacks(self):
+        callbacks = super().get_callbacks()
+        callbacks.append(GPUStatsCallback(self.cfg))
+        callbacks.append(EvalFirstStepCallback())
+
+        if self.cfg.relora_steps:
+            callbacks.append(ReLoRACallback(self.cfg))
+
+        if (
+            hasattr(self.model, "use_bettertransformer")
+            and self.model.use_bettertransformer is True
+        ):
+            callbacks.append(SaveBetterTransformerModelCallback())
+
+        if self.cfg.loss_watchdog_threshold is not None:
+            callbacks.append(LossWatchDogCallback(self.cfg))
+
+        callbacks.append(SaveModelCallback())
+
+        return callbacks
+    
+    def get_post_trainer_create_callbacks(self, trainer):
+        callbacks = []
+        if self.cfg.use_wandb and self.cfg.eval_table_size > 0:
+            LogPredictionCallback = log_prediction_callback_factory(
+                trainer, self.processor, "wandb"
+            )
+            callbacks.append(LogPredictionCallback(self.cfg))
+        if (
+            self.cfg.use_mlflow
+            and is_mlflow_available()
+            and self.cfg.eval_table_size > 0
+        ):
+            LogPredictionCallback = log_prediction_callback_factory(
+                trainer, self.processor, "mlflow"
+            )
+            callbacks.append(LogPredictionCallback(self.cfg))
+
+        if self.cfg.do_bench_eval:
+            callbacks.append(bench_eval_callback_factory(trainer, self.tokenizer))
+        if self.cfg.do_causal_lm_eval:
+            CausalLMBenchEvalCallback = causal_lm_bench_eval_callback_factory(
+                trainer, self.tokenizer
+            )
+            callbacks.append(CausalLMBenchEvalCallback(self.cfg))
+
+        if self.cfg.early_stopping_patience:
+            early_stop_cb = EarlyStoppingCallback(
+                self.cfg.early_stopping_patience,
+            )
+            callbacks.append(early_stop_cb)
+
+        if self.cfg.lisa_step_interval and self.cfg.lisa_n_layers:
+            callbacks.append(lisa_callback_factory(trainer))
+        return callbacks
+
+    def _get_trainer_cls(self):
+        if self.cfg.relora_steps:
+            return ReLoRATrainer
+        if self.cfg.model_config_type == "mamba":
+            return AxolotlMambaTrainer
+        return AxolotlTrainer
+    
+    def build(self, total_num_steps):
+        warmup_steps = None
+        if self.cfg.warmup_steps is not None:
+            warmup_steps = self.cfg.warmup_steps
+        elif self.cfg.warmup_ratio is not None:
+            warmup_steps = max(int(self.cfg.warmup_ratio * total_num_steps), 0)
+        else:
+            warmup_steps = min(int(0.03 * total_num_steps), 100)
+        if warmup_steps == 1:
+            warmup_steps = 2
+
+        logging_steps = (
+            self.cfg.logging_steps
+            if self.cfg.logging_steps is not None
+            else max(min(int(0.005 * total_num_steps), 10), 1)
+        )
+
+        training_arguments_kwargs = {}
+        if self.cfg.bf16 == "full":
+            training_arguments_kwargs["bf16_full_eval"] = True
+        else:
+            training_arguments_kwargs["bf16"] = self.cfg.bf16
+        training_arguments_kwargs["fp16"] = (
+            self.cfg.fp16 and not self.cfg.bf16
+        ) or False
+        training_arguments_kwargs["tf32"] = self.cfg.tf32
+        training_arguments_kwargs["warmup_steps"] = warmup_steps
+        training_arguments_kwargs["logging_steps"] = logging_steps
+
+        if self.cfg.seed:
+            training_arguments_kwargs["seed"] = self.cfg.seed
+
+        if self.cfg.gradient_checkpointing:
+            training_arguments_kwargs[
+                "gradient_checkpointing"
+            ] = self.cfg.gradient_checkpointing
+            if self.cfg.gradient_checkpointing_kwargs is not None:
+                training_arguments_kwargs[
+                    "gradient_checkpointing_kwargs"
+                ] = self.cfg.gradient_checkpointing_kwargs
+        if self.cfg.fsdp:
+            training_arguments_kwargs["fsdp"] = self.cfg.fsdp
+            if self.cfg.fsdp_config:
+                training_arguments_kwargs["fsdp_config"] = {
+                    k.lstrip("fsdp_"): v for k, v in dict(self.cfg.fsdp_config).items()
+                }
+
+        if self.cfg.adapter == "qlora":
+            training_arguments_kwargs["qlora"] = True
+
+        # deepspeed
+        if self.cfg.deepspeed:
+            training_arguments_kwargs["deepspeed"] = self.cfg.deepspeed
+
+        if self.cfg.lr_quadratic_warmup is not None:
+            training_arguments_kwargs[
+                "lr_quadratic_warmup"
+            ] = self.cfg.lr_quadratic_warmup
+
+        if self.cfg.adam_beta1:
+            training_arguments_kwargs["adam_beta1"] = self.cfg.adam_beta1
+        if self.cfg.adam_beta2:
+            training_arguments_kwargs["adam_beta2"] = self.cfg.adam_beta2
+        if self.cfg.adam_epsilon:
+            training_arguments_kwargs["adam_epsilon"] = self.cfg.adam_epsilon
+        if self.cfg.max_grad_norm:
+            training_arguments_kwargs["max_grad_norm"] = self.cfg.max_grad_norm
+
+        if self.cfg.hub_model_id:
+            training_arguments_kwargs["hub_model_id"] = self.cfg.hub_model_id
+            training_arguments_kwargs["push_to_hub"] = True
+            training_arguments_kwargs["hub_private_repo"] = True
+            training_arguments_kwargs["hub_always_push"] = True
+
+            if self.cfg.hub_strategy:
+                training_arguments_kwargs["hub_strategy"] = self.cfg.hub_strategy
+
+        if self.cfg.save_safetensors is not None:
+            training_arguments_kwargs["save_safetensors"] = self.cfg.save_safetensors
+
+        if self.cfg.dataloader_pin_memory is not None:
+            training_arguments_kwargs[
+                "dataloader_pin_memory"
+            ] = self.cfg.dataloader_pin_memory
+        if self.cfg.dataloader_num_workers is not None:
+            training_arguments_kwargs[
+                "dataloader_num_workers"
+            ] = self.cfg.dataloader_num_workers
+        if self.cfg.dataloader_prefetch_factor is not None:
+            training_arguments_kwargs[
+                "dataloader_prefetch_factor"
+            ] = self.cfg.dataloader_prefetch_factor
+        if self.cfg.dataloader_drop_last is not None:
+            training_arguments_kwargs[
+                "dataloader_drop_last"
+            ] = self.cfg.dataloader_drop_last
+        elif self.cfg.sample_packing and self.cfg.eval_sample_packing is False:
+            training_arguments_kwargs["dataloader_drop_last"] = True
+
+        if self.cfg.remove_unused_columns is not None:
+            training_arguments_kwargs[
+                "remove_unused_columns"
+            ] = self.cfg.remove_unused_columns
+
+        if not self.cfg.test_datasets and self.cfg.val_set_size == 0:
+            # no eval set, so don't eval
+            training_arguments_kwargs["evaluation_strategy"] = "no"
+        elif self.cfg.eval_steps:
+            training_arguments_kwargs["evaluation_strategy"] = "steps"
+            training_arguments_kwargs["eval_steps"] = self.cfg.eval_steps
+        elif self.cfg.evaluation_strategy:
+            training_arguments_kwargs[
+                "evaluation_strategy"
+            ] = self.cfg.evaluation_strategy
+        else:
+            # we have an eval set, but no steps defined, default to use epoch
+            training_arguments_kwargs["evaluation_strategy"] = "epoch"
+
+        if self.cfg.save_steps:
+            training_arguments_kwargs["save_strategy"] = "steps"
+            training_arguments_kwargs["save_steps"] = self.cfg.save_steps
+        elif self.cfg.save_strategy:
+            training_arguments_kwargs["save_strategy"] = self.cfg.save_strategy
+        else:
+            # default to saving each epoch if not defined
+            training_arguments_kwargs["save_strategy"] = "epoch"
+
+        training_arguments_kwargs["save_only_model"] = self.cfg.save_only_model
+
+        if self.cfg.do_bench_eval:
+            training_arguments_kwargs["do_bench_eval"] = self.cfg.do_bench_eval
+            if self.cfg.bench_dataset:
+                training_arguments_kwargs["bench_dataset"] = self.cfg.bench_dataset
+        if self.cfg.do_causal_lm_eval:
+            training_arguments_kwargs["do_causal_lm_eval"] = self.cfg.do_causal_lm_eval
+        if self.cfg.metric_for_best_model:
+            training_arguments_kwargs[
+                "metric_for_best_model"
+            ] = self.cfg.metric_for_best_model
+        if self.cfg.greater_is_better:
+            training_arguments_kwargs["greater_is_better"] = self.cfg.greater_is_better
+
+        if self.cfg.torch_compile:
+            if torch.__version__ < "2.1.0":  # pylint: disable=protected-access
+                LOG.warning("torch>=2.1.0 required for torch_compile to work properly")
+            elif torch._dynamo:  # pylint: disable=protected-access
+                torch._dynamo.config.suppress_errors = (  # pylint: disable=protected-access
+                    True
+                )
+                training_arguments_kwargs["torch_compile"] = self.cfg.torch_compile
+                if self.cfg.torch_compile_backend:
+                    training_arguments_kwargs[
+                        "torch_compile_backend"
+                    ] = self.cfg.torch_compile_backend
+                if self.cfg.torch_compile_mode:
+                    training_arguments_kwargs[
+                        "torch_compile_mode"
+                    ] = self.cfg.torch_compile_mode
+
+        # DDP Config
+        if self.cfg.ddp_timeout:
+            training_arguments_kwargs["ddp_timeout"] = self.cfg.ddp_timeout
+        # see https://pytorch.org/docs/stable/generated/torch.nn.parallel.DistributedDataParallel.html
+        if self.cfg.ddp_bucket_cap_mb:
+            training_arguments_kwargs["ddp_bucket_cap_mb"] = self.cfg.ddp_bucket_cap_mb
+        if self.cfg.ddp_broadcast_buffers is not None:
+            training_arguments_kwargs[
+                "ddp_broadcast_buffers"
+            ] = self.cfg.ddp_broadcast_buffers
+
+        # these are all the "standard" kwargs that are def used
+        training_arguments_kwargs["max_steps"] = (
+            total_num_steps if self.cfg.max_steps else -1
+        )
+        training_arguments_kwargs["max_seq_length"] = self.cfg.sequence_len
+        training_arguments_kwargs[
+            "per_device_train_batch_size"
+        ] = self.cfg.micro_batch_size
+        if self.cfg.eval_batch_size:
+            training_arguments_kwargs[
+                "per_device_eval_batch_size"
+            ] = self.cfg.eval_batch_size
+        if self.cfg.auto_find_batch_size is not None:
+            training_arguments_kwargs[
+                "auto_find_batch_size"
+            ] = self.cfg.auto_find_batch_size
+        training_arguments_kwargs[
+            "gradient_accumulation_steps"
+        ] = self.cfg.gradient_accumulation_steps
+        training_arguments_kwargs[
+            "eval_accumulation_steps"
+        ] = self.cfg.gradient_accumulation_steps
+        training_arguments_kwargs["num_train_epochs"] = self.cfg.num_epochs
+        training_arguments_kwargs["learning_rate"] = self.cfg.learning_rate
+        training_arguments_kwargs["output_dir"] = self.cfg.output_dir
+        training_arguments_kwargs["save_total_limit"] = (
+            self.cfg.save_total_limit if self.cfg.save_total_limit else 4
+        )
+        training_arguments_kwargs["load_best_model_at_end"] = (
+            (
+                self.cfg.load_best_model_at_end is not False
+                or self.cfg.early_stopping_patience
+            )
+            and (
+                (not self.cfg.test_datasets and self.cfg.val_set_size > 0)
+                or (self.cfg.test_datasets and self.cfg.val_set_size == 0)
+            )
+            and self.cfg.save_steps
+            and self.cfg.eval_steps
+            and self.cfg.save_steps % self.cfg.eval_steps == 0
+        ) or False
+        training_arguments_kwargs["ddp_find_unused_parameters"] = (
+            False if self.cfg.ddp else None
+        )
+        training_arguments_kwargs["group_by_length"] = self.cfg.group_by_length
+        training_arguments_kwargs["curriculum_sampling"] = self.cfg.curriculum_sampling
+        report_to = []
+        if self.cfg.use_wandb:
+            report_to.append("wandb")
+        if self.cfg.use_mlflow:
+            report_to.append("mlflow")
+        if self.cfg.use_tensorboard:
+            report_to.append("tensorboard")
+
+        training_arguments_kwargs["report_to"] = report_to
+        training_arguments_kwargs["run_name"] = (
+            self.cfg.wandb_name if self.cfg.use_wandb else None
+        )
+        training_arguments_kwargs["optim"] = (
+            self.cfg.optimizer if self.cfg.optimizer else "adamw_hf"
+        )
+        if self.cfg.optim_args:
+            if isinstance(self.cfg.optim_args, dict):
+                optim_args = ",".join(
+                    [f"{key}={value}" for key, value in self.cfg.optim_args.items()]
+                )
+            else:
+                optim_args = self.cfg.optim_args
+            training_arguments_kwargs["optim_args"] = optim_args
+        if self.cfg.optim_target_modules:
+            training_arguments_kwargs[
+                "optim_target_modules"
+            ] = self.cfg.optim_target_modules
+        training_arguments_kwargs["loraplus_lr_ratio"] = self.cfg.loraplus_lr_ratio
+        training_arguments_kwargs[
+            "loraplus_lr_embedding"
+        ] = self.cfg.loraplus_lr_embedding
+        if self.cfg.lr_scheduler in ["one_cycle", "log_sweep"]:
+            training_arguments_kwargs["lr_scheduler_type"] = "cosine"
+            training_arguments_kwargs[
+                "alternate_lr_scheduler_type"
+            ] = self.cfg.lr_scheduler
+        else:
+            training_arguments_kwargs["lr_scheduler_type"] = (
+                self.cfg.lr_scheduler if self.cfg.lr_scheduler else "cosine"
+            )
+        training_arguments_kwargs["lr_scheduler_kwargs"] = (
+            self.cfg.lr_scheduler_kwargs if self.cfg.lr_scheduler_kwargs else {}
+        )
+        training_arguments_kwargs["cosine_min_lr_ratio"] = self.cfg.cosine_min_lr_ratio
+        training_arguments_kwargs[
+            "cosine_constant_lr_ratio"
+        ] = self.cfg.cosine_constant_lr_ratio
+        training_arguments_kwargs["weight_decay"] = (
+            self.cfg.weight_decay if self.cfg.weight_decay is not None else 0.0
+        )
+
+        training_arguments_kwargs["sample_packing"] = bool(self.cfg.sample_packing)
+        training_arguments_kwargs["multipack_real_batches"] = (
+            not self.cfg.flash_attention or self.cfg.multipack_real_batches
+        )
+        training_arguments_kwargs["eval_sample_packing"] = bool(
+            self.cfg.eval_sample_packing
+        )
+        if self.cfg.sample_packing_bin_size is not None:
+            training_arguments_kwargs[
+                "sample_packing_bin_size"
+            ] = self.cfg.sample_packing_bin_size
+        if self.cfg.sample_packing_group_size is not None:
+            training_arguments_kwargs[
+                "sample_packing_group_size"
+            ] = self.cfg.sample_packing_group_size
+        if self.cfg.sample_packing_eff_est:
+            training_arguments_kwargs[
+                "sample_packing_efficiency"
+            ] = self.cfg.sample_packing_eff_est
+
+        if self.cfg.relora_steps:
+            training_arguments_kwargs["relora_steps"] = self.cfg.relora_steps
+            training_arguments_kwargs[
+                "relora_warmup_steps"
+            ] = self.cfg.relora_warmup_steps
+            if self.cfg.relora_anneal_steps:
+                training_arguments_kwargs[
+                    "relora_anneal_steps"
+                ] = self.cfg.relora_anneal_steps
+            if self.cfg.relora_prune_ratio:
+                training_arguments_kwargs[
+                    "relora_prune_ratio"
+                ] = self.cfg.relora_prune_ratio
+
+        if self.cfg.lisa_step_interval and self.cfg.lisa_n_layers:
+            training_arguments_kwargs["lisa_n_layers"] = self.cfg.lisa_n_layers
+            training_arguments_kwargs[
+                "lisa_step_interval"
+            ] = self.cfg.lisa_step_interval
+            training_arguments_kwargs[
+                "lisa_layers_attribute"
+            ] = self.cfg.lisa_layers_attribute
+
+        training_arguments_kwargs = self.hook_pre_create_training_args(
+            training_arguments_kwargs
+        )
+        training_arguments_kwargs["model_type"] = self.cfg.model_config_type
+        training_arguments_kwargs["pretraining"] = bool(self.cfg.pretraining_dataset)
+
+        if self.cfg.rl == "orpo":
+            training_arguments_kwargs["orpo_alpha"] = self.cfg.orpo_alpha
+
+        if self.cfg.neftune_noise_alpha is not None:
+            training_arguments_kwargs[
+                "neftune_noise_alpha"
+            ] = self.cfg.neftune_noise_alpha
+
+        trainer_kwargs = {}
+
+        if self.cfg.optimizer in [
+            "optimi_adamw",
+            "ao_adamw_4bit",
+            "ao_adamw_8bit",
+            "ao_adamw_fp8",
+        ]:
+            # Set default so transformers doesn't throw
+            training_arguments_kwargs["optim"] = "adamw_hf"
+            training_arguments_kwargs["alternate_optimizer"] = self.cfg.optimizer
+
+        if self.cfg.optimizer == "lion_pytorch":
+            from lion_pytorch import Lion
+
+            lion_kwargs = {"lr": training_arguments_kwargs["learning_rate"]}
+            if "weight_decay" in training_arguments_kwargs:
+                lion_kwargs["weight_decay"] = training_arguments_kwargs["weight_decay"]
+
+            if (
+                "adam_beta1" in training_arguments_kwargs
+                and "adam_beta2" in training_arguments_kwargs
+            ):
+                lion_kwargs["betas"] = (
+                    training_arguments_kwargs["adam_beta1"],
+                    training_arguments_kwargs["adam_beta2"],
+                )
+
+            trainer_kwargs["optimizers"] = (
+                Lion(params=self.model.parameters(), **lion_kwargs),
+                None,
+            )
+            # Set default so transformers doesn't throw
+            training_arguments_kwargs["optim"] = "adamw_hf"
+
+        if self.cfg.optimizer == "adamw_anyprecision":
+            if Path(self.cfg.torchdistx_path).exists():
+                sys.path.append(self.cfg.torchdistx_path)
+                importlib.import_module("torchdistx")
+
+        if self.cfg.accelerator_config:
+            training_arguments_kwargs[
+                "accelerator_config"
+            ] = self.cfg.accelerator_config
+
+        training_args = (
+            AxolotlTrainingArguments(  # pylint: disable=unexpected-keyword-arg
+                **training_arguments_kwargs,
+            )
+        )
+        training_args = self.hook_post_create_training_args(training_args)
+
+        data_collator_kwargs = {
+            "padding": True,  # True/"longest" is the default
+        }
+        if self.cfg.pad_to_sequence_len:
+            data_collator_kwargs["pad_to_multiple_of"] = 64 * math.ceil(
+                self.cfg.sequence_len / 64
+            )
+        else:
+            # A100 is best at 64, while others at 8. Let's use the larger so we don't have to check
+            # https://docs.nvidia.com/deeplearning/performance/dl-performance-matrix-multiplication/index.html
+            data_collator_kwargs["pad_to_multiple_of"] = 64
+
+        trainer_cls = self._get_trainer_cls()
+        trainer_kwargs, trainer_cls = self.hook_pre_create_trainer(
+            trainer_kwargs, trainer_cls
+        )
+        trainer = trainer_cls(
+            model=self.model,
+            train_dataset=self.train_dataset,
+            eval_dataset=self.eval_dataset,
+            args=training_args,
+            processor=self.processor,
+            #data_collator=self.build_collator(training_args, **data_collator_kwargs),
+            #eval_data_collator=self.build_collator(
+            #    training_args, is_eval=True, **data_collator_kwargs
+            #),
+            #bench_data_collator=transformers.DataCollatorForSeq2Seq(
+            #    self.tokenizer,
+            #    return_tensors="pt",
+            #    **data_collator_kwargs,
+            #),
+            callbacks=self.get_callbacks(),
+            num_epochs=self.cfg.num_epochs,
+            **trainer_kwargs,
+        )
+        trainer = self.hook_post_create_trainer(trainer)
+        for callback in self.get_post_trainer_create_callbacks(trainer):
+            trainer.add_callback(callback)
+
+        if self.cfg.deepspeed and self.cfg.sample_packing:
+            trainer.accelerator.state.deepspeed_plugin.deepspeed_config[
+                "train_micro_batch_size_per_gpu"
+            ] = self.cfg.micro_batch_size
+
+        return trainer
+    
+    def build_collator(
+        self, training_args: AxolotlTrainingArguments, is_eval=False, **kwargs
+    ):
+        if training_args.pretraining:
+            return None
+
+        if self.cfg.model_config_type == "mamba":
+            return MambaDataCollator(tokenizer=self.tokenizer)
+
+        use_batch_sampler_collator = False
+        if is_eval is False and training_args.sample_packing:
+            use_batch_sampler_collator = True
+        if is_eval and training_args.eval_sample_packing:
+            use_batch_sampler_collator = True
+
+        collator: Type[
+            Union[
+                V2BatchSamplerDataCollatorForSeq2Seq,
+                BatchSamplerDataCollatorForSeq2Seq,
+                DataCollatorForSeq2Seq,
+            ]
+        ]
+        if use_batch_sampler_collator:
+            if self.cfg.model_config_type in SUPPORTED_MULTIPACK_MODEL_TYPES:
+                collator = V2BatchSamplerDataCollatorForSeq2Seq
+            elif (
+                self.cfg.model_config_type in ["llama"]
+                and self.cfg.flash_attention is not True
+            ):
+                collator = V2BatchSamplerDataCollatorForSeq2Seq
+            else:
+                collator = BatchSamplerDataCollatorForSeq2Seq
+        else:
+            collator = DataCollatorForSeq2Seq
+
+        return collator(
+            self.tokenizer,
+            return_tensors="pt",
+            **kwargs,
+        )

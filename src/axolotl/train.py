@@ -71,6 +71,7 @@ def train(
     tokenizer = load_tokenizer(cfg)
     processor = None
     tokenizer_processor = None
+    
     if cfg.is_multimodal:
         processor = load_processor(cfg, tokenizer)
         tokenizer_processor = processor

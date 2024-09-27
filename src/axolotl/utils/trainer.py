@@ -15,7 +15,7 @@ from datasets import set_caching_enabled
 from torch.utils.data import DataLoader, RandomSampler
 from transformers.utils import is_torch_bf16_gpu_available
 
-from axolotl.core.trainer_builder import HFCausalTrainerBuilder, HFRLTrainerBuilder
+from axolotl.core.trainer_builder import HFCausalTrainerBuilder, HFRLTrainerBuilder, HFConditionalGenTrainerBuilder
 from axolotl.utils.distributed import reduce_and_broadcast
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 
@@ -484,7 +484,10 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer_processor, 
         trainer_builder.model_ref = model[1]
         trainer_builder.peft_config = model[2]
     else:
-        trainer_builder = HFCausalTrainerBuilder(cfg, model[0], tokenizer_processor)
+        if cfg.is_multimodal:
+            trainer_builder = HFConditionalGenTrainerBuilder(cfg, model[0], tokenizer_processor)
+        else:
+            trainer_builder = HFCausalTrainerBuilder(cfg, model[0], tokenizer_processor)
 
     trainer_builder.train_dataset = train_dataset
     trainer_builder.eval_dataset = eval_dataset

@@ -483,7 +483,7 @@ def load_model(
             patch_self_attn_lora()
 
     # Modify mistral derived models
-    if cfg.model_config_type == "mistral" and cfg.flash_attn_cross_entropy_loss:
+    if cfg.model_text_config_type == "mistral" and cfg.flash_attn_cross_entropy_loss:
         from axolotl.monkeypatch.mistral_attn_hijack_flash import (
             patch_mistral_cross_entropy,
         )
