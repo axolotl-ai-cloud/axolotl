@@ -128,8 +128,8 @@ def normalize_config(cfg):
     )
 
     cfg.is_multimodal = (
-        hasattr(model_config, "model_type") and model_config.model_type in [ "llava", "mllama"]
-        or any(multimodal_name in cfg.base_model.lower() for multimodal_name in [ "pixtral", ])
+        hasattr(model_config, "model_type") and model_config.model_type in ["llava", "mllama"]
+        or any(multimodal_name in cfg.base_model.lower() for multimodal_name in ["pixtral", ])
         or cfg.is_multimodal 
     )
     if cfg.is_multimodal:
@@ -139,7 +139,6 @@ def normalize_config(cfg):
         model_config = model_config.text_config
 
     cfg.model_text_config_type = model_config.model_type
-
 
     # figure out if the model is llama
     cfg.is_llama_derived_model = (
