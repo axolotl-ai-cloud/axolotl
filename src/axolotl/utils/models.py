@@ -306,9 +306,10 @@ def load_tokenizer(cfg):
         )
     return tokenizer
 
+
 def load_processor(cfg: DictDefault, tokenizer: PreTrainedTokenizerBase):
-    #model_config = load_model_config(cfg)
-    processor_kwargs = {} #do we actually need this?
+    # model_config = load_model_config(cfg)
+    processor_kwargs = {}  # do we actually need this?
 
     processor_cls = AutoProcessor
     if cfg.processor_type:
@@ -327,7 +328,7 @@ def load_processor(cfg: DictDefault, tokenizer: PreTrainedTokenizerBase):
 def load_model(
     cfg: DictDefault,
     tokenizer: PreTrainedTokenizerBase,
-    #processor: ProcessorMixin = None, 
+    # processor: ProcessorMixin = None,
     inference: bool = False,
     reference_model: bool = False,
 ) -> Tuple[PreTrainedModel, Optional[PeftConfig]]:
@@ -346,10 +347,10 @@ def load_model(
     plugin_manager = PluginManager.get_instance()
     plugin_manager.pre_model_load(cfg)
 
-
     if is_multimodal:
         model_text_config = model_config.text_config
-    else: model_text_config = model_config
+    else:
+        model_text_config = model_config
 
     def update_model_config(is_multimodal, model_text_config, model_config):
         if is_multimodal:
@@ -501,10 +502,10 @@ def load_model(
 
     if cfg.is_multimodal:
         Auto = AutoModelForPreTraining
-        #if model_config.model_type == "llava":
-        #    Auto = LlavaForConditionalGeneration
-        #elif model_config.model_type == "mllama":
-        #    Auto = MllamaForConditionalGeneration
+        # if model_config.model_type == "llava":
+        #     Auto = LlavaForConditionalGeneration
+        # elif model_config.model_type == "mllama":
+        #     Auto = MllamaForConditionalGeneration
     else:
         Auto = AutoModelForCausalLM
 
@@ -816,7 +817,7 @@ def load_model(
     else:
         model.tie_weights()
 
-    ###we need to generalize model attributing for multmodal alongside pure language model
+    # we need to generalize model attributing for multmodal alongside pure language model
     def setattr_model_text_config(is_multimodal, model, attr_name, attr_val):
         if is_multimodal:
             setattr(model.config.text_config, attr_name, attr_val)

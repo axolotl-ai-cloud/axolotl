@@ -1892,6 +1892,7 @@ class HFPPOTrainerBuilder(TrainerBuilderBase):
         # build PPOConfig
         pass
 
+
 class HFConditionalGenTrainerBuilder(TrainerBuilderBase):
     """
     Build the HuggingFace training args/trainer for Conditional Generation models
@@ -2358,15 +2359,15 @@ class HFConditionalGenTrainerBuilder(TrainerBuilderBase):
             eval_dataset=self.eval_dataset,
             args=training_args,
             processor=self.processor,
-            #data_collator=self.build_collator(training_args, **data_collator_kwargs),
-            #eval_data_collator=self.build_collator(
-            #    training_args, is_eval=True, **data_collator_kwargs
-            #),
-            #bench_data_collator=transformers.DataCollatorForSeq2Seq(
-            #    self.tokenizer,
-            #    return_tensors="pt",
-            #    **data_collator_kwargs,
-            #),
+            # data_collator=self.build_collator(training_args, **data_collator_kwargs),
+            # eval_data_collator=self.build_collator(
+            #     training_args, is_eval=True, **data_collator_kwargs
+            # ),
+            # bench_data_collator=transformers.DataCollatorForSeq2Seq(
+            #     self.tokenizer,
+            #     return_tensors="pt",
+            #     **data_collator_kwargs,
+            # ),
             callbacks=self.get_callbacks(),
             num_epochs=self.cfg.num_epochs,
             **trainer_kwargs,
