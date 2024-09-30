@@ -142,7 +142,7 @@ def normalize_config(cfg):
 
     # figure out if the model is llama
     cfg.is_llama_derived_model = (
-        (hasattr(model_config, "model_type") and model_config.model_type == ["llama", "mllama_text_model"])
+        (hasattr(model_config, "model_type") and model_config.model_type in ["llama", "mllama_text_model"])
         or cfg.is_llama_derived_model
         or "llama" in cfg.base_model.lower()
         or (cfg.type_of_model and "llama" in cfg.type_of_model.lower())
