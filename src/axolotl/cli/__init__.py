@@ -39,7 +39,7 @@ from axolotl.utils.data import load_prepare_dpo_datasets, prepare_dataset
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import is_main_process
 from axolotl.utils.mlflow_ import setup_mlflow_env_vars
-from axolotl.utils.models import load_tokenizer
+from axolotl.utils.models import load_tokenizer, load_processor
 from axolotl.utils.tokenization import check_dataset_labels
 from axolotl.utils.trainer import prepare_opinionated_env, prepare_optim_env
 from axolotl.utils.wandb_ import setup_wandb_env_vars
@@ -407,9 +407,13 @@ def load_datasets(
     cli_args: TrainerCliArgs,
 ) -> TrainDatasetMeta:
     tokenizer = load_tokenizer(cfg)
+    tokenizer_processor = tokenizer
+    if cfg.is_multimodal:
+        processor = load_processor(cfg, tokenizer)
+        tokenizer_processor = processor
 
     train_dataset, eval_dataset, total_num_steps, prompters = prepare_dataset(
-        cfg, tokenizer
+        cfg, tokenizer_processor
     )
 
     if cli_args.debug or cfg.debug:

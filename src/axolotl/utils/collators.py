@@ -7,10 +7,16 @@ from typing import Any, Dict, Optional, Sequence, Union
 import numpy as np
 import torch
 import transformers
-from transformers import PreTrainedTokenizerBase
+from transformers import PreTrainedTokenizerBase, ProcessorMixin
 from transformers.utils import PaddingStrategy
 
 IGNORE_INDEX = -100
+
+
+@dataclass
+class DataCollatorForTextImage(DataCollatorForSeq2Seq):
+    processor: ProcessorMixin
+
 
 
 @dataclass

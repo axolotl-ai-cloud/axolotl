@@ -2359,7 +2359,7 @@ class HFConditionalGenTrainerBuilder(TrainerBuilderBase):
             eval_dataset=self.eval_dataset,
             args=training_args,
             processor=self.processor,
-            # data_collator=self.build_collator(training_args, **data_collator_kwargs),
+            data_collator=self.build_collator(training_args, **data_collator_kwargs),
             # eval_data_collator=self.build_collator(
             #     training_args, is_eval=True, **data_collator_kwargs
             # ),
@@ -2419,7 +2419,8 @@ class HFConditionalGenTrainerBuilder(TrainerBuilderBase):
             collator = DataCollatorForSeq2Seq
 
         return collator(
-            self.tokenizer,
+            # self.tokenizer,
+            self.processor,
             return_tensors="pt",
             **kwargs,
         )

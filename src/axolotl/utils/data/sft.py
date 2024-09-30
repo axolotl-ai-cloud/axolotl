@@ -14,7 +14,7 @@ from datasets import (
 )
 from huggingface_hub import hf_hub_download
 from huggingface_hub.utils import HFValidationError
-from transformers import PreTrainedTokenizerBase
+from transformers import PreTrainedTokenizerBase, ProcessorMixin
 
 from axolotl.common.const import DEFAULT_DATASET_PREPARED_PATH
 from axolotl.datasets import TokenizedPromptDataset
@@ -51,20 +51,20 @@ from axolotl.utils.trainer import (
 LOG = logging.getLogger("axolotl")
 
 
-def prepare_dataset(cfg, tokenizer):
+def prepare_dataset(cfg, tokenizer_processor):
     prompters = []
     if not cfg.pretraining_dataset:
         with zero_first(is_local_main_process()):
             if cfg.test_datasets:
                 train_dataset, _, prompters = load_prepare_datasets(
-                    tokenizer, cfg, DEFAULT_DATASET_PREPARED_PATH, split="train"
+                    tokenizer_processor, cfg, DEFAULT_DATASET_PREPARED_PATH, split="train"
                 )
                 _, eval_dataset, _ = load_prepare_datasets(
-                    tokenizer, cfg, DEFAULT_DATASET_PREPARED_PATH, split="test"
+                    tokenizer_processor, cfg, DEFAULT_DATASET_PREPARED_PATH, split="test"
                 )
             else:
                 train_dataset, eval_dataset, prompters = load_prepare_datasets(
-                    tokenizer, cfg, DEFAULT_DATASET_PREPARED_PATH
+                    tokenizer_processor, cfg, DEFAULT_DATASET_PREPARED_PATH
                 )
     else:
         path = cfg.pretraining_dataset
@@ -81,14 +81,14 @@ def prepare_dataset(cfg, tokenizer):
         ds_wrapper_partial = functools.partial(
             get_dataset_wrapper,
             cfg.pretraining_dataset[0],
-            tokenizer,
+            tokenizer_processor,
             cfg,
             cfg.pretraining_dataset[0]["type"] or "pretrain",
         )
 
         train_dataset = wrap_pretraining_dataset(
             load_dataset(path, streaming=True, split=split, name=name),
-            tokenizer,
+            tokenizer_processor,
             cfg,
             ds_wrapper_partial,
             max_tokens=cfg.sequence_len,
@@ -118,14 +118,18 @@ def prepare_dataset(cfg, tokenizer):
     return train_dataset, eval_dataset, total_num_steps, prompters
 
 
-def load_tokenized_prepared_datasets(
-    tokenizer,
+def load_tokenized_processed_prepared_datasets(
+    tokenizer_processor,
     cfg,
     default_dataset_prepared_path,
     split="train",
 ) -> Tuple[DatasetDict, List[Prompter]]:
     cfg_datasets = cfg.test_datasets if split == "test" else cfg.datasets
-    tokenizer_name = cfg.tokenizer_config
+
+    if cfg.is_multimodal:
+        tokenizer_processor_name = cfg.processor_config
+    else:
+        tokenizer_processor_name = cfg.tokenizer_config
     ds_hash = str(
         md5(
             (
@@ -146,7 +150,7 @@ def load_tokenized_prepared_datasets(
                     )
                 )
                 + "|"
-                + tokenizer_name
+                + tokenizer_processor_name
             )
         )
     )
@@ -418,7 +422,7 @@ def load_tokenized_prepared_datasets(
 
             dataset_wrapper, dataset_prompter = get_dataset_wrapper(
                 config_dataset=config_dataset,
-                tokenizer=tokenizer,
+                tokenizer_processor=tokenizer_processor,
                 cfg=cfg,
                 dataset=ds,
                 d_base_type=d_base_type,
@@ -474,13 +478,13 @@ def get_ds_type(config_dataset: DictDefault):
 
 
 def load_prepare_datasets(
-    tokenizer: PreTrainedTokenizerBase,
+    tokenizer_processor: Union[PreTrainedTokenizerBase, ProcessorMixin],
     cfg,
     default_dataset_prepared_path,
     split="train",
 ) -> Tuple[Dataset, Dataset, List[Prompter]]:
-    dataset, prompters = load_tokenized_prepared_datasets(
-        tokenizer, cfg, default_dataset_prepared_path, split=split
+    dataset, prompters = load_tokenized_processed_prepared_datasets(
+        tokenizer_processor, cfg, default_dataset_prepared_path, split=split
     )
 
     if cfg.dataset_shard_num and cfg.dataset_shard_idx is not None:
@@ -541,7 +545,7 @@ def load_prepare_datasets(
 
 def get_dataset_wrapper(
     config_dataset,
-    tokenizer,
+    tokenizer_processor,
     cfg,
     d_base_type,
     dataset,
@@ -570,7 +574,7 @@ def get_dataset_wrapper(
         dataset_wrapper = dataset
     elif isinstance(config_dataset.type, DictDefault):
         ds_strategy = load(
-            "user_defined", tokenizer, cfg, config_dataset.type.to_dict()
+            "user_defined", tokenizer_processor, cfg, config_dataset.type.to_dict()
         )
         dataset_prompter = UnsupportedPrompter()
         dataset_wrapper = TokenizedPromptDataset(
@@ -578,7 +582,7 @@ def get_dataset_wrapper(
             dataset,
             **ds_kwargs,
         )
-    elif ds_strategy := load(config_dataset.type, tokenizer, cfg, config_dataset):
+    elif ds_strategy := load(config_dataset.type, tokenizer_processor, cfg, config_dataset):
         dataset_prompter = UnsupportedPrompter()
         dataset_wrapper = TokenizedPromptDataset(
             ds_strategy,
@@ -589,7 +593,7 @@ def get_dataset_wrapper(
         dataset_prompter = AlpacaPrompter(d_prompt_style)
         ds_strategy = AlpacaPromptTokenizingStrategy(
             dataset_prompter,
-            tokenizer,
+            tokenizer_processor,
             cfg.train_on_inputs,
             cfg.sequence_len,
         )
@@ -603,7 +607,7 @@ def get_dataset_wrapper(
         dataset_prompter = MultipleChoiceExplainPrompter(d_prompt_style)
         ds_strategy = AlpacaMultipleChoicePromptTokenizingStrategy(
             dataset_prompter,
-            tokenizer,
+            tokenizer_processor,
             cfg.train_on_inputs,
             cfg.sequence_len,
         )
@@ -617,7 +621,7 @@ def get_dataset_wrapper(
         dataset_prompter = MultipleChoiceConcisePrompter(d_prompt_style)
         ds_strategy = AlpacaMultipleChoicePromptTokenizingStrategy(
             dataset_prompter,
-            tokenizer,
+            tokenizer_processor,
             cfg.train_on_inputs,
             cfg.sequence_len,
         )
@@ -631,7 +635,7 @@ def get_dataset_wrapper(
         dataset_prompter = SummarizeTLDRPrompter(d_prompt_style)
         ds_strategy = SummarizeTLDRPromptTokenizingStrategy(
             dataset_prompter,
-            tokenizer,
+            tokenizer_processor,
             cfg.train_on_inputs,
             cfg.sequence_len,
         )
@@ -645,7 +649,7 @@ def get_dataset_wrapper(
         dataset_prompter = JeopardyPrompter(d_prompt_style)
         ds_strategy = JeopardyPromptTokenizingStrategy(
             dataset_prompter,
-            tokenizer,
+            tokenizer_processor,
             cfg.train_on_inputs,
             cfg.sequence_len,
         )
@@ -659,7 +663,7 @@ def get_dataset_wrapper(
         dataset_prompter = AlpacaPrompter(d_prompt_style)
         ds_strategy = OpenAssistantPromptTokenizingStrategy(
             dataset_prompter,
-            tokenizer,
+            tokenizer_processor,
             cfg.train_on_inputs,
             cfg.sequence_len,
         )
@@ -673,7 +677,7 @@ def get_dataset_wrapper(
         dataset_prompter = GPTeacherPrompter(d_prompt_style)
         ds_strategy = GPTeacherPromptTokenizingStrategy(
             dataset_prompter,
-            tokenizer,
+            tokenizer_processor,
             cfg.train_on_inputs,
             cfg.sequence_len,
         )
@@ -687,7 +691,7 @@ def get_dataset_wrapper(
         dataset_prompter = ReflectAlpacaPrompter(d_prompt_style)
         ds_strategy = AlpacaReflectionPTStrategy(
             dataset_prompter,
-            tokenizer,
+            tokenizer_processor,
             cfg.train_on_inputs,
             cfg.sequence_len,
         )
