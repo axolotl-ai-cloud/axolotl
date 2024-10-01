@@ -12,12 +12,12 @@ from axolotl.prompt_strategies.sharegpt import (
     GlaiveShareGPTPromptTokenizingStrategy,
     SimpleShareGPTPromptTokenizingStrategy,
     register_chatml_template,
-    register_llama3_template,
+    register_llama3x_template,
 )
 from axolotl.prompters import ShareGPTPrompterV2
 
 register_chatml_template()
-register_llama3_template()
+register_llama3x_template()
 
 
 @pytest.fixture(name="sharegpt_dataset")
