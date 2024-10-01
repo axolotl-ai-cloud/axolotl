@@ -24,7 +24,7 @@ from peft import (
 )
 from peft.tuners.lora import QuantLinear
 from torch import nn
-from transformers import (  # noqa: F401
+from transformers import (  # noqa: F401; LlavaForConditionalGeneration,; MllamaForConditionalGeneration,; ProcessorMixin,
     AddedToken,
     AutoConfig,
     AutoModelForCausalLM,
@@ -34,11 +34,8 @@ from transformers import (  # noqa: F401
     AwqConfig,
     BitsAndBytesConfig,
     GPTQConfig,
-    # LlavaForConditionalGeneration,
-    # MllamaForConditionalGeneration,
     PreTrainedModel,
     PreTrainedTokenizerBase,
-    # ProcessorMixin,
 )
 from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
 

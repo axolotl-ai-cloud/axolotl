@@ -2404,7 +2404,7 @@ class HFConditionalGenTrainerBuilder(TrainerBuilderBase):
                 V2BatchSamplerDataCollatorForSeq2Seq,
                 BatchSamplerDataCollatorForSeq2Seq,
                 DataCollatorForSeq2Seq,
-                DataCollatorForMultiModal
+                DataCollatorForMultiModal,
             ]
         ]
         if self.cfg.is_multimodal:
