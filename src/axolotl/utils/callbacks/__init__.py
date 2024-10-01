@@ -10,13 +10,13 @@ from shutil import copyfile
 from tempfile import NamedTemporaryFile
 from typing import TYPE_CHECKING, Any, Dict, List
 
+import comet_ml
 import evaluate
 import numpy as np
 import pandas as pd
 import torch
 import torch.distributed as dist
 import wandb
-import comet_ml
 from datasets import load_dataset
 from optimum.bettertransformer import BetterTransformer
 from tqdm import tqdm
@@ -751,7 +751,10 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer, logger: str):
                 elif logger == "comet_ml":
                     experiment = comet_ml.get_running_experiment()
                     if experiment:
-                        experiment.log_table(f"{name} - Predictions vs Ground Truth.csv", pd.DataFrame(table_data))
+                        experiment.log_table(
+                            f"{name} - Predictions vs Ground Truth.csv",
+                            pd.DataFrame(table_data),
+                        )
 
             if is_main_process():
                 log_table_from_dataloader("Eval", eval_dataloader)
@@ -811,7 +814,11 @@ class SaveAxolotlConfigtoCometCallback(TrainerCallback):
         if is_main_process():
             try:
                 comet_experiment = comet_ml.start(source="axolotl")
-                comet_experiment._log_asset(self.axolotl_config_path, file_name="axolotl-config", framework="axolotl")
+                comet_experiment._log_asset(
+                    self.axolotl_config_path,
+                    file_name="axolotl-config",
+                    framework="axolotl",
+                )
                 LOG.info(
                     "The Axolotl config has been saved to the Comet Experiment under assets."
                 )

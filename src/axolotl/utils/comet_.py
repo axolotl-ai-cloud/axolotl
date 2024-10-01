@@ -1,7 +1,7 @@
 """Module for wandb utilities"""
 
-import os
 import logging
+import os
 
 from axolotl.utils.dict import DictDefault
 
@@ -46,40 +46,44 @@ def python_value_to_environ_value(python_value):
     if isinstance(python_value, bool):
         if python_value is True:
             return "true"
-        else:
-            return "false"
-    elif isinstance(python_value, list):  # Comet only have one list of string parameter
+
+        return "false"
+
+    if isinstance(python_value, int):
+        return str(python_value)
+
+    if isinstance(python_value, list):  # Comet only have one list of string parameter
         return ",".join(map(str, python_value))
-    else:
-        return python_value
+
+    return python_value
 
 
 def setup_comet_env_vars(cfg: DictDefault):
     # TODO, we need to convert Axolotl configuration to environment variables
     # as Transformers integration are call first and would create an
     # Experiment first
-    # cfg.use_comet = True
 
     for key in cfg.keys():
         if key.startswith("comet_") and key != "comet_experiment_config":
             value = cfg.get(key, "")
 
-            if value and value != "":
+            if value is not None and value != "":
                 env_variable_name = COMET_ENV_MAPPING_OVERRIDE.get(key, key.upper())
                 final_value = python_value_to_environ_value(value)
                 os.environ[env_variable_name] = final_value
 
     if cfg.comet_experiment_config:
         for key, value in cfg.comet_experiment_config.items():
-            if value and value != "":
-                config_env_variable_name = COMET_EXPERIMENT_CONFIG_ENV_MAPPING_OVERRIDE.get(
-                    key
+            if value is not None and value != "":
+                config_env_variable_name = (
+                    COMET_EXPERIMENT_CONFIG_ENV_MAPPING_OVERRIDE.get(key)
                 )
 
                 if config_env_variable_name is None:
                     LOG.warning(
                         f"Unknown Comet Experiment Config name {key}, ignoring it"
                     )
+                    continue
 
                 final_value = python_value_to_environ_value(value)
                 os.environ[config_env_variable_name] = final_value
