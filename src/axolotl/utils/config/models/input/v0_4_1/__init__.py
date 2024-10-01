@@ -298,6 +298,13 @@ class LoraConfig(BaseModel):
                     raise ValueError("Require cfg.load_in_4bit to be True for qlora")
         return self
 
+    @field_validator("loraplus_lr_embedding")
+    @classmethod
+    def convert_loraplus_lr_embedding(cls, loraplus_lr_embedding):
+        if loraplus_lr_embedding and isinstance(loraplus_lr_embedding, str):
+            loraplus_lr_embedding = float(loraplus_lr_embedding)
+        return loraplus_lr_embedding
+
 
 class ReLoRAConfig(BaseModel):
     """ReLoRA configuration subset"""
@@ -1017,10 +1024,18 @@ class AxolotlInputConfig(
         return neftune_noise_alpha
 
     @model_validator(mode="after")
-    def check(self):
+    def check_rl_beta(self):
         if self.dpo_beta and not self.rl_beta:
             self.rl_beta = self.dpo_beta
             del self.dpo_beta
+        return self
+
+    @model_validator(mode="after")
+    def check_simpo_warmup(self):
+        if self.rl == "simpo" and self.warmup_ratio:
+            raise ValueError(
+                "warmup_ratio is not supported with the simpo trainer. Please use `warmup_steps` instead"
+            )
         return self
 
     @model_validator(mode="before")

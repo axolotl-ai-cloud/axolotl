@@ -21,6 +21,7 @@ from typing import Any, Dict, List, Literal, Optional, Type, Union
 import torch
 import transformers
 from datasets import Dataset
+from peft.optimizers import create_loraplus_optimizer
 from torch import nn
 from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import BatchSampler, DataLoader, RandomSampler, SequentialSampler
@@ -45,7 +46,6 @@ from trl import (
 )
 from trl.trainer.utils import pad_to_length
 
-from axolotl.loraplus import create_loraplus_optimizer
 from axolotl.monkeypatch.multipack import SUPPORTED_MULTIPACK_MODEL_TYPES
 from axolotl.monkeypatch.relora import ReLoRACallback, ReLoRAScheduler
 from axolotl.utils import is_mlflow_available
@@ -456,14 +456,14 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
             if self.args.loraplus_lr_ratio is not None:
                 loraplus_lr_ratio = getattr(self.args, "loraplus_lr_ratio", None)
                 loraplus_lr_embedding = getattr(
-                    self.args, "loraplus_lr_embedding", None
+                    self.args, "loraplus_lr_embedding", 1e-6
                 )
                 self.optimizer = create_loraplus_optimizer(  # pylint: disable=attribute-defined-outside-init
                     opt_model,
                     optimizer_cls,
-                    optimizer_kwargs,
-                    loraplus_lr_ratio,
-                    loraplus_lr_embedding,
+                    loraplus_lr_ratio=loraplus_lr_ratio,
+                    loraplus_lr_embedding=loraplus_lr_embedding,
+                    **optimizer_kwargs,
                 )
             elif self.args.alternate_optimizer == "optimi_adamw":
                 from optimi import AdamW
@@ -969,9 +969,9 @@ class AxolotlDPOTrainer(SchedulerMixin, DPOTrainer):
             self.optimizer = create_loraplus_optimizer(  # pylint: disable=attribute-defined-outside-init
                 opt_model,
                 optimizer_cls,
-                optimizer_kwargs,
-                loraplus_lr_ratio,
-                loraplus_lr_embedding,
+                loraplus_lr_ratio=loraplus_lr_ratio,
+                loraplus_lr_embedding=loraplus_lr_embedding,
+                **optimizer_kwargs,
             )
 
         if is_sagemaker_mp_enabled():
@@ -1417,6 +1417,8 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         report_to = []
         if self.cfg.use_wandb:
             report_to.append("wandb")
+            if self.cfg.wandb_name:
+                training_arguments_kwargs["run_name"] = self.cfg.wandb_name
         if self.cfg.use_mlflow:
             report_to.append("mlflow")
         if self.cfg.use_tensorboard:
@@ -1573,6 +1575,12 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             )
         )
         training_args = self.hook_post_create_training_args(training_args)
+
+        # unset run_name so wandb sets up experiment names
+        if self.cfg.use_wandb and training_args.run_name == training_args.output_dir:
+            training_args.run_name = (  # pylint: disable=attribute-defined-outside-init
+                None
+            )
 
         data_collator_kwargs = {
             "padding": True,  # True/"longest" is the default
