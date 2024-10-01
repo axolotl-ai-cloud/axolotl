@@ -825,14 +825,12 @@ def load_model(
     def hasattr_model_text_config(is_multimodal, model, attr_name):
         if is_multimodal:
             return hasattr(model.config.text_config, attr_name)
-        else:
-            return hasattr(model.config, attr_name)
+        return hasattr(model.config, attr_name)
 
     def getattr_model_text_config(is_multimodal, model, attr_name):
         if is_multimodal:
             return getattr(model.config.text_config, attr_name)
-        else:
-            return getattr(model.config, attr_name)
+        return getattr(model.config, attr_name)
 
     if (
         hasattr(model, "config")
