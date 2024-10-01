@@ -66,6 +66,7 @@ from axolotl.utils.collators import (
     DataCollatorForSeq2Seq,
     MambaDataCollator,
     V2BatchSamplerDataCollatorForSeq2Seq,
+    DataCollatorForMultiModal
 )
 from axolotl.utils.models import ensure_dtype
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
@@ -2391,7 +2392,7 @@ class HFConditionalGenTrainerBuilder(TrainerBuilderBase):
 
         if self.cfg.model_config_type == "mamba":
             return MambaDataCollator(tokenizer=self.tokenizer)
-
+        
         use_batch_sampler_collator = False
         if is_eval is False and training_args.sample_packing:
             use_batch_sampler_collator = True
@@ -2405,7 +2406,9 @@ class HFConditionalGenTrainerBuilder(TrainerBuilderBase):
                 DataCollatorForSeq2Seq,
             ]
         ]
-        if use_batch_sampler_collator:
+        if self.cfg.is_multimodal:
+            collator = DataCollatorForMultiModal
+        elif use_batch_sampler_collator:
             if self.cfg.model_config_type in SUPPORTED_MULTIPACK_MODEL_TYPES:
                 collator = V2BatchSamplerDataCollatorForSeq2Seq
             elif (
