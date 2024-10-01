@@ -57,10 +57,16 @@ def prepare_dataset(cfg, tokenizer_processor):
         with zero_first(is_local_main_process()):
             if cfg.test_datasets:
                 train_dataset, _, prompters = load_prepare_datasets(
-                    tokenizer_processor, cfg, DEFAULT_DATASET_PREPARED_PATH, split="train"
+                    tokenizer_processor,
+                    cfg,
+                    DEFAULT_DATASET_PREPARED_PATH,
+                    split="train",
                 )
                 _, eval_dataset, _ = load_prepare_datasets(
-                    tokenizer_processor, cfg, DEFAULT_DATASET_PREPARED_PATH, split="test"
+                    tokenizer_processor,
+                    cfg,
+                    DEFAULT_DATASET_PREPARED_PATH,
+                    split="test",
                 )
             else:
                 train_dataset, eval_dataset, prompters = load_prepare_datasets(
@@ -582,7 +588,9 @@ def get_dataset_wrapper(
             dataset,
             **ds_kwargs,
         )
-    elif ds_strategy := load(config_dataset.type, tokenizer_processor, cfg, config_dataset):
+    elif ds_strategy := load(
+        config_dataset.type, tokenizer_processor, cfg, config_dataset
+    ):
         dataset_prompter = UnsupportedPrompter()
         dataset_wrapper = TokenizedPromptDataset(
             ds_strategy,

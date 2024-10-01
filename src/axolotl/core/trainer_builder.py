@@ -63,10 +63,10 @@ from axolotl.utils.callbacks import (
 from axolotl.utils.callbacks.lisa import lisa_callback_factory
 from axolotl.utils.collators import (
     BatchSamplerDataCollatorForSeq2Seq,
+    DataCollatorForMultiModal,
     DataCollatorForSeq2Seq,
     MambaDataCollator,
     V2BatchSamplerDataCollatorForSeq2Seq,
-    DataCollatorForMultiModal
 )
 from axolotl.utils.models import ensure_dtype
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
@@ -1898,7 +1898,7 @@ class HFConditionalGenTrainerBuilder(TrainerBuilderBase):
     """
     Build the HuggingFace training args/trainer for Conditional Generation models
     """
-    
+
     def get_callbacks(self):
         callbacks = super().get_callbacks()
         callbacks.append(GPUStatsCallback(self.cfg))
@@ -1919,7 +1919,7 @@ class HFConditionalGenTrainerBuilder(TrainerBuilderBase):
         callbacks.append(SaveModelCallback())
 
         return callbacks
-    
+
     def get_post_trainer_create_callbacks(self, trainer):
         callbacks = []
         if self.cfg.use_wandb and self.cfg.eval_table_size > 0:
@@ -1961,7 +1961,7 @@ class HFConditionalGenTrainerBuilder(TrainerBuilderBase):
         if self.cfg.model_config_type == "mamba":
             return AxolotlMambaTrainer
         return AxolotlTrainer
-    
+
     def build(self, total_num_steps):
         warmup_steps = None
         if self.cfg.warmup_steps is not None:
@@ -2383,7 +2383,7 @@ class HFConditionalGenTrainerBuilder(TrainerBuilderBase):
             ] = self.cfg.micro_batch_size
 
         return trainer
-    
+
     def build_collator(
         self, training_args: AxolotlTrainingArguments, is_eval=False, **kwargs
     ):
@@ -2392,7 +2392,7 @@ class HFConditionalGenTrainerBuilder(TrainerBuilderBase):
 
         if self.cfg.model_config_type == "mamba":
             return MambaDataCollator(tokenizer=self.tokenizer)
-        
+
         use_batch_sampler_collator = False
         if is_eval is False and training_args.sample_packing:
             use_batch_sampler_collator = True
@@ -2404,6 +2404,7 @@ class HFConditionalGenTrainerBuilder(TrainerBuilderBase):
                 V2BatchSamplerDataCollatorForSeq2Seq,
                 BatchSamplerDataCollatorForSeq2Seq,
                 DataCollatorForSeq2Seq,
+                DataCollatorForMultiModal
             ]
         ]
         if self.cfg.is_multimodal:

@@ -24,7 +24,7 @@ from axolotl.core.tokenizer_utils import fix_untrained_tokens
 from axolotl.logging_config import configure_logging
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.freeze import freeze_layers_except
-from axolotl.utils.models import load_model, load_tokenizer, load_processor
+from axolotl.utils.models import load_model, load_processor, load_tokenizer
 from axolotl.utils.trainer import setup_trainer
 
 try:
@@ -71,7 +71,7 @@ def train(
     tokenizer = load_tokenizer(cfg)
     processor = None
     tokenizer_processor = None
-    
+
     if cfg.is_multimodal:
         processor = load_processor(cfg, tokenizer)
         tokenizer_processor = processor

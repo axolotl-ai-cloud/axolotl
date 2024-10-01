@@ -10,7 +10,7 @@ from axolotl.monkeypatch.mixtral import patch_mixtral_moe_forward_zero3
 from axolotl.monkeypatch.utils import get_unpad_data
 
 SUPPORTED_MULTIPACK_MODEL_TYPES = [
-    "mllama_text_model", #not sure if mllama_text is compatible with multipack
+    "mllama_text_model",  # not sure if mllama_text is compatible with multipack
     "llama",
     "mistral",
     "mixtral",
@@ -47,8 +47,8 @@ def patch_for_multipack(model_type, model_name=None, is_remote_code=False):
         )
         if is_deepspeed_zero3_enabled():
             patch_mixtral_moe_forward_zero3()
-    elif model_type in [ "llama", "mllama_text_model"] :
-    #elif model_type == "llama" or model_type == "mllama_text_model": #
+    elif model_type in ["llama", "mllama_text_model"]:
+        # elif model_type == "llama" or model_type == "mllama_text_model": #
         if hasattr(transformers.models.llama.modeling_llama, "_get_unpad_data"):
             transformers.models.llama.modeling_llama._get_unpad_data = (  # pylint: disable=protected-access
                 get_unpad_data

@@ -699,7 +699,7 @@ class AxolotlInputConfig(
     axolotl_config_path: Optional[str] = None
 
     is_multimodal: Optional[bool] = Field(default=None)
-    
+
     is_falcon_derived_model: Optional[bool] = Field(default=None)
     is_llama_derived_model: Optional[bool] = Field(default=None)
     is_mistral_derived_model: Optional[bool] = Field(default=None)

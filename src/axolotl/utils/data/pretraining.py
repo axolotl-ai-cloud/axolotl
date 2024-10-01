@@ -17,17 +17,21 @@ from axolotl.utils.trainer import process_pretraining_datasets_for_packing
 LOG = logging.getLogger("axolotl")
 
 
-def encode_pretraining_multimodal(processor: ProcessorMixin, max_tokens: int, examples: Dict[str, List]) -> Dict[str, list]:
+def encode_pretraining_multimodal(
+    processor: ProcessorMixin, max_tokens: int, examples: Dict[str, List]
+) -> Dict[str, list]:
     def format_conversation(messages):
         """
         Concatenate the conversation messages from the 'messages' field in a structured way.
         """
         conversation = []
         for message in messages:
-            for content in message['content']:
-                if content['type'] == 'text' and content['text'] is not None:
-                    conversation.append(content['text'])
-                elif content['type'] == 'image':  # Assuming 'image' is the type for images
+            for content in message["content"]:
+                if content["type"] == "text" and content["text"] is not None:
+                    conversation.append(content["text"])
+                elif (
+                    content["type"] == "image"
+                ):  # Assuming 'image' is the type for images
                     conversation.append(processor.image_token)  # Insert image token
         return "\n".join(conversation)
 
@@ -38,7 +42,9 @@ def encode_pretraining_multimodal(processor: ProcessorMixin, max_tokens: int, ex
         texts.append(conversation_text)
 
         # Step 2: Process images
-        images = examples['images']  # [0] if len(example['images']) > 0 else self.get_placeholder_image()
+        images = examples[
+            "images"
+        ]  # [0] if len(example['images']) > 0 else self.get_placeholder_image()
 
     res = processor(
         text=texts,
@@ -207,9 +213,13 @@ def wrap_pretraining_dataset(
     else:
         if cfg.is_multmodal:
             processor = tokenizer_processor
-            encode = functools.partial(encode_pretraining_multimodal, processor, max_tokens)
+            encode = functools.partial(
+                encode_pretraining_multimodal, processor, max_tokens
+            )
         else:
-            encode = functools.partial(encode_pretraining, tokenizer_processor, max_tokens)
+            encode = functools.partial(
+                encode_pretraining, tokenizer_processor, max_tokens
+            )
 
     if cfg.shuffle_merged_datasets:
         dataset = dataset.shuffle(seed=seed, buffer_size=buffer_size)

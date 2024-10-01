@@ -14,7 +14,11 @@ IGNORE_INDEX = -100
 
 
 @dataclass
-class DataCollatorForMultiModal():
+class DataCollatorForMultiModal:
+    """
+    DataCollator for MultiModal data
+    """
+
     processor: ProcessorMixin
     model: Optional[Any] = None
     padding: Union[bool, str, PaddingStrategy] = True
@@ -319,7 +323,7 @@ class PretrainingBatchSamplerDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):
                 chunked_data[feature] = np.concatenate(arrays)
         features = [chunked_data]
         return super().__call__(features, return_tensors=return_tensors)
-    
+
 
 @dataclass
 class PretrainingBatchSamplerDataCollatorMultiModal(DataCollatorForSeq2Seq):
