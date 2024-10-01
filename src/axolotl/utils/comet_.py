@@ -67,7 +67,6 @@ def setup_comet_env_vars(cfg: DictDefault):
             if value and value != "":
                 env_variable_name = COMET_ENV_MAPPING_OVERRIDE.get(key, key.upper())
                 final_value = python_value_to_environ_value(value)
-                print(f"SETTING ENV {env_variable_name=} {final_value=}")
                 os.environ[env_variable_name] = final_value
 
     if cfg.comet_experiment_config:
@@ -83,7 +82,6 @@ def setup_comet_env_vars(cfg: DictDefault):
                     )
 
                 final_value = python_value_to_environ_value(value)
-                print(f"SETTING ENV {config_env_variable_name=} {final_value=}")
                 os.environ[config_env_variable_name] = final_value
 
     # Enable comet if project name is present
