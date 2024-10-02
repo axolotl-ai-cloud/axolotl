@@ -1,16 +1,13 @@
 """
 DataCollator for axolotl to pad labels and position_ids for packed sequences
 """
+
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Sequence, Union
+from typing import Any, Optional, Union
 
 import numpy as np
-import torch
-import transformers
 from transformers import PreTrainedTokenizerBase
 from transformers.utils import PaddingStrategy
-
-IGNORE_INDEX = -100
 
 
 @dataclass
@@ -181,34 +178,6 @@ class V2BatchSamplerDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):
                     ]
                     out_features[i][feature] = np.concatenate(arrays)
         return super().__call__(out_features, return_tensors=return_tensors)
-
-
-@dataclass
-class MambaDataCollator:
-    """
-    Collator for State Space Models (Mamba)
-    """
-
-    tokenizer: transformers.PreTrainedTokenizer
-
-    def __call__(self, instances: Sequence[Dict]) -> Dict[str, torch.Tensor]:
-        input_ids, labels = tuple(
-            [torch.LongTensor(instance[key]) for instance in instances]
-            for key in ("input_ids", "labels")
-        )
-        input_ids = torch.nn.utils.rnn.pad_sequence(
-            input_ids,
-            batch_first=True,
-            padding_value=self.tokenizer.pad_token_id,
-        )
-        labels = torch.nn.utils.rnn.pad_sequence(
-            labels, batch_first=True, padding_value=IGNORE_INDEX
-        )
-
-        return {
-            "input_ids": input_ids,
-            "labels": labels,
-        }
 
 
 @dataclass

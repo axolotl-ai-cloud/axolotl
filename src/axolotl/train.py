@@ -127,6 +127,7 @@ def train(
         eval_dataset,
         (model, model_ref, peft_config),
         tokenizer,
+        processor,
         total_num_steps,
     )
 

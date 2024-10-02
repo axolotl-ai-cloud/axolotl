@@ -534,6 +534,7 @@ class AxolotlInputConfig(
     dataset_prepared_path: Optional[str] = None
     dataset_shard_num: Optional[int] = None
     dataset_shard_idx: Optional[int] = None
+    skip_dataset_preprocess: Optional[bool] = False
 
     pretraining_dataset: Optional[  # type: ignore
         conlist(Union[PretrainingDataset, SFTDataset], min_length=1)
