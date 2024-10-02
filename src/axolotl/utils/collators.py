@@ -28,7 +28,34 @@ class DataCollatorForMultiModal:
     position_pad_token_id: int = 0
     return_tensors: str = "pt"
 
-    def __call__(self, features, return_tensors=None):
+    def __call__(self, examples, return_tensors=None):
+        image_token = self.processor.image_token
+        texts = []
+        images = []
+
+        for example in examples:  # input is a batch of data
+            # Step 1: Process text by concatenating messages
+            if self.processor.chat_template is not None:
+                prompt = self.processor.apply_chat_template(example['messages'], tokenize=False)
+            elif isinstance(example['messages'], str):
+                prompt = example['messages']
+            elif isinstance(example['messages'], list):
+                prompt = ""
+                for message in example['messages']:
+                    prompt += message
+            else:
+                prompt = None
+            texts.append(prompt)
+
+            # Step 2: Process images
+            image = example['images'] if len(example['images']) > 0 else [self.get_placeholder_image() for _ in range(prompt.count(image_token))]
+            images.append(image)
+
+        # Step 3: Preprocess text and images using the processor (pass entire batch as lists)
+        processed = self.processor(text=texts, images=images, return_tensors="pt", padding=True, truncation=True)
+
+        features = processed
+
         labels = None
         if return_tensors is None:
             return_tensors = self.return_tensors
@@ -94,6 +121,13 @@ class DataCollatorForMultiModal:
             features["decoder_input_ids"] = decoder_input_ids
 
         return features
+
+    def get_placeholder_image(self):
+        """
+        Return a blank or placeholder image in case there is no image in the dataset entry.
+        """
+        from PIL import Image
+        return Image.new('RGB', (224, 224))  # Replace with the desired placeholder size
 
 
 @dataclass
