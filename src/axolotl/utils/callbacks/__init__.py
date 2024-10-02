@@ -814,10 +814,10 @@ class SaveAxolotlConfigtoCometCallback(TrainerCallback):
         if is_main_process():
             try:
                 comet_experiment = comet_ml.start(source="axolotl")
-                comet_experiment._log_asset(
+                comet_experiment.log_other("Created from", "axolotl")
+                comet_experiment.log_asset(
                     self.axolotl_config_path,
                     file_name="axolotl-config",
-                    framework="axolotl",
                 )
                 LOG.info(
                     "The Axolotl config has been saved to the Comet Experiment under assets."
