@@ -1,6 +1,8 @@
 """
 Monkeypatch for Vision Llama for FA2 support
 """
+# pylint: disable=duplicate-code
+
 from typing import Optional, Tuple
 
 import torch

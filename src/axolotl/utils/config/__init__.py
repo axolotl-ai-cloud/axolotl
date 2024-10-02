@@ -119,7 +119,7 @@ def normalize_config(cfg):
 
     if not cfg.base_model_config:
         cfg.base_model_config = cfg.base_model
-        
+
     model_config = load_model_config(cfg)
 
     cfg.tokenizer_config = (
@@ -127,9 +127,15 @@ def normalize_config(cfg):
     )
 
     cfg.is_multimodal = (
-        hasattr(model_config, "model_type") and model_config.model_type in [ "llava", "mllama"]
-        or any(multimodal_name in cfg.base_model.lower() for multimodal_name in [ "pixtral", ])
-        or cfg.is_multimodal 
+        hasattr(model_config, "model_type")
+        and model_config.model_type in ["llava", "mllama"]
+        or any(
+            multimodal_name in cfg.base_model.lower()
+            for multimodal_name in [
+                "pixtral",
+            ]
+        )
+        or cfg.is_multimodal
     )
     if cfg.is_multimodal:
         cfg.processor_config = (
@@ -137,11 +143,14 @@ def normalize_config(cfg):
         )
         model_config = model_config.text_config
 
-    cfg.model_config_type = model_config.model_type 
+    cfg.model_config_type = model_config.model_type
 
     # figure out if the model is llama
     cfg.is_llama_derived_model = (
-        (hasattr(model_config, "model_type") and model_config.model_type == ["llama", "mllama_text_model"])
+        (
+            hasattr(model_config, "model_type")
+            and model_config.model_type == ["llama", "mllama_text_model"]
+        )
         or cfg.is_llama_derived_model
         or "llama" in cfg.base_model.lower()
         or (cfg.type_of_model and "llama" in cfg.type_of_model.lower())
