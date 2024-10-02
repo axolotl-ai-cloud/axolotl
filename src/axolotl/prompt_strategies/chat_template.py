@@ -245,7 +245,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             tokenized_res = self.prompter.build_prompt(turns, images=images)
             tokenized_prompt = {}
             if isinstance(tokenized_res, list):
-                input_ids = prompt_ids + tokenized_res
+                input_ids = prompt_ids + tokenized_res[len(prompt_ids) :]
                 tokenized_prompt["input_ids"] = input_ids
                 tokenized_prompt["attention_mask"] = [1] * len(input_ids)
             else:
@@ -261,10 +261,6 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             tokenized_prompt["labels"] = labels
 
             return tokenized_prompt
-        # LOG.info(self.roles_to_train)
-        # LOG.info(self.train_on_eos)
-        # LOG.info(self.prompter.message_field_training)
-        # LOG.info(self.prompter.message_field_training_detail)
 
         turns = prompt[self.messages]
         input_ids = self.prompter.build_prompt(turns)
