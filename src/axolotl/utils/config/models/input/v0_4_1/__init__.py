@@ -229,7 +229,7 @@ class LoraConfig(BaseModel):
     lora_r: Optional[int] = None
     lora_alpha: Optional[int] = None
     lora_fan_in_fan_out: Optional[bool] = None
-    lora_target_modules: Optional[List[str]] = None
+    lora_target_modules: Optional[Union[str, List[str]]] = None
     lora_target_linear: Optional[bool] = None
     lora_modules_to_save: Optional[List[str]] = None
     lora_dropout: Optional[float] = 0.0
@@ -1068,6 +1068,15 @@ class AxolotlInputConfig(
                 "`unfrozen_parameters` used with `peft_layers_to_transform` can have unexpected behavior."
             )
 
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_peft_layers_pattern(cls, data):
+        if data.get("peft_layers_pattern") and not data.get("peft_layers_to_transform"):
+            raise ValueError(
+                "peft_layers_pattern requires peft_layers_to_transform to be set"
+            )
         return data
 
     @model_validator(mode="after")
