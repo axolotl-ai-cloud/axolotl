@@ -217,13 +217,11 @@ def patch_mllama():
     MllamaPreTrainedModel._supports_flash_attn_2 = (  # pylint: disable=protected-access
         True
     )
-    MLLAMA_TEXT_ATTENTION_CLASSES.set(
-        "flash_attention_2", MllamaTextSelfFlashAttention2
-    )
-    MLLAMA_TEXT_CROSS_ATTENTION_CLASSES.set(
-        "flash_attention_2", MllamaTextCrossFlashAttention2
-    )
+    MLLAMA_TEXT_ATTENTION_CLASSES["flash_attention_2"] = MllamaTextSelfFlashAttention2
+    MLLAMA_TEXT_CROSS_ATTENTION_CLASSES[
+        "flash_attention_2"
+    ] = MllamaTextCrossFlashAttention2
     # fallback to SDPA
-    MLLAMA_VISION_ATTENTION_CLASSES.set(
-        "flash_attention_2", MLLAMA_VISION_ATTENTION_CLASSES.get("sdpa")
-    )
+    MLLAMA_VISION_ATTENTION_CLASSES[
+        "flash_attention_2"
+    ] = MLLAMA_VISION_ATTENTION_CLASSES["sdpa"]

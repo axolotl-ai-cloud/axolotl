@@ -457,7 +457,7 @@ def load_tokenized_prepared_datasets(
         if not cfg.skip_prepare_dataset:
             dataset, _ = process_datasets_for_packing(cfg, dataset, None)
 
-        if cfg.local_rank == 0:
+        if cfg.local_rank == 0 and not cfg.skip_prepare_dataset:
             LOG.info(f"Saving merged prepared dataset to disk... {prepared_ds_path}")
             dataset.save_to_disk(str(prepared_ds_path))
             if cfg.push_dataset_to_hub:
