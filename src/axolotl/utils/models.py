@@ -24,10 +24,12 @@ from peft import (
 )
 from peft.tuners.lora import QuantLinear
 from torch import nn
-from transformers import (  # noqa: F401
+from transformers import (  # noqa: F401; LlavaForConditionalGeneration,; MllamaForConditionalGeneration,; ProcessorMixin,
     AddedToken,
     AutoConfig,
     AutoModelForCausalLM,
+    AutoModelForPreTraining,
+    AutoProcessor,
     AutoTokenizer,
     AwqConfig,
     BitsAndBytesConfig,
@@ -80,6 +82,9 @@ def get_module_class_from_name(module, name):
 
 
 def check_model_config(cfg: DictDefault, model_config: Union[AutoConfig, DictDefault]):
+    if cfg.is_multimodal:
+        model_config = model_config.text_config
+
     quant_config_exists = (
         hasattr(model_config, "quantization_config")
         and model_config.quantization_config
@@ -299,9 +304,28 @@ def load_tokenizer(cfg):
     return tokenizer
 
 
+def load_processor(cfg: DictDefault, tokenizer: PreTrainedTokenizerBase):
+    # model_config = load_model_config(cfg)
+    processor_kwargs: Dict[str, Union[list, str]] = {}  # do we actually need this?
+
+    processor_cls = AutoProcessor
+    if cfg.processor_type:
+        processor_cls = getattr(transformers, cfg.processor_type)
+
+    processor = processor_cls.from_pretrained(
+        cfg.processor_config,
+        trust_remote_code=cfg.trust_remote_code or False,
+        tokenizer=tokenizer,
+        **processor_kwargs,
+    )
+
+    return processor
+
+
 def load_model(
     cfg: DictDefault,
     tokenizer: PreTrainedTokenizerBase,
+    # processor: ProcessorMixin = None,
     inference: bool = False,
     reference_model: bool = False,
 ) -> Tuple[PreTrainedModel, Optional[PeftConfig]]:
@@ -312,6 +336,7 @@ def load_model(
     base_model = cfg.base_model
     model_type = cfg.type_of_model
     model_config = load_model_config(cfg)
+    is_multimodal = cfg.is_multimodal
 
     # load any patches from plugins
     from axolotl.integrations.base import PluginManager
@@ -319,13 +344,27 @@ def load_model(
     plugin_manager = PluginManager.get_instance()
     plugin_manager.pre_model_load(cfg)
 
+    if is_multimodal:
+        model_text_config = model_config.text_config
+    else:
+        model_text_config = model_config
+
+    def update_model_config(is_multimodal, model_text_config, model_config):
+        if is_multimodal:
+            model_config.text_config = model_text_config
+        else:
+            model_config = model_text_config
+
     # TODO refactor as a kwarg
     load_in_8bit = cfg.load_in_8bit
 
     if cfg.gradient_checkpointing == "unsloth":
         transformers.modeling_utils.checkpoint = hf_grad_checkpoint_unsloth_wrapper
 
-    if hasattr(model_config, "model_type") and model_config.model_type == "btlm":
+    if (
+        hasattr(model_text_config, "model_type")
+        and model_text_config.model_type == "btlm"
+    ):
         if cfg.flash_attention:
             from axolotl.monkeypatch.btlm_attn_hijack_flash import (
                 replace_btlm_attn_with_flash_attn,
@@ -334,8 +373,8 @@ def load_model(
             replace_btlm_attn_with_flash_attn(cfg.base_model)
 
     if (
-        hasattr(model_config, "model_type")
-        and model_config.model_type == "stablelm_epoch"
+        hasattr(model_text_config, "model_type")
+        and model_text_config.model_type == "stablelm_epoch"
     ):
         if cfg.flash_attention and cfg.sample_packing:
             from axolotl.monkeypatch.stablelm_attn_hijack_flash import (
@@ -445,7 +484,7 @@ def load_model(
             patch_self_attn_lora()
 
     # Modify mistral derived models
-    if cfg.model_config_type == "mistral" and cfg.flash_attn_cross_entropy_loss:
+    if cfg.model_text_config_type == "mistral" and cfg.flash_attn_cross_entropy_loss:
         from axolotl.monkeypatch.mistral_attn_hijack_flash import (
             patch_mistral_cross_entropy,
         )
@@ -460,6 +499,15 @@ def load_model(
 
     max_memory = cfg.max_memory
     device_map = cfg.device_map
+
+    if cfg.is_multimodal:
+        automodel = AutoModelForPreTraining
+        # if model_config.model_type == "llava":
+        #     Auto = LlavaForConditionalGeneration
+        # elif model_config.model_type == "mllama":
+        #     Auto = MllamaForConditionalGeneration
+    else:
+        automodel = AutoModelForCausalLM
 
     if cfg.gpu_memory_limit:
         gpu_memory_limit = (
@@ -478,7 +526,7 @@ def load_model(
         from accelerate import infer_auto_device_map
 
         with init_empty_weights():
-            model_canvas = AutoModelForCausalLM.from_config(
+            model_canvas = automodel.from_config(
                 model_config, trust_remote_code=cfg.trust_remote_code or False
             )
         model_canvas.tie_weights()
@@ -633,6 +681,8 @@ def load_model(
             quantization_config = (
                 quantization_config or model_kwargs["quantization_config"]
             )
+
+            update_model_config(is_multimodal, model_text_config, model_config)
             model = load_sharded_model_quant(
                 base_model,
                 model_config,
@@ -642,7 +692,7 @@ def load_model(
             )
             skip_move_to_device = True
         elif (
-            model_config.model_type == "llama"
+            model_text_config.model_type == "llama"
             and not cfg.trust_remote_code
             and not cfg.gptq
         ):
@@ -651,7 +701,8 @@ def load_model(
                 if "device_map" in model_kwargs:
                     del model_kwargs["device_map"]
 
-            model = AutoModelForCausalLM.from_pretrained(
+            update_model_config(is_multimodal, model_text_config, model_config)
+            model = automodel.from_pretrained(
                 base_model,
                 config=model_config,
                 **model_kwargs,
@@ -690,13 +741,15 @@ def load_model(
             and not cfg.trust_remote_code
         ):
             if cfg.gptq:
-                model = AutoModelForCausalLM.from_pretrained(
+                update_model_config(is_multimodal, model_text_config, model_config)
+                model = automodel.from_pretrained(
                     base_model,
                     config=model_config,
                     trust_remote_code=cfg.trust_remote_code or False,
                     **model_kwargs,
                 )
             else:
+                update_model_config(is_multimodal, model_text_config, model_config)
                 model = getattr(transformers, model_type).from_pretrained(
                     base_model,
                     config=model_config,
@@ -707,21 +760,22 @@ def load_model(
             # Shouldn't be a problem most of the time. will obviously error if the model doesn't support this
             # when training starts
             if (
-                hasattr(model_config, "max_seq_len")
-                and model_config.max_seq_len
+                hasattr(model_text_config, "max_seq_len")
+                and model_text_config.max_seq_len
                 and cfg.sequence_len > model_config.max_seq_len
             ):
-                model_config.max_seq_len = cfg.sequence_len
+                model_text_config.max_seq_len = cfg.sequence_len
                 LOG.warning(f"increasing context length to {cfg.sequence_len}")
             elif (
-                hasattr(model_config, "max_sequence_length")
-                and model_config.max_sequence_length
-                and cfg.sequence_len > model_config.max_sequence_length
+                hasattr(model_text_config, "max_sequence_length")
+                and model_text_config.max_sequence_length
+                and cfg.sequence_len > model_text_config.max_sequence_length
             ):
-                model_config.max_sequence_length = cfg.sequence_len
+                model_text_config.max_sequence_length = cfg.sequence_len
                 LOG.warning(f"increasing context length to {cfg.sequence_len}")
             if cfg.gptq:
-                model = AutoModelForCausalLM.from_pretrained(
+                update_model_config(is_multimodal, model_text_config, model_config)
+                model = automodel.from_pretrained(
                     base_model,
                     config=model_config,
                     trust_remote_code=cfg.trust_remote_code or False,
@@ -734,7 +788,8 @@ def load_model(
                     if "device_map" in model_kwargs:
                         del model_kwargs["device_map"]
 
-                model = AutoModelForCausalLM.from_pretrained(
+                update_model_config(is_multimodal, model_text_config, model_config)
+                model = automodel.from_pretrained(
                     base_model,
                     config=model_config,
                     trust_remote_code=cfg.trust_remote_code or False,
@@ -760,32 +815,70 @@ def load_model(
     else:
         model.tie_weights()
 
+    # we need to generalize model attributing for multmodal alongside pure language model
+    def setattr_model_text_config(is_multimodal, model, attr_name, attr_val):
+        if is_multimodal:
+            setattr(model.config.text_config, attr_name, attr_val)
+        else:
+            setattr(model.config, attr_name, attr_val)
+
+    def hasattr_model_text_config(is_multimodal, model, attr_name):
+        if is_multimodal:
+            return hasattr(model.config.text_config, attr_name)
+        return hasattr(model.config, attr_name)
+
+    def getattr_model_text_config(is_multimodal, model, attr_name):
+        if is_multimodal:
+            return getattr(model.config.text_config, attr_name)
+        return getattr(model.config, attr_name)
+
     if (
         hasattr(model, "config")
-        and hasattr(model.config, "max_position_embeddings")
-        and model.config.max_position_embeddings
-        and cfg.sequence_len > model.config.max_position_embeddings
+        # generalize # and hasattr(model.config, "max_position_embeddings")
+        and hasattr_model_text_config(is_multimodal, model, "max_position_embeddings")
+        # generalize # and model.config.max_position_embeddings
+        and getattr_model_text_config(is_multimodal, model, "max_position_embeddings")
+        # generalize # and cfg.sequence_len > model.config.max_position_embeddings
+        and cfg.sequence_len
+        > getattr_model_text_config(is_multimodal, model, "max_position_embeddings")
     ):
         LOG.warning(
             f"increasing model.config.max_position_embeddings from {model.config.max_position_embeddings} to {cfg.sequence_len}"
         )
-        model.config.max_position_embeddings = cfg.sequence_len
+
+        setattr_model_text_config(
+            is_multimodal, model, "max_position_embeddings", cfg.sequence_len
+        )
 
     if (
         hasattr(model, "config")
-        and hasattr(model.config, "bos_token_id")
-        and model.config.bos_token_id
-        and model.config.bos_token_id != tokenizer.bos_token_id
+        # generalize # and ( hasattr(model.config, "bos_token_id") or hasattr(model.config.text_config, "bos_token_id") )
+        and hasattr_model_text_config(is_multimodal, model, "bos_token_id")
+        # generalize # and model.config.bos_token_id
+        and getattr_model_text_config(is_multimodal, model, "bos_token_id")
+        # generalize # and model.config.bos_token_id != tokenizer.bos_token_id
+        and getattr_model_text_config(is_multimodal, model, "bos_token_id")
+        != tokenizer.bos_token_id
     ):
-        model.config.bos_token_id = tokenizer.bos_token_id
+        # to replace model.config.bos_token_id = tokenizer.bos_token_id
+        setattr_model_text_config(
+            is_multimodal, model, "bos_token_id", tokenizer.bos_token_id
+        )
 
     if (
         hasattr(model, "config")
-        and hasattr(model.config, "eos_token_id")
-        and model.config.eos_token_id
-        and model.config.eos_token_id != tokenizer.eos_token_id
+        # generalize # and hasattr(model.config, "eos_token_id")
+        and hasattr_model_text_config(is_multimodal, model, "eos_token_id")
+        # generalize # and model.config.eos_token_id
+        and getattr_model_text_config(is_multimodal, model, "eos_token_id")
+        # generalize # and model.config.eos_token_id != tokenizer.eos_token_id
+        and getattr_model_text_config(is_multimodal, model, "eos_token_id")
+        != tokenizer.eos_token_id
     ):
-        model.config.eos_token_id = tokenizer.eos_token_id
+        # to replace model.config.eos_token_id = tokenizer.eos_token_id
+        setattr_model_text_config(
+            is_multimodal, model, "eos_token_id", tokenizer.eos_token_id
+        )
 
     if hasattr(model, "device") and model.device.type in ("cuda", "mps"):
         log_gpu_memory_usage(LOG, "after model load", model.device)

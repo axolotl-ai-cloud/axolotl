@@ -205,7 +205,7 @@ ds = load_from_disk(f'last_run_prepared/{directory[0]}/')
     hi there!.  goodbye  farewell</s>
 ```
 
-We can check that the right tokens are ingored by comparing the labels
+We can check that the right tokens are ignored by comparing the labels
 to each token:
 
 ```python

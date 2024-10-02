@@ -24,7 +24,7 @@ from axolotl.core.tokenizer_utils import fix_untrained_tokens
 from axolotl.logging_config import configure_logging
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.freeze import freeze_layers_except
-from axolotl.utils.models import load_model, load_tokenizer
+from axolotl.utils.models import load_model, load_processor, load_tokenizer
 from axolotl.utils.trainer import setup_trainer
 
 try:
@@ -69,6 +69,14 @@ def train(
         main_process_only=True,
     )
     tokenizer = load_tokenizer(cfg)
+    processor = None
+    tokenizer_processor = None
+
+    if cfg.is_multimodal:
+        processor = load_processor(cfg, tokenizer)
+        tokenizer_processor = processor
+    else:
+        tokenizer_processor = tokenizer
 
     train_dataset = dataset_meta.train_dataset
     eval_dataset = dataset_meta.eval_dataset
@@ -121,7 +129,7 @@ def train(
         train_dataset,
         eval_dataset,
         (model, model_ref, peft_config),
-        tokenizer,
+        tokenizer_processor,
         total_num_steps,
     )
 
@@ -207,7 +215,7 @@ def train(
             model = model.merge_and_unload()
         else:
             # final model weights have already been saved by `ReLoRACallback.on_train_end`
-            return model, tokenizer
+            return model, tokenizer_processor
 
     # TODO do we need this fix? https://huggingface.co/docs/accelerate/usage_guides/fsdp#saving-and-loading
     # only save on rank 0, otherwise it corrupts output on multi-GPU when multiple processes attempt to write the same file
@@ -263,7 +271,7 @@ def train(
         # defensively push to the hub to ensure the model card is updated
         trainer.push_to_hub()
 
-    return model, tokenizer
+    return model, tokenizer_processor
 
 
 def pretrain_hooks(_cfg, _trainer):

@@ -6,7 +6,7 @@ import logging
 from typing import Dict, List, Tuple, Union
 
 from fastchat.conversation import Conversation
-from transformers import BatchEncoding, PreTrainedTokenizer
+from transformers import BatchEncoding, PreTrainedTokenizer, ProcessorMixin
 
 from axolotl.monkeypatch.fastchat_conversation_turns import (
     add_get_turns_to_conversation,
@@ -38,12 +38,12 @@ class PromptTokenizingStrategy(abc.ABC):
     def __init__(
         self,
         prompter: Prompter,
-        tokenizer,
+        tokenizer_processor,
         train_on_inputs: bool = False,
         sequence_len: int = 2048,
     ):
         self.prompter = prompter
-        self.tokenizer: PreTrainedTokenizer = tokenizer
+        self.tokenizer: Union[PreTrainedTokenizer, ProcessorMixin] = tokenizer_processor
         self.train_on_inputs = train_on_inputs
         # sequence_len and max_length can be different for CompletionPromptTokenizingStrategy.
         # TODO: Document how they are different.
