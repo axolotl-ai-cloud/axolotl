@@ -1074,12 +1074,17 @@ def load_lora(model, cfg, inference=False, config_only=False):
 
     from peft import LoraConfig, get_peft_model
 
-    lora_target_modules = list(cfg.lora_target_modules or [])
+    lora_target_modules = cfg.lora_target_modules or []
 
     if cfg.lora_target_linear:
         linear_names = find_all_linear_names(model)
         LOG.info(f"found linear modules: {repr(sorted(linear_names))}")
-        lora_target_modules = list(set(lora_target_modules + linear_names))
+        lora_target_modules_as_list = (
+            lora_target_modules
+            if isinstance(lora_target_modules, list)
+            else [lora_target_modules]
+        )
+        lora_target_modules = list(set(lora_target_modules_as_list + linear_names))
 
     lora_config_kwargs = {}
     loftq_bits = cfg.peft and cfg.peft.loftq_config and cfg.peft.loftq_config.loftq_bits
