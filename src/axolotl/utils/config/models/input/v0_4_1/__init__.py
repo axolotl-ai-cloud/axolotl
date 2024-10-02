@@ -234,6 +234,7 @@ class LoraConfig(BaseModel):
     lora_modules_to_save: Optional[List[str]] = None
     lora_dropout: Optional[float] = 0.0
     peft_layers_to_transform: Optional[List[int]] = None
+    peft_layers_pattern: Optional[List[str]] = None
     peft: Optional[PeftConfig] = None
     peft_use_dora: Optional[bool] = None
     peft_use_rslora: Optional[bool] = None
@@ -534,7 +535,7 @@ class AxolotlInputConfig(
     dataset_prepared_path: Optional[str] = None
     dataset_shard_num: Optional[int] = None
     dataset_shard_idx: Optional[int] = None
-    skip_dataset_preprocess: Optional[bool] = False
+    skip_prepare_dataset: Optional[bool] = False
 
     pretraining_dataset: Optional[  # type: ignore
         conlist(Union[PretrainingDataset, SFTDataset], min_length=1)
@@ -999,6 +1000,18 @@ class AxolotlInputConfig(
                 "setting `remove_unused_columns: false` for when sample_packing and eval_sample_packing don't match"
             )
             data["remove_unused_columns"] = False
+
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_mm_prepare(cls, data):
+        if data.get("skip_prepare_dataset"):
+            if data.get("remove_unused_columns") is None:
+                LOG.info(
+                    "setting `remove_unused_columns: false` for skip_prepare_dataset"
+                )
+                data["remove_unused_columns"] = False
 
         return data
 

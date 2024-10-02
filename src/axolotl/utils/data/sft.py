@@ -192,7 +192,7 @@ def load_tokenized_prepared_datasets(
         cfg.dataset_prepared_path
         and any(prepared_ds_path.glob("*"))
         and not cfg.is_preprocess
-        and not cfg.skip_dataset_preprocess
+        and not cfg.skip_prepare_dataset
     ):
         LOG.info(f"Loading prepared dataset from disk at {prepared_ds_path}...")
         dataset = load_from_disk(str(prepared_ds_path))
@@ -454,7 +454,7 @@ def load_tokenized_prepared_datasets(
             else:
                 LOG.debug("NOT shuffling merged datasets")
 
-        if not cfg.skip_dataset_preprocess:
+        if not cfg.skip_prepare_dataset:
             dataset, _ = process_datasets_for_packing(cfg, dataset, None)
 
         if cfg.local_rank == 0:
@@ -602,7 +602,7 @@ def get_dataset_wrapper(
             dataset,
             **ds_kwargs,
         )
-    elif cfg.skip_dataset_preprocess:
+    elif cfg.skip_prepare_dataset:
         dataset_wrapper = dataset
     elif ds_strategy := load(
         config_dataset.type, tokenizer, cfg, config_dataset, processor=processor

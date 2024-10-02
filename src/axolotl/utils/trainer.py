@@ -306,7 +306,7 @@ def process_pretraining_datasets_for_packing(
 
 
 def calculate_total_num_steps(cfg, train_dataset, update=True):
-    if not cfg.total_num_tokens and not cfg.skip_dataset_preprocess:
+    if not cfg.total_num_tokens and not cfg.skip_prepare_dataset:
         total_num_tokens = np.sum(
             train_dataset.data.column("input_ids")
             .to_pandas()
@@ -322,7 +322,7 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
     if (
         not skip_estimates
         and not cfg.total_supervised_tokens
-        and not cfg.skip_dataset_preprocess
+        and not cfg.skip_prepare_dataset
     ):
         total_supervised_tokens = (
             train_dataset.data.column("labels")
