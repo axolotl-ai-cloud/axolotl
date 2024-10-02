@@ -453,7 +453,8 @@ def load_tokenized_prepared_datasets(
             else:
                 LOG.debug("NOT shuffling merged datasets")
 
-        dataset, _ = process_datasets_for_packing(cfg, dataset, None)
+        if not cfg.skip_dataset_preprocess:
+            dataset, _ = process_datasets_for_packing(cfg, dataset, None)
 
         if cfg.local_rank == 0:
             LOG.info(f"Saving merged prepared dataset to disk... {prepared_ds_path}")
