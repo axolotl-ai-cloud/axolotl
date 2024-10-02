@@ -192,6 +192,7 @@ def load_tokenized_prepared_datasets(
         cfg.dataset_prepared_path
         and any(prepared_ds_path.glob("*"))
         and not cfg.is_preprocess
+        and not cfg.skip_dataset_preprocess
     ):
         LOG.info(f"Loading prepared dataset from disk at {prepared_ds_path}...")
         dataset = load_from_disk(str(prepared_ds_path))

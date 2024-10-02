@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional, Union
 
 from transformers import PreTrainedTokenizerBase, ProcessorMixin
 from transformers.data.data_collator import DataCollatorMixin
+from transformers.utils import PaddingStrategy
 
 
 @dataclass
@@ -20,6 +21,7 @@ class MultiModalChatDataCollator(DataCollatorMixin):
     chat_template: Optional[str] = None
     packing: bool = False
     max_images: int = -1
+    padding: Union[bool, str, PaddingStrategy] = True
     pad_to_multiple_of: Optional[int] = None
 
     def __post_init__(self):
