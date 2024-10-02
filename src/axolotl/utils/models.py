@@ -28,6 +28,7 @@ from transformers import (  # noqa: F401
     AddedToken,
     AutoConfig,
     AutoModelForCausalLM,
+    AutoModelForVision2Seq,
     AutoProcessor,
     AutoTokenizer,
     AwqConfig,
@@ -359,6 +360,15 @@ def load_model(
 
     if (
         hasattr(text_model_config, "model_type")
+        and text_model_config.model_type == "mllama"
+    ):
+        if cfg.flash_attention:
+            from axolotl.monkeypatch.attention.mllama import patch_mllama
+
+            patch_mllama()
+
+    if (
+        hasattr(text_model_config, "model_type")
         and text_model_config.model_type == "btlm"
     ):
         if cfg.flash_attention:
@@ -506,6 +516,8 @@ def load_model(
             AutoModelLoader = (  # pylint: disable=invalid-name
                 MllamaForConditionalGeneration
             )
+        else:
+            AutoModelLoader = AutoModelForVision2Seq  # pylint: disable=invalid-name
 
     if cfg.gpu_memory_limit:
         gpu_memory_limit = (

@@ -1,0 +1,28 @@
+# MultiModal / Vision Language Models (BETA)
+
+### Supported Models
+
+- Mllama, i.e. llama with vision models
+
+### Usage
+
+Currently multimodal support is limited and doesn't have full feature parity. To finetune a multimodal Llama w/ LoRA,
+you'll need to use the following in YAML in combination with the rest of the required hyperparams.
+
+```yaml
+base_model: alpindale/Llama-3.2-11B-Vision-Instruct
+processor_type: AutoProcessor
+skip_prepare_dataset: true
+
+chat_template: llama3_2_vision
+datasets:
+  - path: HuggingFaceH4/llava-instruct-mix-vsft
+    type: chat_template
+    split: train[:1%]
+    field_messages: messages
+remove_unused_columns: false
+sample_packing: false
+
+# only finetune the Language model, leave the vision model and vision tower frozen
+lora_target_modules: 'language_model.model.layers.[\d]+.(mlp|cross_attn|self_attn).(up|down|gate|q|k|v|o)_proj'
+```
