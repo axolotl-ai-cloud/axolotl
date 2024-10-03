@@ -4,7 +4,6 @@ chat dataset module
 import os
 from typing import Callable, Optional, Union
 
-from dacite import from_dict
 from datasets import Dataset
 from transformers import PreTrainedTokenizer
 
@@ -31,14 +30,13 @@ class TokenizedChatDataset(Dataset):
             if message_transform is not None:
                 ex = message_transform(ex)
             if formatter is not None:
-                ex = from_dict(
-                    data_class=ChatFormattedChats,
-                    data={**ex, "formatter": formatter},
+                ex = ChatFormattedChats(
+                    formatter=formatter,
+                    **ex,
                 )
             else:
-                ex = from_dict(
-                    data_class=ChatFormattedChats,
-                    data=ex,
+                ex = ChatFormattedChats(
+                    **ex,
                 )
             return ex.tokenized(model_transform)
 
