@@ -1,5 +1,7 @@
 base_model: mistral-community/pixtral-12b
 processor_type: AutoProcessor
+
+load_in_8bit: true
 strict: false
 
 # these 3 lines are needed for now to handle vision chat templates w images
