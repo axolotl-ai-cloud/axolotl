@@ -6,9 +6,8 @@
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
-<meta name="description" content="Template-free prompt construction with the input_output format">
 
-<title>Template-free prompt construction – Axolotl</title>
+<title>multimodal – Axolotl</title>
 <style>
 code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
@@ -130,7 +129,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
       <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
         <i class="bi bi-layout-text-sidebar-reverse"></i>
       </button>
-        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/debugging.html">How-To Guides</a></li><li class="breadcrumb-item"><a href="../docs/input_output.html">Template-free prompt construction</a></li></ol></nav>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"></ol></nav>
         <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
         </a>
     </div>
@@ -177,7 +176,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/input_output.html" class="sidebar-item-text sidebar-link active">
+  <a href="../docs/input_output.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Template-free prompt construction</span></a>
   </div>
 </li>
@@ -293,17 +292,10 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#background" id="toc-background" class="nav-link active" data-scroll-target="#background">Background</a>
+  <li><a href="#multimodal-vision-language-models-beta" id="toc-multimodal-vision-language-models-beta" class="nav-link active" data-scroll-target="#multimodal-vision-language-models-beta">MultiModal / Vision Language Models (BETA)</a>
   <ul class="collapse">
-  <li><a href="#masking-inputs" id="toc-masking-inputs" class="nav-link" data-scroll-target="#masking-inputs">Masking Inputs</a></li>
-  <li><a href="#you-may-not-want-prompt-templates" id="toc-you-may-not-want-prompt-templates" class="nav-link" data-scroll-target="#you-may-not-want-prompt-templates">You may not want prompt templates</a></li>
-  <li><a href="#the-input_output-format" id="toc-the-input_output-format" class="nav-link" data-scroll-target="#the-input_output-format">The <code>input_output</code> format</a></li>
-  </ul></li>
-  <li><a href="#usage" id="toc-usage" class="nav-link" data-scroll-target="#usage">Usage</a>
-  <ul class="collapse">
-  <li><a href="#prepare-data" id="toc-prepare-data" class="nav-link" data-scroll-target="#prepare-data">1. Prepare Data</a></li>
-  <li><a href="#use-type-input_output" id="toc-use-type-input_output" class="nav-link" data-scroll-target="#use-type-input_output">2. Use <code>type: input_output</code></a></li>
-  <li><a href="#check-the-prompts" id="toc-check-the-prompts" class="nav-link" data-scroll-target="#check-the-prompts">3. Check the prompts</a></li>
+  <li><a href="#supported-models" id="toc-supported-models" class="nav-link" data-scroll-target="#supported-models">Supported Models</a></li>
+  <li><a href="#usage" id="toc-usage" class="nav-link" data-scroll-target="#usage">Usage</a></li>
   </ul></li>
   </ul>
 </nav>
@@ -311,278 +303,35 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <!-- main -->
 <main class="content" id="quarto-document-content">
 
-<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/debugging.html">How-To Guides</a></li><li class="breadcrumb-item"><a href="../docs/input_output.html">Template-free prompt construction</a></li></ol></nav>
-<div class="quarto-title">
-<h1 class="title">Template-free prompt construction</h1>
-</div>
-
-<div>
-  <div class="description">
-    Template-free prompt construction with the <code>input_output</code> format
-  </div>
-</div>
 
 
-<div class="quarto-title-meta">
 
-    
-  
-    
-  </div>
-  
-
-
-</header>
-
-
-<!-- TOC -->
+<section id="multimodal-vision-language-models-beta" class="level1">
+<h1>MultiModal / Vision Language Models (BETA)</h1>
+<section id="supported-models" class="level3">
+<h3 class="anchored" data-anchor-id="supported-models">Supported Models</h3>
 <ul>
-<li><a href="#background">Background</a>
-<ul>
-<li><a href="#masking-inputs">Masking Inputs</a></li>
-<li><a href="#you-may-not-want-prompt-templates">You may not want prompt templates</a></li>
-<li><a href="#the-input_output-format">The <code>input_output</code> format</a></li>
-</ul></li>
-<li><a href="#usage">Usage</a>
-<ul>
-<li><a href="#1-prepare-data">1. Prepare Data</a></li>
-<li><a href="#2-use-type-input_output">2. Use <code>type: input_output</code></a></li>
-<li><a href="#3-check-the-prompts">3. Check the prompts</a></li>
-</ul></li>
+<li>Mllama, i.e.&nbsp;llama with vision models</li>
 </ul>
-<!-- /TOC -->
-<p><a id="markdown-background" name="background"></a></p>
-<section id="background" class="level2">
-<h2 class="anchored" data-anchor-id="background">Background</h2>
-<p><a id="markdown-masking-inputs" name="masking-inputs"></a></p>
-<section id="masking-inputs" class="level3">
-<h3 class="anchored" data-anchor-id="masking-inputs">Masking Inputs</h3>
-<p>One of the most popular features of <a href="https://github.com/axolotl-ai-cloud/axolotl">axolotl</a> is setting the following configuration value:</p>
-<div class="sourceCode" id="cb1"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">train_on_inputs</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>If you declare a <a href="https://github.com/axolotl-ai-cloud/axolotl?tab=readme-ov-file#dataset">dataset formats</a> such as <code>alpaca</code> or <code>chatml</code>, axolotl knows what is an input (i.e.&nbsp;human) vs.&nbsp;an output (i.e.&nbsp;the assistant) and masks the input labels so that your model can focus on predicting the outputs only.</p>
-<p><a id="markdown-you-may-not-want-prompt-templates" name="you-may-not-want-prompt-templates"></a></p>
 </section>
-<section id="you-may-not-want-prompt-templates" class="level3">
-<h3 class="anchored" data-anchor-id="you-may-not-want-prompt-templates">You may not want prompt templates</h3>
-<p>However, there are many situations where you don’t want to use one of these formats or templates. This is because they can:</p>
-<ul>
-<li>Add unnecessary boilerplate to your prompts.</li>
-<li>Create artifacts like special delimiters <code>&lt;|im_start|&gt;</code> that can quickly become footguns if you don’t include them correctly at inference time.</li>
-<li>Enforce a <em>chat</em> interface when you do not want one. Sometimes you just want to fine-tune a model to a very specific task and do NOT want multi-turn conversations, roles, etc.</li>
-<li>Limit you to only certain roles that the template allows.</li>
-</ul>
-<p><a id="markdown-the-inputoutput-format" name="the-inputoutput-format"></a></p>
-</section>
-<section id="the-input_output-format" class="level3">
-<h3 class="anchored" data-anchor-id="the-input_output-format">The <code>input_output</code> format</h3>
-<p>You can construct your prompts without a template by using the <code>input_output</code> format, by setting <code>type: input_output</code> in your configuration file like this:</p>
-<p><strong>config.yml</strong></p>
-<div class="sourceCode" id="cb2"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">train_on_inputs</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span><span class="co"> # Mask segments of your data</span></span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> output.jsonl</span></span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> input_output</span><span class="co">  # use template free prompt construction</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Unlike <code>type: completion</code>, which is also template-free, <code>type: input_output</code> allows you to mask segments of your text. More details on how this works are described below.</p>
-<p><a id="markdown-usage" name="usage"></a></p>
-</section>
-</section>
-<section id="usage" class="level2">
-<h2 class="anchored" data-anchor-id="usage">Usage</h2>
-<p>This is how you can use the <code>input_output</code> format:</p>
-<p><a id="markdown-1-prepare-data" name="1-prepare-data"></a></p>
-<section id="prepare-data" class="level3">
-<h3 class="anchored" data-anchor-id="prepare-data">1. Prepare Data</h3>
-<p>To use the <code>input_output</code> format, collect your data in the following format into a jsonl file (below is the first row from the file <code>output</code>.jsonl` pretty printed):</p>
-<div class="sourceCode" id="cb3"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">$</span> head <span class="at">-n1</span> output.jsonl <span class="kw">|</span> <span class="ex">python</span> <span class="at">-m</span> json.tool</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<div class="cell-output cell-output-stdout">
-<pre><code>{
-    "segments": [
-        {
-            "label": true,
-            "text": "&lt;s&gt;Hello\n"
-        },
-        {
-            "label": true,
-            "text": "hi there!. "
-        },
-        {
-            "label": false,
-            "text": "goodbye "
-        },
-        {
-            "label": true,
-            "text": "farewell&lt;/s&gt;"
-        }
-    ]
-}</code></pre>
-</div>
-<p>Set <code>label:false</code> when you want to mask a segment of text so that the model isn’t trained on it. Some things to keep in mind:</p>
-<blockquote class="blockquote">
-<p>[!IMPORTANT] 1. <strong>EOS, BOS, spaces, newlines etc. are entirely up to you. Axolotl concatenates all the segments as-is.</strong> The tokenizer doesn’t add anything additional. Notice how I added spaces, newlines, <code>&lt;s&gt;</code> (BOS), and <code>&lt;/s&gt;</code> (EOS) myself. 2. Make sure you check the materialized output to validate that the prompt is getting assembled how you like.</p>
-</blockquote>
-<p><a id="markdown-2-use-type-inputoutput" name="2-use-type-inputoutput"></a></p>
-</section>
-<section id="use-type-input_output" class="level3">
-<h3 class="anchored" data-anchor-id="use-type-input_output">2. Use <code>type: input_output</code></h3>
-<p>Let’s materialize data with our <code>output.jsonl</code> file by setting <code>type: input_output</code> in our axolotl config:</p>
-<div class="sourceCode" id="cb5"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="co"># training_config.yaml</span></span>
-<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="fu">base_model</span><span class="kw">:</span><span class="at"> mistralai/Mistral-7B-v0.1</span></span>
-<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="fu">data_seed</span><span class="kw">:</span><span class="at"> </span><span class="dv">49</span></span>
-<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a><span class="fu">seed</span><span class="kw">:</span><span class="at"> </span><span class="dv">49</span></span>
-<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
-<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> output.jsonl</span></span>
-<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> input_output</span></span>
-<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a><span class="fu">val_set_size</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.1</span></span>
-<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a><span class="fu">sequence_len</span><span class="kw">:</span><span class="at"> </span><span class="dv">896</span></span>
-<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a><span class="fu">sample_packing</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span>
-<span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a><span class="fu">micro_batch_size</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
-<span id="cb5-15"><a href="#cb5-15" aria-hidden="true" tabindex="-1"></a><span class="fu">gradient_accumulation_steps</span><span class="kw">:</span><span class="at"> </span><span class="dv">3</span></span>
-<span id="cb5-16"><a href="#cb5-16" aria-hidden="true" tabindex="-1"></a><span class="fu">eval_batch_size</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
-<span id="cb5-17"><a href="#cb5-17" aria-hidden="true" tabindex="-1"></a><span class="fu">num_epochs</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span></span>
-<span id="cb5-18"><a href="#cb5-18" aria-hidden="true" tabindex="-1"></a><span class="fu">learning_rate</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.0002</span></span>
-<span id="cb5-19"><a href="#cb5-19" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-20"><a href="#cb5-20" aria-hidden="true" tabindex="-1"></a><span class="fu">train_on_inputs</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span>
-<span id="cb5-21"><a href="#cb5-21" aria-hidden="true" tabindex="-1"></a><span class="fu">special_tokens</span><span class="kw">:</span></span>
-<span id="cb5-22"><a href="#cb5-22" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">bos_token</span><span class="kw">:</span><span class="at"> </span><span class="st">"&lt;s&gt;"</span></span>
-<span id="cb5-23"><a href="#cb5-23" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">eos_token</span><span class="kw">:</span><span class="at"> </span><span class="st">"&lt;/s&gt;"</span></span>
-<span id="cb5-24"><a href="#cb5-24" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">unk_token</span><span class="kw">:</span><span class="at"> </span><span class="st">"&lt;unk&gt;"</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>You can use the following command to materialize your data. The <code>--debug</code> flag will print the tokens, along with the labels so you can verify that the correct items are being ignored:</p>
-<div class="sourceCode" id="cb6"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="ex">$</span> python <span class="at">-m</span> axolotl.cli.preprocess training_config.yaml <span class="at">--debug</span></span>
-<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a><span class="ex">...</span></span>
-<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a><span class="ex">[2024-03-05</span> 23:36:46,969] <span class="pp">[</span><span class="ss">INFO</span><span class="pp">]</span> <span class="pp">[</span><span class="ss">axolotl.check_example_labels:35</span><span class="pp">]</span> <span class="pp">[</span><span class="ss">PID:607731</span><span class="pp">]</span> <span class="pp">[</span><span class="ss">RANK:0</span><span class="pp">]</span> <span class="op">&lt;</span>s<span class="op">&gt;(</span><span class="ex">1,</span> 1<span class="op">)</span> Hello<span class="er">(</span><span class="ex">22557,</span> 22557<span class="kw">)</span></span>
-<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a><span class="kw">(</span><span class="ex">13,</span> 13<span class="kw">)</span> <span class="ex">hi</span><span class="er">(</span><span class="ex">12014,</span> 12014<span class="kw">)</span> <span class="ex">there</span><span class="er">(</span><span class="ex">736,</span> 736<span class="kw">)</span> <span class="ex">!</span><span class="er">(</span><span class="ex">28808,</span> 28808<span class="kw">)</span> <span class="bu">.</span><span class="er">(</span><span class="ex">28723,</span> 28723<span class="kw">)</span> <span class="kw">(</span><span class="ex">28705,</span> 28705<span class="kw">)</span> <span class="ex">good</span><span class="er">(</span><span class="ex">-100,</span> 1179<span class="kw">)</span> <span class="ex">bye</span><span class="er">(</span><span class="ex">-100,</span> 17664<span class="kw">)</span> <span class="kw">(</span><span class="ex">-100,</span> 28705<span class="kw">)</span> <span class="ex">fare</span><span class="er">(</span><span class="ex">19111,</span> 19111<span class="kw">)</span> <span class="ex">well</span><span class="er">(</span><span class="ex">5458,</span> 5458<span class="kw">)</span> <span class="op">&lt;</span>/s<span class="op">&gt;(</span><span class="ex">2,</span> 2<span class="op">)</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>The format is <code>decoded_token</code>(<code>label</code>, <code>token_id</code>), for example, <code>&lt;s&gt;(1, 1)</code> means that the token is <code>&lt;s&gt;</code>, the label is <code>1</code> and the token_id is <code>1</code>. When the label is <code>-100</code> then that token is ignored for training.</p>
-<p><a id="markdown-3-check-the-prompts" name="3-check-the-prompts"></a></p>
-</section>
-<section id="check-the-prompts" class="level3">
-<h3 class="anchored" data-anchor-id="check-the-prompts">3. Check the prompts</h3>
-<p>Here is another way to check the materialized output:</p>
-<div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> transformers <span class="im">import</span> AutoTokenizer</span>
-<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> datasets <span class="im">import</span> load_from_disk</span>
-<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> yaml</span>
-<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>directory <span class="op">=</span> <span class="op">!</span>ls last_run_prepared<span class="op">/</span></span>
-<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a><span class="cf">with</span> <span class="bu">open</span>(<span class="st">'training_config.yaml'</span>, <span class="st">'r'</span>) <span class="im">as</span> f:</span>
-<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a>    cfg <span class="op">=</span> yaml.safe_load(f)</span>
-<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a>model_id <span class="op">=</span> cfg[<span class="st">'base_model'</span>]</span>
-<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a>tok <span class="op">=</span> AutoTokenizer.from_pretrained(model_id)</span>
-<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a>ds <span class="op">=</span> load_from_disk(<span class="ss">f'last_run_prepared/</span><span class="sc">{</span>directory[<span class="dv">0</span>]<span class="sc">}</span><span class="ss">/'</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<div class="sourceCode" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="op">&gt;&gt;&gt;</span> row <span class="op">=</span> ds[<span class="dv">0</span>]</span>
-<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="op">&gt;&gt;&gt;</span> <span class="bu">print</span>(tok.decode(row[<span class="st">'input_ids'</span>]))</span>
-<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="op">&lt;</span>s<span class="op">&gt;</span> Hello</span>
-<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>    hi there<span class="op">!</span>.  goodbye  farewell<span class="op">&lt;/</span>s<span class="op">&gt;</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>We can check that the right tokens are ignored by comparing the labels to each token:</p>
-<div class="sourceCode" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> pandas <span class="im">as</span> pd</span>
-<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>pd.DataFrame([{<span class="st">'token'</span>: tok.decode(i), <span class="st">'label'</span>: l, <span class="st">'id'</span>:i} <span class="cf">for</span> i,l <span class="kw">in</span></span>
-<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>              <span class="bu">zip</span>(row[<span class="st">'input_ids'</span>], row[<span class="st">'labels'</span>])])</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>token</th>
-<th>label</th>
-<th>id</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>0</td>
-<td>&lt;s&gt;</td>
-<td>1</td>
-</tr>
-<tr class="even">
-<td>1</td>
-<td>Hello</td>
-<td>22557</td>
-</tr>
-<tr class="odd">
-<td>2</td>
-<td>\n</td>
-<td>13</td>
-</tr>
-<tr class="even">
-<td>3</td>
-<td>hi</td>
-<td>12014</td>
-</tr>
-<tr class="odd">
-<td>4</td>
-<td>there</td>
-<td>736</td>
-</tr>
-<tr class="even">
-<td>5</td>
-<td>!</td>
-<td>28808</td>
-</tr>
-<tr class="odd">
-<td>6</td>
-<td>.</td>
-<td>28723</td>
-</tr>
-<tr class="even">
-<td>7</td>
-<td></td>
-<td>28705</td>
-</tr>
-<tr class="odd">
-<td>8</td>
-<td>good</td>
-<td>-100</td>
-</tr>
-<tr class="even">
-<td>9</td>
-<td>bye</td>
-<td>-100</td>
-</tr>
-<tr class="odd">
-<td>10</td>
-<td></td>
-<td>-100</td>
-</tr>
-<tr class="even">
-<td>11</td>
-<td>fare</td>
-<td>19111</td>
-</tr>
-<tr class="odd">
-<td>12</td>
-<td>well</td>
-<td>5458</td>
-</tr>
-<tr class="even">
-<td>13</td>
-<td>&lt;/s&gt;</td>
-<td>2</td>
-</tr>
-</tbody>
-</table>
-<p>If we look at the input data, the above table seems correct! (The jsonl version is repeated below for reference):</p>
-<div class="sourceCode" id="cb10"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="ex">$</span> head <span class="at">-n1</span> output.jsonl <span class="kw">|</span> <span class="ex">python</span> <span class="at">-m</span> json.tool</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<div class="cell-output cell-output-stdout">
-<pre><code>{
-    "segments": [
-        {
-            "label": true,
-            "text": "&lt;s&gt;Hello\n"
-        },
-        {
-            "label": true,
-            "text": "hi there!. "
-        },
-        {
-            "label": false,
-            "text": "goodbye "
-        },
-        {
-            "label": true,
-            "text": "farewell&lt;/s&gt;"
-        }
-    ]
-}</code></pre>
-</div>
+<section id="usage" class="level3">
+<h3 class="anchored" data-anchor-id="usage">Usage</h3>
+<p>Currently multimodal support is limited and doesn’t have full feature parity. To finetune a multimodal Llama w/ LoRA, you’ll need to use the following in YAML in combination with the rest of the required hyperparams.</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">base_model</span><span class="kw">:</span><span class="at"> alpindale/Llama-3.2-11B-Vision-Instruct</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="fu">processor_type</span><span class="kw">:</span><span class="at"> AutoProcessor</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="fu">skip_prepare_dataset</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="fu">chat_template</span><span class="kw">:</span><span class="at"> llama3_2_vision</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> HuggingFaceH4/llava-instruct-mix-vsft</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> chat_template</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">split</span><span class="kw">:</span><span class="at"> train[:1%]</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">field_messages</span><span class="kw">:</span><span class="at"> messages</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a><span class="fu">remove_unused_columns</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a><span class="fu">sample_packing</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a><span class="co"># only finetune the Language model, leave the vision model and vision tower frozen</span></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_target_modules</span><span class="kw">:</span><span class="at"> </span><span class="st">'language_model.model.layers.[\d]+.(mlp|cross_attn|self_attn).(up|down|gate|q|k|v|o)_proj'</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 
 
 </section>
