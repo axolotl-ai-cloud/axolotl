@@ -1104,7 +1104,7 @@ class TrainerBuilderBase(abc.ABC):
             callbacks.append(
                 SaveAxolotlConfigtoMlflowCallback(self.cfg.axolotl_config_path)
             )
-        if self.cfg.use_comet:
+        if self.cfg.use_comet and is_comet_available():
             from axolotl.utils.callbacks.comet_ import SaveAxolotlConfigtoCometCallback
 
             callbacks.append(
