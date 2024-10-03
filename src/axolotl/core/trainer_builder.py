@@ -61,12 +61,14 @@ from axolotl.utils.callbacks import (
     log_prediction_callback_factory,
 )
 from axolotl.utils.callbacks.lisa import lisa_callback_factory
+from axolotl.utils.chat_templates import chat_templates
 from axolotl.utils.collators import (
     BatchSamplerDataCollatorForSeq2Seq,
     DataCollatorForSeq2Seq,
     MambaDataCollator,
     V2BatchSamplerDataCollatorForSeq2Seq,
 )
+from axolotl.utils.collators.mm_chat import MultiModalChatDataCollator
 from axolotl.utils.models import ensure_dtype
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 from axolotl.utils.schedulers import (
@@ -249,6 +251,10 @@ class AxolotlTrainingMixins:
         metadata={
             "help": "workaround to pass an alternate lr scheduler to the HF trainer"
         },
+    )
+    chat_template: Optional[str] = field(
+        default=None,
+        metadata={"help": "Chat template converting chat messages to text"},
     )
 
 
@@ -1043,10 +1049,11 @@ class TrainerBuilderBase(abc.ABC):
     _model_ref = None
     _peft_config = None
 
-    def __init__(self, cfg, model, tokenizer):
+    def __init__(self, cfg, model, tokenizer, processor=None):
         self.cfg = cfg
         self.model = model
         self.tokenizer = tokenizer
+        self.processor = processor
 
         # in case the model supports tagging, add the axolotl tag.
         # This makes sure the tag is correctly pushed even if a user calls
@@ -1515,6 +1522,10 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         )
         training_arguments_kwargs["model_type"] = self.cfg.model_config_type
         training_arguments_kwargs["pretraining"] = bool(self.cfg.pretraining_dataset)
+        if self.cfg.chat_template:
+            training_arguments_kwargs["chat_template"] = chat_templates(
+                self.cfg.chat_template
+            )
 
         if self.cfg.rl == "orpo":
             training_arguments_kwargs["orpo_alpha"] = self.cfg.orpo_alpha
@@ -1661,7 +1672,12 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             else:
                 collator = BatchSamplerDataCollatorForSeq2Seq
         else:
-            collator = DataCollatorForSeq2Seq
+            if self.cfg.processor_type and self.processor:
+                collator = MultiModalChatDataCollator
+                kwargs["processor"] = self.processor
+                kwargs["chat_template"] = training_args.chat_template
+            else:
+                collator = DataCollatorForSeq2Seq
 
         return collator(
             self.tokenizer,
