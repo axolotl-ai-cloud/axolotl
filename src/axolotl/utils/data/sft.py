@@ -574,7 +574,7 @@ def get_dataset_wrapper(
     d_base_type,
     dataset,
     d_prompt_style=None,
-    processor=None,
+    processor=None,  # pylint: disable=unused-argument
 ):
     dataset_wrapper = None
     dataset_prompter = None
