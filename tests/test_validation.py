@@ -9,7 +9,7 @@ from typing import Optional
 import pytest
 from pydantic import ValidationError
 
-from axolotl.utils.comet_ import setup_comet_env_vars
+from axolotl.utils import is_comet_available
 from axolotl.utils.config import validate_config
 from axolotl.utils.config.models.input.v0_4_1 import AxolotlConfigWCapabilities
 from axolotl.utils.dict import DictDefault
@@ -1332,12 +1332,15 @@ class TestValidationWandb(BaseValidation):
         os.environ.pop("WANDB_DISABLED", None)
 
 
+@pytest.mark.skipif(is_comet_available() is False, reason="comet_ml is not installed")
 class TestValidationComet(BaseValidation):
     """
     Validation test for comet
     """
 
     def test_comet_sets_env(self, minimal_cfg):
+        from axolotl.utils.comet_ import setup_comet_env_vars
+
         comet_config = {
             "comet_api_key": "foo",
             "comet_workspace": "some_workspace",

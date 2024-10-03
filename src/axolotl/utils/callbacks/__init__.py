@@ -10,7 +10,6 @@ from shutil import copyfile
 from tempfile import NamedTemporaryFile
 from typing import TYPE_CHECKING, Any, Dict, List
 
-import comet_ml
 import evaluate
 import numpy as np
 import pandas as pd
@@ -30,7 +29,7 @@ from transformers import (
 )
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, IntervalStrategy
 
-from axolotl.utils import is_mlflow_available
+from axolotl.utils import is_comet_available, is_mlflow_available
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.callbacks.perplexity import Perplexity
 from axolotl.utils.config.models.input.v0_4_1 import AxolotlInputConfig
@@ -748,7 +747,9 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer, logger: str):
                         artifact_file="PredictionsVsGroundTruth.json",
                         tracking_uri=tracking_uri,
                     )
-                elif logger == "comet_ml":
+                elif logger == "comet_ml" and is_comet_available():
+                    import comet_ml
+
                     experiment = comet_ml.get_running_experiment()
                     if experiment:
                         experiment.log_table(
@@ -795,35 +796,6 @@ class SaveAxolotlConfigtoWandBCallback(TrainerCallback):
                 )
             except (FileNotFoundError, ConnectionError) as err:
                 LOG.warning(f"Error while saving Axolotl config to WandB: {err}")
-        return control
-
-
-class SaveAxolotlConfigtoCometCallback(TrainerCallback):
-    """Callback to save axolotl config to comet"""
-
-    def __init__(self, axolotl_config_path):
-        self.axolotl_config_path = axolotl_config_path
-
-    def on_train_begin(
-        self,
-        args: AxolotlTrainingArguments,  # pylint: disable=unused-argument
-        state: TrainerState,  # pylint: disable=unused-argument
-        control: TrainerControl,
-        **kwargs,  # pylint: disable=unused-argument
-    ):
-        if is_main_process():
-            try:
-                comet_experiment = comet_ml.start(source="axolotl")
-                comet_experiment.log_other("Created from", "axolotl")
-                comet_experiment.log_asset(
-                    self.axolotl_config_path,
-                    file_name="axolotl-config",
-                )
-                LOG.info(
-                    "The Axolotl config has been saved to the Comet Experiment under assets."
-                )
-            except (FileNotFoundError, ConnectionError) as err:
-                LOG.warning(f"Error while saving Axolotl config to Comet: {err}")
         return control
 
 

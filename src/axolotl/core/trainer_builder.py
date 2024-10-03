@@ -48,12 +48,11 @@ from trl.trainer.utils import pad_to_length
 
 from axolotl.monkeypatch.multipack import SUPPORTED_MULTIPACK_MODEL_TYPES
 from axolotl.monkeypatch.relora import ReLoRACallback, ReLoRAScheduler
-from axolotl.utils import is_mlflow_available
+from axolotl.utils import is_comet_available, is_mlflow_available
 from axolotl.utils.callbacks import (
     EvalFirstStepCallback,
     GPUStatsCallback,
     LossWatchDogCallback,
-    SaveAxolotlConfigtoCometCallback,
     SaveAxolotlConfigtoWandBCallback,
     SaveBetterTransformerModelCallback,
     SaveModelCallback,
@@ -1106,6 +1105,8 @@ class TrainerBuilderBase(abc.ABC):
                 SaveAxolotlConfigtoMlflowCallback(self.cfg.axolotl_config_path)
             )
         if self.cfg.use_comet:
+            from axolotl.utils.callbacks.comet_ import SaveAxolotlConfigtoCometCallback
+
             callbacks.append(
                 SaveAxolotlConfigtoCometCallback(self.cfg.axolotl_config_path)
             )
@@ -1177,7 +1178,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 trainer, self.tokenizer, "mlflow"
             )
             callbacks.append(LogPredictionCallback(self.cfg))
-        if self.cfg.use_comet and self.cfg.eval_table_size > 0:
+        if self.cfg.use_comet and is_comet_available() and self.cfg.eval_table_size > 0:
             LogPredictionCallback = log_prediction_callback_factory(
                 trainer, self.tokenizer, "comet_ml"
             )
