@@ -1114,7 +1114,8 @@ def load_lora(model, cfg, inference=False, config_only=False):
         fan_in_fan_out=cfg.lora_fan_in_fan_out,
         modules_to_save=cfg.lora_modules_to_save if cfg.lora_modules_to_save else None,
         bias="none",
-        task_type="CAUSAL_LM",
+        # task_type="CAUSAL_LM",
+        task_type="CONDITIONAL_GENERATION" if cfg.is_multimodal else "CAUSAL_LM",
         **lora_config_kwargs,
     )
 
