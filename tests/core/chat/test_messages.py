@@ -1,3 +1,6 @@
+"""
+Tests for the chat messages module
+"""
 import unittest
 
 import pytest
@@ -8,8 +11,8 @@ from axolotl.core.chat.format.chatml import format_message
 from axolotl.core.chat.messages import ChatFormattedChats, Chats
 
 
-@pytest.fixture(scope="session")
-def llama_tokenizer():
+@pytest.fixture(scope="session", name="llama_tokenizer")
+def llama_tokenizer_fixture():
     return AutoTokenizer.from_pretrained("NousResearch/Meta-Llama-3.1-8B")
 
 
@@ -109,6 +112,10 @@ chat_msgs_as_obj = from_dict(data_class=Chats, data=chat_msgs)
 
 
 class TestMessagesCase:
+    """
+    Test cases for the chat messages module
+    """
+
     def test_tool_call_stringify(self):
         assert '{"name": "get_stock_price", "arguments": {"symbol": "AAPL"}}' == str(
             chat_msgs_as_obj.conversation[2].content[1].value

@@ -1,25 +1,35 @@
+"""
+internal message representations of chat messages
+"""
 import json
-import logging
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Callable, List, Optional, Union
 
 from transformers import PreTrainedTokenizer
-from transformers import PreTrainedTokenizer
 
 
 class MessageRoles(str, Enum):
+    """
+    Message roles for the system, user, assistant, and tools
+    """
+
     system = "system"  # pylint: disable=invalid-name
     user = "user"  # pylint: disable=invalid-name
     assistant = "assistant"  # pylint: disable=invalid-name
     tool = "tool"  # pylint: disable=invalid-name
-    ipython = (
-        "ipython"  # pylint: disable=invalid-name  # for responses from builtin tools
+    ipython = (  # pylint: disable=invalid-name
+        # for responses from builtin tools
+        "ipython"
     )
 
 
 class MessageContentTypes(str, Enum):
-    special_token = "special_token"  # pylint: disable=invalid-name
+    """
+    Message content types for text, image, audio, tool calls, and tool responses
+    """
+
+    special_token = "special_token"  # pylint: disable=invalid-name  # nosec B105
     text = "text"  # pylint: disable=invalid-name
     image = "image"  # pylint: disable=invalid-name
     audio = "audio"  # pylint: disable=invalid-name
@@ -29,18 +39,30 @@ class MessageContentTypes(str, Enum):
 
 @dataclass
 class SpecialToken(str, Enum):
-    bos_token = "bos_token"  # pylint: disable=invalid-name
-    eos_token = "eos_token"  # pylint: disable=invalid-name
+    """
+    Special tokens for beginning of string and end of string
+    """
+
+    bos_token = "bos_token"  # pylint: disable=invalid-name  # nosec B105
+    eos_token = "eos_token"  # pylint: disable=invalid-name  # nosec B105
 
 
 @dataclass
 class ToolCallFunction:
+    """
+    Tool call function with name and arguments
+    """
+
     name: str
     arguments: dict[str, str]
 
 
 @dataclass
 class Tool:
+    """
+    Tool with description, function, and parameters
+    """
+
     description: str
     function: ToolCallFunction
     parameters: dict[str, str]  # .properties
@@ -48,9 +70,13 @@ class Tool:
 
 @dataclass
 class ToolCallContents:
+    """
+    Tool call contents with name, arguments, and optional id
+    """
+
     name: str
     arguments: dict[str, Union[str, int]]
-    id: Optional[str] = None
+    id: Optional[str] = None  # pylint: disable=invalid-name
 
     def __str__(self) -> str:
         data = {"name": self.name, "arguments": self.arguments}
@@ -61,9 +87,13 @@ class ToolCallContents:
 
 @dataclass
 class ToolResponseContents:
+    """
+    Tool response contents with name, content, and optional id
+    """
+
     name: str
     content: Union[str, dict[str, Union[str, int, float]]]
-    id: Optional[str] = None
+    id: Optional[str] = None  # pylint: disable=invalid-name
 
     def __str__(self) -> str:
         data = {"name": self.name, "content": self.content}
@@ -74,6 +104,10 @@ class ToolResponseContents:
 
 @dataclass
 class MessageContents:
+    """
+    Message contents with type, value, metadata, weight, newline, and end of contents
+    """
+
     type: Union[str, MessageContentTypes]
     value: Union[str, ToolCallContents, ToolResponseContents, SpecialToken]
     meta: Optional[dict[str, Any]] = None  # support additional arbitrary metadata
@@ -90,6 +124,10 @@ class MessageContents:
 
 @dataclass
 class Messages:
+    """
+    Messages with role, content, metadata, weight, and chat formatting
+    """
+
     role: Union[MessageRoles, str]  # allows for arbitrary roles
     content: List["MessageContents"]
     meta: Optional[dict[str, Any]] = None  # support additional arbitrary metadata
@@ -148,6 +186,10 @@ class Messages:
 
 @dataclass
 class Chats:
+    """
+    top level data structure for chat conversations
+    """
+
     conversation: List[Messages]
 
     def __str__(self) -> str:
@@ -173,7 +215,11 @@ class Chats:
 
 @dataclass
 class ChatFormattedChats(Chats):
-    formatter: Callable # [[Union[dict, Chats]], Chats]
+    """
+    Chat formatted chats with formatter and optional train on inputs
+    """
+
+    formatter: Callable  # [[Union[dict, Chats]], Chats]
     train_on_inputs: bool = False
 
     def __post_init__(self):
@@ -185,6 +231,10 @@ class ChatFormattedChats(Chats):
 
 @dataclass
 class PreferenceChats:
+    """
+    representation for preference data for chat
+    """
+
     prompt: List[Messages]
     chosen: Messages
     rejected: Messages

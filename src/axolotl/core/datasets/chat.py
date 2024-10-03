@@ -1,3 +1,6 @@
+"""
+chat dataset module
+"""
 import os
 from typing import Callable, Optional, Union
 
@@ -5,10 +8,14 @@ from dacite import from_dict
 from datasets import Dataset
 from transformers import PreTrainedTokenizer
 
-from axolotl.core.chat.messages import ChatFormattedChats, Chats
+from axolotl.core.chat.messages import ChatFormattedChats
 
 
 class TokenizedChatDataset(Dataset):
+    """
+    Tokenized chat dataset
+    """
+
     def __init__(
         self,
         data: Dataset,
@@ -35,7 +42,10 @@ class TokenizedChatDataset(Dataset):
                 )
             return ex.tokenized(model_transform)
 
-        num_proc = min(64, process_count if process_count else os.cpu_count())
+        process_or_cpu_count: int = (
+            process_count or os.cpu_count()  # type: ignore[assignment]
+        )
+        num_proc = min(64, process_or_cpu_count)
         tokenized_data = data.map(
             map_fn,
             num_proc=num_proc,
