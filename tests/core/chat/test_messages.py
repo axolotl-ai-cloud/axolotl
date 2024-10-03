@@ -4,7 +4,6 @@ Tests for the chat messages module
 import unittest
 
 import pytest
-from dacite import from_dict
 from transformers import AddedToken, AutoTokenizer
 
 from axolotl.core.chat.format.chatml import format_message
@@ -66,7 +65,7 @@ chat_msgs = {
                     },
                 },
             ],
-            "train": True,
+            "weight": 1,
         },
         {
             "role": "tool",
@@ -93,7 +92,7 @@ chat_msgs = {
                 {
                     "type": "text",
                     "value": "The stock price of Apple is $123.45.\n",
-                    "train": False,
+                    "weight": 0,
                 },
                 {
                     "type": "text",
@@ -104,11 +103,11 @@ chat_msgs = {
                     "value": "The stock price of Apple on September 9, 2024 is $123.45.",
                 },
             ],
-            "train": True,
+            "weight": 1,
         },
     ]
 }
-chat_msgs_as_obj = from_dict(data_class=Chats, data=chat_msgs)
+chat_msgs_as_obj = Chats(**chat_msgs)
 
 
 class TestMessagesCase:
@@ -146,11 +145,12 @@ What is today's stock price of Apple?<|im_end|>
 </tool_response>
 <|im_end|>
 <|im_start|>assistant
-The stock price of Apple on September 9, 2024 is $123.45.<|im_end|>\n"""
+The stock price of Apple is $123.45.
+<reflection>The original query asked for today's stock price of Apple. This implies they also wanted the date included in the response.</reflection>The stock price of Apple on September 9, 2024 is $123.45.<|im_end|>\n"""
         assert target_chatml == str(chat_msg_formatted)
 
     def test_chatml_formatting_tool_call(self):
-        target_chatml_turn2 = """<|im_start|>assistant\n<tool_call>{"name": "get_stock_price", "arguments": {"symbol": "AAPL"}}</tool_call><|im_end|>\n"""
+        target_chatml_turn2 = """<|im_start|>assistant\n<tool_call>\n{"name": "get_date", "arguments": {}}\n</tool_call>\n<tool_call>\n{"name": "get_stock_price", "arguments": {"symbol": "AAPL"}}\n</tool_call>\n<|im_end|>\n"""
         assert target_chatml_turn2 == str(
             format_message(chat_msgs_as_obj.conversation[2])
         )
@@ -183,10 +183,10 @@ The stock price of Apple on September 9, 2024 is $123.45.<|im_end|>\n"""
         # fmt: off
         target_labels = [
             -100, -100, -100,  # role
-            -100, -100, -100, -100, -100, -100, -100,  # initial response
-            78098, 16761, 4113, 3319, 4691, 369, 3432, 596, 5708, 3430,
+            -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100,  # initial response
+            27, 78098, 16761, 4113, 3319, 4691, 369, 3432, 596, 5708, 3430,
             315, 8325, 13, 1115, 24897, 814, 1101, 4934, 279, 2457,
-            5343, 304, 279, 2077, 4005, 78098, 29, 5708, 3430, 315,
+            5343, 304, 279, 2077, 4005, 78098, 16761, 5708, 3430, 315,
             8325, 389, 6250, 220, 24, 11, 220, 2366, 19, 374, 400,
             4513, 13, 1774, 13,
             128256,  # <|im_end|>
