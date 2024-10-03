@@ -24,7 +24,7 @@ from axolotl.core.tokenizer_utils import fix_untrained_tokens
 from axolotl.logging_config import configure_logging
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.freeze import freeze_layers_except
-from axolotl.utils.models import load_model, load_tokenizer
+from axolotl.utils.models import load_model, load_processor, load_tokenizer
 from axolotl.utils.trainer import setup_trainer
 
 try:
@@ -69,6 +69,9 @@ def train(
         main_process_only=True,
     )
     tokenizer = load_tokenizer(cfg)
+    processor = None
+    if cfg.is_multimodal:
+        processor = load_processor(cfg, tokenizer)
 
     train_dataset = dataset_meta.train_dataset
     eval_dataset = dataset_meta.eval_dataset
@@ -96,7 +99,9 @@ def train(
     LOG.debug(msg)
     # we wait unitl the last possible moment to setup Accelerator
     Accelerator()
-    model, peft_config = load_model(cfg, tokenizer, inference=cli_args.inference)
+    model, peft_config = load_model(
+        cfg, tokenizer, processor=processor, inference=cli_args.inference
+    )
     model.generation_config.do_sample = True
 
     model_ref = None
@@ -122,6 +127,7 @@ def train(
         eval_dataset,
         (model, model_ref, peft_config),
         tokenizer,
+        processor,
         total_num_steps,
     )
 
