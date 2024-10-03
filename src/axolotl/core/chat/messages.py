@@ -2,10 +2,10 @@
 internal message representations of chat messages
 """
 import json
-from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Callable, List, Optional, Union
 
+from pydantic import BaseModel
 from transformers import PreTrainedTokenizer
 
 
@@ -37,7 +37,6 @@ class MessageContentTypes(str, Enum):
     tool_response = "tool_response"  # pylint: disable=invalid-name
 
 
-@dataclass
 class SpecialToken(str, Enum):
     """
     Special tokens for beginning of string and end of string
@@ -47,8 +46,7 @@ class SpecialToken(str, Enum):
     eos_token = "eos_token"  # pylint: disable=invalid-name  # nosec B105
 
 
-@dataclass
-class ToolCallFunction:
+class ToolCallFunction(BaseModel):
     """
     Tool call function with name and arguments
     """
@@ -57,8 +55,7 @@ class ToolCallFunction:
     arguments: dict[str, str]
 
 
-@dataclass
-class Tool:
+class Tool(BaseModel):
     """
     Tool with description, function, and parameters
     """
@@ -68,8 +65,7 @@ class Tool:
     parameters: dict[str, str]  # .properties
 
 
-@dataclass
-class ToolCallContents:
+class ToolCallContents(BaseModel):
     """
     Tool call contents with name, arguments, and optional id
     """
@@ -85,8 +81,7 @@ class ToolCallContents:
         return json.dumps(data)
 
 
-@dataclass
-class ToolResponseContents:
+class ToolResponseContents(BaseModel):
     """
     Tool response contents with name, content, and optional id
     """
@@ -102,8 +97,7 @@ class ToolResponseContents:
         return json.dumps(data)
 
 
-@dataclass
-class MessageContents:
+class MessageContents(BaseModel):
     """
     Message contents with type, value, metadata, weight, newline, and end of contents
     """
@@ -122,8 +116,7 @@ class MessageContents:
         return str_val
 
 
-@dataclass
-class Messages:
+class Messages(BaseModel):
     """
     Messages with role, content, metadata, weight, and chat formatting
     """
@@ -131,7 +124,7 @@ class Messages:
     role: Union[MessageRoles, str]  # allows for arbitrary roles
     content: List["MessageContents"]
     meta: Optional[dict[str, Any]] = None  # support additional arbitrary metadata
-    weight: Optional[Union[int, float]] = 0
+    weight: Optional[Union[int, float]] = None
     is_chat_formatted: bool = False
 
     def __str__(self) -> str:
@@ -184,8 +177,7 @@ class Messages:
         }
 
 
-@dataclass
-class Chats:
+class Chats(BaseModel):
     """
     top level data structure for chat conversations
     """
@@ -213,7 +205,6 @@ class Chats:
         }
 
 
-@dataclass
 class ChatFormattedChats(Chats):
     """
     Chat formatted chats with formatter and optional train on inputs
@@ -222,15 +213,14 @@ class ChatFormattedChats(Chats):
     formatter: Callable  # [[Union[dict, Chats]], Chats]
     train_on_inputs: bool = False
 
-    def __post_init__(self):
+    def model_post_init(self, __context):
         for i, msg in enumerate(self.conversation):
             self.conversation[i] = self.formatter(msg, message_index=i)
             if self.train_on_inputs:
                 self.conversation[i].weight = 1
 
 
-@dataclass
-class PreferenceChats:
+class PreferenceChats(BaseModel):
     """
     representation for preference data for chat
     """
