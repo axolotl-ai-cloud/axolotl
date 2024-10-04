@@ -33,81 +33,82 @@ def llama_tokenizer_w_chatml(llama_tokenizer):
     return llama_tokenizer
 
 
-chat_msgs = {
-    "conversation": [
-        {
-            "role": "system",
-            "content": [
-                {"type": "text", "value": "You are a helpful assistant."},
-            ],
-        },
-        {
-            "role": "user",
-            "content": [
-                {"type": "text", "value": "What is today's stock price of Apple?"},
-            ],
-        },
-        {
-            "role": "assistant",
-            "content": [
-                {
-                    "type": "tool_call",
-                    "value": {
-                        "name": "get_date",
-                        "arguments": {},
+@pytest.fixture(scope="session", name="chat_msgs")
+def chat_msgs_fixture():
+    return {
+        "conversation": [
+            {
+                "role": "system",
+                "content": [
+                    {"type": "text", "value": "You are a helpful assistant."},
+                ],
+            },
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "value": "What is today's stock price of Apple?"},
+                ],
+            },
+            {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "tool_call",
+                        "value": {
+                            "name": "get_date",
+                            "arguments": {},
+                        },
                     },
-                },
-                {
-                    "type": "tool_call",
-                    "value": {
-                        "name": "get_stock_price",
-                        "arguments": {"symbol": "AAPL"},
+                    {
+                        "type": "tool_call",
+                        "value": {
+                            "name": "get_stock_price",
+                            "arguments": {"symbol": "AAPL"},
+                        },
                     },
-                },
-            ],
-            "weight": 1,
-        },
-        {
-            "role": "tool",
-            "content": [
-                {
-                    "type": "tool_response",
-                    "value": {
-                        "name": "get_date",
-                        "content": {"date": "2024-09-09"},
+                ],
+                "weight": 1,
+            },
+            {
+                "role": "tool",
+                "content": [
+                    {
+                        "type": "tool_response",
+                        "value": {
+                            "name": "get_date",
+                            "content": {"date": "2024-09-09"},
+                        },
                     },
-                },
-                {
-                    "type": "tool_response",
-                    "value": {
-                        "name": "get_stock_price",
-                        "content": {"symbol": "AAPL", "price": 123.45},
+                    {
+                        "type": "tool_response",
+                        "value": {
+                            "name": "get_stock_price",
+                            "content": {"symbol": "AAPL", "price": 123.45},
+                        },
                     },
-                },
-            ],
-        },
-        {
-            "role": "assistant",
-            "content": [
-                {
-                    "type": "text",
-                    "value": "The stock price of Apple is $123.45.\n",
-                    "weight": 0,
-                },
-                {
-                    "type": "text",
-                    "value": "<reflection>The original query asked for today's stock price of Apple. This implies they also wanted the date included in the response.</reflection>",
-                },
-                {
-                    "type": "text",
-                    "value": "The stock price of Apple on September 9, 2024 is $123.45.",
-                },
-            ],
-            "weight": 1,
-        },
-    ]
-}
-chat_msgs_as_obj = Chats(**chat_msgs)
+                ],
+            },
+            {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "text",
+                        "value": "The stock price of Apple is $123.45.\n",
+                        "weight": 0,
+                    },
+                    {
+                        "type": "text",
+                        "value": "<reflection>The original query asked for today's stock price of Apple. This implies they also wanted the date included in the response.</reflection>",
+                    },
+                    {
+                        "type": "text",
+                        "value": "The stock price of Apple on September 9, 2024 is $123.45.",
+                    },
+                ],
+                "weight": 1,
+            },
+        ]
+    }
 
 
 class TestMessagesCase:
@@ -115,15 +116,14 @@ class TestMessagesCase:
     Test cases for the chat messages module
     """
 
-    def test_tool_call_stringify(self):
+    def test_tool_call_stringify(self, chat_msgs):
+        chat_msgs_as_obj = Chats(**chat_msgs)
         assert '{"name": "get_stock_price", "arguments": {"symbol": "AAPL"}}' == str(
             chat_msgs_as_obj.conversation[2].content[1].value
         )
 
-    def test_chatml_formatted_wrapper(self):
-        chat_msg_formatted = ChatFormattedChats(
-            conversation=chat_msgs_as_obj.conversation, formatter=format_message
-        )
+    def test_chatml_formatted_wrapper(self, chat_msgs):
+        chat_msg_formatted = ChatFormattedChats(**chat_msgs, formatter=format_message)
         target_chatml = """<|im_start|>system
 You are a helpful assistant.<|im_end|>
 <|im_start|>user
@@ -149,16 +149,15 @@ The stock price of Apple is $123.45.
 <reflection>The original query asked for today's stock price of Apple. This implies they also wanted the date included in the response.</reflection>The stock price of Apple on September 9, 2024 is $123.45.<|im_end|>\n"""
         assert target_chatml == str(chat_msg_formatted)
 
-    def test_chatml_formatting_tool_call(self):
+    def test_chatml_formatting_tool_call(self, chat_msgs):
+        chat_msgs_as_obj = Chats(**chat_msgs)
         target_chatml_turn2 = """<|im_start|>assistant\n<tool_call>\n{"name": "get_date", "arguments": {}}\n</tool_call>\n<tool_call>\n{"name": "get_stock_price", "arguments": {"symbol": "AAPL"}}\n</tool_call>\n<|im_end|>\n"""
         assert target_chatml_turn2 == str(
             format_message(chat_msgs_as_obj.conversation[2])
         )
 
-    def test_train_labels(self, chatml_tokenizer):
-        chat_msg_formatted = ChatFormattedChats(
-            conversation=chat_msgs_as_obj.conversation, formatter=format_message
-        )
+    def test_train_labels(self, chatml_tokenizer, chat_msgs):
+        chat_msg_formatted = ChatFormattedChats(**chat_msgs, formatter=format_message)
         tokenized = chat_msg_formatted.conversation[2].tokenized(chatml_tokenizer)
         # fmt: off
         target_labels = [
@@ -174,11 +173,9 @@ The stock price of Apple is $123.45.
         # fmt: on
         assert tokenized["labels"] == target_labels
 
-    def test_train_labels_2(self, chatml_tokenizer):
+    def test_train_labels_2(self, chatml_tokenizer, chat_msgs):
         # also test if indivudal contents are set not to train
-        chat_msg_formatted = ChatFormattedChats(
-            conversation=chat_msgs_as_obj.conversation, formatter=format_message
-        )
+        chat_msg_formatted = ChatFormattedChats(**chat_msgs, formatter=format_message)
         tokenized = chat_msg_formatted.conversation[4].tokenized(chatml_tokenizer)
         # fmt: off
         target_labels = [

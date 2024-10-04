@@ -123,19 +123,27 @@ def chat_message_transform_builder(  # pylint: disable=dangerous-default-value
             )
 
             # TODO if "tool_calls" in message[message_content_field]: then convert tool call to ToolCallContents
-
-            messages.append(
-                {
-                    "role": role,
-                    "content": [
-                        {
-                            "type": "text",
-                            "value": message[message_content_field],
-                        }
-                    ],
-                    "weight": weight,
-                }
-            )
+            if isinstance(message[message_content_field], str):
+                messages.append(
+                    {
+                        "role": role,
+                        "content": [
+                            {
+                                "type": "text",
+                                "value": message[message_content_field],
+                            }
+                        ],
+                        "weight": weight,
+                    }
+                )
+            else:
+                messages.append(
+                    {
+                        "role": role,
+                        "content": message[message_content_field],
+                        "weight": weight,
+                    }
+                )
 
         return {"conversation": messages}
 
