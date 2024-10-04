@@ -199,7 +199,7 @@ docker run --privileged --gpus '"all"' --shm-size 10g --rm -it --name axolotl --
 
   3. Install Axolotl along with python dependencies
         ```bash
-        pip3 install packaging
+        pip3 install packaging wheel
         pip3 install -e '.[flash-attn,deepspeed]'
         ```
   4. (Optional) Login to Huggingface to use gated models/datasets.
