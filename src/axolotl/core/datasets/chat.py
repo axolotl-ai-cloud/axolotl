@@ -44,9 +44,12 @@ class TokenizedChatDataset(Dataset):
             process_count or os.cpu_count()  # type: ignore[assignment]
         )
         num_proc = min(64, process_or_cpu_count)
+        features = data.features.keys()
         tokenized_data = data.map(
             map_fn,
             num_proc=num_proc,
             keep_in_memory=keep_in_memory,
+            remove_columns=features,
+            desc="Tokenizing Chats",
         )
         super().__init__(tokenized_data.data, *args, **kwargs)
