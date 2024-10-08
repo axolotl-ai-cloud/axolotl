@@ -306,8 +306,6 @@ def process_pretraining_datasets_for_packing(
 
 
 def calculate_total_num_steps(cfg, train_dataset, update=True):
-
-
     if not cfg.total_num_tokens and not cfg.skip_prepare_dataset:
         total_num_tokens = np.sum(
             train_dataset.data.column("input_ids")
