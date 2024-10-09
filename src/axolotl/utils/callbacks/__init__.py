@@ -29,7 +29,7 @@ from transformers import (
 )
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, IntervalStrategy
 
-from axolotl.utils import is_mlflow_available
+from axolotl.utils import is_comet_available, is_mlflow_available
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.callbacks.perplexity import Perplexity
 from axolotl.utils.config.models.input.v0_4_1 import AxolotlInputConfig
@@ -747,6 +747,15 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer, logger: str):
                         artifact_file="PredictionsVsGroundTruth.json",
                         tracking_uri=tracking_uri,
                     )
+                elif logger == "comet_ml" and is_comet_available():
+                    import comet_ml
+
+                    experiment = comet_ml.get_running_experiment()
+                    if experiment:
+                        experiment.log_table(
+                            f"{name} - Predictions vs Ground Truth.csv",
+                            pd.DataFrame(table_data),
+                        )
 
             if is_main_process():
                 log_table_from_dataloader("Eval", eval_dataloader)

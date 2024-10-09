@@ -14,7 +14,7 @@ Features:
 - Integrated with xformer, flash attention, [liger kernel](https://github.com/linkedin/Liger-Kernel), rope scaling, and multipacking
 - Works with single GPU or multiple GPUs via FSDP or Deepspeed
 - Easily run with Docker locally or on the cloud
-- Log results and optionally checkpoints to wandb or mlflow
+- Log results and optionally checkpoints to wandb, mlflow or Comet
 - And more!
 
 <a href="https://www.phorm.ai/query?projectId=e315ba4a-4e14-421f-ab05-38a1f9076f25">
@@ -513,6 +513,22 @@ wandb_entity:
 wandb_watch:
 wandb_name:
 wandb_log_model:
+```
+
+##### Comet Logging
+
+Make sure your `COMET_API_KEY` environment variable is set (recommended) or you login to wandb with `comet login`.
+
+- wandb options
+```yaml
+use_comet:
+comet_api_key:
+comet_workspace:
+comet_project_name:
+comet_experiment_key:
+comet_mode:
+comet_online:
+comet_experiment_config:
 ```
 
 ##### Special Tokens

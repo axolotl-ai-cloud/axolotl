@@ -267,6 +267,18 @@ mlflow_tracking_uri: # URI to mlflow
 mlflow_experiment_name: # Your experiment name
 hf_mlflow_log_artifacts:  # set to true to copy each saved checkpoint on each save to mlflow artifact registry
 
+# Comet configuration if you're using it
+# Make sure your `COMET_API_KEY` environment variable is set (recommended) or you login to Comet with `comet login`.
+# Check out our documentation for more details https://www.comet.com/docs/v2/api-and-sdk/python-sdk/reference/Experiment-Creation/#comet_ml.start
+use_comet: # Enable or disable Comet integration.
+comet_api_key: # API key for Comet. Recommended to set via `comet login`.
+comet_workspace: # Workspace name in Comet. Defaults to the user's default workspace.
+comet_project_name: # Project name in Comet. Defaults to Uncategorized.
+comet_experiment_key: # Identifier for the experiment. Used to append data to an existing experiment or control the key of new experiments. Default to a random key.
+comet_mode: # Create a new experiment ("create") or log to an existing one ("get"). Default ("get_or_create") auto-selects based on configuration.
+comet_online: # Set to True to log data to Comet server, or False for offline storage. Default is True.
+comet_experiment_config: # Dictionary for additional configuration settings, see the doc for more details.
+
 # Where to save the full-finetuned model to
 output_dir: ./completed-model
 

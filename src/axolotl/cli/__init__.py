@@ -31,6 +31,7 @@ from axolotl.integrations.base import PluginManager
 from axolotl.logging_config import configure_logging
 from axolotl.train import TrainDatasetMeta
 from axolotl.utils.chat_templates import chat_templates
+from axolotl.utils.comet_ import setup_comet_env_vars
 from axolotl.utils.config import (
     normalize_cfg_datasets,
     normalize_config,
@@ -420,6 +421,8 @@ def load_cfg(config: Union[str, Path] = Path("examples/"), **kwargs):
     setup_wandb_env_vars(cfg)
 
     setup_mlflow_env_vars(cfg)
+
+    setup_comet_env_vars(cfg)
 
     return cfg
 

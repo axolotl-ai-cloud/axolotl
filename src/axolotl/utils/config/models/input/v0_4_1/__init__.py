@@ -489,6 +489,19 @@ class WandbConfig(BaseModel):
         return data
 
 
+class CometConfig(BaseModel):
+    """Comet configuration subset"""
+
+    use_comet: Optional[bool] = None
+    comet_api_key: Optional[str] = None
+    comet_workspace: Optional[str] = None
+    comet_project_name: Optional[str] = None
+    comet_experiment_key: Optional[str] = None
+    comet_mode: Optional[str] = None
+    comet_online: Optional[bool] = None
+    comet_experiment_config: Optional[Dict[str, Any]] = None
+
+
 class GradioConfig(BaseModel):
     """Gradio configuration subset"""
 
@@ -509,6 +522,7 @@ class AxolotlInputConfig(
     HyperparametersConfig,
     WandbConfig,
     MLFlowConfig,
+    CometConfig,
     LISAConfig,
     GradioConfig,
     RemappedParameters,
