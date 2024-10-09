@@ -49,6 +49,10 @@ def parse_requirements():
             else:
                 raise ValueError("Invalid version format")
 
+            if (major, minor) >= (2, 4):
+                if patch == 0:
+                    _install_requires.pop(_install_requires.index(xformers_version))
+                    _install_requires.append("xformers>=0.0.27")
             if (major, minor) >= (2, 3):
                 if patch == 0:
                     _install_requires.pop(_install_requires.index(xformers_version))
