@@ -462,7 +462,7 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
                             references=[[r] for r in references],
                             predictions=predictions,
                         )
-                    scores[metric_name] = score
+                    scores["eval_" + metric_name] = score
                 return scores
 
             def predict_with_generate():
