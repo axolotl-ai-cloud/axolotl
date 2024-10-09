@@ -16,6 +16,7 @@
 # This code is based off the following work:
 # https://github.com/huggingface/transformers/blob/main/src/transformers/models/llama/modeling_llama.py
 # https://github.com/huggingface/transformers/blob/main/src/transformers/models/gpt_neox/modeling_gpt_neox.py
+# pylint: disable=duplicate-code
 """ PyTorch StableLM Epoch model. """
 import importlib
 import math
