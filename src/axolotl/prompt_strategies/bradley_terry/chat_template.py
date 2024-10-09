@@ -66,7 +66,9 @@ def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
         "roles": ds_cfg.get("roles"),
         "drop_system_message": ds_cfg.get("drop_system_message", False),
         # we need to add one for detecting sequences with exceeding the `sequence_len` limit.
-        "max_length": cfg.sequence_len + 1,
+        "max_length": cfg.sequence_len + 1
+        if not cfg.reward_model
+        else cfg.sequence_len,
     }
 
     strategy_params = {

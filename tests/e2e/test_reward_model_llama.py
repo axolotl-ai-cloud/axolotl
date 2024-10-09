@@ -25,7 +25,7 @@ class TestRewardModelLoraLlama(unittest.TestCase):
     """
 
     @with_temp_dir
-    def test_lora(self, temp_dir):
+    def test_rm_fft(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
@@ -62,7 +62,6 @@ class TestRewardModelLoraLlama(unittest.TestCase):
                 "optimizer": "adamw_bnb_8bit",
                 "lr_scheduler": "cosine",
                 "gradient_checkpointing": True,
-                "flash_attention": True,
                 "warmup_ratio": 0.1,
             }
         )
