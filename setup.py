@@ -57,6 +57,9 @@ def parse_requirements():
                 if patch == 0:
                     _install_requires.pop(_install_requires.index(xformers_version))
                     _install_requires.append("xformers>=0.0.26.post1")
+                else:
+                    _install_requires.pop(_install_requires.index(xformers_version))
+                    _install_requires.append("xformers>=0.0.27")
             elif (major, minor) >= (2, 2):
                 _install_requires.pop(_install_requires.index(xformers_version))
                 _install_requires.append("xformers>=0.0.25.post1")
