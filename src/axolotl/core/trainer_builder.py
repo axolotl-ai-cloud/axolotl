@@ -1570,6 +1570,9 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
 
         trainer_kwargs = {}
 
+        if self.cfg.reward_model:
+            trainer_kwargs["max_length"] = self.cfg.sequence_len
+
         if self.cfg.optimizer in [
             "optimi_adamw",
             "ao_adamw_4bit",
@@ -1641,6 +1644,9 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             # https://docs.nvidia.com/deeplearning/performance/dl-performance-matrix-multiplication/index.html
             data_collator_kwargs["pad_to_multiple_of"] = 64
 
+        if self.cfg.reward_model:
+            data_collator_kwargs["max_length"] = self.cfg.sequence_len
+
         trainer_cls = self._get_trainer_cls()
         trainer_kwargs, trainer_cls = self.hook_pre_create_trainer(
             trainer_kwargs, trainer_cls
@@ -1648,7 +1654,8 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         if eval_data_collator := self.build_collator(
             training_args, is_eval=True, **data_collator_kwargs
         ):
-            trainer_kwargs["eval_data_collator"] = eval_data_collator
+            if not self.cfg.reward_model:
+                trainer_kwargs["eval_data_collator"] = eval_data_collator
         if not self.cfg.reward_model:
             trainer_kwargs["bench_data_collator"] = transformers.DataCollatorForSeq2Seq(
                 self.tokenizer,
@@ -1682,9 +1689,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         if training_args.pretraining:
             return None
 
-        if self.cfg.reward_model:
-            return None
-
         if self.cfg.model_config_type == "mamba":
             return MambaDataCollator(tokenizer=self.tokenizer)
 
@@ -1699,6 +1703,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 V2BatchSamplerDataCollatorForSeq2Seq,
                 BatchSamplerDataCollatorForSeq2Seq,
                 DataCollatorForSeq2Seq,
+                RewardDataCollatorWithPadding,
             ]
         ]
         if self.cfg.reward_model:
