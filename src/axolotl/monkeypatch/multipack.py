@@ -10,6 +10,7 @@ from axolotl.monkeypatch.mixtral import patch_mixtral_moe_forward_zero3
 from axolotl.monkeypatch.utils import get_unpad_data
 
 SUPPORTED_MULTIPACK_MODEL_TYPES = [
+    "mllama_text_model",
     "llama",
     "mistral",
     "mixtral",

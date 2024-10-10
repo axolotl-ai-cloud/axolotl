@@ -21,6 +21,7 @@ from typing import Any, Dict, List, Literal, Optional, Type, Union
 import torch
 import transformers
 from datasets import Dataset
+from peft.optimizers import create_loraplus_optimizer
 from torch import nn
 from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import BatchSampler, DataLoader, RandomSampler, SequentialSampler
@@ -45,7 +46,6 @@ from trl import (
 )
 from trl.trainer.utils import pad_to_length
 
-from axolotl.loraplus import create_loraplus_optimizer
 from axolotl.monkeypatch.multipack import SUPPORTED_MULTIPACK_MODEL_TYPES
 from axolotl.monkeypatch.relora import ReLoRACallback, ReLoRAScheduler
 from axolotl.utils import is_mlflow_available
@@ -61,12 +61,14 @@ from axolotl.utils.callbacks import (
     log_prediction_callback_factory,
 )
 from axolotl.utils.callbacks.lisa import lisa_callback_factory
+from axolotl.utils.chat_templates import chat_templates
 from axolotl.utils.collators import (
     BatchSamplerDataCollatorForSeq2Seq,
     DataCollatorForSeq2Seq,
     MambaDataCollator,
     V2BatchSamplerDataCollatorForSeq2Seq,
 )
+from axolotl.utils.collators.mm_chat import MultiModalChatDataCollator
 from axolotl.utils.models import ensure_dtype
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 from axolotl.utils.schedulers import (
@@ -249,6 +251,10 @@ class AxolotlTrainingMixins:
         metadata={
             "help": "workaround to pass an alternate lr scheduler to the HF trainer"
         },
+    )
+    chat_template: Optional[str] = field(
+        default=None,
+        metadata={"help": "Chat template converting chat messages to text"},
     )
 
 
@@ -456,14 +462,14 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
             if self.args.loraplus_lr_ratio is not None:
                 loraplus_lr_ratio = getattr(self.args, "loraplus_lr_ratio", None)
                 loraplus_lr_embedding = getattr(
-                    self.args, "loraplus_lr_embedding", None
+                    self.args, "loraplus_lr_embedding", 1e-6
                 )
                 self.optimizer = create_loraplus_optimizer(  # pylint: disable=attribute-defined-outside-init
                     opt_model,
                     optimizer_cls,
-                    optimizer_kwargs,
-                    loraplus_lr_ratio,
-                    loraplus_lr_embedding,
+                    loraplus_lr_ratio=loraplus_lr_ratio,
+                    loraplus_lr_embedding=loraplus_lr_embedding,
+                    **optimizer_kwargs,
                 )
             elif self.args.alternate_optimizer == "optimi_adamw":
                 from optimi import AdamW
@@ -969,9 +975,9 @@ class AxolotlDPOTrainer(SchedulerMixin, DPOTrainer):
             self.optimizer = create_loraplus_optimizer(  # pylint: disable=attribute-defined-outside-init
                 opt_model,
                 optimizer_cls,
-                optimizer_kwargs,
-                loraplus_lr_ratio,
-                loraplus_lr_embedding,
+                loraplus_lr_ratio=loraplus_lr_ratio,
+                loraplus_lr_embedding=loraplus_lr_embedding,
+                **optimizer_kwargs,
             )
 
         if is_sagemaker_mp_enabled():
@@ -1043,10 +1049,11 @@ class TrainerBuilderBase(abc.ABC):
     _model_ref = None
     _peft_config = None
 
-    def __init__(self, cfg, model, tokenizer):
+    def __init__(self, cfg, model, tokenizer, processor=None):
         self.cfg = cfg
         self.model = model
         self.tokenizer = tokenizer
+        self.processor = processor
 
         # in case the model supports tagging, add the axolotl tag.
         # This makes sure the tag is correctly pushed even if a user calls
@@ -1417,6 +1424,8 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         report_to = []
         if self.cfg.use_wandb:
             report_to.append("wandb")
+            if self.cfg.wandb_name:
+                training_arguments_kwargs["run_name"] = self.cfg.wandb_name
         if self.cfg.use_mlflow:
             report_to.append("mlflow")
         if self.cfg.use_tensorboard:
@@ -1513,6 +1522,10 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         )
         training_arguments_kwargs["model_type"] = self.cfg.model_config_type
         training_arguments_kwargs["pretraining"] = bool(self.cfg.pretraining_dataset)
+        if self.cfg.chat_template:
+            training_arguments_kwargs["chat_template"] = chat_templates(
+                self.cfg.chat_template
+            )
 
         if self.cfg.rl == "orpo":
             training_arguments_kwargs["orpo_alpha"] = self.cfg.orpo_alpha
@@ -1573,6 +1586,12 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             )
         )
         training_args = self.hook_post_create_training_args(training_args)
+
+        # unset run_name so wandb sets up experiment names
+        if self.cfg.use_wandb and training_args.run_name == training_args.output_dir:
+            training_args.run_name = (  # pylint: disable=attribute-defined-outside-init
+                None
+            )
 
         data_collator_kwargs = {
             "padding": True,  # True/"longest" is the default
@@ -1653,7 +1672,12 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             else:
                 collator = BatchSamplerDataCollatorForSeq2Seq
         else:
-            collator = DataCollatorForSeq2Seq
+            if self.cfg.processor_type and self.processor:
+                collator = MultiModalChatDataCollator
+                kwargs["processor"] = self.processor
+                kwargs["chat_template"] = training_args.chat_template
+            else:
+                collator = DataCollatorForSeq2Seq
 
         return collator(
             self.tokenizer,

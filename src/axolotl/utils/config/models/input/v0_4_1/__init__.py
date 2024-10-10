@@ -28,22 +28,6 @@ LOG = logging.getLogger("axolotl.utils.config.models.input")
 SUPPORTED_METRICS = {"sacrebleu", "comet", "ter", "chrf", "perplexity"}
 
 
-class ChatTemplate(str, Enum):
-    """Chat templates configuration subset"""
-
-    jinja = "jinja"  # pylint: disable=invalid-name
-    alpaca = "alpaca"  # pylint: disable=invalid-name
-    chatml = "chatml"  # pylint: disable=invalid-name
-    inst = "inst"  # pylint: disable=invalid-name
-    gemma = "gemma"  # pylint: disable=invalid-name
-    cohere = "cohere"  # pylint: disable=invalid-name
-    llama3 = "llama3"  # pylint: disable=invalid-name
-    phi_3 = "phi_3"  # pylint: disable=invalid-name
-    deepseek_v2 = "deepseek_v2"  # pylint: disable=invalid-name
-    jamba = "jamba"  # pylint: disable=invalid-name
-    tokenizer_default = "tokenizer_default"  # pylint: disable=invalid-name
-
-
 class DeprecatedParameters(BaseModel):
     """configurations that are deprecated"""
 
@@ -220,6 +204,24 @@ class RLType(str, Enum):
     simpo = "simpo"  # pylint: disable=invalid-name
 
 
+class ChatTemplate(str, Enum):
+    """Chat templates configuration subset"""
+
+    alpaca = "alpaca"  # pylint: disable=invalid-name
+    chatml = "chatml"  # pylint: disable=invalid-name
+    inst = "inst"  # pylint: disable=invalid-name
+    gemma = "gemma"  # pylint: disable=invalid-name
+    cohere = "cohere"  # pylint: disable=invalid-name
+    llama3 = "llama3"  # pylint: disable=invalid-name
+    llama3_2_vision = "llama3_2_vision"  # pylint: disable=invalid-name
+    phi_3 = "phi_3"  # pylint: disable=invalid-name
+    phi_35 = "phi_35"  # pylint: disable=invalid-name
+    deepseek_v2 = "deepseek_v2"  # pylint: disable=invalid-name
+    jamba = "jamba"  # pylint: disable=invalid-name
+    jinja = "jinja"  # pylint: disable=invalid-name
+    tokenizer_default = "tokenizer_default"  # pylint: disable=invalid-name
+
+
 class LoftQConfig(BaseModel):
     """LoftQ configuration subset"""
 
@@ -254,11 +256,12 @@ class LoraConfig(BaseModel):
     lora_r: Optional[int] = None
     lora_alpha: Optional[int] = None
     lora_fan_in_fan_out: Optional[bool] = None
-    lora_target_modules: Optional[List[str]] = None
+    lora_target_modules: Optional[Union[str, List[str]]] = None
     lora_target_linear: Optional[bool] = None
     lora_modules_to_save: Optional[List[str]] = None
     lora_dropout: Optional[float] = 0.0
     peft_layers_to_transform: Optional[List[int]] = None
+    peft_layers_pattern: Optional[List[str]] = None
     peft: Optional[PeftConfig] = None
     peft_use_dora: Optional[bool] = None
     peft_use_rslora: Optional[bool] = None
@@ -324,6 +327,13 @@ class LoraConfig(BaseModel):
                     raise ValueError("Require cfg.load_in_4bit to be True for qlora")
         return self
 
+    @field_validator("loraplus_lr_embedding")
+    @classmethod
+    def convert_loraplus_lr_embedding(cls, loraplus_lr_embedding):
+        if loraplus_lr_embedding and isinstance(loraplus_lr_embedding, str):
+            loraplus_lr_embedding = float(loraplus_lr_embedding)
+        return loraplus_lr_embedding
+
 
 class ReLoRAConfig(BaseModel):
     """ReLoRA configuration subset"""
@@ -346,6 +356,9 @@ class ModelInputConfig(BaseModel):
     tokenizer_legacy: Optional[bool] = None
     tokenizer_type: Optional[str] = Field(
         default=None, metadata={"help": "transformers tokenizer class"}
+    )
+    processor_type: Optional[str] = Field(
+        default=None, metadata={"help": "transformers processor class"}
     )
     trust_remote_code: Optional[bool] = None
 
@@ -549,6 +562,7 @@ class AxolotlInputConfig(
     dataset_prepared_path: Optional[str] = None
     dataset_shard_num: Optional[int] = None
     dataset_shard_idx: Optional[int] = None
+    skip_prepare_dataset: Optional[bool] = False
 
     pretraining_dataset: Optional[  # type: ignore
         conlist(Union[PretrainingDataset, SFTDataset], min_length=1)
@@ -1039,6 +1053,18 @@ class AxolotlInputConfig(
 
     @model_validator(mode="before")
     @classmethod
+    def check_mm_prepare(cls, data):
+        if data.get("skip_prepare_dataset"):
+            if data.get("remove_unused_columns") is None:
+                LOG.info(
+                    "setting `remove_unused_columns: false` for skip_prepare_dataset"
+                )
+                data["remove_unused_columns"] = False
+
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def check_warmup(cls, data):
         if data.get("warmup_steps") and data.get("warmup_ratio"):
             raise ValueError("warmup_steps and warmup_ratio are mutually exclusive")
@@ -1064,10 +1090,18 @@ class AxolotlInputConfig(
         return neftune_noise_alpha
 
     @model_validator(mode="after")
-    def check(self):
+    def check_rl_beta(self):
         if self.dpo_beta and not self.rl_beta:
             self.rl_beta = self.dpo_beta
             del self.dpo_beta
+        return self
+
+    @model_validator(mode="after")
+    def check_simpo_warmup(self):
+        if self.rl == "simpo" and self.warmup_ratio:
+            raise ValueError(
+                "warmup_ratio is not supported with the simpo trainer. Please use `warmup_steps` instead"
+            )
         return self
 
     @model_validator(mode="before")
@@ -1082,6 +1116,15 @@ class AxolotlInputConfig(
                 "`unfrozen_parameters` used with `peft_layers_to_transform` can have unexpected behavior."
             )
 
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_peft_layers_pattern(cls, data):
+        if data.get("peft_layers_pattern") and not data.get("peft_layers_to_transform"):
+            raise ValueError(
+                "peft_layers_pattern requires peft_layers_to_transform to be set"
+            )
         return data
 
     @model_validator(mode="after")
