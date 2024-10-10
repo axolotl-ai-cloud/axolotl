@@ -11,7 +11,7 @@ import numpy as np
 import torch
 import torch.cuda
 from accelerate.logging import get_logger
-from datasets import set_caching_enabled
+from datasets import disable_caching, enable_caching
 from torch.utils.data import DataLoader, RandomSampler
 from transformers.utils import is_torch_bf16_gpu_available
 
@@ -87,10 +87,10 @@ def trainer_weighted_loss(model_output, labels, shift_labels=True):
 @contextmanager
 def disable_datasets_caching():
     try:
-        set_caching_enabled(False)
+        disable_caching()
         yield
     finally:
-        set_caching_enabled(True)
+        enable_caching()
 
 
 def add_position_ids(sample):

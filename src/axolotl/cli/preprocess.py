@@ -27,6 +27,7 @@ from axolotl.prompt_strategies.sharegpt import (
     register_chatml_template,
     register_llama3_template,
 )
+from axolotl.utils.trainer import disable_datasets_caching
 
 LOG = logging.getLogger("axolotl.cli.preprocess")
 
@@ -70,10 +71,11 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
         LOG.warning(msg)
         parsed_cfg.dataset_prepared_path = DEFAULT_DATASET_PREPARED_PATH
 
-    if parsed_cfg.rl:  # and parsed_cfg.rl != "orpo":
-        load_rl_datasets(cfg=parsed_cfg, cli_args=parsed_cli_args)
-    else:
-        load_datasets(cfg=parsed_cfg, cli_args=parsed_cli_args)
+    with disable_datasets_caching():
+        if parsed_cfg.rl:  # and parsed_cfg.rl != "orpo":
+            load_rl_datasets(cfg=parsed_cfg, cli_args=parsed_cli_args)
+        else:
+            load_datasets(cfg=parsed_cfg, cli_args=parsed_cli_args)
 
     if parsed_cli_args.download:
         model_name = parsed_cfg.base_model
