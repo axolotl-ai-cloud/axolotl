@@ -710,7 +710,7 @@ class AxolotlInputConfig(
     chat_template: Union[
         ChatTemplate,
         Annotated[str, StringConstraints(pattern="^tokenizer_default_fallback_")],
-    ] = ChatTemplate.chatml
+    ] = ChatTemplate.tokenizer_default
     chat_template_jinja: Optional[str] = None
     default_system_message: Optional[str] = None
 
