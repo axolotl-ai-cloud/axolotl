@@ -46,6 +46,7 @@ from trl import (
 )
 from trl.trainer.utils import pad_to_length
 
+from axolotl.integrations.base import PluginManager
 from axolotl.monkeypatch.multipack import SUPPORTED_MULTIPACK_MODEL_TYPES
 from axolotl.monkeypatch.relora import ReLoRACallback, ReLoRAScheduler
 from axolotl.utils import is_comet_available, is_mlflow_available
@@ -1207,6 +1208,18 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
 
         if self.cfg.lisa_step_interval and self.cfg.lisa_n_layers:
             callbacks.append(lisa_callback_factory(trainer))
+
+        if self.cfg.plugins:
+            plugin_manager = PluginManager.get_instance()
+            callbacks.extend(
+                [
+                    cb
+                    for cb in plugin_manager.add_callbacks_post_trainer(
+                        self.cfg, trainer
+                    )
+                    if cb
+                ]
+            )
         return callbacks
 
     def _get_trainer_cls(self):

@@ -726,6 +726,8 @@ class AxolotlInputConfig(
     is_mistral_derived_model: Optional[bool] = Field(default=None)
     is_qwen_derived_model: Optional[bool] = Field(default=None)
 
+    plugins: Optional[List[str]] = Field(default=None)
+
     @field_validator("datasets", mode="before")
     @classmethod
     def fix_sharegpt_datasets(cls, datasets):
