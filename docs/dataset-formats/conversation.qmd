@@ -92,13 +92,14 @@ datasets:
     chat_template: tokenizer_default
 ```
 
-2. Using the default chat template in the tokenizer_config.json on OpenAI messages format, training on all assistant messages.
+2. Using the `gemma` chat template in the tokenizer_config.json on OpenAI messages format, training on all assistant messages.
 
 ```yaml
+chat_template: gemma
 datasets:
   - path: ...
     type: chat_template
-    chat_template: tokenizer_default
+    chat_template: gemma
     roles_to_train: ["assistant"]
 ```
 
