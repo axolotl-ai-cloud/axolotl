@@ -55,8 +55,22 @@ LOG = logging.getLogger("axolotl.scripts")
 
 os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
 
+AXOLOTL_LOGO = """
+     #@@ #@@      @@# @@#
+    @@  @@          @@  @@           =@@#                               @@                 #@    =@@#.
+    @@    #@@@@@@@@@    @@           #@#@=                              @@                 #@     .=@@
+      #@@@@@@@@@@@@@@@@@            =@# @#     ##=     ##    =####=+    @@      =#####+  =#@@###.   @@
+    @@@@@@@@@@/  +@@/  +@@          #@  =@=     #@=   @@   =@#+  +#@#   @@    =@#+  +#@#   #@.      @@
+    @@@@@@@@@@  ##@@  ##@@         =@#   @#      =@# @#    @@      @@   @@    @@      #@   #@       @@
+     @@@@@@@@@@@@@@@@@@@@          #@=+++#@=      =@@#     @@      @@   @@    @@      #@   #@       @@
+                                  =@#=====@@     =@# @#    @@      @@   @@    @@      #@   #@       @@
+    @@@@@@@@@@@@@@@@  @@@@        #@      #@=   #@=  +@@   #@#    =@#   @@.   =@#    =@#   #@.      @@
+                                 =@#       @#  #@=     #@   =#@@@@#=    +#@@=  +#@@@@#=    .##@@+   @@
+    @@@@  @@@@@@@@@@@@@@@@
+"""
 
-def print_axolotl_text_art(suffix=None):
+
+def print_legacy_axolotl_text_art(suffix=None):
     font = "nancyj"
     ascii_text = "  axolotl"
     if suffix:
@@ -67,6 +81,13 @@ def print_axolotl_text_art(suffix=None):
         print(ascii_art)
 
     print_dep_versions()
+
+
+def print_axolotl_text_art(
+    **kwargs,  # pylint: disable=unused-argument
+):
+    if is_main_process():
+        print(AXOLOTL_LOGO)
 
 
 def print_dep_versions():
