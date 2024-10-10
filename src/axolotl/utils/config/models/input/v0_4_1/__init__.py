@@ -990,6 +990,20 @@ class AxolotlInputConfig(
 
     @model_validator(mode="before")
     @classmethod
+    def check_test_datasets_bench(cls, data):
+        if (
+            data.get("do_bench_eval")
+            and not data.get("test_datasets")
+            and not data.get("val_set_size")
+        ):
+            LOG.warning(
+                "`do_bench_eval` needs a test dataset to run evals, adding an empty test_dataset."
+            )
+            data["test_datasets"] = [{"path": "axolotl-ai-co/empty-test-ds"}]
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def check_eval_packing(cls, data):
         # TODO also should check test_datasets and val_set_size as we can skip
         # if there are no eval datasets/splits
