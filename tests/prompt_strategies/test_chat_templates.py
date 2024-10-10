@@ -73,7 +73,7 @@ class TestAssistantChatTemplateLlama3:
         strategy = ChatTemplateStrategy(
             ChatTemplatePrompter(
                 llama3_tokenizer,
-                chat_template=get_chat_template("llama3"),
+                chat_templates("llama3"),
                 message_field_role="role",
                 message_field_content="content",
                 roles={
