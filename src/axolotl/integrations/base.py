@@ -159,6 +159,29 @@ class BasePlugin:
         List[callable]: A list of callback functions to be added to the TrainingArgs
         """
 
+    def post_train(self, cfg, model):
+        """
+        Performs actions after training is complete.
+
+        Parameters:
+        cfg (dict): The axolotl configuration
+        model (object): The loaded model.
+
+        Returns:
+        None
+        """
+
+    def post_train_unload(self, cfg):
+        """
+        Performs actions after training is complete and the model is unloaded.
+
+        Parameters:
+        cfg (dict): The configuration for the plugin.
+
+        Returns:
+        None
+        """
+
 
 def load_plugin(plugin_name: str) -> BasePlugin:
     """
@@ -381,3 +404,17 @@ class PluginManager:
         for plugin in self.plugins:
             callbacks.extend(plugin.add_callbacks_post_trainer(cfg, trainer))
         return callbacks
+
+    def post_train_unload(self, cfg):
+        """
+        Calls the post_train_unload method of all registered plugins.
+
+        Parameters:
+        cfg (dict): The configuration for the plugins.
+        model (object): The loaded model.
+
+        Returns:
+        None
+        """
+        for plugin in self.plugins:
+            plugin.post_train_unload(cfg)
