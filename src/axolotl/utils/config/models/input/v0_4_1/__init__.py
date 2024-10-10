@@ -980,6 +980,12 @@ class AxolotlInputConfig(
                 "evaluation_strategy must be empty or set to `steps` when used with evals_per_epoch."
             )
 
+        if data.get("do_bench_eval") and not (
+            data.get("evals_per_epoch") or data.get("eval_steps")
+        ):
+            raise ValueError(
+                "do_bench_eval requires evals_per_epoch or eval_steps to be set."
+            )
         return data
 
     @model_validator(mode="before")
