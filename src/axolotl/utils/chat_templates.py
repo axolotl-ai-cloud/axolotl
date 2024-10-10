@@ -90,10 +90,10 @@ def get_chat_template(
 
 def extract_chat_template_args(cfg, ds_cfg: Optional[Dict[str, Any]] = None):
     if ds_cfg and ds_cfg.get("chat_template"):
-        chat_template_choice = ds_cfg.get("chat_template") or "tokenizer_default"
+        chat_template_choice = ds_cfg.get("chat_template") or _DEFAULT_TEMPLATE_CHOICE
         chat_template_jinja = ds_cfg.get("chat_template_jinja")
     else:
-        chat_template_choice = cfg.get("chat_template") or "tokenizer_default"
+        chat_template_choice = cfg.get("chat_template") or _DEFAULT_TEMPLATE_CHOICE
         chat_template_jinja = cfg.get("chat_template_jinja")
     return chat_template_choice, chat_template_jinja
 
