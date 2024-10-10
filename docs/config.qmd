@@ -161,6 +161,7 @@ datasets:
     message_field_training: training
     # The key in the message turn that contains the training details. Useful to selectively train on certain tokens in a turn.
     # The value of the key is a List[Dict] containing `begin_offset` (start character index in content), `end_offset` (end character index in content), and `train` (boolean whether to train).
+    # See example at `docs/dataset-formats/conversation.qmd`
     message_field_training_detail: train_detail
 
 
