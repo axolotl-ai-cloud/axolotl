@@ -73,81 +73,36 @@ creates a chat where bot is asked to tell a joke, then explain why the joke is f
 
 ## chat_template
 
-Chat Template strategy uses a jinja2 template that converts a list of messages into a prompt. Usually this chat template is stored in tokenizer_config.json under the key `chat_template`.
-
-Conversational data would normally look like follows:
+Chat Template strategy uses a jinja2 template that converts a list of messages into a prompt. Support using tokenizer's template, a supported template, or custom jinja2.
 
 ```{.json filename="data.jsonl"}
-{"conversations": [{"from": "...", "value": "..."}]}
+{"conversations": [{"role": "...", "content": "..."}]}
 ```
 
-with roles usually being system, user, assistant, etc.
-However, all fields can be customized using the following configuration:
-
-```yaml
-datasets:
-  - path: ...
-    # Set type to `chat_template` to use this strategy
-    type: chat_template
-    # Specify the name of the chat template to use
-    # The name of the chat template to use for training, following values are supported:
-    # - tokenizer_default: Uses the chat template that is available in the tokenizer_config.json. If the chat template is not available in the tokenizer, it will raise an error. This is the default value.
-    # - alpaca/inst/chatml/gemma/cohere/llama3/phi_3/deepseek_v2/jamba: These chat templates are available in the axolotl codebase at src/axolotl/utils/chat_templates.py
-    # - tokenizer_default_fallback_*: where * is the name of the chat template to fallback to. E.g. tokenizer_default_fallback_chatml. This is useful when the chat template is not available in the tokenizer.
-    # - jinja: Uses a custom jinja template for the chat template. The custom jinja template should be provided in the chat_template_jinja field.
-    chat_template: tokenizer_default
-    # custom jinja template for chat template. This will be only used if chat_template is set to `jinja` or `null` (in which case chat_template is automatically set to `jinja`). Default is null.
-    chat_template_jinja: null
-    # The key in the data example that contains the messages. Default is "conversations".
-    field_messages: conversations
-    # The key in the message turn that contains the role. Default is "from".
-    message_field_role: from
-    # The key in the message turn that contains the content. Default is "value".
-    message_field_content: value
-    # Role mapping for the messages. This can be useful if you are combining data from multiple sources and the roles are different.
-    roles:
-      human: user
-      user: user
-      assistant: assistant
-      gpt: assistant
-      system: system
-    # Roles to train on. The tokens from these roles will be considered for the loss. Default is ["gpt", "assistant"]
-    roles_to_train: ["gpt", "assistant"]
-    # Which EOS tokens to train on in the conversation. Possible values are:
-    # - all: train on all EOS tokens
-    # - turn: train on the EOS token at the end of each trainable turn
-    # - last: train on the last EOS token in the conversation
-    # - none: do not train on EOS tokens
-    # Default is "turn".
-    train_on_eos: turn
-    # The key in the message turn that indicates if tokens of a turn should be considered for training. This is an advanced option useful to selectively train on certain turns besides the `roles_to_train`. Default is "training".
-    message_field_training: training
-    # The key in the message turn that contains the training details. This is an advanced option useful to selectively train on certain tokens in a turn. Default is "train_detail".
-    message_field_training_detail: train_detail
-```
+See `config.qmd` for full configs and supported templates.
 
 ### Examples
 
-1. Using the default chat template in the tokenizer_config.json on OpenAI messages format
+1. Using the default chat template in the tokenizer_config.json on OpenAI messages format, training on only last message.
 
 ```yaml
 datasets:
   - path: ...
     type: chat_template
     chat_template: tokenizer_default
-    field_messages: messages
-    message_field_role: role
-    message_field_content: content
-    roles:
-      user: user
-      assistant: assistant
-      human: user
-      gpt: assistant
-      system: system
+```
+
+2. Using the default chat template in the tokenizer_config.json on OpenAI messages format, training on all assistant messages.
+
+```yaml
+datasets:
+  - path: ...
+    type: chat_template
+    chat_template: tokenizer_default
     roles_to_train: ["assistant"]
 ```
 
-2. Using a custom jinja template on OpenAI messages format
+3. Using a custom jinja template on OpenAI messages format, training on all assistant messages.
 
 ```yaml
 datasets:
@@ -155,20 +110,10 @@ datasets:
     type: chat_template
     chat_template: jinja
     chat_template_jinja: "{{ bos_token }}{% for message in messages %}{% if (message['role'] == 'system') %}{{'<|system|>' + '\n' + message['content'] + '<|end|>' + '\n'}}{% elif (message['role'] == 'user') %}{{'<|user|>' + '\n' + message['content'] + '<|end|>' + '\n' + '<|assistant|>' + '\n'}}{% elif message['role'] == 'assistant' %}{{message['content'] + '<|end|>' + '\n'}}{% endif %}{% endfor %}"
-    field_messages: messages
-    message_field_role: role
-    message_field_content: content
-    roles:
-      user: user
-      assistant: assistant
-      human: user
-      gpt: assistant
-      system: system
     roles_to_train: ["assistant"]
 ```
 
-3. Using fine-grained control over tokens and turns to train in a conversation
-
+4. (Advanced) Using fine-grained control over tokens and turns to train in a conversation
 
 For a data sample that looks like:
 
@@ -207,14 +152,10 @@ datasets:
     field_messages: conversations
     message_field_role: from
     message_field_content: value
-    roles:
-      human: human
-      user: human
-      assistant: assistant
-      gpt: assistant
-      system: system
     roles_to_train: []
     train_on_eos: turn
     message_field_training: train
     message_field_training_detail: train_detail
 ```
+
+Tip: It is not necessary to use both `message_field_training` and `message_field_training_detail` at a time.
