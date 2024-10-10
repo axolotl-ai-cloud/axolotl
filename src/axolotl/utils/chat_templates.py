@@ -47,10 +47,12 @@ def get_chat_template(
     tokenizer: Optional["PreTrainedTokenizerBase"] = None,
 ):
     """
-    Finds the correct chat_template for the tokenizer_config.
+    Finds the correct chat_template based on the user's choice, jinja_template, and tokenizer.
 
     Args:
         user_choice (str): The user's choice of template.
+        jinja_template (Optional[str], optional): The jinja template string. Defaults to None.
+        tokenizer (Optional[PreTrainedTokenizerBase], optional): The tokenizer. Defaults to None.
 
     Returns:
         str: The chosen template string.
@@ -121,26 +123,6 @@ def get_chat_template_from_config(
         jinja_template=chat_template_jinja,
         tokenizer=tokenizer,
     )
-
-
-def chat_templates(user_choice: str):
-    """
-    Finds the correct chat_template for the tokenizer_config.
-
-    Args:
-        user_choice (str): The user's choice of template.
-
-    Returns:
-        str: The chosen template string.
-
-    Raises:
-        ValueError: If the user_choice is not found in the templates.
-    """
-
-    if user_choice in CHAT_TEMPLATES:
-        return CHAT_TEMPLATES[user_choice]
-
-    raise ValueError(f"Template '{user_choice}' not found.")
 
 
 def register_chat_template(template_name: str, chat_template: str):

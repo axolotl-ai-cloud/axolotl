@@ -764,7 +764,7 @@ class TestAssistantChatTemplateLlama3:
         strategy = ChatTemplateStrategy(
             ChatTemplatePrompter(
                 phi35_tokenizer,
-                chat_template=chat_templates("phi_35"),
+                chat_template=get_chat_template("phi_35"),
                 message_field_role="role",
                 message_field_content="content",
                 roles={
