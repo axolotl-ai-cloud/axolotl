@@ -403,6 +403,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
 
 def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None, processor=None):
+    # pylint: disable=duplicate-code
     ds_cfg = ds_cfg or {}
 
     prompter_params = {
