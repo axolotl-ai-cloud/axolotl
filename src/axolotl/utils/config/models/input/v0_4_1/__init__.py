@@ -28,6 +28,34 @@ LOG = logging.getLogger("axolotl.utils.config.models.input")
 SUPPORTED_METRICS = {"sacrebleu", "comet", "ter", "chrf", "perplexity"}
 
 
+class RLType(str, Enum):
+    """RL trainer type configuration subset"""
+
+    dpo = "dpo"  # pylint: disable=invalid-name
+    ipo = "ipo"  # pylint: disable=invalid-name
+    orpo = "orpo"  # pylint: disable=invalid-name
+    kto = "kto"  # pylint: disable=invalid-name
+    simpo = "simpo"  # pylint: disable=invalid-name
+
+
+class ChatTemplate(str, Enum):
+    """Chat templates configuration subset"""
+
+    alpaca = "alpaca"  # pylint: disable=invalid-name
+    chatml = "chatml"  # pylint: disable=invalid-name
+    inst = "inst"  # pylint: disable=invalid-name
+    gemma = "gemma"  # pylint: disable=invalid-name
+    cohere = "cohere"  # pylint: disable=invalid-name
+    llama3 = "llama3"  # pylint: disable=invalid-name
+    llama3_2_vision = "llama3_2_vision"  # pylint: disable=invalid-name
+    phi_3 = "phi_3"  # pylint: disable=invalid-name
+    phi_35 = "phi_35"  # pylint: disable=invalid-name
+    deepseek_v2 = "deepseek_v2"  # pylint: disable=invalid-name
+    jamba = "jamba"  # pylint: disable=invalid-name
+    jinja = "jinja"  # pylint: disable=invalid-name
+    tokenizer_default = "tokenizer_default"  # pylint: disable=invalid-name
+
+
 class DeprecatedParameters(BaseModel):
     """configurations that are deprecated"""
 
@@ -192,34 +220,6 @@ class KTODataset(BaseModel):
     type: Optional[Union[UserDefinedKTOType, str]] = None
     data_files: Optional[List[str]] = None
     trust_remote_code: Optional[bool] = False
-
-
-class RLType(str, Enum):
-    """RL trainer type configuration subset"""
-
-    dpo = "dpo"  # pylint: disable=invalid-name
-    ipo = "ipo"  # pylint: disable=invalid-name
-    orpo = "orpo"  # pylint: disable=invalid-name
-    kto = "kto"  # pylint: disable=invalid-name
-    simpo = "simpo"  # pylint: disable=invalid-name
-
-
-class ChatTemplate(str, Enum):
-    """Chat templates configuration subset"""
-
-    alpaca = "alpaca"  # pylint: disable=invalid-name
-    chatml = "chatml"  # pylint: disable=invalid-name
-    inst = "inst"  # pylint: disable=invalid-name
-    gemma = "gemma"  # pylint: disable=invalid-name
-    cohere = "cohere"  # pylint: disable=invalid-name
-    llama3 = "llama3"  # pylint: disable=invalid-name
-    llama3_2_vision = "llama3_2_vision"  # pylint: disable=invalid-name
-    phi_3 = "phi_3"  # pylint: disable=invalid-name
-    phi_35 = "phi_35"  # pylint: disable=invalid-name
-    deepseek_v2 = "deepseek_v2"  # pylint: disable=invalid-name
-    jamba = "jamba"  # pylint: disable=invalid-name
-    jinja = "jinja"  # pylint: disable=invalid-name
-    tokenizer_default = "tokenizer_default"  # pylint: disable=invalid-name
 
 
 class LoftQConfig(BaseModel):
