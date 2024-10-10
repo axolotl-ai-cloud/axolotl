@@ -20,6 +20,7 @@ class LMEvalPlugin(BasePlugin):
     def post_train_unload(self, cfg):
         tasks = ",".join(cfg.lm_eval_tasks)
         fa2 = ",attn_implementation=flash_attention_2" if cfg.flash_attention else ""
+        dtype = ",dtype=bfloat16" if cfg.bf16 else ",dtype=float16"
         output_path = cfg.output_dir
         output_path += "" if cfg.output_dir.endswith("/") else "/"
         output_path += "lm_eval_results/" + datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -29,7 +30,7 @@ class LMEvalPlugin(BasePlugin):
                 "--model",
                 "hf",
                 "--model_args",
-                f"pretrained={cfg.output_dir}{fa2}",
+                f"pretrained={cfg.output_dir}{fa2}{dtype}",
                 "--tasks",
                 tasks,
                 "--batch_size",
