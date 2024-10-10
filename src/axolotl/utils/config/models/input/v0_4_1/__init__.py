@@ -859,6 +859,17 @@ class AxolotlInputConfig(
 
     @model_validator(mode="before")
     @classmethod
+    def hint_reward_model_pad(cls, data):
+        if data.get("reward_model") and not data.get("pad_to_sequence_len"):
+            LOG.warning(
+                "`pad_to_sequence_len: true` is recommended when using reward_model"
+            )
+            if data.get("pad_to_sequence_len") is None:
+                data["pad_to_sequence_len"] = True
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def check_gas_bsz(cls, data):
         if data.get("gradient_accumulation_steps") and data.get("batch_size"):
             raise ValueError(
