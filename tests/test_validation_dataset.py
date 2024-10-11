@@ -24,6 +24,7 @@ def fixture_cfg():
     )
 
 
+# pylint: disable=too-many-public-methods (duplicate-code)
 class BaseValidation:
     """
     Base validation module to setup the log capture
