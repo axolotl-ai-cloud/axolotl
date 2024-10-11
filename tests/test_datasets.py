@@ -12,6 +12,7 @@ from huggingface_hub import snapshot_download
 from transformers import AutoTokenizer
 
 from axolotl.utils.data import load_tokenized_prepared_datasets
+from axolotl.utils.data.rl import load_prepare_dpo_datasets
 from axolotl.utils.dict import DictDefault
 
 
@@ -267,6 +268,40 @@ class TestDatasetPreparation(unittest.TestCase):
             assert "attention_mask" in dataset.features
             assert "labels" in dataset.features
 
+    def test_load_hub_with_dpo(self):
+        """Verify that processing dpo data from the hub works"""
+
+        cfg = DictDefault(
+            {
+                "tokenizer_config": "huggyllama/llama-7b",
+                "sequence_len": 1024,
+                "rl": "dpo",
+                "chat_template": "llama3",
+                "datasets": [
+                    {
+                        "path": "fozziethebeat/alpaca_messages_2k_dpo_test",
+                        "type": "chat_template.default",
+                        "chat_template": "llama3",
+                        "field_messages": "conversation",
+                        "field_chosen": "chosen",
+                        "field_rejected": "rejected",
+                        "message_field_role": "role",
+                        "message_field_content": "content",
+                        "roles": {
+                            "system": ["system"],
+                            "user": ["user"],
+                            "assistant": ["assistant"],
+                        },
+                    }
+                ],
+            }
+        )
+
+        train_dataset, _ = load_prepare_dpo_datasets(cfg)
+
+        assert len(train_dataset) == 1800
+        assert "conversation" in train_dataset.features
+
     def test_load_hub_with_revision(self):
         """Verify that processing data from the hub works with a specific revision"""
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -293,6 +328,41 @@ class TestDatasetPreparation(unittest.TestCase):
             assert "input_ids" in dataset.features
             assert "attention_mask" in dataset.features
             assert "labels" in dataset.features
+
+    def test_load_hub_with_revision_with_dpo(self):
+        """Verify that processing dpo data from the hub works with a specific revision"""
+
+        cfg = DictDefault(
+            {
+                "tokenizer_config": "huggyllama/llama-7b",
+                "sequence_len": 1024,
+                "rl": "dpo",
+                "chat_template": "llama3",
+                "datasets": [
+                    {
+                        "path": "fozziethebeat/alpaca_messages_2k_dpo_test",
+                        "type": "chat_template.default",
+                        "chat_template": "llama3",
+                        "revision": "ea82cff",
+                        "field_messages": "conversation",
+                        "field_chosen": "chosen",
+                        "field_rejected": "rejected",
+                        "message_field_role": "role",
+                        "message_field_content": "content",
+                        "roles": {
+                            "system": ["system"],
+                            "user": ["user"],
+                            "assistant": ["assistant"],
+                        },
+                    }
+                ],
+            }
+        )
+
+        train_dataset, _ = load_prepare_dpo_datasets(cfg)
+
+        assert len(train_dataset) == 1800
+        assert "conversation" in train_dataset.features
 
     def test_load_local_hub_with_revision(self):
         """Verify that a local copy of a hub dataset can be loaded with a specific revision"""
