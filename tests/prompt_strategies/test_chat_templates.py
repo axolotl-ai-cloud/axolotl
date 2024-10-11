@@ -229,7 +229,9 @@ class TestSharegptChatTemplateLlama3:
         LOG.info("Testing ShareGPT style datasets with llama-3 assistant prompts")
         # pylint: disable=duplicate-code
         strategy = ChatTemplateStrategy(
-            ChatTemplatePrompter(llama3_tokenizer, chat_template=get_chat_template("llama3")),
+            ChatTemplatePrompter(
+                llama3_tokenizer, chat_template=get_chat_template("llama3")
+            ),
             tokenizer=llama3_tokenizer,
             train_on_inputs=False,
             train_on_eos="none",
@@ -280,7 +282,9 @@ class TestSharegptChatTemplateLlama3:
         LOG.info("Testing ShareGPT style datasets with llama-3 human prompts")
         # pylint: disable=duplicate-code
         strategy = ChatTemplateStrategy(
-            ChatTemplatePrompter(llama3_tokenizer, chat_template=get_chat_template("llama3")),
+            ChatTemplatePrompter(
+                llama3_tokenizer, chat_template=get_chat_template("llama3")
+            ),
             tokenizer=llama3_tokenizer,
             train_on_inputs=False,
             train_on_eos="none",
@@ -331,7 +335,9 @@ class TestSharegptChatTemplateLlama3:
         LOG.info("Testing ShareGPT style datasets with llama-3 system/human prompts")
         # pylint: disable=duplicate-code
         strategy = ChatTemplateStrategy(
-            ChatTemplatePrompter(llama3_tokenizer, chat_template=get_chat_template("llama3")),
+            ChatTemplatePrompter(
+                llama3_tokenizer, chat_template=get_chat_template("llama3")
+            ),
             tokenizer=llama3_tokenizer,
             train_on_inputs=False,
             train_on_eos="none",
