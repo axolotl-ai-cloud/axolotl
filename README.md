@@ -383,7 +383,7 @@ See [examples](examples) for quick start. It is recommended to duplicate and mod
         - typescript
       type: ... # unimplemented custom format
 
-      # fastchat conversation
+      # fastchat conversation (deprecation soon, use chat_template)
       # See 'conversation' options: https://github.com/lm-sys/FastChat/blob/main/fastchat/conversation.py
     - path: ...
       type: sharegpt
