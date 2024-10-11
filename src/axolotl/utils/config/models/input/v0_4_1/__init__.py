@@ -139,10 +139,13 @@ class SFTDataset(BaseModel):
     type: Optional[Union[str, UserDefinedPrompterType]] = None
     shards: Optional[int] = None
     conversation: Optional[str] = None
-    chat_template: Union[
-        ChatTemplate,
-        Annotated[str, StringConstraints(pattern="^tokenizer_default_fallback_")],
-    ] = ChatTemplate.tokenizer_default
+    # Do not make this too strict or it will break the validator to choose different dataset class
+    chat_template: Optional[
+        Union[
+            ChatTemplate,
+            str,
+        ]
+    ] = None
     chat_template_jinja: Optional[str] = None
     data_files: Optional[Union[str, List[str]]] = None
     name: Optional[str] = None
@@ -165,6 +168,10 @@ class SFTDataset(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def check_chat_template_config(cls, data):
+        # Set chat_template to tokenizer_default if not set
+        if data.get("type") == "chat_template" and not data.get("chat_template"):
+            data["chat_template"] = ChatTemplate.tokenizer_default
+
         # if chat_template is set to jinja, chat_template_jinja is required
         if data.get("chat_template") == ChatTemplate.jinja and not data.get(
             "chat_template_jinja"
@@ -735,10 +742,12 @@ class AxolotlInputConfig(
     gpu_memory_limit: Optional[Union[int, str]] = None
     low_cpu_mem_usage: Optional[bool] = None
 
-    chat_template: Union[
-        ChatTemplate,
-        Annotated[str, StringConstraints(pattern="^tokenizer_default_fallback_")],
-    ] = ChatTemplate.tokenizer_default
+    chat_template: Optional[
+        Union[
+            ChatTemplate,
+            Annotated[str, StringConstraints(pattern="^tokenizer_default_fallback_")],
+        ]
+    ] = None
     chat_template_jinja: Optional[str] = None
     default_system_message: Optional[str] = None
 
@@ -780,6 +789,20 @@ class AxolotlInputConfig(
                     "sharegpt_simple", "sharegpt"
                 )
         return datasets
+
+    @model_validator(mode="before")
+    @classmethod
+    def set_default_chat_template(cls, data):
+        if data.get("chat_template") is None:
+            use_chat_template = any(
+                dataset["type"] == "chat_template"
+                for dataset in data.get("datasets", [])
+            )
+
+            if use_chat_template:
+                data["chat_template"] = ChatTemplate.tokenizer_default
+
+        return data
 
     @model_validator(mode="before")
     @classmethod
