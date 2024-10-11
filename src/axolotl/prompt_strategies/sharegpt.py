@@ -62,7 +62,7 @@ def build_loader(
 ):
     def _load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
         LOG.warning(
-            "sharegpt type support will be deprecated in the next release of Axolotl",
+            "sharegpt type support will be deprecated in the next release of Axolotl. Please use chat_template instead.",
         )
         conversation = (
             ds_cfg["conversation"]
