@@ -9,6 +9,7 @@ from typing import Optional
 import pytest
 from pydantic import ValidationError
 
+from axolotl.utils import is_comet_available
 from axolotl.utils.config import validate_config
 from axolotl.utils.config.models.input.v0_4_1 import AxolotlConfigWCapabilities
 from axolotl.utils.dict import DictDefault
@@ -1329,3 +1330,105 @@ class TestValidationWandb(BaseValidation):
 
         os.environ.pop("WANDB_PROJECT", None)
         os.environ.pop("WANDB_DISABLED", None)
+
+
+@pytest.mark.skipif(is_comet_available() is False, reason="comet_ml is not installed")
+class TestValidationComet(BaseValidation):
+    """
+    Validation test for comet
+    """
+
+    def test_comet_sets_env(self, minimal_cfg):
+        from axolotl.utils.comet_ import setup_comet_env_vars
+
+        comet_config = {
+            "comet_api_key": "foo",
+            "comet_workspace": "some_workspace",
+            "comet_project_name": "some_project",
+            "comet_experiment_key": "some_experiment_key",
+            "comet_mode": "get_or_create",
+            "comet_online": False,
+            "comet_experiment_config": {
+                "auto_histogram_activation_logging": False,
+                "auto_histogram_epoch_rate": 2,
+                "auto_histogram_gradient_logging": True,
+                "auto_histogram_tensorboard_logging": False,
+                "auto_histogram_weight_logging": True,
+                "auto_log_co2": False,
+                "auto_metric_logging": True,
+                "auto_metric_step_rate": 15,
+                "auto_output_logging": False,
+                "auto_param_logging": True,
+                "comet_disabled": False,
+                "display_summary_level": 2,
+                "distributed_node_identifier": "some_distributed_node_identifier",
+                "log_code": True,
+                "log_env_cpu": False,
+                "log_env_details": True,
+                "log_env_disk": False,
+                "log_env_gpu": True,
+                "log_env_host": False,
+                "log_env_network": True,
+                "log_git_metadata": False,
+                "log_git_patch": True,
+                "log_graph": False,
+                "name": "some_name",
+                "offline_directory": "some_offline_directory",
+                "parse_args": True,
+                "tags": ["tag1", "tag2"],
+            },
+        }
+
+        cfg = DictDefault(comet_config) | minimal_cfg
+
+        new_cfg = validate_config(cfg)
+
+        setup_comet_env_vars(new_cfg)
+
+        comet_env = {
+            key: value for key, value in os.environ.items() if key.startswith("COMET_")
+        }
+
+        assert (
+            len(comet_env)
+            == len(comet_config) + len(comet_config["comet_experiment_config"]) - 1
+        )
+
+        assert comet_env == {
+            "COMET_API_KEY": "foo",
+            "COMET_AUTO_LOG_CLI_ARGUMENTS": "true",
+            "COMET_AUTO_LOG_CO2": "false",
+            "COMET_AUTO_LOG_CODE": "true",
+            "COMET_AUTO_LOG_DISABLE": "false",
+            "COMET_AUTO_LOG_ENV_CPU": "false",
+            "COMET_AUTO_LOG_ENV_DETAILS": "true",
+            "COMET_AUTO_LOG_ENV_DISK": "false",
+            "COMET_AUTO_LOG_ENV_GPU": "true",
+            "COMET_AUTO_LOG_ENV_HOST": "false",
+            "COMET_AUTO_LOG_ENV_NETWORK": "true",
+            "COMET_AUTO_LOG_GIT_METADATA": "false",
+            "COMET_AUTO_LOG_GIT_PATCH": "true",
+            "COMET_AUTO_LOG_GRAPH": "false",
+            "COMET_AUTO_LOG_HISTOGRAM_ACTIVATIONS": "false",
+            "COMET_AUTO_LOG_HISTOGRAM_EPOCH_RATE": "2",
+            "COMET_AUTO_LOG_HISTOGRAM_GRADIENTS": "true",
+            "COMET_AUTO_LOG_HISTOGRAM_TENSORBOARD": "false",
+            "COMET_AUTO_LOG_HISTOGRAM_WEIGHTS": "true",
+            "COMET_AUTO_LOG_METRIC_STEP_RATE": "15",
+            "COMET_AUTO_LOG_METRICS": "true",
+            "COMET_AUTO_LOG_OUTPUT_LOGGER": "false",
+            "COMET_AUTO_LOG_PARAMETERS": "true",
+            "COMET_DISPLAY_SUMMARY_LEVEL": "2",
+            "COMET_DISTRIBUTED_NODE_IDENTIFIER": "some_distributed_node_identifier",
+            "COMET_EXPERIMENT_KEY": "some_experiment_key",
+            "COMET_OFFLINE_DIRECTORY": "some_offline_directory",
+            "COMET_PROJECT_NAME": "some_project",
+            "COMET_START_EXPERIMENT_NAME": "some_name",
+            "COMET_START_EXPERIMENT_TAGS": "tag1,tag2",
+            "COMET_START_MODE": "get_or_create",
+            "COMET_START_ONLINE": "false",
+            "COMET_WORKSPACE": "some_workspace",
+        }
+
+        for key in comet_env.keys():
+            os.environ.pop(key, None)

@@ -30,6 +30,8 @@ from axolotl.common.cli import TrainerCliArgs, load_model_and_tokenizer
 from axolotl.integrations.base import PluginManager
 from axolotl.logging_config import configure_logging
 from axolotl.train import TrainDatasetMeta
+from axolotl.utils.chat_templates import get_chat_template
+from axolotl.utils.comet_ import setup_comet_env_vars
 from axolotl.utils.config import (
     normalize_cfg_datasets,
     normalize_config,
@@ -39,7 +41,7 @@ from axolotl.utils.data import load_prepare_dpo_datasets, prepare_dataset
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import is_main_process
 from axolotl.utils.mlflow_ import setup_mlflow_env_vars
-from axolotl.utils.models import load_tokenizer
+from axolotl.utils.models import load_processor, load_tokenizer
 from axolotl.utils.tokenization import check_dataset_labels
 from axolotl.utils.trainer import prepare_opinionated_env, prepare_optim_env
 from axolotl.utils.wandb_ import setup_wandb_env_vars
@@ -53,8 +55,22 @@ LOG = logging.getLogger("axolotl.scripts")
 
 os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
 
+AXOLOTL_LOGO = """
+     #@@ #@@      @@# @@#
+    @@  @@          @@  @@           =@@#                               @@                 #@    =@@#.
+    @@    #@@@@@@@@@    @@           #@#@=                              @@                 #@     .=@@
+      #@@@@@@@@@@@@@@@@@            =@# @#     ##=     ##    =####=+    @@      =#####+  =#@@###.   @@
+    @@@@@@@@@@/  +@@/  +@@          #@  =@=     #@=   @@   =@#+  +#@#   @@    =@#+  +#@#   #@.      @@
+    @@@@@@@@@@  ##@@  ##@@         =@#   @#      =@# @#    @@      @@   @@    @@      #@   #@       @@
+     @@@@@@@@@@@@@@@@@@@@          #@=+++#@=      =@@#     @@      @@   @@    @@      #@   #@       @@
+                                  =@#=====@@     =@# @#    @@      @@   @@    @@      #@   #@       @@
+    @@@@@@@@@@@@@@@@  @@@@        #@      #@=   #@=  +@@   #@#    =@#   @@.   =@#    =@#   #@.      @@
+                                 =@#       @#  #@=     #@   =#@@@@#=    +#@@=  +#@@@@#=    .##@@+   @@
+    @@@@  @@@@@@@@@@@@@@@@
+"""
 
-def print_axolotl_text_art(suffix=None):
+
+def print_legacy_axolotl_text_art(suffix=None):
     font = "nancyj"
     ascii_text = "  axolotl"
     if suffix:
@@ -65,6 +81,13 @@ def print_axolotl_text_art(suffix=None):
         print(ascii_art)
 
     print_dep_versions()
+
+
+def print_axolotl_text_art(
+    **kwargs,  # pylint: disable=unused-argument
+):
+    if is_main_process():
+        print(AXOLOTL_LOGO)
 
 
 def print_dep_versions():
@@ -234,7 +257,8 @@ def do_inference_gradio(
 
     model, tokenizer = load_model_and_tokenizer(cfg=cfg, cli_args=cli_args)
     prompter = cli_args.prompter
-    default_tokens = {"unk_token": "<unk>", "bos_token": "<s>", "eos_token": "</s>"}
+    # default_tokens = {"unk_token": "<unk>", "bos_token": "<s>", "eos_token": "</s>"}
+    default_tokens: Dict[str, str] = {}
 
     for token, symbol in default_tokens.items():
         # If the token isn't already specified in the config, add it
@@ -242,10 +266,13 @@ def do_inference_gradio(
             tokenizer.add_special_tokens({token: symbol})
 
     prompter_module = None
+    chat_template_str = None
     if prompter:
         prompter_module = getattr(
             importlib.import_module("axolotl.prompters"), prompter
         )
+    elif cfg.chat_template:
+        chat_template_str = get_chat_template(cfg.chat_template)
 
     model = model.to(cfg.device, dtype=cfg.torch_dtype)
 
@@ -259,7 +286,24 @@ def do_inference_gradio(
             )
         else:
             prompt = instruction.strip()
-        batch = tokenizer(prompt, return_tensors="pt", add_special_tokens=True)
+
+        if chat_template_str:
+            batch = tokenizer.apply_chat_template(
+                [
+                    {
+                        "role": "user",
+                        "content": prompt,
+                    }
+                ],
+                return_tensors="pt",
+                add_special_tokens=True,
+                add_generation_prompt=True,
+                chat_template=chat_template_str,
+                tokenize=True,
+                return_dict=True,
+            )
+        else:
+            batch = tokenizer(prompt, return_tensors="pt", add_special_tokens=True)
 
         model.eval()
         with torch.no_grad():
@@ -282,6 +326,7 @@ def do_inference_gradio(
             streamer = TextIteratorStreamer(tokenizer)
             generation_kwargs = {
                 "inputs": batch["input_ids"].to(cfg.device),
+                "attention_mask": batch["attention_mask"].to(cfg.device),
                 "generation_config": generation_config,
                 "streamer": streamer,
             }
@@ -398,6 +443,8 @@ def load_cfg(config: Union[str, Path] = Path("examples/"), **kwargs):
 
     setup_mlflow_env_vars(cfg)
 
+    setup_comet_env_vars(cfg)
+
     return cfg
 
 
@@ -407,9 +454,12 @@ def load_datasets(
     cli_args: TrainerCliArgs,
 ) -> TrainDatasetMeta:
     tokenizer = load_tokenizer(cfg)
+    processor = load_processor(cfg, tokenizer=tokenizer) if cfg.processor_type else None
 
     train_dataset, eval_dataset, total_num_steps, prompters = prepare_dataset(
-        cfg, tokenizer
+        cfg,
+        tokenizer,
+        processor=processor,
     )
 
     if cli_args.debug or cfg.debug:
