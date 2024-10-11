@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional, Union
 from transformers import PreTrainedTokenizerBase, ProcessorMixin
 from transformers.data.data_collator import DataCollatorMixin
 from transformers.utils import PaddingStrategy
-
+from PIL import Image
 
 @dataclass
 class MultiModalChatDataCollator(DataCollatorMixin):
@@ -52,7 +52,7 @@ class MultiModalChatDataCollator(DataCollatorMixin):
             )
             for example in examples
         ]
-        images = [example["images"] for example in examples]
+        images = [Image.open(example["images"]) if type(example["images"])==str else example["images"] for example in examples]
 
         if max_images > 0:
             images = [img_batch[:max_images] for img_batch in images]
