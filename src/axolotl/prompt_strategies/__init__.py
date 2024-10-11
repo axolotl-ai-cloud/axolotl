@@ -11,6 +11,10 @@ LOG = logging.getLogger("axolotl.prompt_strategies")
 
 def load(strategy, tokenizer, cfg, ds_cfg, processor=None):
     try:
+        if strategy == "messages":
+            from .messages import load as messages_load
+
+            return messages_load(tokenizer, cfg, ds_cfg, processor=processor)
         load_fn = "load"
         if strategy.split(".")[-1].startswith("load_"):
             load_fn = strategy.split(".")[-1]
