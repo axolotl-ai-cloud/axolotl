@@ -40,6 +40,7 @@ class TestMessagesChatLlama3:
         input_ids = res[0]["input_ids"]
         # fmt: off
         expected_input_ids = [
+            128000,  # bos
             128006, 882, 128007,  # user header
             271, 15339, 128009,  # user prompt eot
             128006, 78191, 128007,  # assistant header

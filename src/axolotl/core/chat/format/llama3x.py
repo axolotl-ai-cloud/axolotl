@@ -24,6 +24,17 @@ def format_message(message: Messages, message_index: Optional[int] = None) -> Me
             weight=0,
         ),
     )
+
+    if message_index == 0:
+        message.content.insert(
+            0,
+            MessageContents(
+                type="text",
+                value="<|begin_of_text|>",
+                weight=0,
+            ),
+        )
+
     message.content.append(
         MessageContents(type="text", value="<|eot_id|>", weight=message.weight)
     )
