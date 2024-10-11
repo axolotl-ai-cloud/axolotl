@@ -3,13 +3,11 @@ CLI to run training on a model
 """
 import logging
 from pathlib import Path
-from typing import Tuple, Union
+from typing import Union
 
 import fire
 from dotenv import load_dotenv
 from transformers.hf_argparser import HfArgumentParser
-from transformers.modeling_utils import PreTrainedModel
-from transformers.tokenization_utils import PreTrainedTokenizer
 
 from axolotl.cli import (
     check_accelerate_default_config,
@@ -20,6 +18,7 @@ from axolotl.cli import (
     print_axolotl_text_art,
 )
 from axolotl.common.cli import TrainerCliArgs
+from axolotl.integrations.base import PluginManager
 from axolotl.prompt_strategies.sharegpt import (
     register_chatml_template,
     register_llama3_template,
@@ -39,7 +38,7 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
     return do_train(parsed_cfg, parsed_cli_args)
 
 
-def do_train(cfg, cli_args) -> Tuple[PreTrainedModel, PreTrainedTokenizer]:
+def do_train(cfg, cli_args) -> None:
     print_axolotl_text_art()
     check_accelerate_default_config()
     check_user_token()
@@ -64,7 +63,13 @@ def do_train(cfg, cli_args) -> Tuple[PreTrainedModel, PreTrainedTokenizer]:
     else:
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
-    return train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
+    model, tokenizer = train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
+    plugin_manager = PluginManager.get_instance()
+
+    del model
+    del tokenizer
+
+    plugin_manager.post_train_unload(cfg)
 
 
 if __name__ == "__main__":
