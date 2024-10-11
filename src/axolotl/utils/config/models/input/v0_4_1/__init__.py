@@ -125,6 +125,7 @@ class SFTDataset(BaseModel):
     drop_system_message: Optional[bool] = None
 
     trust_remote_code: Optional[bool] = False
+    revision: Optional[str] = None
 
 
 class UserDefinedDPOType(BaseModel):
@@ -146,6 +147,7 @@ class DPODataset(BaseModel):
     split: Optional[str] = None
     type: Optional[Union[UserDefinedDPOType, str]] = None
     data_files: Optional[List[str]] = None
+    revision: Optional[str] = None
 
 
 class UserDefinedKTOType(BaseModel):
@@ -167,6 +169,7 @@ class KTODataset(BaseModel):
     type: Optional[Union[UserDefinedKTOType, str]] = None
     data_files: Optional[List[str]] = None
     trust_remote_code: Optional[bool] = False
+    revision: Optional[str] = None
 
 
 class RLType(str, Enum):
