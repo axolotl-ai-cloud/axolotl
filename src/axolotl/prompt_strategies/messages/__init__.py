@@ -15,7 +15,9 @@ def load(tokenizer, cfg, ds_cfg, processor=None):
         if strategy.split(".")[-1].startswith("load_"):
             load_fn = strategy.split(".")[-1]
             strategy = ".".join(strategy.split(".")[:-1])
-        mod = importlib.import_module(f".{strategy}", "axolotl.prompt_strategies")
+        mod = importlib.import_module(
+            f".{strategy}", "axolotl.prompt_strategies.messages"
+        )
         func = getattr(mod, load_fn)
         load_kwargs = {}
         sig = inspect.signature(func)
