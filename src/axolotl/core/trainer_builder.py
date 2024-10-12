@@ -217,6 +217,14 @@ class AxolotlTrainingMixins:
         default=1e-6,
         metadata={"help": "loraplus learning rate for lora embedding layers."},
     )
+    embedding_lr_scale: Optional[float] = field(
+        default=None,
+        metadata={"help": "Scale the learning rate for the embedding layers."},
+    )
+    embedding_lr: Optional[float] = field(
+        default=None,
+        metadata={"help": "absolute learning rate for the embedding layers."},
+    )
     qlora: bool = field(
         default=False,
         metadata={"help": "whether this is a qlora training"},
@@ -427,6 +435,7 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
     def create_optimizer(self):
         if (
             self.args.loraplus_lr_ratio is None
+            and self.args.embedding_lr_scale is None
             and self.args.alternate_optimizer
             not in ["optimi_adamw", "ao_adamw_8bit", "ao_adamw_4bit", "ao_adamw_fp8"]
         ):
@@ -435,29 +444,58 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
         opt_model = self.model_wrapped if is_sagemaker_mp_enabled() else self.model
         if self.optimizer is None:  # pylint: disable=access-member-before-definition
             decay_parameters = self.get_decay_parameter_names(opt_model)
-            optimizer_grouped_parameters = [
-                {
-                    "params": [
-                        p
-                        for n, p in opt_model.named_parameters()
-                        if (n in decay_parameters and p.requires_grad)
-                    ],
-                    "weight_decay": self.args.weight_decay,
-                },
-                {
-                    "params": [
-                        p
-                        for n, p in opt_model.named_parameters()
-                        if (n not in decay_parameters and p.requires_grad)
-                    ],
-                    "weight_decay": 0.0,
-                },
-            ]
+            params = {
+                "to_weight_decay": {},  # LayerNorm and bias
+                "embeddings": {},  # lm_head, embed_tokens,
+                "no_weight_decay": {},
+            }
 
             optimizer_cls, optimizer_kwargs = Trainer.get_optimizer_cls_and_kwargs(
                 self.args,
                 opt_model,
             )
+
+            for name, param in opt_model.named_parameters():
+                if not param.requires_grad:
+                    continue
+                if name in decay_parameters:
+                    params["to_weight_decay"][name] = param
+                elif name.endswith("modules_to_save.default.weight") or any(
+                    embed_name in name for embed_name in ["embed_tokens", "lm_head"]
+                ):
+                    params["embeddings"][name] = param
+                else:
+                    params["no_weight_decay"][name] = param
+            optimizer_grouped_parameters = []
+            if params["to_weight_decay"]:
+                optimizer_grouped_parameters.append(
+                    {
+                        "params": list(params["to_weight_decay"].values()),
+                        "weight_decay": self.args.weight_decay,
+                        "lr": optimizer_kwargs["lr"],
+                    }
+                )
+            if params["embeddings"]:
+                lr = optimizer_kwargs["lr"]  # pylint: disable=invalid-name
+                if self.args.embedding_lr_scale:
+                    lr *= self.args.embedding_lr_scale  # pylint: disable=invalid-name
+                elif self.args.embedding_lr:
+                    lr = self.args.embedding_lr  # pylint: disable=invalid-name
+                optimizer_grouped_parameters.append(
+                    {
+                        "params": list(params["embeddings"].values()),
+                        "weight_decay": 0.0,
+                        "lr": lr,
+                    }
+                )
+            if params["no_weight_decay"]:
+                optimizer_grouped_parameters.append(
+                    {
+                        "params": list(params["no_weight_decay"].values()),
+                        "weight_decay": 0.0,
+                        "lr": optimizer_kwargs["lr"],
+                    }
+                )
 
             if self.args.loraplus_lr_ratio is not None:
                 loraplus_lr_ratio = getattr(self.args, "loraplus_lr_ratio", None)
@@ -1470,6 +1508,9 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         training_arguments_kwargs[
             "loraplus_lr_embedding"
         ] = self.cfg.loraplus_lr_embedding
+        training_arguments_kwargs["embedding_lr"] = self.cfg.embedding_lr
+        training_arguments_kwargs["embedding_lr_scale"] = self.cfg.embedding_lr_scale
+
         if self.cfg.lr_scheduler in ["one_cycle", "log_sweep"]:
             training_arguments_kwargs["lr_scheduler_type"] = "cosine"
             training_arguments_kwargs[

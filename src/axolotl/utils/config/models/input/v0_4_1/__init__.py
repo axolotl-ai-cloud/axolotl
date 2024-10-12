@@ -377,6 +377,8 @@ class HyperparametersConfig(BaseModel):
     group_by_length: Optional[bool] = None
 
     learning_rate: Union[str, float]
+    embedding_lr: Optional[float] = None
+    embedding_lr_scale: Optional[float] = None
     weight_decay: Optional[float] = 0.0
     optimizer: Optional[
         Union[
