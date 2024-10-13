@@ -102,10 +102,12 @@ class SFTDataset(BaseModel):
     path: Optional[str] = None
     split: Optional[str] = None
     type: Optional[Union[str, UserDefinedPrompterType]] = None
+    input_transform: Optional[str] = None
     shards: Optional[int] = None
     conversation: Optional[str] = None
     chat_template: Optional[str] = None
     data_files: Optional[Union[str, List[str]]] = None
+    input_format: Optional[str] = None
     name: Optional[str] = None
     ds_type: Optional[str] = None
     train_on_split: Optional[str] = None
