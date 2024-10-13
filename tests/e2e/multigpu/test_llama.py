@@ -381,7 +381,7 @@ class TestMultiGPULlama(unittest.TestCase):
                 "optimizer": "adamw_torch",
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
-                "deepspeed": str(AXOLOTL_ROOT / "deepspeed_configs/zero3_bf16.yaml"),
+                "deepspeed": str(AXOLOTL_ROOT / "deepspeed_configs/zero3_bf16.json"),
             }
         )
 
@@ -440,7 +440,7 @@ class TestMultiGPULlama(unittest.TestCase):
                 "optimizer": "adamw_torch",
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
-                "deepspeed": str(AXOLOTL_ROOT / "deepspeed_configs/zero3_bf16.yaml"),
+                "deepspeed": str(AXOLOTL_ROOT / "deepspeed_configs/zero3_bf16.json"),
             }
         )
 
