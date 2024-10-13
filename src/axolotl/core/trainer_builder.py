@@ -1445,9 +1445,12 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             report_to.append("comet_ml")
 
         training_arguments_kwargs["report_to"] = report_to
-        training_arguments_kwargs["run_name"] = (
-            self.cfg.wandb_name if self.cfg.use_wandb else None
-        )
+        if self.cfg.use_wandb:
+            training_arguments_kwargs["run_name"] = self.cfg.wandb_name
+        elif self.cfg.use_mlflow:
+            training_arguments_kwargs["run_name"] = self.cfg.mlflow_run_name
+        else:
+            training_arguments_kwargs["run_name"] = None
         training_arguments_kwargs["optim"] = (
             self.cfg.optimizer if self.cfg.optimizer else "adamw_hf"
         )

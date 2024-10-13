@@ -43,7 +43,9 @@ class ChatTemplate(str, Enum):
 
     alpaca = "alpaca"  # pylint: disable=invalid-name
     chatml = "chatml"  # pylint: disable=invalid-name
-    inst = "inst"  # pylint: disable=invalid-name
+    mistral_v1 = "mistral_v1"  # pylint: disable=invalid-name
+    mistral_v2v3 = "mistral_v2v3"  # pylint: disable=invalid-name
+    mistral_v3_tekken = "mistral_v3_tekken"  # pylint: disable=invalid-name
     gemma = "gemma"  # pylint: disable=invalid-name
     cohere = "cohere"  # pylint: disable=invalid-name
     llama3 = "llama3"  # pylint: disable=invalid-name
@@ -53,6 +55,7 @@ class ChatTemplate(str, Enum):
     deepseek_v2 = "deepseek_v2"  # pylint: disable=invalid-name
     jamba = "jamba"  # pylint: disable=invalid-name
     jinja = "jinja"  # pylint: disable=invalid-name
+    qwen_25 = "qwen_25"  # pylint: disable=invalid-name
     tokenizer_default = "tokenizer_default"  # pylint: disable=invalid-name
 
 
@@ -164,6 +167,7 @@ class SFTDataset(BaseModel):
     roles: Optional[Dict[str, List[str]]] = None
     drop_system_message: Optional[bool] = None
     trust_remote_code: Optional[bool] = False
+    revision: Optional[str] = None
 
     @model_validator(mode="before")
     @classmethod
@@ -206,6 +210,7 @@ class DPODataset(BaseModel):
     split: Optional[str] = None
     type: Optional[Union[UserDefinedDPOType, str]] = None
     data_files: Optional[List[str]] = None
+    revision: Optional[str] = None
 
 
 class UserDefinedKTOType(BaseModel):
@@ -227,6 +232,7 @@ class KTODataset(BaseModel):
     type: Optional[Union[UserDefinedKTOType, str]] = None
     data_files: Optional[List[str]] = None
     trust_remote_code: Optional[bool] = False
+    revision: Optional[str] = None
 
 
 class LoftQConfig(BaseModel):
@@ -478,6 +484,7 @@ class MLFlowConfig(BaseModel):
     use_mlflow: Optional[bool] = None
     mlflow_tracking_uri: Optional[str] = None
     mlflow_experiment_name: Optional[str] = None
+    mlflow_run_name: Optional[str] = None
     hf_mlflow_log_artifacts: Optional[bool] = None
 
 

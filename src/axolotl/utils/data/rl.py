@@ -90,6 +90,7 @@ def load_prepare_dpo_datasets(cfg):
                 ds = load_dataset(  # pylint: disable=invalid-name
                     ds_cfg["path"],
                     split=ds_cfg["split"],
+                    revision=ds_cfg.get("revision", None),
                 )
                 split_datasets.insert(i, ds)
 
