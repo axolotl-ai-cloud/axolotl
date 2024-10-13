@@ -551,6 +551,7 @@ class AxolotlInputConfig(
     resize_token_embeddings_to_32x: Optional[bool] = None
 
     rl: Optional[RLType] = None
+    reward_model: Optional[bool] = None
 
     datasets: Optional[conlist(Union[SFTDataset, DPODataset, KTODataset], min_length=1)] = None  # type: ignore
     test_datasets: Optional[conlist(Union[SFTDataset, DPODataset, KTODataset], min_length=1)] = None  # type: ignore
@@ -854,6 +855,17 @@ class AxolotlInputConfig(
             LOG.warning(
                 "`pad_to_sequence_len: true` is recommended when using sample_packing"
             )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def hint_reward_model_pad(cls, data):
+        if data.get("reward_model") and not data.get("pad_to_sequence_len"):
+            LOG.warning(
+                "`pad_to_sequence_len: true` is recommended when using reward_model"
+            )
+            if data.get("pad_to_sequence_len") is None:
+                data["pad_to_sequence_len"] = True
         return data
 
     @model_validator(mode="before")

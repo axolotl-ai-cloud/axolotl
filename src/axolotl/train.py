@@ -102,7 +102,8 @@ def train(
     model, peft_config = load_model(
         cfg, tokenizer, processor=processor, inference=cli_args.inference
     )
-    model.generation_config.do_sample = True
+    if model.generation_config is not None:
+        model.generation_config.do_sample = True
 
     model_ref = None
     if cfg.rl and cfg.rl != "orpo":
