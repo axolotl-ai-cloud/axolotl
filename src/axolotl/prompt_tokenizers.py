@@ -30,6 +30,12 @@ class InvalidDataException(Exception):
     """
 
 
+class DatasetWrappingStrategy(abc.ABC):
+    """
+    Abstract class for wrapping datasets for Chat Messages
+    """
+
+
 class PromptTokenizingStrategy(abc.ABC):
     """
     Abstract class for tokenizing strategies

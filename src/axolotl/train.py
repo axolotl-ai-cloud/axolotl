@@ -10,7 +10,6 @@ from typing import Optional, Tuple, Union
 
 import torch
 import transformers.modelcard
-from accelerate import Accelerator
 from accelerate.logging import get_logger
 from accelerate.utils import save_fsdp_model
 from datasets import Dataset
@@ -97,12 +96,11 @@ def train(
     if cfg.adapter:
         msg += " and peft_config..."
     LOG.debug(msg)
-    # we wait unitl the last possible moment to setup Accelerator
-    Accelerator()
     model, peft_config = load_model(
         cfg, tokenizer, processor=processor, inference=cli_args.inference
     )
-    model.generation_config.do_sample = True
+    if model.generation_config is not None:
+        model.generation_config.do_sample = True
 
     model_ref = None
     if cfg.rl and cfg.rl != "orpo":

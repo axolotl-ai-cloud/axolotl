@@ -403,6 +403,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
 
 def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None, processor=None):
+    # pylint: disable=duplicate-code
     ds_cfg = ds_cfg or {}
     chat_template_string = get_chat_template_from_config(
         cfg=cfg, ds_cfg=ds_cfg, tokenizer=tokenizer

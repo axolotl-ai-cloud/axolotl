@@ -140,6 +140,7 @@ class SFTDataset(BaseModel):
     path: Optional[str] = None
     split: Optional[str] = None
     type: Optional[Union[str, UserDefinedPrompterType]] = None
+    input_transform: Optional[str] = None
     shards: Optional[int] = None
     conversation: Optional[str] = None
     # Do not make this too strict or it will break the validator to choose different dataset class
@@ -151,6 +152,7 @@ class SFTDataset(BaseModel):
     ] = None
     chat_template_jinja: Optional[str] = None
     data_files: Optional[Union[str, List[str]]] = None
+    input_format: Optional[str] = None
     name: Optional[str] = None
     ds_type: Optional[str] = None
     train_on_split: Optional[str] = None
@@ -583,6 +585,7 @@ class AxolotlInputConfig(
     resize_token_embeddings_to_32x: Optional[bool] = None
 
     rl: Optional[RLType] = None
+    reward_model: Optional[bool] = None
 
     datasets: Optional[conlist(Union[SFTDataset, DPODataset, KTODataset], min_length=1)] = None  # type: ignore
     test_datasets: Optional[conlist(Union[SFTDataset, DPODataset, KTODataset], min_length=1)] = None  # type: ignore
@@ -923,6 +926,17 @@ class AxolotlInputConfig(
             LOG.warning(
                 "`pad_to_sequence_len: true` is recommended when using sample_packing"
             )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def hint_reward_model_pad(cls, data):
+        if data.get("reward_model") and not data.get("pad_to_sequence_len"):
+            LOG.warning(
+                "`pad_to_sequence_len: true` is recommended when using reward_model"
+            )
+            if data.get("pad_to_sequence_len") is None:
+                data["pad_to_sequence_len"] = True
         return data
 
     @model_validator(mode="before")
