@@ -802,20 +802,6 @@ class AxolotlInputConfig(
 
     @model_validator(mode="before")
     @classmethod
-    def set_default_chat_template(cls, data):
-        if data.get("chat_template") is None:
-            use_chat_template = any(
-                dataset["type"] == "chat_template"
-                for dataset in data.get("datasets", [])
-            )
-
-            if use_chat_template:
-                data["chat_template"] = ChatTemplate.tokenizer_default
-
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
     def check_batch_size_fields(cls, data):
         fields = ("micro_batch_size", "gradient_accumulation_steps", "batch_size")
         non_empty_count = sum(1 for field in fields if data.get(field))
