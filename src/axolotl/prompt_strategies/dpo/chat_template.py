@@ -53,6 +53,7 @@ def default(
             "role": role_map[sample[field_rejected][field_message_role]],
             "content": sample[field_rejected][field_message_content],
         }
+        dummy_user_message = {"role": "user", "content": "dummy"}
 
         result = {}
         result["prompt"] = tokenizer.apply_chat_template(
@@ -63,7 +64,7 @@ def default(
         )
 
         result["chosen"] = tokenizer.apply_chat_template(
-            [chosen],
+            [dummy_user_message, chosen],
             add_generation_prompt=False,
             chat_template=chat_template_string,
             tokenize=False,
@@ -72,7 +73,7 @@ def default(
         result["chosen"] = result["chosen"][chosen_strip_index:].rstrip()
 
         result["rejected"] = tokenizer.apply_chat_template(
-            [rejected],
+            [dummy_user_message, rejected],
             add_generation_prompt=False,
             chat_template=chat_template_string,
             tokenize=False,
