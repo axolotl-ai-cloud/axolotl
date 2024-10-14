@@ -100,7 +100,7 @@ class TestValidationCheckDatasetConfig(BaseValidation):
         def _check_config():
             assert checked_cfg.datasets[0].path == cfg.datasets[0].path
             assert checked_cfg.datasets[0].type == cfg.datasets[0].type
-            assert checked_cfg.chat_template == ChatTemplate.tokenizer_default
+            assert checked_cfg.chat_template == None
             assert (
                 checked_cfg.datasets[0].chat_template == ChatTemplate.tokenizer_default
             )
