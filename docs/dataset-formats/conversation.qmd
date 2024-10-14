@@ -96,7 +96,6 @@ datasets:
     conversation: chatml
 
 # new (if using tokenizer's chat_template)
-```yaml
 datasets:
   - path: ...
     type: chat_template
@@ -106,7 +105,6 @@ datasets:
     message_field_content: value
 
 # new (if setting a new chat_template like chatml, gemma, etc)
-```yaml
 chat_template: chatml
 datasets:
   - path: ...
