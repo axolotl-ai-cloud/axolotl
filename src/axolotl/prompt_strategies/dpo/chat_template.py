@@ -53,7 +53,7 @@ def default(
             "role": role_map[sample[field_rejected][field_message_role]],
             "content": sample[field_rejected][field_message_content],
         }
-        dummy_user_message = {"role": "user", "content": "dummy"}
+        dummy_user_message = {"role": "user", "content": "[[dummy_message]]"}
 
         result = {}
         result["prompt"] = tokenizer.apply_chat_template(
