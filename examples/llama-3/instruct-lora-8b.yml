@@ -10,7 +10,6 @@ chat_template: llama3
 datasets:
   - path: fozziethebeat/alpaca_messages_2k_test
     type: chat_template
-    chat_template: llama3
     field_messages: messages
     message_field_role: role
     message_field_content: content
