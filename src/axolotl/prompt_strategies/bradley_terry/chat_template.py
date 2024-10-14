@@ -8,7 +8,7 @@ from axolotl.prompt_strategies.chat_template import (
     ChatTemplatePrompter,
     ChatTemplateStrategy,
 )
-from axolotl.utils.chat_templates import chat_templates
+from axolotl.utils.chat_templates import get_chat_template
 
 
 class BTChatTemplateStrategy(ChatTemplateStrategy):
@@ -56,7 +56,7 @@ def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
 
     prompter_params = {
         "tokenizer": tokenizer,
-        "chat_template": chat_templates(ds_cfg.get("chat_template", "chatml")),
+        "chat_template": get_chat_template(ds_cfg.get("chat_template", "chatml")),
         "message_field_role": ds_cfg.get("message_field_role", "from"),
         "message_field_content": ds_cfg.get("message_field_content", "value"),
         "message_field_training": ds_cfg.get("message_field_training", "training"),
