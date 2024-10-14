@@ -10,7 +10,6 @@ from typing import Optional, Tuple, Union
 
 import torch
 import transformers.modelcard
-from accelerate import Accelerator
 from accelerate.logging import get_logger
 from accelerate.utils import save_fsdp_model
 from datasets import Dataset
@@ -97,8 +96,6 @@ def train(
     if cfg.adapter:
         msg += " and peft_config..."
     LOG.debug(msg)
-    # we wait unitl the last possible moment to setup Accelerator
-    Accelerator()
     model, peft_config = load_model(
         cfg, tokenizer, processor=processor, inference=cli_args.inference
     )
