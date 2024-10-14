@@ -6,6 +6,8 @@ order: 3
 
 ## sharegpt
 
+UPDATE: ShareGPT is being deprecated in the next release. Please see `chat_template` section below.
+
 conversations where `from` is `human`/`gpt`. (optional: first row with role `system` to override default system prompt)
 
 ```{.json filename="data.jsonl"}
@@ -81,6 +83,42 @@ Chat Template strategy uses a jinja2 template that converts a list of messages i
 
 See `config.qmd` for full configs and supported templates.
 
+### Migrating from sharegpt
+
+Most configs can be adapted as follows:
+
+```yaml
+# old
+chat_template: chatml
+datasets:
+  - path: ...
+    type: sharegpt
+    conversation: chatml
+
+# new (if using tokenizer's chat_template)
+```yaml
+datasets:
+  - path: ...
+    type: chat_template
+
+    field_messages: conversations
+    message_field_role: from
+    message_field_content: value
+
+# new (if setting a new chat_template like chatml, gemma, etc)
+```yaml
+chat_template: chatml
+datasets:
+  - path: ...
+    type: chat_template
+
+    field_messages: conversations
+    message_field_role: from
+    message_field_content: value
+```
+
+We recommend checking the below examples for other usecases.
+
 ### Examples
 
 1. Using the default chat template in the tokenizer_config.json on OpenAI messages format, training on only last message.
@@ -89,28 +127,28 @@ See `config.qmd` for full configs and supported templates.
 datasets:
   - path: ...
     type: chat_template
-    chat_template: tokenizer_default
+    # chat_template: tokenizer_default # This is the default value
 ```
 
-2. Using the `gemma` chat template in the tokenizer_config.json on OpenAI messages format, training on all assistant messages.
+2. Using the `gemma` chat template to override the tokenizer_config.json's chat template on OpenAI messages format, training on all assistant messages.
 
 ```yaml
-chat_template: gemma
+chat_template: gemma # this overwrites the tokenizer's chat_template
 datasets:
   - path: ...
     type: chat_template
-    chat_template: gemma
     roles_to_train: ["assistant"]
 ```
 
 3. Using a custom jinja template on OpenAI messages format, training on all assistant messages.
 
 ```yaml
+# chat_template: jinja # `jinja` will be implied if the `chat_template_jinja` is set and this field is empty
+chat_template_jinja: "{{ bos_token }}{% for message in messages %}{% if (message['role'] == 'system') %}{{'<|system|>' + '\n' + message['content'] + '<|end|>' + '\n'}}{% elif (message['role'] == 'user') %}{{'<|user|>' + '\n' + message['content'] + '<|end|>' + '\n' + '<|assistant|>' + '\n'}}{% elif message['role'] == 'assistant' %}{{message['content'] + '<|end|>' + '\n'}}{% endif %}{% endfor %}"
+
 datasets:
   - path: ...
     type: chat_template
-    chat_template: jinja
-    chat_template_jinja: "{{ bos_token }}{% for message in messages %}{% if (message['role'] == 'system') %}{{'<|system|>' + '\n' + message['content'] + '<|end|>' + '\n'}}{% elif (message['role'] == 'user') %}{{'<|user|>' + '\n' + message['content'] + '<|end|>' + '\n' + '<|assistant|>' + '\n'}}{% elif message['role'] == 'assistant' %}{{message['content'] + '<|end|>' + '\n'}}{% endif %}{% endfor %}"
     roles_to_train: ["assistant"]
 ```
 
@@ -149,6 +187,7 @@ The configuration would look like:
 ```yaml
 datasets:
   - path: ...
+    type: chat_template
     chat_template: tokenizer_default
     field_messages: conversations
     message_field_role: from
