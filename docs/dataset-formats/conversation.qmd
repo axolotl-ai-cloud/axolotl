@@ -127,7 +127,6 @@ We recommend checking the below examples for other usecases.
 datasets:
   - path: ...
     type: chat_template
-    # chat_template: tokenizer_default # This is the default value
 ```
 
 2. Using the `gemma` chat template to override the tokenizer_config.json's chat template on OpenAI messages format, training on all assistant messages.
@@ -140,7 +139,17 @@ datasets:
     roles_to_train: ["assistant"]
 ```
 
-3. Using a custom jinja template on OpenAI messages format, training on all assistant messages.
+3. Using the tokenizer_config.json's chat template or `chatml` as fallback if the former's chat template does not exist, on OpenAI messages format, training on all assistant messages.
+
+```yaml
+chat_template: tokenizer_default_fallback_chatml # this overwrites the tokenizer's chat_template
+datasets:
+  - path: ...
+    type: chat_template
+    roles_to_train: ["assistant"]
+```
+
+4. Using a custom jinja template on OpenAI messages format, training on all assistant messages.
 
 ```yaml
 # chat_template: jinja # `jinja` will be implied if the `chat_template_jinja` is set and this field is empty
@@ -152,7 +161,7 @@ datasets:
     roles_to_train: ["assistant"]
 ```
 
-4. (Advanced) Using fine-grained control over tokens and turns to train in a conversation
+5. (Advanced) Using fine-grained control over tokens and turns to train in a conversation
 
 For a data sample that looks like:
 
