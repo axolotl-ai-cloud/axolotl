@@ -15,9 +15,12 @@
 """
 Module for handling LIGER input arguments.
 """
+import logging
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
+
+LOG = logging.getLogger("axolotl.integrations.liger.args")
 
 
 class LigerArgs(BaseModel):
@@ -27,6 +30,19 @@ class LigerArgs(BaseModel):
 
     liger_rope: Optional[bool] = None
     liger_rms_norm: Optional[bool] = None
+    liger_layer_norm: Optional[bool] = None
     liger_swiglu: Optional[bool] = None
+    liger_glu_activation: Optional[bool] = None
     liger_cross_entropy: Optional[bool] = None
     liger_fused_linear_cross_entropy: Optional[bool] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_deprecated_swiglu(cls, data):
+        if data.get("liger_swiglu") is not None:
+            LOG.warning(
+                "The 'liger_swiglu' argument is deprecated and will be removed in a future release. "
+                "Please use 'liger_glu_activation' instead."
+            )
+            data["liger_glu_activation"] = data.pop("liger_swiglu")
+        return data
