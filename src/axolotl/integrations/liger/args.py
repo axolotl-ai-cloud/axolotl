@@ -40,6 +40,9 @@ class LigerArgs(BaseModel):
     @classmethod
     def check_deprecated_swiglu(cls, data):
         if data.get("liger_swiglu") is not None:
+            if data.get("liger_glu_activation") is not None:
+                raise ValueError("You cannot have both `liger_swiglu` and `liger_glu_activation` set.")
+
             LOG.warning(
                 "The 'liger_swiglu' argument is deprecated and will be removed in a future release. "
                 "Please use 'liger_glu_activation' instead."
