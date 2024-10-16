@@ -23,6 +23,7 @@ class TestMultiGPUEval(unittest.TestCase):
     """
     Test case for MultiGPU Eval Sample Packing
     """
+
     @with_temp_dir
     def test_eval_sample_packing(self, temp_dir):
         # pylint: disable=duplicate-code
@@ -39,9 +40,7 @@ class TestMultiGPUEval(unittest.TestCase):
                 "lora_dropout": 0.05,
                 "lora_target_linear": True,
                 "val_set_size": 0.1,
-                "special_tokens": {
-                    "pad_token": "<|end_of_text|>"
-                },
+                "special_tokens": {"pad_token": "<|end_of_text|>"},
                 "datasets": [
                     {
                         "path": "teknium/GPT4-LLM-Cleaned",
@@ -64,7 +63,7 @@ class TestMultiGPUEval(unittest.TestCase):
                 "eval_max_new_tokens": 128,
                 "saves_per_epoch": 1,
                 "logging_steps": 1,
-                "weight_decay": 0.0
+                "weight_decay": 0.0,
             }
         )
 
@@ -101,9 +100,7 @@ class TestMultiGPUEval(unittest.TestCase):
                 "lora_dropout": 0.05,
                 "lora_target_linear": True,
                 "val_set_size": 0.1,
-                "special_tokens": {
-                    "pad_token": "<|end_of_text|>"
-                },
+                "special_tokens": {"pad_token": "<|end_of_text|>"},
                 "datasets": [
                     {
                         "path": "teknium/GPT4-LLM-Cleaned",
@@ -126,7 +123,7 @@ class TestMultiGPUEval(unittest.TestCase):
                 "eval_max_new_tokens": 128,
                 "saves_per_epoch": 1,
                 "logging_steps": 1,
-                "weight_decay": 0.0
+                "weight_decay": 0.0,
             }
         )
 
