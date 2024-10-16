@@ -21,7 +21,6 @@ class MultiModalChatDataCollator(DataCollatorMixin):
     return_tensors: str = "pt"
     chat_template: Optional[str] = None
     packing: bool = False
-    sequence_length: Optional[int] = None
     max_images: int = -1
     padding: Union[bool, str, PaddingStrategy] = True
     pad_to_multiple_of: Optional[int] = None
@@ -34,14 +33,6 @@ class MultiModalChatDataCollator(DataCollatorMixin):
         self, examples: List[Union[List[int], Any, Dict[str, Any]]]
     ) -> Dict[str, Any]:
         # Handle dict or lists with proper padding and conversion to tensor.
-        if self.packing:
-            return self.__class__.process_rows_packing(
-                examples,
-                self.processor,
-                self.chat_template,
-                self.max_images,
-                self.sequence_length,
-            )
 
         return self.__class__.process_rows(
             examples, self.processor, self.chat_template, self.max_images
