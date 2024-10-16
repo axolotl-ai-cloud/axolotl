@@ -5,7 +5,7 @@ load_in_4bit: true
 strict: false
 
 datasets:
-  - path: mhenrichsen/alpaca_2k_test
+  - path: teknium/GPT4-LLM-Cleaned
     type: alpaca
 dataset_prepared_path: last_run_prepared
 val_set_size: 0.1
