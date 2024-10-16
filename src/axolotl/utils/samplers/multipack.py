@@ -133,6 +133,8 @@ class MultipackBatchSampler(BatchSampler):
         self.eff_total_used = 0
         self.eff_total_slots = 0
 
+        self.len_across_ranks = None
+
     def set_epoch(self, epoch: int):
         self.epoch = epoch
 
@@ -192,7 +194,7 @@ class MultipackBatchSampler(BatchSampler):
 
     def gather_len_batches(self, num):
         def calc_min_len(estimates: list[(int, float)]):
-            LOG.info(f"gather_len_batches: {repr(estimates)}")
+            LOG.info(f"calc_min_len: {repr(estimates)}")
             return math.floor(0.998 * min(estimates))
 
         min_len_batches = reduce_and_broadcast(
@@ -202,9 +204,10 @@ class MultipackBatchSampler(BatchSampler):
         return min_len_batches
 
     def __len__(self):
-        len_batches = self.num_batches()
-        LOG.info(f"__len__, doing gather_len_batches {len_batches}")
-        return self.gather_len_batches(len_batches)
+        if not self.len_across_ranks:
+            len_batches = self.num_batches()
+            self.len_across_ranks = self.gather_len_batches(len_batches)
+        return self.len_across_ranks
 
     def _len_est(self):
         efficiency = (
