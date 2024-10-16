@@ -29,7 +29,10 @@ class TestMultiGPUEval(unittest.TestCase):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "meta-llama/Llama-3.2-1B",
+                "base_model": "JackFram/llama-68m",
+                "load_in_8bit": False,
+                "load_in_4bit": True,
+                "strict": False,
                 "sequence_len": 2048,
                 "adapter": "qlora",
                 "sample_packing": True,
@@ -89,7 +92,10 @@ class TestMultiGPUEval(unittest.TestCase):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "meta-llama/Llama-3.2-1B",
+                "base_model": "JackFram/llama-68m",
+                "load_in_8bit": False,
+                "load_in_4bit": True,
+                "strict": False,
                 "sequence_len": 2048,
                 "adapter": "qlora",
                 "sample_packing": True,
