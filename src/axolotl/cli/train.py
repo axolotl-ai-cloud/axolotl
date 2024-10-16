@@ -19,10 +19,7 @@ from axolotl.cli import (
 )
 from axolotl.common.cli import TrainerCliArgs
 from axolotl.integrations.base import PluginManager
-from axolotl.prompt_strategies.sharegpt import (
-    register_chatml_template,
-    register_llama3_template,
-)
+from axolotl.prompt_strategies.sharegpt import register_chat_template
 from axolotl.train import train
 
 LOG = logging.getLogger("axolotl.cli.train")
@@ -42,21 +39,9 @@ def do_train(cfg, cli_args) -> None:
     print_axolotl_text_art()
     check_accelerate_default_config()
     check_user_token()
-    if cfg.chat_template == "chatml" and cfg.default_system_message:
-        LOG.info(
-            f"ChatML set. Adding default system message: {cfg.default_system_message}"
-        )
-        register_chatml_template(cfg.default_system_message)
-    else:
-        register_chatml_template()
 
-    if cfg.chat_template == "llama3" and cfg.default_system_message:
-        LOG.info(
-            f"LLaMA-3 set. Adding default system message: {cfg.default_system_message}"
-        )
-        register_llama3_template(cfg.default_system_message)
-    else:
-        register_llama3_template()
+    if cfg.chat_template:
+        register_chat_template(cfg.chat_template, cfg.default_system_message)
 
     if cfg.rl:  # and cfg.rl != "orpo":
         dataset_meta = load_rl_datasets(cfg=cfg, cli_args=cli_args)

@@ -195,6 +195,7 @@ class ChatTemplate(str, Enum):
     gemma = "gemma"  # pylint: disable=invalid-name
     cohere = "cohere"  # pylint: disable=invalid-name
     llama3 = "llama3"  # pylint: disable=invalid-name
+    llama31 = "llama31"  # pylint: disable=invalid-name
     llama3_2_vision = "llama3_2_vision"  # pylint: disable=invalid-name
     phi_3 = "phi_3"  # pylint: disable=invalid-name
     phi_35 = "phi_35"  # pylint: disable=invalid-name
