@@ -197,12 +197,13 @@ class MultipackBatchSampler(BatchSampler):
 
         min_len_batches = reduce_and_broadcast(
             lambda: num,
-            calc_min_len,
+            calc_min_len
         )
         return min_len_batches
 
     def __len__(self):
         len_batches = self.num_batches()
+        LOG.info(f"__len__, doing gather_len_batches {len_batches}")
         return self.gather_len_batches(len_batches)
 
     def _len_est(self):
