@@ -42,7 +42,7 @@ class TestMultiGPUEval(unittest.TestCase):
                 "lora_alpha": 16,
                 "lora_dropout": 0.05,
                 "lora_target_linear": True,
-                "lora_modules_to_save": ['embed_tokens', 'lm_head'],
+                "lora_modules_to_save": ["embed_tokens", "lm_head"],
                 "val_set_size": 0.1,
                 "special_tokens": {"pad_token": "<|end_of_text|>"},
                 "datasets": [
@@ -106,7 +106,7 @@ class TestMultiGPUEval(unittest.TestCase):
                 "lora_alpha": 16,
                 "lora_dropout": 0.05,
                 "lora_target_linear": True,
-                "lora_modules_to_save": ['embed_tokens', 'lm_head'],
+                "lora_modules_to_save": ["embed_tokens", "lm_head"],
                 "val_set_size": 0.1,
                 "special_tokens": {"pad_token": "<|end_of_text|>"},
                 "datasets": [
