@@ -1463,3 +1463,28 @@ class TestValidationMLflow(BaseValidation):
 
         os.environ.pop("HF_MLFLOW_LOG_ARTIFACTS", None)
 
+    def test_mlflow_not_used_by_default(self, minimal_cfg):
+        cfg = DictDefault({}) | minimal_cfg
+
+        new_cfg = validate_config(cfg)
+
+        setup_mlflow_env_vars(new_cfg)
+
+        assert cfg.use_mlflow is not True
+
+        cfg = (
+            DictDefault(
+                {
+                    "mlflow_experiment_name": "foo",
+                }
+            )
+            | minimal_cfg
+        )
+
+        new_cfg = validate_config(cfg)
+
+        setup_mlflow_env_vars(new_cfg)
+
+        assert new_cfg.use_mlflow is True
+
+        os.environ.pop("MLFLOW_EXPERIMENT_NAME", None)
