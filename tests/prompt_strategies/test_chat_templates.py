@@ -11,7 +11,7 @@ from axolotl.prompt_strategies.chat_template import (
     load,
 )
 from axolotl.prompters import IGNORE_TOKEN_ID
-from axolotl.utils.chat_templates import chat_templates
+from axolotl.utils.chat_templates import get_chat_template
 from axolotl.utils.dict import DictDefault
 
 logging.basicConfig(level=logging.DEBUG)
@@ -73,7 +73,7 @@ class TestAssistantChatTemplateLlama3:
         strategy = ChatTemplateStrategy(
             ChatTemplatePrompter(
                 llama3_tokenizer,
-                chat_template=chat_templates("llama3"),
+                chat_template=get_chat_template("llama3"),
                 message_field_role="role",
                 message_field_content="content",
                 roles={
@@ -113,7 +113,7 @@ class TestAssistantChatTemplateLlama3:
         strategy = ChatTemplateStrategy(
             ChatTemplatePrompter(
                 phi35_tokenizer,
-                chat_template=chat_templates("phi_35"),
+                chat_template=get_chat_template("phi_35"),
                 message_field_role="role",
                 message_field_content="content",
                 roles={
@@ -171,7 +171,7 @@ class TestAssistantChatTemplateLlama3:
         strategy = ChatTemplateStrategy(
             ChatTemplatePrompter(
                 llama3_tokenizer,
-                chat_template=chat_templates("llama3"),
+                chat_template=get_chat_template("llama3"),
                 message_field_role="role",
                 message_field_content="content",
                 message_field_training="training",
@@ -230,7 +230,7 @@ class TestSharegptChatTemplateLlama3:
         # pylint: disable=duplicate-code
         strategy = ChatTemplateStrategy(
             ChatTemplatePrompter(
-                llama3_tokenizer, chat_template=chat_templates("llama3")
+                llama3_tokenizer, chat_template=get_chat_template("llama3")
             ),
             tokenizer=llama3_tokenizer,
             train_on_inputs=False,
@@ -283,7 +283,7 @@ class TestSharegptChatTemplateLlama3:
         # pylint: disable=duplicate-code
         strategy = ChatTemplateStrategy(
             ChatTemplatePrompter(
-                llama3_tokenizer, chat_template=chat_templates("llama3")
+                llama3_tokenizer, chat_template=get_chat_template("llama3")
             ),
             tokenizer=llama3_tokenizer,
             train_on_inputs=False,
@@ -336,7 +336,7 @@ class TestSharegptChatTemplateLlama3:
         # pylint: disable=duplicate-code
         strategy = ChatTemplateStrategy(
             ChatTemplatePrompter(
-                llama3_tokenizer, chat_template=chat_templates("llama3")
+                llama3_tokenizer, chat_template=get_chat_template("llama3")
             ),
             tokenizer=llama3_tokenizer,
             train_on_inputs=False,
