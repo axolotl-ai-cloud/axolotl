@@ -63,3 +63,18 @@ class TestValidation(BaseValidation):
             )
             assert updated_cfg.liger_swiglu is None
             assert updated_cfg.liger_glu_activations is False
+
+    def test_conflict_swiglu_ligergluactivation(self, minimal_cfg):
+        test_cfg = DictDefault(
+            {
+                "liger_swiglu": False,
+                "liger_glu_activations": True,
+            }
+            | minimal_cfg
+        )
+
+        with pytest.raises(
+            ValueError,
+            match=r".*You cannot have both `liger_swiglu` and `liger_glu_activation` set.*",
+        ):
+            validate_config(test_cfg)
