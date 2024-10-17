@@ -462,7 +462,12 @@ def load_datasets(
         processor=processor,
     )
 
-    if cli_args.debug or cfg.debug:
+    if (
+        cli_args.debug
+        or cfg.debug
+        or cli_args.debug_text_only
+        or cli_args.debug_num_examples
+    ):
         LOG.info("check_dataset_labels...")
         check_dataset_labels(
             train_dataset.select(
