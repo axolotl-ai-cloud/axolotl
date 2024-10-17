@@ -52,6 +52,7 @@ class TestMultiGPUEval(unittest.TestCase):
                     },
                 ],
                 "num_epochs": 1,
+                "max_steps": 5,
                 "micro_batch_size": 2,
                 "gradient_accumulation_steps": 4,
                 "output_dir": temp_dir,
