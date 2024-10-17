@@ -1,4 +1,4 @@
-base_model: meta-llama/Llama-3.2-1B
+base_model: meta-llama/Llama-3.1-8B-Instruct
 
 save_safetensors: true
 
@@ -9,7 +9,7 @@ datasets:
 dataset_prepared_path: ./last_run_prepared
 
 output_dir: ./outputs/fft-out
-sequence_len: 2048
+sequence_len: 8192
 
 gradient_accumulation_steps: 1
 micro_batch_size: 1
