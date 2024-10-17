@@ -45,3 +45,6 @@ fsdp_config:
   fsdp_state_dict_type: FULL_STATE_DICT
   fsdp_sharding_strategy: FULL_SHARD
   fsdp_backward_prefetch: BACKWARD_PRE
+
+special_tokens:
+  pad_token: "<|end_of_text|>"
