@@ -466,7 +466,7 @@ def load_datasets(
         cli_args.debug
         or cfg.debug
         or cli_args.debug_text_only
-        or cli_args.debug_num_examples
+        or int(cli_args.debug_num_examples) > 0
     ):
         LOG.info("check_dataset_labels...")
         check_dataset_labels(
