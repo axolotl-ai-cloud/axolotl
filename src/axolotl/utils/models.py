@@ -324,6 +324,805 @@ def load_processor(cfg: DictDefault, tokenizer: PreTrainedTokenizerBase):
     return processor
 
 
+class ModelLoader:
+    """
+    ModelLoader: managing all the config and monkey patches while loading model
+    """
+
+    def __init__(
+        self,
+        cfg: DictDefault,
+        tokenizer: PreTrainedTokenizerBase,
+        *,
+        processor: ProcessorMixin = None,  # pylint: disable=unused-argument
+        inference: bool = False,
+        reference_model: bool = False,
+        **kwargs,  # pylint: disable=unused-argument
+    ) -> None:
+        self.cfg = cfg
+        self.tokenizer = tokenizer
+        self.inference: bool = inference
+        self.reference_model: bool = reference_model
+
+        # init model kwargs
+        self.model_kwargs: Dict[str, Any] = {}
+        if cfg.model_kwargs:
+            for key, val in cfg.model_kwargs.items():
+                self.model_kwargs[key] = val
+
+        # init model
+        self.model: PreTrainedModel
+        self.base_model = cfg.base_model
+        self.model_type = cfg.type_of_model
+
+        # init model config
+        self.model_config = load_model_config(cfg)
+        if cfg.is_multimodal:
+            self.text_model_config = self.model_config.text_config
+        else:
+            self.text_model_config = self.model_config
+
+        self.AutoModelLoader = AutoModelForCausalLM  # pylint: disable=invalid-name
+
+    def apply_patches(self) -> None:
+        # load any patches from plugins
+        from axolotl.integrations.base import PluginManager
+
+        plugin_manager = PluginManager.get_instance()
+        plugin_manager.pre_model_load(self.cfg)
+
+        if self.cfg.gradient_checkpointing == "unsloth":
+            transformers.modeling_utils.checkpoint = hf_grad_checkpoint_unsloth_wrapper
+
+        if self.cfg.flash_attention:
+            self.patch_attention()
+
+        if self.cfg.sample_packing and self.cfg.s2_attention:
+            raise ValueError(
+                "Received `sample_packing=true` and `s2_attention=true`; however, \
+            shifted-sparse attention does not currently support sample packing."
+            )
+
+        if (
+            self.cfg.model_config_type in SUPPORTED_MULTIPACK_MODEL_TYPES
+            and self.cfg.flash_attention
+            and self.cfg.sample_packing
+        ):
+            patch_for_multipack(
+                self.cfg.model_config_type,
+                model_name=self.cfg.base_model,
+                is_remote_code=self.cfg.trust_remote_code,
+            )
+
+            if self.cfg.is_llama_derived_model:
+                self.patch_loss()
+                if self.cfg.unsloth_lora_qkv or self.cfg.unsloth_lora_o:
+                    from axolotl.monkeypatch.unsloth_ import patch_self_attn_lora
+
+                    patch_self_attn_lora()
+        elif self.cfg.is_llama_derived_model:
+            self.patch_llama_derived_model()
+
+        if (
+            self.cfg.model_config_type == "mistral"
+            and self.cfg.flash_attn_cross_entropy_loss
+        ):
+            from axolotl.monkeypatch.mistral_attn_hijack_flash import (
+                patch_mistral_cross_entropy,
+            )
+
+            patch_mistral_cross_entropy()
+
+    def patch_attention(self) -> None:
+        if hasattr(self.model_config, "model_type"):
+            if self.model_config.model_type == "mllama" and self.cfg.flash_attention:
+                from axolotl.monkeypatch.attention.mllama import patch_mllama
+
+                patch_mllama()
+
+            if self.model_config.model_type == "btlm":
+                from axolotl.monkeypatch.btlm_attn_hijack_flash import (
+                    replace_btlm_attn_with_flash_attn,
+                )
+
+                replace_btlm_attn_with_flash_attn(self.cfg.base_model)
+
+            if (
+                self.model_config.model_type == "stablelm_epoch"
+                and self.cfg.sample_packing
+            ):
+                from axolotl.monkeypatch.stablelm_attn_hijack_flash import (
+                    replace_stablelm_attn_with_flash_attn,
+                )
+
+                replace_stablelm_attn_with_flash_attn(self.cfg.base_model)
+
+    def patch_loss(self) -> None:
+        """
+        Patch loss functions
+        """
+        from axolotl.monkeypatch.llama_attn_hijack_flash import (
+            patch_llama_cross_entropy,
+            patch_llama_rms_norm,
+        )
+
+        if self.cfg.flash_attn_cross_entropy:
+            patch_llama_cross_entropy()
+        if self.cfg.flash_attn_rms_norm:
+            patch_llama_rms_norm()
+        elif self.cfg.unsloth_rms_norm:
+            from axolotl.monkeypatch.unsloth_ import patch_unsloth_layernorm
+
+            patch_unsloth_layernorm()
+        if self.cfg.unsloth_cross_entropy_loss:
+            from axolotl.monkeypatch.unsloth_ import integrate_cross_entropy_loss_patch
+
+            integrate_cross_entropy_loss_patch(model_type="llama")
+        if self.cfg.unsloth_lora_qkv or self.cfg.unsloth_lora_o:
+            from axolotl.monkeypatch.unsloth_ import patch_self_attn_lora
+
+            patch_self_attn_lora()
+
+    def patch_llama_derived_model(self) -> None:
+        """
+        Modify all llama derived models in one block
+        """
+
+        if self.cfg.flash_attention:
+            from axolotl.monkeypatch.llama_attn_hijack_flash import (
+                replace_llama_attn_with_flash_attn,
+            )
+
+            if self.cfg.sample_packing:
+                if self.cfg.device not in ["mps", "cpu"] and not self.inference:
+                    LOG.info("patching with flash attention for sample packing")
+                    replace_llama_attn_with_flash_attn(
+                        packed=True,
+                        cross_entropy=self.cfg.flash_attn_cross_entropy,
+                        rms_norm=self.cfg.flash_attn_rms_norm,
+                    )
+            elif self.cfg.s2_attention:
+                LOG.info("patching w/ flash-enabled, shifted-sparse attention")
+                replace_llama_attn_with_flash_attn(
+                    packed=False,
+                    cross_entropy=self.cfg.flash_attn_cross_entropy,
+                    rms_norm=self.cfg.flash_attn_rms_norm,
+                    use_shifted_sparse_attn=True,
+                )
+            elif self.cfg.flash_attn_cross_entropy or self.cfg.flash_attn_rms_norm:
+                replace_llama_attn_with_flash_attn(
+                    packed=False,
+                    cross_entropy=self.cfg.flash_attn_cross_entropy,
+                    rms_norm=self.cfg.flash_attn_rms_norm,
+                )
+        elif self.cfg.xformers_attention:
+            from axolotl.monkeypatch.llama_attn_hijack_xformers import (
+                hijack_llama_attention,
+            )
+
+            LOG.info("patching with xformers attention")
+            hijack_llama_attention()
+        elif self.cfg.sample_packing:
+            from axolotl.monkeypatch.llama_patch_multipack import (
+                hijack_llama_prepare_4d_mask,
+            )
+
+            LOG.info("patching llama _prepare_4d_causal_attention_mask*")
+            hijack_llama_prepare_4d_mask()
+        elif self.cfg.s2_attention:
+            raise NotImplementedError(
+                "Shifted-sparse attention not currently implemented without flash attention."
+            )
+
+        if self.cfg.unsloth_cross_entropy_loss:
+            from axolotl.monkeypatch.unsloth_ import integrate_cross_entropy_loss_patch
+
+            integrate_cross_entropy_loss_patch(model_type="llama")
+
+        if self.cfg.unsloth_lora_qkv or self.cfg.unsloth_lora_o:
+            from axolotl.monkeypatch.unsloth_ import patch_self_attn_lora
+
+            patch_self_attn_lora()
+
+    def set_auto_model_loader(self) -> None:
+        """set self.AutoModelLoader
+        - default value: AutoModelForCausalLM (set at __init__)
+        - when using a multi modality model, self.AutoModelLoader should
+          be set according to model type of the model
+        """
+        if self.cfg.is_multimodal:
+            if self.model_config.model_type == "llava":
+                self.AutoModelLoader = (  # pylint: disable=invalid-name
+                    LlavaForConditionalGeneration
+                )
+            elif self.model_config.model_type == "mllama":
+                self.AutoModelLoader = (  # pylint: disable=invalid-name
+                    MllamaForConditionalGeneration
+                )
+            else:
+                self.AutoModelLoader = (
+                    AutoModelForVision2Seq  # pylint: disable=invalid-name
+                )
+
+    def set_device_map_config(self) -> None:
+        device_map = self.cfg.device_map
+        max_memory = self.cfg.max_memory
+
+        if self.cfg.gpu_memory_limit:
+            gpu_memory_limit = (
+                str(self.cfg.gpu_memory_limit) + "GiB"
+                if isinstance(self.cfg.gpu_memory_limit, int)
+                else self.cfg.gpu_memory_limit
+            )
+
+            max_memory = {}
+            for i in range(torch.cuda.device_count()):
+                max_memory[i] = gpu_memory_limit
+            max_memory["cpu"] = "256GiB"  # something sufficiently large to fit anything
+
+        if max_memory is not None:
+            # Based on https://github.com/togethercomputer/OpenChatKit/blob/main/inference/bot.py
+            from accelerate import infer_auto_device_map
+
+            with init_empty_weights():
+                model_canvas = self.AutoModelLoader.from_config(
+                    self.model_config,
+                    trust_remote_code=self.cfg.trust_remote_code or False,
+                )
+            model_canvas.tie_weights()
+            device_map = infer_auto_device_map(
+                model_canvas,
+                max_memory=max_memory,
+                dtype=self.cfg.torch_dtype,
+            )
+            # We can discard max_memory now as we have a device map set up for us
+            max_memory = None
+
+        self.model_kwargs["device_map"] = device_map
+        self.model_kwargs["torch_dtype"] = self.cfg.torch_dtype
+
+        if torch.backends.mps.is_available():
+            self.model_kwargs["device_map"] = "mps:0"
+
+        # TODO can we put the reference model on it's own gpu? I think we have to move logits around to calculate loss
+        # if cfg.rl:
+        #     if torch.cuda.device_count() > 1:
+        #         if reference_model:
+        #             model_kwargs["device_map"] = "cuda:" + str(
+        #                 torch.cuda.current_device() + 1
+        #             )
+        #         else:
+        #             model_kwargs["device_map"] = "cuda:" + str(torch.cuda.current_device())
+
+        if is_deepspeed_zero3_enabled():
+            del self.model_kwargs["device_map"]
+
+    def set_quantization_config(self) -> None:
+        if self.cfg.load_in_8bit and self.cfg.adapter is not None:
+            self.model_kwargs["load_in_8bit"] = True
+        if self.cfg.load_in_4bit and self.cfg.adapter is not None:
+            self.model_kwargs["load_in_4bit"] = True
+
+        if self.cfg.gptq:
+            if not hasattr(self.model_config, "quantization_config"):
+                LOG.warning(
+                    "model config does not contain quantization_config information"
+                )
+            else:
+                if self.cfg.gptq_disable_exllama is not None:
+                    self.model_config.quantization_config[
+                        "disable_exllama"
+                    ] = self.cfg.gptq_disable_exllama
+                self.model_kwargs["quantization_config"] = GPTQConfig(
+                    **self.model_config.quantization_config
+                )
+        if (
+            self.cfg.adapter in ["qlora", "lora"]
+            and hasattr(self.model_config, "quantization_config")
+            and self.model_config.quantization_config["quant_method"]
+            in ["gptq", "awq", "bitsandbytes"]
+        ):
+            if self.model_config.quantization_config["quant_method"] == "gptq":
+                self.model_kwargs["quantization_config"] = GPTQConfig(
+                    **self.model_config.quantization_config
+                )
+            elif self.model_config.quantization_config["quant_method"] == "awq":
+                self.model_kwargs["quantization_config"] = AwqConfig(
+                    **self.model_config.quantization_config
+                )
+            elif (
+                self.model_config.quantization_config["quant_method"] == "bitsandbytes"
+            ):
+                self.model_kwargs["quantization_config"] = BitsAndBytesConfig(
+                    **self.model_config.quantization_config
+                )
+        elif self.cfg.adapter == "qlora" and (
+            "load_in_4bit" in self.model_kwargs and self.model_kwargs["load_in_4bit"]
+        ):
+            bnb_config = {
+                "load_in_4bit": True,
+                "llm_int8_threshold": 6.0,
+                "llm_int8_has_fp16_weight": False,
+                "bnb_4bit_compute_dtype": self.cfg.torch_dtype,
+                "bnb_4bit_use_double_quant": True,
+                "bnb_4bit_quant_type": "nf4",
+                "bnb_4bit_quant_storage": torch.bfloat16,
+            }
+            if self.cfg.model_config_type in ["jamba", "qwen2_moe"] and not (
+                self.cfg.deepspeed or self.cfg.fsdp
+            ):
+                # for some reason, this causes the loss to be off by an order of magnitude
+                # but deepspeed needs this still in bfloat16
+                bnb_config["bnb_4bit_quant_storage"] = torch.float32
+
+            if self.cfg.bnb_config_kwargs:
+                bnb_config.update(self.cfg.bnb_config_kwargs)
+
+            self.model_kwargs["quantization_config"] = BitsAndBytesConfig(
+                **bnb_config,
+            )
+        elif self.cfg.adapter == "lora" and (
+            "load_in_8bit" in self.model_kwargs and self.model_kwargs["load_in_8bit"]
+        ):
+            bnb_config = {
+                "load_in_8bit": True,
+            }
+            # Exclude mamba blocks from int8 quantization for jamba
+            if self.cfg.model_config_type == "jamba":
+                bnb_config["llm_int8_skip_modules"] = ["mamba"]
+            self.model_kwargs["quantization_config"] = BitsAndBytesConfig(
+                **bnb_config,
+            )
+
+        # no longer needed per https://github.com/huggingface/transformers/pull/26610
+        if "quantization_config" in self.model_kwargs or self.cfg.gptq:
+            if "load_in_8bit" in self.model_kwargs:
+                del self.model_kwargs["load_in_8bit"]
+            if "load_in_4bit" in self.model_kwargs:
+                del self.model_kwargs["load_in_4bit"]
+
+    def set_attention_config(self) -> None:
+        """
+        sample packing uses custom FA2 patch
+        """
+        if self.cfg.flash_attention:
+            if not self.cfg.sample_packing and self.cfg.s2_attention:
+                pass
+            self.model_kwargs["attn_implementation"] = "flash_attention_2"
+            self.model_config._attn_implementation = (  # pylint: disable=protected-access
+                "flash_attention_2"
+            )
+        elif self.cfg.sdp_attention:
+            self.model_kwargs["attn_implementation"] = "sdpa"
+            self.model_config._attn_implementation = (  # pylint: disable=protected-access
+                "sdpa"
+            )
+        elif self.cfg.eager_attention:
+            self.model_kwargs["attn_implementation"] = "eager"
+            self.model_config._attn_implementation = (  # pylint: disable=protected-access
+                "eager"
+            )
+
+        if self.cfg.low_cpu_mem_usage:
+            self.model_kwargs["low_cpu_mem_usage"] = True
+
+    def build_model(self, qlora_fsdp) -> bool:
+        skip_move_to_device = False
+        if (  # pylint: disable=condition-evals-to-constant)
+            (self.cfg.fsdp and self.cfg.fsdp_config.fsdp_cpu_ram_efficient_loading)
+            and not qlora_fsdp
+            and False
+        ):
+            self.model = load_sharded_model(
+                self.base_model,
+                self.model_config,
+                self.cfg,
+                torch_dtype=self.cfg.torch_dtype,
+            )
+            skip_move_to_device = True
+        elif (
+            qlora_fsdp
+            and self.cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
+            and (
+                self.cfg.model_config_type == "dbrx"
+                or self.cfg.qlora_sharded_model_loading
+            )
+        ):
+            quant_storage = self.cfg.torch_dtype
+            quantization_config = hasattr(
+                self.model_config, "quantization_config"
+            ) and getattr(self.model_config, "quantization_config")
+            quantization_config = (
+                quantization_config or self.model_kwargs["quantization_config"]
+            )
+            if self.cfg.is_multimodal:
+                self.model_config.text_config = self.text_model_config
+            self.model = load_sharded_model_quant(
+                self.base_model,
+                self.model_config,
+                self.cfg,
+                quant_storage=quant_storage,
+                quantization_config=quantization_config,
+            )
+            skip_move_to_device = True
+        elif (
+            self.model_config.model_type == "llama"
+            and not self.cfg.trust_remote_code
+            and not self.cfg.gptq
+        ):
+            if self.cfg.fsdp and self.cfg.fsdp_config.fsdp_cpu_ram_efficient_loading:
+                skip_move_to_device = True
+                if "device_map" in self.model_kwargs:
+                    del self.model_kwargs["device_map"]
+
+            if self.cfg.is_multimodal:
+                self.model_config.text_config = self.text_model_config
+            self.model = self.AutoModelLoader.from_pretrained(
+                self.base_model,
+                config=self.model_config,
+                **self.model_kwargs,
+            )
+
+            #  TODO (MengqingCao) split these patches seperately
+            if self.cfg.flash_attention and not self.inference:
+                from axolotl.monkeypatch.llama_attn_hijack_flash import (
+                    is_xformers_swiglu_available,
+                    replace_llama_mlp_with_swiglu,
+                    replace_llama_qkv_with_fused,
+                )
+
+                if self.cfg.flash_attn_fuse_mlp and is_xformers_swiglu_available():
+                    LOG.info("patching with SwiGLU")
+                    replace_llama_mlp_with_swiglu(self.model)
+
+                if self.cfg.flash_attn_fuse_qkv:
+                    LOG.info("patching with fused QKV")
+                    replace_llama_qkv_with_fused(self.model)
+        elif self.model_type == "MambaLMHeadModel":
+            # FIXME this is janky at best and hacked together to make it work
+            MambaLMHeadModel = fix_mamba_attn_for_loss()  # pylint: disable=invalid-name
+
+            self.model_kwargs["dtype"] = self.model_kwargs["torch_dtype"]
+            self.model_kwargs["device"] = torch.cuda.current_device()
+            del self.model_kwargs["torch_dtype"]
+            del self.model_kwargs["device_map"]
+
+            self.model = MambaLMHeadModel.from_pretrained(
+                self.base_model,
+                **self.model_kwargs,
+            )
+        elif (
+            self.model_type
+            and self.model_type != "AutoModelForCausalLM"
+            and not self.cfg.trust_remote_code
+        ):
+            if self.cfg.is_multimodal:
+                self.model_config.text_config = self.text_model_config
+            if self.cfg.gptq:
+                self.model = self.AutoModelLoader.from_pretrained(
+                    self.base_model,
+                    config=self.model_config,
+                    trust_remote_code=self.cfg.trust_remote_code or False,
+                    **self.model_kwargs,
+                )
+            else:
+                self.model = getattr(transformers, self.model_type).from_pretrained(
+                    self.base_model,
+                    config=self.model_config,
+                    trust_remote_code=self.cfg.trust_remote_code or False,
+                    **self.model_kwargs,
+                )
+        else:
+            # Shouldn't be a problem most of the time. will obviously error if the model doesn't support this
+            # when training starts
+            if (
+                hasattr(self.text_model_config, "max_seq_len")
+                and self.text_model_config.max_seq_len
+                and self.cfg.sequence_len > self.text_model_config.max_seq_len
+            ):
+                self.text_model_config.max_seq_len = self.cfg.sequence_len
+                LOG.warning(f"increasing context length to {self.cfg.sequence_len}")
+            elif (
+                hasattr(self.text_model_config, "max_sequence_length")
+                and self.text_model_config.max_sequence_length
+                and self.cfg.sequence_len > self.text_model_config.max_sequence_length
+            ):
+                self.text_model_config.max_sequence_length = self.cfg.sequence_len
+                LOG.warning(f"increasing context length to {self.cfg.sequence_len}")
+            if self.cfg.gptq:
+                if self.cfg.is_multimodal:
+                    self.model_config.text_config = self.text_model_config
+                self.model = self.AutoModelLoader.from_pretrained(
+                    self.base_model,
+                    config=self.model_config,
+                    trust_remote_code=self.cfg.trust_remote_code or False,
+                    **self.model_kwargs,
+                )
+            else:
+                if (
+                    self.cfg.fsdp
+                    and self.cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
+                ):
+                    # disabling either of these two still leads to VRAM spike before setting back down
+                    skip_move_to_device = True
+                    if "device_map" in self.model_kwargs:
+                        del self.model_kwargs["device_map"]
+
+                if self.cfg.is_multimodal:
+                    self.model_config.text_config = self.text_model_config
+                self.model = self.AutoModelLoader.from_pretrained(
+                    self.base_model,
+                    config=self.model_config,
+                    trust_remote_code=self.cfg.trust_remote_code or False,
+                    **self.model_kwargs,
+                )
+        if is_deepspeed_zero3_enabled():
+            skip_move_to_device = True
+
+        return skip_move_to_device
+
+    def ajust_model_config(self) -> None:
+        if (
+            hasattr(self.model, "config")
+            and hasattr(self.model.config, "max_position_embeddings")
+            and self.model.config.max_position_embeddings
+            and self.cfg.sequence_len > self.model.config.max_position_embeddings
+        ):
+            LOG.warning(
+                f"increasing model.config.max_position_embeddings from {self.model.config.max_position_embeddings} to {self.cfg.sequence_len}"
+            )
+            self.model.config.max_position_embeddings = self.cfg.sequence_len
+
+        if (
+            hasattr(self.model, "config")
+            and hasattr(self.model.config, "bos_token_id")
+            and self.model.config.bos_token_id
+            and self.model.config.bos_token_id != self.tokenizer.bos_token_id
+        ):
+            self.model.config.bos_token_id = self.tokenizer.bos_token_id
+
+        if (
+            hasattr(self.model, "config")
+            and hasattr(self.model.config, "eos_token_id")
+            and self.model.config.eos_token_id
+            and self.model.config.eos_token_id != self.tokenizer.eos_token_id
+        ):
+            self.model.config.eos_token_id = self.tokenizer.eos_token_id
+
+    def set_z3_leaf_modules(self) -> None:
+        from deepspeed.utils import (  # pylint: disable=no-name-in-module
+            set_z3_leaf_modules,
+        )
+
+        if self.cfg.model_config_type in MOE_ARCH_BLOCK:
+            moe_blocks = MOE_ARCH_BLOCK[self.cfg.model_config_type]
+            moe_blocks = [moe_blocks] if isinstance(moe_blocks, str) else moe_blocks
+            set_z3_leaf_modules(
+                self.model,
+                [
+                    get_module_class_from_name(self.model, module_name)
+                    for module_name in moe_blocks
+                ],
+            )
+
+    def prepare_model(self, qlora_fsdp) -> None:
+        skip_prepare_model_for_kbit_training = False
+        if self.cfg.model_config_type == "qwen" and self.cfg.adapter == "lora":
+            # Qwen doesn't play nicely with LoRA if this is enabled
+            skip_prepare_model_for_kbit_training = True
+
+        loftq_bits = (
+            self.cfg.peft
+            and self.cfg.peft.loftq_config
+            and self.cfg.peft.loftq_config.loftq_bits
+        )
+        if self.cfg.adapter == "lora" and loftq_bits:
+            skip_prepare_model_for_kbit_training = True
+
+        if qlora_fsdp or (
+            self.cfg.fsdp and self.cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
+        ):
+            # make sure everything is in the same dtype
+            skip_prepare_model_for_kbit_training = True
+
+        if is_deepspeed_zero3_enabled():
+            skip_prepare_model_for_kbit_training = True
+
+        is_load_in_8bit = (
+            "load_in_8bit" in self.model_kwargs and self.model_kwargs["load_in_8bit"]
+        )
+        is_load_in_4bit = (
+            "load_in_4bit" in self.model_kwargs and self.model_kwargs["load_in_4bit"]
+        )
+
+        if (
+            not skip_prepare_model_for_kbit_training
+            and self.cfg.adapter in ["lora", "qlora"]
+            and (is_load_in_8bit or is_load_in_4bit)
+        ):
+            LOG.info("converting PEFT model w/ prepare_model_for_kbit_training")
+            self.model = prepare_model_for_kbit_training(
+                self.model, use_gradient_checkpointing=self.cfg.gradient_checkpointing
+            )
+
+    def convert_embedding_modules_dtype(
+        self, embedding_modules, dist_dtype, before_kbit_train_or_finetune
+    ) -> None:
+        for name, module in self.model.named_modules():
+            if "norm" in name:
+                module.to(dist_dtype)
+            if before_kbit_train_or_finetune:
+                if name.endswith(".gate"):
+                    module.to(dist_dtype)
+                if self.model_config.model_type == "btlm":
+                    # don't upcast lm_head for btlm
+                    continue
+            if any(m in name for m in embedding_modules):
+                if hasattr(module, "weight"):
+                    module.to(dist_dtype)
+
+    def apply_lora_patch(self) -> None:
+        if self.cfg.unsloth_lora_mlp:
+            from axolotl.monkeypatch.unsloth_ import integrate_lora_mlp_patch
+
+            integrate_lora_mlp_patch(self.model)
+        if self.cfg.unsloth_lora_qkv or self.cfg.unsloth_lora_o:
+            from axolotl.monkeypatch.unsloth_ import integrate_lora_patch
+
+            integrate_lora_patch(self.model, self.cfg)
+        if self.cfg.unsloth_rope:
+            from axolotl.monkeypatch.unsloth_ import integrate_rope_embeddings
+
+            integrate_rope_embeddings()
+
+    def load_model(self) -> Tuple[PreTrainedModel, Optional[PeftConfig]]:
+        self.apply_patches()
+        self.set_auto_model_loader()
+        self.set_device_map_config()
+        if self.cfg.revision_of_model:
+            self.model_kwargs["revision"] = self.cfg.revision_of_model
+        self.set_quantization_config()
+        self.set_attention_config()
+
+        qlora_fsdp = self.cfg.fsdp and self.cfg.adapter == "qlora"
+        skip_move_to_device = False
+
+        try:
+            skip_move_to_device = self.build_model(qlora_fsdp)
+        except Exception as err:  # pylint: disable=broad-exception-caught
+            LOG.exception(err)
+            raise err
+
+        if isinstance(self.model, (PeftModel, PeftModelForCausalLM)) and not qlora_fsdp:
+            self.model = self.model.merge_and_unload()
+
+        embeddings_len = (
+            math.ceil(len(self.tokenizer) / 32) * 32
+            if self.cfg.resize_token_embeddings_to_32x
+            else len(self.tokenizer)
+        )
+        if (
+            hasattr(self.model, "get_input_embeddings")
+            and self.model.get_input_embeddings().num_embeddings < embeddings_len
+        ):
+            self.model.resize_token_embeddings(embeddings_len)
+        else:
+            self.model.tie_weights()
+
+        self.ajust_model_config()
+
+        # log device memory usage
+        if hasattr(self.model, "device") and self.model.device.type in ("cuda", "mps"):
+            log_gpu_memory_usage(LOG, "after model load", self.model.device)
+
+        # make sure these are fp32 per Ramesh et al. (2021)
+        embedding_modules = get_linear_embedding_layers(self.cfg.model_config_type)
+        if not self.cfg.fsdp:
+            # FSDP doesn't like mixed Float and BFloat16
+            self.convert_embedding_modules_dtype(
+                embedding_modules,
+                dist_dtype=torch.float32,
+                before_kbit_train_or_finetune=True,
+            )
+
+        if is_deepspeed_zero3_enabled():
+            self.set_z3_leaf_modules()
+
+        needs_fa2_dtype = self.cfg.adapter or self.cfg.fsdp
+        if self.cfg.adapter in ["lora", "qlora"]:
+            needs_fa2_dtype = True
+            if self.cfg.gradient_checkpointing:
+                self.model.gradient_checkpointing_enable(
+                    gradient_checkpointing_kwargs=self.cfg.gradient_checkpointing_kwargs
+                )
+
+        self.prepare_model(qlora_fsdp)
+
+        # LlamaRMSNorm layers are in fp32 after kbit_training or full finetune, so we need to
+        # convert them back to fp16/bf16 for flash-attn compatibility.
+        if (needs_fa2_dtype or self.cfg.flash_attention) and not qlora_fsdp:
+            LOG.info(
+                "converting modules to %s for flash attention", self.cfg.torch_dtype
+            )
+            self.convert_embedding_modules_dtype(
+                embedding_modules,
+                dist_dtype=self.cfg.torch_dtype,
+                before_kbit_train_or_finetune=False,
+            )
+
+        # ---------------------------------------------------------
+        #  load lora or adapter
+        # ---------------------------------------------------------
+        lora_config = None
+        if not self.reference_model or self.cfg.lora_model_dir:
+            # if we're not loading the reference model, then we're loading the model for training
+            # then the dpo trainer doesn't want the peft model loaded over it, it just wants the lora/peft config
+            if (
+                self.cfg.adapter
+                and self.cfg.rl in ["dpo", "ipo", "kto"]
+                and not self.cfg.merge_lora
+            ):
+                _, lora_config = load_lora(
+                    self.model, self.cfg, inference=False, config_only=True
+                )
+            else:
+                self.model, lora_config = load_adapter(
+                    self.model, self.cfg, self.cfg.adapter
+                )
+
+        # ---------------------------------------------------------
+        #  put model to accelerator
+        # ---------------------------------------------------------
+        if (
+            self.cfg.ddp
+            and not (
+                "load_in_8bit" in self.model_kwargs
+                and self.model_kwargs["load_in_8bit"]
+            )
+            and not (
+                self.cfg.rl
+                and "load_in_4bit" in self.model_kwargs
+                and self.model_kwargs["load_in_4bit"]
+            )
+            and not skip_move_to_device
+        ):
+            # TODO revaldate this conditional
+            self.model.to(f"cuda:{self.cfg.local_rank}")
+
+        if torch.cuda.device_count() > 1 and int(os.getenv("WORLD_SIZE", "1")) == 1:
+            setattr(self.model, "is_parallelizable", True)
+            setattr(self.model, "model_parallel", True)
+
+        # ---------------------------------------------------------
+        #  parameters that require gradient updates
+        # ---------------------------------------------------------
+        requires_grad = []
+        for name, param in self.model.named_parameters(recurse=True):
+            if param.requires_grad:
+                requires_grad.append(f"{name}: {param.requires_grad}")
+        if len(requires_grad) == 0:
+            LOG.warning("there are no parameters that require gradient updates")
+        if hasattr(self.model, "config"):
+            self.model.config.use_cache = False
+
+        if self.cfg.flash_optimum:
+            from optimum.bettertransformer import BetterTransformer
+
+            self.model = BetterTransformer.transform(self.model)
+
+        if self.cfg.adapter is not None:
+            log_gpu_memory_usage(LOG, "after adapters", self.model.device)
+
+        self.apply_lora_patch()
+
+        for _ in range(3):
+            gc.collect()
+            torch.cuda.empty_cache()
+
+        # TODO resume_from_checkpoint handling
+        return self.model, lora_config
+
+
 def load_model(
     cfg: DictDefault,
     tokenizer: PreTrainedTokenizerBase,
@@ -336,659 +1135,15 @@ def load_model(
     """
     Load a model for a given configuration and tokenizer.
     """
-
-    base_model = cfg.base_model
-    model_type = cfg.type_of_model
-    model_config = load_model_config(cfg)
-
-    # load any patches from plugins
-    from axolotl.integrations.base import PluginManager
-
-    plugin_manager = PluginManager.get_instance()
-    plugin_manager.pre_model_load(cfg)
-
-    if cfg.is_multimodal:
-        text_model_config = model_config.text_config
-    else:
-        text_model_config = model_config
-
-    # TODO refactor as a kwarg
-    load_in_8bit = cfg.load_in_8bit
-
-    if cfg.gradient_checkpointing == "unsloth":
-        transformers.modeling_utils.checkpoint = hf_grad_checkpoint_unsloth_wrapper
-
-    if hasattr(model_config, "model_type") and model_config.model_type == "mllama":
-        if cfg.flash_attention:
-            from axolotl.monkeypatch.attention.mllama import patch_mllama
-
-            patch_mllama()
-
-    if hasattr(model_config, "model_type") and model_config.model_type == "btlm":
-        if cfg.flash_attention:
-            from axolotl.monkeypatch.btlm_attn_hijack_flash import (
-                replace_btlm_attn_with_flash_attn,
-            )
-
-            replace_btlm_attn_with_flash_attn(cfg.base_model)
-
-    if (
-        hasattr(model_config, "model_type")
-        and model_config.model_type == "stablelm_epoch"
-    ):
-        if cfg.flash_attention and cfg.sample_packing:
-            from axolotl.monkeypatch.stablelm_attn_hijack_flash import (
-                replace_stablelm_attn_with_flash_attn,
-            )
-
-            replace_stablelm_attn_with_flash_attn(cfg.base_model)
-
-    if cfg.sample_packing and cfg.s2_attention:
-        raise ValueError(
-            "Received `sample_packing=true` and `s2_attention=true`; however, \
-        shifted-sparse attention does not currently support sample packing."
-        )
-
-    if (
-        cfg.model_config_type in SUPPORTED_MULTIPACK_MODEL_TYPES
-        and cfg.flash_attention
-        and cfg.sample_packing
-    ):
-        patch_for_multipack(
-            cfg.model_config_type,
-            model_name=cfg.base_model,
-            is_remote_code=cfg.trust_remote_code,
-        )
-
-        if cfg.is_llama_derived_model:
-            from axolotl.monkeypatch.llama_attn_hijack_flash import (
-                patch_llama_cross_entropy,
-                patch_llama_rms_norm,
-            )
-
-            if cfg.flash_attn_cross_entropy:
-                patch_llama_cross_entropy()
-            if cfg.flash_attn_rms_norm:
-                patch_llama_rms_norm()
-            elif cfg.unsloth_rms_norm:
-                from axolotl.monkeypatch.unsloth_ import patch_unsloth_layernorm
-
-                patch_unsloth_layernorm()
-            if cfg.unsloth_cross_entropy_loss:
-                from axolotl.monkeypatch.unsloth_ import (
-                    integrate_cross_entropy_loss_patch,
-                )
-
-                integrate_cross_entropy_loss_patch(model_type="llama")
-            if cfg.unsloth_lora_qkv or cfg.unsloth_lora_o:
-                from axolotl.monkeypatch.unsloth_ import patch_self_attn_lora
-
-                patch_self_attn_lora()
-    elif cfg.is_llama_derived_model:
-        # Modify all llama derived models in one block
-
-        if cfg.flash_attention:
-            from axolotl.monkeypatch.llama_attn_hijack_flash import (
-                replace_llama_attn_with_flash_attn,
-            )
-
-            if cfg.sample_packing:
-                if cfg.device not in ["mps", "cpu"] and not inference:
-                    LOG.info("patching with flash attention for sample packing")
-                    replace_llama_attn_with_flash_attn(
-                        packed=True,
-                        cross_entropy=cfg.flash_attn_cross_entropy,
-                        rms_norm=cfg.flash_attn_rms_norm,
-                    )
-            elif cfg.s2_attention:
-                LOG.info("patching w/ flash-enabled, shifted-sparse attention")
-                replace_llama_attn_with_flash_attn(
-                    packed=False,
-                    cross_entropy=cfg.flash_attn_cross_entropy,
-                    rms_norm=cfg.flash_attn_rms_norm,
-                    use_shifted_sparse_attn=True,
-                )
-            elif cfg.flash_attn_cross_entropy or cfg.flash_attn_rms_norm:
-                replace_llama_attn_with_flash_attn(
-                    packed=False,
-                    cross_entropy=cfg.flash_attn_cross_entropy,
-                    rms_norm=cfg.flash_attn_rms_norm,
-                )
-        elif cfg.xformers_attention:
-            from axolotl.monkeypatch.llama_attn_hijack_xformers import (
-                hijack_llama_attention,
-            )
-
-            LOG.info("patching with xformers attention")
-            hijack_llama_attention()
-        elif cfg.sample_packing:
-            from axolotl.monkeypatch.llama_patch_multipack import (
-                hijack_llama_prepare_4d_mask,
-            )
-
-            LOG.info("patching llama _prepare_4d_causal_attention_mask*")
-            hijack_llama_prepare_4d_mask()
-        elif cfg.s2_attention:
-            raise NotImplementedError(
-                "Shifted-sparse attention not currently implemented without flash attention."
-            )
-
-        if cfg.unsloth_cross_entropy_loss:
-            from axolotl.monkeypatch.unsloth_ import integrate_cross_entropy_loss_patch
-
-            integrate_cross_entropy_loss_patch(model_type="llama")
-
-        if cfg.unsloth_lora_qkv or cfg.unsloth_lora_o:
-            from axolotl.monkeypatch.unsloth_ import patch_self_attn_lora
-
-            patch_self_attn_lora()
-
-    # Modify mistral derived models
-    if cfg.model_config_type == "mistral" and cfg.flash_attn_cross_entropy_loss:
-        from axolotl.monkeypatch.mistral_attn_hijack_flash import (
-            patch_mistral_cross_entropy,
-        )
-
-        patch_mistral_cross_entropy()
-
-    model_kwargs: Dict[str, Any] = {}
-
-    if cfg.model_kwargs:
-        for key, val in cfg.model_kwargs.items():
-            model_kwargs[key] = val
-
-    max_memory = cfg.max_memory
-    device_map = cfg.device_map
-
-    AutoModelLoader = AutoModelForCausalLM  # pylint: disable=invalid-name
-    if cfg.is_multimodal:
-        if model_config.model_type == "llava":
-            AutoModelLoader = (  # pylint: disable=invalid-name
-                LlavaForConditionalGeneration
-            )
-        elif model_config.model_type == "mllama":
-            AutoModelLoader = (  # pylint: disable=invalid-name
-                MllamaForConditionalGeneration
-            )
-        else:
-            AutoModelLoader = AutoModelForVision2Seq  # pylint: disable=invalid-name
-
-    if cfg.gpu_memory_limit:
-        gpu_memory_limit = (
-            str(cfg.gpu_memory_limit) + "GiB"
-            if isinstance(cfg.gpu_memory_limit, int)
-            else cfg.gpu_memory_limit
-        )
-
-        max_memory = {}
-        for i in range(torch.cuda.device_count()):
-            max_memory[i] = gpu_memory_limit
-        max_memory["cpu"] = "256GiB"  # something sufficiently large to fit anything
-
-    if max_memory is not None:
-        # Based on https://github.com/togethercomputer/OpenChatKit/blob/main/inference/bot.py
-        from accelerate import infer_auto_device_map
-
-        with init_empty_weights():
-            model_canvas = AutoModelLoader.from_config(
-                model_config, trust_remote_code=cfg.trust_remote_code or False
-            )
-        model_canvas.tie_weights()
-        device_map = infer_auto_device_map(
-            model_canvas,
-            max_memory=max_memory,
-            dtype=cfg.torch_dtype,
-        )
-        # We can discard max_memory now as we have a device map set up for us
-        max_memory = None
-
-    model_kwargs["device_map"] = device_map
-    model_kwargs["torch_dtype"] = cfg.torch_dtype
-
-    if torch.backends.mps.is_available():
-        model_kwargs["device_map"] = "mps:0"
-
-    # TODO can we put the reference model on it's own gpu? I think we have to move logits around to calculate loss
-    # if cfg.rl:
-    #     if torch.cuda.device_count() > 1:
-    #         if reference_model:
-    #             model_kwargs["device_map"] = "cuda:" + str(
-    #                 torch.cuda.current_device() + 1
-    #             )
-    #         else:
-    #             model_kwargs["device_map"] = "cuda:" + str(torch.cuda.current_device())
-
-    if is_deepspeed_zero3_enabled():
-        del model_kwargs["device_map"]
-
-    if cfg.revision_of_model:
-        model_kwargs["revision"] = cfg.revision_of_model
-
-    if cfg.gptq:
-        if not hasattr(model_config, "quantization_config"):
-            LOG.warning("model config does not contain quantization_config information")
-        else:
-            if cfg.gptq_disable_exllama is not None:
-                model_config.quantization_config[
-                    "disable_exllama"
-                ] = cfg.gptq_disable_exllama
-            model_kwargs["quantization_config"] = GPTQConfig(
-                **model_config.quantization_config
-            )
-    if (
-        cfg.adapter in ["qlora", "lora"]
-        and hasattr(model_config, "quantization_config")
-        and model_config.quantization_config["quant_method"]
-        in ["gptq", "awq", "bitsandbytes"]
-    ):
-        if model_config.quantization_config["quant_method"] == "gptq":
-            model_kwargs["quantization_config"] = GPTQConfig(
-                **model_config.quantization_config
-            )
-        elif model_config.quantization_config["quant_method"] == "awq":
-            model_kwargs["quantization_config"] = AwqConfig(
-                **model_config.quantization_config
-            )
-        elif model_config.quantization_config["quant_method"] == "bitsandbytes":
-            model_kwargs["quantization_config"] = BitsAndBytesConfig(
-                **model_config.quantization_config
-            )
-    elif cfg.adapter == "qlora" and cfg.load_in_4bit:
-        bnb_config = {
-            "load_in_4bit": True,
-            "llm_int8_threshold": 6.0,
-            "llm_int8_has_fp16_weight": False,
-            "bnb_4bit_compute_dtype": cfg.torch_dtype,
-            "bnb_4bit_use_double_quant": True,
-            "bnb_4bit_quant_type": "nf4",
-            "bnb_4bit_quant_storage": torch.bfloat16,
-        }
-        if cfg.model_config_type in ["jamba", "qwen2_moe"] and not (
-            cfg.deepspeed or cfg.fsdp
-        ):
-            # for some reason, this causes the loss to be off by an order of magnitude
-            # but deepspeed needs this still in bfloat16
-            bnb_config["bnb_4bit_quant_storage"] = torch.float32
-
-        if cfg.bnb_config_kwargs:
-            bnb_config.update(cfg.bnb_config_kwargs)
-
-        model_kwargs["quantization_config"] = BitsAndBytesConfig(
-            **bnb_config,
-        )
-    elif cfg.adapter == "lora" and cfg.load_in_8bit:
-        bnb_config = {
-            "load_in_8bit": True,
-        }
-        # Exclude mamba blocks from int8 quantization for jamba
-        if cfg.model_config_type == "jamba":
-            bnb_config["llm_int8_skip_modules"] = ["mamba"]
-        model_kwargs["quantization_config"] = BitsAndBytesConfig(
-            **bnb_config,
-        )
-
-    if cfg.load_in_8bit and cfg.adapter is not None:
-        model_kwargs["load_in_8bit"] = True
-    if cfg.load_in_4bit and cfg.adapter is not None:
-        model_kwargs["load_in_4bit"] = True
-
-    # no longer needed per https://github.com/huggingface/transformers/pull/26610
-    if "quantization_config" in model_kwargs or cfg.gptq:
-        if "load_in_8bit" in model_kwargs:
-            del model_kwargs["load_in_8bit"]
-        if "load_in_4bit" in model_kwargs:
-            del model_kwargs["load_in_4bit"]
-
-    # sample packing uses custom FA2 patch
-    if cfg.flash_attention:
-        if not cfg.sample_packing and cfg.s2_attention:
-            pass
-        model_kwargs["attn_implementation"] = "flash_attention_2"
-        model_config._attn_implementation = (  # pylint: disable=protected-access
-            "flash_attention_2"
-        )
-    elif cfg.sdp_attention:
-        model_kwargs["attn_implementation"] = "sdpa"
-        model_config._attn_implementation = "sdpa"  # pylint: disable=protected-access
-    elif cfg.eager_attention:
-        model_kwargs["attn_implementation"] = "eager"
-        model_config._attn_implementation = "eager"  # pylint: disable=protected-access
-
-    if cfg.low_cpu_mem_usage:
-        model_kwargs["low_cpu_mem_usage"] = True
-
-    qlora_fsdp = cfg.fsdp and cfg.adapter == "qlora"
-
-    try:
-        skip_move_to_device = False
-        if (  # pylint: disable=condition-evals-to-constant)
-            (cfg.fsdp and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading)
-            and not qlora_fsdp
-            and False
-        ):
-            model = load_sharded_model(
-                base_model,
-                model_config,
-                cfg,
-                torch_dtype=cfg.torch_dtype,
-            )
-            skip_move_to_device = True
-        elif (
-            qlora_fsdp
-            and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
-            and (cfg.model_config_type == "dbrx" or cfg.qlora_sharded_model_loading)
-        ):
-            quant_storage = cfg.torch_dtype
-            quantization_config = hasattr(
-                model_config, "quantization_config"
-            ) and getattr(model_config, "quantization_config")
-            quantization_config = (
-                quantization_config or model_kwargs["quantization_config"]
-            )
-            if cfg.is_multimodal:
-                model_config.text_config = text_model_config
-            model = load_sharded_model_quant(
-                base_model,
-                model_config,
-                cfg,
-                quant_storage=quant_storage,
-                quantization_config=quantization_config,
-            )
-            skip_move_to_device = True
-        elif (
-            model_config.model_type == "llama"
-            and not cfg.trust_remote_code
-            and not cfg.gptq
-        ):
-            if cfg.fsdp and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading:
-                skip_move_to_device = True
-                if "device_map" in model_kwargs:
-                    del model_kwargs["device_map"]
-
-            if cfg.is_multimodal:
-                model_config.text_config = text_model_config
-            model = AutoModelLoader.from_pretrained(
-                base_model,
-                config=model_config,
-                **model_kwargs,
-            )
-
-            if cfg.flash_attention and not inference:
-                from axolotl.monkeypatch.llama_attn_hijack_flash import (
-                    is_xformers_swiglu_available,
-                    replace_llama_mlp_with_swiglu,
-                    replace_llama_qkv_with_fused,
-                )
-
-                if cfg.flash_attn_fuse_mlp and is_xformers_swiglu_available():
-                    LOG.info("patching with SwiGLU")
-                    replace_llama_mlp_with_swiglu(model)
-
-                if cfg.flash_attn_fuse_qkv:
-                    LOG.info("patching with fused QKV")
-                    replace_llama_qkv_with_fused(model)
-        elif model_type == "MambaLMHeadModel":
-            # FIXME this is janky at best and hacked together to make it work
-            MambaLMHeadModel = fix_mamba_attn_for_loss()  # pylint: disable=invalid-name
-
-            model_kwargs["dtype"] = model_kwargs["torch_dtype"]
-            model_kwargs["device"] = torch.cuda.current_device()
-            del model_kwargs["torch_dtype"]
-            del model_kwargs["device_map"]
-
-            model = MambaLMHeadModel.from_pretrained(
-                base_model,
-                **model_kwargs,
-            )
-        elif (
-            model_type
-            and model_type != "AutoModelForCausalLM"
-            and not cfg.trust_remote_code
-        ):
-            if cfg.gptq:
-                if cfg.is_multimodal:
-                    model_config.text_config = text_model_config
-                model = AutoModelLoader.from_pretrained(
-                    base_model,
-                    config=model_config,
-                    trust_remote_code=cfg.trust_remote_code or False,
-                    **model_kwargs,
-                )
-            else:
-                if cfg.is_multimodal:
-                    model_config.text_config = text_model_config
-                model = getattr(transformers, model_type).from_pretrained(
-                    base_model,
-                    config=model_config,
-                    trust_remote_code=cfg.trust_remote_code or False,
-                    **model_kwargs,
-                )
-        else:
-            # Shouldn't be a problem most of the time. will obviously error if the model doesn't support this
-            # when training starts
-            if (
-                hasattr(text_model_config, "max_seq_len")
-                and text_model_config.max_seq_len
-                and cfg.sequence_len > model_config.max_seq_len
-            ):
-                text_model_config.max_seq_len = cfg.sequence_len
-                LOG.warning(f"increasing context length to {cfg.sequence_len}")
-            elif (
-                hasattr(text_model_config, "max_sequence_length")
-                and text_model_config.max_sequence_length
-                and cfg.sequence_len > text_model_config.max_sequence_length
-            ):
-                text_model_config.max_sequence_length = cfg.sequence_len
-                LOG.warning(f"increasing context length to {cfg.sequence_len}")
-            if cfg.gptq:
-                if cfg.is_multimodal:
-                    model_config.text_config = text_model_config
-                model = AutoModelLoader.from_pretrained(
-                    base_model,
-                    config=model_config,
-                    trust_remote_code=cfg.trust_remote_code or False,
-                    **model_kwargs,
-                )
-            else:
-                if cfg.fsdp and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading:
-                    # disabling either of these two still leads to VRAM spike before setting back down
-                    skip_move_to_device = True
-                    if "device_map" in model_kwargs:
-                        del model_kwargs["device_map"]
-
-                if cfg.is_multimodal:
-                    model_config.text_config = text_model_config
-                model = AutoModelLoader.from_pretrained(
-                    base_model,
-                    config=model_config,
-                    trust_remote_code=cfg.trust_remote_code or False,
-                    **model_kwargs,
-                )
-    except Exception as err:  # pylint: disable=broad-exception-caught
-        LOG.exception(err)
-        raise err
-
-    if isinstance(model, (PeftModel, PeftModelForCausalLM)) and not qlora_fsdp:
-        model = model.merge_and_unload()
-
-    embeddings_len = (
-        math.ceil(len(tokenizer) / 32) * 32
-        if cfg.resize_token_embeddings_to_32x
-        else len(tokenizer)
+    loader = ModelLoader(
+        cfg,
+        tokenizer,
+        processor=processor,
+        inference=inference,
+        reference_model=reference_model,
+        **kwargs,
     )
-    if (
-        hasattr(model, "get_input_embeddings")
-        and model.get_input_embeddings().num_embeddings < embeddings_len
-    ):
-        model.resize_token_embeddings(embeddings_len)
-    else:
-        model.tie_weights()
-
-    if (
-        hasattr(model, "config")
-        and hasattr(model.config, "max_position_embeddings")
-        and model.config.max_position_embeddings
-        and cfg.sequence_len > model.config.max_position_embeddings
-    ):
-        LOG.warning(
-            f"increasing model.config.max_position_embeddings from {model.config.max_position_embeddings} to {cfg.sequence_len}"
-        )
-        model.config.max_position_embeddings = cfg.sequence_len
-
-    if (
-        hasattr(model, "config")
-        and hasattr(model.config, "bos_token_id")
-        and model.config.bos_token_id
-        and model.config.bos_token_id != tokenizer.bos_token_id
-    ):
-        model.config.bos_token_id = tokenizer.bos_token_id
-
-    if (
-        hasattr(model, "config")
-        and hasattr(model.config, "eos_token_id")
-        and model.config.eos_token_id
-        and model.config.eos_token_id != tokenizer.eos_token_id
-    ):
-        model.config.eos_token_id = tokenizer.eos_token_id
-
-    if hasattr(model, "device") and model.device.type in ("cuda", "mps"):
-        log_gpu_memory_usage(LOG, "after model load", model.device)
-
-    # make sure these are fp32 per Ramesh et al. (2021)
-    embedding_modules = get_linear_embedding_layers(cfg.model_config_type)
-    if not cfg.fsdp:
-        # FSDP doesn't like mixed Float and BFloat16
-        for name, module in model.named_modules():
-            if "norm" in name or name.endswith(".gate"):
-                module.to(torch.float32)
-            if model_config.model_type == "btlm":
-                # don't upcast lm_head for btlm
-                continue
-            if any(m in name for m in embedding_modules):
-                if hasattr(module, "weight"):
-                    module.to(torch.float32)
-
-    needs_fa2_dtype = cfg.adapter or cfg.fsdp
-    skip_prepare_model_for_kbit_training = False
-
-    if is_deepspeed_zero3_enabled():
-        from deepspeed.utils import (  # pylint: disable=no-name-in-module
-            set_z3_leaf_modules,
-        )
-
-        if cfg.model_config_type in MOE_ARCH_BLOCK:
-            moe_blocks = MOE_ARCH_BLOCK[cfg.model_config_type]
-            moe_blocks = [moe_blocks] if isinstance(moe_blocks, str) else moe_blocks
-            set_z3_leaf_modules(
-                model,
-                [
-                    get_module_class_from_name(model, module_name)
-                    for module_name in moe_blocks
-                ],
-            )
-
-    if cfg.model_config_type == "qwen" and cfg.adapter == "lora":
-        # Qwen doesn't play nicely with LoRA if this is enabled
-        skip_prepare_model_for_kbit_training = True
-
-    loftq_bits = cfg.peft and cfg.peft.loftq_config and cfg.peft.loftq_config.loftq_bits
-    if cfg.adapter == "lora" and loftq_bits:
-        skip_prepare_model_for_kbit_training = True
-
-    if qlora_fsdp or (cfg.fsdp and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading):
-        # make sure everything is in the same dtype
-        skip_prepare_model_for_kbit_training = True
-
-    if is_deepspeed_zero3_enabled():
-        skip_prepare_model_for_kbit_training = True
-
-    if cfg.adapter in ["lora", "qlora"]:
-        if cfg.gradient_checkpointing:
-            model.gradient_checkpointing_enable(
-                gradient_checkpointing_kwargs=cfg.gradient_checkpointing_kwargs
-            )
-        if (
-            cfg.load_in_8bit or cfg.load_in_4bit
-        ) and not skip_prepare_model_for_kbit_training:
-            LOG.info("converting PEFT model w/ prepare_model_for_kbit_training")
-            model = prepare_model_for_kbit_training(
-                model, use_gradient_checkpointing=cfg.gradient_checkpointing
-            )
-        needs_fa2_dtype = True
-
-    # LlamaRMSNorm layers are in fp32 after kbit_training or full finetune, so we need to
-    # convert them back to fp16/bf16 for flash-attn compatibility.
-    if (needs_fa2_dtype or cfg.flash_attention) and not qlora_fsdp:
-        LOG.info("converting modules to %s for flash attention", cfg.torch_dtype)
-        for name, module in model.named_modules():
-            if "norm" in name:
-                module.to(cfg.torch_dtype)
-            if any(m in name for m in embedding_modules):
-                if hasattr(module, "weight"):
-                    module.to(cfg.torch_dtype)
-
-    lora_config = None
-    if not reference_model or cfg.lora_model_dir:
-        # if we're not loading the reference model, then we're loading the model for training
-        # then the dpo trainer doesn't want the peft model loaded over it, it just wants the lora/peft config
-        if cfg.adapter and cfg.rl in ["dpo", "ipo", "kto"] and not cfg.merge_lora:
-            _, lora_config = load_lora(model, cfg, inference=False, config_only=True)
-        else:
-            model, lora_config = load_adapter(model, cfg, cfg.adapter)
-
-    if is_deepspeed_zero3_enabled():
-        skip_move_to_device = True
-
-    if (
-        cfg.ddp
-        and not load_in_8bit
-        and not (cfg.rl and cfg.load_in_4bit)
-        and not skip_move_to_device
-    ):
-        # TODO revaldate this conditional
-        model.to(f"cuda:{cfg.local_rank}")
-
-    if torch.cuda.device_count() > 1 and int(os.getenv("WORLD_SIZE", "1")) == 1:
-        setattr(model, "is_parallelizable", True)
-        setattr(model, "model_parallel", True)
-
-    requires_grad = []
-    for name, param in model.named_parameters(recurse=True):
-        if param.requires_grad:
-            requires_grad.append(f"{name}: {param.requires_grad}")
-    if len(requires_grad) == 0:
-        LOG.warning("there are no parameters that require gradient updates")
-    if hasattr(model, "config"):
-        model.config.use_cache = False
-
-    if cfg.flash_optimum:
-        from optimum.bettertransformer import BetterTransformer
-
-        model = BetterTransformer.transform(model)
-
-    if cfg.adapter is not None:
-        log_gpu_memory_usage(LOG, "after adapters", model.device)
-
-    if cfg.unsloth_lora_mlp:
-        from axolotl.monkeypatch.unsloth_ import integrate_lora_mlp_patch
-
-        integrate_lora_mlp_patch(model)
-    if cfg.unsloth_lora_qkv or cfg.unsloth_lora_o:
-        from axolotl.monkeypatch.unsloth_ import integrate_lora_patch
-
-        integrate_lora_patch(model, cfg)
-
-    if cfg.unsloth_rope:
-        from axolotl.monkeypatch.unsloth_ import integrate_rope_embeddings
-
-        integrate_rope_embeddings()
-
-    for _ in range(3):
-        gc.collect()
-        torch.cuda.empty_cache()
-
-    # TODO resume_from_checkpoint handling
-    return model, lora_config
+    return loader.load_model()
 
 
 def load_adapter(model, cfg, adapter, inference=False):
