@@ -104,6 +104,7 @@ setup(
         ],
         "mamba-ssm": [
             "mamba-ssm==1.2.0.post1",
+            "causal_conv1d",
         ],
         "auto-gptq": [
             "auto-gptq==0.5.1",
