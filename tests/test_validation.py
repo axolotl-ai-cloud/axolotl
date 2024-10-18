@@ -13,6 +13,7 @@ from axolotl.utils import is_comet_available
 from axolotl.utils.config import validate_config
 from axolotl.utils.config.models.input.v0_4_1 import AxolotlConfigWCapabilities
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.mlflow_ import setup_mlflow_env_vars
 from axolotl.utils.models import check_model_config
 from axolotl.utils.wandb_ import setup_wandb_env_vars
 
@@ -1432,3 +1433,58 @@ class TestValidationComet(BaseValidation):
 
         for key in comet_env.keys():
             os.environ.pop(key, None)
+
+
+class TestValidationMLflow(BaseValidation):
+    """
+    Validation test for MLflow
+    """
+
+    def test_hf_mlflow_artifacts_config_sets_env(self, minimal_cfg):
+        cfg = (
+            DictDefault(
+                {
+                    "hf_mlflow_log_artifacts": True,
+                }
+            )
+            | minimal_cfg
+        )
+
+        new_cfg = validate_config(cfg)
+
+        assert new_cfg.hf_mlflow_log_artifacts is True
+
+        # Check it's not already present in env
+        assert "HF_MLFLOW_LOG_ARTIFACTS" not in os.environ
+
+        setup_mlflow_env_vars(new_cfg)
+
+        assert os.environ.get("HF_MLFLOW_LOG_ARTIFACTS") == "true"
+
+        os.environ.pop("HF_MLFLOW_LOG_ARTIFACTS", None)
+
+    def test_mlflow_not_used_by_default(self, minimal_cfg):
+        cfg = DictDefault({}) | minimal_cfg
+
+        new_cfg = validate_config(cfg)
+
+        setup_mlflow_env_vars(new_cfg)
+
+        assert cfg.use_mlflow is not True
+
+        cfg = (
+            DictDefault(
+                {
+                    "mlflow_experiment_name": "foo",
+                }
+            )
+            | minimal_cfg
+        )
+
+        new_cfg = validate_config(cfg)
+
+        setup_mlflow_env_vars(new_cfg)
+
+        assert new_cfg.use_mlflow is True
+
+        os.environ.pop("MLFLOW_EXPERIMENT_NAME", None)
