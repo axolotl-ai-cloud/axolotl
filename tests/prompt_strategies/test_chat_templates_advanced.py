@@ -12,7 +12,7 @@ from axolotl.prompt_strategies.chat_template import (
     ChatTemplateStrategy,
 )
 from axolotl.prompters import IGNORE_TOKEN_ID
-from axolotl.utils.chat_templates import chat_templates
+from axolotl.utils.chat_templates import get_chat_template
 
 logging.basicConfig(level=logging.DEBUG)
 LOG = logging.getLogger("axolotl")
@@ -35,7 +35,7 @@ class TestChatTemplateConfigurations:
         LOG.info("Testing with train_on_inputs=True")
         strategy = ChatTemplateStrategy(
             ChatTemplatePrompter(
-                llama3_tokenizer, chat_template=chat_templates("llama3")
+                llama3_tokenizer, chat_template=get_chat_template("llama3")
             ),
             tokenizer=llama3_tokenizer,
             train_on_inputs=True,
@@ -80,7 +80,7 @@ class TestChatTemplateConfigurations:
         LOG.info("Testing with train_on_inputs=False")
         strategy = ChatTemplateStrategy(
             ChatTemplatePrompter(
-                llama3_tokenizer, chat_template=chat_templates("llama3")
+                llama3_tokenizer, chat_template=get_chat_template("llama3")
             ),
             tokenizer=llama3_tokenizer,
             train_on_inputs=False,
@@ -123,7 +123,7 @@ class TestChatTemplateConfigurations:
         LOG.info("Testing roles_to_train with assistant only")
         strategy = ChatTemplateStrategy(
             ChatTemplatePrompter(
-                llama3_tokenizer, chat_template=chat_templates("llama3")
+                llama3_tokenizer, chat_template=get_chat_template("llama3")
             ),
             tokenizer=llama3_tokenizer,
             train_on_inputs=False,
@@ -151,7 +151,7 @@ class TestChatTemplateConfigurations:
         LOG.info("Testing roles_to_train with all roles")
         strategy = ChatTemplateStrategy(
             ChatTemplatePrompter(
-                llama3_tokenizer, chat_template=chat_templates("llama3")
+                llama3_tokenizer, chat_template=get_chat_template("llama3")
             ),
             tokenizer=llama3_tokenizer,
             train_on_inputs=True,
@@ -184,7 +184,7 @@ class TestChatTemplateConfigurations:
         LOG.info("Testing with empty roles_to_train")
         strategy = ChatTemplateStrategy(
             ChatTemplatePrompter(
-                llama3_tokenizer, chat_template=chat_templates("llama3")
+                llama3_tokenizer, chat_template=get_chat_template("llama3")
             ),
             tokenizer=llama3_tokenizer,
             train_on_inputs=False,
@@ -205,7 +205,7 @@ class TestChatTemplateConfigurations:
         LOG.info("Testing with train_on_eos='all'")
         strategy = ChatTemplateStrategy(
             ChatTemplatePrompter(
-                llama3_tokenizer, chat_template=chat_templates("llama3")
+                llama3_tokenizer, chat_template=get_chat_template("llama3")
             ),
             tokenizer=llama3_tokenizer,
             train_on_inputs=False,
@@ -232,7 +232,7 @@ class TestChatTemplateConfigurations:
         LOG.info("Testing with train_on_eos='turn'")
         strategy = ChatTemplateStrategy(
             ChatTemplatePrompter(
-                llama3_tokenizer, chat_template=chat_templates("llama3")
+                llama3_tokenizer, chat_template=get_chat_template("llama3")
             ),
             tokenizer=llama3_tokenizer,
             train_on_inputs=False,
@@ -282,7 +282,7 @@ class TestChatTemplateConfigurations:
         LOG.info("Testing with train_on_eos='last'")
         strategy = ChatTemplateStrategy(
             ChatTemplatePrompter(
-                llama3_tokenizer, chat_template=chat_templates("llama3")
+                llama3_tokenizer, chat_template=get_chat_template("llama3")
             ),
             tokenizer=llama3_tokenizer,
             train_on_inputs=False,
@@ -315,7 +315,7 @@ class TestChatTemplateConfigurations:
         LOG.info("Testing with train_on_eos='none'")
         strategy = ChatTemplateStrategy(
             ChatTemplatePrompter(
-                llama3_tokenizer, chat_template=chat_templates("llama3")
+                llama3_tokenizer, chat_template=get_chat_template("llama3")
             ),
             tokenizer=llama3_tokenizer,
             train_on_inputs=False,
@@ -343,7 +343,7 @@ class TestChatTemplateConfigurations:
         strategy = ChatTemplateStrategy(
             ChatTemplatePrompter(
                 llama3_tokenizer,
-                chat_template=chat_templates("llama3"),
+                chat_template=get_chat_template("llama3"),
                 drop_system_message=True,
             ),
             tokenizer=llama3_tokenizer,
@@ -371,7 +371,7 @@ class TestChatTemplateConfigurations:
         strategy = ChatTemplateStrategy(
             ChatTemplatePrompter(
                 llama3_tokenizer,
-                chat_template=chat_templates("llama3"),
+                chat_template=get_chat_template("llama3"),
                 roles=custom_roles,
             ),
             tokenizer=llama3_tokenizer,
@@ -424,7 +424,7 @@ class TestChatTemplateConfigurations:
         strategy = ChatTemplateStrategy(
             ChatTemplatePrompter(
                 llama3_tokenizer,
-                chat_template=chat_templates("llama3"),
+                chat_template=get_chat_template("llama3"),
                 message_field_training="train",
                 message_field_training_detail="train_detail",
             ),

@@ -6,6 +6,8 @@ order: 3
 
 ## sharegpt
 
+UPDATE: ShareGPT is being deprecated in the next release. Please see `chat_template` section below.
+
 conversations where `from` is `human`/`gpt`. (optional: first row with role `system` to override default system prompt)
 
 ```{.json filename="data.jsonl"}
@@ -69,3 +71,138 @@ creates a chat where bot is asked to tell a joke, then explain why the joke is f
 ```{.json filename="data.jsonl"}
 {"conversations": [{"title": "...", "text": "...", "explanation": "..."}]}
 ```
+
+
+## chat_template
+
+Chat Template strategy uses a jinja2 template that converts a list of messages into a prompt. Support using tokenizer's template, a supported template, or custom jinja2.
+
+```{.json filename="data.jsonl"}
+{"conversations": [{"role": "...", "content": "..."}]}
+```
+
+See `config.qmd` for full configs and supported templates.
+
+### Migrating from sharegpt
+
+Most configs can be adapted as follows:
+
+```yaml
+# old
+chat_template: chatml
+datasets:
+  - path: ...
+    type: sharegpt
+    conversation: chatml
+
+# new (if using tokenizer's chat_template)
+datasets:
+  - path: ...
+    type: chat_template
+
+    field_messages: conversations
+    message_field_role: from
+    message_field_content: value
+
+# new (if setting a new chat_template like chatml, gemma, etc)
+chat_template: chatml
+datasets:
+  - path: ...
+    type: chat_template
+
+    field_messages: conversations
+    message_field_role: from
+    message_field_content: value
+```
+
+We recommend checking the below examples for other usecases.
+
+### Examples
+
+1. Using the default chat template in the tokenizer_config.json on OpenAI messages format, training on only last message.
+
+```yaml
+datasets:
+  - path: ...
+    type: chat_template
+```
+
+2. Using the `gemma` chat template to override the tokenizer_config.json's chat template on OpenAI messages format, training on all assistant messages.
+
+```yaml
+chat_template: gemma # this overwrites the tokenizer's chat_template
+datasets:
+  - path: ...
+    type: chat_template
+    roles_to_train: ["assistant"]
+```
+
+3. Using the tokenizer_config.json's chat template or `chatml` as fallback if the former's chat template does not exist, on OpenAI messages format, training on all assistant messages.
+
+```yaml
+chat_template: tokenizer_default_fallback_chatml # this overwrites the tokenizer's chat_template
+datasets:
+  - path: ...
+    type: chat_template
+    roles_to_train: ["assistant"]
+```
+
+4. Using a custom jinja template on OpenAI messages format, training on all assistant messages.
+
+```yaml
+# chat_template: jinja # `jinja` will be implied if the `chat_template_jinja` is set and this field is empty
+chat_template_jinja: "{{ bos_token }}{% for message in messages %}{% if (message['role'] == 'system') %}{{'<|system|>' + '\n' + message['content'] + '<|end|>' + '\n'}}{% elif (message['role'] == 'user') %}{{'<|user|>' + '\n' + message['content'] + '<|end|>' + '\n' + '<|assistant|>' + '\n'}}{% elif message['role'] == 'assistant' %}{{message['content'] + '<|end|>' + '\n'}}{% endif %}{% endfor %}"
+
+datasets:
+  - path: ...
+    type: chat_template
+    roles_to_train: ["assistant"]
+```
+
+5. (Advanced) Using fine-grained control over tokens and turns to train in a conversation
+
+For a data sample that looks like:
+
+```{.json filename="data.jsonl"}
+{
+  "conversations": [
+    {"from": "system", "value": "You are an AI assistant.", "train": false},
+    {"from": "human", "value": "Hello", "train": false},
+    {"from": "assistant", "value": "Hello", "train": true},
+    {"from": "human", "value": "How are you?", "train": true},
+    {
+      "from": "assistant",
+      "value": "I'm doing very well, thank you!",
+      "train_detail": [
+        {"begin_offset": 0, "end_offset": 8, "train": false},
+        {"begin_offset": 9, "end_offset": 18, "train": true},
+        {"begin_offset": 19, "end_offset": 30, "train": false},
+      ],
+    },
+    {
+        "from": "human",
+        "value": "I'm doing very well, thank you!",
+        "train": true,
+    },
+    {"from": "assistant", "value": "Hi there!", "train": true}
+  ]
+}
+```
+
+The configuration would look like:
+
+```yaml
+datasets:
+  - path: ...
+    type: chat_template
+    chat_template: tokenizer_default
+    field_messages: conversations
+    message_field_role: from
+    message_field_content: value
+    roles_to_train: []
+    train_on_eos: turn
+    message_field_training: train
+    message_field_training_detail: train_detail
+```
+
+Tip: It is not necessary to use both `message_field_training` and `message_field_training_detail` at a time.
