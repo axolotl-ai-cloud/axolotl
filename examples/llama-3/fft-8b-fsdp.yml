@@ -21,14 +21,14 @@ bf16: auto
 fp16:
 tf32: false
 
-logging_steps: 10
+logging_steps: 2
 xformers_attention:
 flash_attention: true
 
-warmup_steps: 10
+warmup_steps: 2
 evals_per_epoch: 2
 save_steps: 2
-max_steps: 5
+max_steps: 2
 weight_decay: 0.0
 
 fsdp:
