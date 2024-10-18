@@ -22,6 +22,9 @@ class TestModelsUtils:
         self.cfg = load_cfg(  # pylint: disable=attribute-defined-outside-init
             config_path
         )
+        self.cfg.flash_attention = (
+            False  # pylint: disable=attribute-defined-outside-init
+        )
         self.tokenizer = MagicMock(  # pylint: disable=attribute-defined-outside-init
             spec=PreTrainedTokenizerBase
         )
@@ -37,6 +40,20 @@ class TestModelsUtils:
                 reference_model=self.reference_model,
             )
         )
+
+    def test_set_device_map_config(self):
+        # check device_map
+        device_map = self.cfg.device_map
+        if is_torch_mps_available():
+            device_map = "mps"
+        self.model_loader.set_device_map_config()
+        if is_deepspeed_zero3_enabled():
+            assert "device_map" not in self.model_loader.model_kwargs
+        else:
+            assert device_map in self.model_loader.model_kwargs["device_map"]
+
+        # check torch_dtype
+        assert self.cfg.torch_dtype == self.model_loader.model_kwargs["torch_dtype"]
 
     def test_cfg_throws_error_with_s2_attention_and_sample_packing(self):
         cfg = DictDefault(
@@ -60,20 +77,6 @@ class TestModelsUtils:
                 "shifted-sparse attention does not currently support sample packing"
                 in str(exc.value)
             )
-
-    def test_set_device_map_config(self):
-        # check device_map
-        device_map = self.cfg.device_map
-        if is_torch_mps_available():
-            device_map = "mps"
-        self.model_loader.set_device_map_config()
-        if is_deepspeed_zero3_enabled():
-            assert "device_map" not in self.model_loader.model_kwargs
-        else:
-            assert device_map in self.model_loader.model_kwargs["device_map"]
-
-        # check torch_dtype
-        assert self.cfg.torch_dtype == self.model_loader.model_kwargs["torch_dtype"]
 
     @pytest.mark.parametrize("adapter", ["lora", "qlora", None])
     @pytest.mark.parametrize("load_in_8bit", [True, False])
