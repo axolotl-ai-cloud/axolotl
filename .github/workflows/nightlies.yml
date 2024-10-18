@@ -28,6 +28,11 @@ jobs:
             python_version: "3.11"
             pytorch: 2.4.1
             axolotl_extras:
+          - cuda: 124
+            cuda_version: 12.4.1
+            python_version: "3.11"
+            pytorch: 2.5.0
+            axolotl_extras:
     runs-on: axolotl-gpu-runner
     steps:
       - name: Checkout
@@ -84,6 +89,11 @@ jobs:
             cuda_version: 12.4.1
             python_version: "3.11"
             pytorch: 2.4.1
+            axolotl_extras:
+          - cuda: 124
+            cuda_version: 12.4.1
+            python_version: "3.11"
+            pytorch: 2.5.0
             axolotl_extras:
     runs-on: axolotl-gpu-runner
     steps:

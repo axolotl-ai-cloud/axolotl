@@ -21,10 +21,17 @@ jobs:
             pytorch: 2.3.1
             axolotl_extras:
             num_gpus: 2
-          - cuda: 121
-            cuda_version: 12.1.1
+          - cuda: 124
+            cuda_version: 12.4.1
             python_version: "3.11"
-            pytorch: 2.3.1
+            pytorch: 2.4.1
+            axolotl_extras:
+            num_gpus: 2
+            nightly_build: "true"
+          - cuda: 124
+            cuda_version: 12.4.1
+            python_version: "3.11"
+            pytorch: 2.5.0
             axolotl_extras:
             num_gpus: 2
             nightly_build: "true"

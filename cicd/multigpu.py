@@ -64,7 +64,7 @@ def run_cmd(cmd: str, run_folder: str):
 @stub.function(
     image=cicd_image,
     gpu=GPU_CONFIG,
-    timeout=45 * 60,
+    timeout=60 * 60,
     cpu=8.0,
     memory=131072 * N_GPUS,
 )
