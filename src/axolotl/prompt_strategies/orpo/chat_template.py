@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 from axolotl.prompt_tokenizers import IGNORE_INDEX, PromptTokenizingStrategy
 from axolotl.prompters import Prompter
-from axolotl.utils.chat_templates import chat_templates
+from axolotl.utils.chat_templates import get_chat_template_from_config
 
 
 class Message(BaseModel):
@@ -28,18 +28,13 @@ def load(
     """
     chatml transforms for datasets with system, input, chosen, rejected
     """
-
-    chat_template = chat_templates("chatml")
-    if ds_cfg and "chat_template" in ds_cfg:
-        chat_template = ds_cfg["chat_template"]
-        try:
-            chat_template = chat_templates(chat_template)
-        except ValueError:
-            pass
-    tokenizer.chat_template = chat_template
+    chat_template_string = get_chat_template_from_config(
+        cfg=cfg, ds_cfg=ds_cfg, tokenizer=tokenizer
+    )
+    tokenizer.chat_template = chat_template_string
 
     return ORPOTokenizingStrategy(
-        ORPOPrompter(chat_template, tokenizer),
+        ORPOPrompter(chat_template_string, tokenizer),
         tokenizer,
         cfg.train_on_inputs,
         cfg.sequence_len,
@@ -248,28 +243,30 @@ class ORPOPrompter(Prompter):
 def argilla(cfg, **kwargs):  # pylint: disable=possibly-unused-variable,unused-argument
     dataset_parser = ORPODatasetParsingStrategy()
 
-    chat_template_str = chat_templates(cfg.chat_template)
-
     def transform_fn(sample, tokenizer=None):
         res = {}
+
+        chat_template_string = get_chat_template_from_config(
+            cfg=cfg, tokenizer=tokenizer
+        )
 
         res["prompt"] = tokenizer.apply_chat_template(
             [msg.model_dump() for msg in dataset_parser.get_prompt(sample).messages],
             add_generation_prompt=True,
-            chat_template=chat_template_str,
+            chat_template=chat_template_string,
             tokenize=False,
         )
         prompt_str_len = len(res["prompt"])
         res["chosen"] = tokenizer.apply_chat_template(
             [msg.model_dump() for msg in dataset_parser.get_chosen(sample).messages],
             add_generation_prompt=False,
-            chat_template=chat_template_str,
+            chat_template=chat_template_string,
             tokenize=False,
         )[prompt_str_len:]
         res["rejected"] = tokenizer.apply_chat_template(
             [msg.model_dump() for msg in dataset_parser.get_rejected(sample).messages],
             add_generation_prompt=False,
-            chat_template=chat_template_str,
+            chat_template=chat_template_string,
             tokenize=False,
         )[prompt_str_len:]
 

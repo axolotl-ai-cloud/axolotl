@@ -30,7 +30,7 @@ from axolotl.common.cli import TrainerCliArgs, load_model_and_tokenizer
 from axolotl.integrations.base import PluginManager
 from axolotl.logging_config import configure_logging
 from axolotl.train import TrainDatasetMeta
-from axolotl.utils.chat_templates import chat_templates
+from axolotl.utils.chat_templates import get_chat_template
 from axolotl.utils.comet_ import setup_comet_env_vars
 from axolotl.utils.config import (
     normalize_cfg_datasets,
@@ -272,7 +272,7 @@ def do_inference_gradio(
             importlib.import_module("axolotl.prompters"), prompter
         )
     elif cfg.chat_template:
-        chat_template_str = chat_templates(cfg.chat_template)
+        chat_template_str = get_chat_template(cfg.chat_template)
 
     model = model.to(cfg.device, dtype=cfg.torch_dtype)
 

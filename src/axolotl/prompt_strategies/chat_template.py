@@ -9,7 +9,7 @@ from transformers import ProcessorMixin
 
 from axolotl.prompt_tokenizers import PromptTokenizingStrategy
 from axolotl.prompters import IGNORE_TOKEN_ID, Prompter
-from axolotl.utils.chat_templates import chat_templates
+from axolotl.utils.chat_templates import get_chat_template_from_config
 
 # Configure the logger
 LOG = logging.getLogger("axolotl")
@@ -405,10 +405,14 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None, processor=None):
     # pylint: disable=duplicate-code
     ds_cfg = ds_cfg or {}
+    chat_template_string = get_chat_template_from_config(
+        cfg=cfg, ds_cfg=ds_cfg, tokenizer=tokenizer
+    )
+    LOG.info(f"Using chat template:\n---\n{chat_template_string!s}\n---")
 
     prompter_params = {
         "tokenizer": tokenizer,
-        "chat_template": chat_templates(ds_cfg.get("chat_template", "chatml")),
+        "chat_template": chat_template_string,
         "message_field_role": ds_cfg.get("message_field_role", "role"),
         "message_field_content": ds_cfg.get("message_field_content", "content"),
         "message_field_training": ds_cfg.get("message_field_training", None),
