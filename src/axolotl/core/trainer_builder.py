@@ -1929,7 +1929,7 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             dpo_trainer_kwargs["max_length"] = self.cfg.sequence_len
             dpo_trainer_kwargs["max_target_length"] = None
             dpo_trainer_kwargs["max_prompt_length"] = self.cfg.sequence_len
-            dpo_trainer_kwargs["generate_during_eval"] = True
+            dpo_trainer_kwargs["generate_during_eval"] = self.cfg.use_wandb
         elif self.cfg.rl == "orpo":
             trainer_cls = AxolotlORPOTrainer
             trainer_cls_args = [self.model]
