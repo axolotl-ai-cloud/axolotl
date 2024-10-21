@@ -43,7 +43,7 @@ s3fs>=2024.5.0
 gcsfs>=2024.5.0
 # adlfs
 
-trl==0.9.6
+trl==0.11.4
 zstandard==0.22.0
 fastcore
 
