@@ -31,6 +31,8 @@ def parse_requirements():
     try:
         xformers_version = [req for req in _install_requires if "xformers" in req][0]
         torchao_version = [req for req in _install_requires if "torchao" in req][0]
+        autoawq_version = [req for req in _install_requires if "autoawq" in req][0]
+
         if "Darwin" in platform.system():
             # don't install xformers on MacOS
             _install_requires.pop(_install_requires.index(xformers_version))
@@ -52,10 +54,14 @@ def parse_requirements():
 
             if (major, minor) >= (2, 5):
                 _install_requires.pop(_install_requires.index(xformers_version))
+                _install_requires.pop(_install_requires.index(autoawq_version))
             elif (major, minor) >= (2, 4):
                 if patch == 0:
                     _install_requires.pop(_install_requires.index(xformers_version))
                     _install_requires.append("xformers>=0.0.27")
+                else:
+                    _install_requires.pop(_install_requires.index(xformers_version))
+                    _install_requires.append("xformers==0.0.28.post1")
             elif (major, minor) >= (2, 3):
                 _install_requires.pop(_install_requires.index(torchao_version))
                 if patch == 0:
@@ -75,7 +81,6 @@ def parse_requirements():
 
     except PackageNotFoundError:
         pass
-
     return _install_requires, _dependency_links
 
 
