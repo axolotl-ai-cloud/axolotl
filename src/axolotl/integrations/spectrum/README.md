@@ -15,6 +15,7 @@ By identifying the top n% of layers with the highest SNR, you can optimize train
 plugins:
   - axolotl.integrations.spectrum.SpectrumPlugin
 
+# fraction of modules in the model to keep trainable
 spectrum_top_fraction: 0.5
 # Optional if using a pre-scanned model as your base_model. Useful if using a model mirror
 spectrum_model_name: meta-llama/Meta-Llama-3.1-8B

@@ -28,12 +28,12 @@ jobs:
             cuda_version: 12.4.1
             python_version: "3.11"
             pytorch: 2.4.1
-            axolotl_extras:
+            axolotl_extras: torchao
           - cuda: 124
             cuda_version: 12.4.1
             python_version: "3.11"
             pytorch: 2.5.0
-            axolotl_extras:
+            axolotl_extras: torchao
     runs-on: axolotl-gpu-runner
     steps:
       - name: Checkout

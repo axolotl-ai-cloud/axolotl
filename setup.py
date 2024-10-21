@@ -30,7 +30,6 @@ def parse_requirements():
 
     try:
         xformers_version = [req for req in _install_requires if "xformers" in req][0]
-        torchao_version = [req for req in _install_requires if "torchao" in req][0]
         if "Darwin" in platform.system():
             # don't install xformers on MacOS
             _install_requires.pop(_install_requires.index(xformers_version))
@@ -57,7 +56,6 @@ def parse_requirements():
                     _install_requires.pop(_install_requires.index(xformers_version))
                     _install_requires.append("xformers>=0.0.27")
             elif (major, minor) >= (2, 3):
-                _install_requires.pop(_install_requires.index(torchao_version))
                 if patch == 0:
                     _install_requires.pop(_install_requires.index(xformers_version))
                     _install_requires.append("xformers>=0.0.26.post1")
@@ -65,11 +63,9 @@ def parse_requirements():
                     _install_requires.pop(_install_requires.index(xformers_version))
                     _install_requires.append("xformers>=0.0.27")
             elif (major, minor) >= (2, 2):
-                _install_requires.pop(_install_requires.index(torchao_version))
                 _install_requires.pop(_install_requires.index(xformers_version))
                 _install_requires.append("xformers>=0.0.25.post1")
             else:
-                _install_requires.pop(_install_requires.index(torchao_version))
                 _install_requires.pop(_install_requires.index(xformers_version))
                 _install_requires.append("xformers>=0.0.23.post1")
 
@@ -123,6 +119,9 @@ setup(
             "lion-pytorch==0.1.2",
             "lomo-optim==0.1.1",
             "torch-optimi==0.2.1",
+        ],
+        "torchao": [
+            "torchao==0.5.0",
         ],
     },
 )
