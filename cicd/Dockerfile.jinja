@@ -23,7 +23,6 @@ RUN git fetch origin +$GITHUB_REF && \
     git checkout FETCH_HEAD
 
 # If AXOLOTL_EXTRAS is set, append it in brackets
-RUN pip install causal_conv1d
 RUN if [ "$NIGHTLY_BUILD" = "true" ] ; then \
         sed -i 's#^transformers.*#transformers @ git+https://github.com/huggingface/transformers.git@main#' requirements.txt; \
         sed -i 's#^peft.*#peft @ git+https://github.com/huggingface/peft.git@main#' requirements.txt; \
