@@ -49,14 +49,18 @@ jobs:
           python-version: ${{ matrix.python_version }}
           cache: 'pip' # caching pip dependencies
 
+      - name: upgrade pip
+        run: |
+          pip3 install --upgrade pip
+          pip3 install --upgrade packaging setuptools wheel
+
       - name: Install PyTorch
         run: |
-          pip3 install torch==${{ matrix.pytorch_version }} --index-url https://download.pytorch.org/whl/cpu
+          pip3 install torch==${{ matrix.pytorch_version }}
 
       - name: Install dependencies
         run: |
-          pip3 install --upgrade pip
-          pip3 install --upgrade packaging
+          pip3 show torch
           pip3 install -U -e .
           pip3 install -r requirements-tests.txt
 
