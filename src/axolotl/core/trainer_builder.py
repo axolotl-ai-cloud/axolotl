@@ -666,7 +666,7 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
         return DataLoader(bench_dataset, **dataloader_params)
         # return self.accelerator.prepare(DataLoader(bench_dataset, **dataloader_params))
 
-    def compute_loss(self, model, inputs, return_outputs=False):
+    def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
         # use one's weighted cross entropy loss calc
         # if self.args.sample_packing:
         #     labels = inputs.pop("labels")
@@ -674,8 +674,15 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
         #     loss = trainer_weighted_loss(outputs, labels, shift_labels=True)
         #     return (loss, outputs) if return_outputs else loss
         if self.args.orpo_alpha:
-            return self.orpo_compute_loss(model, inputs, return_outputs=return_outputs)
-        return super().compute_loss(model, inputs, return_outputs=return_outputs)
+            return self.orpo_compute_loss(
+                model, inputs, return_outputs=return_outputs, **kwargs
+            )
+        return super().compute_loss(
+            model,
+            inputs,
+            return_outputs=return_outputs,
+            **kwargs,
+        )
 
     @staticmethod
     def orpo_concatenate_inputs(inputs, label_pad_token=-100, pad_token=0, device=None):
@@ -771,7 +778,13 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
         ).squeeze(2)
         return torch.mul(per_token_logps, mask).sum(dim=1) / mask.sum(dim=1)
 
-    def orpo_compute_loss(self, model, inputs, return_outputs=False):
+    def orpo_compute_loss(
+        self,
+        model,
+        inputs,
+        return_outputs=False,
+        **kwargs,  # pylint: disable=unused-argument
+    ):
         concat_inputs = AxolotlTrainer.orpo_concatenate_inputs(
             inputs,
             label_pad_token=-100,
@@ -898,6 +911,7 @@ class AxolotlMambaTrainer(AxolotlTrainer):
         model,
         inputs,
         return_outputs=False,  # pylint: disable=unused-argument
+        **kwargs,  # pylint: disable=unused-argument
     ):
         input_ids = inputs.pop("input_ids")
         lm_logits = model(input_ids).logits
