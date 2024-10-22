@@ -7,6 +7,7 @@ import abc
 import gc
 import importlib
 import importlib.util
+import inspect
 import logging
 import math
 import os
@@ -1694,12 +1695,17 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 return_tensors="pt",
                 **data_collator_kwargs,
             )
+        sig = inspect.signature(trainer_cls)
+        if "tokenizer" in sig.parameters.keys():
+            trainer_kwargs["tokenizer"] = self.tokenizer
+        else:
+            trainer_kwargs["processor_class"] = self.tokenizer
+
         trainer = trainer_cls(
             model=self.model,
             train_dataset=self.train_dataset,
             eval_dataset=self.eval_dataset,
             args=training_args,
-            tokenizer=self.tokenizer,
             data_collator=self.build_collator(training_args, **data_collator_kwargs),
             callbacks=self.get_callbacks(),
             **trainer_kwargs,
