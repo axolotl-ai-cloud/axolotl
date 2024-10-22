@@ -43,7 +43,7 @@ s3fs>=2024.5.0
 gcsfs>=2024.5.0
 # adlfs
 
-trl==0.11.4
+trl @ git+https://github.com/huggingface/trl.git@31d02cfb795284591a084416b9dcb7bef5d08924
 zstandard==0.22.0
 fastcore
 
