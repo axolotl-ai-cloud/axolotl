@@ -26,10 +26,9 @@ class TestLoadModelUtils:
         # load config
         self.cfg = DictDefault(
             {
-                "base_model": "openlm-research/open_llama_3b_v2",
+                "base_model": "JackFram/llama-68m",
                 "model_type": "LlamaForCausalLM",
                 "tokenizer_type": "LlamaTokenizer",
-                "tokenizer_config": "openlm-research/open_llama_3b_v2",
                 "load_in_8bit": True,
                 "load_in_4bit": False,
                 "strict": False,
