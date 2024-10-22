@@ -20,7 +20,6 @@ RUN git clone --depth=1 https://github.com/axolotl-ai-cloud/axolotl.git
 WORKDIR /workspace/axolotl
 
 # If AXOLOTL_EXTRAS is set, append it in brackets
-RUN pip install causal_conv1d
 RUN if [ "$AXOLOTL_EXTRAS" != "" ] ; then \
         pip install -e .[deepspeed,flash-attn,optimizers,$AXOLOTL_EXTRAS] $AXOLOTL_ARGS; \
     else \
