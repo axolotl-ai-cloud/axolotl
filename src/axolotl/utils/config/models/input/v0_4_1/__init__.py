@@ -392,6 +392,7 @@ class HyperparametersConfig(BaseModel):
                 "ao_adamw_4bit",
                 "ao_adamw_8bit",
                 "ao_adamw_fp8",
+                "soap",
             ],
         ]
     ] = OptimizerNames.ADAMW_HF.value
@@ -404,6 +405,10 @@ class HyperparametersConfig(BaseModel):
             "help": "The target modules to optimize, i.e. the module names that you would like to train."
         },
     )
+
+    optim_soap_beta1: Optional[float] = None
+    optim_soap_beta2: Optional[float] = None
+
     torchdistx_path: Optional[str] = None
     lr_scheduler: Optional[Union[SchedulerType, Literal["one_cycle"]]] = "cosine"
     lr_scheduler_kwargs: Optional[Dict[str, Any]] = None
