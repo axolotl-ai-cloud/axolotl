@@ -7,7 +7,6 @@ from transformers import BitsAndBytesConfig, PreTrainedTokenizerBase
 from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
 from transformers.utils.import_utils import is_torch_mps_available
 
-from axolotl.cli import load_cfg
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.models import ModelLoader, load_model
 
@@ -17,12 +16,18 @@ class TestModelsUtils:
 
     def setup_method(self) -> None:
         # load config
-        config_path = "examples/openllama-3b/config.yml"
-        self.cfg = load_cfg(  # pylint: disable=attribute-defined-outside-init
-            config_path
-        )
-        self.cfg.flash_attention = (
-            False  # pylint: disable=attribute-defined-outside-init
+        self.cfg = DictDefault(  # pylint: disable=attribute-defined-outside-init
+            {
+                "base_model": "openlm-research/open_llama_3b_v2",
+                "model_type": "LlamaForCausalLM",
+                "tokenizer_type": "LlamaTokenizer",
+                "load_in_8bit": True,
+                "load_in_4bit": False,
+                "adapter": "lora",
+                "flash_attention": False,
+                "sample_packing": True,
+                "device_map": "auto",
+            }
         )
         self.tokenizer = MagicMock(  # pylint: disable=attribute-defined-outside-init
             spec=PreTrainedTokenizerBase
