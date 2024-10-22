@@ -27,7 +27,6 @@ from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import BatchSampler, DataLoader, RandomSampler, SequentialSampler
 from transformers import (
     EarlyStoppingCallback,
-    PreTrainedModel,
     Trainer,
     TrainerCallback,
     TrainingArguments,
@@ -1019,18 +1018,32 @@ class AxolotlDPOTrainer(SchedulerMixin, DPOTrainer):
         return super().push_to_hub(*args, **kwargs)
 
     def tokenize_row(
-        self, feature, model: Optional[Union[PreTrainedModel, torch.nn.Module]] = None
+        self,
+        features,
+        processing_class,
+        max_prompt_length,
+        max_completion_length,
+        add_special_tokens,
     ) -> Dict:
-        res = super().tokenize_row(feature, model=model)
-        if self.tokenizer.bos_token_id is None and res["prompt_input_ids"][0] is None:
+        res = super().tokenize_row(
+            features,
+            processing_class,
+            max_prompt_length,
+            max_completion_length,
+            add_special_tokens,
+        )
+        if processing_class.bos_token_id is None and res["prompt_input_ids"][0] is None:
             for key in res.keys():
                 res[key] = res[key][1:]
         return res
 
     def training_step(
-        self, model: nn.Module, inputs: Dict[str, Union[torch.Tensor, Any]]
+        self,
+        model: nn.Module,
+        inputs: Dict[str, Union[torch.Tensor, Any]],
+        num_items_in_batch=None,
     ) -> torch.Tensor:
-        loss: torch.Tensor = super().training_step(model, inputs)
+        loss: torch.Tensor = super().training_step(model, inputs, num_items_in_batch)
         gc.collect()
         torch.cuda.empty_cache()
         return loss
