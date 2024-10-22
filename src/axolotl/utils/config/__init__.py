@@ -228,6 +228,7 @@ def normalize_cfg_datasets(cfg):
                         f"updating dataset {ds_cfg.path} with `chat_template: {cfg.chat_template}` to match your chat_template"
                     )
                     cfg.datasets[idx].chat_template = cfg.chat_template
+                    cfg.datasets[idx].chat_template_jinja = cfg.chat_template_jinja
 
 
 def validate_config(cfg: DictDefault, capabilities: Optional[dict] = None):
