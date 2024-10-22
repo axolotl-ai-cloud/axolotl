@@ -1962,11 +1962,17 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             trainer_cls_args = [self.model]
         else:
             raise ValueError(f"Unsupported RL: {self.cfg.rl}")
+
+        sig = inspect.signature(trainer_cls)
+        if "processing_class" in sig.parameters.keys():
+            dpo_trainer_kwargs["processing_class"] = self.tokenizer
+        else:
+            dpo_trainer_kwargs["tokenizer"] = self.tokenizer
+
         dpo_trainer = trainer_cls(
             *trainer_cls_args,
             args=training_args,
             train_dataset=self.train_dataset,
-            tokenizer=self.tokenizer,
             callbacks=self.get_callbacks(),
             **dpo_trainer_kwargs,
         )
