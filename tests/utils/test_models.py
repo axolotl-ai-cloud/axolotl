@@ -18,7 +18,7 @@ class TestModelsUtils:
         # load config
         self.cfg = DictDefault(  # pylint: disable=attribute-defined-outside-init
             {
-                "base_model": "openlm-research/open_llama_3b_v2",
+                "base_model": "JackFram/llama-68m",
                 "model_type": "LlamaForCausalLM",
                 "tokenizer_type": "LlamaTokenizer",
                 "load_in_8bit": True,
