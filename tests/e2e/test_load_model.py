@@ -27,50 +27,33 @@ class TestLoadModelUtils:
         self.cfg = DictDefault(
             {
                 "base_model": "JackFram/llama-68m",
-                "model_type": "LlamaForCausalLM",
                 "tokenizer_type": "LlamaTokenizer",
-                "load_in_8bit": True,
-                "load_in_4bit": False,
-                "strict": False,
-                "datasets": [
-                    {
-                        "path": "teknium/GPT4-LLM-Cleaned",
-                        "type": "alpaca",
-                    },
-                ],
-                "val_set_size": 0.02,
+                "tokenizer_config": "JackFram/llama-68m",
                 "sequence_len": 1024,
-                "sample_packing": True,
+                "load_in_8bit": False,
                 "adapter": "lora",
                 "lora_r": 8,
                 "lora_alpha": 16,
-                "lora_dropout": 0.0,
-                "lora_target_modules": [
-                    "gate_proj",
-                    "down_proj",
-                    "up_proj",
-                    "q_proj",
-                    "v_proj",
-                    "k_proj",
-                    "o_proj",
-                ],
-                "gradient_accumulation_steps": 1,
-                "num_epochs": 1,
-                "micro_batch_size": 2,
-                "optimizer": "adamw_bnb_8bit",
-                "lr_scheduler": "cosine",
-                "learning_rate": 0.0002,
-                "train_on_inputs": False,
-                "group_by_length": False,
-                "bf16": False,
-                "fp16": True,
-                "tf32": False,
-                "gradient_checkpointing": True,
+                "lora_dropout": 0.05,
+                "lora_target_linear": True,
+                "val_set_size": 0.1,
                 "special_tokens": {
                     "unk_token": "<unk>",
                     "bos_token": "<s>",
                     "eos_token": "</s>",
                 },
+                "datasets": [
+                    {
+                        "path": "mhenrichsen/alpaca_2k_test",
+                        "type": "alpaca",
+                    },
+                ],
+                "num_epochs": 1,
+                "micro_batch_size": 8,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 0.00001,
+                "optimizer": "adamw_torch",
+                "lr_scheduler": "cosine",
             }
         )
         self.model_loader = (  # pylint: disable=attribute-defined-outside-init
@@ -108,5 +91,5 @@ class TestLoadModelUtils:
                     and hasattr(module, "weight")
                 )
             ):
-                for _, param in module.named_parameters(recurse=False):
+                for _, param in module.named_parameters():
                     assert param.dtype == dist_dtype
