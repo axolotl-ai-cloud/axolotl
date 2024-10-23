@@ -562,7 +562,8 @@ plugins:
   - axolotl.integrations.liger.LigerPlugin
 liger_rope: true
 liger_rms_norm: true
-liger_swiglu: true
+liger_glu_activation: true
+liger_layer_norm: true
 liger_fused_linear_cross_entropy: true
 ```
 
