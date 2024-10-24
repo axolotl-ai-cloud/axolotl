@@ -37,7 +37,7 @@ RUN if [ "$AXOLOTL_EXTRAS" != "" ] ; then \
     fi
 
 # So we can test the Docker image
-RUN pip install -r requirements-tests.txt
+RUN pip install -r requirements-dev.txt -r requirements-tests.txt
 
 # fix so that git fetch/pull from remote works
 RUN git config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*" && \
