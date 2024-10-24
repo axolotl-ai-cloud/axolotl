@@ -19,6 +19,7 @@ SUPPORTED_MULTIPACK_MODEL_TYPES = [
     "falcon",
     "phi",
     "phi3",
+    "phimoe",
     "gemma",
     "gemma2",
     "gemmoe",
@@ -32,6 +33,8 @@ def patch_for_multipack(model_type, model_name=None, is_remote_code=False):
         patch_remote(model_name, ".configuration_gemmoe", ".modeling_gemmoe")
     elif model_type == "deepseek_v2":
         patch_remote(model_name, ".configuration_deepseek", ".modeling_deepseek")
+    elif model_type == "phimoe":
+        patch_remote(model_name, ".configuration_phimoe", ".modeling_phimoe")
     elif hasattr(transformers, "modeling_flash_attention_utils") and not is_remote_code:
         transformers.modeling_flash_attention_utils._get_unpad_data = (  # pylint: disable=protected-access
             get_unpad_data
