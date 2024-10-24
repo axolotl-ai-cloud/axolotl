@@ -1,7 +1,7 @@
 --extra-index-url https://huggingface.github.io/autogptq-index/whl/cu118/
 packaging==23.2
 peft==0.13.2
-transformers==4.45.2
+transformers==4.46.0
 tokenizers>=0.20.1
 bitsandbytes==0.44.1
 accelerate==1.0.1
@@ -43,7 +43,7 @@ s3fs>=2024.5.0
 gcsfs>=2024.5.0
 # adlfs
 
-trl==0.9.6
+trl @ git+https://github.com/huggingface/trl.git@31d02cfb795284591a084416b9dcb7bef5d08924
 zstandard==0.22.0
 fastcore
 
