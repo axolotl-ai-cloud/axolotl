@@ -27,7 +27,7 @@ jobs:
         run: |
           pip3 install wheel packaging
           pip3 install -e .
-          pip3 install -r requirements-tests.txt
+          pip3 install -r requirements-dev.txt -r requirements-tests.txt
 
       - name: Extract tag name
         id: tag
