@@ -40,7 +40,10 @@ from transformers import (  # noqa: F401
     PreTrainedTokenizerBase,
     ProcessorMixin,
 )
-from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
+from transformers.integrations.deepspeed import (
+    HfTrainerDeepSpeedConfig,
+    is_deepspeed_zero3_enabled,
+)
 
 from axolotl.common.architectures import MOE_ARCH_BLOCK
 from axolotl.models.mamba import fix_mamba_attn_for_loss
@@ -704,6 +707,22 @@ def load_model(
                 skip_move_to_device = True
                 if "device_map" in model_kwargs:
                     del model_kwargs["device_map"]
+            if os.getenv("ACCELERATE_DEEPSPEED_ZERO_STAGE") == "3":
+                hf_ds_cfg = HfTrainerDeepSpeedConfig(cfg.deepspeed)
+                hf_ds_cfg.fill_match(
+                    "train_micro_batch_size_per_gpu", cfg.micro_batch_size
+                )
+                hf_ds_cfg.fill_match(
+                    "gradient_accumulation_steps", cfg.gradient_accumulation_steps
+                )
+                hf_ds_cfg.fill_match(
+                    "train_batch_size",
+                    int(os.getenv("WORLD_SIZE", "1"))
+                    * cfg.micro_batch_size
+                    * cfg.gradient_accumulation_steps,
+                )
+                if "device_map" in model_kwargs:
+                    del model_kwargs["device_map"]
 
             if cfg.is_multimodal:
                 model_config.text_config = text_model_config
@@ -793,6 +812,22 @@ def load_model(
                 if cfg.fsdp and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading:
                     # disabling either of these two still leads to VRAM spike before setting back down
                     skip_move_to_device = True
+                    if "device_map" in model_kwargs:
+                        del model_kwargs["device_map"]
+                if os.getenv("ACCELERATE_DEEPSPEED_ZERO_STAGE") == "3":
+                    hf_ds_cfg = HfTrainerDeepSpeedConfig(cfg.deepspeed)
+                    hf_ds_cfg.fill_match(
+                        "train_micro_batch_size_per_gpu", cfg.micro_batch_size
+                    )
+                    hf_ds_cfg.fill_match(
+                        "gradient_accumulation_steps", cfg.gradient_accumulation_steps
+                    )
+                    hf_ds_cfg.fill_match(
+                        "train_batch_size",
+                        int(os.getenv("WORLD_SIZE", "1"))
+                        * cfg.micro_batch_size
+                        * cfg.gradient_accumulation_steps,
+                    )
                     if "device_map" in model_kwargs:
                         del model_kwargs["device_map"]
 

@@ -20,15 +20,6 @@
   "bf16": {
     "enabled": true
   },
-  "fp16": {
-    "enabled": "auto",
-    "auto_cast": false,
-    "loss_scale": 0,
-    "initial_scale_power": 32,
-    "loss_scale_window": 1000,
-    "hysteresis": 2,
-    "min_loss_scale": 1
-  },
   "gradient_accumulation_steps": "auto",
   "gradient_clipping": "auto",
   "train_batch_size": "auto",
