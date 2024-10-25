@@ -57,6 +57,7 @@ class ChatTemplate(str, Enum):
     jinja = "jinja"  # pylint: disable=invalid-name
     qwen_25 = "qwen_25"  # pylint: disable=invalid-name
     tokenizer_default = "tokenizer_default"  # pylint: disable=invalid-name
+    exaone = "exaone"  # pylint: disable=invalid-name
 
 
 class DeprecatedParameters(BaseModel):
