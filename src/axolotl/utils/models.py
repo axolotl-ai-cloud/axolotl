@@ -710,8 +710,11 @@ class ModelLoader:
     def build_model(self, qlora_fsdp) -> bool:
         def _configure_zero3_memory_efficient_loading():
             """
-            Set the deepspeed config to load the model into RAM first before moving to VRAM
+            Set the deepspeed config to load the model into RAM first before moving to VRAM.
+
+            We need to return hf_ds_cfg as it needs to exist before model loading.
             """
+            hf_ds_cfg = None
 
             if os.getenv("ACCELERATE_DEEPSPEED_ZERO_STAGE") == "3":
                 hf_ds_cfg = HfTrainerDeepSpeedConfig(self.cfg.deepspeed)
@@ -729,6 +732,8 @@ class ModelLoader:
                 )
                 if "device_map" in self.model_kwargs:
                     del self.model_kwargs["device_map"]
+
+            return hf_ds_cfg
 
         skip_move_to_device = False
         if (  # pylint: disable=condition-evals-to-constant)
@@ -778,7 +783,7 @@ class ModelLoader:
                 if "device_map" in self.model_kwargs:
                     del self.model_kwargs["device_map"]
 
-            _configure_zero3_memory_efficient_loading()
+            _ = _configure_zero3_memory_efficient_loading()
 
             if self.cfg.is_multimodal:
                 self.model_config.text_config = self.text_model_config
@@ -873,7 +878,7 @@ class ModelLoader:
                     if "device_map" in self.model_kwargs:
                         del self.model_kwargs["device_map"]
 
-                _configure_zero3_memory_efficient_loading()
+                _ = _configure_zero3_memory_efficient_loading()
 
                 if self.cfg.is_multimodal:
                     self.model_config.text_config = self.text_model_config
