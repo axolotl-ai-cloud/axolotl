@@ -7,6 +7,7 @@ import abc
 import gc
 import importlib
 import importlib.util
+import inspect
 import logging
 import math
 import os
@@ -27,7 +28,6 @@ from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import BatchSampler, DataLoader, RandomSampler, SequentialSampler
 from transformers import (
     EarlyStoppingCallback,
-    PreTrainedModel,
     Trainer,
     TrainerCallback,
     TrainingArguments,
@@ -666,7 +666,9 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
         return DataLoader(bench_dataset, **dataloader_params)
         # return self.accelerator.prepare(DataLoader(bench_dataset, **dataloader_params))
 
-    def compute_loss(self, model, inputs, return_outputs=False):
+    def compute_loss(
+        self, model, inputs, return_outputs=False, num_items_in_batch=None
+    ):
         # use one's weighted cross entropy loss calc
         # if self.args.sample_packing:
         #     labels = inputs.pop("labels")
@@ -674,8 +676,18 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
         #     loss = trainer_weighted_loss(outputs, labels, shift_labels=True)
         #     return (loss, outputs) if return_outputs else loss
         if self.args.orpo_alpha:
-            return self.orpo_compute_loss(model, inputs, return_outputs=return_outputs)
-        return super().compute_loss(model, inputs, return_outputs=return_outputs)
+            return self.orpo_compute_loss(
+                model,
+                inputs,
+                return_outputs=return_outputs,
+                num_items_in_batch=num_items_in_batch,
+            )
+        return super().compute_loss(
+            model,
+            inputs,
+            return_outputs=return_outputs,
+            num_items_in_batch=num_items_in_batch,
+        )
 
     @staticmethod
     def orpo_concatenate_inputs(inputs, label_pad_token=-100, pad_token=0, device=None):
@@ -771,7 +783,13 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
         ).squeeze(2)
         return torch.mul(per_token_logps, mask).sum(dim=1) / mask.sum(dim=1)
 
-    def orpo_compute_loss(self, model, inputs, return_outputs=False):
+    def orpo_compute_loss(
+        self,
+        model,
+        inputs,
+        return_outputs=False,
+        num_items_in_batch=None,  # pylint: disable=unused-argument
+    ):
         concat_inputs = AxolotlTrainer.orpo_concatenate_inputs(
             inputs,
             label_pad_token=-100,
@@ -898,6 +916,7 @@ class AxolotlMambaTrainer(AxolotlTrainer):
         model,
         inputs,
         return_outputs=False,  # pylint: disable=unused-argument
+        num_items_in_batch=None,  # pylint: disable=unused-argument
     ):
         input_ids = inputs.pop("input_ids")
         lm_logits = model(input_ids).logits
@@ -1005,18 +1024,32 @@ class AxolotlDPOTrainer(SchedulerMixin, DPOTrainer):
         return super().push_to_hub(*args, **kwargs)
 
     def tokenize_row(
-        self, feature, model: Optional[Union[PreTrainedModel, torch.nn.Module]] = None
+        self,
+        features,
+        processing_class,
+        max_prompt_length,
+        max_completion_length,
+        add_special_tokens,
     ) -> Dict:
-        res = super().tokenize_row(feature, model=model)
-        if self.tokenizer.bos_token_id is None and res["prompt_input_ids"][0] is None:
+        res = super().tokenize_row(
+            features,
+            processing_class,
+            max_prompt_length,
+            max_completion_length,
+            add_special_tokens,
+        )
+        if processing_class.bos_token_id is None and res["prompt_input_ids"][0] is None:
             for key in res.keys():
                 res[key] = res[key][1:]
         return res
 
     def training_step(
-        self, model: nn.Module, inputs: Dict[str, Union[torch.Tensor, Any]]
+        self,
+        model: nn.Module,
+        inputs: Dict[str, Union[torch.Tensor, Any]],
+        num_items_in_batch=None,
     ) -> torch.Tensor:
-        loss: torch.Tensor = super().training_step(model, inputs)
+        loss: torch.Tensor = super().training_step(model, inputs, num_items_in_batch)
         gc.collect()
         torch.cuda.empty_cache()
         return loss
@@ -1667,12 +1700,17 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 return_tensors="pt",
                 **data_collator_kwargs,
             )
+        sig = inspect.signature(trainer_cls)
+        if "processing_class" in sig.parameters.keys():
+            trainer_kwargs["processing_class"] = self.tokenizer
+        else:
+            trainer_kwargs["tokenizer"] = self.tokenizer
+
         trainer = trainer_cls(
             model=self.model,
             train_dataset=self.train_dataset,
             eval_dataset=self.eval_dataset,
             args=training_args,
-            tokenizer=self.tokenizer,
             data_collator=self.build_collator(training_args, **data_collator_kwargs),
             callbacks=self.get_callbacks(),
             **trainer_kwargs,
@@ -1713,6 +1751,8 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         ]
         if self.cfg.reward_model:
             collator = RewardDataCollatorWithPadding
+            if "max_length" in kwargs:
+                kwargs.pop("max_length")
         elif use_batch_sampler_collator:
             if self.cfg.model_config_type in SUPPORTED_MULTIPACK_MODEL_TYPES:
                 collator = V2BatchSamplerDataCollatorForSeq2Seq
@@ -1915,7 +1955,7 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             dpo_trainer_kwargs["max_length"] = self.cfg.sequence_len
             dpo_trainer_kwargs["max_target_length"] = None
             dpo_trainer_kwargs["max_prompt_length"] = self.cfg.sequence_len
-            dpo_trainer_kwargs["generate_during_eval"] = True
+            dpo_trainer_kwargs["generate_during_eval"] = self.cfg.use_wandb
         elif self.cfg.rl == "orpo":
             trainer_cls = AxolotlORPOTrainer
             trainer_cls_args = [self.model]
@@ -1927,11 +1967,17 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             trainer_cls_args = [self.model]
         else:
             raise ValueError(f"Unsupported RL: {self.cfg.rl}")
+
+        sig = inspect.signature(trainer_cls)
+        if "processing_class" in sig.parameters.keys():
+            dpo_trainer_kwargs["processing_class"] = self.tokenizer
+        else:
+            dpo_trainer_kwargs["tokenizer"] = self.tokenizer
+
         dpo_trainer = trainer_cls(
             *trainer_cls_args,
             args=training_args,
             train_dataset=self.train_dataset,
-            tokenizer=self.tokenizer,
             callbacks=self.get_callbacks(),
             **dpo_trainer_kwargs,
         )

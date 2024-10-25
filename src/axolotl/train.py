@@ -260,8 +260,10 @@ def train(
 
     if not cfg.hub_model_id:
         try:
-            trainer.create_model_card(model_name=cfg.output_dir.lstrip("./"))
-        except AttributeError:
+            trainer.create_model_card(
+                model_name=cfg.output_dir.lstrip("./").encode("utf-8").decode("utf-8")
+            )
+        except (AttributeError, UnicodeDecodeError):
             pass
     elif cfg.hub_model_id:
         # defensively push to the hub to ensure the model card is updated
