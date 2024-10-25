@@ -666,7 +666,9 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
         return DataLoader(bench_dataset, **dataloader_params)
         # return self.accelerator.prepare(DataLoader(bench_dataset, **dataloader_params))
 
-    def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
+    def compute_loss(
+        self, model, inputs, return_outputs=False, num_items_in_batch=None
+    ):
         # use one's weighted cross entropy loss calc
         # if self.args.sample_packing:
         #     labels = inputs.pop("labels")
@@ -675,13 +677,16 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
         #     return (loss, outputs) if return_outputs else loss
         if self.args.orpo_alpha:
             return self.orpo_compute_loss(
-                model, inputs, return_outputs=return_outputs, **kwargs
+                model,
+                inputs,
+                return_outputs=return_outputs,
+                num_items_in_batch=num_items_in_batch,
             )
         return super().compute_loss(
             model,
             inputs,
             return_outputs=return_outputs,
-            **kwargs,
+            num_items_in_batch=num_items_in_batch,
         )
 
     @staticmethod
@@ -783,7 +788,7 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
         model,
         inputs,
         return_outputs=False,
-        **kwargs,  # pylint: disable=unused-argument
+        num_items_in_batch=None,  # pylint: disable=unused-argument
     ):
         concat_inputs = AxolotlTrainer.orpo_concatenate_inputs(
             inputs,
@@ -911,7 +916,7 @@ class AxolotlMambaTrainer(AxolotlTrainer):
         model,
         inputs,
         return_outputs=False,  # pylint: disable=unused-argument
-        **kwargs,  # pylint: disable=unused-argument
+        num_items_in_batch=None,  # pylint: disable=unused-argument
     ):
         input_ids = inputs.pop("input_ids")
         lm_logits = model(input_ids).logits
