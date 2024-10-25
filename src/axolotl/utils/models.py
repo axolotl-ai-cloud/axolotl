@@ -709,10 +709,10 @@ class ModelLoader:
 
     def build_model(self, qlora_fsdp) -> bool:
         def _configure_zero3_memory_efficient_loading():
-            '''
+            """
             Set the deepspeed config to load the model into RAM first before moving to VRAM
-            '''
-            
+            """
+
             if os.getenv("ACCELERATE_DEEPSPEED_ZERO_STAGE") == "3":
                 hf_ds_cfg = HfTrainerDeepSpeedConfig(self.cfg.deepspeed)
                 hf_ds_cfg.fill_match(
