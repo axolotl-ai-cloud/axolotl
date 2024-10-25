@@ -598,10 +598,8 @@ class ModelLoader:
             del self.model_kwargs["device_map"]
 
     def set_quantization_config(self) -> None:
-        if self.cfg.load_in_8bit and self.cfg.adapter is not None:
-            self.model_kwargs["load_in_8bit"] = True
-        if self.cfg.load_in_4bit and self.cfg.adapter is not None:
-            self.model_kwargs["load_in_4bit"] = True
+        self.model_kwargs["load_in_8bit"] = self.cfg.load_in_8bit
+        self.model_kwargs["load_in_4bit"] = self.cfg.load_in_4bit
 
         if self.cfg.gptq:
             if not hasattr(self.model_config, "quantization_config"):
@@ -1073,17 +1071,16 @@ class ModelLoader:
         # ---------------------------------------------------------
         #  put model to accelerator
         # ---------------------------------------------------------
+        is_load_in_8bit = (
+            "load_in_8bit" in self.model_kwargs and self.model_kwargs["load_in_8bit"]
+        )
+        is_load_in_4bit = (
+            "load_in_4bit" in self.model_kwargs and self.model_kwargs["load_in_4bit"]
+        )
         if (
             self.cfg.ddp
-            and not (
-                "load_in_8bit" in self.model_kwargs
-                and self.model_kwargs["load_in_8bit"]
-            )
-            and not (
-                self.cfg.rl
-                and "load_in_4bit" in self.model_kwargs
-                and self.model_kwargs["load_in_4bit"]
-            )
+            and not is_load_in_8bit
+            and not (self.cfg.rl and is_load_in_4bit)
             and not skip_move_to_device
         ):
             # TODO revaldate this conditional
