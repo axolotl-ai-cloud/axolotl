@@ -201,6 +201,7 @@ class ChatTemplate(str, Enum):
     deepseek_v2 = "deepseek_v2"  # pylint: disable=invalid-name
     jamba = "jamba"  # pylint: disable=invalid-name
     qwen_25 = "qwen_25"  # pylint: disable=invalid-name
+    exaone = "exaone"  # pylint: disable=invalid-name
 
 
 class LoftQConfig(BaseModel):
