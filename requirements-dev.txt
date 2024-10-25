@@ -2,3 +2,4 @@ pre-commit
 black
 mypy
 types-requests
+tbparse
