@@ -1042,7 +1042,10 @@ class ModelLoader:
             hasattr(self.model, "get_input_embeddings")
             and self.model.get_input_embeddings().num_embeddings < embeddings_len
         ):
-            self.model.resize_token_embeddings(embeddings_len)
+            resize_kwargs = {}
+            if self.cfg.mean_resizing_embeddings is not None:
+                resize_kwargs["mean_resizing"] = self.cfg.mean_resizing_embeddings
+            self.model.resize_token_embeddings(embeddings_len, **resize_kwargs)
         else:
             self.model.tie_weights()
 
