@@ -1116,16 +1116,10 @@ class ModelLoader:
         # ---------------------------------------------------------
         #  put model to accelerator
         # ---------------------------------------------------------
-        is_load_in_8bit = (
-            "load_in_8bit" in self.model_kwargs and self.model_kwargs["load_in_8bit"]
-        )
-        is_load_in_4bit = (
-            "load_in_4bit" in self.model_kwargs and self.model_kwargs["load_in_4bit"]
-        )
         if (
             self.cfg.ddp
-            and not is_load_in_8bit
-            and not (self.cfg.rl and is_load_in_4bit)
+            and not self.cfg.load_in_8bit
+            and not (self.cfg.rl and self.cfg.load_in_8bit)
             and not skip_move_to_device
         ):
             # TODO revaldate this conditional
