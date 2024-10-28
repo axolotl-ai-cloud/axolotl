@@ -152,7 +152,7 @@ class TestMultiGPULlama(unittest.TestCase):
                 "base_model": "TinyLlama/TinyLlama_v1.1",
                 "tokenizer_type": "LlamaTokenizer",
                 "sequence_len": 2048,
-                "sample_packing": True,
+                "sample_packing": False,
                 "eval_sample_packing": False,
                 "pad_to_sequence_len": True,
                 "adapter": "lora",
