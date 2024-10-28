@@ -968,17 +968,10 @@ class ModelLoader:
         if is_deepspeed_zero3_enabled():
             skip_prepare_model_for_kbit_training = True
 
-        is_load_in_8bit = (
-            "load_in_8bit" in self.model_kwargs and self.model_kwargs["load_in_8bit"]
-        )
-        is_load_in_4bit = (
-            "load_in_4bit" in self.model_kwargs and self.model_kwargs["load_in_4bit"]
-        )
-
         if (
             not skip_prepare_model_for_kbit_training
             and self.cfg.adapter in ["lora", "qlora"]
-            and (is_load_in_8bit or is_load_in_4bit)
+            and (self.cfg.load_in_8bit or self.cfg.load_in_4bit)
         ):
             LOG.info("converting PEFT model w/ prepare_model_for_kbit_training")
             self.model = prepare_model_for_kbit_training(
