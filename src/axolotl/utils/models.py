@@ -1112,7 +1112,7 @@ class ModelLoader:
         if (
             self.cfg.ddp
             and not self.cfg.load_in_8bit
-            and not (self.cfg.rl and self.cfg.load_in_8bit)
+            and not (self.cfg.rl and self.cfg.load_in_4bit)
             and not skip_move_to_device
         ):
             # TODO revaldate this conditional
