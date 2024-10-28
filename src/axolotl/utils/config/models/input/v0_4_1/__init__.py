@@ -549,6 +549,7 @@ class AxolotlInputConfig(
     resume_from_checkpoint: Optional[str] = None
     auto_resume_from_checkpoints: Optional[bool] = None
     resize_token_embeddings_to_32x: Optional[bool] = None
+    mean_resizing_embeddings: Optional[bool] = False
 
     rl: Optional[RLType] = None
     reward_model: Optional[bool] = None
