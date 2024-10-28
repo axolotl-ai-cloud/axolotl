@@ -40,7 +40,10 @@ from transformers import (  # noqa: F401
     PreTrainedTokenizerBase,
     ProcessorMixin,
 )
-from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
+from transformers.integrations.deepspeed import (
+    HfTrainerDeepSpeedConfig,
+    is_deepspeed_zero3_enabled,
+)
 
 from axolotl.common.architectures import MOE_ARCH_BLOCK
 from axolotl.models.mamba import fix_mamba_attn_for_loss
@@ -705,6 +708,38 @@ class ModelLoader:
             self.model_kwargs["low_cpu_mem_usage"] = True
 
     def build_model(self, qlora_fsdp) -> bool:
+        def _configure_zero3_memory_efficient_loading():
+            """
+            Set the deepspeed config to load the model into RAM first before moving to VRAM.
+
+            We need to return hf_ds_cfg as it needs to exist before model loading.
+            """
+            hf_ds_cfg = None
+
+            if os.getenv("ACCELERATE_DEEPSPEED_ZERO_STAGE") == "3":
+                hf_ds_cfg = HfTrainerDeepSpeedConfig(self.cfg.deepspeed)
+                hf_ds_cfg.fill_match(
+                    "train_micro_batch_size_per_gpu", self.cfg.micro_batch_size
+                )
+                hf_ds_cfg.fill_match(
+                    "gradient_accumulation_steps", self.cfg.gradient_accumulation_steps
+                )
+                hf_ds_cfg.fill_match(
+                    "train_batch_size",
+                    int(os.getenv("WORLD_SIZE", "1"))
+                    * self.cfg.micro_batch_size
+                    * self.cfg.gradient_accumulation_steps,
+                )
+                if "device_map" in self.model_kwargs:
+                    del self.model_kwargs["device_map"]
+
+                transformers.modeling_utils.is_deepspeed_zero3_enabled = lambda: True
+                transformers.integrations.deepspeed.is_deepspeed_zero3_enabled = (
+                    lambda: True
+                )
+
+            return hf_ds_cfg
+
         skip_move_to_device = False
         if (  # pylint: disable=condition-evals-to-constant)
             (self.cfg.fsdp and self.cfg.fsdp_config.fsdp_cpu_ram_efficient_loading)
@@ -752,6 +787,8 @@ class ModelLoader:
                 skip_move_to_device = True
                 if "device_map" in self.model_kwargs:
                     del self.model_kwargs["device_map"]
+
+            _ = _configure_zero3_memory_efficient_loading()
 
             if self.cfg.is_multimodal:
                 self.model_config.text_config = self.text_model_config
@@ -845,6 +882,8 @@ class ModelLoader:
                     skip_move_to_device = True
                     if "device_map" in self.model_kwargs:
                         del self.model_kwargs["device_map"]
+
+                _ = _configure_zero3_memory_efficient_loading()
 
                 if self.cfg.is_multimodal:
                     self.model_config.text_config = self.text_model_config
