@@ -254,7 +254,7 @@ unfrozen_parameters:
 # model.embed_tokens layers
 
 
-gradient_accumulation_steps: 16
+gradient_accumulation_steps: 2
 micro_batch_size: 2
 num_epochs: 3
 optimizer: adamw_torch_fused
