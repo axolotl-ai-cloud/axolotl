@@ -155,6 +155,7 @@ class TestMultiGPULlama(unittest.TestCase):
                 "sample_packing": False,
                 "eval_sample_packing": False,
                 "pad_to_sequence_len": True,
+                "load_in_8bit": True,
                 "adapter": "lora",
                 "lora_r": 8,
                 "lora_alpha": 16,
