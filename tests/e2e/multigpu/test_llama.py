@@ -189,6 +189,7 @@ class TestMultiGPULlama(unittest.TestCase):
                 "micro_batch_size": 4,
                 "gradient_accumulation_steps": 4,
                 "output_dir": temp_dir,
+                "warmup_steps": 0,
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_8bit",
                 "lr_scheduler": "cosine",
