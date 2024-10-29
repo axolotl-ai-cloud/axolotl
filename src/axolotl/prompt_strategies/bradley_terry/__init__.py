@@ -6,7 +6,7 @@ import logging
 
 from axolotl.prompt_strategies.user_defined import UserDefinedDatasetConfig
 
-LOG = logging.getLogger("axolotl.prompt_strategies")
+LOG = logging.getLogger("axolotl.prompt_strategies.bradley_terry")
 
 
 def load(strategy, tokenizer, cfg, ds_cfg):

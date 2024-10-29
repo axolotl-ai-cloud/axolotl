@@ -83,7 +83,7 @@ lora_on_cpu: true
 datasets:
   # HuggingFace dataset repo | s3://,gs:// path | "json" for local dataset, make sure to fill data_files
   - path: vicgalle/alpaca-gpt4
-  # The type of prompt to use for training. [alpaca, sharegpt, gpteacher, oasst, reflection]
+    # The type of prompt to use for training. [alpaca, sharegpt, gpteacher, oasst, reflection]
     type: alpaca # format | format:<prompt_style> (chat/instruct) | <prompt_strategies>.load_<load_fn>
     ds_type: # Optional[str] (json|arrow|parquet|text|csv) defines the datatype when path is a file
     data_files: # Optional[str] path to source data files
@@ -124,6 +124,48 @@ datasets:
       # For `completion` datsets only, uses the provided field instead of `text` column
       field:
 
+  # Using chat template
+  - path: ...
+    # Set type to `chat_template` to use this strategy
+    type: chat_template
+    # Specify the name of the chat template to use
+    # The name of the chat template to use for training, following values are supported:
+    # - tokenizer_default: Uses the chat template that is available in the tokenizer_config.json. If the chat template is not available in the tokenizer, it will raise an error. This is the default.
+    # - alpaca/inst/chatml/gemma/cohere/llama3/phi_3/deepseek_v2/jamba: These chat templates are available in the axolotl codebase at src/axolotl/utils/chat_templates.py
+    # - tokenizer_default_fallback_*: where * is the name of the chat template to fallback to if the tokenizer does not have a chat template else default to tokenizer. E.g. tokenizer_default_fallback_chatml.
+    # - jinja: Uses a custom jinja template for the chat template. The custom jinja template should be provided in the chat_template_jinja field.
+    chat_template: tokenizer_default
+    # Custom jinja template for chat template. This will be only used if `chat_template` is set to `jinja` or empty (in which case chat_template is automatically set to `jinja`).
+    chat_template_jinja:
+    # The key in the data example that contains the messages. Default is "messages".
+    field_messages: messages
+    # The key in the message turn that contains the role. Default is "role".
+    message_field_role: role
+    # The key in the message turn that contains the content. Default is "content".
+    message_field_content: content
+    # Optional[Dict[str, List]]. Roles mapping for the messages.
+    roles:
+      user: ["human", "user"]
+      assistant: ["gpt", "assistant", "ai"]
+      system: ["system"]
+
+    ## NOTE: Leaving the below empty will default to using the simple legacy tokenization strategy where only last message is trained on.
+
+    # Optional[List[str]]. Roles to train on. The tokens from these roles will be considered for the loss.
+    roles_to_train: ["gpt", "assistant"]
+    # Optional[str]. Which EOS tokens to train on in the conversation. Possible values are:
+    # - all: train on all EOS tokens
+    # - turn: train on the EOS token at the end of each trainable turn
+    # - last: train on the last EOS token in the conversation
+    train_on_eos: last
+    # The key in the message turn that indicates via boolean whether tokens of a turn should be considered for training. Useful to selectively train on certain turns besides the `roles_to_train`.
+    message_field_training: training
+    # The key in the message turn that contains the training details. Useful to selectively train on certain tokens in a turn.
+    # The value of the key is a List[Dict] containing `begin_offset` (start character index in content), `end_offset` (end character index in content), and `train` (boolean whether to train).
+    # See example at `docs/dataset-formats/conversation.qmd`
+    message_field_training_detail: train_detail
+
+
 # If false, the datasets will not be shuffled and will keep their original order in `datasets`.
 # The same applies to the `test_datasets` option and the `pretraining_dataset` option. Default is true.
 shuffle_merged_datasets: true
@@ -142,9 +184,16 @@ test_datasets:
 # use RL training: 'dpo', 'ipo', 'kto'
 rl:
 
-# Saves the desired chat template to the tokenizer_config.json for easier inferencing
-# Currently supports chatml and inst (mistral/mixtral)
-chat_template: chatml
+# The name of the chat template to use for training, following values are supported:
+# - tokenizer_default: Uses the chat template that is available in the tokenizer_config.json. If the chat template is not available in the tokenizer, it will raise an error. This is the default value.
+# - alpaca/inst/chatml/gemma/cohere/llama3/phi_3/deepseek_v2/jamba: These chat templates are available in the axolotl codebase at src/axolotl/utils/chat_templates.py
+# - tokenizer_default_fallback_*: where * is the name of the chat template to fallback to. E.g. tokenizer_default_fallback_chatml. This is useful when the chat template is not available in the tokenizer.
+# - jinja: Uses a custom jinja template for the chat template. The custom jinja template should be provided in the chat_template_jinja field.
+# The selected chat template will be saved to the tokenizer_config.json for easier inferencing
+# Note: It is recommended to set train_on_inputs to true when using a chat template that is different from the model's default chat template.
+chat_template: tokenizer_default
+# custom jinja template for chat template. This will be only used if chat_template is set to `jinja` or `null` (in which case chat_template is automatically set to `jinja`). Default is null.
+chat_template_jinja: null
 # Changes the default system message
 default_system_message: You are a helpful assistant. Please give a long and detailed answer. # Currently only supports chatml.
 # Axolotl attempts to save the dataset as an arrow after packing the data together so
