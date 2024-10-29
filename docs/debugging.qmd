@@ -51,12 +51,12 @@ While debugging it's helpful to simplify your test scenario as much as possible.
 
 ### Background
 
-The below example shows how to configure VSCode to debug data preprocessing of the `sharegpt` format.  This is the format used when you have the following in your axolotl config:
+The below example shows how to configure VSCode to debug data preprocessing of the `chat_template` format.  This is the format used when you have the following in your axolotl config:
 
 ```yaml
 datasets:
-  - path: <path to your sharegpt formatted dataset> # example on HF Hub: philschmid/guanaco-sharegpt-style
-    type: sharegpt
+  - path: <path to your chat_template formatted dataset> # example on HF Hub: fozziethebeat/alpaca_messages_2k_test
+    type: chat_template
 ```
 
 >[!Important]
@@ -83,7 +83,7 @@ If you developing on a remote host, you can easily use VSCode to debug remotely.
 
 The easiest way to get started is to modify the [.vscode/launch.json](../.vscode/launch.json) file in this project.  This is just an example configuration, so you may need to modify or copy it to suit your needs.
 
-For example, to mimic the command `cd devtools && CUDA_VISIBLE_DEVICES=0 accelerate launch -m axolotl.cli.train dev_sharegpt.yml`, you would use the below configuration[^1].  Note that we add additional flags that override the axolotl config and incorporate the tips above (see the comments). We also set the working directory to `devtools` and set the `env` variable `HF_HOME` to a temporary folder that is later partially deleted.  This is because we want to delete the HF dataset cache before each run in order to ensure that the data preprocessing code is run from scratch.
+For example, to mimic the command `cd devtools && CUDA_VISIBLE_DEVICES=0 accelerate launch -m axolotl.cli.train dev_chat_template.yml`, you would use the below configuration[^1].  Note that we add additional flags that override the axolotl config and incorporate the tips above (see the comments). We also set the working directory to `devtools` and set the `env` variable `HF_HOME` to a temporary folder that is later partially deleted.  This is because we want to delete the HF dataset cache before each run in order to ensure that the data preprocessing code is run from scratch.
 
 ```jsonc
 // .vscode/launch.json
@@ -91,12 +91,12 @@ For example, to mimic the command `cd devtools && CUDA_VISIBLE_DEVICES=0 acceler
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Debug axolotl prompt - sharegpt",
+            "name": "Debug axolotl prompt - chat_template",
             "type": "python",
             "module": "accelerate.commands.launch",
             "request": "launch",
             "args": [
-                "-m", "axolotl.cli.train", "dev_sharegpt.yml",
+                "-m", "axolotl.cli.train", "dev_chat_template.yml",
                 // The flags below simplify debugging by overriding the axolotl config
                 // with the debugging tips above.  Modify as needed.
                 "--dataset_processes=1",      // limits data preprocessing to one process
@@ -240,6 +240,6 @@ style="border-radius: 10px; display: block; margin: auto;" width="560" height="3
 </div>
 <br>
 
-[^1]: The config actually mimics the command `CUDA_VISIBLE_DEVICES=0 python -m accelerate.commands.launch -m axolotl.cli.train devtools/sharegpt.yml`, but this is the same thing.
+[^1]: The config actually mimics the command `CUDA_VISIBLE_DEVICES=0 python -m accelerate.commands.launch -m axolotl.cli.train devtools/chat_template.yml`, but this is the same thing.
 
 [^2]: Many of the below flags are recommended best practices by Nvidia when using nvidia-container-toolkit.  You can read more about these flags [here](https://docs.nvidia.com/deeplearning/frameworks/user-guide/index.html).
