@@ -16,7 +16,10 @@ chat_template: deepseek_v2
 datasets:
   - path: mlabonne/FineTome-100k
     type: chat_template
-    split: train
+    split: train[:20%]
+    field_messages: conversations
+    message_field_role: from
+    message_field_content: value
 
 dataset_prepared_path: last_run_prepared
 val_set_size: 0.0
