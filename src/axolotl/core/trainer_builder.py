@@ -394,7 +394,7 @@ class SchedulerMixin(Trainer):
                     min_lr_ratio=self.args.cosine_min_lr_ratio,
                 )
             else:
-                return super().create_scheduler(num_training_steps, optimizer)
+                return super().create_scheduler(num_training_steps, optimizer=optimizer)
         else:
             if use_cosine_quadratic:
                 LOG.warning("axolotl's cosine scheduler with quadratic warmup not used (e.g., because of deepspeed).")
