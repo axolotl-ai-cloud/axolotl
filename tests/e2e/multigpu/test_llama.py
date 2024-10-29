@@ -273,7 +273,6 @@ class TestMultiGPULlama(unittest.TestCase):
             ]
         )
 
-    @pytest.mark.skip("disabled due to upstream issue")
     @with_temp_dir
     def test_fsdp_qlora_prequant_packed(self, temp_dir):
         # pylint: disable=duplicate-code
