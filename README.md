@@ -121,7 +121,7 @@ Features:
 
 Get started with Axolotl in just a few steps! This quickstart guide will walk you through setting up and running a basic fine-tuning task.
 
-**Requirements**: Python >=3.10 and Pytorch >=2.1.1.
+**Requirements**: Nvidia GPU (Ampere architecture or newer for `bf16` and Flash Attention), Python >=3.10 and PyTorch >=2.3.1.
 
 ```bash
 git clone https://github.com/axolotl-ai-cloud/axolotl
