@@ -7,8 +7,8 @@ load_in_8bit: true
 load_in_4bit: false
 
 datasets:
-  - path: philschmid/guanaco-sharegpt-style
-    type: sharegpt
+  - path: fozziethebeat/alpaca_messages_2k_test
+    type: chat_template
     shards: 10
 val_set_size: 0
 output_dir: temp_debug/axolotl_outputs/model
