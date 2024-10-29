@@ -397,7 +397,7 @@ class ModelLoader:
             patch_for_multipack(
                 self.cfg.model_config_type,
                 model_name=self.cfg.base_model,
-                is_remote_code=self.cfg.trust_remote_code,
+                # is_remote_code=self.cfg.trust_remote_code,
             )
 
             if self.cfg.is_llama_derived_model:
