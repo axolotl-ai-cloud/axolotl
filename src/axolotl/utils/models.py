@@ -393,7 +393,8 @@ class ModelLoader:
             self.cfg.model_config_type in SUPPORTED_MULTIPACK_MODEL_TYPES
             and self.cfg.flash_attention
             and self.cfg.sample_packing
-        ):
+        ):  
+            LOG.info(f"Model_config_type: {self.cfg.model_config_type}")
             patch_for_multipack(
                 self.cfg.model_config_type,
                 model_name=self.cfg.base_model,
