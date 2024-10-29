@@ -281,6 +281,7 @@ class TestMultiGPULlama(unittest.TestCase):
                 "base_model": "axolotl-ai-co/TinyLlama_v1.1-bnb-nf4-bf16",
                 "tokenizer_type": "AutoTokenizer",
                 "adapter": "qlora",
+                "mean_resizing_embeddings": True,
                 "load_in_4bit": True,
                 "lora_r": 8,
                 "lora_alpha": 16,
