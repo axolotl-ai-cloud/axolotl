@@ -13,7 +13,7 @@ from axolotl.train import train
 from axolotl.utils.config import normalize_config
 from axolotl.utils.dict import DictDefault
 
-from ..utils import require_torch_2_1_1, with_temp_dir
+from ..utils import require_torch_2_3_1, with_temp_dir
 
 LOG = logging.getLogger("axolotl.tests.e2e")
 os.environ["WANDB_DISABLED"] = "true"
@@ -24,7 +24,7 @@ class Test4dMultipackLlama(unittest.TestCase):
     Test case for Llama models using 4d attention with multipack
     """
 
-    @require_torch_2_1_1
+    @require_torch_2_3_1
     @with_temp_dir
     def test_sdp_lora_packing(self, temp_dir):
         # pylint: disable=duplicate-code
