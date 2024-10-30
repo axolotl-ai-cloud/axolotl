@@ -392,10 +392,10 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <h2 class="anchored" data-anchor-id="debugging-with-vscode">Debugging with VSCode</h2>
 <section id="background" class="level3">
 <h3 class="anchored" data-anchor-id="background">Background</h3>
-<p>The below example shows how to configure VSCode to debug data preprocessing of the <code>sharegpt</code> format. This is the format used when you have the following in your axolotl config:</p>
+<p>The below example shows how to configure VSCode to debug data preprocessing of the <code>chat_template</code> format. This is the format used when you have the following in your axolotl config:</p>
 <div class="sourceCode" id="cb1"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> &lt;path to your sharegpt formatted dataset&gt;</span><span class="co"> # example on HF Hub: philschmid/guanaco-sharegpt-style</span></span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> sharegpt</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> &lt;path to your chat_template formatted dataset&gt;</span><span class="co"> # example on HF Hub: fozziethebeat/alpaca_messages_2k_test</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> chat_template</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <blockquote class="blockquote">
 <p>[!Important] If you are already familiar with advanced VSCode debugging, you can skip the below explanation and look at the files <a href="../.vscode/launch.json">.vscode/launch.json</a> and <a href="../.vscode/tasks.json">.vscode/tasks.json</a> for an example configuration.</p>
 </blockquote>
@@ -416,18 +416,18 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <section id="configuration" class="level3">
 <h3 class="anchored" data-anchor-id="configuration">Configuration</h3>
 <p>The easiest way to get started is to modify the <a href="../.vscode/launch.json">.vscode/launch.json</a> file in this project. This is just an example configuration, so you may need to modify or copy it to suit your needs.</p>
-<p>For example, to mimic the command <code>cd devtools &amp;&amp; CUDA_VISIBLE_DEVICES=0 accelerate launch -m axolotl.cli.train dev_sharegpt.yml</code>, you would use the below configuration<a href="#fn1" class="footnote-ref" id="fnref1" role="doc-noteref"><sup>1</sup></a>. Note that we add additional flags that override the axolotl config and incorporate the tips above (see the comments). We also set the working directory to <code>devtools</code> and set the <code>env</code> variable <code>HF_HOME</code> to a temporary folder that is later partially deleted. This is because we want to delete the HF dataset cache before each run in order to ensure that the data preprocessing code is run from scratch.</p>
+<p>For example, to mimic the command <code>cd devtools &amp;&amp; CUDA_VISIBLE_DEVICES=0 accelerate launch -m axolotl.cli.train dev_chat_template.yml</code>, you would use the below configuration<a href="#fn1" class="footnote-ref" id="fnref1" role="doc-noteref"><sup>1</sup></a>. Note that we add additional flags that override the axolotl config and incorporate the tips above (see the comments). We also set the working directory to <code>devtools</code> and set the <code>env</code> variable <code>HF_HOME</code> to a temporary folder that is later partially deleted. This is because we want to delete the HF dataset cache before each run in order to ensure that the data preprocessing code is run from scratch.</p>
 <pre class="jsonc"><code>// .vscode/launch.json
 {
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Debug axolotl prompt - sharegpt",
+            "name": "Debug axolotl prompt - chat_template",
             "type": "python",
             "module": "accelerate.commands.launch",
             "request": "launch",
             "args": [
-                "-m", "axolotl.cli.train", "dev_sharegpt.yml",
+                "-m", "axolotl.cli.train", "dev_chat_template.yml",
                 // The flags below simplify debugging by overriding the axolotl config
                 // with the debugging tips above.  Modify as needed.
                 "--dataset_processes=1",      // limits data preprocessing to one process
@@ -552,7 +552,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <div id="quarto-appendix" class="default"><section id="footnotes" class="footnotes footnotes-end-of-document" role="doc-endnotes"><h2 class="anchored quarto-appendix-heading">Footnotes</h2>
 
 <ol>
-<li id="fn1"><p>The config actually mimics the command <code>CUDA_VISIBLE_DEVICES=0 python -m accelerate.commands.launch -m axolotl.cli.train devtools/sharegpt.yml</code>, but this is the same thing.<a href="#fnref1" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn1"><p>The config actually mimics the command <code>CUDA_VISIBLE_DEVICES=0 python -m accelerate.commands.launch -m axolotl.cli.train devtools/chat_template.yml</code>, but this is the same thing.<a href="#fnref1" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 <li id="fn2"><p>Many of the below flags are recommended best practices by Nvidia when using nvidia-container-toolkit. You can read more about these flags <a href="https://docs.nvidia.com/deeplearning/frameworks/user-guide/index.html">here</a>.<a href="#fnref2" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 </ol>
 </section></div></main> <!-- /main -->
