@@ -273,7 +273,6 @@ class TestMultiGPULlama(unittest.TestCase):
             ]
         )
 
-    @pytest.mark.skip("disabled due to upstream issue")
     @with_temp_dir
     def test_fsdp_qlora_prequant_packed(self, temp_dir):
         # pylint: disable=duplicate-code
@@ -282,6 +281,7 @@ class TestMultiGPULlama(unittest.TestCase):
                 "base_model": "axolotl-ai-co/TinyLlama_v1.1-bnb-nf4-bf16",
                 "tokenizer_type": "AutoTokenizer",
                 "adapter": "qlora",
+                "mean_resizing_embeddings": True,
                 "load_in_4bit": True,
                 "lora_r": 8,
                 "lora_alpha": 16,
@@ -297,7 +297,7 @@ class TestMultiGPULlama(unittest.TestCase):
                 "sequence_len": 2048,
                 "val_set_size": 0.05,
                 "special_tokens": {
-                    "pad_token": "<|end_of_text|>",
+                    "pad_token": "</s>",
                 },
                 "datasets": [
                     {
