@@ -1638,6 +1638,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             trainer_kwargs["max_length"] = self.cfg.sequence_len
 
         if self.cfg.optimizer in [
+            # pylint: disable=duplicate-code
             "optimi_adamw",
             "ao_adamw_4bit",
             "ao_adamw_8bit",
