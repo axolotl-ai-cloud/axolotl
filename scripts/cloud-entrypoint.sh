@@ -76,5 +76,11 @@ if [ ! -L "/workspace/axolotl/outputs" ]; then
     ln -sf /workspace/data/axolotl-artifacts /workspace/axolotl/outputs
 fi
 
+# Check if CRED_FILE_CONTENT is set and not empty
+if [ -n "$CRED_FILE_CONTENT" ]; then
+    # write Google Cloud credentials to file
+    python /root/write_creds.py
+fi
+
 # Execute the passed arguments (CMD)
 exec "$@"
