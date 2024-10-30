@@ -297,7 +297,7 @@ class TestMultiGPULlama(unittest.TestCase):
                 "sequence_len": 2048,
                 "val_set_size": 0.05,
                 "special_tokens": {
-                    "pad_token": "<|end_of_text|>",
+                    "pad_token": "</s>",
                 },
                 "datasets": [
                     {
