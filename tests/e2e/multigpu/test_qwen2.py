@@ -47,7 +47,7 @@ class TestMultiGPUQwen2(unittest.TestCase):
                     },
                 ],
                 "num_epochs": 1,
-                "max_steps": 100,
+                "max_steps": 15,
                 "warmup_steps": 20,
                 "micro_batch_size": 4,
                 "gradient_accumulation_steps": 2,

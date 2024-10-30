@@ -640,9 +640,7 @@ class ModelLoader:
                 self.model_kwargs["quantization_config"] = BitsAndBytesConfig(
                     **self.model_config.quantization_config
                 )
-        elif self.cfg.adapter == "qlora" and (
-            "load_in_4bit" in self.model_kwargs and self.model_kwargs["load_in_4bit"]
-        ):
+        elif self.cfg.adapter == "qlora" and self.model_kwargs["load_in_4bit"]:
             bnb_config = {
                 "load_in_4bit": True,
                 "llm_int8_threshold": 6.0,
@@ -665,9 +663,7 @@ class ModelLoader:
             self.model_kwargs["quantization_config"] = BitsAndBytesConfig(
                 **bnb_config,
             )
-        elif self.cfg.adapter == "lora" and (
-            "load_in_8bit" in self.model_kwargs and self.model_kwargs["load_in_8bit"]
-        ):
+        elif self.cfg.adapter == "lora" and self.model_kwargs["load_in_8bit"]:
             bnb_config = {
                 "load_in_8bit": True,
             }
@@ -680,10 +676,8 @@ class ModelLoader:
 
         # no longer needed per https://github.com/huggingface/transformers/pull/26610
         if "quantization_config" in self.model_kwargs or self.cfg.gptq:
-            if "load_in_8bit" in self.model_kwargs:
-                del self.model_kwargs["load_in_8bit"]
-            if "load_in_4bit" in self.model_kwargs:
-                del self.model_kwargs["load_in_4bit"]
+            self.model_kwargs.pop("load_in_8bit", None)
+            self.model_kwargs.pop("load_in_4bit", None)
 
     def set_attention_config(self) -> None:
         """
@@ -968,17 +962,10 @@ class ModelLoader:
         if is_deepspeed_zero3_enabled():
             skip_prepare_model_for_kbit_training = True
 
-        is_load_in_8bit = (
-            "load_in_8bit" in self.model_kwargs and self.model_kwargs["load_in_8bit"]
-        )
-        is_load_in_4bit = (
-            "load_in_4bit" in self.model_kwargs and self.model_kwargs["load_in_4bit"]
-        )
-
         if (
             not skip_prepare_model_for_kbit_training
             and self.cfg.adapter in ["lora", "qlora"]
-            and (is_load_in_8bit or is_load_in_4bit)
+            and (self.cfg.load_in_8bit or self.cfg.load_in_4bit)
         ):
             LOG.info("converting PEFT model w/ prepare_model_for_kbit_training")
             self.model = prepare_model_for_kbit_training(
@@ -1116,16 +1103,10 @@ class ModelLoader:
         # ---------------------------------------------------------
         #  put model to accelerator
         # ---------------------------------------------------------
-        is_load_in_8bit = (
-            "load_in_8bit" in self.model_kwargs and self.model_kwargs["load_in_8bit"]
-        )
-        is_load_in_4bit = (
-            "load_in_4bit" in self.model_kwargs and self.model_kwargs["load_in_4bit"]
-        )
         if (
             self.cfg.ddp
-            and not is_load_in_8bit
-            and not (self.cfg.rl and is_load_in_4bit)
+            and not self.cfg.load_in_8bit
+            and not (self.cfg.rl and self.cfg.load_in_4bit)
             and not skip_move_to_device
         ):
             # TODO revaldate this conditional
