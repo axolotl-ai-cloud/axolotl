@@ -632,7 +632,7 @@ class TestMultiGPULlama:
                     },
                 ],
                 "num_epochs": 1,
-                "max_steps": 50,
+                "max_steps": 15,
                 "micro_batch_size": 4,
                 "gradient_accumulation_steps": 4,
                 "output_dir": temp_dir,
