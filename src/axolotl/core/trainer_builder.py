@@ -48,6 +48,7 @@ from trl import (
 )
 from trl.trainer.utils import RewardDataCollatorWithPadding, pad_to_length
 
+from axolotl.integrations.base import PluginManager
 from axolotl.monkeypatch.multipack import SUPPORTED_MULTIPACK_MODEL_TYPES
 from axolotl.monkeypatch.relora import ReLoRACallback, ReLoRAScheduler
 from axolotl.utils import is_comet_available, is_mlflow_available
@@ -1147,6 +1148,12 @@ class TrainerBuilderBase(abc.ABC):
 
     def get_callbacks(self) -> List[TrainerCallback]:
         callbacks = []
+
+        plugin_manager = PluginManager.get_instance()
+        callbacks.extend(
+            plugin_manager.add_callbacks_pre_trainer(cfg=self.cfg, model=self.model)
+        )
+
         if self.cfg.use_wandb:
             callbacks.append(
                 SaveAxolotlConfigtoWandBCallback(self.cfg.axolotl_config_path)
@@ -1173,11 +1180,17 @@ class TrainerBuilderBase(abc.ABC):
 
         return callbacks
 
-    @abstractmethod
     def get_post_trainer_create_callbacks(self, trainer):
         """
         Callbacks added after the trainer is created, usually b/c these need access to the trainer
         """
+        callbacks = []
+
+        plugin_manager = PluginManager.get_instance()
+        callbacks.extend(
+            plugin_manager.add_callbacks_post_trainer(cfg=self.cfg, trainer=trainer)
+        )
+        return callbacks
 
     def hook_pre_create_training_args(self, training_arguments_kwargs):
         # TODO
@@ -1223,7 +1236,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         return callbacks
 
     def get_post_trainer_create_callbacks(self, trainer):
-        callbacks = []
+        callbacks = super().get_post_trainer_create_callbacks(trainer=trainer)
         if self.cfg.use_wandb and self.cfg.eval_table_size > 0:
             LogPredictionCallback = log_prediction_callback_factory(
                 trainer, self.tokenizer, "wandb"
@@ -1595,7 +1608,8 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         training_arguments_kwargs["pretraining"] = bool(self.cfg.pretraining_dataset)
         if self.cfg.chat_template:
             training_arguments_kwargs["chat_template"] = get_chat_template(
-                self.cfg.chat_template
+                self.cfg.chat_template,
+                tokenizer=self.tokenizer,
             )
 
         if self.cfg.rl == "orpo":
@@ -1790,7 +1804,7 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         return callbacks
 
     def get_post_trainer_create_callbacks(self, trainer):
-        callbacks = []
+        callbacks = super().get_post_trainer_create_callbacks(trainer=trainer)
         return callbacks
 
     def build_training_arguments(self, total_num_steps):
@@ -1999,11 +2013,11 @@ class HFPPOTrainerBuilder(TrainerBuilderBase):
     """
 
     def get_callbacks(self):
-        callbacks = []
+        callbacks = super().get_callbacks()
         return callbacks
 
     def get_post_trainer_create_callbacks(self, trainer):
-        callbacks = []
+        callbacks = super().get_post_trainer_create_callbacks(trainer=trainer)
         return callbacks
 
     def build(self, total_num_steps):
