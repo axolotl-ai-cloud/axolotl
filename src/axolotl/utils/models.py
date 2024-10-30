@@ -393,11 +393,16 @@ class ModelLoader:
             self.cfg.model_config_type in SUPPORTED_MULTIPACK_MODEL_TYPES
             and self.cfg.flash_attention
             and self.cfg.sample_packing
-        ):
+        ):  
+            has_remote_code = (
+                "auto_map" in self.model_config
+                and self.model_type in self.model_config["auto_map"]
+            )
+
             patch_for_multipack(
                 self.cfg.model_config_type,
                 model_name=self.cfg.base_model,
-                # is_remote_code=self.cfg.trust_remote_code,
+                has_remote_code=has_remote_code,
             )
 
             if self.cfg.is_llama_derived_model:
