@@ -11,8 +11,11 @@ chat_template: gemma
 datasets:
   - path: cgato/SlimOrcaDedupCleaned
     type: chat_template
-    chat_template: gemma
     drop_system_message: true
+    field_messages: conversations
+    message_field_role: from
+    message_field_content: value
+
 val_set_size: 0.0
 output_dir: ./outputs/out
 

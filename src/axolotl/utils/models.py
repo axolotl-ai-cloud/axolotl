@@ -53,7 +53,7 @@ from axolotl.monkeypatch.multipack import (
 )
 from axolotl.prompt_tokenizers import LLAMA_DEFAULT_EOS_TOKEN
 from axolotl.utils.bench import log_gpu_memory_usage
-from axolotl.utils.chat_templates import chat_templates
+from axolotl.utils.chat_templates import get_chat_template_from_config
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import zero_only
 from axolotl.utils.gradient_checkpointing import hf_grad_checkpoint_unsloth_wrapper
@@ -296,7 +296,10 @@ def load_tokenizer(cfg):
         LOG.debug(f"UNK: {tokenizer.unk_token_id} / {tokenizer.unk_token}")
 
     if cfg.chat_template:
-        chat_template_string = chat_templates(cfg.chat_template)
+        chat_template_string = get_chat_template_from_config(
+            cfg=cfg,
+            tokenizer=tokenizer,
+        )
         if cfg.default_system_message and cfg.chat_template == "chatml":
             chat_template_string = chat_template_string.replace(
                 "You are a helpful assistant.", cfg.default_system_message
@@ -1042,7 +1045,10 @@ class ModelLoader:
             hasattr(self.model, "get_input_embeddings")
             and self.model.get_input_embeddings().num_embeddings < embeddings_len
         ):
-            self.model.resize_token_embeddings(embeddings_len)
+            resize_kwargs = {}
+            if self.cfg.mean_resizing_embeddings is not None:
+                resize_kwargs["mean_resizing"] = self.cfg.mean_resizing_embeddings
+            self.model.resize_token_embeddings(embeddings_len, **resize_kwargs)
         else:
             self.model.tie_weights()
 
