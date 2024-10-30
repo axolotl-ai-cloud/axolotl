@@ -388,7 +388,7 @@ class TestDatasetPreparation(unittest.TestCase):
                                 "ds_type": "parquet",
                                 "type": "alpaca",
                                 "data_files": [
-                                    "mhenrichsen/alpaca_2k_test/alpaca_2000.parquet",
+                                    f"{tmp_ds_path}/alpaca_2000.parquet",
                                 ],
                                 "revision": "d05c1cb",
                             },
