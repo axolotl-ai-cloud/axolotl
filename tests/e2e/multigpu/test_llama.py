@@ -14,7 +14,7 @@ from huggingface_hub import snapshot_download
 
 from axolotl.utils.dict import DictDefault
 
-from ..utils import with_temp_dir
+from ..utils import is_hopper, with_temp_dir
 
 LOG = logging.getLogger("axolotl.tests.e2e.multigpu")
 os.environ["WANDB_DISABLED"] = "true"
@@ -144,6 +144,7 @@ class TestMultiGPULlama(unittest.TestCase):
             ]
         )
 
+    @pytest.mark.skipif(is_hopper(), reason="h100 doesn't support 8-bit lora")
     @with_temp_dir
     def test_dpo_lora_ddp(self, temp_dir):
         # pylint: disable=duplicate-code
@@ -186,7 +187,75 @@ class TestMultiGPULlama(unittest.TestCase):
                     },
                 ],
                 "num_epochs": 1,
-                "max_steps": 50,
+                "max_steps": 10,
+                "micro_batch_size": 4,
+                "gradient_accumulation_steps": 4,
+                "output_dir": temp_dir,
+                "warmup_steps": 0,
+                "learning_rate": 0.00001,
+                "optimizer": "adamw_8bit",
+                "lr_scheduler": "cosine",
+                "flash_attention": True,
+            }
+        )
+
+        # write cfg to yaml file
+        Path(temp_dir).mkdir(parents=True, exist_ok=True)
+        with open(Path(temp_dir) / "config.yaml", "w", encoding="utf-8") as fout:
+            fout.write(yaml.dump(cfg.to_dict(), Dumper=yaml.Dumper))
+
+        execute_subprocess_async(
+            [
+                "accelerate",
+                "launch",
+                "--num-processes",
+                "2",
+                "-m",
+                "axolotl.cli.train",
+                str(Path(temp_dir) / "config.yaml"),
+            ]
+        )
+
+    @with_temp_dir
+    def test_dpo_qlora_ddp(self, temp_dir):
+        # pylint: disable=duplicate-code
+        cfg = DictDefault(
+            {
+                "base_model": "HuggingFaceTB/SmolLM-135M",
+                "sequence_len": 2048,
+                "sample_packing": False,
+                "eval_sample_packing": False,
+                "pad_to_sequence_len": True,
+                "load_in_4bit": True,
+                "adapter": "qlora",
+                "lora_r": 8,
+                "lora_alpha": 16,
+                "lora_dropout": 0.05,
+                "lora_target_linear": True,
+                "val_set_size": 0.05,
+                "special_tokens": {
+                    "pad_token": "<|endoftext|>",
+                },
+                "rl": "dpo",
+                "chat_template": "chatml",
+                "datasets": [
+                    {
+                        "path": "fozziethebeat/alpaca_messages_2k_dpo_test",
+                        "type": "chat_template.default",
+                        "field_messages": "conversation",
+                        "field_chosen": "chosen",
+                        "field_rejected": "rejected",
+                        "message_field_role": "role",
+                        "message_field_content": "content",
+                        "roles": {
+                            "system": ["system"],
+                            "user": ["user"],
+                            "assistant": ["assistant"],
+                        },
+                    },
+                ],
+                "num_epochs": 1,
+                "max_steps": 10,
                 "micro_batch_size": 4,
                 "gradient_accumulation_steps": 4,
                 "output_dir": temp_dir,
