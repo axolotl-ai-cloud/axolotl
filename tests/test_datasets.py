@@ -368,7 +368,7 @@ class TestDatasetPreparation(unittest.TestCase):
         """Verify that a local copy of a hub dataset can be loaded with a specific revision"""
         with tempfile.TemporaryDirectory() as tmp_dir:
             with tempfile.TemporaryDirectory() as tmp_dir2:
-                tmp_ds_path = tmp_dir2 / "mhenrichsen/alpaca_2k_test"
+                tmp_ds_path = Path(tmp_dir2) / "mhenrichsen/alpaca_2k_test"
                 tmp_ds_path.mkdir(parents=True, exist_ok=True)
                 snapshot_download(
                     repo_id="mhenrichsen/alpaca_2k_test",
