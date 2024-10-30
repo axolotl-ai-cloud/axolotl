@@ -272,7 +272,7 @@ def do_inference_gradio(
             importlib.import_module("axolotl.prompters"), prompter
         )
     elif cfg.chat_template:
-        chat_template_str = get_chat_template(cfg.chat_template)
+        chat_template_str = get_chat_template(cfg.chat_template, tokenizer=tokenizer)
 
     model = model.to(cfg.device, dtype=cfg.torch_dtype)
 

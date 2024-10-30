@@ -1595,7 +1595,8 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         training_arguments_kwargs["pretraining"] = bool(self.cfg.pretraining_dataset)
         if self.cfg.chat_template:
             training_arguments_kwargs["chat_template"] = get_chat_template(
-                self.cfg.chat_template
+                self.cfg.chat_template,
+                tokenizer=self.tokenizer,
             )
 
         if self.cfg.rl == "orpo":
