@@ -284,7 +284,7 @@ class PluginManager:
         list[str]: A list of Pydantic classes for all registered plugins' input arguments.'
         """
         input_args = []
-        for _, plugin in self.plugins.items():
+        for plugin in self.plugins.values():
             input_args_from_plugin = plugin.get_input_args()
             if input_args_from_plugin is not None:
                 input_args.append(input_args_from_plugin)
@@ -300,7 +300,7 @@ class PluginManager:
         Returns:
         None
         """
-        for _, plugin in self.plugins.items():
+        for plugin in self.plugins.values():
             plugin.pre_model_load(cfg)
 
     def post_model_load(self, cfg, model):
@@ -314,7 +314,7 @@ class PluginManager:
         Returns:
         None
         """
-        for _, plugin in self.plugins.items():
+        for plugin in self.plugins.values():
             plugin.post_model_load(cfg, model)
 
     def pre_lora_load(self, cfg, model):
@@ -328,7 +328,7 @@ class PluginManager:
         Returns:
         None
         """
-        for _, plugin in self.plugins.items():
+        for plugin in self.plugins.values():
             plugin.pre_lora_load(cfg, model)
 
     def post_lora_load(self, cfg, model):
@@ -342,7 +342,7 @@ class PluginManager:
         Returns:
         None
         """
-        for _, plugin in self.plugins.items():
+        for plugin in self.plugins.values():
             plugin.post_lora_load(cfg, model)
 
     def create_optimizer(self, cfg, trainer):
@@ -356,7 +356,7 @@ class PluginManager:
         Returns:
         object: The created optimizer, or None if none was found.
         """
-        for _, plugin in self.plugins.items():
+        for plugin in self.plugins.values():
             optimizer = plugin.create_optimizer(cfg, trainer)
             if optimizer is not None:
                 return optimizer
@@ -374,7 +374,7 @@ class PluginManager:
         Returns:
         object: The created learning rate scheduler, or None if none was found.
         """
-        for _, plugin in self.plugins.items():
+        for plugin in self.plugins.values():
             scheduler = plugin.create_lr_scheduler(cfg, trainer, optimizer)
             if scheduler is not None:
                 return scheduler
@@ -392,7 +392,7 @@ class PluginManager:
         List[callable]: A list of callback functions to be added to the TrainingArgs.
         """
         callbacks = []
-        for _, plugin in self.plugins.items():
+        for plugin in self.plugins.values():
             callbacks.extend(plugin.add_callbacks_pre_trainer(cfg, model))
         return callbacks
 
@@ -408,7 +408,7 @@ class PluginManager:
         List[callable]: A list of callback functions to be added to the TrainingArgs.
         """
         callbacks = []
-        for _, plugin in self.plugins.items():
+        for plugin in self.plugins.values():
             callbacks.extend(plugin.add_callbacks_post_trainer(cfg, trainer))
         return callbacks
 
@@ -423,5 +423,5 @@ class PluginManager:
         Returns:
         None
         """
-        for _, plugin in self.plugins.items():
+        for plugin in self.plugins.values():
             plugin.post_train_unload(cfg)
