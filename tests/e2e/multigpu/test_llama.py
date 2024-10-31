@@ -637,7 +637,7 @@ class TestMultiGPULlama:
                 "gradient_accumulation_steps": 4,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
-                "optimizer": "adamw_8bit",
+                "optimizer": "adamw_torch",
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
                 "deepspeed": "deepspeed_configs/zero3_bf16_cpuoffload_all.json",
