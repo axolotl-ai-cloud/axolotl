@@ -129,12 +129,6 @@ jobs:
             pytorch: 2.3.1
             num_gpus: 1
             axolotl_extras: mamba-ssm
-          - cuda: 121
-            cuda_version: 12.1.1
-            python_version: "3.11"
-            pytorch: 2.3.1
-            num_gpus: 1
-            axolotl_extras: mamba-ssm
           - cuda: 124
             cuda_version: 12.4.1
             python_version: "3.11"
