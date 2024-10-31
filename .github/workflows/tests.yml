@@ -72,12 +72,52 @@ jobs:
         run: |
           find "$(pip cache dir)/http-v2" -type f -mtime +14 -exec rm {} \;
 
-  docker-e2e-tests:
+  docker-e2e-tests-1st:
     if: github.repository_owner == 'axolotl-ai-cloud'
     # this job needs to be run on self-hosted GPU runners...
     runs-on: [self-hosted, modal]
     timeout-minutes: 90
     needs: [pre-commit, pytest]
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - cuda: 124
+            cuda_version: 12.4.1
+            python_version: "3.11"
+            pytorch: 2.4.1
+            num_gpus: 1
+            axolotl_extras:
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Install Modal
+        run: |
+          python -m pip install --upgrade pip
+          pip install modal==0.63.64 jinja2
+      - name: Update env vars
+        run: |
+          echo "BASE_TAG=main-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}" >> $GITHUB_ENV
+          echo "PYTORCH_VERSION=${{ matrix.pytorch}}" >> $GITHUB_ENV
+          echo "AXOLOTL_ARGS=${{ matrix.axolotl_args}}" >> $GITHUB_ENV
+          echo "AXOLOTL_EXTRAS=${{ matrix.axolotl_extras}}" >> $GITHUB_ENV
+          echo "CUDA=${{ matrix.cuda }}" >> $GITHUB_ENV
+          echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
+      - name: Run tests job on Modal
+        run: |
+          modal run cicd.tests
+
+  docker-e2e-tests:
+    if: github.repository_owner == 'axolotl-ai-cloud'
+    # this job needs to be run on self-hosted GPU runners...
+    runs-on: [self-hosted, modal]
+    timeout-minutes: 90
+    needs: [pre-commit, pytest, docker-e2e-tests-1st]
 
     strategy:
       fail-fast: false
@@ -95,12 +135,6 @@ jobs:
             pytorch: 2.3.1
             num_gpus: 1
             axolotl_extras: mamba-ssm
-          - cuda: 124
-            cuda_version: 12.4.1
-            python_version: "3.11"
-            pytorch: 2.4.1
-            num_gpus: 1
-            axolotl_extras:
           - cuda: 124
             cuda_version: 12.4.1
             python_version: "3.11"
