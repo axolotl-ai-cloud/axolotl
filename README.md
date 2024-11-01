@@ -121,7 +121,7 @@ Features:
 
 Get started with Axolotl in just a few steps! This quickstart guide will walk you through setting up and running a basic fine-tuning task.
 
-**Requirements**: Nvidia GPU (Ampere architecture or newer for `bf16` and Flash Attention), Python >=3.10 and PyTorch >=2.3.1.
+**Requirements**: Python >=3.10 and Pytorch >=2.1.1.
 
 ```bash
 git clone https://github.com/axolotl-ai-cloud/axolotl
@@ -383,7 +383,7 @@ See [examples](examples) for quick start. It is recommended to duplicate and mod
         - typescript
       type: ... # unimplemented custom format
 
-      # fastchat conversation (deprecation soon, use chat_template https://axolotl-ai-cloud.github.io/axolotl/docs/dataset-formats/conversation.html#chat_template)
+      # fastchat conversation (deprecation soon, use chat_template)
       # See 'conversation' options: https://github.com/lm-sys/FastChat/blob/main/fastchat/conversation.py
     - path: ...
       type: sharegpt
@@ -562,7 +562,8 @@ plugins:
   - axolotl.integrations.liger.LigerPlugin
 liger_rope: true
 liger_rms_norm: true
-liger_swiglu: true
+liger_glu_activation: true
+liger_layer_norm: true
 liger_fused_linear_cross_entropy: true
 ```
 
