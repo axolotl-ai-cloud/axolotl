@@ -9,14 +9,9 @@ liger_fused_linear_cross_entropy: true
 
 strict: false
 
-chat_template: llama3
 datasets:
-  - path: mlabonne/FineTome-100k
-    type: chat_template
-    split: train[:20%]
-    field_messages: conversations
-    message_field_role: from
-    message_field_content: value
+    - path: tatsu-lab/alpaca
+      type: alpaca
 dataset_prepared_path: last_run_prepared
 val_set_size: 0
 output_dir: ./outputs/out
@@ -28,7 +23,7 @@ pad_to_sequence_len: true
 wandb_project: check_liger_hf_GA_llama_fix_redo
 wandb_entity: axolotl-ai
 wandb_watch:
-wandb_name: 
+wandb_name: -tr4.46.1
 wandb_log_model:
 
 gradient_accumulation_steps: 4
