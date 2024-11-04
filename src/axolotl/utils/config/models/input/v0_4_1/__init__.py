@@ -71,6 +71,8 @@ class DeprecatedParameters(BaseModel):
     dpo_beta: Optional[float] = None
     evaluation_strategy: Optional[str] = None
 
+    alternate_optimizer: Optional[str] = None
+
     @field_validator("max_packed_sequence_len")
     @classmethod
     def validate_max_packed_sequence_len(cls, max_packed_sequence_len):
@@ -107,6 +109,14 @@ class DeprecatedParameters(BaseModel):
         if evaluation_strategy is not None:
             LOG.warning("evaluation_strategy is deprecated, use eval_strategy instead")
         return evaluation_strategy
+
+    @field_validator("alternate_optimizer")
+    @classmethod
+    def validate_alternate_optimizer(cls, alternate_optimizer):
+        if alternate_optimizer:
+            raise DeprecationWarning(
+                "alternate_optimizer is deprecated, use optimizer instead"
+            )
 
 
 class RemappedParameters(BaseModel):

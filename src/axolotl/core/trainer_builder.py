@@ -34,6 +34,7 @@ from transformers import (
     TrainingArguments,
 )
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, seed_worker
+from transformers.training_args import OptimizerNames
 from transformers.utils import is_sagemaker_mp_enabled
 from trl import (
     CPOConfig,
@@ -74,6 +75,7 @@ from axolotl.utils.collators import (
 )
 from axolotl.utils.collators.mm_chat import MultiModalChatDataCollator
 from axolotl.utils.models import ensure_dtype
+from axolotl.utils.optimizers.embedding_scaled import create_embedding_scaled_optimizer
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 from axolotl.utils.schedulers import (
     get_cosine_schedule_with_min_lr,
@@ -268,12 +270,6 @@ class AxolotlTrainingMixins:
         default=None,
         metadata={"help": "whether to use sequential sampling for curriculum learning"},
     )
-    alternate_optimizer: Optional[str] = field(
-        default=None,
-        metadata={
-            "help": "workaround to pass an alternate optimizer to the HF trainer"
-        },
-    )
     alternate_lr_scheduler_type: Optional[str] = field(
         default=None,
         metadata={
@@ -460,132 +456,46 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
         return super()._wrap_model(model, training=training, dataloader=dataloader)
 
     def create_optimizer(self):
-        if (
-            self.args.loraplus_lr_ratio is None
+        # For all other cases, use parent implementation
+        if (self.args.loraplus_lr_ratio is None
             and self.args.embedding_lr_scale is None
             and self.args.embedding_lr is None
-            and self.args.alternate_optimizer
-            not in [
-                "optimi_adamw",
-                "ao_adamw_8bit",
-                "ao_adamw_4bit",
-                "ao_adamw_fp8",
-                "adopt_adamw",
-            ]
         ):
             return super().create_optimizer()
 
         opt_model = self.model_wrapped if is_sagemaker_mp_enabled() else self.model
-        if self.optimizer is None:  # pylint: disable=access-member-before-definition
-            decay_parameters = self.get_decay_parameter_names(opt_model)
-            params = {
-                "to_weight_decay": {},  # LayerNorm and bias
-                "embeddings": {},  # lm_head, embed_tokens,
-                "no_weight_decay": {},
-            }
+        if self.optimizer is not None:
+            raise ValueError("Optimizer already created.")
 
-            optimizer_cls, optimizer_kwargs = Trainer.get_optimizer_cls_and_kwargs(
-                self.args,
-                opt_model,
-            )
+        optimizer_cls, optimizer_kwargs = Trainer.get_optimizer_cls_and_kwargs(
+            self.args,
+            opt_model,
+        )
 
-            for name, param in opt_model.named_parameters():
-                if not param.requires_grad:
-                    continue
-                if name.endswith("modules_to_save.default.weight") or any(
-                    embed_name in name for embed_name in ["embed_tokens", "lm_head"]
-                ):
-                    params["embeddings"][name] = param
-                elif name in decay_parameters:
-                    params["to_weight_decay"][name] = param
-                else:
-                    params["no_weight_decay"][name] = param
-            optimizer_grouped_parameters = []
-            if params["to_weight_decay"]:
-                optimizer_grouped_parameters.append(
-                    {
-                        "params": list(params["to_weight_decay"].values()),
-                        "weight_decay": self.args.weight_decay,
-                        "lr": optimizer_kwargs["lr"],
-                    }
-                )
-            if params["embeddings"]:
-                lr = optimizer_kwargs["lr"]  # pylint: disable=invalid-name
-                if self.args.embedding_lr_scale:
-                    lr *= self.args.embedding_lr_scale  # pylint: disable=invalid-name
-                elif self.args.embedding_lr:
-                    lr = self.args.embedding_lr  # pylint: disable=invalid-name
-                optimizer_grouped_parameters.append(
-                    {
-                        "params": list(params["embeddings"].values()),
-                        "weight_decay": 0.0,
-                        "lr": lr,
-                    }
-                )
-            if params["no_weight_decay"]:
-                optimizer_grouped_parameters.append(
-                    {
-                        "params": list(params["no_weight_decay"].values()),
-                        "weight_decay": 0.0,
-                        "lr": optimizer_kwargs["lr"],
-                    }
-                )
-
-            if self.args.loraplus_lr_ratio is not None:
-                loraplus_lr_ratio = getattr(self.args, "loraplus_lr_ratio", None)
-                loraplus_lr_embedding = getattr(
-                    self.args, "loraplus_lr_embedding", 1e-6
-                )
-                self.optimizer = create_loraplus_optimizer(  # pylint: disable=attribute-defined-outside-init
+        if self.args.loraplus_lr_ratio is not None:
+            self.optimizer = (
+                create_loraplus_optimizer(
                     opt_model,
                     optimizer_cls,
-                    loraplus_lr_ratio=loraplus_lr_ratio,
-                    loraplus_lr_embedding=loraplus_lr_embedding,
+                    loraplus_lr_ratio=self.args.loraplus_lr_ratio,
+                    loraplus_lr_embedding=self.args.loraplus_lr_embedding,
                     **optimizer_kwargs,
                 )
-            elif (
-                self.args.embedding_lr_scale is not None
-                or self.args.embedding_lr is not None
-            ):
-                self.optimizer = (  # pylint: disable=attribute-defined-outside-init
-                    optimizer_cls(optimizer_grouped_parameters, **optimizer_kwargs)
-                )
-            elif self.args.alternate_optimizer == "optimi_adamw":
-                from optimi import AdamW
+            )
+        elif (
+            self.args.embedding_lr_scale is not None
+            or self.args.embedding_lr is not None
+        ):
+            decay_parameters = self.get_decay_parameter_names(opt_model)
 
-                self.optimizer = (  # pylint: disable=attribute-defined-outside-init
-                    AdamW(
-                        optimizer_grouped_parameters, foreach=False, **optimizer_kwargs
-                    )
-                )
-            elif self.args.alternate_optimizer == "ao_adamw_4bit":
-                from torchao.prototype.low_bit_optim import AdamW4bit
-
-                self.optimizer = (  # pylint: disable=attribute-defined-outside-init
-                    AdamW4bit(optimizer_grouped_parameters, **optimizer_kwargs)
-                )
-            elif self.args.alternate_optimizer == "ao_adamw_8bit":
-                from torchao.prototype.low_bit_optim import AdamW8bit
-
-                self.optimizer = (  # pylint: disable=attribute-defined-outside-init
-                    AdamW8bit(optimizer_grouped_parameters, **optimizer_kwargs)
-                )
-            elif self.args.alternate_optimizer == "ao_adamw_fp8":
-                from torchao.prototype.low_bit_optim import AdamWFp8
-
-                self.optimizer = (  # pylint: disable=attribute-defined-outside-init
-                    AdamWFp8(optimizer_grouped_parameters, **optimizer_kwargs)
-                )
-            elif self.args.alternate_optimizer == "adopt_adamw":
-                from axolotl.utils.optimizers.adopt import ADOPT
-
-                self.optimizer = (  # pylint: disable=attribute-defined-outside-init
-                    ADOPT(
-                        optimizer_grouped_parameters,
-                        decouple=True,
-                        **optimizer_kwargs,
-                    )
-                )
+            self.optimizer = create_embedding_scaled_optimizer(
+                opt_model,
+                embedding_lr_scale=self.args.embedding_lr_scale,
+                embedding_lr=self.args.embedding_lr,
+                decay_parameters=decay_parameters,
+                optimizer_cls=optimizer_cls,
+                optimizer_kwargs=optimizer_kwargs,
+            )
 
         if is_sagemaker_mp_enabled():
             self.optimizer = smp.DistributedOptimizer(  # pylint: disable=attribute-defined-outside-init
@@ -593,6 +503,7 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
             )
 
         return self.optimizer
+
 
     def _get_train_sampler(self) -> Optional[torch.utils.data.Sampler]:
         if self.args.sample_packing and not self.args.pretraining:
@@ -1078,27 +989,25 @@ class AxolotlDPOTrainer(SchedulerMixin, DPOTrainer):
         self.optimizer = None
 
     def create_optimizer(self):
+        # For all other cases, use parent implementation
         if self.args.loraplus_lr_ratio is None:
             return super().create_optimizer()
 
+        # Handle LoRA Plus
         opt_model = self.model_wrapped if is_sagemaker_mp_enabled() else self.model
-        if self.optimizer is None:  # pylint: disable=access-member-before-definition
-            optimizer_cls, optimizer_kwargs = Trainer.get_optimizer_cls_and_kwargs(
-                self.args,
-                opt_model,
-            )
-
-            loraplus_lr_ratio = getattr(self.args, "loraplus_lr_ratio", None)
-            if loraplus_lr_ratio:
-                print("Using lora+")
-            loraplus_lr_embedding = getattr(self.args, "loraplus_lr_embedding", None)
-            self.optimizer = create_loraplus_optimizer(  # pylint: disable=attribute-defined-outside-init
+        optimizer_cls, optimizer_kwargs = Trainer.get_optimizer_cls_and_kwargs(
+            self.args,
+            opt_model,
+        )
+        self.optimizer = (  # pylint: disable=attribute-defined-outside-init
+            create_loraplus_optimizer(
                 opt_model,
                 optimizer_cls,
-                loraplus_lr_ratio=loraplus_lr_ratio,
-                loraplus_lr_embedding=loraplus_lr_embedding,
+                loraplus_lr_ratio=self.args.loraplus_lr_ratio,
+                loraplus_lr_embedding=self.args.loraplus_lr_embedding,
                 **optimizer_kwargs,
             )
+        )
 
         if is_sagemaker_mp_enabled():
             self.optimizer = smp.DistributedOptimizer(  # pylint: disable=attribute-defined-outside-init
@@ -1734,27 +1643,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             training_arguments_kwargs["run_name"] = self.cfg.mlflow_run_name
         else:
             training_arguments_kwargs["run_name"] = None
-        training_arguments_kwargs["optim"] = (
-            self.cfg.optimizer if self.cfg.optimizer else "adamw_hf"
-        )
-        if self.cfg.optim_args:
-            if isinstance(self.cfg.optim_args, dict):
-                optim_args = ",".join(
-                    [f"{key}={value}" for key, value in self.cfg.optim_args.items()]
-                )
-            else:
-                optim_args = self.cfg.optim_args
-            training_arguments_kwargs["optim_args"] = optim_args
-        if self.cfg.optim_target_modules:
-            training_arguments_kwargs[
-                "optim_target_modules"
-            ] = self.cfg.optim_target_modules
-        training_arguments_kwargs["loraplus_lr_ratio"] = self.cfg.loraplus_lr_ratio
-        training_arguments_kwargs[
-            "loraplus_lr_embedding"
-        ] = self.cfg.loraplus_lr_embedding
-        training_arguments_kwargs["embedding_lr"] = self.cfg.embedding_lr
-        training_arguments_kwargs["embedding_lr_scale"] = self.cfg.embedding_lr_scale
 
         if self.cfg.lr_scheduler in ["one_cycle", "log_sweep"]:
             training_arguments_kwargs["lr_scheduler_type"] = "cosine"
@@ -1843,45 +1731,117 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         if self.cfg.reward_model:
             trainer_kwargs["max_length"] = self.cfg.sequence_len
 
-        # pylint: disable=duplicate-code
+        # Handle custom optimizer
         if self.cfg.optimizer in [
             "optimi_adamw",
             "ao_adamw_4bit",
             "ao_adamw_8bit",
             "ao_adamw_fp8",
             "adopt_adamw",
+            "lion_pytorch",
         ]:
-            # Set default so transformers doesn't throw
-            training_arguments_kwargs["optim"] = "adamw_hf"
-            training_arguments_kwargs["alternate_optimizer"] = self.cfg.optimizer
+            # Common optimizer kwargs
+            optimizer_kwargs = {
+                "lr": training_arguments_kwargs.get("learning_rate"),
+                "weight_decay": training_arguments_kwargs.get("weight_decay"),
+            }
 
-        if self.cfg.optimizer == "lion_pytorch":
-            from lion_pytorch import Lion
+            # Adam-specific kwargs
+            adam_kwargs = {
+                "betas": (
+                    training_arguments_kwargs.get("adam_beta1"),
+                    training_arguments_kwargs.get("adam_beta2"),
+                ),
+                "eps": training_arguments_kwargs.get("adam_epsilon"),
+            }
 
-            lion_kwargs = {"lr": training_arguments_kwargs["learning_rate"]}
-            if "weight_decay" in training_arguments_kwargs:
-                lion_kwargs["weight_decay"] = training_arguments_kwargs["weight_decay"]
+            if self.cfg.optimizer == "optimi_adamw":
+                from optimi import AdamW
 
-            if (
-                "adam_beta1" in training_arguments_kwargs
-                and "adam_beta2" in training_arguments_kwargs
-            ):
-                lion_kwargs["betas"] = (
-                    training_arguments_kwargs["adam_beta1"],
-                    training_arguments_kwargs["adam_beta2"],
+                optimizer_kwargs["foreach"] = False
+                optimizer_cls = AdamW
+                optimizer_kwargs.update(adam_kwargs)
+            elif self.cfg.optimizer == "ao_adamw_4bit":
+                from torchao.prototype.low_bit_optim import AdamW4bit
+
+                optimizer_cls = AdamW4bit
+                optimizer_kwargs.update(adam_kwargs)
+
+                LOG.warning(
+                    f"`ao_adamw_4bit` will be deprecated soon. Please use `{OptimizerNames.ADAMW_TORCH_4BIT}` instead."
+                )
+            elif self.cfg.optimizer == "ao_adamw_8bit":
+                from torchao.prototype.low_bit_optim import AdamW8bit
+
+                optimizer_cls = AdamW8bit
+                optimizer_kwargs.update(adam_kwargs)
+            elif self.cfg.optimizer == "ao_adamw_fp8":
+                from torchao.prototype.low_bit_optim import AdamWFp8
+
+                optimizer_cls = AdamWFp8
+                optimizer_kwargs.update(adam_kwargs)
+            elif self.cfg.optimizer = "adopt_adamw":
+                from axolotl.utils.optimizers.adopt import ADOPT
+
+                optimizer_cls = ADOPT
+                adam_kwargs["decouple"] = True
+                optimizer_kwargs.update(adam_kwargs)
+            elif self.cfg.optimizer == "lion_pytorch":
+                from lion_pytorch import Lion
+
+                optimizer_cls = Lion
+                optimizer_kwargs.update({"betas": adam_kwargs["betas"]})
+
+                LOG.warning(
+                    f"`lion_pytorch` will be deprecated soon. Please use `{OptimizerNames.LION}` instead."
                 )
 
-            trainer_kwargs["optimizers"] = (
-                Lion(params=self.model.parameters(), **lion_kwargs),
-                None,
+            # Parse any additional optimizer args from config
+            if self.cfg.optim_args:
+                if isinstance(self.cfg.optim_args, dict):
+                    optimizer_kwargs.update(self.cfg.optim_args)
+                else:
+                    # Parse string format "key1=value1,key2=value2"
+                    for mapping in self.cfg.optim_args.replace(" ", "").split(","):
+                        key, value = mapping.split("=")
+                        optimizer_kwargs[key] = value
+
+            training_arguments_kwargs["optimizer_cls_and_kwargs"] = (
+                optimizer_cls,
+                optimizer_kwargs,
             )
-            # Set default so transformers doesn't throw
-            training_arguments_kwargs["optim"] = "adamw_hf"
+
+        else:
+            # Use transformers' optimizer
+            training_arguments_kwargs["optim"] = self.cfg.optimizer
+
+            # Parse any additional optimizer args from config
+            if self.cfg.optim_args:
+                if isinstance(self.cfg.optim_args, dict):
+                    optim_args = ",".join(
+                        [f"{key}={value}" for key, value in self.cfg.optim_args.items()]
+                    )
+                else:
+                    optim_args = self.cfg.optim_args
+                training_arguments_kwargs["optim_args"] = optim_args
 
         if self.cfg.optimizer == "adamw_anyprecision":
             if Path(self.cfg.torchdistx_path).exists():
                 sys.path.append(self.cfg.torchdistx_path)
                 importlib.import_module("torchdistx")
+
+        if self.cfg.optim_target_modules:
+            training_arguments_kwargs[
+                "optim_target_modules"
+            ] = self.cfg.optim_target_modules
+
+        training_arguments_kwargs["embedding_lr"] = self.cfg.embedding_lr
+        training_arguments_kwargs["embedding_lr_scale"] = self.cfg.embedding_lr_scale
+
+        training_arguments_kwargs["loraplus_lr_ratio"] = self.cfg.loraplus_lr_ratio
+        training_arguments_kwargs[
+            "loraplus_lr_embedding"
+        ] = self.cfg.loraplus_lr_embedding
 
         if self.cfg.accelerator_config:
             training_arguments_kwargs[
