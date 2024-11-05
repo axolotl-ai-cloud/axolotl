@@ -1890,17 +1890,18 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             # default to saving each epoch if not defined
             training_args_kwargs["save_strategy"] = "epoch"
 
+        training_args_kwargs["dataset_num_proc"] = self.cfg.dataset_processes
+
         if self.cfg.rl_beta:
             training_args_kwargs["beta"] = self.cfg.rl_beta
         if self.cfg.orpo_alpha:
             # trl does some odd mapping of alpha to beta to reuse the beta parameter ???
             training_args_kwargs["beta"] = self.cfg.orpo_alpha
 
-        training_args_kwargs["dataset_num_proc"] = self.cfg.dataset_processes
-        training_args_cls = AxolotlDPOConfig
         if self.cfg.rpo_alpha is not None:
             training_args_kwargs["rpo_alpha"] = self.cfg.rpo_alpha
 
+        training_args_cls = None
         if self.cfg.rl == "simpo":
             training_args_cls = AxolotlCPOConfig
             training_args_kwargs["loss_type"] = "simpo"
@@ -1909,13 +1910,13 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             if self.cfg.cpo_alpha is not None:
                 training_args_kwargs["cpo_alpha"] = self.cfg.cpo_alpha
 
-        if self.cfg.rl == "orpo":
+        elif self.cfg.rl == "orpo":
             training_args_cls = AxolotlORPOConfig
             training_args_kwargs["max_length"] = self.cfg.sequence_len
             if self.cfg.max_prompt_len:
                 training_args_kwargs["max_prompt_length"] = self.cfg.max_prompt_len
 
-        if self.cfg.rl == "kto":
+        elif self.cfg.rl == "kto":
             training_args_cls = AxolotlKTOConfig
 
             training_args_kwargs["desirable_weight"] = (
@@ -1929,6 +1930,11 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             training_args_kwargs["max_length"] = self.cfg.sequence_len
             if self.cfg.max_prompt_len:
                 training_args_kwargs["max_prompt_length"] = self.cfg.max_prompt_len
+
+        else:
+            training_args_cls = AxolotlDPOConfig
+            if self.cfg.dpo_use_weighting is not None:
+                training_args_kwargs["use_weighting"] = self.cfg.dpo_use_weighting
 
         training_args = training_args_cls(  # pylint: disable=unexpected-keyword-arg
             output_dir=self.cfg.output_dir,

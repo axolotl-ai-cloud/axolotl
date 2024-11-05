@@ -183,6 +183,8 @@ test_datasets:
 
 # use RL training: 'dpo', 'ipo', 'kto'
 rl:
+# whether to perform weighting if doing DPO training. Boolean.
+dpo_use_weighting:
 
 # The name of the chat template to use for training, following values are supported:
 # - tokenizer_default: Uses the chat template that is available in the tokenizer_config.json. If the chat template is not available in the tokenizer, it will raise an error. This is the default value.
