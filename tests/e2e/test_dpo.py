@@ -116,7 +116,7 @@ class TestDPOLlamaLora(unittest.TestCase):
         assert (Path(temp_dir) / "checkpoint-20/adapter_model.safetensors").exists()
 
     @with_temp_dir
-    def test_dpo_nll_use_weighting(self, temp_dir):
+    def test_dpo_use_weighting(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
