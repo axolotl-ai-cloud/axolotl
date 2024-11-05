@@ -8,11 +8,18 @@ strict: false
 
 chat_template: llama3
 datasets:
-  - path: gs://ai-team-data/resolve-qa-data/llama3-data/train.jsonl
+  - path: gs://ai-team-data/resolve-qa-data/llama3_data/train.jsonl
     type: chat_template
     field_messages: conversations
     message_field_role: role
     message_field_content: content
+    roles:
+      system:
+        - system
+      user:
+        - user
+      assistant:
+        - assistant
 dataset_prepared_path: last_run_prepared
 val_set_size: 0.05
 output_dir: ./outputs/llama-3.1-8B-RasA
