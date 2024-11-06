@@ -71,8 +71,6 @@ class DeprecatedParameters(BaseModel):
     dpo_beta: Optional[float] = None
     evaluation_strategy: Optional[str] = None
 
-    alternate_optimizer: Optional[str] = None
-
     @field_validator("max_packed_sequence_len")
     @classmethod
     def validate_max_packed_sequence_len(cls, max_packed_sequence_len):
