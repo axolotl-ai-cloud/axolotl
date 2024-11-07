@@ -1,4 +1,4 @@
-base_model: JackFram/llama-68m,
+base_model: JackFram/llama-68m
 
 sequence_len: 1024
 load_in_8bit: true
