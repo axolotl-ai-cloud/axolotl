@@ -8,6 +8,7 @@ lora_alpha: 32
 lora_dropout: 0.1
 lora_target_linear: true
 rl: dpo
+dpo_use_weighting: true
 
 datasets:
   - path: arcee-ai/distilabel-intel-orca-dpo-pairs-binarized
