@@ -27,5 +27,5 @@ warmup_steps: 5
 gradient_checkpointing: True
 gradient_checkpointing_kwargs:
   use_reentrant: false
-special_tokens:
-  pad_token: <|end_of_text|>
+#special_tokens:
+#  pad_token: <|end_of_text|>
