@@ -1,0 +1,31 @@
+base_model: JackFram/llama-68m,
+
+sequence_len: 1024
+load_in_8bit: true
+adapter: lora
+lora_r: 64
+lora_alpha: 32
+lora_dropout: 0.1
+lora_target_linear: true
+rl: dpo
+
+datasets:
+  - path: arcee-ai/distilabel-intel-orca-dpo-pairs-binarized
+    type: chatml.ultra
+    split: train
+
+num_epochs: 1
+micro_batch_size: 4
+gradient_accumulation_steps: 1
+output_dir: ./outputs/lora-out
+learning_rate: 0.00001
+optimizer: paged_adamw_8bit
+lr_scheduler: cosine
+max_steps": 20
+save_steps: 10
+warmup_steps: 5
+gradient_checkpointing: True
+gradient_checkpointing_kwargs:
+  use_reentrant: false
+special_tokens:
+  pad_token: <|end_of_text|>
