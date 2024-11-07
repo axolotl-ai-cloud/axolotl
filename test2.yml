@@ -30,3 +30,9 @@ gradient_checkpointing_kwargs:
   use_reentrant: false
 #special_tokens:
 #  pad_token: <|end_of_text|>
+
+wandb_project: check_dpotrainer
+wandb_entity: axolotl-ai
+wandb_watch:
+wandb_name: baseline/dpo_base/dpo_use_weighting
+wandb_log_model:
