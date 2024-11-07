@@ -35,3 +35,7 @@ RUN git lfs install --skip-repo && \
     pip3 install awscli && \
     # The base image ships with `pydantic==1.8.2` which is not working
     pip3 install -U --no-cache-dir pydantic==1.10.10
+
+RUN if [ "$PYTHON_VERSION" != "2.5.1" ] ; then \
+        pip3 install flash-attn==2.6.3; \
+    fi
