@@ -1,4 +1,4 @@
-base_model: NousResearch/Meta-Llama-3.1-8B
+base_model: JackFram/llama-68m
 
 plugins:
   - axolotl.integrations.liger.LigerPlugin
