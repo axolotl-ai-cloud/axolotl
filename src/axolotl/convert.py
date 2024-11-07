@@ -1,6 +1,6 @@
-"""Module containing File Reader, File Writer, Json Parser, and Jsonl Serializer classes"""
+"""Module containing File Reader, File Writer, Json Parser, Csv Parser, and Jsonl Serializer classes"""
 
-
+import csv
 import json
 import sys
 
@@ -11,7 +11,7 @@ class FileReader:
     """
 
     def read(self, file_path):
-        with open(file_path, encoding="utf-8") as file:
+        with open(file_path, mode="r", encoding="utf-8") as file:
             return file.read()
 
 
@@ -20,11 +20,8 @@ class FileWriter:
     Writes a string to a file
     """
 
-    def __init__(self, file_path):
-        self.file_path = file_path
-
-    def write(self, content):
-        with open(self.file_path, "w", encoding="utf-8") as file:
+    def write(self, content, file_path):
+        with open(file_path, mode="w", encoding="utf-8") as file:
             file.write(content)
 
 
@@ -47,6 +44,17 @@ class JsonParser:
         return json.loads(content)
 
 
+class CsvParser:
+    """
+    Reads a CSV file and returns its contents as a list of dictionaries
+    """
+
+    def read(self, file_path):
+        with open(file_path, mode="r", encoding="utf-8") as file:
+            reader = csv.DictReader(file)
+            return list(reader)
+
+
 class JsonlSerializer:
     """
     Serializes a list of JSON objects into a JSONL string
@@ -57,22 +65,22 @@ class JsonlSerializer:
         return "\n".join(lines)
 
 
-class JsonToJsonlConverter:
+class ConverterToJsonl:
     """
-    Converts a JSON file to JSONL
+    Converts to JSONL
     """
 
-    def __init__(self, file_reader, file_writer, json_parser, jsonl_serializer):
-        self.file_reader = file_reader
-        self.file_writer = file_writer
-        self.json_parser = json_parser
+    def __init__(self, parser, writer, jsonl_serializer=JsonlSerializer()):
+        self.csv_parser = parser
+        self.file_writer = writer
         self.jsonl_serializer = jsonl_serializer
 
-    def convert(
-        self, input_file_path, output_file_path
-    ):  # pylint: disable=unused-argument
-        content = self.file_reader.read(input_file_path)
-        data = self.json_parser.parse(content)
-        # data = [r for r in data if r["conversations"]]  # vicuna cleaned has rows with empty conversations
+    def convert(self, input_file_path, output_file_path):
+        # Read data from the CSV file
+        data = self.csv_parser.read(input_file_path)
+
+        # Serialize the data to JSONL format
         jsonl_content = self.jsonl_serializer.serialize(data)
-        self.file_writer.write(jsonl_content)
+
+        # Write the JSONL content to the output file
+        self.file_writer.write(jsonl_content, output_file_path)

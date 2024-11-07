@@ -23,6 +23,7 @@ from axolotl.cli import (
 )
 from axolotl.common.cli import PreprocessCliArgs
 from axolotl.common.const import DEFAULT_DATASET_PREPARED_PATH
+from axolotl.convert import ConverterToJsonl, CsvParser, FileWriter, JsonlSerializer
 from axolotl.prompt_strategies.sharegpt import (
     register_chatml_template,
     register_llama3_template,
@@ -76,6 +77,20 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
             load_rl_datasets(cfg=parsed_cfg, cli_args=parsed_cli_args)
         else:
             load_datasets(cfg=parsed_cfg, cli_args=parsed_cli_args)
+
+    if parsed_cfg.dataset_prepared_path and parsed_cfg.datasets[0].path.endswith(
+        ".csv"
+    ):
+        csv_file = parsed_cfg.datasets[0].path
+        jsonl_file = (
+            parsed_cfg.dataset_prepared_path
+            + f"/{parsed_cfg.datasets[0].path.rsplit('.', 1)[0]}.jsonl"
+        )
+        LOG.info(f"Converting {csv_file} to {jsonl_file}...")
+
+        converter = ConverterToJsonl(CsvParser(), FileWriter(), JsonlSerializer())
+        converter.convert(csv_file, jsonl_file)
+        parsed_cfg.dataset_file = jsonl_file  # Update config to use JSONL file path
 
     if parsed_cli_args.download:
         model_name = parsed_cfg.base_model
