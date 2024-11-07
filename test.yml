@@ -56,20 +56,3 @@ saves_per_epoch: 1
 debug:
 deepspeed:
 weight_decay: 0.0
-fsdp:
-  - full_shard
-  - auto_wrap
-fsdp_config:
-  fsdp_limit_all_gathers: true
-  fsdp_sync_module_states: true
-  fsdp_offload_params: true
-  fsdp_use_orig_params: false
-  fsdp_cpu_ram_efficient_loading: true
-  fsdp_auto_wrap_policy: TRANSFORMER_BASED_WRAP
-  fsdp_transformer_layer_cls_to_wrap: LlamaDecoderLayer
-  fsdp_state_dict_type: FULL_STATE_DICT
-  fsdp_sharding_strategy: FULL_SHARD
-  fsdp_backward_prefetch: BACKWARD_PRE
-special_tokens:
-  pad_token: <|finetune_right_pad_id|>
-  eos_token: <|eot_id|>
