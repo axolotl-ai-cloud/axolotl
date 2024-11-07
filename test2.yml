@@ -1,5 +1,11 @@
 base_model: JackFram/llama-68m
 
+datasets:
+  - path: arcee-ai/distilabel-intel-orca-dpo-pairs-binarized
+    type: chatml.ultra
+    split: train
+output_dir: ./outputs/lora-out
+
 sequence_len: 1024
 load_in_8bit: true
 adapter: lora
@@ -10,15 +16,16 @@ lora_target_linear: true
 rl: dpo
 dpo_use_weighting: true
 
-datasets:
-  - path: arcee-ai/distilabel-intel-orca-dpo-pairs-binarized
-    type: chatml.ultra
-    split: train
+wandb_project: check_dpotrainer
+wandb_entity: axolotl-ai
+wandb_watch:
+wandb_name: baseline/dpo_base/dpo_use_weighting
+wandb_log_model:
+
 
 num_epochs: 1
 micro_batch_size: 4
 gradient_accumulation_steps: 1
-output_dir: ./outputs/lora-out
 learning_rate: 0.00001
 optimizer: paged_adamw_8bit
 lr_scheduler: cosine
@@ -31,8 +38,3 @@ gradient_checkpointing_kwargs:
 #special_tokens:
 #  pad_token: <|end_of_text|>
 
-wandb_project: check_dpotrainer
-wandb_entity: axolotl-ai
-wandb_watch:
-wandb_name: baseline/dpo_base/dpo_use_weighting
-wandb_log_model:
