@@ -5,8 +5,9 @@ load_in_4bit: false
 strict: false
 
 datasets:
-  - path: tatsu-lab/alpaca
-    type: alpaca
+  - path: arcee-ai/distilabel-intel-orca-dpo-pairs-binarized
+    type: chatml.ultra
+    split: train
 dataset_prepared_path: last_run_prepared
 val_set_size: 0.1
 output_dir: ./outputs/out
