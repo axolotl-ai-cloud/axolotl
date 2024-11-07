@@ -306,6 +306,10 @@ class TestDatasetPreparation(unittest.TestCase):
         """Verify that processing data from the hub works with a specific revision"""
         with tempfile.TemporaryDirectory() as tmp_dir:
             prepared_path = Path(tmp_dir) / "prepared"
+
+            # make sure prepared_path is empty
+            shutil.rmtree(prepared_path, ignore_errors=True)
+
             cfg = DictDefault(
                 {
                     "tokenizer_config": "huggyllama/llama-7b",
