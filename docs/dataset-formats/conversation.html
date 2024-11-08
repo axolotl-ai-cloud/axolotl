@@ -295,10 +295,6 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <ul>
   <li><a href="#sharegpt" id="toc-sharegpt" class="nav-link active" data-scroll-target="#sharegpt">sharegpt</a></li>
   <li><a href="#pygmalion" id="toc-pygmalion" class="nav-link" data-scroll-target="#pygmalion">pygmalion</a></li>
-  <li><a href="#sharegpt.load_role" id="toc-sharegpt.load_role" class="nav-link" data-scroll-target="#sharegpt.load_role">sharegpt.load_role</a></li>
-  <li><a href="#sharegpt.load_guanaco" id="toc-sharegpt.load_guanaco" class="nav-link" data-scroll-target="#sharegpt.load_guanaco">sharegpt.load_guanaco</a></li>
-  <li><a href="#sharegpt.load_ultrachat" id="toc-sharegpt.load_ultrachat" class="nav-link" data-scroll-target="#sharegpt.load_ultrachat">sharegpt.load_ultrachat</a></li>
-  <li><a href="#sharegpt_jokes" id="toc-sharegpt_jokes" class="nav-link" data-scroll-target="#sharegpt_jokes">sharegpt_jokes</a></li>
   <li><a href="#chat_template" id="toc-chat_template" class="nav-link" data-scroll-target="#chat_template">chat_template</a>
   <ul class="collapse">
   <li><a href="#migrating-from-sharegpt" id="toc-migrating-from-sharegpt" class="nav-link" data-scroll-target="#migrating-from-sharegpt">Migrating from sharegpt</a></li>
@@ -336,26 +332,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 
 <section id="sharegpt" class="level2">
 <h2 class="anchored" data-anchor-id="sharegpt">sharegpt</h2>
-<p>UPDATE: ShareGPT is being deprecated in the next release. Please see <code>chat_template</code> section below.</p>
-<p>conversations where <code>from</code> is <code>human</code>/<code>gpt</code>. (optional: first row with role <code>system</code> to override default system prompt)</p>
-<div class="code-with-filename">
-<div class="code-with-filename-file">
-<pre><strong>data.jsonl</strong></pre>
-</div>
-<div class="sourceCode" id="cb1" data-filename="data.jsonl"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"conversations"</span><span class="fu">:</span> <span class="ot">[</span><span class="fu">{</span><span class="dt">"from"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"value"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span><span class="ot">]</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-</div>
-<p>Note: <code>type: sharegpt</code> opens special configs: - <code>conversation</code>: enables conversions to many Conversation types. Refer to the ‘name’ <a href="https://github.com/lm-sys/FastChat/blob/main/fastchat/conversation.py">here</a> for options. - <code>roles</code>: allows you to specify the roles for input and output. This is useful for datasets with custom roles such as <code>tool</code> etc to support masking. - <code>field_human</code>: specify the key to use instead of <code>human</code> in the conversation. - <code>field_model</code>: specify the key to use instead of <code>gpt</code> in the conversation.</p>
-<div class="sourceCode" id="cb2"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">path</span><span class="kw">:</span><span class="at"> ...</span></span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> sharegpt</span></span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">conversation</span><span class="kw">:</span><span class="co"> # Options (see Conversation 'name'): https://github.com/lm-sys/FastChat/blob/main/fastchat/conversation.py</span></span>
-<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">field_human</span><span class="kw">:</span><span class="co"> # Optional[str]. Human key to use for conversation.</span></span>
-<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">field_model</span><span class="kw">:</span><span class="co"> # Optional[str]. Assistant key to use for conversation.</span></span>
-<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a><span class="co">    # Add additional keys from your dataset as input or output roles</span></span>
-<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">roles</span><span class="kw">:</span></span>
-<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">input</span><span class="kw">:</span><span class="co"> # Optional[List[str]]. These will be masked based on train_on_input</span></span>
-<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">output</span><span class="kw">:</span><span class="co"> # Optional[List[str]].</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>IMPORTANT: ShareGPT is deprecated!. Please see <code>chat_template</code> section below.</p>
 </section>
 <section id="pygmalion" class="level2">
 <h2 class="anchored" data-anchor-id="pygmalion">pygmalion</h2>
@@ -363,47 +340,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <div class="code-with-filename-file">
 <pre><strong>data.jsonl</strong></pre>
 </div>
-<div class="sourceCode" id="cb3" data-filename="data.jsonl"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"conversations"</span><span class="fu">:</span> <span class="ot">[</span><span class="fu">{</span><span class="dt">"role"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"value"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span><span class="ot">]</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-</div>
-</section>
-<section id="sharegpt.load_role" class="level2">
-<h2 class="anchored" data-anchor-id="sharegpt.load_role">sharegpt.load_role</h2>
-<p>conversations where <code>role</code> is used instead of <code>from</code></p>
-<div class="code-with-filename">
-<div class="code-with-filename-file">
-<pre><strong>data.jsonl</strong></pre>
-</div>
-<div class="sourceCode" id="cb4" data-filename="data.jsonl"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"conversations"</span><span class="fu">:</span> <span class="ot">[</span><span class="fu">{</span><span class="dt">"role"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"value"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span><span class="ot">]</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-</div>
-</section>
-<section id="sharegpt.load_guanaco" class="level2">
-<h2 class="anchored" data-anchor-id="sharegpt.load_guanaco">sharegpt.load_guanaco</h2>
-<p>conversations where <code>from</code> is <code>prompter</code> <code>assistant</code> instead of default sharegpt</p>
-<div class="code-with-filename">
-<div class="code-with-filename-file">
-<pre><strong>data.jsonl</strong></pre>
-</div>
-<div class="sourceCode" id="cb5" data-filename="data.jsonl"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"conversations"</span><span class="fu">:</span> <span class="ot">[</span><span class="fu">{</span><span class="dt">"from"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"value"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span><span class="ot">]</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-</div>
-</section>
-<section id="sharegpt.load_ultrachat" class="level2">
-<h2 class="anchored" data-anchor-id="sharegpt.load_ultrachat">sharegpt.load_ultrachat</h2>
-<p>conversations where the turns field is ‘messages’, human is ‘user’ and gpt is ‘assistant’.</p>
-<div class="code-with-filename">
-<div class="code-with-filename-file">
-<pre><strong>data.jsonl</strong></pre>
-</div>
-<div class="sourceCode" id="cb6" data-filename="data.jsonl"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"messages"</span><span class="fu">:</span> <span class="ot">[</span><span class="fu">{</span><span class="dt">"user"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"assistant"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span><span class="ot">]</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-</div>
-</section>
-<section id="sharegpt_jokes" class="level2">
-<h2 class="anchored" data-anchor-id="sharegpt_jokes">sharegpt_jokes</h2>
-<p>creates a chat where bot is asked to tell a joke, then explain why the joke is funny</p>
-<div class="code-with-filename">
-<div class="code-with-filename-file">
-<pre><strong>data.jsonl</strong></pre>
-</div>
-<div class="sourceCode" id="cb7" data-filename="data.jsonl"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"conversations"</span><span class="fu">:</span> <span class="ot">[</span><span class="fu">{</span><span class="dt">"title"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"text"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"explanation"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span><span class="ot">]</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb1" data-filename="data.jsonl"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"conversations"</span><span class="fu">:</span> <span class="ot">[</span><span class="fu">{</span><span class="dt">"role"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"value"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span><span class="ot">]</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
 </section>
 <section id="chat_template" class="level2">
@@ -413,37 +350,37 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <div class="code-with-filename-file">
 <pre><strong>data.jsonl</strong></pre>
 </div>
-<div class="sourceCode" id="cb8" data-filename="data.jsonl"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"conversations"</span><span class="fu">:</span> <span class="ot">[</span><span class="fu">{</span><span class="dt">"role"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"content"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span><span class="ot">]</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb2" data-filename="data.jsonl"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"conversations"</span><span class="fu">:</span> <span class="ot">[</span><span class="fu">{</span><span class="dt">"role"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"content"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span><span class="ot">]</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
 <p>See <code>config.qmd</code> for full configs and supported templates.</p>
 <section id="migrating-from-sharegpt" class="level3">
 <h3 class="anchored" data-anchor-id="migrating-from-sharegpt">Migrating from sharegpt</h3>
 <p>Most configs can be adapted as follows:</p>
-<div class="sourceCode" id="cb9"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="co"># old</span></span>
-<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="fu">chat_template</span><span class="kw">:</span><span class="at"> chatml</span></span>
-<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
-<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> ...</span></span>
-<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> sharegpt</span></span>
-<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">conversation</span><span class="kw">:</span><span class="at"> chatml</span></span>
-<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a><span class="co"># new (if using tokenizer's chat_template)</span></span>
-<span id="cb9-9"><a href="#cb9-9" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
-<span id="cb9-10"><a href="#cb9-10" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> ...</span></span>
-<span id="cb9-11"><a href="#cb9-11" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> chat_template</span></span>
-<span id="cb9-12"><a href="#cb9-12" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-13"><a href="#cb9-13" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">field_messages</span><span class="kw">:</span><span class="at"> conversations</span></span>
-<span id="cb9-14"><a href="#cb9-14" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">message_field_role</span><span class="kw">:</span><span class="at"> from</span></span>
-<span id="cb9-15"><a href="#cb9-15" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">message_field_content</span><span class="kw">:</span><span class="at"> value</span></span>
-<span id="cb9-16"><a href="#cb9-16" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-17"><a href="#cb9-17" aria-hidden="true" tabindex="-1"></a><span class="co"># new (if setting a new chat_template like chatml, gemma, etc)</span></span>
-<span id="cb9-18"><a href="#cb9-18" aria-hidden="true" tabindex="-1"></a><span class="fu">chat_template</span><span class="kw">:</span><span class="at"> chatml</span></span>
-<span id="cb9-19"><a href="#cb9-19" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
-<span id="cb9-20"><a href="#cb9-20" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> ...</span></span>
-<span id="cb9-21"><a href="#cb9-21" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> chat_template</span></span>
-<span id="cb9-22"><a href="#cb9-22" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-23"><a href="#cb9-23" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">field_messages</span><span class="kw">:</span><span class="at"> conversations</span></span>
-<span id="cb9-24"><a href="#cb9-24" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">message_field_role</span><span class="kw">:</span><span class="at"> from</span></span>
-<span id="cb9-25"><a href="#cb9-25" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">message_field_content</span><span class="kw">:</span><span class="at"> value</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb3"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="co"># old</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="fu">chat_template</span><span class="kw">:</span><span class="at"> chatml</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> ...</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> sharegpt</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">conversation</span><span class="kw">:</span><span class="at"> chatml</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a><span class="co"># new (if using tokenizer's chat_template)</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> ...</span></span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> chat_template</span></span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">field_messages</span><span class="kw">:</span><span class="at"> conversations</span></span>
+<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">message_field_role</span><span class="kw">:</span><span class="at"> from</span></span>
+<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">message_field_content</span><span class="kw">:</span><span class="at"> value</span></span>
+<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a><span class="co"># new (if setting a new chat_template like chatml, gemma, etc)</span></span>
+<span id="cb3-18"><a href="#cb3-18" aria-hidden="true" tabindex="-1"></a><span class="fu">chat_template</span><span class="kw">:</span><span class="at"> chatml</span></span>
+<span id="cb3-19"><a href="#cb3-19" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
+<span id="cb3-20"><a href="#cb3-20" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> ...</span></span>
+<span id="cb3-21"><a href="#cb3-21" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> chat_template</span></span>
+<span id="cb3-22"><a href="#cb3-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-23"><a href="#cb3-23" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">field_messages</span><span class="kw">:</span><span class="at"> conversations</span></span>
+<span id="cb3-24"><a href="#cb3-24" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">message_field_role</span><span class="kw">:</span><span class="at"> from</span></span>
+<span id="cb3-25"><a href="#cb3-25" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">message_field_content</span><span class="kw">:</span><span class="at"> value</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>We recommend checking the below examples for other usecases.</p>
 </section>
 <section id="examples" class="level3">
@@ -451,35 +388,35 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <ol type="1">
 <li>Using the default chat template in the tokenizer_config.json on OpenAI messages format, training on only last message.</li>
 </ol>
-<div class="sourceCode" id="cb10"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
-<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> ...</span></span>
-<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> chat_template</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb4"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> ...</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> chat_template</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <ol start="2" type="1">
 <li>Using the <code>gemma</code> chat template to override the tokenizer_config.json’s chat template on OpenAI messages format, training on all assistant messages.</li>
 </ol>
-<div class="sourceCode" id="cb11"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="fu">chat_template</span><span class="kw">:</span><span class="at"> gemma</span><span class="co"> # this overwrites the tokenizer's chat_template</span></span>
-<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
-<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> ...</span></span>
-<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> chat_template</span></span>
-<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">roles_to_train</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="st">"assistant"</span><span class="kw">]</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb5"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="fu">chat_template</span><span class="kw">:</span><span class="at"> gemma</span><span class="co"> # this overwrites the tokenizer's chat_template</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> ...</span></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> chat_template</span></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">roles_to_train</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="st">"assistant"</span><span class="kw">]</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <ol start="3" type="1">
 <li>Using the tokenizer_config.json’s chat template or <code>chatml</code> as fallback if the former’s chat template does not exist, on OpenAI messages format, training on all assistant messages.</li>
 </ol>
-<div class="sourceCode" id="cb12"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="fu">chat_template</span><span class="kw">:</span><span class="at"> tokenizer_default_fallback_chatml</span><span class="co"> # this overwrites the tokenizer's chat_template</span></span>
-<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
-<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> ...</span></span>
-<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> chat_template</span></span>
-<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">roles_to_train</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="st">"assistant"</span><span class="kw">]</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb6"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">chat_template</span><span class="kw">:</span><span class="at"> tokenizer_default_fallback_chatml</span><span class="co"> # this overwrites the tokenizer's chat_template</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> ...</span></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> chat_template</span></span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">roles_to_train</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="st">"assistant"</span><span class="kw">]</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <ol start="4" type="1">
 <li>Using a custom jinja template on OpenAI messages format, training on all assistant messages.</li>
 </ol>
-<div class="sourceCode" id="cb13"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="co"># chat_template: jinja # `jinja` will be implied if the `chat_template_jinja` is set and this field is empty</span></span>
-<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a><span class="fu">chat_template_jinja</span><span class="kw">:</span><span class="at"> </span><span class="st">"{{ bos_token }}{% for message in messages %}{% if (message['role'] == 'system') %}{{'&lt;|system|&gt;' + '</span><span class="sc">\n</span><span class="st">' + message['content'] + '&lt;|end|&gt;' + '</span><span class="sc">\n</span><span class="st">'}}{% elif (message['role'] == 'user') %}{{'&lt;|user|&gt;' + '</span><span class="sc">\n</span><span class="st">' + message['content'] + '&lt;|end|&gt;' + '</span><span class="sc">\n</span><span class="st">' + '&lt;|assistant|&gt;' + '</span><span class="sc">\n</span><span class="st">'}}{% elif message['role'] == 'assistant' %}{{message['content'] + '&lt;|end|&gt;' + '</span><span class="sc">\n</span><span class="st">'}}{% endif %}{% endfor %}"</span></span>
-<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
-<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> ...</span></span>
-<span id="cb13-6"><a href="#cb13-6" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> chat_template</span></span>
-<span id="cb13-7"><a href="#cb13-7" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">roles_to_train</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="st">"assistant"</span><span class="kw">]</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb7"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="co"># chat_template: jinja # `jinja` will be implied if the `chat_template_jinja` is set and this field is empty</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="fu">chat_template_jinja</span><span class="kw">:</span><span class="at"> </span><span class="st">"{{ bos_token }}{% for message in messages %}{% if (message['role'] == 'system') %}{{'&lt;|system|&gt;' + '</span><span class="sc">\n</span><span class="st">' + message['content'] + '&lt;|end|&gt;' + '</span><span class="sc">\n</span><span class="st">'}}{% elif (message['role'] == 'user') %}{{'&lt;|user|&gt;' + '</span><span class="sc">\n</span><span class="st">' + message['content'] + '&lt;|end|&gt;' + '</span><span class="sc">\n</span><span class="st">' + '&lt;|assistant|&gt;' + '</span><span class="sc">\n</span><span class="st">'}}{% elif message['role'] == 'assistant' %}{{message['content'] + '&lt;|end|&gt;' + '</span><span class="sc">\n</span><span class="st">'}}{% endif %}{% endfor %}"</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> ...</span></span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> chat_template</span></span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">roles_to_train</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="st">"assistant"</span><span class="kw">]</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <ol start="5" type="1">
 <li>(Advanced) Using fine-grained control over tokens and turns to train in a conversation</li>
 </ol>
@@ -488,42 +425,42 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <div class="code-with-filename-file">
 <pre><strong>data.jsonl</strong></pre>
 </div>
-<div class="sourceCode" id="cb14" data-filename="data.jsonl"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
-<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">"conversations"</span><span class="fu">:</span> <span class="ot">[</span></span>
-<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span><span class="dt">"from"</span><span class="fu">:</span> <span class="st">"system"</span><span class="fu">,</span> <span class="dt">"value"</span><span class="fu">:</span> <span class="st">"You are an AI assistant."</span><span class="fu">,</span> <span class="dt">"train"</span><span class="fu">:</span> <span class="kw">false</span><span class="fu">}</span><span class="ot">,</span></span>
-<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span><span class="dt">"from"</span><span class="fu">:</span> <span class="st">"human"</span><span class="fu">,</span> <span class="dt">"value"</span><span class="fu">:</span> <span class="st">"Hello"</span><span class="fu">,</span> <span class="dt">"train"</span><span class="fu">:</span> <span class="kw">false</span><span class="fu">}</span><span class="ot">,</span></span>
-<span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span><span class="dt">"from"</span><span class="fu">:</span> <span class="st">"assistant"</span><span class="fu">,</span> <span class="dt">"value"</span><span class="fu">:</span> <span class="st">"Hello"</span><span class="fu">,</span> <span class="dt">"train"</span><span class="fu">:</span> <span class="kw">true</span><span class="fu">}</span><span class="ot">,</span></span>
-<span id="cb14-6"><a href="#cb14-6" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span><span class="dt">"from"</span><span class="fu">:</span> <span class="st">"human"</span><span class="fu">,</span> <span class="dt">"value"</span><span class="fu">:</span> <span class="st">"How are you?"</span><span class="fu">,</span> <span class="dt">"train"</span><span class="fu">:</span> <span class="kw">true</span><span class="fu">}</span><span class="ot">,</span></span>
-<span id="cb14-7"><a href="#cb14-7" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span></span>
-<span id="cb14-8"><a href="#cb14-8" aria-hidden="true" tabindex="-1"></a>      <span class="dt">"from"</span><span class="fu">:</span> <span class="st">"assistant"</span><span class="fu">,</span></span>
-<span id="cb14-9"><a href="#cb14-9" aria-hidden="true" tabindex="-1"></a>      <span class="dt">"value"</span><span class="fu">:</span> <span class="st">"I'm doing very well, thank you!"</span><span class="fu">,</span></span>
-<span id="cb14-10"><a href="#cb14-10" aria-hidden="true" tabindex="-1"></a>      <span class="dt">"train_detail"</span><span class="fu">:</span> <span class="ot">[</span></span>
-<span id="cb14-11"><a href="#cb14-11" aria-hidden="true" tabindex="-1"></a>        <span class="fu">{</span><span class="dt">"begin_offset"</span><span class="fu">:</span> <span class="dv">0</span><span class="fu">,</span> <span class="dt">"end_offset"</span><span class="fu">:</span> <span class="dv">8</span><span class="fu">,</span> <span class="dt">"train"</span><span class="fu">:</span> <span class="kw">false</span><span class="fu">}</span><span class="ot">,</span></span>
-<span id="cb14-12"><a href="#cb14-12" aria-hidden="true" tabindex="-1"></a>        <span class="fu">{</span><span class="dt">"begin_offset"</span><span class="fu">:</span> <span class="dv">9</span><span class="fu">,</span> <span class="dt">"end_offset"</span><span class="fu">:</span> <span class="dv">18</span><span class="fu">,</span> <span class="dt">"train"</span><span class="fu">:</span> <span class="kw">true</span><span class="fu">}</span><span class="ot">,</span></span>
-<span id="cb14-13"><a href="#cb14-13" aria-hidden="true" tabindex="-1"></a>        <span class="fu">{</span><span class="dt">"begin_offset"</span><span class="fu">:</span> <span class="dv">19</span><span class="fu">,</span> <span class="dt">"end_offset"</span><span class="fu">:</span> <span class="dv">30</span><span class="fu">,</span> <span class="dt">"train"</span><span class="fu">:</span> <span class="kw">false</span><span class="fu">}</span><span class="ot">,</span></span>
-<span id="cb14-14"><a href="#cb14-14" aria-hidden="true" tabindex="-1"></a>      <span class="ot">]</span><span class="fu">,</span></span>
-<span id="cb14-15"><a href="#cb14-15" aria-hidden="true" tabindex="-1"></a>    <span class="fu">}</span><span class="ot">,</span></span>
-<span id="cb14-16"><a href="#cb14-16" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span></span>
-<span id="cb14-17"><a href="#cb14-17" aria-hidden="true" tabindex="-1"></a>        <span class="dt">"from"</span><span class="fu">:</span> <span class="st">"human"</span><span class="fu">,</span></span>
-<span id="cb14-18"><a href="#cb14-18" aria-hidden="true" tabindex="-1"></a>        <span class="dt">"value"</span><span class="fu">:</span> <span class="st">"I'm doing very well, thank you!"</span><span class="fu">,</span></span>
-<span id="cb14-19"><a href="#cb14-19" aria-hidden="true" tabindex="-1"></a>        <span class="dt">"train"</span><span class="fu">:</span> <span class="kw">true</span><span class="fu">,</span></span>
-<span id="cb14-20"><a href="#cb14-20" aria-hidden="true" tabindex="-1"></a>    <span class="fu">}</span><span class="ot">,</span></span>
-<span id="cb14-21"><a href="#cb14-21" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span><span class="dt">"from"</span><span class="fu">:</span> <span class="st">"assistant"</span><span class="fu">,</span> <span class="dt">"value"</span><span class="fu">:</span> <span class="st">"Hi there!"</span><span class="fu">,</span> <span class="dt">"train"</span><span class="fu">:</span> <span class="kw">true</span><span class="fu">}</span></span>
-<span id="cb14-22"><a href="#cb14-22" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span></span>
-<span id="cb14-23"><a href="#cb14-23" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb8" data-filename="data.jsonl"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">"conversations"</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span><span class="dt">"from"</span><span class="fu">:</span> <span class="st">"system"</span><span class="fu">,</span> <span class="dt">"value"</span><span class="fu">:</span> <span class="st">"You are an AI assistant."</span><span class="fu">,</span> <span class="dt">"train"</span><span class="fu">:</span> <span class="kw">false</span><span class="fu">}</span><span class="ot">,</span></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span><span class="dt">"from"</span><span class="fu">:</span> <span class="st">"human"</span><span class="fu">,</span> <span class="dt">"value"</span><span class="fu">:</span> <span class="st">"Hello"</span><span class="fu">,</span> <span class="dt">"train"</span><span class="fu">:</span> <span class="kw">false</span><span class="fu">}</span><span class="ot">,</span></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span><span class="dt">"from"</span><span class="fu">:</span> <span class="st">"assistant"</span><span class="fu">,</span> <span class="dt">"value"</span><span class="fu">:</span> <span class="st">"Hello"</span><span class="fu">,</span> <span class="dt">"train"</span><span class="fu">:</span> <span class="kw">true</span><span class="fu">}</span><span class="ot">,</span></span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span><span class="dt">"from"</span><span class="fu">:</span> <span class="st">"human"</span><span class="fu">,</span> <span class="dt">"value"</span><span class="fu">:</span> <span class="st">"How are you?"</span><span class="fu">,</span> <span class="dt">"train"</span><span class="fu">:</span> <span class="kw">true</span><span class="fu">}</span><span class="ot">,</span></span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span></span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a>      <span class="dt">"from"</span><span class="fu">:</span> <span class="st">"assistant"</span><span class="fu">,</span></span>
+<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a>      <span class="dt">"value"</span><span class="fu">:</span> <span class="st">"I'm doing very well, thank you!"</span><span class="fu">,</span></span>
+<span id="cb8-10"><a href="#cb8-10" aria-hidden="true" tabindex="-1"></a>      <span class="dt">"train_detail"</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb8-11"><a href="#cb8-11" aria-hidden="true" tabindex="-1"></a>        <span class="fu">{</span><span class="dt">"begin_offset"</span><span class="fu">:</span> <span class="dv">0</span><span class="fu">,</span> <span class="dt">"end_offset"</span><span class="fu">:</span> <span class="dv">8</span><span class="fu">,</span> <span class="dt">"train"</span><span class="fu">:</span> <span class="kw">false</span><span class="fu">}</span><span class="ot">,</span></span>
+<span id="cb8-12"><a href="#cb8-12" aria-hidden="true" tabindex="-1"></a>        <span class="fu">{</span><span class="dt">"begin_offset"</span><span class="fu">:</span> <span class="dv">9</span><span class="fu">,</span> <span class="dt">"end_offset"</span><span class="fu">:</span> <span class="dv">18</span><span class="fu">,</span> <span class="dt">"train"</span><span class="fu">:</span> <span class="kw">true</span><span class="fu">}</span><span class="ot">,</span></span>
+<span id="cb8-13"><a href="#cb8-13" aria-hidden="true" tabindex="-1"></a>        <span class="fu">{</span><span class="dt">"begin_offset"</span><span class="fu">:</span> <span class="dv">19</span><span class="fu">,</span> <span class="dt">"end_offset"</span><span class="fu">:</span> <span class="dv">30</span><span class="fu">,</span> <span class="dt">"train"</span><span class="fu">:</span> <span class="kw">false</span><span class="fu">}</span><span class="ot">,</span></span>
+<span id="cb8-14"><a href="#cb8-14" aria-hidden="true" tabindex="-1"></a>      <span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb8-15"><a href="#cb8-15" aria-hidden="true" tabindex="-1"></a>    <span class="fu">}</span><span class="ot">,</span></span>
+<span id="cb8-16"><a href="#cb8-16" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span></span>
+<span id="cb8-17"><a href="#cb8-17" aria-hidden="true" tabindex="-1"></a>        <span class="dt">"from"</span><span class="fu">:</span> <span class="st">"human"</span><span class="fu">,</span></span>
+<span id="cb8-18"><a href="#cb8-18" aria-hidden="true" tabindex="-1"></a>        <span class="dt">"value"</span><span class="fu">:</span> <span class="st">"I'm doing very well, thank you!"</span><span class="fu">,</span></span>
+<span id="cb8-19"><a href="#cb8-19" aria-hidden="true" tabindex="-1"></a>        <span class="dt">"train"</span><span class="fu">:</span> <span class="kw">true</span><span class="fu">,</span></span>
+<span id="cb8-20"><a href="#cb8-20" aria-hidden="true" tabindex="-1"></a>    <span class="fu">}</span><span class="ot">,</span></span>
+<span id="cb8-21"><a href="#cb8-21" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span><span class="dt">"from"</span><span class="fu">:</span> <span class="st">"assistant"</span><span class="fu">,</span> <span class="dt">"value"</span><span class="fu">:</span> <span class="st">"Hi there!"</span><span class="fu">,</span> <span class="dt">"train"</span><span class="fu">:</span> <span class="kw">true</span><span class="fu">}</span></span>
+<span id="cb8-22"><a href="#cb8-22" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span></span>
+<span id="cb8-23"><a href="#cb8-23" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
 <p>The configuration would look like:</p>
-<div class="sourceCode" id="cb15"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
-<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> ...</span></span>
-<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> chat_template</span></span>
-<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">chat_template</span><span class="kw">:</span><span class="at"> tokenizer_default</span></span>
-<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">field_messages</span><span class="kw">:</span><span class="at"> conversations</span></span>
-<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">message_field_role</span><span class="kw">:</span><span class="at"> from</span></span>
-<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">message_field_content</span><span class="kw">:</span><span class="at"> value</span></span>
-<span id="cb15-8"><a href="#cb15-8" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">roles_to_train</span><span class="kw">:</span><span class="at"> </span><span class="kw">[]</span></span>
-<span id="cb15-9"><a href="#cb15-9" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">train_on_eos</span><span class="kw">:</span><span class="at"> turn</span></span>
-<span id="cb15-10"><a href="#cb15-10" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">message_field_training</span><span class="kw">:</span><span class="at"> train</span></span>
-<span id="cb15-11"><a href="#cb15-11" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">message_field_training_detail</span><span class="kw">:</span><span class="at"> train_detail</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb9"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> ...</span></span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> chat_template</span></span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">chat_template</span><span class="kw">:</span><span class="at"> tokenizer_default</span></span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">field_messages</span><span class="kw">:</span><span class="at"> conversations</span></span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">message_field_role</span><span class="kw">:</span><span class="at"> from</span></span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">message_field_content</span><span class="kw">:</span><span class="at"> value</span></span>
+<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">roles_to_train</span><span class="kw">:</span><span class="at"> </span><span class="kw">[]</span></span>
+<span id="cb9-9"><a href="#cb9-9" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">train_on_eos</span><span class="kw">:</span><span class="at"> turn</span></span>
+<span id="cb9-10"><a href="#cb9-10" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">message_field_training</span><span class="kw">:</span><span class="at"> train</span></span>
+<span id="cb9-11"><a href="#cb9-11" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">message_field_training_detail</span><span class="kw">:</span><span class="at"> train_detail</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Tip: It is not necessary to use both <code>message_field_training</code> and <code>message_field_training_detail</code> at a time.</p>
 
 
