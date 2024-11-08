@@ -778,6 +778,20 @@ class AxolotlInputConfig(
     is_mistral_derived_model: Optional[bool] = Field(default=None)
     is_qwen_derived_model: Optional[bool] = Field(default=None)
 
+    @field_validator("datasets", mode="before")
+    @classmethod
+    def deprecate_sharegpt_datasets(cls, datasets):
+        for _, ds_cfg in enumerate(datasets):
+            if not ds_cfg.get("type"):
+                continue
+
+            if ds_cfg["type"].startswith("sharegpt"):
+                raise ValueError(
+                    "`type: sharegpt.*` is deprecated. Please use `type: chat_template` instead."
+                )
+
+        return datasets
+
     @model_validator(mode="before")
     @classmethod
     def check_batch_size_fields(cls, data):
