@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 from typing import Generator, List, Sequence
 
 from axolotl.prompt_tokenizers import PromptTokenizingStrategy
-from axolotl.prompters import IGNORE_TOKEN_ID, SHAREGPT_ASSERTION_FAILED_ROLE
+from axolotl.prompters import ALTERNATING_ASSERTION_FAILED_ROLE, IGNORE_TOKEN_ID
 
 
 @dataclass
@@ -75,7 +75,7 @@ class Llama2ChatConversation:
 
 class LLama2ChatTokenizingStrategy(PromptTokenizingStrategy):
     """
-    Tokenizing strategy for ShareGPT prompts.
+    Tokenizing strategy for Llama2 prompts.
     adapted from https://github.com/lm-sys/FastChat/blob/main/fastchat/train/train.py
     """
 
@@ -191,7 +191,7 @@ class Llama2ChatPrompter:  # pylint: disable=too-few-public-methods
         conv.messages = []  # pylint: disable=R0801
         for j, sentence in enumerate(source):
             role = roles[sentence["from"]]
-            assert role == conv.roles[j % 2], SHAREGPT_ASSERTION_FAILED_ROLE
+            assert role == conv.roles[j % 2], ALTERNATING_ASSERTION_FAILED_ROLE
             if sentence["value"]:
                 conv.append_message(role, sentence["value"])
         yield conv

@@ -1,8 +1,6 @@
 """Module for tokenization utilities"""
 
 import logging
-import re
-from typing import Dict, List
 
 from termcolor import colored
 
@@ -93,65 +91,3 @@ def check_rl_example_labels(example, tokenizer, text_only=False):
     LOG.info(f"REJECTED RESPONSE: {delimiter.join(colored_rejecteds)}\n\n\n")
 
     return delimiter.join(colored_tokens)
-
-
-GLAIVE_ROLES = ["USER", "ASSISTANT", "FUNCTION RESPONSE"]
-GLAIVE_TO_SHAREGPT_ROLE = {
-    "SYSTEM": "system",
-    "USER": "human",
-    "ASSISTANT": "gpt",
-    "FUNCTION RESPONSE": "tool",
-}
-
-GLAIVE_MSG_REGEX = re.compile(rf"({'|'.join(GLAIVE_ROLES)}): ")
-
-
-def chatml_to_conversation(row: Dict[str, str]) -> List[Dict[str, str]]:
-    """
-    Converts a ChatML formatted row to a list of messages in ShareGPT format.
-    Initially based off https://github.com/lilacai/lilac/blob/main/notebooks/GlaiveToShareGPT.ipynb.
-    """
-
-    system_prompt = row.get("system")
-    if system_prompt:
-        system_prompt = system_prompt.removeprefix("SYSTEM: ")
-
-    chat_str = row["chat"]
-    chat_msgs = [s.strip() for s in GLAIVE_MSG_REGEX.split(chat_str) if s]
-
-    chat_msg_dicts = [
-        {"from": GLAIVE_TO_SHAREGPT_ROLE[role], "value": value}
-        for role, value in zip(chat_msgs[::2], chat_msgs[1::2])
-    ]
-
-    if system_prompt:
-        chat_msg_dicts = [
-            {"from": GLAIVE_TO_SHAREGPT_ROLE["SYSTEM"], "value": system_prompt}
-        ] + chat_msg_dicts
-
-    return chat_msg_dicts
-
-
-def merge_consecutive_messages(messages):
-    """
-    Merge consecutive messages from the same sender into a single message.
-    This can be useful with datasets that contain multiple consecutive tool calls.
-    """
-
-    merged_messages = []
-    current_from = None
-    current_message = ""
-
-    for msg in messages:
-        if current_from == msg["from"]:
-            current_message += msg["value"]
-        else:
-            if current_from is not None:
-                merged_messages.append({"from": current_from, "value": current_message})
-            current_from = msg["from"]
-            current_message = msg["value"]
-
-    if current_from is not None:
-        merged_messages.append({"from": current_from, "value": current_message})
-
-    return merged_messages

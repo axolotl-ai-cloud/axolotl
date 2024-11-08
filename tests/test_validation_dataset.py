@@ -48,9 +48,8 @@ class TestValidationCheckDatasetConfig(BaseValidation):
             | {
                 "datasets": [
                     {
-                        "path": "LDJnr/Puffin",
-                        "type": "sharegpt",
-                        "conversation": "chatml",
+                        "path": "mhenrichsen/alpaca_2k_test",
+                        "type": "alpaca",
                         "shards": 10,
                     }
                 ]
@@ -62,7 +61,6 @@ class TestValidationCheckDatasetConfig(BaseValidation):
         def _check_config():
             assert checked_cfg.datasets[0].path == cfg.datasets[0].path
             assert checked_cfg.datasets[0].type == cfg.datasets[0].type
-            assert checked_cfg.datasets[0].conversation == cfg.datasets[0].conversation
             assert checked_cfg.datasets[0].shards == cfg.datasets[0].shards
 
         _check_config()

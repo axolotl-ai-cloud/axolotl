@@ -646,39 +646,6 @@ class TestValidation(BaseValidation):
 
         validate_config(cfg)
 
-    def test_sharegpt_deprecation(self, minimal_cfg):
-        cfg = (
-            DictDefault(
-                {"datasets": [{"path": "lorem/ipsum", "type": "sharegpt:chat"}]}
-            )
-            | minimal_cfg
-        )
-        with self._caplog.at_level(logging.WARNING):
-            new_cfg = validate_config(cfg)
-            assert any(
-                "`type: sharegpt:chat` will soon be deprecated." in record.message
-                for record in self._caplog.records
-            )
-        assert new_cfg.datasets[0].type == "sharegpt"
-
-        cfg = (
-            DictDefault(
-                {
-                    "datasets": [
-                        {"path": "lorem/ipsum", "type": "sharegpt_simple:load_role"}
-                    ]
-                }
-            )
-            | minimal_cfg
-        )
-        with self._caplog.at_level(logging.WARNING):
-            new_cfg = validate_config(cfg)
-            assert any(
-                "`type: sharegpt_simple` will soon be deprecated." in record.message
-                for record in self._caplog.records
-            )
-        assert new_cfg.datasets[0].type == "sharegpt:load_role"
-
     def test_no_conflict_save_strategy(self, minimal_cfg):
         cfg = (
             DictDefault(
