@@ -1,5 +1,7 @@
 base_model: JackFram/llama-68m
 
+load_in_8bit: true
+
 datasets:
   - path: arcee-ai/distilabel-intel-orca-dpo-pairs-binarized
     type: chatml.ultra
@@ -7,12 +9,13 @@ datasets:
 output_dir: ./outputs/lora-out
 
 sequence_len: 1024
-load_in_8bit: true
+
 adapter: lora
 lora_r: 64
 lora_alpha: 32
 lora_dropout: 0.1
 lora_target_linear: true
+
 rl: dpo
 dpo_use_weighting: true
 
