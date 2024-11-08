@@ -383,11 +383,10 @@ See [examples](examples) for quick start. It is recommended to duplicate and mod
         - typescript
       type: ... # unimplemented custom format
 
-      # fastchat conversation (deprecation soon, use chat_template https://axolotl-ai-cloud.github.io/axolotl/docs/dataset-formats/conversation.html#chat_template)
-      # See 'conversation' options: https://github.com/lm-sys/FastChat/blob/main/fastchat/conversation.py
+      # chat_template https://axolotl-ai-cloud.github.io/axolotl/docs/dataset-formats/conversation.html#chat_template
     - path: ...
-      type: sharegpt
-      conversation: chatml # default: vicuna_v1.1
+      type: chat_template
+      chat_template: chatml # defaults to tokenizer's chat_template
 
       # local
     - path: data.jsonl # or json
