@@ -215,11 +215,6 @@ def normalize_cfg_datasets(cfg):
     if cfg.chat_template:
         if cfg.datasets:
             for idx, ds_cfg in enumerate(cfg.datasets):
-                if ds_cfg.type == "sharegpt" and not ds_cfg.conversation:
-                    LOG.info(
-                        f"updating dataset {ds_cfg.path} with `conversation: {cfg.chat_template}` to match your chat_template"
-                    )
-                    cfg.datasets[idx].conversation = cfg.chat_template
                 if (
                     ds_cfg.type in ["orpo.chat_template", "chat_template"]
                     and not ds_cfg.chat_template
@@ -460,27 +455,6 @@ def legacy_validate_config(cfg):
             raise ValueError(
                 "`early_stopping_patience` requires that eval_steps should evenly divide save_steps."
             )
-
-    if cfg.datasets:
-        for idx, ds_cfg in enumerate(cfg.datasets):
-            if not ds_cfg.type:
-                continue
-            if ds_cfg.type == "sharegpt:chat":
-                LOG.warning(
-                    PendingDeprecationWarning(
-                        "`type: sharegpt:chat` will soon be deprecated. simply use `type: sharegpt` instead."
-                    )
-                )
-                cfg.datasets[idx].type = "sharegpt"
-            if "sharegpt_simple" in ds_cfg.type:
-                LOG.warning(
-                    PendingDeprecationWarning(
-                        "`type: sharegpt_simple` will soon be deprecated. simply use `type: sharegpt` instead."
-                    )
-                )
-                cfg.datasets[idx].type = cfg.datasets[idx].type.replace(
-                    "sharegpt_simple", "sharegpt"
-                )
 
     if cfg.saves_per_epoch and cfg.save_steps:
         raise ValueError(
