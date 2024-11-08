@@ -778,30 +778,6 @@ class AxolotlInputConfig(
     is_mistral_derived_model: Optional[bool] = Field(default=None)
     is_qwen_derived_model: Optional[bool] = Field(default=None)
 
-    @field_validator("datasets", mode="before")
-    @classmethod
-    def fix_sharegpt_datasets(cls, datasets):
-        for idx, ds_cfg in enumerate(datasets):
-            if not ds_cfg["type"]:
-                continue
-            if ds_cfg["type"] == "sharegpt:chat":
-                LOG.warning(
-                    PendingDeprecationWarning(
-                        "`type: sharegpt:chat` will soon be deprecated. simply use `type: sharegpt` instead."
-                    )
-                )
-                datasets[idx]["type"] = "sharegpt"
-            if "sharegpt_simple" in ds_cfg["type"]:
-                LOG.warning(
-                    PendingDeprecationWarning(
-                        "`type: sharegpt_simple` will soon be deprecated. simply use `type: sharegpt` instead."
-                    )
-                )
-                datasets[idx]["type"] = datasets[idx]["type"].replace(
-                    "sharegpt_simple", "sharegpt"
-                )
-        return datasets
-
     @model_validator(mode="before")
     @classmethod
     def check_batch_size_fields(cls, data):
