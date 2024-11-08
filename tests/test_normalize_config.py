@@ -39,12 +39,12 @@ class NormalizeConfigTestCase(unittest.TestCase):
                 "datasets": [
                     {
                         "path": "lorem/ipsum",
-                        "type": "sharegpt",
-                        "conversation": "vicuna_v1.1",
+                        "type": "chat_template",
+                        "chat_template": "gemma",
                     },
                     {
                         "path": "sit/amet",
-                        "type": "sharegpt",
+                        "type": "chat_template",
                     },
                 ],
             }
@@ -52,8 +52,8 @@ class NormalizeConfigTestCase(unittest.TestCase):
 
         normalize_cfg_datasets(cfg)
 
-        assert cfg.datasets[0].conversation == "vicuna_v1.1"
-        assert cfg.datasets[1].conversation == "chatml"
+        assert cfg.datasets[0].chat_template == "gemma"
+        assert cfg.datasets[1].chat_template == "chatml"
 
     @patch("axolotl.utils.config.is_torch_bf16_gpu_available")
     def test_bf16_auto_setter_available(self, mock_bf16_avail):
