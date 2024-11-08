@@ -83,7 +83,7 @@ lora_on_cpu: true
 datasets:
   # HuggingFace dataset repo | s3://,gs:// path | "json" for local dataset, make sure to fill data_files
   - path: vicgalle/alpaca-gpt4
-    # The type of prompt to use for training. [alpaca, sharegpt, gpteacher, oasst, reflection]
+    # The type of prompt to use for training. [alpaca, gpteacher, oasst, reflection]
     type: alpaca # format | format:<prompt_style> (chat/instruct) | <prompt_strategies>.load_<load_fn>
     ds_type: # Optional[str] (json|arrow|parquet|text|csv) defines the datatype when path is a file
     data_files: # Optional[str] path to source data files
@@ -91,15 +91,6 @@ datasets:
     name: # Optional[str] name of dataset configuration to load
     train_on_split: train # Optional[str] name of dataset split to load from
     revision: # Optional[str] The specific revision of the dataset to use when loading from the Hugging Face Hub. This can be a commit hash, tag, or branch name. If not specified, the latest version will be used. This parameter is ignored for local datasets.
-
-    # Optional[str] fastchat conversation type, only used with type: sharegpt
-    conversation: # Options (see Conversation 'name'): https://github.com/lm-sys/FastChat/blob/main/fastchat/conversation.py
-    field_human: # Optional[str]. Human key to use for conversation.
-    field_model: # Optional[str]. Assistant key to use for conversation.
-    # Add additional keys from your dataset as input or output roles
-    roles:
-      input: # Optional[List[str]]. These will be masked based on train_on_input
-      output: # Optional[List[str]].
 
   # Custom user instruction prompt
   - path: repo

@@ -75,7 +75,7 @@ class Llama2ChatConversation:
 
 class LLama2ChatTokenizingStrategy(PromptTokenizingStrategy):
     """
-    Tokenizing strategy for ShareGPT prompts.
+    Tokenizing strategy for Llama2 prompts.
     adapted from https://github.com/lm-sys/FastChat/blob/main/fastchat/train/train.py
     """
 
