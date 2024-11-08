@@ -100,9 +100,6 @@ setup(
         "flash-attn": [
             "flash-attn==2.6.3",
         ],
-        "fused-dense-lib": [
-            "fused-dense-lib  @ git+https://github.com/Dao-AILab/flash-attention@v2.6.2#subdirectory=csrc/fused_dense_lib",
-        ],
         "deepspeed": [
             "deepspeed==0.14.4",
             "deepspeed-kernels",
