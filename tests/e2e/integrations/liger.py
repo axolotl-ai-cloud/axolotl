@@ -1,7 +1,6 @@
 """
 Simple end-to-end test for Liger integration
 """
-
 import unittest
 from pathlib import Path
 
