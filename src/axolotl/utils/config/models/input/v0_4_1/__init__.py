@@ -293,7 +293,7 @@ class LoraConfig(BaseModel):
     gptq: Optional[bool] = None
     bnb_config_kwargs: Optional[Dict[str, Any]] = None
 
-    loraplus_lr_ratio: Optional[float] = Field(
+    loraplus__ratio: Optional[float] = Field(
         default=None,
         metadata={
             "help": "loraplus learning rate ratio lr_B / lr_A. Recommended value is 2^4."
@@ -427,6 +427,7 @@ class HyperparametersConfig(BaseModel):
                 "ao_adamw_4bit",
                 "ao_adamw_8bit",
                 "ao_adamw_fp8",
+                "adopt_adamw"
             ],
         ]
     ] = OptimizerNames.ADAMW_HF.value
