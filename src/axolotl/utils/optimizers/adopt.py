@@ -1,11 +1,13 @@
 # mypy: allow-untyped-decorators
 # mypy: allow-untyped-defs
-from typing import cast, List, Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union, cast
 
 import torch
 from torch import Tensor
-
 from torch.optim.optimizer import (
+    DeviceDict,
+    Optimizer,
+    ParamsT,
     _capturable_doc,
     _default_to_fused_or_foreach,
     _device_dtype_check_for_fused,
@@ -20,11 +22,7 @@ from torch.optim.optimizer import (
     _stack_if_compiling,
     _use_grad_for_differentiable,
     _view_as_real,
-    DeviceDict,
-    Optimizer,
-    ParamsT,
 )
-
 
 __all__ = ["ADOPT", "adopt"]
 
@@ -128,9 +126,7 @@ class ADOPT(Optimizer):
                 has_complex |= torch.is_complex(p)
                 params_with_grad.append(p)
                 if p.grad.is_sparse:
-                    raise RuntimeError(
-                        "ADOPT does not support sparse gradients"
-                    )
+                    raise RuntimeError("ADOPT does not support sparse gradients")
                 grads.append(p.grad)
 
                 state = self.state[p]
@@ -284,7 +280,7 @@ def _single_tensor_adopt(
 
         if weight_decay != 0:
             if decoupled:
-                param.add_(param, alpha=-lr*weight_decay)
+                param.add_(param, alpha=-lr * weight_decay)
             else:
                 grad = grad.add(param, alpha=weight_decay)
 
@@ -392,7 +388,9 @@ def _multi_tensor_adopt(
 
         if weight_decay != 0:
             if decoupled:
-                torch._foreach_add_(device_params, device_params, alpha=-lr*weight_decay)
+                torch._foreach_add_(
+                    device_params, device_params, alpha=-lr * weight_decay
+                )
             else:
                 # Re-use the intermediate memory (device_grads) already allocated for maximize
                 if maximize:
@@ -449,9 +447,7 @@ def adopt(
     eps: float,
     maximize: bool,
 ):
-    r"""Functional API that performs ADOPT algorithm computation.
-
-    """
+    r"""Functional API that performs ADOPT algorithm computation."""
     # Respect when the user inputs False/True for foreach or fused. We only want to change
     # the default when neither have been user-specified. Note that we default to foreach
     # and pass False to use_fused. This is not a mistake--we want to give the fused impl

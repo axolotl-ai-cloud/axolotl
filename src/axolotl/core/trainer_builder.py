@@ -436,7 +436,13 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
         if (
             self.args.loraplus_lr_ratio is None
             and self.args.alternate_optimizer
-            not in ["optimi_adamw", "ao_adamw_8bit", "ao_adamw_4bit", "ao_adamw_fp8", "adopt_adamw"]
+            not in [
+                "optimi_adamw",
+                "ao_adamw_8bit",
+                "ao_adamw_4bit",
+                "ao_adamw_fp8",
+                "adopt_adamw",
+            ]
         ):
             return super().create_optimizer()
 
@@ -506,10 +512,12 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
                     AdamWFp8(optimizer_grouped_parameters, **optimizer_kwargs)
                 )
             elif self.args.alternate_optimizer == "adopt_adamw":
-                from axolotl.core.optimizers.adopt import ADOPT
+                from axolotl.utils.optimizers.adopt import ADOPT
 
                 self.optimizer = (  # pylint: disable=attribute-defined-outside-init
-                    ADOPT(optimizer_grouped_parameters, decoupled=True, **optimizer_kwargs)
+                    ADOPT(
+                        optimizer_grouped_parameters, decoupled=True, **optimizer_kwargs
+                    )
                 )
 
         if is_sagemaker_mp_enabled():
@@ -1636,7 +1644,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             "ao_adamw_4bit",
             "ao_adamw_8bit",
             "ao_adamw_fp8",
-            "adopt_adamw"
+            "adopt_adamw",
         ]:
             # Set default so transformers doesn't throw
             training_arguments_kwargs["optim"] = "adamw_hf"
