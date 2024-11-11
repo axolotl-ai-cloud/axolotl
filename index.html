@@ -592,7 +592,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <h3 class="anchored" data-anchor-id="environment">Environment</h3>
 <section id="docker" class="level4">
 <h4 class="anchored" data-anchor-id="docker">Docker</h4>
-<div class="sourceCode" id="cb3"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> run <span class="at">--gpus</span> <span class="st">'"all"'</span> <span class="at">--rm</span> <span class="at">-it</span> winglian/axolotl:main-latest</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb3"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> run <span class="at">--gpus</span> <span class="st">'"all"'</span> <span class="at">--rm</span> <span class="at">-it</span> axolotlai/axolotl:main-latest</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Or run on the current files for development:</p>
 <div class="sourceCode" id="cb4"><pre class="sourceCode sh code-with-copy"><code class="sourceCode bash"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> compose up <span class="at">-d</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <blockquote class="blockquote">
@@ -603,7 +603,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 Docker advanced
 </summary>
 <p>A more powerful Docker command to run would be this:</p>
-<div class="sourceCode" id="cb5"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> run <span class="at">--privileged</span> <span class="at">--gpus</span> <span class="st">'"all"'</span> <span class="at">--shm-size</span> 10g <span class="at">--rm</span> <span class="at">-it</span> <span class="at">--name</span> axolotl <span class="at">--ipc</span><span class="op">=</span>host <span class="at">--ulimit</span> memlock=-1 <span class="at">--ulimit</span> stack=67108864 <span class="at">--mount</span> type=bind,src=<span class="st">"</span><span class="va">${PWD}</span><span class="st">"</span>,target=/workspace/axolotl <span class="at">-v</span> <span class="va">${HOME}</span>/.cache/huggingface:/root/.cache/huggingface winglian/axolotl:main-latest</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb5"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> run <span class="at">--privileged</span> <span class="at">--gpus</span> <span class="st">'"all"'</span> <span class="at">--shm-size</span> 10g <span class="at">--rm</span> <span class="at">-it</span> <span class="at">--name</span> axolotl <span class="at">--ipc</span><span class="op">=</span>host <span class="at">--ulimit</span> memlock=-1 <span class="at">--ulimit</span> stack=67108864 <span class="at">--mount</span> type=bind,src=<span class="st">"</span><span class="va">${PWD}</span><span class="st">"</span>,target=/workspace/axolotl <span class="at">-v</span> <span class="va">${HOME}</span>/.cache/huggingface:/root/.cache/huggingface axolotlai/axolotl:main-latest</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>It additionally: * Prevents memory issues when running e.g.&nbsp;deepspeed (e.g.&nbsp;you could hit SIGBUS/signal 7 error) through <code>--ipc</code> and <code>--ulimit</code> args. * Persists the downloaded HF data (models etc.) and your modifications to axolotl code through <code>--mount</code>/<code>-v</code> args. * The <code>--name</code> argument simply makes it easier to refer to the container in vscode (<code>Dev Containers: Attach to Running Container...</code>) or in your terminal. * The <code>--privileged</code> flag gives all capabilities to the container. * The <code>--shm-size 10g</code> argument increases the shared memory size. Use this if you see <code>exitcode: -7</code> errors using deepspeed.</p>
 <p><a href="https://docs.nvidia.com/deeplearning/frameworks/user-guide/index.html#setincshmem">More information on nvidia website</a></p>
 </details>
@@ -619,7 +619,7 @@ Docker advanced
 </section>
 <section id="cloud-gpu" class="level4">
 <h4 class="anchored" data-anchor-id="cloud-gpu">Cloud GPU</h4>
-<p>For cloud GPU providers that support docker images, use <a href="https://hub.docker.com/r/winglian/axolotl-cloud/tags"><code>winglian/axolotl-cloud:main-latest</code></a></p>
+<p>For cloud GPU providers that support docker images, use <a href="https://hub.docker.com/r/axolotlai/axolotl-cloud/tags"><code>axolotlai/axolotl-cloud:main-latest</code></a></p>
 <ul>
 <li>on Latitude.sh use this <a href="https://latitude.sh/blueprint/989e0e79-3bf6-41ea-a46b-1f246e309d5c">direct link</a></li>
 <li>on JarvisLabs.ai use this <a href="https://jarvislabs.ai/templates/axolotl">direct link</a></li>
@@ -709,7 +709,7 @@ cd skypilot/llm/axolotl</code></pre>
 <div class="sourceCode" id="cb15"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="co"># dstack.yaml</span></span>
 <span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a><span class="fu">type</span><span class="kw">:</span><span class="at"> task</span></span>
 <span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a><span class="fu">image</span><span class="kw">:</span><span class="at"> winglian/axolotl-cloud:main-20240429-py3.11-cu121-2.2.2</span></span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a><span class="fu">image</span><span class="kw">:</span><span class="at"> axolotlai/axolotl-cloud:main-latest</span></span>
 <span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a><span class="fu">env</span><span class="kw">:</span></span>
 <span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> HUGGING_FACE_HUB_TOKEN</span></span>
