@@ -21,13 +21,6 @@ datasets:
     field_rejected: rejected
     message_field_role: role
     message_field_content: content
-    roles:
-      system:
-        - system
-      user:
-        - user
-      assistant:
-        - assistant
 
 dataset_prepared_path:
 val_set_size: 0.05
@@ -37,7 +30,7 @@ sequence_len: 2048
 sample_packing: false
 pad_to_sequence_len: true
 
-adapter: lora
+adapter: qlora
 lora_model_dir:
 lora_r: 8
 lora_alpha: 16
