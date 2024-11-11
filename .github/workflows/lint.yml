@@ -20,4 +20,4 @@ jobs:
         with:
           python-version: "3.10"
           cache: 'pip' # caching pip dependencies
-      - uses: pre-commit/action@v3.0.0
+      - uses: pre-commit/action@v3.0.1
