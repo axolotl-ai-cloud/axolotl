@@ -45,23 +45,6 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
         return_remaining_strings=True
     )
 
-    if parsed_cfg.chat_template == "chatml":
-        if parsed_cfg.default_system_message:
-            LOG.info(
-                f"ChatML set. Adding default system message: {parsed_cfg.default_system_message}"
-            )
-            register_chatml_template(parsed_cfg.default_system_message)
-        else:
-            register_chatml_template()
-    elif parsed_cfg.chat_template == "llama3":
-        if parsed_cfg.default_system_message:
-            LOG.info(
-                f"LLaMA-3 set. Adding default system message: {parsed_cfg.default_system_message}"
-            )
-            register_llama3_template(parsed_cfg.default_system_message)
-        else:
-            register_llama3_template()
-
     if not parsed_cfg.dataset_prepared_path:
         msg = (
             Fore.RED

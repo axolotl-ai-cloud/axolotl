@@ -1,4 +1,4 @@
-# Example config for debugging the sharegpt prompt format
+# Example config for debugging the chat_template prompt format
 base_model: TinyLlama/TinyLlama-1.1B-Chat-v1.0
 model_type: LlamaForCausalLM
 tokenizer_type: LlamaTokenizer

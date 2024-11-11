@@ -588,6 +588,9 @@ class AxolotlInputConfig(
 
     rl: Optional[RLType] = None
     reward_model: Optional[bool] = None
+    dpo_use_weighting: Optional[
+        bool
+    ] = None  # whether to use weighting in DPO trainer. If none, default is false in the trainer.
 
     datasets: Optional[conlist(Union[SFTDataset, DPODataset, KTODataset], min_length=1)] = None  # type: ignore
     test_datasets: Optional[conlist(Union[SFTDataset, DPODataset, KTODataset], min_length=1)] = None  # type: ignore
@@ -780,26 +783,16 @@ class AxolotlInputConfig(
 
     @field_validator("datasets", mode="before")
     @classmethod
-    def fix_sharegpt_datasets(cls, datasets):
-        for idx, ds_cfg in enumerate(datasets):
-            if not ds_cfg["type"]:
+    def deprecate_sharegpt_datasets(cls, datasets):
+        for _, ds_cfg in enumerate(datasets):
+            if not ds_cfg.get("type"):
                 continue
-            if ds_cfg["type"] == "sharegpt:chat":
-                LOG.warning(
-                    PendingDeprecationWarning(
-                        "`type: sharegpt:chat` will soon be deprecated. simply use `type: sharegpt` instead."
-                    )
+
+            if ds_cfg["type"].startswith("sharegpt"):
+                raise ValueError(
+                    "`type: sharegpt.*` is deprecated. Please use `type: chat_template` instead."
                 )
-                datasets[idx]["type"] = "sharegpt"
-            if "sharegpt_simple" in ds_cfg["type"]:
-                LOG.warning(
-                    PendingDeprecationWarning(
-                        "`type: sharegpt_simple` will soon be deprecated. simply use `type: sharegpt` instead."
-                    )
-                )
-                datasets[idx]["type"] = datasets[idx]["type"].replace(
-                    "sharegpt_simple", "sharegpt"
-                )
+
         return datasets
 
     @model_validator(mode="before")

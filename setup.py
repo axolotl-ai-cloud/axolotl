@@ -89,7 +89,7 @@ install_requires, dependency_links = parse_requirements()
 
 setup(
     name="axolotl",
-    version="0.4.1",
+    version="0.5.0",
     description="LLM Trainer",
     long_description="Axolotl is a tool designed to streamline the fine-tuning of various AI models, offering support for multiple configurations and architectures.",
     package_dir={"": "src"},
@@ -99,9 +99,6 @@ setup(
     extras_require={
         "flash-attn": [
             "flash-attn==2.6.3",
-        ],
-        "fused-dense-lib": [
-            "fused-dense-lib  @ git+https://github.com/Dao-AILab/flash-attention@v2.6.2#subdirectory=csrc/fused_dense_lib",
         ],
         "deepspeed": [
             "deepspeed==0.14.4",
