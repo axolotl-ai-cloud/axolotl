@@ -1,3 +1,11 @@
+'''
+@inproceedings{taniguchi2024adopt,
+ author={Taniguchi, Shohei and Harada, Keno and Minegishi, Gouki and Oshima, Yuta and Jeong, Seong Cheol and Nagahara, Go and Iiyama, Tomoshi and Suzuki, Masahiro and Iwasawa, Yusuke and Matsuo, Yutaka},
+ booktitle = {Advances in Neural Information Processing Systems},
+ title = {ADOPT: Modified Adam Can Converge with Any β2 with the Optimal Rate},
+ year = {2024}
+}
+'''
 # mypy: allow-untyped-decorators
 # mypy: allow-untyped-defs
 from typing import List, Optional, Tuple, Union, cast
@@ -5,21 +13,21 @@ from typing import List, Optional, Tuple, Union, cast
 import torch
 from torch import Tensor
 from torch.optim.optimizer import (
-    DeviceDict,
+    # DeviceDict,
     Optimizer,
     ParamsT,
-    _capturable_doc,
+    # _capturable_doc,
     _default_to_fused_or_foreach,
     _device_dtype_check_for_fused,
-    _differentiable_doc,
+    # _differentiable_doc,
     _disable_dynamo_if_unsupported,
-    _foreach_doc,
-    _fused_doc,
+    # _foreach_doc,
+    # _fused_doc,
     _get_capturable_supported_devices,
     _get_scalar_dtype,
     _get_value,
-    _maximize_doc,
-    _stack_if_compiling,
+    # _maximize_doc,
+    # _stack_if_compiling,
     _use_grad_for_differentiable,
     _view_as_real,
 )
