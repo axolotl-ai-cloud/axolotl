@@ -789,7 +789,7 @@ class AxolotlInputConfig(
                 continue
 
             ds_type = ds_cfg["type"]
-            # skip if it's a dict (for custom dataset)
+            # skip if it's a dict (for custom user instruction prompt)
             if isinstance(ds_type, dict):
                 continue
 
