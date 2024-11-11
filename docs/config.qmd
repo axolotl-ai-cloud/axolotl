@@ -405,6 +405,7 @@ lr_div_factor: # Learning rate div factor
 # - adamw_torch_fused
 # - adamw_torch_xla
 # - adamw_apex_fused
+# - adopt_adamw
 # - adafactor
 # - adamw_anyprecision
 # - sgd
