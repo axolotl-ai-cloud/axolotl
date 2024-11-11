@@ -159,7 +159,7 @@ accelerate launch -m axolotl.cli.train https://raw.githubusercontent.com/axolotl
 #### Docker
 
   ```bash
-  docker run --gpus '"all"' --rm -it winglian/axolotl:main-latest
+  docker run --gpus '"all"' --rm -it axolotlai/axolotl:main-latest
   ```
 
   Or run on the current files for development:
@@ -178,7 +178,7 @@ accelerate launch -m axolotl.cli.train https://raw.githubusercontent.com/axolotl
   A more powerful Docker command to run would be this:
 
   ```bash
-docker run --privileged --gpus '"all"' --shm-size 10g --rm -it --name axolotl --ipc=host --ulimit memlock=-1 --ulimit stack=67108864 --mount type=bind,src="${PWD}",target=/workspace/axolotl -v ${HOME}/.cache/huggingface:/root/.cache/huggingface winglian/axolotl:main-latest
+docker run --privileged --gpus '"all"' --shm-size 10g --rm -it --name axolotl --ipc=host --ulimit memlock=-1 --ulimit stack=67108864 --mount type=bind,src="${PWD}",target=/workspace/axolotl -v ${HOME}/.cache/huggingface:/root/.cache/huggingface axolotlai/axolotl:main-latest
   ```
 
   It additionally:
@@ -210,7 +210,7 @@ docker run --privileged --gpus '"all"' --shm-size 10g --rm -it --name axolotl --
 
 #### Cloud GPU
 
-For cloud GPU providers that support docker images, use [`winglian/axolotl-cloud:main-latest`](https://hub.docker.com/r/winglian/axolotl-cloud/tags)
+For cloud GPU providers that support docker images, use [`axolotlai/axolotl-cloud:main-latest`](https://hub.docker.com/r/axolotlai/axolotl-cloud/tags)
 
 - on Latitude.sh use this [direct link](https://latitude.sh/blueprint/989e0e79-3bf6-41ea-a46b-1f246e309d5c)
 - on JarvisLabs.ai use this [direct link](https://jarvislabs.ai/templates/axolotl)
@@ -319,7 +319,7 @@ Write a job description in YAML as below:
 # dstack.yaml
 type: task
 
-image: winglian/axolotl-cloud:main-20240429-py3.11-cu121-2.2.2
+image: axolotlai/axolotl-cloud:main-latest
 
 env:
   - HUGGING_FACE_HUB_TOKEN
