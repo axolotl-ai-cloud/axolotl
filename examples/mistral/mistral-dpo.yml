@@ -1,6 +1,6 @@
 #Note that we are switching from the regular chat template to chatml.
 #If you experience problems with the special tokens, training for more epochs can help.
-#After trainig, merge the model before inference otherwise you might
+#After training, merge the model before inference otherwise you might
 #face problems with the special tokens.
 
 base_model: mistralai/Mistral-7B-Instruct-v0.2
@@ -31,9 +31,9 @@ datasets:
 
 dataset_prepared_path:
 val_set_size: 0.05
-output_dir: ./outputs/dpo-lora-out-5
+output_dir: ./outputs/dpo-lora
 
-sequence_len: 64
+sequence_len: 2048
 sample_packing: false
 pad_to_sequence_len: true
 
@@ -74,8 +74,8 @@ learning_rate: 0.0001
 
 train_on_inputs: false
 group_by_length: false
-bf16: false
-fp16: true
+bf16: auto
+fp16:
 tf32: false
 
 gradient_checkpointing: true
@@ -100,4 +100,3 @@ fsdp_config:
 special_tokens:
   bos_token: "<|im_start|>"
   eos_token: "<|im_end|>"
-device_map: "cuda:0"
