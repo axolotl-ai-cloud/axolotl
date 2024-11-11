@@ -1,5 +1,5 @@
 ARG BASE_TAG=main-base
-FROM winglian/axolotl-base:$BASE_TAG
+FROM axolotlai/axolotl-base:$BASE_TAG
 
 ARG TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6+PTX"
 ARG AXOLOTL_EXTRAS=""
