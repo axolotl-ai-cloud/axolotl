@@ -1,9 +1,8 @@
-#Note that we are switching from the regular chat template to chatml. 
-#If you experience problems with the special tokens, training for more epochs can help. 
-#After trainig, merge the model before inference otherwise you might 
+#Note that we are switching from the regular chat template to chatml.
+#If you experience problems with the special tokens, training for more epochs can help.
+#After trainig, merge the model before inference otherwise you might
 #face problems with the special tokens.
 
-base_model: mistralai/Mistral-7B-Instruct-v0.2
 base_model: mistralai/Mistral-7B-Instruct-v0.2
 model_type: MistralForCausalLM
 tokenizer_type: LlamaTokenizer
@@ -42,7 +41,7 @@ adapter: lora
 lora_model_dir:
 lora_r: 8
 lora_alpha: 16
-lora_dropout: 0.2 
+lora_dropout: 0.2
 lora_target_linear: true
 lora_fan_in_fan_out:
 
