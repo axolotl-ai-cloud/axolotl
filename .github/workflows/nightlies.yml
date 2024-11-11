@@ -41,7 +41,9 @@ jobs:
         id: metadata
         uses: docker/metadata-action@v5
         with:
-          images: winglian/axolotl
+          images: |
+            winglian/axolotl
+            axolotlai/axolotl
           tags: |
             type=raw,value={{ branch }}-{{ date 'YYYYMMDD' }}
       - name: Set up Docker Buildx
