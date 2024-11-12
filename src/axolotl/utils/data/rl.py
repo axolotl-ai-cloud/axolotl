@@ -181,7 +181,10 @@ def load_prepare_dpo_datasets(cfg):
             if dropped:
                 LOG.warning(f"Dropped {dropped} long samples from dataset index {i}")
 
-        return concatenate_datasets(split_datasets)
+        combined_datasets = concatenate_datasets(split_datasets)
+        combined_datasets = combined_datasets.shuffle(seed=cfg.seed)
+
+        return combined_datasets
 
     with zero_first(is_main_process()):
         train_is_preprocessed = False
