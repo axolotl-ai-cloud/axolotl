@@ -436,7 +436,13 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
         if (
             self.args.loraplus_lr_ratio is None
             and self.args.alternate_optimizer
-            not in ["optimi_adamw", "ao_adamw_8bit", "ao_adamw_4bit", "ao_adamw_fp8"]
+            not in [
+                "optimi_adamw",
+                "ao_adamw_8bit",
+                "ao_adamw_4bit",
+                "ao_adamw_fp8",
+                "soap",
+            ]
         ):
             return super().create_optimizer()
 
@@ -478,6 +484,25 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
                     loraplus_lr_ratio=loraplus_lr_ratio,
                     loraplus_lr_embedding=loraplus_lr_embedding,
                     **optimizer_kwargs,
+                )
+            elif self.args.alternate_optimizer == "soap":
+                from axolotl.utils.optimizers.soap import SOAP
+
+                optim_args = {
+                    "lr": optimizer_kwargs.pop("lr"),
+                    "eps": optimizer_kwargs.pop("eps"),
+                }
+
+                if self.cfg.optim_args:
+                    optim_args.update(self.cfg.optim_args)
+
+                optim_args["betas"] = (
+                    self.args.optim_soap_beta1,
+                    self.args.optim_soap_beta2,
+                )
+                self.optimizer = SOAP(  # pylint: disable=attribute-defined-outside-init
+                    optimizer_grouped_parameters,
+                    **optim_args,
                 )
             elif self.args.alternate_optimizer == "optimi_adamw":
                 from optimi import AdamW
@@ -1626,10 +1651,12 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             trainer_kwargs["max_length"] = self.cfg.sequence_len
 
         if self.cfg.optimizer in [
+            # pylint: disable=duplicate-code
             "optimi_adamw",
             "ao_adamw_4bit",
             "ao_adamw_8bit",
             "ao_adamw_fp8",
+            "soap",
         ]:
             # Set default so transformers doesn't throw
             training_arguments_kwargs["optim"] = "adamw_hf"
