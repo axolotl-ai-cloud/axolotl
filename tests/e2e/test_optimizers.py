@@ -13,7 +13,7 @@ from axolotl.train import train
 from axolotl.utils.config import normalize_config
 from axolotl.utils.dict import DictDefault
 
-from .utils import with_temp_dir
+from .utils import with_temp_dir, require_torch_2_5_1
 
 LOG = logging.getLogger("axolotl.tests.e2e")
 os.environ["WANDB_DISABLED"] = "true"
@@ -67,6 +67,7 @@ class TestCustomOptimizers(unittest.TestCase):
         assert (Path(temp_dir) / "adapter_model.bin").exists()
 
     @with_temp_dir
+    @require_torch_2_5_1
     def test_adopt_adamw(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
