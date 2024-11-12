@@ -66,28 +66,47 @@ def process_tokens_for_rl_debug(tokens, color, tokenizer, text_only):
 
 
 def check_rl_example_labels(example, tokenizer, text_only=False):
-    field_prompt, field_chosen, field_rejected = "prompt", "chosen", "rejected"
+    field_prompt, field_chosen, field_rejected, field_completion = (
+        "prompt",
+        "chosen",
+        "rejected",
+        "completion",
+    )
 
     input_tokens = example[field_prompt]
-    labels_chosen, labels_rejected = example[field_chosen], example[field_rejected]
+
+    labels_chosen = example.get(field_chosen)
+    labels_rejected = example.get(field_rejected)
+    labels_completion = example.get(field_completion)
+
+    # Create a delimiter based on text_only flag
+    delimiter = "" if text_only else " "
 
     # Process and color each type of token
     colored_tokens = process_tokens_for_rl_debug(
         input_tokens, "yellow", tokenizer, text_only
     )
-    colored_chosens = process_tokens_for_rl_debug(
-        labels_chosen, "green", tokenizer, text_only
-    )
-    colored_rejecteds = process_tokens_for_rl_debug(
-        labels_rejected, "red", tokenizer, text_only
-    )
 
-    # Create a delimiter based on text_only flag
-    delimiter = "" if text_only else " "
+    # Process tokens
+    if labels_completion is None:
+        colored_chosens = process_tokens_for_rl_debug(
+            labels_chosen, "green", tokenizer, text_only
+        )
+        colored_rejecteds = process_tokens_for_rl_debug(
+            labels_rejected, "red", tokenizer, text_only
+        )
+    else:
+        colored_completion = process_tokens_for_rl_debug(
+            labels_completion, "green", tokenizer, text_only
+        )
 
     # Logging information
     LOG.info(f"INPUT PROMPT: {delimiter.join(colored_tokens)}\n\n")
-    LOG.info(f"CHOSEN RESPONSE: {delimiter.join(colored_chosens)}\n\n")
-    LOG.info(f"REJECTED RESPONSE: {delimiter.join(colored_rejecteds)}\n\n\n")
+
+    if labels_completion is None:
+        LOG.info(f"CHOSEN RESPONSE: {delimiter.join(colored_chosens)}\n\n")
+        LOG.info(f"REJECTED RESPONSE: {delimiter.join(colored_rejecteds)}\n\n\n")
+    else:
+        LOG.info(f"COMPLETION RESPONSE: {delimiter.join(colored_completion)}\n\n\n")
 
     return delimiter.join(colored_tokens)
