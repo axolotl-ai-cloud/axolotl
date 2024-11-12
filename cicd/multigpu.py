@@ -10,7 +10,7 @@ import tempfile
 import jinja2
 import modal
 from jinja2 import select_autoescape
-from modal import Image, Stub
+from modal import App, Image
 
 cicd_path = pathlib.Path(__file__).parent.resolve()
 
@@ -46,7 +46,7 @@ cicd_image = (
     .pip_install("fastapi==0.110.0", "pydantic==2.6.3")
 )
 
-stub = Stub("Axolotl CI/CD", secrets=[])
+app = App("Axolotl CI/CD", secrets=[])
 
 
 N_GPUS = int(os.environ.get("N_GPUS", 2))
@@ -61,7 +61,7 @@ def run_cmd(cmd: str, run_folder: str):
         exit(exit_code)  # pylint: disable=consider-using-sys-exit
 
 
-@stub.function(
+@app.function(
     image=cicd_image,
     gpu=GPU_CONFIG,
     timeout=60 * 60,
@@ -72,6 +72,6 @@ def cicd_pytest():
     run_cmd("./cicd/multigpu.sh", "/workspace/axolotl")
 
 
-@stub.local_entrypoint()
+@app.local_entrypoint()
 def main():
     cicd_pytest.remote()

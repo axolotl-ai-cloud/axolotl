@@ -1,5 +1,5 @@
 ARG BASE_TAG=main
-FROM winglian/axolotl:$BASE_TAG
+FROM axolotlai/axolotl:$BASE_TAG
 
 ENV HF_DATASETS_CACHE="/workspace/data/huggingface-cache/datasets"
 ENV HUGGINGFACE_HUB_CACHE="/workspace/data/huggingface-cache/hub"
