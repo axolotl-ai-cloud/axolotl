@@ -17,6 +17,7 @@ from transformers.utils import is_torch_bf16_gpu_available
 
 from axolotl.core.trainer_builder import HFCausalTrainerBuilder, HFRLTrainerBuilder
 from axolotl.utils.distributed import reduce_and_broadcast
+from axolotl.utils.environment import check_cuda_p2p_ib_support
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 
 LOG = get_logger("axolotl")
@@ -461,6 +462,9 @@ def setup_fsdp_envs(cfg):
 
 
 def prepare_optim_env(cfg):
+    if not check_cuda_p2p_ib_support():
+        if os.getenv("NCCL_P2P_DISABLE") is None:
+            os.environ["NCCL_P2P_DISABLE"] = "1"
     if cfg.fsdp:
         setup_fsdp_envs(cfg)
     elif cfg.deepspeed:
