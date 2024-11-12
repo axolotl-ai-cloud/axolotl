@@ -64,13 +64,56 @@ def map_dataset(cfg, data_set, ds_transform_fn, tokenizer):
             tokenizer = load_tokenizer(cfg)
         ds_transform_fn = partial(ds_transform_fn, tokenizer=tokenizer)
 
+    if isinstance(data_set, DatasetDict):
+        data_set = data_set["train"]
+
     data_set = data_set.map(
         ds_transform_fn,
         desc="Mapping RL Dataset",
+        num_proc=cfg.dataset_processes,
     )
-    if isinstance(data_set, DatasetDict):
-        data_set = data_set["train"]
+
     return data_set
+
+
+def drop_long_rl_seq(
+    sample, rl, tokenizer, sequence_len  # pylint: disable=invalid-name
+):
+    if rl in ("dpo", "orpo"):
+        if not (
+            sample.get("prompt") and sample.get("chosen") and sample.get("rejected")
+        ):
+            raise ValueError(
+                "Prompt, chosen and rejected keys are required for DPO/ORPO datasets"
+            )
+
+        prompt = sample["prompt"]
+        chosen = sample["chosen"]
+        rejected = sample["rejected"]
+
+        len_prompt = len(tokenizer(prompt, add_special_tokens=False)["input_ids"])
+        len_chosen = len(tokenizer(chosen, add_special_tokens=False)["input_ids"])
+        len_rejected = len(tokenizer(rejected, add_special_tokens=False)["input_ids"])
+
+        return (len_prompt + len_chosen) <= sequence_len and (
+            len_prompt + len_rejected
+        ) <= sequence_len
+
+    if rl == "kto":
+        if not (sample.get("prompt") and sample.get("completion")):
+            raise ValueError("Prompt and completion keys are required for KTO datasets")
+
+        prompt = sample["prompt"]
+        completion = sample["completion"]
+
+        len_prompt = len(tokenizer(prompt, add_special_tokens=False)["input_ids"])
+        len_completion = len(
+            tokenizer(completion, add_special_tokens=False)["input_ids"]
+        )
+
+        return (len_prompt + len_completion) <= sequence_len
+
+    raise ValueError("Unknown RL type")
 
 
 def load_prepare_dpo_datasets(cfg):
@@ -94,7 +137,7 @@ def load_prepare_dpo_datasets(cfg):
                 )
                 split_datasets.insert(i, ds)
 
-        tokenizer = None
+        tokenizer = load_tokenizer(cfg)
 
         for i, data_set in enumerate(split_datasets):
             _type = dataset_cfgs[i]["type"]
@@ -120,6 +163,24 @@ def load_prepare_dpo_datasets(cfg):
                 # If no `type` is provided, assume the dataset is already in the expected format with
                 # "prompt", "chosen" and "rejected" already preprocessed
                 split_datasets[i] = data_set
+
+            drop_long = partial(
+                drop_long_rl_seq,
+                rl=_cfg.rl,
+                tokenizer=tokenizer,
+                sequence_len=cfg.sequence_len,
+            )
+
+            prior_len = len(split_datasets[i])
+            split_datasets[i] = split_datasets[i].filter(
+                drop_long,
+                num_proc=cfg.dataset_processes,
+                load_from_cache_file=not cfg.is_preprocess,
+                desc="Dropping Long Sequences",
+            )
+            dropped = prior_len - len(split_datasets[i])
+            if dropped:
+                LOG.warning(f"Dropped {dropped} long samples from dataset index {i}")
 
         return concatenate_datasets(split_datasets)
 
