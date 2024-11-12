@@ -15,21 +15,14 @@ from typing import List, Optional, Tuple, Union, cast
 import torch
 from torch import Tensor
 from torch.optim.optimizer import (
-    DeviceDict,
     Optimizer,
     ParamsT,
-    _capturable_doc,
     _default_to_fused_or_foreach,
     _device_dtype_check_for_fused,
-    _differentiable_doc,
     _disable_dynamo_if_unsupported,
-    _foreach_doc,
-    _fused_doc,
     _get_capturable_supported_devices,
     _get_scalar_dtype,
     _get_value,
-    _maximize_doc,
-    _stack_if_compiling,
     _use_grad_for_differentiable,
     _view_as_real,
 )
@@ -488,9 +481,10 @@ def adopt(
     if fused and torch.jit.is_scripting():
         raise RuntimeError("torch.jit.script not supported with fused optimizers")
 
-    if fused and not torch.jit.is_scripting():
-        func = _fused_adopt
-    elif foreach and not torch.jit.is_scripting():
+    # if fused and not torch.jit.is_scripting():
+    #     func = _fused_adopt
+    # elif foreach and not torch.jit.is_scripting():
+    if foreach and not torch.jit.is_scripting():
         func = _multi_tensor_adopt
     else:
         func = _single_tensor_adopt
