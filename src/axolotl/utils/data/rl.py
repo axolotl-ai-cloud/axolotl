@@ -79,7 +79,7 @@ def map_dataset(cfg, data_set, ds_transform_fn, tokenizer):
 def drop_long_rl_seq(
     sample, rl, tokenizer, sequence_len  # pylint: disable=invalid-name
 ):
-    if rl in ("dpo", "orpo"):
+    if rl in ("dpo", "ipo", "orpo"):
         if not (
             sample.get("prompt") and sample.get("chosen") and sample.get("rejected")
         ):
