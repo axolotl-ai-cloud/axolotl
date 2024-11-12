@@ -70,7 +70,6 @@ def map_dataset(cfg, data_set, ds_transform_fn, tokenizer):
     data_set = data_set.map(
         ds_transform_fn,
         desc="Mapping RL Dataset",
-        num_proc=cfg.dataset_processes,
     )
 
     return data_set
