@@ -24,7 +24,7 @@ datasets:
 
 dataset_prepared_path:
 val_set_size: 0.05
-output_dir: ./outputs/dpo-lora
+output_dir: ./outputs/dpo-qlora
 
 sequence_len: 2048
 sample_packing: false
@@ -46,8 +46,6 @@ lora_target_modules:
   - v_proj
   - k_proj
   - o_proj
-  - embed_tokens
-  - lm_head
 lora_modules_to_save:
  - embed_tokens
  - lm_head
