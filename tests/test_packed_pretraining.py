@@ -2,6 +2,7 @@
 import functools
 import unittest
 
+import pytest
 import torch
 from datasets import load_dataset
 from torch.utils.data import DataLoader
@@ -21,6 +22,7 @@ class TestPretrainingPacking(unittest.TestCase):
         self.tokenizer = AutoTokenizer.from_pretrained("huggyllama/llama-7b")
         self.tokenizer.pad_token = "</s>"
 
+    @pytest.mark.flaky(retries=3, delay=5)
     def test_packing_stream_dataset(self):
         # pylint: disable=duplicate-code
         dataset = load_dataset(
