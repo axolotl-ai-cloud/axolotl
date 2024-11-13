@@ -20,7 +20,7 @@ import torch
 
 torch_version = version("torch")
 
-if torch_version < "2.5.1":
+if torch_version < "2.4.0":
     torch_cuda_amp_custom_fwd = torch.cuda.amp.custom_fwd
     torch_cuda_amp_custom_bwd = torch.cuda.amp.custom_bwd
 else:
