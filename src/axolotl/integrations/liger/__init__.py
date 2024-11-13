@@ -23,6 +23,7 @@ import logging
 import sys
 
 from liger_kernel.transformers.cross_entropy import LigerCrossEntropyLoss
+from liger_kernel.transformers.functional import liger_cross_entropy
 from liger_kernel.transformers.monkey_patch import MODEL_TYPE_TO_APPLY_LIGER_FN
 from liger_kernel.transformers.rms_norm import LigerRMSNorm
 from liger_kernel.transformers.rope import liger_rotary_pos_emb
@@ -82,7 +83,9 @@ class LigerPlugin(BasePlugin):
             if cfg.liger_glu_activation:
                 modeling_jamba.JambaMLP = LigerSwiGLUMLP
             if cfg.liger_cross_entropy:
-                modeling_jamba.CrossEntropyLoss = LigerCrossEntropyLoss
+                from transformers.loss.loss_utils import nn
+
+                nn.functional.cross_entropy = liger_cross_entropy
             if cfg.liger_fused_linear_cross_entropy:
                 modeling_jamba.JambaForCausalLM.forward = jamba_lce_forward
         elif cfg.model_config_type == "deepseek_v2":
@@ -106,6 +109,8 @@ class LigerPlugin(BasePlugin):
             if cfg.liger_glu_activation:
                 modeling_mod.DeepseekV2MLP.forward = LigerSwiGLUMLP.forward
             if cfg.liger_cross_entropy:
+                # We do not patch `nn.functional.cross_entropy` for DeepseekV2 as it still uses
+                # nn.CrossEntropyLoss in the forward method.
                 modeling_mod.CrossEntropyLoss = LigerCrossEntropyLoss
             if cfg.liger_fused_linear_cross_entropy:
                 modeling_mod.DeepseekV2ForCausalLM.forward = deepseekv2_lce_forward
