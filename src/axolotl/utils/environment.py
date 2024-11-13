@@ -15,7 +15,7 @@ def check_cuda_p2p_ib_support():
         device_names, device_count = get_gpu_info()
         if 1 < device_count < 8:
             if any(
-                device_name in unsupported_device
+                unsupported_device in device_name
                 for device_name in device_names
                 for unsupported_device in unsupported_devices
             ):
