@@ -13,13 +13,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from importlib.metadata import version
-
 import torch
+from packaging import version
 
-torch_version = version("torch")
+torch_version = version.parse(torch.__version__)
 
-if torch_version < "2.4.0":
+if torch_version < version.parse("2.4.0"):
     torch_cuda_amp_custom_fwd = torch.cuda.amp.custom_fwd
     torch_cuda_amp_custom_bwd = torch.cuda.amp.custom_bwd
 else:
