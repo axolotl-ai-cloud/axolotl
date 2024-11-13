@@ -185,11 +185,10 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
         min_sequence_len=cfg.min_sample_len or 2,
     )
 
-    if cfg.is_preprocess:
-        min_input_len = np.min(get_dataset_lengths(train_dataset))
-        LOG.debug(f"min_input_len: {min_input_len}", main_process_only=True)
-        max_input_len = np.max(get_dataset_lengths(train_dataset))
-        LOG.debug(f"max_input_len: {max_input_len}", main_process_only=True)
+    min_input_len = np.min(get_dataset_lengths(train_dataset))
+    LOG.debug(f"min_input_len: {min_input_len}", main_process_only=True)
+    max_input_len = np.max(get_dataset_lengths(train_dataset))
+    LOG.debug(f"max_input_len: {max_input_len}", main_process_only=True)
 
     if cfg.model_config_type == "mamba":
         LOG.info("dropping attention_mask column")
