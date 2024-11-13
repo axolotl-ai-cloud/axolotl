@@ -15,6 +15,11 @@ on:
        - '.github/workflows/*.yml'
   workflow_dispatch:
 
+# Cancel jobs on the same ref if a new one is triggered
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   pre-commit:
     name: pre-commit
