@@ -1,7 +1,7 @@
 name: publish pypi
 
 on:
-  create:
+  push:
     tags:
       - 'v*'
   workflow_dispatch:
@@ -27,6 +27,7 @@ jobs:
   pypi-publish:
     name: Upload release to PyPI
     runs-on: ubuntu-latest
+    needs: [setup_release]
     environment:
       name: pypi
       url: https://pypi.org/p/axolotl
