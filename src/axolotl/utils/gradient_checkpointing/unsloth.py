@@ -15,10 +15,16 @@
 # limitations under the License.
 import torch
 from functools import partial
+from importlib.metadata import version
 
+torch_version = version("torch")
 
-torch_cuda_amp_custom_fwd = partial(torch.amp.custom_fwd, device_type='cuda')
-torch_cuda_amp_custom_bwd = partial(torch.amp.custom_bwd, device_type='cuda')
+if torch_version < "2.5.1":
+    torch_cuda_amp_custom_fwd = torch.cuda.amp.custom_fwd
+    torch_cuda_amp_custom_bwd = torch.cuda.amp.custom_bwd
+else:
+    torch_cuda_amp_custom_fwd = partial(torch.amp.custom_fwd, device_type='cuda')
+    torch_cuda_amp_custom_bwd = partial(torch.amp.custom_bwd, device_type='cuda')
 
 
 class Unsloth_Offloaded_Gradient_Checkpointer(  # pylint: disable=invalid-name
