@@ -234,3 +234,59 @@ class TestValidationCheckDatasetConfig(BaseValidation):
         )
 
         _check_config()
+
+    def test_dataset_sharegpt_deprecation(self, minimal_cfg):
+        cfg = DictDefault(
+            minimal_cfg
+            | {
+                "chat_template": "chatml",
+                "datasets": [
+                    {
+                        "path": "LDJnr/Puffin",
+                        "type": "sharegpt",
+                        "conversation": "chatml",
+                    }
+                ],
+            }
+        )
+
+        # Check sharegpt deprecation is raised
+        with pytest.raises(ValueError, match=r".*type: sharegpt.*` is deprecated.*"):
+            validate_config(cfg)
+
+        # Check that deprecation is not thrown for non-str type
+        cfg = DictDefault(
+            minimal_cfg
+            | {
+                "datasets": [
+                    {
+                        "path": "mhenrichsen/alpaca_2k_test",
+                        "type": {
+                            "field_instruction": "instruction",
+                            "field_output": "output",
+                            "field_system": "system",
+                            "format": "<|user|> {instruction} {input} <|model|>",
+                            "no_input_format": "<|user|> {instruction} <|model|>",
+                            "system_prompt": "",
+                        },
+                    }
+                ],
+            }
+        )
+
+        validate_config(cfg)
+
+        # Check that deprecation is not thrown for non-sharegpt type
+        cfg = DictDefault(
+            minimal_cfg
+            | {
+                "datasets": [
+                    {
+                        "path": "mhenrichsen/alpaca_2k_test",
+                        "type": "alpaca",
+                    }
+                ],
+            }
+        )
+
+        validate_config(cfg)

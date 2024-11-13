@@ -58,6 +58,7 @@ class ChatTemplate(str, Enum):
     qwen_25 = "qwen_25"  # pylint: disable=invalid-name
     tokenizer_default = "tokenizer_default"  # pylint: disable=invalid-name
     exaone = "exaone"  # pylint: disable=invalid-name
+    metharme = "metharme"  # pylint: disable=invalid-name
 
 
 class DeprecatedParameters(BaseModel):
@@ -789,7 +790,12 @@ class AxolotlInputConfig(
             if not ds_cfg.get("type"):
                 continue
 
-            if ds_cfg["type"].startswith("sharegpt"):
+            ds_type = ds_cfg["type"]
+            # skip if it's a dict (for custom user instruction prompt)
+            if isinstance(ds_type, dict):
+                continue
+
+            if isinstance(ds_type, str) and ds_type.startswith("sharegpt"):
                 raise ValueError(
                     "`type: sharegpt.*` is deprecated. Please use `type: chat_template` instead."
                 )
