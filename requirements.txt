@@ -12,7 +12,7 @@ addict
 fire
 PyYAML>=6.0
 requests
-flash-attn==2.6.3
+flash-attn==2.7.0.post2
 sentencepiece
 wandb
 einops
