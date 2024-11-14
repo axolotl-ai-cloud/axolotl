@@ -3,7 +3,6 @@ E2E tests for multigpu eval
 """
 import logging
 import os
-import unittest
 from pathlib import Path
 
 import yaml
@@ -18,7 +17,7 @@ os.environ["WANDB_DISABLED"] = "true"
 AXOLOTL_ROOT = Path(__file__).parent.parent.parent.parent
 
 
-class TestMultiGPUEval(unittest.TestCase):
+class TestMultiGPUEval:
     """
     Test case for MultiGPU Eval Sample Packing
     """
