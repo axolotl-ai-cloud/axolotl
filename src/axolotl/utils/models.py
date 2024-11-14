@@ -238,6 +238,7 @@ def load_tokenizer(cfg):
                         x in cfg.lora_modules_to_save for x in lora_modules_to_save
                     )
                 )
+                and k != "pad_token"
             ):
                 lora_modules_to_save = ", ".join(
                     [f"`{x}`" for x in lora_modules_to_save]

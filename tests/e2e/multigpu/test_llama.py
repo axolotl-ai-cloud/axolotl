@@ -4,17 +4,17 @@ E2E tests for multigpu lora tinyllama
 
 import logging
 import os
-import unittest
 from pathlib import Path
 
 import pytest
 import yaml
 from accelerate.test_utils import execute_subprocess_async
 from huggingface_hub import snapshot_download
+from transformers.testing_utils import get_torch_dist_unique_port
 
 from axolotl.utils.dict import DictDefault
 
-from ..utils import is_hopper, with_temp_dir
+from ..utils import is_hopper
 
 LOG = logging.getLogger("axolotl.tests.e2e.multigpu")
 os.environ["WANDB_DISABLED"] = "true"
@@ -28,18 +28,16 @@ def download_model():
     snapshot_download("TinyLlama/TinyLlama_v1.1")
 
 
-class TestMultiGPULlama(unittest.TestCase):
+class TestMultiGPULlama:
     """
     Test case for Llama models using LoRA
     """
 
-    @with_temp_dir
     def test_lora_ddp(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "TinyLlama/TinyLlama_v1.1",
-                "tokenizer_type": "LlamaTokenizer",
+                "base_model": "HuggingFaceTB/SmolLM-135M",
                 "sequence_len": 2048,
                 "adapter": "lora",
                 "lora_r": 8,
@@ -48,9 +46,7 @@ class TestMultiGPULlama(unittest.TestCase):
                 "lora_target_linear": True,
                 "val_set_size": 0.05,
                 "special_tokens": {
-                    "unk_token": "<unk>",
-                    "bos_token": "<s>",
-                    "eos_token": "</s>",
+                    "pad_token": "<|endoftext|>",
                 },
                 "datasets": [
                     {
@@ -81,19 +77,23 @@ class TestMultiGPULlama(unittest.TestCase):
                 "launch",
                 "--num-processes",
                 "2",
+                "--main_process_port",
+                f"{get_torch_dist_unique_port()}",
                 "-m",
                 "axolotl.cli.train",
                 str(Path(temp_dir) / "config.yaml"),
             ]
         )
 
-    @with_temp_dir
-    def test_lora_ddp_packed(self, temp_dir):
+    @pytest.mark.parametrize(
+        "gradient_accumulation_steps",
+        [1, 4],
+    )
+    def test_lora_ddp_packed(self, temp_dir, gradient_accumulation_steps):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "TinyLlama/TinyLlama_v1.1",
-                "tokenizer_type": "LlamaTokenizer",
+                "base_model": "HuggingFaceTB/SmolLM-135M",
                 "sequence_len": 2048,
                 "sample_packing": True,
                 "eval_sample_packing": False,
@@ -105,9 +105,7 @@ class TestMultiGPULlama(unittest.TestCase):
                 "lora_target_linear": True,
                 "val_set_size": 0.05,
                 "special_tokens": {
-                    "unk_token": "<unk>",
-                    "bos_token": "<s>",
-                    "eos_token": "</s>",
+                    "pad_token": "<|endoftext|>",
                 },
                 "datasets": [
                     {
@@ -118,7 +116,7 @@ class TestMultiGPULlama(unittest.TestCase):
                 "num_epochs": 1,
                 "max_steps": 15,
                 "micro_batch_size": 4,
-                "gradient_accumulation_steps": 4,
+                "gradient_accumulation_steps": gradient_accumulation_steps,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_8bit",
@@ -138,6 +136,8 @@ class TestMultiGPULlama(unittest.TestCase):
                 "launch",
                 "--num-processes",
                 "2",
+                "--main_process_port",
+                f"{get_torch_dist_unique_port()}",
                 "-m",
                 "axolotl.cli.train",
                 str(Path(temp_dir) / "config.yaml"),
@@ -145,7 +145,6 @@ class TestMultiGPULlama(unittest.TestCase):
         )
 
     @pytest.mark.skipif(is_hopper(), reason="h100 doesn't support 8-bit lora")
-    @with_temp_dir
     def test_dpo_lora_ddp(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
@@ -210,13 +209,14 @@ class TestMultiGPULlama(unittest.TestCase):
                 "launch",
                 "--num-processes",
                 "2",
+                "--main_process_port",
+                f"{get_torch_dist_unique_port()}",
                 "-m",
                 "axolotl.cli.train",
                 str(Path(temp_dir) / "config.yaml"),
             ]
         )
 
-    @with_temp_dir
     def test_dpo_qlora_ddp(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
@@ -278,25 +278,27 @@ class TestMultiGPULlama(unittest.TestCase):
                 "launch",
                 "--num-processes",
                 "2",
+                "--main_process_port",
+                f"{get_torch_dist_unique_port()}",
                 "-m",
                 "axolotl.cli.train",
                 str(Path(temp_dir) / "config.yaml"),
             ]
         )
 
-    @with_temp_dir
-    def test_fsdp(self, temp_dir):
+    @pytest.mark.parametrize(
+        "gradient_accumulation_steps",
+        [1, 4],
+    )
+    def test_fsdp(self, temp_dir, gradient_accumulation_steps):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "TinyLlama/TinyLlama_v1.1",
-                "tokenizer_type": "LlamaTokenizer",
+                "base_model": "HuggingFaceTB/SmolLM-135M",
                 "sequence_len": 2048,
-                "val_set_size": 0.05,
+                "val_set_size": 0.01,
                 "special_tokens": {
-                    "unk_token": "<unk>",
-                    "bos_token": "<s>",
-                    "eos_token": "</s>",
+                    "pad_token": "<|endoftext|>",
                 },
                 "datasets": [
                     {
@@ -305,9 +307,9 @@ class TestMultiGPULlama(unittest.TestCase):
                     },
                 ],
                 "num_epochs": 1,
-                "max_steps": 15,
+                "max_steps": 10,
                 "micro_batch_size": 4,
-                "gradient_accumulation_steps": 4,
+                "gradient_accumulation_steps": gradient_accumulation_steps,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_torch",
@@ -324,7 +326,7 @@ class TestMultiGPULlama(unittest.TestCase):
                     "fsdp_use_orig_params": False,
                     "fsdp_cpu_ram_efficient_loading": False,
                     "fsdp_transformer_layer_cls_to_wrap": "LlamaDecoderLayer",
-                    "fsdp_state_dict_type": "SHARDED_STATE_DICT",
+                    "fsdp_state_dict_type": "FULL_STATE_DICT",
                     "fsdp_auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
                 },
             }
@@ -341,28 +343,29 @@ class TestMultiGPULlama(unittest.TestCase):
                 "launch",
                 "--num-processes",
                 "2",
+                "--main_process_port",
+                f"{get_torch_dist_unique_port()}",
                 "-m",
                 "axolotl.cli.train",
                 str(Path(temp_dir) / "config.yaml"),
             ]
         )
 
-    @with_temp_dir
-    def test_fsdp_packed(self, temp_dir):
+    @pytest.mark.parametrize(
+        "fsdp_state_dict_type",
+        ["FULL_STATE_DICT", "SHARDED_STATE_DICT"],
+    )
+    def test_fsdp_packed(self, temp_dir, fsdp_state_dict_type):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "TinyLlama/TinyLlama_v1.1",
-                "tokenizer_type": "LlamaTokenizer",
+                "base_model": "HuggingFaceTB/SmolLM-135M",
                 "sample_packing": True,
-                "eval_sample_packing": False,
                 "pad_to_sequence_len": True,
                 "sequence_len": 2048,
                 "val_set_size": 0.05,
                 "special_tokens": {
-                    "unk_token": "<unk>",
-                    "bos_token": "<s>",
-                    "eos_token": "</s>",
+                    "pad_token": "<|endoftext|>",
                 },
                 "datasets": [
                     {
@@ -390,7 +393,7 @@ class TestMultiGPULlama(unittest.TestCase):
                     "fsdp_use_orig_params": False,
                     "fsdp_cpu_ram_efficient_loading": False,
                     "fsdp_transformer_layer_cls_to_wrap": "LlamaDecoderLayer",
-                    "fsdp_state_dict_type": "SHARDED_STATE_DICT",
+                    "fsdp_state_dict_type": fsdp_state_dict_type,
                     "fsdp_auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
                 },
             }
@@ -407,13 +410,14 @@ class TestMultiGPULlama(unittest.TestCase):
                 "launch",
                 "--num-processes",
                 "2",
+                "--main_process_port",
+                f"{get_torch_dist_unique_port()}",
                 "-m",
                 "axolotl.cli.train",
                 str(Path(temp_dir) / "config.yaml"),
             ]
         )
 
-    @with_temp_dir
     def test_fsdp_qlora_prequant_packed(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
@@ -483,28 +487,29 @@ class TestMultiGPULlama(unittest.TestCase):
                 "launch",
                 "--num-processes",
                 "2",
+                "--main_process_port",
+                f"{get_torch_dist_unique_port()}",
                 "-m",
                 "axolotl.cli.train",
                 str(Path(temp_dir) / "config.yaml"),
             ]
         )
 
-    @with_temp_dir
-    def test_ds_zero3_packed(self, temp_dir):
+    @pytest.mark.parametrize(
+        "gradient_accumulation_steps",
+        [1, 4],
+    )
+    def test_ds_zero3_packed(self, temp_dir, gradient_accumulation_steps):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "TinyLlama/TinyLlama_v1.1",
-                "tokenizer_type": "LlamaTokenizer",
+                "base_model": "HuggingFaceTB/SmolLM-135M",
                 "sample_packing": True,
-                "eval_sample_packing": False,
                 "pad_to_sequence_len": True,
                 "sequence_len": 2048,
                 "val_set_size": 0.05,
                 "special_tokens": {
-                    "unk_token": "<unk>",
-                    "bos_token": "<s>",
-                    "eos_token": "</s>",
+                    "pad_token": "<|endoftext|>",
                 },
                 "datasets": [
                     {
@@ -515,7 +520,7 @@ class TestMultiGPULlama(unittest.TestCase):
                 "num_epochs": 1,
                 "max_steps": 15,
                 "micro_batch_size": 4,
-                "gradient_accumulation_steps": 4,
+                "gradient_accumulation_steps": gradient_accumulation_steps,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_torch",
@@ -536,19 +541,19 @@ class TestMultiGPULlama(unittest.TestCase):
                 "launch",
                 "--num-processes",
                 "2",
+                "--main_process_port",
+                f"{get_torch_dist_unique_port()}",
                 "-m",
                 "axolotl.cli.train",
                 str(Path(temp_dir) / "config.yaml"),
             ]
         )
 
-    @with_temp_dir
     def test_ds_zero3_qlora_packed(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "TinyLlama/TinyLlama_v1.1",
-                "tokenizer_type": "LlamaTokenizer",
+                "base_model": "HuggingFaceTB/SmolLM-135M",
                 "load_in_4bit": True,
                 "adapter": "qlora",
                 "lora_r": 8,
@@ -561,9 +566,7 @@ class TestMultiGPULlama(unittest.TestCase):
                 "sequence_len": 2048,
                 "val_set_size": 0.05,
                 "special_tokens": {
-                    "unk_token": "<unk>",
-                    "bos_token": "<s>",
-                    "eos_token": "</s>",
+                    "pad_token": "<|endoftext|>",
                 },
                 "datasets": [
                     {
@@ -595,6 +598,8 @@ class TestMultiGPULlama(unittest.TestCase):
                 "launch",
                 "--num-processes",
                 "2",
+                "--main_process_port",
+                f"{get_torch_dist_unique_port()}",
                 "-m",
                 "axolotl.cli.train",
                 str(Path(temp_dir) / "config.yaml"),

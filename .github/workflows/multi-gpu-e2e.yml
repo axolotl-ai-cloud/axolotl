@@ -8,6 +8,11 @@ on:
   schedule:
     - cron: '0 0 * * 1,4'  # Runs at 00:00 UTC every monday & thursday
 
+# Cancel jobs on the same ref if a new one is triggered
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
   test-axolotl-multigpu:
     if: ${{ ! contains(github.event.commits[0].message, '[skip docker]]') && github.repository_owner == 'axolotl-ai-cloud' }}
