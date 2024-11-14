@@ -348,7 +348,15 @@ def load_tokenized_prepared_datasets(
                             split=None,
                         )
                     else:
-                        ds = load_from_disk(config_dataset.path)
+                        try:
+                            ds = load_from_disk(config_dataset.path)
+                        except FileNotFoundError:
+                            ds = load_dataset(
+                                config_dataset.path,
+                                name=config_dataset.name,
+                                streaming=False,
+                                split=None,
+                            )
                 elif local_path.is_file():
                     ds_type = get_ds_type(config_dataset)
 
