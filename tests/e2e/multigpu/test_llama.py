@@ -285,18 +285,19 @@ class TestMultiGPULlama(unittest.TestCase):
         )
 
     @with_temp_dir
-    def test_fsdp(self, temp_dir):
+    @pytest.mark.parametrize(
+        "gradient_accumulation_steps",
+        [1, 4],
+    )
+    def test_fsdp(self, temp_dir, gradient_accumulation_steps=1):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "TinyLlama/TinyLlama_v1.1",
-                "tokenizer_type": "LlamaTokenizer",
+                "base_model": "HuggingFaceTB/SmolLM-135M",
                 "sequence_len": 2048,
-                "val_set_size": 0.05,
+                "val_set_size": 0.01,
                 "special_tokens": {
-                    "unk_token": "<unk>",
-                    "bos_token": "<s>",
-                    "eos_token": "</s>",
+                    "pad_token": "<|endoftext|>",
                 },
                 "datasets": [
                     {
@@ -305,9 +306,9 @@ class TestMultiGPULlama(unittest.TestCase):
                     },
                 ],
                 "num_epochs": 1,
-                "max_steps": 15,
+                "max_steps": 10,
                 "micro_batch_size": 4,
-                "gradient_accumulation_steps": 4,
+                "gradient_accumulation_steps": gradient_accumulation_steps,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_torch",
@@ -324,7 +325,7 @@ class TestMultiGPULlama(unittest.TestCase):
                     "fsdp_use_orig_params": False,
                     "fsdp_cpu_ram_efficient_loading": False,
                     "fsdp_transformer_layer_cls_to_wrap": "LlamaDecoderLayer",
-                    "fsdp_state_dict_type": "SHARDED_STATE_DICT",
+                    "fsdp_state_dict_type": "FULL_STATE_DICT",
                     "fsdp_auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
                 },
             }
@@ -348,14 +349,16 @@ class TestMultiGPULlama(unittest.TestCase):
         )
 
     @with_temp_dir
-    def test_fsdp_packed(self, temp_dir):
+    @pytest.mark.parametrize(
+        "fsdp_state_dict_type",
+        ["FULL_STATE_DICT", "SHARDED_STATE_DICT"],
+    )
+    def test_fsdp_packed(self, temp_dir, fsdp_state_dict_type=None):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "TinyLlama/TinyLlama_v1.1",
-                "tokenizer_type": "LlamaTokenizer",
+                "base_model": "HuggingFaceTB/SmolLM-135M",
                 "sample_packing": True,
-                "eval_sample_packing": False,
                 "pad_to_sequence_len": True,
                 "sequence_len": 2048,
                 "val_set_size": 0.05,
@@ -390,7 +393,7 @@ class TestMultiGPULlama(unittest.TestCase):
                     "fsdp_use_orig_params": False,
                     "fsdp_cpu_ram_efficient_loading": False,
                     "fsdp_transformer_layer_cls_to_wrap": "LlamaDecoderLayer",
-                    "fsdp_state_dict_type": "SHARDED_STATE_DICT",
+                    "fsdp_state_dict_type": fsdp_state_dict_type,
                     "fsdp_auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
                 },
             }
@@ -490,21 +493,21 @@ class TestMultiGPULlama(unittest.TestCase):
         )
 
     @with_temp_dir
-    def test_ds_zero3_packed(self, temp_dir):
+    @pytest.mark.parametrize(
+        "gradient_accumulation_steps",
+        [1, 4],
+    )
+    def test_ds_zero3_packed(self, temp_dir, gradient_accumulation_steps=1):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "TinyLlama/TinyLlama_v1.1",
-                "tokenizer_type": "LlamaTokenizer",
+                "base_model": "HuggingFaceTB/SmolLM-135M",
                 "sample_packing": True,
-                "eval_sample_packing": False,
                 "pad_to_sequence_len": True,
                 "sequence_len": 2048,
                 "val_set_size": 0.05,
                 "special_tokens": {
-                    "unk_token": "<unk>",
-                    "bos_token": "<s>",
-                    "eos_token": "</s>",
+                    "pad_token": "<|endoftext|>",
                 },
                 "datasets": [
                     {
@@ -515,7 +518,7 @@ class TestMultiGPULlama(unittest.TestCase):
                 "num_epochs": 1,
                 "max_steps": 15,
                 "micro_batch_size": 4,
-                "gradient_accumulation_steps": 4,
+                "gradient_accumulation_steps": gradient_accumulation_steps,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_torch",
