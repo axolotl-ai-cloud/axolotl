@@ -3,15 +3,13 @@ E2E tests for multigpu eval
 """
 import logging
 import os
-import unittest
 from pathlib import Path
 
 import yaml
 from accelerate.test_utils import execute_subprocess_async
+from transformers.testing_utils import get_torch_dist_unique_port
 
 from axolotl.utils.dict import DictDefault
-
-from ..utils import with_temp_dir
 
 LOG = logging.getLogger("axolotl.tests.e2e.multigpu")
 os.environ["WANDB_DISABLED"] = "true"
@@ -19,12 +17,11 @@ os.environ["WANDB_DISABLED"] = "true"
 AXOLOTL_ROOT = Path(__file__).parent.parent.parent.parent
 
 
-class TestMultiGPUEval(unittest.TestCase):
+class TestMultiGPUEval:
     """
     Test case for MultiGPU Eval Sample Packing
     """
 
-    @with_temp_dir
     def test_eval_sample_packing(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
@@ -83,13 +80,14 @@ class TestMultiGPUEval(unittest.TestCase):
                 "launch",
                 "--num-processes",
                 "2",
+                "--main_process_port",
+                f"{get_torch_dist_unique_port()}",
                 "-m",
                 "axolotl.cli.train",
                 str(Path(temp_dir) / "config.yaml"),
             ]
         )
 
-    @with_temp_dir
     def test_eval(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
@@ -148,6 +146,8 @@ class TestMultiGPUEval(unittest.TestCase):
                 "launch",
                 "--num-processes",
                 "2",
+                "--main_process_port",
+                f"{get_torch_dist_unique_port()}",
                 "-m",
                 "axolotl.cli.train",
                 str(Path(temp_dir) / "config.yaml"),

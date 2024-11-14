@@ -1293,6 +1293,25 @@ class AxolotlInputConfig(
 
     @model_validator(mode="before")
     @classmethod
+    def warn_qlora_zero3_w_use_reentrant(cls, data):
+        if (
+            data.get("adapter") == "qlora"
+            and data.get("gradient_checkpointing_kwargs", {})
+            and data.get("gradient_checkpointing_kwargs", {}).get("use_reentrant")
+            is False
+            and "zero3" in data.get("deepspeed", "")
+        ):
+            # may result in:
+            # torch.utils.checkpoint.CheckpointError: torch.utils.checkpoint:
+            # Recomputed values for the following tensors have different metadata
+            # than during the forward pass.
+            LOG.warning(
+                "qlora + zero3 with use_reentrant: false may result in a CheckpointError about recomputed values"
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def check_val_w_test_datasets(cls, data):
         if data.get("test_datasets") and data.get("val_set_size"):
             raise ValueError(
