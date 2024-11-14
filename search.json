@@ -121,7 +121,7 @@
     "href": "examples/colab-notebooks/colab-axolotl-example.html#install-axolotl-and-dependencies",
     "title": "Example notebook for running Axolotl on google colab",
     "section": "Install Axolotl and dependencies",
-    "text": "Install Axolotl and dependencies\n\n!pip install -e git+https://github.com/axolotl-ai-cloud/axolotl#egg=axolotl\n!pip install flash-attn==\"2.5.0\"\n!pip install deepspeed==\"0.13.1\"!pip install mlflow==\"2.13.0\""
+    "text": "Install Axolotl and dependencies\n\n!pip install -e git+https://github.com/axolotl-ai-cloud/axolotl#egg=axolotl\n!pip install flash-attn==\"2.7.0.post2\"\n!pip install deepspeed==\"0.13.1\"!pip install mlflow==\"2.13.0\""
   },
   {
     "objectID": "examples/colab-notebooks/colab-axolotl-example.html#create-an-yaml-config-file",
