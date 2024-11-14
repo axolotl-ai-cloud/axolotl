@@ -356,7 +356,7 @@ class TestMultiGPULlama:
         "fsdp_state_dict_type",
         ["FULL_STATE_DICT", "SHARDED_STATE_DICT"],
     )
-    def test_fsdp_packed(self, temp_dir, fsdp_state_dict_type=None):
+    def test_fsdp_packed(self, temp_dir, fsdp_state_dict_type):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
