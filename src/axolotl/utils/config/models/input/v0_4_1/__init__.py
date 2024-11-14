@@ -1299,7 +1299,7 @@ class AxolotlInputConfig(
             and data.get("gradient_checkpointing_kwargs", {})
             and data.get("gradient_checkpointing_kwargs", {}).get("use_reentrant")
             is False
-            and "zero3" in data.get("deepspeed")
+            and "zero3" in data.get("deepspeed", "")
         ):
             # may result in:
             # torch.utils.checkpoint.CheckpointError: torch.utils.checkpoint:
