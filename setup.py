@@ -105,7 +105,7 @@ setup(
     dependency_links=dependency_links,
     extras_require={
         "flash-attn": [
-            "flash-attn==2.6.3",
+            "flash-attn==2.7.0.post2",
         ],
         "deepspeed": [
             "deepspeed==0.14.4",
