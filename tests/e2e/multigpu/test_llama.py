@@ -89,7 +89,7 @@ class TestMultiGPULlama:
         "gradient_accumulation_steps",
         [1, 4],
     )
-    def test_lora_ddp_packed(self, temp_dir, gradient_accumulation_steps=1):
+    def test_lora_ddp_packed(self, temp_dir, gradient_accumulation_steps):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
@@ -291,7 +291,7 @@ class TestMultiGPULlama:
         "gradient_accumulation_steps",
         [1, 4],
     )
-    def test_fsdp(self, temp_dir, gradient_accumulation_steps=1):
+    def test_fsdp(self, temp_dir, gradient_accumulation_steps):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
@@ -500,7 +500,7 @@ class TestMultiGPULlama:
         "gradient_accumulation_steps",
         [1, 4],
     )
-    def test_ds_zero3_packed(self, temp_dir, gradient_accumulation_steps=1):
+    def test_ds_zero3_packed(self, temp_dir, gradient_accumulation_steps):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
