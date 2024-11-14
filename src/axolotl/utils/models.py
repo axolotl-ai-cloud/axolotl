@@ -396,7 +396,7 @@ class ModelLoader:
         ):
             has_remote_code = (
                 "auto_map" in self.model_config
-                and self.model_type in self.model_config["auto_map"]
+                and "AutoModelForCausalLM" in self.model_config["auto_map"]
             )
             patch_for_multipack(
                 self.cfg.model_config_type,
