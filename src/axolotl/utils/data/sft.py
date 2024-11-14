@@ -44,7 +44,7 @@ from axolotl.prompters import (
     UnsupportedPrompter,
 )
 from axolotl.utils.data.pretraining import wrap_pretraining_dataset
-from axolotl.utils.data.utils import md5
+from axolotl.utils.data.utils import md5, deduplicate_and_log_datasets
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import is_local_main_process, zero_first
 from axolotl.utils.trainer import (
@@ -136,8 +136,12 @@ def prepare_dataset(cfg, tokenizer, processor=None):
         # https://discuss.huggingface.co/t/how-to-use-huggingface-trainer-streaming-datasets-without-wrapping-it-with-torchdatas-iterablewrapper/25230
         train_dataset = train_dataset.with_format("torch")
         eval_dataset = None
+        if cfg.exact_deduplication:
+            train_dataset, eval_dataset = deduplicate_and_log_datasets(train_dataset,eval_dataset)
         return train_dataset, eval_dataset, cfg.max_steps, prompters
 
+    if cfg.exact_deduplication:
+        train_dataset, eval_dataset = deduplicate_and_log_datasets(train_dataset,eval_dataset)
     if eval_dataset and cfg.sample_packing and cfg.eval_sample_packing is not False:
         total_eval_steps = calculate_total_num_steps(cfg, eval_dataset, update=False)
         if total_eval_steps == 0:
