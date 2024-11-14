@@ -1411,6 +1411,7 @@ class AxolotlInputConfig(
                     "FSDP w/ gradient_accumulation_steps > 1 is broken with transformers==4.46.2. "
                     "Please use a lower value or switch to an older version of transformers."
                 )
+        return data
 
 
 class AxolotlConfigWCapabilities(AxolotlInputConfig):
