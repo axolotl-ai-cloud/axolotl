@@ -27,7 +27,7 @@ jobs:
           - cuda: "124"
             cuda_version: 12.4.1
             cudnn_version: ""
-            python_version: "3.11"
+            python_version: "3.10"
             pytorch: 2.4.1
             torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
           - cuda: "124"
