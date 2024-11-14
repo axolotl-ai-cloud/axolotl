@@ -8,6 +8,7 @@ from pathlib import Path
 
 import yaml
 from accelerate.test_utils import execute_subprocess_async
+from transformers.testing_utils import get_torch_dist_unique_port
 
 from axolotl.utils.dict import DictDefault
 
@@ -83,6 +84,8 @@ class TestMultiGPUEval(unittest.TestCase):
                 "launch",
                 "--num-processes",
                 "2",
+                "--main_process_port",
+                f"{get_torch_dist_unique_port()}",
                 "-m",
                 "axolotl.cli.train",
                 str(Path(temp_dir) / "config.yaml"),
@@ -148,6 +151,8 @@ class TestMultiGPUEval(unittest.TestCase):
                 "launch",
                 "--num-processes",
                 "2",
+                "--main_process_port",
+                f"{get_torch_dist_unique_port()}",
                 "-m",
                 "axolotl.cli.train",
                 str(Path(temp_dir) / "config.yaml"),

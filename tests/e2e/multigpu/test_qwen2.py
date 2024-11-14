@@ -9,6 +9,7 @@ from pathlib import Path
 
 import yaml
 from accelerate.test_utils import execute_subprocess_async
+from transformers.testing_utils import get_torch_dist_unique_port
 
 from axolotl.utils.dict import DictDefault
 
@@ -28,7 +29,7 @@ class TestMultiGPUQwen2(unittest.TestCase):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "Qwen/Qwen2-1.5B",
+                "base_model": "Qwen/Qwen2-0.5B",
                 "load_in_4bit": True,
                 "rl": "dpo",
                 "chat_template": "chatml",
@@ -91,6 +92,8 @@ class TestMultiGPUQwen2(unittest.TestCase):
                 "launch",
                 "--num-processes",
                 "2",
+                "--main_process_port",
+                f"{get_torch_dist_unique_port()}",
                 "-m",
                 "axolotl.cli.train",
                 str(Path(temp_dir) / "config.yaml"),
