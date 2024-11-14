@@ -4,7 +4,6 @@ E2E tests for multigpu lora tinyllama
 
 import logging
 import os
-import unittest
 from pathlib import Path
 
 import pytest
@@ -15,7 +14,7 @@ from transformers.testing_utils import get_torch_dist_unique_port
 
 from axolotl.utils.dict import DictDefault
 
-from ..utils import is_hopper, with_temp_dir
+from ..utils import is_hopper
 
 LOG = logging.getLogger("axolotl.tests.e2e.multigpu")
 os.environ["WANDB_DISABLED"] = "true"
@@ -29,12 +28,11 @@ def download_model():
     snapshot_download("TinyLlama/TinyLlama_v1.1")
 
 
-class TestMultiGPULlama(unittest.TestCase):
+class TestMultiGPULlama:
     """
     Test case for Llama models using LoRA
     """
 
-    @with_temp_dir
     def test_lora_ddp(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
@@ -87,7 +85,6 @@ class TestMultiGPULlama(unittest.TestCase):
             ]
         )
 
-    @with_temp_dir
     @pytest.mark.parametrize(
         "gradient_accumulation_steps",
         [1, 4],
@@ -149,7 +146,6 @@ class TestMultiGPULlama(unittest.TestCase):
         )
 
     @pytest.mark.skipif(is_hopper(), reason="h100 doesn't support 8-bit lora")
-    @with_temp_dir
     def test_dpo_lora_ddp(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
@@ -222,7 +218,6 @@ class TestMultiGPULlama(unittest.TestCase):
             ]
         )
 
-    @with_temp_dir
     def test_dpo_qlora_ddp(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
@@ -292,7 +287,6 @@ class TestMultiGPULlama(unittest.TestCase):
             ]
         )
 
-    @with_temp_dir
     @pytest.mark.parametrize(
         "gradient_accumulation_steps",
         [1, 4],
@@ -358,7 +352,6 @@ class TestMultiGPULlama(unittest.TestCase):
             ]
         )
 
-    @with_temp_dir
     @pytest.mark.parametrize(
         "fsdp_state_dict_type",
         ["FULL_STATE_DICT", "SHARDED_STATE_DICT"],
@@ -426,7 +419,6 @@ class TestMultiGPULlama(unittest.TestCase):
             ]
         )
 
-    @with_temp_dir
     def test_fsdp_qlora_prequant_packed(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
@@ -504,7 +496,6 @@ class TestMultiGPULlama(unittest.TestCase):
             ]
         )
 
-    @with_temp_dir
     @pytest.mark.parametrize(
         "gradient_accumulation_steps",
         [1, 4],
@@ -559,7 +550,6 @@ class TestMultiGPULlama(unittest.TestCase):
             ]
         )
 
-    @with_temp_dir
     def test_ds_zero3_qlora_packed(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
