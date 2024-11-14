@@ -38,8 +38,7 @@ class TestMultiGPULlama(unittest.TestCase):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "TinyLlama/TinyLlama_v1.1",
-                "tokenizer_type": "LlamaTokenizer",
+                "base_model": "HuggingFaceTB/SmolLM-135M",
                 "sequence_len": 2048,
                 "adapter": "lora",
                 "lora_r": 8,
@@ -48,9 +47,7 @@ class TestMultiGPULlama(unittest.TestCase):
                 "lora_target_linear": True,
                 "val_set_size": 0.05,
                 "special_tokens": {
-                    "unk_token": "<unk>",
-                    "bos_token": "<s>",
-                    "eos_token": "</s>",
+                    "pad_token": "<|endoftext|>",
                 },
                 "datasets": [
                     {
@@ -88,11 +85,15 @@ class TestMultiGPULlama(unittest.TestCase):
         )
 
     @with_temp_dir
-    def test_lora_ddp_packed(self, temp_dir):
+    @pytest.mark.parametrize(
+        "gradient_accumulation_steps",
+        [1, 4],
+    )
+    def test_lora_ddp_packed(self, temp_dir, gradient_accumulation_steps=1):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "TinyLlama/TinyLlama_v1.1",
+                "base_model": "HuggingFaceTB/SmolLM-135M",
                 "tokenizer_type": "LlamaTokenizer",
                 "sequence_len": 2048,
                 "sample_packing": True,
@@ -105,9 +106,7 @@ class TestMultiGPULlama(unittest.TestCase):
                 "lora_target_linear": True,
                 "val_set_size": 0.05,
                 "special_tokens": {
-                    "unk_token": "<unk>",
-                    "bos_token": "<s>",
-                    "eos_token": "</s>",
+                    "pad_token": "<|endoftext|>",
                 },
                 "datasets": [
                     {
@@ -118,7 +117,7 @@ class TestMultiGPULlama(unittest.TestCase):
                 "num_epochs": 1,
                 "max_steps": 15,
                 "micro_batch_size": 4,
-                "gradient_accumulation_steps": 4,
+                "gradient_accumulation_steps": gradient_accumulation_steps,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_8bit",
@@ -550,8 +549,7 @@ class TestMultiGPULlama(unittest.TestCase):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "TinyLlama/TinyLlama_v1.1",
-                "tokenizer_type": "LlamaTokenizer",
+                "base_model": "HuggingFaceTB/SmolLM-135M",
                 "load_in_4bit": True,
                 "adapter": "qlora",
                 "lora_r": 8,
@@ -564,9 +562,7 @@ class TestMultiGPULlama(unittest.TestCase):
                 "sequence_len": 2048,
                 "val_set_size": 0.05,
                 "special_tokens": {
-                    "unk_token": "<unk>",
-                    "bos_token": "<s>",
-                    "eos_token": "</s>",
+                    "pad_token": "<|endoftext|>",
                 },
                 "datasets": [
                     {
