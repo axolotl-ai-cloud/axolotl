@@ -94,7 +94,6 @@ class TestMultiGPULlama:
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM-135M",
-                "tokenizer_type": "LlamaTokenizer",
                 "sequence_len": 2048,
                 "sample_packing": True,
                 "eval_sample_packing": False,
