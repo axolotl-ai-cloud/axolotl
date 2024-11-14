@@ -8,7 +8,6 @@ from transformers.utils import is_torch_bf16_gpu_available
 
 from axolotl.integrations.config import merge_input_args
 from axolotl.utils.bench import log_gpu_memory_usage
-from axolotl.utils.config.models.input.v0_4_1 import SUPPORTED_METRICS
 from axolotl.utils.config.models.input.v0_4_1 import (
     AxolotlConfigWCapabilities as AxolotlConfigWCapabilitiesBase,
 )
