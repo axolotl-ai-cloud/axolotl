@@ -135,6 +135,7 @@ class TestCustomOptimizers(unittest.TestCase):
                 "save_savetensors": True,
             }
         )
+        # pylint: disable=duplicate-code
         normalize_config(cfg)
         cli_args = TrainerCliArgs()
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
