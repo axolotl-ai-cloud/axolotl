@@ -1038,15 +1038,15 @@ class AxolotlDPOTrainer(SchedulerMixin, DPOTrainer):
 
         return super().push_to_hub(*args, **kwargs)
 
+    @staticmethod
     def tokenize_row(
-        self,
         features,
         processing_class,
         max_prompt_length,
         max_completion_length,
         add_special_tokens,
     ) -> Dict:
-        res = super().tokenize_row(
+        res = DPOTrainer.tokenize_row(
             features,
             processing_class,
             max_prompt_length,
@@ -1054,12 +1054,12 @@ class AxolotlDPOTrainer(SchedulerMixin, DPOTrainer):
             add_special_tokens,
         )
         # fix when the tokenizer doesn't have a bos_token_id, e.g. Qwen
-        if processing_class.bos_token_id is None and res["prompt_input_ids"][0] is None:
+        if processing_class.bos_token is None and res["prompt_input_ids"][0] is None:
             for key in res.keys():
                 res[key] = res[key][1:]
 
-        if processing_class.bos_token_id is not None:
-            # dpo trainer is incorrectly prepending the bos_token_id to the dpo outputs
+        if processing_class.bos_token and processing_class.bos_token_id is not None:
+            # dpo trainer may incorrectly prepend the bos_token_id to the dpo outputs
             if res["chosen_input_ids"][0] == processing_class.bos_token_id:
                 res["chosen_input_ids"] = res["chosen_input_ids"][1:]
                 res["chosen_labels"] = res["chosen_labels"][1:]
@@ -1068,9 +1068,6 @@ class AxolotlDPOTrainer(SchedulerMixin, DPOTrainer):
                 res["rejected_input_ids"] = res["rejected_input_ids"][1:]
                 res["rejected_labels"] = res["rejected_labels"][1:]
                 res["rejected_attention_mask"] = res["rejected_attention_mask"][1:]
-            if res["prompt_input_ids"][0] == processing_class.bos_token_id:
-                res["prompt_input_ids"] = res["prompt_input_ids"][1:]
-                res["prompt_attention_mask"] = res["prompt_attention_mask"][1:]
 
         return res
 
