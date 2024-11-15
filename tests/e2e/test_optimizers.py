@@ -132,7 +132,7 @@ class TestCustomOptimizers(unittest.TestCase):
                 "learning_rate": 0.00001,
                 "optimizer": "schedule_free_adamw",
                 "lr_scheduler": "constant",
-                "save_savetensors": True,
+                "save_safetensors": True,
             }
         )
         # pylint: disable=duplicate-code
