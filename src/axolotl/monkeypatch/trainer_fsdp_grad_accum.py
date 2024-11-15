@@ -3,13 +3,13 @@ fix for FSDP gradient accumulation
 see https://github.com/huggingface/transformers/pull/34645
 """
 import inspect
-import logging
 
+from accelerate.logging import get_logger
 from transformers.trainer import Trainer
 
 from axolotl.monkeypatch.unsloth_ import detab_code
 
-LOG = logging.getLogger("axolotl.monkeypatch.trainer_fsdp_grad_accumulation")
+LOG = get_logger("axolotl.monkeypatch.trainer_fsdp_grad_accumulation")
 
 ORIGINAL_CONTEXT_CODE = """
                 context = (
