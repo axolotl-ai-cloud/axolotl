@@ -1310,6 +1310,19 @@ class AxolotlInputConfig(
 
     @model_validator(mode="before")
     @classmethod
+    def check_eval_strategy(cls, data):
+        if (
+            data.get("evaluation_strategy") is not None
+            and data.get("eval_strategy") is None
+        ):
+            LOG.info(
+                "explicitly setting `eval_strategy` from the `evaluation_strategy`"
+            )
+            data["eval_strategy"] = data.get("evaluation_strategy")
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def check_fsdp_offload_w_8bit_optimizer(cls, data):
         if (
             data.get("fsdp")

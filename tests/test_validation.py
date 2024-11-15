@@ -1095,6 +1095,24 @@ class TestValidation(BaseValidation):
             assert new_cfg["dpo_beta"] is None
             assert len(self._caplog.records) == 1
 
+    def test_eval_strategy_remap(self, minimal_cfg):
+        cfg = (
+            DictDefault(
+                {
+                    "evaluation_strategy": "steps",
+                }
+            )
+            | minimal_cfg
+        )
+
+        with self._caplog.at_level(logging.WARNING):
+            new_cfg = validate_config(cfg)
+            assert new_cfg.eval_strategy == "steps"
+            assert (
+                "evaluation_strategy is deprecated, use eval_strategy instead"
+                in self._caplog.records[0].message
+            )
+
 
 class TestValidationCheckModelConfig(BaseValidation):
     """
