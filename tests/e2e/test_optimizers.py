@@ -131,6 +131,7 @@ class TestCustomOptimizers(unittest.TestCase):
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
                 "optimizer": "schedule_free_adamw",
+                "lr_scheduler": "constant",
                 "save_savetensors": True,
             }
         )
