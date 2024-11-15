@@ -496,7 +496,7 @@ def prepare_opinionated_env(cfg):
 def setup_trainer(
     cfg, train_dataset, eval_dataset, model, tokenizer, processor, total_num_steps
 ):
-    if cfg.fsdp and cfg.gradient_accumulation_steps > 1:
+    if cfg.fsdp:
         try:
             patch_training_loop_for_fsdp_grad_accum()
         except AssertionError:
