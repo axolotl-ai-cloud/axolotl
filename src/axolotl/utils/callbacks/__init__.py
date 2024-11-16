@@ -64,10 +64,7 @@ class EvalFirstStepCallback(
         control: TrainerControl,
         **kwargs,
     ):
-        if (
-            args.evaluation_strategy == IntervalStrategy.STEPS
-            and state.global_step == 1
-        ):
+        if args.eval_strategy == IntervalStrategy.STEPS and state.global_step == 1:
             control.should_evaluate = True
         return control
 
