@@ -16,6 +16,9 @@ from torch.utils.data import DataLoader, RandomSampler
 from transformers.utils import is_torch_bf16_gpu_available
 
 from axolotl.core.trainer_builder import HFCausalTrainerBuilder, HFRLTrainerBuilder
+from axolotl.monkeypatch.trainer_fsdp_grad_accum import (
+    patch_training_loop_for_fsdp_grad_accum,
+)
 from axolotl.utils.distributed import reduce_and_broadcast
 from axolotl.utils.environment import check_cuda_p2p_ib_support
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
@@ -493,6 +496,11 @@ def prepare_opinionated_env(cfg):
 def setup_trainer(
     cfg, train_dataset, eval_dataset, model, tokenizer, processor, total_num_steps
 ):
+    if cfg.fsdp:
+        try:
+            patch_training_loop_for_fsdp_grad_accum()
+        except AssertionError:
+            pass
     if cfg.rl in ["dpo", "ipo", "orpo", "kto", "simpo"]:
         trainer_builder = HFRLTrainerBuilder(cfg, model[0], tokenizer, processor)
         trainer_builder.model_ref = model[1]
