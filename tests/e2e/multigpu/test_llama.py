@@ -25,7 +25,7 @@ AXOLOTL_ROOT = Path(__file__).parent.parent.parent.parent
 @pytest.fixture(scope="session", autouse=True)
 def download_model():
     # download the model
-    snapshot_download("TinyLlama/TinyLlama_v1.1")
+    snapshot_download("HuggingFaceTB/SmolLM-135M")
 
 
 class TestMultiGPULlama:
@@ -149,8 +149,7 @@ class TestMultiGPULlama:
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "TinyLlama/TinyLlama_v1.1",
-                "tokenizer_type": "LlamaTokenizer",
+                "base_model": "HuggingFaceTB/SmolLM-135M",
                 "sequence_len": 2048,
                 "sample_packing": False,
                 "eval_sample_packing": False,
@@ -163,12 +162,10 @@ class TestMultiGPULlama:
                 "lora_target_linear": True,
                 "val_set_size": 0.05,
                 "special_tokens": {
-                    "unk_token": "<unk>",
-                    "bos_token": "<s>",
-                    "eos_token": "</s>",
+                    "pad_token": "<|endoftext|>",
                 },
                 "rl": "dpo",
-                "chat_template": "llama3",
+                "chat_template": "chatml",
                 "datasets": [
                     {
                         "path": "fozziethebeat/alpaca_messages_2k_dpo_test",
@@ -422,8 +419,7 @@ class TestMultiGPULlama:
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "axolotl-ai-co/TinyLlama_v1.1-bnb-nf4-bf16",
-                "tokenizer_type": "AutoTokenizer",
+                "base_model": "axolotl-ai-co/SmolLM2-135M-bnb-nf4-bf16",
                 "adapter": "qlora",
                 "mean_resizing_embeddings": True,
                 "load_in_4bit": True,
@@ -441,7 +437,7 @@ class TestMultiGPULlama:
                 "sequence_len": 2048,
                 "val_set_size": 0.05,
                 "special_tokens": {
-                    "pad_token": "</s>",
+                    "pad_token": "<|endoftext|>",
                 },
                 "datasets": [
                     {
