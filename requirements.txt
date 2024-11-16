@@ -31,7 +31,8 @@ art
 gradio==3.50.2
 tensorboard
 python-dotenv==1.0.1
-autoawq==0.2.7
+# autoawq==0.2.7
+https://github.com/casper-hansen/AutoAWQ/releases/download/v0.2.7.post1/autoawq-0.2.7-py3-none-any.whl
 triton>=2.3.0
 liger-kernel==0.4.1
 
