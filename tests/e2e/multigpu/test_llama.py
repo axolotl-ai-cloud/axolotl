@@ -427,10 +427,10 @@ class TestMultiGPULlama:
                 "lora_alpha": 16,
                 "lora_dropout": 0.05,
                 "lora_target_linear": True,
-                "lora_modules_to_save": [
-                    "embed_tokens",
-                    "lm_head",
-                ],
+                # "lora_modules_to_save": [
+                #     "embed_tokens",
+                #     "lm_head",
+                # ],
                 "sample_packing": True,
                 "eval_sample_packing": False,
                 "pad_to_sequence_len": True,
