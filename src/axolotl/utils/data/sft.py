@@ -260,6 +260,7 @@ def load_tokenized_prepared_datasets(
         for config_dataset in for_d_in_datasets(cfg_datasets):
             ds: Optional[Union[Dataset, DatasetDict]] = None
             ds_from_hub = False
+            ds_trust_remote_code = config_dataset.trust_remote_code
             try:
                 # this is just a basic check to see if the path is a
                 # valid HF dataset that's loadable
@@ -269,6 +270,7 @@ def load_tokenized_prepared_datasets(
                     streaming=True,
                     token=use_auth_token,
                     revision=config_dataset.revision,
+                    trust_remote_code=ds_trust_remote_code,
                 )
                 ds_from_hub = True
             except (FileNotFoundError, ConnectionError, HFValidationError, ValueError):
@@ -366,7 +368,7 @@ def load_tokenized_prepared_datasets(
             elif ds_from_hub:
                 load_ds_kwargs = {}
                 if config_dataset.split:
-                    load_ds_kwargs = {"split": config_dataset.split}
+                    load_ds_kwargs["split"] = config_dataset.split
                 ds = load_dataset(
                     config_dataset.path,
                     name=config_dataset.name,
@@ -374,6 +376,7 @@ def load_tokenized_prepared_datasets(
                     data_files=config_dataset.data_files,
                     token=use_auth_token,
                     revision=config_dataset.revision,
+                    trust_remote_code=config_dataset.trust_remote_code,
                     **load_ds_kwargs,
                 )
             elif ds_from_cloud and remote_file_system:
@@ -391,6 +394,7 @@ def load_tokenized_prepared_datasets(
                         streaming=False,
                         split=None,
                         storage_options=storage_options,
+                        trust_remote_code=config_dataset.trust_remote_code,
                     )
             elif config_dataset.path.startswith("https://"):
                 ds_type = get_ds_type(config_dataset)
@@ -401,6 +405,7 @@ def load_tokenized_prepared_datasets(
                     streaming=False,
                     split=None,
                     storage_options=storage_options,
+                    trust_remote_code=config_dataset.trust_remote_code,
                 )
             else:
                 if isinstance(config_dataset.data_files, str):
