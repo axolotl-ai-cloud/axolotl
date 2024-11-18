@@ -1,10 +1,9 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="image/axolotl_symbol_digital_white.svg">
-    <source media="(prefers-color-scheme: light)" srcset="image/axolotl_symbol_digital_black.svg">
-    <source alt="Axolotl" media="(prefers-color-scheme: dark)" srcset="image/axolotl_symbol_digital_black.svg">
-    <source alt="Axolotl" media="(prefers-color-scheme: light)" srcset="image/axolotl_symbol_digital_black.svg">
-  </picture>
+    <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="image/axolotl_logo_digital_white.svg">
+    <source media="(prefers-color-scheme: light)" srcset="image/axolotl_logo_digital_black.svg">
+    <img alt="axolotl" src="image/axolotl_logo_digital_black.svg">
+    </picture>
 </p>
 
 ![GitHub License](https://img.shields.io/github/license/axolotl-ai-cloud/axolotl.svg?color=blue)
