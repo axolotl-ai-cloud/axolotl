@@ -1,6 +1,10 @@
 # Axolotl
 
+![GitHub License](https://img.shields.io/github/license/axolotl-ai-cloud/axolotl.svg?color=blue)
 ![tests](https://github.com/axolotl-ai-cloud/axolotl/actions/workflows/tests.yml/badge.svg)
+![https://github.com/axolotl-ai-cloud/axolotl/releases](https://img.shields.io/github/release/axolotl-ai-cloud/axolotl.svg)
+![GitHub Repo stars](https://img.shields.io/github/stars/axolotl-ai-cloud/axolotl)
+
 ![tests-nightly](https://github.com/axolotl-ai-cloud/axolotl/actions/workflows/tests-nightly.yml/badge.svg)
 ![multigpu-semi-weekly tests](https://github.com/axolotl-ai-cloud/axolotl/actions/workflows/multi-gpu-e2e.yml/badge.svg)
 
