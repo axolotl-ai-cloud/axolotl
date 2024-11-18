@@ -1,4 +1,11 @@
 # Axolotl
+<p align="center">
+    <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/refs/heads/readme-updates-v2/image/axolotl_logo_digital_white.svg">
+        <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/refs/heads/readme-updates-v2/image/axolotl_logo_digital_black.svg">
+        <img alt="axolotl" src="https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/refs/heads/readme-updates-v2/image/axolotl_logo_digital_black.svg" width="400" height="104" style="max-width: 100%;">
+    </picture>
+</p>
 
 ![GitHub License](https://img.shields.io/github/license/axolotl-ai-cloud/axolotl.svg?color=blue)
 ![tests](https://github.com/axolotl-ai-cloud/axolotl/actions/workflows/tests.yml/badge.svg)
