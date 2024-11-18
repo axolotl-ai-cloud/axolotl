@@ -71,7 +71,7 @@ jobs:
 
       - name: Run tests
         run: |
-          pytest --ignore=tests/e2e/ tests/
+          pytest -n8 --ignore=tests/e2e/ tests/
 
       - name: cleanup pip cache
         run: |
