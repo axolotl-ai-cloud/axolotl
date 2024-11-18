@@ -1,4 +1,11 @@
-# Axolotl
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="image/axolotl_symbol_digital_white.svg">
+    <source media="(prefers-color-scheme: light)" srcset="image/axolotl_symbol_digital_black.svg">
+    <source alt="Axolotl" media="(prefers-color-scheme: dark)" srcset="image/axolotl_symbol_digital_black.svg">
+    <source alt="Axolotl" media="(prefers-color-scheme: light)" srcset="image/axolotl_symbol_digital_black.svg">
+  </picture>
+</p>
 
 ![GitHub License](https://img.shields.io/github/license/axolotl-ai-cloud/axolotl.svg?color=blue)
 ![tests](https://github.com/axolotl-ai-cloud/axolotl/actions/workflows/tests.yml/badge.svg)
@@ -79,7 +86,7 @@ Features:
 <td>
 
 <div align="center">
-  <img src="image/axolotl.png" alt="axolotl" width="160">
+  <img src="image/axolotl_symbol_digital_white.svg" alt="axolotl" width="160">
   <div>
     <p>
       <b>Axolotl provides a unified repository for fine-tuning <br />a variety of AI models with ease</b>
