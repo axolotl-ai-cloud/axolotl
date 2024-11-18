@@ -38,6 +38,7 @@ from axolotl.utils.config import (
     validate_config,
 )
 from axolotl.utils.data import load_prepare_dpo_datasets, prepare_dataset
+from axolotl.utils.data.utils import deduplicate_dataset
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import is_main_process
 from axolotl.utils.mlflow_ import setup_mlflow_env_vars
@@ -190,15 +191,18 @@ def do_inference(
 ):
     model, tokenizer = load_model_and_tokenizer(cfg=cfg, cli_args=cli_args)
     prompter = cli_args.prompter
+    default_tokens = {"unk_token": "<unk>", "bos_token": "<s>", "eos_token": "</s>"}
+
+    for token, symbol in default_tokens.items():
+        # If the token isn't already specified in the config, add it
+        if not (cfg.special_tokens and token in cfg.special_tokens):
+            tokenizer.add_special_tokens({token: symbol})
 
     prompter_module = None
-    chat_template_str = None
     if prompter:
         prompter_module = getattr(
             importlib.import_module("axolotl.prompters"), prompter
         )
-    elif cfg.chat_template:
-        chat_template_str = get_chat_template(cfg.chat_template)
 
     model = model.to(cfg.device, dtype=cfg.torch_dtype)
 
@@ -208,31 +212,13 @@ def do_inference(
         instruction = get_multi_line_input()
         if not instruction:
             return
-
         if prompter_module:
             prompt: str = next(
                 prompter_module().build_prompt(instruction=instruction.strip("\n"))
             )
         else:
             prompt = instruction.strip()
-
-        if chat_template_str:
-            batch = tokenizer.apply_chat_template(
-                [
-                    {
-                        "role": "user",
-                        "content": prompt,
-                    }
-                ],
-                return_tensors="pt",
-                add_special_tokens=True,
-                add_generation_prompt=True,
-                chat_template=chat_template_str,
-                tokenize=True,
-                return_dict=True,
-            )
-        else:
-            batch = tokenizer(prompt, return_tensors="pt", add_special_tokens=True)
+        batch = tokenizer(prompt, return_tensors="pt", add_special_tokens=True)
 
         print("=" * 40)
         model.eval()
@@ -272,6 +258,13 @@ def do_inference_gradio(
 
     model, tokenizer = load_model_and_tokenizer(cfg=cfg, cli_args=cli_args)
     prompter = cli_args.prompter
+    # default_tokens = {"unk_token": "<unk>", "bos_token": "<s>", "eos_token": "</s>"}
+    default_tokens: Dict[str, str] = {}
+
+    for token, symbol in default_tokens.items():
+        # If the token isn't already specified in the config, add it
+        if not (cfg.special_tokens and token in cfg.special_tokens):
+            tokenizer.add_special_tokens({token: symbol})
 
     prompter_module = None
     chat_template_str = None
@@ -506,9 +499,19 @@ def load_rl_datasets(
     cli_args: TrainerCliArgs,  # pylint: disable=unused-argument
 ) -> TrainDatasetMeta:
     train_dataset, eval_dataset = load_prepare_dpo_datasets(cfg)
-    total_num_steps = int(
-        math.ceil(len(train_dataset) * cfg.num_epochs / cfg.batch_size)
-    )
+    if cfg.exact_deduplication:
+        LOG.info(
+            f"Starting exact deduplication. Original train dataset size: {len(train_dataset)}, eval dataset size: {len(eval_dataset)}"
+        )
+        train_dataset = deduplicate_dataset(dataset=train_dataset)
+        eval_dataset = deduplicate_dataset(dataset=eval_dataset)
+        LOG.info(
+            f"Exact deduplication complete. New train dataset size: {len(train_dataset)}, eval dataset size: {len(eval_dataset)}"
+        )
+
+        total_num_steps = int(
+            math.ceil(len(train_dataset) * cfg.num_epochs / cfg.batch_size)
+        )
 
     if cli_args.debug or cfg.debug:
         LOG.info("check_dataset_labels...")
