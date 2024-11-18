@@ -1,9 +1,9 @@
 # Axolotl
 <p align="center">
     <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/refs/heads/readme-updates-v2/image/axolotl_logo_digital_white.svg">
-        <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/refs/heads/readme-updates-v2/image/axolotl_logo_digital_black.svg">
-        <img alt="axolotl" src="https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/refs/heads/readme-updates-v2/image/axolotl_logo_digital_black.svg" width="400" height="104" style="max-width: 100%;">
+        <source media="(prefers-color-scheme: dark)" srcset="image/axolotl_logo_digital_white.svg">
+        <source media="(prefers-color-scheme: light)" srcset="image/axolotl_logo_digital_black.svg">
+        <img alt="axolotl" src="image/axolotl_logo_digital_black.svg" width="400" height="104" style="max-width: 100%;">
     </picture>
 </p>
 
