@@ -7,13 +7,16 @@
     </picture>
 </p>
 
-![GitHub License](https://img.shields.io/github/license/axolotl-ai-cloud/axolotl.svg?color=blue)
-![tests](https://github.com/axolotl-ai-cloud/axolotl/actions/workflows/tests.yml/badge.svg)
-![https://github.com/axolotl-ai-cloud/axolotl/releases](https://img.shields.io/github/release/axolotl-ai-cloud/axolotl.svg)
-![GitHub Repo stars](https://img.shields.io/github/stars/axolotl-ai-cloud/axolotl)
-
-![tests-nightly](https://github.com/axolotl-ai-cloud/axolotl/actions/workflows/tests-nightly.yml/badge.svg)
-![multigpu-semi-weekly tests](https://github.com/axolotl-ai-cloud/axolotl/actions/workflows/multi-gpu-e2e.yml/badge.svg)
+<p align="center">
+    <img src="https://img.shields.io/github/license/axolotl-ai-cloud/axolotl.svg?color=blue" alt="GitHub License">
+    <img src="https://github.com/axolotl-ai-cloud/axolotl/actions/workflows/tests.yml/badge.svg" alt="tests">
+    <a href="https://github.com/axolotl-ai-cloud/axolotl/releases"><img src="https://img.shields.io/github/release/axolotl-ai-cloud/axolotl.svg" alt="Releases"></a>
+    <img src="https://img.shields.io/github/stars/axolotl-ai-cloud/axolotl" alt="GitHub Repo stars">
+</p>
+<p align="center">
+    <img src="https://github.com/axolotl-ai-cloud/axolotl/actions/workflows/tests-nightly.yml/badge.svg" alt="tests-nightly">
+    <img src="https://github.com/axolotl-ai-cloud/axolotl/actions/workflows/multi-gpu-e2e.yml/badge.svg" alt="multigpu-semi-weekly tests">
+</p>
 
 Axolotl is a tool designed to streamline the fine-tuning of various AI models, offering support for multiple configurations and architectures.
 
