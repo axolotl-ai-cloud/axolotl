@@ -25,7 +25,7 @@ AXOLOTL_ROOT = Path(__file__).parent.parent.parent.parent
 @pytest.fixture(scope="session", autouse=True)
 def download_model():
     # download the model
-    snapshot_download("HuggingFaceTB/SmolLM-135M")
+    snapshot_download("HuggingFaceTB/SmolLM2-135M")
 
 
 class TestMultiGPULlama:
@@ -37,7 +37,7 @@ class TestMultiGPULlama:
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "HuggingFaceTB/SmolLM-135M",
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
                 "sequence_len": 2048,
                 "adapter": "lora",
                 "lora_r": 8,
@@ -93,7 +93,7 @@ class TestMultiGPULlama:
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "HuggingFaceTB/SmolLM-135M",
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
                 "sequence_len": 2048,
                 "sample_packing": True,
                 "eval_sample_packing": False,
@@ -149,7 +149,7 @@ class TestMultiGPULlama:
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "HuggingFaceTB/SmolLM-135M",
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
                 "sequence_len": 2048,
                 "sample_packing": False,
                 "eval_sample_packing": False,
@@ -218,7 +218,7 @@ class TestMultiGPULlama:
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "HuggingFaceTB/SmolLM-135M",
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
                 "sequence_len": 2048,
                 "sample_packing": False,
                 "eval_sample_packing": False,
@@ -291,7 +291,7 @@ class TestMultiGPULlama:
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "HuggingFaceTB/SmolLM-135M",
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
                 "sequence_len": 2048,
                 "val_set_size": 0.01,
                 "special_tokens": {
@@ -356,7 +356,7 @@ class TestMultiGPULlama:
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "HuggingFaceTB/SmolLM-135M",
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
                 "sample_packing": True,
                 "pad_to_sequence_len": True,
                 "sequence_len": 2048,
@@ -499,7 +499,7 @@ class TestMultiGPULlama:
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "HuggingFaceTB/SmolLM-135M",
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
                 "sample_packing": True,
                 "pad_to_sequence_len": True,
                 "sequence_len": 2048,
@@ -549,7 +549,7 @@ class TestMultiGPULlama:
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "HuggingFaceTB/SmolLM-135M",
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
                 "load_in_4bit": True,
                 "adapter": "qlora",
                 "lora_r": 8,

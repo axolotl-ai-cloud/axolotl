@@ -11,7 +11,7 @@ from huggingface_hub import snapshot_download
 @pytest.fixture(scope="session", autouse=True)
 def download_smollm2_135m_model():
     # download the model
-    snapshot_download("HuggingFaceTB/SmolLM-135M")
+    snapshot_download("HuggingFaceTB/SmolLM2-135M")
 
 
 @pytest.fixture(scope="session", autouse=True)

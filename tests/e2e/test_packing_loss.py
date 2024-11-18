@@ -31,7 +31,7 @@ class TestPackedLlama(unittest.TestCase):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "HuggingFaceTB/SmolLM-135M",
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
                 "sequence_len": 1024,
                 "sample_packing": True,
                 "flash_attention": True,
