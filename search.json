@@ -4,7 +4,7 @@
     "href": "index.html",
     "title": "Axolotl",
     "section": "",
-    "text": "Axolotl\n  \n  Axolotl supports\n  Quickstart ⚡\n  \n  Usage\n  \n  Advanced Setup\n  \n  Environment\n  Dataset\n  Config\n  Train\n  Inference Playground\n  Merge LORA to base\n  \n  Common Errors 🧰\n  \n  Tokenization Mismatch b/w Inference & Training\n  \n  Debugging Axolotl\n  Need help? 🙋\n  Badge ❤🏷️\n  Community Showcase\n  Contributing 🤝\n  Sponsors 🤝❤",
+    "text": "Axolotl supports\n  Quickstart ⚡\n  \n  Usage\n  \n  Advanced Setup\n  \n  Environment\n  Dataset\n  Config\n  Train\n  Inference Playground\n  Merge LORA to base\n  \n  Common Errors 🧰\n  \n  Tokenization Mismatch b/w Inference & Training\n  \n  Debugging Axolotl\n  Need help? 🙋\n  Badge ❤🏷️\n  Community Showcase\n  Contributing 🤝\n  Sponsors 🤝❤\nAxolotl is a tool designed to streamline the fine-tuning of various AI models, offering support for multiple configurations and architectures.\nFeatures: - Train various Huggingface models such as llama, pythia, falcon, mpt - Supports fullfinetune, lora, qlora, relora, and gptq - Customize configurations using a simple yaml file or CLI overwrite - Load different dataset formats, use custom formats, or bring your own tokenized datasets - Integrated with xformer, flash attention, liger kernel, rope scaling, and multipacking - Works with single GPU or multiple GPUs via FSDP or Deepspeed - Easily run with Docker locally or on the cloud - Log results and optionally checkpoints to wandb, mlflow or Comet - And more!",
     "crumbs": [
       "Home"
     ]
