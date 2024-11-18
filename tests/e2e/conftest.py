@@ -5,6 +5,25 @@ import shutil
 import tempfile
 
 import pytest
+from huggingface_hub import snapshot_download
+
+
+@pytest.fixture(scope="session", autouse=True)
+def download_smollm2_135m_model():
+    # download the model
+    snapshot_download("HuggingFaceTB/SmolLM2-135M")
+
+
+@pytest.fixture(scope="session", autouse=True)
+def download_tatsu_lab_alpaca_dataset():
+    # download the model
+    snapshot_download("tatsu-lab/alpaca", repo_type="dataset")
+
+
+@pytest.fixture(scope="session", autouse=True)
+def download_mhenrichsen_alpaca_2k_dataset():
+    # download the model
+    snapshot_download("mhenrichsen/alpaca_2k_test", repo_type="dataset")
 
 
 @pytest.fixture
