@@ -68,7 +68,7 @@ jobs:
           pip3 show torch
           pip3 install -U -e .
           pip3 install -r requirements-dev.txt -r requirements-tests.txt
-          pip3 uninstall intel-extension-for-pytorch
+          pip3 uninstall -y intel-extension-for-pytorch
 
       - name: Run tests
         run: |

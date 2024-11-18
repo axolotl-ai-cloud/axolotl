@@ -26,7 +26,7 @@ RUN if [ "$AXOLOTL_EXTRAS" != "" ] ; then \
         pip install -e .[deepspeed,flash-attn,optimizers] $AXOLOTL_ARGS; \
     fi
 
-RUN pip uninstall intel-extension-for-pytorch
+RUN pip uninstall -y intel-extension-for-pytorch
 
 # So we can test the Docker image
 RUN pip install pytest
