@@ -44,7 +44,7 @@ from axolotl.prompters import (
     UnsupportedPrompter,
 )
 from axolotl.utils.data.pretraining import wrap_pretraining_dataset
-from axolotl.utils.data.utils import md5, deduplicate_and_log_datasets
+from axolotl.utils.data.utils import deduplicate_and_log_datasets, md5
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import is_local_main_process, zero_first
 from axolotl.utils.trainer import (
@@ -137,11 +137,12 @@ def prepare_dataset(cfg, tokenizer, processor=None):
         train_dataset = train_dataset.with_format("torch")
         eval_dataset = None
         if cfg.exact_deduplication:
-            train_dataset, eval_dataset = deduplicate_and_log_datasets(train_dataset,eval_dataset)
+            LOG.info("Deduplication not available for pretrained datasets")
         return train_dataset, eval_dataset, cfg.max_steps, prompters
-
     if cfg.exact_deduplication:
-        train_dataset, eval_dataset = deduplicate_and_log_datasets(train_dataset,eval_dataset)
+        train_dataset, eval_dataset = deduplicate_and_log_datasets(
+            train_dataset=train_dataset, eval_dataset=eval_dataset
+        )
     if eval_dataset and cfg.sample_packing and cfg.eval_sample_packing is not False:
         total_eval_steps = calculate_total_num_steps(cfg, eval_dataset, update=False)
         if total_eval_steps == 0:
@@ -182,7 +183,7 @@ def load_tokenized_prepared_datasets(
                 + "|".join(
                     sorted(
                         [
-                            f"{d.path}:{d.type}:{d.shards}:{d.conversation}{d.split}"
+                            f"{d.path}: {d.type}: {d.shards}: {d.conversation}{d.split}"
                             for d in cfg_datasets
                         ]
                     )
