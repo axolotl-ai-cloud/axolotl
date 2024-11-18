@@ -1,9 +1,8 @@
-# Axolotl
 <p align="center">
     <picture>
         <source media="(prefers-color-scheme: dark)" srcset="image/axolotl_logo_digital_white.svg">
         <source media="(prefers-color-scheme: light)" srcset="image/axolotl_logo_digital_black.svg">
-        <img alt="axolotl" src="image/axolotl_logo_digital_black.svg" width="400" height="104" style="max-width: 100%;">
+        <img alt="Axolotl" src="image/axolotl_logo_digital_black.svg" width="400" height="104" style="max-width: 100%;">
     </picture>
 </p>
 
