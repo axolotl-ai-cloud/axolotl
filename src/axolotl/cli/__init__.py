@@ -38,7 +38,6 @@ from axolotl.utils.config import (
     validate_config,
 )
 from axolotl.utils.data import load_prepare_dpo_datasets, prepare_dataset
-from axolotl.utils.data.utils import deduplicate_dataset
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import is_main_process
 from axolotl.utils.mlflow_ import setup_mlflow_env_vars
@@ -499,19 +498,9 @@ def load_rl_datasets(
     cli_args: TrainerCliArgs,  # pylint: disable=unused-argument
 ) -> TrainDatasetMeta:
     train_dataset, eval_dataset = load_prepare_dpo_datasets(cfg)
-    if cfg.exact_deduplication:
-        LOG.info(
-            f"Starting exact deduplication. Original train dataset size: {len(train_dataset)}, eval dataset size: {len(eval_dataset)}"
-        )
-        train_dataset = deduplicate_dataset(dataset=train_dataset)
-        eval_dataset = deduplicate_dataset(dataset=eval_dataset)
-        LOG.info(
-            f"Exact deduplication complete. New train dataset size: {len(train_dataset)}, eval dataset size: {len(eval_dataset)}"
-        )
-
-        total_num_steps = int(
-            math.ceil(len(train_dataset) * cfg.num_epochs / cfg.batch_size)
-        )
+    total_num_steps = int(
+        math.ceil(len(train_dataset) * cfg.num_epochs / cfg.batch_size)
+    )
 
     if cli_args.debug or cfg.debug:
         LOG.info("check_dataset_labels...")
