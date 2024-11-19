@@ -1314,6 +1314,7 @@ class AxolotlInputConfig(
             and data.get("gradient_checkpointing_kwargs", {})
             and data.get("gradient_checkpointing_kwargs", {}).get("use_reentrant")
             is False
+            and data.get("deepspeed", "") is not None
             and "zero3" in data.get("deepspeed", "")
         ):
             # may result in:
