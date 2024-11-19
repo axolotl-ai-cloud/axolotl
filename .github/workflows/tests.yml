@@ -78,7 +78,7 @@ jobs:
           find "$(pip cache dir)/http-v2" -type f -mtime +14 -exec rm {} \;
 
   pytest-sdist:
-    name: PyTest
+    name: PyTest from Source Dist
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
