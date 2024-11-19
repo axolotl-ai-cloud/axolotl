@@ -602,7 +602,6 @@ class TestMultiGPULlama:
             ]
         )
 
-    @with_temp_dir
     def test_8bit_lora_ds_zero3(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
