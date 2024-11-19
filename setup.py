@@ -100,7 +100,7 @@ setup(
     description="LLM Trainer",
     long_description="Axolotl is a tool designed to streamline the fine-tuning of various AI models, offering support for multiple configurations and architectures.",
     package_dir={"": "src"},
-    packages=find_packages(),
+    packages=find_packages("src"),
     install_requires=install_requires,
     dependency_links=dependency_links,
     extras_require={
