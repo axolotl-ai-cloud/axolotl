@@ -10,6 +10,8 @@ jobs:
   setup_release:
     name: Create Release
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Get the tag version
         id: extract_branch
