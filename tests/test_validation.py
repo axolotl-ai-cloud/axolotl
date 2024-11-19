@@ -74,6 +74,7 @@ class TestValidation(BaseValidation):
                 "deepspeed": "",
                 "gradient_checkpointing": True,
                 "gradient_checkpointing_kwargs": {"use_reentrant": False},
+                "load_in_4bit": True,
                 "adapter": "qlora",
             }
             | minimal_cfg
@@ -86,6 +87,7 @@ class TestValidation(BaseValidation):
                 "deepspeed": None,
                 "gradient_checkpointing": True,
                 "gradient_checkpointing_kwargs": {"use_reentrant": False},
+                "load_in_4bit": True,
                 "adapter": "qlora",
             }
             | minimal_cfg
