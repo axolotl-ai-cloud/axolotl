@@ -1,7 +1,9 @@
 """
-test module for the axolotl.utils.data module
-"""
+Test suite for functions in the axolotl.utils.data.utils module, focusing on the deduplicate_and_log_datasets function.
 
+Additionally, this test suite includes tests for functions that indirectly call deduplicate_and_log_datasets during the execution of the preprocess command.
+"""
+# pylint: disable=duplicate-code
 # import logging
 import unittest
 
