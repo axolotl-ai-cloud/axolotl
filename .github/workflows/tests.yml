@@ -78,7 +78,7 @@ jobs:
           find "$(pip cache dir)/http-v2" -type f -mtime +14 -exec rm {} \;
 
   docker-e2e-tests-1st:
-    if: github.repository_owner == 'axolotl-ai-cloud'
+    if: ${{ ! contains(github.event.commits[0].message, '[skip e2e]') && github.repository_owner == 'axolotl-ai-cloud' }}
     # this job needs to be run on self-hosted GPU runners...
     runs-on: [self-hosted, modal]
     timeout-minutes: 90
