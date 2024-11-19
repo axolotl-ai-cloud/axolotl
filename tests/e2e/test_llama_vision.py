@@ -56,6 +56,7 @@ class TestLlamaVision(unittest.TestCase):
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_bnb_8bit",
                 "lr_scheduler": "cosine",
+                "max_steps": 5,
                 "save_safetensors": True,
             }
         )
@@ -100,6 +101,7 @@ class TestLlamaVision(unittest.TestCase):
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_bnb_8bit",
                 "lr_scheduler": "cosine",
+                "max_steps": 5,
                 "save_safetensors": True,
             }
         )

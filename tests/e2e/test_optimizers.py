@@ -56,6 +56,7 @@ class TestCustomOptimizers(unittest.TestCase):
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
                 "optimizer": "optimi_adamw",
+                "max_steps": 5,
                 "lr_scheduler": "cosine",
             }
         )
