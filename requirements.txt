@@ -1,12 +1,12 @@
 --extra-index-url https://huggingface.github.io/autogptq-index/whl/cu118/
 packaging==23.2
 peft==0.13.2
-transformers==4.46.2
+transformers==4.46.3
 tokenizers>=0.20.1
 bitsandbytes==0.44.1
 accelerate==1.1.0
 datasets==3.1.0
-deepspeed==0.15.3
+deepspeed==0.15.4
 pydantic==2.6.3
 addict
 fire
@@ -31,7 +31,7 @@ art
 gradio==3.50.2
 tensorboard
 python-dotenv==1.0.1
-autoawq>=0.2.5
+autoawq==0.2.7.post2
 triton>=2.3.0
 liger-kernel==0.4.1
 

@@ -32,16 +32,19 @@ class TestCosineConstantLr(unittest.TestCase):
     def test_schedulers(self):
         self.assertEqual(self.lr_scheduler.get_last_lr()[0], 0)
         for _ in range(self.warmup_steps):
+            self.optimizer.step()
             self.lr_scheduler.step()
         self.assertEqual(self.lr_scheduler.get_last_lr()[0], self._lr)
         constant_step = int(self.train_steps * self.constant_lr_ratio)
         remaining_step = self.train_steps - constant_step
         for _ in range(constant_step):
+            self.optimizer.step()
             self.lr_scheduler.step()
         self.assertEqual(
             self.lr_scheduler.get_last_lr()[0], self._lr * self.min_lr_ratio
         )
         for _ in range(remaining_step):
+            self.optimizer.step()
             self.lr_scheduler.step()
         self.assertEqual(
             self.lr_scheduler.get_last_lr()[0], self._lr * self.min_lr_ratio

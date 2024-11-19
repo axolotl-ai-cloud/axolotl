@@ -66,6 +66,8 @@ class TestFAXentropyLlama(unittest.TestCase):
                     },
                 ],
                 "num_epochs": 1,
+                "max_steps": 10,
+                "save_steps": 10,
                 "micro_batch_size": 8,
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,

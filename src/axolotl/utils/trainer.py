@@ -16,9 +16,6 @@ from torch.utils.data import DataLoader, RandomSampler
 from transformers.utils import is_torch_bf16_gpu_available
 
 from axolotl.core.trainer_builder import HFCausalTrainerBuilder, HFRLTrainerBuilder
-from axolotl.monkeypatch.trainer_fsdp_grad_accum import (
-    patch_training_loop_for_fsdp_grad_accum,
-)
 from axolotl.utils.distributed import reduce_and_broadcast
 from axolotl.utils.environment import check_cuda_p2p_ib_support
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
@@ -206,37 +203,59 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
         if eval_dataset and "token_type_ids" in eval_dataset.column_names:
             eval_dataset = eval_dataset.remove_columns("token_type_ids")
 
+    prior_len = len(train_dataset)
     train_dataset = train_dataset.filter(
         drop_long,
         num_proc=cfg.dataset_processes,
         load_from_cache_file=not cfg.is_preprocess,
         desc="Dropping Long Sequences",
     )
+    dropped = prior_len - len(train_dataset)
+    if dropped:
+        LOG.warning(f"Dropped {dropped} long samples from train dataset")
+
     if eval_dataset:
+        prior_len = len(eval_dataset)
         eval_dataset = eval_dataset.filter(
             drop_long,
             num_proc=cfg.dataset_processes,
             load_from_cache_file=not cfg.is_preprocess,
             desc="Dropping Long Sequences",
         )
+        dropped = prior_len - len(eval_dataset)
+        if dropped:
+            LOG.warning(f"Dropped {dropped} long samples from eval dataset")
 
     # drop samples with where the number of elements with labels not equal to -100 is zero
     def drop_no_trainable_tokens(sample):
         return np.sum(np.array(sample["labels"]) != -100) > 0
 
+    prior_len = len(train_dataset)
     train_dataset = train_dataset.filter(
         drop_no_trainable_tokens,
         num_proc=cfg.dataset_processes,
         load_from_cache_file=not cfg.is_preprocess,
         desc="Drop Samples with Zero Trainable Tokens",
     )
+    dropped = prior_len - len(train_dataset)
+    if dropped:
+        LOG.warning(
+            f"Dropped {dropped} samples with no trainable tokens from train dataset"
+        )
+
     if eval_dataset:
+        prior_len = len(eval_dataset)
         eval_dataset = eval_dataset.filter(
             drop_no_trainable_tokens,
             num_proc=cfg.dataset_processes,
             load_from_cache_file=not cfg.is_preprocess,
             desc="Drop Samples with Zero Trainable Tokens",
         )
+        dropped = prior_len - len(eval_dataset)
+        if dropped:
+            LOG.warning(
+                f"Dropped {dropped} samples with no trainable tokens from eval dataset"
+            )
 
     if cfg.group_by_length:
         train_dataset = train_dataset.map(
@@ -496,12 +515,7 @@ def prepare_opinionated_env(cfg):
 def setup_trainer(
     cfg, train_dataset, eval_dataset, model, tokenizer, processor, total_num_steps
 ):
-    if cfg.fsdp:
-        try:
-            patch_training_loop_for_fsdp_grad_accum()
-        except AssertionError:
-            pass
-    if cfg.rl in ["dpo", "ipo", "orpo", "kto", "simpo"]:
+    if cfg.rl in ("dpo", "ipo", "orpo", "kto", "simpo"):
         trainer_builder = HFRLTrainerBuilder(cfg, model[0], tokenizer, processor)
         trainer_builder.model_ref = model[1]
         trainer_builder.peft_config = model[2]

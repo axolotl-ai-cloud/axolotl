@@ -10,7 +10,7 @@ on:
 
 jobs:
   build-axolotl:
-    if: ${{ ! contains(github.event.commits[0].message, '[skip docker]]') && github.repository_owner == 'axolotl-ai-cloud' }}
+    if: ${{ ! contains(github.event.commits[0].message, '[skip docker]') && github.repository_owner == 'axolotl-ai-cloud' }}
     strategy:
       fail-fast: false
       matrix:
@@ -49,7 +49,7 @@ jobs:
             axolotlai/axolotl
           tags: |
             type=ref,event=branch
-            type=semver,pattern={{version}}
+            type=pep440,pattern={{version}}
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Login to Docker Hub
@@ -77,7 +77,7 @@ jobs:
 
   build-axolotl-cloud:
     needs: build-axolotl
-    if: ${{ ! contains(github.event.commits[0].message, '[skip docker]]') && github.repository_owner == 'axolotl-ai-cloud' }}
+    if: ${{ ! contains(github.event.commits[0].message, '[skip docker]') && github.repository_owner == 'axolotl-ai-cloud' }}
     # this job needs to be run on self-hosted GPU runners...
     strategy:
       matrix:
@@ -116,7 +116,7 @@ jobs:
             axolotlai/axolotl-cloud
           tags: |
             type=ref,event=branch
-            type=semver,pattern={{version}}
+            type=pep440,pattern={{version}}
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
@@ -140,7 +140,7 @@ jobs:
 
   build-axolotl-cloud-no-tmux:
     needs: build-axolotl
-    if: ${{ ! contains(github.event.commits[0].message, '[skip docker]]') && github.repository_owner == 'axolotl-ai-cloud' }}
+    if: ${{ ! contains(github.event.commits[0].message, '[skip docker]') && github.repository_owner == 'axolotl-ai-cloud' }}
     # this job needs to be run on self-hosted GPU runners...
     strategy:
       matrix:
@@ -163,7 +163,7 @@ jobs:
             axolotlai/axolotl-cloud-term
           tags: |
             type=ref,event=branch
-            type=semver,pattern={{version}}
+            type=pep440,pattern={{version}}
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:

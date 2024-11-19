@@ -1,0 +1,4 @@
+include requirements.txt
+include README.md
+include LICENSE
+recursive-include axolotl *.py

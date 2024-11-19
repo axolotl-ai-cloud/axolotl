@@ -250,8 +250,10 @@ class KTODataset(BaseModel):
 class LoftQConfig(BaseModel):
     """LoftQ configuration subset"""
 
-    loftq_bits: int = Field(default=4, metadata={"help": "Quantization bits for LoftQ"})
-    # loftq_iter: int = Field(default=1, metadata={"help": "Alternating iterations for LoftQ"})
+    loftq_bits: int = Field(
+        default=4, json_schema_extra={"description": "Quantization bits for LoftQ"}
+    )
+    # loftq_iter: int = Field(default=1, json_schema_extra={"description": "Alternating iterations for LoftQ"})
 
 
 class PeftConfig(BaseModel):
@@ -294,8 +296,8 @@ class LoraConfig(BaseModel):
 
     qlora_sharded_model_loading: Optional[bool] = Field(
         default=False,
-        metadata={
-            "help": "load qlora model in sharded format for FSDP using answer.ai technique."
+        json_schema_extra={
+            "description": "load qlora model in sharded format for FSDP using answer.ai technique."
         },
     )
     lora_on_cpu: Optional[bool] = None
@@ -304,13 +306,15 @@ class LoraConfig(BaseModel):
 
     loraplus_lr_ratio: Optional[float] = Field(
         default=None,
-        metadata={
-            "help": "loraplus learning rate ratio lr_B / lr_A. Recommended value is 2^4."
+        json_schema_extra={
+            "description": "loraplus learning rate ratio lr_B / lr_A. Recommended value is 2^4."
         },
     )
     loraplus_lr_embedding: Optional[float] = Field(
         default=1e-6,
-        metadata={"help": "loraplus learning rate for lora embedding layers."},
+        json_schema_extra={
+            "description": "loraplus learning rate for lora embedding layers."
+        },
     )
 
     merge_lora: Optional[bool] = None
@@ -380,10 +384,10 @@ class ModelInputConfig(BaseModel):
     tokenizer_use_fast: Optional[bool] = None
     tokenizer_legacy: Optional[bool] = None
     tokenizer_type: Optional[str] = Field(
-        default=None, metadata={"help": "transformers tokenizer class"}
+        default=None, json_schema_extra={"description": "transformers tokenizer class"}
     )
     processor_type: Optional[str] = Field(
-        default=None, metadata={"help": "transformers processor class"}
+        default=None, json_schema_extra={"description": "transformers processor class"}
     )
     trust_remote_code: Optional[bool] = None
 
@@ -405,18 +409,18 @@ class HyperparametersConfig(BaseModel):
     gradient_accumulation_steps: Optional[int] = Field(default=1)
     micro_batch_size: Optional[int] = Field(
         default=1,
-        metadata={"help": "per gpu micro batch size for training"},
+        json_schema_extra={"description": "per gpu micro batch size for training"},
     )
     batch_size: Optional[int] = Field(
         default=None,
-        metadata={
-            "help": "Total batch size, we do not recommended setting this manually"
+        json_schema_extra={
+            "description": "Total batch size, we do not recommended setting this manually"
         },
     )
     eval_batch_size: Optional[int] = Field(
         default=None,
-        metadata={
-            "help": "per gpu micro batch size for evals, defaults to value of micro_batch_size"
+        json_schema_extra={
+            "description": "per gpu micro batch size for evals, defaults to value of micro_batch_size"
         },
     )
 
@@ -441,12 +445,13 @@ class HyperparametersConfig(BaseModel):
         ]
     ] = OptimizerNames.ADAMW_HF.value
     optim_args: Optional[Union[str, Dict[str, Any]]] = Field(
-        default=None, metadata={"help": "Optional arguments to supply to optimizer."}
+        default=None,
+        json_schema_extra={"description": "Optional arguments to supply to optimizer."},
     )
     optim_target_modules: Optional[Union[List[str], Literal["all_linear"]]] = Field(
         default=None,
-        metadata={
-            "help": "The target modules to optimize, i.e. the module names that you would like to train."
+        json_schema_extra={
+            "description": "The target modules to optimize, i.e. the module names that you would like to train."
         },
     )
     torchdistx_path: Optional[str] = None
@@ -506,15 +511,15 @@ class LISAConfig(BaseModel):
 
     lisa_n_layers: Optional[int] = Field(
         default=None,
-        metadata={"help": "the number of activate layers in LISA"},
+        json_schema_extra={"description": "the number of activate layers in LISA"},
     )
     lisa_step_interval: Optional[int] = Field(
         default=None,
-        metadata={"help": "how often to switch layers in LISA"},
+        json_schema_extra={"description": "how often to switch layers in LISA"},
     )
     lisa_layers_attribute: Optional[str] = Field(
         default="model.layers",
-        metadata={"help": "path under the model to access the layers"},
+        json_schema_extra={"description": "path under the model to access the layers"},
     )
 
 
@@ -613,7 +618,8 @@ class AxolotlInputConfig(
     pretraining_dataset: Optional[  # type: ignore
         conlist(Union[PretrainingDataset, SFTDataset], min_length=1)
     ] = Field(
-        default=None, metadata={"help": {"streaming dataset to use for pretraining"}}
+        default=None,
+        json_schema_extra={"description": "streaming dataset to use for pretraining"},
     )
     dataset_processes: Optional[int] = Field(default=os.cpu_count())
     dataset_keep_in_memory: Optional[bool] = None
@@ -673,7 +679,8 @@ class AxolotlInputConfig(
     sequence_len: int = Field(default=512)
     min_sample_len: Optional[int] = None
     max_prompt_len: int = Field(
-        default=512, metadata={"help": "maximum prompt length for RL training"}
+        default=512,
+        json_schema_extra={"description": "maximum prompt length for RL training"},
     )
     sample_packing: Optional[bool] = None
     sample_packing_group_size: Optional[int] = 100_000
@@ -692,8 +699,8 @@ class AxolotlInputConfig(
     pretrain_multipack_buffer_size: Optional[int] = 10_000
     pretrain_multipack_attn: Optional[bool] = Field(
         default=True,
-        metadata={
-            "help": "whether to prevent cross attention for packed sequences during pretraining",
+        json_schema_extra={
+            "description": "whether to prevent cross attention for packed sequences during pretraining",
         },
     )
 

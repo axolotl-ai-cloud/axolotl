@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   test-axolotl-multigpu:
-    if: ${{ ! contains(github.event.commits[0].message, '[skip docker]]') && github.repository_owner == 'axolotl-ai-cloud' }}
+    if: ${{ ! contains(github.event.commits[0].message, '[skip e2e]') && github.repository_owner == 'axolotl-ai-cloud' }}
     strategy:
       fail-fast: false
       matrix:
