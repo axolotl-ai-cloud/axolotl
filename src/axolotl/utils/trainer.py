@@ -437,6 +437,15 @@ def setup_deepspeed_env(cfg, stage=None):
         os.environ["ACCELERATE_DEEPSPEED_ZERO_STAGE"] = str(stage)
         if stage == 3:
             os.environ["ACCELERATE_DEEPSPEED_ZERO3_INIT"] = "true"
+            if cfg.adapter and cfg.load_in_8bit:
+                from axolotl.monkeypatch.modeling_zero3_int8_lora import (
+                    patch_modeling_state_dict_code,
+                )
+
+                try:
+                    patch_modeling_state_dict_code()
+                except AssertionError:
+                    LOG.warning("Failed to patch the meta model loading code")
     # If we don't assign this, it doesn't actually get set in the accelerate weakref
     _ = HfTrainerDeepSpeedConfig(cfg.deepspeed)
 
