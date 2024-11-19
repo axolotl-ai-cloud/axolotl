@@ -68,6 +68,30 @@ class TestValidation(BaseValidation):
         assert cfg.train_on_inputs is False
         assert cfg.weight_decay is None
 
+    def test_deepspeed_empty(self, minimal_cfg):
+        test_cfg = DictDefault(
+            {
+                "deepspeed": "",
+                "gradient_checkpointing": True,
+                "gradient_checkpointing_kwargs": {"use_reentrant": False},
+                "adapter": "qlora",
+            }
+            | minimal_cfg
+        )
+        _ = validate_config(test_cfg)
+
+    def test_deepspeed_not_set(self, minimal_cfg):
+        test_cfg = DictDefault(
+            {
+                "deepspeed": None,
+                "gradient_checkpointing": True,
+                "gradient_checkpointing_kwargs": {"use_reentrant": False},
+                "adapter": "qlora",
+            }
+            | minimal_cfg
+        )
+        _ = validate_config(test_cfg)
+
     def test_datasets_min_length(self):
         cfg = DictDefault(
             {
