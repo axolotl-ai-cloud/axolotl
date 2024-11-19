@@ -96,7 +96,7 @@ install_requires, dependency_links = parse_requirements()
 
 setup(
     name="axolotl",
-    version="0.5.0",
+    version="0.5.1",
     description="LLM Trainer",
     long_description="Axolotl is a tool designed to streamline the fine-tuning of various AI models, offering support for multiple configurations and architectures.",
     package_dir={"": "src"},
@@ -108,7 +108,7 @@ setup(
             "flash-attn==2.7.0.post2",
         ],
         "deepspeed": [
-            "deepspeed==0.14.4",
+            "deepspeed==0.15.4",
             "deepspeed-kernels",
         ],
         "mamba-ssm": [
