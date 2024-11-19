@@ -77,12 +77,56 @@ jobs:
         run: |
           find "$(pip cache dir)/http-v2" -type f -mtime +14 -exec rm {} \;
 
+  pytest-sdist:
+    name: PyTest
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python_version: ["3.10", "3.11"]
+        pytorch_version: ["2.3.1", "2.4.1", "2.5.1"]
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python_version }}
+          cache: 'pip' # caching pip dependencies
+
+      - name: upgrade pip
+        run: |
+          pip3 install --upgrade pip
+          pip3 install --upgrade packaging setuptools wheel
+
+      - name: Install PyTorch
+        run: |
+          pip3 install torch==${{ matrix.pytorch_version }}
+
+      - name: Install dependencies
+        run: |
+          pip3 show torch
+          python3 setup.py sdist
+          pip3 install dist/axolotl*.tar.gz
+          pip3 install -r requirements-dev.txt -r requirements-tests.txt
+
+      - name: Run tests
+        run: |
+          pytest -n8 --ignore=tests/e2e/ tests/
+
+      - name: cleanup pip cache
+        run: |
+          find "$(pip cache dir)/http-v2" -type f -mtime +14 -exec rm {} \;
+
   docker-e2e-tests-1st:
     if: ${{ ! contains(github.event.commits[0].message, '[skip e2e]') && github.repository_owner == 'axolotl-ai-cloud' }}
     # this job needs to be run on self-hosted GPU runners...
     runs-on: [self-hosted, modal]
     timeout-minutes: 90
-    needs: [pre-commit, pytest]
+    needs: [pre-commit, pytest, pytest-sdist]
 
     strategy:
       fail-fast: false
