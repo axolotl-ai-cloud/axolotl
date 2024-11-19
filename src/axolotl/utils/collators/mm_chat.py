@@ -4,7 +4,7 @@ Collators for multi-modal chat messages and packing
 
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Optional, Union
 
 from PIL import Image
 from transformers import PreTrainedTokenizerBase, ProcessorMixin
@@ -32,8 +32,8 @@ class MultiModalChatDataCollator(DataCollatorMixin):
             raise ValueError("Packing is currently not supported.")
 
     def torch_call(
-        self, examples: List[Union[List[int], Any, Dict[str, Any]]]
-    ) -> Dict[str, Any]:
+        self, examples: list[Union[list[int], Any, dict[str, Any]]]
+    ) -> dict[str, Any]:
         # Handle dict or lists with proper padding and conversion to tensor.
 
         return self.__class__.process_rows(
@@ -48,7 +48,7 @@ class MultiModalChatDataCollator(DataCollatorMixin):
         # *** This is COPIED from the trl example sft_vlm.py code ***
         # use this as a starting point
 
-        def _preprocess(examples: list[dict]) -> dict:
+        def _preprocess(examples: list[dict]) -> list[dict]:
             """
             Preprocess conversation examples to ensure consistent format.
 
@@ -75,7 +75,7 @@ class MultiModalChatDataCollator(DataCollatorMixin):
                 """Normalize role names to OpenAI format. Default to original role if not found."""
                 return role_mapping.get(role, role)
 
-            def convert_legacy_format(example: Dict) -> Dict:
+            def convert_legacy_format(example: dict) -> dict:
                 """Convert legacy 'conversations' format to OpenAI 'messages' format."""
                 messages = [
                     {
@@ -90,18 +90,22 @@ class MultiModalChatDataCollator(DataCollatorMixin):
                 result.pop("conversations")
                 return {"messages": messages, **result}
 
+            processed_examples = []
             for example in examples:
                 # OpenAI format
                 if "messages" in example:
-                    return example
+                    processed_examples.append(example)
 
                 # Legacy format
-                if "conversations" in example:
-                    return convert_legacy_format(example)
+                elif "conversations" in example:
+                    processed_examples.append(convert_legacy_format(example))
 
-            raise ValueError(
-                "Only `messages` and `conversations` message keys are currently supported."
-            )
+                else:
+                    raise ValueError(
+                        "Only `messages` and `conversations` message keys are currently supported."
+                    )
+
+            return processed_examples
 
         def _process_images(examples, max_images):
             """
