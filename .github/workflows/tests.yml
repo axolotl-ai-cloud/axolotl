@@ -67,6 +67,7 @@ jobs:
         run: |
           pip3 show torch
           pip3 install -U -e .
+          python scripts/unsloth_install.py | sh
           pip3 install -r requirements-dev.txt -r requirements-tests.txt
 
       - name: Run tests
@@ -111,7 +112,6 @@ jobs:
           pip3 show torch
           python3 setup.py sdist
           pip3 install dist/axolotl*.tar.gz
-          python scripts/unsloth_install.py | sh
           pip3 install -r requirements-dev.txt -r requirements-tests.txt
 
       - name: Run tests
