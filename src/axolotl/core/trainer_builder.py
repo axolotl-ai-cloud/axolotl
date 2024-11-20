@@ -106,6 +106,21 @@ def _sanitize_kwargs_for_tagging(tag_names, kwargs=None):
 
     return kwargs
 
+def _sanitize_kwargs_for_ds_tagging(self, ds_names, kwargs=None):
+    if isinstance(ds_names, str):
+        ds_names = [ds_names]
+
+    if kwargs is not None:
+        if "datasets" not in kwargs:
+            kwargs["datasets"] = ds_names
+        elif "datasets" in kwargs and isinstance(kwargs["datasets"], list):
+            kwargs["datasets"].extend(ds_names)
+        elif "datasets" in kwargs and isinstance(kwargs["datasets"], str):
+            ds_names.append(kwargs["datasets"])
+            kwargs["datasets"] = ds_names
+
+    return kwargs
+
 
 @dataclass
 class AxolotlTrainingMixins:
