@@ -8,7 +8,10 @@ from packaging.version import Version as V
 
 v = V(torch.__version__)
 cuda = str(torch.version.cuda)
-is_ampere = torch.cuda.get_device_capability()[0] >= 8
+try:
+    is_ampere = torch.cuda.get_device_capability()[0] >= 8
+except RuntimeError:
+    is_ampere = False
 if cuda != "12.1" and cuda != "11.8" and cuda != "12.4":
     raise RuntimeError(f"CUDA = {cuda} not supported!")
 if v <= V("2.1.0"):
