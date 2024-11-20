@@ -280,7 +280,9 @@ def train(
         dataset_tags = [
             d["path"] for d in cfg["datasets"] if not Path(d["path"]).is_dir()
         ]
-        trainer.push_to_hub()
+        kwargs = {}
+        kwargs["datasets"] = dataset_tags
+        trainer.push_to_hub(**kwargs)
 
     return model, tokenizer
 

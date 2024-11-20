@@ -106,18 +106,19 @@ def _sanitize_kwargs_for_tagging(tag_names, kwargs=None):
 
     return kwargs
 
-def _sanitize_kwargs_for_ds_tagging(self, ds_names, kwargs=None):
-    if isinstance(ds_names, str):
-        ds_names = [ds_names]
+
+def _sanitize_kwargs_for_ds_tagging(self, dataset_names, kwargs=None):
+    if isinstance(dataset_names, str):
+        dataset_names = [dataset_names]
 
     if kwargs is not None:
         if "datasets" not in kwargs:
-            kwargs["datasets"] = ds_names
+            kwargs["datasets"] = dataset_names
         elif "datasets" in kwargs and isinstance(kwargs["datasets"], list):
-            kwargs["datasets"].extend(ds_names)
+            kwargs["datasets"].extend(dataset_names)
         elif "datasets" in kwargs and isinstance(kwargs["datasets"], str):
-            ds_names.append(kwargs["datasets"])
-            kwargs["datasets"] = ds_names
+            dataset_names.append(kwargs["datasets"])
+            kwargs["datasets"] = dataset_names
 
     return kwargs
 
@@ -886,6 +887,7 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
         Overwrite the `push_to_hub` method in order to force-add the tags when pushing the
         model on the Hub. Please refer to `~transformers.Trainer.push_to_hub` for more details.
         """
+        # kwargs = _sanitize_kwargs_for_ds_tagging(dataset_names=self.dataset_names, kwargs=kwargs)
         kwargs = _sanitize_kwargs_for_tagging(tag_names=self.tag_names, kwargs=kwargs)
 
         return super().push_to_hub(*args, **kwargs)
@@ -1049,8 +1051,9 @@ class AxolotlDPOTrainer(SchedulerMixin, DPOTrainer):
         Overwrite the `push_to_hub` method in order to force-add the tags when pushing the
         model on the Hub. Please refer to `~transformers.Trainer.push_to_hub` for more details.
         """
+        # kwargs = _sanitize_kwargs_for_ds_tagging(dataset_names=self.dataset_names, kwargs=kwargs)
         kwargs = _sanitize_kwargs_for_tagging(tag_names=self.tag_names, kwargs=kwargs)
-
+        
         return super().push_to_hub(*args, **kwargs)
 
     @staticmethod
