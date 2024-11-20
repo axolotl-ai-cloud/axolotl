@@ -7,7 +7,6 @@ Module for pydantic models for configuration
 import logging
 import os
 from enum import Enum
-from importlib.metadata import version
 from typing import Annotated, Any, Dict, List, Literal, Optional, Tuple, Union
 
 from pydantic import (
@@ -1422,21 +1421,6 @@ class AxolotlInputConfig(
             if data.get("adapter") == "lora" or data.get("load_in_8bit"):
                 raise ValueError(
                     "unsloth_lora_mlp, unsloth_lora_qkv, and unsloth_lora_o are not compatible with 8-bit LoRA"
-                )
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_unsloth_xformers_version(cls, data):
-        if (
-            data.get("unsloth_lora_mlp")
-            or data.get("unsloth_lora_qkv")
-            or data.get("unsloth_lora_o")
-        ):
-            xformers_version = version("xformers")
-            if xformers_version == "0.0.27":
-                raise ValueError(
-                    "xformers version 0.0.27 is not supported with unsloth. Please downgrade to 0.0.26.post1"
                 )
         return data
 

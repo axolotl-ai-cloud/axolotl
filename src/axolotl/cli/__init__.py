@@ -30,7 +30,10 @@ from axolotl.common.cli import TrainerCliArgs, load_model_and_tokenizer
 from axolotl.integrations.base import PluginManager
 from axolotl.logging_config import configure_logging
 from axolotl.train import TrainDatasetMeta
-from axolotl.utils.chat_templates import get_chat_template
+from axolotl.utils.chat_templates import (
+    get_chat_template,
+    get_chat_template_from_config,
+)
 from axolotl.utils.comet_ import setup_comet_env_vars
 from axolotl.utils.config import (
     normalize_cfg_datasets,
@@ -199,6 +202,10 @@ def do_inference(
         )
     elif cfg.chat_template:
         chat_template_str = get_chat_template(cfg.chat_template)
+    elif cfg.datasets[0].type == "chat_template":
+        chat_template_str = get_chat_template_from_config(
+            cfg=cfg, ds_cfg=cfg.datasets[0], tokenizer=tokenizer
+        )
 
     model = model.to(cfg.device, dtype=cfg.torch_dtype)
 
