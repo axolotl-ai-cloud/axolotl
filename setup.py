@@ -133,5 +133,8 @@ setup(
             "lomo-optim==0.1.1",
             "torch-optimi==0.2.1",
         ],
+        "cce": [
+            "cut-cross-entropy[transformers] @ git+https://github.com/apple/ml-cross-entropy.git",
+        ],
     },
 )

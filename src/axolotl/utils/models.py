@@ -429,6 +429,11 @@ class ModelLoader:
 
             patch_mistral_cross_entropy()
 
+        if self.cfg.cut_cross_entropy:
+            from axolotl.monkeypatch.cut_cross_entropy import patch_cut_cross_entropy
+
+            patch_cut_cross_entropy(self.model_config.model_type)
+
     def patch_attention(self) -> None:
         if hasattr(self.model_config, "model_type"):
             if self.model_config.model_type == "mllama" and self.cfg.flash_attention:
