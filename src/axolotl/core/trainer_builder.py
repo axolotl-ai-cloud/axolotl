@@ -107,18 +107,20 @@ def _sanitize_kwargs_for_tagging(tag_names, kwargs=None):
     return kwargs
 
 
-def _sanitize_kwargs_for_ds_tagging(self, dataset_names, kwargs=None):
-    if isinstance(dataset_names, str):
-        dataset_names = [dataset_names]
+def _sanitize_kwargs_for_ds_tagging(dataset_tag_names, kwargs=None):
+    if isinstance(dataset_tag_names, type(None)):
+        return kwargs
+    if isinstance(dataset_tag_names, str):
+        dataset_tag_names = [dataset_tag_names]
 
     if kwargs is not None:
         if "datasets" not in kwargs:
-            kwargs["datasets"] = dataset_names
+            kwargs["datasets"] = dataset_tag_names
         elif "datasets" in kwargs and isinstance(kwargs["datasets"], list):
-            kwargs["datasets"].extend(dataset_names)
+            kwargs["datasets"].extend(dataset_tag_names)
         elif "datasets" in kwargs and isinstance(kwargs["datasets"], str):
-            dataset_names.append(kwargs["datasets"])
-            kwargs["datasets"] = dataset_names
+            dataset_tag_names.append(kwargs["datasets"])
+            kwargs["datasets"] = dataset_tag_names
 
     return kwargs
 
@@ -426,10 +428,12 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
         *_args,
         bench_data_collator=None,
         eval_data_collator=None,
+        dataset_tag_names=None,
         **kwargs,
     ):
         self.bench_data_collator = bench_data_collator
         self.eval_data_collator = eval_data_collator
+        self.dataset_tag_names = dataset_tag_names
         super().__init__(*_args, **kwargs)
         self.train_data_collator = self.data_collator
         self._stored_metrics = defaultdict(lambda: defaultdict(list))
@@ -887,7 +891,9 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
         Overwrite the `push_to_hub` method in order to force-add the tags when pushing the
         model on the Hub. Please refer to `~transformers.Trainer.push_to_hub` for more details.
         """
-        # kwargs = _sanitize_kwargs_for_ds_tagging(dataset_names=self.dataset_names, kwargs=kwargs)
+        kwargs = _sanitize_kwargs_for_ds_tagging(
+            dataset_tag_names=self.dataset_tag_names, kwargs=kwargs
+        )
         kwargs = _sanitize_kwargs_for_tagging(tag_names=self.tag_names, kwargs=kwargs)
 
         return super().push_to_hub(*args, **kwargs)
@@ -1011,8 +1017,9 @@ class AxolotlDPOTrainer(SchedulerMixin, DPOTrainer):
 
     tag_names = ["axolotl", "dpo"]
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, dataset_tag_names=None, **kwargs):
         super().__init__(*args, **kwargs)
+        self.dataset_tag_names = dataset_tag_names
         self.optimizer = None
 
     def create_optimizer(self):
@@ -1051,9 +1058,11 @@ class AxolotlDPOTrainer(SchedulerMixin, DPOTrainer):
         Overwrite the `push_to_hub` method in order to force-add the tags when pushing the
         model on the Hub. Please refer to `~transformers.Trainer.push_to_hub` for more details.
         """
-        # kwargs = _sanitize_kwargs_for_ds_tagging(dataset_names=self.dataset_names, kwargs=kwargs)
+        kwargs = _sanitize_kwargs_for_ds_tagging(
+            dataset_tag_names=self.dataset_tag_names, kwargs=kwargs
+        )
         kwargs = _sanitize_kwargs_for_tagging(tag_names=self.tag_names, kwargs=kwargs)
-        
+
         return super().push_to_hub(*args, **kwargs)
 
     @staticmethod
@@ -1777,6 +1786,9 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         else:
             trainer_kwargs["tokenizer"] = self.tokenizer
 
+        trainer_kwargs["dataset_tag_names"] = [
+            d["path"] for d in self.cfg.datasets if not Path(d["path"]).is_dir()
+        ]
         trainer = trainer_cls(
             model=self.model,
             train_dataset=self.train_dataset,
@@ -2050,6 +2062,9 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         else:
             dpo_trainer_kwargs["tokenizer"] = self.tokenizer
 
+        dpo_trainer_kwargs["dataset_tag_names"] = [
+            d["path"] for d in self.cfg.datasets if not Path(d["path"]).is_dir()
+        ]
         dpo_trainer = trainer_cls(
             *trainer_cls_args,
             args=training_args,

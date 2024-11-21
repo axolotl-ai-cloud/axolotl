@@ -270,19 +270,14 @@ def train(
             trainer.create_model_card(
                 model_name=cfg.output_dir.lstrip("./"),
                 dataset_tags=[
-                    d["path"] for d in cfg["datasets"] if not Path(d["path"]).is_dir()
+                    d["path"] for d in cfg.datasets if not Path(d["path"]).is_dir()
                 ],
             )
         except (AttributeError, UnicodeDecodeError, RepositoryNotFoundError):
             pass
     elif cfg.hub_model_id:
         # defensively push to the hub to ensure the model card is updated
-        dataset_tags = [
-            d["path"] for d in cfg["datasets"] if not Path(d["path"]).is_dir()
-        ]
-        kwargs = {}
-        kwargs["datasets"] = dataset_tags
-        trainer.push_to_hub(**kwargs)
+        trainer.push_to_hub()
 
     return model, tokenizer
 
