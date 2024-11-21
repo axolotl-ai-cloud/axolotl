@@ -4,6 +4,9 @@ import functools
 import pynvml
 import torch
 from pynvml.nvml import NVMLError
+from transformers.utils.import_utils import is_torch_npu_available
+
+from axolotl.utils.distributed import get_device_type
 
 
 def check_cuda_device(default_value):
@@ -53,6 +56,12 @@ def mps_memory_usage_all():
     return usage, reserved - usage, 0
 
 
+def npu_memory_usage_all(device=0):
+    usage = torch.npu.memory_allocated(device) / 1024.0**3
+    reserved = torch.npu.memory_reserved(device) / 1024.0**3
+    return usage, reserved - usage, 0
+
+
 @check_cuda_device(0.0)
 def gpu_memory_usage_smi(device=0):
     if isinstance(device, torch.device):
@@ -69,8 +78,11 @@ def gpu_memory_usage_smi(device=0):
 
 
 def log_gpu_memory_usage(log, msg, device):
+    cur_device = get_device_type()
     if torch.backends.mps.is_available():
         usage, cache, misc = mps_memory_usage_all()
+    elif "npu" in str(cur_device) and is_torch_npu_available():
+        usage, cache, misc = npu_memory_usage_all(device)
     else:
         usage, cache, misc = gpu_memory_usage_all(device)
     extras = []
@@ -79,6 +91,7 @@ def log_gpu_memory_usage(log, msg, device):
     if misc > 0:
         extras.append(f"+{misc:.03f}GB misc")
     log.info(
-        f"GPU memory usage {msg}: {usage:.03f}GB ({', '.join(extras)})", stacklevel=2
+        f"{str(cur_device)} memory usage {msg}: {usage:.03f}GB ({', '.join(extras)})",
+        stacklevel=2,
     )
     return usage, cache, misc
