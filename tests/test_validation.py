@@ -86,7 +86,7 @@ class TestValidation(BaseValidation):
                 "qlora + zero3 with use_reentrant: false may result in a CheckpointError about recomputed values"
                 in self._caplog.records[0].message
             )
-    
+
     def test_deepspeed_empty(self, minimal_cfg):
         test_cfg = DictDefault(
             {
