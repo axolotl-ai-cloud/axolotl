@@ -1786,7 +1786,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         else:
             trainer_kwargs["tokenizer"] = self.tokenizer
 
-        if (not trainer_cls == AxolotlRewardTrainer) and self.cfg.datasets is not None:
+        if (trainer_cls is not AxolotlRewardTrainer) and self.cfg.datasets is not None:
             trainer_kwargs["dataset_tag_names"] = [
                 d["path"] for d in self.cfg.datasets if not Path(d["path"]).is_dir()
             ]
