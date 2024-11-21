@@ -267,12 +267,15 @@ def train(
             hf_api = HfApi()
             hf_api.model_info(cfg.base_model)
 
-            trainer.create_model_card(
-                model_name=cfg.output_dir.lstrip("./"),
-                datasets=[
+            model_card_kwarg = {"model_name": cfg.output_dir.lstrip("./")}
+            if cfg.rl is not None:
+                trainer.create_model_card(**model_card_kwarg)
+            else:
+                model_card_kwarg["dataset_tags"] = [
                     d["path"] for d in cfg.datasets if not Path(d["path"]).is_dir()
-                ],
-            )
+                ]
+
+                trainer.create_model_card(**model_card_kwarg)
         except (AttributeError, UnicodeDecodeError, RepositoryNotFoundError):
             pass
     elif cfg.hub_model_id:
