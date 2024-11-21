@@ -34,7 +34,7 @@ class TestUnslothQLoRA:
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
-                "sequence_len": 2048,
+                "sequence_len": 1024,
                 "sample_packing": sample_packing,
                 "flash_attention": True,
                 "load_in_4bit": True,
@@ -56,7 +56,7 @@ class TestUnslothQLoRA:
                 "num_epochs": 1,
                 "max_steps": 5,
                 "save_steps": 10,
-                "micro_batch_size": 8,
+                "micro_batch_size": 4,
                 "gradient_accumulation_steps": 2,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
@@ -89,7 +89,7 @@ class TestUnslothQLoRA:
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
-                "sequence_len": 2048,
+                "sequence_len": 1024,
                 "sample_packing": False,
                 "load_in_4bit": True,
                 "adapter": "qlora",
@@ -110,7 +110,7 @@ class TestUnslothQLoRA:
                 "num_epochs": 1,
                 "max_steps": 5,
                 "save_steps": 10,
-                "micro_batch_size": 8,
+                "micro_batch_size": 4,
                 "gradient_accumulation_steps": 2,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
