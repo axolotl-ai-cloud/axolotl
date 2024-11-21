@@ -1786,9 +1786,10 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         else:
             trainer_kwargs["tokenizer"] = self.tokenizer
 
-        trainer_kwargs["dataset_tag_names"] = [
-            d["path"] for d in self.cfg.datasets if not Path(d["path"]).is_dir()
-        ]
+        if self.cfg.datasets is not None:
+            trainer_kwargs["dataset_tag_names"] = [
+                d["path"] for d in self.cfg.datasets if not Path(d["path"]).is_dir()
+            ]
         trainer = trainer_cls(
             model=self.model,
             train_dataset=self.train_dataset,
@@ -2062,9 +2063,10 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         else:
             dpo_trainer_kwargs["tokenizer"] = self.tokenizer
 
-        dpo_trainer_kwargs["dataset_tag_names"] = [
-            d["path"] for d in self.cfg.datasets if not Path(d["path"]).is_dir()
-        ]
+        if self.cfg.datasets is not None:
+            dpo_trainer_kwargs["dataset_tag_names"] = [
+                d["path"] for d in self.cfg.datasets if not Path(d["path"]).is_dir()
+            ]
         dpo_trainer = trainer_cls(
             *trainer_cls_args,
             args=training_args,
