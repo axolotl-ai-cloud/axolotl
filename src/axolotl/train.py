@@ -269,7 +269,7 @@ def train(
 
             trainer.create_model_card(
                 model_name=cfg.output_dir.lstrip("./"),
-                dataset_tags=[
+                datasets=[
                     d["path"] for d in cfg.datasets if not Path(d["path"]).is_dir()
                 ],
             )
