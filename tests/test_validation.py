@@ -79,7 +79,10 @@ class TestValidation(BaseValidation):
             }
             | minimal_cfg
         )
-        _ = validate_config(test_cfg)
+
+        with self._caplog.at_level(logging.WARNING):
+            validate_config(test_cfg)
+            assert "qlora + zero3 with use_reentrant: false may result in a CheckpointError about recomputed values" in self._caplog.records[0].message
 
     def test_deepspeed_not_set(self, minimal_cfg):
         test_cfg = DictDefault(
@@ -92,7 +95,10 @@ class TestValidation(BaseValidation):
             }
             | minimal_cfg
         )
-        _ = validate_config(test_cfg)
+        
+        with self._caplog.at_level(logging.WARNING):
+            validate_config(test_cfg)
+            assert "qlora + zero3 with use_reentrant: false may result in a CheckpointError about recomputed values" in self._caplog.records[0].message
 
     def test_datasets_min_length(self):
         cfg = DictDefault(
