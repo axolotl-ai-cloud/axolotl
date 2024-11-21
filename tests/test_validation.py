@@ -68,10 +68,10 @@ class TestValidation(BaseValidation):
         assert cfg.train_on_inputs is False
         assert cfg.weight_decay is None
 
-    def test_deepspeed_empty(self, minimal_cfg):
+    def test_zero3_qlora_use_reentrant_false(self, minimal_cfg):
         test_cfg = DictDefault(
             {
-                "deepspeed": "",
+                "deepspeed": "deepspeed_configs/zero3_bf16.json",
                 "gradient_checkpointing": True,
                 "gradient_checkpointing_kwargs": {"use_reentrant": False},
                 "load_in_4bit": True,
@@ -86,6 +86,20 @@ class TestValidation(BaseValidation):
                 "qlora + zero3 with use_reentrant: false may result in a CheckpointError about recomputed values"
                 in self._caplog.records[0].message
             )
+    
+    def test_deepspeed_empty(self, minimal_cfg):
+        test_cfg = DictDefault(
+            {
+                "deepspeed": "",
+                "gradient_checkpointing": True,
+                "gradient_checkpointing_kwargs": {"use_reentrant": False},
+                "load_in_4bit": True,
+                "adapter": "qlora",
+            }
+            | minimal_cfg
+        )
+
+        _ = validate_config(test_cfg)
 
     def test_deepspeed_not_set(self, minimal_cfg):
         test_cfg = DictDefault(
@@ -99,12 +113,7 @@ class TestValidation(BaseValidation):
             | minimal_cfg
         )
 
-        with self._caplog.at_level(logging.WARNING):
-            validate_config(test_cfg)
-            assert (
-                "qlora + zero3 with use_reentrant: false may result in a CheckpointError about recomputed values"
-                in self._caplog.records[0].message
-            )
+        _ = validate_config(test_cfg)
 
     def test_datasets_min_length(self):
         cfg = DictDefault(
