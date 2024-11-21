@@ -270,7 +270,7 @@ def train(
             model_card_kwarg = {"model_name": cfg.output_dir.lstrip("./")}
             if cfg.rl is not None or cfg.reward_model:
                 trainer.create_model_card(**model_card_kwarg)
-            else:
+            elif cfg.datasets is not None:
                 model_card_kwarg["dataset_tags"] = [
                     d["path"] for d in cfg.datasets if not Path(d["path"]).is_dir()
                 ]
