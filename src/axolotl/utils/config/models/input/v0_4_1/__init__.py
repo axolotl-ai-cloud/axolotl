@@ -729,6 +729,8 @@ class AxolotlInputConfig(
     unsloth_rms_norm: Optional[bool] = None
     unsloth_rope: Optional[bool] = None
 
+    cut_cross_entropy: Optional[bool] = None
+
     deepspeed: Optional[Union[str, Dict[str, Any]]] = None
     fsdp: Optional[List[str]] = None
     fsdp_config: Optional[Dict[str, Any]] = None
