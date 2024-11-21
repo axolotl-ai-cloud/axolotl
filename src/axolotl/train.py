@@ -268,7 +268,7 @@ def train(
             hf_api.model_info(cfg.base_model)
 
             model_card_kwarg = {"model_name": cfg.output_dir.lstrip("./")}
-            if cfg.rl is not None:
+            if cfg.rl is not None or cfg.reward_model:
                 trainer.create_model_card(**model_card_kwarg)
             else:
                 model_card_kwarg["dataset_tags"] = [
