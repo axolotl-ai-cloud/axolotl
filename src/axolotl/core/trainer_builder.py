@@ -2063,7 +2063,7 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         else:
             dpo_trainer_kwargs["tokenizer"] = self.tokenizer
 
-        if self.cfg.datasets is not None:
+        if self.cfg.datasets is not None and (trainer_cls is AxolotlDPOTrainer):
             dpo_trainer_kwargs["dataset_tag_names"] = [
                 d["path"] for d in self.cfg.datasets if not Path(d["path"]).is_dir()
             ]
