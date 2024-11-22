@@ -46,6 +46,7 @@ from transformers.integrations.deepspeed import (
 )
 
 from axolotl.common.architectures import MOE_ARCH_BLOCK
+from axolotl.integrations.sageattention.lib.core import monkeypatch_sdp_w_sage_attention
 from axolotl.models.mamba import fix_mamba_attn_for_loss
 from axolotl.monkeypatch.multipack import (
     SUPPORTED_MULTIPACK_MODEL_TYPES,
@@ -707,6 +708,7 @@ class ModelLoader:
             self.model_config._attn_implementation = (  # pylint: disable=protected-access
                 "sdpa"
             )
+            monkeypatch_sdp_w_sage_attention()
         elif self.cfg.eager_attention:
             self.model_kwargs["attn_implementation"] = "eager"
             self.model_config._attn_implementation = (  # pylint: disable=protected-access
