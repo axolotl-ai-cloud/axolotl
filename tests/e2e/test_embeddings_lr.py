@@ -7,13 +7,15 @@ import os
 import unittest
 from pathlib import Path
 
+from tbparse import SummaryReader
+
 from axolotl.cli import load_datasets
 from axolotl.common.cli import TrainerCliArgs
 from axolotl.train import train
 from axolotl.utils.config import normalize_config
 from axolotl.utils.dict import DictDefault
 
-from .utils import with_temp_dir
+from .utils import most_recent_subdir, with_temp_dir
 
 LOG = logging.getLogger("axolotl.tests.e2e")
 os.environ["WANDB_DISABLED"] = "true"
@@ -29,15 +31,12 @@ class TestEmbeddingsLrScale(unittest.TestCase):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "JackFram/llama-68m",
-                "tokenizer_type": "LlamaTokenizer",
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
                 "flash_attention": True,
                 "sequence_len": 1024,
                 "sample_packing": True,
                 "special_tokens": {
-                    "unk_token": "<unk>",
-                    "bos_token": "<s>",
-                    "eos_token": "</s>",
+                    "pad_token": "<|endoftext|>",
                 },
                 "datasets": [
                     {
@@ -57,6 +56,7 @@ class TestEmbeddingsLrScale(unittest.TestCase):
                 "lr_scheduler": "cosine",
                 "save_safetensors": True,
                 "bf16": "auto",
+                "use_tensorboard": True,
             }
         )
         normalize_config(cfg)
@@ -65,6 +65,13 @@ class TestEmbeddingsLrScale(unittest.TestCase):
 
         train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
         assert (Path(temp_dir) / "model.safetensors").exists()
+
+        tb_log_path = most_recent_subdir(temp_dir + "/runs")
+        event_file = os.path.join(tb_log_path, sorted(os.listdir(tb_log_path))[0])
+        reader = SummaryReader(event_file)
+        df = reader.scalars  # pylint: disable=invalid-name
+        df = df[(df.tag == "train/train_loss")]  # pylint: disable=invalid-name
+        assert df.value.values[-1] < 2.0, "Loss is too high"
 
     @with_temp_dir
     def test_train_w_embedding_lr(self, temp_dir):
@@ -99,6 +106,7 @@ class TestEmbeddingsLrScale(unittest.TestCase):
                 "lr_scheduler": "cosine",
                 "save_safetensors": True,
                 "bf16": "auto",
+                "use_tensorboard": True,
             }
         )
         normalize_config(cfg)
@@ -107,3 +115,10 @@ class TestEmbeddingsLrScale(unittest.TestCase):
 
         train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
         assert (Path(temp_dir) / "model.safetensors").exists()
+
+        tb_log_path = most_recent_subdir(temp_dir + "/runs")
+        event_file = os.path.join(tb_log_path, sorted(os.listdir(tb_log_path))[0])
+        reader = SummaryReader(event_file)
+        df = reader.scalars  # pylint: disable=invalid-name
+        df = df[(df.tag == "train/train_loss")]  # pylint: disable=invalid-name
+        assert df.value.values[-1] < 2.0, "Loss is too high"
