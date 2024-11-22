@@ -25,17 +25,16 @@ class TestLlamaVision(unittest.TestCase):
     """
 
     @with_temp_dir
-    def test_llama_vision_text_only_dataset(self, temp_dir):
+    def test_lora_llama_vision_text_only_dataset(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "alpindale/Llama-3.2-11B-Vision-Instruct",
+                "base_model": "axolotl-ai-co/Llama-3.2-39M-Vision",
                 "processor_type": "AutoProcessor",
                 "skip_prepare_dataset": True,
                 "remove_unused_columns": False,
                 "sample_packing": False,
                 "sequence_len": 1024,
-                "load_in_8bit": True,
                 "adapter": "lora",
                 "lora_r": 8,
                 "lora_alpha": 16,
@@ -58,6 +57,7 @@ class TestLlamaVision(unittest.TestCase):
                 "lr_scheduler": "cosine",
                 "max_steps": 5,
                 "save_safetensors": True,
+                "bf16": True,
             }
         )
         normalize_config(cfg)
@@ -65,20 +65,19 @@ class TestLlamaVision(unittest.TestCase):
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
         train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-        assert (Path(temp_dir) / "model-00001-of-00005.safetensors").exists()
+        assert (Path(temp_dir) / "adapter_model.safetensors").exists()
 
     @with_temp_dir
-    def test_llama_vision_multimodal_dataset(self, temp_dir):
+    def test_lora_llama_vision_multimodal_dataset(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "alpindale/Llama-3.2-11B-Vision-Instruct",
+                "base_model": "axolotl-ai-co/Llama-3.2-39M-Vision",
                 "processor_type": "AutoProcessor",
                 "skip_prepare_dataset": True,
                 "remove_unused_columns": False,
                 "sample_packing": False,
                 "sequence_len": 1024,
-                "load_in_8bit": True,
                 "adapter": "lora",
                 "lora_r": 8,
                 "lora_alpha": 16,
@@ -88,9 +87,9 @@ class TestLlamaVision(unittest.TestCase):
                 "chat_template": "llama3_2_vision",
                 "datasets": [
                     {
-                        "path": "HuggingFaceH4/llava-instruct-mix-vsft",
+                        "path": "axolotl-ai-co/llava-instruct-mix-vsft-small",
                         "type": "chat_template",
-                        "split": "train[:1%]",
+                        "split": "train",
                         "field_messages": "messages",
                     },
                 ],
@@ -103,6 +102,7 @@ class TestLlamaVision(unittest.TestCase):
                 "lr_scheduler": "cosine",
                 "max_steps": 5,
                 "save_safetensors": True,
+                "bf16": True,
             }
         )
         normalize_config(cfg)
@@ -110,4 +110,4 @@ class TestLlamaVision(unittest.TestCase):
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
         train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-        assert (Path(temp_dir) / "model-00001-of-00005.safetensors").exists()
+        assert (Path(temp_dir) / "adapter_model.safetensors").exists()
