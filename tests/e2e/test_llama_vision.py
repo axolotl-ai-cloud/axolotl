@@ -46,6 +46,9 @@ class TestLlamaVision(unittest.TestCase):
                     {
                         "path": "LDJnr/Puffin",
                         "type": "chat_template",
+                        "field_messages": "conversations",
+                        "message_field_role": "from",
+                        "message_field_content": "value",
                     },
                 ],
                 "num_epochs": 1,
