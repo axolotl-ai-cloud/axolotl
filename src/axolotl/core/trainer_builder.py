@@ -523,6 +523,10 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
                     loraplus_lr_embedding=loraplus_lr_embedding,
                     **optimizer_kwargs,
                 )
+            elif self.args.embedding_lr_scale is not None:
+                self.optimizer = (  # pylint: disable=attribute-defined-outside-init
+                    optimizer_cls(optimizer_grouped_parameters, **optimizer_kwargs)
+                )
             elif self.args.alternate_optimizer == "optimi_adamw":
                 from optimi import AdamW
 
