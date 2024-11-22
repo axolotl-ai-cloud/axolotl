@@ -473,12 +473,12 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
             for name, param in opt_model.named_parameters():
                 if not param.requires_grad:
                     continue
-                if name in decay_parameters:
-                    params["to_weight_decay"][name] = param
-                elif name.endswith("modules_to_save.default.weight") or any(
+                if name.endswith("modules_to_save.default.weight") or any(
                     embed_name in name for embed_name in ["embed_tokens", "lm_head"]
                 ):
                     params["embeddings"][name] = param
+                elif name in decay_parameters:
+                    params["to_weight_decay"][name] = param
                 else:
                     params["no_weight_decay"][name] = param
             optimizer_grouped_parameters = []
