@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 
-<title>Example notebook for running Axolotl on google colab – Axolotl</title>
+<title>Setting up – Axolotl</title>
 <style>
 code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
@@ -101,6 +101,35 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   }
 }</script>
 
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN") {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
 
 <link rel="stylesheet" href="../../styles.css">
 </head>
@@ -129,7 +158,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
       <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
         <i class="bi bi-layout-text-sidebar-reverse"></i>
       </button>
-        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item">Example notebook for running Axolotl on google colab</li></ol></nav>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item">Setting up</li></ol></nav>
         <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
         </a>
     </div>
@@ -292,10 +321,12 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#install-axolotl-and-dependencies" id="toc-install-axolotl-and-dependencies" class="nav-link active" data-scroll-target="#install-axolotl-and-dependencies">Install Axolotl and dependencies</a></li>
-  <li><a href="#create-an-yaml-config-file" id="toc-create-an-yaml-config-file" class="nav-link" data-scroll-target="#create-an-yaml-config-file">Create an yaml config file</a></li>
-  <li><a href="#launch-the-training" id="toc-launch-the-training" class="nav-link" data-scroll-target="#launch-the-training">Launch the training</a></li>
-  <li><a href="#play-with-inference" id="toc-play-with-inference" class="nav-link" data-scroll-target="#play-with-inference">Play with inference</a></li>
+  <li><a href="#hugging-face-login-optional" id="toc-hugging-face-login-optional" class="nav-link active" data-scroll-target="#hugging-face-login-optional">Hugging Face login (optional)</a></li>
+  <li><a href="#example-configuration" id="toc-example-configuration" class="nav-link" data-scroll-target="#example-configuration">Example configuration</a></li>
+  <li><a href="#deeper-dive" id="toc-deeper-dive" class="nav-link" data-scroll-target="#deeper-dive">Deeper Dive</a></li>
+  <li><a href="#configuration-normalization" id="toc-configuration-normalization" class="nav-link" data-scroll-target="#configuration-normalization">Configuration Normalization</a></li>
+  <li><a href="#loading-models-tokenizers-and-trainer" id="toc-loading-models-tokenizers-and-trainer" class="nav-link" data-scroll-target="#loading-models-tokenizers-and-trainer">Loading Models, Tokenizers, and Trainer</a></li>
+  <li><a href="#monkey-patch" id="toc-monkey-patch" class="nav-link" data-scroll-target="#monkey-patch">Monkey patch</a></li>
   </ul>
 </nav>
     </div>
@@ -304,7 +335,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 
 <header id="title-block-header" class="quarto-title-block default">
 <div class="quarto-title">
-<h1 class="title">Example notebook for running Axolotl on google colab</h1>
+<h1 class="title">Setting up</h1>
 </div>
 
 
@@ -326,115 +357,189 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="co"># Check so there is a gpu available, a T4(free tier) is enough to run this notebook</span></span>
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> (torch.cuda.is_available()<span class="op">==</span><span class="va">True</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
-<section id="install-axolotl-and-dependencies" class="level2">
-<h2 class="anchored" data-anchor-id="install-axolotl-and-dependencies">Install Axolotl and dependencies</h2>
-<div id="cell-4" class="cell" data-outputid="e3777b5a-40ef-424f-e181-62dfecd1dd01">
-<div class="sourceCode cell-code" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="op">!</span>pip install <span class="op">-</span>e git<span class="op">+</span>https:<span class="op">//</span>github.com<span class="op">/</span>axolotl<span class="op">-</span>ai<span class="op">-</span>cloud<span class="op">/</span>axolotl<span class="co">#egg=axolotl</span></span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="op">!</span>pip install flash<span class="op">-</span>attn<span class="op">==</span><span class="st">"2.7.0.post2"</span></span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="op">!</span>pip install deepspeed<span class="op">==</span><span class="st">"0.13.1"</span><span class="op">!</span>pip install mlflow<span class="op">==</span><span class="st">"2.13.0"</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div id="cell-3" class="cell">
+<div class="sourceCode cell-code" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="op">!</span>pip install axolotl[deepspeed]</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+<section id="hugging-face-login-optional" class="level2">
+<h2 class="anchored" data-anchor-id="hugging-face-login-optional">Hugging Face login (optional)</h2>
+<div id="cell-5" class="cell">
+<div class="sourceCode cell-code" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> huggingface_hub <span class="im">import</span> notebook_login</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>notebook_login()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
 </section>
-<section id="create-an-yaml-config-file" class="level2">
-<h2 class="anchored" data-anchor-id="create-an-yaml-config-file">Create an yaml config file</h2>
-<div id="cell-6" class="cell">
-<div class="sourceCode cell-code" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> yaml</span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="co"># Your YAML string</span></span>
-<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>yaml_string <span class="op">=</span> <span class="st">"""</span></span>
-<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="st">base_model: TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T</span></span>
-<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="st">model_type: LlamaForCausalLM</span></span>
-<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a><span class="st">tokenizer_type: LlamaTokenizer</span></span>
-<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a><span class="st">load_in_8bit: false</span></span>
-<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a><span class="st">load_in_4bit: true</span></span>
-<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a><span class="st">strict: false</span></span>
-<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a><span class="st">datasets:</span></span>
-<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a><span class="st">  - path: mhenrichsen/alpaca_2k_test</span></span>
-<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a><span class="st">    type: alpaca</span></span>
-<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a><span class="st">dataset_prepared_path:</span></span>
-<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a><span class="st">val_set_size: 0.05</span></span>
-<span id="cb3-18"><a href="#cb3-18" aria-hidden="true" tabindex="-1"></a><span class="st">output_dir: ./outputs/qlora-out</span></span>
-<span id="cb3-19"><a href="#cb3-19" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-20"><a href="#cb3-20" aria-hidden="true" tabindex="-1"></a><span class="st">adapter: qlora</span></span>
-<span id="cb3-21"><a href="#cb3-21" aria-hidden="true" tabindex="-1"></a><span class="st">lora_model_dir:</span></span>
-<span id="cb3-22"><a href="#cb3-22" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-23"><a href="#cb3-23" aria-hidden="true" tabindex="-1"></a><span class="st">sequence_len: 4096</span></span>
-<span id="cb3-24"><a href="#cb3-24" aria-hidden="true" tabindex="-1"></a><span class="st">sample_packing: true</span></span>
-<span id="cb3-25"><a href="#cb3-25" aria-hidden="true" tabindex="-1"></a><span class="st">eval_sample_packing: false</span></span>
-<span id="cb3-26"><a href="#cb3-26" aria-hidden="true" tabindex="-1"></a><span class="st">pad_to_sequence_len: true</span></span>
-<span id="cb3-27"><a href="#cb3-27" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-28"><a href="#cb3-28" aria-hidden="true" tabindex="-1"></a><span class="st">lora_r: 32</span></span>
-<span id="cb3-29"><a href="#cb3-29" aria-hidden="true" tabindex="-1"></a><span class="st">lora_alpha: 16</span></span>
-<span id="cb3-30"><a href="#cb3-30" aria-hidden="true" tabindex="-1"></a><span class="st">lora_dropout: 0.05</span></span>
-<span id="cb3-31"><a href="#cb3-31" aria-hidden="true" tabindex="-1"></a><span class="st">lora_target_modules:</span></span>
-<span id="cb3-32"><a href="#cb3-32" aria-hidden="true" tabindex="-1"></a><span class="st">lora_target_linear: true</span></span>
-<span id="cb3-33"><a href="#cb3-33" aria-hidden="true" tabindex="-1"></a><span class="st">lora_fan_in_fan_out:</span></span>
-<span id="cb3-34"><a href="#cb3-34" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-35"><a href="#cb3-35" aria-hidden="true" tabindex="-1"></a><span class="st">wandb_project:</span></span>
-<span id="cb3-36"><a href="#cb3-36" aria-hidden="true" tabindex="-1"></a><span class="st">wandb_entity:</span></span>
-<span id="cb3-37"><a href="#cb3-37" aria-hidden="true" tabindex="-1"></a><span class="st">wandb_watch:</span></span>
-<span id="cb3-38"><a href="#cb3-38" aria-hidden="true" tabindex="-1"></a><span class="st">wandb_name:</span></span>
-<span id="cb3-39"><a href="#cb3-39" aria-hidden="true" tabindex="-1"></a><span class="st">wandb_log_model:</span></span>
-<span id="cb3-40"><a href="#cb3-40" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-41"><a href="#cb3-41" aria-hidden="true" tabindex="-1"></a><span class="st">gradient_accumulation_steps: 4</span></span>
-<span id="cb3-42"><a href="#cb3-42" aria-hidden="true" tabindex="-1"></a><span class="st">micro_batch_size: 2</span></span>
-<span id="cb3-43"><a href="#cb3-43" aria-hidden="true" tabindex="-1"></a><span class="st">num_epochs: 4</span></span>
-<span id="cb3-44"><a href="#cb3-44" aria-hidden="true" tabindex="-1"></a><span class="st">optimizer: paged_adamw_32bit</span></span>
-<span id="cb3-45"><a href="#cb3-45" aria-hidden="true" tabindex="-1"></a><span class="st">lr_scheduler: cosine</span></span>
-<span id="cb3-46"><a href="#cb3-46" aria-hidden="true" tabindex="-1"></a><span class="st">learning_rate: 0.0002</span></span>
-<span id="cb3-47"><a href="#cb3-47" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-48"><a href="#cb3-48" aria-hidden="true" tabindex="-1"></a><span class="st">train_on_inputs: false</span></span>
-<span id="cb3-49"><a href="#cb3-49" aria-hidden="true" tabindex="-1"></a><span class="st">group_by_length: false</span></span>
-<span id="cb3-50"><a href="#cb3-50" aria-hidden="true" tabindex="-1"></a><span class="st">bf16: auto</span></span>
-<span id="cb3-51"><a href="#cb3-51" aria-hidden="true" tabindex="-1"></a><span class="st">fp16:</span></span>
-<span id="cb3-52"><a href="#cb3-52" aria-hidden="true" tabindex="-1"></a><span class="st">tf32: false</span></span>
-<span id="cb3-53"><a href="#cb3-53" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-54"><a href="#cb3-54" aria-hidden="true" tabindex="-1"></a><span class="st">gradient_checkpointing: true</span></span>
-<span id="cb3-55"><a href="#cb3-55" aria-hidden="true" tabindex="-1"></a><span class="st">early_stopping_patience:</span></span>
-<span id="cb3-56"><a href="#cb3-56" aria-hidden="true" tabindex="-1"></a><span class="st">resume_from_checkpoint:</span></span>
-<span id="cb3-57"><a href="#cb3-57" aria-hidden="true" tabindex="-1"></a><span class="st">local_rank:</span></span>
-<span id="cb3-58"><a href="#cb3-58" aria-hidden="true" tabindex="-1"></a><span class="st">logging_steps: 1</span></span>
-<span id="cb3-59"><a href="#cb3-59" aria-hidden="true" tabindex="-1"></a><span class="st">xformers_attention:</span></span>
-<span id="cb3-60"><a href="#cb3-60" aria-hidden="true" tabindex="-1"></a><span class="st">flash_attention: true</span></span>
-<span id="cb3-61"><a href="#cb3-61" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-62"><a href="#cb3-62" aria-hidden="true" tabindex="-1"></a><span class="st">warmup_steps: 10</span></span>
-<span id="cb3-63"><a href="#cb3-63" aria-hidden="true" tabindex="-1"></a><span class="st">evals_per_epoch: 4</span></span>
-<span id="cb3-64"><a href="#cb3-64" aria-hidden="true" tabindex="-1"></a><span class="st">saves_per_epoch: 1</span></span>
-<span id="cb3-65"><a href="#cb3-65" aria-hidden="true" tabindex="-1"></a><span class="st">debug:</span></span>
-<span id="cb3-66"><a href="#cb3-66" aria-hidden="true" tabindex="-1"></a><span class="st">deepspeed:</span></span>
-<span id="cb3-67"><a href="#cb3-67" aria-hidden="true" tabindex="-1"></a><span class="st">weight_decay: 0.0</span></span>
-<span id="cb3-68"><a href="#cb3-68" aria-hidden="true" tabindex="-1"></a><span class="st">fsdp:</span></span>
-<span id="cb3-69"><a href="#cb3-69" aria-hidden="true" tabindex="-1"></a><span class="st">fsdp_config:</span></span>
-<span id="cb3-70"><a href="#cb3-70" aria-hidden="true" tabindex="-1"></a><span class="st">special_tokens:</span></span>
-<span id="cb3-71"><a href="#cb3-71" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-72"><a href="#cb3-72" aria-hidden="true" tabindex="-1"></a><span class="st">"""</span></span>
-<span id="cb3-73"><a href="#cb3-73" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-74"><a href="#cb3-74" aria-hidden="true" tabindex="-1"></a><span class="co"># Convert the YAML string to a Python dictionary</span></span>
-<span id="cb3-75"><a href="#cb3-75" aria-hidden="true" tabindex="-1"></a>yaml_dict <span class="op">=</span> yaml.safe_load(yaml_string)</span>
-<span id="cb3-76"><a href="#cb3-76" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-77"><a href="#cb3-77" aria-hidden="true" tabindex="-1"></a><span class="co"># Specify your file path</span></span>
-<span id="cb3-78"><a href="#cb3-78" aria-hidden="true" tabindex="-1"></a>file_path <span class="op">=</span> <span class="st">'test_axolotl.yaml'</span></span>
-<span id="cb3-79"><a href="#cb3-79" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-80"><a href="#cb3-80" aria-hidden="true" tabindex="-1"></a><span class="co"># Write the YAML file</span></span>
-<span id="cb3-81"><a href="#cb3-81" aria-hidden="true" tabindex="-1"></a><span class="cf">with</span> <span class="bu">open</span>(file_path, <span class="st">'w'</span>) <span class="im">as</span> <span class="bu">file</span>:</span>
-<span id="cb3-82"><a href="#cb3-82" aria-hidden="true" tabindex="-1"></a>    yaml.dump(yaml_dict, <span class="bu">file</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<section id="example-configuration" class="level2">
+<h2 class="anchored" data-anchor-id="example-configuration">Example configuration</h2>
+<div id="cell-7" class="cell">
+<div class="sourceCode cell-code" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> yaml</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>yaml_string <span class="op">=</span> <span class="st">"""</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="st">base_model: NousResearch/Meta-Llama-3.1-8B</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a><span class="st">load_in_8bit: false</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a><span class="st">load_in_4bit: true</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a><span class="st">strict: false</span></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a><span class="st">datasets:</span></span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a><span class="st">  - path: tatsu-lab/alpaca</span></span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a><span class="st">    type: alpaca</span></span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a><span class="st">dataset_prepared_path: last_run_prepared</span></span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a><span class="st">val_set_size: 0.05</span></span>
+<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a><span class="st">output_dir: ./outputs/lora-out</span></span>
+<span id="cb4-16"><a href="#cb4-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-17"><a href="#cb4-17" aria-hidden="true" tabindex="-1"></a><span class="st">sequence_len: 2048</span></span>
+<span id="cb4-18"><a href="#cb4-18" aria-hidden="true" tabindex="-1"></a><span class="st">sample_packing: true</span></span>
+<span id="cb4-19"><a href="#cb4-19" aria-hidden="true" tabindex="-1"></a><span class="st">eval_sample_packing: true</span></span>
+<span id="cb4-20"><a href="#cb4-20" aria-hidden="true" tabindex="-1"></a><span class="st">pad_to_sequence_len: true</span></span>
+<span id="cb4-21"><a href="#cb4-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-22"><a href="#cb4-22" aria-hidden="true" tabindex="-1"></a><span class="st">adapter: qlora</span></span>
+<span id="cb4-23"><a href="#cb4-23" aria-hidden="true" tabindex="-1"></a><span class="st">lora_model_dir:</span></span>
+<span id="cb4-24"><a href="#cb4-24" aria-hidden="true" tabindex="-1"></a><span class="st">lora_r: 32</span></span>
+<span id="cb4-25"><a href="#cb4-25" aria-hidden="true" tabindex="-1"></a><span class="st">lora_alpha: 16</span></span>
+<span id="cb4-26"><a href="#cb4-26" aria-hidden="true" tabindex="-1"></a><span class="st">lora_dropout: 0.05</span></span>
+<span id="cb4-27"><a href="#cb4-27" aria-hidden="true" tabindex="-1"></a><span class="st">lora_target_linear: true</span></span>
+<span id="cb4-28"><a href="#cb4-28" aria-hidden="true" tabindex="-1"></a><span class="st">lora_fan_in_fan_out:</span></span>
+<span id="cb4-29"><a href="#cb4-29" aria-hidden="true" tabindex="-1"></a><span class="st">lora_modules_to_save:</span></span>
+<span id="cb4-30"><a href="#cb4-30" aria-hidden="true" tabindex="-1"></a><span class="st">  - embed_tokens</span></span>
+<span id="cb4-31"><a href="#cb4-31" aria-hidden="true" tabindex="-1"></a><span class="st">  - lm_head</span></span>
+<span id="cb4-32"><a href="#cb4-32" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-33"><a href="#cb4-33" aria-hidden="true" tabindex="-1"></a><span class="st">wandb_project:</span></span>
+<span id="cb4-34"><a href="#cb4-34" aria-hidden="true" tabindex="-1"></a><span class="st">wandb_entity:</span></span>
+<span id="cb4-35"><a href="#cb4-35" aria-hidden="true" tabindex="-1"></a><span class="st">wandb_watch:</span></span>
+<span id="cb4-36"><a href="#cb4-36" aria-hidden="true" tabindex="-1"></a><span class="st">wandb_name:</span></span>
+<span id="cb4-37"><a href="#cb4-37" aria-hidden="true" tabindex="-1"></a><span class="st">wandb_log_model:</span></span>
+<span id="cb4-38"><a href="#cb4-38" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-39"><a href="#cb4-39" aria-hidden="true" tabindex="-1"></a><span class="st">gradient_accumulation_steps: 2</span></span>
+<span id="cb4-40"><a href="#cb4-40" aria-hidden="true" tabindex="-1"></a><span class="st">micro_batch_size: 1</span></span>
+<span id="cb4-41"><a href="#cb4-41" aria-hidden="true" tabindex="-1"></a><span class="st">num_epochs: 1</span></span>
+<span id="cb4-42"><a href="#cb4-42" aria-hidden="true" tabindex="-1"></a><span class="st">optimizer: paged_adamw_8bit</span></span>
+<span id="cb4-43"><a href="#cb4-43" aria-hidden="true" tabindex="-1"></a><span class="st">lr_scheduler: cosine</span></span>
+<span id="cb4-44"><a href="#cb4-44" aria-hidden="true" tabindex="-1"></a><span class="st">learning_rate: 2e-5</span></span>
+<span id="cb4-45"><a href="#cb4-45" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-46"><a href="#cb4-46" aria-hidden="true" tabindex="-1"></a><span class="st">train_on_inputs: false</span></span>
+<span id="cb4-47"><a href="#cb4-47" aria-hidden="true" tabindex="-1"></a><span class="st">group_by_length: false</span></span>
+<span id="cb4-48"><a href="#cb4-48" aria-hidden="true" tabindex="-1"></a><span class="st">bf16: auto</span></span>
+<span id="cb4-49"><a href="#cb4-49" aria-hidden="true" tabindex="-1"></a><span class="st">fp16:</span></span>
+<span id="cb4-50"><a href="#cb4-50" aria-hidden="true" tabindex="-1"></a><span class="st">tf32: false</span></span>
+<span id="cb4-51"><a href="#cb4-51" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-52"><a href="#cb4-52" aria-hidden="true" tabindex="-1"></a><span class="st">gradient_checkpointing: true</span></span>
+<span id="cb4-53"><a href="#cb4-53" aria-hidden="true" tabindex="-1"></a><span class="st">early_stopping_patience:</span></span>
+<span id="cb4-54"><a href="#cb4-54" aria-hidden="true" tabindex="-1"></a><span class="st">resume_from_checkpoint:</span></span>
+<span id="cb4-55"><a href="#cb4-55" aria-hidden="true" tabindex="-1"></a><span class="st">logging_steps: 1</span></span>
+<span id="cb4-56"><a href="#cb4-56" aria-hidden="true" tabindex="-1"></a><span class="st">xformers_attention:</span></span>
+<span id="cb4-57"><a href="#cb4-57" aria-hidden="true" tabindex="-1"></a><span class="st">flash_attention: false</span></span>
+<span id="cb4-58"><a href="#cb4-58" aria-hidden="true" tabindex="-1"></a><span class="st">sdp_attention: true</span></span>
+<span id="cb4-59"><a href="#cb4-59" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-60"><a href="#cb4-60" aria-hidden="true" tabindex="-1"></a><span class="st">warmup_steps: 1</span></span>
+<span id="cb4-61"><a href="#cb4-61" aria-hidden="true" tabindex="-1"></a><span class="st">max_steps: 25</span></span>
+<span id="cb4-62"><a href="#cb4-62" aria-hidden="true" tabindex="-1"></a><span class="st">evals_per_epoch: 1</span></span>
+<span id="cb4-63"><a href="#cb4-63" aria-hidden="true" tabindex="-1"></a><span class="st">eval_table_size:</span></span>
+<span id="cb4-64"><a href="#cb4-64" aria-hidden="true" tabindex="-1"></a><span class="st">saves_per_epoch: 1</span></span>
+<span id="cb4-65"><a href="#cb4-65" aria-hidden="true" tabindex="-1"></a><span class="st">debug:</span></span>
+<span id="cb4-66"><a href="#cb4-66" aria-hidden="true" tabindex="-1"></a><span class="st">deepspeed:</span></span>
+<span id="cb4-67"><a href="#cb4-67" aria-hidden="true" tabindex="-1"></a><span class="st">weight_decay: 0.0</span></span>
+<span id="cb4-68"><a href="#cb4-68" aria-hidden="true" tabindex="-1"></a><span class="st">fsdp:</span></span>
+<span id="cb4-69"><a href="#cb4-69" aria-hidden="true" tabindex="-1"></a><span class="st">fsdp_config:</span></span>
+<span id="cb4-70"><a href="#cb4-70" aria-hidden="true" tabindex="-1"></a><span class="st">special_tokens:</span></span>
+<span id="cb4-71"><a href="#cb4-71" aria-hidden="true" tabindex="-1"></a><span class="st">  pad_token: &lt;|end_of_text|&gt;</span></span>
+<span id="cb4-72"><a href="#cb4-72" aria-hidden="true" tabindex="-1"></a><span class="st">"""</span></span>
+<span id="cb4-73"><a href="#cb4-73" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-74"><a href="#cb4-74" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-75"><a href="#cb4-75" aria-hidden="true" tabindex="-1"></a><span class="co"># Convert the YAML string to a Python dictionary</span></span>
+<span id="cb4-76"><a href="#cb4-76" aria-hidden="true" tabindex="-1"></a>yaml_dict <span class="op">=</span> yaml.safe_load(yaml_string)</span>
+<span id="cb4-77"><a href="#cb4-77" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-78"><a href="#cb4-78" aria-hidden="true" tabindex="-1"></a><span class="co"># Specify your file path</span></span>
+<span id="cb4-79"><a href="#cb4-79" aria-hidden="true" tabindex="-1"></a>file_path <span class="op">=</span> <span class="st">'test_axolotl.yaml'</span></span>
+<span id="cb4-80"><a href="#cb4-80" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-81"><a href="#cb4-81" aria-hidden="true" tabindex="-1"></a><span class="co"># Write the YAML file</span></span>
+<span id="cb4-82"><a href="#cb4-82" aria-hidden="true" tabindex="-1"></a><span class="cf">with</span> <span class="bu">open</span>(file_path, <span class="st">'w'</span>) <span class="im">as</span> <span class="bu">file</span>:</span>
+<span id="cb4-83"><a href="#cb4-83" aria-hidden="true" tabindex="-1"></a>    yaml.dump(yaml_dict, <span class="bu">file</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+<p>Above we have a configuration file with base LLM model and datasets specified, among many other things. Axolotl can automatically detect whether the specified datasets are on HuggingFace repo or local machine.</p>
+<p>The Axolotl configuration options encompass model and dataset selection, data pre-processing, and training. Let’s go through them line by line:</p>
+<ul>
+<li>“base model”: String value, specifies the underlying pre-trained LLM that will be used for finetuning</li>
+</ul>
+<p>Next we have options for model weights quantization. Quantization allows for reduction in occupied memory on GPUs.</p>
+<ul>
+<li><p>“load_in_8bit”: Boolean value, whether to quantize the model weights into 8-bit integer.</p></li>
+<li><p>“load_in_4bit”: Boolean value, whether to quantize the model weights into 4-bit integer.</p></li>
+<li><p>“strict”: Boolean value. If false, it allows for overriding established configuration options in the yaml file when executing in command-line interface.</p></li>
+<li><p>“datasets”: a list of dicts that contain path and type of data sets as well as other optional configurations where datasets are concerned. Supports multiple datasets.</p></li>
+<li><p>“val_set_size”: Either a float value less than one or an integer less than the total size of dataset. Sets the size of validation set from the whole dataset. If float, sets the proportion of the dataset assigned for validation. If integer, sets the direct size of validation set.</p></li>
+<li><p>“output_dir”: String value. Path of trained model.</p></li>
+</ul>
+<p>For data preprocessing:</p>
+<ul>
+<li><p>“sequence_len”: Integer. Specifies the maximum sequence length of the input. Typically 2048 or less.</p></li>
+<li><p>“pad_to_sequence_len”: Boolean. Padding input to maximum sequence length.</p></li>
+<li><p>“sample_packing”: Boolean. Specifies whether to use multi-packing with block diagonal attention.</p></li>
+<li><p>“special_tokens”: Python dict, optional. Allows users to specify the additional special tokens to be ignored by the tokenizer.</p></li>
+</ul>
+<p>For LoRA configuration and its hyperparamters:</p>
+<ul>
+<li><p>“adapter”: String. Either “lora” or “qlora”, depending on user’s choice.</p></li>
+<li><p>“lora_model_dir”: String, Optional. Path to directory that contains LoRA model, if there is already a trained LoRA model the user would like to use.</p></li>
+<li><p>“lora_r”: Integer. Refers to the rank of LoRA decomposition matrices. Higher value will reduce LoRA efficiency. Recommended to be set to 8.</p></li>
+<li><p>“lora_alpha”: Integer. Scale the weight matrices by <span class="math inline">\(\frac{\text{lora_alpha}}{\text{lora_r}}\)</span>Recommended to be fixed at 16.</p></li>
+<li><p>“lora_dropout”: Float that is 1 or less. The dropout probability of a lora layer.</p></li>
+<li><p>“lora_target_linear”: Boolean. If true, lora will target all linear modules in the transformers architecture.</p></li>
+<li><p>“lora_modules_to_save”: If you added new tokens to the tokenizer, you may need to save some LoRA modules because they need to know the new tokens.</p></li>
+</ul>
+<p>See <a href="https://arxiv.org/abs/2106.09685">LoRA</a> for detailed explanation of LoRA implementation.</p>
+<p>For the training configurations:</p>
+<ul>
+<li><p>“gradient_accumulation_steps”: Integer. The number of steps over which to accumulate gradient for batch training. E.g. if 2, backprop is performed every two steps.</p></li>
+<li><p>“micro_batch_size”: Integer. Batch size per gpu / gradient_accumulation_steps</p></li>
+<li><p>“num_epochs”: Integer. Number of epochs. One epoch is when training has looped over every batch in the whole data set once.</p></li>
+<li><p>“optimizer”: The optimizer to use for the training.</p></li>
+<li><p>“learning_rate”: The learning rate.</p></li>
+<li><p>“lr_scheduler”: The learning rate scheduler to use for adjusting learning rate during training.</p></li>
+<li><p>“train_on_inputs”: Boolean. Whether to ignore or include the user’s prompt from the training labels.</p></li>
+<li><p>“group_by_length”: Boolean. Whether to group similarly sized data to minimize padding.</p></li>
+<li><p>“bf16”: Either “auto”, “true”, or “false”. Whether to use CUDA bf16 floating point format. If set to “auto”, will automatically apply bf16 should the gpu supports it.</p></li>
+<li><p>“fp16”: Optional. Specifies whether to use CUDA fp16. Automatically set to true if “bf16” is set to true. Otherwise false.</p></li>
+<li><p>“tf32”: Boolean. Whether to use CUDA tf32. Will override bf16.</p></li>
+<li><p>“gradient_checkpointing”: Boolean. Whether to use gradient checkpointing https://huggingface.co/docs/transformers/v4.18.0/en/performance#gradient-checkpointing</p></li>
+<li><p>“gradient_checkpointing_kwargs”: Python Dict. Fed into the trainer.</p></li>
+<li><p>“logging_steps”: Integer. Log training information over every specified number of steps.</p></li>
+<li><p>“flash_attention”: Boolean. Whether to use the <a href="https://github.com/Dao-AILab/flash-attention">flash attention</a> mechanism.</p></li>
+<li><p>“sdp_attention”: Boolean. Whether to use the Scaled Dot Product attention mechanism (the attention mechanism in the <a href="https://arxiv.org/abs/1706.03762">original implementation</a> of transformers.)</p></li>
+<li><p>“warmup_steps”: Integer. The number of pre-training steps where a very low learning rate is used.</p></li>
+<li><p>“evals_per_epoch”: Integer. Number of evaluations to be performed within one training epoch.</p></li>
+<li><p>“saves_per_epoch”: Integer. Number of times the model is saved in one training epoch.</p></li>
+<li><p>“weight_decay”: Positive Float. Sets the “strength” of weight decay (i.e.&nbsp;setting the coefficient of L2 regularization)</p></li>
+</ul>
+<p>The above is but a snippet aiming to get users familiarized with the types of streamlined configuration options axolotl provides. For a full list of configuration options, see <a href="https://axolotl-ai-cloud.github.io/axolotl/docs/config.html">here</a></p>
+<p>Train the model</p>
+<div id="cell-11" class="cell">
+<div class="sourceCode cell-code" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="op">!</span>accelerate launch <span class="op">-</span>m axolotl.cli.train <span class="op">/</span>content<span class="op">/</span>test_axolotl.yaml</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+<p>Predict with trained model</p>
+<div id="cell-13" class="cell">
+<div class="sourceCode cell-code" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="op">!</span>accelerate launch <span class="op">-</span>m axolotl.cli.inference <span class="op">/</span>content<span class="op">/</span>test_axolotl.yaml <span class="op">\</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>    <span class="op">--</span>lora_model_dir<span class="op">=</span><span class="st">"./outputs/lora-out"</span> <span class="op">--</span>gradio</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
 </section>
-<section id="launch-the-training" class="level2">
-<h2 class="anchored" data-anchor-id="launch-the-training">Launch the training</h2>
-<div id="cell-8" class="cell" data-outputid="d6d0df17-4b53-439c-c802-22c0456d301b">
-<div class="sourceCode cell-code" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="co"># By using the ! the comand will be executed as a bash command</span></span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="op">!</span>accelerate launch <span class="op">-</span>m axolotl.cli.train <span class="op">/</span>content<span class="op">/</span>test_axolotl.yaml</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-</div>
+<section id="deeper-dive" class="level2">
+<h2 class="anchored" data-anchor-id="deeper-dive">Deeper Dive</h2>
+<p>It is also helpful to gain some familiarity over some of the core inner workings of axolotl</p>
 </section>
-<section id="play-with-inference" class="level2">
-<h2 class="anchored" data-anchor-id="play-with-inference">Play with inference</h2>
-<div id="cell-10" class="cell">
-<div class="sourceCode cell-code" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="co"># By using the ! the comand will be executed as a bash command</span></span>
-<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="op">!</span>accelerate launch <span class="op">-</span>m axolotl.cli.inference <span class="op">/</span>content<span class="op">/</span>test_axolotl.yaml <span class="op">\</span></span>
-<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    <span class="op">--</span>qlora_model_dir<span class="op">=</span><span class="st">"./qlora-out"</span> <span class="op">--</span>gradio</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-</div>
+<section id="configuration-normalization" class="level2">
+<h2 class="anchored" data-anchor-id="configuration-normalization">Configuration Normalization</h2>
+<p>Axolotl uses a custom Dict class, called <code>DictDefault</code> to store configurations specified in the yaml configuration file (into a Python variable named <code>cfg</code>). The definition for this custom Dict can be found in the <a href="https://github.com/axolotl-ai-cloud/axolotl/blob/main/src/axolotl/utils/dict.py">utils/dict.py</a></p>
+<p><code>DictDefault</code> is amended such that calling a missing key from it will result in a <code>None</code> return type. This is important because if some configuration options aren’t specified by the user, the <code>None</code> type allows Axolotl to perform boolean operations to determine the default settings for missing configurations. For more examples on how this is done, check out <a href="https://github.com/axolotl-ai-cloud/axolotl/blob/main/src/axolotl/utils/config/__init__.py">utils/config/<strong>init</strong>.py</a></p>
+</section>
+<section id="loading-models-tokenizers-and-trainer" class="level2">
+<h2 class="anchored" data-anchor-id="loading-models-tokenizers-and-trainer">Loading Models, Tokenizers, and Trainer</h2>
+<p>If we inspect <a href="https://github.com/axolotl-ai-cloud/axolotl/blob/main/src/axolotl/cli/train.py">cli.train.py</a>, we will find that most of the heavy lifting were done by the function <code>train()</code> which is itself imported from <a href="https://github.com/axolotl-ai-cloud/axolotl/blob/main/src/axolotl/train.py">src/axolotl/train.py</a>.</p>
+<p><code>train()</code> takes care of loading the appropriate tokenizer and pre-trained model through <code>load_model()</code> and <code>load_tokenizer()</code> from <a href="https://github.com/axolotl-ai-cloud/axolotl/blob/main/src/axolotl/utils/models.py">src/axolotl/utils/models.py</a> respectively.</p>
+<p><code>load_tokenizer()</code> loads in the appropriate tokenizer given the desired model, as well as chat templates.</p>
+<p><code>ModelLoader</code> class follows after tokenizer has been selected. It will automatically discern the base model type, load in the desired model, as well as applying model-appropriate attention mechanism modifications (e.g.&nbsp;flash attention). Depending on which base model the user chooses in the configuration, <code>ModelLoader</code> will utilize the corresponding “attention hijacking” script. For example, if the user specified the base model to be <code>NousResearch/Meta-Llama-3.1-8B</code>, which is of llama type, and set <code>flash_attn</code> to <code>True</code>, <code>ModelLoader</code> will load in <a href="https://github.com/axolotl-ai-cloud/axolotl/blob/main/src/axolotl/monkeypatch/llama_attn_hijack_flash.py">llama_attn_hijack_flash.py</a>. For a list of supported attention hijacking, please refer to the directory <a href="https://github.com/axolotl-ai-cloud/axolotl/tree/main/src/axolotl/monkeypatch">/src/axolotl/monkeypatch/</a></p>
+<p>Another important operation encompassed in <code>train()</code> is setting up the training that takes into account of user-specified traning configurations (e.g.&nbsp;num_epochs, optimizer) through the use of <code>setup_trainer()</code> from <a href="https://github.com/axolotl-ai-cloud/axolotl/blob/main/src/axolotl/utils/trainer.py">/src/axolotl/utils/trainer.py</a>, which in turn relies on modules from <a href="https://github.com/axolotl-ai-cloud/axolotl/blob/main/src/axolotl/core/trainer_builder.py">/src/axolotl/core/trainer_builder.py</a>. <code>trainer_builder.py</code> provides a list of trainer object options bespoke for the task type (Causal or Reinforcement learning (‘dpo’, ‘ipo’, ‘kto’) )</p>
+</section>
+<section id="monkey-patch" class="level2">
+<h2 class="anchored" data-anchor-id="monkey-patch">Monkey patch</h2>
+<p>The <a href="https://github.com/axolotl-ai-cloud/axolotl/tree/main/src/axolotl/monkeypatch">Monkey patch directory</a> is where model architecture/optimization patching scripts are stored (these are modifications that are not implemented in the official releases, hence the name monkey patch). It includes attention jacking, ReLoRA, and unsloth optimization.</p>
 
 
 </section>
