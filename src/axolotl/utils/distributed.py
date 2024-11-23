@@ -9,8 +9,42 @@ from datetime import timedelta
 import torch
 import torch.distributed as dist
 from accelerate import PartialState
+from transformers.utils.import_utils import (
+    is_torch_cuda_available,
+    is_torch_mps_available,
+    is_torch_npu_available,
+)
 
 distributed_state = None  # pylint: disable=invalid-name
+
+
+def get_device_type():
+    device = torch.device("cpu")
+    if is_torch_cuda_available():
+        device = torch.device("cuda")
+    elif is_torch_mps_available():
+        device = torch.device("mps")
+    elif is_torch_npu_available():
+        device = torch.device("npu")
+    return device
+
+
+def get_device_count():
+    cur_device = get_device_type()
+    if "cuda" in str(cur_device):
+        return torch.cuda.device_count()
+    if "npu" in str(cur_device):
+        return torch.npu.device_count()
+    return 1
+
+
+def get_current_device():
+    cur_device = get_device_type()
+    if "cuda" in str(cur_device):
+        return torch.cuda.current_device()
+    if "npu" in str(cur_device):
+        return torch.npu.current_device()
+    return 0
 
 
 def is_distributed():
@@ -91,7 +125,7 @@ def gather_scalar_from_all_ranks(fn, world_size=1):  # pylint: disable=invalid-n
     if not is_distributed():
         return [value_scalar]
     value_tensor = torch.tensor(
-        value_scalar, device=torch.cuda.current_device()
+        value_scalar, device=f"{get_device_type()}:{get_current_device()}"
     ).float()
 
     if not is_main_process():
@@ -115,13 +149,14 @@ def broadcast_dict(vals: dict):
     if not is_distributed():
         return vals
 
+    cur_device = get_device_type()
     if is_main_process():
         data_byte = pickle.dumps(vals)
-        data_tensor = torch.ByteTensor(list(data_byte)).to("cuda")
-        data_size = torch.IntTensor([len(data_byte)]).to("cuda")
+        data_tensor = torch.ByteTensor(list(data_byte)).to(cur_device)
+        data_size = torch.IntTensor([len(data_byte)]).to(cur_device)
     else:
-        data_tensor = torch.empty([1024], dtype=torch.uint8, device="cuda")
-        data_size = torch.IntTensor([0]).to("cuda")
+        data_tensor = torch.empty([1024], dtype=torch.uint8, device=cur_device)
+        data_size = torch.IntTensor([0]).to(cur_device)
 
     dist.broadcast(data_size, 0)
     if not is_main_process():
@@ -150,14 +185,15 @@ def compute_and_broadcast(fn):  # pylint: disable=invalid-name
     Returns:
     - The computed value (int or float).
     """
+    cur_device = f"{get_device_type()}:{get_current_device()}"
     if is_main_process():
         value_scalar = fn()
         value_tensor = torch.tensor(
-            value_scalar, device=torch.cuda.current_device(), dtype=torch.float32
+            value_scalar, device=cur_device, dtype=torch.float32
         )
     else:
         value_tensor = torch.tensor(
-            0.0, device=torch.cuda.current_device(), dtype=torch.float32
+            0.0, device=cur_device, dtype=torch.float32
         )  # Placeholder tensor
 
     # Broadcast the tensor to all processes.
@@ -184,7 +220,7 @@ def gather_from_all_ranks(fn, world_size=1):  # pylint: disable=invalid-name
     """
     value_scalar = fn()
     value_tensor = torch.tensor(
-        value_scalar, device=torch.cuda.current_device()
+        value_scalar, device=f"{get_device_type()}:{get_current_device()}"
     ).float()
 
     # Placeholder tensor for gathering results

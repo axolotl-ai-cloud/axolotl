@@ -33,7 +33,7 @@ tensorboard
 python-dotenv==1.0.1
 autoawq==0.2.7.post2
 triton>=2.3.0
-liger-kernel==0.4.1
+liger-kernel==0.4.2
 
 mamba-ssm==1.2.0.post1
 
