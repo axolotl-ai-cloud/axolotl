@@ -37,6 +37,7 @@ _CCE_INSTALL_MESSAGE = (
 )
 
 
+# pylint: disable=duplicate-code
 def get_pytorch_version() -> tuple[int, int, int]:
     torch_version = torch.__version__
     version_match = re.match(r"^(\d+)\.(\d+)(?:\.(\d+))?", torch_version)
@@ -49,6 +50,9 @@ def get_pytorch_version() -> tuple[int, int, int]:
         return major, minor, patch
 
     raise ValueError("Invalid version format")
+
+
+# pylint: enable=duplicate-code
 
 
 class CutCrossEntropyPlugin(BasePlugin):
