@@ -11,10 +11,12 @@ standard industry baselines.
 
 ### Installation
 
-The following will install the correct unsloth and extras from source.
+The following will install unsloth from source and downgrade xformers as unsloth is incompatible with the most up
+to date libraries.
 
 ```bash
-python scripts/unsloth_install.py | sh
+pip install --no-deps "unsloth @ git+https://github.com/unslothai/unsloth.git"
+pip install --no-deps --force-reinstall xformers==0.0.26.post1
 ```
 
 ### Using unsloth w Axolotl

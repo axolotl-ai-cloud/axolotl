@@ -13,10 +13,19 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Create release
+      - name: Get the tag version
+        id: extract_branch
+        run: echo ::set-output name=branch::${GITHUB_REF#refs/tags/}
+        shell: bash
+
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create "$GITHUB_REF_NAME" # GITHUB_REF_NAME is the tag name in `on.push.tags` workflows
+        with:
+          tag_name: ${{ steps.extract_branch.outputs.branch }}
+          release_name: ${{ steps.extract_branch.outputs.branch }}
   pypi-publish:
     name: Upload release to PyPI
     runs-on: ubuntu-latest

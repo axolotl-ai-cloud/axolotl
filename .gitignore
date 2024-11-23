@@ -182,6 +182,3 @@ submit.sh
 
 typings/
 out/
-
-# vim
-*.swp

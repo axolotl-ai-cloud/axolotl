@@ -188,7 +188,7 @@ def integrate_lora_mlp_patch(peft_model: PeftModelForCausalLM):
             for module in layer_modules
         )
         mlp_not_dora = all(
-            len(getattr(module, "lora_magnitude_vector", []) or []) == 0
+            getattr(module, "lora_magnitude_vector", None) is None
             for module in layer_modules
         )
 
@@ -213,7 +213,7 @@ def integrate_lora_patch(peft_model: PeftModelForCausalLM, cfg):
                 for module in layer_modules
             )
             qkv_not_dora = all(
-                len(getattr(module, "lora_magnitude_vector", []) or []) == 0
+                getattr(module, "lora_magnitude_vector", None) is None
                 for module in layer_modules
             )
 
@@ -232,7 +232,7 @@ def integrate_lora_patch(peft_model: PeftModelForCausalLM, cfg):
                 for module in layer_modules
             )
             o_not_dora = all(
-                len(getattr(module, "lora_magnitude_vector", []) or []) == 0
+                getattr(module, "lora_magnitude_vector", None) is None
                 for module in layer_modules
             )
 

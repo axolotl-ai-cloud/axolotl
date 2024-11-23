@@ -7,6 +7,7 @@ Module for pydantic models for configuration
 import logging
 import os
 from enum import Enum
+from importlib.metadata import version
 from typing import Annotated, Any, Dict, List, Literal, Optional, Tuple, Union
 
 from pydantic import (
@@ -19,7 +20,6 @@ from pydantic import (
 )
 from transformers import SchedulerType
 from transformers.training_args import OptimizerNames
-from transformers.utils.import_utils import is_torch_npu_available
 
 from axolotl.utils.config.models.internals import GPUCapabilities
 
@@ -1314,7 +1314,6 @@ class AxolotlInputConfig(
             and data.get("gradient_checkpointing_kwargs", {})
             and data.get("gradient_checkpointing_kwargs", {}).get("use_reentrant")
             is False
-            and data.get("deepspeed", "") is not None
             and "zero3" in data.get("deepspeed", "")
         ):
             # may result in:
@@ -1428,45 +1427,26 @@ class AxolotlInputConfig(
 
     @model_validator(mode="before")
     @classmethod
+    def check_unsloth_xformers_version(cls, data):
+        if (
+            data.get("unsloth_lora_mlp")
+            or data.get("unsloth_lora_qkv")
+            or data.get("unsloth_lora_o")
+        ):
+            xformers_version = version("xformers")
+            if xformers_version == "0.0.27":
+                raise ValueError(
+                    "xformers version 0.0.27 is not supported with unsloth. Please downgrade to 0.0.26.post1"
+                )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def check_torch_compile_deepspeed(cls, data):
         if data.get("deepspeed") and data.get("torch_compile"):
             raise ValueError(
                 "torch_compile should be set within your deepspeed config file"
             )
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_npu_config(cls, data):
-        if is_torch_npu_available():
-            # check attention config
-            attn_list = ["flash_attention", "sdp_attention", "s2_attention"]
-            for attn in attn_list:
-                if data.get(attn):
-                    raise NotImplementedError(
-                        f"{attn} is currently not supported in Ascend npu, please disable this configuration."
-                    )
-
-            # check quant config
-            if data.get("optimizer") is not None and "bit" in data.get("optimizer"):
-                optimizer = data.get("optimizer")
-                raise NotImplementedError(
-                    f"{optimizer} is currently not supported in Ascend npu, choose another one please."
-                )
-
-            quant_list = ["load_in_8bit", "load_in_4bit"]
-            for quant in quant_list:
-                if data.get(quant):
-                    raise NotImplementedError(
-                        f"Quantification is currently not supported in Ascend npu, please disable {quant}."
-                    )
-
-            # check dtype config
-            if data.get("tf32"):
-                raise NotImplementedError(
-                    "tf32 dtype is currently not supported in Ascend npu, please disable this configuration"
-                )
-
         return data
 
 
