@@ -54,6 +54,7 @@ class LigerIntegrationTestCase(unittest.TestCase):
                 "lr_scheduler": "cosine",
                 "save_safetensors": True,
                 "bf16": "auto",
+                "max_steps": 10,
             }
         )
         normalize_config(cfg)
@@ -99,6 +100,7 @@ class LigerIntegrationTestCase(unittest.TestCase):
                 "lr_scheduler": "cosine",
                 "save_safetensors": True,
                 "bf16": "auto",
+                "max_steps": 10,
             }
         )
         normalize_config(cfg)
