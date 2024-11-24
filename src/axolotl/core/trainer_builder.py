@@ -1239,11 +1239,17 @@ class TrainerBuilderBase(abc.ABC):
         Callbacks added after the trainer is created, usually b/c these need access to the trainer
         """
         callbacks = []
-
-        plugin_manager = PluginManager.get_instance()
-        callbacks.extend(
-            plugin_manager.add_callbacks_post_trainer(cfg=self.cfg, trainer=trainer)
-        )
+        if self.cfg.plugins:
+            plugin_manager = PluginManager.get_instance()
+            callbacks.extend(
+                [
+                    cb
+                    for cb in plugin_manager.add_callbacks_post_trainer(
+                        self.cfg, trainer
+                    )
+                    if cb
+                ]
+            )
         return callbacks
 
     def hook_pre_create_training_args(self, training_arguments_kwargs):
@@ -1290,7 +1296,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         return callbacks
 
     def get_post_trainer_create_callbacks(self, trainer):
-        callbacks = super().get_post_trainer_create_callbacks(trainer=trainer)
+        callbacks = []
         if self.cfg.use_wandb and self.cfg.eval_table_size > 0:
             LogPredictionCallback = log_prediction_callback_factory(
                 trainer, self.tokenizer, "wandb"
@@ -1328,17 +1334,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         if self.cfg.lisa_step_interval and self.cfg.lisa_n_layers:
             callbacks.append(lisa_callback_factory(trainer))
 
-        if self.cfg.plugins:
-            plugin_manager = PluginManager.get_instance()
-            callbacks.extend(
-                [
-                    cb
-                    for cb in plugin_manager.add_callbacks_post_trainer(
-                        self.cfg, trainer
-                    )
-                    if cb
-                ]
-            )
+        callbacks.extend(super().get_post_trainer_create_callbacks(trainer=trainer))
         return callbacks
 
     def _get_trainer_cls(self):
