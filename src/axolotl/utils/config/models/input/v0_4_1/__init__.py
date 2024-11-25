@@ -1478,7 +1478,7 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
     """wrapper to valdiate gpu capabilities with the configured options"""
 
     capabilities: GPUCapabilities
-    env_capabilities: ENVCapabilities
+    env_capabilities: Optional[ENVCapabilities] = None
 
     @model_validator(mode="after")
     def check_bf16(self):
