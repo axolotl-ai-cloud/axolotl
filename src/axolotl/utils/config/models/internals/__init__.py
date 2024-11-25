@@ -17,4 +17,4 @@ class GPUCapabilities(BaseModel):
 class ENVCapabilities(BaseModel):
     """model to manage the environment capabilities statically"""
 
-    torch_version: str = Field(default=None)
+    torch_version: Optional[str] = Field(default=None)
