@@ -20,11 +20,11 @@ from Apple's ML team.
 """
 import importlib
 import logging
-import re
 
 import torch
 
 from axolotl.integrations.base import BasePlugin
+from axolotl.utils import get_pytorch_version
 
 from ...utils.distributed import zero_only
 from .args import CutCrossEntropyArgs  # pylint: disable=unused-import. # noqa: F401
@@ -35,24 +35,6 @@ _CCE_INSTALL_MESSAGE = (
     "Please install cut_cross_entropy with transformers support using "
     '`pip install "cut-cross-entropy @ git+https://github.com/apple/ml-cross-entropy.git"`'
 )
-
-
-# pylint: disable=duplicate-code
-def get_pytorch_version() -> tuple[int, int, int]:
-    torch_version = torch.__version__
-    version_match = re.match(r"^(\d+)\.(\d+)(?:\.(\d+))?", torch_version)
-    if version_match:
-        major, minor, patch = version_match.groups()
-        major, minor = int(major), int(minor)
-        patch = (
-            int(patch) if patch is not None else 0
-        )  # Default patch to 0 if not present
-        return major, minor, patch
-
-    raise ValueError("Invalid version format")
-
-
-# pylint: enable=duplicate-code
 
 
 class CutCrossEntropyPlugin(BasePlugin):
