@@ -51,7 +51,7 @@ from trl.trainer.utils import RewardDataCollatorWithPadding, pad_to_length
 from axolotl.integrations.base import PluginManager
 from axolotl.monkeypatch.multipack import SUPPORTED_MULTIPACK_MODEL_TYPES
 from axolotl.monkeypatch.relora import ReLoRACallback, ReLoRAScheduler
-from axolotl.utils import is_comet_available, is_mlflow_available, is_torch_min
+from axolotl.utils import is_comet_available, is_mlflow_available
 from axolotl.utils.callbacks import (
     EvalFirstStepCallback,
     GPUStatsCallback,
@@ -558,16 +558,15 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
                     AdamWFp8(optimizer_grouped_parameters, **optimizer_kwargs)
                 )
             elif self.args.alternate_optimizer == "adopt_adamw":
-                if is_torch_min("2.5.1"):
-                    from axolotl.utils.optimizers.adopt import ADOPT
+                from axolotl.utils.optimizers.adopt import ADOPT
 
-                    self.optimizer = (  # pylint: disable=attribute-defined-outside-init
-                        ADOPT(
-                            optimizer_grouped_parameters,
-                            decouple=True,
-                            **optimizer_kwargs,
-                        )
+                self.optimizer = (  # pylint: disable=attribute-defined-outside-init
+                    ADOPT(
+                        optimizer_grouped_parameters,
+                        decouple=True,
+                        **optimizer_kwargs,
                     )
+                )
 
         if is_sagemaker_mp_enabled():
             self.optimizer = smp.DistributedOptimizer(  # pylint: disable=attribute-defined-outside-init
