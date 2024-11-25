@@ -51,6 +51,7 @@ class CutCrossEntropyIntegrationTestCase(unittest.TestCase):
                 "save_safetensors": True,
                 "max_steps": 10,
                 "bf16": "auto",
+                "flash_attention": True,
             }
         )
         prepare_plugins(cfg)
