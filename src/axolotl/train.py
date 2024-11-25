@@ -267,7 +267,7 @@ def train(
             hf_api = HfApi()
             hf_api.model_info(cfg.base_model)
 
-            model_card_kwarg = {"model_name": cfg.output_dir.lstrip("./")}
+            model_card_kwarg = {"model_name": cfg.output_dir.lstrip("./").encode("utf-8").decode("utf-8")}
             if cfg.datasets is not None:
                 if cfg.rl is not None or cfg.reward_model:
                     model_card_kwarg["dataset_name"] = [

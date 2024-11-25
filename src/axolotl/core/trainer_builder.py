@@ -108,8 +108,6 @@ def _sanitize_kwargs_for_tagging(tag_names, kwargs=None):
 
 
 def _sanitize_kwargs_for_ds_tagging(dataset_tag_names, kwargs=None):
-    if isinstance(dataset_tag_names, type(None)):
-        return kwargs
     if isinstance(dataset_tag_names, str):
         dataset_tag_names = [dataset_tag_names]
 
