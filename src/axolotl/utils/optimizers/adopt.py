@@ -6,6 +6,7 @@ Taniguchi, Shohei and Harada, Keno and Minegishi, Gouki and Oshima, Yuta and Jeo
 """
 # mypy: ignore-errors
 # pylint: skip-file
+# flake8: noqa
 # mypy: allow-untyped-decorators
 # mypy: allow-untyped-defs
 from typing import Callable, List, Optional, Tuple, Union, cast
@@ -13,14 +14,21 @@ from typing import Callable, List, Optional, Tuple, Union, cast
 import torch
 from torch import Tensor
 from torch.optim.optimizer import (  # DeviceDict,; _capturable_doc,; _differentiable_doc,; _foreach_doc,; _fused_doc,; _maximize_doc,; _stack_if_compiling,
+    DeviceDict,
     Optimizer,
     ParamsT,
+    _capturable_doc,
     _default_to_fused_or_foreach,
     _device_dtype_check_for_fused,
+    _differentiable_doc,
     _disable_dynamo_if_unsupported,
+    _foreach_doc,
+    _fused_doc,
     _get_capturable_supported_devices,
     _get_scalar_dtype,
     _get_value,
+    _maximize_doc,
+    _stack_if_compiling,
     _use_grad_for_differentiable,
     _view_as_real,
 )
