@@ -1,7 +1,6 @@
 """module for gpu capabilities"""
 from typing import Optional
 
-from packaging.version import Version
 from pydantic import BaseModel, Field
 
 
@@ -18,4 +17,4 @@ class GPUCapabilities(BaseModel):
 class ENVCapabilities(BaseModel):
     """model to manage the environment capabilities statically"""
 
-    torch_version: Version = Field(default=None)
+    torch_version: str = Field(default=None)
