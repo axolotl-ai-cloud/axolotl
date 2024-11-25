@@ -564,7 +564,7 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
                     self.optimizer = (  # pylint: disable=attribute-defined-outside-init
                         ADOPT(
                             optimizer_grouped_parameters,
-                            decoupled=True,
+                            decouple=True,
                             **optimizer_kwargs,
                         )
                     )
