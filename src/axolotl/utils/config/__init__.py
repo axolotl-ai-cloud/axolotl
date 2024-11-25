@@ -245,7 +245,9 @@ def validate_config(
 
     if capabilities:
         if env_capabilities is None:
-            env_capabilities = {}
+            env_capabilities = {
+                "torch_version": str(torch.__version__).split("+", maxsplit=1)[0]
+            }
         return DictDefault(
             dict(
                 AxolotlConfigWCapabilities(
