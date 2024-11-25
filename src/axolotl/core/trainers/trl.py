@@ -40,7 +40,7 @@ class TRLPPOTrainer(PPOTrainer):
                 query_tensors,
                 return_prompt=False,
                 generate_ref_response=True,
-                **generation_kwargs
+                **generation_kwargs,
             )
             batch["response"] = self.tokenizer.batch_decode(response_tensors)
             batch["ref_response"] = self.tokenizer.batch_decode(ref_response_tensors)
