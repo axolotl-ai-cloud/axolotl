@@ -244,24 +244,18 @@ def validate_config(
         ) = merge_input_args()
 
     if capabilities:
-        if env_capabilities:
-            return DictDefault(
-                dict(
-                    AxolotlConfigWCapabilities(
-                        **cfg.to_dict(),
-                        capabilities=capabilities,
-                        env_capabilities=env_capabilities,
-                    ).model_dump(exclude_none=True)
-                )
-            )
+        if env_capabilities is None:
+            env_capabilities = {}
         return DictDefault(
             dict(
                 AxolotlConfigWCapabilities(
                     **cfg.to_dict(),
                     capabilities=capabilities,
+                    env_capabilities=env_capabilities,
                 ).model_dump(exclude_none=True)
             )
         )
+
     return DictDefault(
         dict(AxolotlInputConfig(**cfg.to_dict()).model_dump(exclude_none=True))
     )
