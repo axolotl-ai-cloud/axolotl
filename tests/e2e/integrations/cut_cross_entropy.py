@@ -11,15 +11,12 @@ from axolotl.train import train
 from axolotl.utils.config import normalize_config
 from axolotl.utils.dict import DictDefault
 
-from ..utils import with_temp_dir
-
 
 class CutCrossEntropyIntegrationTestCase(unittest.TestCase):
     """
     e2e tests for cut_cross_entropy integration with Axolotl
     """
 
-    @with_temp_dir
     def test_llama_w_cce(self, temp_dir):
         cfg = DictDefault(
             {
