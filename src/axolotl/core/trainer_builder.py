@@ -111,7 +111,7 @@ def _sanitize_kwargs_for_ds_tagging(dataset_tag_names, kwargs=None):
     if isinstance(dataset_tag_names, str):
         dataset_tag_names = [dataset_tag_names]
 
-    if kwargs is not None:
+    if (dataset_tag_names is not None) and (kwargs is not None):
         if "datasets" not in kwargs:
             kwargs["datasets"] = dataset_tag_names
         elif "datasets" in kwargs and isinstance(kwargs["datasets"], list):
