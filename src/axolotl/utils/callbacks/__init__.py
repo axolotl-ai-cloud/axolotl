@@ -404,7 +404,7 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
 
             device = torch.device(
                 self.cfg.device
-            )  # Note: Use this instead of trainer.model_wrapped.device as it may return cpu if offloaded
+            )  # Use this instead of trainer.model_wrapped.device as it may return cpu if fsdp offloaded
 
             # pylint: disable=duplicate-code
             generation_config = GenerationConfig(
