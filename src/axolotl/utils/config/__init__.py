@@ -243,13 +243,22 @@ def validate_config(
             AxolotlInputConfig,  # pylint: disable=invalid-name
         ) = merge_input_args()
 
-    if capabilities or env_capabilities:
+    if capabilities:
+        if env_capabilities:
+            return DictDefault(
+                dict(
+                    AxolotlConfigWCapabilities(
+                        **cfg.to_dict(),
+                        capabilities=capabilities,
+                        env_capabilities=env_capabilities,
+                    ).model_dump(exclude_none=True)
+                )
+            )
         return DictDefault(
             dict(
                 AxolotlConfigWCapabilities(
                     **cfg.to_dict(),
                     capabilities=capabilities,
-                    env_capabilities=env_capabilities,
                 ).model_dump(exclude_none=True)
             )
         )
