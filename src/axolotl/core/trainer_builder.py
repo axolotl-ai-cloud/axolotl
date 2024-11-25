@@ -957,13 +957,15 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
 
         return res
 
-    def log(self, logs: Dict[str, float]) -> None:
+    def log(self, logs: Dict[str, float], start_time: Optional[float] = None) -> None:
         """
         Log `logs` on the various objects watching training, including stored metrics.
 
         Args:
             logs (`Dict[str, float]`):
                 The values to log.
+            start_time (`Optional[float]`):
+                The start of training.
         """
         # logs either has 'loss' or 'eval_loss'
         train_eval = "train" if "loss" in logs else "eval"
@@ -971,7 +973,7 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
         for key, metrics in self._stored_metrics[train_eval].items():
             logs[key] = torch.tensor(metrics).mean().item()
         del self._stored_metrics[train_eval]
-        return super().log(logs)
+        return super().log(logs, start_time)
 
     def store_metrics(
         self, metrics: Dict[str, float], train_eval: Literal["train", "eval"] = "train"
