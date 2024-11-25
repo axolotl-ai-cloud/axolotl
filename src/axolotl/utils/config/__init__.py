@@ -7,6 +7,7 @@ import torch
 from transformers.utils import is_torch_bf16_gpu_available
 from transformers.utils.import_utils import is_torch_npu_available
 
+from axolotl.integrations.base import PluginManager
 from axolotl.integrations.config import merge_input_args
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.config.models.input.v0_4_1 import (
@@ -264,3 +265,14 @@ def validate_config(
     return DictDefault(
         dict(AxolotlInputConfig(**cfg.to_dict()).model_dump(exclude_none=True))
     )
+
+
+def prepare_plugins(cfg):
+    """
+    Prepare the plugins for the configuration
+    """
+
+    if cfg.get("plugins"):
+        plugin_manager = PluginManager.get_instance()
+        for plugin_name in cfg["plugins"]:
+            plugin_manager.register(plugin_name)

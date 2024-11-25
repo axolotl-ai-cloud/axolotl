@@ -8,8 +8,10 @@ from pathlib import Path
 from axolotl.cli import load_datasets
 from axolotl.common.cli import TrainerCliArgs
 from axolotl.train import train
-from axolotl.utils.config import normalize_config
+from axolotl.utils.config import normalize_config, prepare_plugins
 from axolotl.utils.dict import DictDefault
+
+from ..utils import with_temp_dir
 
 
 class CutCrossEntropyIntegrationTestCase(unittest.TestCase):
@@ -17,6 +19,8 @@ class CutCrossEntropyIntegrationTestCase(unittest.TestCase):
     e2e tests for cut_cross_entropy integration with Axolotl
     """
 
+    # pylint: disable=duplicate-code
+    @with_temp_dir
     def test_llama_w_cce(self, temp_dir):
         cfg = DictDefault(
             {
@@ -48,9 +52,12 @@ class CutCrossEntropyIntegrationTestCase(unittest.TestCase):
                 "bf16": "auto",
             }
         )
+        prepare_plugins(cfg)
         normalize_config(cfg)
         cli_args = TrainerCliArgs()
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
         train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
         assert (Path(temp_dir) / "model.safetensors").exists()
+
+    # pylint: enable=duplicate-code
