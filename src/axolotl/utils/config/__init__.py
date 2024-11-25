@@ -229,7 +229,11 @@ def normalize_cfg_datasets(cfg):
                     cfg.datasets[idx].chat_template_jinja = cfg.chat_template_jinja
 
 
-def validate_config(cfg: DictDefault, capabilities: Optional[dict] = None):
+def validate_config(
+    cfg: DictDefault,
+    capabilities: Optional[dict] = None,
+    env_capabilities: Optional[dict] = None,
+):
     AxolotlConfigWCapabilities = AxolotlConfigWCapabilitiesBase
     AxolotlInputConfig = AxolotlInputConfigBase
 
@@ -239,11 +243,13 @@ def validate_config(cfg: DictDefault, capabilities: Optional[dict] = None):
             AxolotlInputConfig,  # pylint: disable=invalid-name
         ) = merge_input_args()
 
-    if capabilities:
+    if capabilities or env_capabilities:
         return DictDefault(
             dict(
                 AxolotlConfigWCapabilities(
-                    **cfg.to_dict(), capabilities=capabilities
+                    **cfg.to_dict(),
+                    capabilities=capabilities,
+                    env_capabilities=env_capabilities,
                 ).model_dump(exclude_none=True)
             )
         )
