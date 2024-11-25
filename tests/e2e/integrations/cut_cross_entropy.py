@@ -13,13 +13,14 @@ from axolotl.utils.dict import DictDefault
 
 from ..utils import with_temp_dir
 
+# pylint: disable=duplicate-code
+
 
 class CutCrossEntropyIntegrationTestCase(unittest.TestCase):
     """
     e2e tests for cut_cross_entropy integration with Axolotl
     """
 
-    # pylint: disable=duplicate-code
     @with_temp_dir
     def test_llama_w_cce(self, temp_dir):
         cfg = DictDefault(
@@ -59,5 +60,3 @@ class CutCrossEntropyIntegrationTestCase(unittest.TestCase):
 
         train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
         assert (Path(temp_dir) / "model.safetensors").exists()
-
-    # pylint: enable=duplicate-code
