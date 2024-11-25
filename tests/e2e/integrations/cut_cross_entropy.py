@@ -31,9 +31,7 @@ class CutCrossEntropyIntegrationTestCase(unittest.TestCase):
                 "sequence_len": 1024,
                 "val_set_size": 0.1,
                 "special_tokens": {
-                    "unk_token": "<unk>",
-                    "bos_token": "<s>",
-                    "eos_token": "</s>",
+                    "pad_token": "<|endoftext|>",
                 },
                 "datasets": [
                     {
