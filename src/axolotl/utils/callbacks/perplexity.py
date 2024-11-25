@@ -8,6 +8,8 @@ from transformers.modeling_outputs import CausalLMOutput
 from transformers.modeling_utils import PreTrainedModel
 from transformers.tokenization_utils import PreTrainedTokenizer
 
+from axolotl.utils.distributed import is_main_process
+
 
 class Perplexity:
     """
@@ -17,16 +19,13 @@ class Perplexity:
 
     def __init__(
         self,
-        model: PreTrainedModel,
         tokenizer: PreTrainedTokenizer,
         max_seq_len: int,
         stride: int = 512,
     ) -> None:
         self.max_seq_len = max_seq_len
         self.stride = stride
-        self.model = model
         self.tokenizer = tokenizer
-        self.device = model.device
         self.name = "perplexity"
 
     def _feature_names(self) -> List[str]:
@@ -34,6 +33,7 @@ class Perplexity:
 
     def compute(
         self,
+        model: PreTrainedModel,
         references: Optional[List[str]] = None,
     ) -> Dict[str, float]:
         """
@@ -41,17 +41,21 @@ class Perplexity:
         """
         assert references is not None, "Missing parameter: references"
 
+        model.eval()
+
         references_tokenized = self.tokenizer(
             references, return_tensors="pt", padding=True, truncation=True
         )
         input_ids: Tensor = references_tokenized["input_ids"]  # type: ignore
-        input_ids = input_ids.to(self.device)
+        input_ids = input_ids.to(model.device)
 
         sequence_length = input_ids.size(1)
 
         losses = []
         prev_end_loc = 0
-        for begin_loc in tqdm(range(0, sequence_length, self.stride)):
+        for begin_loc in tqdm(
+            range(0, sequence_length, self.stride), disable=not is_main_process()
+        ):
             end_loc = min(begin_loc + self.max_seq_len, sequence_length)
             trg_len = end_loc - prev_end_loc
             input_ids_slice = input_ids[:, begin_loc:end_loc]
@@ -59,7 +63,7 @@ class Perplexity:
             labels_slice[:, :-trg_len] = -100
 
             with torch.no_grad():
-                outputs: CausalLMOutput = self.model(
+                outputs: CausalLMOutput = model(
                     input_ids=input_ids_slice, labels=labels_slice
                 )
 
