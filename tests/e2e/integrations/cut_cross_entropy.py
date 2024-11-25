@@ -23,8 +23,7 @@ class CutCrossEntropyIntegrationTestCase(unittest.TestCase):
     def test_llama_w_cce(self, temp_dir):
         cfg = DictDefault(
             {
-                "base_model": "JackFram/llama-68m",
-                "tokenizer_type": "LlamaTokenizer",
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
                 "plugins": [
                     "axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin",
                 ],
