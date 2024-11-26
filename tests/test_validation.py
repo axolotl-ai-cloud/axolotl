@@ -1163,6 +1163,28 @@ class TestValidation(BaseValidation):
                 in self._caplog.records[0].message
             )
 
+    def test_adopt_torch_version_check(self, minimal_cfg):
+        cfg = (
+            DictDefault(
+                {
+                    "optimizer": "adopt_adamw",
+                }
+            )
+            | minimal_cfg
+        )
+
+        with self._caplog.at_level(logging.WARNING):
+            env_capabilities = {"torch_version": "2.3.0"}
+            capabilities = {"bf16": False}
+            _ = validate_config(
+                cfg, capabilities=capabilities, env_capabilities=env_capabilities
+            )
+
+            assert (
+                "ADOPT optimizer is incompatible with torch version < 2.5.1"
+                in self._caplog.records[0].message
+            )
+
 
 class TestValidationCheckModelConfig(BaseValidation):
     """
