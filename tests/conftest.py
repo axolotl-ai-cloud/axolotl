@@ -26,6 +26,11 @@ def download_mhenrichsen_alpaca_2k_dataset():
     snapshot_download("mhenrichsen/alpaca_2k_test", repo_type="dataset")
 
 
+def download_mlabonne_finetome_100k_dataset():
+    # download the model
+    snapshot_download("mlabonne/FineTome-100k", repo_type="dataset")
+
+
 @pytest.fixture
 def temp_dir():
     # Create a temporary directory

@@ -7,9 +7,12 @@ from pathlib import Path
 
 import yaml
 from accelerate.test_utils import execute_subprocess_async
+from tbparse import SummaryReader
 from transformers.testing_utils import get_torch_dist_unique_port
 
 from axolotl.utils.dict import DictDefault
+
+from ..utils import most_recent_subdir
 
 LOG = logging.getLogger("axolotl.tests.e2e.multigpu")
 os.environ["WANDB_DISABLED"] = "true"
@@ -26,12 +29,12 @@ class TestMultiGPUEval:
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "JackFram/llama-68m",
-                "load_in_8bit": False,
-                "load_in_4bit": True,
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "load_in_8bit": True,
+                "load_in_4bit": False,
                 "strict": False,
                 "sequence_len": 2048,
-                "adapter": "qlora",
+                "adapter": "lora",
                 "sample_packing": True,
                 "eval_sample_packing": True,
                 "pad_to_sequence_len": True,
@@ -40,8 +43,8 @@ class TestMultiGPUEval:
                 "lora_dropout": 0.05,
                 "lora_target_linear": True,
                 "lora_modules_to_save": ["embed_tokens", "lm_head"],
-                "val_set_size": 0.1,
-                "special_tokens": {"pad_token": "<|end_of_text|>"},
+                "val_set_size": 0.004,
+                "special_tokens": {"pad_token": "<|endoftext|>"},
                 "datasets": [
                     {
                         "path": "teknium/GPT4-LLM-Cleaned",
@@ -66,6 +69,7 @@ class TestMultiGPUEval:
                 "saves_per_epoch": 1,
                 "logging_steps": 1,
                 "weight_decay": 0.0,
+                "use_tensorboard": True,
             }
         )
 
@@ -87,17 +91,23 @@ class TestMultiGPUEval:
                 str(Path(temp_dir) / "config.yaml"),
             ]
         )
+        tb_log_path = most_recent_subdir(temp_dir + "/runs")
+        event_file = os.path.join(tb_log_path, sorted(os.listdir(tb_log_path))[0])
+        reader = SummaryReader(event_file)
+        df = reader.scalars  # pylint: disable=invalid-name
+        df = df[(df.tag == "eval/loss")]  # pylint: disable=invalid-name
+        assert df.value.values[-1] < 2.5, "Loss is too high"
 
     def test_eval(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "JackFram/llama-68m",
-                "load_in_8bit": False,
-                "load_in_4bit": True,
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "load_in_8bit": True,
+                "load_in_4bit": False,
                 "strict": False,
                 "sequence_len": 2048,
-                "adapter": "qlora",
+                "adapter": "lora",
                 "sample_packing": True,
                 "eval_sample_packing": False,
                 "pad_to_sequence_len": True,
@@ -106,8 +116,8 @@ class TestMultiGPUEval:
                 "lora_dropout": 0.05,
                 "lora_target_linear": True,
                 "lora_modules_to_save": ["embed_tokens", "lm_head"],
-                "val_set_size": 0.1,
-                "special_tokens": {"pad_token": "<|end_of_text|>"},
+                "val_set_size": 0.0004,
+                "special_tokens": {"pad_token": "<|endoftext|>"},
                 "datasets": [
                     {
                         "path": "teknium/GPT4-LLM-Cleaned",
@@ -132,6 +142,7 @@ class TestMultiGPUEval:
                 "saves_per_epoch": 1,
                 "logging_steps": 1,
                 "weight_decay": 0.0,
+                "use_tensorboard": True,
             }
         )
 
@@ -153,3 +164,9 @@ class TestMultiGPUEval:
                 str(Path(temp_dir) / "config.yaml"),
             ]
         )
+        tb_log_path = most_recent_subdir(temp_dir + "/runs")
+        event_file = os.path.join(tb_log_path, sorted(os.listdir(tb_log_path))[0])
+        reader = SummaryReader(event_file)
+        df = reader.scalars  # pylint: disable=invalid-name
+        df = df[(df.tag == "eval/loss")]  # pylint: disable=invalid-name
+        assert df.value.values[-1] < 2.5, "Loss is too high"
