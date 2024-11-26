@@ -1559,7 +1559,15 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
     def check_adopt_torch_version(cls, data):
         if (data.get("optimizer") is not None) and ("adopt" in data.get("optimizer")):
             env_capabilities = data.get("env_capabilities")
-            torch_version = env_capabilities.get("torch_version")
+
+            torch_version = None
+            if env_capabilities is not None:
+                torch_version = env_capabilities.get("torch_version")
+            if torch_version is None:
+                import torch
+
+                torch_version = str(torch.__version__).split("+", maxsplit=1)[0]
+
             if version.parse(torch_version) < version.parse("2.5.1"):
                 raise ValueError(
                     "ADOPT optimizer is incompatible with torch version < 2.5.1"
