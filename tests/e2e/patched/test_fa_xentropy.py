@@ -4,7 +4,6 @@ E2E tests for lora llama
 
 import logging
 import os
-import unittest
 from importlib import reload
 from pathlib import Path
 
@@ -18,7 +17,7 @@ from axolotl.train import train
 from axolotl.utils.config import normalize_config
 from axolotl.utils.dict import DictDefault
 
-from ..utils import most_recent_subdir, with_temp_dir
+from ..utils import most_recent_subdir
 
 LOG = logging.getLogger("axolotl.tests.e2e")
 os.environ["WANDB_DISABLED"] = "true"
@@ -32,13 +31,16 @@ def reload_transformers():
     reload(transformers.models.llama.modeling_llama)
 
 
-class TestFAXentropyLlama(unittest.TestCase):
+class TestFAXentropyLlama:
     """
     Test case for Llama models using LoRA w multipack
     """
 
-    @with_temp_dir
-    def test_lora_packing_fa_cross_entropy(self, temp_dir):
+    @pytest.mark.parametrize(
+        "gradient_accumulation_steps",
+        [1, 4],
+    )
+    def test_lora_packing_fa_cross_entropy(self, temp_dir, gradient_accumulation_steps):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
@@ -71,8 +73,8 @@ class TestFAXentropyLlama(unittest.TestCase):
                 "num_epochs": 1,
                 "max_steps": 5,
                 "save_steps": 5,
-                "micro_batch_size": 8,
-                "gradient_accumulation_steps": 1,
+                "micro_batch_size": 2,
+                "gradient_accumulation_steps": gradient_accumulation_steps,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_8bit",
