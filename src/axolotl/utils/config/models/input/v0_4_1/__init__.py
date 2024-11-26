@@ -22,7 +22,7 @@ from transformers import SchedulerType
 from transformers.training_args import OptimizerNames
 from transformers.utils.import_utils import is_torch_npu_available
 
-from axolotl.utils.config.models.internals import ENVCapabilities, GPUCapabilities
+from axolotl.utils.config.models.internals import EnvCapabilities, GPUCapabilities
 
 LOG = logging.getLogger("axolotl.utils.config.models.input")
 
@@ -1478,7 +1478,7 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
     """wrapper to valdiate gpu capabilities with the configured options"""
 
     capabilities: GPUCapabilities
-    env_capabilities: Optional[ENVCapabilities] = None
+    env_capabilities: Optional[EnvCapabilities] = None
 
     @model_validator(mode="after")
     def check_bf16(self):
