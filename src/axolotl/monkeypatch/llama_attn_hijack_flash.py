@@ -113,8 +113,7 @@ def patch_fa_llama_cross_entropy():
             source, target, ignore_index=ignore_index
         )
         if reduction == "sum":
-            loss.sum()
-            loss = loss / num_items_in_batch
+            loss = loss.sum() / num_items_in_batch
         else:
             loss = loss.sum() / (target != ignore_index).sum()
         return loss
