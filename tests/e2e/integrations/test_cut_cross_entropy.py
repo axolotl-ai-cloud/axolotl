@@ -16,7 +16,7 @@ from axolotl.utils.dict import DictDefault
 
 
 @pytest.fixture()
-def get_min_cfg(temp_dir):
+def min_cfg(temp_dir):
     return {
         "base_model": "HuggingFaceTB/SmolLM2-135M",
         "plugins": [
@@ -47,13 +47,14 @@ def get_min_cfg(temp_dir):
     }
 
 
-class CutCrossEntropyIntegrationTestCase:
+class TestCutCrossEntropyIntegration:
     """
     e2e tests for cut_cross_entropy integration with Axolotl
     """
 
-    def test_llama_w_cce(self, temp_dir):
-        cfg = DictDefault(get_min_cfg(temp_dir))
+    # pylint: disable=redefined-outer-name
+    def test_llama_w_cce(self, min_cfg, temp_dir):
+        cfg = DictDefault(min_cfg)
         prepare_plugins(cfg)
         normalize_config(cfg)
         cli_args = TrainerCliArgs()
@@ -66,9 +67,9 @@ class CutCrossEntropyIntegrationTestCase:
         "attention_type",
         ["flash_attention", "sdp_attention", "xformers_attention"],
     )
-    def test_llama_w_cce_and_attention(self, temp_dir, attention_type):
+    def test_llama_w_cce_and_attention(self, min_cfg, temp_dir, attention_type):
         cfg = DictDefault(
-            get_min_cfg(temp_dir)
+            min_cfg
             | {
                 attention_type: True,
             }
