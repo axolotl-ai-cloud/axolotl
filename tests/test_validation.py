@@ -672,6 +672,9 @@ class TestValidation(BaseValidation):
                 {
                     "bf16": True,
                     "capabilities": {"bf16": False},
+                    "env_capabilities": {
+                        "torch_version": "2.5.1",
+                    },
                 }
             )
             | minimal_cfg
