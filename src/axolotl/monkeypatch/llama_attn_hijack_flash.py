@@ -4,7 +4,6 @@
 
 import logging
 import warnings
-from functools import partial
 from typing import List, Optional, Tuple, Union
 
 import torch
@@ -94,13 +93,33 @@ def replace_llama_qkv_with_fused(model):
             set_module_name(model, name, qkv)
 
 
-def patch_llama_cross_entropy():
-    from flash_attn.losses.cross_entropy import CrossEntropyLoss
-
-    LOG.info("patching with flash_attn.losses.cross_entropy")
-    transformers.models.llama.modeling_llama.CrossEntropyLoss = partial(
-        CrossEntropyLoss, inplace_backward=True
+def patch_fa_llama_cross_entropy():
+    LOG.info(
+        "patching transformers.loss.loss_utils.fixed_cross_entropy with flash_attn.ops.triton.cross_entropy"
     )
+    from flash_attn.ops.triton.cross_entropy import (
+        cross_entropy_loss as flash_attn_cross_entropy_loss,
+    )
+
+    def fa2_fixed_cross_entropy(
+        source,
+        target,
+        num_items_in_batch: int = None,
+        ignore_index: int = -100,
+        **kwargs,
+    ):  # pylint: disable=unused-argument
+        reduction = "sum" if num_items_in_batch is not None else "mean"
+        loss, _ = flash_attn_cross_entropy_loss(
+            source, target, ignore_index=ignore_index
+        )
+        if reduction == "sum":
+            loss.sum()
+            loss = loss / num_items_in_batch
+        else:
+            loss = loss.sum() / (target != ignore_index).sum()
+        return loss
+
+    transformers.loss.loss_utils.fixed_cross_entropy = fa2_fixed_cross_entropy
 
 
 def patch_llama_rms_norm():
@@ -147,7 +166,7 @@ def replace_llama_attn_with_flash_attn(
 
     # skip only if explicitly disabled
     if cross_entropy:
-        patch_llama_cross_entropy()
+        patch_fa_llama_cross_entropy()
 
     # skip only if explicitly disabled
     if rms_norm:

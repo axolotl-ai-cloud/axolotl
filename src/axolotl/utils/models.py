@@ -454,7 +454,7 @@ class ModelLoader:
                 replace_stablelm_attn_with_flash_attn(self.cfg.base_model)
 
     @cached_property
-    def flash_attn(self) -> bool:
+    def has_flash_attn(self) -> bool:
         """Check if flash attention is installed"""
         return importlib.util.find_spec("flash_attn") is not None
 
@@ -462,20 +462,20 @@ class ModelLoader:
         """
         Patch loss functions
         """
-        if self.flash_attn:
+        if self.has_flash_attn:
             from axolotl.monkeypatch.llama_attn_hijack_flash import (
-                patch_llama_cross_entropy,
+                patch_fa_llama_cross_entropy,
                 patch_llama_rms_norm,
             )
 
-        if self.cfg.flash_attn_cross_entropy and self.flash_attn:
-            patch_llama_cross_entropy()
+        if self.cfg.flash_attn_cross_entropy and self.has_flash_attn:
+            patch_fa_llama_cross_entropy()
         elif self.cfg.unsloth_cross_entropy_loss:
             from axolotl.monkeypatch.unsloth_ import integrate_cross_entropy_loss_patch
 
             integrate_cross_entropy_loss_patch(model_type="llama")
 
-        if self.cfg.flash_attn_rms_norm and self.flash_attn:
+        if self.cfg.flash_attn_rms_norm and self.has_flash_attn:
             patch_llama_rms_norm()
         elif self.cfg.unsloth_rms_norm:
             from axolotl.monkeypatch.unsloth_ import patch_unsloth_layernorm
