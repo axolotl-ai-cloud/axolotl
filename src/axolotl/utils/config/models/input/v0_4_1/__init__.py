@@ -1478,7 +1478,7 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
     """wrapper to valdiate gpu capabilities with the configured options"""
 
     capabilities: GPUCapabilities
-    env_capabilities: Optional[EnvCapabilities] = None
+    env_capabilities: EnvCapabilities
 
     @model_validator(mode="after")
     def check_bf16(self):
@@ -1559,10 +1559,8 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
     def check_adopt_torch_version(cls, data):
         if (data.get("optimizer") is not None) and ("adopt" in data.get("optimizer")):
             env_capabilities = data.get("env_capabilities")
+            torch_version = env_capabilities.get("torch_version")
 
-            torch_version = None
-            if env_capabilities is not None:
-                torch_version = env_capabilities.get("torch_version")
             if torch_version is None:
                 import torch
 
