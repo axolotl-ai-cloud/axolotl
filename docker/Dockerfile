@@ -27,6 +27,7 @@ RUN if [ "$AXOLOTL_EXTRAS" != "" ] ; then \
     fi
 
 RUN python scripts/unsloth_install.py | sh
+RUN python scripts/cutcrossentropy_install.py | sh
 
 # So we can test the Docker image
 RUN pip install pytest
