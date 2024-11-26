@@ -55,9 +55,7 @@ class TestFAXentropyLlama(unittest.TestCase):
                 "lora_target_linear": True,
                 "val_set_size": 0.2,
                 "special_tokens": {
-                    "unk_token": "<unk>",
-                    "bos_token": "<s>",
-                    "eos_token": "</s>",
+                    "par_token": "<|endoftext|>",
                 },
                 "chat_template": "chatml",
                 "datasets": [
