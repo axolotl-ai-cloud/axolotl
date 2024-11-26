@@ -1183,6 +1183,12 @@ class TestValidation(BaseValidation):
                 cfg, capabilities=capabilities, env_capabilities=env_capabilities
             )
 
+        env_capabilities = {"torch_version": "2.5.1"}
+        capabilities = {"bf16": False}
+        _ = validate_config(
+            cfg, capabilities=capabilities, env_capabilities=env_capabilities
+        )
+
 
 class TestValidationCheckModelConfig(BaseValidation):
     """
