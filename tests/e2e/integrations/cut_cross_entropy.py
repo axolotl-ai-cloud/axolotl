@@ -2,7 +2,6 @@
 Simple end-to-end test for Cut Cross Entropy integration
 """
 
-import unittest
 from pathlib import Path
 
 from axolotl.cli import load_datasets
@@ -11,17 +10,14 @@ from axolotl.train import train
 from axolotl.utils.config import normalize_config, prepare_plugins
 from axolotl.utils.dict import DictDefault
 
-from ..utils import with_temp_dir
-
 # pylint: disable=duplicate-code
 
 
-class CutCrossEntropyIntegrationTestCase(unittest.TestCase):
+class CutCrossEntropyIntegrationTestCase:
     """
     e2e tests for cut_cross_entropy integration with Axolotl
     """
 
-    @with_temp_dir
     def test_llama_w_cce(self, temp_dir):
         cfg = DictDefault(
             {
