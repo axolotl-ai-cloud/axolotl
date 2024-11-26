@@ -107,18 +107,18 @@ def _sanitize_kwargs_for_tagging(tag_names, kwargs=None):
     return kwargs
 
 
-def _sanitize_kwargs_for_ds_tagging(dataset_tag_names, kwargs=None):
-    if isinstance(dataset_tag_names, str):
-        dataset_tag_names = [dataset_tag_names]
+def _sanitize_kwargs_for_ds_tagging(dataset_tags, kwargs=None):
+    if isinstance(dataset_tags, str):
+        dataset_tags = [dataset_tags]
 
-    if (dataset_tag_names is not None) and (kwargs is not None):
-        if "datasets" not in kwargs:
-            kwargs["datasets"] = dataset_tag_names
-        elif "datasets" in kwargs and isinstance(kwargs["datasets"], list):
-            kwargs["datasets"].extend(dataset_tag_names)
-        elif "datasets" in kwargs and isinstance(kwargs["datasets"], str):
-            dataset_tag_names.append(kwargs["datasets"])
-            kwargs["datasets"] = dataset_tag_names
+    if (dataset_tags is not None) and (kwargs is not None):
+        if "dataset_tags" not in kwargs:
+            kwargs["dataset_tags"] = dataset_tags
+        elif "dataset_tags" in kwargs and isinstance(kwargs["dataset_tags"], list):
+            kwargs["dataset_tags"].extend(dataset_tags)
+        elif "dataset_tags" in kwargs and isinstance(kwargs["dataset_tags"], str):
+            dataset_tags.append(kwargs["dataset_tags"])
+            kwargs["dataset_tags"] = dataset_tags
 
     return kwargs
 
@@ -426,12 +426,12 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
         *_args,
         bench_data_collator=None,
         eval_data_collator=None,
-        dataset_tag_names=None,
+        dataset_tags=None,
         **kwargs,
     ):
         self.bench_data_collator = bench_data_collator
         self.eval_data_collator = eval_data_collator
-        self.dataset_tag_names = dataset_tag_names
+        self.dataset_tags = dataset_tags
         super().__init__(*_args, **kwargs)
         self.train_data_collator = self.data_collator
         self._stored_metrics = defaultdict(lambda: defaultdict(list))
@@ -890,7 +890,7 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
         model on the Hub. Please refer to `~transformers.Trainer.push_to_hub` for more details.
         """
         kwargs = _sanitize_kwargs_for_ds_tagging(
-            dataset_tag_names=self.dataset_tag_names, kwargs=kwargs
+            dataset_tags=self.dataset_tags, kwargs=kwargs
         )
         kwargs = _sanitize_kwargs_for_tagging(tag_names=self.tag_names, kwargs=kwargs)
 
@@ -1015,9 +1015,9 @@ class AxolotlDPOTrainer(SchedulerMixin, DPOTrainer):
 
     tag_names = ["axolotl", "dpo"]
 
-    def __init__(self, *args, dataset_tag_names=None, **kwargs):
+    def __init__(self, *args, dataset_tags=None, **kwargs):
         super().__init__(*args, **kwargs)
-        self.dataset_tag_names = dataset_tag_names
+        self.dataset_tags = dataset_tags
         self.optimizer = None
 
     def create_optimizer(self):
@@ -1057,7 +1057,7 @@ class AxolotlDPOTrainer(SchedulerMixin, DPOTrainer):
         model on the Hub. Please refer to `~transformers.Trainer.push_to_hub` for more details.
         """
         kwargs = _sanitize_kwargs_for_ds_tagging(
-            dataset_tag_names=self.dataset_tag_names, kwargs=kwargs
+            dataset_tags=self.dataset_tags, kwargs=kwargs
         )
         kwargs = _sanitize_kwargs_for_tagging(tag_names=self.tag_names, kwargs=kwargs)
 
@@ -1781,7 +1781,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             trainer_kwargs["tokenizer"] = self.tokenizer
 
         if (trainer_cls is not AxolotlRewardTrainer) and self.cfg.datasets is not None:
-            trainer_kwargs["dataset_tag_names"] = [
+            trainer_kwargs["dataset_tags"] = [
                 d["path"] for d in self.cfg.datasets if not Path(d["path"]).is_dir()
             ]
         trainer = trainer_cls(
@@ -2058,7 +2058,7 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             dpo_trainer_kwargs["tokenizer"] = self.tokenizer
 
         if self.cfg.datasets is not None and (trainer_cls is AxolotlDPOTrainer):
-            dpo_trainer_kwargs["dataset_tag_names"] = [
+            dpo_trainer_kwargs["dataset_tags"] = [
                 d["path"] for d in self.cfg.datasets if not Path(d["path"]).is_dir()
             ]
         dpo_trainer = trainer_cls(
