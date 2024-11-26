@@ -244,10 +244,6 @@ def validate_config(
         ) = merge_input_args()
 
     if capabilities:
-        if env_capabilities is None:
-            env_capabilities = {
-                "torch_version": str(torch.__version__).split("+", maxsplit=1)[0]
-            }
         return DictDefault(
             dict(
                 AxolotlConfigWCapabilities(
