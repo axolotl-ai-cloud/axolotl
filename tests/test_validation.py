@@ -1163,7 +1163,7 @@ class TestValidation(BaseValidation):
                 in self._caplog.records[0].message
             )
 
-    def test_adopt_torch_version_check(self, minimal_cfg):
+    def test_torch_version_adopt_req(self, minimal_cfg):
         cfg = (
             DictDefault(
                 {
@@ -1173,16 +1173,14 @@ class TestValidation(BaseValidation):
             | minimal_cfg
         )
 
-        with self._caplog.at_level(logging.WARNING):
+        with pytest.raises(
+            ValueError,
+            match=r".*ADOPT optimizer is incompatible with torch version*",
+        ):
             env_capabilities = {"torch_version": "2.3.0"}
             capabilities = {"bf16": False}
             _ = validate_config(
                 cfg, capabilities=capabilities, env_capabilities=env_capabilities
-            )
-
-            assert (
-                "ADOPT optimizer is incompatible with torch version < 2.5.1"
-                in self._caplog.records[0].message
             )
 
 
