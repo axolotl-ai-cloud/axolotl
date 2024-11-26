@@ -62,41 +62,15 @@ class CutCrossEntropyIntegrationTestCase:
         train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
         assert (Path(temp_dir) / "model.safetensors").exists()
 
-    def test_llama_w_cce_flash_attention(self, temp_dir):
+    @pytest.mark.parametrize(
+        "attention_type",
+        ["flash_attention", "sdp_attention", "xformers_attention"],
+    )
+    def test_llama_w_cce_and_attention(self, temp_dir, attention_type):
         cfg = DictDefault(
             get_min_cfg(temp_dir)
             | {
-                "flash_attention": True,
-            }
-        )
-        prepare_plugins(cfg)
-        normalize_config(cfg)
-        cli_args = TrainerCliArgs()
-        dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
-
-        train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-        assert (Path(temp_dir) / "model.safetensors").exists()
-
-    def test_llama_w_cce_sdp_attention(self, temp_dir):
-        cfg = DictDefault(
-            get_min_cfg(temp_dir)
-            | {
-                "sdp_attention": True,
-            }
-        )
-        prepare_plugins(cfg)
-        normalize_config(cfg)
-        cli_args = TrainerCliArgs()
-        dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
-
-        train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-        assert (Path(temp_dir) / "model.safetensors").exists()
-
-    def test_llama_w_cce_xformers_attention(self, temp_dir):
-        cfg = DictDefault(
-            get_min_cfg(temp_dir)
-            | {
-                "xformers_attention": True,
+                attention_type: True,
             }
         )
         prepare_plugins(cfg)
