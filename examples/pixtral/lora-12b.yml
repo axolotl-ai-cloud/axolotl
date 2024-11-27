@@ -7,7 +7,7 @@ skip_prepare_dataset: true
 remove_unused_columns: false
 sample_packing: false
 
-chat_template: llama3_2_vision
+chat_template: pixtral
 datasets:
   - path: HuggingFaceH4/llava-instruct-mix-vsft
     type: chat_template
