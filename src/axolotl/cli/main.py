@@ -1,12 +1,15 @@
 """
 CLI definition for various axolotl commands
 """
+import json
 import os
 import subprocess  # nosec B404
 import sys
-from typing import Any, Dict, List
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 import click
+import requests
 
 from axolotl.common.cli import PreprocessCliArgs, TrainerCliArgs
 
@@ -68,6 +71,62 @@ def common_options(function):
     )(function)
     function = click.option("--prompter", type=str, help="Prompter to use")(function)
     return function
+
+
+def fetch_from_github(dir_prefix: str, dest_dir: Optional[str] = None) -> None:
+    """
+    Fetch files from a specific directory in the GitHub repository.
+
+    Args:
+        dir_prefix: Directory prefix to filter files (e.g., 'examples/', 'deepspeed_configs/')
+        dest_dir: Local destination directory
+    """
+    api_url = "https://api.github.com/repos/axolotl-ai-cloud/axolotl/git/trees/main?recursive=1"
+    raw_base_url = "https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/main"
+
+    # Get repository tree with timeout
+    response = requests.get(api_url, timeout=30)  # 30 seconds timeout
+    response.raise_for_status()
+    tree = json.loads(response.text)
+
+    # Filter for files under specified directory
+    files = [
+        item["path"]
+        for item in tree["tree"]
+        if item["type"] == "blob" and item["path"].startswith(dir_prefix)
+    ]
+
+    if not files:
+        raise click.ClickException(f"No files found in {dir_prefix}")
+
+    # Default destination directory is the last part of dir_prefix
+    default_dest = Path(dir_prefix.rstrip("/"))
+    dest_path = Path(dest_dir) if dest_dir else default_dest
+
+    for file_path in files:
+        # Create full URLs and paths
+        raw_url = f"{raw_base_url}/{file_path}"
+        dest_file = dest_path / file_path.split(dir_prefix)[-1]
+
+        # Create directories if needed
+        dest_file.parent.mkdir(parents=True, exist_ok=True)
+
+        print(f"Downloading {file_path} to {dest_file}")
+        response = requests.get(raw_url, timeout=30)
+        response.raise_for_status()
+
+        with open(dest_file, "wb") as file:
+            file.write(response.content)
+
+
+def fetch_examples(dest_dir: Optional[str] = None) -> None:
+    """Fetch all example configs from GitHub repository."""
+    fetch_from_github("examples/", dest_dir)
+
+
+def fetch_deepspeed_configs(dest_dir: Optional[str] = None) -> None:
+    """Fetch all deepspeed configs from GitHub repository."""
+    fetch_from_github("deepspeed_configs/", dest_dir)
 
 
 @click.group()
@@ -150,6 +209,23 @@ def merge_sharded_fsdp_weights(config: str, **kwargs):
     cmd = build_command(base_cmd, vars(cli_args))
 
     subprocess.run(cmd, check=True)  # nosec B603
+
+
+@cli.command()
+@click.argument("directory", type=click.Choice(["examples", "deepspeed_configs"]))
+@click.option("--dest", help="Destination directory")
+def fetch(directory: str, dest: Optional[str]):
+    """
+    Fetch example configs or other resources.
+
+    Available directories:
+    - examples: Example configuration files
+    - deepspeed_configs: DeepSpeed configuration files
+    """
+    if directory == "examples":
+        fetch_examples(dest)
+    elif directory == "deepspeed_configs":
+        fetch_deepspeed_configs(dest)
 
 
 def main():
