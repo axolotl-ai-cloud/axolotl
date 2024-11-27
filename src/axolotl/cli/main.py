@@ -134,14 +134,16 @@ def cli():
 @click.argument("config", type=str)
 @common_options
 @click.option("--download", is_flag=True, default=True, help="Download datasets")
-def preprocess(config: str, **kwargs):
+def preprocess(config: Optional[str], **kwargs):
     """Preprocess datasets before training."""
     cli_args = create_preprocess_args(**kwargs)
 
     env = os.environ.copy()
     env["CUDA_VISIBLE_DEVICES"] = ""
 
-    base_cmd = [sys.executable, "-m", "axolotl.cli.preprocess", config]
+    base_cmd = [sys.executable, "-m", "axolotl.cli.preprocess"]
+    if config:
+        base_cmd.append(config)
     cmd = build_command(base_cmd, vars(cli_args))
 
     subprocess.run(cmd, env=env, check=True)  # nosec B603
@@ -150,11 +152,13 @@ def preprocess(config: str, **kwargs):
 @cli.command()
 @click.argument("config", type=str)
 @common_options
-def train(config: str, **kwargs):
+def train(config: Optional[str], **kwargs):
     """Train or fine-tune a model."""
     cli_args = create_trainer_args(**kwargs)
 
-    base_cmd = ["accelerate", "launch", "-m", "axolotl.cli.train", config]
+    base_cmd = ["accelerate", "launch", "-m", "axolotl.cli.train"]
+    if config:
+        base_cmd.append(config)
     cmd = build_command(base_cmd, vars(cli_args))
 
     subprocess.run(cmd, check=True)  # nosec B603
@@ -167,11 +171,13 @@ def train(config: str, **kwargs):
 @click.option("--base-model", help="Path to base model for non-LoRA models")
 @click.option("--gradio", is_flag=True, help="Launch Gradio interface")
 @click.option("--load-in-8bit", is_flag=True, help="Load model in 8-bit mode")
-def inference(config: str, **kwargs):
+def inference(config: Optional[str], **kwargs):
     """Run inference with a trained model."""
     cli_args = create_trainer_args(inference=True, **kwargs)
 
-    base_cmd = ["accelerate", "launch", "-m", "axolotl.cli.inference", config]
+    base_cmd = ["accelerate", "launch", "-m", "axolotl.cli.inference"]
+    if config:
+        base_cmd.append(config)
     cmd = build_command(base_cmd, vars(cli_args))
 
     subprocess.run(cmd, check=True)  # nosec B603
@@ -182,11 +188,13 @@ def inference(config: str, **kwargs):
 @common_options
 @click.option("--model-dir", help="Directory containing model weights to shard")
 @click.option("--save-dir", help="Directory to save sharded weights")
-def shard(config: str, **kwargs):
+def shard(config: Optional[str], **kwargs):
     """Shard model weights."""
     cli_args = create_trainer_args(shard=True, **kwargs)
 
-    base_cmd = [sys.executable, "-m", "axolotl.cli.shard", config]
+    base_cmd = ["accelerate", "launch", "-m", "axolotl.cli.shard"]
+    if config:
+        base_cmd.append(config)
     cmd = build_command(base_cmd, vars(cli_args))
 
     subprocess.run(cmd, check=True)  # nosec B603
@@ -197,11 +205,13 @@ def shard(config: str, **kwargs):
 @common_options
 @click.option("--model-dir", help="Directory containing sharded weights")
 @click.option("--save-path", help="Path to save merged weights")
-def merge_sharded_fsdp_weights(config: str, **kwargs):
+def merge_sharded_fsdp_weights(config: Optional[str], **kwargs):
     """Merge sharded FSDP model weights."""
     cli_args = create_trainer_args(**kwargs)
 
-    base_cmd = [sys.executable, "-m", "axolotl.cli.merge_sharded_fsdp_weights", config]
+    base_cmd = ["accelerate", "launch", "-m", "axolotl.cli.merge_sharded_fsdp_weights"]
+    if config:
+        base_cmd.append(config)
     cmd = build_command(base_cmd, vars(cli_args))
 
     subprocess.run(cmd, check=True)  # nosec B603
