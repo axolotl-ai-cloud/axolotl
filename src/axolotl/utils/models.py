@@ -1045,7 +1045,9 @@ class ModelLoader:
             and self.model.get_input_embeddings().num_embeddings < embeddings_len
         ):
             resize_kwargs = {}
-            if self.cfg.mean_resizing_embeddings is not None:
+            if self.cfg.mean_resizing_embeddings is not None and not (
+                self.model_config.model_type == "llava"
+            ):
                 resize_kwargs["mean_resizing"] = self.cfg.mean_resizing_embeddings
             self.model.resize_token_embeddings(embeddings_len, **resize_kwargs)
         else:
