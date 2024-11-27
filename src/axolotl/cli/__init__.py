@@ -15,7 +15,6 @@ from urllib.parse import urlparse
 
 import requests
 import torch
-import yaml
 
 # add src to the pythonpath so we don't need to pip install this
 from accelerate.commands.config import config_args
@@ -26,6 +25,7 @@ from transformers import GenerationConfig, TextIteratorStreamer, TextStreamer
 from transformers.utils import is_torch_bf16_gpu_available
 from transformers.utils.import_utils import _is_package_available
 
+import yaml
 from axolotl.common.cli import TrainerCliArgs, load_model_and_tokenizer
 from axolotl.logging_config import configure_logging
 from axolotl.train import TrainDatasetMeta
@@ -380,7 +380,7 @@ def choose_config(path: Path):
 
     if len(yaml_files) == 1:
         print(f"Using default YAML file '{yaml_files[0]}'")
-        return yaml_files[0]
+        return str(yaml_files[0])
 
     print("Choose a YAML file:")
     for idx, file in enumerate(yaml_files):
@@ -391,7 +391,7 @@ def choose_config(path: Path):
         try:
             choice = int(input("Enter the number of your choice: "))
             if 1 <= choice <= len(yaml_files):
-                chosen_file = yaml_files[choice - 1]
+                chosen_file = str(yaml_files[choice - 1])
             else:
                 print("Invalid choice. Please choose a number from the list.")
         except ValueError:
