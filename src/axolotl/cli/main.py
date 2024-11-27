@@ -111,12 +111,13 @@ def fetch_from_github(dir_prefix: str, dest_dir: Optional[str] = None) -> None:
 
         # Check if file exists and needs updating
         if dest_file.exists():
-            # Get local file content hash
+            # Git blob SHA is calculated with a header
             with open(dest_file, "rb") as file:
-                local_content = file.read()
-                local_sha = hashlib.sha1(
-                    local_content, usedforsecurity=False
-                ).hexdigest()
+                content = file.read()
+
+                # Calculate git blob SHA
+                blob = b"blob " + str(len(content)).encode() + b"\0" + content
+                local_sha = hashlib.sha1(blob, usedforsecurity=False).hexdigest()
 
             if local_sha == remote_sha:
                 print(f"Skipping {file_path} (unchanged)")
