@@ -5,6 +5,7 @@ import json
 import os
 import subprocess  # nosec B404
 import sys
+from dataclasses import fields
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -14,28 +15,23 @@ import requests
 from axolotl.common.cli import PreprocessCliArgs, TrainerCliArgs
 
 
+def create_args_from_dataclass(cls, **kwargs):
+    """Create args from dataclass, using its default values if not in kwargs."""
+    field_defaults = {field.name: field.default for field in fields(cls)}
+
+    # Update defaults with provided kwargs
+    field_defaults.update(kwargs)
+    return cls(**field_defaults)
+
+
 def create_trainer_args(**kwargs) -> TrainerCliArgs:
-    """Create TrainerCliArgs from click options"""
-    return TrainerCliArgs(
-        debug=kwargs.get("debug", False),
-        debug_text_only=kwargs.get("debug_text_only", False),
-        debug_num_examples=kwargs.get("debug_num_examples", 0),
-        inference=kwargs.get("inference", False),
-        merge_lora=kwargs.get("merge_lora", False),
-        prompter=kwargs.get("prompter"),
-        shard=kwargs.get("shard", False),
-    )
+    """Create TrainerCliArgs from cli options"""
+    return create_args_from_dataclass(TrainerCliArgs, **kwargs)
 
 
 def create_preprocess_args(**kwargs) -> PreprocessCliArgs:
-    """Create PreprocessCliArgs from click options"""
-    return PreprocessCliArgs(
-        debug=kwargs.get("debug", False),
-        debug_text_only=kwargs.get("debug_text_only", False),
-        debug_num_examples=kwargs.get("debug_num_examples", 1),
-        prompter=kwargs.get("prompter"),
-        download=kwargs.get("download", True),
-    )
+    """Create PreprocessCliArgs from cli options"""
+    return create_args_from_dataclass(PreprocessCliArgs, **kwargs)
 
 
 def build_command(base_cmd: List[str], options: Dict[str, Any]) -> List[str]:
