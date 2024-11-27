@@ -103,6 +103,11 @@ setup(
     packages=find_packages("src"),
     install_requires=install_requires,
     dependency_links=dependency_links,
+    entry_points={
+        "console_scripts": [
+            "axolotl=axolotl.cli.main:main",
+        ],
+    },
     extras_require={
         "flash-attn": [
             "flash-attn==2.7.0.post2",
