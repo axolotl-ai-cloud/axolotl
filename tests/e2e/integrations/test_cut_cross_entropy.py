@@ -9,6 +9,7 @@ import pytest
 from axolotl.cli import load_datasets
 from axolotl.common.cli import TrainerCliArgs
 from axolotl.train import train
+from axolotl.utils import get_pytorch_version
 from axolotl.utils.config import normalize_config, prepare_plugins
 from axolotl.utils.dict import DictDefault
 
@@ -60,8 +61,13 @@ class TestCutCrossEntropyIntegration:
         cli_args = TrainerCliArgs()
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
-        train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-        assert (Path(temp_dir) / "model.safetensors").exists()
+        major, minor, _ = get_pytorch_version()
+        if (major, minor) < (2, 4):
+            with pytest.raises(ImportError):
+                train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
+        else:
+            train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
+            assert (Path(temp_dir) / "model.safetensors").exists()
 
     @pytest.mark.parametrize(
         "attention_type",
@@ -79,5 +85,10 @@ class TestCutCrossEntropyIntegration:
         cli_args = TrainerCliArgs()
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
-        train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-        assert (Path(temp_dir) / "model.safetensors").exists()
+        major, minor, _ = get_pytorch_version()
+        if (major, minor) < (2, 4):
+            with pytest.raises(ImportError):
+                train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
+        else:
+            train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
+            assert (Path(temp_dir) / "model.safetensors").exists()
