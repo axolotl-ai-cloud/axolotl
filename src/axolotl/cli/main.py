@@ -1,6 +1,7 @@
 """
 CLI definition for various axolotl commands
 """
+import hashlib
 import json
 import os
 import subprocess  # nosec B404
@@ -71,7 +72,8 @@ def common_options(function):
 
 def fetch_from_github(dir_prefix: str, dest_dir: Optional[str] = None) -> None:
     """
-    Fetch files from a specific directory in the GitHub repository.
+    Sync files from a specific directory in the GitHub repository.
+    Only downloads files that don't exist locally or have changed.
 
     Args:
         dir_prefix: Directory prefix to filter files (e.g., 'examples/', 'deepspeed_configs/')
@@ -81,16 +83,16 @@ def fetch_from_github(dir_prefix: str, dest_dir: Optional[str] = None) -> None:
     raw_base_url = "https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/main"
 
     # Get repository tree with timeout
-    response = requests.get(api_url, timeout=30)  # 30 seconds timeout
+    response = requests.get(api_url, timeout=30)
     response.raise_for_status()
     tree = json.loads(response.text)
 
-    # Filter for files under specified directory
-    files = [
-        item["path"]
+    # Filter for files and get their SHA
+    files = {
+        item["path"]: item["sha"]
         for item in tree["tree"]
         if item["type"] == "blob" and item["path"].startswith(dir_prefix)
-    ]
+    }
 
     if not files:
         raise click.ClickException(f"No files found in {dir_prefix}")
@@ -99,30 +101,49 @@ def fetch_from_github(dir_prefix: str, dest_dir: Optional[str] = None) -> None:
     default_dest = Path(dir_prefix.rstrip("/"))
     dest_path = Path(dest_dir) if dest_dir else default_dest
 
-    for file_path in files:
+    # Keep track of processed files for summary
+    files_processed: Dict[str, List[str]] = {"new": [], "updated": [], "unchanged": []}
+
+    for file_path, remote_sha in files.items():
         # Create full URLs and paths
         raw_url = f"{raw_base_url}/{file_path}"
         dest_file = dest_path / file_path.split(dir_prefix)[-1]
 
+        # Check if file exists and needs updating
+        if dest_file.exists():
+            # Get local file content hash
+            with open(dest_file, "rb") as file:
+                local_content = file.read()
+                local_sha = hashlib.sha1(
+                    local_content, usedforsecurity=False
+                ).hexdigest()
+
+            if local_sha == remote_sha:
+                print(f"Skipping {file_path} (unchanged)")
+                files_processed["unchanged"].append(file_path)
+                continue
+
+            print(f"Updating {file_path}")
+            files_processed["updated"].append(file_path)
+        else:
+            print(f"Downloading {file_path}")
+            files_processed["new"].append(file_path)
+
         # Create directories if needed
         dest_file.parent.mkdir(parents=True, exist_ok=True)
 
-        print(f"Downloading {file_path} to {dest_file}")
+        # Download and save file
         response = requests.get(raw_url, timeout=30)
         response.raise_for_status()
 
         with open(dest_file, "wb") as file:
             file.write(response.content)
 
-
-def fetch_examples(dest_dir: Optional[str] = None) -> None:
-    """Fetch all example configs from GitHub repository."""
-    fetch_from_github("examples/", dest_dir)
-
-
-def fetch_deepspeed_configs(dest_dir: Optional[str] = None) -> None:
-    """Fetch all deepspeed configs from GitHub repository."""
-    fetch_from_github("deepspeed_configs/", dest_dir)
+    # Print summary
+    print("\nSync Summary:")
+    print(f"New files: {len(files_processed['new'])}")
+    print(f"Updated files: {len(files_processed['updated'])}")
+    print(f"Unchanged files: {len(files_processed['unchanged'])}")
 
 
 @click.group()
@@ -228,10 +249,7 @@ def fetch(directory: str, dest: Optional[str]):
     - examples: Example configuration files
     - deepspeed_configs: DeepSpeed configuration files
     """
-    if directory == "examples":
-        fetch_examples(dest)
-    elif directory == "deepspeed_configs":
-        fetch_deepspeed_configs(dest)
+    fetch_from_github(f"{directory}/", dest)
 
 
 def main():
