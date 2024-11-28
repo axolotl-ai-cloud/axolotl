@@ -12,6 +12,11 @@ from huggingface_hub import snapshot_download
 from transformers import AutoTokenizer
 
 from axolotl.utils.data import load_tokenized_prepared_datasets
+from axolotl.utils.data.constants import (
+    ALPACA_MESSAGES_CONFIG_OG,
+    ALPACA_MESSAGES_CONFIG_REVISION,
+    SPECIAL_TOKENS,
+)
 from axolotl.utils.data.rl import load_prepare_dpo_datasets
 from axolotl.utils.dict import DictDefault
 
@@ -21,13 +26,7 @@ class TestDatasetPreparation(unittest.TestCase):
 
     def setUp(self) -> None:
         self.tokenizer = AutoTokenizer.from_pretrained("huggyllama/llama-7b")
-        self.tokenizer.add_special_tokens(
-            {
-                "bos_token": "<s>",
-                "eos_token": "</s>",
-                "unk_token": "<unk>",
-            }
-        )
+        self.tokenizer.add_special_tokens(SPECIAL_TOKENS)
         # Alpaca dataset.
         self.dataset = Dataset.from_list(
             [
@@ -277,23 +276,7 @@ class TestDatasetPreparation(unittest.TestCase):
                 "sequence_len": 1024,
                 "rl": "dpo",
                 "chat_template": "llama3",
-                "datasets": [
-                    {
-                        "path": "fozziethebeat/alpaca_messages_2k_dpo_test",
-                        "type": "chat_template.default",
-                        "chat_template": "llama3",
-                        "field_messages": "conversation",
-                        "field_chosen": "chosen",
-                        "field_rejected": "rejected",
-                        "message_field_role": "role",
-                        "message_field_content": "content",
-                        "roles": {
-                            "system": ["system"],
-                            "user": ["user"],
-                            "assistant": ["assistant"],
-                        },
-                    }
-                ],
+                "datasets": [ALPACA_MESSAGES_CONFIG_OG],
             }
         )
 
@@ -342,24 +325,7 @@ class TestDatasetPreparation(unittest.TestCase):
                 "sequence_len": 1024,
                 "rl": "dpo",
                 "chat_template": "llama3",
-                "datasets": [
-                    {
-                        "path": "fozziethebeat/alpaca_messages_2k_dpo_test",
-                        "type": "chat_template.default",
-                        "chat_template": "llama3",
-                        "revision": "ea82cff",
-                        "field_messages": "conversation",
-                        "field_chosen": "chosen",
-                        "field_rejected": "rejected",
-                        "message_field_role": "role",
-                        "message_field_content": "content",
-                        "roles": {
-                            "system": ["system"],
-                            "user": ["user"],
-                            "assistant": ["assistant"],
-                        },
-                    }
-                ],
+                "datasets": [ALPACA_MESSAGES_CONFIG_REVISION],
             }
         )
 

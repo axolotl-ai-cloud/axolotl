@@ -145,8 +145,8 @@ def load_prepare_dpo_datasets(cfg):
         if eval_dataset and not eval_is_preprocessed:
             _save_preprocessed_ds(cfg, cfg.test_datasets, eval_dataset)
 
-    if cfg.exact_deduplication:
-        train_dataset, eval_dataset = deduplicate_and_log_datasets(
+    if cfg.dataset_exact_deduplication:
+        train_dataset, eval_dataset, _ = deduplicate_and_log_datasets(
             train_dataset=train_dataset, eval_dataset=eval_dataset
         )
 

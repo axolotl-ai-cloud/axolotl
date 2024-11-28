@@ -3,20 +3,43 @@ Test suite for functions in the axolotl.utils.data.utils module, focusing on the
 
 Additionally, this test suite includes tests for functions that indirectly call deduplicate_and_log_datasets during the execution of the preprocess command.
 """
-# pylint: disable=duplicate-code
-# import logging
 import unittest
 
 from datasets import Dataset
 from transformers import AutoTokenizer
 
 from axolotl.utils.data import prepare_dataset
+from axolotl.utils.data.constants import ALPACA_MESSAGES_CONFIG_REVISION, SPECIAL_TOKENS
 from axolotl.utils.data.rl import load_prepare_dpo_datasets
 from axolotl.utils.data.utils import deduplicate_and_log_datasets
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.models import load_processor, load_tokenizer
 
-# logging.basicConfig(level=logging.INFO)
+
+def verify_deduplication(actual_dataset, expected_dataset, dataset_name):
+    """
+    Validates deduplication results and size consistency.
+
+    Parameters:
+    - actual_dataset: Deduplicated dataset.
+    - expected_dataset: Expected dataset.
+    - dataset_name: Name of the dataset (e.g., 'train' or 'eval').
+
+    Asserts:
+    - Datasets match in content.
+    - Dataset size matches unique row count.
+    """
+    # Convert datasets to sets of tuples for unordered comparison
+    actual_rows = set(tuple(row.values()) for row in actual_dataset)
+    expected_rows = set(tuple(row.values()) for row in expected_dataset)
+
+    # Verify deduplication correctness
+    assert actual_rows == expected_rows, f"Mismatch in {dataset_name} dataset"
+
+    # Verify size consistency
+    assert len(actual_rows) == len(
+        actual_dataset
+    ), f"Size mismatch in {dataset_name} dataset after deduplication"
 
 
 class TestDeduplicateIndividualFunctions(unittest.TestCase):
@@ -44,36 +67,15 @@ class TestDeduplicateIndividualFunctions(unittest.TestCase):
         self.expected_dataset = Dataset.from_dict(self.expected_data)
 
     def test_deduplication(self):
-        train_dataset, eval_dataset = deduplicate_and_log_datasets(
-            train_dataset=self.dataset, eval_dataset=self.dataset
-        )
+        train_dataset, _, _ = deduplicate_and_log_datasets(train_dataset=self.dataset)
+        _, eval_dataset, _ = deduplicate_and_log_datasets(eval_dataset=self.dataset)
 
-        # Convert datasets to sets of row tuples for unordered comparison
-        train_rows = set(tuple(row.values()) for row in train_dataset)
-        eval_rows = set(tuple(row.values()) for row in eval_dataset)
-        expected_rows = set(tuple(row.values()) for row in self.expected_dataset)
-
-        # Verify that deduplicated datasets match expected rows
-        self.assertEqual(train_rows, expected_rows, "Mismatch in train_dataset")
-        self.assertEqual(eval_rows, expected_rows, "Mismatch in eval_dataset")
-
-        # Verify sizes remain consistent post-deduplication
-        train_size = len(train_rows)
-        eval_size = len(eval_rows)
-        self.assertEqual(
-            train_size,
-            len(train_dataset),
-            "Size mismatch in train_dataset after deduplication",
-        )
-        self.assertEqual(
-            eval_size,
-            len(eval_dataset),
-            "Size mismatch in eval_dataset after deduplication",
-        )
+        verify_deduplication(train_dataset, self.expected_dataset, "train_dataset")
+        verify_deduplication(eval_dataset, self.expected_dataset, "eval_dataset")
 
     def test_datasets_are_none(self):
         # Test when both datasets are None
-        train_dataset, eval_dataset = deduplicate_and_log_datasets(
+        train_dataset, eval_dataset, _ = deduplicate_and_log_datasets(
             train_dataset=None, eval_dataset=None
         )
         self.assertIsNone(train_dataset, "Expected train_dataset to be None")
@@ -81,43 +83,19 @@ class TestDeduplicateIndividualFunctions(unittest.TestCase):
 
     def test_only_train_is_none(self):
         # Test when only train_dataset is None
-        train_dataset, eval_dataset = deduplicate_and_log_datasets(
+        train_dataset, eval_dataset, _ = deduplicate_and_log_datasets(
             train_dataset=None, eval_dataset=self.dataset
         )
         self.assertIsNone(train_dataset, "Expected train_dataset to be None")
-
-        # Verify that deduplication on eval_dataset works as expected
-        eval_rows = set(tuple(row.values()) for row in eval_dataset)
-        expected_rows = set(tuple(row.values()) for row in self.expected_dataset)
-        self.assertEqual(eval_rows, expected_rows, "Mismatch in eval_dataset")
-
-        # Verify size remains consistent post-deduplication
-        eval_size = len(eval_rows)
-        self.assertEqual(
-            eval_size,
-            len(eval_dataset),
-            "Size mismatch in eval_dataset after deduplication",
-        )
+        verify_deduplication(eval_dataset, self.expected_dataset, "eval_dataset")
 
     def test_only_eval_is_none(self):
         # Test when only eval_dataset is None
-        train_dataset, eval_dataset = deduplicate_and_log_datasets(
+        train_dataset, eval_dataset, _ = deduplicate_and_log_datasets(
             train_dataset=self.dataset, eval_dataset=None
         )
         self.assertIsNone(eval_dataset, "Expected eval_dataset to be None")
-
-        # Verify that deduplication on train_dataset works as expected
-        train_rows = set(tuple(row.values()) for row in train_dataset)
-        expected_rows = set(tuple(row.values()) for row in self.expected_dataset)
-        self.assertEqual(train_rows, expected_rows, "Mismatch in train_dataset")
-
-        # Verify size remains consistent post-deduplication
-        train_size = len(train_rows)
-        self.assertEqual(
-            train_size,
-            len(train_dataset),
-            "Size mismatch in train_dataset after deduplication",
-        )
+        verify_deduplication(train_dataset, self.expected_dataset, "train_dataset")
 
     def test_exact_duplicates(self):
         # Test when datasets are exact duplicates
@@ -133,30 +111,11 @@ class TestDeduplicateIndividualFunctions(unittest.TestCase):
         expected_dataset = Dataset.from_dict(expected_data)
 
         # Run deduplication
-        train_dataset, eval_dataset = deduplicate_and_log_datasets(
-            train_dataset=dataset, eval_dataset=dataset
-        )
+        train_dataset, _, _ = deduplicate_and_log_datasets(train_dataset=dataset)
+        _, eval_dataset, _ = deduplicate_and_log_datasets(eval_dataset=dataset)
 
-        # Verify that deduplicated datasets match expected rows
-        expected_rows = set(tuple(row.values()) for row in expected_dataset)
-        train_rows = set(tuple(row.values()) for row in train_dataset)
-        eval_rows = set(tuple(row.values()) for row in eval_dataset)
-        self.assertEqual(train_rows, expected_rows)
-        self.assertEqual(eval_rows, expected_rows)
-
-        # Verify size remains consistent post-deduplication
-        train_size = len(train_rows)
-        eval_size = len(eval_rows)
-        self.assertEqual(
-            train_size,
-            len(train_dataset),
-            "Size mismatch in train_dataset after deduplication",
-        )
-        self.assertEqual(
-            eval_size,
-            len(eval_dataset),
-            "Size mismatch in eval_dataset after deduplication",
-        )
+        verify_deduplication(train_dataset, expected_dataset, "train_dataset")
+        verify_deduplication(eval_dataset, expected_dataset, "eval_dataset")
 
     def test_partial_duplicates(self):
         # Test when only part of the dataset is a duplicate
@@ -176,30 +135,79 @@ class TestDeduplicateIndividualFunctions(unittest.TestCase):
         expected_dataset = Dataset.from_dict(expected_data)
 
         # Run deduplication
-        train_dataset, eval_dataset = deduplicate_and_log_datasets(
+        train_dataset, _, _ = deduplicate_and_log_datasets(train_dataset=dataset)
+        _, eval_dataset, _ = deduplicate_and_log_datasets(eval_dataset=dataset)
+
+        verify_deduplication(train_dataset, expected_dataset, "train_dataset")
+        verify_deduplication(eval_dataset, expected_dataset, "eval_dataset")
+
+    def test_combined_duplicates_empty(self):
+        # Test when only part of the dataset is a duplicate
+        partial_duplicate_data = {
+            "column1": ["apple", "banana", "apple"],
+            "column2": [1, 2, 1],
+            "column3": ["red", "yellow", "red"],
+        }
+        expected_data_train = {
+            "column1": ["apple", "banana"],
+            "column2": [1, 2],
+            "column3": ["red", "yellow"],
+        }
+        expected_data_eval = {
+            "column1": [],
+            "column2": [],
+            "column3": [],
+        }
+
+        # Convert to Dataset format
+        dataset = Dataset.from_dict(partial_duplicate_data)
+        expected_dataset_train = Dataset.from_dict(expected_data_train)
+        expected_dataset_eval = Dataset.from_dict(expected_data_eval)
+
+        # Run deduplication
+        train_dataset, eval_dataset, _ = deduplicate_and_log_datasets(
             train_dataset=dataset, eval_dataset=dataset
         )
 
-        # Verify that deduplicated datasets match expected rows
-        expected_rows = set(tuple(row.values()) for row in expected_dataset)
-        train_rows = set(tuple(row.values()) for row in train_dataset)
-        eval_rows = set(tuple(row.values()) for row in eval_dataset)
-        self.assertEqual(train_rows, expected_rows)
-        self.assertEqual(eval_rows, expected_rows)
+        verify_deduplication(train_dataset, expected_dataset_train, "train_dataset")
+        verify_deduplication(eval_dataset, expected_dataset_eval, "eval_dataset")
 
-        # Verify size remains consistent post-deduplication
-        train_size = len(train_rows)
-        eval_size = len(eval_rows)
-        self.assertEqual(
-            train_size,
-            len(train_dataset),
-            "Size mismatch in train_dataset after deduplication",
+    def test_combined_duplicates_one(self):
+        # Test when only part of the dataset is a duplicate
+        partial_duplicate_data_train = {
+            "column1": ["apple", "banana", "apple"],
+            "column2": [1, 2, 1],
+            "column3": ["red", "yellow", "red"],
+        }
+        partial_duplicate_data_eval = {
+            "column1": ["apple", "orange", "apple"],
+            "column2": [1, 2, 1],
+            "column3": ["red", "orange", "red"],
+        }
+        expected_data_train = {
+            "column1": ["apple", "banana"],
+            "column2": [1, 2],
+            "column3": ["red", "yellow"],
+        }
+        expected_data_eval = {
+            "column1": ["orange"],
+            "column2": [2],
+            "column3": ["orange"],
+        }
+
+        # Convert to Dataset format
+        dataset_train = Dataset.from_dict(partial_duplicate_data_train)
+        dataset_eval = Dataset.from_dict(partial_duplicate_data_eval)
+        expected_dataset_train = Dataset.from_dict(expected_data_train)
+        expected_dataset_eval = Dataset.from_dict(expected_data_eval)
+
+        # Run deduplication
+        train_dataset, eval_dataset, _ = deduplicate_and_log_datasets(
+            train_dataset=dataset_train, eval_dataset=dataset_eval
         )
-        self.assertEqual(
-            eval_size,
-            len(eval_dataset),
-            "Size mismatch in eval_dataset after deduplication",
-        )
+
+        verify_deduplication(train_dataset, expected_dataset_train, "train_dataset")
+        verify_deduplication(eval_dataset, expected_dataset_eval, "eval_dataset")
 
 
 class TestDeduplicateRLDataset(unittest.TestCase):
@@ -207,53 +215,17 @@ class TestDeduplicateRLDataset(unittest.TestCase):
 
     def setUp(self) -> None:
         self.tokenizer = AutoTokenizer.from_pretrained("huggyllama/llama-7b")
-        self.tokenizer.add_special_tokens(
-            {
-                "bos_token": "<s>",
-                "eos_token": "</s>",
-                "unk_token": "<unk>",
-            }
-        )
+        self.tokenizer.add_special_tokens(SPECIAL_TOKENS)
         self.cfg = DictDefault(
             {
                 "tokenizer_config": "huggyllama/llama-7b",
                 "sequence_len": 1024,
                 "rl": "dpo",
                 "chat_template": "llama3",
-                "exact_deduplication": True,
+                "dataset_exact_deduplication": True,
                 "datasets": [
-                    {
-                        "path": "fozziethebeat/alpaca_messages_2k_dpo_test",
-                        "type": "chat_template.default",
-                        "chat_template": "llama3",
-                        "revision": "ea82cff",
-                        "field_messages": "conversation",
-                        "field_chosen": "chosen",
-                        "field_rejected": "rejected",
-                        "message_field_role": "role",
-                        "message_field_content": "content",
-                        "roles": {
-                            "system": ["system"],
-                            "user": ["user"],
-                            "assistant": ["assistant"],
-                        },
-                    },
-                    {
-                        "path": "fozziethebeat/alpaca_messages_2k_dpo_test",
-                        "type": "chat_template.default",
-                        "chat_template": "llama3",
-                        "revision": "ea82cff",
-                        "field_messages": "conversation",
-                        "field_chosen": "chosen",
-                        "field_rejected": "rejected",
-                        "message_field_role": "role",
-                        "message_field_content": "content",
-                        "roles": {
-                            "system": ["system"],
-                            "user": ["user"],
-                            "assistant": ["assistant"],
-                        },
-                    },
+                    ALPACA_MESSAGES_CONFIG_REVISION,
+                    ALPACA_MESSAGES_CONFIG_REVISION,
                 ],
             }
         )
@@ -269,7 +241,7 @@ class TestDeduplicateRLDataset(unittest.TestCase):
 
     def test_load_without_deduplication(self):
         """Verify that loading without deduplication retains duplicates."""
-        self.cfg.exact_deduplication = False
+        self.cfg.dataset_exact_deduplication = False
         # Load the dataset without deduplication
         train_dataset, _ = load_prepare_dpo_datasets(self.cfg)
 
@@ -284,18 +256,12 @@ class TestDeduplicateNonRL(unittest.TestCase):
 
     def setUp(self) -> None:
         self.tokenizer = AutoTokenizer.from_pretrained("huggyllama/llama-7b")
-        self.tokenizer.add_special_tokens(
-            {
-                "bos_token": "<s>",
-                "eos_token": "</s>",
-                "unk_token": "<unk>",
-            }
-        )
+        self.tokenizer.add_special_tokens(SPECIAL_TOKENS)
         self.cfg_1 = DictDefault(
             {
                 "tokenizer_config": "huggyllama/llama-7b",
                 "sequence_len": 1024,
-                "exact_deduplication": True,
+                "dataset_exact_deduplication": True,
                 "datasets": [
                     {
                         "path": "mhenrichsen/alpaca_2k_test",
@@ -316,7 +282,7 @@ class TestDeduplicateNonRL(unittest.TestCase):
 
     def test_prepare_dataset_with_deduplication_train(self):
         """Verify that prepare_dataset function processes the dataset correctly with deduplication."""
-        self.cfg_1.exact_deduplication = True
+        self.cfg_1.dataset_exact_deduplication = True
 
         # Load tokenizer and processor
         tokenizer = load_tokenizer(self.cfg_1)
@@ -336,13 +302,13 @@ class TestDeduplicateNonRL(unittest.TestCase):
         self.assertEqual(
             len(train_dataset),
             2000,
-            "Train dataset should have 1800 samples after deduplication.",
+            "Train dataset should have 2000 samples after deduplication.",
         )
 
     def test_prepare_dataset_with_deduplication_eval(self):
         """Verify that prepare_dataset function processes the dataset correctly with deduplication."""
-        self.cfg_1.exact_deduplication = True
-        self.cfg_1.val_set_size = 3998
+        self.cfg_1.dataset_exact_deduplication = True
+        self.cfg_1.val_set_size = 0.5
         # Load tokenizer and processor
         tokenizer = load_tokenizer(self.cfg_1)
         processor = (
@@ -360,15 +326,13 @@ class TestDeduplicateNonRL(unittest.TestCase):
 
         self.assertEqual(
             len(eval_dataset),
-            2000,
+            1000,
             "Eval dataset should have 2000 samples after deduplication.",
         )
-        # note that it should be 2000 because the val set size removed two unique elements. So there are 3996 elements with duplicates and 2 unique.
-        # consequently by removing the duplicates we get 1998 + 2 = 2000 elements.
 
     def test_prepare_dataset_without_deduplication(self):
         """Verify that prepare_dataset function processes the dataset correctly without deduplication."""
-        self.cfg_1.exact_deduplication = False
+        self.cfg_1.dataset_exact_deduplication = False
         self.cfg_1.val_set_size = 0.1
         # Load tokenizer and processor
         tokenizer = load_tokenizer(self.cfg_1)
