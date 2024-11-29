@@ -19,6 +19,7 @@ LOG = logging.getLogger("axolotl.tests.e2e")
 os.environ["WANDB_DISABLED"] = "true"
 
 
+# pylint: disable=duplicate-code
 class TestUnslothQLoRA:
     """
     Test class for Unsloth QLoRA Llama models
@@ -29,7 +30,6 @@ class TestUnslothQLoRA:
         [True, False],
     )
     def test_unsloth_llama_qlora_fa2(self, temp_dir, sample_packing):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -80,8 +80,7 @@ class TestUnslothQLoRA:
         df = df[(df.tag == "train/train_loss")]  # pylint: disable=invalid-name
         assert df.value.values[-1] < 2.0, "Loss is too high"
 
-    def test_unsloth_llama_qlora_unpacked_no_fa2(self, temp_dir):
-        # pylint: disable=duplicate-code
+    def test_unsloth_llama_qlora_unpacked(self, temp_dir):
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -136,7 +135,6 @@ class TestUnslothQLoRA:
         [True, False],
     )
     def test_unsloth_llama_qlora_unpacked_no_fa2_fp16(self, temp_dir, sdp_attention):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
