@@ -587,10 +587,14 @@ def load_prepare_datasets(
     elif split == "test":
         if cfg.dataset_exact_deduplication:
             _, eval_dataset, _ = deduplicate_and_log_datasets(eval_dataset=dataset)
+        else:
+            eval_dataset = dataset
         train_dataset = None
     else:
         if cfg.dataset_exact_deduplication:
             train_dataset, _, _ = deduplicate_and_log_datasets(train_dataset=dataset)
+        else:
+            train_dataset = dataset
         eval_dataset = None
     return train_dataset, eval_dataset, prompters
 
