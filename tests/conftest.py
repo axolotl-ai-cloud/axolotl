@@ -15,6 +15,12 @@ def download_smollm2_135m_model():
 
 
 @pytest.fixture(scope="session", autouse=True)
+def download_qwen_2_5_half_billion_model():
+    # download the model
+    snapshot_download("Qwen/Qwen2.5-0.5B")
+
+
+@pytest.fixture(scope="session", autouse=True)
 def download_tatsu_lab_alpaca_dataset():
     # download the model
     snapshot_download("tatsu-lab/alpaca", repo_type="dataset")
