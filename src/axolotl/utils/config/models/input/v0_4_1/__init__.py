@@ -1558,7 +1558,7 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
     @classmethod
     def check_adopt_torch_version(cls, data):
         if (data.get("optimizer") is not None) and ("adopt" in data.get("optimizer")):
-            env_capabilities = data.get("env_capabilities")
+            env_capabilities = data.get("env_capabilities", {})
             torch_version = env_capabilities.get("torch_version")
 
             if torch_version is None:
