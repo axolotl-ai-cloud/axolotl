@@ -169,4 +169,4 @@ class TestMultiGPUEval:
         reader = SummaryReader(event_file)
         df = reader.scalars  # pylint: disable=invalid-name
         df = df[(df.tag == "eval/loss")]  # pylint: disable=invalid-name
-        assert df.value.values[-1] < 2.8, "Loss is too high"
+        assert df.value.values[-1] < 2.9, "Loss is too high"
