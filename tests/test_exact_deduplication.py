@@ -3,7 +3,9 @@ Test suite for functions in the axolotl.utils.data.utils module, focusing on the
 
 Additionally, this test suite includes tests for functions that indirectly call deduplicate_and_log_datasets during the execution of the preprocess command.
 """
+import hashlib
 import unittest
+from unittest.mock import patch
 
 from datasets import Dataset
 from transformers import AutoTokenizer
@@ -359,6 +361,71 @@ class TestDeduplicateNonRL(unittest.TestCase):
             len(eval_dataset),
             200 * 2,
             "Train dataset should have 400 samples after deduplication.",
+        )
+
+
+class TestWrongCollisions(unittest.TestCase):
+    """Creating mock datasets for testing wrong collisions"""
+
+    def setUp(self):
+        self.train_data = {"text": ["sample 5", "sample 6"], "label": [1, 2]}
+        self.eval_data = {
+            "text": [
+                "sample 5",
+                "sample 7",
+            ],  # Different label but same text as in train_data
+            "label": [2, 3],
+        }
+        self.dataset_data = {
+            "text": ["sample 5", "sample 9", "sample 5"],
+            "label": [1, 2, 8],
+        }
+        self.train_dataset = Dataset.from_dict(self.train_data)
+        self.eval_dataset = Dataset.from_dict(self.eval_data)
+        self.dataset = Dataset.from_dict(self.dataset_data)
+
+    @patch(
+        "axolotl.utils.data.utils.sha256",
+        side_effect=lambda x: hashlib.sha256(
+            "forced_collision_hash".encode("utf-8")
+        ).hexdigest()
+        if "sample 5" in x
+        else hashlib.sha256(x.encode("utf-8")).hexdigest(),
+    )
+    def test_deduplication_wrong_collision_train_eval(self, _mock_sha256):
+        dedup_train, dedup_eval, _ = deduplicate_and_log_datasets(
+            train_dataset=self.train_dataset, eval_dataset=self.eval_dataset
+        )
+        self.assertEqual(
+            len(dedup_train),
+            2,
+            "train dataset should not deduplicate rows with forced hash collisions but different labels.",
+        )
+        self.assertEqual(
+            len(dedup_eval),
+            2,
+            "Eval dataset should not deduplicate rows with forced hash collisions but different labels.",
+        )
+        self.assertEqual(
+            len(dedup_eval),
+            len(self.eval_dataset),
+            "The output eval dataset should have the same number of rows as the input eval dataset.",
+        )
+        self.assertEqual(
+            str(dedup_eval),
+            str(self.eval_dataset),
+            "The string representation of the output eval dataset should be identical to the input eval dataset.",
+        )
+
+    def test_deduplication_dataset_only(self):
+        _, _, dedup_dataset = deduplicate_and_log_datasets(dataset=self.dataset)
+        self.assertEqual(
+            len(dedup_dataset), 3, "Dataset should have all original values"
+        )
+        self.assertEqual(
+            str(dedup_dataset),
+            str(self.dataset),
+            "The string representation of the output dataset should not differ.",
         )
 
 
