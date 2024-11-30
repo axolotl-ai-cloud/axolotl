@@ -26,6 +26,8 @@ RUN if [ "$AXOLOTL_EXTRAS" != "" ] ; then \
         pip install -e .[deepspeed,flash-attn,optimizers] $AXOLOTL_ARGS; \
     fi
 
+RUN python scripts/unsloth_install.py | sh
+
 # So we can test the Docker image
 RUN pip install pytest
 

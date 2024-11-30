@@ -67,6 +67,7 @@ jobs:
         run: |
           pip3 show torch
           pip3 install -U -e .
+          python scripts/unsloth_install.py | sh
           pip3 install -r requirements-dev.txt -r requirements-tests.txt
 
       - name: Run tests
