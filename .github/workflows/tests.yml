@@ -110,7 +110,7 @@ jobs:
           echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
       - name: Run tests job on Modal
         run: |
-          modal run cicd.cicd_tests
+          modal run cicd.tests
 
   docker-e2e-tests:
     if: github.repository_owner == 'axolotl-ai-cloud'
@@ -156,4 +156,4 @@ jobs:
           echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
       - name: Run tests job on Modal
         run: |
-          modal run cicd.cicd_tests
+          modal run cicd.tests

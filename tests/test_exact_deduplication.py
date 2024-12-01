@@ -7,6 +7,7 @@ import hashlib
 import unittest
 from unittest.mock import patch
 
+from constants import ALPACA_MESSAGES_CONFIG_REVISION, SPECIAL_TOKENS
 from datasets import Dataset
 from transformers import AutoTokenizer
 
@@ -15,7 +16,6 @@ from axolotl.utils.data.rl import load_prepare_dpo_datasets
 from axolotl.utils.data.utils import deduplicate_and_log_datasets
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.models import load_processor, load_tokenizer
-from tests.constants import ALPACA_MESSAGES_CONFIG_REVISION, SPECIAL_TOKENS
 
 
 def verify_deduplication(actual_dataset, expected_dataset, dataset_name):
