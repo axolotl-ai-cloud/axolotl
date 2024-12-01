@@ -14,4 +14,4 @@ if v < V("2.4.0"):
     print("")
     sys.exit(0)
 
-print('pip install "cut-cross-entropy==24.11.4')
+print('pip install "cut-cross-entropy==24.11.4"')
