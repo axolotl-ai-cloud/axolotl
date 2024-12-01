@@ -14,6 +14,4 @@ if v < V("2.4.0"):
     print("")
     sys.exit(0)
 
-print(
-    'pip install "cut-cross-entropy @ git+https://github.com/apple/ml-cross-entropy.git@9c297c905f55b73594b5d650722d1e78183b77bd"'
-)
+print('pip install "cut-cross-entropy==24.11.4')
