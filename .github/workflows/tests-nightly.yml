@@ -118,4 +118,4 @@ jobs:
           echo "NIGHTLY_BUILD=${{ matrix.nightly_build }}" >> $GITHUB_ENV
       - name: Run tests job on Modal
         run: |
-          modal run cicd.tests
+          modal run cicd.cicd_tests

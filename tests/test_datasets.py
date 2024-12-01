@@ -12,13 +12,13 @@ from huggingface_hub import snapshot_download
 from transformers import AutoTokenizer
 
 from axolotl.utils.data import load_tokenized_prepared_datasets
-from axolotl.utils.data.constants import (
+from axolotl.utils.data.rl import load_prepare_dpo_datasets
+from axolotl.utils.dict import DictDefault
+from tests.constants import (
     ALPACA_MESSAGES_CONFIG_OG,
     ALPACA_MESSAGES_CONFIG_REVISION,
     SPECIAL_TOKENS,
 )
-from axolotl.utils.data.rl import load_prepare_dpo_datasets
-from axolotl.utils.dict import DictDefault
 
 
 class TestDatasetPreparation(unittest.TestCase):
