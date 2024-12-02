@@ -67,7 +67,7 @@ class TestDatasetPreparation(unittest.TestCase):
     def test_load_local_hub(self):
         """Niche use case.  Verify that a local copy of a hub dataset can be loaded"""
         with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_ds_path = Path("mhenrichsen/alpaca_2k_test")
+            tmp_ds_path = Path(tmp_dir) / "mhenrichsen/alpaca_2k_test"
             tmp_ds_path.mkdir(parents=True, exist_ok=True)
             snapshot_download(
                 repo_id="mhenrichsen/alpaca_2k_test",
@@ -89,7 +89,7 @@ class TestDatasetPreparation(unittest.TestCase):
                             "ds_type": "parquet",
                             "type": "alpaca",
                             "data_files": [
-                                "mhenrichsen/alpaca_2k_test/alpaca_2000.parquet",
+                                f"{tmp_ds_path}/alpaca_2000.parquet",
                             ],
                         },
                     ],
