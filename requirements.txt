@@ -26,7 +26,7 @@ numpy>=1.24.4,<=2.0.1
 evaluate==0.4.1
 scipy
 scikit-learn==1.4.2
-pynvml==11.5.3
+nvidia-ml-py==12.560.30
 art
 gradio==3.50.2
 tensorboard
