@@ -34,6 +34,8 @@ bf16: auto
 fp16:
 tf32: false
 
+trust_remote_code: true
+
 gradient_checkpointing: true
 gradient_checkpointing_kwargs:
   use_reentrant: false
