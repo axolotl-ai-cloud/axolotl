@@ -5,7 +5,6 @@ CLI definition for various axolotl commands
 import dataclasses
 import hashlib
 import json
-import os
 import subprocess  # nosec B404
 from pathlib import Path
 from types import NoneType
@@ -188,19 +187,10 @@ def add_options_from_config(config_class: Type[BaseModel]):
 
 @cli.command()
 @click.argument("config", type=str)
-@click.option(
-    "--use-gpu",
-    is_flag=True,
-    default=False,
-    help="Allow GPU usage during preprocessing",
-)
 @add_options_from_dataclass(PreprocessCliArgs)
-def preprocess(config: str, use_gpu: bool, **kwargs):
+def preprocess(config: str, **kwargs):
     """Preprocess datasets before training."""
     kwargs = {k: v for k, v in kwargs.items() if v is not None}
-
-    if not use_gpu:
-        os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
     from axolotl.cli.preprocess import do_cli
 
