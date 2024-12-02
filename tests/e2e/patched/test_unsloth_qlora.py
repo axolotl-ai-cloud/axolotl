@@ -42,7 +42,7 @@ class TestUnslothQLoRA:
                 "lora_alpha": 16,
                 "lora_dropout": 0.05,
                 "lora_target_linear": True,
-                "val_set_size": 0.2,
+                "val_set_size": 0.05,
                 "special_tokens": {
                     "pad_token": "<|endoftext|>",
                 },
@@ -92,7 +92,7 @@ class TestUnslothQLoRA:
                 "lora_alpha": 16,
                 "lora_dropout": 0.05,
                 "lora_target_linear": True,
-                "val_set_size": 0.2,
+                "val_set_size": 0.05,
                 "special_tokens": {
                     "pad_token": "<|endoftext|>",
                 },
@@ -146,7 +146,7 @@ class TestUnslothQLoRA:
                 "lora_alpha": 16,
                 "lora_dropout": 0.05,
                 "lora_target_linear": True,
-                "val_set_size": 0.2,
+                "val_set_size": 0.05,
                 "special_tokens": {
                     "pad_token": "<|endoftext|>",
                 },

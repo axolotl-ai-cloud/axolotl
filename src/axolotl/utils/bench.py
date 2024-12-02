@@ -1,12 +1,23 @@
 """Benchmarking and measurement utilities"""
 import functools
 
-import pynvml
 import torch
-from pynvml.nvml import NVMLError
 from transformers.utils.import_utils import is_torch_npu_available
 
 from axolotl.utils.distributed import get_device_type
+
+try:
+    from pynvml import (
+        NVMLError,
+        nvmlDeviceGetHandleByIndex,
+        nvmlDeviceGetMemoryInfo,
+        nvmlInit,
+    )
+except ImportError:
+    NVMLError = None
+    nvmlDeviceGetHandleByIndex = None
+    nvmlDeviceGetMemoryInfo = None
+    nvmlInit = None
 
 
 def check_cuda_device(default_value):
@@ -68,10 +79,12 @@ def gpu_memory_usage_smi(device=0):
         device = device.index
     if isinstance(device, str) and device.startswith("cuda:"):
         device = int(device[5:])
+    if not nvmlInit:
+        return 0.0
     try:
-        pynvml.nvmlInit()
-        handle = pynvml.nvmlDeviceGetHandleByIndex(device)
-        info = pynvml.nvmlDeviceGetMemoryInfo(handle)
+        nvmlInit()
+        handle = nvmlDeviceGetHandleByIndex(device)
+        info = nvmlDeviceGetMemoryInfo(handle)
         return info.used / 1024.0**3
     except NVMLError:
         return 0.0
