@@ -6,33 +6,11 @@ import hashlib
 import json
 import os
 import subprocess  # nosec B404
-from dataclasses import fields
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import click
 import requests
-
-from axolotl.common.cli import PreprocessCliArgs, TrainerCliArgs
-
-
-def create_args_from_dataclass(cls, **kwargs):
-    """Create args from dataclass, using its default values if not in kwargs."""
-    field_defaults = {field.name: field.default for field in fields(cls)}
-
-    # Update defaults with provided kwargs
-    field_defaults.update(kwargs)
-    return cls(**field_defaults)
-
-
-def create_trainer_args(**kwargs) -> TrainerCliArgs:
-    """Create TrainerCliArgs from cli options"""
-    return create_args_from_dataclass(TrainerCliArgs, **kwargs)
-
-
-def create_preprocess_args(**kwargs) -> PreprocessCliArgs:
-    """Create PreprocessCliArgs from cli options"""
-    return create_args_from_dataclass(PreprocessCliArgs, **kwargs)
 
 
 def build_command(base_cmd: List[str], options: Dict[str, Any]) -> List[str]:
@@ -184,18 +162,16 @@ def preprocess(config: str, use_gpu: bool, **kwargs):
 )
 def train(config: str, accelerate: bool, **kwargs):
     """Train or fine-tune a model."""
-    cli_args = create_trainer_args(**kwargs)
-
     if accelerate:
         base_cmd = ["accelerate", "launch", "-m", "axolotl.cli.train"]
         if config:
             base_cmd.append(config)
-        cmd = build_command(base_cmd, vars(cli_args))
+        cmd = build_command(base_cmd, kwargs)
         subprocess.run(cmd, check=True)  # nosec B603
     else:
         from axolotl.cli.train import do_cli
 
-        do_cli(config=config, **cli_args.__dict__)
+        do_cli(config=config, **kwargs)
 
 
 @cli.command()
@@ -213,18 +189,16 @@ def train(config: str, accelerate: bool, **kwargs):
 @click.option("--load-in-8bit", is_flag=True, help="Load model in 8-bit mode")
 def inference(config: str, accelerate: bool, **kwargs):
     """Run inference with a trained model."""
-    cli_args = create_trainer_args(inference=True, **kwargs)
-
     if accelerate:
         base_cmd = ["accelerate", "launch", "-m", "axolotl.cli.inference"]
         if config:
             base_cmd.append(config)
-        cmd = build_command(base_cmd, vars(cli_args))
+        cmd = build_command(base_cmd, kwargs)
         subprocess.run(cmd, check=True)  # nosec B603
     else:
         from axolotl.cli.inference import do_cli
 
-        do_cli(config=config, **cli_args.__dict__)
+        do_cli(config=config, **kwargs)
 
 
 @cli.command()
@@ -240,18 +214,16 @@ def inference(config: str, accelerate: bool, **kwargs):
 @click.option("--save-dir", help="Directory to save sharded weights")
 def shard(config: str, accelerate: bool, **kwargs):
     """Shard model weights."""
-    cli_args = create_trainer_args(shard=True, **kwargs)
-
     if accelerate:
         base_cmd = ["accelerate", "launch", "-m", "axolotl.cli.shard"]
         if config:
             base_cmd.append(config)
-        cmd = build_command(base_cmd, vars(cli_args))
+        cmd = build_command(base_cmd, kwargs)
         subprocess.run(cmd, check=True)  # nosec B603
     else:
         from axolotl.cli.shard import do_cli
 
-        do_cli(config=config, **cli_args.__dict__)
+        do_cli(config=config, **kwargs)
 
 
 @cli.command()
@@ -267,8 +239,6 @@ def shard(config: str, accelerate: bool, **kwargs):
 @click.option("--save-path", help="Path to save merged weights")
 def merge_sharded_fsdp_weights(config: str, accelerate: bool, **kwargs):
     """Merge sharded FSDP model weights."""
-    cli_args = create_trainer_args(**kwargs)
-
     if accelerate:
         base_cmd = [
             "accelerate",
@@ -278,12 +248,12 @@ def merge_sharded_fsdp_weights(config: str, accelerate: bool, **kwargs):
         ]
         if config:
             base_cmd.append(config)
-        cmd = build_command(base_cmd, vars(cli_args))
+        cmd = build_command(base_cmd, kwargs)
         subprocess.run(cmd, check=True)  # nosec B603
     else:
         from axolotl.cli.merge_sharded_fsdp_weights import do_cli
 
-        do_cli(config=config, **cli_args.__dict__)
+        do_cli(config=config, **kwargs)
 
 
 @cli.command()
