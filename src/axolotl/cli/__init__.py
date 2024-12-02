@@ -15,6 +15,7 @@ from urllib.parse import urlparse
 
 import requests
 import torch
+import yaml
 
 # add src to the pythonpath so we don't need to pip install this
 from accelerate.commands.config import config_args
@@ -25,7 +26,6 @@ from transformers import GenerationConfig, TextIteratorStreamer, TextStreamer
 from transformers.utils import is_torch_bf16_gpu_available
 from transformers.utils.import_utils import _is_package_available
 
-import yaml
 from axolotl.common.cli import TrainerCliArgs, load_model_and_tokenizer
 from axolotl.logging_config import configure_logging
 from axolotl.train import TrainDatasetMeta

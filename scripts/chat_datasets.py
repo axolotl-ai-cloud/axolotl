@@ -2,9 +2,8 @@
 helper script to parse chat datasets into a usable yaml
 """
 import click
-from datasets import load_dataset
-
 import yaml
+from datasets import load_dataset
 
 
 @click.command()
