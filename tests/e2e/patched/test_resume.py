@@ -33,8 +33,7 @@ class TestResumeLlama(unittest.TestCase):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "JackFram/llama-68m",
-                "tokenizer_type": "LlamaTokenizer",
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
                 "sequence_len": 1024,
                 "sample_packing": True,
                 "flash_attention": True,
@@ -45,7 +44,9 @@ class TestResumeLlama(unittest.TestCase):
                 "lora_dropout": 0.05,
                 "lora_target_linear": True,
                 "val_set_size": 0.1,
-                "special_tokens": {},
+                "special_tokens": {
+                    "pad_token": "<|endoftext|>",
+                },
                 "datasets": [
                     {
                         "path": "vicgalle/alpaca-gpt4",
@@ -57,7 +58,7 @@ class TestResumeLlama(unittest.TestCase):
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
-                "optimizer": "adamw_torch",
+                "optimizer": "adamw_8bit",
                 "lr_scheduler": "cosine",
                 "save_steps": 10,
                 "save_total_limit": 5,

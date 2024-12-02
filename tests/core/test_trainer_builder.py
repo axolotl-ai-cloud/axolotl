@@ -14,9 +14,7 @@ from axolotl.utils.models import load_model, load_tokenizer
 def fixture_cfg():
     cfg = DictDefault(
         {
-            "base_model": "TinyLlama/TinyLlama-1.1B-Chat-v0.6",
-            "model_type": "AutoModelForCausalLM",
-            "tokenizer_type": "LlamaTokenizer",
+            "base_model": "HuggingFaceTB/SmolLM2-135M",
             "micro_batch_size": 1,
             "gradient_accumulation_steps": 1,
             "learning_rate": 0.00005,
@@ -33,6 +31,9 @@ def fixture_cfg():
             "dataloader_num_workers": 1,
             "dataloader_pin_memory": True,
             "model_config_type": "llama",
+            "special_tokens": {
+                "pad_token": "<|endoftext|>",
+            },
         }
     )
 
