@@ -94,6 +94,7 @@ class TestCustomOptimizers(unittest.TestCase):
                     },
                 ],
                 "num_epochs": 1,
+                "max_steps": 5,
                 "micro_batch_size": 8,
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
@@ -115,7 +116,7 @@ class TestCustomOptimizers(unittest.TestCase):
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
                 "sequence_len": 1024,
-                "val_set_size": 0.1,
+                "val_set_size": 0.01,
                 "special_tokens": {
                     "pad_token": "<|endoftext|>",
                 },
@@ -126,13 +127,14 @@ class TestCustomOptimizers(unittest.TestCase):
                     },
                 ],
                 "num_epochs": 1,
-                "micro_batch_size": 4,
+                "micro_batch_size": 2,
                 "gradient_accumulation_steps": 2,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
                 "optimizer": "schedule_free_adamw",
                 "lr_scheduler": "constant",
                 "save_safetensors": True,
+                "max_steps": 10,
             }
         )
         # pylint: disable=duplicate-code

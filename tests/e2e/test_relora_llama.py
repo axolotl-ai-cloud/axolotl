@@ -52,6 +52,7 @@ class TestReLoraLlama(unittest.TestCase):
                 ],
                 "warmup_steps": 15,
                 "num_epochs": 2,
+                "max_steps": 51,  # at least 2x relora_steps
                 "micro_batch_size": 4,
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
