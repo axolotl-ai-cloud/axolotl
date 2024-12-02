@@ -135,7 +135,7 @@ accelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \
 accelerate launch -m axolotl.cli.train https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/main/examples/openllama-3b/lora.yml
 ```
 
-### Axolotl CLI (New)
+### Axolotl CLI
 
 If you've installed this package using `pip` from source, we now support a new, more
 streamlined CLI using [click](https://click.palletsprojects.com/en/stable/). Rewriting
