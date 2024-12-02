@@ -61,11 +61,11 @@ class CutCrossEntropyPlugin(BasePlugin):
         if cce_spec is None:
             raise ImportError(_CCE_INSTALL_MESSAGE)
 
-        # cce_spec_transformers = importlib.util.find_spec(
-        #     "cut_cross_entropy.transformers"
-        # )
-        # if cce_spec_transformers is None:
-        #     raise ImportError(_CCE_INSTALL_MESSAGE)
+        cce_spec_transformers = importlib.util.find_spec(
+            "cut_cross_entropy.transformers"
+        )
+        if cce_spec_transformers is None:
+            raise ImportError(_CCE_INSTALL_MESSAGE)
 
     def pre_model_load(self, cfg):
         """Apply cut cross entropy before model loading if enabled."""
