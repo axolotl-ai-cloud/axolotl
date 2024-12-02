@@ -329,7 +329,7 @@ class LoraConfig(BaseModel):
             and (data.get("load_in_8bit") or data.get("load_in_4bit"))
         ):
             raise ValueError(
-                "load_in_8bit and load_in_4bit are not supported without setting an adapter."
+                "load_in_8bit and load_in_4bit are not supported without setting an adapter for training."
                 "If you want to full finetune, please turn off load_in_8bit and load_in_4bit."
             )
         return data
