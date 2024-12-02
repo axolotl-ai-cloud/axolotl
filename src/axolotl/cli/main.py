@@ -6,11 +6,17 @@ import hashlib
 import json
 import os
 import subprocess  # nosec B404
+from dataclasses import fields as dataclass_fields
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from types import NoneType
+from typing import Any, Dict, List, Optional, Type, Union, get_args, get_origin
 
 import click
 import requests
+from pydantic import BaseModel
+
+from axolotl.common.cli import PreprocessCliArgs, TrainerCliArgs
+from axolotl.utils.config.models.input.v0_4_1 import AxolotlInputConfig
 
 
 def build_command(base_cmd: List[str], options: Dict[str, Any]) -> List[str]:
@@ -30,23 +36,6 @@ def build_command(base_cmd: List[str], options: Dict[str, Any]) -> List[str]:
             cmd.extend([f"--{key}", str(value)])
 
     return cmd
-
-
-def common_options(function):
-    """Common options shared between commands"""
-    function = click.option("--debug", is_flag=True, help="Enable debug mode")(function)
-    function = click.option(
-        "--debug-text-only", is_flag=True, help="Debug text processing only"
-    )(function)
-    function = click.option(
-        "--debug-num-examples",
-        type=int,
-        default=0,
-        help="Number of examples to use in debug mode",
-    )(function)
-    function = click.option("--prompter", type=str, help="Prompter to use")(function)
-
-    return function
 
 
 def fetch_from_github(dir_prefix: str, dest_dir: Optional[str] = None) -> None:
@@ -131,16 +120,72 @@ def cli():
     """Axolotl CLI - Train and fine-tune large language models"""
 
 
+def get_click_type(python_type: Type) -> Any:
+    """Convert Python/Pydantic types to Click types."""
+    # Handle Union/Optional types
+    if get_origin(python_type) is Union:
+        types = get_args(python_type)
+        # If one of the types is None, it's Optional
+        types = tuple(t for t in types if not isinstance(t, NoneType))
+        if len(types) == 1:
+            return get_click_type(types[0])
+
+    # Map Python types to Click types
+    type_map = {
+        str: str,
+        int: int,
+        float: float,
+        bool: bool,
+    }
+    return type_map.get(python_type, str)
+
+
+def generate_click_options(model: Union[Type[BaseModel], Type]):
+    """Generate Click options from a Pydantic model or dataclass."""
+
+    def decorator(function):
+        # Handle Pydantic models
+        if isinstance(model, type) and issubclass(model, BaseModel):
+            for field_name, field in model.model_fields.items():
+                # Convert snake_case to kebab-case for CLI
+                cli_name = f"--{field_name.replace('_', '-')}"
+                field_type = get_click_type(field.annotation)
+
+                # Handle boolean flags specially
+                if field_type is bool:
+                    function = click.option(
+                        cli_name, is_flag=True, help=field.description
+                    )(function)
+                else:
+                    function = click.option(
+                        cli_name, type=field_type, help=field.description
+                    )(function)
+
+        # Handle dataclasses
+        elif hasattr(model, "__dataclass_fields__"):
+            for field in dataclass_fields(model):
+                cli_name = f"--{field.name.replace('_', '-')}"
+                field_type = get_click_type(field.type)
+
+                if field_type is bool:
+                    function = click.option(cli_name, is_flag=True)(function)
+                else:
+                    function = click.option(cli_name, type=field_type)(function)
+
+        return function
+
+    return decorator
+
+
 @cli.command()
 @click.argument("config", type=str)
-@common_options
-@click.option("--download", is_flag=True, default=True, help="Download datasets")
 @click.option(
     "--use-gpu",
     is_flag=True,
     default=False,
     help="Allow GPU usage during preprocessing",
 )
+@generate_click_options(PreprocessCliArgs)
 def preprocess(config: str, use_gpu: bool, **kwargs):
     """Preprocess datasets before training."""
     if not use_gpu:
@@ -153,13 +198,14 @@ def preprocess(config: str, use_gpu: bool, **kwargs):
 
 @cli.command()
 @click.argument("config", type=str)
-@common_options
 @click.option(
     "--accelerate",
     is_flag=True,
-    default=True,
+    default=False,
     help="Use accelerate launch for multi-GPU training",
 )
+@generate_click_options(AxolotlInputConfig)
+@generate_click_options(TrainerCliArgs)
 def train(config: str, accelerate: bool, **kwargs):
     """Train or fine-tune a model."""
     if accelerate:
@@ -176,7 +222,6 @@ def train(config: str, accelerate: bool, **kwargs):
 
 @cli.command()
 @click.argument("config", type=str)
-@common_options
 @click.option(
     "--accelerate",
     is_flag=True,
@@ -187,6 +232,8 @@ def train(config: str, accelerate: bool, **kwargs):
 @click.option("--base-model", help="Path to base model for non-LoRA models")
 @click.option("--gradio", is_flag=True, help="Launch Gradio interface")
 @click.option("--load-in-8bit", is_flag=True, help="Load model in 8-bit mode")
+@generate_click_options(AxolotlInputConfig)
+@generate_click_options(TrainerCliArgs)
 def inference(config: str, accelerate: bool, **kwargs):
     """Run inference with a trained model."""
     if accelerate:
@@ -203,7 +250,6 @@ def inference(config: str, accelerate: bool, **kwargs):
 
 @cli.command()
 @click.argument("config", type=str)
-@common_options
 @click.option(
     "--accelerate",
     is_flag=True,
@@ -212,6 +258,8 @@ def inference(config: str, accelerate: bool, **kwargs):
 )
 @click.option("--model-dir", help="Directory containing model weights to shard")
 @click.option("--save-dir", help="Directory to save sharded weights")
+@generate_click_options(AxolotlInputConfig)
+@generate_click_options(TrainerCliArgs)
 def shard(config: str, accelerate: bool, **kwargs):
     """Shard model weights."""
     if accelerate:
@@ -228,7 +276,6 @@ def shard(config: str, accelerate: bool, **kwargs):
 
 @cli.command()
 @click.argument("config", type=str)
-@common_options
 @click.option(
     "--accelerate",
     is_flag=True,
@@ -237,6 +284,8 @@ def shard(config: str, accelerate: bool, **kwargs):
 )
 @click.option("--model-dir", help="Directory containing sharded weights")
 @click.option("--save-path", help="Path to save merged weights")
+@generate_click_options(AxolotlInputConfig)
+@generate_click_options(TrainerCliArgs)
 def merge_sharded_fsdp_weights(config: str, accelerate: bool, **kwargs):
     """Merge sharded FSDP model weights."""
     if accelerate:
