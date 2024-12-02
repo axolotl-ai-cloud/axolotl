@@ -43,7 +43,7 @@ early_stopping_patience:
 resume_from_checkpoint:
 logging_steps: 1
 xformers_attention:
-flash_attention: false
+flash_attention: true
 
 warmup_steps: 100
 evals_per_epoch: 2
