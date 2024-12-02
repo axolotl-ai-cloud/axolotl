@@ -157,7 +157,7 @@ def preprocess(config: str, use_gpu: bool, **kwargs):
 @click.option(
     "--accelerate",
     is_flag=True,
-    default=False,
+    default=True,
     help="Use accelerate launch for multi-GPU training",
 )
 def train(config: str, accelerate: bool, **kwargs):
@@ -180,7 +180,7 @@ def train(config: str, accelerate: bool, **kwargs):
 @click.option(
     "--accelerate",
     is_flag=True,
-    default=False,
+    default=True,
     help="Use accelerate launch for multi-GPU inference",
 )
 @click.option("--lora-model-dir", help="Directory containing LoRA model")
@@ -207,7 +207,7 @@ def inference(config: str, accelerate: bool, **kwargs):
 @click.option(
     "--accelerate",
     is_flag=True,
-    default=False,
+    default=True,
     help="Use accelerate launch for multi-GPU operations",
 )
 @click.option("--model-dir", help="Directory containing model weights to shard")
@@ -232,7 +232,7 @@ def shard(config: str, accelerate: bool, **kwargs):
 @click.option(
     "--accelerate",
     is_flag=True,
-    default=False,
+    default=True,
     help="Use accelerate launch for weight merging",
 )
 @click.option("--model-dir", help="Directory containing sharded weights")
