@@ -1,11 +1,11 @@
 """
 CLI definition for various axolotl commands
 """
+# pylint: disable=redefined-outer-name
 import hashlib
 import json
 import os
 import subprocess  # nosec B404
-import sys
 from dataclasses import fields
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -67,6 +67,7 @@ def common_options(function):
         help="Number of examples to use in debug mode",
     )(function)
     function = click.option("--prompter", type=str, help="Prompter to use")(function)
+
     return function
 
 
@@ -156,87 +157,133 @@ def cli():
 @click.argument("config", type=str)
 @common_options
 @click.option("--download", is_flag=True, default=True, help="Download datasets")
-def preprocess(config: Optional[str], **kwargs):
+@click.option(
+    "--use-gpu",
+    is_flag=True,
+    default=False,
+    help="Allow GPU usage during preprocessing",
+)
+def preprocess(config: str, use_gpu: bool, **kwargs):
     """Preprocess datasets before training."""
-    cli_args = create_preprocess_args(**kwargs)
+    if not use_gpu:
+        os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
-    env = os.environ.copy()
-    env["CUDA_VISIBLE_DEVICES"] = ""
+    from axolotl.cli.preprocess import do_cli
 
-    base_cmd = [sys.executable, "-m", "axolotl.cli.preprocess"]
-    if config:
-        base_cmd.append(config)
-    cmd = build_command(base_cmd, vars(cli_args))
-
-    subprocess.run(cmd, env=env, check=True)  # nosec B603
+    do_cli(config=config, **kwargs)
 
 
 @cli.command()
 @click.argument("config", type=str)
 @common_options
-def train(config: Optional[str], **kwargs):
+@click.option(
+    "--accelerate",
+    is_flag=True,
+    default=False,
+    help="Use accelerate launch for multi-GPU training",
+)
+def train(config: str, accelerate: bool, **kwargs):
     """Train or fine-tune a model."""
     cli_args = create_trainer_args(**kwargs)
 
-    base_cmd = ["accelerate", "launch", "-m", "axolotl.cli.train"]
-    if config:
-        base_cmd.append(config)
-    cmd = build_command(base_cmd, vars(cli_args))
+    if accelerate:
+        base_cmd = ["accelerate", "launch", "-m", "axolotl.cli.train"]
+        if config:
+            base_cmd.append(config)
+        cmd = build_command(base_cmd, vars(cli_args))
+        subprocess.run(cmd, check=True)  # nosec B603
+    else:
+        from axolotl.cli.train import do_cli
 
-    subprocess.run(cmd, check=True)  # nosec B603
+        do_cli(config=config, **cli_args.__dict__)
 
 
 @cli.command()
 @click.argument("config", type=str)
 @common_options
+@click.option(
+    "--accelerate",
+    is_flag=True,
+    default=False,
+    help="Use accelerate launch for multi-GPU inference",
+)
 @click.option("--lora-model-dir", help="Directory containing LoRA model")
 @click.option("--base-model", help="Path to base model for non-LoRA models")
 @click.option("--gradio", is_flag=True, help="Launch Gradio interface")
 @click.option("--load-in-8bit", is_flag=True, help="Load model in 8-bit mode")
-def inference(config: Optional[str], **kwargs):
+def inference(config: str, accelerate: bool, **kwargs):
     """Run inference with a trained model."""
     cli_args = create_trainer_args(inference=True, **kwargs)
 
-    base_cmd = ["accelerate", "launch", "-m", "axolotl.cli.inference"]
-    if config:
-        base_cmd.append(config)
-    cmd = build_command(base_cmd, vars(cli_args))
+    if accelerate:
+        base_cmd = ["accelerate", "launch", "-m", "axolotl.cli.inference"]
+        if config:
+            base_cmd.append(config)
+        cmd = build_command(base_cmd, vars(cli_args))
+        subprocess.run(cmd, check=True)  # nosec B603
+    else:
+        from axolotl.cli.inference import do_cli
 
-    subprocess.run(cmd, check=True)  # nosec B603
+        do_cli(config=config, **cli_args.__dict__)
 
 
 @cli.command()
 @click.argument("config", type=str)
 @common_options
+@click.option(
+    "--accelerate",
+    is_flag=True,
+    default=False,
+    help="Use accelerate launch for multi-GPU operations",
+)
 @click.option("--model-dir", help="Directory containing model weights to shard")
 @click.option("--save-dir", help="Directory to save sharded weights")
-def shard(config: Optional[str], **kwargs):
+def shard(config: str, accelerate: bool, **kwargs):
     """Shard model weights."""
     cli_args = create_trainer_args(shard=True, **kwargs)
 
-    base_cmd = ["accelerate", "launch", "-m", "axolotl.cli.shard"]
-    if config:
-        base_cmd.append(config)
-    cmd = build_command(base_cmd, vars(cli_args))
+    if accelerate:
+        base_cmd = ["accelerate", "launch", "-m", "axolotl.cli.shard"]
+        if config:
+            base_cmd.append(config)
+        cmd = build_command(base_cmd, vars(cli_args))
+        subprocess.run(cmd, check=True)  # nosec B603
+    else:
+        from axolotl.cli.shard import do_cli
 
-    subprocess.run(cmd, check=True)  # nosec B603
+        do_cli(config=config, **cli_args.__dict__)
 
 
 @cli.command()
 @click.argument("config", type=str)
 @common_options
+@click.option(
+    "--accelerate",
+    is_flag=True,
+    default=False,
+    help="Use accelerate launch for weight merging",
+)
 @click.option("--model-dir", help="Directory containing sharded weights")
 @click.option("--save-path", help="Path to save merged weights")
-def merge_sharded_fsdp_weights(config: Optional[str], **kwargs):
+def merge_sharded_fsdp_weights(config: str, accelerate: bool, **kwargs):
     """Merge sharded FSDP model weights."""
     cli_args = create_trainer_args(**kwargs)
 
-    base_cmd = ["accelerate", "launch", "-m", "axolotl.cli.merge_sharded_fsdp_weights"]
-    if config:
-        base_cmd.append(config)
-    cmd = build_command(base_cmd, vars(cli_args))
+    if accelerate:
+        base_cmd = [
+            "accelerate",
+            "launch",
+            "-m",
+            "axolotl.cli.merge_sharded_fsdp_weights",
+        ]
+        if config:
+            base_cmd.append(config)
+        cmd = build_command(base_cmd, vars(cli_args))
+        subprocess.run(cmd, check=True)  # nosec B603
+    else:
+        from axolotl.cli.merge_sharded_fsdp_weights import do_cli
 
-    subprocess.run(cmd, check=True)  # nosec B603
+        do_cli(config=config, **cli_args.__dict__)
 
 
 @cli.command()
