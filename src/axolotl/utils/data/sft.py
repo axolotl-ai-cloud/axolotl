@@ -44,7 +44,7 @@ from axolotl.prompters import (
     UnsupportedPrompter,
 )
 from axolotl.utils.data.pretraining import wrap_pretraining_dataset
-from axolotl.utils.data.utils import md5
+from axolotl.utils.data.utils import deduplicate_and_log_datasets, md5
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import is_local_main_process, zero_first
 from axolotl.utils.trainer import (
@@ -136,8 +136,9 @@ def prepare_dataset(cfg, tokenizer, processor=None):
         # https://discuss.huggingface.co/t/how-to-use-huggingface-trainer-streaming-datasets-without-wrapping-it-with-torchdatas-iterablewrapper/25230
         train_dataset = train_dataset.with_format("torch")
         eval_dataset = None
+        if cfg.dataset_exact_deduplication:
+            LOG.info("Deduplication not available for pretrained datasets")
         return train_dataset, eval_dataset, cfg.max_steps, prompters
-
     if eval_dataset and cfg.sample_packing and cfg.eval_sample_packing is not False:
         total_eval_steps = calculate_total_num_steps(cfg, eval_dataset, update=False)
         if total_eval_steps == 0:
@@ -178,7 +179,7 @@ def load_tokenized_prepared_datasets(
                 + "|".join(
                     sorted(
                         [
-                            f"{d.path}:{d.type}:{d.shards}:{d.conversation}{d.split}"
+                            f"{d.path}: {d.type}: {d.shards}: {d.conversation}{d.split}"
                             for d in cfg_datasets
                         ]
                     )
@@ -584,7 +585,8 @@ def load_prepare_datasets(
         )
         train_fingerprint = md5(to_hash_train)
         test_fingerprint = md5(to_hash_test)
-
+        if cfg.dataset_exact_deduplication:
+            _, _, dataset = deduplicate_and_log_datasets(dataset=dataset)
         dataset = dataset.train_test_split(
             test_size=val_set_size,
             shuffle=False,
@@ -596,12 +598,17 @@ def load_prepare_datasets(
         train_dataset = dataset["train"]
         eval_dataset = dataset["test"]
     elif split == "test":
+        if cfg.dataset_exact_deduplication:
+            _, eval_dataset, _ = deduplicate_and_log_datasets(eval_dataset=dataset)
+        else:
+            eval_dataset = dataset
         train_dataset = None
-        eval_dataset = dataset
     else:
-        train_dataset = dataset
+        if cfg.dataset_exact_deduplication:
+            train_dataset, _, _ = deduplicate_and_log_datasets(train_dataset=dataset)
+        else:
+            train_dataset = dataset
         eval_dataset = None
-
     return train_dataset, eval_dataset, prompters
 
 

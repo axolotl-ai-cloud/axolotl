@@ -13,7 +13,7 @@ from axolotl.common.const import DEFAULT_DATASET_PREPARED_PATH
 from axolotl.prompt_strategies.dpo import load as load_dpo
 from axolotl.prompt_strategies.kto import load as load_kto
 from axolotl.prompt_strategies.orpo import load as load_orpo
-from axolotl.utils.data.utils import md5
+from axolotl.utils.data.utils import deduplicate_and_log_datasets, md5
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import is_main_process, zero_first
 from axolotl.utils.models import load_tokenizer
@@ -207,5 +207,10 @@ def load_prepare_dpo_datasets(cfg):
             _save_preprocessed_ds(cfg, cfg.datasets, train_dataset)
         if eval_dataset and not eval_is_preprocessed:
             _save_preprocessed_ds(cfg, cfg.test_datasets, eval_dataset)
+
+    if cfg.dataset_exact_deduplication:
+        train_dataset, eval_dataset, _ = deduplicate_and_log_datasets(
+            train_dataset=train_dataset, eval_dataset=eval_dataset
+        )
 
     return train_dataset, eval_dataset
