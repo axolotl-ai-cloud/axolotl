@@ -8,6 +8,8 @@ on:
       - '**.py'
       - 'requirements.txt'
       - '.github/workflows/*.yml'
+      - 'requirements-tests.txt'
+      - 'cicd/cicd.sh'
   pull_request:
       paths:
        - '**.py'
