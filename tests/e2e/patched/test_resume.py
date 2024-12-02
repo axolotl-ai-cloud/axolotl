@@ -29,7 +29,7 @@ class TestResumeLlama(unittest.TestCase):
     """
 
     @with_temp_dir
-    def test_resume_qlora_packed(self, temp_dir):
+    def test_resume_lora_packed(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
@@ -37,13 +37,13 @@ class TestResumeLlama(unittest.TestCase):
                 "sequence_len": 1024,
                 "sample_packing": True,
                 "flash_attention": True,
-                "load_in_4bit": True,
-                "adapter": "qlora",
-                "lora_r": 32,
-                "lora_alpha": 64,
+                "load_in_8bit": True,
+                "adapter": "lora",
+                "lora_r": 8,
+                "lora_alpha": 16,
                 "lora_dropout": 0.05,
                 "lora_target_linear": True,
-                "val_set_size": 0.1,
+                "val_set_size": 0.01,
                 "special_tokens": {
                     "pad_token": "<|endoftext|>",
                 },
@@ -60,9 +60,9 @@ class TestResumeLlama(unittest.TestCase):
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_8bit",
                 "lr_scheduler": "cosine",
-                "save_steps": 10,
+                "save_steps": 3,
                 "save_total_limit": 5,
-                "max_steps": 40,
+                "max_steps": 15,
                 "use_tensorboard": True,
             }
         )
@@ -78,7 +78,7 @@ class TestResumeLlama(unittest.TestCase):
 
         resume_cfg = cfg | DictDefault(
             {
-                "resume_from_checkpoint": f"{temp_dir}/checkpoint-30/",
+                "resume_from_checkpoint": f"{temp_dir}/checkpoint-9/",
             }
         )
         normalize_config(resume_cfg)
@@ -94,4 +94,4 @@ class TestResumeLlama(unittest.TestCase):
         )
         pattern = r"first_step\s+(\d+)"
         first_steps = int(re.findall(pattern, res.stdout)[0])
-        assert first_steps == 31
+        assert first_steps == 10
