@@ -1,6 +1,16 @@
 name: ci-cd-base
 
 on:
+  push:
+    branches:
+      - "main"
+    paths:
+      - 'Dockerfile-base'
+      - '.github/workflows/base.yml'
+  pull_request:
+    paths:
+      - 'Dockerfile-base'
+      - '.github/workflows/base.yml'
   workflow_dispatch:
 
 jobs:
