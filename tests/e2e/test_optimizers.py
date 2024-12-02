@@ -94,6 +94,7 @@ class TestCustomOptimizers(unittest.TestCase):
                     },
                 ],
                 "num_epochs": 1,
+                "max_steps": 5,
                 "micro_batch_size": 8,
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
@@ -133,6 +134,7 @@ class TestCustomOptimizers(unittest.TestCase):
                 "optimizer": "schedule_free_adamw",
                 "lr_scheduler": "constant",
                 "save_safetensors": True,
+                "max_steps": 10,
             }
         )
         # pylint: disable=duplicate-code

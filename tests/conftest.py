@@ -15,6 +15,12 @@ def download_smollm2_135m_model():
 
 
 @pytest.fixture(scope="session", autouse=True)
+def download_llama_68m_random_model():
+    # download the model
+    snapshot_download("JackFram/llama-68m")
+
+
+@pytest.fixture(scope="session", autouse=True)
 def download_qwen_2_5_half_billion_model():
     # download the model
     snapshot_download("Qwen/Qwen2.5-0.5B")
@@ -22,26 +28,26 @@ def download_qwen_2_5_half_billion_model():
 
 @pytest.fixture(scope="session", autouse=True)
 def download_tatsu_lab_alpaca_dataset():
-    # download the model
+    # download the dataset
     snapshot_download("tatsu-lab/alpaca", repo_type="dataset")
 
 
 @pytest.fixture(scope="session", autouse=True)
 def download_mhenrichsen_alpaca_2k_dataset():
-    # download the model
+    # download the dataset
     snapshot_download("mhenrichsen/alpaca_2k_test", repo_type="dataset")
 
 
 @pytest.fixture(scope="session", autouse=True)
 def download_mhenrichsen_alpaca_2k_w_revision_dataset():
-    # download the model
+    # download the dataset
     snapshot_download(
         "mhenrichsen/alpaca_2k_test", repo_type="dataset", revision="d05c1cb"
     )
 
 
 def download_mlabonne_finetome_100k_dataset():
-    # download the model
+    # download the dataset
     snapshot_download("mlabonne/FineTome-100k", repo_type="dataset")
 
 
