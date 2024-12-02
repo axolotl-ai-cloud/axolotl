@@ -1,0 +1,95 @@
+base_model: meta-llama/Llama-3.2-1B
+model_type: LlamaForCausalLM
+tokenizer_type: AutoTokenizer
+
+load_in_8bit: true
+load_in_4bit: false
+strict: false
+
+chat_template: llama3
+rl: dpo
+datasets:
+  - path: fozziethebeat/alpaca_messages_2k_dpo_test
+    type: chat_template.default
+    field_messages: conversation
+    field_chosen: chosen
+    field_rejected: rejected
+    message_field_role: role
+    message_field_content: content
+    roles:
+      system:
+        - system
+      user:
+        - user
+      assistant:
+        - assistant
+  - path: fozziethebeat/alpaca_messages_2k_dpo_test
+    type: chat_template.default
+    field_messages: conversation
+    field_chosen: chosen
+    field_rejected: rejected
+    message_field_role: role
+    message_field_content: content
+    roles:
+      system:
+        - system
+      user:
+        - user
+      assistant:
+        - assistant
+
+dataset_exact_deduplication: true
+dataset_prepared_path:
+val_set_size: 0
+output_dir: ./outputs/lora-out
+
+sequence_len: 4096
+sample_packing: false
+pad_to_sequence_len: true
+
+adapter: lora
+lora_model_dir:
+lora_r: 32
+lora_alpha: 16
+lora_dropout: 0.05
+lora_target_linear: true
+lora_fan_in_fan_out:
+
+wandb_project:
+wandb_entity:
+wandb_watch:
+wandb_name:
+wandb_log_model:
+
+gradient_accumulation_steps: 4
+micro_batch_size: 2
+num_epochs: 4
+optimizer: adamw_bnb_8bit
+lr_scheduler: cosine
+learning_rate: 0.0002
+
+train_on_inputs: false
+group_by_length: false
+bf16: auto
+fp16:
+tf32: false
+
+gradient_checkpointing: true
+early_stopping_patience:
+resume_from_checkpoint:
+local_rank:
+logging_steps: 1
+xformers_attention:
+flash_attention: true
+s2_attention:
+
+warmup_steps: 10
+evals_per_epoch: 4
+eval_table_size:
+eval_max_new_tokens: 128
+saves_per_epoch: 1
+debug:
+deepspeed:
+weight_decay: 0.0
+fsdp:
+fsdp_config:
