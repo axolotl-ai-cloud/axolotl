@@ -6,7 +6,6 @@ import logging
 import os
 import re
 import subprocess
-import unittest
 from pathlib import Path
 
 from transformers.utils import is_torch_bf16_gpu_available
@@ -17,18 +16,17 @@ from axolotl.train import train
 from axolotl.utils.config import normalize_config
 from axolotl.utils.dict import DictDefault
 
-from ..utils import most_recent_subdir, with_temp_dir
+from ..utils import most_recent_subdir
 
 LOG = logging.getLogger("axolotl.tests.e2e")
 os.environ["WANDB_DISABLED"] = "true"
 
 
-class TestResumeLlama(unittest.TestCase):
+class TestResumeLlama:
     """
     Test case for resuming training of llama models
     """
 
-    @with_temp_dir
     def test_resume_lora_packed(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
@@ -43,7 +41,7 @@ class TestResumeLlama(unittest.TestCase):
                 "lora_alpha": 16,
                 "lora_dropout": 0.05,
                 "lora_target_linear": True,
-                "val_set_size": 0.01,
+                "val_set_size": 0.001,
                 "special_tokens": {
                     "pad_token": "<|endoftext|>",
                 },
