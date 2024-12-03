@@ -8,7 +8,6 @@ from importlib import reload
 from pathlib import Path
 
 import pytest
-from e2e.utils import check_tensorboard
 from transformers.utils import is_torch_bf16_gpu_available
 
 from axolotl.cli import load_datasets
@@ -16,6 +15,8 @@ from axolotl.common.cli import TrainerCliArgs
 from axolotl.train import train
 from axolotl.utils.config import normalize_config
 from axolotl.utils.dict import DictDefault
+
+from ..utils import check_tensorboard
 
 LOG = logging.getLogger("axolotl.tests.e2e")
 os.environ["WANDB_DISABLED"] = "true"
