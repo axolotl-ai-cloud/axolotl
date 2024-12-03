@@ -33,7 +33,7 @@ class CutCrossEntropyArgs(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def check_dtype_is_half(cls, data):
-        if not (data.get("bf16") or data.get("fp16")):
+        if data.get("cut_cross_entropy") and not (data.get("bf16") or data.get("fp16")):
             raise ValueError(
                 "Cut Cross Entropy requires fp16/bf16 training for backward pass. "
                 "Please set `bf16` or `fp16` to `True`."
