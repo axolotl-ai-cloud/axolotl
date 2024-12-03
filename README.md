@@ -147,7 +147,7 @@ pip3 install -e '.[flash-attn,deepspeed]'
 ### Usage
 ```bash
 # preprocess datasets - optional but recommended
-CUDA_VISIBLE_DEVICES="" python -m axolotl.cli.preprocess examples/openllama-3b/lora.yml
+CUDA_VISIBLE_DEVICES="0" python -m axolotl.cli.preprocess examples/openllama-3b/lora.yml
 
 # finetune lora
 accelerate launch -m axolotl.cli.train examples/openllama-3b/lora.yml
