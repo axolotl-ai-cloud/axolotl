@@ -16,11 +16,11 @@ if v < V("2.4.0"):
     sys.exit(0)
 
 cce_spec = importlib.util.find_spec("cut_cross_entropy")
-cce_spec_transformers = importlib.util.find_spec("cut_cross_entropy.transformers")
 
 UNINSTALL_PREFIX = ""
-if cce_spec and not cce_spec_transformers:
-    UNINSTALL_PREFIX = "pip uninstall -y cut-cross-entropy && "
+if cce_spec:
+    if not importlib.util.find_spec("cut_cross_entropy.transformers"):
+        UNINSTALL_PREFIX = "pip uninstall -y cut-cross-entropy && "
 
 print(
     UNINSTALL_PREFIX
