@@ -40,6 +40,7 @@ with open(pathlib.Path(temp_dir) / "Dockerfile", "w", encoding="utf-8") as f:
 cicd_image = (
     Image.from_dockerfile(
         pathlib.Path(temp_dir) / "Dockerfile",
+        context_mount=None,
         force_build=True,
         gpu="A10G",
     )

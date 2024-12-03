@@ -55,6 +55,7 @@ jobs:
           pip3 install --upgrade pip
           pip3 install --upgrade packaging
           pip3 install -U -e .
+          python scripts/cutcrossentropy_install.py | sh
           pip3 install -r requirements-dev.txt -r requirements-tests.txt
 
       - name: Run tests
