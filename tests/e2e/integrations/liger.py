@@ -7,7 +7,7 @@ from pathlib import Path
 from axolotl.cli import load_datasets
 from axolotl.common.cli import TrainerCliArgs
 from axolotl.train import train
-from axolotl.utils.config import normalize_config
+from axolotl.utils.config import normalize_config, prepare_plugins
 from axolotl.utils.dict import DictDefault
 
 from ..utils import with_temp_dir
@@ -54,8 +54,10 @@ class LigerIntegrationTestCase(unittest.TestCase):
                 "lr_scheduler": "cosine",
                 "save_safetensors": True,
                 "bf16": "auto",
+                "max_steps": 10,
             }
         )
+        prepare_plugins(cfg)
         normalize_config(cfg)
         cli_args = TrainerCliArgs()
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
@@ -99,8 +101,10 @@ class LigerIntegrationTestCase(unittest.TestCase):
                 "lr_scheduler": "cosine",
                 "save_safetensors": True,
                 "bf16": "auto",
+                "max_steps": 10,
             }
         )
+        prepare_plugins(cfg)
         normalize_config(cfg)
         cli_args = TrainerCliArgs()
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)

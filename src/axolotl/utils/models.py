@@ -1084,14 +1084,17 @@ class ModelLoader:
 
         self.prepare_model(qlora_fsdp)
 
-        # LlamaRMSNorm layers are in fp32 after kbit_training or full finetune, so we need to
-        # convert them back to fp16/bf16 for flash-attn compatibility.
-        if (needs_fa2_dtype or self.cfg.flash_attention) and not qlora_fsdp:
-            LOG.info(
-                "converting modules to %s for flash attention", self.cfg.torch_dtype
-            )
+        should_convert = (
+            # LlamaRMSNorm layers are in fp32 after kbit_training or full finetune, so we need to
+            # convert them back to fp16/bf16 for flash-attn compatibility.
+            ((needs_fa2_dtype or self.cfg.flash_attention) and not qlora_fsdp)
+            or self.cfg.cut_cross_entropy  # Cut cross entropy requires embedding layers to be in fp16/bf16 for backward pass
+        )
+
+        if should_convert:
+            LOG.info("Converting modules to %s", self.cfg.torch_dtype)
             self.convert_embedding_modules_dtype(
-                embedding_modules,
+                embedding_modules=embedding_modules,
                 dist_dtype=self.cfg.torch_dtype,
                 before_kbit_train_or_finetune=False,
             )
