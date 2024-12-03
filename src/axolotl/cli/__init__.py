@@ -432,6 +432,8 @@ def load_cfg(config: Union[str, Path] = Path("examples/"), **kwargs):
     except:  # pylint: disable=bare-except # noqa: E722
         gpu_version = None
 
+    prepare_plugins(cfg)
+
     cfg = validate_config(
         cfg,
         capabilities={
@@ -443,8 +445,6 @@ def load_cfg(config: Union[str, Path] = Path("examples/"), **kwargs):
             "torch_version": str(torch.__version__).split("+", maxsplit=1)[0]
         },
     )
-
-    prepare_plugins(cfg)
 
     prepare_optim_env(cfg)
 
