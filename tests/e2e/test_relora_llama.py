@@ -7,7 +7,7 @@ import os
 import unittest
 from pathlib import Path
 
-from tbparse import SummaryReader
+from utils.tensorboard_ import check_tensorboard
 
 from axolotl.cli import load_datasets
 from axolotl.common.cli import TrainerCliArgs
@@ -15,7 +15,7 @@ from axolotl.train import train
 from axolotl.utils.config import normalize_config
 from axolotl.utils.dict import DictDefault
 
-from .utils import most_recent_subdir, with_temp_dir
+from .utils import with_temp_dir
 
 LOG = logging.getLogger("axolotl.tests.e2e")
 os.environ["WANDB_DISABLED"] = "true"
@@ -85,9 +85,6 @@ class TestReLoraLlama(unittest.TestCase):
         ).exists()
         assert (Path(temp_dir) / "checkpoint-100/relora/model.safetensors").exists()
 
-        tb_log_path = most_recent_subdir(temp_dir + "/runs")
-        event_file = os.path.join(tb_log_path, sorted(os.listdir(tb_log_path))[0])
-        reader = SummaryReader(event_file)
-        df = reader.scalars  # pylint: disable=invalid-name
-        df = df[(df.tag == "train/grad_norm")]  # pylint: disable=invalid-name
-        assert df.value.values[-1] < 0.2, "grad_norm is too high"
+        check_tensorboard(
+            temp_dir + "/runs", "train/grad_norm", 0.2, "grad_norm is too high"
+        )
