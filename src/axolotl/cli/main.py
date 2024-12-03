@@ -7,8 +7,7 @@ import hashlib
 import json
 import subprocess  # nosec B404
 from pathlib import Path
-from types import NoneType
-from typing import Any, Dict, List, Optional, Type, Union, get_args, get_origin
+from typing import Any, Dict, List, Optional, Type
 
 import click
 import requests
@@ -117,26 +116,6 @@ def fetch_from_github(dir_prefix: str, dest_dir: Optional[str] = None) -> None:
 @click.group()
 def cli():
     """Axolotl CLI - Train and fine-tune large language models"""
-
-
-def get_click_type(python_type: Type) -> Any:
-    """Convert Python/Pydantic types to Click types."""
-    # Handle Union/Optional types
-    if get_origin(python_type) is Union:
-        types = get_args(python_type)
-        # If one of the types is None, it's Optional
-        types = tuple(t for t in types if not isinstance(t, NoneType))
-        if len(types) == 1:
-            return get_click_type(types[0])
-
-    # Map Python types to Click types
-    type_map = {
-        str: str,
-        int: int,
-        float: float,
-        bool: bool,
-    }
-    return type_map.get(python_type, str)
 
 
 def add_options_from_dataclass(config_class: Type[Any]):
