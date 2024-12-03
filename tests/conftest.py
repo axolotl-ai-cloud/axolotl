@@ -46,6 +46,7 @@ def download_mhenrichsen_alpaca_2k_w_revision_dataset():
     )
 
 
+@pytest.fixture(scope="session", autouse=True)
 def download_mlabonne_finetome_100k_dataset():
     # download the dataset
     snapshot_download("mlabonne/FineTome-100k", repo_type="dataset")
