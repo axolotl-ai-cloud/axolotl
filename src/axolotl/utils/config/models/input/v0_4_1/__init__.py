@@ -9,6 +9,7 @@ import os
 from enum import Enum
 from typing import Annotated, Any, Dict, List, Literal, Optional, Tuple, Union
 
+from packaging import version
 from pydantic import (
     BaseModel,
     Field,
@@ -21,7 +22,7 @@ from transformers import SchedulerType
 from transformers.training_args import OptimizerNames
 from transformers.utils.import_utils import is_torch_npu_available
 
-from axolotl.utils.config.models.internals import GPUCapabilities
+from axolotl.utils.config.models.internals import EnvCapabilities, GPUCapabilities
 
 LOG = logging.getLogger("axolotl.utils.config.models.input")
 
@@ -1477,6 +1478,7 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
     """wrapper to valdiate gpu capabilities with the configured options"""
 
     capabilities: GPUCapabilities
+    env_capabilities: EnvCapabilities
 
     @model_validator(mode="after")
     def check_bf16(self):
@@ -1549,5 +1551,23 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             if capabilities and capabilities.get("n_gpu", 0) > 1:
                 raise ValueError(
                     "unsloth_lora_mlp, unsloth_lora_qkv, and unsloth_lora_o are not compatible with multi-GPU training."
+                )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_adopt_torch_version(cls, data):
+        if (data.get("optimizer") is not None) and ("adopt" in data.get("optimizer")):
+            env_capabilities = data.get("env_capabilities", {})
+            torch_version = env_capabilities.get("torch_version")
+
+            if torch_version is None:
+                import torch
+
+                torch_version = str(torch.__version__).split("+", maxsplit=1)[0]
+
+            if version.parse(torch_version) < version.parse("2.5.1"):
+                raise ValueError(
+                    "ADOPT optimizer is incompatible with torch version < 2.5.1"
                 )
         return data

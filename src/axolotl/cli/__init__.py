@@ -100,8 +100,8 @@ def print_dep_versions():
         print("*" * 40)
         print("**** Axolotl Dependency Versions *****")
         for pkg in packages:
-            version = _is_package_available(pkg, return_version=True)
-            print(f"{pkg: >{max_len}}: {version[1]: <15}")
+            pkg_version = _is_package_available(pkg, return_version=True)
+            print(f"{pkg: >{max_len}}: {pkg_version[1]: <15}")
         print("*" * 40)
 
 
@@ -443,6 +443,9 @@ def load_cfg(config: Union[str, Path] = Path("examples/"), **kwargs):
             "bf16": is_torch_bf16_gpu_available(),
             "n_gpu": int(os.environ.get("WORLD_SIZE", 1)),
             "compute_capability": gpu_version,
+        },
+        env_capabilities={
+            "torch_version": str(torch.__version__).split("+", maxsplit=1)[0]
         },
     )
 
