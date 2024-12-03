@@ -4,6 +4,7 @@ shared fixtures for prompt strategies tests
 
 import pytest
 from datasets import Dataset
+from huggingface_hub import hf_hub_download
 from transformers import AutoTokenizer
 
 
@@ -60,6 +61,17 @@ def fixture_basic_dataset():
 
 @pytest.fixture(name="llama3_tokenizer")
 def fixture_llama3_tokenizer():
+    hf_hub_download(
+        repo_id="NousResearch/Meta-Llama-3-8B-Instruct",
+        filename="special_tokens_map.json",
+    )
+    hf_hub_download(
+        repo_id="NousResearch/Meta-Llama-3-8B-Instruct",
+        filename="tokenizer_config.json",
+    )
+    hf_hub_download(
+        repo_id="NousResearch/Meta-Llama-3-8B-Instruct", filename="tokenizer.json"
+    )
     tokenizer = AutoTokenizer.from_pretrained("NousResearch/Meta-Llama-3-8B-Instruct")
 
     return tokenizer
