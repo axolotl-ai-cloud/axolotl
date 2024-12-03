@@ -8,8 +8,8 @@ from importlib import reload
 from pathlib import Path
 
 import pytest
+from e2e.utils import check_tensorboard
 from transformers.utils import is_torch_bf16_gpu_available
-from utils.tensorboard_ import check_tensorboard
 
 from axolotl.cli import load_datasets
 from axolotl.common.cli import TrainerCliArgs

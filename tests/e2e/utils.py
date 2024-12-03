@@ -12,6 +12,7 @@ import torch
 
 # from importlib.metadata import version
 from packaging import version
+from tbparse import SummaryReader
 
 
 def with_temp_dir(test_func):
@@ -66,3 +67,17 @@ def require_torch_2_5_1(test_case):
 def is_hopper():
     compute_capability = torch.cuda.get_device_capability()
     return compute_capability == (9, 0)
+
+
+def check_tensorboard(
+    temp_run_dir: str, tag: str, lt_val: float, assertion_err: str
+) -> None:
+    """
+    helper function to parse and check tensorboard logs
+    """
+    tb_log_path = most_recent_subdir(temp_run_dir)
+    event_file = os.path.join(tb_log_path, sorted(os.listdir(tb_log_path))[0])
+    reader = SummaryReader(event_file)
+    df = reader.scalars  # pylint: disable=invalid-name
+    df = df[(df.tag == tag)]  # pylint: disable=invalid-name
+    assert df.value.values[-1] < lt_val, assertion_err
