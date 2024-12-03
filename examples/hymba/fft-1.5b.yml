@@ -22,7 +22,7 @@ wandb_name:
 wandb_log_model:
 
 gradient_accumulation_steps: 2
-micro_batch_size: 4
+micro_batch_size: 2
 num_epochs: 1
 optimizer: paged_adamw_8bit
 lr_scheduler: cosine
@@ -45,7 +45,7 @@ logging_steps: 1
 xformers_attention:
 flash_attention: true
 
-warmup_steps: 100
+warmup_steps: 5
 evals_per_epoch: 2
 eval_table_size:
 saves_per_epoch: 1
