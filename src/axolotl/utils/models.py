@@ -398,6 +398,7 @@ class ModelLoader:
             and self.cfg.sample_packing
         ):
             has_remote_code = None
+            # some model config objects are not subscriptable
             if self.cfg.model_config_type in ["hymba"]:
                 has_remote_code = hasattr(
                     self.model_config, "auto_map"
