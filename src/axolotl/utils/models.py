@@ -399,15 +399,16 @@ class ModelLoader:
         ):
             has_remote_code = None
             # some model config objects are not subscriptable
-            if self.cfg.model_config_type in ["hymba"]:
-                has_remote_code = hasattr(
-                    self.model_config, "auto_map"
-                ) and "AutoModelForCausalLM" in getattr(self.model_config, "auto_map")
-            else:
+            try:
                 has_remote_code = (
                     "auto_map" in self.model_config
                     and "AutoModelForCausalLM" in self.model_config["auto_map"]
                 )
+            except TypeError:
+                has_remote_code = hasattr(
+                    self.model_config, "auto_map"
+                ) and "AutoModelForCausalLM" in getattr(self.model_config, "auto_map")
+
             if has_remote_code and self.cfg.trust_remote_code is False:
                 # if explicitly set in the YAML, we should prefer that, for example if explicitly disabled
                 has_remote_code = self.cfg.trust_remote_code
