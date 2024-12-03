@@ -397,7 +397,6 @@ class ModelLoader:
             and self.cfg.flash_attention
             and self.cfg.sample_packing
         ):
-            has_remote_code = None
             # some model config objects are not subscriptable
             try:
                 has_remote_code = (
