@@ -8,11 +8,15 @@ on:
       - '**.py'
       - 'requirements.txt'
       - '.github/workflows/*.yml'
+      - 'requirements-tests.txt'
+      - 'cicd/cicd.sh'
   pull_request:
       paths:
        - '**.py'
        - 'requirements.txt'
        - '.github/workflows/*.yml'
+       - 'requirements-tests.txt'
+       - 'cicd/cicd.sh'
   workflow_dispatch:
 
 # Cancel jobs on the same ref if a new one is triggered
