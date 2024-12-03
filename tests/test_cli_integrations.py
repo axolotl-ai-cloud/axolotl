@@ -3,7 +3,6 @@ test cases to make sure the plugin args are loaded from the config file
 """
 from pathlib import Path
 
-import pytest
 import yaml
 
 from axolotl.cli import load_cfg
@@ -11,32 +10,24 @@ from axolotl.utils.dict import DictDefault
 
 
 # pylint: disable=duplicate-code
-@pytest.fixture(name="minimal_cfg_w_dataset")
-def fixture_cfg():
-    return DictDefault(
-        {
-            "base_model": "HuggingFaceTB/SmolLM2-135M",
-            "learning_rate": 0.000001,
-            "micro_batch_size": 1,
-            "gradient_accumulation_steps": 1,
-            "datasets": [
-                {
-                    "path": "mhenrichsen/alpaca_2k_test",
-                    "type": "alpaca",
-                },
-            ],
-        }
-    )
-
-
 class TestPluginArgs:
     """
     test class for plugin args loaded from the config file
     """
 
-    def test_liger_plugin_args(self, minimal_cfg_w_dataset, temp_dir):
+    def test_liger_plugin_args(self, temp_dir):
         test_cfg = DictDefault(
             {
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "learning_rate": 0.000001,
+                "micro_batch_size": 1,
+                "gradient_accumulation_steps": 1,
+                "datasets": [
+                    {
+                        "path": "mhenrichsen/alpaca_2k_test",
+                        "type": "alpaca",
+                    },
+                ],
                 "plugins": ["axolotl.integrations.liger.LigerPlugin"],
                 "liger_layer_norm": True,
                 "liger_rope": True,
@@ -44,7 +35,6 @@ class TestPluginArgs:
                 "liger_glu_activation": True,
                 "liger_fused_linear_cross_entropy": True,
             }
-            | minimal_cfg_w_dataset
         )
 
         with open(Path(temp_dir) / "config.yaml", "w", encoding="utf-8") as fout:
