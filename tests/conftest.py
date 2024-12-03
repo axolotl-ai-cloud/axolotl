@@ -52,6 +52,22 @@ def download_mlabonne_finetome_100k_dataset():
 
 
 @pytest.fixture
+def download_argilla_distilabel_capybara_dpo_7k_binarized_dataset():
+    # download the dataset
+    snapshot_download(
+        "argilla/distilabel-capybara-dpo-7k-binarized", repo_type="dataset"
+    )
+
+
+@pytest.fixture
+def download_arcee_ai_distilabel_intel_orca_dpo_pairs_dataset():
+    # download the dataset
+    snapshot_download(
+        "arcee-ai/distilabel-intel-orca-dpo-pairs-binarized", repo_type="dataset"
+    )
+
+
+@pytest.fixture
 def temp_dir():
     # Create a temporary directory
     _temp_dir = tempfile.mkdtemp()
