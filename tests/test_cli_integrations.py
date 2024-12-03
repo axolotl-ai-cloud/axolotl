@@ -11,7 +11,7 @@ from axolotl.utils.dict import DictDefault
 
 
 # pylint: disable=duplicate-code
-@pytest.fixture(name="minimal_cfg")
+@pytest.fixture(name="minimal_cfg_w_dataset")
 def fixture_cfg():
     return DictDefault(
         {
@@ -34,7 +34,7 @@ class TestPluginArgs:
     test class for plugin args loaded from the config file
     """
 
-    def test_liger_plugin_args(self, minimal_cfg, temp_dir):
+    def test_liger_plugin_args(self, minimal_cfg_w_dataset, temp_dir):
         test_cfg = DictDefault(
             {
                 "plugins": ["axolotl.integrations.liger.LigerPlugin"],
@@ -44,7 +44,7 @@ class TestPluginArgs:
                 "liger_glu_activation": True,
                 "liger_fused_linear_cross_entropy": True,
             }
-            | minimal_cfg
+            | minimal_cfg_w_dataset
         )
 
         with open(Path(temp_dir) / "config.yaml", "w", encoding="utf-8") as fout:
