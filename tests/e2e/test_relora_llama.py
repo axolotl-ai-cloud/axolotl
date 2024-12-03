@@ -57,7 +57,7 @@ class TestReLoraLlama(unittest.TestCase):
                         "path": "mlabonne/FineTome-100k",
                         "type": "chat_template",
                         "split": "train[:10%]",
-                        "field_messages": "conversation",
+                        "field_messages": "conversations",
                         "message_field_role": "from",
                         "message_field_content": "value",
                     },
