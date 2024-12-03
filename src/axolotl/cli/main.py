@@ -7,7 +7,7 @@ import hashlib
 import json
 import subprocess  # nosec B404
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Dict, List, Optional, Type, Union, get_args, get_origin
 
 import click
 import requests
@@ -124,19 +124,23 @@ def add_options_from_dataclass(config_class: Type[Any]):
     def decorator(function):
         for field in reversed(dataclasses.fields(config_class)):
             option_name = f"--{field.name.replace('_', '-')}"
+            field_type = field.type
 
-            if field.type == bool:
+            if get_origin(field_type) is Union and type(None) in get_args(field_type):
+                field_type = next(t for t in get_args(field_type) if t is not type(None))
+
+            if field_type == bool:
                 function = click.option(
                     option_name,
                     is_flag=True,
-                    default=None,
+                    default=field.default,
                     help=field.metadata.get("description"),
                 )(function)
             else:
                 function = click.option(
                     option_name,
-                    type=field.type,
-                    default=None,
+                    type=field_type,
+                    default=field.default,
                     help=field.metadata.get("description"),
                 )(function)
         return function

@@ -12,18 +12,25 @@ from axolotl.cli.main import cli
 def mock_train_deps():
     """Mock dependencies for training"""
     with patch.multiple(
-        "axolotl.cli.train",
+        'axolotl.cli',
         load_datasets=DEFAULT,
         load_rl_datasets=DEFAULT,
-        train=DEFAULT,
-        PluginManager=DEFAULT,
+        load_cfg=DEFAULT,
         check_accelerate_default_config=DEFAULT,
         check_user_token=DEFAULT,
-    ) as mocks:
-        # Setup plugin manager mock
+    ) as cli_mocks, patch(
+        'axolotl.train.train'
+    ) as mock_train, patch(
+        'axolotl.integrations.base.PluginManager'
+    ) as mock_plugin_manager:
         mock_plugin_instance = MagicMock()
-        mocks["PluginManager"].get_instance.return_value = mock_plugin_instance
-        mocks["plugin_manager_instance"] = mock_plugin_instance
+        mock_plugin_manager.get_instance.return_value = mock_plugin_instance
+        mocks = {
+            'train': mock_train,
+            'PluginManager': mock_plugin_manager,
+            'plugin_manager_instance': mock_plugin_instance,
+            **cli_mocks,
+        }
         yield mocks
 
 
