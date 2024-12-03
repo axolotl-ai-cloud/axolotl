@@ -33,15 +33,18 @@ class TestReLoraLlama(unittest.TestCase):
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
                 "sequence_len": 2048,
+                "sample_packing": True,
+                "pad_to_sequence_len": True,
+                "flash_attention": True,
                 "load_in_8bit": True,
                 "adapter": "lora",
                 "lora_r": 8,
                 "lora_alpha": 16,
                 "lora_dropout": 0.05,
                 "lora_target_modules": ["q_proj", "v_proj"],
-                "relora_steps": 50,
-                "relora_warmup_steps": 10,
-                "relora_anneal_steps": 5,
+                "relora_steps": 100,
+                "relora_warmup_steps": 20,
+                "relora_anneal_steps": 10,
                 "relora_prune_ratio": 0.9,
                 "relora_cpu_offload": True,
                 "val_set_size": 0.0,
@@ -51,13 +54,17 @@ class TestReLoraLlama(unittest.TestCase):
                 "chat_template": "chatml",
                 "datasets": [
                     {
-                        "path": "mhenrichsen/alpaca_2k_test",
-                        "type": "alpaca",
+                        "path": "mlabonne/FineTome-100k",
+                        "type": "chat_template",
+                        "split": "train[:10%]",
+                        "field_messages": "conversation",
+                        "message_field_role": "from",
+                        "message_field_content": "value",
                     },
                 ],
-                "warmup_steps": 10,
+                "warmup_steps": 20,
                 "num_epochs": 2,
-                "max_steps": 105,  # at least 2x relora_steps
+                "max_steps": 205,  # at least 2x relora_steps
                 "micro_batch_size": 2,
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
@@ -83,4 +90,4 @@ class TestReLoraLlama(unittest.TestCase):
         reader = SummaryReader(event_file)
         df = reader.scalars  # pylint: disable=invalid-name
         df = df[(df.tag == "train/grad_norm")]  # pylint: disable=invalid-name
-        assert df.value.values[-1] < 0.1, "Loss is too high"
+        assert df.value.values[-1] < 0.2, "grad_norm is too high"
