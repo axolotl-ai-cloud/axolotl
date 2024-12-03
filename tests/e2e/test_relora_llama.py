@@ -58,6 +58,7 @@ class TestReLoraLlama(unittest.TestCase):
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_torch",
+                "max_steps": 5,
                 "lr_scheduler": "cosine",
             }
         )
