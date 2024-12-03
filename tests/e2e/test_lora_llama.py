@@ -57,6 +57,7 @@ class TestLoraLlama(unittest.TestCase):
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_torch",
                 "lr_scheduler": "cosine",
+                "max_steps": 20,
             }
         )
         normalize_config(cfg)
