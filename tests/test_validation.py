@@ -672,6 +672,9 @@ class TestValidation(BaseValidation):
                 {
                     "bf16": True,
                     "capabilities": {"bf16": False},
+                    "env_capabilities": {
+                        "torch_version": "2.5.1",
+                    },
                 }
             )
             | minimal_cfg
@@ -1159,6 +1162,38 @@ class TestValidation(BaseValidation):
                 "evaluation_strategy is deprecated, use eval_strategy instead"
                 in self._caplog.records[0].message
             )
+
+    def test_torch_version_adopt_req(self, minimal_cfg):
+        cfg = (
+            DictDefault(
+                {
+                    "optimizer": "adopt_adamw",
+                }
+            )
+            | minimal_cfg
+        )
+
+        with pytest.raises(
+            ValueError,
+            match=r".*ADOPT optimizer is incompatible with torch version*",
+        ):
+            env_capabilities = {"torch_version": "2.3.0"}
+            capabilities = {"bf16": False}
+            _ = validate_config(
+                cfg, capabilities=capabilities, env_capabilities=env_capabilities
+            )
+
+        env_capabilities = {"torch_version": "2.5.1"}
+        capabilities = {"bf16": False}
+        _ = validate_config(
+            cfg, capabilities=capabilities, env_capabilities=env_capabilities
+        )
+
+        env_capabilities = {"torch_version": "2.5.2"}
+        capabilities = {"bf16": False}
+        _ = validate_config(
+            cfg, capabilities=capabilities, env_capabilities=env_capabilities
+        )
 
 
 class TestValidationCheckModelConfig(BaseValidation):

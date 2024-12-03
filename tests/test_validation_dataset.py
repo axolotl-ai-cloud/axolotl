@@ -72,6 +72,9 @@ class TestValidationCheckDatasetConfig(BaseValidation):
                 "n_gpu": 1,
                 "compute_capability": "8.0",
             },
+            env_capabilities={
+                "torch_version": "2.5.1",
+            },
         )
 
         _check_config()
@@ -123,6 +126,9 @@ class TestValidationCheckDatasetConfig(BaseValidation):
                 "bf16": "false",
                 "n_gpu": 1,
                 "compute_capability": "8.0",
+            },
+            env_capabilities={
+                "torch_version": "2.5.1",
             },
         )
 
@@ -177,6 +183,9 @@ class TestValidationCheckDatasetConfig(BaseValidation):
                 "n_gpu": 1,
                 "compute_capability": "8.0",
             },
+            env_capabilities={
+                "torch_version": "2.5.1",
+            },
         )
 
         _check_config()
@@ -230,6 +239,9 @@ class TestValidationCheckDatasetConfig(BaseValidation):
                 "bf16": "false",
                 "n_gpu": 1,
                 "compute_capability": "8.0",
+            },
+            env_capabilities={
+                "torch_version": "2.5.1",
             },
         )
 
