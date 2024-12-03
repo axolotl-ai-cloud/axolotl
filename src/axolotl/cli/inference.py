@@ -19,7 +19,7 @@ from axolotl.common.cli import TrainerCliArgs
 def do_cli(config: Path = Path("examples/"), gradio=False, **kwargs):
     # pylint: disable=duplicate-code
     print_axolotl_text_art()
-    parsed_cfg = load_cfg(config, **kwargs)
+    parsed_cfg = load_cfg(config, inference=True, **kwargs)
     parsed_cfg.sample_packing = False
     parser = transformers.HfArgumentParser((TrainerCliArgs))
     parsed_cli_args, _ = parser.parse_args_into_dataclasses(
