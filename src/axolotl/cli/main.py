@@ -7,6 +7,7 @@ import hashlib
 import json
 import subprocess  # nosec B404
 from pathlib import Path
+from types import NoneType
 from typing import Any, Dict, List, Optional, Type, Union, get_args, get_origin
 
 import click
@@ -127,7 +128,9 @@ def add_options_from_dataclass(config_class: Type[Any]):
             field_type = field.type
 
             if get_origin(field_type) is Union and type(None) in get_args(field_type):
-                field_type = next(t for t in get_args(field_type) if t is not type(None))
+                field_type = next(
+                    t for t in get_args(field_type) if not isinstance(t, NoneType)
+                )
 
             if field_type == bool:
                 function = click.option(

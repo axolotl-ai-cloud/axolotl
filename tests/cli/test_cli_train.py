@@ -9,36 +9,38 @@ from axolotl.cli.main import cli
 
 
 @pytest.fixture
-def mock_train_deps():
+def mock_train_deps(common_mocks):
     """Mock dependencies for training"""
     with patch.multiple(
-        'axolotl.cli',
-        load_datasets=DEFAULT,
-        load_rl_datasets=DEFAULT,
-        load_cfg=DEFAULT,
-        check_accelerate_default_config=DEFAULT,
-        check_user_token=DEFAULT,
-    ) as cli_mocks, patch(
-        'axolotl.train.train'
-    ) as mock_train, patch(
-        'axolotl.integrations.base.PluginManager'
+        "axolotl.cli",
+        **common_mocks,
+    ) as cli_mocks, patch("axolotl.train.train") as mock_train, patch(
+        "axolotl.integrations.base.PluginManager"
     ) as mock_plugin_manager:
         mock_plugin_instance = MagicMock()
         mock_plugin_manager.get_instance.return_value = mock_plugin_instance
         mocks = {
-            'train': mock_train,
-            'PluginManager': mock_plugin_manager,
-            'plugin_manager_instance': mock_plugin_instance,
+            "train": mock_train,
+            "PluginManager": mock_plugin_manager,
+            "plugin_manager_instance": mock_plugin_instance,
             **cli_mocks,
         }
         yield mocks
 
 
-def test_train_command_args(cli_runner):
+def test_train_command_args(cli_runner, default_config):
     """Test train command accepts various arguments"""
     with patch("subprocess.run") as mock_run:
         cli_runner.invoke(
-            cli, ["train", "config.yml", "--learning-rate", "1e-4", "--batch-size", "8"]
+            cli,
+            [
+                "train",
+                str(default_config),
+                "--learning-rate",
+                "1e-4",
+                "--batch-size",
+                "8",
+            ],
         )
 
         cmd = mock_run.call_args[0][0]
@@ -47,7 +49,7 @@ def test_train_command_args(cli_runner):
 
 
 def test_train_regular_flow(
-    cli_runner, mock_train_deps
+    cli_runner, default_config, mock_train_deps
 ):  # pylint: disable=redefined-outer-name
     """Test normal training flow without RL"""
     mock_cfg = MagicMock()
@@ -59,7 +61,7 @@ def test_train_regular_flow(
     mock_tokenizer = MagicMock()
     mock_train_deps["train"].return_value = (mock_model, mock_tokenizer)
 
-    cli_runner.invoke(cli, ["train", "config.yml"])
+    cli_runner.invoke(cli, ["train", str(default_config)])
 
     mock_train_deps["check_accelerate_default_config"].assert_called_once()
     mock_train_deps["check_user_token"].assert_called_once()
@@ -69,7 +71,7 @@ def test_train_regular_flow(
 
 
 def test_train_rl_flow(
-    cli_runner, mock_train_deps
+    cli_runner, default_config, mock_train_deps
 ):  # pylint: disable=redefined-outer-name
     """Test RL training flow"""
     mock_cfg = MagicMock()
@@ -77,13 +79,13 @@ def test_train_rl_flow(
     mock_dataset_meta = {"some": "metadata"}
     mock_train_deps["load_rl_datasets"].return_value = mock_dataset_meta
 
-    cli_runner.invoke(cli, ["train", "config.yml"])
+    cli_runner.invoke(cli, ["train", str(default_config)])
 
     mock_train_deps["load_rl_datasets"].assert_called_once()
     assert not mock_train_deps["load_datasets"].called
 
 
-def test_train_config_cli_merge(cli_runner):
+def test_train_config_cli_merge(cli_runner, default_config):
     """Test that CLI args properly override config values"""
     with patch.multiple(
         "axolotl.cli.train", load_cfg=DEFAULT, do_train=DEFAULT
@@ -92,9 +94,23 @@ def test_train_config_cli_merge(cli_runner):
         mocks["load_cfg"].return_value = mock_cfg
 
         cli_runner.invoke(
-            cli, ["train", "config.yml", "--learning-rate", "1e-4", "--batch-size", "8"]
+            cli,
+            [
+                "train",
+                str(default_config),
+                "--learning-rate",
+                "1e-4",
+                "--batch-size",
+                "8",
+            ],
         )
 
         mocks["load_cfg"].assert_called_with(
-            "config.yml", learning_rate="1e-4", batch_size="8"
+            str(default_config), learning_rate="1e-4", batch_size="8"
         )
+
+
+def test_train_config_not_found(cli_runner):
+    """Test train fails when config not found"""
+    result = cli_runner.invoke(cli, ["train", "nonexistent.yml"])
+    assert result.exit_code != 0
