@@ -6,7 +6,6 @@ import logging
 import os
 import unittest
 
-from tbparse import SummaryReader
 from transformers.utils import is_torch_bf16_gpu_available
 
 from axolotl.cli import load_datasets
@@ -15,7 +14,7 @@ from axolotl.train import train
 from axolotl.utils.config import normalize_config
 from axolotl.utils.dict import DictDefault
 
-from .utils import most_recent_subdir, with_temp_dir
+from .utils import check_tensorboard, with_temp_dir
 
 LOG = logging.getLogger("axolotl.tests.e2e")
 os.environ["WANDB_DISABLED"] = "true"
@@ -66,9 +65,6 @@ class TestPackedLlama(unittest.TestCase):
 
         train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
 
-        tb_log_path = most_recent_subdir(temp_dir + "/runs")
-        event_file = os.path.join(tb_log_path, sorted(os.listdir(tb_log_path))[0])
-        reader = SummaryReader(event_file)
-        df = reader.scalars  # pylint: disable=invalid-name
-        df = df[(df.tag == "train/train_loss")]  # pylint: disable=invalid-name
-        assert df.value.values[-1] < 2.0, "Loss is too high"
+        check_tensorboard(
+            temp_dir + "/runs", "train/train_loss", 2.0, "Train Loss is too high"
+        )
