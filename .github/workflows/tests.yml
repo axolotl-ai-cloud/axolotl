@@ -10,6 +10,7 @@ on:
       - '.github/workflows/*.yml'
       - 'requirements-tests.txt'
       - 'cicd/cicd.sh'
+      - 'cicd/Dockerfile.jinja'
   pull_request:
       paths:
        - '**.py'
@@ -17,6 +18,7 @@ on:
        - '.github/workflows/*.yml'
        - 'requirements-tests.txt'
        - 'cicd/cicd.sh'
+       - 'cicd/Dockerfile.jinja'
   workflow_dispatch:
 
 # Cancel jobs on the same ref if a new one is triggered
