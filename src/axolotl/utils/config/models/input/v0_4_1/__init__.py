@@ -1576,7 +1576,7 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
 
     @classmethod
     def check_hymba_torch_version(cls, data):
-        if "hymba" not in data.get("base_model").lower():
+        if "hymba" not in data.get("base_model", {}).lower():
             env_capabilities = data.get("env_capabilities", {})
             torch_version = env_capabilities.get("torch_version")
 
@@ -1585,6 +1585,6 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
 
                 torch_version = str(torch.__version__).split("+", maxsplit=1)[0]
 
-            if version.parse(torch_version) < version.parse("2.5"):
+            if version.parse(torch_version) < version.parse("2.5.0"):
                 raise ValueError("Hymba requires torch version >= 2.5")
         return data
