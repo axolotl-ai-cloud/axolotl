@@ -124,7 +124,6 @@ def add_options_from_dataclass(config_class: Type[Any]):
 
     def decorator(function):
         for field in reversed(dataclasses.fields(config_class)):
-            option_name = f"--{field.name.replace('_', '-')}"
             field_type = field.type
 
             if get_origin(field_type) is Union and type(None) in get_args(field_type):
@@ -133,13 +132,15 @@ def add_options_from_dataclass(config_class: Type[Any]):
                 )
 
             if field_type == bool:
+                field_name = field.name.replace("_", "-")
+                option_name = f"--{field_name}/--no-{field_name}"
                 function = click.option(
                     option_name,
-                    is_flag=True,
                     default=field.default,
                     help=field.metadata.get("description"),
                 )(function)
             else:
+                option_name = f"--{field.name.replace('_', '-')}"
                 function = click.option(
                     option_name,
                     type=field_type,
@@ -156,13 +157,14 @@ def add_options_from_config(config_class: Type[BaseModel]):
 
     def decorator(function):
         for name, field in reversed(config_class.model_fields.items()):
-            option_name = f"--{name.replace('_', '-')}"
-
             if field.annotation == bool:
+                field_name = name.replace("_", "-")
+                option_name = f"--{field_name}/--no-{field_name}"
                 function = click.option(
-                    option_name, is_flag=True, default=None, help=field.description
+                    option_name, default=None, help=field.description
                 )(function)
             else:
+                option_name = f"--{name.replace('_', '-')}"
                 function = click.option(
                     option_name, default=None, help=field.description
                 )(function)
@@ -186,8 +188,7 @@ def preprocess(config: str, **kwargs):
 @cli.command()
 @click.argument("config", type=str)
 @click.option(
-    "--accelerate",
-    is_flag=True,
+    "--accelerate/--no-accelerate",
     default=True,
     help="Use accelerate launch for multi-GPU training",
 )
@@ -212,8 +213,7 @@ def train(config: str, accelerate: bool, **kwargs):
 @cli.command()
 @click.argument("config", type=str)
 @click.option(
-    "--accelerate",
-    is_flag=True,
+    "--accelerate/--no-accelerate",
     default=True,
     help="Use accelerate launch for multi-GPU inference",
 )
@@ -242,8 +242,7 @@ def inference(config: str, accelerate: bool, **kwargs):
 @cli.command()
 @click.argument("config", type=str)
 @click.option(
-    "--accelerate",
-    is_flag=True,
+    "--accelerate/--no-accelerate",
     default=True,
     help="Use accelerate launch for multi-GPU operations",
 )
@@ -270,8 +269,7 @@ def shard(config: str, accelerate: bool, **kwargs):
 @cli.command()
 @click.argument("config", type=str)
 @click.option(
-    "--accelerate",
-    is_flag=True,
+    "--accelerate/--no-accelerate",
     default=True,
     help="Use accelerate launch for weight merging",
 )

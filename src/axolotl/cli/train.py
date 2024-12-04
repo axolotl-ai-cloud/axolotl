@@ -44,7 +44,9 @@ def do_train(cfg, cli_args) -> None:
     else:
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
-    model, tokenizer = train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
+    output = train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
+    model, tokenizer = output
+    # model, tokenizer = train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
     plugin_manager = PluginManager.get_instance()
 
     del model

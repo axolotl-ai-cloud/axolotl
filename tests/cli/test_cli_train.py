@@ -1,116 +1,111 @@
-"""
-pytest tests for axolotl CLI train command
-"""
-from unittest.mock import DEFAULT, MagicMock, patch
+"""Test the train CLI command"""
+import shutil
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from axolotl.cli.main import cli
 
-
-@pytest.fixture
-def mock_train_deps(common_mocks):
-    """Mock dependencies for training"""
-    with patch.multiple(
-        "axolotl.cli",
-        **common_mocks,
-    ) as cli_mocks, patch("axolotl.train.train") as mock_train, patch(
-        "axolotl.integrations.base.PluginManager"
-    ) as mock_plugin_manager:
-        mock_plugin_instance = MagicMock()
-        mock_plugin_manager.get_instance.return_value = mock_plugin_instance
-        mocks = {
-            "train": mock_train,
-            "PluginManager": mock_plugin_manager,
-            "plugin_manager_instance": mock_plugin_instance,
-            **cli_mocks,
-        }
-        yield mocks
+VALID_TEST_CONFIG = """
+base_model: HuggingFaceTB/SmolLM2-135M
+datasets:
+  - path: mhenrichsen/alpaca_2k_test
+    type: alpaca
+sequence_len: 2048
+micro_batch_size: 1
+gradient_accumulation_steps: 1
+max_steps: 1
+val_set_size: 0
+learning_rate: 1e-3
+special_tokens:
+  pad_token: <|end_of_text|>
+"""
 
 
-def test_train_command_args(cli_runner, default_config):
-    """Test train command accepts various arguments"""
-    with patch("subprocess.run") as mock_run:
-        cli_runner.invoke(
-            cli,
-            [
-                "train",
-                str(default_config),
-                "--learning-rate",
-                "1e-4",
-                "--batch-size",
-                "8",
-            ],
-        )
+@pytest.fixture(autouse=True)
+def cleanup_model_out():
+    yield
 
-        cmd = mock_run.call_args[0][0]
-        assert "--learning-rate" in cmd
-        assert "1e-4" in cmd
+    # Clean up after the test
+    if Path("model-out").exists():
+        shutil.rmtree("model-out")
 
 
-def test_train_regular_flow(
-    cli_runner, default_config, mock_train_deps
-):  # pylint: disable=redefined-outer-name
-    """Test normal training flow without RL"""
-    mock_cfg = MagicMock()
-    mock_cfg.rl = False
-    mock_dataset_meta = {"some": "metadata"}
-    mock_train_deps["load_datasets"].return_value = mock_dataset_meta
-
-    mock_model = MagicMock()
-    mock_tokenizer = MagicMock()
-    mock_train_deps["train"].return_value = (mock_model, mock_tokenizer)
-
-    cli_runner.invoke(cli, ["train", str(default_config)])
-
-    mock_train_deps["check_accelerate_default_config"].assert_called_once()
-    mock_train_deps["check_user_token"].assert_called_once()
-    mock_train_deps["load_datasets"].assert_called_once()
-    mock_train_deps["train"].assert_called_once()
-    mock_train_deps["plugin_manager_instance"].post_train_unload.assert_called_once()
-
-
-def test_train_rl_flow(
-    cli_runner, default_config, mock_train_deps
-):  # pylint: disable=redefined-outer-name
-    """Test RL training flow"""
-    mock_cfg = MagicMock()
-    mock_cfg.rl = True
-    mock_dataset_meta = {"some": "metadata"}
-    mock_train_deps["load_rl_datasets"].return_value = mock_dataset_meta
-
-    cli_runner.invoke(cli, ["train", str(default_config)])
-
-    mock_train_deps["load_rl_datasets"].assert_called_once()
-    assert not mock_train_deps["load_datasets"].called
-
-
-def test_train_config_cli_merge(cli_runner, default_config):
-    """Test that CLI args properly override config values"""
-    with patch.multiple(
-        "axolotl.cli.train", load_cfg=DEFAULT, do_train=DEFAULT
-    ) as mocks:
-        mock_cfg = MagicMock()
-        mocks["load_cfg"].return_value = mock_cfg
-
-        cli_runner.invoke(
-            cli,
-            [
-                "train",
-                str(default_config),
-                "--learning-rate",
-                "1e-4",
-                "--batch-size",
-                "8",
-            ],
-        )
-
-        mocks["load_cfg"].assert_called_with(
-            str(default_config), learning_rate="1e-4", batch_size="8"
-        )
-
-
-def test_train_config_not_found(cli_runner):
-    """Test train fails when config not found"""
-    result = cli_runner.invoke(cli, ["train", "nonexistent.yml"])
+def test_train_cli_validation(cli_runner):
+    """Test CLI validation"""
+    # Test missing config file
+    result = cli_runner.invoke(cli, ["train"])
     assert result.exit_code != 0
+
+    # Test non-existent config file
+    result = cli_runner.invoke(cli, ["train", "nonexistent.yml", "--no-accelerate"])
+    assert result.exit_code != 0
+    assert "No such file" in str(result.exception)
+
+
+def test_train_basic_execution(cli_runner, tmp_path):
+    """Test basic successful execution"""
+    config_path = tmp_path / "config.yml"
+    config_path.write_text(VALID_TEST_CONFIG)
+
+    result = cli_runner.invoke(
+        cli,
+        [
+            "train",
+            str(config_path),
+            "--no-accelerate",
+        ],
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0
+
+
+def test_train_basic_execution_accelerate(cli_runner, tmp_path):
+    """Test basic successful execution"""
+    config_path = tmp_path / "config.yml"
+    config_path.write_text(VALID_TEST_CONFIG)
+
+    result = cli_runner.invoke(
+        cli,
+        [
+            "train",
+            str(config_path),
+        ],
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0
+
+
+def test_train_cli_overrides(cli_runner, tmp_path):
+    """Test CLI arguments properly override config values"""
+    config_path = tmp_path / "config.yml"
+    output_dir = tmp_path / "model-out"
+
+    test_config = VALID_TEST_CONFIG.replace(
+        "output_dir: model-out", f"output_dir: {output_dir}"
+    )
+    config_path.write_text(test_config)
+
+    with patch("axolotl.cli.train.train") as mock_train:
+        mock_train.return_value = (MagicMock(), MagicMock())
+
+        result = cli_runner.invoke(
+            cli,
+            [
+                "train",
+                str(config_path),
+                "--learning-rate",
+                "1e-4",
+                "--micro-batch-size",
+                "2",
+                "--no-accelerate",
+            ],
+            catch_exceptions=False,
+        )
+
+        assert result.exit_code == 0
+        mock_train.assert_called_once()
+        cfg = mock_train.call_args[1]["cfg"]
+        assert cfg["learning_rate"] == 1e-4
+        assert cfg["micro_batch_size"] == 2

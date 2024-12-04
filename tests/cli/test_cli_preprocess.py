@@ -1,6 +1,7 @@
 """
 pytest tests for axolotl CLI preprocess command
 """
+# pylint: disable=redefined-outer-name
 from unittest.mock import patch
 
 import pytest
@@ -27,24 +28,20 @@ def mock_preprocess_deps(common_mocks):
         yield mocks
 
 
-def test_preprocess_dataset_loading(
-    cli_runner, default_config, mock_preprocess_deps
-):  # pylint: disable=redefined-outer-name
+def test_preprocess_dataset_loading(cli_runner, default_config, mock_preprocess_deps):
     """Test dataset loading paths in preprocess command"""
     mock_preprocess_deps["load_cfg"].return_value = DictDefault(
         {"dataset_prepared_path": None, "rl": False, "base_model": "mock_model"}
     )
 
-    result = cli_runner.invoke(cli, ["preprocess", str(default_config), "--download"])
-    print(f"CLI Result: {result.output}")  # see what happened
-    print(f"Exit Code: {result.exit_code}")
+    cli_runner.invoke(cli, ["preprocess", str(default_config), "--download"])
 
     mock_preprocess_deps["load_datasets"].assert_called_once()
 
 
 def test_preprocess_rl_dataset_loading(
     cli_runner, default_config, mock_preprocess_deps
-):  # pylint: disable=redefined-outer-name
+):
     """Test RL dataset loading path"""
     mock_preprocess_deps["load_cfg"].return_value = DictDefault(
         {
@@ -60,9 +57,7 @@ def test_preprocess_rl_dataset_loading(
     assert not mock_preprocess_deps["load_datasets"].called
 
 
-def test_preprocess_model_download(
-    cli_runner, default_config, mock_preprocess_deps
-):  # pylint: disable=redefined-outer-name
+def test_preprocess_model_download(cli_runner, default_config, mock_preprocess_deps):
     """Test model validation during preprocessing"""
     mock_preprocess_deps["load_cfg"].return_value = DictDefault(
         {
@@ -79,9 +74,7 @@ def test_preprocess_model_download(
     )
 
 
-def test_preprocess_default_path(
-    cli_runner, default_config, mock_preprocess_deps
-):  # pylint: disable=redefined-outer-name
+def test_preprocess_default_path(cli_runner, default_config, mock_preprocess_deps):
     """Test default dataset path handling"""
     mock_preprocess_deps["load_cfg"].return_value = DictDefault(
         {"dataset_prepared_path": None, "rl": False, "base_model": "mock_model"}
