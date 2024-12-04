@@ -25,7 +25,7 @@ MOCK_TREE_RESPONSE = {
 def mock_responses():
     """Mock responses for API and file downloads"""
 
-    def mock_get(url, _=None):
+    def mock_get(url, timeout=None):  # pylint: disable=unused-argument
         response = Mock()
         if "api.github.com" in url:
             response.text = json.dumps(MOCK_TREE_RESPONSE)

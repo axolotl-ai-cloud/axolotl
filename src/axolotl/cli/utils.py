@@ -63,6 +63,7 @@ def fetch_from_github(dir_prefix: str, dest_dir: Optional[str] = None) -> None:
     # Keep track of processed files for summary
     files_processed: Dict[str, List[str]] = {"new": [], "updated": [], "unchanged": []}
 
+    # TODO: parallelize downloads
     for file_path, remote_sha in files.items():
         # Create full URLs and paths
         raw_url = f"{raw_base_url}/{file_path}"

@@ -128,6 +128,7 @@ def train(config: str, accelerate: bool, **kwargs):
 def inference(config: str, accelerate: bool, **kwargs):
     """Run inference with a trained model."""
     kwargs = {k: v for k, v in kwargs.items() if v is not None}
+    del kwargs["inference"]  # interferes with inference.do_cli
 
     if accelerate:
         base_cmd = ["accelerate", "launch", "-m", "axolotl.cli.inference"]
