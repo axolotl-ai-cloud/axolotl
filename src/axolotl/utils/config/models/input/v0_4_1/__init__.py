@@ -1574,6 +1574,7 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 )
         return data
 
+    @model_validator(mode="before")
     @classmethod
     def check_hymba_torch_version(cls, data):
         if "hymba" in data.get("base_model", {}).lower():
