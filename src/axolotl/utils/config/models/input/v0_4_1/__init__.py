@@ -1576,7 +1576,7 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
 
     @classmethod
     def check_hymba_torch_version(cls, data):
-        if "hymba" in data.get("base_model").lower():
+        if "hymba" not in data.get("base_model").lower():
             env_capabilities = data.get("env_capabilities", {})
             torch_version = env_capabilities.get("torch_version")
 
