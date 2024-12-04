@@ -27,7 +27,6 @@ def test_preprocess_config_not_found(cli_runner):
     assert result.exit_code != 0
 
 
-@pytest.mark.integration
 def test_preprocess_basic(cli_runner, config_path):
     """Test basic preprocessing with minimal config"""
     result = cli_runner.invoke(cli, ["preprocess", str(config_path)])

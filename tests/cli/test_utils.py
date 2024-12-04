@@ -82,7 +82,6 @@ def integration_test_dir(tmp_path):
     yield test_dir
 
 
-@pytest.mark.integration
 def test_fetch_from_github_real(integration_test_dir):
     """Test actual GitHub API interaction"""
     fetch_from_github("examples/", integration_test_dir)

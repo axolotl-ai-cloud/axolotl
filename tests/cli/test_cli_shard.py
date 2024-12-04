@@ -1,15 +1,12 @@
 """
 pytest tests for axolotl CLI shard command
 """
-from unittest.mock import patch
-
 # pylint: disable=duplicate-code
-import pytest
+from unittest.mock import patch
 
 from axolotl.cli.main import cli
 
 
-@pytest.mark.integration
 def test_shard_with_accelerate(cli_runner, config_path):
     """Test shard command with accelerate"""
     result = cli_runner.invoke(cli, ["shard", str(config_path), "--accelerate"])
@@ -38,7 +35,7 @@ def test_shard_with_model_dir(cli_runner, config_path):
                 "--model-dir",
                 "/path/to/model",
             ],
-        )  # pylint: disable=duplicate-code
+        )
 
         assert mock.called
         assert mock.call_args.kwargs["config"] == str(config_path)

@@ -3,8 +3,6 @@ pytest tests for axolotl CLI train command
 """
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from axolotl.cli.main import cli
 
 from .conftest import VALID_TEST_CONFIG
@@ -22,7 +20,6 @@ def test_train_cli_validation(cli_runner):
     assert "No such file" in str(result.exception)
 
 
-@pytest.mark.integration
 def test_train_basic_execution(cli_runner, tmp_path):
     """Test basic successful execution"""
     config_path = tmp_path / "config.yml"
