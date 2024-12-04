@@ -29,8 +29,6 @@ LOG = logging.getLogger("axolotl.cli.preprocess")
 
 
 def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
-    print("in do_cli")
-
     # pylint: disable=duplicate-code
     print_axolotl_text_art()
     parsed_cfg = load_cfg(config, **kwargs)
@@ -41,8 +39,6 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
     parsed_cli_args, _ = parser.parse_args_into_dataclasses(
         return_remaining_strings=True
     )
-
-    print(f"parsed_cli_args: {parsed_cli_args}")
 
     if not parsed_cfg.dataset_prepared_path:
         msg = (

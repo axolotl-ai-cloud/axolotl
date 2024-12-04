@@ -1,35 +1,9 @@
 """Test the train CLI command"""
-import shutil
-from pathlib import Path
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from axolotl.cli.main import cli
 
-VALID_TEST_CONFIG = """
-base_model: HuggingFaceTB/SmolLM2-135M
-datasets:
-  - path: mhenrichsen/alpaca_2k_test
-    type: alpaca
-sequence_len: 2048
-micro_batch_size: 1
-gradient_accumulation_steps: 1
-max_steps: 1
-val_set_size: 0
-learning_rate: 1e-3
-special_tokens:
-  pad_token: <|end_of_text|>
-"""
-
-
-@pytest.fixture(autouse=True)
-def cleanup_model_out():
-    yield
-
-    # Clean up after the test
-    if Path("model-out").exists():
-        shutil.rmtree("model-out")
+from .conftest import VALID_TEST_CONFIG
 
 
 def test_train_cli_validation(cli_runner):
@@ -39,7 +13,7 @@ def test_train_cli_validation(cli_runner):
     assert result.exit_code != 0
 
     # Test non-existent config file
-    result = cli_runner.invoke(cli, ["train", "nonexistent.yml", "--no-accelerate"])
+    result = cli_runner.invoke(cli, ["train", "nonexistent.yml"])
     assert result.exit_code != 0
     assert "No such file" in str(result.exception)
 
@@ -54,14 +28,13 @@ def test_train_basic_execution(cli_runner, tmp_path):
         [
             "train",
             str(config_path),
-            "--no-accelerate",
         ],
         catch_exceptions=False,
     )
     assert result.exit_code == 0
 
 
-def test_train_basic_execution_accelerate(cli_runner, tmp_path):
+def test_train_basic_execution_no_accelerate(cli_runner, tmp_path):
     """Test basic successful execution"""
     config_path = tmp_path / "config.yml"
     config_path.write_text(VALID_TEST_CONFIG)
@@ -71,6 +44,7 @@ def test_train_basic_execution_accelerate(cli_runner, tmp_path):
         [
             "train",
             str(config_path),
+            "--no-accelerate",
         ],
         catch_exceptions=False,
     )
