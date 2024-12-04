@@ -50,7 +50,7 @@ tf32: true
 gradient_checkpointing: true
 local_rank:
 logging_steps: 1
-flash_attention: false
+flash_attention: false # PixtralVisionModel does not support Flash Attention 2.0 yet
 eager_attention:
 
 warmup_ratio: 0.1
