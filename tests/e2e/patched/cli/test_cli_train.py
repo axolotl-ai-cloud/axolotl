@@ -1,11 +1,7 @@
-"""
-pytest tests for axolotl CLI train command
-"""
+"""pytest tests for axolotl CLI train command."""
 from unittest.mock import MagicMock, patch
 
 from axolotl.cli.main import cli
-
-from .conftest import VALID_TEST_CONFIG
 
 
 def test_train_cli_validation(cli_runner):
@@ -20,26 +16,33 @@ def test_train_cli_validation(cli_runner):
     assert "No such file" in str(result.exception)
 
 
-def test_train_basic_execution(cli_runner, tmp_path):
+def test_train_basic_execution(cli_runner, tmp_path, valid_test_config):
     """Test basic successful execution"""
     config_path = tmp_path / "config.yml"
-    config_path.write_text(VALID_TEST_CONFIG)
+    config_path.write_text(valid_test_config)
 
-    result = cli_runner.invoke(
-        cli,
-        [
-            "train",
+    with patch("subprocess.run") as mock:
+        result = cli_runner.invoke(cli, ["train", str(config_path)])
+
+        assert mock.called
+        print("here:", mock.call_args.args[0])
+        assert mock.call_args.args[0] == [
+            "accelerate",
+            "launch",
+            "-m",
+            "axolotl.cli.train",
             str(config_path),
-        ],
-        catch_exceptions=False,
-    )
-    assert result.exit_code == 0
+            "--debug-num-examples",
+            "0",
+        ]
+        assert mock.call_args.kwargs == {"check": True}
+        assert result.exit_code == 0
 
 
-def test_train_basic_execution_no_accelerate(cli_runner, tmp_path):
+def test_train_basic_execution_no_accelerate(cli_runner, tmp_path, valid_test_config):
     """Test basic successful execution"""
     config_path = tmp_path / "config.yml"
-    config_path.write_text(VALID_TEST_CONFIG)
+    config_path.write_text(valid_test_config)
 
     with patch("axolotl.cli.train.train") as mock_train:
         mock_train.return_value = (MagicMock(), MagicMock())
@@ -62,12 +65,12 @@ def test_train_basic_execution_no_accelerate(cli_runner, tmp_path):
         mock_train.assert_called_once()
 
 
-def test_train_cli_overrides(cli_runner, tmp_path):
+def test_train_cli_overrides(cli_runner, tmp_path, valid_test_config):
     """Test CLI arguments properly override config values"""
     config_path = tmp_path / "config.yml"
     output_dir = tmp_path / "model-out"
 
-    test_config = VALID_TEST_CONFIG.replace(
+    test_config = valid_test_config.replace(
         "output_dir: model-out", f"output_dir: {output_dir}"
     )
     config_path.write_text(test_config)

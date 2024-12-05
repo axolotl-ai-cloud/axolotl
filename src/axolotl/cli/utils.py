@@ -1,6 +1,4 @@
-"""
-utility methods for axoltl CLI
-"""
+"""Utility methods for axoltl CLI."""
 import concurrent.futures
 import hashlib
 import json

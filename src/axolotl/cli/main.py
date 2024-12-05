@@ -1,6 +1,4 @@
-"""
-CLI definition for various axolotl commands
-"""
+"""CLI definition for various axolotl commands."""
 # pylint: disable=redefined-outer-name
 import dataclasses
 import subprocess  # nosec B404

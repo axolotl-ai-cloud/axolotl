@@ -1,6 +1,4 @@
-"""
-general pytest tests for axolotl.cli.main interface
-"""
+"""General pytest tests for axolotl.cli.main interface."""
 from axolotl.cli.main import build_command, cli
 
 

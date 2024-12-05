@@ -1,6 +1,4 @@
-"""
-pytest tests for axolotl CLI fetch command
-"""
+"""pytest tests for axolotl CLI fetch command."""
 from unittest.mock import patch
 
 from axolotl.cli.main import fetch

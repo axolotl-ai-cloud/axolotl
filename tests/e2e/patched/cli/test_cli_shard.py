@@ -1,6 +1,4 @@
-"""
-pytest tests for axolotl CLI shard command
-"""
+"""pytest tests for axolotl CLI shard command."""
 # pylint: disable=duplicate-code
 from unittest.mock import patch
 
@@ -9,9 +7,21 @@ from axolotl.cli.main import cli
 
 def test_shard_with_accelerate(cli_runner, config_path):
     """Test shard command with accelerate"""
-    result = cli_runner.invoke(cli, ["shard", str(config_path), "--accelerate"])
+    with patch("subprocess.run") as mock:
+        result = cli_runner.invoke(cli, ["shard", str(config_path), "--accelerate"])
 
-    assert result.exit_code == 0
+        assert mock.called
+        assert mock.call_args.args[0] == [
+            "accelerate",
+            "launch",
+            "-m",
+            "axolotl.cli.shard",
+            str(config_path),
+            "--debug-num-examples",
+            "0",
+        ]
+        assert mock.call_args.kwargs == {"check": True}
+        assert result.exit_code == 0
 
 
 def test_shard_no_accelerate(cli_runner, config_path):

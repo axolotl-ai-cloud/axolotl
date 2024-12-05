@@ -1,7 +1,4 @@
-"""
-shared pytest fixtures for cli module
-"""
-
+"""Shared pytest fixtures for cli module."""
 import shutil
 from pathlib import Path
 
@@ -26,6 +23,11 @@ special_tokens:
 @pytest.fixture
 def cli_runner():
     return CliRunner()
+
+
+@pytest.fixture
+def valid_test_config():
+    return VALID_TEST_CONFIG
 
 
 @pytest.fixture
