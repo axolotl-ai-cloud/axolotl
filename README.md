@@ -143,18 +143,18 @@ the above commands:
 
 ```bash
 # preprocess datasets - optional but recommended
-CUDA_VISIBLE_DEVICES="" axolotl preprocess examples/openllama-3b/lora.yml
+CUDA_VISIBLE_DEVICES="0" axolotl preprocess examples/openllama-3b/lora.yml
 
 # finetune lora
 axolotl train examples/openllama-3b/lora.yml
 
 # inference
 axolotl inference examples/openllama-3b/lora.yml \
-    --lora_model_dir="./outputs/lora-out"
+    --lora-model-dir="./outputs/lora-out"
 
 # gradio
 axolotl inference examples/openllama-3b/lora.yml \
-    --lora_model_dir="./outputs/lora-out" --gradio
+    --lora-model-dir="./outputs/lora-out" --gradio
 
 # remote yaml files - the yaml config can be hosted on a public URL
 # Note: the yaml config must directly link to the **raw** yaml

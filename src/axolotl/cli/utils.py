@@ -1,12 +1,74 @@
 """Utility methods for axoltl CLI."""
 import concurrent.futures
+import dataclasses
 import hashlib
 import json
+import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from types import NoneType
+from typing import Any, Dict, List, Optional, Tuple, Type, Union, get_args, get_origin
 
 import click
 import requests
+from pydantic import BaseModel
+
+LOG = logging.getLogger("axolotl.cli.utils")
+
+
+def add_options_from_dataclass(config_class: Type[Any]):
+    """Create Click options from the fields of a dataclass."""
+
+    def decorator(function):
+        # Process dataclass fields in reverse order for correct option ordering
+        for field in reversed(dataclasses.fields(config_class)):
+            field_type = field.type
+
+            if get_origin(field_type) is Union and type(None) in get_args(field_type):
+                field_type = next(
+                    t for t in get_args(field_type) if not isinstance(t, NoneType)
+                )
+
+            if field_type == bool:
+                field_name = field.name.replace("_", "-")
+                option_name = f"--{field_name}/--no-{field_name}"
+                function = click.option(
+                    option_name,
+                    default=field.default,
+                    help=field.metadata.get("description"),
+                )(function)
+            else:
+                option_name = f"--{field.name.replace('_', '-')}"
+                function = click.option(
+                    option_name,
+                    type=field_type,
+                    default=field.default,
+                    help=field.metadata.get("description"),
+                )(function)
+        return function
+
+    return decorator
+
+
+def add_options_from_config(config_class: Type[BaseModel]):
+    """Create Click options from the fields of a Pydantic model."""
+
+    def decorator(function):
+        # Process model fields in reverse order for correct option ordering
+        for name, field in reversed(config_class.model_fields.items()):
+            if field.annotation == bool:
+                field_name = name.replace("_", "-")
+                option_name = f"--{field_name}/--no-{field_name}"
+                function = click.option(
+                    option_name, default=None, help=field.description
+                )(function)
+            else:
+                option_name = f"--{name.replace('_', '-')}"
+                function = click.option(
+                    option_name, default=None, help=field.description
+                )(function)
+        return function
+
+    return decorator
 
 
 def build_command(base_cmd: List[str], options: Dict[str, Any]) -> List[str]:
@@ -147,10 +209,10 @@ def fetch_from_github(
                 print(f"Error processing {file_path}: {str(request_error)}")
                 files_processed["error"].append(file_path)
 
-    # Print summary
-    print("\nSync Summary:")
-    print(f"New files: {len(files_processed['new'])}")
-    print(f"Updated files: {len(files_processed['updated'])}")
-    print(f"Unchanged files: {len(files_processed['unchanged'])}")
+    # Log summary
+    LOG.info("\nSync Summary:")
+    LOG.info(f"New files: {len(files_processed['new'])}")
+    LOG.info(f"Updated files: {len(files_processed['updated'])}")
+    LOG.info(f"Unchanged files: {len(files_processed['unchanged'])}")
     if files_processed["error"]:
-        print(f"Failed files: {len(files_processed['error'])}")
+        LOG.info(f"Failed files: {len(files_processed['error'])}")
