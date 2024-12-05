@@ -1523,19 +1523,6 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
 
     @model_validator(mode="before")
     @classmethod
-    def check_hopper_8bit_lora(cls, data):
-        is_sm_90: bool = (
-            data["capabilities"]
-            and data["capabilities"].get("compute_capability") == "sm_90"
-        )
-        if data.get("adapter") and data.get("load_in_8bit") and is_sm_90:
-            # see https://github.com/bitsandbytes-foundation/bitsandbytes/issues/538#issuecomment-2262945464
-            raise ValueError("8-bit LoRA is not supported on Hopper GPUs")
-
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
     def check_fsdp_deepspeed(cls, data):
         if data.get("deepspeed") and data.get("fsdp"):
             raise ValueError("deepspeed and fsdp cannot be used together.")
