@@ -1,0 +1,12 @@
+[build-system]
+requires = ["setuptools>=64", "wheel", "setuptools_scm>=8"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "axolotl"
+dynamic = ["version"]
+description = "LLM Trainer"
+readme = "README.md"
+requires-python = ">=3.10"
+
+[tool.setuptools_scm]
