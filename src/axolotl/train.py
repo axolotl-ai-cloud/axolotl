@@ -260,7 +260,7 @@ def train(
 
     if not cfg.hub_model_id:
         from huggingface_hub import HfApi
-        from huggingface_hub.utils import RepositoryNotFoundError
+        from huggingface_hub.utils import HFValidationError, RepositoryNotFoundError
 
         try:
             # Check to make sure the base model is from HuggingFace not a local directory
@@ -283,7 +283,12 @@ def train(
                     ]
 
             trainer.create_model_card(**model_card_kwarg)
-        except (AttributeError, UnicodeDecodeError, RepositoryNotFoundError):
+        except (
+            AttributeError,
+            UnicodeDecodeError,
+            RepositoryNotFoundError,
+            HFValidationError,
+        ):
             pass
     elif cfg.hub_model_id:
         # defensively push to the hub to ensure the model card is updated
