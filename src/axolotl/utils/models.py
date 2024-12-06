@@ -386,6 +386,15 @@ class ModelLoader:
         if self.cfg.flash_attention:
             self.patch_attention()
 
+        if self.cfg.model_config_type == "llama":
+            from axolotl.monkeypatch.trainer_grad_accum import (
+                patch_forward_for_ga,
+                patch_training_step_for_ga,
+            )
+
+            patch_forward_for_ga()
+            patch_training_step_for_ga()
+
         if self.cfg.sample_packing and self.cfg.s2_attention:
             raise ValueError(
                 "Received `sample_packing=true` and `s2_attention=true`; however, \
