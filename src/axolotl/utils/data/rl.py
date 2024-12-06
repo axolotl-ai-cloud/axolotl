@@ -70,6 +70,8 @@ def map_dataset(cfg, data_set, ds_transform_fn, tokenizer, **map_kwargs):
 
     data_set = data_set.map(
         ds_transform_fn,
+        num_proc=cfg.dataset_processes,
+        load_from_cache_file=not cfg.is_preprocess,
         desc="Mapping RL Dataset",
         **map_kwargs,
     )
