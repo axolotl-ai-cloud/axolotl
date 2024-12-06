@@ -26,8 +26,7 @@ pad_to_sequence_len: false
 lora_r: 32
 lora_alpha: 16
 lora_dropout: 0.05
-# lora_target_linear: true
-lora_target_modules: 'torch.nn.linear'
+lora_target_modules: 'model.layers.[\d]+.(mlp|cross_attn|self_attn).(up|down|gate|q|k|v|o)_proj'
 
 wandb_project:
 wandb_entity:
