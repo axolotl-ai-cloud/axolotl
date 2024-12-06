@@ -40,7 +40,7 @@ class TestMixtral(unittest.TestCase):
                 "lora_alpha": 32,
                 "lora_dropout": 0.1,
                 "lora_target_linear": True,
-                "val_set_size": 0.1,
+                "val_set_size": 0.05,
                 "special_tokens": {},
                 "datasets": [
                     {
@@ -78,7 +78,7 @@ class TestMixtral(unittest.TestCase):
                 "flash_attention": True,
                 "sample_packing": True,
                 "sequence_len": 2048,
-                "val_set_size": 0.1,
+                "val_set_size": 0.05,
                 "special_tokens": {},
                 "datasets": [
                     {

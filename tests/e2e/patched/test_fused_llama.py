@@ -38,7 +38,7 @@ class TestFusedLlama(unittest.TestCase):
                 "flash_attn_fuse_mlp": True,
                 "sample_packing": True,
                 "sequence_len": 1024,
-                "val_set_size": 0.1,
+                "val_set_size": 0.02,
                 "special_tokens": {
                     "unk_token": "<unk>",
                     "bos_token": "<s>",

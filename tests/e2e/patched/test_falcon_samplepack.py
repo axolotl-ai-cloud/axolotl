@@ -40,7 +40,7 @@ class TestFalconPatched(unittest.TestCase):
                 "lora_dropout": 0.1,
                 "lora_target_linear": True,
                 "lora_modules_to_save": ["word_embeddings", "lm_head"],
-                "val_set_size": 0.1,
+                "val_set_size": 0.05,
                 "special_tokens": {
                     "bos_token": "<|endoftext|>",
                     "pad_token": "<|endoftext|>",
@@ -80,7 +80,7 @@ class TestFalconPatched(unittest.TestCase):
                 "flash_attention": True,
                 "sample_packing": True,
                 "sequence_len": 2048,
-                "val_set_size": 0.1,
+                "val_set_size": 0.05,
                 "special_tokens": {
                     "bos_token": "<|endoftext|>",
                     "pad_token": "<|endoftext|>",

@@ -45,9 +45,15 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
+      max-parallel: 2
       matrix:
         python_version: ["3.10", "3.11"]
         pytorch_version: ["2.3.1", "2.4.1", "2.5.1"]
+        exclude:
+          - python_version: "3.10"
+            pytorch_version: "2.4.1"
+          - python_version: "3.10"
+            pytorch_version: "2.5.1"
     timeout-minutes: 20
 
     steps:
@@ -95,6 +101,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
+      max-parallel: 1
       matrix:
         python_version: ["3.11"]
         pytorch_version: ["2.4.1", "2.5.1"]
@@ -124,6 +131,8 @@ jobs:
           pip3 show torch
           python3 setup.py sdist
           pip3 install dist/axolotl*.tar.gz
+          python scripts/unsloth_install.py | sh
+          python scripts/cutcrossentropy_install.py | sh
           pip3 install -r requirements-dev.txt -r requirements-tests.txt
 
       - name: Ensure axolotl CLI was installed
