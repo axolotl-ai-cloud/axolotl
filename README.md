@@ -107,58 +107,37 @@ Get started with Axolotl in just a few steps! This quickstart guide will walk yo
 **Requirements**: *Nvidia* GPU (Ampere architecture or newer for `bf16` and Flash Attention) or *AMD* GPU, Python >=3.10 and PyTorch >=2.3.1.
 
 ```bash
-git clone https://github.com/axolotl-ai-cloud/axolotl
-cd axolotl
+pip install axolotl[flash-attn,deepspeed]
 
-pip3 install packaging ninja
-pip3 install -e '.[flash-attn,deepspeed]'
+# download examples and optionally deepspeed configs to the local path
+axolotl fetch examples
+axolotl fetch deepspeed_configs  # OPTIONAL
+
+axolotl train examples/llama-3/qlora-1b.yml
 ```
 
-### Usage
-```bash
-# preprocess datasets - optional but recommended
-CUDA_VISIBLE_DEVICES="0" python -m axolotl.cli.preprocess examples/openllama-3b/lora.yml
-
-# finetune lora
-accelerate launch -m axolotl.cli.train examples/openllama-3b/lora.yml
-
-# inference
-accelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \
-    --lora_model_dir="./outputs/lora-out"
-
-# gradio
-accelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \
-    --lora_model_dir="./outputs/lora-out" --gradio
-
-# remote yaml files - the yaml config can be hosted on a public URL
-# Note: the yaml config must directly link to the **raw** yaml
-accelerate launch -m axolotl.cli.train https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/main/examples/openllama-3b/lora.yml
-```
-
-### Axolotl CLI
-
+### Axolotl CLI Usage
 If you've installed this package using `pip` from source, we now support a new, more
-streamlined CLI using [click](https://click.palletsprojects.com/en/stable/). Rewriting
-the above commands:
+streamlined CLI using [click](https://click.palletsprojects.com/en/stable/).
 
 ```bash
 # preprocess datasets - optional but recommended
-CUDA_VISIBLE_DEVICES="0" axolotl preprocess examples/openllama-3b/lora.yml
+CUDA_VISIBLE_DEVICES="0" axolotl preprocess examples/llama-3/qlora-1b.yml
 
 # finetune lora
-axolotl train examples/openllama-3b/lora.yml
+axolotl train examples/llama-3/qlora-1b.yml
 
 # inference
 axolotl inference examples/openllama-3b/lora.yml \
     --lora-model-dir="./outputs/lora-out"
 
 # gradio
-axolotl inference examples/openllama-3b/lora.yml \
-    --lora-model-dir="./outputs/lora-out" --gradio
+axolotl inference examples/llama-3/qlora-1b.yml \
+    --lora-model-dir="./outputs/qlora-out" --gradio
 
 # remote yaml files - the yaml config can be hosted on a public URL
 # Note: the yaml config must directly link to the **raw** yaml
-axolotl train https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/main/examples/openllama-3b/lora.yml
+axolotl train https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/main/examples/llama-3/qlora-1b.yml
 ```
 
 We've also added a new command for fetching `examples` and `deepspeed_configs` to your
@@ -174,6 +153,36 @@ axolotl fetch deepspeed_configs
 # Optionally, specify a destination folder
 axolotl fetch examples --dest path/to/folder
 ```
+
+### Legacy Usage
+<details>
+
+<summary>Click to Expand</summary>
+
+While the Axolotl CLI is the preferred method for interacting with axolotl, we
+still support the legacy `-m axolotl.cli.*` usage.
+
+```bash
+# preprocess datasets - optional but recommended
+CUDA_VISIBLE_DEVICES="0" python -m axolotl.cli.preprocess examples/llama-3/qlora-1b.yml
+
+# finetune lora
+accelerate launch -m axolotl.cli.train examples/llama-3/qlora-1b.yml
+
+# inference
+accelerate launch -m axolotl.cli.inference examples/llama-3/qlora-1b.yml \
+    --lora_model_dir="./outputs/qlora-out"
+
+# gradio
+accelerate launch -m axolotl.cli.inference examples/llama-3/qlora-1b.yml \
+    --lora_model_dir="./outputs/qlora-out" --gradio
+
+# remote yaml files - the yaml config can be hosted on a public URL
+# Note: the yaml config must directly link to the **raw** yaml
+accelerate launch -m axolotl.cli.train https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/main/examples/llama-3/qlora-1b.yml
+```
+
+</details>
 
 ## Badge ❤🏷️
 
