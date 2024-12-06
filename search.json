@@ -4,7 +4,47 @@
     "href": "index.html",
     "title": "Axolotl",
     "section": "",
-    "text": "Axolotl supports\n  Quickstart ⚡\n  \n  Usage\n  \n  Advanced Setup\n  \n  Environment\n  Dataset\n  Config\n  Train\n  Inference Playground\n  Merge LORA to base\n  \n  Common Errors 🧰\n  \n  Tokenization Mismatch b/w Inference & Training\n  \n  Debugging Axolotl\n  Need help? 🙋\n  Badge ❤🏷️\n  Community Showcase\n  Contributing 🤝\n  Sponsors 🤝❤\nAxolotl is a tool designed to streamline the fine-tuning of various AI models, offering support for multiple configurations and architectures.\nFeatures: - Train various Huggingface models such as llama, pythia, falcon, mpt - Supports fullfinetune, lora, qlora, relora, and gptq - Customize configurations using a simple yaml file or CLI overwrite - Load different dataset formats, use custom formats, or bring your own tokenized datasets - Integrated with xformer, flash attention, liger kernel, rope scaling, and multipacking - Works with single GPU or multiple GPUs via FSDP or Deepspeed - Easily run with Docker locally or on the cloud - Log results and optionally checkpoints to wandb, mlflow or Comet - And more!",
+    "text": "Quickstart ⚡\n  \n  Usage\n  Axolotl CLI\n  \n  Badge ❤🏷️\n  Sponsors 🤝❤\n  Contributing 🤝\n  Axolotl supports\n  Advanced Setup\n  \n  Environment\n  Dataset\n  Config\n  Train\n  Inference Playground\n  Merge LORA to base\n  \n  Common Errors 🧰\n  \n  Tokenization Mismatch b/w Inference & Training\n  \n  Debugging Axolotl\n  Need help? 🙋\nAxolotl is a tool designed to streamline the fine-tuning of various AI models, offering support for multiple configurations and architectures.\nFeatures: - Train various Huggingface models such as llama, pythia, falcon, mpt - Supports fullfinetune, lora, qlora, relora, and gptq - Customize configurations using a simple yaml file or CLI overwrite - Load different dataset formats, use custom formats, or bring your own tokenized datasets - Integrated with xformer, flash attention, liger kernel, rope scaling, and multipacking - Works with single GPU or multiple GPUs via FSDP or Deepspeed - Easily run with Docker locally or on the cloud - Log results and optionally checkpoints to wandb, mlflow or Comet - And more!",
+    "crumbs": [
+      "Home"
+    ]
+  },
+  {
+    "objectID": "index.html#quickstart",
+    "href": "index.html#quickstart",
+    "title": "Axolotl",
+    "section": "Quickstart ⚡",
+    "text": "Quickstart ⚡\nGet started with Axolotl in just a few steps! This quickstart guide will walk you through setting up and running a basic fine-tuning task.\nRequirements: Nvidia GPU (Ampere architecture or newer for bf16 and Flash Attention) or AMD GPU, Python &gt;=3.10 and PyTorch &gt;=2.3.1.\ngit clone https://github.com/axolotl-ai-cloud/axolotl\ncd axolotl\n\npip3 install packaging ninja\npip3 install -e '.[flash-attn,deepspeed]'\n\nUsage\n# preprocess datasets - optional but recommended\nCUDA_VISIBLE_DEVICES=\"0\" python -m axolotl.cli.preprocess examples/openllama-3b/lora.yml\n\n# finetune lora\naccelerate launch -m axolotl.cli.train examples/openllama-3b/lora.yml\n\n# inference\naccelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \\\n    --lora_model_dir=\"./outputs/lora-out\"\n\n# gradio\naccelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \\\n    --lora_model_dir=\"./outputs/lora-out\" --gradio\n\n# remote yaml files - the yaml config can be hosted on a public URL\n# Note: the yaml config must directly link to the **raw** yaml\naccelerate launch -m axolotl.cli.train https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/main/examples/openllama-3b/lora.yml\n\n\nAxolotl CLI\nIf you’ve installed this package using pip from source, we now support a new, more streamlined CLI using click. Rewriting the above commands:\n# preprocess datasets - optional but recommended\nCUDA_VISIBLE_DEVICES=\"0\" axolotl preprocess examples/openllama-3b/lora.yml\n\n# finetune lora\naxolotl train examples/openllama-3b/lora.yml\n\n# inference\naxolotl inference examples/openllama-3b/lora.yml \\\n    --lora-model-dir=\"./outputs/lora-out\"\n\n# gradio\naxolotl inference examples/openllama-3b/lora.yml \\\n    --lora-model-dir=\"./outputs/lora-out\" --gradio\n\n# remote yaml files - the yaml config can be hosted on a public URL\n# Note: the yaml config must directly link to the **raw** yaml\naxolotl train https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/main/examples/openllama-3b/lora.yml\nWe’ve also added a new command for fetching examples and deepspeed_configs to your local machine. This will come in handy when installing axolotl from PyPI.\n# Fetch example YAML files (stores in \"examples/\" folder)\naxolotl fetch examples\n\n# Fetch deepspeed config files (stores in \"deepspeed_configs/\" folder)\naxolotl fetch deepspeed_configs\n\n# Optionally, specify a destination folder\naxolotl fetch examples --dest path/to/folder",
+    "crumbs": [
+      "Home"
+    ]
+  },
+  {
+    "objectID": "index.html#badge",
+    "href": "index.html#badge",
+    "title": "Axolotl",
+    "section": "Badge ❤🏷️",
+    "text": "Badge ❤🏷️\nBuilding something cool with Axolotl? Consider adding a badge to your model card.\n[&lt;img src=\"https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/main/image/axolotl-badge-web.png\" alt=\"Built with Axolotl\" width=\"200\" height=\"32\"/&gt;](https://github.com/axolotl-ai-cloud/axolotl)",
+    "crumbs": [
+      "Home"
+    ]
+  },
+  {
+    "objectID": "index.html#sponsors",
+    "href": "index.html#sponsors",
+    "title": "Axolotl",
+    "section": "Sponsors 🤝❤",
+    "text": "Sponsors 🤝❤\nIf you love axolotl, consider sponsoring the project by reaching out directly to wing@axolotl.ai.\n\n\nModal Modal lets you run data/AI jobs in the cloud, by just writing a few lines of Python. Customers use Modal to deploy Gen AI models at large scale, fine-tune LLM models, run protein folding simulations, and much more.",
+    "crumbs": [
+      "Home"
+    ]
+  },
+  {
+    "objectID": "index.html#contributing",
+    "href": "index.html#contributing",
+    "title": "Axolotl",
+    "section": "Contributing 🤝",
+    "text": "Contributing 🤝\nPlease read the contributing guide\nBugs? Please check the open issues else create a new Issue.\nPRs are greatly welcome!\nPlease run the quickstart instructions followed by the below to setup env:\npip3 install -r requirements-dev.txt -r requirements-tests.txt\npre-commit install\n\n# test\npytest tests/\n\n# optional: run against all files\npre-commit run --all-files\nThanks to all of our contributors to date. Help drive open source AI progress forward by contributing to Axolotl.",
     "crumbs": [
       "Home"
     ]
@@ -15,16 +55,6 @@
     "title": "Axolotl",
     "section": "Axolotl supports",
     "text": "Axolotl supports\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nfp16/fp32\nlora\nqlora\ngptq\ngptq w/flash attn\nflash attn\nxformers attn\n\n\n\n\nllama\n✅\n✅\n✅\n✅\n✅\n✅\n✅\n\n\nMistral\n✅\n✅\n✅\n✅\n✅\n✅\n✅\n\n\nMixtral-MoE\n✅\n✅\n✅\n❓\n❓\n❓\n❓\n\n\nMixtral8X22\n✅\n✅\n✅\n❓\n❓\n❓\n❓\n\n\nPythia\n✅\n✅\n✅\n❌\n❌\n❌\n❓\n\n\ncerebras\n✅\n✅\n✅\n❌\n❌\n❌\n❓\n\n\nbtlm\n✅\n✅\n✅\n❌\n❌\n❌\n❓\n\n\nmpt\n✅\n❌\n❓\n❌\n❌\n❌\n❓\n\n\nfalcon\n✅\n✅\n✅\n❌\n❌\n❌\n❓\n\n\ngpt-j\n✅\n✅\n✅\n❌\n❌\n❓\n❓\n\n\nXGen\n✅\n❓\n✅\n❓\n❓\n❓\n✅\n\n\nphi\n✅\n✅\n✅\n❓\n❓\n❓\n❓\n\n\nRWKV\n✅\n❓\n❓\n❓\n❓\n❓\n❓\n\n\nQwen\n✅\n✅\n✅\n❓\n❓\n❓\n❓\n\n\nGemma\n✅\n✅\n✅\n❓\n❓\n✅\n❓\n\n\nJamba\n✅\n✅\n✅\n❓\n❓\n✅\n❓\n\n\n\n✅: supported ❌: not supported ❓: untested",
-    "crumbs": [
-      "Home"
-    ]
-  },
-  {
-    "objectID": "index.html#quickstart",
-    "href": "index.html#quickstart",
-    "title": "Axolotl",
-    "section": "Quickstart ⚡",
-    "text": "Quickstart ⚡\nGet started with Axolotl in just a few steps! This quickstart guide will walk you through setting up and running a basic fine-tuning task.\nRequirements: Nvidia GPU (Ampere architecture or newer for bf16 and Flash Attention), Python &gt;=3.10 and PyTorch &gt;=2.3.1.\ngit clone https://github.com/axolotl-ai-cloud/axolotl\ncd axolotl\n\npip3 install packaging ninja\npip3 install -e '.[flash-attn,deepspeed]'\n\nUsage\n# preprocess datasets - optional but recommended\nCUDA_VISIBLE_DEVICES=\"0\" python -m axolotl.cli.preprocess examples/openllama-3b/lora.yml\n\n# finetune lora\naccelerate launch -m axolotl.cli.train examples/openllama-3b/lora.yml\n\n# inference\naccelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \\\n    --lora_model_dir=\"./outputs/lora-out\"\n\n# gradio\naccelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \\\n    --lora_model_dir=\"./outputs/lora-out\" --gradio\n\n# remote yaml files - the yaml config can be hosted on a public URL\n# Note: the yaml config must directly link to the **raw** yaml\naccelerate launch -m axolotl.cli.train https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/main/examples/openllama-3b/lora.yml",
     "crumbs": [
       "Home"
     ]
@@ -64,47 +94,7 @@
     "href": "index.html#need-help",
     "title": "Axolotl",
     "section": "Need help? 🙋",
-    "text": "Need help? 🙋\nJoin our Discord server where we our community members can help you.\nNeed dedicated support? Please contact us at ✉️wing@openaccessaicollective.org for dedicated support options.",
-    "crumbs": [
-      "Home"
-    ]
-  },
-  {
-    "objectID": "index.html#badge",
-    "href": "index.html#badge",
-    "title": "Axolotl",
-    "section": "Badge ❤🏷️",
-    "text": "Badge ❤🏷️\nBuilding something cool with Axolotl? Consider adding a badge to your model card.\n[&lt;img src=\"https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/main/image/axolotl-badge-web.png\" alt=\"Built with Axolotl\" width=\"200\" height=\"32\"/&gt;](https://github.com/axolotl-ai-cloud/axolotl)",
-    "crumbs": [
-      "Home"
-    ]
-  },
-  {
-    "objectID": "index.html#community-showcase",
-    "href": "index.html#community-showcase",
-    "title": "Axolotl",
-    "section": "Community Showcase",
-    "text": "Community Showcase\nCheck out some of the projects and models that have been built using Axolotl! Have a model you’d like to add to our Community Showcase? Open a PR with your model.\nOpen Access AI Collective - Minotaur 13b - Manticore 13b - Hippogriff 30b\nPocketDoc Labs - Dan’s PersonalityEngine 13b LoRA",
-    "crumbs": [
-      "Home"
-    ]
-  },
-  {
-    "objectID": "index.html#contributing",
-    "href": "index.html#contributing",
-    "title": "Axolotl",
-    "section": "Contributing 🤝",
-    "text": "Contributing 🤝\nPlease read the contributing guide\nBugs? Please check the open issues else create a new Issue.\nPRs are greatly welcome!\nPlease run the quickstart instructions followed by the below to setup env:\npip3 install -r requirements-dev.txt -r requirements-tests.txt\npre-commit install\n\n# test\npytest tests/\n\n# optional: run against all files\npre-commit run --all-files\nThanks to all of our contributors to date. Help drive open source AI progress forward by contributing to Axolotl.",
-    "crumbs": [
-      "Home"
-    ]
-  },
-  {
-    "objectID": "index.html#sponsors",
-    "href": "index.html#sponsors",
-    "title": "Axolotl",
-    "section": "Sponsors 🤝❤",
-    "text": "Sponsors 🤝❤\nOpenAccess AI Collective is run by volunteer contributors such as winglian, NanoCode012, tmm1, mhenrichsen, casper-hansen, hamelsmu and many more who help us accelerate forward by fixing bugs, answering community questions and implementing new features. Axolotl needs donations from sponsors for the compute needed to run our unit & integration tests, troubleshooting community issues, and providing bounties. If you love axolotl, consider sponsoring the project via GitHub Sponsors, Ko-fi or reach out directly to wing@openaccessaicollective.org.\n\n\n💎 Diamond Sponsors - Contact directly\n\n\n\n🥇 Gold Sponsors - $5000/mo\n\n\n\n🥈 Silver Sponsors - $1000/mo\n\n\n\n🥉 Bronze Sponsors - $500/mo\n\nJarvisLabs.ai",
+    "text": "Need help? 🙋\nJoin our Discord server where our community members can help you.\nNeed dedicated support? Please contact us at ✉️wing@axolotl.ai for dedicated support options.",
     "crumbs": [
       "Home"
     ]
