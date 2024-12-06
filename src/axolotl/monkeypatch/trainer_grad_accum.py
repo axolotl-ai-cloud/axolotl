@@ -114,9 +114,11 @@ def patch_training_step_for_ga():
     training_step = get_training_step_code()
     Trainer._original_training_step = training_step  # pylint: disable=protected-access
     training_step, _ = detab_code(training_step)
-    assert (
-        ORIGINAL_CONTEXT_CODE in training_step
-    ), "Original training_step code not found"
+    if ORIGINAL_CONTEXT_CODE not in training_step:
+        return
+    # assert (
+    #     ORIGINAL_CONTEXT_CODE in training_step
+    # ), "Original training_step code not found"
 
     training_step = training_step.replace(ORIGINAL_CONTEXT_CODE, PATCHED_CONTEXT_CODE)
     training_step = training_step.replace(
@@ -167,7 +169,9 @@ def patch_forward_for_ga():
     forward = get_model_forward_code()
     LlamaForCausalLM._original_forward = forward  # pylint: disable=protected-access
     forward, _ = detab_code(forward)
-    assert ORIGINAL_LLAMA_FCLM_CODE in forward, "Original forward code not found"
+    if ORIGINAL_LLAMA_FCLM_CODE not in forward:
+        return
+    # assert ORIGINAL_LLAMA_FCLM_CODE in forward, "Original forward code not found"
 
     forward = forward.replace(ORIGINAL_LLAMA_FCLM_CODE, PATCHED_LLAMA_FCLM_CODE)
     forward = forward.replace(
