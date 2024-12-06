@@ -92,7 +92,11 @@ def get_module_class_from_name(module, name):
 
 def check_model_config(cfg: DictDefault, model_config: Union[AutoConfig, DictDefault]):
     if cfg.is_multimodal:
-        model_config = model_config.text_config
+        try:
+            model_config = model_config.text_config
+        except AttributeError:
+            # for qwen2_vl
+            model_config = model_config.get_text_config()
 
     quant_config_exists = (
         hasattr(model_config, "quantization_config")
