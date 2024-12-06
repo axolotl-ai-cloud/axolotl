@@ -188,7 +188,7 @@ jobs:
           echo "GPU_TYPE=${{ matrix.gpu_type }}" >> $GITHUB_ENV
       - name: Build the image on Modal
         run: |
-          modal run cicd/tests.py:app.image_build
+          modal run cicd/tests.py::app.image_build
       - name: Run tests job on Modal
         run: |
           modal run cicd.tests
