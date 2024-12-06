@@ -72,6 +72,15 @@ def download_argilla_distilabel_capybara_dpo_7k_binarized_dataset():
 
 @pytest.fixture
 @retry_on_request_exceptions(max_retries=3, delay=5)
+def download_argilla_ultrafeedback_binarized_preferences_cleaned_dataset():
+    # download the dataset
+    snapshot_download(
+        "argilla/ultrafeedback-binarized-preferences-cleaned", repo_type="dataset"
+    )
+
+
+@pytest.fixture
+@retry_on_request_exceptions(max_retries=3, delay=5)
 def download_arcee_ai_distilabel_intel_orca_dpo_pairs_dataset():
     # download the dataset
     snapshot_download(
