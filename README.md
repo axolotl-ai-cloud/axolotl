@@ -107,7 +107,7 @@ Get started with Axolotl in just a few steps! This quickstart guide will walk yo
 **Requirements**: *Nvidia* GPU (Ampere architecture or newer for `bf16` and Flash Attention) or *AMD* GPU, Python >=3.10 and PyTorch >=2.3.1.
 
 ```bash
-pip install axolotl[flash-attn,deepspeed]
+pip3 install axolotl[flash-attn,deepspeed]
 
 # download examples and optionally deepspeed configs to the local path
 axolotl fetch examples
