@@ -1434,6 +1434,20 @@ class AxolotlInputConfig(
 
     @model_validator(mode="before")
     @classmethod
+    def notify_qlora_unsloth(cls, data):
+        if (
+            data.get("unsloth_lora_mlp")
+            or data.get("unsloth_lora_qkv")
+            or data.get("unsloth_lora_o")
+        ):
+            LOG.info(
+                "Unsloth may not be well supported with the latest version of Transformers, "
+                "resulting in loss that is incorrect."
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def check_torch_compile_deepspeed(cls, data):
         if data.get("deepspeed") and data.get("torch_compile"):
             raise ValueError(

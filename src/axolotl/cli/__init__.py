@@ -442,7 +442,7 @@ def load_cfg(config: Union[str, Path] = Path("examples/"), **kwargs):
             "compute_capability": gpu_version,
         },
         env_capabilities={
-            "torch_version": str(torch.__version__).split("+", maxsplit=1)[0]
+            "torch_version": str(torch.__version__).split("+", maxsplit=1)[0],
         },
     )
 

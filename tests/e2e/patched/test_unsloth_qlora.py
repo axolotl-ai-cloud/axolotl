@@ -20,6 +20,7 @@ os.environ["WANDB_DISABLED"] = "true"
 
 
 # pylint: disable=duplicate-code
+@pytest.mark.skip(reason="latest unsloth doesn't work with latest transformers")
 class TestUnslothQLoRA:
     """
     Test class for Unsloth QLoRA Llama models
