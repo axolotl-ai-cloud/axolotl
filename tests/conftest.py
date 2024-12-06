@@ -7,12 +7,12 @@ import tempfile
 import pytest
 from huggingface_hub import snapshot_download
 
-from axolotl.utils.data.sft import retry_on_request_exceptions
-
-
-@retry_on_request_exceptions(max_retries=3, delay=5)
-def snapshot_download_w_retry(*args, **kwargs):
-    return snapshot_download(*args, **kwargs)
+# from axolotl.utils.data.sft import retry_on_request_exceptions
+#
+#
+# @retry_on_request_exceptions(max_retries=3, delay=5)
+# def snapshot_download_w_retry(*args, **kwargs):
+#     return snapshot_download(*args, **kwargs)
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -64,6 +64,14 @@ def download_argilla_distilabel_capybara_dpo_7k_binarized_dataset():
     # download the dataset
     snapshot_download(
         "argilla/distilabel-capybara-dpo-7k-binarized", repo_type="dataset"
+    )
+
+
+@pytest.fixture(scope="session", autouse=True)
+def download_argilla_ultrafeedback_binarized_preferences_cleaned_dataset():
+    # download the dataset
+    snapshot_download(
+        "argilla/ultrafeedback-binarized-preferences-cleaned", repo_type="dataset"
     )
 
 

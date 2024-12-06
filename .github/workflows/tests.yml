@@ -136,7 +136,7 @@ jobs:
     # this job needs to be run on self-hosted GPU runners...
     runs-on: [self-hosted, modal]
     timeout-minutes: 90
-    needs: [pre-commit, pytest, pytest-sdist]
+#    needs: [pre-commit, pytest, pytest-sdist]
 
     strategy:
       fail-fast: false
