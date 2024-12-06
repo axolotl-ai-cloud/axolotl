@@ -92,13 +92,7 @@ def parse_requirements():
 
 install_requires, dependency_links = parse_requirements()
 
-
 setup(
-    name="axolotl",
-    use_scm_version=True,
-    setup_requires=["setuptools_scm"],
-    description="LLM Trainer",
-    long_description="Axolotl is a tool designed to streamline the fine-tuning of various AI models, offering support for multiple configurations and architectures.",
     package_dir={"": "src"},
     packages=find_packages("src"),
     install_requires=install_requires,

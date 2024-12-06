@@ -58,6 +58,10 @@ jobs:
           python scripts/cutcrossentropy_install.py | sh
           pip3 install -r requirements-dev.txt -r requirements-tests.txt
 
+      - name: Ensure axolotl CLI was installed
+        run: |
+          axolotl --help
+
       - name: Run tests
         run: |
           pytest -n8 --dist loadfile --ignore=tests/e2e/ --ignore=tests/patched/ tests/
