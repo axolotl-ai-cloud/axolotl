@@ -30,6 +30,7 @@ from transformers import (  # noqa: F401
     AddedToken,
     AutoConfig,
     AutoModelForCausalLM,
+    AutoModelForImageTextToText,
     AutoModelForVision2Seq,
     AutoProcessor,
     AutoTokenizer,
@@ -552,6 +553,10 @@ class ModelLoader:
             elif self.model_config.model_type == "mllama":
                 self.AutoModelLoader = (  # pylint: disable=invalid-name
                     MllamaForConditionalGeneration
+                )
+            elif self.model_config.model_type == "qwen2_vl":
+                self.AutoModelLoader = (  # pylint: disable=invalid-name
+                    AutoModelForImageTextToText
                 )
             else:
                 self.AutoModelLoader = (
