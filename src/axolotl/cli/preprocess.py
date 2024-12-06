@@ -16,11 +16,10 @@ from transformers import AutoModelForCausalLM
 from axolotl.cli import (
     check_accelerate_default_config,
     check_user_token,
-    load_cfg,
-    load_datasets,
-    load_rl_datasets,
     print_axolotl_text_art,
 )
+from axolotl.cli.config import load_cfg
+from axolotl.cli.datasets import load_datasets, load_rl_datasets
 from axolotl.common.cli import PreprocessCliArgs
 from axolotl.common.const import DEFAULT_DATASET_PREPARED_PATH
 from axolotl.utils.trainer import disable_datasets_caching

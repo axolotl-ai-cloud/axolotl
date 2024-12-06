@@ -9,7 +9,8 @@ import fire
 import transformers
 from dotenv import load_dotenv
 
-from axolotl.cli import load_cfg, print_axolotl_text_art
+from axolotl.cli import print_axolotl_text_art
+from axolotl.cli.config import load_cfg
 from axolotl.common.cli import TrainerCliArgs, load_model_and_tokenizer
 from axolotl.utils.dict import DictDefault
 
