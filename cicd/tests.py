@@ -52,7 +52,8 @@ app = App("Axolotl CI/CD", secrets=[])
 
 
 N_GPUS = int(os.environ.get("N_GPUS", 1))
-GPU_CONFIG = modal.gpu.A10G(count=N_GPUS)
+GPU_TYPE = os.environ.get("GPU_TYPE", "A10G")
+GPU_CONFIG = getattr(modal.gpu, GPU_TYPE)(count=N_GPUS)
 
 
 def run_cmd(cmd: str, run_folder: str):
@@ -61,6 +62,18 @@ def run_cmd(cmd: str, run_folder: str):
     # Propagate errors from subprocess.
     if exit_code := subprocess.call(cmd.split(), cwd=run_folder):  # nosec
         exit(exit_code)  # pylint: disable=consider-using-sys-exit
+
+
+@app.function(
+    image=cicd_image,
+    gpu=GPU_CONFIG,
+    timeout=45 * 60,
+    cpu=8.0,
+    memory=131072,
+)
+def image_build():
+    # noop to trigger the image build
+    pass
 
 
 @app.function(
