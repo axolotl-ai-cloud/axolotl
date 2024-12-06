@@ -62,6 +62,7 @@ class ChatTemplate(str, Enum):
     exaone = "exaone"  # pylint: disable=invalid-name
     metharme = "metharme"  # pylint: disable=invalid-name
     pixtral = "pixtral"  # pylint: disable=invalid-name
+    qwen2_vl = "qwen2_vl"  # pylint: disable=invalid-name
 
 
 class DeprecatedParameters(BaseModel):
