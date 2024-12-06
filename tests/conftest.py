@@ -10,43 +10,43 @@ from huggingface_hub import snapshot_download
 from axolotl.utils.data.sft import retry_on_request_exceptions
 
 
-@pytest.fixture(scope="session", autouse=True)
 @retry_on_request_exceptions(max_retries=3, delay=5)
+@pytest.fixture(scope="session", autouse=True)
 def download_smollm2_135m_model():
     # download the model
     snapshot_download("HuggingFaceTB/SmolLM2-135M")
 
 
-@pytest.fixture(scope="session", autouse=True)
 @retry_on_request_exceptions(max_retries=3, delay=5)
+@pytest.fixture(scope="session", autouse=True)
 def download_llama_68m_random_model():
     # download the model
     snapshot_download("JackFram/llama-68m")
 
 
-@pytest.fixture(scope="session", autouse=True)
 @retry_on_request_exceptions(max_retries=3, delay=5)
+@pytest.fixture(scope="session", autouse=True)
 def download_qwen_2_5_half_billion_model():
     # download the model
     snapshot_download("Qwen/Qwen2.5-0.5B")
 
 
-@pytest.fixture(scope="session", autouse=True)
 @retry_on_request_exceptions(max_retries=3, delay=5)
+@pytest.fixture(scope="session", autouse=True)
 def download_tatsu_lab_alpaca_dataset():
     # download the dataset
     snapshot_download("tatsu-lab/alpaca", repo_type="dataset")
 
 
-@pytest.fixture(scope="session", autouse=True)
 @retry_on_request_exceptions(max_retries=3, delay=5)
+@pytest.fixture(scope="session", autouse=True)
 def download_mhenrichsen_alpaca_2k_dataset():
     # download the dataset
     snapshot_download("mhenrichsen/alpaca_2k_test", repo_type="dataset")
 
 
-@pytest.fixture(scope="session", autouse=True)
 @retry_on_request_exceptions(max_retries=3, delay=5)
+@pytest.fixture(scope="session", autouse=True)
 def download_mhenrichsen_alpaca_2k_w_revision_dataset():
     # download the dataset
     snapshot_download(
@@ -54,15 +54,15 @@ def download_mhenrichsen_alpaca_2k_w_revision_dataset():
     )
 
 
-@pytest.fixture(scope="session", autouse=True)
 @retry_on_request_exceptions(max_retries=3, delay=5)
+@pytest.fixture(scope="session", autouse=True)
 def download_mlabonne_finetome_100k_dataset():
     # download the dataset
     snapshot_download("mlabonne/FineTome-100k", repo_type="dataset")
 
 
-@pytest.fixture
 @retry_on_request_exceptions(max_retries=3, delay=5)
+@pytest.fixture
 def download_argilla_distilabel_capybara_dpo_7k_binarized_dataset():
     # download the dataset
     snapshot_download(
@@ -70,8 +70,8 @@ def download_argilla_distilabel_capybara_dpo_7k_binarized_dataset():
     )
 
 
-@pytest.fixture
 @retry_on_request_exceptions(max_retries=3, delay=5)
+@pytest.fixture
 def download_arcee_ai_distilabel_intel_orca_dpo_pairs_dataset():
     # download the dataset
     snapshot_download(
