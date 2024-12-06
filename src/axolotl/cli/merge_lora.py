@@ -2,6 +2,7 @@
 CLI to run merge a trained LoRA into a base model
 """
 from pathlib import Path
+from typing import Union
 
 import fire
 import transformers
@@ -11,7 +12,7 @@ from axolotl.cli import do_merge_lora, load_cfg, print_axolotl_text_art
 from axolotl.common.cli import TrainerCliArgs
 
 
-def do_cli(config: Path = Path("examples/"), **kwargs):
+def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
     # pylint: disable=duplicate-code
     print_axolotl_text_art()
     parser = transformers.HfArgumentParser((TrainerCliArgs))

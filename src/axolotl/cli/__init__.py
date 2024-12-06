@@ -380,7 +380,7 @@ def choose_config(path: Path):
 
     if len(yaml_files) == 1:
         print(f"Using default YAML file '{yaml_files[0]}'")
-        return yaml_files[0]
+        return str(yaml_files[0])
 
     print("Choose a YAML file:")
     for idx, file in enumerate(yaml_files):
@@ -391,7 +391,7 @@ def choose_config(path: Path):
         try:
             choice = int(input("Enter the number of your choice: "))
             if 1 <= choice <= len(yaml_files):
-                chosen_file = yaml_files[choice - 1]
+                chosen_file = str(yaml_files[choice - 1])
             else:
                 print("Invalid choice. Please choose a number from the list.")
         except ValueError:
