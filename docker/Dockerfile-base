@@ -6,7 +6,7 @@ ARG MAX_JOBS=4
 ARG BASE_IMAGE=nvidia/cuda
 ARG DEFAULT_TAG=${CUDA_VERSION}-cudnn${CUDNN_VERSION}-devel-ubuntu${UBUNTU_VERSION}
 ARG BASE_TAG=""
-FROM ${BASE_IMAGE}:${BASE_TAG:-${DEFAULT_TAG}} AS base-builder
+FROM ${BASE_IMAGE:-nvidia/cuda}:${BASE_TAG:-${DEFAULT_TAG}} AS base-builder
 
 ENV PATH="/root/miniconda3/bin:${PATH}"
 
