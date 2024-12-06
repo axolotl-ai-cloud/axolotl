@@ -1,20 +1,220 @@
-"""
-CLI to run inference on a trained model
-"""
+"""CLI to run inference on a trained model."""
+import importlib
+import logging
+import sys
 from pathlib import Path
-from typing import Union
+from threading import Thread
+from typing import Optional, Union
 
 import fire
+import torch
 import transformers
 from dotenv import load_dotenv
+from transformers import GenerationConfig, TextIteratorStreamer, TextStreamer
 
-from axolotl.cli import (
-    do_inference,
-    do_inference_gradio,
-    load_cfg,
-    print_axolotl_text_art,
+from axolotl.cli import print_axolotl_text_art
+from axolotl.cli.config import load_cfg
+from axolotl.common.cli import TrainerCliArgs, load_model_and_tokenizer
+from axolotl.utils.chat_templates import (
+    get_chat_template,
+    get_chat_template_from_config,
 )
-from axolotl.common.cli import TrainerCliArgs
+from axolotl.utils.dict import DictDefault
+
+LOG = logging.getLogger("axolotl.cli.inference")
+
+
+def get_multi_line_input() -> Optional[str]:
+    print("Give me an instruction (Ctrl + D to submit): ")
+    instruction = ""
+    for line in sys.stdin:
+        instruction += line  # pylint: disable=consider-using-join
+    # instruction = pathlib.Path("/proc/self/fd/0").read_text()
+    return instruction
+
+
+def do_inference(
+    *,
+    cfg: DictDefault,
+    cli_args: TrainerCliArgs,
+):
+    model, tokenizer = load_model_and_tokenizer(cfg=cfg, cli_args=cli_args)
+    prompter = cli_args.prompter
+
+    prompter_module = None
+    chat_template_str = None
+    if prompter:
+        prompter_module = getattr(
+            importlib.import_module("axolotl.prompters"), prompter
+        )
+    elif cfg.chat_template:
+        chat_template_str = get_chat_template(cfg.chat_template)
+    elif cfg.datasets[0].type == "chat_template":
+        chat_template_str = get_chat_template_from_config(
+            cfg=cfg, ds_cfg=cfg.datasets[0], tokenizer=tokenizer
+        )
+
+    model = model.to(cfg.device, dtype=cfg.torch_dtype)
+
+    while True:
+        print("=" * 80)
+        # support for multiline inputs
+        instruction = get_multi_line_input()
+        if not instruction:
+            return
+
+        if prompter_module:
+            prompt: str = next(
+                prompter_module().build_prompt(instruction=instruction.strip("\n"))
+            )
+        else:
+            prompt = instruction.strip()
+
+        if chat_template_str:
+            batch = tokenizer.apply_chat_template(
+                [
+                    {
+                        "role": "user",
+                        "content": prompt,
+                    }
+                ],
+                return_tensors="pt",
+                add_special_tokens=True,
+                add_generation_prompt=True,
+                chat_template=chat_template_str,
+                tokenize=True,
+                return_dict=True,
+            )
+        else:
+            batch = tokenizer(prompt, return_tensors="pt", add_special_tokens=True)
+
+        print("=" * 40)
+        model.eval()
+        with torch.no_grad():
+            generation_config = GenerationConfig(
+                repetition_penalty=1.1,
+                max_new_tokens=1024,
+                temperature=0.9,
+                top_p=0.95,
+                top_k=40,
+                bos_token_id=tokenizer.bos_token_id,
+                eos_token_id=tokenizer.eos_token_id,
+                pad_token_id=tokenizer.pad_token_id,
+                do_sample=True,
+                use_cache=True,
+                return_dict_in_generate=True,
+                output_attentions=False,
+                output_hidden_states=False,
+                output_scores=False,
+            )
+            streamer = TextStreamer(tokenizer)
+            generated = model.generate(
+                inputs=batch["input_ids"].to(cfg.device),
+                generation_config=generation_config,
+                streamer=streamer,
+            )
+        print("=" * 40)
+        print(tokenizer.decode(generated["sequences"].cpu().tolist()[0]))
+
+
+def do_inference_gradio(
+    *,
+    cfg: DictDefault,
+    cli_args: TrainerCliArgs,
+):
+    import gradio as gr
+
+    model, tokenizer = load_model_and_tokenizer(cfg=cfg, cli_args=cli_args)
+    prompter = cli_args.prompter
+
+    prompter_module = None
+    chat_template_str = None
+    if prompter:
+        prompter_module = getattr(
+            importlib.import_module("axolotl.prompters"), prompter
+        )
+    elif cfg.chat_template:
+        chat_template_str = get_chat_template(cfg.chat_template, tokenizer=tokenizer)
+
+    model = model.to(cfg.device, dtype=cfg.torch_dtype)
+
+    def generate(instruction):
+        if not instruction:
+            return
+        if prompter_module:
+            # pylint: disable=stop-iteration-return
+            prompt: str = next(
+                prompter_module().build_prompt(instruction=instruction.strip("\n"))
+            )
+        else:
+            prompt = instruction.strip()
+
+        if chat_template_str:
+            batch = tokenizer.apply_chat_template(
+                [
+                    {
+                        "role": "user",
+                        "content": prompt,
+                    }
+                ],
+                return_tensors="pt",
+                add_special_tokens=True,
+                add_generation_prompt=True,
+                chat_template=chat_template_str,
+                tokenize=True,
+                return_dict=True,
+            )
+        else:
+            batch = tokenizer(prompt, return_tensors="pt", add_special_tokens=True)
+
+        model.eval()
+        with torch.no_grad():
+            generation_config = GenerationConfig(
+                repetition_penalty=1.1,
+                max_new_tokens=cfg.get("gradio_max_new_tokens", 1024),
+                temperature=cfg.get("gradio_temperature", 0.9),
+                top_p=0.95,
+                top_k=40,
+                bos_token_id=tokenizer.bos_token_id,
+                eos_token_id=tokenizer.eos_token_id,
+                pad_token_id=tokenizer.pad_token_id,
+                do_sample=True,
+                use_cache=True,
+                return_dict_in_generate=True,
+                output_attentions=False,
+                output_hidden_states=False,
+                output_scores=False,
+            )
+            streamer = TextIteratorStreamer(tokenizer)
+            generation_kwargs = {
+                "inputs": batch["input_ids"].to(cfg.device),
+                "attention_mask": batch["attention_mask"].to(cfg.device),
+                "generation_config": generation_config,
+                "streamer": streamer,
+            }
+
+            thread = Thread(target=model.generate, kwargs=generation_kwargs)
+            thread.start()
+
+            all_text = ""
+
+            for new_text in streamer:
+                all_text += new_text
+                yield all_text
+
+    demo = gr.Interface(
+        fn=generate,
+        inputs="textbox",
+        outputs="text",
+        title=cfg.get("gradio_title", "Axolotl Gradio Interface"),
+    )
+
+    demo.queue().launch(
+        show_api=False,
+        share=cfg.get("gradio_share", True),
+        server_name=cfg.get("gradio_server_name", "127.0.0.1"),
+        server_port=cfg.get("gradio_server_port", None),
+    )
 
 
 def do_cli(config: Union[Path, str] = Path("examples/"), gradio=False, **kwargs):

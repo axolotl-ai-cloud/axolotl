@@ -1,53 +1,18 @@
 """Prepare and train a model on a dataset. Can also infer from a model or merge lora"""
-
-import importlib
-import json
 import logging
-import math
 import os
-import random
 import sys
-import tempfile
 from pathlib import Path
-from threading import Thread
-from typing import Any, Dict, List, Optional, Union
-from urllib.parse import urlparse
-
-import requests
-import torch
-import yaml
 
 # add src to the pythonpath so we don't need to pip install this
 from accelerate.commands.config import config_args
 from art import text2art
 from huggingface_hub import HfApi
 from huggingface_hub.utils import LocalTokenNotFoundError
-from transformers import GenerationConfig, TextIteratorStreamer, TextStreamer
-from transformers.utils import is_torch_bf16_gpu_available
 from transformers.utils.import_utils import _is_package_available
 
-from axolotl.common.cli import TrainerCliArgs, load_model_and_tokenizer
 from axolotl.logging_config import configure_logging
-from axolotl.train import TrainDatasetMeta
-from axolotl.utils.chat_templates import (
-    get_chat_template,
-    get_chat_template_from_config,
-)
-from axolotl.utils.comet_ import setup_comet_env_vars
-from axolotl.utils.config import (
-    normalize_cfg_datasets,
-    normalize_config,
-    prepare_plugins,
-    validate_config,
-)
-from axolotl.utils.data import load_prepare_dpo_datasets, prepare_dataset
-from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import is_main_process
-from axolotl.utils.mlflow_ import setup_mlflow_env_vars
-from axolotl.utils.models import load_processor, load_tokenizer
-from axolotl.utils.tokenization import check_dataset_labels
-from axolotl.utils.trainer import prepare_opinionated_env, prepare_optim_env
-from axolotl.utils.wandb_ import setup_wandb_env_vars
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 src_dir = os.path.join(project_root, "src")
@@ -105,6 +70,7 @@ def print_dep_versions():
         print("*" * 40)
 
 
+<<<<<<< HEAD
 def check_remote_config(config: Union[str, Path]):
     # Check if the config is a valid HTTPS URL to a .yml or .yaml file
     if not (isinstance(config, str) and config.startswith("https://")):
@@ -541,6 +507,8 @@ def load_rl_datasets(
     )
 
 
+=======
+>>>>>>> 73d65961 (CLI init refactor)
 def check_accelerate_default_config():
     if Path(config_args.default_yaml_config_file).exists():
         LOG.warning(

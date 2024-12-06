@@ -1,6 +1,7 @@
 """
 CLI to run merge a trained LoRA into a base model
 """
+import logging
 from pathlib import Path
 from typing import Union
 
@@ -8,8 +9,38 @@ import fire
 import transformers
 from dotenv import load_dotenv
 
-from axolotl.cli import do_merge_lora, load_cfg, print_axolotl_text_art
-from axolotl.common.cli import TrainerCliArgs
+from axolotl.cli import print_axolotl_text_art
+from axolotl.cli.config import load_cfg
+from axolotl.common.cli import TrainerCliArgs, load_model_and_tokenizer
+from axolotl.utils.dict import DictDefault
+
+LOG = logging.getLogger("axolotl.cli.merge_lora")
+
+
+def do_merge_lora(
+    *,
+    cfg: DictDefault,
+    cli_args: TrainerCliArgs,
+):
+    model, tokenizer = load_model_and_tokenizer(cfg=cfg, cli_args=cli_args)
+    safe_serialization = cfg.save_safetensors is True
+
+    LOG.info("running merge of LoRA with base model")
+    model = model.merge_and_unload(progressbar=True)
+    try:
+        model.to(dtype=cfg.torch_dtype)
+    except RuntimeError:
+        pass
+    model.generation_config.do_sample = True
+
+    if cfg.local_rank == 0:
+        LOG.info(f"saving merged model to: {str(Path(cfg.output_dir) / 'merged')}")
+        model.save_pretrained(
+            str(Path(cfg.output_dir) / "merged"),
+            safe_serialization=safe_serialization,
+            progressbar=True,
+        )
+        tokenizer.save_pretrained(str(Path(cfg.output_dir) / "merged"))
 
 
 def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
