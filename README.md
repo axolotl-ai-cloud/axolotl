@@ -139,8 +139,8 @@ CUDA_VISIBLE_DEVICES="0" axolotl preprocess examples/llama-3/qlora-1b.yml
 axolotl train examples/llama-3/qlora-1b.yml
 
 # inference
-axolotl inference examples/openllama-3b/lora.yml \
-    --lora-model-dir="./outputs/lora-out"
+axolotl inference examples/llama-3/qlora-1b.yml \
+    --lora-model-dir="./outputs/qlora-out"
 
 # gradio
 axolotl inference examples/llama-3/qlora-1b.yml \
