@@ -372,7 +372,11 @@ class ModelLoader:
         # init model config
         self.model_config = load_model_config(cfg)
         if cfg.is_multimodal:
-            self.text_model_config = self.model_config.text_config
+            try:
+                self.text_model_config = self.model_config.text_config
+            except AttributeError:
+                # for qwen2_vl
+                self.text_model_config = self.model_config.get_text_config()
         else:
             self.text_model_config = self.model_config
 
