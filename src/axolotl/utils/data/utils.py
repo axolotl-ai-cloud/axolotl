@@ -1,9 +1,15 @@
 """data handling helpers"""
 
+import functools
 import hashlib
 import logging
+import time
+from typing import TYPE_CHECKING
 
-from datasets import Dataset
+import requests
+
+if TYPE_CHECKING:
+    from datasets import Dataset
 
 LOG = logging.getLogger("axolotl")
 
@@ -20,8 +26,10 @@ def sha256(to_hash: str, encoding: str = "utf-8") -> str:
 
 
 def deduplicate_dataset(
-    dataset: Dataset, seen_hashes: dict[str, list[int]], other_dataset: Dataset = None
-) -> Dataset:
+    dataset: "Dataset",
+    seen_hashes: dict[str, list[int]],
+    other_dataset: "Dataset" = None,
+) -> "Dataset":
     unique_indices = []
 
     for idx, row in enumerate(dataset):
@@ -57,10 +65,10 @@ def deduplicate_dataset(
 
 def deduplicate_and_log_datasets(
     *,
-    train_dataset: Dataset = None,
-    eval_dataset: Dataset = None,
-    dataset: Dataset = None,
-) -> tuple[Dataset, Dataset, Dataset]:
+    train_dataset: "Dataset" = None,
+    eval_dataset: "Dataset" = None,
+    dataset: "Dataset" = None,
+) -> tuple["Dataset", "Dataset", "Dataset"]:
     """
     Deduplicates train, eval, and an optional dataset if provided, logging original and new sizes.
 
@@ -106,3 +114,24 @@ def deduplicate_and_log_datasets(
         )
 
     return train_dataset, eval_dataset, dataset
+
+
+def retry_on_request_exceptions(max_retries=3, delay=1):
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):  # pylint: disable=inconsistent-return-statements
+            for attempt in range(max_retries):
+                try:
+                    return func(*args, **kwargs)
+                except (
+                    requests.exceptions.ReadTimeout,
+                    requests.exceptions.ConnectionError,
+                ) as exc:
+                    if attempt < max_retries - 1:
+                        time.sleep(delay)
+                    else:
+                        raise exc
+
+        return wrapper
+
+    return decorator
