@@ -125,7 +125,8 @@ from source.
 ```bash
 git clone https://github.com/axolotl-ai-cloud/axolotl.git
 cd axolotl
-pip install -e .[flash-attn,deepspeed]
+pip3 install packaging ninja
+pip install -e '.[flash-attn,deepspeed]'
 ```
 
 ### Axolotl CLI Usage
