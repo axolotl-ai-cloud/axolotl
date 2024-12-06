@@ -1,4 +1,4 @@
-base_model: meta-llama/Llama-3.2-1B
+base_model: NousResearch/Llama-3.2-1B
 
 load_in_8bit: false
 load_in_4bit: true
@@ -22,7 +22,6 @@ pad_to_sequence_len: true
 lora_r: 32
 lora_alpha: 16
 lora_dropout: 0.05
-lora_target_linear: true
 lora_fan_in_fan_out:
 lora_target_modules:
   - gate_proj
