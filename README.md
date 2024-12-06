@@ -116,6 +116,17 @@ axolotl fetch deepspeed_configs  # OPTIONAL
 axolotl train examples/llama-3/qlora-1b.yml
 ```
 
+### Edge Builds 🏎️
+
+If you're looking for the latest features and updates between releases, you'll need to install
+from source.
+
+```bash
+git clone https://github.com/axolotl-ai-cloud/axolotl.git
+cd axolotl
+pip install -e .[flash-attn,deepspeed]
+```
+
 ### Axolotl CLI Usage
 If you've installed this package using `pip` from source, we now support a new, more
 streamlined CLI using [click](https://click.palletsprojects.com/en/stable/).
