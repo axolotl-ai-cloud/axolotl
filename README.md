@@ -135,6 +135,46 @@ accelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \
 accelerate launch -m axolotl.cli.train https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/main/examples/openllama-3b/lora.yml
 ```
 
+### Axolotl CLI (New)
+
+If you've installed this package using `pip` from source, we now support a new, more
+streamlined CLI using [click](https://click.palletsprojects.com/en/stable/). Rewriting
+the above commands:
+
+```bash
+# preprocess datasets - optional but recommended
+CUDA_VISIBLE_DEVICES="" axolotl preprocess examples/openllama-3b/lora.yml
+
+# finetune lora
+axolotl train examples/openllama-3b/lora.yml
+
+# inference
+axolotl inference examples/openllama-3b/lora.yml \
+    --lora_model_dir="./outputs/lora-out"
+
+# gradio
+axolotl inference examples/openllama-3b/lora.yml \
+    --lora_model_dir="./outputs/lora-out" --gradio
+
+# remote yaml files - the yaml config can be hosted on a public URL
+# Note: the yaml config must directly link to the **raw** yaml
+axolotl train https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/main/examples/openllama-3b/lora.yml
+```
+
+We've also added a new command for fetching `examples` and `deepspeed_configs` to your
+local machine. This will come in handy when installing `axolotl` from PyPI.
+
+```bash
+# Fetch example YAML files (stores in "examples/" folder)
+axolotl fetch examples
+
+# Fetch deepspeed config files (stores in "deepspeed_configs/" folder)
+axolotl fetch deepspeed_configs
+
+# Optionally, specify a destination folder
+axolotl fetch examples --dest path/to/folder
+```
+
 ## Badge ❤🏷️
 
 Building something cool with Axolotl? Consider adding a badge to your model card.
@@ -205,7 +245,6 @@ Thanks to all of our contributors to date. Help drive open source AI progress fo
 ✅: supported
 ❌: not supported
 ❓: untested
-
 
 ## Advanced Setup
 
