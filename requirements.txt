@@ -1,6 +1,6 @@
 --extra-index-url https://huggingface.github.io/autogptq-index/whl/cu118/
 packaging==23.2
-peft @ git+https://github.com/huggingface/peft.git@860f7838c885ada7d48bb91fbc65b5f1843b9bc6
+peft==0.14.0
 transformers==4.46.3
 tokenizers>=0.20.1
 bitsandbytes==0.45.0
