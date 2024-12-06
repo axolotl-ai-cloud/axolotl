@@ -14,8 +14,6 @@ from transformers.testing_utils import get_torch_dist_unique_port
 
 from axolotl.utils.dict import DictDefault
 
-from ..utils import is_hopper
-
 LOG = logging.getLogger("axolotl.tests.e2e.multigpu")
 os.environ["WANDB_DISABLED"] = "true"
 
@@ -144,7 +142,6 @@ class TestMultiGPULlama:
             ]
         )
 
-    @pytest.mark.skipif(is_hopper(), reason="h100 doesn't support 8-bit lora")
     def test_dpo_lora_ddp(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
