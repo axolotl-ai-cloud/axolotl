@@ -3,7 +3,9 @@ ARG CUDNN_VERSION="8"
 ARG UBUNTU_VERSION="22.04"
 ARG MAX_JOBS=4
 
-FROM nvidia/cuda:$CUDA_VERSION-cudnn$CUDNN_VERSION-devel-ubuntu$UBUNTU_VERSION AS base-builder
+ARG BASE_IMAGE=nvidia/cuda
+ARG BASE_TAG=""
+FROM $BASE_IMAGE:${BASE_TAG:-$CUDA_VERSION-cudnn$CUDNN_VERSION-devel-ubuntu$UBUNTU_VERSION} AS base-builder
 
 ENV PATH="/root/miniconda3/bin:${PATH}"
 

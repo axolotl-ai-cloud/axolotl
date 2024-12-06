@@ -28,30 +28,32 @@ jobs:
             python_version: "3.10"
             pytorch: 2.3.1
             torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
+            from_base_img: ""
+            from_base_tag: ""
           - cuda: "121"
             cuda_version: 12.1.1
             cudnn_version: 8
             python_version: "3.11"
             pytorch: 2.3.1
             torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
-          - cuda: "124"
-            cuda_version: 12.4.1
-            cudnn_version: ""
-            python_version: "3.10"
-            pytorch: 2.4.1
-            torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
+            from_base_img: ""
+            from_base_tag: ""
           - cuda: "124"
             cuda_version: 12.4.1
             cudnn_version: ""
             python_version: "3.11"
             pytorch: 2.4.1
             torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
+            from_base_img: ""
+            from_base_tag: ""
           - cuda: "124"
             cuda_version: 12.4.1
             cudnn_version: ""
             python_version: "3.11"
             pytorch: 2.5.1
             torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
+            from_base_img: nvcr.io/nvidia/pytorch
+            from_base_tag: 24.10-py3
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -84,3 +86,5 @@ jobs:
             PYTHON_VERSION=${{ matrix.python_version }}
             PYTORCH_VERSION=${{ matrix.pytorch }}
             TORCH_CUDA_ARCH_LIST=${{ matrix.torch_cuda_arch_list }}
+            BASE_IMAGE=${{ matrix.from_base_img || '' }}
+            BASE_TAG=${{ matrix.from_base_tag || '' }}
