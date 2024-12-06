@@ -2,12 +2,9 @@
 
 import functools
 import logging
-import time
 from pathlib import Path
 from typing import List, Optional, Tuple, Union
 
-import huggingface_hub
-import requests
 from datasets import (
     Dataset,
     DatasetDict,
@@ -45,7 +42,11 @@ from axolotl.prompters import (
     UnsupportedPrompter,
 )
 from axolotl.utils.data.pretraining import wrap_pretraining_dataset
-from axolotl.utils.data.utils import deduplicate_and_log_datasets, md5
+from axolotl.utils.data.utils import (
+    deduplicate_and_log_datasets,
+    md5,
+    retry_on_request_exceptions,
+)
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import is_local_main_process, zero_first
 from axolotl.utils.trainer import (
@@ -54,28 +55,6 @@ from axolotl.utils.trainer import (
 )
 
 LOG = logging.getLogger("axolotl")
-
-
-def retry_on_request_exceptions(max_retries=3, delay=1):
-    def decorator(func):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):  # pylint: disable=inconsistent-return-statements
-            for attempt in range(max_retries):
-                try:
-                    return func(*args, **kwargs)
-                except (
-                    requests.exceptions.ReadTimeout,
-                    requests.exceptions.ConnectionError,
-                    huggingface_hub.errors.HfHubHTTPError,
-                ) as exc:
-                    if attempt < max_retries - 1:
-                        time.sleep((attempt + 1) * delay)
-                    else:
-                        raise exc
-
-        return wrapper
-
-    return decorator
 
 
 @retry_on_request_exceptions(max_retries=3, delay=5)

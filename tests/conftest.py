@@ -7,7 +7,7 @@ import tempfile
 import pytest
 from huggingface_hub import snapshot_download
 
-from axolotl.utils.data.sft import retry_on_request_exceptions
+from axolotl.utils.data.utils import retry_on_request_exceptions
 
 
 @pytest.fixture(scope="session", autouse=True)

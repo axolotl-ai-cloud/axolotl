@@ -1,11 +1,55 @@
 """data handling helpers"""
-
+import functools
 import hashlib
 import logging
+import time
+from enum import Enum
 
+import huggingface_hub
+import requests
 from datasets import Dataset
 
 LOG = logging.getLogger("axolotl")
+
+
+class RetryStrategy(Enum):
+    """
+    Enum for retry strategies.
+    """
+
+    CONSTANT = 1
+    LINEAR = 2
+    EXPONENTIAL = 3
+
+
+def retry_on_request_exceptions(
+    max_retries=3, delay=1, retry_strategy: RetryStrategy = RetryStrategy.LINEAR
+):
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):  # pylint: disable=inconsistent-return-statements
+            for attempt in range(max_retries):
+                try:
+                    return func(*args, **kwargs)
+                except (
+                    requests.exceptions.ReadTimeout,
+                    requests.exceptions.ConnectionError,
+                    huggingface_hub.errors.HfHubHTTPError,
+                ) as exc:
+                    if attempt < max_retries - 1:
+                        if retry_strategy == RetryStrategy.EXPONENTIAL:
+                            step_delay = delay * 2**attempt
+                        elif retry_strategy == RetryStrategy.LINEAR:
+                            step_delay = delay * (attempt + 1)
+                        else:
+                            step_delay = delay  # Use constant delay.
+                        time.sleep(step_delay)
+                    else:
+                        raise exc
+
+        return wrapper
+
+    return decorator
 
 
 def md5(to_hash: str, encoding: str = "utf-8") -> str:
