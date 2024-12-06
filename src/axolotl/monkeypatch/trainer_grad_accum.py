@@ -111,7 +111,10 @@ def patch_training_step_for_ga():
     monkeypatch for fixing the training loop for gradient accumulation
     """
 
-    training_step = get_training_step_code()
+    try:
+        training_step = get_training_step_code()
+    except OSError:
+        return
     Trainer._original_training_step = training_step  # pylint: disable=protected-access
     training_step, _ = detab_code(training_step)
     if ORIGINAL_CONTEXT_CODE not in training_step:
@@ -166,7 +169,10 @@ def patch_forward_for_ga():
     monkeypatch for fixing the training loop for gradient accumulation
     """
 
-    forward = get_model_forward_code()
+    try:
+        forward = get_model_forward_code()
+    except OSError:
+        return
     LlamaForCausalLM._original_forward = forward  # pylint: disable=protected-access
     forward, _ = detab_code(forward)
     if ORIGINAL_LLAMA_FCLM_CODE not in forward:

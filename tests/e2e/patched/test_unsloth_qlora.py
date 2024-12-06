@@ -20,7 +20,6 @@ os.environ["WANDB_DISABLED"] = "true"
 
 
 # pylint: disable=duplicate-code
-@pytest.mark.skip(reason="latest unsloth doesn't work with latest transformers")
 class TestUnslothQLoRA:
     """
     Test class for Unsloth QLoRA Llama models
@@ -37,6 +36,9 @@ class TestUnslothQLoRA:
                 "sequence_len": 1024,
                 "sample_packing": sample_packing,
                 "flash_attention": True,
+                "unsloth_lora_mlp": True,
+                "unsloth_lora_qkv": True,
+                "unsloth_lora_o": True,
                 "load_in_4bit": True,
                 "adapter": "qlora",
                 "lora_r": 16,
@@ -83,6 +85,9 @@ class TestUnslothQLoRA:
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
                 "sequence_len": 1024,
+                "unsloth_lora_mlp": True,
+                "unsloth_lora_qkv": True,
+                "unsloth_lora_o": True,
                 "sample_packing": False,
                 "load_in_4bit": True,
                 "adapter": "qlora",
@@ -134,6 +139,9 @@ class TestUnslothQLoRA:
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
                 "sequence_len": 1024,
+                "unsloth_lora_mlp": True,
+                "unsloth_lora_qkv": True,
+                "unsloth_lora_o": True,
                 "sample_packing": False,
                 "load_in_4bit": True,
                 "adapter": "qlora",
