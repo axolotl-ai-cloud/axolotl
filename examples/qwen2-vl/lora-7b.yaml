@@ -27,7 +27,7 @@ lora_r: 32
 lora_alpha: 16
 lora_dropout: 0.05
 # lora_target_linear: true
-lora_target_modules: 'language_model.model.layers.[\d]+.(mlp|cross_attn|self_attn).(up|down|gate|q|k|v|o)_proj'
+lora_target_modules: 'torch.nn.linear'
 
 wandb_project:
 wandb_entity:
