@@ -213,11 +213,9 @@ class MultiModalChatDataCollator(DataCollatorMixin):
                 for example in examples
             ]
 
-        if chat_template_type != "llava":
-            images = __class__.process_images(examples, max_images=max_images)
-        else:
+        images = __class__.process_images(examples, max_images=max_images)
+        if chat_template_type == "llava":
             # LLava1.5 does not support multiple images
-            images = [example["images"] for example in examples]
             images = [image[0] for image in images]
 
         # Tokenize the texts and process the images
