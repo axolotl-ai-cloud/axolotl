@@ -113,7 +113,8 @@ pip install axolotl[flash-attn,deepspeed]
 axolotl fetch examples
 axolotl fetch deepspeed_configs  # OPTIONAL
 
-axolotl train examples/llama-3/qlora-1b.yml
+# finetune using lora
+axolotl train examples/llama-3/lora-1b.yml
 ```
 
 ### Edge Builds 🏎️
@@ -133,22 +134,22 @@ streamlined CLI using [click](https://click.palletsprojects.com/en/stable/).
 
 ```bash
 # preprocess datasets - optional but recommended
-CUDA_VISIBLE_DEVICES="0" axolotl preprocess examples/llama-3/qlora-1b.yml
+CUDA_VISIBLE_DEVICES="0" axolotl preprocess examples/llama-3/lora-1b.yml
 
 # finetune lora
-axolotl train examples/llama-3/qlora-1b.yml
+axolotl train examples/llama-3/lora-1b.yml
 
 # inference
-axolotl inference examples/llama-3/qlora-1b.yml \
-    --lora-model-dir="./outputs/qlora-out"
+axolotl inference examples/llama-3/lora-1b.yml \
+    --lora-model-dir="./outputs/lora-out"
 
 # gradio
-axolotl inference examples/llama-3/qlora-1b.yml \
-    --lora-model-dir="./outputs/qlora-out" --gradio
+axolotl inference examples/llama-3/lora-1b.yml \
+    --lora-model-dir="./outputs/lora-out" --gradio
 
 # remote yaml files - the yaml config can be hosted on a public URL
 # Note: the yaml config must directly link to the **raw** yaml
-axolotl train https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/main/examples/llama-3/qlora-1b.yml
+axolotl train https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/main/examples/llama-3/lora-1b.yml
 ```
 
 We've also added a new command for fetching `examples` and `deepspeed_configs` to your
@@ -175,22 +176,22 @@ still support the legacy `-m axolotl.cli.*` usage.
 
 ```bash
 # preprocess datasets - optional but recommended
-CUDA_VISIBLE_DEVICES="0" python -m axolotl.cli.preprocess examples/llama-3/qlora-1b.yml
+CUDA_VISIBLE_DEVICES="0" python -m axolotl.cli.preprocess examples/llama-3/lora-1b.yml
 
 # finetune lora
-accelerate launch -m axolotl.cli.train examples/llama-3/qlora-1b.yml
+accelerate launch -m axolotl.cli.train examples/llama-3/lora-1b.yml
 
 # inference
-accelerate launch -m axolotl.cli.inference examples/llama-3/qlora-1b.yml \
-    --lora_model_dir="./outputs/qlora-out"
+accelerate launch -m axolotl.cli.inference examples/llama-3/lora-1b.yml \
+    --lora_model_dir="./outputs/lora-out"
 
 # gradio
-accelerate launch -m axolotl.cli.inference examples/llama-3/qlora-1b.yml \
-    --lora_model_dir="./outputs/qlora-out" --gradio
+accelerate launch -m axolotl.cli.inference examples/llama-3/lora-1b.yml \
+    --lora_model_dir="./outputs/lora-out" --gradio
 
 # remote yaml files - the yaml config can be hosted on a public URL
 # Note: the yaml config must directly link to the **raw** yaml
-accelerate launch -m axolotl.cli.train https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/main/examples/llama-3/qlora-1b.yml
+accelerate launch -m axolotl.cli.train https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/main/examples/llama-3/lora-1b.yml
 ```
 
 </details>
