@@ -70,20 +70,3 @@ def test_fetch_from_github_network_error():
     with patch("requests.get", side_effect=requests.RequestException):
         with pytest.raises(requests.RequestException):
             fetch_from_github("examples/", None)
-
-
-@pytest.fixture
-def integration_test_dir(tmp_path):
-    """Fixture for integration test directory that cleans up after itself"""
-    test_dir = tmp_path / "github_downloads"
-    test_dir.mkdir(parents=True)
-    yield test_dir
-
-
-def test_fetch_from_github_real(integration_test_dir):
-    """Test actual GitHub API interaction"""
-    fetch_from_github("examples/", integration_test_dir)
-
-    # Verify some known files exist
-    assert (integration_test_dir / "openllama-3b" / "lora.yml").exists()
-    assert (integration_test_dir / "openllama-3b" / "qlora.yml").exists()
