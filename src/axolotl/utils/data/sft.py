@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 from typing import List, Optional, Tuple, Union
 
+import huggingface_hub
 import requests
 from datasets import (
     Dataset,
@@ -65,9 +66,10 @@ def retry_on_request_exceptions(max_retries=3, delay=1):
                 except (
                     requests.exceptions.ReadTimeout,
                     requests.exceptions.ConnectionError,
+                    huggingface_hub.errors.HfHubHTTPError,
                 ) as exc:
                     if attempt < max_retries - 1:
-                        time.sleep(delay)
+                        time.sleep((attempt + 1) * delay)
                     else:
                         raise exc
 
