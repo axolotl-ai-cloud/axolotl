@@ -38,7 +38,7 @@ class TestPhiMultipack(unittest.TestCase):
                 "pad_to_sequence_len": True,
                 "load_in_8bit": False,
                 "adapter": None,
-                "val_set_size": 0.02,
+                "val_set_size": 0.05,
                 "special_tokens": {
                     "pad_token": "<|endoftext|>",
                 },
