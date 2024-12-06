@@ -23,7 +23,12 @@ from axolotl.core.tokenizer_utils import fix_untrained_tokens
 from axolotl.logging_config import configure_logging
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.freeze import freeze_layers_except
-from axolotl.utils.models import load_model, load_processor, load_tokenizer
+from axolotl.utils.models import (
+    load_model,
+    load_model_config,
+    load_processor,
+    load_tokenizer,
+)
 from axolotl.utils.trainer import setup_trainer
 
 try:
@@ -145,7 +150,11 @@ def train(
         os.makedirs(cfg.output_dir, exist_ok=True)
     tokenizer.save_pretrained(str(Path(cfg.output_dir)))
     if hasattr(model, "config"):
-        model.config.save_pretrained(str(Path(cfg.output_dir)))
+        try:
+            model.config.save_pretrained(str(Path(cfg.output_dir)))
+        except TypeError:  # required to deal with Hymba in its current state
+            model_config = load_model_config(cfg)
+            model_config.save_pretrained(str(Path(cfg.output_dir)))
 
     # In case we want to stop early with ctrl+c, this is a nice to have to save the pretrained model
     if cfg.local_rank == 0:
