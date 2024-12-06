@@ -94,8 +94,11 @@ def integrate_cross_entropy_loss_patch(model_type: str = "llama") -> None:
 
 
 def detab_code(code: str) -> Tuple[str, str]:
-    spaces = re.match(r"([\s\t]{1,})", code).group(0)
-    code = re.sub(r"^" + spaces, "", code, flags=re.MULTILINE)
+    try:
+        spaces = re.match(r"([\s\t]{1,})", code).group(0)
+        code = re.sub(r"^" + spaces, "", code, flags=re.MULTILINE)
+    except AttributeError:
+        return code, ""
     return code, spaces
 
 
