@@ -1266,12 +1266,6 @@ class AxolotlRewardTrainer(SchedulerMixin, RewardTrainer):
 
     def log(self, logs: Dict[str, float], start_time: Optional[float] = None) -> None:
         # TODO remove once trl supports the updated to the Trainer.log method
-        # logs either has 'loss' or 'eval_loss'
-        train_eval = "train" if "loss" in logs else "eval"
-        # Add averaged stored metrics to logs
-        for key, metrics in self._stored_metrics[train_eval].items():
-            logs[key] = torch.tensor(metrics).mean().item()
-        del self._stored_metrics[train_eval]
         return super(RewardTrainer, self).log(  # pylint: disable=bad-super-call
             logs, start_time
         )
