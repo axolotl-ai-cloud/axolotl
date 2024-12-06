@@ -1,13 +1,36 @@
 """
 shared pytest fixtures
 """
+import functools
 import shutil
 import tempfile
+import time
 
 import pytest
+import requests
 from huggingface_hub import snapshot_download
 
-from axolotl.utils.data.utils import retry_on_request_exceptions
+
+def retry_on_request_exceptions(max_retries=3, delay=1):
+    # pylint: disable=duplicate-code
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):  # pylint: disable=inconsistent-return-statements
+            for attempt in range(max_retries):
+                try:
+                    return func(*args, **kwargs)
+                except (
+                    requests.exceptions.ReadTimeout,
+                    requests.exceptions.ConnectionError,
+                ) as exc:
+                    if attempt < max_retries - 1:
+                        time.sleep(delay)
+                    else:
+                        raise exc
+
+        return wrapper
+
+    return decorator
 
 
 @retry_on_request_exceptions(max_retries=3, delay=5)
