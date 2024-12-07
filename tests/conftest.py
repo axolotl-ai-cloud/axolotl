@@ -123,7 +123,7 @@ def cleanup_monkeypatches():
     yield
     # Reset known monkeypatches
     modules_to_reset = [
-        "transformers.models.modeling_llama",
+        "transformers.models.llama.modeling_llama",
         "transformers.trainer",
     ]
     for module_name in modules_to_reset:
