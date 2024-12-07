@@ -199,12 +199,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - cuda: 121
-            cuda_version: 12.1.1
-            python_version: "3.10"
-            pytorch: 2.3.1
-            num_gpus: 1
-            axolotl_extras: mamba-ssm
+#          - cuda: 121
+#            cuda_version: 12.1.1
+#            python_version: "3.10"
+#            pytorch: 2.3.1
+#            num_gpus: 1
+#            axolotl_extras: mamba-ssm
           - cuda: 124
             cuda_version: 12.4.1
             python_version: "3.11"
@@ -224,7 +224,7 @@ jobs:
           pip install modal==0.63.64 jinja2
       - name: Update env vars
         run: |
-          echo "BASE_TAG=main-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}" >> $GITHUB_ENV
+          echo "BASE_TAG=pr-2139-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}" >> $GITHUB_ENV
           echo "PYTORCH_VERSION=${{ matrix.pytorch}}" >> $GITHUB_ENV
           echo "AXOLOTL_ARGS=${{ matrix.axolotl_args}}" >> $GITHUB_ENV
           echo "AXOLOTL_EXTRAS=${{ matrix.axolotl_extras}}" >> $GITHUB_ENV
