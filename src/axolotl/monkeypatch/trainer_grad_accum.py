@@ -3,14 +3,14 @@ fix for FSDP gradient accumulation
 see https://github.com/huggingface/transformers/pull/35128
 """
 import inspect
+import logging
 
-from accelerate.logging import get_logger
 from transformers import LlamaForCausalLM
 from transformers.trainer import Trainer
 
 from axolotl.monkeypatch.unsloth_ import detab_code
 
-LOG = get_logger("axolotl.monkeypatch.trainer_grad_accum")
+LOG = logging.getLogger("axolotl.monkeypatch.trainer_grad_accum")
 
 ORIGINAL_CONTEXT_CODE = """
     with self.compute_loss_context_manager():
@@ -145,7 +145,7 @@ def patch_training_step_for_ga():
         globals(),
     )
     exec(training_step, globals())  # pylint: disable=exec-used  # nosec B102
-    LOG.info("patching training_step", main_process_only=True)
+    LOG.info("patching training_step")
     Trainer.training_step = (  # pylint: disable=protected-access
         _fixed_training_step  # pylint: disable=undefined-variable  # noqa: F821
     )
@@ -201,7 +201,7 @@ def patch_forward_for_ga():
         globals(),
     )
     exec(forward, globals())  # pylint: disable=exec-used  # nosec B102
-    LOG.info("patching forward", main_process_only=True)
+    LOG.info("patching forward")
     LlamaForCausalLM.forward = (  # pylint: disable=protected-access
         _fixed_forward  # pylint: disable=undefined-variable  # noqa: F821
     )
