@@ -1,5 +1,6 @@
+ARG BASE_IMAGE=axolotlai/axolotl-base
 ARG BASE_TAG=main-base
-FROM axolotlai/axolotl-base:$BASE_TAG
+FROM $BASE_IMAGE:$BASE_TAG
 
 ARG TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6+PTX"
 ARG AXOLOTL_EXTRAS=""
