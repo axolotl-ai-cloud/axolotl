@@ -124,15 +124,15 @@ def cleanup_monkeypatches():
     # Reset known monkeypatches
     modules_to_reset: list[str, list[str]] = [
         ("transformers.models.llama.modeling_llama",),
-        ("transformers.models.llama.modeling_llama", "LlamaFlashAttention2"),
+        ("transformers.models.llama.modeling_llama", ["LlamaFlashAttention2"]),
         ("transformers.trainer",),
     ]
     for module_name_tuple in modules_to_reset:
         module_name = module_name_tuple[0]
-        module_globals = module_name_tuple[1]
         module = importlib.import_module(module_name)
         sys.modules[module_name] = module
         importlib.reload(sys.modules[module_name])
-        if module_globals:
+        if len(module_name_tuple) > 1:
+            module_globals = module_name_tuple[1]
             for module_global in module_globals:
                 globals().pop(module_global, None)
