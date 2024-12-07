@@ -9,10 +9,7 @@ import torch
 from accelerate.logging import get_logger
 from peft import PeftModelForCausalLM
 from torch import nn
-from transformers.models.llama.modeling_llama import (
-    LlamaFlashAttention2,
-    LlamaForCausalLM,
-)
+from transformers.models.llama.modeling_llama import LlamaFlashAttention2
 
 LOG = get_logger("axolotl.monkeypatch.unsloth")
 
@@ -53,11 +50,6 @@ def original_apply_qkv(self, hidden_states):
 def original_apply_o(self, hidden_states):
     attn_output = self.o_proj(hidden_states)
     return attn_output
-
-
-def get_forward_code() -> str:
-    forward = inspect.getsource(LlamaForCausalLM.forward)
-    return forward
 
 
 def get_self_attn_code() -> str:
@@ -102,8 +94,11 @@ def integrate_cross_entropy_loss_patch(model_type: str = "llama") -> None:
 
 
 def detab_code(code: str) -> Tuple[str, str]:
-    spaces = re.match(r"([\s\t]{1,})", code).group(0)
-    code = re.sub(r"^" + spaces, "", code, flags=re.MULTILINE)
+    try:
+        spaces = re.match(r"([\s\t]{1,})", code).group(0)
+        code = re.sub(r"^" + spaces, "", code, flags=re.MULTILINE)
+    except AttributeError:
+        return code, ""
     return code, spaces
 
 

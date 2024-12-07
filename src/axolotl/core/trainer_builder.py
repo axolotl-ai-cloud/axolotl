@@ -957,13 +957,15 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
 
         return res
 
-    def log(self, logs: Dict[str, float]) -> None:
+    def log(self, logs: Dict[str, float], start_time: Optional[float] = None) -> None:
         """
         Log `logs` on the various objects watching training, including stored metrics.
 
         Args:
             logs (`Dict[str, float]`):
                 The values to log.
+            start_time (`Optional[float]`):
+                The start of training.
         """
         # logs either has 'loss' or 'eval_loss'
         train_eval = "train" if "loss" in logs else "eval"
@@ -971,7 +973,7 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
         for key, metrics in self._stored_metrics[train_eval].items():
             logs[key] = torch.tensor(metrics).mean().item()
         del self._stored_metrics[train_eval]
-        return super().log(logs)
+        return super().log(logs, start_time)
 
     def store_metrics(
         self, metrics: Dict[str, float], train_eval: Literal["train", "eval"] = "train"
@@ -1155,6 +1157,18 @@ class AxolotlDPOTrainer(SchedulerMixin, DPOTrainer):
         torch.cuda.empty_cache()
         return loss
 
+    def log(self, logs: Dict[str, float], start_time: Optional[float] = None) -> None:
+        # TODO remove once trl supports the updated to the Trainer.log method
+        # logs either has 'loss' or 'eval_loss'
+        train_eval = "train" if "loss" in logs else "eval"
+        # Add averaged stored metrics to logs
+        for key, metrics in self._stored_metrics[train_eval].items():
+            logs[key] = torch.tensor(metrics).mean().item()
+        del self._stored_metrics[train_eval]
+        return super(DPOTrainer, self).log(  # pylint: disable=bad-super-call
+            logs, start_time
+        )
+
 
 class AxolotlORPOTrainer(SchedulerMixin, ORPOTrainer):
     """
@@ -1162,6 +1176,18 @@ class AxolotlORPOTrainer(SchedulerMixin, ORPOTrainer):
     """
 
     tag_names = ["axolotl", "orpo"]
+
+    def log(self, logs: Dict[str, float], start_time: Optional[float] = None) -> None:
+        # TODO remove once trl supports the updated to the Trainer.log method
+        # logs either has 'loss' or 'eval_loss'
+        train_eval = "train" if "loss" in logs else "eval"
+        # Add averaged stored metrics to logs
+        for key, metrics in self._stored_metrics[train_eval].items():
+            logs[key] = torch.tensor(metrics).mean().item()
+        del self._stored_metrics[train_eval]
+        return super(ORPOTrainer, self).log(  # pylint: disable=bad-super-call
+            logs, start_time
+        )
 
 
 class AxolotlKTOTrainer(SchedulerMixin, KTOTrainer):
@@ -1171,6 +1197,45 @@ class AxolotlKTOTrainer(SchedulerMixin, KTOTrainer):
 
     tag_names = ["axolotl", "kto"]
 
+    def log(self, logs: Dict[str, float], start_time: Optional[float] = None) -> None:
+        # TODO remove once trl supports the updated to the Trainer.log method
+        # logs either has 'loss' or 'eval_loss'
+        train_eval = "train" if "loss" in logs else "eval"
+        # train metrics should have no prefix, eval should have 'eval_'
+        prefix = "eval_" if train_eval == "eval" else ""
+        # accumulate average metrics from sums and lengths
+        for split in ["chosen", "rejected"]:
+            if f"count/{split}" in self._stored_metrics[train_eval]:
+                count_sum = (
+                    torch.Tensor(self._stored_metrics[train_eval][f"count/{split}"])
+                    .sum()
+                    .item()
+                )
+                for metric in ["rewards", "logps", "logits"]:
+                    logs[f"{prefix}{metric}/{split}"] = (
+                        torch.Tensor(
+                            self._stored_metrics[train_eval][f"{metric}/{split}_sum"]
+                        )
+                        .sum()
+                        .item()
+                        / count_sum
+                    )
+                    # delete obsolete metric
+                    del self._stored_metrics[train_eval][f"{metric}/{split}_sum"]
+                del self._stored_metrics[train_eval][f"count/{split}"]
+        # calculate reward margin
+        if f"{prefix}rewards/chosen" in logs and f"{prefix}rewards/rejected" in logs:
+            logs[f"{prefix}rewards/margins"] = (
+                logs[f"{prefix}rewards/chosen"] - logs[f"{prefix}rewards/rejected"]
+            )
+        # Add averaged stored metrics to logs
+        for key, metrics in self._stored_metrics[train_eval].items():
+            logs[f"{prefix}{key}"] = torch.Tensor(metrics).mean().item()
+        del self._stored_metrics[train_eval]
+        return super(KTOTrainer, self).log(  # pylint: disable=bad-super-call
+            logs, start_time
+        )
+
 
 class AxolotlCPOTrainer(SchedulerMixin, CPOTrainer):
     """
@@ -1179,6 +1244,18 @@ class AxolotlCPOTrainer(SchedulerMixin, CPOTrainer):
 
     tag_names = ["axolotl", "cpo"]
 
+    def log(self, logs: Dict[str, float], start_time: Optional[float] = None) -> None:
+        # TODO remove once trl supports the updated to the Trainer.log method
+        # logs either has 'loss' or 'eval_loss'
+        train_eval = "train" if "loss" in logs else "eval"
+        # Add averaged stored metrics to logs
+        for key, metrics in self._stored_metrics[train_eval].items():
+            logs[key] = torch.tensor(metrics).mean().item()
+        del self._stored_metrics[train_eval]
+        return super(CPOTrainer, self).log(  # pylint: disable=bad-super-call
+            logs, start_time
+        )
+
 
 class AxolotlRewardTrainer(SchedulerMixin, RewardTrainer):
     """
@@ -1186,6 +1263,12 @@ class AxolotlRewardTrainer(SchedulerMixin, RewardTrainer):
     """
 
     tag_names = ["axolotl", "reward"]
+
+    def log(self, logs: Dict[str, float], start_time: Optional[float] = None) -> None:
+        # TODO remove once trl supports the updated to the Trainer.log method
+        return super(RewardTrainer, self).log(  # pylint: disable=bad-super-call
+            logs, start_time
+        )
 
 
 class TrainerBuilderBase(abc.ABC):
