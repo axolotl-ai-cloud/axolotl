@@ -102,7 +102,14 @@ def detab_code(code: str) -> Tuple[str, str]:
     return code, spaces
 
 
+self_attn_lora_patched = False  # pylint: disable=invalid-name
+
+
 def patch_self_attn_lora():
+    global self_attn_lora_patched  # pylint: disable=global-statement
+    if self_attn_lora_patched:
+        # prevent patching multiple times
+        return
     self_attn_forward = get_self_attn_code()
     LlamaFlashAttention2._original_forward = (  # pylint: disable=protected-access
         self_attn_forward
@@ -134,6 +141,7 @@ def patch_self_attn_lora():
         globals(),
     )
     exec(self_attn_forward, globals())  # pylint: disable=exec-used  # nosec B102
+    self_attn_lora_patched = True
     LOG.info("patching unsloth attn lora", main_process_only=True)
     LlamaFlashAttention2.forward = (
         unsloth_attn_forward  # pylint: disable=undefined-variable  # noqa: F821
