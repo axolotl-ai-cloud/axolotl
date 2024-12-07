@@ -2,7 +2,9 @@
 shared pytest fixtures
 """
 import functools
+import importlib
 import shutil
+import sys
 import tempfile
 import time
 
@@ -113,3 +115,18 @@ def temp_dir():
     yield _temp_dir
     # Clean up the directory after the test
     shutil.rmtree(_temp_dir)
+
+
+@pytest.fixture(scope="function", autouse=True)
+def cleanup_monkeypatches():
+    # monkey patches can happen inside the tests
+    yield
+    # Reset known monkeypatches
+    modules_to_reset = [
+        "transformers.models.modeling_llama",
+        "transformers.trainer",
+    ]
+    for module_name in modules_to_reset:
+        module = importlib.import_module(module_name)
+        sys.modules[module_name] = module
+        importlib.reload(sys.modules[module_name])
