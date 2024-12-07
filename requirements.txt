@@ -31,7 +31,7 @@ art
 gradio==3.50.2
 tensorboard
 python-dotenv==1.0.1
-autoawq==0.2.7.post2
+autoawq==0.2.7.post3
 triton>=2.3.0
 liger-kernel==0.4.2
 
