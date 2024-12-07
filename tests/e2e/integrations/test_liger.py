@@ -4,7 +4,7 @@ Simple end-to-end test for Liger integration
 
 from e2e.utils import require_torch_2_4_1
 
-from axolotl.cli import load_datasets
+from axolotl.cli.datasets import load_datasets
 from axolotl.common.cli import TrainerCliArgs
 from axolotl.train import train
 from axolotl.utils.config import normalize_config, prepare_plugins
