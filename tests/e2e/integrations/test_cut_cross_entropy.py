@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from axolotl.cli import load_datasets
+from axolotl.cli.datasets import load_datasets
 from axolotl.common.cli import TrainerCliArgs
 from axolotl.train import train
 from axolotl.utils import get_pytorch_version

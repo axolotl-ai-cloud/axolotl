@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from axolotl.cli import load_rl_datasets
+from axolotl.cli.datasets import load_rl_datasets
 from axolotl.common.cli import TrainerCliArgs
 from axolotl.train import train
 from axolotl.utils.config import normalize_config

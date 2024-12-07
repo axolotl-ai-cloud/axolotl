@@ -5,7 +5,7 @@ from pathlib import Path
 
 import yaml
 
-from axolotl.cli import load_cfg
+from axolotl.cli.config import load_cfg
 from axolotl.utils.dict import DictDefault
 
 
