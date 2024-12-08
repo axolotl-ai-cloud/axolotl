@@ -5,8 +5,7 @@ see https://github.com/huggingface/transformers/pull/35128
 import inspect
 import logging
 
-from transformers import LlamaForCausalLM
-from transformers.trainer import Trainer
+from transformers import LlamaForCausalLM, Trainer
 
 from axolotl.monkeypatch.unsloth_ import detab_code
 
