@@ -5,6 +5,7 @@ from typing import Optional
 
 import click
 
+import axolotl
 from axolotl.cli.utils import (
     add_options_from_config,
     add_options_from_dataclass,
@@ -16,6 +17,7 @@ from axolotl.utils.config.models.input.v0_4_1 import AxolotlInputConfig
 
 
 @click.group()
+@click.version_option(version=axolotl.__version__, prog_name="axolotl")
 def cli():
     """Axolotl CLI - Train and fine-tune large language models"""
 
