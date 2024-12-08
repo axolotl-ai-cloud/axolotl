@@ -126,6 +126,7 @@ def cleanup_monkeypatches():
     original_trainer_inner_training_loop = (
         Trainer._inner_training_loop  # pylint: disable=protected-access
     )
+    original_trainer_training_step = Trainer.training_step
     # monkey patches can happen inside the tests
     yield
     # Reset LlamaFlashAttention2 forward
@@ -133,6 +134,7 @@ def cleanup_monkeypatches():
     Trainer._inner_training_loop = (  # pylint: disable=protected-access
         original_trainer_inner_training_loop
     )
+    Trainer.training_step = original_trainer_training_step
 
     # Reset other known monkeypatches
     modules_to_reset: list[tuple[str, list[str]]] = [
