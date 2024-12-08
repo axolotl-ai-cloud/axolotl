@@ -18,7 +18,7 @@ ORIGINAL_TRAINER_CODE = """
 
 PATCHED_TRAINER_CODE = """
 
-    delay_optimizer_creation = is_sagemaker_mp_enabled() or self.is_fsdp_xla_enabled or self.is_fsdp_enabledå
+    delay_optimizer_creation = is_sagemaker_mp_enabled() or self.is_fsdp_xla_enabled or self.is_fsdp_enabled
 
 """
 
