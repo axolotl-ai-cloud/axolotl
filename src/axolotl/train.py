@@ -259,14 +259,7 @@ def train(
         model.save_pretrained(cfg.output_dir, safe_serialization=safe_serialization)
 
     if not cfg.hub_model_id:
-        from huggingface_hub import HfApi
-        from huggingface_hub.utils import RepositoryNotFoundError
-
         try:
-            # Check to make sure the base model is from HuggingFace not a local directory
-            hf_api = HfApi()
-            hf_api.model_info(cfg.base_model)
-
             model_card_kwarg = {
                 "model_name": cfg.output_dir.lstrip("./")
                 .encode("utf-8")
@@ -283,7 +276,7 @@ def train(
                     ]
 
             trainer.create_model_card(**model_card_kwarg)
-        except (AttributeError, UnicodeDecodeError, RepositoryNotFoundError):
+        except (AttributeError, UnicodeDecodeError):
             pass
     elif cfg.hub_model_id:
         # defensively push to the hub to ensure the model card is updated
