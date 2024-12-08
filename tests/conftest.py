@@ -119,18 +119,25 @@ def temp_dir():
 
 @pytest.fixture(scope="function", autouse=True)
 def cleanup_monkeypatches():
+    from transformers import Trainer
     from transformers.models.llama.modeling_llama import LlamaFlashAttention2
 
     original_fa2_forward = LlamaFlashAttention2.forward
+    original_trainer_inner_training_loop = (
+        Trainer._inner_training_loop  # pylint: disable=protected-access
+    )
     # monkey patches can happen inside the tests
     yield
     # Reset LlamaFlashAttention2 forward
     LlamaFlashAttention2.forward = original_fa2_forward
+    Trainer._inner_training_loop = (  # pylint: disable=protected-access
+        original_trainer_inner_training_loop
+    )
 
     # Reset other known monkeypatches
     modules_to_reset: list[tuple[str, list[str]]] = [
         ("transformers.models.llama.modeling_llama", ["LlamaFlashAttention2"]),
-        ("transformers.trainer",),
+        ("transformers.trainer", ["Trainer"]),
         ("transformers.loss.loss_utils",),
     ]
     for module_name_tuple in modules_to_reset:
