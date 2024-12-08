@@ -406,10 +406,14 @@ class ModelLoader:
             and self.cfg.flash_attention
             and self.cfg.sample_packing
         ):
-            has_remote_code = (
-                "auto_map" in self.model_config
-                and "AutoModelForCausalLM" in self.model_config["auto_map"]
-            )
+            if "auto_map" in self.model_config:
+                try:
+                    auto_map_config = self.model_config["auto_map"]
+                except TypeError:
+                    auto_map_config = self.model_config.auto_map
+                has_remote_code = "AutoModelForCausalLM" in auto_map_config
+            else:
+                has_remote_code = False
             if has_remote_code and self.cfg.trust_remote_code is False:
                 # if explicitly set in the YAML, we should prefer that, for example if explicitly disabled
                 has_remote_code = self.cfg.trust_remote_code
