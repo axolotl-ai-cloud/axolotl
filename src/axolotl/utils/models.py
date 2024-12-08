@@ -380,6 +380,13 @@ class ModelLoader:
         plugin_manager = PluginManager.get_instance()
         plugin_manager.pre_model_load(self.cfg)
 
+        if self.cfg.fsdp:
+            from axolotl.monkeypatch.trainer_fsdp_optim import (
+                patch_training_loop_for_fsdp,
+            )
+
+            patch_training_loop_for_fsdp()
+
         if self.cfg.gradient_checkpointing == "unsloth":
             transformers.modeling_utils.checkpoint = hf_grad_checkpoint_unsloth_wrapper
 
