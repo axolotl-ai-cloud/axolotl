@@ -1,7 +1,10 @@
 """setup.py for axolotl"""
+import ast
+import os
 import platform
 import re
 from importlib.metadata import PackageNotFoundError, version
+from pathlib import Path
 
 from setuptools import find_packages, setup
 
@@ -90,9 +93,24 @@ def parse_requirements():
     return _install_requires, _dependency_links
 
 
+def get_package_version():
+    with open(
+        Path(os.path.dirname(os.path.abspath(__file__)))
+        / "src"
+        / "axolotl"
+        / "__init__.py",
+        "r",
+        encoding="utf-8",
+    ) as fin:
+        version_match = re.search(r"^__version__\s*=\s*(.*)$", fin.read(), re.MULTILINE)
+    version_ = ast.literal_eval(version_match.group(1))
+    return version_
+
+
 install_requires, dependency_links = parse_requirements()
 
 setup(
+    version=get_package_version(),
     package_dir={"": "src"},
     packages=find_packages("src"),
     install_requires=install_requires,
