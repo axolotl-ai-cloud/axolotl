@@ -76,5 +76,5 @@ def patch_training_loop_for_fsdp():
     exec(training_loop, globals())  # pylint: disable=exec-used  # nosec B102
     LOG.info("patching _inner_training_loop for fsdp optimsizer save")
     Trainer.training_loop = (  # pylint: disable=protected-access
-        _fixed_training_loop  # pylint: disable=undefined-variable  # noqa: F821
+        _fixed_inner_training_loop  # pylint: disable=undefined-variable  # noqa: F821
     )
