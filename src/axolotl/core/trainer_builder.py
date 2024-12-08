@@ -976,7 +976,10 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
         del self._stored_metrics[train_eval]
 
         if version.parse(transformers.__version__) >= version.parse("4.47.0.dev0"):
-            return super().log(logs, start_time)
+            try:
+                return super().log(logs, start_time)
+            except TypeError:
+                return super().log(logs)  # transformers<=4.46
         return super().log(logs)  # transformers<=4.46
 
     def store_metrics(
