@@ -22,6 +22,7 @@ from typing import Any, Dict, List, Literal, Optional, Type, Union
 import torch
 import transformers
 from datasets import Dataset
+from packaging import version
 from peft.optimizers import create_loraplus_optimizer
 from torch import nn
 from torch.optim.lr_scheduler import OneCycleLR
@@ -973,7 +974,10 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
         for key, metrics in self._stored_metrics[train_eval].items():
             logs[key] = torch.tensor(metrics).mean().item()
         del self._stored_metrics[train_eval]
-        return super().log(logs, start_time)
+
+        if version.parse(transformers.__version__) >= version.parse("4.47.0.dev0"):
+            return super().log(logs, start_time)
+        return super().log(logs)  # transformers<=4.46
 
     def store_metrics(
         self, metrics: Dict[str, float], train_eval: Literal["train", "eval"] = "train"
@@ -1165,9 +1169,13 @@ class AxolotlDPOTrainer(SchedulerMixin, DPOTrainer):
         for key, metrics in self._stored_metrics[train_eval].items():
             logs[key] = torch.tensor(metrics).mean().item()
         del self._stored_metrics[train_eval]
-        return super(DPOTrainer, self).log(  # pylint: disable=bad-super-call
-            logs, start_time
-        )
+
+        if version.parse(transformers.__version__) >= version.parse("4.47.0.dev0"):
+            return super(DPOTrainer, self).log(  # pylint: disable=bad-super-call
+                logs, start_time
+            )
+        # transformers<=4.46
+        return super(DPOTrainer, self).log(logs)  # pylint: disable=bad-super-call
 
 
 class AxolotlORPOTrainer(SchedulerMixin, ORPOTrainer):
@@ -1185,9 +1193,13 @@ class AxolotlORPOTrainer(SchedulerMixin, ORPOTrainer):
         for key, metrics in self._stored_metrics[train_eval].items():
             logs[key] = torch.tensor(metrics).mean().item()
         del self._stored_metrics[train_eval]
-        return super(ORPOTrainer, self).log(  # pylint: disable=bad-super-call
-            logs, start_time
-        )
+
+        if version.parse(transformers.__version__) >= version.parse("4.47.0.dev0"):
+            return super(ORPOTrainer, self).log(  # pylint: disable=bad-super-call
+                logs, start_time
+            )
+        # transformers<=4.46
+        return super(ORPOTrainer, self).log(logs)  # pylint: disable=bad-super-call
 
 
 class AxolotlKTOTrainer(SchedulerMixin, KTOTrainer):
@@ -1232,9 +1244,13 @@ class AxolotlKTOTrainer(SchedulerMixin, KTOTrainer):
         for key, metrics in self._stored_metrics[train_eval].items():
             logs[f"{prefix}{key}"] = torch.Tensor(metrics).mean().item()
         del self._stored_metrics[train_eval]
-        return super(KTOTrainer, self).log(  # pylint: disable=bad-super-call
-            logs, start_time
-        )
+
+        if version.parse(transformers.__version__) >= version.parse("4.47.0.dev0"):
+            return super(KTOTrainer, self).log(  # pylint: disable=bad-super-call
+                logs, start_time
+            )
+        # transformers<=4.46
+        return super(KTOTrainer, self).log(logs)  # pylint: disable=bad-super-call
 
 
 class AxolotlCPOTrainer(SchedulerMixin, CPOTrainer):
@@ -1252,9 +1268,13 @@ class AxolotlCPOTrainer(SchedulerMixin, CPOTrainer):
         for key, metrics in self._stored_metrics[train_eval].items():
             logs[key] = torch.tensor(metrics).mean().item()
         del self._stored_metrics[train_eval]
-        return super(CPOTrainer, self).log(  # pylint: disable=bad-super-call
-            logs, start_time
-        )
+
+        if version.parse(transformers.__version__) >= version.parse("4.47.0.dev0"):
+            return super(CPOTrainer, self).log(  # pylint: disable=bad-super-call
+                logs, start_time
+            )
+        # transformers<=4.46
+        return super(CPOTrainer, self).log(logs)  # pylint: disable=bad-super-call
 
 
 class AxolotlRewardTrainer(SchedulerMixin, RewardTrainer):
@@ -1266,9 +1286,12 @@ class AxolotlRewardTrainer(SchedulerMixin, RewardTrainer):
 
     def log(self, logs: Dict[str, float], start_time: Optional[float] = None) -> None:
         # TODO remove once trl supports the updated to the Trainer.log method
-        return super(RewardTrainer, self).log(  # pylint: disable=bad-super-call
-            logs, start_time
-        )
+        if version.parse(transformers.__version__) >= version.parse("4.47.0.dev0"):
+            return super(RewardTrainer, self).log(  # pylint: disable=bad-super-call
+                logs, start_time
+            )
+        # transformers<=4.46
+        return super(RewardTrainer, self).log(logs)  # pylint: disable=bad-super-call
 
 
 class TrainerBuilderBase(abc.ABC):
