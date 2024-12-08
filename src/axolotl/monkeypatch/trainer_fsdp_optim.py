@@ -8,7 +8,7 @@ from transformers.trainer import Trainer
 
 from axolotl.monkeypatch.unsloth_ import detab_code
 
-LOG = logging.getLogger("axolotl.monkeypatch.trainer_grad_accum")
+LOG = logging.getLogger("axolotl.monkeypatch.trainer_fsdp_save")
 
 ORIGINAL_TRAINER_CODE = """
 
@@ -74,7 +74,7 @@ def patch_training_loop_for_fsdp():
         globals(),
     )
     exec(training_loop, globals())  # pylint: disable=exec-used  # nosec B102
-    LOG.info("patching _inner_training_loop for fsdp optimsizer save")
-    Trainer.training_loop = (  # pylint: disable=protected-access
+    LOG.info("patching _inner_training_loop for fsdp optimizer save")
+    Trainer._inner_training_loop = (  # pylint: disable=protected-access
         _fixed_inner_training_loop  # pylint: disable=undefined-variable  # noqa: F821
     )
