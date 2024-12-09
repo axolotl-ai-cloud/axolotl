@@ -13,10 +13,13 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Create release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create ${GITHUB_REF#refs/tags/}
+        run: gh release create "$GITHUB_REF_NAME" --generate-notes
   pypi-publish:
     name: Upload release to PyPI
     runs-on: ubuntu-latest
