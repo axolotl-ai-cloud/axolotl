@@ -89,8 +89,8 @@ jobs:
 
       - name: Run tests
         run: |
-          pytest -n8 --dist loadfile --ignore=tests/e2e/ --ignore=tests/patched/ tests/
-          pytest tests/patched/
+          pytest -v -n8 --dist loadfile --ignore=tests/e2e/ --ignore=tests/patched/ tests/
+          pytest -v tests/patched/
 
       - name: cleanup pip cache
         run: |
@@ -141,8 +141,8 @@ jobs:
 
       - name: Run tests
         run: |
-          pytest -n8 --dist loadfile --ignore=tests/e2e/ --ignore=tests/patched/ tests/
-          pytest tests/patched/
+          pytest -v -n8 --dist loadfile --ignore=tests/e2e/ --ignore=tests/patched/ tests/
+          pytest -v tests/patched/
 
       - name: cleanup pip cache
         run: |
