@@ -14,7 +14,7 @@ from axolotl.train import train
 from axolotl.utils.config import normalize_config
 from axolotl.utils.dict import DictDefault
 
-from .utils import check_tensorboard, with_temp_dir, require_torch_2_5_1
+from .utils import check_tensorboard, require_torch_2_5_1, with_temp_dir
 
 LOG = logging.getLogger("axolotl.tests.e2e")
 os.environ["WANDB_DISABLED"] = "true"
@@ -86,7 +86,6 @@ class TestPackedHymba(unittest.TestCase):
                 "sample_packing": True,
                 "flash_attention": True,
                 "val_set_size": 0.0,
-                
                 "datasets": [
                     {
                         "path": "vicgalle/alpaca-gpt4",
@@ -118,7 +117,6 @@ class TestPackedHymba(unittest.TestCase):
             temp_dir + "/runs", "train/train_loss", 2.0, "Train Loss is too high"
         )
 
-    
     @with_temp_dir
     @require_torch_2_5_1
     def test_loss_unpacked(self, temp_dir):
@@ -130,7 +128,6 @@ class TestPackedHymba(unittest.TestCase):
                 "sample_packing": False,
                 "flash_attention": True,
                 "val_set_size": 0.0,
-                
                 "datasets": [
                     {
                         "path": "vicgalle/alpaca-gpt4",
@@ -161,4 +158,3 @@ class TestPackedHymba(unittest.TestCase):
         check_tensorboard(
             temp_dir + "/runs", "train/train_loss", 2.0, "Train Loss is too high"
         )
-
