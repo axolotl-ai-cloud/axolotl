@@ -397,8 +397,8 @@ class ModelLoader:
             and self.cfg.flash_attention
             and self.cfg.sample_packing
         ):
-            # some model config objects are not subscriptable
             if "auto_map" in self.model_config:
+                # some model config objects are not subscriptable
                 try:
                     auto_map_config = self.model_config["auto_map"]
                 except TypeError:
