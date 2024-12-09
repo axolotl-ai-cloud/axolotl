@@ -32,9 +32,16 @@ class ChatTemplatePrompter(Prompter):
         roles: Optional[Dict[str, List[str]]] = None,
         drop_system_message: bool = False,
     ):
-        self.roles = (
-            {s: t for t, sources in roles.items() for s in sources} if roles else {}
-        )
+        if roles:
+            self.roles = {s: t for t, sources in roles.items() for s in sources}
+        else:
+            self.roles = {
+                "human": "user",
+                "user": "user",
+                "assistant": "assistant",
+                "gpt": "assistant",
+                "system": "system",
+            }
 
         self.message_field_role = message_field_role
         self.message_field_content = message_field_content
