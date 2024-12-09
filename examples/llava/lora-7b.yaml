@@ -20,7 +20,7 @@ output_dir: ./outputs/out
 adapter: lora
 lora_model_dir:
 
-sequence_len: 8192
+sequence_len: 4096
 pad_to_sequence_len: false
 
 lora_r: 32
