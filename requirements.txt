@@ -6,7 +6,7 @@ tokenizers>=0.20.1
 bitsandbytes==0.45.0
 accelerate==1.2.0
 datasets==3.1.0
-deepspeed==0.15.4
+deepspeed==0.16.1
 pydantic==2.6.3
 addict
 fire
