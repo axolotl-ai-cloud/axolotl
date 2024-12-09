@@ -119,14 +119,6 @@ class DeprecatedParameters(BaseModel):
             LOG.warning("evaluation_strategy is deprecated, use eval_strategy instead")
         return evaluation_strategy
 
-    @field_validator("alternate_optimizer")
-    @classmethod
-    def validate_alternate_optimizer(cls, alternate_optimizer):
-        if alternate_optimizer:
-            raise DeprecationWarning(
-                "alternate_optimizer is deprecated, use optimizer instead"
-            )
-
 
 class RemappedParameters(BaseModel):
     """parameters that have been remapped to other names"""
