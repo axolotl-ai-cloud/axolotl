@@ -285,11 +285,10 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
             if turn_start_idx == -1 or turn_end_idx == -1:
                 LOG.warning(f"Failed to find boundaries for turn {index}")
-                continue
 
             LOG.debug(f"Turn indices: start={turn_start_idx}, end={turn_end_idx}")
 
-            if should_train:
+            if should_train and turn_start_idx != -1 and turn_end_idx != -1:
                 if train_detail:
                     token_offsets = self.prompter.get_offsets_for_train_detail(
                         content, train_detail
@@ -397,7 +396,6 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                     LOG.debug(f"Found turn {turn} content at position {i}")
                     return i, i + len(content_ids)
 
-        LOG.warning(f"Could not find content for turn {turn}")
         return -1, -1
 
     def get_conversation_thread(self, prompt):
