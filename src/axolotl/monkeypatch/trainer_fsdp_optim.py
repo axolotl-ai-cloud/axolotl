@@ -4,7 +4,7 @@ fix for FSDP optimizer save in trainer w 4.47.0
 import inspect
 import logging
 
-from transformers.trainer import Trainer
+from transformers import Trainer
 
 from axolotl.monkeypatch.unsloth_ import detab_code
 
