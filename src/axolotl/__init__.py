@@ -1,8 +1,3 @@
 """Axolotl - Train and fine-tune large language models"""
 
-try:
-    from importlib.metadata import version
-
-    __version__ = version("axolotl")
-except ImportError:
-    __version__ = "unknown"
+__version__ = "0.5.3.dev0"
