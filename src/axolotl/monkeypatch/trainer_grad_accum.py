@@ -218,9 +218,13 @@ ORIGINAL_TRAINER_CODE = """
 """
 
 PATCHED_TRAINER_CODE = """
+                disable_deepspeed_no_sync = (
+                        self.accelerator.distributed_type == DistributedType.DEEPSPEED
+                        and self.accelerator.deepspeed_engine_wrapped.engine.zero_optimization_partition_gradients()
+                )
                 context = (
                     functools.partial(self.accelerator.no_sync, model=model)
-                    if i != len(batch_samples) - 1 and self.accelerator.distributed_type != DistributedType.DEEPSPEED
+                    if i != len(batch_samples) - 1 and disable_deepspeed_no_sync
                     else contextlib.nullcontext
                 )
                 with context():
@@ -244,6 +248,8 @@ def check_training_loop_is_patchable() -> bool:
 def patch_training_loop_for_deepspeed_0_16_x():
     """
     monkeypatch for fixing the training loop for deepspeed GA
+
+    see https://github.com/huggingface/transformers/pull/35157
     """
 
     try:
