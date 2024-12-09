@@ -130,8 +130,7 @@ pip3 install -e '.[flash-attn,deepspeed]'
 ```
 
 ### Axolotl CLI Usage
-If you've installed this package using `pip` from source, we now support a new, more
-streamlined CLI using [click](https://click.palletsprojects.com/en/stable/).
+We now support a new, more streamlined CLI using [click](https://click.palletsprojects.com/en/stable/).
 
 ```bash
 # preprocess datasets - optional but recommended
