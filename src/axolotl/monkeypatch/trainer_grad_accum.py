@@ -224,7 +224,7 @@ PATCHED_TRAINER_CODE = """
                 )
                 context = (
                     functools.partial(self.accelerator.no_sync, model=model)
-                    if i != len(batch_samples) - 1 and disable_deepspeed_no_sync
+                    if i != len(batch_samples) - 1 and not disable_deepspeed_no_sync
                     else contextlib.nullcontext
                 )
                 with context():
