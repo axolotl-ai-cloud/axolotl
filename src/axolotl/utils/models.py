@@ -386,6 +386,12 @@ class ModelLoader:
             )
 
             patch_training_loop_for_fsdp()
+        elif self.cfg.deepspeed:
+            from axolotl.monkeypatch.trainer_grad_accum import (
+                patch_training_loop_for_deepspeed_0_16_x,
+            )
+
+            patch_training_loop_for_deepspeed_0_16_x()
 
         if self.cfg.gradient_checkpointing == "unsloth":
             transformers.modeling_utils.checkpoint = hf_grad_checkpoint_unsloth_wrapper

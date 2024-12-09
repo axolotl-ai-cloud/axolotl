@@ -1,22 +1,30 @@
 --extra-index-url https://huggingface.github.io/autogptq-index/whl/cu118/
+
+# START section of dependencies that don't install on Darwin/MacOS
+bitsandbytes==0.45.0
+triton>=2.3.0
+mamba-ssm==1.2.0.post1
+flash-attn==2.7.0.post2
+xformers>=0.0.23.post1
+autoawq==0.2.7.post3
+liger-kernel==0.4.2
+# END section
+
 packaging==23.2
 peft==0.14.0
 transformers>=4.46.3
 tokenizers>=0.20.1
-bitsandbytes==0.45.0
 accelerate==1.2.0
 datasets==3.1.0
-deepspeed==0.15.4
+deepspeed==0.16.1
 pydantic==2.6.3
 addict
 fire
 PyYAML>=6.0
 requests
-flash-attn==2.7.0.post2
 sentencepiece
 wandb
 einops
-xformers>=0.0.23.post1
 optimum==1.16.2
 hf_transfer
 colorama
@@ -31,11 +39,6 @@ art
 gradio==3.50.2
 tensorboard
 python-dotenv==1.0.1
-autoawq==0.2.7.post3
-triton>=2.3.0
-liger-kernel==0.4.2
-
-mamba-ssm==1.2.0.post1
 
 # remote filesystems
 s3fs>=2024.5.0
