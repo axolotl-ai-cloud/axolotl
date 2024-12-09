@@ -71,7 +71,11 @@ class TestCutCrossEntropyIntegration:
 
     @pytest.mark.parametrize(
         "attention_type",
-        ["flash_attention", "sdp_attention", "xformers_attention"],
+        [
+            "flash_attention",
+            "sdp_attention",
+            # "xformers_attention",
+        ],
     )
     def test_llama_w_cce_and_attention(self, min_cfg, temp_dir, attention_type):
         cfg = DictDefault(

@@ -164,9 +164,7 @@ def cleanup_monkeypatches():
         sys.modules[module_name] = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(sys.modules[module_name])
 
-        module = importlib.import_module(module_name)
-        sys.modules[module_name] = module
-        importlib.reload(sys.modules[module_name])
+        sys.modules[module_name] = importlib.reload(sys.modules[module_name])
         if len(module_name_tuple) > 1:
             module_globals = module_name_tuple[1]
             for module_global in module_globals:
