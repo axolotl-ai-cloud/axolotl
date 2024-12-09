@@ -52,6 +52,26 @@ datasets:
     type: chat_template.argilla
 ```
 
+
+#### KTO
+
+```yaml
+rl: kto
+rl_beta: 0.5
+kto_desirable_weight: 0.2
+
+remove_unused_columns: false
+
+datasets:
+  - path: argilla/ultrafeedback-binarized-preferences-cleaned-kto
+    type: llama3.ultra
+    split: train
+
+gradient_checkpointing: true
+gradient_checkpointing_kwargs:
+  use_reentrant: true
+```
+
 #### Using local dataset files
 ```yaml
 datasets:
