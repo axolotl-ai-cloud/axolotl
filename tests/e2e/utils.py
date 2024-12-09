@@ -46,7 +46,7 @@ def require_torch_2_3_1(test_case):
     """
 
     def is_min_2_3_1():
-        torch_version = version.parse(torch.__version__)
+        torch_version = version.parse(torch.__version__.split("+")[0])
         return torch_version >= version.parse("2.3.1")
 
     return unittest.skipUnless(is_min_2_3_1(), "test torch 2.3.1")(test_case)
@@ -58,7 +58,7 @@ def require_torch_2_5_1(test_case):
     """
 
     def is_min_2_5_1():
-        torch_version = version.parse(torch.__version__)
+        torch_version = version.parse(torch.__version__.split("+")[0])
         return torch_version >= version.parse("2.5.1")
 
     return unittest.skipUnless(is_min_2_5_1(), "test torch 2.5.1")(test_case)
