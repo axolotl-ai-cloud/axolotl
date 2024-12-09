@@ -28,6 +28,8 @@ class BTChatTemplateStrategy(ChatTemplateStrategy):
         :return:
         """
 
+        max_length = self.prompter.max_length
+
         self.messages = "chosen_messages"
         # pylint: disable=duplicate-code
         prompt[self.messages] = []
@@ -38,6 +40,16 @@ class BTChatTemplateStrategy(ChatTemplateStrategy):
         prompt[self.messages].append({"role": "user", "content": prompt["input"]})
         prompt[self.messages].append({"role": "assistant", "content": prompt["chosen"]})
         chosen_tokenized = super().tokenize_prompt(prompt)
+
+        if len(chosen_tokenized["input_ids"]) > max_length:
+            LOG.warning(
+                f"Chosen sequence exceeds max sequence length: {len(chosen_tokenized['input_ids'])}",
+            )
+
+            chosen_tokenized["input_ids"] = chosen_tokenized["input_ids"][:max_length]
+            chosen_tokenized["attention_mask"] = chosen_tokenized["attention_mask"][
+                :max_length
+            ]
 
         self.messages = "rejected_messages"
         # pylint: disable=duplicate-code
@@ -51,6 +63,18 @@ class BTChatTemplateStrategy(ChatTemplateStrategy):
             {"role": "assistant", "content": prompt["rejected"]}
         )
         rejected_tokenized = super().tokenize_prompt(prompt)
+
+        if len(rejected_tokenized["input_ids"]) > max_length:
+            LOG.warning(
+                f"Rejected sequence exceeds max sequence length: {len(rejected_tokenized['input_ids'])}",
+            )
+
+            rejected_tokenized["input_ids"] = rejected_tokenized["input_ids"][
+                :max_length
+            ]
+            rejected_tokenized["attention_mask"] = rejected_tokenized["attention_mask"][
+                :max_length
+            ]
 
         return {
             "input_ids_chosen": chosen_tokenized["input_ids"],
@@ -80,9 +104,9 @@ def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
         "roles": ds_cfg.get("roles"),
         "drop_system_message": ds_cfg.get("drop_system_message", False),
         # we need to add one for detecting sequences with exceeding the `sequence_len` limit.
-        "max_length": cfg.sequence_len + 1
-        if not cfg.reward_model
-        else cfg.sequence_len,
+        "max_length": (
+            cfg.sequence_len + 1 if not cfg.reward_model else cfg.sequence_len
+        ),
     }
 
     strategy_params = {
