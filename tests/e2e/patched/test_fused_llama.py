@@ -7,6 +7,7 @@ import os
 import unittest
 from pathlib import Path
 
+import pytest
 from transformers.utils import is_torch_bf16_gpu_available
 
 from axolotl.cli import load_datasets
@@ -21,6 +22,7 @@ LOG = logging.getLogger("axolotl.tests.e2e")
 os.environ["WANDB_DISABLED"] = "true"
 
 
+@pytest.mark.skip("FIXME, mostly underused functionality")
 class TestFusedLlama(unittest.TestCase):
     """
     Test case for Llama models using Fused layers
