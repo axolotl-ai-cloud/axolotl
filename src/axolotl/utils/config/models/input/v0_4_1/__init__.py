@@ -1475,6 +1475,27 @@ class AxolotlInputConfig(
 
         return data
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_kto_config(cls, data):
+        if data.get("rl") == "kto":
+            if data.get("sample_packing") or data.get("eval_sample_packing"):
+                raise ValueError("sample_packing is not supported with kto")
+
+            if data.get("remove_unused_columns") is not False:
+                raise ValueError("Set `remove_unused_columns: False` when using kto")
+
+            if data.get("gradient_checkpointing") and not (
+                data.get("gradient_checkpointing_kwargs")
+                and isinstance(data.get("gradient_checkpointing_kwargs"), dict)
+                and data["gradient_checkpointing_kwargs"].get("use_reentrant")
+            ):
+                raise ValueError(
+                    "Set `gradient_checkpointing_kwargs: {use_reentrant: true}` for when kto is enabled"
+                )
+
+        return data
+
 
 class AxolotlConfigWCapabilities(AxolotlInputConfig):
     """wrapper to valdiate gpu capabilities with the configured options"""
