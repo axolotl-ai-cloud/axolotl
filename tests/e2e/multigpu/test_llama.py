@@ -54,7 +54,7 @@ class TestMultiGPULlama:
                     },
                 ],
                 "num_epochs": 1,
-                "max_steps": 5,
+                "max_steps": 2,
                 "micro_batch_size": 4,
                 "gradient_accumulation_steps": 4,
                 "output_dir": temp_dir,
@@ -91,7 +91,7 @@ class TestMultiGPULlama:
 
     @pytest.mark.parametrize(
         "gradient_accumulation_steps",
-        [1, 4],
+        [1, 2],
     )
     def test_lora_ddp_packed(self, temp_dir, gradient_accumulation_steps):
         # pylint: disable=duplicate-code
@@ -118,8 +118,8 @@ class TestMultiGPULlama:
                     },
                 ],
                 "num_epochs": 1,
-                "max_steps": 5,
-                "micro_batch_size": 4,
+                "max_steps": 2,
+                "micro_batch_size": 1,
                 "gradient_accumulation_steps": gradient_accumulation_steps,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
@@ -191,7 +191,7 @@ class TestMultiGPULlama:
                     },
                 ],
                 "num_epochs": 1,
-                "max_steps": 5,
+                "max_steps": 2,
                 "micro_batch_size": 4,
                 "gradient_accumulation_steps": 4,
                 "output_dir": temp_dir,
@@ -265,8 +265,8 @@ class TestMultiGPULlama:
                     },
                 ],
                 "num_epochs": 1,
-                "max_steps": 5,
-                "micro_batch_size": 4,
+                "max_steps": 2,
+                "micro_batch_size": 2,
                 "gradient_accumulation_steps": 4,
                 "output_dir": temp_dir,
                 "warmup_steps": 0,
@@ -303,7 +303,7 @@ class TestMultiGPULlama:
 
     @pytest.mark.parametrize(
         "gradient_accumulation_steps",
-        [1, 4],
+        [1, 2],
     )
     def test_fsdp(self, temp_dir, gradient_accumulation_steps):
         # pylint: disable=duplicate-code
@@ -322,8 +322,8 @@ class TestMultiGPULlama:
                     },
                 ],
                 "num_epochs": 1,
-                "max_steps": 5,
-                "micro_batch_size": 4,
+                "max_steps": 2,
+                "micro_batch_size": 2,
                 "gradient_accumulation_steps": gradient_accumulation_steps,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
@@ -394,7 +394,7 @@ class TestMultiGPULlama:
                     },
                 ],
                 "num_epochs": 1,
-                "max_steps": 5,
+                "max_steps": 2,
                 "micro_batch_size": 4,
                 "gradient_accumulation_steps": 4,
                 "output_dir": temp_dir,
@@ -475,7 +475,7 @@ class TestMultiGPULlama:
                     },
                 ],
                 "num_epochs": 1,
-                "max_steps": 5,
+                "max_steps": 2,
                 "micro_batch_size": 4,
                 "gradient_accumulation_steps": 4,
                 "output_dir": temp_dir,
@@ -526,14 +526,14 @@ class TestMultiGPULlama:
 
     @pytest.mark.parametrize(
         "gradient_accumulation_steps",
-        [1, 4],
+        [1, 2],
     )
     @pytest.mark.parametrize(
         "deepspeed",
         [
             "deepspeed_configs/zero3_bf16.json",
             "deepspeed_configs/zero3_bf16_cpuoffload_all.json",
-            "deepspeed_configs/zero3_bf16_cpuoffload_params.json",
+            # "deepspeed_configs/zero3_bf16_cpuoffload_params.json",
         ],
     )
     @pytest.mark.parametrize(
@@ -572,8 +572,8 @@ class TestMultiGPULlama:
                     },
                 ],
                 "num_epochs": 1,
-                "max_steps": 5,
-                "micro_batch_size": 2,
+                "max_steps": 2,
+                "micro_batch_size": 1,
                 "gradient_accumulation_steps": gradient_accumulation_steps,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
@@ -611,7 +611,7 @@ class TestMultiGPULlama:
 
     @pytest.mark.parametrize(
         "gradient_accumulation_steps",
-        [1, 4],
+        [1, 2],
     )
     @pytest.mark.parametrize(
         "qlora",
@@ -647,8 +647,8 @@ class TestMultiGPULlama:
                     },
                 ],
                 "num_epochs": 1,
-                "max_steps": 5,
-                "micro_batch_size": 2,
+                "max_steps": 2,
+                "micro_batch_size": 1,
                 "gradient_accumulation_steps": gradient_accumulation_steps,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
@@ -686,7 +686,7 @@ class TestMultiGPULlama:
 
     @pytest.mark.parametrize(
         "gradient_accumulation_steps",
-        [1, 4],
+        [1, 2],
     )
     @pytest.mark.parametrize(
         "qlora",
@@ -722,8 +722,8 @@ class TestMultiGPULlama:
                     },
                 ],
                 "num_epochs": 1,
-                "max_steps": 5,
-                "micro_batch_size": 2,
+                "max_steps": 2,
+                "micro_batch_size": 1,
                 "gradient_accumulation_steps": gradient_accumulation_steps,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,

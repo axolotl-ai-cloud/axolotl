@@ -125,7 +125,7 @@ setup(
             "flash-attn==2.7.0.post2",
         ],
         "deepspeed": [
-            "deepspeed==0.15.4",
+            "deepspeed==0.16.1",
             "deepspeed-kernels",
         ],
         "mamba-ssm": [

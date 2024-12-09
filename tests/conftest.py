@@ -120,9 +120,15 @@ def temp_dir():
 @pytest.fixture(scope="function", autouse=True)
 def cleanup_monkeypatches():
     from transformers import Trainer
-    from transformers.models.llama.modeling_llama import LlamaFlashAttention2
+    from transformers.models.llama.modeling_llama import (
+        LlamaAttention,
+        LlamaFlashAttention2,
+        LlamaForCausalLM,
+    )
 
     original_fa2_forward = LlamaFlashAttention2.forward
+    original_llama_attn_forward = LlamaAttention.forward
+    original_llama_forward = LlamaForCausalLM.forward
     original_trainer_inner_training_loop = (
         Trainer._inner_training_loop  # pylint: disable=protected-access
     )
@@ -131,6 +137,8 @@ def cleanup_monkeypatches():
     yield
     # Reset LlamaFlashAttention2 forward
     LlamaFlashAttention2.forward = original_fa2_forward
+    LlamaAttention.forward = original_llama_attn_forward
+    LlamaForCausalLM.forward = original_llama_forward
     Trainer._inner_training_loop = (  # pylint: disable=protected-access
         original_trainer_inner_training_loop
     )
@@ -138,15 +146,25 @@ def cleanup_monkeypatches():
 
     # Reset other known monkeypatches
     modules_to_reset: list[tuple[str, list[str]]] = [
-        ("transformers.models.llama.modeling_llama", ["LlamaFlashAttention2"]),
-        ("transformers.trainer", ["Trainer"]),
+        ("transformers.models.llama",),
+        (
+            "transformers.models.llama.modeling_llama",
+            ["LlamaFlashAttention2", "LlamaAttention"],
+        ),
+        ("transformers.trainer",),
+        ("transformers", ["Trainer"]),
         ("transformers.loss.loss_utils",),
     ]
     for module_name_tuple in modules_to_reset:
         module_name = module_name_tuple[0]
-        module = importlib.import_module(module_name)
-        sys.modules[module_name] = module
-        importlib.reload(sys.modules[module_name])
+
+        spec = importlib.util.spec_from_file_location(
+            module_name, sys.modules[module_name].__file__
+        )
+        sys.modules[module_name] = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(sys.modules[module_name])
+
+        sys.modules[module_name] = importlib.reload(sys.modules[module_name])
         if len(module_name_tuple) > 1:
             module_globals = module_name_tuple[1]
             for module_global in module_globals:
