@@ -1368,8 +1368,6 @@ class TrainerBuilderBase(abc.ABC):
                 SaveAxolotlConfigtoWandBCallback(self.cfg.axolotl_config_path)
             )
         if self.cfg.use_mlflow and is_mlflow_available():
-            from transformers.integrations.integration_utils import MLflowCallback
-
             from axolotl.utils.callbacks.mlflow_ import (
                 SaveAxolotlConfigtoMlflowCallback,
             )
@@ -1377,7 +1375,6 @@ class TrainerBuilderBase(abc.ABC):
             callbacks.extend(
                 [
                     SaveAxolotlConfigtoMlflowCallback(self.cfg.axolotl_config_path),
-                    MLflowCallback,
                 ]
             )
         if self.cfg.use_comet and is_comet_available():
