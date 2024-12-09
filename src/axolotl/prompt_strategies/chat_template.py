@@ -262,8 +262,8 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         for index, turn in enumerate(turns):
             role = turn.get("role")
             content = turn.get("content")
-            train_turn = turn.get(self.prompter.message_field_training)
-            train_detail = turn.get(self.prompter.message_field_training_detail)
+            train_turn = turn.get("training")
+            train_detail = turn.get("training_detail")
 
             LOG.debug(
                 f"Processing turn {index}: role={role}, content={content}, train_turn={train_turn}, train_detail={train_detail}"
@@ -405,7 +405,8 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             {
                 "role": self.prompter.roles[t[self.prompter.message_field_role]],
                 "content": t[self.prompter.message_field_content],
-                "training": t.get(self.prompter.message_field_training, None),
+                "training": t.get(self.prompter.message_field_training),
+                "training_detail": t.get(self.prompter.message_field_training_detail),
             }
             for t in prompt[self.messages]
         ]
