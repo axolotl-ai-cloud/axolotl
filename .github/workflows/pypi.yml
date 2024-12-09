@@ -16,7 +16,7 @@ jobs:
       - name: Create release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create "$GITHUB_REF_NAME" # GITHUB_REF_NAME is the tag name in `on.push.tags` workflows
+        run: gh release create ${GITHUB_REF#refs/tags/}
   pypi-publish:
     name: Upload release to PyPI
     runs-on: ubuntu-latest
