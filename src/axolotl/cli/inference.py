@@ -2,6 +2,7 @@
 CLI to run inference on a trained model
 """
 from pathlib import Path
+from typing import Union
 
 import fire
 import transformers
@@ -16,7 +17,7 @@ from axolotl.cli import (
 from axolotl.common.cli import TrainerCliArgs
 
 
-def do_cli(config: Path = Path("examples/"), gradio=False, **kwargs):
+def do_cli(config: Union[Path, str] = Path("examples/"), gradio=False, **kwargs):
     # pylint: disable=duplicate-code
     print_axolotl_text_art()
     parsed_cfg = load_cfg(config, inference=True, **kwargs)

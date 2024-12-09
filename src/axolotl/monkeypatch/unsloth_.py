@@ -9,10 +9,7 @@ import torch
 from accelerate.logging import get_logger
 from peft import PeftModelForCausalLM
 from torch import nn
-from transformers.models.llama.modeling_llama import (
-    LlamaFlashAttention2,
-    LlamaForCausalLM,
-)
+from transformers.models.llama.modeling_llama import LlamaFlashAttention2
 
 LOG = get_logger("axolotl.monkeypatch.unsloth")
 
@@ -53,11 +50,6 @@ def original_apply_qkv(self, hidden_states):
 def original_apply_o(self, hidden_states):
     attn_output = self.o_proj(hidden_states)
     return attn_output
-
-
-def get_forward_code() -> str:
-    forward = inspect.getsource(LlamaForCausalLM.forward)
-    return forward
 
 
 def get_self_attn_code() -> str:
@@ -102,12 +94,22 @@ def integrate_cross_entropy_loss_patch(model_type: str = "llama") -> None:
 
 
 def detab_code(code: str) -> Tuple[str, str]:
-    spaces = re.match(r"([\s\t]{1,})", code).group(0)
-    code = re.sub(r"^" + spaces, "", code, flags=re.MULTILINE)
+    try:
+        spaces = re.match(r"([\s\t]{1,})", code).group(0)
+        code = re.sub(r"^" + spaces, "", code, flags=re.MULTILINE)
+    except AttributeError:
+        return code, ""
     return code, spaces
 
 
+self_attn_lora_patched = False  # pylint: disable=invalid-name
+
+
 def patch_self_attn_lora():
+    global self_attn_lora_patched  # pylint: disable=global-statement
+    if self_attn_lora_patched:
+        # prevent patching multiple times
+        return
     self_attn_forward = get_self_attn_code()
     LlamaFlashAttention2._original_forward = (  # pylint: disable=protected-access
         self_attn_forward
@@ -139,6 +141,7 @@ def patch_self_attn_lora():
         globals(),
     )
     exec(self_attn_forward, globals())  # pylint: disable=exec-used  # nosec B102
+    self_attn_lora_patched = True
     LOG.info("patching unsloth attn lora", main_process_only=True)
     LlamaFlashAttention2.forward = (
         unsloth_attn_forward  # pylint: disable=undefined-variable  # noqa: F821

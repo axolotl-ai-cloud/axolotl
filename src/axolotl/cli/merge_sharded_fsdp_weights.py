@@ -177,7 +177,7 @@ def merge_fsdp_weights(
     state.wait_for_everyone()
 
 
-def do_cli(config: Path = Path("examples/"), **kwargs):
+def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
     # pylint: disable=duplicate-code
     print_axolotl_text_art()
     parser = transformers.HfArgumentParser((TrainerCliArgs))

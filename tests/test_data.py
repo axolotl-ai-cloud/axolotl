@@ -1,5 +1,5 @@
 """
-test module for the axolotl.utis.data module
+test module for the axolotl.utils.data module
 """
 import unittest
 

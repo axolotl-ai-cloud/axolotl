@@ -1476,6 +1476,27 @@ class AxolotlInputConfig(
 
         return data
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_kto_config(cls, data):
+        if data.get("rl") == "kto":
+            if data.get("sample_packing") or data.get("eval_sample_packing"):
+                raise ValueError("sample_packing is not supported with kto")
+
+            if data.get("remove_unused_columns") is not False:
+                raise ValueError("Set `remove_unused_columns: False` when using kto")
+
+            if data.get("gradient_checkpointing") and not (
+                data.get("gradient_checkpointing_kwargs")
+                and isinstance(data.get("gradient_checkpointing_kwargs"), dict)
+                and data["gradient_checkpointing_kwargs"].get("use_reentrant")
+            ):
+                raise ValueError(
+                    "Set `gradient_checkpointing_kwargs: {use_reentrant: true}` for when kto is enabled"
+                )
+
+        return data
+
 
 class AxolotlConfigWCapabilities(AxolotlInputConfig):
     """wrapper to valdiate gpu capabilities with the configured options"""
@@ -1519,19 +1540,6 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 "sample_packing & torch sdpa with bf16 is unsupported may results in 0.0 loss. "
                 "This may work on H100s."
             )
-
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_hopper_8bit_lora(cls, data):
-        is_sm_90: bool = (
-            data["capabilities"]
-            and data["capabilities"].get("compute_capability") == "sm_90"
-        )
-        if data.get("adapter") and data.get("load_in_8bit") and is_sm_90:
-            # see https://github.com/bitsandbytes-foundation/bitsandbytes/issues/538#issuecomment-2262945464
-            raise ValueError("8-bit LoRA is not supported on Hopper GPUs")
 
         return data
 

@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=64", "wheel", "setuptools_scm>=8"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "axolotl"
+dynamic = ["version", "dependencies", "optional-dependencies"]
+description = "LLM Trainer"
+readme = "README.md"
+requires-python = ">=3.10"
+
+[project.scripts]
+axolotl = "axolotl.cli.main:main"
+
+[project.urls]
+Homepage = "https://axolotl-ai-cloud.github.io/axolotl/"
+Repository = "https://github.com/axolotl-ai-cloud/axolotl.git"
+
+[tool.setuptools_scm]

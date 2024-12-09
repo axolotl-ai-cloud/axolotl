@@ -42,7 +42,7 @@ class Test4dMultipackLlama(unittest.TestCase):
                 "lora_dropout": 0.05,
                 "lora_target_linear": True,
                 "sequence_len": 1024,
-                "val_set_size": 0.1,
+                "val_set_size": 0.02,
                 "datasets": [
                     {
                         "path": "mhenrichsen/alpaca_2k_test",
@@ -86,7 +86,7 @@ class Test4dMultipackLlama(unittest.TestCase):
                 "lora_alpha": 16,
                 "lora_dropout": 0.05,
                 "lora_target_linear": True,
-                "val_set_size": 0.1,
+                "val_set_size": 0.02,
                 "datasets": [
                     {
                         "path": "mhenrichsen/alpaca_2k_test",

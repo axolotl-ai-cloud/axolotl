@@ -41,9 +41,12 @@ Features:
 ## Table of Contents
 - [Axolotl](#axolotl)
   - [Table of Contents](#table-of-contents)
-  - [Axolotl supports](#axolotl-supports)
   - [Quickstart ⚡](#quickstart-)
     - [Usage](#usage)
+  - [Badge ❤🏷️](#badge-️)
+  - [Contributing 🤝](#contributing-)
+  - [Sponsors 🤝❤](#sponsors-)
+  - [Axolotl supports](#axolotl-supports)
   - [Advanced Setup](#advanced-setup)
     - [Environment](#environment)
       - [Docker](#docker)
@@ -75,14 +78,6 @@ Features:
     - [Tokenization Mismatch b/w Inference \& Training](#tokenization-mismatch-bw-inference--training)
   - [Debugging Axolotl](#debugging-axolotl)
   - [Need help? 🙋](#need-help-)
-  - [Badge ❤🏷️](#badge-️)
-  - [Community Showcase](#community-showcase)
-  - [Contributing 🤝](#contributing-)
-  - [Sponsors 🤝❤](#sponsors-)
-      - [💎 Diamond Sponsors - Contact directly](#-diamond-sponsors---contact-directly)
-      - [🥇 Gold Sponsors - $5000/mo](#-gold-sponsors---5000mo)
-      - [🥈 Silver Sponsors - $1000/mo](#-silver-sponsors---1000mo)
-      - [🥉 Bronze Sponsors - $500/mo](#-bronze-sponsors---500mo)
 
 </td>
 <td>
@@ -105,36 +100,11 @@ Features:
 </tr>
 </table>
 
-## Axolotl supports
-
-|             | fp16/fp32 | lora | qlora | gptq | gptq w/flash attn | flash attn | xformers attn |
-|-------------|:----------|:-----|-------|------|-------------------|------------|--------------|
-| llama       | ✅         | ✅    | ✅     | ✅             | ✅                 | ✅          | ✅            |
-| Mistral     | ✅         | ✅    | ✅     | ✅             | ✅                 | ✅          | ✅            |
-| Mixtral-MoE | ✅         | ✅    | ✅     | ❓             | ❓                 | ❓          | ❓            |
-| Mixtral8X22 | ✅         | ✅    | ✅     | ❓             | ❓                 | ❓          | ❓            |
-| Pythia      | ✅         | ✅    | ✅     | ❌             | ❌                 | ❌          | ❓            |
-| cerebras    | ✅         | ✅    | ✅     | ❌             | ❌                 | ❌          | ❓            |
-| btlm        | ✅         | ✅    | ✅     | ❌             | ❌                 | ❌          | ❓            |
-| mpt         | ✅         | ❌    | ❓     | ❌             | ❌                 | ❌          | ❓            |
-| falcon      | ✅         | ✅    | ✅     | ❌             | ❌                 | ❌          | ❓            |
-| gpt-j       | ✅         | ✅    | ✅     | ❌             | ❌                 | ❓          | ❓            |
-| XGen        | ✅         | ❓    | ✅     | ❓             | ❓                 | ❓          | ✅            |
-| phi         | ✅         | ✅    | ✅     | ❓             | ❓                 | ❓          | ❓            |
-| RWKV        | ✅         | ❓    | ❓     | ❓             | ❓                 | ❓          | ❓            |
-| Qwen        | ✅         | ✅    | ✅     | ❓             | ❓                 | ❓          | ❓            |
-| Gemma       | ✅         | ✅    | ✅     | ❓             | ❓                 | ✅          | ❓            |
-| Jamba       | ✅         | ✅    | ✅     | ❓             | ❓                 | ✅          | ❓            |
-
-✅: supported
-❌: not supported
-❓: untested
-
 ## Quickstart ⚡
 
 Get started with Axolotl in just a few steps! This quickstart guide will walk you through setting up and running a basic fine-tuning task.
 
-**Requirements**: Nvidia GPU (Ampere architecture or newer for `bf16` and Flash Attention), Python >=3.10 and PyTorch >=2.3.1.
+**Requirements**: *Nvidia* GPU (Ampere architecture or newer for `bf16` and Flash Attention) or *AMD* GPU, Python >=3.10 and PyTorch >=2.3.1.
 
 ```bash
 git clone https://github.com/axolotl-ai-cloud/axolotl
@@ -164,6 +134,117 @@ accelerate launch -m axolotl.cli.inference examples/openllama-3b/lora.yml \
 # Note: the yaml config must directly link to the **raw** yaml
 accelerate launch -m axolotl.cli.train https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/main/examples/openllama-3b/lora.yml
 ```
+
+### Axolotl CLI
+
+If you've installed this package using `pip` from source, we now support a new, more
+streamlined CLI using [click](https://click.palletsprojects.com/en/stable/). Rewriting
+the above commands:
+
+```bash
+# preprocess datasets - optional but recommended
+CUDA_VISIBLE_DEVICES="0" axolotl preprocess examples/openllama-3b/lora.yml
+
+# finetune lora
+axolotl train examples/openllama-3b/lora.yml
+
+# inference
+axolotl inference examples/openllama-3b/lora.yml \
+    --lora-model-dir="./outputs/lora-out"
+
+# gradio
+axolotl inference examples/openllama-3b/lora.yml \
+    --lora-model-dir="./outputs/lora-out" --gradio
+
+# remote yaml files - the yaml config can be hosted on a public URL
+# Note: the yaml config must directly link to the **raw** yaml
+axolotl train https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/main/examples/openllama-3b/lora.yml
+```
+
+We've also added a new command for fetching `examples` and `deepspeed_configs` to your
+local machine. This will come in handy when installing `axolotl` from PyPI.
+
+```bash
+# Fetch example YAML files (stores in "examples/" folder)
+axolotl fetch examples
+
+# Fetch deepspeed config files (stores in "deepspeed_configs/" folder)
+axolotl fetch deepspeed_configs
+
+# Optionally, specify a destination folder
+axolotl fetch examples --dest path/to/folder
+```
+
+## Badge ❤🏷️
+
+Building something cool with Axolotl? Consider adding a badge to your model card.
+
+```markdown
+[<img src="https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/main/image/axolotl-badge-web.png" alt="Built with Axolotl" width="200" height="32"/>](https://github.com/axolotl-ai-cloud/axolotl)
+```
+
+[<img src="https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/main/image/axolotl-badge-web.png" alt="Built with Axolotl" width="200" height="32"/>](https://github.com/axolotl-ai-cloud/axolotl)
+
+## Sponsors 🤝❤
+
+If you love axolotl, consider sponsoring the project by reaching out directly to [wing@axolotl.ai](mailto:wing@axolotl.ai).
+
+---
+
+- [Modal](https://modal.com/) Modal lets you run data/AI jobs in the cloud, by just writing a few lines of Python. Customers use Modal to deploy Gen AI models at large scale, fine-tune LLM models, run protein folding simulations, and much more.
+
+---
+
+## Contributing 🤝
+
+Please read the [contributing guide](./.github/CONTRIBUTING.md)
+
+Bugs? Please check the [open issues](https://github.com/axolotl-ai-cloud/axolotl/issues/bug) else create a new Issue.
+
+PRs are **greatly welcome**!
+
+Please run the quickstart instructions followed by the below to setup env:
+```bash
+pip3 install -r requirements-dev.txt -r requirements-tests.txt
+pre-commit install
+
+# test
+pytest tests/
+
+# optional: run against all files
+pre-commit run --all-files
+```
+
+Thanks to all of our contributors to date. Help drive open source AI progress forward by contributing to Axolotl.
+
+<a href="https://github.com/axolotl-ai-cloud/axolotl/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=openaccess-ai-collective/axolotl" alt="contributor chart by https://contrib.rocks"/>
+</a>
+
+## Axolotl supports
+
+|             | fp16/fp32 | lora | qlora | gptq | gptq w/flash attn | flash attn | xformers attn |
+|-------------|:----------|:-----|-------|------|-------------------|------------|--------------|
+| llama       | ✅         | ✅    | ✅     | ✅             | ✅                 | ✅          | ✅            |
+| Mistral     | ✅         | ✅    | ✅     | ✅             | ✅                 | ✅          | ✅            |
+| Mixtral-MoE | ✅         | ✅    | ✅     | ❓             | ❓                 | ❓          | ❓            |
+| Mixtral8X22 | ✅         | ✅    | ✅     | ❓             | ❓                 | ❓          | ❓            |
+| Pythia      | ✅         | ✅    | ✅     | ❌             | ❌                 | ❌          | ❓            |
+| cerebras    | ✅         | ✅    | ✅     | ❌             | ❌                 | ❌          | ❓            |
+| btlm        | ✅         | ✅    | ✅     | ❌             | ❌                 | ❌          | ❓            |
+| mpt         | ✅         | ❌    | ❓     | ❌             | ❌                 | ❌          | ❓            |
+| falcon      | ✅         | ✅    | ✅     | ❌             | ❌                 | ❌          | ❓            |
+| gpt-j       | ✅         | ✅    | ✅     | ❌             | ❌                 | ❓          | ❓            |
+| XGen        | ✅         | ❓    | ✅     | ❓             | ❓                 | ❓          | ✅            |
+| phi         | ✅         | ✅    | ✅     | ❓             | ❓                 | ❓          | ❓            |
+| RWKV        | ✅         | ❓    | ❓     | ❓             | ❓                 | ❓          | ❓            |
+| Qwen        | ✅         | ✅    | ✅     | ❓             | ❓                 | ❓          | ❓            |
+| Gemma       | ✅         | ✅    | ✅     | ❓             | ❓                 | ✅          | ❓            |
+| Jamba       | ✅         | ✅    | ✅     | ❓             | ❓                 | ✅          | ❓            |
+
+✅: supported
+❌: not supported
+❓: untested
 
 ## Advanced Setup
 
@@ -682,86 +763,6 @@ See [this debugging guide](docs/debugging.qmd) for tips on debugging Axolotl, al
 
 ## Need help? 🙋
 
-Join our [Discord server](https://discord.gg/HhrNrHJPRb) where we our community members can help you.
+Join our [Discord server](https://discord.gg/HhrNrHJPRb) where our community members can help you.
 
-Need dedicated support? Please contact us at [✉️wing@openaccessaicollective.org](mailto:wing@openaccessaicollective.org) for dedicated support options.
-
-## Badge ❤🏷️
-
-Building something cool with Axolotl? Consider adding a badge to your model card.
-
-```markdown
-[<img src="https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/main/image/axolotl-badge-web.png" alt="Built with Axolotl" width="200" height="32"/>](https://github.com/axolotl-ai-cloud/axolotl)
-```
-
-[<img src="https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/main/image/axolotl-badge-web.png" alt="Built with Axolotl" width="200" height="32"/>](https://github.com/axolotl-ai-cloud/axolotl)
-
-## Community Showcase
-
-Check out some of the projects and models that have been built using Axolotl! Have a model you'd like to add to our Community Showcase? Open a PR with your model.
-
-Open Access AI Collective
-- [Minotaur 13b](https://huggingface.co/openaccess-ai-collective/minotaur-13b-fixed)
-- [Manticore 13b](https://huggingface.co/openaccess-ai-collective/manticore-13b)
-- [Hippogriff 30b](https://huggingface.co/openaccess-ai-collective/hippogriff-30b-chat)
-
-PocketDoc Labs
-- [Dan's PersonalityEngine 13b LoRA](https://huggingface.co/PocketDoc/Dans-PersonalityEngine-13b-LoRA)
-
-## Contributing 🤝
-
-Please read the [contributing guide](./.github/CONTRIBUTING.md)
-
-Bugs? Please check the [open issues](https://github.com/axolotl-ai-cloud/axolotl/issues/bug) else create a new Issue.
-
-PRs are **greatly welcome**!
-
-Please run the quickstart instructions followed by the below to setup env:
-```bash
-pip3 install -r requirements-dev.txt -r requirements-tests.txt
-pre-commit install
-
-# test
-pytest tests/
-
-# optional: run against all files
-pre-commit run --all-files
-```
-
-Thanks to all of our contributors to date. Help drive open source AI progress forward by contributing to Axolotl.
-
-<a href="https://github.com/axolotl-ai-cloud/axolotl/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=openaccess-ai-collective/axolotl" alt="contributor chart by https://contrib.rocks"/>
-</a>
-
-## Sponsors 🤝❤
-
-OpenAccess AI Collective is run by volunteer contributors such as [winglian](https://github.com/winglian),
-[NanoCode012](https://github.com/NanoCode012), [tmm1](https://github.com/tmm1),
-[mhenrichsen](https://github.com/mhenrichsen), [casper-hansen](https://github.com/casper-hansen),
-[hamelsmu](https://github.com/hamelsmu) and many more who help us accelerate forward by fixing bugs, answering
-community questions and implementing new features. Axolotl needs donations from sponsors for the compute needed to
-run our unit & integration tests, troubleshooting community issues, and providing bounties. If you love axolotl,
-consider sponsoring the project via [GitHub Sponsors](https://github.com/sponsors/OpenAccess-AI-Collective),
-[Ko-fi](https://ko-fi.com/axolotl_ai) or reach out directly to
-[wing@openaccessaicollective.org](mailto:wing@openaccessaicollective.org).
-
----
-
-#### 💎 Diamond Sponsors - [Contact directly](mailto:wing@openaccessaicollective.org)
-
----
-
-#### 🥇 Gold Sponsors - $5000/mo
-
----
-
-#### 🥈 Silver Sponsors - $1000/mo
-
----
-
-#### 🥉 Bronze Sponsors - $500/mo
-
- - [JarvisLabs.ai](https://jarvislabs.ai)
-
----
+Need dedicated support? Please contact us at [✉️wing@axolotl.ai](ailto:wing@axolotl.ai) for dedicated support options.

@@ -22,6 +22,7 @@ from typing import Any, Dict, List, Literal, Optional, Type, Union
 import torch
 import transformers
 from datasets import Dataset
+from packaging import version
 from peft.optimizers import create_loraplus_optimizer
 from torch import nn
 from torch.optim.lr_scheduler import OneCycleLR
@@ -957,13 +958,15 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
 
         return res
 
-    def log(self, logs: Dict[str, float]) -> None:
+    def log(self, logs: Dict[str, float], start_time: Optional[float] = None) -> None:
         """
         Log `logs` on the various objects watching training, including stored metrics.
 
         Args:
             logs (`Dict[str, float]`):
                 The values to log.
+            start_time (`Optional[float]`):
+                The start of training.
         """
         # logs either has 'loss' or 'eval_loss'
         train_eval = "train" if "loss" in logs else "eval"
@@ -971,7 +974,13 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
         for key, metrics in self._stored_metrics[train_eval].items():
             logs[key] = torch.tensor(metrics).mean().item()
         del self._stored_metrics[train_eval]
-        return super().log(logs)
+
+        if version.parse(transformers.__version__) >= version.parse("4.47.0.dev0"):
+            try:
+                return super().log(logs, start_time)
+            except TypeError:
+                return super().log(logs)  # transformers<=4.46
+        return super().log(logs)  # transformers<=4.46
 
     def store_metrics(
         self, metrics: Dict[str, float], train_eval: Literal["train", "eval"] = "train"
@@ -1155,6 +1164,22 @@ class AxolotlDPOTrainer(SchedulerMixin, DPOTrainer):
         torch.cuda.empty_cache()
         return loss
 
+    def log(self, logs: Dict[str, float], start_time: Optional[float] = None) -> None:
+        # TODO remove once trl supports the updated to the Trainer.log method
+        # logs either has 'loss' or 'eval_loss'
+        train_eval = "train" if "loss" in logs else "eval"
+        # Add averaged stored metrics to logs
+        for key, metrics in self._stored_metrics[train_eval].items():
+            logs[key] = torch.tensor(metrics).mean().item()
+        del self._stored_metrics[train_eval]
+
+        if version.parse(transformers.__version__) >= version.parse("4.47.0.dev0"):
+            return super(DPOTrainer, self).log(  # pylint: disable=bad-super-call
+                logs, start_time
+            )
+        # transformers<=4.46
+        return super(DPOTrainer, self).log(logs)  # pylint: disable=bad-super-call
+
 
 class AxolotlORPOTrainer(SchedulerMixin, ORPOTrainer):
     """
@@ -1162,6 +1187,22 @@ class AxolotlORPOTrainer(SchedulerMixin, ORPOTrainer):
     """
 
     tag_names = ["axolotl", "orpo"]
+
+    def log(self, logs: Dict[str, float], start_time: Optional[float] = None) -> None:
+        # TODO remove once trl supports the updated to the Trainer.log method
+        # logs either has 'loss' or 'eval_loss'
+        train_eval = "train" if "loss" in logs else "eval"
+        # Add averaged stored metrics to logs
+        for key, metrics in self._stored_metrics[train_eval].items():
+            logs[key] = torch.tensor(metrics).mean().item()
+        del self._stored_metrics[train_eval]
+
+        if version.parse(transformers.__version__) >= version.parse("4.47.0.dev0"):
+            return super(ORPOTrainer, self).log(  # pylint: disable=bad-super-call
+                logs, start_time
+            )
+        # transformers<=4.46
+        return super(ORPOTrainer, self).log(logs)  # pylint: disable=bad-super-call
 
 
 class AxolotlKTOTrainer(SchedulerMixin, KTOTrainer):
@@ -1171,6 +1212,49 @@ class AxolotlKTOTrainer(SchedulerMixin, KTOTrainer):
 
     tag_names = ["axolotl", "kto"]
 
+    def log(self, logs: Dict[str, float], start_time: Optional[float] = None) -> None:
+        # TODO remove once trl supports the updated to the Trainer.log method
+        # logs either has 'loss' or 'eval_loss'
+        train_eval = "train" if "loss" in logs else "eval"
+        # train metrics should have no prefix, eval should have 'eval_'
+        prefix = "eval_" if train_eval == "eval" else ""
+        # accumulate average metrics from sums and lengths
+        for split in ["chosen", "rejected"]:
+            if f"count/{split}" in self._stored_metrics[train_eval]:
+                count_sum = (
+                    torch.Tensor(self._stored_metrics[train_eval][f"count/{split}"])
+                    .sum()
+                    .item()
+                )
+                for metric in ["rewards", "logps", "logits"]:
+                    logs[f"{prefix}{metric}/{split}"] = (
+                        torch.Tensor(
+                            self._stored_metrics[train_eval][f"{metric}/{split}_sum"]
+                        )
+                        .sum()
+                        .item()
+                        / count_sum
+                    )
+                    # delete obsolete metric
+                    del self._stored_metrics[train_eval][f"{metric}/{split}_sum"]
+                del self._stored_metrics[train_eval][f"count/{split}"]
+        # calculate reward margin
+        if f"{prefix}rewards/chosen" in logs and f"{prefix}rewards/rejected" in logs:
+            logs[f"{prefix}rewards/margins"] = (
+                logs[f"{prefix}rewards/chosen"] - logs[f"{prefix}rewards/rejected"]
+            )
+        # Add averaged stored metrics to logs
+        for key, metrics in self._stored_metrics[train_eval].items():
+            logs[f"{prefix}{key}"] = torch.Tensor(metrics).mean().item()
+        del self._stored_metrics[train_eval]
+
+        if version.parse(transformers.__version__) >= version.parse("4.47.0.dev0"):
+            return super(KTOTrainer, self).log(  # pylint: disable=bad-super-call
+                logs, start_time
+            )
+        # transformers<=4.46
+        return super(KTOTrainer, self).log(logs)  # pylint: disable=bad-super-call
+
 
 class AxolotlCPOTrainer(SchedulerMixin, CPOTrainer):
     """
@@ -1179,6 +1263,22 @@ class AxolotlCPOTrainer(SchedulerMixin, CPOTrainer):
 
     tag_names = ["axolotl", "cpo"]
 
+    def log(self, logs: Dict[str, float], start_time: Optional[float] = None) -> None:
+        # TODO remove once trl supports the updated to the Trainer.log method
+        # logs either has 'loss' or 'eval_loss'
+        train_eval = "train" if "loss" in logs else "eval"
+        # Add averaged stored metrics to logs
+        for key, metrics in self._stored_metrics[train_eval].items():
+            logs[key] = torch.tensor(metrics).mean().item()
+        del self._stored_metrics[train_eval]
+
+        if version.parse(transformers.__version__) >= version.parse("4.47.0.dev0"):
+            return super(CPOTrainer, self).log(  # pylint: disable=bad-super-call
+                logs, start_time
+            )
+        # transformers<=4.46
+        return super(CPOTrainer, self).log(logs)  # pylint: disable=bad-super-call
+
 
 class AxolotlRewardTrainer(SchedulerMixin, RewardTrainer):
     """
@@ -1186,6 +1286,15 @@ class AxolotlRewardTrainer(SchedulerMixin, RewardTrainer):
     """
 
     tag_names = ["axolotl", "reward"]
+
+    def log(self, logs: Dict[str, float], start_time: Optional[float] = None) -> None:
+        # TODO remove once trl supports the updated to the Trainer.log method
+        if version.parse(transformers.__version__) >= version.parse("4.47.0.dev0"):
+            return super(RewardTrainer, self).log(  # pylint: disable=bad-super-call
+                logs, start_time
+            )
+        # transformers<=4.46
+        return super(RewardTrainer, self).log(logs)  # pylint: disable=bad-super-call
 
 
 class TrainerBuilderBase(abc.ABC):
@@ -1259,8 +1368,6 @@ class TrainerBuilderBase(abc.ABC):
                 SaveAxolotlConfigtoWandBCallback(self.cfg.axolotl_config_path)
             )
         if self.cfg.use_mlflow and is_mlflow_available():
-            from transformers.integrations.integration_utils import MLflowCallback
-
             from axolotl.utils.callbacks.mlflow_ import (
                 SaveAxolotlConfigtoMlflowCallback,
             )
@@ -1268,7 +1375,6 @@ class TrainerBuilderBase(abc.ABC):
             callbacks.extend(
                 [
                     SaveAxolotlConfigtoMlflowCallback(self.cfg.axolotl_config_path),
-                    MLflowCallback,
                 ]
             )
         if self.cfg.use_comet and is_comet_available():
