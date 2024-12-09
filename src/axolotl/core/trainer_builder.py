@@ -74,6 +74,7 @@ from axolotl.utils.collators import (
     V2BatchSamplerDataCollatorForSeq2Seq,
 )
 from axolotl.utils.collators.mm_chat import MultiModalChatDataCollator
+from axolotl.utils.config.models.input.v0_4_1 import CustomSupportedOptimizers
 from axolotl.utils.models import ensure_dtype
 from axolotl.utils.optimizers.embedding_scaled import create_embedding_scaled_optimizer
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
@@ -1726,14 +1727,8 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             trainer_kwargs["max_length"] = self.cfg.sequence_len
 
         # Handle custom optimizer
-        if self.cfg.optimizer in [
-            "optimi_adamw",
-            "ao_adamw_4bit",
-            "ao_adamw_8bit",
-            "ao_adamw_fp8",
-            "adopt_adamw",
-            "lion_pytorch",
-        ]:
+        custom_supported_optimizers = [opt.value for opt in CustomSupportedOptimizers]
+        if self.cfg.optimizer in custom_supported_optimizers:
             # Common optimizer kwargs
             optimizer_kwargs = {
                 "lr": training_arguments_kwargs.get("learning_rate"),
