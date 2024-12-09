@@ -82,6 +82,7 @@ class TestPackedHymba(unittest.TestCase):
         cfg = DictDefault(
             {
                 "base_model": "nvidia/Hymba-1.5B-Base",
+                "trust_remote_code": True,
                 "sequence_len": 1024,
                 "sample_packing": True,
                 "flash_attention": True,
@@ -124,6 +125,7 @@ class TestPackedHymba(unittest.TestCase):
         cfg = DictDefault(
             {
                 "base_model": "nvidia/Hymba-1.5B-Base",
+                "trust_remote_code": True,
                 "sequence_len": 1024,
                 "sample_packing": False,
                 "flash_attention": True,
