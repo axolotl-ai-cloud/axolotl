@@ -267,13 +267,19 @@ def train(
             }
             if cfg.datasets is not None:
                 if cfg.rl is not None or cfg.reward_model:
-                    model_card_kwarg["dataset_name"] = [
+                    dataset_tags = [
                         d["path"] for d in cfg.datasets if not Path(d["path"]).is_dir()
                     ]
+                    if dataset_tags:
+                        # guard as create_model_card may fail if dataset_tags is empty list
+                        model_card_kwarg["dataset_name"] = dataset_tags
                 else:
-                    model_card_kwarg["dataset_tags"] = [
+                    dataset_tags = [
                         d["path"] for d in cfg.datasets if not Path(d["path"]).is_dir()
                     ]
+                    if dataset_tags:
+                        # guard as create_model_card may fail if dataset_tags is empty list
+                        model_card_kwarg["dataset_tags"] = dataset_tags
 
             trainer.create_model_card(**model_card_kwarg)
         except (AttributeError, UnicodeDecodeError):
