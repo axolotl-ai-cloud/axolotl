@@ -429,7 +429,6 @@ class ModelLoader:
             else:
                 has_remote_code = False
 
-
             if has_remote_code and self.cfg.trust_remote_code is False:
                 # if explicitly set in the YAML, we should prefer that, for example if explicitly disabled
                 has_remote_code = self.cfg.trust_remote_code
