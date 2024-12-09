@@ -41,6 +41,7 @@ class ChatTemplatePrompter(Prompter):
                 "assistant": "assistant",
                 "gpt": "assistant",
                 "system": "system",
+                "tool": "tool",
             }
         self.message_field_role = message_field_role
         self.message_field_content = message_field_content
@@ -58,6 +59,8 @@ class ChatTemplatePrompter(Prompter):
                 "role": self.roles[t[self.message_field_role]],
                 "content": t[self.message_field_content],
                 "training": t.get(self.message_field_training, None),
+                "tool_calls": t.get("tool_calls", None),
+                "name": t.get("name", None),
             }
             for t in conversation
         ]
