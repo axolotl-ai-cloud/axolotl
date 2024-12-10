@@ -112,7 +112,7 @@ Get started with Axolotl in just a few steps! This quickstart guide will walk yo
 **Requirements**: *Nvidia* GPU (Ampere architecture or newer for `bf16` and Flash Attention) or *AMD* GPU, Python >=3.10 and PyTorch >=2.3.1.
 
 ```bash
-pip3 install axolotl[flash-attn,deepspeed]
+pip3 install --no-build-isolation axolotl[flash-attn,deepspeed]
 
 # download examples and optionally deepspeed configs to the local path
 axolotl fetch examples
@@ -131,7 +131,7 @@ from source.
 git clone https://github.com/axolotl-ai-cloud/axolotl.git
 cd axolotl
 pip3 install packaging ninja
-pip3 install -e '.[flash-attn,deepspeed]'
+pip3 install --no-build-isolation -e '.[flash-attn,deepspeed]'
 ```
 
 ### Axolotl CLI Usage
@@ -320,7 +320,7 @@ docker run --privileged --gpus '"all"' --shm-size 10g --rm -it --name axolotl --
   3. Install Axolotl along with python dependencies
         ```bash
         pip3 install packaging
-        pip3 install -e '.[flash-attn,deepspeed]'
+        pip3 install --no-build-isolation -e '.[flash-attn,deepspeed]'
         ```
   4. (Optional) Login to Huggingface to use gated models/datasets.
         ```bash
@@ -399,7 +399,7 @@ Please use WSL or Docker!
 
 Use the below instead of the install method in QuickStart.
 ```
-pip3 install -e '.'
+pip3 install --no-build-isolation -e '.'
 ```
 More info: [mac.md](/docs/mac.qmd)
 

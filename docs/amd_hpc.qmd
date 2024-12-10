@@ -52,7 +52,7 @@ export GPU_ARCHS="gfx90a"
 cd flash-attention
 export PYTHON_SITE_PACKAGES=$(python -c 'import site; print(site.getsitepackages()[0])')
 patch "${PYTHON_SITE_PACKAGES}/torch/utils/hipify/hipify_python.py" hipify_patch.patch
-pip install .
+pip install --no-build-isolation .
 ```
 
 ### 6. Install Axolotl
@@ -63,7 +63,7 @@ Clone and install Axolotl:
 git clone https://github.com/axolotl-ai-cloud/axolotl
 cd axolotl
 pip install packaging ninja
-pip install -e .
+pip install --no-build-isolation -e .
 ```
 
 ### 7. Apply xformers Workaround

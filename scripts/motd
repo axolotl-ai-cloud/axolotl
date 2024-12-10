@@ -13,5 +13,5 @@ cd /workspace
 rm -rf /workspace/axolotl
 git clone https://github.com/axolotl-ai-cloud/axolotl.git
 cd axolotl
-pip install --no-deps -e .
+pip install --no-build-isolation --no-deps -e .
 ```
