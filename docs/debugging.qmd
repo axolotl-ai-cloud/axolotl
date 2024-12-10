@@ -71,7 +71,7 @@ Make sure you have an [editable install](https://setuptools.pypa.io/en/latest/us
 
 ```bash
 pip3 install packaging
-pip3 install -e '.[flash-attn,deepspeed]'
+pip3 install --no-build-isolation -e '.[flash-attn,deepspeed]'
 ```
 
 #### Remote Hosts
@@ -212,7 +212,7 @@ You will now be in the container.  Next, perform an editable install of Axolotl:
 
 ```bash
 pip3 install packaging
-pip3 install -e '.[flash-attn,deepspeed]'
+pip3 install --no-build-isolation -e '.[flash-attn,deepspeed]'
 ```
 
 ### Attach To Container

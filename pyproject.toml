@@ -17,3 +17,10 @@ Homepage = "https://axolotl-ai-cloud.github.io/axolotl/"
 Repository = "https://github.com/axolotl-ai-cloud/axolotl.git"
 
 [tool.setuptools_scm]
+
+[tool.setuptools]
+py-modules = ["setuptools_axolotl_dynamic_dependencies"]
+include-package-data = true
+
+[tool.setuptools.cmdclass]
+build_py = "setuptools_axolotl_dynamic_dependencies.BuildPyCommand"

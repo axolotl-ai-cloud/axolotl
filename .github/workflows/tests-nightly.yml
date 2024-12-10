@@ -60,7 +60,7 @@ jobs:
         run: |
           pip3 install --upgrade pip
           pip3 install --upgrade packaging
-          pip3 install -U -e .
+          pip3 install --no-build-isolation -U -e .
           python scripts/unsloth_install.py | sh
           python scripts/cutcrossentropy_install.py | sh
           pip3 install -r requirements-dev.txt -r requirements-tests.txt
