@@ -70,14 +70,14 @@ class TestPackedLlama(unittest.TestCase):
         )
 
 
-class TestUnpackedHymba(unittest.TestCase):
+class TestPackedHymba(unittest.TestCase):
     """
-    Test case for Unpacked training of hymba models
+    Test case for Packed training of hymba models
     """
 
     @require_torch_2_5_1
     @with_temp_dir
-    def test_loss_unpacked(self, temp_dir):
+    def test_loss_packed(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
@@ -98,7 +98,7 @@ class TestUnpackedHymba(unittest.TestCase):
                     "o_proj",
                 ],
                 "sequence_len": 1024,
-                "sample_packing": False,
+                "sample_packing": True,
                 "flash_attention": True,
                 "val_set_size": 0.0,
                 "datasets": [
@@ -133,14 +133,14 @@ class TestUnpackedHymba(unittest.TestCase):
         )
 
 
-class TestPackedHymba(unittest.TestCase):
+class TestUnpackedHymba(unittest.TestCase):
     """
-    Test case for Packed training of hymba models
+    Test case for Unpacked training of hymba models
     """
 
     @require_torch_2_5_1
     @with_temp_dir
-    def test_loss_packed(self, temp_dir):
+    def test_loss_unpacked(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
@@ -161,7 +161,7 @@ class TestPackedHymba(unittest.TestCase):
                     "o_proj",
                 ],
                 "sequence_len": 1024,
-                "sample_packing": True,
+                "sample_packing": False,
                 "flash_attention": True,
                 "val_set_size": 0.0,
                 "datasets": [
