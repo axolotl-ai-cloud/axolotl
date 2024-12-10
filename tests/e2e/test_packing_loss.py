@@ -83,6 +83,12 @@ class TestPackedHymba(unittest.TestCase):
             {
                 "base_model": "nvidia/Hymba-1.5B-Base",
                 "trust_remote_code": True,
+                "load_in_4bit": True,
+                "adapter": "qlora",
+                "lora_r": 32,
+                "lora_alpha": 16,
+                "lora_dropout": 0.05,
+                "lora_target_linear": True,
                 "sequence_len": 1024,
                 "sample_packing": True,
                 "flash_attention": True,
