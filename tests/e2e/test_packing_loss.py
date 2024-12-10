@@ -20,24 +20,37 @@ LOG = logging.getLogger("axolotl.tests.e2e")
 os.environ["WANDB_DISABLED"] = "true"
 
 
-class TestPackedLlama(unittest.TestCase):
+class TestPackedHymba(unittest.TestCase):
     """
-    Test case for Packed training of llama models
+    Test case for Packed training of hymba models
     """
 
+    @require_torch_2_5_1
     @with_temp_dir
     def test_loss_packed(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "base_model": "nvidia/Hymba-1.5B-Base",
+                "trust_remote_code": True,
+                "load_in_4bit": True,
+                "adapter": "qlora",
+                "lora_r": 32,
+                "lora_alpha": 16,
+                "lora_dropout": 0.05,
+                "lora_target_modules": [
+                    "gate_proj",
+                    "down_proj",
+                    "up_proj",
+                    "q_proj",
+                    "v_proj",
+                    "k_proj",
+                    "o_proj",
+                ],
                 "sequence_len": 1024,
                 "sample_packing": True,
                 "flash_attention": True,
                 "val_set_size": 0.0,
-                "special_tokens": {
-                    "pad_token": "<|endoftext|>",
-                },
                 "datasets": [
                     {
                         "path": "vicgalle/alpaca-gpt4",
@@ -70,37 +83,24 @@ class TestPackedLlama(unittest.TestCase):
         )
 
 
-class TestPackedHymba(unittest.TestCase):
+class TestPackedLlama(unittest.TestCase):
     """
-    Test case for Packed training of hymba models
+    Test case for Packed training of llama models
     """
 
-    @require_torch_2_5_1
     @with_temp_dir
     def test_loss_packed(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "nvidia/Hymba-1.5B-Base",
-                "trust_remote_code": True,
-                "load_in_4bit": True,
-                "adapter": "qlora",
-                "lora_r": 32,
-                "lora_alpha": 16,
-                "lora_dropout": 0.05,
-                "lora_target_modules": [
-                    "gate_proj",
-                    "down_proj",
-                    "up_proj",
-                    "q_proj",
-                    "v_proj",
-                    "k_proj",
-                    "o_proj",
-                ],
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
                 "sequence_len": 1024,
                 "sample_packing": True,
                 "flash_attention": True,
                 "val_set_size": 0.0,
+                "special_tokens": {
+                    "pad_token": "<|endoftext|>",
+                },
                 "datasets": [
                     {
                         "path": "vicgalle/alpaca-gpt4",
