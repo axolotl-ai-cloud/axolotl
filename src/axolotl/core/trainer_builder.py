@@ -2003,6 +2003,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 collator = MultiModalChatDataCollator
                 kwargs["processor"] = self.processor
                 kwargs["chat_template"] = training_args.chat_template
+                kwargs["chat_template_type"] = self.cfg.chat_template
             else:
                 collator = DataCollatorForSeq2Seq
 
