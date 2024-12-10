@@ -1994,6 +1994,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 RewardDataCollatorWithPadding,
             ]
         ]
+        collator_args = [self.tokenizer]
         if self.cfg.reward_model:
             collator = RewardDataCollatorWithPadding
             if "max_length" in kwargs:
@@ -2015,12 +2016,16 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 kwargs["chat_template"] = training_args.chat_template
             elif self.cfg.flash_attention:
                 collator = DataCollatorWithFlattening
+                collator_args.pop(0)
+                kwargs.pop("pad_to_multiple_of", None)
+                kwargs.pop("padding", None)
             else:
                 collator = DataCollatorForSeq2Seq
 
+        kwargs["return_tensors"] = "pt"
+
         return collator(
-            self.tokenizer,
-            return_tensors="pt",
+            *collator_args,
             **kwargs,
         )
 
