@@ -367,7 +367,11 @@ class ModelLoader:
         # init model config
         self.model_config = load_model_config(cfg)
         if cfg.is_multimodal:
-            self.text_model_config = self.model_config.text_config
+            try:
+                self.text_model_config = self.model_config.text_config
+            except AttributeError:
+                # for qwen2_vl
+                self.text_model_config = self.model_config.get_text_config()
         else:
             self.text_model_config = self.model_config
 
@@ -1071,7 +1075,9 @@ class ModelLoader:
             and self.model.get_input_embeddings().num_embeddings < embeddings_len
         ):
             resize_kwargs = {}
-            if self.cfg.mean_resizing_embeddings is not None:
+            if self.cfg.mean_resizing_embeddings is not None and not (
+                self.model_config.model_type == "llava"
+            ):
                 resize_kwargs["mean_resizing"] = self.cfg.mean_resizing_embeddings
             self.model.resize_token_embeddings(embeddings_len, **resize_kwargs)
         else:
