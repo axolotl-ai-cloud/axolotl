@@ -60,6 +60,7 @@ class ChatTemplate(str, Enum):
     tokenizer_default = "tokenizer_default"  # pylint: disable=invalid-name
     exaone = "exaone"  # pylint: disable=invalid-name
     metharme = "metharme"  # pylint: disable=invalid-name
+    hymba = "hymba"  # pylint: disable=invalid-name
 
 
 class DeprecatedParameters(BaseModel):
@@ -1580,4 +1581,20 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 raise ValueError(
                     "ADOPT optimizer is incompatible with torch version < 2.5.1"
                 )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_hymba_torch_version(cls, data):
+        if "hymba" in data.get("base_model", {}).lower():
+            env_capabilities = data.get("env_capabilities", {})
+            torch_version = env_capabilities.get("torch_version")
+
+            if torch_version is None:
+                import torch
+
+                torch_version = str(torch.__version__).split("+", maxsplit=1)[0]
+
+            if version.parse(torch_version) < version.parse("2.5.0"):
+                raise ValueError("Hymba requires torch version >= 2.5")
         return data

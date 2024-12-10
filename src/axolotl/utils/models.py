@@ -420,6 +420,7 @@ class ModelLoader:
             and self.cfg.sample_packing
         ):
             if "auto_map" in self.model_config:
+                # some model config objects are not subscriptable
                 try:
                     auto_map_config = self.model_config["auto_map"]
                 except TypeError:
@@ -427,6 +428,7 @@ class ModelLoader:
                 has_remote_code = "AutoModelForCausalLM" in auto_map_config
             else:
                 has_remote_code = False
+
             if has_remote_code and self.cfg.trust_remote_code is False:
                 # if explicitly set in the YAML, we should prefer that, for example if explicitly disabled
                 has_remote_code = self.cfg.trust_remote_code
@@ -1155,7 +1157,7 @@ class ModelLoader:
             and not skip_move_to_device
         ):
             # TODO revaldate this conditional
-            self.model.to(f"{str(get_device_type())}:{self.cfg.local_rank}")
+            self.model.to(f"{str(get_device_type())}: {self.cfg.local_rank}")
 
         if get_device_count() > 1 and int(os.getenv("WORLD_SIZE", "1")) == 1:
             setattr(self.model, "is_parallelizable", True)
