@@ -75,8 +75,8 @@ class TestPackedHymba(unittest.TestCase):
     Test case for Packed training of llama models
     """
 
-    @with_temp_dir
     @require_torch_2_5_1
+    @with_temp_dir
     def test_loss_packed(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
@@ -118,8 +118,8 @@ class TestPackedHymba(unittest.TestCase):
             temp_dir + "/runs", "train/train_loss", 2.0, "Train Loss is too high"
         )
 
-    @with_temp_dir
     @require_torch_2_5_1
+    @with_temp_dir
     def test_loss_unpacked(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
