@@ -47,7 +47,7 @@ def generate_sweep_configs(base_config, sweeps_config):
     for combination in all_combinations:
         new_config = deepcopy(base_config)
         for param_name, param_value in zip(param_names, combination):
-            new_config = new_config[param_name] = param_value
+            new_config[param_name] = param_value
         result_configs.append(new_config)
 
     return result_configs
