@@ -88,7 +88,6 @@ class TestPackedHymba(unittest.TestCase):
                 "lora_r": 32,
                 "lora_alpha": 16,
                 "lora_dropout": 0.05,
-                "lora_target_linear": True,
                 "lora_target_modules": [
                     "gate_proj",
                     "down_proj",
