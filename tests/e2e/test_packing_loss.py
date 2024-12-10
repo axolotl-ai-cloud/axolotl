@@ -72,7 +72,7 @@ class TestPackedLlama(unittest.TestCase):
 
 class TestPackedHymba(unittest.TestCase):
     """
-    Test case for Packed training of llama models
+    Test case for Packed training of hymba models
     """
 
     @require_torch_2_5_1
@@ -131,6 +131,12 @@ class TestPackedHymba(unittest.TestCase):
         check_tensorboard(
             temp_dir + "/runs", "train/train_loss", 2.0, "Train Loss is too high"
         )
+
+
+class TestUnpackedHymba(unittest.TestCase):
+    """
+    Test case for Unpacked training of hymba models
+    """
 
     @require_torch_2_5_1
     @with_temp_dir
