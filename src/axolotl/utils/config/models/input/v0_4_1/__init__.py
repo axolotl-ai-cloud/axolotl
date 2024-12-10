@@ -741,7 +741,7 @@ class AxolotlInputConfig(
     special_tokens: Optional[SpecialTokensConfig] = None
     tokens: Optional[List[str]] = None
 
-    torch_compile: Optional[bool] = None
+    torch_compile: Optional[Union[Literal["auto"], bool]] = None
     torch_compile_backend: Optional[str] = None
     torch_compile_mode: Optional[
         Literal["default", "reduce-overhead", "max-autotune"]
@@ -1582,3 +1582,15 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                     "ADOPT optimizer is incompatible with torch version < 2.5.1"
                 )
         return data
+
+    @model_validator(mode="after")
+    def check_torch_compile_auto(self):
+        if self.torch_compile == "auto" and self.env_capabilities.get("cuda_version"):
+            if version.parse(self.env_capabilities.get("cuda_version")) > version.parse(
+                "2.5.1"
+            ):
+                LOG.info("torch.compile is available, setting torch_compile to True")
+                self.torch_compile = True
+            else:
+                self.torch_compile = False
+        return self
