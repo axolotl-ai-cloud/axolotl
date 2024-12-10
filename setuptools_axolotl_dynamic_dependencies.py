@@ -8,6 +8,7 @@ from importlib.metadata import PackageNotFoundError, version
 from setuptools.command.build_py import build_py as _build_py
 
 
+# pylint: disable=duplicate-code
 def parse_requirements():
     _install_requires = []
     _dependency_links = []
