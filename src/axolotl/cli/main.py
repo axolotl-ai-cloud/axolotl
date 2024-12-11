@@ -33,15 +33,44 @@ def generate_sweep_configs(base_config, sweeps_config):
 
     Args:
         base_config (dict): The original configuration dictionary
-        sweeps_config (dict): Dictionary where keys are paths to parameters and values are lists of values to sweep
+        sweeps_config (dict): Dictionary where keys are parameters and values are either:
+            - lists of values to sweep independently
+            - or for paired values, a list of dicts under the '_' key
 
     Returns:
         list: List of all possible configuration dictionaries
+
+    Example:
+        sweeps_config = {
+            'learning_rate': [0.1, 0.01],
+            '_': [
+                {'load_in_8bit': True, 'adapter': 'lora'},
+                {'load_in_4bit': True, 'adapter': 'qlora'}
+            ]
+        }
     """
-    # Get all parameter combinations
-    param_names = list(sweeps_config.keys())
-    param_values = list(sweeps_config.values())
-    all_combinations = list(product(*param_values))
+    # Separate paired values from regular sweeps
+    paired_values = sweeps_config.get("_", [])
+    regular_sweeps = {k: v for k, v in sweeps_config.items() if k != "_"}
+
+    # Process regular sweeps
+    param_names = list(regular_sweeps.keys())
+    param_values = list(regular_sweeps.values())
+
+    # Generate combinations for regular sweeps
+    regular_combinations = list(product(*param_values)) if param_values else [()]
+
+    # Combine regular sweeps with paired values
+    all_combinations = []
+    for reg_combo in regular_combinations:
+        if paired_values:
+            for paired_set in paired_values:
+                # Combine regular parameters with paired parameters
+                full_combo = {**dict(zip(param_names, reg_combo)), **paired_set}
+                all_combinations.append(full_combo)
+        else:
+            # If no paired values, just use regular combinations
+            all_combinations.append(dict(zip(param_names, reg_combo)))
 
     # randomize the order of trials
     random.seed(42)
