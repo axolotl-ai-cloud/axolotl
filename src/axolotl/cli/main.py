@@ -65,12 +65,22 @@ def generate_sweep_configs(base_config, sweeps_config):
     for reg_combo in regular_combinations:
         if paired_values:
             for paired_set in paired_values:
+                new_config = {}
+                # new_config = deepcopy(base_config)
                 # Combine regular parameters with paired parameters
                 full_combo = {**dict(zip(param_names, reg_combo)), **paired_set}
-                all_combinations.append(full_combo)
+                for param_name, param_value in full_combo.items():
+                    new_config[param_name] = param_value
+                print(new_config)
+                all_combinations.append(new_config)
         else:
             # If no paired values, just use regular combinations
-            all_combinations.append(dict(zip(param_names, reg_combo)))
+            # new_config = deepcopy(base_config)
+            new_config = {}
+            for param_name, param_value in zip(param_names, reg_combo):
+                new_config[param_name] = param_value
+            print(new_config)
+            all_combinations.append(new_config)
 
     # randomize the order of trials
     random.seed(42)
@@ -80,7 +90,7 @@ def generate_sweep_configs(base_config, sweeps_config):
     result_configs = []
     for combination in all_combinations:
         new_config = deepcopy(base_config)
-        for param_name, param_value in zip(param_names, combination):
+        for param_name, param_value in combination.items():
             new_config[param_name] = param_value
         result_configs.append(new_config)
 
