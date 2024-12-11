@@ -1,6 +1,7 @@
 """CLI definition for various axolotl commands."""
 # pylint: disable=redefined-outer-name
 import logging
+import random
 import subprocess  # nosec B404
 import tempfile
 from copy import deepcopy
@@ -38,6 +39,10 @@ def generate_sweep_configs(base_config, sweeps_config):
     param_names = list(sweeps_config.keys())
     param_values = list(sweeps_config.values())
     all_combinations = list(product(*param_values))
+
+    # randomize the order of trials
+    random.seed(42)
+    random.shuffle(all_combinations)
 
     # Generate a new config for each combination
     result_configs = []
