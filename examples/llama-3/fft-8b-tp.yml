@@ -34,7 +34,7 @@ bf16: auto
 fp16:
 tf32: false
 
-tensor_parallel: true
+tensor_parallel: 'auto'
 
 gradient_checkpointing: true
 gradient_checkpointing_kwargs:
