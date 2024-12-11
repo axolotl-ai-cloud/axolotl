@@ -827,7 +827,7 @@ class ModelLoader:
             _ = _configure_zero3_memory_efficient_loading()
 
             if self.cfg.tensor_parallel == "auto":
-                rank = int(os.environ["RANK"])
+                rank = int(os.environ.get("LOCAL_RANK", 0))
                 device = torch.device(f"cuda:{rank}")
                 torch.distributed.init_process_group("nccl", device_id=device)
 
