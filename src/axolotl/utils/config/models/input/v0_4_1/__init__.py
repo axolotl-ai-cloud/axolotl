@@ -60,6 +60,9 @@ class ChatTemplate(str, Enum):
     tokenizer_default = "tokenizer_default"  # pylint: disable=invalid-name
     exaone = "exaone"  # pylint: disable=invalid-name
     metharme = "metharme"  # pylint: disable=invalid-name
+    pixtral = "pixtral"  # pylint: disable=invalid-name
+    llava = "llava"  # pylint: disable=invalid-name
+    qwen2_vl = "qwen2_vl"  # pylint: disable=invalid-name
 
 
 class DeprecatedParameters(BaseModel):
