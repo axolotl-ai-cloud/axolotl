@@ -1692,7 +1692,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         training_arguments_kwargs["learning_rate"] = self.cfg.learning_rate
         training_arguments_kwargs["output_dir"] = self.cfg.output_dir
         training_arguments_kwargs["save_total_limit"] = (
-            self.cfg.save_total_limit if self.cfg.save_total_limit else 4
+            self.cfg.save_total_limit if self.cfg.save_total_limit else None
         )
         training_arguments_kwargs["load_best_model_at_end"] = (
             (
@@ -2173,7 +2173,7 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             logging_first_step=True,
             logging_steps=1,
             optim=self.cfg.optimizer,
-            save_total_limit=self.cfg.save_total_limit or 5,
+            save_total_limit=self.cfg.save_total_limit or None,
             **training_args_kwargs,
         )
 
