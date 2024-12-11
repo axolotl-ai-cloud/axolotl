@@ -829,6 +829,7 @@ class ModelLoader:
             if self.cfg.tensor_parallel == "auto":
                 rank = int(os.environ.get("LOCAL_RANK", 0))
                 os.environ["RANK"] = str(rank)
+                os.environ["WORLD_SIZE"] = os.getenv("WORLD_SIZE", "1")
                 device = torch.device(f"cuda:{rank}")
                 torch.distributed.init_process_group("nccl", device_id=device)
 
