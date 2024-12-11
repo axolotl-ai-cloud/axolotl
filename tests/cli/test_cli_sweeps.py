@@ -40,19 +40,19 @@ def test_generate_sweep_configs_with_pairs():
         "_": [
             {
                 "micro_batch_size": 1,
-                "gradient_accumulation_Steps": 8,
+                "gradient_accumulation_steps": 8,
             },
             {
                 "micro_batch_size": 2,
-                "gradient_accumulation_Steps": 4,
+                "gradient_accumulation_steps": 4,
             },
             {
                 "micro_batch_size": 4,
-                "gradient_accumulation_Steps": 2,
+                "gradient_accumulation_steps": 2,
             },
             {
                 "micro_batch_size": 8,
-                "gradient_accumulation_Steps": 1,
+                "gradient_accumulation_steps": 1,
             },
         ],
         "weight_decay": [0.0, 0.1],
