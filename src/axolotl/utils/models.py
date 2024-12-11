@@ -621,6 +621,7 @@ class ModelLoader:
 
         self.model_kwargs["device_map"] = device_map
         self.model_kwargs["torch_dtype"] = self.cfg.torch_dtype
+        self.model_kwargs["tp_plan"] = self.cfg.tensor_parallel
 
         cur_device = get_device_type()
         if "mps" in str(cur_device):

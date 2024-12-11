@@ -393,7 +393,7 @@ class ModelInputConfig(BaseModel):
         default=None, json_schema_extra={"description": "transformers processor class"}
     )
     trust_remote_code: Optional[bool] = None
-
+    tensor_parallel: Optional[Union[Literal["auto"], bool]] = "auto"
     model_kwargs: Optional[Dict[str, Any]] = None
 
     @field_validator("trust_remote_code")
