@@ -312,8 +312,8 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                 LOG.debug(f"Labels after processing turn {index}: {labels}")
 
             # Handle EOS token
-            eos_idx = self.find_eos_token(input_ids, turn_end_idx)
-            if eos_idx == turn_end_idx:
+            eos_idx = self.find_first_eos_token(input_ids, start_idx=turn_end_idx)
+            if abs(eos_idx - turn_end_idx) <= 3:  # Allow for some template padding
                 last_eos_idx = eos_idx
                 if self.train_on_eos == "all" or (
                     self.train_on_eos == "turn" and should_train
@@ -338,7 +338,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             "attention_mask": [1] * len(input_ids),
         }
 
-    def find_eos_token(self, input_ids, start_idx):
+    def find_first_eos_token(self, input_ids, start_idx):
         eos_token_id = self.tokenizer.eos_token_id
         for i in range(start_idx, len(input_ids)):
             if input_ids[i] == eos_token_id:
