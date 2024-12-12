@@ -696,6 +696,8 @@ class AxolotlInputConfig(
     curriculum_sampling: Optional[bool] = None
     multipack_real_batches: Optional[bool] = None
 
+    batch_flattening: Optional[bool] = None
+
     # for PoSE context length extension
     use_pose: Optional[bool] = None
     pose_split_on_token_ids: Optional[List[int]] = None
@@ -921,6 +923,19 @@ class AxolotlInputConfig(
             LOG.warning(
                 "sample_packing without flash_attention or sdp_attention does not handle cross-attention."
             )
+
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_batch_flattening_fa(cls, data):
+        if data.get("batch_flattening"):
+            if not data.get("flash_attention"):
+                raise ValueError("batch_flattening requires flash attention")
+            if data.get("sample_packing"):
+                raise ValueError("batch_flattening not compatible with sample_packing")
+            if data.get("micro_batch_size") == 1:
+                LOG.warning("batch_flattening has no effect with micro_batch_size == 1")
 
         return data
 
