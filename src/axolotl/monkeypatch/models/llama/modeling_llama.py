@@ -116,6 +116,7 @@ class AxolotlLlamaForCausalLM(LlamaForCausalLM):
         forward_source = forward_source.replace(
             HF_MODEL_OUTPUTS, PATCHED_HF_MODEL_OUTPUTS
         )
+        forward_source, _ = detab_code(forward_source)
         # replace forward method with patched version
         cls.forward = types.MethodType(
             compile(forward_source, "<llama_forward_w_act_offloading>", "exec"), cls
@@ -149,7 +150,7 @@ class AxolotlLlamaForCausalLM(LlamaForCausalLM):
         forward_source = forward_source.replace(
             HF_GA_FORWARD_2, PATCHED_HF_GA_FORWARD_2
         )
-        forward_source = detab_code(forward_source)
+        forward_source, _ = detab_code(forward_source)
         # replace forward method with patched version
         cls.forward = types.MethodType(
             compile(forward_source, "<llama_forward_ga_fix>", "exec"), cls
