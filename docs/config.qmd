@@ -127,21 +127,27 @@ datasets:
     # - tokenizer_default_fallback_*: where * is the name of the chat template to fallback to if the tokenizer does not have a chat template else default to tokenizer. E.g. tokenizer_default_fallback_chatml.
     # - jinja: Uses a custom jinja template for the chat template. The custom jinja template should be provided in the chat_template_jinja field.
     chat_template: tokenizer_default
-    # Custom jinja template for chat template. This will be only used if `chat_template` is set to `jinja` or empty (in which case chat_template is automatically set to `jinja`).
+
+    # Custom jinja chat template. Used only if `chat_template: jinja` or empty.
     chat_template_jinja:
-    # The key in the data example that contains the messages. Default is "messages".
+
+    # Key containing the messages (default: "conversations")
     field_messages: messages
-    # The key in the message turn that contains the role. Default is "role".
+    # Key for role in each message (default: "from")
     message_field_role: role
-    # The key in the message turn that contains the content. Default is "content".
+    # Key for content in each message (default:  "value")
     message_field_content: content
-    # Optional[Dict[str, List]]. Roles mapping for the messages.
+
+    # Optional[Dict[str, List]]. Roles mapping in the messages.
     roles:
       user: ["human", "user"]
       assistant: ["gpt", "assistant", "ai"]
       system: ["system"]
 
-    ## NOTE: Leaving the below empty will default to using the simple legacy tokenization strategy where only last message is trained on.
+    # IMPORTANT: The following fields determine which parts of the conversation to train on.
+    # Priority order: message_field_training > message_field_training_detail > train_on_inputs or role in roles_to_train
+    # See examples at `docs/dataset-formats/conversation.qmd`
+    # Note: If the below 4 fields are empty, defaults to training only on the last message.
 
     # Optional[List[str]]. Roles to train on. The tokens from these roles will be considered for the loss.
     roles_to_train: ["gpt", "assistant"]
@@ -154,7 +160,6 @@ datasets:
     message_field_training: training
     # The key in the message turn that contains the training details. Useful to selectively train on certain tokens in a turn.
     # The value of the key is a List[Dict] containing `begin_offset` (start character index in content), `end_offset` (end character index in content), and `train` (boolean whether to train).
-    # See example at `docs/dataset-formats/conversation.qmd`
     message_field_training_detail: train_detail
 
 
