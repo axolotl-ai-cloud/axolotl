@@ -409,21 +409,29 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
     def get_conversation_thread(self, prompt):
         turns = []
+        optional_keys = [
+            "tool_calls",  # tool that 'assistant' calls
+            "name",  # name of tool given by 'tool'
+            "tool_call_id",  # mistral/mixtral requires this
+        ]
         for message in prompt[self.messages]:
             turn = {
                 "role": self.prompter.roles[message[self.prompter.message_field_role]],
-                "content": message[self.prompter.message_field_content],
                 "training": message.get(self.prompter.message_field_training),
                 "training_detail": message.get(
                     self.prompter.message_field_training_detail
                 ),
             }
 
-            if hasattr(message, "tool_calls"):
-                turn["tool_calls"] = message["tool_calls"]
+            # do not add content if None as it may conflict with some templates due to tools
+            content = message.get(self.prompter.message_field_content, None)
+            if content is not None:
+                turn["content"] = content
 
-            if hasattr(message, "name"):
-                turn["name"] = message["name"]
+            for key in optional_keys:
+                value = message.get(key, None)
+                if value is not None:
+                    turn[key] = value
 
             turns.append(turn)
 
