@@ -679,6 +679,7 @@ class AxolotlInputConfig(
         default=False
     )
     gradient_checkpointing_kwargs: Optional[Dict[str, Any]] = None
+    activation_offloading: Optional[bool] = None
 
     unfrozen_parameters: Optional[List[str]] = None
 

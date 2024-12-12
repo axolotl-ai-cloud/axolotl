@@ -1183,6 +1183,8 @@ class ModelLoader:
 
         self.apply_lora_patch()
 
+        # self.apply_patches_to_model()
+
         for _ in range(3):
             gc.collect()
             torch.cuda.empty_cache()

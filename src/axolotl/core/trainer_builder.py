@@ -996,6 +996,15 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
         os.makedirs(output_dir, exist_ok=True)
         return super()._save_checkpoint(model, trial, **kwargs)
 
+    def _evaluate(self, *args, **kwargs):
+        metrics = super()._evaluate(*args, **kwargs)
+
+        # cleanup memory after evals
+        gc.collect()
+        torch.cuda.empty_cache()
+
+        return metrics
+
 
 class AxolotlMambaTrainer(AxolotlTrainer):
     """
