@@ -2014,7 +2014,11 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 collator = MultiModalChatDataCollator
                 kwargs["processor"] = self.processor
                 kwargs["chat_template"] = training_args.chat_template
-            elif self.cfg.flash_attention:
+            elif (
+                self.cfg.flash_attention
+                and self.cfg.micro_batch_size > 1
+                and not self.cfg.sample_packing
+            ):
                 collator = DataCollatorWithFlattening
                 collator_args.pop(0)
                 kwargs.pop("pad_to_multiple_of", None)
