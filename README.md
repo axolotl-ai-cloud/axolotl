@@ -478,7 +478,7 @@ See [examples](examples) for quick start. It is recommended to duplicate and mod
 
 - model
   ```yaml
-  base_model: ./llama-7b-hf # local or huggingface repo
+  base_model: ./llama-7b-hf/ # local or huggingface repo
   ```
   Note: The code will load the right architecture.
 
