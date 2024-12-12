@@ -131,18 +131,19 @@ datasets:
     # Custom jinja chat template. Used only if `chat_template: jinja` or empty.
     chat_template_jinja:
 
-    # Key containing the messages (default: "conversations")
+    # Key containing the messages (default: "messages")
     field_messages: messages
-    # Key for role in each message (default: "from")
+    # Key for role in each message (default: "role")
     message_field_role: role
-    # Key for content in each message (default:  "value")
+    # Key for content in each message (default:  "content")
     message_field_content: content
 
-    # Optional[Dict[str, List]]. Roles mapping in the messages.
+    # Optional[Dict[str, List]]. Roles mapping in the messages. The default is:
     roles:
       user: ["human", "user"]
-      assistant: ["gpt", "assistant", "ai"]
+      assistant: ["gpt", "assistant"]
       system: ["system"]
+      tool: ["tool"]
 
     # IMPORTANT: The following fields determine which parts of the conversation to train on.
     # Priority order: message_field_training > message_field_training_detail > train_on_inputs or role in roles_to_train
@@ -150,10 +151,10 @@ datasets:
     # Note: If the below 4 fields are empty, defaults to training only on the last message.
 
     # Optional[List[str]]. Roles to train on. The tokens from these roles will be considered for the loss.
-    roles_to_train: ["gpt", "assistant"]
+    roles_to_train: ["assistant"]  # default
     # Optional[str]. Which EOS tokens to train on in the conversation. Possible values are:
     # - all: train on all EOS tokens
-    # - turn: train on the EOS token at the end of each trainable turn
+    # - turn (default): train on the EOS token at the end of each trainable turn
     # - last: train on the last EOS token in the conversation
     train_on_eos: last
     # The key in the message turn that indicates via boolean whether tokens of a turn should be considered for training. Useful to selectively train on certain turns besides the `roles_to_train`.

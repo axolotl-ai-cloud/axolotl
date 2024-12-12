@@ -47,9 +47,6 @@ datasets:
     message_field_role: from
     message_field_content: value
 
-    roles_to_train: ["assistant"]
-    train_on_eos: turn
-
 # new (if setting a new chat_template like chatml, gemma, etc)
 chat_template: chatml
 datasets:
@@ -59,9 +56,6 @@ datasets:
     field_messages: conversations
     message_field_role: from
     message_field_content: value
-
-    roles_to_train: ["assistant"]
-    train_on_eos: turn
 ```
 
 We recommend checking the below examples for other usecases.
@@ -74,6 +68,8 @@ We recommend checking the below examples for other usecases.
 datasets:
   - path: ...
     type: chat_template
+    roles_to_train:
+    train_on_eos:
 ```
 
 2. Using the `gemma` chat template to override the tokenizer_config.json's chat template on OpenAI messages format, training on all assistant messages.
@@ -83,8 +79,7 @@ chat_template: gemma # this overwrites the tokenizer's chat_template
 datasets:
   - path: ...
     type: chat_template
-    roles_to_train: ["assistant"]
-    train_on_eos: turn
+    roles_to_train: ["assistant"]  # default value
 ```
 
 3. Using the tokenizer_config.json's chat template or `chatml` as fallback if the former's chat template does not exist, on OpenAI messages format, training on all assistant messages.
@@ -94,8 +89,6 @@ chat_template: tokenizer_default_fallback_chatml # this overwrites the tokenizer
 datasets:
   - path: ...
     type: chat_template
-    roles_to_train: ["assistant"]
-    train_on_eos: turn
 ```
 
 4. Using a custom jinja template on OpenAI messages format, training on all assistant messages.
@@ -107,8 +100,6 @@ chat_template_jinja: "{{ bos_token }}{% for message in messages %}{% if (message
 datasets:
   - path: ...
     type: chat_template
-    roles_to_train: ["assistant"]
-      train_on_eos: turn
 ```
 
 5. (Advanced) Using fine-grained control over tokens and turns to train in a conversation
