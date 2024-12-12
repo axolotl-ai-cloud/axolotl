@@ -380,6 +380,15 @@ class ModelLoader:
         plugin_manager = PluginManager.get_instance()
         plugin_manager.pre_model_load(self.cfg)
 
+        if self.cfg.model_config_type == "llama":
+            from axolotl.monkeypatch.models.llama.modeling_llama import replace_auto_model
+
+            AxolotlLlamaForCausalLM = replace_auto_model()
+
+            AxolotlLlamaForCausalLM.patch_hf_ga()
+            if self.cfg.activation_offloading:
+                AxolotlLlamaForCausalLM.enable_act_offloading()
+
         if self.cfg.fsdp:
             from axolotl.monkeypatch.trainer_fsdp_optim import (
                 patch_training_loop_for_fsdp,
