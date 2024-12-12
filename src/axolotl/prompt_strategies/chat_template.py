@@ -41,6 +41,7 @@ class ChatTemplatePrompter(Prompter):
                 "assistant": "assistant",
                 "gpt": "assistant",
                 "system": "system",
+                "tool": "tool",
             }
 
         self.message_field_role = message_field_role
@@ -279,9 +280,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
             LOG.debug(f"Should train: {should_train}")
 
-            turn_start_idx, turn_end_idx = self.find_turn(
-                conversation_ids=input_ids, turn=index, turn_content=turn
-            )
+            turn_start_idx, turn_end_idx = self.find_turn(turns=turns, turn_idx=index)
 
             if turn_start_idx == -1 or turn_end_idx == -1:
                 LOG.warning(f"Failed to find boundaries for turn {index}")
@@ -346,68 +345,87 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                 return i
         return -1
 
-    def find_turn(self, conversation_ids: list[int], turn: int, turn_content: dict):
+    def find_turn(self, turns: list[dict], turn_idx: int):
         """
         Locate the starting and ending indices of the specified turn in a conversation.
         """
-        content = turn_content.get("content")
-        content_ids = self.tokenizer.encode(content, add_special_tokens=False)
+        if turn_idx >= len(turns):
+            raise ValueError(f"Turn index {turn_idx} out of range")
 
-        LOG.debug(f"content_ids (length {len(content_ids)}): {content_ids}")
+        empty_turn = {
+            "role": turns[turn_idx].get("role"),
+            "content": "[[dummy_message]]",
+        }
 
-        if not content_ids:
-            LOG.warning(f"Empty content for turn {turn}")
+        # Create conversation versions
+        turns_with_empty = turns[:turn_idx] + [empty_turn]
+        turns_with_content = turns[: turn_idx + 1]
+
+        # Generate the conversation up to the turn, with final turn replaced with dummy content
+        dummy_ids = self.prompter.build_prompt(turns_with_empty)  # type: ignore
+
+        # Generate the conversation up to the turn, with final turn included
+        full_ids = self.prompter.build_prompt(turns_with_content)  # type: ignore
+
+        if not full_ids or not dummy_ids:
+            LOG.warning(f"Empty template generated for turn {turn_idx}")
             return -1, -1
 
-        # For first turn, start from beginning
-        if turn == 0:
-            start_search_idx = 0
-        else:
-            # For subsequent turns, find the previous EOS token
-            eos_token_id = self.tokenizer.eos_token_id
-            eos_count = 0
-            start_search_idx = 0
+        # Find first difference (start of content)
+        start_idx = None
+        min_len = min(len(dummy_ids), len(full_ids))
+        for i in range(min_len):
+            if dummy_ids[i] != full_ids[i]:
+                start_idx = i
+                break
 
-            for i, token_id in enumerate(conversation_ids):
-                if token_id == eos_token_id:
-                    eos_count += 1
-                    if eos_count == turn:  # Find the nth EOS token where n = turn
-                        start_search_idx = i + 1
-                        break
-
-        # we can optimize this to only search for a few tokens from start_search_idx
-        # but it would risk missing the content if it's not found within the first few tokens or
-        # if start_search_idx cannot be found above.
-        last_index = len(conversation_ids) - len(content_ids) + 1
-
-        if last_index < start_search_idx:
-            LOG.warning(
-                f"last_index to search is less than start_search_idx for turn {turn}"
-            )
+        if start_idx is None:
+            LOG.warning("Could not find content start boundary")
             return -1, -1
 
-        # Search for content starting from start_search_idx
-        first_elem = content_ids[0]
-        for i in range(start_search_idx, last_index):
-            # Quick check of first element before doing full comparison
-            if conversation_ids[i] == first_elem:
-                # Check if the rest of the content matches
-                if conversation_ids[i : i + len(content_ids)] == content_ids:
-                    LOG.debug(f"Found turn {turn} content at position {i}")
-                    return i, i + len(content_ids)
+        # Find last difference (end of content)
+        end_idx = None
+        for i in range(min_len):
+            dummy_pos = len(dummy_ids) - 1 - i
+            full_pos = len(full_ids) - 1 - i
+            if dummy_ids[dummy_pos] != full_ids[full_pos]:
+                end_idx = full_pos + 1  # Add one to include the last token when slice
+                break
 
-        return -1, -1
+        if end_idx is None:
+            LOG.warning("Could not find content end boundary")
+            return -1, -1
+
+        if end_idx <= start_idx:
+            LOG.warning("Content end boundary is before start boundary")
+            return -1, -1
+
+        LOG.debug(f"Content boundaries: {start_idx}, {end_idx}")
+        LOG.debug(
+            f"Content tokens: {self.tokenizer.convert_ids_to_tokens(full_ids[start_idx:end_idx])}"
+        )
+
+        return start_idx, end_idx
 
     def get_conversation_thread(self, prompt):
-        turns = [
-            {
-                "role": self.prompter.roles[t[self.prompter.message_field_role]],
-                "content": t[self.prompter.message_field_content],
-                "training": t.get(self.prompter.message_field_training),
-                "training_detail": t.get(self.prompter.message_field_training_detail),
+        turns = []
+        for message in prompt[self.messages]:
+            turn = {
+                "role": self.prompter.roles[message[self.prompter.message_field_role]],
+                "content": message[self.prompter.message_field_content],
+                "training": message.get(self.prompter.message_field_training),
+                "training_detail": message.get(
+                    self.prompter.message_field_training_detail
+                ),
             }
-            for t in prompt[self.messages]
-        ]
+
+            if hasattr(message, "tool_calls"):
+                turn["tool_calls"] = message["tool_calls"]
+
+            if hasattr(message, "name"):
+                turn["name"] = message["name"]
+
+            turns.append(turn)
 
         if self.prompter.drop_system_message and turns[0]["role"] == "system":
             turns = turns[1:]
