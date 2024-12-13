@@ -363,6 +363,9 @@ eval_table_size: # Approximate number of predictions sent to wandb depending on 
 eval_max_new_tokens: # Total number of tokens generated for predictions sent to wandb. Default is 128
 eval_causal_lm_metrics: # HF evaluate metrics used during evaluation. Default is ["sacrebleu", "comet", "ter", "chrf", "perplexity"]
 
+profiler_steps: # enable the pytorch profiler to capture the first N steps of training to the output_dir.
+                # see https://pytorch.org/blog/understanding-gpu-memory-1/ for more information
+
 loss_watchdog_threshold: # High loss value, indicating the learning has broken down (a good estimate is ~2 times the loss at the start of training)
 loss_watchdog_patience: # Number of high-loss steps in a row before the trainer aborts (default: 3)
 
