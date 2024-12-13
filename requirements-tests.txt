@@ -1,5 +1,6 @@
 pytest
 pytest-xdist
+pytest-forked
 pytest-retry
 pytest-sugar
 tbparse
