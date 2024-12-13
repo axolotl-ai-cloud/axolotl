@@ -1,4 +1,6 @@
 """CLI definition for various axolotl commands."""
+import os
+
 # pylint: disable=redefined-outer-name
 import subprocess  # nosec B404
 from typing import Optional
@@ -14,6 +16,7 @@ from axolotl.cli.utils import (
 )
 from axolotl.common.cli import EvaluateCliArgs, PreprocessCliArgs, TrainerCliArgs
 from axolotl.utils.config.models.input.v0_4_1 import AxolotlInputConfig
+from axolotl.utils.trainer import set_pytorch_cuda_alloc_conf
 
 
 @click.group()
@@ -47,6 +50,9 @@ def preprocess(config: str, **kwargs):
 def train(config: str, accelerate: bool, **kwargs):
     """Train or fine-tune a model."""
     kwargs = {k: v for k, v in kwargs.items() if v is not None}
+
+    # Enable expandable segments for cuda allocation to improve VRAM usage
+    set_pytorch_cuda_alloc_conf()
 
     if accelerate:
         base_cmd = ["accelerate", "launch", "-m", "axolotl.cli.train"]

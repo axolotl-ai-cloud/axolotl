@@ -24,7 +24,7 @@ from axolotl.logging_config import configure_logging
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.freeze import freeze_layers_except
 from axolotl.utils.models import load_model, load_processor, load_tokenizer
-from axolotl.utils.trainer import set_pytorch_cuda_alloc_conf, setup_trainer
+from axolotl.utils.trainer import setup_trainer
 
 try:
     from optimum.bettertransformer import BetterTransformer
@@ -53,9 +53,6 @@ class TrainDatasetMeta:
 def train(
     *, cfg: DictDefault, cli_args: TrainerCliArgs, dataset_meta: TrainDatasetMeta
 ) -> Tuple[Union[PeftModel, PreTrainedModel], PreTrainedTokenizer]:
-    # Enable expandable segments for cuda allocation to improve VRAM usage
-    set_pytorch_cuda_alloc_conf()
-
     # Load tokenizer
     LOG.debug(
         f"loading tokenizer... {cfg.tokenizer_config or cfg.base_model_config}",
