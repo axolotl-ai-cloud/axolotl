@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 def copy_attention_weights(
     old_attn: Union[LlamaAttention, LlamaSdpaAttention],
     new_attn: Union[LlamaDifferentialAttention, LlamaDifferentialSdpaAttention],
-    zero_init: bool = True,
+    zero_init: bool = False,
 ) -> None:
     """
     Copy weights from old attention layer to new differential attention layer.
@@ -68,7 +68,9 @@ def copy_attention_weights(
     )
 
 
-def convert_to_diff_attention(model: PreTrainedModel) -> PreTrainedModel:
+def convert_to_diff_attention(
+    model: PreTrainedModel, zero_init: bool
+) -> PreTrainedModel:
     """Convert a pre-trained model's attention layers to differential attention"""
     attention_patterns = (
         LlamaAttention,
@@ -77,9 +79,6 @@ def convert_to_diff_attention(model: PreTrainedModel) -> PreTrainedModel:
         MixtralAttention,
     )
     layer_idx = 0
-
-    # Get model dtype from existing weights
-    model_dtype = next(model.parameters()).dtype
 
     def convert_module(module):
         nonlocal layer_idx
@@ -103,11 +102,10 @@ def convert_to_diff_attention(model: PreTrainedModel) -> PreTrainedModel:
                 new_attention = attention_class(
                     config=module.config if hasattr(module, "config") else model.config,
                     layer_idx=layer_idx,
-                    dtype=model_dtype,
                 )
 
                 # Copy weights from old attention to new attention
-                copy_attention_weights(child, new_attention)
+                copy_attention_weights(child, new_attention, zero_init=zero_init)
 
                 # Replace the layer
                 setattr(module, name, new_attention)
