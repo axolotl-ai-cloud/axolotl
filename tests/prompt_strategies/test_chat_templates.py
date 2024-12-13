@@ -230,7 +230,10 @@ class TestSharegptChatTemplateLlama3:
         # pylint: disable=duplicate-code
         strategy = ChatTemplateStrategy(
             ChatTemplatePrompter(
-                llama3_tokenizer, chat_template=get_chat_template("llama3")
+                llama3_tokenizer,
+                chat_template=get_chat_template("llama3"),
+                message_field_role="from",
+                message_field_content="value",
             ),
             tokenizer=llama3_tokenizer,
             train_on_inputs=False,
@@ -284,7 +287,10 @@ class TestSharegptChatTemplateLlama3:
         # pylint: disable=duplicate-code
         strategy = ChatTemplateStrategy(
             ChatTemplatePrompter(
-                llama3_tokenizer, chat_template=get_chat_template("llama3")
+                llama3_tokenizer,
+                chat_template=get_chat_template("llama3"),
+                message_field_role="from",
+                message_field_content="value",
             ),
             tokenizer=llama3_tokenizer,
             train_on_inputs=False,
@@ -334,11 +340,14 @@ class TestSharegptChatTemplateLlama3:
         ), f"Labels mismatch: {labels} != {expected_labels}"
 
     def test_llama3_system_human(self, llama3_tokenizer, basic_dataset):
-        LOG.info("Testing Assistant style datasets with llama-3 system/human prompts")
+        LOG.info("Testing ShareGPT style datasets with llama-3 system/human prompts")
         # pylint: disable=duplicate-code
         strategy = ChatTemplateStrategy(
             ChatTemplatePrompter(
-                llama3_tokenizer, chat_template=get_chat_template("llama3")
+                llama3_tokenizer,
+                chat_template=get_chat_template("llama3"),
+                message_field_role="from",
+                message_field_content="value",
             ),
             tokenizer=llama3_tokenizer,
             train_on_inputs=False,
@@ -346,6 +355,7 @@ class TestSharegptChatTemplateLlama3:
             sequence_len=512,
             roles_to_train=["system", "human"],
         )
+        strategy.messages = "conversations"
         res = strategy.tokenize_prompt(basic_dataset[0])
         input_ids = res["input_ids"]
         labels = res["labels"]
