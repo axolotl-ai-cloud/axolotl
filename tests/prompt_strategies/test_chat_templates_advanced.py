@@ -4,8 +4,12 @@ tests for chat_template prompt strategy
 
 import logging
 import unittest
+from copy import deepcopy
 
+import pytest
 from datasets import Dataset
+from tokenizers import AddedToken
+from transformers import PreTrainedTokenizer
 
 from axolotl.prompt_strategies.chat_template import (
     ChatTemplatePrompter,
@@ -17,7 +21,30 @@ from axolotl.utils.chat_templates import get_chat_template
 logging.basicConfig(level=logging.DEBUG)
 LOG = logging.getLogger("axolotl")
 
+PARAMETRIZE_KEYS = "tokenizer, chat_template, chat_template_jinja, eos_token"
+PARAMETRIZE_PARAMS = [
+    ("llama3_tokenizer", "llama3", None, None),
+    ("llama3_tokenizer", "chatml", None, "<|im_end|>"),
+    (
+        "mistralv03_tokenizer",
+        "jinja",
+        "mistralv03_tokenizer_chat_template_jinja",
+        None,
+    ),
+    (
+        "gemma2_tokenizer",
+        "jinja",
+        "gemma2_tokenizer_chat_template_jinja",
+        "<end_of_turn>",
+    ),
+    ("phi35_tokenizer", "phi_35", None, None),
+]
 
+
+@pytest.mark.parametrize(
+    PARAMETRIZE_KEYS,
+    PARAMETRIZE_PARAMS,
+)
 class TestChatTemplateConfigurations:
     """
     Test class for various configurations of ChatTemplateStrategy.
@@ -31,13 +58,58 @@ class TestChatTemplateConfigurations:
                 return index
         return -1
 
-    def test_train_on_inputs_true(self, llama3_tokenizer, basic_dataset):
+    @staticmethod
+    def setup_tokenizer(
+        tokenizer_name,
+        chat_template,
+        chat_template_jinja=None,
+        eos_token=None,
+        request=None,
+    ) -> tuple[PreTrainedTokenizer, str]:
+        """
+        Helper function to set up the tokenizer and chat template for the test.
+        """
+        tokenizer = deepcopy(request.getfixturevalue(tokenizer_name))
+        if chat_template == "jinja":
+            chat_template_jinja = request.getfixturevalue(chat_template_jinja)
+        if eos_token:
+            tokenizer.add_special_tokens(
+                {
+                    "eos_token": AddedToken(
+                        eos_token, rstrip=False, lstrip=False, normalized=False
+                    )
+                }
+            )
+            if tokenizer.__class__.__name__ in (
+                "LlamaTokenizerFast",
+                "CodeLlamaTokenizerFast",
+            ):
+                tokenizer.update_post_processor()
+        return tokenizer, chat_template_jinja
+
+    def test_train_on_inputs_true(
+        self,
+        tokenizer,
+        chat_template,
+        chat_template_jinja,
+        eos_token,
+        basic_dataset,
+        request,
+    ):
         LOG.info("Testing with train_on_inputs=True")
+
+        tokenizer, chat_template_jinja = self.setup_tokenizer(
+            tokenizer, chat_template, chat_template_jinja, eos_token, request
+        )
+
         strategy = ChatTemplateStrategy(
             ChatTemplatePrompter(
-                llama3_tokenizer, chat_template=get_chat_template("llama3")
+                tokenizer,
+                chat_template=get_chat_template(
+                    chat_template, jinja_template=chat_template_jinja
+                ),
             ),
-            tokenizer=llama3_tokenizer,
+            tokenizer=tokenizer,
             train_on_inputs=True,
             sequence_len=512,
             roles_to_train=["assistant"],
@@ -49,7 +121,7 @@ class TestChatTemplateConfigurations:
         # Verify that assistant responses are labeled
         assistant_responses = ["Hi there!", "I'm doing well, thank you!"]
         for response in assistant_responses:
-            response_ids = llama3_tokenizer.encode(response, add_special_tokens=False)
+            response_ids = tokenizer.encode(response, add_special_tokens=False)
             start_idx = self.find_sublist(input_ids, response_ids)
             LOG.debug(
                 f"Assistant response '{response}' expected IDs: {response_ids}, found at: {start_idx}"
@@ -63,7 +135,7 @@ class TestChatTemplateConfigurations:
         # Check the behavior of human inputs
         human_inputs = ["Hello", "How are you?"]
         for input_text in human_inputs:
-            input_ids = llama3_tokenizer.encode(input_text, add_special_tokens=False)
+            input_ids = tokenizer.encode(input_text, add_special_tokens=False)
             start_idx = self.find_sublist(input_ids, input_ids)
             labeled = all(
                 label != IGNORE_TOKEN_ID
@@ -73,16 +145,34 @@ class TestChatTemplateConfigurations:
                 f"Human input '{input_text}' is {'labeled' if labeled else 'not labeled'}, expected IDs: {input_ids}, found at: {start_idx}"
             )
 
+            assert not labeled, f"Expected human input '{input_text}' to not be labeled"
+
         LOG.debug("Full labels: %s", labels)
         LOG.debug("Full input_ids: %s", input_ids)
 
-    def test_train_on_inputs_false(self, llama3_tokenizer, basic_dataset):
+    def test_train_on_inputs_false(
+        self,
+        tokenizer,
+        chat_template,
+        chat_template_jinja,
+        eos_token,
+        basic_dataset,
+        request,
+    ):
         LOG.info("Testing with train_on_inputs=False")
+
+        tokenizer, chat_template_jinja = self.setup_tokenizer(
+            tokenizer, chat_template, chat_template_jinja, eos_token, request
+        )
+
         strategy = ChatTemplateStrategy(
             ChatTemplatePrompter(
-                llama3_tokenizer, chat_template=get_chat_template("llama3")
+                tokenizer,
+                chat_template=get_chat_template(
+                    chat_template, jinja_template=chat_template_jinja
+                ),
             ),
-            tokenizer=llama3_tokenizer,
+            tokenizer=tokenizer,
             train_on_inputs=False,
             sequence_len=512,
             roles_to_train=["assistant"],
@@ -94,7 +184,7 @@ class TestChatTemplateConfigurations:
         # Verify that only assistant responses are labeled
         assistant_responses = ["Hi there!", "I'm doing well, thank you!"]
         for response in assistant_responses:
-            response_ids = llama3_tokenizer.encode(response, add_special_tokens=False)
+            response_ids = tokenizer.encode(response, add_special_tokens=False)
             start_idx = self.find_sublist(input_ids, response_ids)
             LOG.debug(
                 f"Assistant response '{response}' expected IDs: {response_ids}, found at: {start_idx}"
@@ -108,7 +198,7 @@ class TestChatTemplateConfigurations:
         # Verify that human inputs are not labeled
         human_inputs = ["Hello", "How are you?"]
         for input_text in human_inputs:
-            input_ids = llama3_tokenizer.encode(input_text, add_special_tokens=False)
+            input_ids = tokenizer.encode(input_text, add_special_tokens=False)
             start_idx = self.find_sublist(input_ids, input_ids)
             LOG.debug(
                 f"Human input '{input_text}' expected IDs: {input_ids}, found at: {start_idx}"
@@ -119,13 +209,29 @@ class TestChatTemplateConfigurations:
                 for label in labels[start_idx : start_idx + len(input_ids)]
             ), f"Expected labels for human input '{input_text}' to be IGNORE_TOKEN_ID, but got {labels[start_idx:start_idx+len(input_ids)]}"
 
-    def test_roles_to_train_assistant_only(self, llama3_tokenizer, basic_dataset):
+    def test_roles_to_train_assistant_only(
+        self,
+        tokenizer,
+        chat_template,
+        chat_template_jinja,
+        eos_token,
+        basic_dataset,
+        request,
+    ):
         LOG.info("Testing roles_to_train with assistant only")
+
+        tokenizer, chat_template_jinja = self.setup_tokenizer(
+            tokenizer, chat_template, chat_template_jinja, eos_token, request
+        )
+
         strategy = ChatTemplateStrategy(
             ChatTemplatePrompter(
-                llama3_tokenizer, chat_template=get_chat_template("llama3")
+                tokenizer,
+                chat_template=get_chat_template(
+                    chat_template, jinja_template=chat_template_jinja
+                ),
             ),
-            tokenizer=llama3_tokenizer,
+            tokenizer=tokenizer,
             train_on_inputs=False,
             sequence_len=512,
             roles_to_train=["assistant"],
@@ -137,7 +243,7 @@ class TestChatTemplateConfigurations:
         # Verify that only assistant responses are labeled
         assistant_responses = ["Hi there!", "I'm doing well, thank you!"]
         for response in assistant_responses:
-            response_ids = llama3_tokenizer.encode(response, add_special_tokens=False)
+            response_ids = tokenizer.encode(response, add_special_tokens=False)
             start_idx = self.find_sublist(input_ids, response_ids)
             LOG.debug(
                 f"Assistant response '{response}' expected IDs: {response_ids}, found at: {start_idx}"
@@ -147,46 +253,79 @@ class TestChatTemplateConfigurations:
                 for label in labels[start_idx : start_idx + len(response_ids)]
             ), f"Expected labels for assistant response '{response}' to be set, but got {labels[start_idx:start_idx+len(response_ids)]}"
 
-    def test_roles_to_train_all(self, llama3_tokenizer, basic_dataset):
+    def test_roles_to_train_all(
+        self,
+        tokenizer,
+        chat_template,
+        chat_template_jinja,
+        eos_token,
+        basic_dataset,
+        request,
+    ):
         LOG.info("Testing roles_to_train with all roles")
+
+        tokenizer, chat_template_jinja = self.setup_tokenizer(
+            tokenizer, chat_template, chat_template_jinja, eos_token, request
+        )
+
         strategy = ChatTemplateStrategy(
             ChatTemplatePrompter(
-                llama3_tokenizer, chat_template=get_chat_template("llama3")
+                tokenizer,
+                chat_template=get_chat_template(
+                    chat_template, jinja_template=chat_template_jinja
+                ),
             ),
-            tokenizer=llama3_tokenizer,
+            tokenizer=tokenizer,
             train_on_inputs=True,
             sequence_len=512,
             roles_to_train=["human", "assistant"],
         )
         res = strategy.tokenize_prompt(basic_dataset[0])
+        turns = strategy.get_conversation_thread(basic_dataset[0])
         labels = res["labels"]
         input_ids = res["input_ids"]
 
         # Verify that all responses are labeled (except for special tokens)
-        all_responses = [
-            "Hello",
-            "Hi there!",
-            "How are you?",
-            "I'm doing well, thank you!",
-        ]
-        for response in all_responses:
-            response_ids = llama3_tokenizer.encode(response, add_special_tokens=False)
-            start_idx = self.find_sublist(input_ids, response_ids)
-            LOG.debug(
-                f"Response '{response}' expected IDs: {response_ids}, found at: {start_idx}"
-            )
-            assert all(
-                label != IGNORE_TOKEN_ID
-                for label in labels[start_idx : start_idx + len(response_ids)]
-            ), f"Expected labels for response '{response}' to be set, but got {labels[start_idx:start_idx+len(response_ids)]}"
+        all_responses = [d["value"] for d in basic_dataset[0]["messages"]]
+        for i, response in enumerate(all_responses):
+            if i == 0 and "mistral" in tokenizer.name_or_path.lower():
+                # Skip system message for Mistral as template does not output it without more turns
+                continue
 
-    def test_empty_roles_to_train(self, llama3_tokenizer, basic_dataset):
+            start_idx, end_idx = strategy.find_turn(turns=turns, turn_idx=i)
+
+            decoded_response = tokenizer.decode(input_ids[start_idx:end_idx])
+            assert (
+                response in decoded_response
+            ), f"Response {response} not found in index {start_idx}:{end_idx} decoded:{decoded_response}"
+
+            assert all(
+                label != IGNORE_TOKEN_ID for label in labels[start_idx:end_idx]
+            ), f"Expected labels for response '{response}' to be set, but got {labels[start_idx:end_idx]}"
+
+    def test_empty_roles_to_train(
+        self,
+        tokenizer,
+        chat_template,
+        chat_template_jinja,
+        eos_token,
+        basic_dataset,
+        request,
+    ):
         LOG.info("Testing with empty roles_to_train")
+
+        tokenizer, chat_template_jinja = self.setup_tokenizer(
+            tokenizer, chat_template, chat_template_jinja, eos_token, request
+        )
+
         strategy = ChatTemplateStrategy(
             ChatTemplatePrompter(
-                llama3_tokenizer, chat_template=get_chat_template("llama3")
+                tokenizer,
+                chat_template=get_chat_template(
+                    chat_template, jinja_template=chat_template_jinja
+                ),
             ),
-            tokenizer=llama3_tokenizer,
+            tokenizer=tokenizer,
             train_on_inputs=False,
             sequence_len=512,
             roles_to_train=[],
@@ -201,13 +340,29 @@ class TestChatTemplateConfigurations:
             label == IGNORE_TOKEN_ID for label in labels
         ), "Expected all labels to be IGNORE_TOKEN_ID when roles_to_train is empty"
 
-    def test_train_on_eos_all(self, llama3_tokenizer, basic_dataset):
+    def test_train_on_eos_all(
+        self,
+        tokenizer,
+        chat_template,
+        chat_template_jinja,
+        eos_token,
+        basic_dataset,
+        request,
+    ):
         LOG.info("Testing with train_on_eos='all'")
+
+        tokenizer, chat_template_jinja = self.setup_tokenizer(
+            tokenizer, chat_template, chat_template_jinja, eos_token, request
+        )
+
         strategy = ChatTemplateStrategy(
             ChatTemplatePrompter(
-                llama3_tokenizer, chat_template=get_chat_template("llama3")
+                tokenizer,
+                chat_template=get_chat_template(
+                    chat_template, jinja_template=chat_template_jinja
+                ),
             ),
-            tokenizer=llama3_tokenizer,
+            tokenizer=tokenizer,
             train_on_inputs=False,
             sequence_len=512,
             roles_to_train=["assistant"],
@@ -217,7 +372,7 @@ class TestChatTemplateConfigurations:
         labels = res["labels"]
         input_ids = res["input_ids"]
 
-        eos_token_id = llama3_tokenizer.eos_token_id
+        eos_token_id = tokenizer.eos_token_id
         eos_indices = [
             i for i, token_id in enumerate(input_ids) if token_id == eos_token_id
         ]
@@ -228,13 +383,29 @@ class TestChatTemplateConfigurations:
                 labels[eos_idx] != IGNORE_TOKEN_ID
             ), f"Expected EOS token at index {eos_idx} to be labeled"
 
-    def test_train_on_eos_turn(self, llama3_tokenizer, basic_dataset):
+    def test_train_on_eos_turn(
+        self,
+        tokenizer,
+        chat_template,
+        chat_template_jinja,
+        eos_token,
+        basic_dataset,
+        request,
+    ):
         LOG.info("Testing with train_on_eos='turn'")
+
+        tokenizer, chat_template_jinja = self.setup_tokenizer(
+            tokenizer, chat_template, chat_template_jinja, eos_token, request
+        )
+
         strategy = ChatTemplateStrategy(
             ChatTemplatePrompter(
-                llama3_tokenizer, chat_template=get_chat_template("llama3")
+                tokenizer,
+                chat_template=get_chat_template(
+                    chat_template, jinja_template=chat_template_jinja
+                ),
             ),
-            tokenizer=llama3_tokenizer,
+            tokenizer=tokenizer,
             train_on_inputs=False,
             sequence_len=512,
             roles_to_train=["assistant"],
@@ -244,11 +415,11 @@ class TestChatTemplateConfigurations:
         labels = res["labels"]
         input_ids = res["input_ids"]
 
-        eos_token_id = llama3_tokenizer.eos_token_id
+        eos_token_id = tokenizer.eos_token_id
         assistant_responses = ["Hi there!", "I'm doing well, thank you!"]
 
         for response in assistant_responses:
-            response_ids = llama3_tokenizer.encode(response, add_special_tokens=False)
+            response_ids = tokenizer.encode(response, add_special_tokens=False)
             start_idx = self.find_sublist(input_ids, response_ids)
             assert start_idx != -1, f"Could not find '{response}' in input_ids"
 
@@ -266,7 +437,7 @@ class TestChatTemplateConfigurations:
         # Check that EOS tokens after human inputs are not labeled
         human_inputs = ["Hello", "How are you?"]
         for input_text in human_inputs:
-            input_ids = llama3_tokenizer.encode(input_text, add_special_tokens=False)
+            input_ids = tokenizer.encode(input_text, add_special_tokens=False)
             start_idx = self.find_sublist(input_ids, input_ids)
             assert start_idx != -1, f"Could not find '{input_text}' in input_ids"
 
@@ -278,13 +449,29 @@ class TestChatTemplateConfigurations:
                 labels[eos_idx] == IGNORE_TOKEN_ID
             ), f"Expected EOS token after human input '{input_text}' to not be labeled"
 
-    def test_train_on_eos_last(self, llama3_tokenizer, basic_dataset):
+    def test_train_on_eos_last(
+        self,
+        tokenizer,
+        chat_template,
+        chat_template_jinja,
+        eos_token,
+        basic_dataset,
+        request,
+    ):
         LOG.info("Testing with train_on_eos='last'")
+
+        tokenizer, chat_template_jinja = self.setup_tokenizer(
+            tokenizer, chat_template, chat_template_jinja, eos_token, request
+        )
+
         strategy = ChatTemplateStrategy(
             ChatTemplatePrompter(
-                llama3_tokenizer, chat_template=get_chat_template("llama3")
+                tokenizer,
+                chat_template=get_chat_template(
+                    chat_template, jinja_template=chat_template_jinja
+                ),
             ),
-            tokenizer=llama3_tokenizer,
+            tokenizer=tokenizer,
             train_on_inputs=False,
             sequence_len=512,
             roles_to_train=["assistant"],
@@ -294,7 +481,7 @@ class TestChatTemplateConfigurations:
         labels = res["labels"]
         input_ids = res["input_ids"]
 
-        eos_token_id = llama3_tokenizer.eos_token_id
+        eos_token_id = tokenizer.eos_token_id
         eos_indices = [
             i for i, token_id in enumerate(input_ids) if token_id == eos_token_id
         ]
@@ -311,13 +498,29 @@ class TestChatTemplateConfigurations:
             labels[last_eos_idx] != IGNORE_TOKEN_ID
         ), f"Expected last EOS token at index {last_eos_idx} to be labeled"
 
-    def test_train_on_eos_none(self, llama3_tokenizer, basic_dataset):
+    def test_train_on_eos_none(
+        self,
+        tokenizer,
+        chat_template,
+        chat_template_jinja,
+        eos_token,
+        basic_dataset,
+        request,
+    ):
         LOG.info("Testing with train_on_eos='none'")
+
+        tokenizer, chat_template_jinja = self.setup_tokenizer(
+            tokenizer, chat_template, chat_template_jinja, eos_token, request
+        )
+
         strategy = ChatTemplateStrategy(
             ChatTemplatePrompter(
-                llama3_tokenizer, chat_template=get_chat_template("llama3")
+                tokenizer,
+                chat_template=get_chat_template(
+                    chat_template, jinja_template=chat_template_jinja
+                ),
             ),
-            tokenizer=llama3_tokenizer,
+            tokenizer=tokenizer,
             train_on_inputs=False,
             sequence_len=512,
             roles_to_train=["assistant"],
@@ -327,7 +530,7 @@ class TestChatTemplateConfigurations:
         labels = res["labels"]
         input_ids = res["input_ids"]
 
-        eos_token_id = llama3_tokenizer.eos_token_id
+        eos_token_id = tokenizer.eos_token_id
         eos_indices = [
             i for i, token_id in enumerate(input_ids) if token_id == eos_token_id
         ]
@@ -338,15 +541,29 @@ class TestChatTemplateConfigurations:
                 labels[eos_idx] == IGNORE_TOKEN_ID
             ), f"Expected EOS token at index {eos_idx} to not be labeled"
 
-    def test_drop_system_message(self, llama3_tokenizer, basic_dataset):
+    def test_drop_system_message(
+        self,
+        tokenizer,
+        chat_template,
+        chat_template_jinja,
+        eos_token,
+        basic_dataset,
+        request,
+    ):
         LOG.info("Testing with drop_system_message=True")
+        tokenizer, chat_template_jinja = self.setup_tokenizer(
+            tokenizer, chat_template, chat_template_jinja, eos_token, request
+        )
+
         strategy = ChatTemplateStrategy(
             ChatTemplatePrompter(
-                llama3_tokenizer,
-                chat_template=get_chat_template("llama3"),
+                tokenizer,
+                chat_template=get_chat_template(
+                    chat_template, jinja_template=chat_template_jinja
+                ),
                 drop_system_message=True,
             ),
-            tokenizer=llama3_tokenizer,
+            tokenizer=tokenizer,
             train_on_inputs=False,
             sequence_len=512,
             roles_to_train=["assistant"],
@@ -356,25 +573,38 @@ class TestChatTemplateConfigurations:
 
         # Check if system message is not present in input_ids
         system_message = "You are an AI assistant."
-        system_ids = llama3_tokenizer.encode(system_message, add_special_tokens=False)
+        system_ids = tokenizer.encode(system_message, add_special_tokens=False)
         assert (
             self.find_sublist(input_ids, system_ids) == -1
         ), "Expected system message to be dropped"
 
-    def test_custom_roles(self, llama3_tokenizer):
+    def test_custom_roles(
+        self,
+        tokenizer,
+        chat_template,
+        chat_template_jinja,
+        eos_token,
+        request,
+    ):
         LOG.info("Testing with custom roles mapping")
         custom_roles = {
             "user": ["human", "user"],
             "assistant": ["ai", "assistant"],
             "system": ["context"],
         }
+        tokenizer, chat_template_jinja = self.setup_tokenizer(
+            tokenizer, chat_template, chat_template_jinja, eos_token, request
+        )
+
         strategy = ChatTemplateStrategy(
             ChatTemplatePrompter(
-                llama3_tokenizer,
-                chat_template=get_chat_template("llama3"),
+                tokenizer,
+                chat_template=get_chat_template(
+                    chat_template, jinja_template=chat_template_jinja
+                ),
                 roles=custom_roles,
             ),
-            tokenizer=llama3_tokenizer,
+            tokenizer=tokenizer,
             train_on_inputs=False,
             sequence_len=512,
             roles_to_train=["ai"],
@@ -389,9 +619,7 @@ class TestChatTemplateConfigurations:
             {"from": "ai", "value": "I'm doing well, thank you!"},
         ]
 
-        modified_dataset = Dataset.from_dict(
-            {"conversations": [modified_conversations]}
-        )
+        modified_dataset = Dataset.from_dict({"messages": [modified_conversations]})
 
         res = strategy.tokenize_prompt(modified_dataset[0])
         labels = res["labels"]
@@ -400,7 +628,7 @@ class TestChatTemplateConfigurations:
         # Check if AI responses are labeled correctly
         ai_responses = ["Hi there!", "I'm doing well, thank you!"]
         for response in ai_responses:
-            response_ids = llama3_tokenizer.encode(response, add_special_tokens=False)
+            response_ids = tokenizer.encode(response, add_special_tokens=False)
             start_idx = self.find_sublist(input_ids, response_ids)
             assert start_idx != -1, f"Could not find response '{response}' in input_ids"
             assert all(
@@ -411,7 +639,7 @@ class TestChatTemplateConfigurations:
         # Check if human messages are not labeled
         human_messages = ["Hello", "How are you?"]
         for message in human_messages:
-            message_ids = llama3_tokenizer.encode(message, add_special_tokens=False)
+            message_ids = tokenizer.encode(message, add_special_tokens=False)
             start_idx = self.find_sublist(input_ids, message_ids)
             assert start_idx != -1, f"Could not find message '{message}' in input_ids"
             assert all(
@@ -419,16 +647,30 @@ class TestChatTemplateConfigurations:
                 for label in labels[start_idx : start_idx + len(message_ids)]
             ), f"Expected labels for human message '{message}' to be IGNORE_TOKEN_ID"
 
-    def test_message_field_training(self, llama3_tokenizer):
+    def test_message_field_training(
+        self,
+        tokenizer,
+        chat_template,
+        chat_template_jinja,
+        eos_token,
+        request,
+    ):
         LOG.info("Testing with message_field_training")
+
+        tokenizer, chat_template_jinja = self.setup_tokenizer(
+            tokenizer, chat_template, chat_template_jinja, eos_token, request
+        )
+
         strategy = ChatTemplateStrategy(
             ChatTemplatePrompter(
-                llama3_tokenizer,
-                chat_template=get_chat_template("llama3"),
+                tokenizer,
+                chat_template=get_chat_template(
+                    chat_template, jinja_template=chat_template_jinja
+                ),
                 message_field_training="train",
                 message_field_training_detail="train_detail",
             ),
-            tokenizer=llama3_tokenizer,
+            tokenizer=tokenizer,
             train_on_inputs=False,
             sequence_len=512,
             roles_to_train=[],
@@ -457,7 +699,7 @@ class TestChatTemplateConfigurations:
             {"from": "assistant", "value": "Hi there!", "train": True},
         ]
 
-        modified_dataset = Dataset.from_dict({"conversations": [modified_conversation]})
+        modified_dataset = Dataset.from_dict({"messages": [modified_conversation]})
 
         res = strategy.tokenize_prompt(modified_dataset[0])
         labels = res["labels"]
@@ -475,9 +717,7 @@ class TestChatTemplateConfigurations:
         processed_occurrences = {}
         # Check if messages are labeled correctly based on train or train_detail
         for i, turn in enumerate(modified_conversation):
-            turn_tokens = llama3_tokenizer.encode(
-                turn["value"], add_special_tokens=False
-            )
+            turn_tokens = tokenizer.encode(turn["value"], add_special_tokens=False)
             occurrences = find_all_sublists(input_ids, turn_tokens)
             turn_key = turn["value"]
             if turn_key not in processed_occurrences:
@@ -499,7 +739,7 @@ class TestChatTemplateConfigurations:
 
             if "train_detail" in turn:
                 # Get token offsets
-                tokenized_output = llama3_tokenizer(
+                tokenized_output = tokenizer(
                     turn["value"], return_offsets_mapping=True, add_special_tokens=False
                 )
                 token_offsets = tokenized_output["offset_mapping"]
@@ -571,9 +811,7 @@ class TestChatTemplateConfigurations:
                     )
                     LOG.debug(f"Detail input_ids: {detail_input_ids}")
                     LOG.debug(f"Detail labels: {detail_labels}")
-                    LOG.debug(
-                        f"Decoded detail: {llama3_tokenizer.decode(detail_input_ids)}"
-                    )
+                    LOG.debug(f"Decoded detail: {tokenizer.decode(detail_input_ids)}")
                     LOG.debug(
                         f"Token offsets for this detail: {token_offsets[detail_start-start_idx:detail_end-start_idx]}"
                     )
@@ -585,7 +823,7 @@ class TestChatTemplateConfigurations:
                             f"Expected labels for trainable detail '{detail_text}' to be set, but some were IGNORE_TOKEN_ID. "
                             f"Labels({detail_start}:{detail_end}): {detail_labels}, "
                             f"InputIDs: {detail_input_ids}, "
-                            f"Decoded: '{llama3_tokenizer.decode(detail_input_ids)}'"
+                            f"Decoded: '{tokenizer.decode(detail_input_ids)}'"
                         )
                     else:
                         assert all(
@@ -594,7 +832,7 @@ class TestChatTemplateConfigurations:
                             f"Expected all labels for non-trainable detail '{detail_text}' to be IGNORE_TOKEN_ID, but some were not. "
                             f"Labels({detail_start}:{detail_end}): {detail_labels}, "
                             f"InputIDs: {detail_input_ids}, "
-                            f"Decoded: '{llama3_tokenizer.decode(detail_input_ids)}'"
+                            f"Decoded: '{tokenizer.decode(detail_input_ids)}'"
                         )
             else:
                 should_train = turn.get("train", False)
@@ -605,7 +843,7 @@ class TestChatTemplateConfigurations:
                 LOG.debug(f"Turn labels: {turn_labels}")
                 LOG.debug(f"Turn input IDs: {input_ids[start_idx:end_idx]}")
                 LOG.debug(
-                    f"Decoded turn: {llama3_tokenizer.decode(input_ids[start_idx:end_idx])}"
+                    f"Decoded turn: {tokenizer.decode(input_ids[start_idx:end_idx])}"
                 )
 
                 if should_train:
@@ -613,14 +851,14 @@ class TestChatTemplateConfigurations:
                         f"Expected all labels for '{turn['value']}' to be set\n"
                         f"Labels({start_idx}:{end_idx}): {turn_labels}, "
                         f"InputIDs: {input_ids[start_idx:end_idx]}, "
-                        f"Decoded: '{llama3_tokenizer.decode(input_ids[start_idx:end_idx])}'"
+                        f"Decoded: '{tokenizer.decode(input_ids[start_idx:end_idx])}'"
                     )
                 else:
                     assert all(label == IGNORE_TOKEN_ID for label in turn_labels), (
                         f"Expected all labels for '{turn['value']}' to be IGNORE_TOKEN_ID\n"
                         f"Labels({start_idx}:{end_idx}): {turn_labels}, "
                         f"InputIDs: {input_ids[start_idx:end_idx]}, "
-                        f"Decoded: '{llama3_tokenizer.decode(input_ids[start_idx:end_idx])}'"
+                        f"Decoded: '{tokenizer.decode(input_ids[start_idx:end_idx])}'"
                     )
 
                 LOG.debug(
