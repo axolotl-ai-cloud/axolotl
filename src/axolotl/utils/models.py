@@ -710,13 +710,6 @@ class ModelLoader:
         """
         sample packing uses custom FA2 patch
         """
-        print(
-            self.cfg.flash_attention,
-            self.cfg.sdp_attention,
-            self.cfg.eager_attention,
-            self.cfg.diff_attention,
-        )
-
         if self.cfg.flash_attention:
             if not self.cfg.sample_packing and self.cfg.s2_attention:
                 pass
@@ -760,9 +753,6 @@ class ModelLoader:
             self.model_config._attn_implementation = (  # pylint: disable=protected-access
                 "differential_eager"
             )
-
-        if "attn_implementation" in self.model_kwargs:
-            print(self.model_kwargs["attn_implementation"])
 
         if self.cfg.low_cpu_mem_usage:
             self.model_kwargs["low_cpu_mem_usage"] = True

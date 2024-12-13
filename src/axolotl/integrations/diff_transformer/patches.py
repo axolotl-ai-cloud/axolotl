@@ -1,4 +1,5 @@
 """Patches related to differential transformers implementation."""
+
 from transformers import PreTrainedModel
 from transformers.models.llama.modeling_llama import LLAMA_ATTENTION_CLASSES
 
