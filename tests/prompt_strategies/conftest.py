@@ -47,12 +47,57 @@ def fixture_basic_dataset():
     return Dataset.from_list(
         [
             {
-                "messages": [
+                "conversations": [
                     {"from": "system", "value": "You are an AI assistant."},
                     {"from": "human", "value": "Hello"},
                     {"from": "assistant", "value": "Hi there!"},
                     {"from": "human", "value": "How are you?"},
                     {"from": "assistant", "value": "I'm doing well, thank you!"},
+                ]
+            }
+        ]
+    )
+
+
+@pytest.fixture(name="toolcalling_dataset")
+def fixture_toolcalling_dataset():
+    # pylint: disable=duplicate-code
+    return Dataset.from_list(
+        [
+            {
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": "You are a bot that responds to weather queries. You should reply with the unit used in the queried location.",
+                    },
+                    {
+                        "role": "user",
+                        "content": "Hey, what's the temperature in Paris right now?",
+                    },
+                    {
+                        "role": "assistant",
+                        "tool_calls": [
+                            {
+                                "type": "function",
+                                "function": {
+                                    "name": "get_current_temperature",
+                                    "arguments": {
+                                        "location": "Paris, France",
+                                        "unit": "celsius",
+                                    },
+                                },
+                            }
+                        ],
+                    },
+                    {
+                        "role": "tool",
+                        "name": "get_current_temperature",
+                        "content": "22.0",
+                    },
+                    {
+                        "role": "assistant",
+                        "content": "The temperature in Paris is 22.0 degrees Celsius.",
+                    },
                 ]
             }
         ]
