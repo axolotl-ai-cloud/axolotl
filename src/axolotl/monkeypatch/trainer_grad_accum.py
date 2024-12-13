@@ -6,6 +6,7 @@ import inspect
 import logging
 
 from transformers import LlamaForCausalLM, Trainer
+from transformers.modeling_flash_attention_utils import _flash_attention_forward
 
 from axolotl.monkeypatch.unsloth_ import detab_code
 
@@ -284,4 +285,21 @@ def patch_training_loop_for_deepspeed_0_16_x():
     LOG.info("patching _inner_training_loop for fsdp optimizer save")
     Trainer._inner_training_loop = (  # pylint: disable=protected-access
         _fixed_inner_training_loop  # pylint: disable=undefined-variable  # noqa: F821
+    )
+
+
+def patch_flash_attention_forward():
+    """
+    monkeypatch for fixing the forward pass for flash attention to ignore num_items_in_batch
+    """
+
+    import transformers.modeling_flash_attention_utils
+
+    def proxy_flash_attention_forward(*args, **kwargs):
+        kwargs.pop("num_items_in_batch", None)
+
+        return _flash_attention_forward(*args, **kwargs)
+
+    transformers.modeling_flash_attention_utils._flash_attention_forward = (  # pylint: disable=protected-access
+        proxy_flash_attention_forward
     )
