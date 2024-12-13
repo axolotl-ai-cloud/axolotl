@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 from transformers import HfArgumentParser
 
 from axolotl.cli import load_cfg, print_axolotl_text_art
-from axolotl.common.cli import TrainerCliArgs, load_model_and_tokenizer
+from axolotl.common.cli import ConvertDiffTransformerCliArgs, load_model_and_tokenizer
 from axolotl.integrations.diff_transformer.convert import convert_to_diff_attention
 
 LOG = logging.getLogger("axolotl.cli.convert_attention")
@@ -67,21 +67,23 @@ def convert_diff_transformer(cfg, cli_args, config_path):
         )
 
         # Test original model
-        LOG.info("Testing original model...")
-        orig_time, orig_text = test_inference(model, tokenizer)
+        if cli_args.debug:
+            LOG.info("Testing original model...")
+            orig_time, orig_text = test_inference(model, tokenizer)
 
         # Convert attention
         LOG.info("Converting to differential attention...")
         try:
-            model = convert_to_diff_attention(model)
+            model = convert_to_diff_attention(model, cli_args.zero_init)
             model.to(model.device)
         except Exception as exc:
             LOG.error(Fore.RED + "Conversion failed: %s" + Fore.RESET, str(exc))
             raise
 
         # Test converted model
-        LOG.info("Testing converted model...")
-        conv_time, conv_text = test_inference(model, tokenizer)
+        if cli_args.debug:
+            LOG.info("Testing converted model...")
+            conv_time, conv_text = test_inference(model, tokenizer)
 
         # Save if requested
         if cfg.output_dir:
@@ -106,30 +108,65 @@ def convert_diff_transformer(cfg, cli_args, config_path):
             LOG.info("Not saving converted model to disk")
             LOG.info("Pass --output-dir path/to/save to save model")
 
-        LOG.info(
-            Fore.GREEN
-            + "Conversion successful!\n"
-            + f"Original generation time: {orig_time:.2f}s\n"
-            + f"Converted generation time: {conv_time:.2f}s"
-            + Fore.RESET
-        )
-
-        if orig_text == conv_text:
+        if cli_args.debug:
             LOG.info(
                 Fore.GREEN
-                + "Generations match!\n"
-                + f"Model generation: {orig_text}\n"
-                + Fore.RESET
-            )
-        else:
-            LOG.info(
-                Fore.RED
-                + "Generations do not match.\n"
-                + f"Original generation: {orig_text}\n"
-                + f"Converted generation: {conv_text}\n"
+                + "Conversion successful!\n"
+                + f"Original generation time: {orig_time:.2f}s\n"
+                + f"Converted generation time: {conv_time:.2f}s"
                 + Fore.RESET
             )
 
+            if orig_text == conv_text:
+                LOG.info(
+                    Fore.GREEN
+                    + "Generations match!\n"
+                    + "Model generation:\n"
+                    + "*" * 50
+                    + "\n"
+                    + f"{orig_text}\n"
+                    + "*" * 50
+                    + "\n"
+                    + Fore.RESET
+                )
+            else:
+                if cli_args.zero_init:
+                    LOG.info(
+                        Fore.RED
+                        + "Generations do not match.\n"
+                        + "Original generation:\n"
+                        + "*" * 50
+                        + "\n"
+                        + f"{orig_text}\n"
+                        + "*" * 50
+                        + "\n"
+                        + "Converted generation:\n"
+                        + "*" * 50
+                        + "\n"
+                        + f"{conv_text}\n"
+                        + "*" * 50
+                        + "\n"
+                        + Fore.RESET
+                    )
+                else:
+                    LOG.info(
+                        Fore.YELLOW
+                        + "Generations do not match.\n"
+                        + "Original generation:\n"
+                        + "*" * 50
+                        + "\n"
+                        + f"{orig_text}\n"
+                        + "*" * 50
+                        + "\n"
+                        + "Converted generation:\n"
+                        + "*" * 50
+                        + "\n"
+                        + f"{conv_text}\n"
+                        + "*" * 50
+                        + "\n"
+                        + "However, this is expected since --zero-init was not passed."
+                        + Fore.RESET
+                    )
     except Exception as exc:
         LOG.error(Fore.RED + "Process failed: %s" + Fore.RESET, str(exc))
         raise
@@ -139,7 +176,7 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
     print_axolotl_text_art()
 
     cfg = load_cfg(config, **kwargs)
-    parser = HfArgumentParser(TrainerCliArgs)
+    parser = HfArgumentParser(ConvertDiffTransformerCliArgs)
     cli_args, _ = parser.parse_args_into_dataclasses(return_remaining_strings=True)
 
     convert_diff_transformer(cfg, cli_args, config)

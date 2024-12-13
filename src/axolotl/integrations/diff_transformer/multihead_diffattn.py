@@ -60,11 +60,10 @@ class LlamaDifferentialAttention(nn.Module):
         self,
         config: Any,
         layer_idx: int,
-        dtype: torch.dtype,
     ):
         super().__init__()
 
-        # Base model dimensions
+        # Base model config
         self.attention_dropout = config.attention_dropout
         self.hidden_size = config.hidden_size
         self.base_num_heads = config.num_attention_heads
@@ -76,6 +75,8 @@ class LlamaDifferentialAttention(nn.Module):
         self.max_position_embeddings = config.max_position_embeddings
         self.rope_theta = config.rope_theta
         self.is_causal = True
+
+        dtype = getattr(config, "torch_dtype", torch.float32)
 
         # For Q1 and Q2
         self.q_proj = nn.Linear(
