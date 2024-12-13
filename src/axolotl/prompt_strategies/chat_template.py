@@ -282,9 +282,6 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
             turn_start_idx, turn_end_idx = self.find_turn(turns=turns, turn_idx=index)
 
-            if turn_start_idx == -1 or turn_end_idx == -1:
-                LOG.warning(f"Failed to find boundaries for turn {index}")
-
             LOG.debug(f"Turn indices: start={turn_start_idx}, end={turn_end_idx}")
 
             if should_train and turn_start_idx != -1 and turn_end_idx != -1:
@@ -380,7 +377,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                 break
 
         if start_idx is None:
-            LOG.warning("Could not find content start boundary")
+            LOG.warning(f"Could not find content start boundary for turn {turn_idx}")
             return -1, -1
 
         # Find last difference (end of content)
@@ -393,11 +390,19 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                 break
 
         if end_idx is None:
-            LOG.warning("Could not find content end boundary")
+            LOG.warning(f"Could not find content end boundary for turn {turn_idx}")
             return -1, -1
 
-        if end_idx <= start_idx:
-            LOG.warning("Content end boundary is before start boundary")
+        if end_idx < start_idx:
+            LOG.warning(
+                f"Content end boundary is before start boundary for turn {turn_idx}"
+            )
+            return -1, -1
+
+        if end_idx == start_idx:
+            LOG.warning(
+                f"Content end boundary is the same as start boundary for turn {turn_idx}. This is likely an empty turn."
+            )
             return -1, -1
 
         LOG.debug(f"Content boundaries: {start_idx}, {end_idx}")
