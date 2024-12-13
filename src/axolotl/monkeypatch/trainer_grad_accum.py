@@ -303,3 +303,6 @@ def patch_flash_attention_forward():
     transformers.modeling_flash_attention_utils._flash_attention_forward = (  # pylint: disable=protected-access
         proxy_flash_attention_forward
     )
+    transformers.models.llama.modeling_llama._flash_attention_forward = (  # pylint: disable=protected-access
+        proxy_flash_attention_forward
+    )
