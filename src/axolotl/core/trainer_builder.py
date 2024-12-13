@@ -1319,6 +1319,10 @@ class TrainerBuilderBase(abc.ABC):
         if hasattr(model, "add_model_tags"):
             model.add_model_tags(["axolotl"])
 
+        if self.cfg.tensor_parallel == "auto" and self.model.supports_tp_plan:
+            os.environ["ACCELERATE_USE_TP"] = "true"
+            # self.model =
+
     @property
     def model_ref(self):
         return self._model_ref

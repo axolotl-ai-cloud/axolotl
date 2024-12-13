@@ -621,7 +621,6 @@ class ModelLoader:
 
         self.model_kwargs["device_map"] = device_map
         self.model_kwargs["torch_dtype"] = self.cfg.torch_dtype
-        self.model_kwargs["tp_plan"] = self.cfg.tensor_parallel
 
         cur_device = get_device_type()
         if "mps" in str(cur_device):
@@ -825,16 +824,6 @@ class ModelLoader:
                     del self.model_kwargs["device_map"]
 
             _ = _configure_zero3_memory_efficient_loading()
-
-            if self.cfg.tensor_parallel == "auto":
-                from accelerate import Accelerator
-
-                Accelerator()
-                rank = int(os.environ.get("LOCAL_RANK", 0))
-                os.environ["RANK"] = str(rank)
-                os.environ["WORLD_SIZE"] = os.getenv("WORLD_SIZE", "1")
-                device = torch.device(f"cuda:{rank}")
-                torch.distributed.init_process_group("nccl", device_id=device)
 
             if self.cfg.is_multimodal:
                 self.model_config.text_config = self.text_model_config
@@ -1198,8 +1187,14 @@ class ModelLoader:
             gc.collect()
             torch.cuda.empty_cache()
 
+        self.post_loading_set_env()
+
         # TODO resume_from_checkpoint handling
         return self.model, lora_config
+
+    def post_loading_set_env(self):
+        if self.cfg.tensor_parallel == "auto" and self.model.supports_tp_plan:
+            os.environ["ACCELERATE_USE_TP"] = "true"
 
 
 def load_model(
