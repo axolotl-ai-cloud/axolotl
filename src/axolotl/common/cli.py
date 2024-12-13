@@ -16,6 +16,19 @@ LOG = logging.getLogger("axolotl.common.cli")
 
 
 @dataclass
+class PreprocessCliArgs:
+    """
+    dataclass representing arguments for preprocessing only
+    """
+
+    debug: bool = field(default=False)
+    debug_text_only: bool = field(default=False)
+    debug_num_examples: int = field(default=1)
+    prompter: Optional[str] = field(default=None)
+    download: Optional[bool] = field(default=True)
+
+
+@dataclass
 class TrainerCliArgs:
     """
     dataclass representing the various non-training arguments
@@ -31,16 +44,14 @@ class TrainerCliArgs:
 
 
 @dataclass
-class PreprocessCliArgs:
+class EvaluateCliArgs:
     """
-    dataclass representing arguments for preprocessing only
+    dataclass representing the various evaluation arguments
     """
 
     debug: bool = field(default=False)
     debug_text_only: bool = field(default=False)
-    debug_num_examples: int = field(default=1)
-    prompter: Optional[str] = field(default=None)
-    download: Optional[bool] = field(default=True)
+    debug_num_examples: int = field(default=0)
 
 
 def load_model_and_tokenizer(
@@ -50,7 +61,9 @@ def load_model_and_tokenizer(
 ):
     LOG.info(f"loading tokenizer... {cfg.tokenizer_config or cfg.base_model_config}")
     tokenizer = load_tokenizer(cfg)
+
     LOG.info("loading model and (optionally) peft_config...")
-    model, _ = load_model(cfg, tokenizer, inference=cli_args.inference)
+    inference = getattr(cli_args, "inference", False)
+    model, _ = load_model(cfg, tokenizer, inference=inference)
 
     return model, tokenizer

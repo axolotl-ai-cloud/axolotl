@@ -12,7 +12,7 @@ from axolotl.cli.utils import (
     build_command,
     fetch_from_github,
 )
-from axolotl.common.cli import PreprocessCliArgs, TrainerCliArgs
+from axolotl.common.cli import EvaluateCliArgs, PreprocessCliArgs, TrainerCliArgs
 from axolotl.utils.config.models.input.v0_4_1 import AxolotlInputConfig
 
 
@@ -56,6 +56,31 @@ def train(config: str, accelerate: bool, **kwargs):
         subprocess.run(cmd, check=True)  # nosec B603
     else:
         from axolotl.cli.train import do_cli
+
+        do_cli(config=config, **kwargs)
+
+
+@cli.command()
+@click.argument("config", type=click.Path(exists=True, path_type=str))
+@click.option(
+    "--accelerate/--no-accelerate",
+    default=True,
+    help="Use accelerate launch for multi-GPU training",
+)
+@add_options_from_dataclass(EvaluateCliArgs)
+@add_options_from_config(AxolotlInputConfig)
+def evaluate(config: str, accelerate: bool, **kwargs):
+    """Evaluate a model."""
+    kwargs = {k: v for k, v in kwargs.items() if v is not None}
+
+    if accelerate:
+        base_cmd = ["accelerate", "launch", "-m", "axolotl.cli.evaluate"]
+        if config:
+            base_cmd.append(config)
+        cmd = build_command(base_cmd, kwargs)
+        subprocess.run(cmd, check=True)  # nosec B603
+    else:
+        from axolotl.cli.evaluate import do_cli
 
         do_cli(config=config, **kwargs)
 
