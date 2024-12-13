@@ -7,6 +7,7 @@ from typing import Union
 
 import fire
 import torch
+import yaml
 from colorama import Fore
 from dotenv import load_dotenv
 from transformers import HfArgumentParser
@@ -50,13 +51,7 @@ def test_inference(model, tokenizer, prompt="The quick brown fox"):
         raise
 
 
-def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
-    print_axolotl_text_art()
-
-    cfg = load_cfg(config, **kwargs)
-    parser = HfArgumentParser(TrainerCliArgs)
-    cli_args, _ = parser.parse_args_into_dataclasses(return_remaining_strings=True)
-
+def convert_diff_transformer(cfg, cli_args, config_path):
     try:
         # Load model and tokenizer
         with warnings.catch_warnings():
@@ -90,8 +85,26 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
 
         # Save if requested
         if cfg.output_dir:
+            # Save model and tokenizer
             LOG.info("Saving converted model to %s", cfg.output_dir)
             model.save_pretrained(cfg.output_dir)
+            tokenizer.save_pretrained(cfg.output_dir)
+
+            # Modify config to reflect new path / differential attention
+            output_config_path = Path(cfg.output_dir) / "axolotl_config.yml"
+            LOG.info("Saving updated config to %s", output_config_path)
+
+            with open(config_path, "r", encoding="utf-8") as file:
+                data = yaml.safe_load(file) or {}
+
+            data["base_model"] = cfg.output_dir
+            data["diff_attention"] = True
+
+            with open(output_config_path, "w", encoding="utf-8") as file:
+                yaml.dump(data, file)
+        else:
+            LOG.info("Not saving converted model to disk")
+            LOG.info("Pass --output-dir path/to/save to save model")
 
         LOG.info(
             Fore.GREEN
@@ -122,10 +135,16 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
         raise
 
 
+def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
+    print_axolotl_text_art()
+
+    cfg = load_cfg(config, **kwargs)
+    parser = HfArgumentParser(TrainerCliArgs)
+    cli_args, _ = parser.parse_args_into_dataclasses(return_remaining_strings=True)
+
+    convert_diff_transformer(cfg, cli_args, config)
+
+
 if __name__ == "__main__":
     load_dotenv()
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(levelname)s - %(message)s",
-    )
     fire.Fire(do_cli)
