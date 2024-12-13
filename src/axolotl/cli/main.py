@@ -12,7 +12,7 @@ from axolotl.cli.utils import (
     build_command,
     fetch_from_github,
 )
-from axolotl.common.cli import EvaluateCliArgs, PreprocessCliArgs, TrainerCliArgs
+from axolotl.common.cli import ConvertDiffTransformerCliArgs, EvaluateCliArgs, PreprocessCliArgs, TrainerCliArgs
 from axolotl.utils import set_pytorch_cuda_alloc_conf
 from axolotl.utils.config.models.input.v0_4_1 import AxolotlInputConfig
 
@@ -242,7 +242,7 @@ def merge_lora(
 
 @cli.command()
 @click.argument("config", type=click.Path(exists=True, path_type=str))
-@add_options_from_dataclass(TrainerCliArgs)
+@add_options_from_dataclass(ConvertDiffTransformerCliArgs)
 @add_options_from_config(AxolotlInputConfig)
 def convert_diff_transformer(config: str, **kwargs):
     """Convert model attention layers to differential attention layers."""
