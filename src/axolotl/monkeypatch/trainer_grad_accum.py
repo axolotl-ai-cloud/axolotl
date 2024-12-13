@@ -13,10 +13,7 @@ LOG = logging.getLogger("axolotl.monkeypatch.trainer_grad_accum")
 
 ORIGINAL_CONTEXT_CODE = """
     with self.compute_loss_context_manager():
-        if self.model_accepts_loss_kwargs:
-            loss = self.compute_loss(model, inputs)
-        else:
-            loss = self.compute_loss(model, inputs, num_items_in_batch=num_items_in_batch)
+        loss = self.compute_loss(model, inputs, num_items_in_batch=num_items_in_batch)
 """
 
 PATCHED_CONTEXT_CODE = """
