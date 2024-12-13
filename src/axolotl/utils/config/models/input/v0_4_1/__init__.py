@@ -727,6 +727,8 @@ class AxolotlInputConfig(
 
     eager_attention: Optional[bool] = None
 
+    diff_attention: Optional[bool] = None
+
     unsloth_cross_entropy_loss: Optional[bool] = None
     unsloth_lora_mlp: Optional[bool] = None
     unsloth_lora_qkv: Optional[bool] = None

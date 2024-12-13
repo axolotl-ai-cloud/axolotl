@@ -88,7 +88,7 @@ def train(
             )
     resume_from_checkpoint = cfg.resume_from_checkpoint
 
-    # Load the model and tokenizer
+    # Load the model
     msg = "loading model"
     if cfg.adapter:
         msg += " and peft_config..."

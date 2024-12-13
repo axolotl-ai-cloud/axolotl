@@ -293,7 +293,7 @@ class AxolotlTrainingArguments(AxolotlTrainingMixins, TrainingArguments):
     """
     Training arguments for Causal trainer
 
-    This code is duplicated due to HF TrainingArguments not setting output_dir with a defaujlt value
+    This code is duplicated due to HF TrainingArguments not setting output_dir with a default value
     so it can't be used as a mixin.
     """
 
