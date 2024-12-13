@@ -238,6 +238,7 @@ class TestSharegptChatTemplateLlama3:
             sequence_len=512,
             roles_to_train=["gpt"],
         )
+        strategy.messages = "conversations"
         res = strategy.tokenize_prompt(sharegpt_dataset[0])
         input_ids = res["input_ids"]
         labels = res["labels"]
@@ -291,6 +292,7 @@ class TestSharegptChatTemplateLlama3:
             sequence_len=512,
             roles_to_train=["human"],
         )
+        strategy.messages = "conversations"
         res = strategy.tokenize_prompt(sharegpt_dataset[0])
         input_ids = res["input_ids"]
         labels = res["labels"]
@@ -332,7 +334,7 @@ class TestSharegptChatTemplateLlama3:
         ), f"Labels mismatch: {labels} != {expected_labels}"
 
     def test_llama3_system_human(self, llama3_tokenizer, basic_dataset):
-        LOG.info("Testing ShareGPT style datasets with llama-3 system/human prompts")
+        LOG.info("Testing Assistant style datasets with llama-3 system/human prompts")
         # pylint: disable=duplicate-code
         strategy = ChatTemplateStrategy(
             ChatTemplatePrompter(
