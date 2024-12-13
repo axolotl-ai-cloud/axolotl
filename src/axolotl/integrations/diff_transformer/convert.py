@@ -88,13 +88,16 @@ def convert_to_diff_attention(model: PreTrainedModel) -> PreTrainedModel:
         for name, child in module.named_children():
             if isinstance(child, attention_patterns):
                 layer_type = type(child).__name__
-                logger.info(f"Converting attention layer {layer_idx}: {layer_type}")
 
                 # Choose appropriate differential attention class
                 if isinstance(child, LlamaSdpaAttention):
                     attention_class = LlamaDifferentialSdpaAttention
                 else:
                     attention_class = LlamaDifferentialAttention
+
+                logger.info(
+                    f"Converting attention layer {layer_idx}: {layer_type} to {attention_class.__name__}"
+                )
 
                 # Create new diff attn layer
                 new_attention = attention_class(

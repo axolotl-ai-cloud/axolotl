@@ -242,11 +242,6 @@ def merge_lora(
 
 @cli.command()
 @click.argument("config", type=click.Path(exists=True, path_type=str))
-@click.option(
-    "--output-dir",
-    type=click.Path(path_type=str),
-    help="Directory to save converted model",
-)
 @add_options_from_dataclass(TrainerCliArgs)
 @add_options_from_config(AxolotlInputConfig)
 def convert_diff_transformer(config: str, **kwargs):

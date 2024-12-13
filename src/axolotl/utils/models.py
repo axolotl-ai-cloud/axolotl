@@ -710,23 +710,59 @@ class ModelLoader:
         """
         sample packing uses custom FA2 patch
         """
+        print(
+            self.cfg.flash_attention,
+            self.cfg.sdp_attention,
+            self.cfg.eager_attention,
+            self.cfg.diff_attention,
+        )
+
         if self.cfg.flash_attention:
             if not self.cfg.sample_packing and self.cfg.s2_attention:
                 pass
-            self.model_kwargs["attn_implementation"] = "flash_attention_2"
-            self.model_config._attn_implementation = (  # pylint: disable=protected-access
-                "flash_attention_2"
-            )
+
+            if self.cfg.diff_attention:
+                self.model_kwargs[
+                    "attn_implementation"
+                ] = "differential_flash_attention_2"
+                self.model_config._attn_implementation = (  # pylint: disable=protected-access
+                    "differential_flash_attention_2"
+                )
+            else:
+                self.model_kwargs["attn_implementation"] = "flash_attention_2"
+                self.model_config._attn_implementation = (  # pylint: disable=protected-access
+                    "flash_attention_2"
+                )
         elif self.cfg.sdp_attention:
-            self.model_kwargs["attn_implementation"] = "sdpa"
-            self.model_config._attn_implementation = (  # pylint: disable=protected-access
-                "sdpa"
-            )
+            if self.cfg.diff_attention:
+                self.model_kwargs["attn_implementation"] = "differential_sdpa"
+                self.model_config._attn_implementation = (  # pylint: disable=protected-access
+                    "differential_sdpa"
+                )
+            else:
+                self.model_kwargs["attn_implementation"] = "sdpa"
+                self.model_config._attn_implementation = (  # pylint: disable=protected-access
+                    "sdpa"
+                )
         elif self.cfg.eager_attention:
-            self.model_kwargs["attn_implementation"] = "eager"
+            if self.cfg.diff_attention:
+                self.model_kwargs["attn_implementation"] = "differential_eager"
+                self.model_config._attn_implementation = (  # pylint: disable=protected-access
+                    "differential_eager"
+                )
+            else:
+                self.model_kwargs["attn_implementation"] = "eager"
+                self.model_config._attn_implementation = (  # pylint: disable=protected-access
+                    "eager"
+                )
+        elif self.cfg.diff_attention:
+            self.model_kwargs["attn_implementation"] = "differential_eager"
             self.model_config._attn_implementation = (  # pylint: disable=protected-access
-                "eager"
+                "differential_eager"
             )
+
+        if "attn_implementation" in self.model_kwargs:
+            print(self.model_kwargs["attn_implementation"])
 
         if self.cfg.low_cpu_mem_usage:
             self.model_kwargs["low_cpu_mem_usage"] = True
@@ -816,6 +852,8 @@ class ModelLoader:
 
             if self.cfg.is_multimodal:
                 self.model_config.text_config = self.text_model_config
+
+            # self.model._attn_implementation_autoset = False
             self.model = self.AutoModelLoader.from_pretrained(
                 self.base_model,
                 config=self.model_config,
@@ -1030,6 +1068,10 @@ class ModelLoader:
             integrate_rope_embeddings()
 
     def load_model(self) -> Tuple[PreTrainedModel, Optional[PeftConfig]]:
+        from axolotl.integrations.diff_transformer.patches import patch_transformers
+
+        patch_transformers()
+
         self.apply_patches()
         self.set_auto_model_loader()
         self.set_device_map_config()
