@@ -365,6 +365,7 @@ eval_causal_lm_metrics: # HF evaluate metrics used during evaluation. Default is
 
 profiler_steps: # enable the pytorch profiler to capture the first N steps of training to the output_dir.
                 # see https://pytorch.org/blog/understanding-gpu-memory-1/ for more information
+                # snapshots can be visualized @ https://pytorch.org/memory_viz
 
 loss_watchdog_threshold: # High loss value, indicating the learning has broken down (a good estimate is ~2 times the loss at the start of training)
 loss_watchdog_patience: # Number of high-loss steps in a row before the trainer aborts (default: 3)
