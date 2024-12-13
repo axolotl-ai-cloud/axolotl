@@ -20,17 +20,10 @@ class PytorchProfilerCallback(TrainerCallback):
 
     def __init__(self, steps_to_profile: int = 5):
         self.steps_to_profile = steps_to_profile
-
-    def on_train_begin(
-        self,
-        args: TrainingArguments,  # pylint: disable=unused-argument
-        state: TrainerState,  # pylint: disable=unused-argument
-        control: TrainerControl,
-        **kwargs,  # pylint: disable=unused-argument
-    ):
-        torch.cuda.memory._record_memory_history(  # pylint: disable=protected-access
-            enabled="all"
-        )
+        if self.steps_to_profile:
+            torch.cuda.memory._record_memory_history(  # pylint: disable=protected-access
+                enabled="all"
+            )
 
     def on_step_end(  # pylint: disable=unused-argument
         self,
