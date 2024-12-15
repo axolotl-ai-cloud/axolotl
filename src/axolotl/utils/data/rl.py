@@ -136,7 +136,7 @@ def load_prepare_preference_datasets(cfg):
                         )
                         if isinstance(ds, DatasetDict):
                             if ds_cfg["split"] in ds:
-                                ds = ds[ds_cfg["split"]
+                                ds = ds[ds_cfg["split"]]
                             else:
                                 raise ValueError(f"{ds_cfg["split"]} split does not exist in the dataset")
                     except:
