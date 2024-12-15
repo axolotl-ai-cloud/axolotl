@@ -129,11 +129,28 @@ def load_prepare_preference_datasets(cfg):
                     )
                     split_datasets.insert(i, ds)
             else:
-                ds = load_dataset(  # pylint: disable=invalid-name
-                    ds_cfg["path"],
-                    split=ds_cfg["split"],
-                    revision=ds_cfg.get("revision", None),
-                )
+                if Path(ds_cfg["path"]).exists():
+                    try:
+                        ds = load_from_disk(
+                            ds_cfg["path"]
+                        )
+                        if isinstance(ds, DatasetDict):
+                            if ds_cfg["split"] in ds:
+                                ds = ds[ds_cfg["split"]
+                            else:
+                                raise ValueError(f"{ds_cfg["split"]} split does not exist in the dataset")
+                    except:
+                        ds = load_dataset(  # pylint: disable=invalid-name
+                            ds_cfg["path"],
+                            split=ds_cfg["split"],
+                            revision=ds_cfg.get("revision", None),
+                        )
+                else:
+                    ds = load_dataset(  # pylint: disable=invalid-name
+                        ds_cfg["path"],
+                        split=ds_cfg["split"],
+                        revision=ds_cfg.get("revision", None),
+                    )
                 split_datasets.insert(i, ds)
 
         tokenizer = load_tokenizer(cfg)
