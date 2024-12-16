@@ -36,6 +36,8 @@ class LigerArgs(BaseModel):
     liger_cross_entropy: Optional[bool] = None
     liger_fused_linear_cross_entropy: Optional[bool] = None
 
+    liger_pref_rl: Optional[bool] = None
+
     @model_validator(mode="before")
     @classmethod
     def check_deprecated_swiglu(cls, data):
