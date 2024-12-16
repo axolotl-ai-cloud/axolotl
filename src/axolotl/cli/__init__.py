@@ -476,6 +476,7 @@ def load_datasets(
         tokenizer,
         processor=processor,
     )
+    print(train_dataset, eval_dataset, total_num_steps)
 
     if (
         cli_args.debug

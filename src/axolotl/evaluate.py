@@ -1,14 +1,13 @@
 """Module for evaluating models."""
 
+import csv
 import os
 import sys
 from pathlib import Path
-from typing import Tuple, Union
+from typing import Dict, Optional
 
 import torch
 from accelerate.logging import get_logger
-from peft import PeftModel
-from transformers import PreTrainedModel, PreTrainedTokenizer
 
 from axolotl.common.cli import TrainerCliArgs
 from axolotl.logging_config import configure_logging
@@ -22,19 +21,56 @@ src_dir = os.path.join(project_root, "src")
 sys.path.insert(0, src_dir)
 
 configure_logging()
-LOG = get_logger("axolotl.eval")
+LOG = get_logger("axolotl.evaluate")
+
+
+def evaluate_dataset(
+    trainer, dataset, dataset_type: str, flash_optimum: bool = False
+) -> Optional[Dict[str, float]]:
+    """Helper function to evaluate a single dataset safely.
+
+    Args:
+        trainer: The trainer instance
+        dataset: Dataset to evaluate
+        dataset_type: Type of dataset ('train' or 'eval')
+        flash_optimum: Whether to use flash optimum
+
+    Returns:
+        Dictionary of metrics or None if dataset is None
+    """
+    if dataset is None:
+        return None
+
+    LOG.info(f"Starting {dataset_type} set evaluation...")
+
+    if flash_optimum:
+        with torch.backends.cuda.sdp_kernel(
+            enable_flash=True,
+            enable_math=True,
+            enable_mem_efficient=True,
+        ):
+            metrics = trainer.evaluate(dataset, metric_key_prefix=dataset_type)
+    else:
+        metrics = trainer.evaluate(dataset, metric_key_prefix=dataset_type)
+
+    LOG.info(f"{dataset_type.capitalize()} set evaluation completed!")
+    LOG.info(f"{dataset_type.capitalize()} Metrics:")
+    for key, value in metrics.items():
+        LOG.info(f"{key}: {value}")
+
+    return metrics
 
 
 def evaluate(
     *, cfg: DictDefault, cli_args: TrainerCliArgs, dataset_meta: TrainDatasetMeta
-) -> Tuple[Union[PeftModel, PreTrainedModel], PreTrainedTokenizer, dict]:
+) -> Dict[str, float]:
     """
-    Evaluate a model on a dataset
+    Evaluate a model on training and validation datasets
 
     Args:
         cfg: Configuration dictionary
         cli_args: Command line arguments
-        dataset_meta: Dataset metadata containing evaluation dataset
+        dataset_meta: Dataset metadata containing training and evaluation datasets
 
     Returns:
         Tuple containing:
@@ -42,6 +78,7 @@ def evaluate(
         - The tokenizer
         - Dictionary of evaluation metrics
     """
+    # pylint: disable=duplicate-code
     # Set up CUDA allocation config if using PyTorch >= 2.2
     torch_version = torch.__version__.split(".")
     torch_major, torch_minor = int(torch_version[0]), int(torch_version[1])
@@ -63,7 +100,8 @@ def evaluate(
     if cfg.is_multimodal:
         processor = load_processor(cfg, tokenizer)
 
-    # Get evaluation dataset
+    # Get datasets
+    train_dataset = dataset_meta.train_dataset
     eval_dataset = dataset_meta.eval_dataset
     total_num_steps = dataset_meta.total_num_steps
 
@@ -76,7 +114,7 @@ def evaluate(
     # Set up trainer
     trainer = setup_trainer(
         cfg,
-        train_dataset=eval_dataset,  # None # No training dataset needed for evaluation
+        train_dataset=train_dataset,
         eval_dataset=eval_dataset,
         model=(model, None, None),  # No need for model_ref or peft_config
         tokenizer=tokenizer,
@@ -84,38 +122,53 @@ def evaluate(
         total_num_steps=total_num_steps,
     )
 
-    # Run evaluation
-    LOG.info("Starting evaluation...")
+    # Evaluate datasets
+    all_metrics = {}
+    train_metrics = evaluate_dataset(trainer, train_dataset, "train", cfg.flash_optimum)
+    eval_metrics = evaluate_dataset(trainer, eval_dataset, "eval", cfg.flash_optimum)
 
-    if cfg.flash_optimum:
-        with torch.backends.cuda.sdp_kernel(
-            enable_flash=True,
-            enable_math=True,
-            enable_mem_efficient=True,
-        ):
-            metrics = trainer.evaluate()
-    else:
-        metrics = trainer.evaluate()
+    if train_metrics:
+        all_metrics.update(train_metrics)
+    if eval_metrics:
+        all_metrics.update(eval_metrics)
 
-    # Log results
-    LOG.info("Evaluation completed!")
-    LOG.info("Metrics:")
-    for key, value in metrics.items():
-        LOG.info(f"{key}: {value}")
-
-    # Save metrics to file if output directory is specified
-    if cfg.output_dir:
+    # Save metrics to CSV if output directory is specified and we have metrics
+    if cfg.output_dir and (train_metrics or eval_metrics):
         output_dir = Path(cfg.output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        metrics_file = output_dir / "eval_results.txt"
-        with metrics_file.open("w", encoding="utf-8") as file:
-            for key, value in metrics.items():
-                file.write(f"{key} = {value}\n")
+        metrics_file = output_dir / "eval_summary.csv"
+        with metrics_file.open("w", newline="", encoding="utf-8") as file:
+            writer = csv.writer(file)
+            writer.writerow(["metric", "training", "validation"])
+
+            # Get unique metric names (removing prefixes) from available metrics
+            train_metric_names = {
+                k.replace("train_", ""): k for k in (train_metrics or {})
+            }
+            eval_metric_names = {
+                k.replace("eval_", ""): k for k in (eval_metrics or {})
+            }
+            all_metric_names = sorted(
+                set(train_metric_names.keys()) | set(eval_metric_names.keys())
+            )
+
+            for metric_name in all_metric_names:
+                train_value = (
+                    train_metrics.get(train_metric_names.get(metric_name, ""), "")
+                    if train_metrics
+                    else ""
+                )
+                eval_value = (
+                    eval_metrics.get(eval_metric_names.get(metric_name, ""), "")
+                    if eval_metrics
+                    else ""
+                )
+                writer.writerow([metric_name, train_value, eval_value])
 
         LOG.info(f"Evaluation results saved to {metrics_file}")
 
     del model
     del tokenizer
 
-    return metrics
+    return all_metrics

@@ -20,10 +20,11 @@ from axolotl.cli import (
 from axolotl.common.cli import TrainerCliArgs
 from axolotl.evaluate import evaluate
 
-LOG = logging.getLogger("axolotl.cli.train")
+LOG = logging.getLogger("axolotl.cli.evaluate")
 
 
 def do_evaluate(cfg, cli_args) -> None:
+    # pylint: disable=duplicate-code
     print_axolotl_text_art()
     check_accelerate_default_config()
     check_user_token()
