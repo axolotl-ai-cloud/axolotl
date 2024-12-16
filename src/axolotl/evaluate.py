@@ -14,7 +14,7 @@ from axolotl.logging_config import configure_logging
 from axolotl.train import TrainDatasetMeta
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.models import load_model, load_processor, load_tokenizer
-from axolotl.utils.trainer import setup_trainer
+from axolotl.utils.trainer import set_pytorch_cuda_alloc_conf, setup_trainer
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 src_dir = os.path.join(project_root, "src")
@@ -79,14 +79,8 @@ def evaluate(
         - Dictionary of evaluation metrics
     """
     # pylint: disable=duplicate-code
-    # Set up CUDA allocation config if using PyTorch >= 2.2
-    torch_version = torch.__version__.split(".")
-    torch_major, torch_minor = int(torch_version[0]), int(torch_version[1])
-    if torch_major == 2 and torch_minor >= 2:
-        if os.getenv("PYTORCH_CUDA_ALLOC_CONF") is None:
-            os.environ[
-                "PYTORCH_CUDA_ALLOC_CONF"
-            ] = "expandable_segments:True,roundup_power2_divisions:16"
+    # Enable expandable segments for cuda allocation to improve VRAM usage
+    set_pytorch_cuda_alloc_conf()
 
     # Load tokenizer
     LOG.debug(
