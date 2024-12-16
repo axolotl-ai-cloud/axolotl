@@ -75,7 +75,10 @@ def do_preprocess(cfg: DictDefault, cli_args: PreprocessCliArgs) -> None:
     )
 
 
-def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs) -> None:
+def do_cli(
+    config: Union[Path, str] = Path("examples/"),
+    **kwargs,
+) -> None:
     """
     Parses `axolotl` config, CLI args, and calls `do_preprocess`.
 
