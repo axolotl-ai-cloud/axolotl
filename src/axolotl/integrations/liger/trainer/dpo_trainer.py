@@ -4,8 +4,8 @@ integration of liger dpo kernels with dpotrainer
 from typing import Dict, List, Literal, Union
 
 import torch
-from liger_kernal.transformers.trainer.orpo_trainer import _FSDPForwardRedirection
 from liger_kernel.chunked_loss import LigerFusedLinearDPOLoss
+from liger_kernel.transformers.trainer.orpo_trainer import _FSDPForwardRedirection
 from torch import nn
 from torch.distributed.fsdp import FullyShardedDataParallel
 
