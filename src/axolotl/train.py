@@ -19,7 +19,9 @@ from transformers import PreTrainedModel, PreTrainedTokenizer
 from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
 
 from axolotl.common.cli import TrainerCliArgs
-from axolotl.core.tokenizer_utils import fix_untrained_tokens
+from axolotl.contribs.lgpl.unsloth import (  # pylint: disable = no-name-in-module
+    fix_untrained_tokens,
+)
 from axolotl.logging_config import configure_logging
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.freeze import freeze_layers_except
