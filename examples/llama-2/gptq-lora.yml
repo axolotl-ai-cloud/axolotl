@@ -1,8 +1,13 @@
 base_model: TheBloke/Llama-2-7B-GPTQ
-gptq: true
-gptq_disable_exllama: true
+# optionally might have model_type or tokenizer_type
 model_type: AutoModelForCausalLM
 tokenizer_type: LlamaTokenizer
+# Automatically upload checkpoint and final model to HF
+# hub_model_id: username/custom_model_name
+
+gptq: true
+gptq_disable_exllama: true
+
 tokenizer_use_fast: true
 tokenizer_legacy: true
 load_in_8bit: false

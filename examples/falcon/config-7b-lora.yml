@@ -1,7 +1,12 @@
 base_model: tiiuae/falcon-7b
-trust_remote_code: true
+# optionally might have model_type or tokenizer_type
 model_type: AutoModelForCausalLM
 tokenizer_type: AutoTokenizer
+# Automatically upload checkpoint and final model to HF
+# hub_model_id: username/custom_model_name
+
+# required by falcon custom model code: https://huggingface.co/tiiuae/falcon-7b/tree/main
+trust_remote_code: true
 
 load_in_8bit: true
 load_in_4bit: false

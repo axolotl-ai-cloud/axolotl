@@ -1,5 +1,9 @@
 base_model: alpindale/Llama-3.2-11B-Vision-Instruct
+# optionally might have model_type or tokenizer_type or processor_type
 processor_type: AutoProcessor
+# Automatically upload checkpoint and final model to HF
+# hub_model_id: username/custom_model_name
+
 strict: false
 
 # these 3 lines are needed for now to handle vision chat templates w images
