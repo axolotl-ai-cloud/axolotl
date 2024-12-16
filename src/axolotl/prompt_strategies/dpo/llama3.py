@@ -8,17 +8,37 @@ def argilla(
     **kwargs,
 ):  # pylint: disable=possibly-unused-variable,unused-argument
     def transform_fn(sample):
+        # pylint: disable=duplicate-code
+        if "prompt" in sample.keys():
+            prompt_key = "prompt"
+        elif "input" in sample.keys():
+            prompt_key = "input"
+        elif "question" in sample.keys():
+            prompt_key = "question"
+        else:
+            prompt_key = "instruction"
+
+        if "chosen" in sample.keys():
+            chosen_key = "chosen"
+        else:
+            chosen_key = "chosen_response"
+
+        if "rejected" in sample.keys():
+            rejected_key = "rejected"
+        else:
+            rejected_key = "rejected_response"
+
         if "system" in sample and sample["system"]:
             sample["prompt"] = (
                 f"<|start_header_id|>system<|end_header_id|>\n\n{sample['system']}<|eot_id|>"
-                f"<|start_header_id|>user<|end_header_id|>\n\n{sample['instruction']}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+                f"<|start_header_id|>user<|end_header_id|>\n\n{sample[prompt_key]}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
             )
         else:
             sample[
                 "prompt"
-            ] = f"<|start_header_id|>user<|end_header_id|>\n\n{sample['instruction']}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
-        sample["chosen"] = f"{sample['chosen_response']}<|eot_id|>"
-        sample["rejected"] = f"{sample['rejected_response']}<|eot_id|>"
+            ] = f"<|start_header_id|>user<|end_header_id|>\n\n{sample[prompt_key]}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+        sample["chosen"] = f"{sample[chosen_key]}<|eot_id|>"
+        sample["rejected"] = f"{sample[rejected_key]}<|eot_id|>"
         return sample
 
     return transform_fn
