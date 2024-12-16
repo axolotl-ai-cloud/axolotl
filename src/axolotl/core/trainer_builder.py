@@ -65,6 +65,7 @@ from axolotl.utils.callbacks import (
     log_prediction_callback_factory,
 )
 from axolotl.utils.callbacks.lisa import lisa_callback_factory
+from axolotl.utils.callbacks.profiler import PytorchProfilerCallback
 from axolotl.utils.chat_templates import get_chat_template
 from axolotl.utils.collators import (
     BatchSamplerDataCollatorForSeq2Seq,
@@ -1362,6 +1363,13 @@ class TrainerBuilderBase(abc.ABC):
         callbacks.extend(
             plugin_manager.add_callbacks_pre_trainer(cfg=self.cfg, model=self.model)
         )
+
+        if self.cfg.profiler_steps:
+            callbacks.append(
+                PytorchProfilerCallback(
+                    steps_to_profile=self.cfg.profiler_steps,
+                )
+            )
 
         if self.cfg.use_wandb:
             callbacks.append(
