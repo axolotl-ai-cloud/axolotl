@@ -317,6 +317,24 @@ class TrainerBuilderBase(abc.ABC):
             total_num_steps if self.cfg.max_steps else -1
         )
 
+        report_to = []
+        if self.cfg.use_wandb:
+            report_to.append("wandb")
+        if self.cfg.use_mlflow:
+            report_to.append("mlflow")
+        if self.cfg.use_tensorboard:
+            report_to.append("tensorboard")
+        if self.cfg.use_comet:
+            report_to.append("comet_ml")
+
+        training_args_kwargs["report_to"] = report_to
+        if self.cfg.use_wandb:
+            training_args_kwargs["run_name"] = self.cfg.wandb_name
+        elif self.cfg.use_mlflow:
+            training_args_kwargs["run_name"] = self.cfg.mlflow_run_name
+        else:
+            training_args_kwargs["run_name"] = None
+
         return training_args_kwargs
 
 
@@ -537,25 +555,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         )
         training_arguments_kwargs["group_by_length"] = self.cfg.group_by_length
         training_arguments_kwargs["curriculum_sampling"] = self.cfg.curriculum_sampling
-        report_to = []
-        if self.cfg.use_wandb:
-            report_to.append("wandb")
-            if self.cfg.wandb_name:
-                training_arguments_kwargs["run_name"] = self.cfg.wandb_name
-        if self.cfg.use_mlflow:
-            report_to.append("mlflow")
-        if self.cfg.use_tensorboard:
-            report_to.append("tensorboard")
-        if self.cfg.use_comet:
-            report_to.append("comet_ml")
 
-        training_arguments_kwargs["report_to"] = report_to
-        if self.cfg.use_wandb:
-            training_arguments_kwargs["run_name"] = self.cfg.wandb_name
-        elif self.cfg.use_mlflow:
-            training_arguments_kwargs["run_name"] = self.cfg.mlflow_run_name
-        else:
-            training_arguments_kwargs["run_name"] = None
         training_arguments_kwargs["optim"] = (
             self.cfg.optimizer if self.cfg.optimizer else "adamw_hf"
         )
