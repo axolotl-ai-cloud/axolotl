@@ -119,7 +119,9 @@ def prepare_dataset(cfg, tokenizer, processor=None):
         eval_dataset = None
         if cfg.dataset_exact_deduplication:
             LOG.info("Deduplication not available for pretrained datasets")
+
         return train_dataset, eval_dataset, cfg.max_steps, prompters
+
     if eval_dataset and cfg.sample_packing and cfg.eval_sample_packing is not False:
         total_eval_steps = calculate_total_num_steps(cfg, eval_dataset, update=False)
         if total_eval_steps == 0:
@@ -134,6 +136,7 @@ def prepare_dataset(cfg, tokenizer, processor=None):
         LOG.info(f"Maximum number of steps set at {total_num_steps}")
     else:
         total_num_steps = calculate_total_num_steps(cfg, train_dataset)
+
     return train_dataset, eval_dataset, total_num_steps, prompters
 
 
