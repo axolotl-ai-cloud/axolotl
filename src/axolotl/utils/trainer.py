@@ -512,6 +512,17 @@ def prepare_opinionated_env(cfg):
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
+def set_pytorch_cuda_alloc_conf():
+    """Set up CUDA allocation config if using PyTorch >= 2.2"""
+    torch_version = torch.__version__.split(".")
+    torch_major, torch_minor = int(torch_version[0]), int(torch_version[1])
+    if torch_major == 2 and torch_minor >= 2:
+        if os.getenv("PYTORCH_CUDA_ALLOC_CONF") is None:
+            os.environ[
+                "PYTORCH_CUDA_ALLOC_CONF"
+            ] = "expandable_segments:True,roundup_power2_divisions:16"
+
+
 def setup_trainer(
     cfg, train_dataset, eval_dataset, model, tokenizer, processor, total_num_steps
 ):
