@@ -1,6 +1,10 @@
 base_model: mistral-community/Mixtral-8x22B-v0.1
+# optionally might have model_type or tokenizer_type
 model_type: AutoModelForCausalLM
 tokenizer_type: LlamaTokenizer
+# Automatically upload checkpoint and final model to HF
+# hub_model_id: username/custom_model_name
+
 trust_remote_code: true
 
 load_in_8bit: false

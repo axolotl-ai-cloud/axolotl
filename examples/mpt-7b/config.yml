@@ -1,5 +1,9 @@
 base_model: mosaicml/mpt-7b
+# optionally might have model_type or tokenizer_type
 tokenizer_type: AutoTokenizer
+# Automatically upload checkpoint and final model to HF
+# hub_model_id: username/custom_model_name
+
 trust_remote_code: true  # required for mpt as their model class is not merged into transformers yet
 load_in_8bit: false
 datasets:

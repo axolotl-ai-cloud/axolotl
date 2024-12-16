@@ -1,7 +1,11 @@
 base_model: EleutherAI/pythia-12b-deduped
 base_model_ignore_patterns: pytorch*  # prefer safetensors
+# optionally might have model_type or tokenizer_type
 model_type: GPTNeoXForCausalLM
 tokenizer_type: AutoTokenizer
+# Automatically upload checkpoint and final model to HF
+# hub_model_id: username/custom_model_name
+
 load_in_8bit: false
 load_in_4bit: false
 gptq: false
