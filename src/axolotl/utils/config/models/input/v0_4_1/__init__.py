@@ -1583,14 +1583,21 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 )
         return data
 
-    @model_validator(mode="after")
-    def check_torch_compile_auto(self):
-        if self.torch_compile == "auto" and self.env_capabilities.get("cuda_version"):
-            if version.parse(self.env_capabilities.get("cuda_version")) > version.parse(
-                "2.5.1"
-            ):
-                LOG.info("torch.compile is available, setting torch_compile to True")
-                self.torch_compile = True
+    @model_validator(mode="before")
+    @classmethod
+    def check_torch_compile_auto(cls, data):
+        if data.get("torch_compile") == "auto":
+            env_capabilities = data.get("env_capabilities", {})
+            if env_capabilities.get("torch_version"):
+                if version.parse(
+                    env_capabilities.get("torch_version")
+                ) >= version.parse("2.5.1"):
+                    LOG.info(
+                        "torch.compile is available, setting torch_compile to True"
+                    )
+                    data["torch_compile"] = True
+                else:
+                    data["torch_compile"] = False
             else:
-                self.torch_compile = False
-        return self
+                data["torch_compile"] = False
+        return data

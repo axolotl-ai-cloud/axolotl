@@ -332,7 +332,7 @@ output_dir: ./completed-model
 
 # Whether to use torch.compile and which backend to use
 # setting to `auto` will enable torch compile when torch>=2.5.1
-torch_compile:  Optional[Union[Literal["auto"], bool]]
+torch_compile:  # Optional[Union[Literal["auto"], bool]]
 torch_compile_backend:  # Optional[str]
 
 # Training hyperparameters
