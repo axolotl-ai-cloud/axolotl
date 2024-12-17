@@ -7,6 +7,8 @@ from datasets import Dataset
 from huggingface_hub import hf_hub_download
 from transformers import AutoTokenizer
 
+from axolotl.utils.chat_templates import _CHAT_TEMPLATES
+
 
 @pytest.fixture(name="assistant_dataset")
 def fixture_assistant_dataset():
@@ -151,3 +153,24 @@ def fixture_mistralv03_chat_template_jinja_w_system() -> str:
 @pytest.fixture(name="gemma2_tokenizer_chat_template_jinja")
 def fixture_gemma2_chat_template_jinja_w_system() -> str:
     return "{{ bos_token }}{% for message in messages %}{% if (message['role'] == 'assistant') %}{% set role = 'model' %}{% else %}{% set role = message['role'] %}{% endif %}{{ '<start_of_turn>' + role + '\n' + message['content'] | trim + '<end_of_turn>\n' }}{% endfor %}{% if add_generation_prompt %}{{'<start_of_turn>model\n'}}{% endif %}"
+
+
+@pytest.fixture(name="llama3_2_vision_chat_template_jinja")
+def fixture_llama3_2_vision_with_hardcoded_date() -> str:
+    """Hardcodes the date in the template to avoid the need for date logic in the prompt"""
+
+    template = _CHAT_TEMPLATES["llama3_2_vision"]
+
+    old_date_logic = """{%- if not date_string is defined %}
+    {%- if strftime_now is defined %}
+        {%- set date_string = strftime_now("%d %b %Y") %}
+    {%- else %}
+        {%- set date_string = "26 Jul 2024" %}
+    {%- endif %}
+{%- endif %}"""
+
+    new_date_logic = """{%- set date_string = "17 Dec 2024" %}"""
+
+    modified_template = template.replace(old_date_logic, new_date_logic)
+
+    return modified_template
