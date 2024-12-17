@@ -696,7 +696,7 @@ class AxolotlInputConfig(
     curriculum_sampling: Optional[bool] = None
     multipack_real_batches: Optional[bool] = None
 
-    batch_flattening: Optional[bool] = None
+    batch_flattening: Optional[Union[Literal["auto"], bool]] = None
 
     # for PoSE context length extension
     use_pose: Optional[bool] = None
@@ -930,12 +930,23 @@ class AxolotlInputConfig(
     @classmethod
     def check_batch_flattening_fa(cls, data):
         if data.get("batch_flattening"):
-            if not data.get("flash_attention"):
+            batch_flattening_auto = data.get("batch_flattening") == "auto"
+            if not data.get("flash_attention") and not batch_flattening_auto:
                 raise ValueError("batch_flattening requires flash attention")
-            if data.get("sample_packing"):
+            if data.get("sample_packing") and not batch_flattening_auto:
                 raise ValueError("batch_flattening not compatible with sample_packing")
-            if data.get("micro_batch_size") == 1:
+            if data.get("micro_batch_size") == 1 and not batch_flattening_auto:
                 LOG.warning("batch_flattening has no effect with micro_batch_size == 1")
+
+            if (
+                batch_flattening_auto
+                and data.get("flash_attention")
+                and not data.get("sample_packing")
+                and data.get("micro_batch_size") > 1
+            ):
+                data["batch_flattening"] = True
+            elif batch_flattening_auto:
+                data["batch_flattening"] = False
 
         return data
 
