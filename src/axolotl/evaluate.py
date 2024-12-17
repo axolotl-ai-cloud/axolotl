@@ -12,9 +12,10 @@ from accelerate.logging import get_logger
 from axolotl.common.cli import TrainerCliArgs
 from axolotl.logging_config import configure_logging
 from axolotl.train import TrainDatasetMeta
+from axolotl.utils import set_pytorch_cuda_alloc_conf
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.models import load_model, load_processor, load_tokenizer
-from axolotl.utils.trainer import set_pytorch_cuda_alloc_conf, setup_trainer
+from axolotl.utils.trainer import setup_trainer
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 src_dir = os.path.join(project_root, "src")

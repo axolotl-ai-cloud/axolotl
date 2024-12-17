@@ -1,6 +1,4 @@
 """CLI definition for various axolotl commands."""
-import os
-
 # pylint: disable=redefined-outer-name
 import subprocess  # nosec B404
 from typing import Optional
@@ -15,8 +13,8 @@ from axolotl.cli.utils import (
     fetch_from_github,
 )
 from axolotl.common.cli import EvaluateCliArgs, PreprocessCliArgs, TrainerCliArgs
+from axolotl.utils import set_pytorch_cuda_alloc_conf
 from axolotl.utils.config.models.input.v0_4_1 import AxolotlInputConfig
-from axolotl.utils.trainer import set_pytorch_cuda_alloc_conf
 
 
 @click.group()
