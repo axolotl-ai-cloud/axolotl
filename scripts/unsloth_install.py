@@ -32,5 +32,5 @@ else:
     raise RuntimeError(f"Torch = {v} too new!")
 x = x.format(cuda.replace(".", ""), "-ampere" if is_ampere else "")
 print(
-    f'pip install unsloth-zoo==2024.11.7 && pip install --no-deps "unsloth[{x}]==2024.11.9"'
+    f'pip install unsloth-zoo==2024.12.1 && pip install --no-deps "unsloth[{x}]==2024.12.4"'
 )
