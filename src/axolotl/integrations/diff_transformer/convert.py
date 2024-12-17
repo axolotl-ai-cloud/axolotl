@@ -59,7 +59,7 @@ def copy_attention_weights(
         nn.init.zeros_(new_attn.lambda_k1)
         nn.init.zeros_(new_attn.lambda_q2)
         nn.init.zeros_(new_attn.lambda_k2)
-        new_attn.lambda_init = 0.0
+        nn.init.zeros_(new_attn.lambda_init)
 
     logger.debug(
         "Copied positive attention weights from %s to %s",
@@ -105,6 +105,7 @@ def convert_to_diff_attention(
                 )
 
                 # Copy weights from old attention to new attention
+                new_attention.to(child.q_proj.weight.device)
                 copy_attention_weights(child, new_attention, zero_init=zero_init)
 
                 # Replace the layer

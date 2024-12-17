@@ -70,13 +70,12 @@ class LlamaDifferentialAttention(nn.Module):
         self.base_num_kv_heads = config.num_key_value_heads
         self.head_dim = config.hidden_size // config.num_attention_heads
 
-        self.scaling = self.head_dim**-0.5
         self.layer_idx = layer_idx
         self.max_position_embeddings = config.max_position_embeddings
         self.rope_theta = config.rope_theta
         self.is_causal = True
 
-        dtype = getattr(config, "torch_dtype", torch.float32)
+        dtype = torch.float32
 
         # For Q1 and Q2
         self.q_proj = nn.Linear(
@@ -111,7 +110,10 @@ class LlamaDifferentialAttention(nn.Module):
         )
 
         # Initialize differential attention parameters
-        self.lambda_init = lambda_init_fn(self.layer_idx)
+        self.lambda_init = nn.Parameter(
+            torch.full((), lambda_init_fn(self.layer_idx), dtype=dtype),
+            requires_grad=False,
+        )
         self.lambda_q1 = nn.Parameter(
             torch.zeros(self.head_dim, dtype=dtype).normal_(mean=0, std=0.1)
         )
@@ -190,6 +192,14 @@ class LlamaDifferentialAttention(nn.Module):
         # Calculate attention scores for both parts
         # NOTE(Dan): the Differential Transformers paper scales by a constant scaling factor
         # instead of sqrt(head_dim). This could be set on the class as `self.scaling`.
+        attn_weights1 = torch.matmul(q1, k1.transpose(-1, -2)) / math.sqrt(
+            self.head_dim
+        )
+        attn_weights2 = torch.matmul(q2, k2.transpose(-1, -2)) / math.sqrt(
+            self.head_dim
+        )
+
+        # Add this debug step right after computing attention weights in the forward pass
         attn_weights1 = torch.matmul(q1, k1.transpose(-1, -2)) / math.sqrt(
             self.head_dim
         )
