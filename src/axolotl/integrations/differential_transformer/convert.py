@@ -5,22 +5,35 @@ from typing import Union
 import torch
 from torch import nn
 from transformers import PreTrainedModel
-from transformers.models.llama.modeling_llama import LlamaAttention, LlamaSdpaAttention
-from transformers.models.mistral.modeling_mistral import MistralAttention
-from transformers.models.mixtral.modeling_mixtral import MixtralAttention
+from transformers.models.llama.modeling_llama import (
+    LlamaAttention,
+    LlamaFlashAttention2,
+    LlamaSdpaAttention,
+)
 
-from .multihead_diffattn import (
+from .differential_attention import (
     LlamaDifferentialAttention,
+    LlamaDifferentialFlashAttention2,
     LlamaDifferentialSdpaAttention,
 )
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+ATTENTION_MAPPING = {
+    LlamaAttention: LlamaDifferentialAttention,
+    LlamaSdpaAttention: LlamaDifferentialSdpaAttention,
+    LlamaFlashAttention2: LlamaDifferentialFlashAttention2,
+}
+
 
 def copy_attention_weights(
-    old_attn: Union[LlamaAttention, LlamaSdpaAttention],
-    new_attn: Union[LlamaDifferentialAttention, LlamaDifferentialSdpaAttention],
+    old_attn: Union[LlamaAttention, LlamaSdpaAttention, LlamaFlashAttention2],
+    new_attn: Union[
+        LlamaDifferentialAttention,
+        LlamaDifferentialSdpaAttention,
+        LlamaDifferentialFlashAttention2,
+    ],
     zero_init: bool = False,
 ) -> None:
     """
@@ -69,31 +82,24 @@ def copy_attention_weights(
 
 
 def convert_to_diff_attention(
-    model: PreTrainedModel, zero_init: bool
+    model: PreTrainedModel, zero_init: bool = False, sublayer_norm: bool = True
 ) -> PreTrainedModel:
     """Convert a pre-trained model's attention layers to differential attention"""
-    attention_patterns = (
-        LlamaAttention,
-        LlamaSdpaAttention,
-        MistralAttention,
-        MixtralAttention,
-    )
     layer_idx = 0
+
+    # Set sublayer norm as config on the model.
+    model.config.sublayer_norm = sublayer_norm
 
     def convert_module(module):
         nonlocal layer_idx
 
         # Iterate through module children, convert any attn layers to diff attn
         for name, child in module.named_children():
-            if isinstance(child, attention_patterns):
-                layer_type = type(child).__name__
-
+            if isinstance(child, tuple(ATTENTION_MAPPING.keys())):
                 # Choose appropriate differential attention class
-                if isinstance(child, LlamaSdpaAttention):
-                    attention_class = LlamaDifferentialSdpaAttention
-                else:
-                    attention_class = LlamaDifferentialAttention
+                attention_class = ATTENTION_MAPPING[type(child)]
 
+                layer_type = type(child).__name__
                 logger.info(
                     f"Converting attention layer {layer_idx}: {layer_type} to {attention_class.__name__}"
                 )
