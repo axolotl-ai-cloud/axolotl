@@ -105,7 +105,6 @@ class TestLlama:
         train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
         assert (Path(temp_dir) / "model.safetensors").exists()
 
-
     def test_batch_flattening(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
