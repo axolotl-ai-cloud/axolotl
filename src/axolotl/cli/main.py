@@ -13,6 +13,7 @@ from axolotl.cli.utils import (
     fetch_from_github,
 )
 from axolotl.common.cli import EvaluateCliArgs, PreprocessCliArgs, TrainerCliArgs
+from axolotl.utils import set_pytorch_cuda_alloc_conf
 from axolotl.utils.config.models.input.v0_4_1 import AxolotlInputConfig
 
 
@@ -47,6 +48,9 @@ def preprocess(config: str, **kwargs):
 def train(config: str, accelerate: bool, **kwargs):
     """Train or fine-tune a model."""
     kwargs = {k: v for k, v in kwargs.items() if v is not None}
+
+    # Enable expandable segments for cuda allocation to improve VRAM usage
+    set_pytorch_cuda_alloc_conf()
 
     if accelerate:
         base_cmd = ["accelerate", "launch", "-m", "axolotl.cli.train"]
