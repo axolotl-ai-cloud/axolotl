@@ -266,12 +266,18 @@ def train(
                     dataset_tags = [
                         d["path"] for d in cfg.datasets if not Path(d["path"]).is_dir()
                     ]
+                    dataset_tags = [
+                        d for d in dataset_tags if not d.startswith("https://")
+                    ]
                     if dataset_tags:
                         # guard as create_model_card may fail if dataset_tags is empty list
                         model_card_kwarg["dataset_name"] = dataset_tags
                 else:
                     dataset_tags = [
                         d["path"] for d in cfg.datasets if not Path(d["path"]).is_dir()
+                    ]
+                    dataset_tags = [
+                        d for d in dataset_tags if not d.startswith("https://")
                     ]
                     if dataset_tags:
                         # guard as create_model_card may fail if dataset_tags is empty list
