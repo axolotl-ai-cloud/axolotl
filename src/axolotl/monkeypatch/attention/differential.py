@@ -3,7 +3,7 @@
 from transformers import PreTrainedModel
 from transformers.models.llama.modeling_llama import LLAMA_ATTENTION_CLASSES
 
-from .multihead_diffattn import (
+from axolotl.integrations.diff_transformer.multihead_diffattn import (
     LlamaDifferentialAttention,
     LlamaDifferentialSdpaAttention,
 )
