@@ -28,6 +28,7 @@ from torch import nn
 from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import BatchSampler, DataLoader, RandomSampler, SequentialSampler
 from transformers import (
+    DataCollatorWithFlattening,
     EarlyStoppingCallback,
     Trainer,
     TrainerCallback,
@@ -1989,9 +1990,11 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 V2BatchSamplerDataCollatorForSeq2Seq,
                 BatchSamplerDataCollatorForSeq2Seq,
                 DataCollatorForSeq2Seq,
+                DataCollatorWithFlattening,
                 RewardDataCollatorWithPadding,
             ]
         ]
+        collator_args = [self.tokenizer]
         if self.cfg.reward_model:
             collator = RewardDataCollatorWithPadding
             if "max_length" in kwargs:
@@ -2011,12 +2014,18 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 collator = MultiModalChatDataCollator
                 kwargs["processor"] = self.processor
                 kwargs["chat_template"] = training_args.chat_template
+            elif self.cfg.batch_flattening:
+                collator = DataCollatorWithFlattening
+                collator_args.pop(0)
+                kwargs.pop("pad_to_multiple_of", None)
+                kwargs.pop("padding", None)
             else:
                 collator = DataCollatorForSeq2Seq
 
+        kwargs["return_tensors"] = "pt"
+
         return collator(
-            self.tokenizer,
-            return_tensors="pt",
+            *collator_args,
             **kwargs,
         )
 
