@@ -14,7 +14,9 @@ from transformers import HfArgumentParser
 
 from axolotl.cli import load_cfg, print_axolotl_text_art
 from axolotl.common.cli import ConvertDiffTransformerCliArgs, load_model_and_tokenizer
-from axolotl.integrations.diff_transformer.convert import convert_to_diff_attention
+from axolotl.integrations.differential_transformer.convert import (
+    convert_to_diff_attention,
+)
 
 LOG = logging.getLogger("axolotl.cli.convert_attention")
 
@@ -74,7 +76,11 @@ def convert_diff_transformer(cfg, cli_args, config_path):
         # Convert attention
         LOG.info("Converting to differential attention...")
         try:
-            model = convert_to_diff_attention(model, cli_args.zero_init)
+            model = convert_to_diff_attention(
+                model=model,
+                zero_init=cli_args.zero_init,
+                sublayer_norm=cli_args.sublayer_norm,
+            )
             model.to(cfg.device, dtype=cfg.torch_dtype)
         except Exception as exc:
             LOG.error(Fore.RED + "Conversion failed: %s" + Fore.RESET, str(exc))
@@ -130,43 +136,35 @@ def convert_diff_transformer(cfg, cli_args, config_path):
                     + Fore.RESET
                 )
             else:
-                if cli_args.zero_init:
-                    LOG.info(
-                        Fore.RED
-                        + "Generations do not match.\n"
-                        + "Original generation:\n"
-                        + "*" * 50
-                        + "\n"
-                        + f"{orig_text}\n"
-                        + "*" * 50
-                        + "\n"
-                        + "Converted generation:\n"
-                        + "*" * 50
-                        + "\n"
-                        + f"{conv_text}\n"
-                        + "*" * 50
-                        + "\n"
-                        + Fore.RESET
-                    )
+                message = (
+                    "Generations do not match.\n"
+                    + "Original generation:\n"
+                    + "*" * 50
+                    + "\n"
+                    + f"{orig_text}\n"
+                    + "*" * 50
+                    + "\n"
+                    + "Converted generation:\n"
+                    + "*" * 50
+                    + "\n"
+                    + f"{conv_text}\n"
+                    + "*" * 50
+                    + "\n"
+                )
+
+                if cli_args.zero_init and not cli_args.sublayer_norm:
+                    LOG.info(Fore.RED + message + Fore.RESET)
                 else:
                     LOG.info(
                         Fore.YELLOW
-                        + "Generations do not match.\n"
-                        + "Original generation:\n"
-                        + "*" * 50
-                        + "\n"
-                        + f"{orig_text}\n"
-                        + "*" * 50
-                        + "\n"
-                        + "Converted generation:\n"
-                        + "*" * 50
-                        + "\n"
-                        + f"{conv_text}\n"
-                        + "*" * 50
-                        + "\n"
-                        + "However, this is expected since --zero-init was not passed."
+                        + message
+                        + "However, this is expected since --zero-init"
+                        + " and --no-sublayer-norm were not passed."
                         + Fore.RESET
                     )
+
+        return model
+
     except Exception as exc:
         LOG.error(Fore.RED + "Process failed: %s" + Fore.RESET, str(exc))
         raise
