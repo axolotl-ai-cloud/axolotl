@@ -1,4 +1,7 @@
 base_model: cerebras/Cerebras-GPT-1.3B
+# Automatically upload checkpoint and final model to HF
+# hub_model_id: username/custom_model_name
+
 load_in_8bit: false
 load_in_4bit: true
 strict: false

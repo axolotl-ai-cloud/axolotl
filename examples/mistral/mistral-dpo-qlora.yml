@@ -4,8 +4,11 @@
 #face problems with the special tokens.
 
 base_model: mistralai/Mistral-7B-Instruct-v0.2
+# optionally might have model_type or tokenizer_type
 model_type: MistralForCausalLM
 tokenizer_type: LlamaTokenizer
+# Automatically upload checkpoint and final model to HF
+# hub_model_id: username/custom_model_name
 
 load_in_8bit: false
 load_in_4bit: true

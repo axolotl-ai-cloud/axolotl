@@ -1,4 +1,6 @@
 base_model: ai21labs/Jamba-v0.1
+# Automatically upload checkpoint and final model to HF
+# hub_model_id: username/custom_model_name
 trust_remote_code: true
 
 load_in_8bit: false

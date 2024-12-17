@@ -1,4 +1,6 @@
 base_model: bigcode/starcoder2-3b
+# Automatically upload checkpoint and final model to HF
+# hub_model_id: username/custom_model_name
 
 load_in_8bit: false
 load_in_4bit: true

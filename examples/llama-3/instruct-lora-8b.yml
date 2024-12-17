@@ -1,6 +1,9 @@
 base_model: NousResearch/Meta-Llama-3-8B-Instruct
+# optionally might have model_type or tokenizer_type
 model_type: LlamaForCausalLM
 tokenizer_type: AutoTokenizer
+# Automatically upload checkpoint and final model to HF
+# hub_model_id: username/custom_model_name
 
 load_in_8bit: true
 load_in_4bit: false

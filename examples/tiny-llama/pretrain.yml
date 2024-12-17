@@ -1,7 +1,9 @@
 base_model: TinyLlama/TinyLlama-1.1B-Chat-v1.0
-
+# optionally might have model_type or tokenizer_type
 model_type: LlamaForCausalLM
 tokenizer_type: LlamaTokenizer
+# Automatically upload checkpoint and final model to HF
+# hub_model_id: username/custom_model_name
 
 load_in_8bit: false
 load_in_4bit: false

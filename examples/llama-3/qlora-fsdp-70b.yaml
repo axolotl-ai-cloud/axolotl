@@ -1,6 +1,9 @@
 base_model: casperhansen/llama-3-70b-fp16
+# optionally might have model_type or tokenizer_type
 model_type: LlamaForCausalLM
 tokenizer_type: AutoTokenizer  # PreTrainedTokenizerFast
+# Automatically upload checkpoint and final model to HF
+# hub_model_id: username/custom_model_name
 
 load_in_8bit: false
 load_in_4bit: true

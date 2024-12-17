@@ -1,5 +1,8 @@
 base_model: hugging-quants/Meta-Llama-3.1-405B-BNB-NF4-BF16
+# optionally might have model_type or tokenizer_type
 tokenizer_type: AutoTokenizer
+# Automatically upload checkpoint and final model to HF
+# hub_model_id: username/custom_model_name
 
 load_in_4bit: true
 strict: false
