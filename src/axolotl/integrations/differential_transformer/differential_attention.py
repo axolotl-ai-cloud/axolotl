@@ -262,6 +262,7 @@ class LlamaDifferentialSdpaAttention(LlamaDifferentialAttention):
         dtype: Data type for the layer parameters
     """
 
+    # pylint: disable=duplicate-code
     def forward(
         self,
         hidden_states: torch.Tensor,  # [bsz, seq_len, hidden_size]
@@ -284,8 +285,8 @@ class LlamaDifferentialSdpaAttention(LlamaDifferentialAttention):
                 'but specifying the manual implementation will be required from Transformers version v5.0.0 onwards. This warning can be removed using the argument `attn_implementation="eager"` when loading the model.'
             )
             return super().forward(
-                hidden_states=hidden_states,  # pylint: disable=duplicate-code
-                attention_mask=attention_mask,  # pylint: disable=duplicate-code
+                hidden_states=hidden_states,
+                attention_mask=attention_mask,
                 position_ids=position_ids,
                 past_key_value=past_key_value,
                 output_attentions=output_attentions,
@@ -422,6 +423,7 @@ class LlamaDifferentialFlashAttention2(LlamaDifferentialAttention):
         dtype: Data type for the layer parameters
     """
 
+    # pylint: disable=duplicate-code
     def forward(
         self,
         hidden_states: torch.Tensor,  # [bsz, seq_len, hidden_size]
