@@ -4,7 +4,7 @@ shared module for cli specific things
 
 import logging
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, Union
 
 import axolotl.monkeypatch.data.batch_dataset_fetcher  # pylint: disable=unused-import  # noqa: F401
 from axolotl.logging_config import configure_logging
@@ -67,7 +67,7 @@ class ConvertDiffTransformerCliArgs:
 def load_model_and_tokenizer(
     *,
     cfg: DictDefault,
-    cli_args: TrainerCliArgs,
+    cli_args: Union[TrainerCliArgs, EvaluateCliArgs, ConvertDiffTransformerCliArgs],
 ):
     LOG.info(f"loading tokenizer... {cfg.tokenizer_config or cfg.base_model_config}")
     tokenizer = load_tokenizer(cfg)
