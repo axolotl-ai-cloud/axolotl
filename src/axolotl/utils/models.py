@@ -445,7 +445,7 @@ class ModelLoader:
             patch_mistral_cross_entropy()
 
         if self.cfg.diff_attention:
-            from axolotl.integrations.diff_transformer.patches import (
+            from axolotl.monkeypatch.attention.differential import (
                 patch_llama_attention_classes,
             )
 
