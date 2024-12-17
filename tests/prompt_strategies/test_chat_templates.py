@@ -140,7 +140,6 @@ class TestAssistantChatTemplateLlama3:
             1781, 26966, 32007,  # user eot
             32001,  # assistant
             1781, 26966, 32007,  # assistant eot
-            32000,  # eos
         ]
         expected_labels = [
             -100,  # user
@@ -151,7 +150,6 @@ class TestAssistantChatTemplateLlama3:
             -100, -100, -100,  # user eot
             -100,  # assistant
             1781, 26966, 32007,  # assistant eot
-            32000,  # eos
         ]
         # fmt: on
         LOG.debug(f"Expected input_ids: {expected_input_ids}")
@@ -230,7 +228,10 @@ class TestSharegptChatTemplateLlama3:
         # pylint: disable=duplicate-code
         strategy = ChatTemplateStrategy(
             ChatTemplatePrompter(
-                llama3_tokenizer, chat_template=get_chat_template("llama3")
+                llama3_tokenizer,
+                chat_template=get_chat_template("llama3"),
+                message_field_role="from",
+                message_field_content="value",
             ),
             tokenizer=llama3_tokenizer,
             train_on_inputs=False,
@@ -238,6 +239,7 @@ class TestSharegptChatTemplateLlama3:
             sequence_len=512,
             roles_to_train=["gpt"],
         )
+        strategy.messages = "conversations"
         res = strategy.tokenize_prompt(sharegpt_dataset[0])
         input_ids = res["input_ids"]
         labels = res["labels"]
@@ -283,7 +285,10 @@ class TestSharegptChatTemplateLlama3:
         # pylint: disable=duplicate-code
         strategy = ChatTemplateStrategy(
             ChatTemplatePrompter(
-                llama3_tokenizer, chat_template=get_chat_template("llama3")
+                llama3_tokenizer,
+                chat_template=get_chat_template("llama3"),
+                message_field_role="from",
+                message_field_content="value",
             ),
             tokenizer=llama3_tokenizer,
             train_on_inputs=False,
@@ -291,6 +296,7 @@ class TestSharegptChatTemplateLlama3:
             sequence_len=512,
             roles_to_train=["human"],
         )
+        strategy.messages = "conversations"
         res = strategy.tokenize_prompt(sharegpt_dataset[0])
         input_ids = res["input_ids"]
         labels = res["labels"]
@@ -336,7 +342,10 @@ class TestSharegptChatTemplateLlama3:
         # pylint: disable=duplicate-code
         strategy = ChatTemplateStrategy(
             ChatTemplatePrompter(
-                llama3_tokenizer, chat_template=get_chat_template("llama3")
+                llama3_tokenizer,
+                chat_template=get_chat_template("llama3"),
+                message_field_role="from",
+                message_field_content="value",
             ),
             tokenizer=llama3_tokenizer,
             train_on_inputs=False,
@@ -344,6 +353,7 @@ class TestSharegptChatTemplateLlama3:
             sequence_len=512,
             roles_to_train=["system", "human"],
         )
+        strategy.messages = "conversations"
         res = strategy.tokenize_prompt(basic_dataset[0])
         input_ids = res["input_ids"]
         labels = res["labels"]
@@ -384,6 +394,149 @@ class TestSharegptChatTemplateLlama3:
         assert (
             input_ids == expected_input_ids
         ), f"Input IDs mismatch: {input_ids} != {expected_input_ids}"
+        assert (
+            labels == expected_labels
+        ), f"Labels mismatch: {labels} != {expected_labels}"
+
+
+class TestAssistantToolCallingChatTemplateLlama32Vision:
+    """
+    Test class for assistant style datasets with tool_calling prompts using the llama-32_vision chat template.
+    """
+
+    def test_llama32vision_train_on_assistant(
+        self, llama3_tokenizer, toolcalling_dataset, llama3_2_vision_chat_template_jinja
+    ):
+        LOG.info(
+            "Testing assistant style datasets with tool_calling with llama-32 chat template, training on assistant"
+        )
+
+        strategy = ChatTemplateStrategy(
+            ChatTemplatePrompter(
+                llama3_tokenizer,
+                chat_template=get_chat_template(
+                    "jinja", jinja_template=llama3_2_vision_chat_template_jinja
+                ),
+                message_field_role="role",
+                message_field_content="content",
+            ),
+            tokenizer=llama3_tokenizer,
+            train_on_inputs=False,
+            train_on_eos="turn",
+            sequence_len=512,
+            roles_to_train=["assistant"],
+        )
+
+        res = strategy.tokenize_prompt(toolcalling_dataset[0])
+
+        input_ids = res["input_ids"]
+        labels = res["labels"]
+
+        # fmt: off
+        expected_input_ids = [
+            128000,  # bos
+            128006, 9125, 128007, 271,  # system header
+            38766, 1303, 33025, 2696, 25, 6790, 220, 2366, 18, 198, 15724, 2696, 25, 220, 1114, 3799, 220, 2366, 19, 271,  # system date prompt
+            2675, 527, 264, 11164, 430, 31680, 311, 9282, 20126, 13, 1472, 1288, 10052, 449, 279, 5089, 1511, 304, 279, 79002, 3813, 13, 128009,  # system message
+            128006, 882, 128007, 271,  # user header
+            19182, 11, 1148, 596, 279, 9499, 304, 12366, 1314, 1457, 30, 128009,  # user message
+            128006, 78191, 128007, 271,  # assistant header
+            5018, 609, 794, 330, 456, 11327, 54625, 498, 330, 14105, 794, 5324, 2588, 794, 330, 60704, 11, 9822, 498, 330, 3928, 794, 330, 66, 41347, 32075, 128009,  # assistant message
+            128006, 23799, 4690, 128007, 271,  # tool header
+            1, 1313, 13, 15, 1, 128009,  # tool message
+            128006, 78191, 128007, 271,  # assistant header
+            791, 9499, 304, 12366, 374, 220, 1313, 13, 15, 12628, 62447, 13, 128009  # assistant message
+        ]
+
+        expected_labels = [
+            IGNORE_TOKEN_ID,  # bos
+            IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID,  # system header
+            IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID,  # system date prompt
+            IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID,  # system message
+            IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID,  # user header
+            IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID,  # user message
+            IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID,  # assistant header
+            5018, 609, 794, 330, 456, 11327, 54625, 498, 330, 14105, 794, 5324, 2588, 794, 330, 60704, 11, 9822, 498, 330, 3928, 794, 330, 66, 41347, 32075, 128009,  # assistant message
+            IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID,  # tool header
+            IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID,  # tool message
+            IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID,  # assistant header
+            791, 9499, 304, 12366, 374, 220, 1313, 13, 15, 12628, 62447, 13, 128009  # assistant message
+        ]
+        # fmt: on
+
+        assert (
+            input_ids == expected_input_ids
+        ), f"Input IDs mismatch: {input_ids} != {expected_input_ids}"
+
+        assert (
+            labels == expected_labels
+        ), f"Labels mismatch: {labels} != {expected_labels}"
+
+    def test_llama32vision_train_on_tools(
+        self, llama3_tokenizer, toolcalling_dataset, llama3_2_vision_chat_template_jinja
+    ):
+        LOG.info(
+            "Testing assistant style datasets with tool_calling with llama-32 chat template, training on tools"
+        )
+        # pylint: disable=duplicate-code
+
+        strategy = ChatTemplateStrategy(
+            ChatTemplatePrompter(
+                llama3_tokenizer,
+                chat_template=get_chat_template(
+                    "jinja", jinja_template=llama3_2_vision_chat_template_jinja
+                ),
+                message_field_role="role",
+                message_field_content="content",
+            ),
+            tokenizer=llama3_tokenizer,
+            train_on_inputs=False,
+            train_on_eos="turn",
+            sequence_len=512,
+            roles_to_train=["assistant", "tool"],
+        )
+
+        res = strategy.tokenize_prompt(toolcalling_dataset[0])
+
+        input_ids = res["input_ids"]
+        labels = res["labels"]
+
+        # fmt: off
+        expected_input_ids = [
+            128000,  # bos
+            128006, 9125, 128007, 271,  # system header
+            38766, 1303, 33025, 2696, 25, 6790, 220, 2366, 18, 198, 15724, 2696, 25, 220, 1114, 3799, 220, 2366, 19, 271,  # system date prompt
+            2675, 527, 264, 11164, 430, 31680, 311, 9282, 20126, 13, 1472, 1288, 10052, 449, 279, 5089, 1511, 304, 279, 79002, 3813, 13, 128009,  # system message
+            128006, 882, 128007, 271,  # user header
+            19182, 11, 1148, 596, 279, 9499, 304, 12366, 1314, 1457, 30, 128009,  # user message
+            128006, 78191, 128007, 271,  # assistant header
+            5018, 609, 794, 330, 456, 11327, 54625, 498, 330, 14105, 794, 5324, 2588, 794, 330, 60704, 11, 9822, 498, 330, 3928, 794, 330, 66, 41347, 32075, 128009,  # assistant message
+            128006, 23799, 4690, 128007, 271,  # tool header
+            1, 1313, 13, 15, 1, 128009,  # tool message
+            128006, 78191, 128007, 271,  # assistant header
+            791, 9499, 304, 12366, 374, 220, 1313, 13, 15, 12628, 62447, 13, 128009  # assistant message
+        ]
+
+        expected_labels = [
+            IGNORE_TOKEN_ID,  # bos
+            IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID,  # system header
+            IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID,  # system date prompt
+            IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID,  # system message
+            IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID,  # user header
+            IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID,  # user message
+            IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID,  # assistant header
+            5018, 609, 794, 330, 456, 11327, 54625, 498, 330, 14105, 794, 5324, 2588, 794, 330, 60704, 11, 9822, 498, 330, 3928, 794, 330, 66, 41347, 32075, 128009,  # assistant message
+            IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID,  # tool header
+            IGNORE_TOKEN_ID, 1313, 13, 15, IGNORE_TOKEN_ID, 128009,  # tool message
+            IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID,  # assistant header
+            791, 9499, 304, 12366, 374, 220, 1313, 13, 15, 12628, 62447, 13, 128009  # assistant message
+        ]
+        # fmt: on
+
+        assert (
+            input_ids == expected_input_ids
+        ), f"Input IDs mismatch: {input_ids} != {expected_input_ids}"
+
         assert (
             labels == expected_labels
         ), f"Labels mismatch: {labels} != {expected_labels}"
