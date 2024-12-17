@@ -346,8 +346,18 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         """
         Locate the starting and ending indices of the specified turn in a conversation.
         """
+        # pylint: disable=too-many-return-statements
+
         if turn_idx >= len(turns):
             raise ValueError(f"Turn index {turn_idx} out of range")
+
+        # mistral does not output message if it contains only system message
+        if (
+            turn_idx == 0
+            and turns[0].get("role") == "system"
+            and "mistral" in self.tokenizer.name_or_path.lower()
+        ):
+            return -1, -1
 
         empty_turn = {
             "role": turns[turn_idx].get("role"),
