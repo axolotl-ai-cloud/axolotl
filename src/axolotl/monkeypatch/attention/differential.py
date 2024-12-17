@@ -3,8 +3,9 @@
 from transformers import PreTrainedModel
 from transformers.models.llama.modeling_llama import LLAMA_ATTENTION_CLASSES
 
-from axolotl.integrations.diff_transformer.multihead_diffattn import (
+from axolotl.integrations.differential_transformer.differential_attention import (
     LlamaDifferentialAttention,
+    LlamaDifferentialFlashAttention2,
     LlamaDifferentialSdpaAttention,
 )
 
@@ -15,6 +16,9 @@ def patch_llama_attention_classes():
     # Add our attention class to the registry
     LLAMA_ATTENTION_CLASSES["differential_eager"] = LlamaDifferentialAttention
     LLAMA_ATTENTION_CLASSES["differential_sdpa"] = LlamaDifferentialSdpaAttention
+    LLAMA_ATTENTION_CLASSES[
+        "differential_flash_attention_2"
+    ] = LlamaDifferentialFlashAttention2
 
     @classmethod
     def new_autoset(_, config, **kwargs):  # pylint: disable=unused-argument
@@ -28,6 +32,7 @@ def patch_llama_attention_classes():
             "flash_attention_2",
             "differential_eager",
             "differential_sdpa",
+            "differential_flash_attention_2",
         ]
         if attn_implementation not in valid_impls:
             message = (
