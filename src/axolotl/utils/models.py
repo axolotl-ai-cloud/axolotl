@@ -444,6 +444,13 @@ class ModelLoader:
 
             patch_mistral_cross_entropy()
 
+        if self.cfg.diff_attention:
+            from axolotl.integrations.diff_transformer.patches import (
+                patch_llama_attention_classes,
+            )
+
+            patch_llama_attention_classes()
+
     def patch_attention(self) -> None:
         if hasattr(self.model_config, "model_type"):
             if self.model_config.model_type == "mllama" and self.cfg.flash_attention:
@@ -1058,10 +1065,6 @@ class ModelLoader:
             integrate_rope_embeddings()
 
     def load_model(self) -> Tuple[PreTrainedModel, Optional[PeftConfig]]:
-        from axolotl.integrations.diff_transformer.patches import patch_transformers
-
-        patch_transformers()
-
         self.apply_patches()
         self.set_auto_model_loader()
         self.set_device_map_config()

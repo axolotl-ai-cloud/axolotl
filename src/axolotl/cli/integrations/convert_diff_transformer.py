@@ -75,7 +75,7 @@ def convert_diff_transformer(cfg, cli_args, config_path):
         LOG.info("Converting to differential attention...")
         try:
             model = convert_to_diff_attention(model, cli_args.zero_init)
-            model.to(model.device)
+            model.to(cfg.device, dtype=cfg.torch_dtype)
         except Exception as exc:
             LOG.error(Fore.RED + "Conversion failed: %s" + Fore.RESET, str(exc))
             raise
