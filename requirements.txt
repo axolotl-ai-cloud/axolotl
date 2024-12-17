@@ -11,22 +11,27 @@ liger-kernel==0.4.2
 # END section
 
 packaging==23.2
+
 peft==0.14.0
 transformers @ git+https://github.com/huggingface/transformers.git@v4.47-release
 tokenizers>=0.20.1
-accelerate==1.2.0
+accelerate==1.2.1
 datasets==3.1.0
 deepspeed==0.16.1
+trl==0.12.1
+
+optimum==1.16.2
+hf_transfer
+sentencepiece
+gradio==3.50.2
+
 pydantic==2.6.3
 addict
 fire
 PyYAML>=6.0
 requests
-sentencepiece
 wandb
 einops
-optimum==1.16.2
-hf_transfer
 colorama
 numba
 numpy>=1.24.4,<=2.0.1
@@ -36,7 +41,6 @@ scipy
 scikit-learn==1.4.2
 nvidia-ml-py==12.560.30
 art
-gradio==3.50.2
 tensorboard
 python-dotenv==1.0.1
 
@@ -45,7 +49,6 @@ s3fs>=2024.5.0
 gcsfs>=2024.5.0
 # adlfs
 
-trl==0.12.1
 zstandard==0.22.0
 fastcore
 
