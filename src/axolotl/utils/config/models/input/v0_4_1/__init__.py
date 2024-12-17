@@ -741,7 +741,7 @@ class AxolotlInputConfig(
     special_tokens: Optional[SpecialTokensConfig] = None
     tokens: Optional[List[str]] = None
 
-    torch_compile: Optional[bool] = None
+    torch_compile: Optional[Union[Literal["auto"], bool]] = None
     torch_compile_backend: Optional[str] = None
     torch_compile_mode: Optional[
         Literal["default", "reduce-overhead", "max-autotune"]
@@ -1581,4 +1581,23 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 raise ValueError(
                     "ADOPT optimizer is incompatible with torch version < 2.5.1"
                 )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_torch_compile_auto(cls, data):
+        if data.get("torch_compile") == "auto":
+            env_capabilities = data.get("env_capabilities", {})
+            if env_capabilities.get("torch_version"):
+                if version.parse(
+                    env_capabilities.get("torch_version")
+                ) >= version.parse("2.5.1"):
+                    LOG.info(
+                        "torch.compile is available, setting torch_compile to True"
+                    )
+                    data["torch_compile"] = True
+                else:
+                    data["torch_compile"] = False
+            else:
+                data["torch_compile"] = False
         return data

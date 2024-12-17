@@ -337,7 +337,8 @@ comet_experiment_config: # Dictionary for additional configuration settings, see
 output_dir: ./completed-model
 
 # Whether to use torch.compile and which backend to use
-torch_compile:  # bool
+# setting to `auto` will enable torch compile when torch>=2.5.1
+torch_compile:  # Optional[Union[Literal["auto"], bool]]
 torch_compile_backend:  # Optional[str]
 
 # Training hyperparameters

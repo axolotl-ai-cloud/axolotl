@@ -245,8 +245,8 @@ def validate_config(
         ) = merge_input_args()
 
     if capabilities or env_capabilities:
-        if (capabilities and not env_capabilities) or (
-            env_capabilities and not capabilities
+        if (capabilities and env_capabilities is None) or (
+            env_capabilities and capabilities is None
         ):
             raise ValueError(
                 "Both capabilities and env_capabilities must be provided or not provided."
