@@ -9,15 +9,12 @@ from .multihead_diffattn import (
 )
 
 
-def patch_transformers():
+def patch_llama_attention_classes():
     """Patch transformers to support differential attention"""
 
     # Add our attention class to the registry
     LLAMA_ATTENTION_CLASSES["differential_eager"] = LlamaDifferentialAttention
     LLAMA_ATTENTION_CLASSES["differential_sdpa"] = LlamaDifferentialSdpaAttention
-
-    # Store original method for use in our patch
-    # original_autoset = PreTrainedModel._autoset_attn_implementation
 
     @classmethod
     def new_autoset(_, config, **kwargs):  # pylint: disable=unused-argument
