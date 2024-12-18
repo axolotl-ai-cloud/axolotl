@@ -1,6 +1,0 @@
-metric,training,validation
-loss,1.8773103952407837,1.915901780128479
-model_preparation_time,0.0051,0.0051
-runtime,89.7635,8.9565
-samples_per_second,20.053,22.33
-steps_per_second,20.053,22.33
