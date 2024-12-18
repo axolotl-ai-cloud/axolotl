@@ -1,6 +1,7 @@
 """Shared fixtures for differential transformer conversion tests."""
 
 import pytest
+from click.testing import CliRunner
 
 
 @pytest.fixture()
@@ -26,3 +27,8 @@ def base_config():
             "pad_token": "<|endoftext|>",
         },
     }
+
+
+@pytest.fixture
+def cli_runner():
+    return CliRunner()
