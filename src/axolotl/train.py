@@ -26,7 +26,7 @@ from axolotl.logging_config import configure_logging
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.freeze import freeze_layers_except
 from axolotl.utils.models import load_model, load_processor, load_tokenizer
-from axolotl.utils.trainer import set_pytorch_cuda_alloc_conf, setup_trainer
+from axolotl.utils.trainer import setup_trainer
 
 try:
     from optimum.bettertransformer import BetterTransformer
@@ -87,7 +87,7 @@ def train(
             )
     resume_from_checkpoint = cfg.resume_from_checkpoint
 
-    # Load the model
+    # Load the model and tokenizer
     msg = "loading model"
     if cfg.adapter:
         msg += " and peft_config..."

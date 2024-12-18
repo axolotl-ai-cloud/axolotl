@@ -12,10 +12,9 @@ from accelerate.logging import get_logger
 from axolotl.common.cli import EvaluateCliArgs, load_model_and_tokenizer
 from axolotl.logging_config import configure_logging
 from axolotl.train import TrainDatasetMeta
-from axolotl.utils import set_pytorch_cuda_alloc_conf
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.models import load_processor
-from axolotl.utils.trainer import set_pytorch_cuda_alloc_conf, setup_trainer
+from axolotl.utils.trainer import setup_trainer
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 src_dir = os.path.join(project_root, "src")
@@ -62,6 +61,7 @@ def evaluate_dataset(
     return metrics
 
 
+# pylint: disable=duplicate-code
 def evaluate(
     *, cfg: DictDefault, cli_args: EvaluateCliArgs, dataset_meta: TrainDatasetMeta
 ) -> Dict[str, float]:
@@ -79,10 +79,6 @@ def evaluate(
         - The tokenizer
         - Dictionary of evaluation metrics
     """
-    # pylint: disable=duplicate-code
-    # Enable expandable segments for cuda allocation to improve VRAM usage
-    set_pytorch_cuda_alloc_conf()
-
     # Load model
     LOG.debug("loading model for evaluation...")
 
