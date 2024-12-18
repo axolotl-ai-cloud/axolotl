@@ -2,7 +2,7 @@
 
 import abc
 import logging
-from typing import Dict, List, Tuple, Union
+from typing import Callable, Dict, List, Optional, Tuple, Union
 
 from transformers import BatchEncoding, PreTrainedTokenizer
 
@@ -33,6 +33,8 @@ class PromptTokenizingStrategy(abc.ABC):
     """
     Abstract class for tokenizing strategies
     """
+
+    filter_rows: Optional[Callable] = None
 
     def __init__(
         self,
