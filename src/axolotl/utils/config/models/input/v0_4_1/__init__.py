@@ -177,6 +177,7 @@ class SFTDataset(BaseModel):
     message_field_content: Optional[str] = None
     message_field_training: Optional[str] = None
     message_field_training_detail: Optional[str] = None
+    logprobs_field: Optional[str] = None
     roles_to_train: Optional[List[str]] = None
     train_on_eos: Optional[str] = None
     roles: Optional[Dict[str, List[str]]] = None
@@ -620,6 +621,8 @@ class AxolotlInputConfig(
     dpo_use_weighting: Optional[
         bool
     ] = None  # whether to use weighting in DPO trainer. If none, default is false in the trainer.
+
+    trainer: Optional[Literal["kd"]] = None
 
     datasets: Optional[conlist(Union[SFTDataset, DPODataset, KTODataset], min_length=1)] = None  # type: ignore
     test_datasets: Optional[conlist(Union[SFTDataset, DPODataset, KTODataset], min_length=1)] = None  # type: ignore
