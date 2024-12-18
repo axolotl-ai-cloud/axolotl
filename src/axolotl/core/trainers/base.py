@@ -176,6 +176,7 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
         self.bench_data_collator = bench_data_collator
         self.eval_data_collator = eval_data_collator
         self.dataset_tags = dataset_tags
+        self._signature_columns = None  # workaround for pylint
         super().__init__(*_args, **kwargs)
         self.train_data_collator = self.data_collator
         self._stored_metrics = defaultdict(lambda: defaultdict(list))

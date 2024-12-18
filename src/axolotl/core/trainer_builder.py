@@ -16,7 +16,11 @@ from typing import List, Type, Union
 
 import torch
 import transformers
-from transformers import EarlyStoppingCallback, TrainerCallback, DataCollatorWithFlattening
+from transformers import (
+    DataCollatorWithFlattening,
+    EarlyStoppingCallback,
+    TrainerCallback,
+)
 from trl.trainer.utils import RewardDataCollatorWithPadding
 
 from axolotl.core.trainers.base import (
@@ -29,6 +33,7 @@ from axolotl.core.trainers.base import (
     AxolotlTrainer,
     ReLoRATrainer,
 )
+from axolotl.core.trainers.kd import AxolotlKDTrainer
 from axolotl.core.training_args import (
     AxolotlCPOConfig,
     AxolotlDPOConfig,
@@ -38,7 +43,6 @@ from axolotl.core.training_args import (
     AxolotlTrainingArguments,
 )
 from axolotl.integrations.base import PluginManager
-from axolotl.integrations.liger.trainer.dpo_trainer import AxolotlLigerDPOTrainer
 from axolotl.monkeypatch.multipack import SUPPORTED_MULTIPACK_MODEL_TYPES
 from axolotl.monkeypatch.relora import ReLoRACallback
 from axolotl.utils import is_comet_available, is_mlflow_available
@@ -282,6 +286,8 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             return AxolotlMambaTrainer
         if self.cfg.reward_model:
             return AxolotlRewardTrainer
+        if self.cfg.trainer == "kd":
+            return AxolotlKDTrainer
         return AxolotlTrainer
 
     def build(self, total_num_steps):
@@ -988,10 +994,7 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
                 "precompute_ref_log_probs"
             ] = self.cfg.precompute_ref_log_probs
         if self.cfg.rl in ["dpo", "ipo"]:
-            if self.cfg.liger_pref_rl:
-                trainer_cls = AxolotlLigerDPOTrainer
-            else:
-                trainer_cls = AxolotlDPOTrainer
+            trainer_cls = AxolotlDPOTrainer
             trainer_cls_args = [self.model, self.model_ref]
         elif self.cfg.rl == "orpo":
             trainer_cls = AxolotlORPOTrainer
