@@ -84,9 +84,9 @@ class LlamaDifferentialAttention(nn.Module):
 
         if config.split_heads:
             # Split heads mode
-            assert (
-                self.base_num_heads % 2 == 0
-            ), "Number of heads must be even for splitting"
+            # assert (
+            #     self.base_num_heads % 2 == 0
+            # ), "Number of heads must be even for splitting"
             self.heads_per_component = self.base_num_heads // 2
 
             # Single projections

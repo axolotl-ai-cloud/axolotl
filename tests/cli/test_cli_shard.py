@@ -1,5 +1,6 @@
 """pytest tests for axolotl CLI shard command."""
 # pylint: disable=duplicate-code
+
 from unittest.mock import patch
 
 from axolotl.cli.main import cli
