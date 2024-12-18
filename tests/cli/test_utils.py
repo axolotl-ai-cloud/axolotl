@@ -1,5 +1,6 @@
 """pytest tests for axolotl CLI utils."""
 # pylint: disable=redefined-outer-name
+
 import json
 from unittest.mock import Mock, patch
 
