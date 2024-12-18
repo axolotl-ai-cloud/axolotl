@@ -106,3 +106,26 @@ def test_conversion_cli_repoduce_attentions(
     assert (output_dir / "model.safetensors").exists()
     assert (output_dir / "config.json").exists()
     assert (output_dir / "axolotl_config.yml").exists()
+
+
+@pytest.mark.parametrize(
+    "attention", ["eager_attention", "sdp_attention", "flash_attention"]
+)
+def test_conversion_cli_split_heads(tmp_path: Path, base_config, attention: str):
+    output_dir = tmp_path / "converted"
+    base_config["base_model"] = "HuggingFaceTB/SmolLM2-1.7B"
+    base_config["output_dir"] = str(output_dir)
+    base_config[attention] = True
+
+    config_path = tmp_path / "config.yml"
+    with open(config_path, "w", encoding="utf-8") as file:
+        yaml.dump(base_config, file)
+
+    cfg = load_cfg(str(config_path))
+    cli_args = ConvertDiffTransformerCliArgs(debug=True, split_heads=True)
+    _, debug_info = convert_differential_transformer(cfg, cli_args, str(config_path))
+
+    assert debug_info["generations_match"] is False
+    assert (output_dir / "model.safetensors").exists()
+    assert (output_dir / "config.json").exists()
+    assert (output_dir / "axolotl_config.yml").exists()
