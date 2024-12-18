@@ -10,6 +10,8 @@ LOG = logging.getLogger("axolotl")
 
 def load(strategy, cfg, module_base=None, **kwargs):
     try:
+        if len(strategy.split(".")) == 1:
+            strategy = strategy + ".default"
         load_fn = strategy.split(".")[-1]
         strategy = ".".join(strategy.split(".")[:-1])
         mod = importlib.import_module(f".{strategy}", module_base)
