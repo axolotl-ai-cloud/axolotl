@@ -1,4 +1,5 @@
 """pytest tests for axolotl CLI merge_lora command."""
+
 from unittest.mock import patch
 
 from axolotl.cli.main import cli
