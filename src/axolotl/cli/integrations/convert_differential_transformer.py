@@ -14,9 +14,7 @@ from transformers import HfArgumentParser
 
 from axolotl.cli import load_cfg, print_axolotl_text_art
 from axolotl.common.cli import ConvertDiffTransformerCliArgs, load_model_and_tokenizer
-from axolotl.integrations.differential_transformer.convert import (
-    convert_to_differential_attention,
-)
+from axolotl.integrations.differential_transformer.convert import convert_to_diff_attn
 
 LOG = logging.getLogger(__name__)
 
@@ -78,11 +76,19 @@ def convert_differential_transformer(cfg, cli_args, config_path):
 
     # Convert attention
     LOG.info("Converting to differential attention...")
+    if cli_args.split_heads and cli_args.zero_init:
+        LOG.warning(
+            Fore.YELLOW
+            + "Warning: Using split_heads with zero_init is not recommended; "
+            + "split_heads will preclude the effects of zero_init"
+            + Fore.RESET
+        )
     try:
-        model = convert_to_differential_attention(
+        model = convert_to_diff_attn(
             model=model,
             zero_init=cli_args.zero_init,
             sublayer_norm=cli_args.sublayer_norm,
+            split_heads=cli_args.split_heads,
         )
         model.to(cfg.device, dtype=cfg.torch_dtype)
     except Exception as exc:

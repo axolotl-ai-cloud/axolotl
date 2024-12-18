@@ -70,26 +70,51 @@ class LlamaDifferentialAttention(nn.Module):
         self.hidden_size = config.hidden_size
         self.base_num_heads = config.num_attention_heads
         self.base_num_kv_heads = config.num_key_value_heads
-        self.head_dim = config.hidden_size // config.num_attention_heads
+
+        if config.split_heads:
+            self.head_dim = config.hidden_size // config.num_attention_heads // 2
+        else:
+            self.head_dim = config.hidden_size // config.num_attention_heads
 
         self.layer_idx = layer_idx
         self.max_position_embeddings = config.max_position_embeddings
         self.rope_theta = config.rope_theta
         self.is_causal = True
+        self.split_heads = config.split_heads
 
-        # For Q1 and Q2
-        self.q_proj = nn.Linear(
-            self.hidden_size,
-            self.hidden_size * 2,
-            bias=False,
-        )
+        if config.split_heads:
+            # Split heads mode
+            assert (
+                self.base_num_heads % 2 == 0
+            ), "Number of heads must be even for splitting"
+            self.heads_per_component = self.base_num_heads // 2
 
-        # For K1 and K2
-        self.k_proj = nn.Linear(
-            self.hidden_size,
-            self.hidden_size // self.base_num_heads * self.base_num_kv_heads * 2,
-            bias=False,
-        )
+            # Single projections
+            self.q_proj = nn.Linear(
+                self.hidden_size,
+                self.hidden_size,
+                bias=False,
+            )
+            self.k_proj = nn.Linear(
+                self.hidden_size,
+                self.hidden_size // self.base_num_heads * self.base_num_kv_heads,
+                bias=False,
+            )
+        else:
+            # Double projection mode
+            self.heads_per_component = self.base_num_heads
+
+            # Double-sized projections
+            self.q_proj = nn.Linear(
+                self.hidden_size,
+                self.hidden_size * 2,
+                bias=False,
+            )
+            self.k_proj = nn.Linear(
+                self.hidden_size,
+                self.hidden_size // self.base_num_heads * self.base_num_kv_heads * 2,
+                bias=False,
+            )
 
         # Single V projection
         self.v_proj = nn.Linear(
@@ -125,8 +150,14 @@ class LlamaDifferentialAttention(nn.Module):
 
         self.rotary_emb = LlamaRotaryEmbedding(config=config)
         sublayer_norm = getattr(config, "sublayer_norm", True)
+
+        if self.split_heads:
+            subln_dim = 2 * self.head_dim
+        else:
+            subln_dim = self.head_dim
+
         self.subln = (
-            LlamaRMSNorm(hidden_size=self.head_dim, eps=1e-5)
+            LlamaRMSNorm(hidden_size=subln_dim, eps=1e-5)
             if sublayer_norm
             else nn.Identity()
         )
@@ -167,7 +198,10 @@ class LlamaDifferentialAttention(nn.Module):
         k2 = k2.view(bsz, q_len, -1, self.head_dim).transpose(1, 2)
 
         # Reshape V
-        v = v.view(bsz, q_len, -1, self.head_dim).transpose(1, 2)
+        if self.split_heads:
+            v = v.view(bsz, q_len, -1, 2 * self.head_dim).transpose(1, 2)
+        else:
+            v = v.view(bsz, q_len, -1, self.head_dim).transpose(1, 2)
 
         # Apply rotary embeddings
         if position_embeddings is None:
@@ -176,6 +210,10 @@ class LlamaDifferentialAttention(nn.Module):
             cos, sin = self.rotary_emb(q1, position_ids)
         else:
             cos, sin = position_embeddings
+
+        if self.split_heads:
+            cos, _ = cos.chunk(2, dim=2)
+            sin, _ = sin.chunk(2, dim=2)
 
         q1, k1 = apply_rotary_pos_emb(q1, k1, cos, sin)
         q2, k2 = apply_rotary_pos_emb(q2, k2, cos, sin)
@@ -192,8 +230,6 @@ class LlamaDifferentialAttention(nn.Module):
         v = repeat_kv(v, self.base_num_heads // self.base_num_kv_heads)
 
         # Calculate attention scores for both parts
-        # NOTE(Dan): the Differential Transformers paper scales by a constant scaling factor
-        # instead of sqrt(head_dim). This could be set on the class as `self.scaling`.
         attn1 = torch.matmul(q1, k1.transpose(-1, -2)) / math.sqrt(self.head_dim)
         attn2 = torch.matmul(q2, k2.transpose(-1, -2)) / math.sqrt(self.head_dim)
 
@@ -307,13 +343,18 @@ class LlamaDifferentialSdpaAttention(LlamaDifferentialAttention):
         k1, k2 = kp.chunk(2, dim=-1)
 
         # Reshape Q1,Q2 for attention
-        q1 = q1.view(bsz, q_len, self.base_num_heads, self.head_dim).transpose(1, 2)
-        q2 = q2.view(bsz, q_len, self.base_num_heads, self.head_dim).transpose(1, 2)
+        q1 = q1.view(bsz, q_len, -1, self.head_dim).transpose(1, 2)
+        q2 = q2.view(bsz, q_len, -1, self.head_dim).transpose(1, 2)
+
         # Reshape K1,K2 for attention
-        k1 = k1.view(bsz, q_len, self.base_num_kv_heads, self.head_dim).transpose(1, 2)
-        k2 = k2.view(bsz, q_len, self.base_num_kv_heads, self.head_dim).transpose(1, 2)
+        k1 = k1.view(bsz, q_len, -1, self.head_dim).transpose(1, 2)
+        k2 = k2.view(bsz, q_len, -1, self.head_dim).transpose(1, 2)
+
         # Reshape V
-        v = v.view(bsz, q_len, self.base_num_kv_heads, self.head_dim).transpose(1, 2)
+        if self.split_heads:
+            v = v.view(bsz, q_len, -1, 2 * self.head_dim).transpose(1, 2)
+        else:
+            v = v.view(bsz, q_len, -1, self.head_dim).transpose(1, 2)
 
         # Apply rotary embeddings
         if position_embeddings is None:
@@ -322,6 +363,10 @@ class LlamaDifferentialSdpaAttention(LlamaDifferentialAttention):
             cos, sin = self.rotary_emb(q1, position_ids)
         else:
             cos, sin = position_embeddings
+
+        if self.split_heads:
+            cos, _ = cos.chunk(2, dim=2)
+            sin, _ = sin.chunk(2, dim=2)
 
         q1, k1 = apply_rotary_pos_emb(q1, k1, cos, sin)
         q2, k2 = apply_rotary_pos_emb(q2, k2, cos, sin)
@@ -468,13 +513,18 @@ class LlamaDifferentialFlashAttention2(LlamaDifferentialAttention):
         k1, k2 = kp.chunk(2, dim=-1)
 
         # Reshape Q1,Q2 for attention
-        q1 = q1.view(bsz, q_len, self.base_num_heads, self.head_dim).transpose(1, 2)
-        q2 = q2.view(bsz, q_len, self.base_num_heads, self.head_dim).transpose(1, 2)
+        q1 = q1.view(bsz, q_len, -1, self.head_dim).transpose(1, 2)
+        q2 = q2.view(bsz, q_len, -1, self.head_dim).transpose(1, 2)
+
         # Reshape K1,K2 for attention
-        k1 = k1.view(bsz, q_len, self.base_num_kv_heads, self.head_dim).transpose(1, 2)
-        k2 = k2.view(bsz, q_len, self.base_num_kv_heads, self.head_dim).transpose(1, 2)
+        k1 = k1.view(bsz, q_len, -1, self.head_dim).transpose(1, 2)
+        k2 = k2.view(bsz, q_len, -1, self.head_dim).transpose(1, 2)
+
         # Reshape V
-        v = v.view(bsz, q_len, self.base_num_kv_heads, self.head_dim).transpose(1, 2)
+        if self.split_heads:
+            v = v.view(bsz, q_len, -1, 2 * self.head_dim).transpose(1, 2)
+        else:
+            v = v.view(bsz, q_len, -1, self.head_dim).transpose(1, 2)
 
         # Apply rotary embeddings
         if position_embeddings is None:
@@ -483,6 +533,10 @@ class LlamaDifferentialFlashAttention2(LlamaDifferentialAttention):
             cos, sin = self.rotary_emb(q1, position_ids)
         else:
             cos, sin = position_embeddings
+
+        if self.split_heads:
+            cos, _ = cos.chunk(2, dim=2)
+            sin, _ = sin.chunk(2, dim=2)
 
         q1, k1 = apply_rotary_pos_emb(q1, k1, cos, sin)
         q2, k2 = apply_rotary_pos_emb(q2, k2, cos, sin)
@@ -506,20 +560,54 @@ class LlamaDifferentialFlashAttention2(LlamaDifferentialAttention):
 
         # Calculate attention using Flash Attention
         dropout_p = self.attention_dropout if self.training else 0.0
-        attn1 = flash_attn_func(
-            q1,
-            k1,
-            v,
-            dropout_p=dropout_p,
-            causal=True,
-        )
-        attn2 = flash_attn_func(
-            q2,
-            k2,
-            v,
-            dropout_p=dropout_p,
-            causal=True,
-        )
+        if self.split_heads:
+            v1, v2 = v.chunk(2, dim=-1)
+            attn11 = flash_attn_func(
+                q1,
+                k1,
+                v1,
+                dropout_p=dropout_p,
+                causal=True,
+            )
+            attn12 = flash_attn_func(
+                q1,
+                k1,
+                v2,
+                dropout_p=dropout_p,
+                causal=True,
+            )
+            attn1 = torch.cat([attn11, attn12], dim=-1)
+
+            attn21 = flash_attn_func(
+                q2,
+                k2,
+                v1,
+                dropout_p=dropout_p,
+                causal=True,
+            )
+            attn22 = flash_attn_func(
+                q2,
+                k2,
+                v2,
+                dropout_p=dropout_p,
+                causal=True,
+            )
+            attn2 = torch.cat([attn21, attn22], dim=-1)
+        else:
+            attn1 = flash_attn_func(
+                q1,
+                k1,
+                v,
+                dropout_p=dropout_p,
+                causal=True,
+            )
+            attn2 = flash_attn_func(
+                q2,
+                k2,
+                v,
+                dropout_p=dropout_p,
+                causal=True,
+            )
 
         attn1 = attn1.transpose(1, 2)
         attn2 = attn2.transpose(1, 2)
