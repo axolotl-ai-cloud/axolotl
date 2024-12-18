@@ -12,7 +12,6 @@ from axolotl.integrations.differential_transformer.differential_attention import
 
 def patch_llama_attention_classes():
     """Patch transformers to support differential attention"""
-
     # Add our attention class to the registry
     LLAMA_ATTENTION_CLASSES["differential_eager"] = LlamaDifferentialAttention
     LLAMA_ATTENTION_CLASSES["differential_sdpa"] = LlamaDifferentialSdpaAttention
