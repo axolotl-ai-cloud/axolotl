@@ -5,6 +5,7 @@ HF Chat Templates prompt strategy
 import logging
 from typing import Any, Dict, List, Optional
 
+import torch
 from transformers import ProcessorMixin
 
 from axolotl.prompt_tokenizers import PromptTokenizingStrategy
@@ -459,6 +460,84 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         return prompt.get(self.images, None)
 
 
+class ChatTemplateStrategyWithKD(ChatTemplateStrategy):
+    """
+    Handle fields for logprob KD
+    """
+
+    def __init__(
+        self,
+        prompter,
+        tokenizer,
+        train_on_inputs,
+        sequence_len,
+        roles_to_train=None,
+        train_on_eos=None,
+        logprobs_field="logprobs",
+        temperature=1.0,
+    ):
+        self.logprobs_field = logprobs_field
+        self.temperature = temperature
+        super().__init__(
+            prompter,
+            tokenizer,
+            train_on_inputs,
+            sequence_len,
+            roles_to_train=roles_to_train,
+            train_on_eos=train_on_eos,
+        )
+
+    def transform_logprobs(self, sample):
+        logprobs = sample.pop(self.logprobs_field)
+        target_logprobs = []
+        target_token_ids = []
+
+        for _, token_pos_logprobs in enumerate(logprobs):
+            # Initialize collections for logprobs and token_ids
+            position_logprobs = []
+            position_token_ids = []
+
+            # Process each token probability entry
+            for entry in token_pos_logprobs:
+                # Extract logprob value
+                logprob = entry["logprob"]
+
+                # Parse token_id from the "token_id:###" format
+                token_id = int(entry["token"].split(":")[1])
+
+                # Append to our collections
+                position_logprobs.append(logprob)
+                position_token_ids.append(token_id)
+
+            # Convert to a tensor for easier manipulation
+            # Convert to tensor
+            position_logprobs_tensor = torch.tensor(
+                position_logprobs, dtype=torch.float
+            )
+
+            # Apply temperature scaling at data load time
+            # log p_k^(T) = (log p_k / T) - logsumexp(log p_j / T)
+            position_logprobs_tensor = position_logprobs_tensor / self.temperature
+            position_logprobs_tensor = position_logprobs_tensor - torch.logsumexp(
+                position_logprobs_tensor, dim=0, keepdim=True
+            )
+
+            position_logprobs_scaled = position_logprobs_tensor.tolist()
+
+            target_logprobs.append(position_logprobs_scaled)
+            target_token_ids.append(position_token_ids)
+
+        # Update sample with transformed logprobs
+        sample["target_logprobs"] = target_logprobs
+        sample["target_token_ids"] = target_token_ids
+
+        return sample
+
+    def tokenize_prompt(self, prompt):
+        tokenized_prompt = super().tokenize_prompt(prompt)
+        return self.transform_logprobs(tokenized_prompt)
+
+
 def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None, processor=None):
     # pylint: disable=duplicate-code
     ds_cfg = ds_cfg or {}
@@ -491,7 +570,16 @@ def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None, processor=None
         "train_on_eos": ds_cfg.get("train_on_eos", "turn"),
     }
 
-    strategy = ChatTemplateStrategy(
+    strategy_cls = ChatTemplateStrategy
+    if logprobs_field := ds_cfg.get("logprobs_field"):
+        strategy_params["logprobs_field"] = logprobs_field
+    if temperature := ds_cfg.get("temperature"):
+        strategy_params["temperature"] = temperature
+
+    if cfg.trainer == "kd" or logprobs_field:
+        strategy_cls = ChatTemplateStrategyWithKD
+
+    strategy = strategy_cls(
         ChatTemplatePrompter(**prompter_params), tokenizer=tokenizer, **strategy_params
     )
 
