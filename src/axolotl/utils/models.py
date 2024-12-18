@@ -444,13 +444,6 @@ class ModelLoader:
 
             patch_mistral_cross_entropy()
 
-        if self.cfg.diff_attention:
-            from axolotl.monkeypatch.attention.differential import (
-                patch_llama_attention_classes,
-            )
-
-            patch_llama_attention_classes()
-
     def patch_attention(self) -> None:
         if hasattr(self.model_config, "model_type"):
             if self.model_config.model_type == "mllama" and self.cfg.flash_attention:
@@ -721,7 +714,7 @@ class ModelLoader:
             if not self.cfg.sample_packing and self.cfg.s2_attention:
                 pass
 
-            if self.cfg.diff_attention:
+            if self.cfg.differential_attention:
                 self.model_kwargs[
                     "attn_implementation"
                 ] = "differential_flash_attention_2"
@@ -734,7 +727,7 @@ class ModelLoader:
                     "flash_attention_2"
                 )
         elif self.cfg.sdp_attention:
-            if self.cfg.diff_attention:
+            if self.cfg.differential_attention:
                 self.model_kwargs["attn_implementation"] = "differential_sdpa"
                 self.model_config._attn_implementation = (  # pylint: disable=protected-access
                     "differential_sdpa"
@@ -745,7 +738,7 @@ class ModelLoader:
                     "sdpa"
                 )
         elif self.cfg.eager_attention:
-            if self.cfg.diff_attention:
+            if self.cfg.differential_attention:
                 self.model_kwargs["attn_implementation"] = "differential_eager"
                 self.model_config._attn_implementation = (  # pylint: disable=protected-access
                     "differential_eager"
@@ -755,7 +748,7 @@ class ModelLoader:
                 self.model_config._attn_implementation = (  # pylint: disable=protected-access
                     "eager"
                 )
-        elif self.cfg.diff_attention:
+        elif self.cfg.differential_attention:
             self.model_kwargs["attn_implementation"] = "differential_eager"
             self.model_config._attn_implementation = (  # pylint: disable=protected-access
                 "differential_eager"

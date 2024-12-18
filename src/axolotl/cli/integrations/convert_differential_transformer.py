@@ -15,7 +15,7 @@ from transformers import HfArgumentParser
 from axolotl.cli import load_cfg, print_axolotl_text_art
 from axolotl.common.cli import ConvertDiffTransformerCliArgs, load_model_and_tokenizer
 from axolotl.integrations.differential_transformer.convert import (
-    convert_to_diff_attention,
+    convert_to_differential_attention,
 )
 
 LOG = logging.getLogger(__name__)
@@ -79,7 +79,7 @@ def convert_differential_transformer(cfg, cli_args, config_path):
     # Convert attention
     LOG.info("Converting to differential attention...")
     try:
-        model = convert_to_diff_attention(
+        model = convert_to_differential_attention(
             model=model,
             zero_init=cli_args.zero_init,
             sublayer_norm=cli_args.sublayer_norm,
@@ -111,7 +111,10 @@ def convert_differential_transformer(cfg, cli_args, config_path):
             data = yaml.safe_load(file) or {}
 
         data["base_model"] = cfg.output_dir
-        data["diff_attention"] = True
+        data["differential_attention"] = True
+        data["plugins"] = [
+            "axolotl.integrations.differential_transformer.DifferentialTransformerPlugin"
+        ]
 
         with open(output_config_path, "w", encoding="utf-8") as file:
             yaml.dump(data, file)

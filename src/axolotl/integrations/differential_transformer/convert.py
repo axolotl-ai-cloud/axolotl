@@ -80,7 +80,7 @@ def copy_attention_weights(
     )
 
 
-def convert_to_diff_attention(
+def convert_to_differential_attention(
     model: PreTrainedModel, zero_init: bool = False, sublayer_norm: bool = True
 ) -> PreTrainedModel:
     """Convert a pre-trained model's attention layers to differential attention"""

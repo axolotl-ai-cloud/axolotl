@@ -185,3 +185,6 @@ out/
 
 # vim
 *.swp
+
+# symlinked to axolotl-artifacts in docker containers
+outputs
