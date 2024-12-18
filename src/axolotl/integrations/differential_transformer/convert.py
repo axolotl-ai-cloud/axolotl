@@ -80,14 +80,18 @@ def copy_attention_weights(
     )
 
 
-def convert_to_differential_attention(
-    model: PreTrainedModel, zero_init: bool = False, sublayer_norm: bool = True
+def convert_to_diff_attn(
+    model: PreTrainedModel,
+    zero_init: bool = False,
+    sublayer_norm: bool = True,
+    split_heads: bool = True,
 ) -> PreTrainedModel:
     """Convert a pre-trained model's attention layers to differential attention"""
     layer_idx = 0
 
     # Set sublayer norm as config on the model.
     model.config.sublayer_norm = sublayer_norm
+    model.config.split_heads = split_heads
 
     def convert_module(module):
         nonlocal layer_idx
@@ -111,7 +115,8 @@ def convert_to_differential_attention(
 
                 # Copy weights from old attention to new attention
                 new_attention.to(child.q_proj.weight.device)
-                copy_attention_weights(child, new_attention, zero_init=zero_init)
+                if not split_heads:
+                    copy_attention_weights(child, new_attention, zero_init=zero_init)
 
                 # Replace the layer
                 setattr(module, name, new_attention)
