@@ -82,6 +82,9 @@ def evaluate(config: str, accelerate: bool, **kwargs):
     """Evaluate a model."""
     kwargs = {k: v for k, v in kwargs.items() if v is not None}
 
+    # Enable expandable segments for cuda allocation to improve VRAM usage
+    set_pytorch_cuda_alloc_conf()
+
     if accelerate:
         base_cmd = ["accelerate", "launch", "-m", "axolotl.cli.evaluate"]
         if config:
