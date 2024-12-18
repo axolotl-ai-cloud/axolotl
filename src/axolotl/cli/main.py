@@ -182,7 +182,9 @@ def train(config: str, accelerate: bool, cloud: Optional[str] = None, sweep: Opt
                     ) as fout:
                         yaml.dump(perm, fout)
                     yield str(Path(temp_dir) / "config.yaml")
+
     else:
+
         def iter_configs():
             yield config
 
