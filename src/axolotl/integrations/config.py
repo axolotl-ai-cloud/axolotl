@@ -43,10 +43,12 @@ def merge_input_args():
     input_args: List[str] = plugin_manager.get_input_args()
     plugin_classes = []
     dynamic_input = ""
+
     for plugin_args in input_args:
         plugin_module, plugin_cls = plugin_args.rsplit(".", 1)
         dynamic_input += f"from {plugin_module} import {plugin_cls}\n"
         plugin_classes.append(plugin_cls)
+
     if dynamic_input:
         dynamic_input += f"class AxolotlConfigWCapabilities(AxolotlConfigWCapabilitiesBase, {', '.join(plugin_classes)}):\n    pass\n"
         dynamic_input += f"class AxolotlInputConfig(AxolotlInputConfigBase, {', '.join(plugin_classes)}):\n    pass\n"
@@ -62,4 +64,5 @@ def merge_input_args():
             "AxolotlConfigWCapabilities"
         ]
         return AxolotlConfigWCapabilities, AxolotlInputConfig
+
     return AxolotlConfigWCapabilitiesBase, AxolotlInputConfigBase
