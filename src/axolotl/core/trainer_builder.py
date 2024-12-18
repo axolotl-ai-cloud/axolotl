@@ -62,6 +62,7 @@ from axolotl.utils.callbacks.profiler import PytorchProfilerCallback
 from axolotl.utils.chat_templates import get_chat_template
 from axolotl.utils.collators import (
     BatchSamplerDataCollatorForSeq2Seq,
+    DataCollatorForKD,
     DataCollatorForSeq2Seq,
     MambaDataCollator,
     V2BatchSamplerDataCollatorForSeq2Seq,
@@ -769,6 +770,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             Union[
                 V2BatchSamplerDataCollatorForSeq2Seq,
                 BatchSamplerDataCollatorForSeq2Seq,
+                DataCollatorForKD,
                 DataCollatorForSeq2Seq,
                 DataCollatorWithFlattening,
                 RewardDataCollatorWithPadding,
@@ -799,6 +801,8 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 collator_args.pop(0)
                 kwargs.pop("pad_to_multiple_of", None)
                 kwargs.pop("padding", None)
+            elif self.cfg.trainer == "kd":
+                collator = DataCollatorForKD
             else:
                 collator = DataCollatorForSeq2Seq
 

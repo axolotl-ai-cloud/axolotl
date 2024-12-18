@@ -479,12 +479,6 @@ class ChatTemplateStrategyWithKD(ChatTemplateStrategy):
         self.logprobs_field = logprobs_field
         self.temperature = temperature
 
-        # remove rows where the logprob field is not available
-        self.filter_rows = (
-            lambda row: self.logprobs_field in row
-            and row[self.logprobs_field] is not None
-        )
-
         super().__init__(
             prompter,
             tokenizer,
@@ -541,7 +535,9 @@ class ChatTemplateStrategyWithKD(ChatTemplateStrategy):
         return sample
 
     def tokenize_prompt(self, prompt):
+        logprobs = prompt.pop(self.logprobs_field)
         tokenized_prompt = super().tokenize_prompt(prompt)
+        tokenized_prompt[self.logprobs_field] = logprobs
         return self.transform_logprobs(tokenized_prompt)
 
 
