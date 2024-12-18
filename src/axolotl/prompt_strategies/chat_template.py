@@ -478,6 +478,13 @@ class ChatTemplateStrategyWithKD(ChatTemplateStrategy):
     ):
         self.logprobs_field = logprobs_field
         self.temperature = temperature
+
+        # remove rows where the logprob field is not available
+        self.filter_rows = (
+            lambda row: self.logprobs_field in row
+            and row[self.logprobs_field] is not None
+        )
+
         super().__init__(
             prompter,
             tokenizer,
