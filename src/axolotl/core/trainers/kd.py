@@ -109,6 +109,10 @@ class AxolotlKDTrainer(AxolotlTrainer):
             num_items_in_batch=num_items_in_batch,
         )
 
+        if self.args.kd_ce_alpha > 0:
+            loss = self.args.kd_ce_alpha * outputs["loss"] + loss_kd
+        else:
+            loss = loss_kd
         # Save past state if it exists
         # TODO: this needs to be fixed and made cleaner later.
         if self.args.past_index >= 0:
@@ -119,4 +123,4 @@ class AxolotlKDTrainer(AxolotlTrainer):
         if self.args.average_tokens_across_devices and self.model_accepts_loss_kwargs:
             loss_kd *= self.accelerator.num_processes
 
-        return (loss_kd, outputs) if return_outputs else loss_kd
+        return (loss, outputs) if return_outputs else loss
