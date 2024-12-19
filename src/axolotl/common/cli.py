@@ -4,7 +4,7 @@ shared module for cli specific things
 
 import logging
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, Union
 
 import axolotl.monkeypatch.data.batch_dataset_fetcher  # pylint: disable=unused-import  # noqa: F401
 from axolotl.logging_config import configure_logging
@@ -18,7 +18,7 @@ LOG = logging.getLogger("axolotl.common.cli")
 @dataclass
 class PreprocessCliArgs:
     """
-    dataclass representing arguments for preprocessing only
+    dataclass with arguments for preprocessing only
     """
 
     debug: bool = field(default=False)
@@ -31,7 +31,7 @@ class PreprocessCliArgs:
 @dataclass
 class TrainerCliArgs:
     """
-    dataclass representing the various non-training arguments
+    dataclass with various non-training arguments
     """
 
     debug: bool = field(default=False)
@@ -46,7 +46,7 @@ class TrainerCliArgs:
 @dataclass
 class EvaluateCliArgs:
     """
-    dataclass representing the various evaluation arguments
+    dataclass with various evaluation arguments
     """
 
     debug: bool = field(default=False)
@@ -54,10 +54,22 @@ class EvaluateCliArgs:
     debug_num_examples: int = field(default=0)
 
 
+@dataclass
+class ConvertDiffTransformerCliArgs:
+    """
+    dataclass with arguments for convert-differential-transformer CLI
+    """
+
+    debug: bool = field(default=False)
+    zero_init: bool = field(default=False)
+    sublayer_norm: bool = field(default=True)
+    split_heads: bool = field(default=False)
+
+
 def load_model_and_tokenizer(
     *,
     cfg: DictDefault,
-    cli_args: TrainerCliArgs,
+    cli_args: Union[TrainerCliArgs, EvaluateCliArgs, ConvertDiffTransformerCliArgs],
 ):
     LOG.info(f"loading tokenizer... {cfg.tokenizer_config or cfg.base_model_config}")
     tokenizer = load_tokenizer(cfg)
