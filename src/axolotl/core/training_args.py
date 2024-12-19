@@ -169,6 +169,13 @@ class AxolotlTrainingMixins:
         metadata={"help": "Chat template converting chat messages to text"},
     )
 
+    kd_ce_alpha: Optional[float] = field(
+        default=None,
+        metadata={
+            "help": "The alpha parameter for SFT cross entropy loss when using KD"
+        },
+    )
+
 
 @dataclass
 class AxolotlTrainingArguments(AxolotlTrainingMixins, TrainingArguments):
