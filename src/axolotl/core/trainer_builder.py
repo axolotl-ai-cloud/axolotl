@@ -678,6 +678,9 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 "accelerator_config"
             ] = self.cfg.accelerator_config
 
+        if self.cfg.kd_ce_alpha is not None:
+            training_arguments_kwargs["kd_ce_alpha"] = self.cfg.kd_ce_alpha
+
         training_args_cls = (
             AxolotlTrainingArguments
             if not self.cfg.reward_model
