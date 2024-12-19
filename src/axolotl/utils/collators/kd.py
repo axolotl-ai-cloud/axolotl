@@ -1,5 +1,6 @@
 """
-DataCollator for axolotl to handle KD fields
+DataCollator for axolotl to handle KD fields without using -inf for padding,
+and with a teacher_mask to identify padded positions.
 """
 
 from dataclasses import dataclass
@@ -17,6 +18,9 @@ from axolotl.utils.collators.batching import DataCollatorForSeq2Seq
 class DataCollatorForKD(DataCollatorForSeq2Seq):
     """
     Data collator for KD, including handling KD-specific fields.
+
+    This version avoids using -inf and instead uses a large negative value for padding
+    target_logprobs. It also creates a teacher_mask to indicate which entries are valid.
     """
 
     tokenizer: PreTrainedTokenizerBase
@@ -32,7 +36,9 @@ class DataCollatorForKD(DataCollatorForSeq2Seq):
         if return_tensors is None:
             return_tensors = self.return_tensors
 
-        # Extract labels and position_ids first (as in original code)
+        padding_side = self.tokenizer.padding_side
+
+        # Pad labels and position_ids first
         for feature_name, pad_token_id in [
             ("labels", self.label_pad_token_id),
             ("position_ids", self.position_pad_token_id),
@@ -46,7 +52,6 @@ class DataCollatorForKD(DataCollatorForSeq2Seq):
                         // self.pad_to_multiple_of
                     ) * self.pad_to_multiple_of
 
-                padding_side = self.tokenizer.padding_side
                 for f in features:  # pylint: disable=invalid-name
                     remainder = [pad_token_id] * (max_len - len(f[feature_name]))
                     if isinstance(f[feature_name], list):
@@ -69,63 +74,77 @@ class DataCollatorForKD(DataCollatorForSeq2Seq):
         # Handle target_logprobs and target_token_ids manually
         target_logprobs_list = []
         target_token_ids_list = []
+        target_mask_list = []
         has_teacher_data = ("target_logprobs" in features[0]) and (
             "target_token_ids" in features[0]
         )
 
         if has_teacher_data:
-            # Extract these fields
+            # Extract and remove from features
             for f in features:  # pylint: disable=invalid-name
                 target_logprobs_list.append(f.pop("target_logprobs"))
                 target_token_ids_list.append(f.pop("target_token_ids"))
+                target_mask_list.append(f.pop("target_mask"))
 
-            # Determine max lengths to pad
+            # Determine max lengths
             max_teacher_seq_len = max(len(seq) for seq in target_logprobs_list)
             max_k = max(len(seq_k) for seq in target_logprobs_list for seq_k in seq)
 
-            # Pad target_logprobs and target_token_ids
             padded_target_logprobs = []
             padded_target_token_ids = []
-            for t_logprobs, t_ids in zip(target_logprobs_list, target_token_ids_list):
-                # Pad seq dimension
+            padded_teacher_mask_list = []
+
+            for t_logprobs, t_ids, t_mask in zip(
+                target_logprobs_list, target_token_ids_list, target_mask_list
+            ):
                 t_logprobs_padded = []
                 t_ids_padded = []
-                for i in range(  # pylint: disable=consider-using-enumerate
-                    len(t_logprobs)
+                t_mask_padded = []
+
+                for lp, ids, mask in zip(  # pylint: disable=invalid-name
+                    t_logprobs, t_ids, t_mask
                 ):
-                    lp = t_logprobs[i]  # pylint: disable=invalid-name
-                    ids = t_ids[i]
-                    # Pad K dimension
                     lp_len = len(lp)
                     if lp_len < max_k:
-                        lp = lp + [-float("inf")] * (  # pylint: disable=invalid-name
-                            max_k - lp_len
-                        )  # or some pad value that won't break exp()
-                        ids = ids + [0] * (max_k - lp_len)
+                        # Use -1e9 for padding logprobs and 0 for token_ids
+                        pad_len = max_k - lp_len
+                        lp = lp + [-1e9] * pad_len  # pylint: disable=invalid-name
+                        ids = ids + [0] * pad_len
+                        mask = mask + [0] * pad_len
+                    else:
+                        lp = lp[:max_k]  # pylint: disable=invalid-name
+                        ids = ids[:max_k]
+                        mask = mask[:max_k]
+
                     t_logprobs_padded.append(lp)
                     t_ids_padded.append(ids)
+                    t_mask_padded.append(mask)
 
-                # If sequence is shorter than max_teacher_seq_len
                 seq_len_diff = max_teacher_seq_len - len(t_logprobs_padded)
                 if seq_len_diff > 0:
+                    # Pad sequences fully if needed
                     t_logprobs_padded.extend(
-                        [[-float("inf")] * max_k for _ in range(seq_len_diff)]
+                        [[-1e9] * max_k for _ in range(seq_len_diff)]
                     )
                     t_ids_padded.extend([[0] * max_k for _ in range(seq_len_diff)])
+                    t_mask_padded.extend([[0] * max_k for _ in range(seq_len_diff)])
 
                 padded_target_logprobs.append(t_logprobs_padded)
                 padded_target_token_ids.append(t_ids_padded)
+                padded_teacher_mask_list.append(t_mask_padded)
 
             # Convert to tensors
             padded_target_logprobs = torch.tensor(
                 padded_target_logprobs, dtype=torch.float
             )
-            # We can store token_ids as long tensor
             padded_target_token_ids = torch.tensor(
                 padded_target_token_ids, dtype=torch.long
             )
+            padded_teacher_mask_list = torch.tensor(
+                padded_teacher_mask_list, dtype=torch.int
+            )
 
-        # Now pad using tokenizer for the remaining fields (input_ids, attention_mask, etc.)
+        # Pad using tokenizer for regular fields
         features = self.tokenizer.pad(
             features,
             padding=self.padding,
@@ -134,12 +153,13 @@ class DataCollatorForKD(DataCollatorForSeq2Seq):
             return_tensors=return_tensors,
         )
 
-        # Add back the teacher data if it exists
+        # Add back teacher data if present
         if has_teacher_data:
             features["target_logprobs"] = padded_target_logprobs
             features["target_token_ids"] = padded_target_token_ids
+            features["target_mask"] = padded_teacher_mask_list
 
-        # Prepare decoder_input_ids if applicable
+        # Prepare decoder_input_ids if the model supports it
         if (
             "labels" in features
             and self.model is not None
