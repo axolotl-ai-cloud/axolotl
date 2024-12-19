@@ -13,46 +13,52 @@ def kd_loss_function(
     student_logits,
     target_token_ids,
     target_logprobs,
+    target_mask,
     num_items_in_batch: Optional[int] = None,
-    **kwargs,  # pylint: disable=unused-argument
 ):
-    # student_logits: [B, seq_len, vocab_size] from the student's forward pass
-    # target_token_ids: [B, teacher_seq_len, K] top-K token IDs from teacher
-    # target_logprobs: [B, teacher_seq_len, K] teacher logprobs for these top-K tokens
+    # teacher_mask: [B, teacher_seq_len, K], where 1 indicates a valid token and 0 indicates padding
 
+    # Determine the teacher sequence length
     teacher_seq_len = target_token_ids.shape[1]
 
-    # Slice the student logits to match the teacher-provided seq length
+    # Slice student logits to match the teacher-provided sequence length
     student_logits_for_kd = student_logits[
         :, -teacher_seq_len:, :
-    ]  # Now [B, teacher_seq_len, vocab_size]
+    ]  # [B, teacher_seq_len, vocab_size]
 
     # Gather student logits for teacher's top-K tokens
     student_logits_topk = torch.gather(
         student_logits_for_kd, dim=-1, index=target_token_ids
     )  # [B, teacher_seq_len, K]
 
-    # Convert student top-K logits to logprobs
+    # Convert student top-k logits to logprobs
     student_logprobs_topk = student_logits_topk - torch.logsumexp(
         student_logits_topk, dim=-1, keepdim=True
-    )
+    )  # [B, seq_len, K]
 
-    # teacher_probs are simply exp of teacher_logprobs (already scaled)
+    # Convert teacher_mask to boolean for indexing
+    valid_mask = target_mask.bool()
+
+    # Prune tensors to only keep valid tokens
+    # This will result in 1D arrays of only valid positions
+    student_logprobs_topk = student_logprobs_topk[valid_mask]  # [N_valid_tokens]
+    target_logprobs = target_logprobs[valid_mask]  # [N_valid_tokens]
+
+    # Since teacher_logprobs are already normalized, just exponentiate to get probabilities
     teacher_probs = target_logprobs.exp()
 
-    # Compute forward KL
-    # L_kl = sum_k p^T_k (log p^T_k - log p^S_k)
-    kd_loss_per_position = (
-        teacher_probs * (target_logprobs - student_logprobs_topk)
-    ).sum(
-        dim=-1
-    )  # [B, teacher_seq_len]
+    # Compute forward KL:
+    # KL = sum p^T_k (log p^T_k - log p^S_k), summed over all valid tokens.
+    kd_loss_per_token = teacher_probs * (target_logprobs - student_logprobs_topk)
+    kd_loss = kd_loss_per_token.sum()
 
-    # gradient accumulation fixes
-    if num_items_in_batch:
-        kd_loss = kd_loss_per_position.sum() / num_items_in_batch  # Scalar
+    # Normalize by number of items or mean over valid tokens
+    if num_items_in_batch is not None:
+        # If you know how many items should be considered in the batch
+        kd_loss = kd_loss / num_items_in_batch
     else:
-        kd_loss = kd_loss_per_position.mean()  # Scalar
+        # Otherwise, just average over all valid tokens
+        kd_loss = kd_loss / kd_loss_per_token.size(0)
 
     return kd_loss
 
@@ -70,6 +76,8 @@ class AxolotlKDTrainer(AxolotlTrainer):
                 columns_to_add.append("target_logprobs")
             if "target_token_ids" not in self._signature_columns:
                 columns_to_add.append("target_token_ids")
+            if "target_mask" not in self._signature_columns:
+                columns_to_add.append("target_mask")
             if columns_to_add:
                 self._signature_columns += columns_to_add
 
@@ -83,6 +91,7 @@ class AxolotlKDTrainer(AxolotlTrainer):
         """
         target_logprobs = inputs.pop("target_logprobs")
         target_token_ids = inputs.pop("target_token_ids")
+        target_mask = inputs.pop("target_mask")
 
         if self.model_accepts_loss_kwargs:
             loss_kwargs = {}
@@ -96,6 +105,7 @@ class AxolotlKDTrainer(AxolotlTrainer):
             student_logits,
             target_token_ids,
             target_logprobs,
+            target_mask,
             num_items_in_batch=num_items_in_batch,
         )
 
