@@ -23,6 +23,7 @@ class DataCollatorForKD(DataCollatorForSeq2Seq):
     target_logprobs. It also creates a teacher_mask to indicate which entries are valid.
     """
 
+    # pylint: disable=duplicate-code
     tokenizer: PreTrainedTokenizerBase
     model: Optional[Any] = None
     padding: Union[bool, str, PaddingStrategy] = True
