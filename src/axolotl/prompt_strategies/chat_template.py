@@ -490,8 +490,23 @@ class ChatTemplateStrategyWithKD(ChatTemplateStrategy):
 
     def transform_logprobs(self, sample):
         logprobs = sample.pop(self.logprobs_field)
+        target_seq_len = len(logprobs)
+        input_seq_len = len(sample["input_ids"])
+        padding_len = input_seq_len - target_seq_len
+        top_k = len(logprobs[0])
         target_logprobs = []
         target_token_ids = []
+        target_mask = []
+
+        # fill with -inf for padding_len tokens for top_k tokens
+        # extend target_logprobs with a padding_len x top_k 2D list filled with -inf
+        for _ in range(padding_len):
+            target_logprobs.append([-float("inf")] * top_k)
+            target_token_ids.append(list(range(top_k)))
+            target_mask.append([0] * top_k)
+
+        for _ in range(target_seq_len):
+            target_mask.append([1] * top_k)
 
         for _, token_pos_logprobs in enumerate(logprobs):
             # Initialize collections for logprobs and token_ids
@@ -519,6 +534,7 @@ class ChatTemplateStrategyWithKD(ChatTemplateStrategy):
             # Apply temperature scaling at data load time
             # log p_k^(T) = (log p_k / T) - logsumexp(log p_j / T)
             position_logprobs_tensor = position_logprobs_tensor / self.temperature
+            # normalize to probabilities so they sum up to 1
             position_logprobs_tensor = position_logprobs_tensor - torch.logsumexp(
                 position_logprobs_tensor, dim=0, keepdim=True
             )
@@ -531,6 +547,7 @@ class ChatTemplateStrategyWithKD(ChatTemplateStrategy):
         # Update sample with transformed logprobs
         sample["target_logprobs"] = target_logprobs
         sample["target_token_ids"] = target_token_ids
+        sample["target_mask"] = target_mask
 
         return sample
 
@@ -538,7 +555,9 @@ class ChatTemplateStrategyWithKD(ChatTemplateStrategy):
         logprobs = prompt.pop(self.logprobs_field)
         tokenized_prompt = super().tokenize_prompt(prompt)
         tokenized_prompt[self.logprobs_field] = logprobs
-        return self.transform_logprobs(tokenized_prompt)
+        tokenized_prompt = self.transform_logprobs(tokenized_prompt)
+
+        return tokenized_prompt
 
 
 def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None, processor=None):
