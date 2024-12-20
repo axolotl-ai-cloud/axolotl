@@ -11,4 +11,4 @@ LOG = logging.getLogger(__name__)
 class DifferentialTransformerArgs(BaseModel):
     """Input args for differential transformer."""
 
-    differential_attention: Optional[bool] = None
+    diff_attention: Optional[bool] = None

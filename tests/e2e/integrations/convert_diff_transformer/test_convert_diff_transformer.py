@@ -10,23 +10,19 @@ import pytest
 import yaml
 
 from axolotl.cli import load_cfg
-from axolotl.cli.integrations.convert_differential_transformer import (
-    convert_differential_transformer,
-)
+from axolotl.cli.integrations.convert_diff_transformer import convert_diff_transformer
 from axolotl.cli.main import cli
 from axolotl.common.cli import ConvertDiffTransformerCliArgs
 
 
 def test_cli_validation(cli_runner):
     # Test missing config file
-    result = cli_runner.invoke(cli, ["convert-differential-transformer"])
+    result = cli_runner.invoke(cli, ["convert-diff-transformer"])
     assert result.exit_code != 0
     assert "Error: Missing argument 'CONFIG'." in result.output
 
     # Test non-existent config file
-    result = cli_runner.invoke(
-        cli, ["convert-differential-transformer", "nonexistent.yml"]
-    )
+    result = cli_runner.invoke(cli, ["convert-diff-transformer", "nonexistent.yml"])
     assert result.exit_code != 0
     assert "Error: Invalid value for 'CONFIG'" in result.output
 
@@ -37,11 +33,9 @@ def test_basic_execution(cli_runner, tmp_path: Path, base_config):
         yaml.dump(base_config, file)
 
     with patch(
-        "axolotl.cli.integrations.convert_differential_transformer.do_cli"
+        "axolotl.cli.integrations.convert_diff_transformer.do_cli"
     ) as mock_do_cli:
-        result = cli_runner.invoke(
-            cli, ["convert-differential-transformer", str(config_path)]
-        )
+        result = cli_runner.invoke(cli, ["convert-diff-transformer", str(config_path)])
         assert result.exit_code == 0
 
         mock_do_cli.assert_called_once()
@@ -56,14 +50,9 @@ def test_conversion_cli_basic(tmp_path: Path, base_config):
     with open(config_path, "w", encoding="utf-8") as file:
         yaml.dump(base_config, file)
 
-    # Load config the same way do_cli does
     cfg = load_cfg(str(config_path))
-
-    # Create CLI args
     cli_args = ConvertDiffTransformerCliArgs()
-
-    # Call convert_differential_transformer directly
-    _, debug_info = convert_differential_transformer(cfg, cli_args, str(config_path))
+    _, debug_info = convert_diff_transformer(cfg, cli_args, str(config_path))
 
     assert not debug_info
     assert (output_dir / "model.safetensors").exists()
@@ -79,14 +68,9 @@ def test_conversion_cli_debug(tmp_path: Path, base_config):
     with open(config_path, "w", encoding="utf-8") as file:
         yaml.dump(base_config, file)
 
-    # Load config the same way do_cli does
     cfg = load_cfg(str(config_path))
-
-    # Create CLI args
     cli_args = ConvertDiffTransformerCliArgs(debug=True)
-
-    # Call convert_differential_transformer directly
-    _, debug_info = convert_differential_transformer(cfg, cli_args, str(config_path))
+    _, debug_info = convert_diff_transformer(cfg, cli_args, str(config_path))
 
     assert not debug_info["generations_match"]
     assert not debug_info["match_expected"]
@@ -107,7 +91,7 @@ def test_conversion_cli_reproduce(tmp_path: Path, base_config):
     cli_args = ConvertDiffTransformerCliArgs(
         debug=True, zero_init=True, sublayer_norm=False
     )
-    _, debug_info = convert_differential_transformer(cfg, cli_args, str(config_path))
+    _, debug_info = convert_diff_transformer(cfg, cli_args, str(config_path))
 
     assert debug_info["generations_match"] is True
     assert (output_dir / "model.safetensors").exists()
@@ -133,7 +117,7 @@ def test_conversion_cli_repoduce_attentions(
     cli_args = ConvertDiffTransformerCliArgs(
         debug=True, zero_init=True, sublayer_norm=False
     )
-    _, debug_info = convert_differential_transformer(cfg, cli_args, str(config_path))
+    _, debug_info = convert_diff_transformer(cfg, cli_args, str(config_path))
 
     assert debug_info["generations_match"] is True
     assert (output_dir / "model.safetensors").exists()
@@ -155,7 +139,7 @@ def test_conversion_cli_split_heads(tmp_path: Path, base_config, attention: str)
 
     cfg = load_cfg(str(config_path))
     cli_args = ConvertDiffTransformerCliArgs(debug=True, split_heads=True)
-    _, debug_info = convert_differential_transformer(cfg, cli_args, str(config_path))
+    _, debug_info = convert_diff_transformer(cfg, cli_args, str(config_path))
 
     assert debug_info["generations_match"] is False
     assert (output_dir / "model.safetensors").exists()

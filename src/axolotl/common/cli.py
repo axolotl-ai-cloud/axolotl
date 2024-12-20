@@ -57,7 +57,7 @@ class EvaluateCliArgs:
 @dataclass
 class ConvertDiffTransformerCliArgs:
     """
-    dataclass with arguments for convert-differential-transformer CLI
+    dataclass with arguments for convert-diff-transformer CLI
     """
 
     debug: bool = field(default=False)

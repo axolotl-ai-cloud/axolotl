@@ -11,7 +11,7 @@ from transformers.models.llama.modeling_llama import (
     LlamaSdpaAttention,
 )
 
-from .differential_attention import (
+from .diff_attn import (
     LlamaDifferentialAttention,
     LlamaDifferentialFlashAttention2,
     LlamaDifferentialSdpaAttention,

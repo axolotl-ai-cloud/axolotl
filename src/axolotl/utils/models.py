@@ -714,7 +714,7 @@ class ModelLoader:
             if not self.cfg.sample_packing and self.cfg.s2_attention:
                 pass
 
-            if self.cfg.differential_attention:
+            if self.cfg.differentiaion:
                 self.model_kwargs[
                     "attn_implementation"
                 ] = "differential_flash_attention_2"
@@ -727,7 +727,7 @@ class ModelLoader:
                     "flash_attention_2"
                 )
         elif self.cfg.sdp_attention:
-            if self.cfg.differential_attention:
+            if self.cfg.diff_attention:
                 self.model_kwargs["attn_implementation"] = "differential_sdpa"
                 self.model_config._attn_implementation = (  # pylint: disable=protected-access
                     "differential_sdpa"
@@ -738,7 +738,7 @@ class ModelLoader:
                     "sdpa"
                 )
         elif self.cfg.eager_attention:
-            if self.cfg.differential_attention:
+            if self.cfg.diff_attention:
                 self.model_kwargs["attn_implementation"] = "differential_eager"
                 self.model_config._attn_implementation = (  # pylint: disable=protected-access
                     "differential_eager"
@@ -748,7 +748,7 @@ class ModelLoader:
                 self.model_config._attn_implementation = (  # pylint: disable=protected-access
                     "eager"
                 )
-        elif self.cfg.differential_attention:
+        elif self.cfg.diff_attention:
             self.model_kwargs["attn_implementation"] = "differential_eager"
             self.model_config._attn_implementation = (  # pylint: disable=protected-access
                 "differential_eager"
