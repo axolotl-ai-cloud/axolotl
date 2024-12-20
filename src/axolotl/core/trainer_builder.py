@@ -49,6 +49,7 @@ from trl import (
     RewardTrainer,
 )
 from trl.trainer.utils import RewardDataCollatorWithPadding, pad_to_length
+from llmcompressor.transformers.finetune.session_mixin import SessionManagerMixIn
 
 from axolotl.integrations.base import PluginManager
 from axolotl.monkeypatch.multipack import SUPPORTED_MULTIPACK_MODEL_TYPES
@@ -424,7 +425,7 @@ class SchedulerMixin(Trainer):
         return self.lr_scheduler
 
 
-class AxolotlTrainer(SchedulerMixin, Trainer):
+class AxolotlTrainer(SessionManagerMixIn, SchedulerMixin, Trainer):
     """
     Extend the base Trainer for axolotl helpers
     """
@@ -1309,11 +1310,12 @@ class TrainerBuilderBase(abc.ABC):
     _model_ref = None
     _peft_config = None
 
-    def __init__(self, cfg, model, tokenizer, processor=None):
+    def __init__(self, cfg, model, tokenizer, processor=None, teacher=None):
         self.cfg = cfg
         self.model = model
         self.tokenizer = tokenizer
         self.processor = processor
+        self.teacher = teacher
 
         # in case the model supports tagging, add the axolotl tag.
         # This makes sure the tag is correctly pushed even if a user calls
@@ -1950,6 +1952,11 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             trainer_kwargs["dataset_tags"] = [
                 d["path"] for d in self.cfg.datasets if not Path(d["path"]).is_dir()
             ]
+
+        if self.cfg.compressor:
+            trainer_kwargs["recipe"] = self.cfg.compressor.recipe
+            trainer_kwargs["recipe_args"] = self.cfg.compressor.recipe_args or {}
+
         trainer = trainer_cls(
             model=self.model,
             train_dataset=self.train_dataset,
@@ -1957,6 +1964,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             args=training_args,
             data_collator=self.build_collator(training_args, **data_collator_kwargs),
             callbacks=self.get_callbacks(),
+            teacher=self.teacher,
             **trainer_kwargs,
         )
         trainer = self.hook_post_create_trainer(trainer)

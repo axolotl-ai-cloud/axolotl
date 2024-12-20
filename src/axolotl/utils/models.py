@@ -1203,6 +1203,27 @@ def load_model(
     return loader.load_model()
 
 
+def load_teacher(
+    cfg: DictDefault,
+    tokenizer: PreTrainedTokenizerBase,
+) -> Optional[PreTrainedModel]:
+    """
+    Load a teacher model for a given configuration and tokenizer.
+    """
+    if not cfg.compressor or not cfg.compressor.teacher:
+        return None
+
+    loader = ModelLoader(
+        cfg.compressor.teacher,
+        tokenizer,
+        inference=True,
+        reference_model=True,
+    )
+    teacher, _ = loader.load_model()
+
+    return teacher
+
+
 def load_adapter(model, cfg, adapter, inference=False):
     # type: (PreTrainedModel, DictDefault, Optional[str], bool) -> Tuple[PreTrainedModel, Optional[PeftConfig]]
 

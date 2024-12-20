@@ -25,7 +25,7 @@ from axolotl.contribs.lgpl.unsloth import (  # pylint: disable = no-name-in-modu
 from axolotl.logging_config import configure_logging
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.freeze import freeze_layers_except
-from axolotl.utils.models import load_model, load_processor, load_tokenizer
+from axolotl.utils.models import load_model, load_processor, load_tokenizer, load_teacher
 from axolotl.utils.trainer import setup_trainer
 
 try:
@@ -98,6 +98,8 @@ def train(
     if model.generation_config is not None:
         model.generation_config.do_sample = True
 
+    teacher = load_teacher(cfg, tokenizer)
+
     model_ref = None
     if cfg.rl and cfg.rl != "orpo":
         if cfg.adapter and not cfg.rl_adapter_ref_model:
@@ -123,6 +125,7 @@ def train(
         tokenizer,
         processor,
         total_num_steps,
+        teacher,
     )
 
     if cfg.fix_untrained_tokens:

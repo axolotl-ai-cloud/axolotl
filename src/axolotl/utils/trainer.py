@@ -513,14 +513,14 @@ def prepare_opinionated_env(cfg):
 
 
 def setup_trainer(
-    cfg, train_dataset, eval_dataset, model, tokenizer, processor, total_num_steps
+    cfg, train_dataset, eval_dataset, model, tokenizer, processor, total_num_steps, teacher
 ):
     if cfg.rl in ("dpo", "ipo", "orpo", "kto", "simpo"):
         trainer_builder = HFRLTrainerBuilder(cfg, model[0], tokenizer, processor)
         trainer_builder.model_ref = model[1]
         trainer_builder.peft_config = model[2]
     else:
-        trainer_builder = HFCausalTrainerBuilder(cfg, model[0], tokenizer, processor)
+        trainer_builder = HFCausalTrainerBuilder(cfg, model[0], tokenizer, processor, teacher)
 
     trainer_builder.train_dataset = train_dataset
     trainer_builder.eval_dataset = eval_dataset
