@@ -67,8 +67,8 @@ class TestCustomOptimizers(unittest.TestCase):
         train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
         assert (Path(temp_dir) / "adapter_model.bin").exists()
 
-    @with_temp_dir
     @require_torch_2_5_1
+    @with_temp_dir
     def test_adopt_adamw(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
