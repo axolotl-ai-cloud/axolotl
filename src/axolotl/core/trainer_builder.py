@@ -2014,6 +2014,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 collator = MultiModalChatDataCollator
                 kwargs["processor"] = self.processor
                 kwargs["chat_template"] = training_args.chat_template
+                kwargs["chat_template_type"] = self.cfg.chat_template
             elif self.cfg.batch_flattening:
                 collator = DataCollatorWithFlattening
                 collator_args.pop(0)
