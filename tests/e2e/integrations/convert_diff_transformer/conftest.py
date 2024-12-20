@@ -9,9 +9,6 @@ def base_config():
     """Basic config for testing."""
     return {
         "base_model": "HuggingFaceTB/SmolLM2-135M",
-        "plugins": [
-            "axolotl.integrations.differential_transformer.DifferentialTransformerPlugin",
-        ],
         "datasets": [
             {
                 "path": "axolotl-ai-co/alpaca_100_test",

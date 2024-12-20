@@ -8,9 +8,7 @@ from pytest import approx
 
 from axolotl.cli import load_cfg
 from axolotl.cli.evaluate import do_evaluate
-from axolotl.cli.integrations.convert_differential_transformer import (
-    convert_differential_transformer,
-)
+from axolotl.cli.integrations.convert_diff_transformer import convert_diff_transformer
 from axolotl.common.cli import ConvertDiffTransformerCliArgs, EvaluateCliArgs
 
 
@@ -26,7 +24,7 @@ def test_conversion_and_eval_cli(tmp_path: Path, base_config):
     cli_args = ConvertDiffTransformerCliArgs(
         debug=True, zero_init=True, sublayer_norm=False
     )
-    _, debug_info = convert_differential_transformer(cfg, cli_args, str(config_path))
+    _, debug_info = convert_diff_transformer(cfg, cli_args, str(config_path))
 
     assert debug_info["generations_match"] is True
     assert (output_dir / "model.safetensors").exists()

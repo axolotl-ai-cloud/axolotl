@@ -13,11 +13,11 @@ class DifferentialTransformerPlugin(BasePlugin):
     """
 
     def get_input_args(self):
-        return "axolotl.integrations.differential_transformer.args.DifferentialTransformerArgs"
+        return "axolotl.integrations.diff_transformer.args.DifferentialTransformerArgs"
 
     def pre_model_load(self, cfg):
         """Apply differential attention patch before model loading if enabled."""
-        if cfg.differential_attention:
+        if cfg.diff_attention:
             from axolotl.monkeypatch.attention.differential import (
                 patch_llama_attention_classes,
             )

@@ -14,7 +14,8 @@ from transformers import HfArgumentParser
 
 from axolotl.cli import load_cfg, print_axolotl_text_art
 from axolotl.common.cli import ConvertDiffTransformerCliArgs, load_model_and_tokenizer
-from axolotl.integrations.differential_transformer.convert import convert_to_diff_attn
+from axolotl.integrations.diff_transformer.convert import convert_to_diff_attn
+from axolotl.utils.yaml import dump_yaml_preserved_order
 
 LOG = logging.getLogger(__name__)
 
@@ -51,7 +52,7 @@ def test_inference(model, tokenizer, prompt="The quick brown fox"):
         raise
 
 
-def convert_differential_transformer(cfg, cli_args, config_path):
+def convert_diff_transformer(cfg, cli_args, config_path):
     debug_info = {}
 
     # Load model and tokenizer
@@ -114,16 +115,23 @@ def convert_differential_transformer(cfg, cli_args, config_path):
         LOG.info("Saving updated config to %s", output_config_path)
 
         with open(config_path, "r", encoding="utf-8") as file:
-            data = yaml.safe_load(file) or {}
+            modified_cfg = yaml.safe_load(file) or {}
 
-        data["base_model"] = cfg.output_dir
-        data["differential_attention"] = True
-        data["plugins"] = [
-            "axolotl.integrations.differential_transformer.DifferentialTransformerPlugin"
-        ]
+        modified_cfg["base_model"] = cfg.output_dir
+        modified_cfg["diff_attention"] = True
+        plugin_class = (
+            "axolotl.integrations.diff_transformer.DifferentialTransformerPlugin"
+        )
+        if "plugins" in modified_cfg:
+            modified_cfg["plugins"].append(plugin_class)
+        else:
+            modified_cfg["plugins"] = [plugin_class]
 
-        with open(output_config_path, "w", encoding="utf-8") as file:
-            yaml.dump(data, file)
+        dump_yaml_preserved_order(
+            data=modified_cfg,
+            reference_yaml_path=config_path,
+            output_path=output_config_path,
+        )
     else:
         LOG.info("Not saving converted model to disk")
         LOG.info("Pass --output-dir path/to/save to save model")
@@ -191,7 +199,7 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
     parser = HfArgumentParser(ConvertDiffTransformerCliArgs)
     cli_args, _ = parser.parse_args_into_dataclasses(return_remaining_strings=True)
 
-    convert_differential_transformer(cfg, cli_args, config)
+    convert_diff_transformer(cfg, cli_args, config)
 
 
 if __name__ == "__main__":

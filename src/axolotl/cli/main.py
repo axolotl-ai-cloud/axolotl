@@ -252,11 +252,11 @@ def merge_lora(
 @click.argument("config", type=click.Path(exists=True, path_type=str))
 @add_options_from_dataclass(ConvertDiffTransformerCliArgs)
 @add_options_from_config(AxolotlInputConfig)
-def convert_differential_transformer(config: str, **kwargs):
+def convert_diff_transformer(config: str, **kwargs):
     """Convert model attention layers to differential attention layers."""
     kwargs = {k: v for k, v in kwargs.items() if v is not None}
 
-    from axolotl.cli.integrations.convert_differential_transformer import do_cli
+    from axolotl.cli.integrations.convert_diff_transformer import do_cli
 
     do_cli(config=config, **kwargs)
 
