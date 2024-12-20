@@ -1,4 +1,7 @@
 base_model: EleutherAI/pythia-1.4b-deduped
+# Automatically upload checkpoint and final model to HF
+# hub_model_id: username/custom_model_name
+
 load_in_8bit: true
 datasets:
   - path: teknium/GPT4-LLM-Cleaned

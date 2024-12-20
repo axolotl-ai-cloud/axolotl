@@ -1,6 +1,10 @@
 base_model: huggyllama/llama-7b
+# optionally might have model_type or tokenizer_type
 model_type: LlamaForCausalLM
 tokenizer_type: LlamaTokenizer
+# Automatically upload checkpoint and final model to HF
+# hub_model_id: username/custom_model_name
+
 load_in_8bit: false
 datasets:
   - path: openaccess-ai-collective/jeopardy

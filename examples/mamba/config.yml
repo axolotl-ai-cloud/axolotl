@@ -1,7 +1,10 @@
 base_model: state-spaces/mamba-2.8b
+# optionally might have model_type or tokenizer_type or tokenizer_config
 model_type: MambaLMHeadModel
 tokenizer_type: AutoTokenizer
 tokenizer_config: EleutherAI/gpt-neox-20b
+# Automatically upload checkpoint and final model to HF
+# hub_model_id: username/custom_model_name
 
 load_in_8bit: false
 load_in_4bit: false

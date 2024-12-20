@@ -19,7 +19,9 @@ from transformers import PreTrainedModel, PreTrainedTokenizer
 from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
 
 from axolotl.common.cli import TrainerCliArgs
-from axolotl.core.tokenizer_utils import fix_untrained_tokens
+from axolotl.contribs.lgpl.unsloth import (  # pylint: disable = no-name-in-module
+    fix_untrained_tokens,
+)
 from axolotl.logging_config import configure_logging
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.freeze import freeze_layers_except
@@ -53,25 +55,19 @@ class TrainDatasetMeta:
 def train(
     *, cfg: DictDefault, cli_args: TrainerCliArgs, dataset_meta: TrainDatasetMeta
 ) -> Tuple[Union[PeftModel, PreTrainedModel], PreTrainedTokenizer]:
-    # enable expandable segments for cuda allocation to improve VRAM usage
-    torch_version = torch.__version__.split(".")
-    torch_major, torch_minor = int(torch_version[0]), int(torch_version[1])
-    if torch_major == 2 and torch_minor >= 2:
-        if os.getenv("PYTORCH_CUDA_ALLOC_CONF") is None:
-            os.environ[
-                "PYTORCH_CUDA_ALLOC_CONF"
-            ] = "expandable_segments:True,roundup_power2_divisions:16"
-
-    # load the tokenizer first
+    # Load tokenizer
     LOG.debug(
         f"loading tokenizer... {cfg.tokenizer_config or cfg.base_model_config}",
         main_process_only=True,
     )
     tokenizer = load_tokenizer(cfg)
+
+    # Load processor for multimodal models if needed
     processor = None
     if cfg.is_multimodal:
         processor = load_processor(cfg, tokenizer)
 
+    # Get datasets
     train_dataset = dataset_meta.train_dataset
     eval_dataset = dataset_meta.eval_dataset
     total_num_steps = dataset_meta.total_num_steps
@@ -270,12 +266,18 @@ def train(
                     dataset_tags = [
                         d["path"] for d in cfg.datasets if not Path(d["path"]).is_dir()
                     ]
+                    dataset_tags = [
+                        d for d in dataset_tags if not d.startswith("https://")
+                    ]
                     if dataset_tags:
                         # guard as create_model_card may fail if dataset_tags is empty list
                         model_card_kwarg["dataset_name"] = dataset_tags
                 else:
                     dataset_tags = [
                         d["path"] for d in cfg.datasets if not Path(d["path"]).is_dir()
+                    ]
+                    dataset_tags = [
+                        d for d in dataset_tags if not d.startswith("https://")
                     ]
                     if dataset_tags:
                         # guard as create_model_card may fail if dataset_tags is empty list

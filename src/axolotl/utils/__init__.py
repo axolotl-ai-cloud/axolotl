@@ -3,6 +3,7 @@ Basic utils for Axolotl
 """
 
 import importlib.util
+import os
 import re
 
 import torch
@@ -33,4 +34,12 @@ def get_pytorch_version() -> tuple[int, int, int]:
     return major, minor, patch
 
 
-# pylint: enable=duplicate-code
+def set_pytorch_cuda_alloc_conf():
+    """Set up CUDA allocation config if using PyTorch >= 2.2"""
+    torch_version = torch.__version__.split(".")
+    torch_major, torch_minor = int(torch_version[0]), int(torch_version[1])
+    if torch_major == 2 and torch_minor >= 2:
+        if os.getenv("PYTORCH_CUDA_ALLOC_CONF") is None:
+            os.environ[
+                "PYTORCH_CUDA_ALLOC_CONF"
+            ] = "expandable_segments:True,roundup_power2_divisions:16"

@@ -1196,6 +1196,116 @@ class TestValidation(BaseValidation):
         )
 
 
+class TestTorchCompileValidation(BaseValidation):
+    """
+    test suite for when torch_compile is set to 'auto'
+    """
+
+    def test_torch_compile_auto(self, minimal_cfg):
+        cfg = (
+            DictDefault(
+                {
+                    "torch_compile": "auto",
+                }
+            )
+            | minimal_cfg
+        )
+
+        env_capabilities = {"torch_version": "2.5.1"}
+        capabilities = {"bf16": True}
+        updated_cfg = validate_config(
+            cfg, capabilities=capabilities, env_capabilities=env_capabilities
+        )
+
+        assert updated_cfg.torch_compile is True
+
+        env_capabilities = {"torch_version": "2.4.1"}
+        capabilities = {"bf16": True}
+        updated_cfg = validate_config(
+            cfg, capabilities=capabilities, env_capabilities=env_capabilities
+        )
+
+        assert updated_cfg.torch_compile is False
+
+        env_capabilities = {}
+        capabilities = {"bf16": True}
+        updated_cfg = validate_config(
+            cfg, capabilities=capabilities, env_capabilities=env_capabilities
+        )
+
+        assert updated_cfg.torch_compile is False
+
+
+class TestSampleOptimConfigValidation(BaseValidation):
+    """
+    test configurations for sample optimizations like batch flattening
+    """
+
+    def test_batch_flattening_auto_enables(self, minimal_cfg):
+        cfg = (
+            DictDefault(
+                {
+                    "flash_attention": True,
+                    "sample_packing": None,
+                    "micro_batch_size": 2,
+                    "batch_flattening": "auto",
+                }
+            )
+            | minimal_cfg
+        )
+
+        new_cfg = validate_config(cfg)
+        assert new_cfg["batch_flattening"] is True
+
+    def test_batch_flattening_auto_no_fa(self, minimal_cfg):
+        cfg = (
+            DictDefault(
+                {
+                    "flash_attention": False,
+                    "sample_packing": None,
+                    "micro_batch_size": 2,
+                    "batch_flattening": "auto",
+                }
+            )
+            | minimal_cfg
+        )
+
+        new_cfg = validate_config(cfg)
+        assert new_cfg["batch_flattening"] is False
+
+    def test_batch_flattening_auto_mbsz_1(self, minimal_cfg):
+        cfg = (
+            DictDefault(
+                {
+                    "flash_attention": True,
+                    "sample_packing": None,
+                    "micro_batch_size": 1,
+                    "batch_flattening": "auto",
+                }
+            )
+            | minimal_cfg
+        )
+
+        new_cfg = validate_config(cfg)
+        assert new_cfg["batch_flattening"] is False
+
+    def test_batch_flattening_auto_packing(self, minimal_cfg):
+        cfg = (
+            DictDefault(
+                {
+                    "flash_attention": True,
+                    "sample_packing": True,
+                    "micro_batch_size": 2,
+                    "batch_flattening": "auto",
+                }
+            )
+            | minimal_cfg
+        )
+
+        new_cfg = validate_config(cfg)
+        assert new_cfg["batch_flattening"] is False
+
+
 class TestValidationCheckModelConfig(BaseValidation):
     """
     Test the validation for the config when the model config is available

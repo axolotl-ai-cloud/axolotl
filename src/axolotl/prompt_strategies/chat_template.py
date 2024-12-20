@@ -25,8 +25,8 @@ class ChatTemplatePrompter(Prompter):
         processor=None,
         chat_template=None,
         max_length=2048,
-        message_field_role: str = "from",
-        message_field_content: str = "value",
+        message_field_role: str = "role",
+        message_field_content: str = "content",
         message_field_training: Optional[str] = None,
         message_field_training_detail: Optional[str] = None,
         roles: Optional[Dict[str, List[str]]] = None,
@@ -41,6 +41,7 @@ class ChatTemplatePrompter(Prompter):
                 "assistant": "assistant",
                 "gpt": "assistant",
                 "system": "system",
+                "tool": "tool",
             }
 
         self.message_field_role = message_field_role
@@ -188,7 +189,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
     Tokenizing strategy for instruction-based prompts.
     """
 
-    _messages = "conversations"
+    _messages = "messages"
 
     def __init__(
         self,
@@ -279,12 +280,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
             LOG.debug(f"Should train: {should_train}")
 
-            turn_start_idx, turn_end_idx = self.find_turn(
-                conversation_ids=input_ids, turn=index, turn_content=turn
-            )
-
-            if turn_start_idx == -1 or turn_end_idx == -1:
-                LOG.warning(f"Failed to find boundaries for turn {index}")
+            turn_start_idx, turn_end_idx = self.find_turn(turns=turns, turn_idx=index)
 
             LOG.debug(f"Turn indices: start={turn_start_idx}, end={turn_end_idx}")
 
@@ -313,8 +309,8 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                 LOG.debug(f"Labels after processing turn {index}: {labels}")
 
             # Handle EOS token
-            eos_idx = self.find_eos_token(input_ids, turn_end_idx)
-            if eos_idx == turn_end_idx:
+            eos_idx = self.find_first_eos_token(input_ids, start_idx=turn_end_idx)
+            if abs(eos_idx - turn_end_idx) <= 3:  # Allow for some template padding
                 last_eos_idx = eos_idx
                 if self.train_on_eos == "all" or (
                     self.train_on_eos == "turn" and should_train
@@ -339,75 +335,120 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             "attention_mask": [1] * len(input_ids),
         }
 
-    def find_eos_token(self, input_ids, start_idx):
+    def find_first_eos_token(self, input_ids, start_idx):
         eos_token_id = self.tokenizer.eos_token_id
         for i in range(start_idx, len(input_ids)):
             if input_ids[i] == eos_token_id:
                 return i
         return -1
 
-    def find_turn(self, conversation_ids: list[int], turn: int, turn_content: dict):
+    def find_turn(self, turns: list[dict], turn_idx: int):
         """
         Locate the starting and ending indices of the specified turn in a conversation.
         """
-        content = turn_content.get("content")
-        content_ids = self.tokenizer.encode(content, add_special_tokens=False)
+        # pylint: disable=too-many-return-statements
 
-        LOG.debug(f"content_ids (length {len(content_ids)}): {content_ids}")
+        if turn_idx >= len(turns):
+            raise ValueError(f"Turn index {turn_idx} out of range")
 
-        if not content_ids:
-            LOG.warning(f"Empty content for turn {turn}")
+        # mistral does not output message if it contains only system message
+        if (
+            turn_idx == 0
+            and turns[0].get("role") == "system"
+            and "mistral" in self.tokenizer.name_or_path.lower()
+        ):
             return -1, -1
 
-        # For first turn, start from beginning
-        if turn == 0:
-            start_search_idx = 0
-        else:
-            # For subsequent turns, find the previous EOS token
-            eos_token_id = self.tokenizer.eos_token_id
-            eos_count = 0
-            start_search_idx = 0
+        empty_turn = {
+            "role": turns[turn_idx].get("role"),
+            "content": "[[dummy_message]]",
+        }
 
-            for i, token_id in enumerate(conversation_ids):
-                if token_id == eos_token_id:
-                    eos_count += 1
-                    if eos_count == turn:  # Find the nth EOS token where n = turn
-                        start_search_idx = i + 1
-                        break
+        # Create conversation versions
+        turns_with_empty = turns[:turn_idx] + [empty_turn]
+        turns_with_content = turns[: turn_idx + 1]
 
-        # we can optimize this to only search for a few tokens from start_search_idx
-        # but it would risk missing the content if it's not found within the first few tokens or
-        # if start_search_idx cannot be found above.
-        last_index = len(conversation_ids) - len(content_ids) + 1
+        # Generate the conversation up to the turn, with final turn replaced with dummy content
+        dummy_ids = self.prompter.build_prompt(turns_with_empty)  # type: ignore
 
-        if last_index < start_search_idx:
+        # Generate the conversation up to the turn, with final turn included
+        full_ids = self.prompter.build_prompt(turns_with_content)  # type: ignore
+
+        if not full_ids or not dummy_ids:
+            LOG.warning(f"Empty template generated for turn {turn_idx}")
+            return -1, -1
+
+        # Find first difference (start of content)
+        start_idx = None
+        min_len = min(len(dummy_ids), len(full_ids))
+        for i in range(min_len):
+            if dummy_ids[i] != full_ids[i]:
+                start_idx = i
+                break
+
+        if start_idx is None:
+            LOG.warning(f"Could not find content start boundary for turn {turn_idx}")
+            return -1, -1
+
+        # Find last difference (end of content)
+        end_idx = None
+        for i in range(min_len):
+            dummy_pos = len(dummy_ids) - 1 - i
+            full_pos = len(full_ids) - 1 - i
+            if dummy_ids[dummy_pos] != full_ids[full_pos]:
+                end_idx = full_pos + 1  # Add one to include the last token when slice
+                break
+
+        if end_idx is None:
+            LOG.warning(f"Could not find content end boundary for turn {turn_idx}")
+            return -1, -1
+
+        if end_idx < start_idx:
             LOG.warning(
-                f"last_index to search is less than start_search_idx for turn {turn}"
+                f"Content end boundary is before start boundary for turn {turn_idx}"
             )
             return -1, -1
 
-        # Search for content starting from start_search_idx
-        first_elem = content_ids[0]
-        for i in range(start_search_idx, last_index):
-            # Quick check of first element before doing full comparison
-            if conversation_ids[i] == first_elem:
-                # Check if the rest of the content matches
-                if conversation_ids[i : i + len(content_ids)] == content_ids:
-                    LOG.debug(f"Found turn {turn} content at position {i}")
-                    return i, i + len(content_ids)
+        if end_idx == start_idx:
+            LOG.warning(
+                f"Content end boundary is the same as start boundary for turn {turn_idx}. This is likely an empty turn."
+            )
+            return -1, -1
 
-        return -1, -1
+        LOG.debug(f"Content boundaries: {start_idx}, {end_idx}")
+        LOG.debug(
+            f"Content tokens: {self.tokenizer.convert_ids_to_tokens(full_ids[start_idx:end_idx])}"
+        )
+
+        return start_idx, end_idx
 
     def get_conversation_thread(self, prompt):
-        turns = [
-            {
-                "role": self.prompter.roles[t[self.prompter.message_field_role]],
-                "content": t[self.prompter.message_field_content],
-                "training": t.get(self.prompter.message_field_training),
-                "training_detail": t.get(self.prompter.message_field_training_detail),
-            }
-            for t in prompt[self.messages]
+        turns = []
+        optional_keys = [
+            "tool_calls",  # tool that 'assistant' calls
+            "name",  # name of tool given by 'tool'
+            "tool_call_id",  # mistral/mixtral requires this
         ]
+        for message in prompt[self.messages]:
+            turn = {
+                "role": self.prompter.roles[message[self.prompter.message_field_role]],
+                "training": message.get(self.prompter.message_field_training),
+                "training_detail": message.get(
+                    self.prompter.message_field_training_detail
+                ),
+            }
+
+            # do not add content if None as it may conflict with some templates due to tools
+            content = message.get(self.prompter.message_field_content, None)
+            if content is not None:
+                turn["content"] = content
+
+            for key in optional_keys:
+                value = message.get(key, None)
+                if value is not None:
+                    turn[key] = value
+
+            turns.append(turn)
 
         if self.prompter.drop_system_message and turns[0]["role"] == "system":
             turns = turns[1:]
@@ -446,8 +487,8 @@ def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None, processor=None
     strategy_params = {
         "train_on_inputs": cfg.train_on_inputs,
         "sequence_len": cfg.sequence_len,
-        "roles_to_train": ds_cfg.get("roles_to_train", []),
-        "train_on_eos": ds_cfg.get("train_on_eos", None),
+        "roles_to_train": ds_cfg.get("roles_to_train", ["assistant"]),
+        "train_on_eos": ds_cfg.get("train_on_eos", "turn"),
     }
 
     strategy = ChatTemplateStrategy(

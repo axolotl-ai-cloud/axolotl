@@ -7,26 +7,31 @@ mamba-ssm==1.2.0.post1
 flash-attn==2.7.0.post2
 xformers>=0.0.23.post1
 autoawq==0.2.7.post3
-liger-kernel==0.4.2
+liger-kernel==0.5.2
 # END section
 
 packaging==23.2
+
 peft==0.14.0
-transformers==4.47.0
+transformers==4.47.1
 tokenizers>=0.20.1
-accelerate==1.2.0
+accelerate==1.2.1
 datasets==3.1.0
 deepspeed==0.16.1
+trl==0.12.1
+
+optimum==1.16.2
+hf_transfer
+sentencepiece
+gradio==3.50.2
+
 pydantic==2.6.3
 addict
 fire
 PyYAML>=6.0
 requests
-sentencepiece
 wandb
 einops
-optimum==1.16.2
-hf_transfer
 colorama
 numba
 numpy>=1.24.4,<=2.0.1
@@ -36,7 +41,6 @@ scipy
 scikit-learn==1.4.2
 nvidia-ml-py==12.560.30
 art
-gradio==3.50.2
 tensorboard
 python-dotenv==1.0.1
 
@@ -45,7 +49,6 @@ s3fs>=2024.5.0
 gcsfs>=2024.5.0
 # adlfs
 
-trl==0.12.1
 zstandard==0.22.0
 fastcore
 
@@ -55,5 +58,7 @@ langdetect==1.0.9
 immutabledict==4.2.0
 antlr4-python3-runtime==4.13.2
 
-torchao==0.5.0
+torchao==0.7.0
 schedulefree==1.3.0
+
+axolotl-contribs-lgpl==0.0.1b2

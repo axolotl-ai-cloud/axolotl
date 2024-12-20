@@ -1,4 +1,6 @@
 base_model: NousResearch/Meta-Llama-3.1-8B
+# Automatically upload checkpoint and final model to HF
+# hub_model_id: username/custom_model_name
 
 plugins:
   - axolotl.integrations.liger.LigerPlugin

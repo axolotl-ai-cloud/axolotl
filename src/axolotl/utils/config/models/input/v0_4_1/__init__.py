@@ -699,6 +699,8 @@ class AxolotlInputConfig(
     curriculum_sampling: Optional[bool] = None
     multipack_real_batches: Optional[bool] = None
 
+    batch_flattening: Optional[Union[Literal["auto"], bool]] = None
+
     # for PoSE context length extension
     use_pose: Optional[bool] = None
     pose_split_on_token_ids: Optional[List[int]] = None
@@ -744,7 +746,7 @@ class AxolotlInputConfig(
     special_tokens: Optional[SpecialTokensConfig] = None
     tokens: Optional[List[str]] = None
 
-    torch_compile: Optional[bool] = None
+    torch_compile: Optional[Union[Literal["auto"], bool]] = None
     torch_compile_backend: Optional[str] = None
     torch_compile_mode: Optional[
         Literal["default", "reduce-overhead", "max-autotune"]
@@ -765,6 +767,7 @@ class AxolotlInputConfig(
     load_best_model_at_end: Optional[bool] = False
     save_only_model: Optional[bool] = False
     use_tensorboard: Optional[bool] = None
+    profiler_steps: Optional[int] = None
 
     neftune_noise_alpha: Optional[float] = None
 
@@ -923,6 +926,30 @@ class AxolotlInputConfig(
             LOG.warning(
                 "sample_packing without flash_attention or sdp_attention does not handle cross-attention."
             )
+
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_batch_flattening_fa(cls, data):
+        if data.get("batch_flattening"):
+            batch_flattening_auto = data.get("batch_flattening") == "auto"
+            if not data.get("flash_attention") and not batch_flattening_auto:
+                raise ValueError("batch_flattening requires flash attention")
+            if data.get("sample_packing") and not batch_flattening_auto:
+                raise ValueError("batch_flattening not compatible with sample_packing")
+            if data.get("micro_batch_size") == 1 and not batch_flattening_auto:
+                LOG.warning("batch_flattening has no effect with micro_batch_size == 1")
+
+            if (
+                batch_flattening_auto
+                and data.get("flash_attention")
+                and not data.get("sample_packing")
+                and data.get("micro_batch_size") > 1
+            ):
+                data["batch_flattening"] = True
+            elif batch_flattening_auto:
+                data["batch_flattening"] = False
 
         return data
 
@@ -1583,4 +1610,23 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 raise ValueError(
                     "ADOPT optimizer is incompatible with torch version < 2.5.1"
                 )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_torch_compile_auto(cls, data):
+        if data.get("torch_compile") == "auto":
+            env_capabilities = data.get("env_capabilities", {})
+            if env_capabilities.get("torch_version"):
+                if version.parse(
+                    env_capabilities.get("torch_version")
+                ) >= version.parse("2.5.1"):
+                    LOG.info(
+                        "torch.compile is available, setting torch_compile to True"
+                    )
+                    data["torch_compile"] = True
+                else:
+                    data["torch_compile"] = False
+            else:
+                data["torch_compile"] = False
         return data

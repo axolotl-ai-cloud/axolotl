@@ -1,6 +1,10 @@
 base_model: cerebras/btlm-3b-8k-base
+# optionally might have model_type or tokenizer_type
 model_type: AutoModelForCausalLM
 tokenizer_type: GPT2Tokenizer
+# Automatically upload checkpoint and final model to HF
+# hub_model_id: username/custom_model_name
+
 trust_remote_code: true
 tokenizer_use_fast: true
 tokenizer_legacy: true

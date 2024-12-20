@@ -127,34 +127,40 @@ datasets:
     # - tokenizer_default_fallback_*: where * is the name of the chat template to fallback to if the tokenizer does not have a chat template else default to tokenizer. E.g. tokenizer_default_fallback_chatml.
     # - jinja: Uses a custom jinja template for the chat template. The custom jinja template should be provided in the chat_template_jinja field.
     chat_template: tokenizer_default
-    # Custom jinja template for chat template. This will be only used if `chat_template` is set to `jinja` or empty (in which case chat_template is automatically set to `jinja`).
+
+    # Custom jinja chat template. Used only if `chat_template: jinja` or empty.
     chat_template_jinja:
-    # The key in the data example that contains the messages. Default is "messages".
+
+    # Key containing the messages (default: "messages")
     field_messages: messages
-    # The key in the message turn that contains the role. Default is "role".
+    # Key for role in each message (default: "role")
     message_field_role: role
-    # The key in the message turn that contains the content. Default is "content".
+    # Key for content in each message (default:  "content")
     message_field_content: content
-    # Optional[Dict[str, List]]. Roles mapping for the messages.
+
+    # Optional[Dict[str, List]]. Roles mapping in the messages. The default is:
     roles:
       user: ["human", "user"]
-      assistant: ["gpt", "assistant", "ai"]
+      assistant: ["gpt", "assistant"]
       system: ["system"]
+      tool: ["tool"]
 
-    ## NOTE: Leaving the below empty will default to using the simple legacy tokenization strategy where only last message is trained on.
+    # IMPORTANT: The following fields determine which parts of the conversation to train on.
+    # Priority order: message_field_training > message_field_training_detail > train_on_inputs or role in roles_to_train
+    # See examples at `docs/dataset-formats/conversation.qmd`
+    # Note: If the below 4 fields are empty, defaults to training only on the last message.
 
     # Optional[List[str]]. Roles to train on. The tokens from these roles will be considered for the loss.
-    roles_to_train: ["gpt", "assistant"]
+    roles_to_train: ["assistant"]  # default
     # Optional[str]. Which EOS tokens to train on in the conversation. Possible values are:
     # - all: train on all EOS tokens
-    # - turn: train on the EOS token at the end of each trainable turn
+    # - turn (default): train on the EOS token at the end of each trainable turn
     # - last: train on the last EOS token in the conversation
     train_on_eos: last
     # The key in the message turn that indicates via boolean whether tokens of a turn should be considered for training. Useful to selectively train on certain turns besides the `roles_to_train`.
     message_field_training: training
     # The key in the message turn that contains the training details. Useful to selectively train on certain tokens in a turn.
     # The value of the key is a List[Dict] containing `begin_offset` (start character index in content), `end_offset` (end character index in content), and `train` (boolean whether to train).
-    # See example at `docs/dataset-formats/conversation.qmd`
     message_field_training_detail: train_detail
 
 
@@ -238,6 +244,9 @@ total_num_tokens:
 sample_packing_group_size: 100000
 # The number of samples which can be packed into one sequence. Increase if using a large sequence_len with many short samples.
 sample_packing_bin_size: 200
+
+# Use batch flattening for speedups when not using sample_packing
+batch_flattening:
 
 # Passed through to transformers when loading the model when launched without accelerate
 # Use `sequential` when training w/ model parallelism to limit memory
@@ -331,7 +340,8 @@ comet_experiment_config: # Dictionary for additional configuration settings, see
 output_dir: ./completed-model
 
 # Whether to use torch.compile and which backend to use
-torch_compile:  # bool
+# setting to `auto` will enable torch compile when torch>=2.5.1
+torch_compile:  # Optional[Union[Literal["auto"], bool]]
 torch_compile_backend:  # Optional[str]
 
 # Training hyperparameters
@@ -362,6 +372,10 @@ max_steps:
 eval_table_size: # Approximate number of predictions sent to wandb depending on batch size. Enabled above 0. Default is 0
 eval_max_new_tokens: # Total number of tokens generated for predictions sent to wandb. Default is 128
 eval_causal_lm_metrics: # HF evaluate metrics used during evaluation. Default is ["sacrebleu", "comet", "ter", "chrf", "perplexity"]
+
+profiler_steps: # enable the pytorch profiler to capture the first N steps of training to the output_dir.
+                # see https://pytorch.org/blog/understanding-gpu-memory-1/ for more information
+                # snapshots can be visualized @ https://pytorch.org/memory_viz
 
 loss_watchdog_threshold: # High loss value, indicating the learning has broken down (a good estimate is ~2 times the loss at the start of training)
 loss_watchdog_patience: # Number of high-loss steps in a row before the trainer aborts (default: 3)

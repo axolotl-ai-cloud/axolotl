@@ -1,6 +1,7 @@
 **/axolotl.egg-info
 configs
 last_run_prepared/
+outputs
 .vscode
 _site/
 

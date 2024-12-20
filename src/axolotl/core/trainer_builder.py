@@ -28,6 +28,7 @@ from torch import nn
 from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import BatchSampler, DataLoader, RandomSampler, SequentialSampler
 from transformers import (
+    DataCollatorWithFlattening,
     EarlyStoppingCallback,
     Trainer,
     TrainerCallback,
@@ -65,6 +66,7 @@ from axolotl.utils.callbacks import (
     log_prediction_callback_factory,
 )
 from axolotl.utils.callbacks.lisa import lisa_callback_factory
+from axolotl.utils.callbacks.profiler import PytorchProfilerCallback
 from axolotl.utils.chat_templates import get_chat_template
 from axolotl.utils.collators import (
     BatchSamplerDataCollatorForSeq2Seq,
@@ -1363,6 +1365,13 @@ class TrainerBuilderBase(abc.ABC):
             plugin_manager.add_callbacks_pre_trainer(cfg=self.cfg, model=self.model)
         )
 
+        if self.cfg.profiler_steps:
+            callbacks.append(
+                PytorchProfilerCallback(
+                    steps_to_profile=self.cfg.profiler_steps,
+                )
+            )
+
         if self.cfg.use_wandb:
             callbacks.append(
                 SaveAxolotlConfigtoWandBCallback(self.cfg.axolotl_config_path)
@@ -1981,9 +1990,11 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 V2BatchSamplerDataCollatorForSeq2Seq,
                 BatchSamplerDataCollatorForSeq2Seq,
                 DataCollatorForSeq2Seq,
+                DataCollatorWithFlattening,
                 RewardDataCollatorWithPadding,
             ]
         ]
+        collator_args = [self.tokenizer]
         if self.cfg.reward_model:
             collator = RewardDataCollatorWithPadding
             if "max_length" in kwargs:
@@ -2004,12 +2015,18 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 kwargs["processor"] = self.processor
                 kwargs["chat_template"] = training_args.chat_template
                 kwargs["chat_template_type"] = self.cfg.chat_template
+            elif self.cfg.batch_flattening:
+                collator = DataCollatorWithFlattening
+                collator_args.pop(0)
+                kwargs.pop("pad_to_multiple_of", None)
+                kwargs.pop("padding", None)
             else:
                 collator = DataCollatorForSeq2Seq
 
+        kwargs["return_tensors"] = "pt"
+
         return collator(
-            self.tokenizer,
-            return_tensors="pt",
+            *collator_args,
             **kwargs,
         )
 
