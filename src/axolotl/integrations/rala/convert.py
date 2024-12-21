@@ -32,9 +32,10 @@ def copy_attention_weights(
 
     # Zero out lambda parameters for exact equivalence
     if zero_init:
-        nn.init.zeros_(new_attn.phi)
+        nn.init.zeros_(new_attn.phi.weight)
     else:
         nn.init.normal_(new_attn.phi)
+    nn.init.zeros_(new_attn.phi.bias)
 
     logger.debug(
         "Copied positive attention weights from %s to %s",

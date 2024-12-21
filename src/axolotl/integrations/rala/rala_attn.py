@@ -163,7 +163,10 @@ class LlamaRALAAttention(nn.Module):
         # Dot product over head_dim
         # K_kappa is [b, n_heads, seq_len, head_dim], Q_g is [b, n_heads, head_dim]
         # We'll do an einsum or transpose to produce logits [b, n_heads, seq_len]
-        logits = torch.einsum("bnh,bnhd->bnd", Q_g, K_kappa)  # [b, n_heads, seq_len]
+
+        # Dot product across the last dimension (d_head), resulting in shape [b, n_heads, seq_len]
+        # logits = torch.einsum("bnh, bnsh -> bns", Q_g, K_kappa)  # [b, n_heads, seq_len]
+        logits = (Q_g.unsqueeze(2) * K_kappa).sum(dim=-1)  # -> [b, n_heads, seq_len]  # identical to above but torch.compile should work
 
         # 4) Incorporate causal or padding mask if provided.
         #    In standard Llama, attention_mask is broadcast as [b, 1, seq_len, seq_len] or similar.
@@ -214,9 +217,8 @@ class LlamaRALAAttention(nn.Module):
         #    We'll do an einsum for that: [b,n_heads,seq_len,d] outer [b,n_heads,seq_len,d] => [b,n_heads,d,d]
         #    alpha: [b, n_heads, seq_len].
         value_states_ = value_states  # [b, n_heads, seq_len, head_dim]
-        outer_sum = torch.einsum(
-            "bnhs,bnhsd,bnhsf->bnhdf", alpha, K_kappa, value_states_
-        )
+        outer_sum = torch.einsum("bns,bnsd,bnsf->bndf", alpha, K_kappa, value_states_)
+
         # Explanation:
         #  - 'bnhs' is alpha (batch, n_heads, seq_len)
         #  - 'bnhsd' is K_kappa  (b,n_heads,seq_len, d)

@@ -466,6 +466,7 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
             self.args.loraplus_lr_ratio is None
             and self.args.embedding_lr_scale is None
             and self.args.embedding_lr is None
+            and self.args.lr_groups is None
             and self.args.alternate_optimizer
             not in [
                 "optimi_adamw",
@@ -481,7 +482,7 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
         if self.optimizer is None:  # pylint: disable=access-member-before-definition
             decay_parameters = self.get_decay_parameter_names(opt_model)
             params = {
-                "to_weight_decay": {},  # LayerNorm and bias
+                "to_weight_decay": {},  # LayerNorm except bias
                 "embeddings": {},  # lm_head, embed_tokens,
                 "no_weight_decay": {},
             }

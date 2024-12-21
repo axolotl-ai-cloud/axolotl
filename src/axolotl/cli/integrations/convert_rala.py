@@ -1,4 +1,4 @@
-"""CLI to convert a transformers model's attns to diff attns."""
+"""CLI to convert a transformers model's attns to rala attns."""
 import logging
 import warnings
 from pathlib import Path
@@ -70,7 +70,7 @@ def convert_rala(cfg, cli_args, config_path):
 
     # Test original model
     if cli_args.debug:
-        LOG.info("Testing original model...")
+        LOG.info("attention layers to RALA attention")
         debug_info["orig_time"], debug_info["orig_text"] = test_inference(
             model, tokenizer
         )
@@ -108,9 +108,9 @@ def convert_rala(cfg, cli_args, config_path):
             modified_cfg = yaml.safe_load(file) or {}
 
         modified_cfg["base_model"] = cfg.output_dir
-        modified_cfg["diff_attention"] = True
+        modified_cfg["rala_attention"] = True
         plugin_class = (
-            "axolotl.integrations.diff_transformer.DifferentialTransformerPlugin"
+            "axolotl.integrations.rala.RalaPlugin"
         )
         if "plugins" in modified_cfg:
             modified_cfg["plugins"].append(plugin_class)
