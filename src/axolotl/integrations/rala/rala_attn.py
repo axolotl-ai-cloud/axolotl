@@ -1,8 +1,9 @@
-from typing import Optional
+from typing import Optional, Tuple
 
 import torch
 import torch.nn.functional as F
 from torch import nn
+from transformers import Cache
 from transformers.models.llama.modeling_llama import (
     LlamaDynamicNTKScalingRotaryEmbedding,
     LlamaLinearScalingRotaryEmbedding,
@@ -104,12 +105,14 @@ class LlamaRALAAttention(nn.Module):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        attention_mask: torch.Tensor = None,
-        position_ids: torch.Tensor = None,
-        past_key_value=None,
+        attention_mask: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.LongTensor] = None,
+        past_key_value: Optional[Cache] = None,
         output_attentions: bool = False,
-        use_cache: bool = False,
-        cache_position: torch.Tensor = None,
+        use_cache: bool = False,  # pylint: disable=unused-argument
+        cache_position: Optional[torch.LongTensor] = None,
+        position_embeddings: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
+        **kwargs,  # pylint: disable=unused-argument
     ):
         """
         RALA forward pass.
