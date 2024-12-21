@@ -21,7 +21,6 @@ logger = logging.getLogger(__name__)
 
 
 def repeat_kv(x: torch.Tensor, n_rep: int) -> torch.Tensor:
-    """torch.repeat_interleave(x, dim=1, repeats=n_rep)"""
     batch_size, n_kv_heads, slen, head_dim = x.shape
     if n_rep == 1:
         return x
@@ -249,6 +248,7 @@ class LlamaDifferentialAttention(DifferentialAttentionBase):
 class LlamaDifferentialSdpaAttention(DifferentialAttentionBase):
     """SDPA-based implementation of differential attention."""
 
+    # pylint: disable=duplicate-code
     def forward(
         self,
         hidden_states: torch.Tensor,
@@ -312,6 +312,7 @@ class LlamaDifferentialSdpaAttention(DifferentialAttentionBase):
 class LlamaDifferentialFlashAttention2(DifferentialAttentionBase):
     """Flash Attention 2-based implementation of differential attention."""
 
+    # pylint: disable=duplicate-code
     def forward(
         self,
         hidden_states: torch.Tensor,

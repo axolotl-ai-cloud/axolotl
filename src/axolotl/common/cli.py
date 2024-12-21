@@ -12,14 +12,12 @@ from axolotl.utils.dict import DictDefault
 from axolotl.utils.models import load_model, load_tokenizer
 
 configure_logging()
-LOG = logging.getLogger("axolotl.common.cli")
+LOG = logging.getLogger(__name__)
 
 
 @dataclass
 class PreprocessCliArgs:
-    """
-    dataclass with arguments for preprocessing only
-    """
+    """dataclass with arguments for preprocessing only"""
 
     debug: bool = field(default=False)
     debug_text_only: bool = field(default=False)
@@ -30,9 +28,7 @@ class PreprocessCliArgs:
 
 @dataclass
 class TrainerCliArgs:
-    """
-    dataclass with various non-training arguments
-    """
+    """dataclass with various non-training arguments"""
 
     debug: bool = field(default=False)
     debug_text_only: bool = field(default=False)
@@ -45,9 +41,7 @@ class TrainerCliArgs:
 
 @dataclass
 class EvaluateCliArgs:
-    """
-    dataclass with various evaluation arguments
-    """
+    """dataclass with various evaluation arguments"""
 
     debug: bool = field(default=False)
     debug_text_only: bool = field(default=False)
@@ -56,9 +50,7 @@ class EvaluateCliArgs:
 
 @dataclass
 class ConvertDiffTransformerCliArgs:
-    """
-    dataclass with arguments for convert-diff-transformer CLI
-    """
+    """dataclass with arguments for convert-diff-transformer CLI"""
 
     debug: bool = field(default=False)
     zero_init: bool = field(default=False)
