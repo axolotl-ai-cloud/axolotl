@@ -7,10 +7,7 @@ from typing import Optional
 import torch
 
 from axolotl.core.trainers.base import AxolotlTrainer
-from axolotl.integrations.kd.kernels.kd import (
-    forward_kl_topk,
-    prepare_topk_student_teacher,
-)
+from axolotl.integrations.kd.kernels.kd import kd_loss_triton
 
 
 def kd_loss_function(
@@ -100,43 +97,29 @@ class AxolotlKDTrainer(AxolotlTrainer):
         outputs = model(**inputs)
 
         student_logits = outputs["logits"]
+        # Slice or gather student logits to match teacher seq len
+        # e.g.:
+        teacher_seq_len = target_token_ids.shape[1]
+        student_logits_for_kd = student_logits[:, :teacher_seq_len, :]  # [B, seq_len, vocab_size]
 
-        # Gather & flatten to [N, K]
-        stud_lp_f, teach_lp_f, mask_f = prepare_topk_student_teacher(
-            student_logits,
-            target_token_ids,
-            target_logprobs,
-            target_mask,
+        # GATHER top-K from student
+        student_logits_topk = torch.gather(
+            student_logits_for_kd, dim=-1, index=target_token_ids  # same shape [B, seq_len, K]
         )
 
-        loss_kd = forward_kl_topk(teach_lp_f, stud_lp_f, mask_f, reduction="none")
+        # Now call the Triton-based KD loss
+        loss_kd = kd_loss_triton(
+            student_logits_topk,
+            target_logprobs,   # teacher logprobs [B, seq_len, K]
+            target_mask,       # mask [B, seq_len, K]
+            num_items_in_batch=num_items_in_batch,
+        )
 
-        # Normalize by number of items or mean over valid tokens
-        if num_items_in_batch is not None:
-            # If you know how many items should be considered in the batch
-            loss_kd = loss_kd / num_items_in_batch
-        else:
-            # Otherwise, just average over all valid tokens
-            # count number of unmasked tokens in teacher_mask
-            kd_loss_per_token = target_mask.sum(dim=1).unsqueeze(-1)
-            # Normalize by number of unmasked tokens in teacher_mask
-            loss_kd = loss_kd / kd_loss_per_token.float()
-
+        # optionally combine with CE loss
         if self.args.kd_ce_alpha > 0:
             loss = self.args.kd_ce_alpha * outputs["loss"] + loss_kd
         else:
             loss = loss_kd
-        # Save past state if it exists
-        # TODO: this needs to be fixed and made cleaner later.
-        if self.args.past_index >= 0:
-            self._past = outputs[  # pylint: disable=attribute-defined-outside-init
-                self.args.past_index
-            ]
-
-        if self.args.average_tokens_across_devices and self.model_accepts_loss_kwargs:
-            loss *= self.accelerator.num_processes
-
-        torch.cuda.empty_cache()
 
         return (loss, outputs) if return_outputs else loss
 
