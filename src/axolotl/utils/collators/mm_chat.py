@@ -83,7 +83,8 @@ class MultiModalChatDataCollator(DataCollatorMixin):
             # Create new dict without 'conversations' key
             result = deepcopy(example)
             result.pop("conversations")
-            return {"messages": messages, **result}
+            result["messages"] = messages
+            return result
 
         processed_examples = []
         for example in examples:
