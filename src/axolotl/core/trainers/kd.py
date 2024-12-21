@@ -108,12 +108,20 @@ class AxolotlKDTrainer(AxolotlTrainer):
         )
 
         # Now call the Triton-based KD loss
-        loss_kd = kd_loss_triton(
+        kd_sum = kd_loss_triton(
             student_logits_topk,
             target_logprobs,   # teacher logprobs [B, seq_len, K]
             target_mask,       # mask [B, seq_len, K]
-            num_items_in_batch=num_items_in_batch,
         )
+
+        # Normalize however you want
+        if num_items_in_batch is not None:
+            loss_kd = kd_sum / num_items_in_batch
+        else:
+            # or do e.g. average over valid tokens
+            # quick example:
+            total_valid = target_mask.sum()
+            loss_kd = kd_sum / (total_valid + 1e-8)
 
         # optionally combine with CE loss
         if self.args.kd_ce_alpha > 0:
