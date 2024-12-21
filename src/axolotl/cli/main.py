@@ -262,6 +262,19 @@ def convert_diff_transformer(config: str, **kwargs):
 
 
 @cli.command()
+@click.argument("config", type=click.Path(exists=True, path_type=str))
+@add_options_from_dataclass(ConvertDiffTransformerCliArgs)
+@add_options_from_config(AxolotlInputConfig)
+def convert_rala(config: str, **kwargs):
+    """Convert model attention layers to RALA attention layers."""
+    kwargs = {k: v for k, v in kwargs.items() if v is not None}
+
+    from axolotl.cli.integrations.convert_rala import do_cli
+
+    do_cli(config=config, **kwargs)
+
+
+@cli.command()
 @click.argument("directory", type=click.Choice(["examples", "deepspeed_configs"]))
 @click.option("--dest", help="Destination directory")
 def fetch(directory: str, dest: Optional[str]):

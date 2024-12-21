@@ -48,6 +48,7 @@ from transformers.integrations.deepspeed import (
 )
 
 from axolotl.common.architectures import MOE_ARCH_BLOCK
+from axolotl.integrations.base import PluginManager
 from axolotl.models.mamba import fix_mamba_attn_for_loss
 from axolotl.monkeypatch.multipack import (
     SUPPORTED_MULTIPACK_MODEL_TYPES,
@@ -375,8 +376,6 @@ class ModelLoader:
 
     def apply_patches(self) -> None:
         # load any patches from plugins
-        from axolotl.integrations.base import PluginManager
-
         plugin_manager = PluginManager.get_instance()
         plugin_manager.pre_model_load(self.cfg)
 
@@ -756,6 +755,9 @@ class ModelLoader:
 
         if self.cfg.low_cpu_mem_usage:
             self.model_kwargs["low_cpu_mem_usage"] = True
+
+        plugin_manager = PluginManager.get_instance()
+        plugin_manager.set_attn_config(self.cfg, self.model_kwargs, self.model_config)
 
     def build_model(self, qlora_fsdp) -> bool:
         def _configure_zero3_memory_efficient_loading():
