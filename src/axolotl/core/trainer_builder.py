@@ -56,6 +56,7 @@ from axolotl.monkeypatch.relora import ReLoRACallback, ReLoRAScheduler
 from axolotl.utils import is_comet_available, is_mlflow_available
 from axolotl.utils.callbacks import (
     EvalFirstStepCallback,
+    GCCallback,
     GPUStatsCallback,
     LossWatchDogCallback,
     SaveAxolotlConfigtoWandBCallback,
@@ -1452,6 +1453,8 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         if self.cfg.loss_watchdog_threshold is not None:
             callbacks.append(LossWatchDogCallback(self.cfg))
 
+        if self.cfg.gc_steps:
+            callbacks.append(GCCallback(gc_steps=self.cfg.gc_steps))
         callbacks.append(SaveModelCallback())
 
         return callbacks

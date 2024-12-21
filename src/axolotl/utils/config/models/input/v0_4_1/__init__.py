@@ -666,6 +666,8 @@ class AxolotlInputConfig(
     loss_watchdog_threshold: Optional[float] = None
     loss_watchdog_patience: Optional[int] = None
 
+    gc_steps: Optional[int] = None
+
     bf16: Optional[Union[Literal["auto"], bool]] = "auto"
     fp16: Optional[bool] = None
     bfloat16: Optional[bool] = None  # for non-AMP cases
