@@ -98,9 +98,13 @@ def convert_to_diff_attn(
 
         # Iterate through module children, convert any attn layers to diff attn
         for name, child in module.named_children():
-            if isinstance(child, tuple(ATTENTION_MAPPING.keys())):
-                # Choose appropriate differential attention class
-                attention_class = ATTENTION_MAPPING[type(child)]
+            child_class_name = type(child).__name__
+            if child_class_name in [k.__name__ for k in ATTENTION_MAPPING]:
+                # Find matching attention class by name
+                for orig_class, diff_class in ATTENTION_MAPPING.items():
+                    if orig_class.__name__ == child_class_name:
+                        attention_class = diff_class
+                        break
 
                 layer_type = type(child).__name__
                 logger.info(
