@@ -32,6 +32,7 @@ def patch_llama_attention_classes():
             "differential_eager",
             "differential_sdpa",
             "differential_flash_attention_2",
+            "rala",
         ]
         if attn_implementation not in valid_impls:
             message = (
