@@ -1,4 +1,5 @@
-"""CLI to convert a transformers model's attns to diff attns."""
+"""CLI to convert a transformers model's attention layers to differential attention layers."""
+
 import logging
 import warnings
 from pathlib import Path
@@ -127,6 +128,7 @@ def convert_diff_transformer(cfg, cli_args, config_path):
         else:
             modified_cfg["plugins"] = [plugin_class]
 
+        # Write out the updated axolotl config while preserving original ordering / formatting
         dump_yaml_preserved_order(
             data=modified_cfg,
             reference_yaml_path=config_path,

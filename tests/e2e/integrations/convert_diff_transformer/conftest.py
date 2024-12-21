@@ -4,7 +4,7 @@ import pytest
 from click.testing import CliRunner
 
 
-@pytest.fixture()
+@pytest.fixture(scope="class")
 def base_config():
     """Basic config for testing."""
     return {
@@ -26,6 +26,6 @@ def base_config():
     }
 
 
-@pytest.fixture
+@pytest.fixture(scope="class")
 def cli_runner():
     return CliRunner()

@@ -84,6 +84,11 @@ class OrderedDumper(yaml.SafeDumper):
     """Custom YAML dumper that maintains dictionary order."""
 
 
+def represent_none(self, _):
+    """Represent None values as empty fields."""
+    return self.represent_scalar("tag:yaml.org,2002:null", "")
+
+
 def ordered_dict_representer(dumper: OrderedDumper, data: Dict) -> Any:
     """Custom representer for dictionaries that maintains order."""
     return dumper.represent_mapping("tag:yaml.org,2002:map", data.items())
@@ -121,7 +126,8 @@ def dump_yaml_preserved_order(
     # Reorder the data
     ordered_data = reorder_dict(data, tracker.structure)
 
-    # Register the custom representer
+    # Register the custom representers
+    OrderedDumper.add_representer(type(None), represent_none)
     OrderedDumper.add_representer(dict, ordered_dict_representer)
     OrderedDumper.add_representer(OrderedDict, ordered_dict_representer)
 
