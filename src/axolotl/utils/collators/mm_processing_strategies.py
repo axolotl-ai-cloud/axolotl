@@ -1,15 +1,18 @@
 from copy import deepcopy
-from dataclasses import dataclass
-from typing import Any, Optional, Union
+from typing import Optional
 
 from PIL import Image
-from transformers import PreTrainedTokenizerBase, ProcessorMixin
-from transformers.data.data_collator import DataCollatorMixin
-from transformers.utils import PaddingStrategy
+from transformers import ProcessorMixin
 
-class ProcessingStrategies:
-    def __init__(self, processor: ProcessorMixin):
+
+class ProcessingStrategy:
+    def __init__(self, processor: ProcessorMixin, chat_template: Optional[str] = None):
         self.processor = processor
+        self.chat_template = chat_template
+        try:
+            self.image_token = processor.image_token
+        except AttributeError:
+            pass
 
     @staticmethod
     def preprocess(examples: list[dict]) -> list[dict]:
@@ -69,7 +72,7 @@ class ProcessingStrategies:
                 )
 
         return processed_examples
-    
+
     @staticmethod
     def process_images(examples, max_images):
         """
@@ -122,67 +125,13 @@ class ProcessingStrategies:
             ]
 
         return images
-    
+
     def process_texts(self, examples):
-        texts = [
-                self.processor.apply_chat_template(
-                    example["messages"], chat_template=self.chat_template, tokenize=False
-                )
-                for example in examples
-            ]
+        texts = [self.processor.apply_chat_template(example["messages"], chat_template=self.chat_template, tokenize=False)for example in examples]
         return texts
-    
-    @staticmethod
-    def process_rows(
-        examples,
-        processor,
-        chat_template,
-        max_images,
-        length_only=False,
-        chat_template_type=None,
-    ):
-        # HINT: use `_torch_collate_batch` to stack and pad tensors
-        # see also DataCollatorWithFlattening and DefaultDataCollator
 
-        # *** This is COPIED from the trl example sft_vlm.py code ***
-        # use this as a starting point
 
-        # Preprocess the examples
-        examples = __class__.preprocess(examples)
-
-        # Get the texts and images, and apply the chat template
-        
-        texts = __class__.process_texts(examples)
-
-        images = __class__.process_images(examples, max_images=max_images)
-        if chat_template_type == "llava":
-            # LLava1.5 does not support multiple images
-            images = [image[0] for image in images]
-
-        # Tokenize the texts and process the images
-        batch = processor(text=texts, images=images, return_tensors="pt", padding=True)
-
-        # The labels are the input_ids, and we mask the padding tokens in the loss computation
-        labels = batch["input_ids"].clone()
-        labels[labels == processor.tokenizer.pad_token_id] = -100  #
-        # Ignore the image token index in the loss computation (model specific)
-        if chat_template_type == "qwen2_vl":
-            image_token_id = processor.tokenizer.convert_tokens_to_ids("<|image_pad|>")
-        else:
-            image_token_id = processor.tokenizer.convert_tokens_to_ids(
-                processor.image_token
-            )
-        labels[labels == image_token_id] = -100
-        batch["labels"] = labels
-
-        if length_only:
-            return {
-                "length": [len(sample["input_ids"]) for sample in batch["input_ids"]]
-            }
-        return batch
-
-class PixtralProcessingStrategies(ProcessingStrategies):
-    
+class PixtralProcessingStrategy(ProcessingStrategy):
     @staticmethod
     def pixtral_chat_conversion(messages):
         is_single_message = not isinstance(messages, list)
@@ -204,3 +153,34 @@ class PixtralProcessingStrategies(ProcessingStrategies):
         if is_single_message:
             return messages[0]
         return messages
+
+    def process_texts(self, examples):
+        texts = [
+            self.processor.apply_chat_template(__class__.pixtral_chat_conversion(example["messages"]), chat_template=self.chat_template, tokenize=False,)
+            for example in examples
+        ]
+        return texts
+
+
+class Qwen2VLProcessingStrategy(ProcessingStrategy):
+
+    def __init__(self, processor: ProcessorMixin, chat_template: Optional[str] = None):
+        super().__init__(processor, chat_template)
+        self.image_token = "<|image_pad|>"
+
+
+class LlavaProcessingStrategy(ProcessingStrategy):
+
+    @staticmethod
+    def process_images(examples, max_images):
+        images = ProcessingStrategy.process_images(examples, max_images)
+        images = [image[0] for image in images]
+        return images
+
+
+def get_processing_strategy(processor: ProcessorMixin, chat_template, chat_template_type):
+    if chat_template_type == "pixtral":
+        return PixtralProcessingStrategy(processor, chat_template)
+    if chat_template_type == "llava":
+        return LlavaProcessingStrategy(processor, chat_template)
+    return ProcessingStrategy(processor, chat_template)

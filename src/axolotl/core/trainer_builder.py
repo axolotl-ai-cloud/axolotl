@@ -75,6 +75,7 @@ from axolotl.utils.collators import (
     V2BatchSamplerDataCollatorForSeq2Seq,
 )
 from axolotl.utils.collators.mm_chat import MultiModalChatDataCollator
+from axolotl.utils.collators.mm_processing_strategies import get_processing_strategy
 from axolotl.utils.models import ensure_dtype
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 from axolotl.utils.schedulers import (
@@ -2011,10 +2012,9 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 collator = BatchSamplerDataCollatorForSeq2Seq
         else:
             if self.cfg.processor_type and self.processor:
+
                 collator = MultiModalChatDataCollator
-                kwargs["processor"] = self.processor
-                kwargs["chat_template"] = training_args.chat_template
-                kwargs["chat_template_type"] = self.cfg.chat_template
+                kwargs["processing_strategy"] = get_processing_strategy(self.processor, training_args.chat_template, self.cfg.chat_template)
             elif self.cfg.batch_flattening:
                 collator = DataCollatorWithFlattening
                 collator_args.pop(0)
