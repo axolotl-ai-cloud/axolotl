@@ -231,21 +231,51 @@ def drop_long_seq(sample, sequence_len=2048, min_sequence_len=2):
     return results
 
 
-def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
+def drop_long_seq_in_dataset(dataset, cfg):
     drop_long = partial(
         drop_long_seq,
         sequence_len=cfg.sequence_len,
-        min_sequence_len=cfg.min_sample_len or 2,
+        min_sequence_len=cfg.min_sequence_len,
     )
 
     try:
-        min_input_len = np.min(get_dataset_lengths(train_dataset))
+        min_input_len = np.min(get_dataset_lengths(dataset))
         LOG.debug(f"min_input_len: {min_input_len}", main_process_only=True)
-        max_input_len = np.max(get_dataset_lengths(train_dataset))
+        max_input_len = np.max(get_dataset_lengths(dataset))
         LOG.debug(f"max_input_len: {max_input_len}", main_process_only=True)
     except AttributeError:
         pass
 
+    try:
+        prior_len = len(dataset)
+    except TypeError:
+        # handle iterable datasets case
+        prior_len = None
+
+    filter_map_kwargs = {}
+    if not isinstance(dataset, IterableDataset):
+        filter_map_kwargs["num_proc"] = cfg.dataset_processes
+        filter_map_kwargs["load_from_cache_file"] = not cfg.is_preprocess
+
+    drop_long_kwargs = {}
+    if filter_map_kwargs:
+        drop_long_kwargs["desc"] = "Dropping Long Sequences"
+
+    dataset = dataset.filter(
+        drop_long,
+        num_proc=cfg.dataset_processes,
+        load_from_cache_file=not cfg.is_preprocess,
+        **filter_map_kwargs,
+        **drop_long_kwargs,
+    )
+    dropped = prior_len - len(dataset)
+    if dropped:
+        LOG.warning(f"Dropped {dropped} long samples from dataset")
+
+    return dataset
+
+
+def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
     if cfg.model_config_type == "mamba":
         LOG.info("dropping attention_mask column")
         train_dataset = train_dataset.remove_columns("attention_mask")
@@ -258,46 +288,6 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
             train_dataset = train_dataset.remove_columns("token_type_ids")
         if eval_dataset and "token_type_ids" in eval_dataset.column_names:
             eval_dataset = eval_dataset.remove_columns("token_type_ids")
-
-    filter_map_kwargs = {}
-    if not isinstance(train_dataset, IterableDataset):
-        filter_map_kwargs["num_proc"] = cfg.dataset_processes
-        filter_map_kwargs["load_from_cache_file"] = not cfg.is_preprocess
-
-    try:
-        prior_len = len(train_dataset)
-    except TypeError:
-        # handle iterable datasets case
-        prior_len = None
-    drop_long_kwargs = {}
-    if filter_map_kwargs:
-        drop_long_kwargs["desc"] = "Dropping Long Sequences"
-    train_dataset = train_dataset.filter(
-        drop_long,
-        batched=True,
-        **filter_map_kwargs,
-        **drop_long_kwargs,
-    )
-    if prior_len:
-        dropped = prior_len - len(train_dataset)
-        if dropped:
-            LOG.warning(f"Dropped {dropped} long samples from train dataset")
-
-    if eval_dataset:
-        try:
-            prior_len = len(eval_dataset)
-        except TypeError:
-            # handle iterable datasets case
-            prior_len = None
-        eval_dataset = eval_dataset.filter(
-            drop_long,
-            **filter_map_kwargs,
-            **drop_long_kwargs,
-        )
-        if prior_len:
-            dropped = prior_len - len(eval_dataset)
-            if dropped:
-                LOG.warning(f"Dropped {dropped} long samples from eval dataset")
 
     def drop_no_trainable_tokens(sample):
         """
@@ -325,6 +315,11 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
     except TypeError:
         # handle iterable datasets case
         prior_len = None
+    filter_map_kwargs = {}
+    if not isinstance(train_dataset, IterableDataset):
+        filter_map_kwargs["num_proc"] = cfg.dataset_processes
+        filter_map_kwargs["load_from_cache_file"] = not cfg.is_preprocess
+
     drop_long_kwargs = {}
     if filter_map_kwargs:
         drop_long_kwargs["desc"] = "Drop Samples with Zero Trainable Tokens"
