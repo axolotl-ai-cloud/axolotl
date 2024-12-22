@@ -244,6 +244,10 @@ class AxolotlTrainingMixins:
         default=None,
         metadata={"help": "Scale the learning rate for the embedding layers."},
     )
+    lr_groups: Optional[dict] = field(
+        default=None,
+        metadata={"help": "Specify learning rate groups for with different LRs."},
+    )
     embedding_lr: Optional[float] = field(
         default=None,
         metadata={"help": "absolute learning rate for the embedding layers."},
@@ -546,6 +550,7 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
             self.args.loraplus_lr_ratio is None
             and self.args.embedding_lr_scale is None
             and self.args.embedding_lr is None
+            and self.args.lr_groups is None
             and self.args.alternate_optimizer
             not in [
                 "optimi_adamw",
@@ -1797,6 +1802,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         ] = self.cfg.loraplus_lr_embedding
         training_arguments_kwargs["embedding_lr"] = self.cfg.embedding_lr
         training_arguments_kwargs["embedding_lr_scale"] = self.cfg.embedding_lr_scale
+        training_arguments_kwargs["lr_groups"] = self.cfg.lr_groups
 
         if self.cfg.lr_scheduler in ["one_cycle", "log_sweep"]:
             training_arguments_kwargs["lr_scheduler_type"] = "cosine"
