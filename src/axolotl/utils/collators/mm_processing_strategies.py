@@ -170,6 +170,7 @@ class Qwen2VLProcessingStrategy(ProcessingStrategy):
     def __init__(self, processor: ProcessorMixin, chat_template: Optional[str] = None):
         super().__init__(processor, chat_template)
         self.image_token = "<|image_pad|>"
+        self.image_token_id = processor.tokenizer.convert_tokens_to_ids(self.image_token)
 
 
 class LlavaProcessingStrategy(ProcessingStrategy):
