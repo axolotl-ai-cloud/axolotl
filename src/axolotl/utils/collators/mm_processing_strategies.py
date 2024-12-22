@@ -11,6 +11,9 @@ class ProcessingStrategy:
         self.chat_template = chat_template
         try:
             self.image_token = processor.image_token
+            self.image_token_id = processor.tokenizer.convert_tokens_to_ids(
+                self.image_token
+            )
         except AttributeError:
             pass
 
