@@ -1,10 +1,10 @@
 """data handling specific to SFT"""
 
 import functools
+import logging
 from pathlib import Path
 from typing import List, Tuple, Union
 
-from accelerate.logging import get_logger
 from datasets import (
     Dataset,
     DatasetDict,
@@ -54,7 +54,7 @@ from axolotl.utils.trainer import (
     process_datasets_for_packing,
 )
 
-LOG = get_logger("axolotl")
+LOG = logging.getLogger("axolotl.utils.data.sft")
 
 
 @retry_on_request_exceptions(max_retries=3, delay=5)
