@@ -68,7 +68,7 @@ from axolotl.utils.callbacks import (
 )
 from axolotl.utils.callbacks.lisa import lisa_callback_factory
 from axolotl.utils.callbacks.profiler import PytorchProfilerCallback
-from axolotl.utils.chat_templates import get_chat_template
+from axolotl.utils.chat_templates import get_chat_template_from_config
 from axolotl.utils.collators import (
     BatchSamplerDataCollatorForSeq2Seq,
     DataCollatorForSeq2Seq,
