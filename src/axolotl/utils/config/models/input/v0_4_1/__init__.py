@@ -794,7 +794,7 @@ class AxolotlInputConfig(
     chat_template_jinja: Optional[str] = None
     default_system_message: Optional[str] = None
 
-    fix_untrained_tokens: Optional[bool] = None
+    fix_untrained_tokens: Optional[Union[int, List[int]]] = None
 
     # INTERNALS - document for now, generally not set externally
     is_preprocess: Optional[bool] = None
