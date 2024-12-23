@@ -96,6 +96,7 @@ class LlamaDifferentialModel(LlamaDifferentialPreTrainedModel):
         )
         self.norm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
+    # pylint: disable=duplicate-code
     def forward(
         self,
         input_ids: Optional[torch.LongTensor] = None,
@@ -322,6 +323,7 @@ class LlamaDifferentialDecoderLayer(nn.Module):
             config.hidden_size, eps=config.rms_norm_eps
         )
 
+    # pylint: disable=duplicate-code
     def forward(
         self,
         hidden_states: torch.Tensor,
