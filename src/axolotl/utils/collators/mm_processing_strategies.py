@@ -1,3 +1,4 @@
+"""Module containing ProcessingStrategy classes and its derivative for different MultiModal Model types"""
 from copy import deepcopy
 from typing import Optional
 
@@ -6,6 +7,8 @@ from transformers import ProcessorMixin
 
 
 class ProcessingStrategy:
+    """Base Processing Strategy class"""
+
     def __init__(self, processor: ProcessorMixin, chat_template: Optional[str] = None):
         self.processor = processor
         self.chat_template = chat_template
@@ -130,11 +133,18 @@ class ProcessingStrategy:
         return images
 
     def process_texts(self, examples):
-        texts = [self.processor.apply_chat_template(example["messages"], chat_template=self.chat_template, tokenize=False)for example in examples]
+        texts = [
+            self.processor.apply_chat_template(
+                example["messages"], chat_template=self.chat_template, tokenize=False
+            )
+            for example in examples
+        ]
         return texts
 
 
 class PixtralProcessingStrategy(ProcessingStrategy):
+    """Processing Strategy class for Pixtral"""
+
     @staticmethod
     def pixtral_chat_conversion(messages):
         is_single_message = not isinstance(messages, list)
@@ -159,21 +169,29 @@ class PixtralProcessingStrategy(ProcessingStrategy):
 
     def process_texts(self, examples):
         texts = [
-            self.processor.apply_chat_template(__class__.pixtral_chat_conversion(example["messages"]), chat_template=self.chat_template, tokenize=False,)
+            self.processor.apply_chat_template(
+                __class__.pixtral_chat_conversion(example["messages"]),
+                chat_template=self.chat_template,
+                tokenize=False,
+            )
             for example in examples
         ]
         return texts
 
 
 class Qwen2VLProcessingStrategy(ProcessingStrategy):
+    """Processing Strategy class for Qwen2-VL"""
 
     def __init__(self, processor: ProcessorMixin, chat_template: Optional[str] = None):
         super().__init__(processor, chat_template)
-        self.image_token = "<|image_pad|>"
-        self.image_token_id = processor.tokenizer.convert_tokens_to_ids(self.image_token)
+        self.image_token = "<|image_pad|>"  # nosec
+        self.image_token_id = processor.tokenizer.convert_tokens_to_ids(
+            self.image_token
+        )
 
 
 class LlavaProcessingStrategy(ProcessingStrategy):
+    """Processing Strategy class for Llava"""
 
     @staticmethod
     def process_images(examples, max_images):
@@ -182,7 +200,9 @@ class LlavaProcessingStrategy(ProcessingStrategy):
         return images
 
 
-def get_processing_strategy(processor: ProcessorMixin, chat_template, chat_template_type):
+def get_processing_strategy(
+    processor: ProcessorMixin, chat_template, chat_template_type
+):
     if chat_template_type == "pixtral":
         return PixtralProcessingStrategy(processor, chat_template)
     if chat_template_type == "llava":

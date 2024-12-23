@@ -2012,9 +2012,10 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 collator = BatchSamplerDataCollatorForSeq2Seq
         else:
             if self.cfg.processor_type and self.processor:
-
                 collator = MultiModalChatDataCollator
-                kwargs["processing_strategy"] = get_processing_strategy(self.processor, training_args.chat_template, self.cfg.chat_template)
+                kwargs["processing_strategy"] = get_processing_strategy(
+                    self.processor, training_args.chat_template, self.cfg.chat_template
+                )
             elif self.cfg.batch_flattening:
                 collator = DataCollatorWithFlattening
                 collator_args.pop(0)

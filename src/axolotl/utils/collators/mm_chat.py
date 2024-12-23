@@ -8,6 +8,7 @@ from typing import Any, Optional, Union
 from transformers import PreTrainedTokenizerBase
 from transformers.data.data_collator import DataCollatorMixin
 from transformers.utils import PaddingStrategy
+
 from .mm_processing_strategies import ProcessingStrategy
 
 
@@ -60,7 +61,9 @@ class MultiModalChatDataCollator(DataCollatorMixin):
         images = processing_strategy.process_images(examples, max_images)
 
         # Tokenize the texts and process the images
-        batch = processing_strategy.processor(text=texts, images=images, return_tensors="pt", padding=True)
+        batch = processing_strategy.processor(
+            text=texts, images=images, return_tensors="pt", padding=True
+        )
 
         # The labels are the input_ids, and we mask the padding tokens in the loss computation
         labels = batch["input_ids"].clone()
