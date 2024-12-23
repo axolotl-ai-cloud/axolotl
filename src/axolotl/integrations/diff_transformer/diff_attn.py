@@ -7,7 +7,6 @@ from typing import Any, Optional, Tuple
 
 import torch
 import torch.nn.functional as F
-from flash_attn.flash_attn_interface import flash_attn_func
 from torch import nn
 from transformers.cache_utils import Cache
 from transformers.models.llama.modeling_llama import (
@@ -17,7 +16,14 @@ from transformers.models.llama.modeling_llama import (
 )
 
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+LOG = logging.getLogger(__name__)
+
+try:
+    from flash_attn.flash_attn_interface import flash_attn_func
+
+    FLASH_ATTENTION_AVAILABLE = True
+except ImportError:
+    FLASH_ATTENTION_AVAILABLE = False
 
 
 def repeat_kv(x: torch.Tensor, n_rep: int) -> torch.Tensor:
@@ -35,11 +41,12 @@ def lambda_init_fn(depth):
     return 0.8 - 0.6 * math.exp(-0.3 * depth)
 
 
-class DifferentialAttentionBase(nn.Module):
+class LlamaDifferentialAttentionBase(nn.Module):
     """Base class for differential attention implementations."""
 
     def __init__(self, config: Any, layer_idx: int):
         super().__init__()
+        self.config = config
         self._init_config(config, layer_idx)
         self._init_projections()
         self._init_differential_params()
@@ -59,9 +66,9 @@ class DifferentialAttentionBase(nn.Module):
 
         if config.split_heads:
             # Split heads mode - single projections
-            self.head_dim = config.hidden_size // config.num_attention_heads // 2
+            self.head_dim = config.hidden_size // config.num_attention_heads
             # NOTE: This rounds down `base_num_heads / 2` as opposed to the original
-            # implementation, which asserts `self.base_num_heads` is even.
+            # implementation, which asserts `self.base_num_heads` is even
             self.heads_per_component = self.base_num_heads // 2
             self.value_head_dim = 2 * self.head_dim
         else:
@@ -110,36 +117,43 @@ class DifferentialAttentionBase(nn.Module):
         self.lambda_k2 = nn.Parameter(
             torch.zeros(self.head_dim).normal_(mean=0, std=0.1)
         )
-        self.rotary_emb = LlamaRotaryEmbedding(
-            self.max_position_embeddings, self.head_dim, self.rope_theta
-        )
+        self.rotary_emb = LlamaRotaryEmbedding(config=self.config)
 
     def _init_normalization(self, config):
         """Initialize normalization layers."""
         sublayer_norm = getattr(config, "sublayer_norm", True)
-        self.subln = (
-            LlamaRMSNorm(self.value_head_dim, eps=1e-5)
-            if sublayer_norm
-            else nn.Identity()
-        )
+        if sublayer_norm:
+            self.subln = LlamaRMSNorm(self.value_head_dim, eps=config.rms_norm_eps)
+        else:
+            self.subln = nn.Identity()
 
     def _prepare_attention_inputs(self, hidden_states: torch.Tensor):
         """Prepare inputs for attention computation."""
         bsz, q_len, _ = hidden_states.size()
 
         # Project and split
-        qp = self.q_proj(hidden_states)
-        kp = self.k_proj(hidden_states)
+        q = self.q_proj(hidden_states)
+        k = self.k_proj(hidden_states)
         v = self.v_proj(hidden_states)
-        q1, q2 = qp.chunk(2, dim=-1)
-        k1, k2 = kp.chunk(2, dim=-1)
+        q1, q2 = q.chunk(2, dim=-1)
+        k1, k2 = k.chunk(2, dim=-1)
 
         # Reshape
-        q1 = q1.view(bsz, q_len, -1, self.head_dim).transpose(1, 2)
-        q2 = q2.view(bsz, q_len, -1, self.head_dim).transpose(1, 2)
-        k1 = k1.view(bsz, q_len, -1, self.head_dim).transpose(1, 2)
-        k2 = k2.view(bsz, q_len, -1, self.head_dim).transpose(1, 2)
-        v = v.view(bsz, q_len, -1, self.value_head_dim).transpose(1, 2)
+        q1 = q1.view(bsz, q_len, self.heads_per_component, self.head_dim).transpose(
+            1, 2
+        )
+        q2 = q2.view(bsz, q_len, self.heads_per_component, self.head_dim).transpose(
+            1, 2
+        )
+        k1 = k1.view(bsz, q_len, self.heads_per_component, self.head_dim).transpose(
+            1, 2
+        )
+        k2 = k2.view(bsz, q_len, self.heads_per_component, self.head_dim).transpose(
+            1, 2
+        )
+        v = v.view(bsz, q_len, self.heads_per_component, self.value_head_dim).transpose(
+            1, 2
+        )
 
         return q1, q2, k1, k2, v
 
@@ -148,15 +162,15 @@ class DifferentialAttentionBase(nn.Module):
     ):
         """Apply rotary embeddings to queries and keys."""
         if position_embeddings is None:
-            if position_ids is None:
-                position_ids = torch.arange(q1.size(-2), device=q1.device)
+            LOG.warning(
+                "The attention layers in this model are transitioning from computing the RoPE embeddings internally "
+                "through `position_ids` (2D tensor with the indexes of the tokens), to using externally computed "
+                "`position_embeddings` (Tuple of tensors, containing cos and sin). In v4.46 `position_ids` will be "
+                "removed and `position_embeddings` will be mandatory."
+            )
             cos, sin = self.rotary_emb(q1, position_ids)
         else:
             cos, sin = position_embeddings
-
-        if self.split_heads:
-            cos, _ = cos.chunk(2, dim=2)
-            sin, _ = sin.chunk(2, dim=2)
 
         q1, k1 = apply_rotary_pos_emb(q1, k1, cos, sin)
         q2, k2 = apply_rotary_pos_emb(q2, k2, cos, sin)
@@ -195,7 +209,7 @@ class DifferentialAttentionBase(nn.Module):
         return self.o_proj(attn)
 
 
-class LlamaDifferentialAttention(DifferentialAttentionBase):
+class LlamaDifferentialAttention(LlamaDifferentialAttentionBase):
     """Standard implementation of differential attention."""
 
     def forward(
@@ -237,15 +251,16 @@ class LlamaDifferentialAttention(DifferentialAttentionBase):
 
         lambda_full = self._compute_lambda(q1)
         attn = torch.matmul(attn1, v) - lambda_full * torch.matmul(attn2, v)
-
         attn = self._process_attention_output(attn, bsz, q_len)
 
         if output_attentions:
-            return attn, attn1 - lambda_full * attn2, past_key_value
+            attn_weights = attn1 - lambda_full * attn2
+            attn_weights = attn_weights.view(bsz, self.heads_per_component, q_len, -1)
+            return attn, attn_weights, past_key_value
         return attn, None, past_key_value
 
 
-class LlamaDifferentialSdpaAttention(DifferentialAttentionBase):
+class LlamaDifferentialSdpaAttention(LlamaDifferentialAttentionBase):
     """SDPA-based implementation of differential attention."""
 
     # pylint: disable=duplicate-code
@@ -262,6 +277,11 @@ class LlamaDifferentialSdpaAttention(DifferentialAttentionBase):
         **kwargs,  # pylint: disable=unused-argument
     ):
         if output_attentions:
+            LOG.warning(
+                "LlamaDifferentialModel is using LlamaDifferentialSdpaAttention, but "
+                + "`torch.nn.functional.scaled_dot_product_attention` does not support "
+                + "`output_attentions=True`. Falling back to the eager attention implementation."
+            )
             return LlamaDifferentialAttention.forward(
                 self,
                 hidden_states,
@@ -309,8 +329,17 @@ class LlamaDifferentialSdpaAttention(DifferentialAttentionBase):
         return attn, None, past_key_value
 
 
-class LlamaDifferentialFlashAttention2(DifferentialAttentionBase):
+class LlamaDifferentialFlashAttention2(LlamaDifferentialAttentionBase):
     """Flash Attention 2-based implementation of differential attention."""
+
+    def __init__(self, *args, **kwargs):
+        if not FLASH_ATTENTION_AVAILABLE:
+            raise ImportError(
+                "LlamaDifferentialFlashAttention2 requires flash-attn library. "
+                "Please install with `pip install flash-attn --no-build-isolation`"
+            )
+
+        super().__init__(*args, **kwargs)
 
     # pylint: disable=duplicate-code
     def forward(
@@ -326,6 +355,11 @@ class LlamaDifferentialFlashAttention2(DifferentialAttentionBase):
         **kwargs,  # pylint: disable=unused-argument
     ):
         if output_attentions:
+            LOG.warning(
+                "LlamaDifferentialModel is using LlamaDifferentialFlashAttention2, but "
+                + "flash attenion does not support `output_attentions=True`. Falling back "
+                + "to the eager attention implementation."
+            )
             return LlamaDifferentialAttention.forward(
                 self,
                 hidden_states,

@@ -50,7 +50,7 @@ def copy_attention_weights(
     new_attn.q_proj.weight.data.copy_(new_q)
 
     # For K projection (K1 and K2)
-    old_kv_size = old_attn.k_proj.weight.data.size(0)  # Size for 3 heads
+    old_kv_size = old_attn.k_proj.weight.data.size(0)
     new_k = torch.empty_like(new_attn.k_proj.weight.data)
     new_k[:old_kv_size] = old_attn.k_proj.weight.data  # K1
     if zero_init:
@@ -99,6 +99,7 @@ def convert_to_diff_attn(
         # Iterate through module children, convert any attn layers to diff attn
         for name, child in module.named_children():
             child_class_name = type(child).__name__
+
             if child_class_name in [k.__name__ for k in ATTENTION_MAPPING]:
                 # Find matching attention class by name
                 for orig_class, diff_class in ATTENTION_MAPPING.items():
