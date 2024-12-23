@@ -1836,6 +1836,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         if self.cfg.chat_template:
             training_arguments_kwargs["chat_template"] = get_chat_template(
                 self.cfg.chat_template,
+                jinja_template=self.cfg.chat_template_jinja,
                 tokenizer=self.tokenizer,
             )
 
