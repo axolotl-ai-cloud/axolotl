@@ -182,10 +182,11 @@ def load_tokenized_prepared_datasets(
                 + "@"
                 + str(cfg.group_by_length)
                 + "@"
+                + str(cfg.kd_temperature or 1.0)
                 + "|".join(
                     sorted(
                         [
-                            f"{d.path}:{d.type}:{d.shards}:{d.conversation}{d.split}"
+                            f"{d.path}:{d.type}:{d.shards}:{d.conversation}:{d.split}:{d.temperature or 1.0}"
                             for d in cfg_datasets
                         ]
                     )
