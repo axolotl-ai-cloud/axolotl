@@ -15,7 +15,10 @@ from transformers import HfArgumentParser
 
 from axolotl.cli import load_cfg, print_axolotl_text_art
 from axolotl.common.cli import ConvertDiffTransformerCliArgs, load_model_and_tokenizer
-from axolotl.integrations.diff_transformer.convert import convert_to_diff_attn
+from axolotl.integrations.diff_transformer.modeling_diff_attn import (
+    LlamaDifferentialConfig,
+    LlamaDifferentialForCausalLM,
+)
 from axolotl.utils.yaml import dump_yaml_preserved_order
 
 LOG = logging.getLogger(__name__)
@@ -86,13 +89,15 @@ def convert_diff_transformer(cfg, cli_args, config_path):
             + Fore.RESET
         )
     try:
-        model = convert_to_diff_attn(
-            model=model,
-            zero_init=cli_args.zero_init,
-            sublayer_norm=cli_args.sublayer_norm,
-            split_heads=cli_args.split_heads,
+        LlamaDifferentialForCausalLM.from_llama(
+            model,
+            LlamaDifferentialConfig(
+                **model.config.__dict__,
+                zero_init=cli_args.zero_init,
+                sublayer_norm=cli_args.sublayer_norm,
+                split_heads=cli_args.split_heads,
+            ),
         )
-        model.to(cfg.device, dtype=cfg.torch_dtype)
     except Exception as exc:
         LOG.error(Fore.RED + "Conversion failed: %s" + Fore.RESET, str(exc))
         raise
