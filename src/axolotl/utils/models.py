@@ -710,11 +710,30 @@ class ModelLoader:
         """
         sample packing uses custom FA2 patch
         """
+        # if self.cfg.flash_attention:
+        #     if not self.cfg.sample_packing and self.cfg.s2_attention:
+        #         pass
+
+        #     self.model_kwargs["attn_implementation"] = "flash_attention_2"
+        #     self.model_config._attn_implementation = (  # pylint: disable=protected-access
+        #         "flash_attention_2"
+        #     )
+        # elif self.cfg.sdp_attention:
+        #     self.model_kwargs["attn_implementation"] = "sdpa"
+        #     self.model_config._attn_implementation = (  # pylint: disable=protected-access
+        #         "sdpa"
+        #     )
+        # elif self.cfg.eager_attention:
+        #     self.model_kwargs["attn_implementation"] = "eager"
+        #     self.model_config._attn_implementation = (  # pylint: disable=protected-access
+        #         "eager"
+        #     )
+
         if self.cfg.flash_attention:
             if not self.cfg.sample_packing and self.cfg.s2_attention:
                 pass
 
-            if self.cfg.differentiaion:
+            if self.cfg.diff_attention:
                 self.model_kwargs[
                     "attn_implementation"
                 ] = "differential_flash_attention_2"

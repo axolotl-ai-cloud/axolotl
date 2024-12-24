@@ -56,8 +56,10 @@ class LlamaDifferentialAttentionBase(nn.Module):
         """Initialize configuration parameters."""
         self.attention_dropout = config.attention_dropout
         self.hidden_size = config.hidden_size
+        self.head_dim = config.hidden_size // config.num_attention_heads
         self.base_num_heads = config.num_attention_heads
         self.base_num_kv_heads = config.num_key_value_heads
+        self.num_key_value_groups = self.base_num_heads // self.base_num_kv_heads
         self.layer_idx = layer_idx
         self.max_position_embeddings = config.max_position_embeddings
         self.rope_theta = config.rope_theta
@@ -66,15 +68,15 @@ class LlamaDifferentialAttentionBase(nn.Module):
 
         if config.split_heads:
             # Split heads mode - single projections
-            self.head_dim = config.hidden_size // config.num_attention_heads
             # NOTE: This rounds down `base_num_heads / 2` as opposed to the original
             # implementation, which asserts `self.base_num_heads` is even
             self.heads_per_component = self.base_num_heads // 2
+            self.kv_heads_per_component = self.base_num_kv_heads // 2
             self.value_head_dim = 2 * self.head_dim
         else:
             # Double projection mode
-            self.head_dim = config.hidden_size // config.num_attention_heads
             self.heads_per_component = self.base_num_heads
+            self.kv_heads_per_component = self.base_num_kv_heads
             self.value_head_dim = self.head_dim
 
     def _init_projections(self):
@@ -90,14 +92,22 @@ class LlamaDifferentialAttentionBase(nn.Module):
                 self.hidden_size // self.base_num_heads * self.base_num_kv_heads * 2
             )
 
-        self.q_proj = nn.Linear(self.hidden_size, q_out_dim, bias=False)
-        self.k_proj = nn.Linear(self.hidden_size, k_out_dim, bias=False)
+        self.q_proj = nn.Linear(
+            self.hidden_size, q_out_dim, bias=self.config.attention_bias
+        )
+        self.k_proj = nn.Linear(
+            self.hidden_size, k_out_dim, bias=self.config.attention_bias
+        )
         self.v_proj = nn.Linear(
             self.hidden_size,
             self.hidden_size // self.base_num_heads * self.base_num_kv_heads,
-            bias=False,
+            bias=self.config.attention_bias,
         )
-        self.o_proj = nn.Linear(self.hidden_size, self.hidden_size, bias=False)
+        self.o_proj = nn.Linear(
+            self.base_num_heads * self.head_dim,
+            self.hidden_size,
+            bias=self.config.attention_bias,
+        )
 
     def _init_differential_params(self):
         """Initialize differential attention parameters."""
@@ -145,13 +155,13 @@ class LlamaDifferentialAttentionBase(nn.Module):
         q2 = q2.view(bsz, q_len, self.heads_per_component, self.head_dim).transpose(
             1, 2
         )
-        k1 = k1.view(bsz, q_len, self.heads_per_component, self.head_dim).transpose(
+        k1 = k1.view(bsz, q_len, self.kv_heads_per_component, self.head_dim).transpose(
             1, 2
         )
-        k2 = k2.view(bsz, q_len, self.heads_per_component, self.head_dim).transpose(
+        k2 = k2.view(bsz, q_len, self.kv_heads_per_component, self.head_dim).transpose(
             1, 2
         )
-        v = v.view(bsz, q_len, self.heads_per_component, self.value_head_dim).transpose(
+        v = v.view(bsz, q_len, self.base_num_kv_heads, self.value_head_dim).transpose(
             1, 2
         )
 
@@ -184,10 +194,10 @@ class LlamaDifferentialAttentionBase(nn.Module):
             k, v = past_key_value.update(k, v, self.layer_idx, cache_kwargs)
             k1, k2 = k.unbind(dim=1)
 
-        # Repeat KV heads
-        k1 = repeat_kv(k1, self.base_num_heads // self.base_num_kv_heads)
-        k2 = repeat_kv(k2, self.base_num_heads // self.base_num_kv_heads)
-        v = repeat_kv(v, self.base_num_heads // self.base_num_kv_heads)
+        # Repeat KV heads to match number of query heads
+        k1 = repeat_kv(k1, self.num_key_value_groups)
+        k2 = repeat_kv(k2, self.num_key_value_groups)
+        v = repeat_kv(v, self.num_key_value_groups)
 
         return k1, k2, v
 

@@ -26,34 +26,27 @@ LOG = logging.getLogger(__name__)
 
 def test_inference(model, tokenizer, prompt="The quick brown fox"):
     """Run test inference and return generation time"""
-    try:
-        inputs = tokenizer(prompt, return_tensors="pt")
-        inputs = {
-            k: v.to(device=model.device, dtype=torch.long) for k, v in inputs.items()
-        }
+    inputs = tokenizer(prompt, return_tensors="pt")
+    inputs = {k: v.to(device=model.device, dtype=torch.long) for k, v in inputs.items()}
 
-        start = time()
-        with torch.no_grad():
-            outputs = model.generate(
-                **inputs,
-                max_new_tokens=20,
-                num_beams=1,
-                do_sample=False,
-                pad_token_id=tokenizer.pad_token_id,
-                use_cache=False,
-            )
-        elapsed = time() - start
+    start = time()
+    with torch.no_grad():
+        outputs = model.generate(
+            **inputs,
+            max_new_tokens=20,
+            num_beams=1,
+            do_sample=False,
+            pad_token_id=tokenizer.pad_token_id,
+            use_cache=False,
+        )
+    elapsed = time() - start
 
-        generated_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
-        LOG.info("Prompt: %s", prompt)
-        LOG.info("Generated: %s", generated_text)
-        LOG.info("Generation time: %.2fs", elapsed)
+    generated_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
+    LOG.info("Prompt: %s", prompt)
+    LOG.info("Generated: %s", generated_text)
+    LOG.info("Generation time: %.2fs", elapsed)
 
-        return elapsed, generated_text
-
-    except Exception as exc:
-        LOG.error("Inference failed: %s", str(exc))
-        raise
+    return elapsed, generated_text
 
 
 def convert_diff_transformer(cfg, cli_args, config_path):
@@ -89,7 +82,7 @@ def convert_diff_transformer(cfg, cli_args, config_path):
             + Fore.RESET
         )
     try:
-        LlamaDifferentialForCausalLM.from_llama(
+        model = LlamaDifferentialForCausalLM.from_llama(
             model,
             LlamaDifferentialConfig(
                 **model.config.__dict__,
@@ -98,6 +91,7 @@ def convert_diff_transformer(cfg, cli_args, config_path):
                 split_heads=cli_args.split_heads,
             ),
         )
+        model.to(cfg.device, dtype=cfg.torch_dtype)
     except Exception as exc:
         LOG.error(Fore.RED + "Conversion failed: %s" + Fore.RESET, str(exc))
         raise

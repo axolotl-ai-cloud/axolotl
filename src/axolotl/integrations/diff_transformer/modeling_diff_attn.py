@@ -56,19 +56,16 @@ class LlamaDifferentialModel(LlamaModel):
 
     def __init__(self, config):
         super().__init__(config)
+
         # Replace standard attention with differential attention in each layer
-        for layer in self.layers:
+        for idx, layer in enumerate(self.layers):
             attn_impl = config._attn_implementation or "eager"
             if attn_impl == "eager":
-                layer.self_attn = LlamaDifferentialAttention(config, layer.layer_idx)
+                layer.self_attn = LlamaDifferentialAttention(config, idx)
             elif attn_impl == "sdpa":
-                layer.self_attn = LlamaDifferentialSdpaAttention(
-                    config, layer.layer_idx
-                )
+                layer.self_attn = LlamaDifferentialSdpaAttention(config, idx)
             elif attn_impl == "flash_attention_2":
-                layer.self_attn = LlamaDifferentialFlashAttention2(
-                    config, layer.layer_idx
-                )
+                layer.self_attn = LlamaDifferentialFlashAttention2(config, idx)
 
     @classmethod
     def from_llama(
@@ -78,7 +75,21 @@ class LlamaDifferentialModel(LlamaModel):
         if config is None:
             config = LlamaDifferentialConfig(**model.config.__dict__)
 
+        # Validate head counts if using split heads mode
+        if config.split_heads:
+            if config.num_attention_heads % 2 != 0:
+                raise ValueError(
+                    f"Number of attention heads ({config.num_attention_heads}) must be even "
+                    "when using split_heads=True"
+                )
+            if config.num_key_value_heads % 2 != 0:
+                raise ValueError(
+                    f"Number of key/value heads ({config.num_key_value_heads}) must be even "
+                    "when using split_heads=True"
+                )
+
         new_model = cls(config)
+
         # Copy all weights except attention
         new_model.embed_tokens.load_state_dict(model.embed_tokens.state_dict())
         new_model.norm.load_state_dict(model.norm.state_dict())
@@ -97,34 +108,28 @@ class LlamaDifferentialModel(LlamaModel):
             new_layer.self_attn.v_proj.load_state_dict(
                 old_layer.self_attn.v_proj.state_dict()
             )
+            print(old_layer.self_attn.o_proj.weight.shape)
             new_layer.self_attn.o_proj.load_state_dict(
                 old_layer.self_attn.o_proj.state_dict()
             )
 
-            if config.split_heads:
-                new_layer.self_attn.q_proj.weight.data.copy_(
+            # Get the original projection sizes
+            old_q_size = old_layer.self_attn.q_proj.weight.size(0)
+            old_k_size = old_layer.self_attn.k_proj.weight.size(0)
+
+            if not config.split_heads:
+                new_layer.self_attn.q_proj.weight.data[:old_q_size].copy_(
                     old_layer.self_attn.q_proj.weight.data
                 )
-                new_layer.self_attn.k_proj.weight.data.copy_(
-                    old_layer.self_attn.k_proj.weight.data
-                )
-            else:
-                new_layer.self_attn.q_proj.weight.data[: config.hidden_size].copy_(
-                    old_layer.self_attn.q_proj.weight.data
-                )
-                new_layer.self_attn.k_proj.weight.data[: config.hidden_size].copy_(
+                new_layer.self_attn.k_proj.weight.data[:old_k_size].copy_(
                     old_layer.self_attn.k_proj.weight.data
                 )
 
                 if config.zero_init:
                     # Zero out components as needed
                     with torch.no_grad():
-                        new_layer.self_attn.q_proj.weight.data[
-                            config.hidden_size :
-                        ].zero_()
-                        new_layer.self_attn.k_proj.weight.data[
-                            config.hidden_size :
-                        ].zero_()
+                        new_layer.self_attn.q_proj.weight.data[old_q_size:].zero_()
+                        new_layer.self_attn.k_proj.weight.data[old_k_size:].zero_()
                         new_layer.self_attn.lambda_q1.zero_()
                         new_layer.self_attn.lambda_k1.zero_()
                         new_layer.self_attn.lambda_q2.zero_()
@@ -149,7 +154,21 @@ class LlamaDifferentialForCausalLM(LlamaForCausalLM):
         if config is None:
             config = LlamaDifferentialConfig(**model.config.__dict__)
 
+        # Validate head counts if using split heads mode
+        if config.split_heads:
+            if config.num_attention_heads % 2 != 0:
+                raise ValueError(
+                    f"Number of attention heads ({config.num_attention_heads}) must be even "
+                    "when using split_heads=True"
+                )
+            if config.num_key_value_heads % 2 != 0:
+                raise ValueError(
+                    f"Number of key/value heads ({config.num_key_value_heads}) must be even "
+                    "when using split_heads=True"
+                )
+
         new_model = cls(config)
         new_model.model = LlamaDifferentialModel.from_llama(model.model, config)
         new_model.lm_head.load_state_dict(model.lm_head.state_dict())
+
         return new_model
