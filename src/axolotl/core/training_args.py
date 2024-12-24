@@ -172,7 +172,19 @@ class AxolotlTrainingMixins:
     kd_ce_alpha: Optional[float] = field(
         default=None,
         metadata={
-            "help": "The alpha parameter for SFT cross entropy loss when using KD"
+            "help": "The alpha scaling parameter for SFT cross entropy loss when using KD"
+        },
+    )
+
+    kd_alpha: Optional[float] = field(
+        default=1.0,
+        metadata={"help": "The alpha scaling parameter for KD loss"},
+    )
+
+    kd_temperature: Optional[float] = field(
+        default=1.0,
+        metadata={
+            "help": "the temperature parameter for KL divergence loss when using KD"
         },
     )
 
