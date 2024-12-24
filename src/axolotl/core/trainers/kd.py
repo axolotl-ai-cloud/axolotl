@@ -16,6 +16,7 @@ def kd_loss_function(
     target_logprobs,
     target_mask,
     num_items_in_batch: Optional[int] = None,
+    kd_temperature: float = 1.0,
 ):
     # teacher_mask: [B, teacher_seq_len, K], where 1 indicates a valid token and 0 indicates padding
 
@@ -28,9 +29,15 @@ def kd_loss_function(
     ]  # [B, teacher_seq_len, vocab_size]
 
     # Gather student logits for teacher's top-K tokens
+    #  shape -> [B, teacher_seq_len, K]
     student_logits_topk = torch.gather(
         student_logits_for_kd, dim=-1, index=target_token_ids
-    )  # [B, teacher_seq_len, K]
+    )
+
+    # Apply KD temperature to student’s logits:
+    #  z_s(T) = z_s / T
+    if kd_temperature != 1.0:
+        student_logits_topk = student_logits_topk / kd_temperature
 
     # Convert student top-k logits to logprobs
     student_logprobs_topk = student_logits_topk - torch.logsumexp(
@@ -52,6 +59,10 @@ def kd_loss_function(
     # KL = sum p^T_k (log p^T_k - log p^S_k), summed over all valid tokens.
     kd_loss_per_token = teacher_probs * (target_logprobs - student_logprobs_topk)
     kd_loss = kd_loss_per_token.sum()
+
+    # 9) Multiply by T^2 (classical KD scaling)
+    if kd_temperature != 1.0:
+        kd_loss = kd_loss * (kd_temperature**2)
 
     # Normalize by number of items or mean over valid tokens
     if num_items_in_batch is not None:
@@ -129,7 +140,8 @@ class AxolotlKDTrainer(AxolotlTrainer):
 
         # optionally combine with CE loss
         if self.args.kd_ce_alpha > 0:
-            loss = self.args.kd_ce_alpha * outputs["loss"] + loss_kd
+            kd_alpha = self.args.kd_alpha
+            loss = self.args.kd_ce_alpha * outputs["loss"] + kd_alpha * loss_kd
         else:
             loss = loss_kd
 
@@ -166,6 +178,7 @@ class AxolotlKDTrainer(AxolotlTrainer):
             target_logprobs,
             target_mask,
             num_items_in_batch=num_items_in_batch,
+            kd_temperature=self.args.kd_temperature,
         )
 
         if self.args.kd_ce_alpha > 0:

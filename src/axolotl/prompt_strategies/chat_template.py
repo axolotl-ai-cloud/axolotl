@@ -474,10 +474,12 @@ class ChatTemplateStrategyWithKD(ChatTemplateStrategy):
         roles_to_train=None,
         train_on_eos=None,
         logprobs_field="logprobs",
-        temperature=1.0,
+        gen_temperature=1.0,
+        kd_temperature=1.0,
     ):
         self.logprobs_field = logprobs_field
-        self.temperature = temperature
+        self.gen_temperature = gen_temperature
+        self.kd_temperature = kd_temperature
 
         super().__init__(
             prompter,
@@ -531,14 +533,25 @@ class ChatTemplateStrategyWithKD(ChatTemplateStrategy):
                 position_logprobs, dtype=torch.float
             )
 
-            # Apply temperature scaling at data load time
-            # log p_k^(T) = (log p_k / T) - logsumexp(log p_j / T)
-            position_logprobs_tensor = position_logprobs_tensor / self.temperature
-            # normalize to probabilities so they sum up to 1
-            position_logprobs_tensor = position_logprobs_tensor - torch.logsumexp(
-                position_logprobs_tensor, dim=0, keepdim=True
-            )
+            if self.kd_temperature != self.gen_temperature:
+                #
+                # Now we have distribution at T1 in log form, i.e. log p_{T1}(k).
+                # Next, re-scale to T2 = self.kd_temperature via exponent-based trick
+                # p_{T2}(k) = [p_{T1}(k)]^(T1 / T2) / Z
+                #
+                # Convert from log to probability
+                teacher_probs_t1 = position_logprobs_tensor.exp()
+                # Exponentiate by factor (T1 / T2)
+                exponent = self.gen_temperature / self.kd_temperature
+                teacher_probs_t2 = teacher_probs_t1**exponent
+                # Re-normalize
+                teacher_probs_t2 = teacher_probs_t2 / teacher_probs_t2.sum(
+                    dim=0, keepdim=True
+                )
+                # Convert back to log
+                position_logprobs_tensor = torch.log(teacher_probs_t2)
 
+            # Now we have log p_{teacher, T2}(k) stored in position_logprobs_tensor
             position_logprobs_scaled = position_logprobs_tensor.tolist()
 
             target_logprobs.append(position_logprobs_scaled)
@@ -593,13 +606,15 @@ def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None, processor=None
     }
 
     strategy_cls = ChatTemplateStrategy
-    if logprobs_field := ds_cfg.get("logprobs_field"):
-        strategy_params["logprobs_field"] = logprobs_field
-    if temperature := ds_cfg.get("temperature"):
-        strategy_params["temperature"] = temperature
 
-    if cfg.trainer == "kd" or logprobs_field:
+    if cfg.trainer == "kd":
         strategy_cls = ChatTemplateStrategyWithKD
+        if logprobs_field := ds_cfg.get("logprobs_field"):
+            strategy_params["logprobs_field"] = logprobs_field
+        if gen_temperature := ds_cfg.get("temperature"):
+            strategy_params["gen_temperature"] = gen_temperature
+        if kd_temperature := cfg.get("kd_temperature"):
+            strategy_params["kd_temperature"] = kd_temperature
 
     strategy = strategy_cls(
         ChatTemplatePrompter(**prompter_params), tokenizer=tokenizer, **strategy_params
