@@ -55,7 +55,7 @@ def add_options_from_config(config_class: Type[BaseModel]):
     def decorator(function):
         # Process model fields in reverse order for correct option ordering
         for name, field in reversed(config_class.model_fields.items()):
-            if field.annotation == bool:
+            if field.annotation in (bool, Optional[bool]):
                 field_name = name.replace("_", "-")
                 option_name = f"--{field_name}/--no-{field_name}"
                 function = click.option(
