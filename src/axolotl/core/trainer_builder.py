@@ -587,6 +587,7 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
             elif (
                 self.args.embedding_lr_scale is not None
                 or self.args.embedding_lr is not None
+                or self.args.lr_groups is not None
             ):
                 self.optimizer = (  # pylint: disable=attribute-defined-outside-init
                     optimizer_cls(optimizer_grouped_parameters, **optimizer_kwargs)
