@@ -129,6 +129,7 @@ class PretrainingDataset(BaseModel):
     type: Optional[str] = "pretrain"
     trust_remote_code: Optional[bool] = False
     data_files: Optional[str] = None
+    skip: Optional[int] = None
 
 
 class UserDefinedPrompterType(BaseModel):
