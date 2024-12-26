@@ -9,7 +9,7 @@ from transformers import PreTrainedTokenizerBase
 from transformers.data.data_collator import DataCollatorMixin
 from transformers.utils import PaddingStrategy
 
-from .mm_processing_strategies import ProcessingStrategy
+from ...processing_strategies import ProcessingStrategy
 
 
 @dataclass
