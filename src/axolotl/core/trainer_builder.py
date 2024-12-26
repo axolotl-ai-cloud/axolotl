@@ -466,7 +466,6 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
             self.args.loraplus_lr_ratio is None
             and self.args.embedding_lr_scale is None
             and self.args.embedding_lr is None
-            and self.args.lr_groups is None
             and self.args.alternate_optimizer
             not in [
                 "optimi_adamw",
