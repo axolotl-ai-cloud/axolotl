@@ -495,7 +495,12 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
                 if lr_groups_lookup and any(
                     group_modules in name for group_modules in lr_groups_lookup
                 ):
-                    group_name = lr_groups_lookup[name]
+                    lr_group_module = [
+                        group_modules
+                        for group_modules in lr_groups_lookup
+                        if group_modules in name
+                    ][0]
+                    group_name = lr_groups_lookup[lr_group_module]
                     params[f"to_weight_decay_{group_name}"][name] = param
                 else:
                     params["to_weight_decay"][name] = param
