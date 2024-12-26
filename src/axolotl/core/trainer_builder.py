@@ -244,7 +244,7 @@ class AxolotlTrainingMixins:
         default=None,
         metadata={"help": "Scale the learning rate for the embedding layers."},
     )
-    lr_groups: Optional[dict] = field(
+    lr_groups: Optional[list[dict]] = field(
         default=None,
         metadata={"help": "Specify learning rate groups for with different LRs."},
     )
@@ -482,7 +482,7 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
                 for module in group_modules:
                     lr_groups_lookup[module] = group_name
                 lr_groups_learning_rates[group_name] = lr_group["lr"]
-                params[f"no_weight_decay_{group_name}"] = {}
+                params[f"to_weight_decay_{group_name}"] = {}
 
         for name, param in opt_model.named_parameters():
             if not param.requires_grad:
@@ -492,15 +492,15 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
             ):
                 params["embeddings"][name] = param
             elif name in decay_parameters:
-                params["to_weight_decay"][name] = param
-            else:
                 if lr_groups_lookup and any(
                     group_modules in name for group_modules in lr_groups_lookup
                 ):
                     group_name = lr_groups_lookup[name]
-                    params[f"no_weight_decay_{group_name}"][name] = param
+                    params[f"to_weight_decay_{group_name}"][name] = param
                 else:
-                    params["no_weight_decay"][name] = param
+                    params["to_weight_decay"][name] = param
+            else:
+                params["no_weight_decay"][name] = param
         optimizer_grouped_parameters = []
         if params["to_weight_decay"]:
             optimizer_grouped_parameters.append(
@@ -532,13 +532,13 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
                 }
             )
         for group_name, group_lr in lr_groups_learning_rates.items():
-            if params[f"no_weight_decay_{group_name}"]:
+            if params[f"to_weight_decay_{group_name}"]:
                 optimizer_grouped_parameters.append(
                     {
                         "params": list(
-                            params[f"no_weight_decay_{group_name}"].values()
+                            params[f"to_weight_decay_{group_name}"].values()
                         ),
-                        "weight_decay": 0.0,
+                        "weight_decay": self.args.weight_decay,
                         "lr": group_lr,
                     }
                 )
