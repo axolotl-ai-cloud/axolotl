@@ -5,7 +5,7 @@ import logging
 from transformers.models.llama.modeling_llama import LLAMA_ATTENTION_CLASSES
 
 from axolotl.integrations.base import BasePlugin
-from axolotl.integrations.rala.rala_attn import LlamaRALAAttention
+from axolotl.integrations.rala.auto.llama.attention import LlamaRALAAttention
 
 LOG = logging.getLogger(__name__)
 
