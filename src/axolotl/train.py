@@ -1,5 +1,6 @@
 """Prepare and train a model on a dataset. Can also infer from a model or merge lora"""
 
+import inspect
 import os
 import signal
 import sys
@@ -126,7 +127,20 @@ def train(
     )
 
     if cfg.fix_untrained_tokens:
-        fix_untrained_tokens(model, tokenizer, train_dataset)
+        # check if the `token_ids_to_fix` kwarg exists in the fix_untrained_tokens args
+        sig = inspect.signature(fix_untrained_tokens)
+        # if the function has the `token_ids_to_fix` arg, and fix_untrained_tokens is a list
+        if "token_ids_to_fix" in sig.parameters and isinstance(
+            cfg.fix_untrained_tokens, list
+        ):
+            fix_untrained_tokens(
+                model,
+                tokenizer,
+                train_dataset,
+                token_ids_to_fix=cfg.fix_untrained_tokens,
+            )
+        else:
+            fix_untrained_tokens(model, tokenizer, train_dataset)
         if cfg.local_rank == 0:
             model.save_pretrained(
                 str(Path(cfg.output_dir)), safe_serialization=safe_serialization

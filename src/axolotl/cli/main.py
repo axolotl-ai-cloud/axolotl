@@ -93,7 +93,7 @@ def evaluate(config: str, accelerate: bool, **kwargs):
 @click.argument("config", type=click.Path(exists=True, path_type=str))
 @click.option(
     "--accelerate/--no-accelerate",
-    default=True,
+    default=False,
     help="Use accelerate launch for multi-GPU inference",
 )
 @click.option(
@@ -124,7 +124,7 @@ def inference(
     if lora_model_dir:
         kwargs["lora_model_dir"] = lora_model_dir
     if base_model:
-        kwargs["output_dir"] = base_model
+        kwargs["base_model"] = base_model
 
     if accelerate:
         base_cmd = ["accelerate", "launch", "-m", "axolotl.cli.inference"]
