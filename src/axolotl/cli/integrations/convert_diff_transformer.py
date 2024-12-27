@@ -18,6 +18,7 @@ from axolotl.common.cli import ConvertDiffTransformerCliArgs, load_model_and_tok
 from axolotl.integrations.diff_transformer.modeling_diff_attn import (
     LlamaDifferentialConfig,
     LlamaDifferentialForCausalLM,
+    register_diff_attn,
 )
 from axolotl.utils.yaml import dump_yaml_preserved_order
 
@@ -50,6 +51,7 @@ def test_inference(model, tokenizer, prompt="The quick brown fox"):
 
 
 def convert_diff_transformer(cfg, cli_args, config_path):
+    register_diff_attn()
     debug_info = {}
 
     # Load model and tokenizer
@@ -82,15 +84,13 @@ def convert_diff_transformer(cfg, cli_args, config_path):
             + Fore.RESET
         )
     try:
-        model = LlamaDifferentialForCausalLM.from_llama(
-            model,
-            LlamaDifferentialConfig(
-                **model.config.__dict__,
-                zero_init=cli_args.zero_init,
-                sublayer_norm=cli_args.sublayer_norm,
-                split_heads=cli_args.split_heads,
-            ),
+        config = LlamaDifferentialConfig(
+            **model.config.__dict__,
+            zero_init=cli_args.zero_init,
+            sublayer_norm=cli_args.sublayer_norm,
+            split_heads=cli_args.split_heads,
         )
+        model = LlamaDifferentialForCausalLM.from_llama(model, config)
         model.to(cfg.device, dtype=cfg.torch_dtype)
     except Exception as exc:
         LOG.error(Fore.RED + "Conversion failed: %s" + Fore.RESET, str(exc))
