@@ -109,9 +109,7 @@ def convert_rala(cfg, cli_args, config_path):
 
         modified_cfg["base_model"] = cfg.output_dir
         modified_cfg["rala_attention"] = True
-        plugin_class = (
-            "axolotl.integrations.rala.RalaPlugin"
-        )
+        plugin_class = "axolotl.integrations.rala.RalaPlugin"
         if "plugins" in modified_cfg:
             modified_cfg["plugins"].append(plugin_class)
         else:

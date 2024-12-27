@@ -35,7 +35,6 @@ def copy_attention_weights(
         nn.init.zeros_(new_attn.phi.weight)
     else:
         nn.init.normal_(new_attn.phi)
-    nn.init.zeros_(new_attn.phi.bias)
 
     logger.debug(
         "Copied positive attention weights from %s to %s",
@@ -85,4 +84,13 @@ def convert_to_rala(
     convert_module(model)
     logger.info(f"Converted {layer_idx} attention layers to RALA attention")
 
+    model.config.architectures = [
+        "LlamaRalaForCausalLM",
+    ]
+    model.config.model_type = "llama_rala"
+    model.auto_map = {
+        "AutoConfig": "llama.configuration_rala.LlamaRalaConfig",
+        "AutoModel": "llama.modeling_rala.LlamaRalaModel",
+        "AutoModelForCausalLM": "llama.modeling_rala.LlamaRalaForCausalLM",
+    }
     return model
