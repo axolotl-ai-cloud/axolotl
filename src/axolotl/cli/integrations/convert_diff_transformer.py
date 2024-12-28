@@ -18,7 +18,6 @@ from axolotl.common.cli import ConvertDiffTransformerCliArgs, load_model_and_tok
 from axolotl.integrations.diff_transformer.modeling_diff_attn import (
     LlamaDifferentialConfig,
     LlamaDifferentialForCausalLM,
-    register_diff_attn,
 )
 from axolotl.utils.yaml import dump_yaml_preserved_order
 
@@ -51,7 +50,6 @@ def test_inference(model, tokenizer, prompt="The quick brown fox"):
 
 
 def convert_diff_transformer(cfg, cli_args, config_path):
-    register_diff_attn()
     debug_info = {}
 
     # Load model and tokenizer
