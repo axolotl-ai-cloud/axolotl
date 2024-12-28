@@ -1,13 +1,28 @@
+# Copyright 2024-2025 Axolotl AI. All rights reserved.
+#
+# This software may be used and distributed according to
+# the terms of the Apache License 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations under
+# the License.
+
+"""
+Custom modeling code for RALA Llama
+"""
+
 from typing import List, Optional, Tuple, Union, Unpack
 
 import torch
 import torch.nn.functional as F
 from torch import nn
-from transformers import Cache, GenerationMixin, LlamaForCausalLM, LlamaModel
+from transformers import Cache, GenerationMixin, LlamaModel
 from transformers.modeling_outputs import CausalLMOutputWithPast
 from transformers.models.llama.modeling_llama import (
     KwargsForCausalLM,
-    LlamaDecoderLayer,
     LlamaDynamicNTKScalingRotaryEmbedding,
     LlamaLinearScalingRotaryEmbedding,
     LlamaMLP,
@@ -21,7 +36,7 @@ from transformers.models.llama.modeling_llama import (
 from .configuration_rala import LlamaRalaConfig
 
 
-def kappa(x: torch.Tensor) -> torch.Tensor:
+def kappa(x: torch.Tensor) -> torch.Tensor:  # pylint: disable=invalid-name
     """
     The paper uses κ(x) = ELU(x) + 1.
     x is assumed to be [batch, n_heads, seq_len, head_dim].
@@ -168,13 +183,15 @@ class LlamaRALAAttention(nn.Module):
         # Now we apply RALA.
 
         # 1) Apply κ(.) to Q,K: shape [b, n_heads, seq_len, head_dim]
-        Q_kappa = kappa(query_states)
-        K_kappa = kappa(key_states)
+        Q_kappa = kappa(query_states)  # pylint: disable=invalid-name
+        K_kappa = kappa(key_states)  # pylint: disable=invalid-name
 
         # 2) Compute global query Q_g = average of Q_kappa across seq_len => [b, n_heads, head_dim]
         # The paper denotes Q_g = (1/N) Σ_i Q_kappa_i
         seq_len_float = float(q_len)  # for scaling
-        Q_g = Q_kappa.mean(dim=2)  # [b, n_heads, head_dim]
+        Q_g = Q_kappa.mean(  # pylint: disable=invalid-name
+            dim=2
+        )  # [b, n_heads, head_dim]
 
         # 3) Compute alpha_j for each token j in [0..seq_len-1]
         #    alpha_j = N * softmax( Q_g · K_kappa_j^T ), shape => [b, n_heads, seq_len]
@@ -266,9 +283,13 @@ class LlamaRALAAttention(nn.Module):
 
         # first, compute φ(X):
         # X is the original hidden_states: [b, seq_len, d_model]
-        X_phi = self.phi(hidden_states)  # [b, seq_len, d_model]
-        X_phi = X_phi.view(bsz, q_len, self.num_heads, self.head_dim)  # [b, s, n, d]
-        X_phi = X_phi.transpose(1, 2)  # [b, n, s, d]
+        X_phi = self.phi(  # pylint: disable=invalid-name
+            hidden_states
+        )  # [b, seq_len, d_model]
+        X_phi = X_phi.view(  # pylint: disable=invalid-name
+            bsz, q_len, self.num_heads, self.head_dim
+        )  # [b, s, n, d]
+        X_phi = X_phi.transpose(1, 2)  # [b, n, s, d]  # pylint: disable=invalid-name
 
         # Now for each i in [0..q_len-1], we do a matrix multiply:
         # result_attn_i = Q_kappa_i [b,n,s,d] × outer_sum [b,n,d,d] => we want [b,n,s,d].
@@ -296,6 +317,10 @@ class LlamaRALAAttention(nn.Module):
 
 
 class LlamaRalaDecoderLayer(nn.Module):
+    """
+    LlamaDecoderLayer with RALA support
+    """
+
     def __init__(self, config: LlamaRalaConfig, layer_idx: int):
         super().__init__()
         self.hidden_size = config.hidden_size
@@ -373,15 +398,19 @@ class LlamaRalaDecoderLayer(nn.Module):
         outputs = (hidden_states,)
 
         if output_attentions:
-            outputs += (self_attn_weights,)
+            outputs += (self_attn_weights,)  # type: ignore
 
         if use_cache:
-            outputs += (present_key_value,)
+            outputs += (present_key_value,)  # type: ignore
 
-        return outputs
+        return outputs  # type: ignore
 
 
 class LlamaRalaModel(LlamaModel):
+    """
+    LlamaModel with RALA support
+    """
+
     config_class = LlamaRalaConfig
 
     def __init__(self, config: LlamaRalaConfig):
@@ -410,6 +439,10 @@ class LlamaRalaModel(LlamaModel):
 
 
 class LlamaRalaForCausalLM(LlamaPreTrainedModel, GenerationMixin):
+    """
+    LlamaForCausalLM with RALA support
+    """
+
     config_class = LlamaRalaConfig
     _no_split_modules = ["LlamaRalaDecoderLayer"]
 
@@ -457,7 +490,7 @@ class LlamaRalaForCausalLM(LlamaPreTrainedModel, GenerationMixin):
         return_dict: Optional[bool] = None,
         cache_position: Optional[torch.LongTensor] = None,
         num_logits_to_keep: int = 0,
-        **kwargs: Unpack[KwargsForCausalLM],
+        **kwargs: Unpack[KwargsForCausalLM],  # type: ignore
     ) -> Union[Tuple, CausalLMOutputWithPast]:
         r"""
         Args:

@@ -184,6 +184,8 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
     print_axolotl_text_art()
 
     cfg = load_cfg(config, **kwargs)
+    if cfg.rala_attention:
+        cfg.rala_attention = False
     parser = HfArgumentParser(ConvertDiffTransformerCliArgs)
     cli_args, _ = parser.parse_args_into_dataclasses(return_remaining_strings=True)
 
