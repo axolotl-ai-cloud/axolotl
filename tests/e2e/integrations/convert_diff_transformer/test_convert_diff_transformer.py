@@ -130,6 +130,9 @@ def test_conversion_cli_repoduce_attentions(
 )
 def test_conversion_cli_split_heads(tmp_path: Path, base_config, attention: str):
     output_dir = tmp_path / "converted"
+
+    # Smallest model with an even number of attention heads
+    base_config["base_model"] = "HuggingFaceTB/SmolLM2-1.7B"
     base_config["output_dir"] = str(output_dir)
     base_config[attention] = True
 

@@ -6,15 +6,10 @@ from typing import Optional, Union
 import torch
 from transformers import AutoConfig, AutoModel, AutoModelForCausalLM
 from transformers.models.llama.configuration_llama import LlamaConfig
-from transformers.models.llama.modeling_llama import (
-    LlamaForCausalLM,
-    LlamaModel,
-    LlamaPreTrainedModel,
-)
+from transformers.models.llama.modeling_llama import LlamaForCausalLM, LlamaModel
 
 from .diff_attn import (
     LlamaDifferentialAttention,
-    LlamaDifferentialAttentionBase,
     LlamaDifferentialFlashAttention2,
     LlamaDifferentialSdpaAttention,
 )
@@ -44,17 +39,6 @@ class LlamaDifferentialConfig(LlamaConfig):
             "sdpa": "differential_sdpa",
             "flash_attention_2": "differential_flash_attention_2",
         }
-
-
-class LlamaDifferentialPreTrainedModel(LlamaPreTrainedModel):
-    """Base class for differential LLaMA models."""
-
-    config_class = LlamaDifferentialConfig
-    base_model_prefix = "llama_differential"
-
-    def _set_gradient_checkpointing(self, module, value=False):
-        if isinstance(module, (LlamaDifferentialAttentionBase, LlamaModel)):
-            module.gradient_checkpointing = value
 
 
 class LlamaDifferentialModel(LlamaModel):
@@ -222,6 +206,37 @@ class LlamaDifferentialForCausalLM(LlamaForCausalLM):
         super().__init__(config)
         self.model = LlamaDifferentialModel(config)
 
+    # pylint: disable=protected-access
+    @classmethod
+    def _autoset_attn_implementation(
+        cls, config, **kwargs
+    ):  # pylint: disable=unused-argument
+        config._attn_implementation_autoset = True
+        attn_implementation = getattr(config, "_attn_implementation", None)
+
+        # Map standard types to differential types if mapping exists
+        if attn_implementation in config._attn_implementations:
+            config._attn_implementation = config._attn_implementations[
+                attn_implementation
+            ]
+            return config
+
+        # If no mapping, validate it's a valid differential type
+        valid_impls = [
+            None,
+            "differential_eager",
+            "differential_sdpa",
+            "differential_flash_attention_2",
+        ]
+        if attn_implementation not in valid_impls:
+            message = (
+                f"Specified `attn_implementation={attn_implementation}` is not supported. "
+                f"The only possible arguments are: {', '.join(repr(x) for x in valid_impls if x)}"
+            )
+            raise ValueError(message)
+
+        return config
+
     @classmethod
     def from_llama(
         cls, model: LlamaForCausalLM, config: Optional[LlamaDifferentialConfig] = None
@@ -257,3 +272,11 @@ def register_diff_attn():
     # Register models
     AutoModel.register(LlamaDifferentialConfig, LlamaDifferentialModel)
     AutoModelForCausalLM.register(LlamaDifferentialConfig, LlamaDifferentialForCausalLM)
+
+    from transformers.models.llama.modeling_llama import LLAMA_ATTENTION_CLASSES
+
+    LLAMA_ATTENTION_CLASSES["differential_eager"] = LlamaDifferentialAttention
+    LLAMA_ATTENTION_CLASSES["differential_sdpa"] = LlamaDifferentialSdpaAttention
+    LLAMA_ATTENTION_CLASSES[
+        "differential_flash_attention_2"
+    ] = LlamaDifferentialFlashAttention2

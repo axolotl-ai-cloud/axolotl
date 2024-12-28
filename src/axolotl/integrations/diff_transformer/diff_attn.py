@@ -46,27 +46,22 @@ class LlamaDifferentialAttentionBase(nn.Module):
 
     def __init__(self, config: Any, layer_idx: int):
         super().__init__()
+
         self.config = config
-        self._init_config(config, layer_idx)
+        self._init_config(layer_idx)
         self._init_projections()
         self._init_differential_params()
-        self._init_normalization(config)
+        self._init_normalization()
 
-    def _init_config(self, config: Any, layer_idx: int):
+    def _init_config(self, layer_idx: int):
         """Initialize configuration parameters."""
-        self.attention_dropout = config.attention_dropout
-        self.hidden_size = config.hidden_size
-        self.head_dim = config.hidden_size // config.num_attention_heads
-        self.base_num_heads = config.num_attention_heads
-        self.base_num_kv_heads = config.num_key_value_heads
+        self.head_dim = self.config.hidden_size // self.config.num_attention_heads
+        self.base_num_heads = self.config.num_attention_heads
+        self.base_num_kv_heads = self.config.num_key_value_heads
         self.num_key_value_groups = self.base_num_heads // self.base_num_kv_heads
         self.layer_idx = layer_idx
-        self.max_position_embeddings = config.max_position_embeddings
-        self.rope_theta = config.rope_theta
-        self.is_causal = True
-        self.split_heads = config.split_heads
 
-        if config.split_heads:
+        if self.config.split_heads:
             # Split heads mode - single projections
             # NOTE: This rounds down `base_num_heads / 2` as opposed to the original
             # implementation, which asserts `self.base_num_heads` is even
@@ -81,31 +76,29 @@ class LlamaDifferentialAttentionBase(nn.Module):
 
     def _init_projections(self):
         """Initialize Q, K, V projections."""
-        if self.split_heads:
+        if self.config.split_heads:
             # Split heads mode - single projections
-            q_out_dim = self.hidden_size
-            k_out_dim = self.hidden_size // self.base_num_heads * self.base_num_kv_heads
+            q_out_dim = self.config.hidden_size
+            k_out_dim = self.head_dim * self.base_num_kv_heads
         else:
             # Double projection mode
-            q_out_dim = self.hidden_size * 2
-            k_out_dim = (
-                self.hidden_size // self.base_num_heads * self.base_num_kv_heads * 2
-            )
+            q_out_dim = self.config.hidden_size * 2
+            k_out_dim = self.head_dim * self.base_num_kv_heads * 2
 
         self.q_proj = nn.Linear(
-            self.hidden_size, q_out_dim, bias=self.config.attention_bias
+            self.config.hidden_size, q_out_dim, bias=self.config.attention_bias
         )
         self.k_proj = nn.Linear(
-            self.hidden_size, k_out_dim, bias=self.config.attention_bias
+            self.config.hidden_size, k_out_dim, bias=self.config.attention_bias
         )
         self.v_proj = nn.Linear(
-            self.hidden_size,
-            self.hidden_size // self.base_num_heads * self.base_num_kv_heads,
+            self.config.hidden_size,
+            self.head_dim * self.base_num_kv_heads,
             bias=self.config.attention_bias,
         )
         self.o_proj = nn.Linear(
             self.base_num_heads * self.head_dim,
-            self.hidden_size,
+            self.config.hidden_size,
             bias=self.config.attention_bias,
         )
 
@@ -129,11 +122,11 @@ class LlamaDifferentialAttentionBase(nn.Module):
         )
         self.rotary_emb = LlamaRotaryEmbedding(config=self.config)
 
-    def _init_normalization(self, config):
+    def _init_normalization(self):
         """Initialize normalization layers."""
-        sublayer_norm = getattr(config, "sublayer_norm", True)
+        sublayer_norm = getattr(self.config, "sublayer_norm", True)
         if sublayer_norm:
-            self.subln = LlamaRMSNorm(self.value_head_dim, eps=config.rms_norm_eps)
+            self.subln = LlamaRMSNorm(self.value_head_dim, eps=self.config.rms_norm_eps)
         else:
             self.subln = nn.Identity()
 
@@ -148,7 +141,6 @@ class LlamaDifferentialAttentionBase(nn.Module):
         q1, q2 = q.chunk(2, dim=-1)
         k1, k2 = k.chunk(2, dim=-1)
 
-        # Reshape
         q1 = q1.view(bsz, q_len, self.heads_per_component, self.head_dim).transpose(
             1, 2
         )
@@ -161,9 +153,7 @@ class LlamaDifferentialAttentionBase(nn.Module):
         k2 = k2.view(bsz, q_len, self.kv_heads_per_component, self.head_dim).transpose(
             1, 2
         )
-        v = v.view(bsz, q_len, self.base_num_kv_heads, self.value_head_dim).transpose(
-            1, 2
-        )
+        v = v.view(bsz, q_len, self.base_num_kv_heads, self.head_dim).transpose(1, 2)
 
         return q1, q2, k1, k2, v
 
@@ -198,6 +188,8 @@ class LlamaDifferentialAttentionBase(nn.Module):
         k1 = repeat_kv(k1, self.num_key_value_groups)
         k2 = repeat_kv(k2, self.num_key_value_groups)
         v = repeat_kv(v, self.num_key_value_groups)
+        if self.config.split_heads:
+            v = torch.cat(torch.chunk(v, 2, dim=1), dim=-1)
 
         return k1, k2, v
 
@@ -215,7 +207,7 @@ class LlamaDifferentialAttentionBase(nn.Module):
         """Process and project attention output."""
         attn = self.subln(attn)
         attn = attn * (1 - self.lambda_init)
-        attn = attn.transpose(1, 2).reshape(bsz, q_len, self.hidden_size)
+        attn = attn.transpose(1, 2).reshape(bsz, q_len, self.config.hidden_size)
         return self.o_proj(attn)
 
 
@@ -255,7 +247,7 @@ class LlamaDifferentialAttention(LlamaDifferentialAttentionBase):
         attn1 = F.softmax(attn1, dim=-1, dtype=torch.float32).type_as(attn1)
         attn2 = F.softmax(attn2, dim=-1, dtype=torch.float32).type_as(attn2)
 
-        dropout_p = self.attention_dropout if self.training else 0.0
+        dropout_p = self.config.attention_dropout if self.training else 0.0
         attn1 = F.dropout(attn1, p=dropout_p, training=self.training)
         attn2 = F.dropout(attn2, p=dropout_p, training=self.training)
 
@@ -318,7 +310,7 @@ class LlamaDifferentialSdpaAttention(LlamaDifferentialAttentionBase):
             None if attention_mask is None else attention_mask[:, :, :, : k1.shape[-2]]
         )
         is_causal = attention_mask is None and q_len > 1
-        dropout_p = self.attention_dropout if self.training else 0.0
+        dropout_p = self.config.attention_dropout if self.training else 0.0
 
         if q1.device.type == "cuda" and causal_mask is not None:
             q1, q2 = q1.contiguous(), q2.contiguous()
@@ -396,9 +388,9 @@ class LlamaDifferentialFlashAttention2(LlamaDifferentialAttentionBase):
         k1, k2 = k1.transpose(1, 2), k2.transpose(1, 2)
         v = v.transpose(1, 2)
 
-        dropout_p = self.attention_dropout if self.training else 0.0
+        dropout_p = self.config.attention_dropout if self.training else 0.0
 
-        if self.split_heads:
+        if self.config.split_heads:
             v1, v2 = v.chunk(2, dim=-1)
             attn11 = flash_attn_func(q1, k1, v1, dropout_p=dropout_p, causal=True)
             attn12 = flash_attn_func(q1, k1, v2, dropout_p=dropout_p, causal=True)
