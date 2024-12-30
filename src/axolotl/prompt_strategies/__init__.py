@@ -20,9 +20,12 @@ def load(strategy, tokenizer, cfg, ds_cfg, processor=None):
         if strategy.split(".")[-1].startswith("load_"):
             load_fn = strategy.split(".")[-1]
             strategy = ".".join(strategy.split(".")[:-1])
-        else:
+        elif len(strategy.split(".")) > 1:
             try:
-                importlib.import_module(".".join(strategy.split(".")[:-1]))
+                importlib.import_module(
+                    "." + strategy.split(".")[-1],
+                    ".".join(strategy.split(".")[:-1]),
+                )
                 package = ".".join(strategy.split(".")[:-1])
                 strategy = strategy.split(".")[-1]
             except ModuleNotFoundError:
