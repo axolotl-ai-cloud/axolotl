@@ -603,6 +603,8 @@ class AxolotlInputConfig(
     strict: Optional[bool] = Field(default=False)
     resume_from_checkpoint: Optional[str] = None
     auto_resume_from_checkpoints: Optional[bool] = None
+    optimizer_checkpoint: Optional[str] = None
+
     resize_token_embeddings_to_32x: Optional[bool] = None
     mean_resizing_embeddings: Optional[bool] = False
 
