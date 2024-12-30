@@ -111,6 +111,17 @@ class BasePlugin:
         None
         """
 
+    def get_trainer_cls(self, cfg):  # pylint: disable=unused-argument):
+        """
+        Returns a custom class for the trainer.
+
+        Parameters:
+        cfg (dict): The global axolotl configuration.
+
+        Returns:
+        class: The class for the trainer.
+        """
+
     def create_optimizer(self, cfg, trainer):  # pylint: disable=unused-argument
         """
         Creates and returns an optimizer for training.
@@ -345,6 +356,22 @@ class PluginManager:
         """
         for plugin in self.plugins.values():
             plugin.post_lora_load(cfg, model)
+
+    def get_trainer_cls(self, cfg):
+        """
+        Calls the get_trainer_cls method of all registered plugins and returns the first non-None trainer class.
+
+        Parameters:
+        cfg (dict): The configuration for the plugins.
+
+        Returns:
+        object: The trainer class, or None if none was found.
+        """
+        for plugin in self.plugins.values():
+            trainer_cls = plugin.get_trainer_cls(cfg)
+            if trainer_cls is not None:
+                return trainer_cls
+        return None
 
     def create_optimizer(self, cfg, trainer):
         """
