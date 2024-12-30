@@ -19,7 +19,8 @@ KD trainer
 import torch
 
 from axolotl.core.trainers.base import AxolotlTrainer
-from axolotl.core.trainers.kd.topk_logprob.forward_kl import loss as topk_kd_loss
+
+from .topk_logprob.forward_kl import loss as topk_kd_loss
 
 
 class AxolotlKDTrainer(AxolotlTrainer):
