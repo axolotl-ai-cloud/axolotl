@@ -502,7 +502,7 @@ class ChatTemplateStrategyWithKD(ChatTemplateStrategy):
 
         # fill with -inf for padding_len tokens for top_k tokens
         # extend target_logprobs with a padding_len x top_k 2D list filled with -inf
-        for _ in range(input_padding_len):
+        for _ in range(1, input_padding_len):  # start at 1 since this is causal
             target_logprobs.append([-float("inf")] * top_k)
             target_token_ids.append(list(range(top_k)))
             target_mask.append([0] * top_k)
