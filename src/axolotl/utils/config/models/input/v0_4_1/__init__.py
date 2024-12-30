@@ -623,13 +623,6 @@ class AxolotlInputConfig(
         bool
     ] = None  # whether to use weighting in DPO trainer. If none, default is false in the trainer.
 
-    trainer: Optional[Literal["kd"]] = None
-    kd_ce_alpha: Optional[
-        float
-    ] = None  # loss coefficient for cross-entropy loss during KD
-    kd_alpha: Optional[float] = None  # loss coefficient for KD loss
-    kd_temperature: Optional[float] = None  # temperature for sampling during KD
-
     datasets: Optional[conlist(Union[SFTDataset, DPODataset, KTODataset], min_length=1)] = None  # type: ignore
     test_datasets: Optional[conlist(Union[SFTDataset, DPODataset, KTODataset], min_length=1)] = None  # type: ignore
     shuffle_merged_datasets: Optional[bool] = True
