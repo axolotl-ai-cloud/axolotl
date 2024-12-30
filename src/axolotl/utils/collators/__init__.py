@@ -7,5 +7,4 @@ from .batching import (  # noqa: F401
     PretrainingBatchSamplerDataCollatorForSeq2Seq,
     V2BatchSamplerDataCollatorForSeq2Seq,
 )
-from .kd import DataCollatorForKD  # noqa: F401
 from .mamba import MambaDataCollator  # noqa: F401
