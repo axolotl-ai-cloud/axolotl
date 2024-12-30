@@ -47,7 +47,6 @@ from axolotl.core.trainers.base import (
     AxolotlTrainer,
     ReLoRATrainer,
 )
-from axolotl.core.trainers.kd import AxolotlKDTrainer
 from axolotl.core.training_args import (
     AxolotlCPOConfig,
     AxolotlDPOConfig,
@@ -77,7 +76,6 @@ from axolotl.utils.callbacks.profiler import PytorchProfilerCallback
 from axolotl.utils.chat_templates import get_chat_template_from_config
 from axolotl.utils.collators import (
     BatchSamplerDataCollatorForSeq2Seq,
-    DataCollatorForKD,
     DataCollatorForSeq2Seq,
     MambaDataCollator,
     V2BatchSamplerDataCollatorForSeq2Seq,
@@ -306,8 +304,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             return AxolotlMambaTrainer
         if self.cfg.reward_model:
             return AxolotlRewardTrainer
-        if self.cfg.trainer == "kd":
-            return AxolotlKDTrainer
         return AxolotlTrainer
 
     def build(self, total_num_steps):
@@ -797,7 +793,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             Union[
                 V2BatchSamplerDataCollatorForSeq2Seq,
                 BatchSamplerDataCollatorForSeq2Seq,
-                DataCollatorForKD,
                 DataCollatorForSeq2Seq,
                 DataCollatorWithFlattening,
                 RewardDataCollatorWithPadding,
@@ -828,7 +823,9 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 collator_args.pop(0)
                 kwargs.pop("pad_to_multiple_of", None)
                 kwargs.pop("padding", None)
-            elif self.cfg.trainer == "kd":
+            elif self.cfg.kd_trainer:
+                from axolotl.integrations.kd.collator import DataCollatorForKD
+
                 collator = DataCollatorForKD
             else:
                 collator = DataCollatorForSeq2Seq
