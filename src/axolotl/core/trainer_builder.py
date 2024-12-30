@@ -295,6 +295,11 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         return callbacks
 
     def _get_trainer_cls(self):
+        if self.cfg.plugins:
+            plugin_manager = PluginManager.get_instance()
+            trainer_cls = plugin_manager.get_trainer_cls(self.cfg)
+            if trainer_cls:
+                return trainer_cls
         if self.cfg.relora_steps:
             return ReLoRATrainer
         if self.cfg.model_config_type == "mamba":
