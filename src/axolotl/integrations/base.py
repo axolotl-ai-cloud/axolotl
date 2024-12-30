@@ -293,8 +293,10 @@ class PluginManager:
         ImportError: If the plugin module cannot be imported.
         """
         try:
+            logging.info(f"Attempting to load plugin: {plugin_name}")
             plugin = load_plugin(plugin_name)
             self.plugins[plugin_name] = plugin
+            logging.info(f"Plugin loaded successfully: {plugin_name}")
         except ImportError:
             logging.error(f"Failed to load plugin: {plugin_name}")
 
