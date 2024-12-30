@@ -5,7 +5,6 @@ HF Chat Templates prompt strategy
 import logging
 from typing import Any, Dict, List, Optional
 
-import torch
 from transformers import ProcessorMixin
 
 from axolotl.prompt_tokenizers import PromptTokenizingStrategy
@@ -460,168 +459,62 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         return prompt.get(self.images, None)
 
 
-class ChatTemplateStrategyWithKD(ChatTemplateStrategy):
+class StrategyLoader:
     """
-    Handle fields for logprob KD
+    Load chat template strategy based on configuration.
     """
 
-    def __init__(
-        self,
-        prompter,
-        tokenizer,
-        train_on_inputs,
-        sequence_len,
-        roles_to_train=None,
-        train_on_eos=None,
-        logprobs_field="logprobs",
-        gen_temperature=1.0,
-        kd_temperature=1.0,
+    def _get_strategy_cls(self):
+        return ChatTemplateStrategy
+
+    def _get_strategy_params(self, cfg, ds_cfg: Dict[str, Any]):
+        return {
+            "train_on_inputs": cfg.train_on_inputs,
+            "sequence_len": cfg.sequence_len,
+            "roles_to_train": ds_cfg.get("roles_to_train", ["assistant"]),
+            "train_on_eos": ds_cfg.get("train_on_eos", "turn"),
+        }
+
+    def __call__(
+        self, tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None, processor=None
     ):
-        self.logprobs_field = logprobs_field
-        self.gen_temperature = gen_temperature
-        self.kd_temperature = kd_temperature
+        # pylint: disable=duplicate-code
+        ds_cfg = ds_cfg or {}
+        chat_template_string = get_chat_template_from_config(
+            cfg=cfg, ds_cfg=ds_cfg, tokenizer=tokenizer
+        )
+        LOG.info(f"Using chat template:\n---\n{chat_template_string!s}\n---")
 
-        super().__init__(
-            prompter,
-            tokenizer,
-            train_on_inputs,
-            sequence_len,
-            roles_to_train=roles_to_train,
-            train_on_eos=train_on_eos,
+        prompter_params = {
+            "tokenizer": tokenizer,
+            "chat_template": chat_template_string,
+            "message_field_role": ds_cfg.get("message_field_role", "role"),
+            "message_field_content": ds_cfg.get("message_field_content", "content"),
+            "message_field_training": ds_cfg.get("message_field_training", None),
+            "message_field_training_detail": ds_cfg.get(
+                "message_field_training_detail",
+                None,
+            ),
+            "roles": ds_cfg.get("roles"),
+            "drop_system_message": ds_cfg.get("drop_system_message", False),
+            # we need to add one for detecting sequences with exceeding the `sequence_len` limit.
+            "max_length": cfg.sequence_len + 1,
+            "processor": processor,
+        }
+
+        strategy_params = self._get_strategy_params(cfg, ds_cfg)
+        strategy_cls = self._get_strategy_cls()
+
+        strategy = strategy_cls(
+            ChatTemplatePrompter(**prompter_params),
+            tokenizer=tokenizer,
+            **strategy_params,
         )
 
-    def transform_logprobs(self, sample):
-        logprobs = sample.pop(self.logprobs_field)
-        target_seq_len = len(logprobs)
-        input_seq_len = len(sample["input_ids"])
-        input_padding_len = input_seq_len - target_seq_len
-        top_k = len(logprobs[0])
-        target_logprobs = []
-        target_token_ids = []
-        target_mask = []
+        if "field_messages" in ds_cfg and hasattr(strategy, "messages"):
+            strategy.messages = ds_cfg["field_messages"]
 
-        # fill with -inf for padding_len tokens for top_k tokens
-        # extend target_logprobs with a padding_len x top_k 2D list filled with -inf
-        for _ in range(1, input_padding_len):  # start at 1 since this is causal
-            target_logprobs.append([-float("inf")] * top_k)
-            target_token_ids.append(list(range(top_k)))
-            target_mask.append([0] * top_k)
-
-        for _ in range(target_seq_len):
-            # TODO also check against sample["labels"]
-            target_mask.append([1] * top_k)
-
-        for _, token_pos_logprobs in enumerate(logprobs):
-            # Initialize collections for logprobs and token_ids
-            position_logprobs = []
-            position_token_ids = []
-
-            # Process each token probability entry
-            for entry in token_pos_logprobs:
-                # Extract logprob value
-                logprob = entry["logprob"]
-
-                # Parse token_id from the "token_id:###" format
-                token_id = int(entry["token"].split(":")[1])
-
-                # Append to our collections
-                position_logprobs.append(logprob)
-                position_token_ids.append(token_id)
-
-            # Convert to a tensor for easier manipulation
-            # Convert to tensor
-            position_logprobs_tensor = torch.tensor(
-                position_logprobs, dtype=torch.float
-            )
-
-            if self.kd_temperature != self.gen_temperature:
-                #
-                # Now we have distribution at T1 in log form, i.e. log p_{T1}(k).
-                # Next, re-scale to T2 = self.kd_temperature via exponent-based trick
-                # p_{T2}(k) = [p_{T1}(k)]^(T1 / T2) / Z
-                #
-                # Convert from log to probability
-                teacher_probs_t1 = position_logprobs_tensor.exp()
-                # Exponentiate by factor (T1 / T2)
-                exponent = self.gen_temperature / self.kd_temperature
-                teacher_probs_t2 = teacher_probs_t1**exponent
-                # Re-normalize
-                teacher_probs_t2 = teacher_probs_t2 / teacher_probs_t2.sum(
-                    dim=0, keepdim=True
-                )
-                # Convert back to log
-                position_logprobs_tensor = torch.log(teacher_probs_t2)
-
-            # Now we have log p_{teacher, T2}(k) stored in position_logprobs_tensor
-            position_logprobs_scaled = position_logprobs_tensor.tolist()
-
-            target_logprobs.append(position_logprobs_scaled)
-            target_token_ids.append(position_token_ids)
-
-        # Update sample with transformed logprobs
-        sample["target_logprobs"] = target_logprobs
-        sample["target_token_ids"] = target_token_ids
-        sample["target_mask"] = target_mask
-
-        return sample
-
-    def tokenize_prompt(self, prompt):
-        logprobs = prompt.pop(self.logprobs_field)
-        tokenized_prompt = super().tokenize_prompt(prompt)
-        tokenized_prompt[self.logprobs_field] = logprobs
-        tokenized_prompt = self.transform_logprobs(tokenized_prompt)
-
-        return tokenized_prompt
+        return strategy
 
 
-def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None, processor=None):
-    # pylint: disable=duplicate-code
-    ds_cfg = ds_cfg or {}
-    chat_template_string = get_chat_template_from_config(
-        cfg=cfg, ds_cfg=ds_cfg, tokenizer=tokenizer
-    )
-    LOG.info(f"Using chat template:\n---\n{chat_template_string!s}\n---")
-
-    prompter_params = {
-        "tokenizer": tokenizer,
-        "chat_template": chat_template_string,
-        "message_field_role": ds_cfg.get("message_field_role", "role"),
-        "message_field_content": ds_cfg.get("message_field_content", "content"),
-        "message_field_training": ds_cfg.get("message_field_training", None),
-        "message_field_training_detail": ds_cfg.get(
-            "message_field_training_detail",
-            None,
-        ),
-        "roles": ds_cfg.get("roles"),
-        "drop_system_message": ds_cfg.get("drop_system_message", False),
-        # we need to add one for detecting sequences with exceeding the `sequence_len` limit.
-        "max_length": cfg.sequence_len + 1,
-        "processor": processor,
-    }
-
-    strategy_params = {
-        "train_on_inputs": cfg.train_on_inputs,
-        "sequence_len": cfg.sequence_len,
-        "roles_to_train": ds_cfg.get("roles_to_train", ["assistant"]),
-        "train_on_eos": ds_cfg.get("train_on_eos", "turn"),
-    }
-
-    strategy_cls = ChatTemplateStrategy
-
-    if cfg.trainer == "kd":
-        strategy_cls = ChatTemplateStrategyWithKD
-        if logprobs_field := ds_cfg.get("logprobs_field"):
-            strategy_params["logprobs_field"] = logprobs_field
-        if gen_temperature := ds_cfg.get("temperature"):
-            strategy_params["gen_temperature"] = gen_temperature
-        if kd_temperature := cfg.get("kd_temperature"):
-            strategy_params["kd_temperature"] = kd_temperature
-
-    strategy = strategy_cls(
-        ChatTemplatePrompter(**prompter_params), tokenizer=tokenizer, **strategy_params
-    )
-
-    if "field_messages" in ds_cfg and hasattr(strategy, "messages"):
-        strategy.messages = ds_cfg["field_messages"]
-
-    return strategy
+load = StrategyLoader()
