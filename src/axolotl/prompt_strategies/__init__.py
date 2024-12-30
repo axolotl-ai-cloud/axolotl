@@ -16,10 +16,18 @@ def load(strategy, tokenizer, cfg, ds_cfg, processor=None):
 
             return messages_load(tokenizer, cfg, ds_cfg, processor=processor)
         load_fn = "load"
+        package = "axolotl.prompt_strategies"
         if strategy.split(".")[-1].startswith("load_"):
             load_fn = strategy.split(".")[-1]
             strategy = ".".join(strategy.split(".")[:-1])
-        mod = importlib.import_module(f".{strategy}", "axolotl.prompt_strategies")
+        else:
+            try:
+                importlib.import_module(".".join(strategy.split(".")[:-1]))
+                package = ".".join(strategy.split(".")[:-1])
+                strategy = strategy.split(".")[-1]
+            except ModuleNotFoundError:
+                pass
+        mod = importlib.import_module(f".{strategy}", package)
         func = getattr(mod, load_fn)
         load_kwargs = {}
         if strategy == "user_defined":
