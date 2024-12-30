@@ -223,7 +223,17 @@ def load_plugin(plugin_name: str) -> BasePlugin:
     module_name, class_name = plugin_name.rsplit(".", 1)
 
     # import the module
-    module = importlib.import_module(module_name)
+    try:
+        module = importlib.import_module(module_name)
+    except ModuleNotFoundError as orig_exc:
+        try:
+            if not module_name.startswith("axolotl.integrations."):
+                module = importlib.import_module("axolotl.integrations." + module_name)
+            else:
+                raise orig_exc
+        except ModuleNotFoundError as exc:
+            raise orig_exc from exc
+
     # instantiate the class
     plugin_class = getattr(module, class_name)
     # create an instance of the class
