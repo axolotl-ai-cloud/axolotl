@@ -16,8 +16,6 @@
 KD trainer
 """
 
-import torch
-
 from axolotl.core.trainers.base import AxolotlTrainer
 
 from .topk_logprob.forward_kl import loss as topk_kd_loss
@@ -105,7 +103,5 @@ class AxolotlKDTrainer(AxolotlTrainer):
 
         if self.args.average_tokens_across_devices and self.model_accepts_loss_kwargs:
             loss *= self.accelerator.num_processes
-
-        torch.cuda.empty_cache()
 
         return (loss, outputs) if return_outputs else loss
