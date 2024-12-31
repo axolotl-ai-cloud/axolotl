@@ -824,9 +824,15 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 kwargs.pop("pad_to_multiple_of", None)
                 kwargs.pop("padding", None)
             elif self.cfg.kd_trainer:
-                from axolotl.integrations.kd.collator import DataCollatorForKD
+                from axolotl.integrations.kd.collator import (
+                    DataCollatorForKD,
+                    KDBatchSamplerDataCollatorForSeq2Seq,
+                )
 
-                collator = DataCollatorForKD
+                if self.cfg.sample_packing:
+                    collator = KDBatchSamplerDataCollatorForSeq2Seq
+                else:
+                    collator = DataCollatorForKD
             else:
                 collator = DataCollatorForSeq2Seq
 

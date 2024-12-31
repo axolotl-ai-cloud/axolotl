@@ -120,6 +120,11 @@ class ChatTemplateStrategyWithKD(ChatTemplateStrategy):
             target_logprobs.append(position_logprobs_scaled)
             target_token_ids.append(position_token_ids)
 
+        # since we started at index 1 for causal, we need one more padding token
+        target_logprobs.append([-float("inf")] * top_k)
+        target_token_ids.append(list(range(top_k)))
+        target_mask.append([0] * top_k)
+
         # Update sample with transformed logprobs
         sample["target_logprobs"] = target_logprobs
         sample["target_token_ids"] = target_token_ids
