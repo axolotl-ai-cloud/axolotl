@@ -2,7 +2,7 @@
 
 import logging
 import os
-from typing import List, Optional
+from typing import List, Optional, Union
 
 import torch
 from datasets import Dataset, IterableDataset
@@ -66,6 +66,24 @@ class TokenizedPromptDataset(Dataset):
             desc="Tokenizing Prompts",
             **map_kwargs,
         )
+
+
+def wrap_dataset_for_tokenized_prompt(
+    prompt_tokenizer: PromptTokenizingStrategy,
+    dataset: Union[Dataset, IterableDataset],
+    **kwargs,
+):
+    if isinstance(dataset, IterableDataset):
+        map_kwargs = {}
+        if prompt_tokenizer.supports_batched:
+            map_kwargs["batched"] = True
+        features = dataset.features.keys()
+        return dataset.map(
+            prompt_tokenizer.tokenize_prompt,
+            remove_columns=features,
+            **map_kwargs,
+        )
+    return TokenizedPromptDataset(prompt_tokenizer, dataset, **kwargs)
 
 
 # TODO this isn't the best since it can't interleave datasets
