@@ -51,7 +51,7 @@ class TokenizedPromptDataset(Dataset):
         map_kwargs = {}
         if self.prompt_tokenizer.supports_batched:
             map_kwargs["batched"] = True
-            map_kwargs["batch_size"] = 100
+            map_kwargs["batch_size"] = 1_000
         if self.prompt_tokenizer.filter_rows:
             dataset = dataset.filter(
                 self.prompt_tokenizer.filter_rows,
