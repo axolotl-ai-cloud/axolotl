@@ -12,4 +12,4 @@ generated-members=numpy.*, torch.*
 disable=missing-function-docstring, line-too-long, import-error,
     too-many-arguments, too-many-locals, too-many-statements, too-many-branches, too-few-public-methods,
     too-many-instance-attributes, fixme, import-outside-toplevel, logging-fstring-interpolation,
-    too-many-positional-arguments
+    too-many-positional-arguments, possibly-used-before-assignment
