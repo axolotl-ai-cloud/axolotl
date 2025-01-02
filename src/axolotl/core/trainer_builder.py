@@ -53,6 +53,7 @@ from trl.trainer.utils import RewardDataCollatorWithPadding, pad_to_length
 from axolotl.integrations.base import PluginManager
 from axolotl.monkeypatch.multipack import SUPPORTED_MULTIPACK_MODEL_TYPES
 from axolotl.monkeypatch.relora import ReLoRACallback, ReLoRAScheduler
+from axolotl.processing_strategies import get_processing_strategy
 from axolotl.utils import is_comet_available, is_mlflow_available
 from axolotl.utils.callbacks import (
     EvalFirstStepCallback,
@@ -2015,8 +2016,9 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         else:
             if self.cfg.processor_type and self.processor:
                 collator = MultiModalChatDataCollator
-                kwargs["processor"] = self.processor
-                kwargs["chat_template"] = training_args.chat_template
+                kwargs["processing_strategy"] = get_processing_strategy(
+                    self.processor, training_args.chat_template, self.cfg.chat_template
+                )
             elif self.cfg.batch_flattening:
                 collator = DataCollatorWithFlattening
                 collator_args.pop(0)
