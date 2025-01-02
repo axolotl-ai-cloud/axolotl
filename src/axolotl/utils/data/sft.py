@@ -57,7 +57,7 @@ from axolotl.utils.trainer import (
     process_datasets_for_packing,
 )
 
-LOG = logging.getLogger("axolotl.utils.data.sft")
+LOG = logging.getLogger(__name__)
 
 
 @retry_on_request_exceptions(max_retries=3, delay=5)
