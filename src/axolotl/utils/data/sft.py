@@ -50,10 +50,11 @@ from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import is_local_main_process, zero_first
 from axolotl.utils.trainer import (
     calculate_total_num_steps,
+    drop_long_seq_in_dataset,
     process_datasets_for_packing,
 )
 
-LOG = logging.getLogger("axolotl")
+LOG = logging.getLogger(__name__)
 
 
 @retry_on_request_exceptions(max_retries=3, delay=5)
@@ -306,6 +307,8 @@ def load_tokenized_prepared_datasets(
                 dataset = dataset.shuffle(seed=seed)
             else:
                 LOG.debug("NOT shuffling merged datasets")
+
+        dataset = drop_long_seq_in_dataset(dataset, cfg)
 
         if cfg.sample_packing and not cfg.skip_prepare_dataset:
             dataset, _ = process_datasets_for_packing(cfg, dataset, None)
