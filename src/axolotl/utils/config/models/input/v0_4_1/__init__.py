@@ -154,6 +154,7 @@ class SFTDataset(BaseModel):
     type: Optional[Union[str, UserDefinedPrompterType]] = None
     input_transform: Optional[str] = None
     shards: Optional[int] = None
+    preprocess_shards: Optional[int] = None
     conversation: Optional[str] = None
     # Do not make this too strict or it will break the validator to choose different dataset class
     chat_template: Optional[
@@ -801,6 +802,7 @@ class AxolotlInputConfig(
 
     # INTERNALS - document for now, generally not set externally
     is_preprocess: Optional[bool] = None
+    preprocess_iterable: Optional[bool] = None
 
     total_num_tokens: Optional[int] = None
     total_supervised_tokens: Optional[int] = None

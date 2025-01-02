@@ -25,15 +25,20 @@ def cli():
 
 @cli.command()
 @click.argument("config", type=click.Path(exists=True, path_type=str))
+@click.option(
+    "--iterable/--no-iterable",
+    default=False,
+    help="Use IterableDataset for streaming processing of large datasets",
+)
 @add_options_from_dataclass(PreprocessCliArgs)
 @add_options_from_config(AxolotlInputConfig)
-def preprocess(config: str, **kwargs):
+def preprocess(config: str, iterable: bool, **kwargs):
     """Preprocess datasets before training."""
     kwargs = {k: v for k, v in kwargs.items() if v is not None}
 
     from axolotl.cli.preprocess import do_cli
 
-    do_cli(config=config, **kwargs)
+    do_cli(config=config, iterable=iterable, **kwargs)
 
 
 @cli.command()

@@ -132,9 +132,9 @@ class ChatTemplateStrategyWithKD(ChatTemplateStrategy):
 
         return sample
 
-    def tokenize_prompt(self, prompt):
+    def _tokenize_single_prompt(self, prompt):
         logprobs = prompt.pop(self.logprobs_field)
-        tokenized_prompt = super().tokenize_prompt(prompt)
+        tokenized_prompt = super()._tokenize_single_prompt(prompt)
         tokenized_prompt[self.logprobs_field] = logprobs
         tokenized_prompt = self.transform_logprobs(tokenized_prompt)
 

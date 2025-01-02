@@ -29,7 +29,9 @@ def get_ds_type(config_dataset: DictDefault):
     return ds_type
 
 
-def load_dataset_w_config(config_dataset, auth_token):
+def load_dataset_w_config(
+    config_dataset, auth_token, streaming=False
+) -> Union[Dataset, DatasetDict]:
     # pylint: disable=invalid-name
     ds: Optional[Union[Dataset, DatasetDict]] = None  # pylint: disable=invalid-name
     ds_from_hub = False
@@ -117,7 +119,7 @@ def load_dataset_w_config(config_dataset, auth_token):
                     ds_type,
                     name=config_dataset.name,
                     data_files=config_dataset.data_files,
-                    streaming=False,
+                    streaming=streaming,
                     split=None,
                 )
             else:
@@ -153,7 +155,7 @@ def load_dataset_w_config(config_dataset, auth_token):
         ds = load_dataset(
             config_dataset.path,
             name=config_dataset.name,
-            streaming=False,
+            streaming=streaming,
             data_files=config_dataset.data_files,
             token=auth_token,
             revision=config_dataset.revision,
@@ -172,7 +174,7 @@ def load_dataset_w_config(config_dataset, auth_token):
                 ds_type,
                 name=config_dataset.name,
                 data_files=config_dataset.path,
-                streaming=False,
+                streaming=streaming,
                 split=None,
                 storage_options=storage_options,
                 trust_remote_code=config_dataset.trust_remote_code,
@@ -183,7 +185,7 @@ def load_dataset_w_config(config_dataset, auth_token):
             ds_type,
             name=config_dataset.name,
             data_files=config_dataset.path,
-            streaming=False,
+            streaming=streaming,
             split=None,
             storage_options=storage_options,
             trust_remote_code=config_dataset.trust_remote_code,
@@ -213,7 +215,7 @@ def load_dataset_w_config(config_dataset, auth_token):
             "json",
             name=config_dataset.name,
             data_files=fp,
-            streaming=False,
+            streaming=streaming,
             split=None,
         )
     if not ds:

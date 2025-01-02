@@ -4,7 +4,7 @@ CLI to run training on a model
 import logging
 import warnings
 from pathlib import Path
-from typing import Union
+from typing import Optional, Union
 
 import fire
 import transformers
@@ -28,11 +28,17 @@ from axolotl.utils.trainer import disable_datasets_caching
 LOG = logging.getLogger("axolotl.cli.preprocess")
 
 
-def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
+def do_cli(
+    config: Union[Path, str] = Path("examples/"),
+    iterable: Optional[bool] = False,
+    **kwargs,
+):
     # pylint: disable=duplicate-code
     print_axolotl_text_art()
     parsed_cfg = load_cfg(config, **kwargs)
     parsed_cfg.is_preprocess = True
+    if iterable:
+        parsed_cfg.preprocess_iterable = iterable
     check_accelerate_default_config()
     check_user_token()
     parser = transformers.HfArgumentParser((PreprocessCliArgs))
