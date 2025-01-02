@@ -39,6 +39,8 @@ def preprocess(config: str, **kwargs) -> None:
         kwargs: Additional keyword arguments which correspond to CLI args or `axolotl`
             config options.
     """
+    kwargs = {k: v for k, v in kwargs.items() if v is not None}
+
     from axolotl.cli.preprocess import do_cli
 
     do_cli(config=config, **kwargs)
