@@ -1,4 +1,5 @@
 """Module containing the Trainer class and related functions"""
+
 import json
 import math
 import os
@@ -235,7 +236,7 @@ def drop_long_seq_in_dataset(dataset, cfg):
     drop_long = partial(
         drop_long_seq,
         sequence_len=cfg.sequence_len,
-        min_sequence_len=cfg.min_sequence_len,
+        min_sequence_len=cfg.min_sample_len,
     )
 
     try:
