@@ -22,7 +22,6 @@ def add_options_from_dataclass(config_class: Type[Any]):
         # Process dataclass fields in reverse order for correct option ordering
         for field in reversed(dataclasses.fields(config_class)):
             field_type = field.type
-
             if get_origin(field_type) is Union and type(None) in get_args(field_type):
                 field_type = next(
                     t for t in get_args(field_type) if not isinstance(t, NoneType)
@@ -44,6 +43,7 @@ def add_options_from_dataclass(config_class: Type[Any]):
                     default=field.default,
                     help=field.metadata.get("description"),
                 )(function)
+
         return function
 
     return decorator
@@ -55,7 +55,14 @@ def add_options_from_config(config_class: Type[BaseModel]):
     def decorator(function):
         # Process model fields in reverse order for correct option ordering
         for name, field in reversed(config_class.model_fields.items()):
-            if field.annotation == bool:
+            field_type = field.annotation
+            if get_origin(field_type) is Union and type(None) in get_args(field_type):
+                field_type = next(
+                    t for t in get_args(field_type) if not isinstance(t, NoneType)
+                )
+
+            # NOTE: defaults are handled by the pydantic model config classes.
+            if field_type == bool:
                 field_name = name.replace("_", "-")
                 option_name = f"--{field_name}/--no-{field_name}"
                 function = click.option(
@@ -66,6 +73,7 @@ def add_options_from_config(config_class: Type[BaseModel]):
                 function = click.option(
                     option_name, default=None, help=field.description
                 )(function)
+
         return function
 
     return decorator

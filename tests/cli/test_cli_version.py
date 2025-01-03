@@ -1,4 +1,5 @@
 """pytest tests for axolotl CLI --version"""
+
 from axolotl.cli.main import cli
 
 
