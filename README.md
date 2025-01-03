@@ -729,7 +729,7 @@ You may need to use the `gpu_memory_limit` and/or `lora_on_cpu` config options t
 CUDA_VISIBLE_DEVICES="" python3 -m axolotl.cli.merge_lora ...
 ```
 
-although this will be very slow, and using the config options above are recommended instead.
+although this will be very slow, and using the config options above are recommended instead. Furthermore, the model output type will be in fp16 even if bf16 is set.
 
 ## Common Errors 🧰
 
