@@ -1,4 +1,5 @@
 """setup.py for axolotl"""
+
 import ast
 import os
 import platform
@@ -29,15 +30,29 @@ def parse_requirements():
             elif not is_extras and line and line[0] != "#":
                 # Handle standard packages
                 _install_requires.append(line)
-
     try:
         xformers_version = [req for req in _install_requires if "xformers" in req][0]
         torchao_version = [req for req in _install_requires if "torchao" in req][0]
         autoawq_version = [req for req in _install_requires if "autoawq" in req][0]
-
         if "Darwin" in platform.system():
-            # don't install xformers on MacOS
-            _install_requires.pop(_install_requires.index(xformers_version))
+            # skip packages not compatible with OSX
+            skip_packages = [
+                "bitsandbytes",
+                "triton",
+                "mamba-ssm",
+                "flash-attn",
+                "xformers",
+                "autoawq",
+                "liger-kernel",
+            ]
+            _install_requires = [
+                req
+                for req in _install_requires
+                if re.split(r"[>=<]", req)[0].strip() not in skip_packages
+            ]
+            print(
+                _install_requires, [req in skip_packages for req in _install_requires]
+            )
         else:
             # detect the version of torch already installed
             # and set it so dependencies don't clobber the torch version

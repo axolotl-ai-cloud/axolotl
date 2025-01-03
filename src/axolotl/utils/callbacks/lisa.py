@@ -43,7 +43,7 @@ def lisa_callback_factory(trainer: "AxolotlTrainer"):
                 getattr, self.layers_attribute.split("."), self.trainer.model
             )
             LOG.info(
-                f"LISA will activate {self.n_layers}/{len(layers)} layers ({self.n_layers*100/len(layers)}%) every {self.step_interval} steps"
+                f"LISA will activate {self.n_layers}/{len(layers)} layers ({self.n_layers * 100 / len(layers)}%) every {self.step_interval} steps"
             )
 
         def freeze_all_layers(self):

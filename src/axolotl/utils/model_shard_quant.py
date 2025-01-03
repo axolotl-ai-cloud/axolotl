@@ -270,7 +270,7 @@ def load_sharded_model_quant(
     model.hf_quantizer = AutoHfQuantizer.from_config(quantization_config)
 
     if cfg.local_rank == 0 and verbose:
-        print(f"Loaded model weights in {time.time()-start:.3f} seconds")
+        print(f"Loaded model weights in {time.time() - start:.3f} seconds")
     # cleanup any extra memory usage from parallel loading
     torch.cuda.empty_cache()
 

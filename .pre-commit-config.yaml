@@ -23,7 +23,7 @@ repos:
     hooks:
     - id: flake8
 -   repo: https://github.com/PyCQA/pylint
-    rev: v2.17.4
+    rev: v3.3.0
     hooks:
     - id: pylint
 -   repo: https://github.com/pre-commit/mirrors-mypy
