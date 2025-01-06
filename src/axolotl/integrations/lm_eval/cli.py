@@ -60,7 +60,7 @@ def build_lm_eval_command(
             wandb_args.append(f"entity={wandb_entity}")
         if wandb_args:
             lm_eval_args.append("--wandb_args")
-            lm_eval_args.extend(",".join(wandb_args))
+            lm_eval_args.append(",".join(wandb_args))
         if num_fewshot_val:
             lm_eval_args.append("--num_fewshot")
             lm_eval_args.append(str(num_fewshot_val))
