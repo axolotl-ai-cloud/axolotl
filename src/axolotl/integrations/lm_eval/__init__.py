@@ -18,18 +18,19 @@ class LMEvalPlugin(BasePlugin):
         return "axolotl.integrations.lm_eval.LMEvalArgs"
 
     def post_train_unload(self, cfg):
-        # pylint: disable=duplicate-code
-        for lm_eval_args in build_lm_eval_command(
-            cfg.lm_eval_tasks,
-            bfloat16=cfg.bfloat16 or cfg.bf16,
-            flash_attention=cfg.flash_attention,
-            output_dir=cfg.output_dir,
-            batch_size=cfg.lm_eval_batch_size,
-            wandb_project=cfg.wandb_project,
-            wandb_entity=cfg.wandb_entity,
-            hub_model_id=cfg.hub_model_id,
-        ):
-            subprocess.run(  # nosec
-                lm_eval_args,
-                check=True,
-            )
+        if cfg.lm_eval_post_train:
+            # pylint: disable=duplicate-code
+            for lm_eval_args in build_lm_eval_command(
+                cfg.lm_eval_tasks,
+                bfloat16=cfg.bfloat16 or cfg.bf16,
+                flash_attention=cfg.flash_attention,
+                output_dir=cfg.output_dir,
+                batch_size=cfg.lm_eval_batch_size,
+                wandb_project=cfg.wandb_project,
+                wandb_entity=cfg.wandb_entity,
+                hub_model_id=cfg.hub_model_id,
+            ):
+                subprocess.run(  # nosec
+                    lm_eval_args,
+                    check=True,
+                )

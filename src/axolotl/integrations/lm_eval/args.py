@@ -13,3 +13,4 @@ class LMEvalArgs(BaseModel):
 
     lm_eval_tasks: List[str] = []
     lm_eval_batch_size: Optional[int] = 8
+    lm_eval_post_train: Optional[bool] = True
