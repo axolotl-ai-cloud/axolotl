@@ -2,8 +2,11 @@
 Modal Cloud support from CLI
 """
 import copy
+import json
 import os
+import subprocess  # nosec B404
 from pathlib import Path
+from random import randint
 
 import modal
 
@@ -12,8 +15,6 @@ from axolotl.cli.cloud.base import Cloud
 
 def run_cmd(cmd: str, run_folder: str, volumes=None):
     """Run a command inside a folder, with Modal Volume reloading before and commit on success."""
-    import subprocess  # nosec B404
-
     # Ensure volumes contain latest files.
     if volumes:
         for _, vol in volumes.items():
@@ -72,12 +73,31 @@ class ModalCloud(Cloud):
         docker_tag = "main-py3.11-cu124-2.5.1"
         if self.config.docker_tag:
             docker_tag = self.config.docker_tag
-        image = modal.Image.from_registry(f"axolotlai/axolotl:{docker_tag}")
+        docker_image = f"axolotlai/axolotl:{docker_tag}"
+
+        # grab the sha256 hash from docker hub for this image+tag
+        # this ensures that we always get the latest image for this tag, even if it's already cached
+        try:
+            manifest = subprocess.check_output(  # nosec B602
+                f"docker manifest inspect {docker_image}",
+                shell=True,
+            ).decode("utf-8")
+            sha256_hash = json.loads(manifest)["manifests"][0]["digest"]
+        except subprocess.CalledProcessError:
+            sha256_hash = None
+
+        # create the image
+        if sha256_hash:
+            image = modal.Image.from_registry(f"axolotlai/axolotl@{sha256_hash}")
+        else:
+            image = modal.Image.from_registry(docker_image)
 
         # branch
         if self.config.branch:
             image = image.dockerfile_commands(
                 [
+                    # Random id for cache busting of branch commits
+                    f"RUN echo '{str(randint(0, 1000000))}'",  # nosec B311
                     f"RUN cd /workspace/axolotl && git fetch && git checkout {self.config.branch}",
                 ]
             )
