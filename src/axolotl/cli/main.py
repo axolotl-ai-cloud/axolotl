@@ -15,6 +15,7 @@ from axolotl.cli.utils import (
     fetch_from_github,
     filter_none_kwargs,
 )
+from axolotl.integrations.lm_eval.cli import lm_eval
 from axolotl.utils import set_pytorch_cuda_alloc_conf
 from axolotl.utils.config.models.input.v0_4_1 import AxolotlInputConfig
 
@@ -251,6 +252,9 @@ def fetch(directory: str, dest: Optional[str]) -> None:
         dest: Optional destination directory.
     """
     fetch_from_github(f"{directory}/", dest)
+
+
+cli.add_command(lm_eval)
 
 
 def main():
