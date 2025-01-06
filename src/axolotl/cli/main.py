@@ -25,15 +25,21 @@ def cli():
 
 @cli.command()
 @click.argument("config", type=click.Path(exists=True, path_type=str))
+@click.option("--cloud", default=None, type=click.Path(exists=True, path_type=str))
 @add_options_from_dataclass(PreprocessCliArgs)
 @add_options_from_config(AxolotlInputConfig)
-def preprocess(config: str, **kwargs):
+def preprocess(config: str, cloud: Optional[str] = None, **kwargs):
     """Preprocess datasets before training."""
     kwargs = {k: v for k, v in kwargs.items() if v is not None}
 
-    from axolotl.cli.preprocess import do_cli
+    if cloud:
+        from axolotl.cli.cloud import do_cli_preprocess
 
-    do_cli(config=config, **kwargs)
+        do_cli_preprocess(cloud_config=cloud, config=config)
+    else:
+        from axolotl.cli.preprocess import do_cli
+
+        do_cli(config=config, **kwargs)
 
 
 @cli.command()
@@ -43,25 +49,33 @@ def preprocess(config: str, **kwargs):
     default=True,
     help="Use accelerate launch for multi-GPU training",
 )
+@click.option("--cloud", default=None, type=click.Path(exists=True, path_type=str))
 @add_options_from_dataclass(TrainerCliArgs)
 @add_options_from_config(AxolotlInputConfig)
-def train(config: str, accelerate: bool, **kwargs):
+def train(config: str, accelerate: bool, cloud: Optional[str], **kwargs):
     """Train or fine-tune a model."""
     kwargs = {k: v for k, v in kwargs.items() if v is not None}
 
     # Enable expandable segments for cuda allocation to improve VRAM usage
     set_pytorch_cuda_alloc_conf()
+    from axolotl.cli.cloud import do_cli_train
 
     if accelerate:
-        base_cmd = ["accelerate", "launch", "-m", "axolotl.cli.train"]
-        if config:
-            base_cmd.append(config)
-        cmd = build_command(base_cmd, kwargs)
-        subprocess.run(cmd, check=True)  # nosec B603
+        if cloud:
+            do_cli_train(cloud_config=cloud, config=config, accelerate=True)
+        else:
+            base_cmd = ["accelerate", "launch", "-m", "axolotl.cli.train"]
+            if config:
+                base_cmd.append(config)
+            cmd = build_command(base_cmd, kwargs)
+            subprocess.run(cmd, check=True)  # nosec B603
     else:
-        from axolotl.cli.train import do_cli
+        if cloud:
+            do_cli_train(cloud_config=cloud, config=config, accelerate=False)
+        else:
+            from axolotl.cli.train import do_cli
 
-        do_cli(config=config, **kwargs)
+            do_cli(config=config, **kwargs)
 
 
 @cli.command()
