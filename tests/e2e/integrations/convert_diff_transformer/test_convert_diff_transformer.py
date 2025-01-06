@@ -69,7 +69,7 @@ def test_conversion_cli_debug(tmp_path: Path, base_config):
         yaml.dump(base_config, file)
 
     cfg = load_cfg(str(config_path))
-    cli_args = ConvertDiffTransformerCliArgs(debug=True)
+    cli_args = ConvertDiffTransformerCliArgs(debug=True, init_scale=0.1)
     _, debug_info = convert_diff_transformer(cfg, cli_args, str(config_path))
 
     assert not debug_info["generations_match"]

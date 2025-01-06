@@ -191,6 +191,26 @@ class LlamaDifferentialModel(LlamaModel):
                         new_layer.self_attn.lambda_q2.zero_()
                         new_layer.self_attn.lambda_k2.zero_()
                         new_layer.self_attn.lambda_init.zero_()
+                else:
+                    logger.debug(
+                        f"Layer {layer_idx}: Initializing with scale {config.init_scale}"
+                    )
+                    # Initialize with small random values
+                    with torch.no_grad():
+                        new_layer.self_attn.q_proj.weight.data[old_q_size:].normal_(
+                            0, config.init_scale
+                        )
+                        new_layer.self_attn.k_proj.weight.data[old_k_size:].normal_(
+                            0, config.init_scale
+                        )
+                        new_layer.self_attn.lambda_q1.normal_(0, config.init_scale)
+                        new_layer.self_attn.lambda_k1.normal_(0, config.init_scale)
+                        new_layer.self_attn.lambda_q2.normal_(0, config.init_scale)
+                        new_layer.self_attn.lambda_k2.normal_(0, config.init_scale)
+                        if config.reinit_lambda_init:
+                            new_layer.self_attn.lambda_init.normal_(
+                                0, config.init_scale
+                            ).abs_()
 
         logger.info("Conversion complete")
         return new_model

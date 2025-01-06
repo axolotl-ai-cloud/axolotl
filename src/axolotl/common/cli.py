@@ -54,8 +54,10 @@ class ConvertDiffTransformerCliArgs:
 
     debug: bool = field(default=False)
     zero_init: bool = field(default=False)
-    sublayer_norm: bool = field(default=True)
+    sublayer_norm: bool = field(default=False)
     split_heads: bool = field(default=False)
+    init_scale: float = field(default=1e-6)
+    reinit_lambda_init: bool = field(default=True)
 
 
 def load_model_and_tokenizer(
