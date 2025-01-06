@@ -8,7 +8,7 @@ import logging
 from transformers import LlamaForCausalLM, Trainer
 from transformers.modeling_flash_attention_utils import _flash_attention_forward
 
-from axolotl.monkeypatch.unsloth_ import detab_code
+from axolotl.monkeypatch.utils import detab_code
 
 LOG = logging.getLogger("axolotl.monkeypatch.trainer_grad_accum")
 
