@@ -666,6 +666,8 @@ class AxolotlInputConfig(
     loss_watchdog_threshold: Optional[float] = None
     loss_watchdog_patience: Optional[int] = None
 
+    gc_steps: Optional[int] = None
+
     bf16: Optional[Union[Literal["auto"], bool]] = "auto"
     fp16: Optional[bool] = None
     bfloat16: Optional[bool] = None  # for non-AMP cases
@@ -792,7 +794,7 @@ class AxolotlInputConfig(
     chat_template_jinja: Optional[str] = None
     default_system_message: Optional[str] = None
 
-    fix_untrained_tokens: Optional[bool] = None
+    fix_untrained_tokens: Optional[Union[int, List[int]]] = None
 
     # INTERNALS - document for now, generally not set externally
     is_preprocess: Optional[bool] = None

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gc
 import logging
 import math
 import os
@@ -842,3 +843,17 @@ class SaveModelCallback(TrainerCallback):
     ):
         control.should_save = True
         return control
+
+
+class GCCallback(TrainerCallback):
+    """Callback to garbage collect torch cache"""
+
+    def __init__(self, gc_steps=None):
+        self.gc_steps = gc_steps
+
+    def on_step_end(
+        self, args, state, control, **kwargs  # pylint: disable=unused-argument
+    ):
+        if state.global_step % self.gc_steps == 0:
+            torch.cuda.empty_cache()
+            gc.collect()
