@@ -27,21 +27,28 @@ def cli():
 
 @cli.command()
 @click.argument("config", type=click.Path(exists=True, path_type=str))
+@click.option("--cloud", default=None, type=click.Path(exists=True, path_type=str))
 @add_options_from_dataclass(PreprocessCliArgs)
 @add_options_from_config(AxolotlInputConfig)
 @filter_none_kwargs
-def preprocess(config: str, **kwargs) -> None:
+def preprocess(config: str, cloud: Optional[str] = None, **kwargs) -> None:
     """
     Preprocess datasets before training.
 
     Args:
         config: Path to `axolotl` config YAML file.
+        cloud: Path to a cloud accelerator configuration file.
         kwargs: Additional keyword arguments which correspond to CLI args or `axolotl`
             config options.
     """
-    from axolotl.cli.preprocess import do_cli
+    if cloud:
+        from axolotl.cli.cloud import do_cli_preprocess
 
-    do_cli(config=config, **kwargs)
+        do_cli_preprocess(cloud_config=cloud, config=config)
+    else:
+        from axolotl.cli.preprocess import do_cli
+
+        do_cli(config=config, **kwargs)
 
 
 @cli.command()
@@ -51,47 +58,56 @@ def preprocess(config: str, **kwargs) -> None:
     default=True,
     help="Use accelerate launch for multi-GPU training",
 )
+@click.option("--cloud", default=None, type=click.Path(exists=True, path_type=str))
 @add_options_from_dataclass(TrainerCliArgs)
 @add_options_from_config(AxolotlInputConfig)
 @filter_none_kwargs
-def train(config: str, accelerate: bool, **kwargs) -> None:
+def train(config: str, accelerate: bool, cloud: Optional[str], **kwargs) -> None:
     """
     Train or fine-tune a model.
 
     Args:
         config: Path to `axolotl` config YAML file.
         accelerate: Whether to use `accelerate` launcher.
+        cloud: Path to a cloud accelerator configuration file
         kwargs: Additional keyword arguments which correspond to CLI args or `axolotl`
             config options.
     """
     # Enable expandable segments for cuda allocation to improve VRAM usage
     set_pytorch_cuda_alloc_conf()
+    from axolotl.cli.cloud import do_cli_train
 
     if "use_ray" in kwargs and kwargs["use_ray"]:
         accelerate = False
 
     if accelerate:
-        accelerate_args = []
-        if "main_process_port" in kwargs:
-            main_process_port = kwargs.pop("main_process_port", None)
-            accelerate_args.append("--main_process_port")
-            accelerate_args.append(str(main_process_port))
-        if "num_processes" in kwargs:
-            num_processes = kwargs.pop("num_processes", None)
-            accelerate_args.append("--num-processes")
-            accelerate_args.append(str(num_processes))
+        if cloud:
+            do_cli_train(cloud_config=cloud, config=config, accelerate=True)
+        else:
+            accelerate_args = []
+            if "main_process_port" in kwargs:
+                main_process_port = kwargs.pop("main_process_port", None)
+                accelerate_args.append("--main_process_port")
+                accelerate_args.append(str(main_process_port))
+            if "num_processes" in kwargs:
+                num_processes = kwargs.pop("num_processes", None)
+                accelerate_args.append("--num-processes")
+                accelerate_args.append(str(num_processes))
 
-        base_cmd = ["accelerate", "launch"]
-        base_cmd.extend(accelerate_args)
-        base_cmd.extend(["-m", "axolotl.cli.train"])
-        if config:
-            base_cmd.append(config)
-        cmd = build_command(base_cmd, kwargs)
-        subprocess.run(cmd, check=True)  # nosec B603
+            base_cmd = ["accelerate", "launch"]
+            base_cmd.extend(accelerate_args)
+            base_cmd.extend(["-m", "axolotl.cli.train"])
+            if config:
+                base_cmd.append(config)
+            cmd = build_command(base_cmd, kwargs)
+            subprocess.run(cmd, check=True)  # nosec B603
     else:
-        from axolotl.cli.train import do_cli
+        if cloud:
+            do_cli_train(cloud_config=cloud, config=config, accelerate=False)
+        else:
+            from axolotl.cli.train import do_cli
 
-        do_cli(config=config, **kwargs)
+            do_cli(config=config, **kwargs)
 
 
 @cli.command()
