@@ -245,7 +245,7 @@ def _lm_eval(config_yaml: str, volumes=None):
         f_out.write(config_yaml)
     run_folder = "/workspace/artifacts/axolotl"
     run_cmd(
-        "axolotl lm_eval /workspace/artifacts/axolotl/config.yaml",
+        "axolotl lm-eval /workspace/artifacts/axolotl/config.yaml",
         run_folder,
         volumes,
     )
