@@ -197,6 +197,15 @@ class ModalCloud(Cloud):
                     volumes={k: v[0] for k, v in self.volumes.items()},
                 )
 
+    def lm_eval(self, config_yaml: str):
+        modal_fn = self.get_train_env()(_lm_eval)
+        with modal.enable_output():
+            with self.app.run(detach=True):
+                modal_fn.remote(
+                    config_yaml,
+                    volumes={k: v[0] for k, v in self.volumes.items()},
+                )
+
 
 def _preprocess(config_yaml: str, volumes=None):
     Path("/workspace/artifacts/axolotl").mkdir(parents=True, exist_ok=True)
@@ -224,6 +233,19 @@ def _train(config_yaml: str, accelerate: bool = True, volumes=None):
         accelerate_args = "--no-accelerate"
     run_cmd(
         f"axolotl train {accelerate_args} /workspace/artifacts/axolotl/config.yaml",
+        run_folder,
+        volumes,
+    )
+
+
+def _lm_eval(config_yaml: str, volumes=None):
+    with open(
+        "/workspace/artifacts/axolotl/config.yaml", "w", encoding="utf-8"
+    ) as f_out:
+        f_out.write(config_yaml)
+    run_folder = "/workspace/artifacts/axolotl"
+    run_cmd(
+        "axolotl lm_eval /workspace/artifacts/axolotl/config.yaml",
         run_folder,
         volumes,
     )

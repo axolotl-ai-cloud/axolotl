@@ -42,3 +42,15 @@ def do_cli_train(
     with open(config, "r", encoding="utf-8") as file:
         config_yaml = file.read()
     cloud.train(config_yaml, accelerate=accelerate)
+
+
+def do_cli_lm_eval(
+    cloud_config: Union[Path, str],
+    config: Union[Path, str] = Path("examples/"),
+) -> None:
+    print_axolotl_text_art()
+    cloud_cfg = load_cloud_cfg(cloud_config)
+    cloud = ModalCloud(cloud_cfg)
+    with open(config, "r", encoding="utf-8") as file:
+        config_yaml = file.read()
+    cloud.lm_eval(config_yaml)
