@@ -227,9 +227,12 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         return True
 
     def is_prompt_batched(self, prompt: dict[str, Any]) -> bool:
-        return all(isinstance(v, list) for v in prompt.values()) and all(
-            isinstance(v, list) for v in prompt[self.messages]
-        )
+        try:
+            return all(isinstance(v, list) for v in prompt.values()) and all(
+                isinstance(v, list) for v in prompt[self.messages]
+            )
+        except KeyError:
+            return False
 
     def tokenize_prompt(self, prompt: dict[str, Any]):
         """
