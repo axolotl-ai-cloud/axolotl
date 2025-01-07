@@ -226,10 +226,13 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         # Let calling code know we can handle lists of examples
         return True
 
-    def tokenize_prompt(self, prompt: dict[str, Any]) -> Dict[str, List[List[int]]]:
+    def tokenize_prompt(self, prompt: dict[str, Any]):
         """
         Public method that can handle either a single prompt or a batch of prompts.
         """
+
+        if not all(isinstance(v, list) for v in prompt.values()):
+            return self._tokenize_single_prompt(prompt)
 
         res = defaultdict(lambda: [])
         feature_names = list(prompt.keys())
