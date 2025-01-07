@@ -2,7 +2,8 @@ const kProgressiveAttr = "data-src";
 let categoriesLoaded = false;
 
 window.quartoListingCategory = (category) => {
-  category = atob(category);
+  // category is URI encoded in EJS template for UTF-8 support
+  category = decodeURIComponent(atob(category));
   if (categoriesLoaded) {
     activateCategory(category);
     setCategoryHash(category);
