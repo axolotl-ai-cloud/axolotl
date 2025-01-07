@@ -5,7 +5,7 @@ import logging
 import sys
 from pathlib import Path
 from threading import Thread
-from typing import Optional, Union
+from typing import Union
 
 import fire
 import torch
@@ -15,7 +15,7 @@ from transformers import GenerationConfig, TextIteratorStreamer, TextStreamer
 
 from axolotl.cli.art import print_axolotl_text_art
 from axolotl.cli.config import load_cfg
-from axolotl.common.cli import TrainerCliArgs, load_model_and_tokenizer
+from axolotl.common.cli import InferenceCliArgs, load_model_and_tokenizer
 from axolotl.utils.chat_templates import (
     get_chat_template,
     get_chat_template_from_config,
@@ -25,7 +25,13 @@ from axolotl.utils.dict import DictDefault
 LOG = logging.getLogger(__name__)
 
 
-def get_multi_line_input() -> Optional[str]:
+def get_multi_line_input() -> str:
+    """
+    Gets multi-line input from terminal.
+
+    Returns:
+        Possibly multi-line, possibly empty stdin input as a string.
+    """
     print("Give me an instruction (Ctrl + D to submit): ")
     instruction = ""
     for line in sys.stdin:
@@ -37,9 +43,18 @@ def get_multi_line_input() -> Optional[str]:
 def do_inference(
     *,
     cfg: DictDefault,
-    cli_args: TrainerCliArgs,
+    cli_args: InferenceCliArgs,
 ):
-    model, tokenizer = load_model_and_tokenizer(cfg=cfg, cli_args=cli_args)
+    """
+    Runs inference on the command line in a loop. User input is accepted, a chat template
+    is (optionally) applied, and the model specified in the `axolotl` config is used to
+    generate completions according to a default generation config.
+
+    Args:
+        cfg: Dictionary mapping `axolotl` config keys to values.
+        cli_args: Training-specific CLI arguments.
+    """
+    model, tokenizer = load_model_and_tokenizer(cfg=cfg, inference=True)
     prompter = cli_args.prompter
 
     prompter_module = None
@@ -121,11 +136,20 @@ def do_inference(
 def do_inference_gradio(
     *,
     cfg: DictDefault,
-    cli_args: TrainerCliArgs,
+    cli_args: InferenceCliArgs,
 ):
+    """
+    Runs inference in a Gradio interface. User input is accepted, a chat template is
+    (optionally) applied, and the model specified in the `axolotl` config is used to
+    generate completions according to a default generation config.
+
+    Args:
+        cfg: Dictionary mapping `axolotl` config keys to values.
+        cli_args: Training-specific CLI arguments.
+    """
     import gradio as gr
 
-    model, tokenizer = load_model_and_tokenizer(cfg=cfg, cli_args=cli_args)
+    model, tokenizer = load_model_and_tokenizer(cfg=cfg, inference=True)
     prompter = cli_args.prompter
 
     prompter_module = None
@@ -218,16 +242,25 @@ def do_inference_gradio(
     )
 
 
-def do_cli(config: Union[Path, str] = Path("examples/"), gradio=False, **kwargs):
+def do_cli(
+    config: Union[Path, str] = Path("examples/"), gradio: bool = False, **kwargs
+) -> None:
+    """
+    Parses axolotl config, training-specific CLI args, and calls `do_inference` or
+    `do_inference_gradio` as a subroutine.
+
+    Args:
+        config: Path to `axolotl` config YAML file.
+        kwargs: Additional keyword arguments to override config file values.
+    """
     # pylint: disable=duplicate-code
     print_axolotl_text_art()
     parsed_cfg = load_cfg(config, inference=True, **kwargs)
     parsed_cfg.sample_packing = False
-    parser = transformers.HfArgumentParser((TrainerCliArgs))
+    parser = transformers.HfArgumentParser(InferenceCliArgs)
     parsed_cli_args, _ = parser.parse_args_into_dataclasses(
         return_remaining_strings=True
     )
-    parsed_cli_args.inference = True
 
     if gradio:
         do_inference_gradio(cfg=parsed_cfg, cli_args=parsed_cli_args)

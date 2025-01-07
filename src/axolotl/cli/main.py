@@ -29,7 +29,14 @@ def cli():
 @add_options_from_dataclass(PreprocessCliArgs)
 @add_options_from_config(AxolotlInputConfig)
 def preprocess(config: str, **kwargs):
-    """Preprocess datasets before training."""
+    """
+    Preprocess datasets before training.
+
+    Args:
+        config: Path to `axolotl` config YAML file.
+        kwargs: Additional keyword arguments which correspond to CLI args or `axolotl`
+            config options.
+    """
     kwargs = {k: v for k, v in kwargs.items() if v is not None}
 
     from axolotl.cli.preprocess import do_cli
@@ -46,8 +53,16 @@ def preprocess(config: str, **kwargs):
 )
 @add_options_from_dataclass(TrainerCliArgs)
 @add_options_from_config(AxolotlInputConfig)
-def train(config: str, accelerate: bool, **kwargs):
-    """Train or fine-tune a model."""
+def train(config: str, accelerate: bool, **kwargs) -> None:
+    """
+    Train or fine-tune a model.
+
+    Args:
+        config: Path to `axolotl` config YAML file.
+        accelerate: Whether to use `accelerate` launcher.
+        kwargs: Additional keyword arguments which correspond to CLI args or `axolotl`
+            config options.
+    """
     kwargs = {k: v for k, v in kwargs.items() if v is not None}
 
     # Enable expandable segments for cuda allocation to improve VRAM usage
@@ -74,8 +89,16 @@ def train(config: str, accelerate: bool, **kwargs):
 )
 @add_options_from_dataclass(EvaluateCliArgs)
 @add_options_from_config(AxolotlInputConfig)
-def evaluate(config: str, accelerate: bool, **kwargs):
-    """Evaluate a model."""
+def evaluate(config: str, accelerate: bool, **kwargs) -> None:
+    """
+    Evaluate a model.
+
+    Args:
+        config: Path to `axolotl` config YAML file.
+        accelerate: Whether to use `accelerate` launcher.
+        kwargs: Additional keyword arguments which correspond to CLI args or `axolotl`
+            config options.
+    """
     kwargs = {k: v for k, v in kwargs.items() if v is not None}
 
     if accelerate:
@@ -97,46 +120,32 @@ def evaluate(config: str, accelerate: bool, **kwargs):
     default=False,
     help="Use accelerate launch for multi-GPU inference",
 )
-@click.option(
-    "--lora-model-dir",
-    type=click.Path(exists=True, path_type=str),
-    help="Directory containing LoRA model",
-)
-@click.option(
-    "--base-model",
-    type=click.Path(exists=True, path_type=str),
-    help="Path to base model for non-LoRA models",
-)
 @click.option("--gradio", is_flag=True, help="Launch Gradio interface")
-@click.option("--load-in-8bit", is_flag=True, help="Load model in 8-bit mode")
 @add_options_from_dataclass(TrainerCliArgs)
 @add_options_from_config(AxolotlInputConfig)
-def inference(
-    config: str,
-    accelerate: bool,
-    lora_model_dir: Optional[str] = None,
-    base_model: Optional[str] = None,
-    **kwargs,
-):
-    """Run inference with a trained model."""
-    kwargs = {k: v for k, v in kwargs.items() if v is not None}
-    del kwargs["inference"]  # interferes with inference.do_cli
+def inference(config: str, accelerate: bool, gradio: bool, **kwargs) -> None:
+    """
+    Run inference with a trained model.
 
-    if lora_model_dir:
-        kwargs["lora_model_dir"] = lora_model_dir
-    if base_model:
-        kwargs["base_model"] = base_model
-
+    Args:
+        config: Path to `axolotl` config YAML file.
+        accelerate: Whether to use `accelerate` launcher.
+        gradio: Whether to use Gradio browser interface or command line for inference.
+        kwargs: Additional keyword arguments which correspond to CLI args or `axolotl`
+            config options.
+    """
     if accelerate:
         base_cmd = ["accelerate", "launch", "-m", "axolotl.cli.inference"]
         if config:
             base_cmd.append(config)
+        if gradio:
+            base_cmd.append("--gradio")
         cmd = build_command(base_cmd, kwargs)
         subprocess.run(cmd, check=True)  # nosec B603
     else:
         from axolotl.cli.inference import do_cli
 
-        do_cli(config=config, **kwargs)
+        do_cli(config=config, gradio=gradio, **kwargs)
 
 
 @cli.command()
@@ -146,20 +155,18 @@ def inference(
     default=False,
     help="Use accelerate launch for multi-GPU operations",
 )
-@click.option(
-    "--model-dir",
-    type=click.Path(exists=True, path_type=str),
-    help="Directory containing model weights to shard",
-)
-@click.option(
-    "--save-dir",
-    type=click.Path(path_type=str),
-    help="Directory to save sharded weights",
-)
 @add_options_from_dataclass(TrainerCliArgs)
 @add_options_from_config(AxolotlInputConfig)
-def shard(config: str, accelerate: bool, **kwargs):
-    """Shard model weights."""
+def shard(config: str, accelerate: bool, **kwargs) -> None:
+    """
+    Shard model weights into chunks.
+
+    Args:
+        config: Path to `axolotl` config YAML file.
+        accelerate: Whether to use `accelerate` launcher.
+        kwargs: Additional keyword arguments which correspond to CLI args or `axolotl`
+            config options.
+    """
     kwargs = {k: v for k, v in kwargs.items() if v is not None}
 
     if accelerate:
@@ -181,18 +188,18 @@ def shard(config: str, accelerate: bool, **kwargs):
     default=True,
     help="Use accelerate launch for weight merging",
 )
-@click.option(
-    "--model-dir",
-    type=click.Path(exists=True, path_type=str),
-    help="Directory containing sharded weights",
-)
-@click.option(
-    "--save-path", type=click.Path(path_type=str), help="Path to save merged weights"
-)
 @add_options_from_dataclass(TrainerCliArgs)
 @add_options_from_config(AxolotlInputConfig)
-def merge_sharded_fsdp_weights(config: str, accelerate: bool, **kwargs):
-    """Merge sharded FSDP model weights."""
+def merge_sharded_fsdp_weights(config: str, accelerate: bool, **kwargs) -> None:
+    """
+    Merge sharded FSDP model weights.
+
+    Args:
+        config: Path to `axolotl` config YAML file.
+        accelerate: Whether to use `accelerate` launcher.
+        kwargs: Additional keyword arguments which correspond to CLI args or `axolotl`
+            config options.
+    """
     kwargs = {k: v for k, v in kwargs.items() if v is not None}
 
     if accelerate:
@@ -214,27 +221,19 @@ def merge_sharded_fsdp_weights(config: str, accelerate: bool, **kwargs):
 
 @cli.command()
 @click.argument("config", type=click.Path(exists=True, path_type=str))
-@click.option(
-    "--lora-model-dir",
-    type=click.Path(exists=True, path_type=str),
-    help="Directory containing the LoRA model to merge",
-)
-@click.option(
-    "--output-dir",
-    type=click.Path(path_type=str),
-    help="Directory to save the merged model",
-)
-def merge_lora(
-    config: str,
-    lora_model_dir: Optional[str] = None,
-    output_dir: Optional[str] = None,
-):
-    """Merge a trained LoRA into a base model"""
-    kwargs = {}
-    if lora_model_dir:
-        kwargs["lora_model_dir"] = lora_model_dir
-    if output_dir:
-        kwargs["output_dir"] = output_dir
+@add_options_from_dataclass(TrainerCliArgs)
+@add_options_from_config(AxolotlInputConfig)
+def merge_lora(config: str, **kwargs) -> None:
+    """
+    Merge trained LoRA adapters into a base model.
+
+    Args:
+        config: Path to `axolotl` config YAML file.
+        accelerate: Whether to use `accelerate` launcher.
+        kwargs: Additional keyword arguments which correspond to CLI args or `axolotl`
+            config options.
+    """
+    kwargs = {k: v for k, v in kwargs.items() if v is not None}
 
     from axolotl.cli.merge_lora import do_cli
 
@@ -244,13 +243,17 @@ def merge_lora(
 @cli.command()
 @click.argument("directory", type=click.Choice(["examples", "deepspeed_configs"]))
 @click.option("--dest", help="Destination directory")
-def fetch(directory: str, dest: Optional[str]):
+def fetch(directory: str, dest: Optional[str]) -> None:
     """
     Fetch example configs or other resources.
 
     Available directories:
     - examples: Example configuration files
     - deepspeed_configs: DeepSpeed configuration files
+
+    Args:
+        directory: One of `examples`, `deepspeed_configs`.
+        dest: Optional destination directory.
     """
     fetch_from_github(f"{directory}/", dest)
 

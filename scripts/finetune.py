@@ -1,4 +1,5 @@
-"""Prepare and train a model on a dataset. Can also infer from a model or merge lora"""
+"""Prepare and train a model on a dataset. Can also infer from a model or merge lora."""
+
 import logging
 from pathlib import Path
 
@@ -30,19 +31,19 @@ def do_cli(config: Path = Path("examples/"), **kwargs):
     parsed_cfg = load_cfg(config, **kwargs)
     check_accelerate_default_config()
     check_user_token()
-    parser = transformers.HfArgumentParser((TrainerCliArgs))
+    parser = transformers.HfArgumentParser(TrainerCliArgs)
     parsed_cli_args, _ = parser.parse_args_into_dataclasses(
         return_remaining_strings=True
     )
     if parsed_cli_args.inference:
         do_inference(cfg=parsed_cfg, cli_args=parsed_cli_args)
     elif parsed_cli_args.merge_lora:
-        do_merge_lora(cfg=parsed_cfg, cli_args=parsed_cli_args)
+        do_merge_lora(cfg=parsed_cfg)
     elif parsed_cli_args.shard:
-        shard(cfg=parsed_cfg, cli_args=parsed_cli_args)
+        shard(cfg=parsed_cfg)
     else:
         dataset_meta = load_datasets(cfg=parsed_cfg, cli_args=parsed_cli_args)
-        train(cfg=parsed_cfg, cli_args=parsed_cli_args, dataset_meta=dataset_meta)
+        train(cfg=parsed_cfg, dataset_meta=dataset_meta)
 
 
 if __name__ == "__main__":

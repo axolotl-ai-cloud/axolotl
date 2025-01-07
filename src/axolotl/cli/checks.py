@@ -15,6 +15,7 @@ LOG = logging.getLogger(__name__)
 
 
 def check_accelerate_default_config():
+    """Logs at warning level if no accelerate config file is found."""
     if Path(config_args.default_yaml_config_file).exists():
         LOG.warning(
             f"accelerate config file found at {config_args.default_yaml_config_file}. This can lead to unexpected errors"
@@ -22,6 +23,14 @@ def check_accelerate_default_config():
 
 
 def check_user_token():
+    """Checks for HF user info. Check is skipped if HF_HUB_OFFLINE=1.
+
+    Returns:
+        Boolean indicating successful check (i.e., HF_HUB_OFFLINE=1 or HF user info is retrieved).
+
+    Raises:
+        LocalTokenNotFoundError: If HF user info can't be retrieved.
+    """
     # Skip check if HF_HUB_OFFLINE is set to True
     if os.getenv("HF_HUB_OFFLINE") == "1":
         LOG.info(

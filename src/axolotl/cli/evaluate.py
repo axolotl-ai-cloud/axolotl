@@ -29,7 +29,7 @@ def do_evaluate(cfg, cli_args) -> None:
     else:
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
-    evaluate(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
+    evaluate(cfg=cfg, dataset_meta=dataset_meta)
 
 
 def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs) -> None:

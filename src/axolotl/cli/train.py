@@ -15,21 +15,21 @@ from axolotl.cli.datasets import load_datasets, load_rl_datasets
 from axolotl.common.cli import TrainerCliArgs
 from axolotl.integrations.base import PluginManager
 from axolotl.train import train
+from axolotl.utils.dict import DictDefault
 
 LOG = logging.getLogger(__name__)
 
 
-def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
-    # pylint: disable=duplicate-code
-    parsed_cfg = load_cfg(config, **kwargs)
-    parser = HfArgumentParser((TrainerCliArgs))
-    parsed_cli_args, _ = parser.parse_args_into_dataclasses(
-        return_remaining_strings=True
-    )
-    return do_train(parsed_cfg, parsed_cli_args)
+def do_train(cfg: DictDefault, cli_args: TrainerCliArgs) -> None:
+    """
+    Trains transformer model by first loading the dataset(s) specified in the `axolotl`
+    config, and then calling `axolotl.train.train` as a subroutine. Also runs the plugin
+    manager's `post_train_unload` once training completes.
 
-
-def do_train(cfg, cli_args) -> None:
+    Args:
+        cfg: Dictionary mapping `axolotl` config keys to values.
+        cli_args: Training-specific CLI arguments.
+    """
     print_axolotl_text_art()
     check_accelerate_default_config()
     check_user_token()
@@ -39,13 +39,31 @@ def do_train(cfg, cli_args) -> None:
     else:
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
-    model, tokenizer = train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
+    model, tokenizer = train(cfg=cfg, dataset_meta=dataset_meta)
     plugin_manager = PluginManager.get_instance()
 
     del model
     del tokenizer
 
     plugin_manager.post_train_unload(cfg)
+
+
+def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs) -> None:
+    """
+    Parses `axolotl` config, training-specific CLI args, and calls `do_train` as a subroutine.
+
+    Args:
+        config: Path to `axolotl` config YAML file.
+        kwargs: Additional keyword arguments to override config file values.
+    """
+    # pylint: disable=duplicate-code
+    parsed_cfg = load_cfg(config, **kwargs)
+    parser = HfArgumentParser(TrainerCliArgs)
+    parsed_cli_args, _ = parser.parse_args_into_dataclasses(
+        return_remaining_strings=True
+    )
+
+    do_train(parsed_cfg, parsed_cli_args)
 
 
 if __name__ == "__main__":

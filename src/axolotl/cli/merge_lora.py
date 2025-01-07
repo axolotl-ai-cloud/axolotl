@@ -13,18 +13,23 @@ from axolotl.cli.config import load_cfg
 from axolotl.common.cli import TrainerCliArgs, load_model_and_tokenizer
 from axolotl.utils.dict import DictDefault
 
-LOG = logging.getLogger("axolotl.cli.merge_lora")
+LOG = logging.getLogger(__name__)
 
 
-def do_merge_lora(
-    *,
-    cfg: DictDefault,
-    cli_args: TrainerCliArgs,
-):
-    model, tokenizer = load_model_and_tokenizer(cfg=cfg, cli_args=cli_args)
+def do_merge_lora(*, cfg: DictDefault) -> None:
+    """
+    Calls `transformers`' `merge_and_unload` on the model given in the `axolotl` config
+    along with the LoRA adapters to combine them into a single base model.
+
+    Args:
+        cfg: Dictionary mapping `axolotl` config keys to values.
+    """
+    print_axolotl_text_art()
+
+    model, tokenizer = load_model_and_tokenizer(cfg=cfg)
     safe_serialization = cfg.save_safetensors is True
 
-    LOG.info("running merge of LoRA with base model")
+    LOG.info("Running merge of LoRA with base model...")
     model = model.merge_and_unload(progressbar=True)
     try:
         model.to(dtype=cfg.torch_dtype)
@@ -33,7 +38,7 @@ def do_merge_lora(
     model.generation_config.do_sample = True
 
     if cfg.local_rank == 0:
-        LOG.info(f"saving merged model to: {str(Path(cfg.output_dir) / 'merged')}")
+        LOG.info(f"Saving merged model to: {str(Path(cfg.output_dir) / 'merged')}...")
         model.save_pretrained(
             str(Path(cfg.output_dir) / "merged"),
             safe_serialization=safe_serialization,
@@ -42,10 +47,21 @@ def do_merge_lora(
         tokenizer.save_pretrained(str(Path(cfg.output_dir) / "merged"))
 
 
-def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
+def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs) -> None:
+    """
+    Parses `axolotl` config, training-specific CLI args, and calls `do_merge_lora` as a subroutine.
+    Note that various config values will be overwritten to allow the LoRA merge logic to work
+    as expected (`load_in_8bit=False`, `load_in4bit=False`, `flash_attention=False`, etc.).
+
+    Args:
+        config: Path to `axolotl` config YAML file.
+        kwargs: Additional keyword arguments to override config file values.
+
+    Raises:
+        ValueError: If target directory for LoRA merged model does not exist.
+    """
     # pylint: disable=duplicate-code
-    print_axolotl_text_art()
-    parser = transformers.HfArgumentParser((TrainerCliArgs))
+    parser = transformers.HfArgumentParser(TrainerCliArgs)
     parsed_cli_args, _ = parser.parse_args_into_dataclasses(
         return_remaining_strings=True
     )
@@ -76,7 +92,7 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
     parsed_cfg.fsdp = None
     parsed_cfg.fsdp_config = None
 
-    do_merge_lora(cfg=parsed_cfg, cli_args=parsed_cli_args)
+    do_merge_lora(cfg=parsed_cfg)
 
 
 if __name__ == "__main__":

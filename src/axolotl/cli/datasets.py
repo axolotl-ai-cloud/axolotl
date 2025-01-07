@@ -2,8 +2,9 @@
 import logging
 import math
 import random
+from typing import Union
 
-from axolotl.common.cli import TrainerCliArgs
+from axolotl.common.cli import PreprocessCliArgs, TrainerCliArgs
 from axolotl.train import TrainDatasetMeta
 from axolotl.utils.data import prepare_dataset
 from axolotl.utils.data.rl import load_prepare_dpo_datasets
@@ -17,7 +18,7 @@ LOG = logging.getLogger(__name__)
 def load_datasets(
     *,
     cfg: DictDefault,
-    cli_args: TrainerCliArgs,
+    cli_args: Union[PreprocessCliArgs, TrainerCliArgs],
 ) -> TrainDatasetMeta:
     tokenizer = load_tokenizer(cfg)
     processor = load_processor(cfg, tokenizer=tokenizer) if cfg.processor_type else None
@@ -61,7 +62,9 @@ def load_datasets(
 def load_rl_datasets(
     *,
     cfg: DictDefault,
-    cli_args: TrainerCliArgs,  # pylint: disable=unused-argument
+    cli_args: Union[
+        PreprocessCliArgs, TrainerCliArgs
+    ],  # pylint: disable=unused-argument
 ) -> TrainDatasetMeta:
     train_dataset, eval_dataset = load_prepare_dpo_datasets(cfg)
     total_num_steps = int(
