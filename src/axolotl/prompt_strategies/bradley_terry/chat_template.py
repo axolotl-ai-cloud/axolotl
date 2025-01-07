@@ -39,7 +39,7 @@ class BTChatTemplateStrategy(ChatTemplateStrategy):
             )
         prompt[self.messages].append({"role": "user", "content": prompt["input"]})
         prompt[self.messages].append({"role": "assistant", "content": prompt["chosen"]})
-        chosen_tokenized = super().tokenize_prompt(prompt)
+        chosen_tokenized = super()._tokenize_single_prompt(prompt)
 
         if len(chosen_tokenized["input_ids"]) > max_length:
             LOG.warning(
@@ -62,7 +62,7 @@ class BTChatTemplateStrategy(ChatTemplateStrategy):
         prompt[self.messages].append(
             {"role": "assistant", "content": prompt["rejected"]}
         )
-        rejected_tokenized = super().tokenize_prompt(prompt)
+        rejected_tokenized = super()._tokenize_single_prompt(prompt)
 
         if len(rejected_tokenized["input_ids"]) > max_length:
             LOG.warning(
