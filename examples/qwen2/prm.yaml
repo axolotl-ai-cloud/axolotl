@@ -1,7 +1,6 @@
-base_model:  Qwen/Qwen2.5-0.5B
+base_model: Qwen/Qwen2.5-0.5B
 # optionally might have model_type or tokenizer_type
 model_type: AutoModelForSequenceClassification
-num_labels: 1
 tokenizer_type: AutoTokenizer
 # Automatically upload checkpoint and final model to HF
 # hub_model_id: username/custom_model_name
@@ -10,8 +9,8 @@ load_in_8bit: false
 load_in_4bit: false
 strict: false
 
-reward_model: true
-chat_template: qwen_25
+process_reward_model: true
+chat_template: 
 datasets:
   - path: argilla/distilabel-intel-orca-dpo-pairs
     type: bradley_terry.chat_template
@@ -40,8 +39,8 @@ learning_rate: 0.0002
 
 train_on_inputs: false
 group_by_length: false
-bf16: true
-fp16:
+bf16: 
+fp16: true
 tf32: true
 
 gradient_checkpointing: true
@@ -51,8 +50,8 @@ early_stopping_patience:
 resume_from_checkpoint:
 local_rank:
 logging_steps: 1
-xformers_attention: 
-flash_attention: true
+xformers_attention: false
+flash_attention: false
 
 warmup_ratio: 0.1
 evals_per_epoch:

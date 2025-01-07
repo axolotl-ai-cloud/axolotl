@@ -1,8 +1,7 @@
 base_model: google/gemma-2-2b
 # optionally might have model_type or tokenizer_type
 model_type: AutoModelForSequenceClassification
-model_cfg:
-  num_labels: 1
+num_labels: 1
 tokenizer_type: AutoTokenizer
 # Automatically upload checkpoint and final model to HF
 # hub_model_id: username/custom_model_name

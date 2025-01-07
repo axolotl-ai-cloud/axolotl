@@ -138,9 +138,9 @@ def load_model_config(cfg):
     config_kwargs = {}
     if cfg.revision_of_model:
         config_kwargs["revision"] = cfg.revision_of_model
-    if cfg.model_cfg:
-        for k, v in cfg.model_cfg.items():
-            config_kwargs[k] = v
+    if cfg.num_labels:
+        # num_labels is used to initialize classifier models
+        config_kwargs["num_labels"] = cfg.num_labels
     try:
         model_config = AutoConfig.from_pretrained(
             model_config_name,
@@ -352,8 +352,8 @@ class ModelLoader:
     ) -> None:
         self.cfg = cfg
         self.tokenizer = tokenizer
-        self.inference: bool = inference
-        self.reference_model: bool = reference_model
+        self.inference = inference
+        self.reference_model = reference_model
 
         # init model kwargs
         self.model_kwargs: Dict[str, Any] = {}
