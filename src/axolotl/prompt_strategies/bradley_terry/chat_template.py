@@ -21,7 +21,7 @@ class BTChatTemplateStrategy(ChatTemplateStrategy):
     Bradley-Terry reward model pairwise chat template prompt strategy.
     """
 
-    def tokenize_prompt(self, prompt):
+    def _tokenize_single_prompt(self, prompt):
         """
 
         :param prompt: the actual row of data from the underlying dataset
