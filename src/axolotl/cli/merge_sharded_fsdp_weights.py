@@ -1,6 +1,5 @@
-"""
-This module provides a CLI to merge sharded FSDP model checkpoints into a single combined checkpoint
-"""
+"""CLI to merge sharded FSDP model checkpoints into a single combined checkpoint."""
+
 import json
 import logging
 import os
@@ -25,11 +24,11 @@ from huggingface_hub import split_torch_state_dict_into_shards
 from safetensors.torch import save_file as safe_save_file
 from torch.distributed.checkpoint.format_utils import _EmptyStateDictLoadPlanner
 
-from axolotl.cli import print_axolotl_text_art
+from axolotl.cli.art import print_axolotl_text_art
 from axolotl.cli.config import load_cfg
 from axolotl.common.cli import TrainerCliArgs
 
-LOG = logging.getLogger("axolotl.cli.merge_sharded_fsdp_weights")
+LOG = logging.getLogger(__name__)
 
 
 class BFloat16CastPlanner(_EmptyStateDictLoadPlanner):

@@ -1,6 +1,5 @@
-"""
-CLI to run training on a model
-"""
+"""CLI to run preprocessing of a dataset."""
+
 import logging
 import warnings
 from pathlib import Path
@@ -13,18 +12,15 @@ from colorama import Fore
 from dotenv import load_dotenv
 from transformers import AutoModelForCausalLM
 
-from axolotl.cli import (
-    check_accelerate_default_config,
-    check_user_token,
-    print_axolotl_text_art,
-)
+from axolotl.cli.art import print_axolotl_text_art
+from axolotl.cli.checks import check_accelerate_default_config, check_user_token
 from axolotl.cli.config import load_cfg
 from axolotl.cli.datasets import load_datasets, load_rl_datasets
 from axolotl.common.cli import PreprocessCliArgs
 from axolotl.common.const import DEFAULT_DATASET_PREPARED_PATH
 from axolotl.utils.trainer import disable_datasets_caching
 
-LOG = logging.getLogger("axolotl.cli.preprocess")
+LOG = logging.getLogger(__name__)
 
 
 def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):

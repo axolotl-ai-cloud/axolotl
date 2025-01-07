@@ -1,6 +1,5 @@
-"""
-CLI to run merge a trained LoRA into a base model
-"""
+"""CLI to merge a trained LoRA into a base model."""
+
 import logging
 from pathlib import Path
 from typing import Union
@@ -9,7 +8,7 @@ import fire
 import transformers
 from dotenv import load_dotenv
 
-from axolotl.cli import print_axolotl_text_art
+from axolotl.cli.art import print_axolotl_text_art
 from axolotl.cli.config import load_cfg
 from axolotl.common.cli import TrainerCliArgs, load_model_and_tokenizer
 from axolotl.utils.dict import DictDefault

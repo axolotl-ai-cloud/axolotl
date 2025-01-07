@@ -5,15 +5,12 @@ from pathlib import Path
 import fire
 import transformers
 
-from axolotl.cli import (
-    check_accelerate_default_config,
-    check_user_token,
-    do_inference,
-    do_merge_lora,
-    load_cfg,
-    load_datasets,
-    print_axolotl_text_art,
-)
+from axolotl.cli.art import print_axolotl_text_art
+from axolotl.cli.checks import check_accelerate_default_config, check_user_token
+from axolotl.cli.config import load_cfg
+from axolotl.cli.datasets import load_datasets
+from axolotl.cli.inference import do_inference
+from axolotl.cli.merge_lora import do_merge_lora
 from axolotl.cli.shard import shard
 from axolotl.common.cli import TrainerCliArgs
 from axolotl.train import train

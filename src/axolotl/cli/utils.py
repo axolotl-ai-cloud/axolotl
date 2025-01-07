@@ -1,4 +1,5 @@
-"""Utility methods for axoltl CLI."""
+"""Utility methods for axolotl CLI."""
+
 import concurrent.futures
 import dataclasses
 import hashlib
@@ -12,11 +13,16 @@ import click
 import requests
 from pydantic import BaseModel
 
-LOG = logging.getLogger("axolotl.cli.utils")
+LOG = logging.getLogger(__name__)
 
 
 def add_options_from_dataclass(config_class: Type[Any]):
-    """Create Click options from the fields of a dataclass."""
+    """
+    Create Click options from the fields of a dataclass.
+
+    Args:
+        config_class: Dataclass with fields to parse from the CLI
+    """
 
     def decorator(function):
         # Process dataclass fields in reverse order for correct option ordering
@@ -49,7 +55,12 @@ def add_options_from_dataclass(config_class: Type[Any]):
 
 
 def add_options_from_config(config_class: Type[BaseModel]):
-    """Create Click options from the fields of a Pydantic model."""
+    """
+    Create Click options from the fields of a Pydantic model.
+
+    Args:
+        config_class: PyDantic model with fields to parse from the CLI
+    """
 
     def decorator(function):
         # Process model fields in reverse order for correct option ordering
@@ -71,7 +82,16 @@ def add_options_from_config(config_class: Type[BaseModel]):
 
 
 def build_command(base_cmd: List[str], options: Dict[str, Any]) -> List[str]:
-    """Build command list from base command and options."""
+    """
+    Build command list from base command and options.
+
+    Args:
+        base_cmd: Command without options
+        options: Options to parse and append to base command
+
+    Returns:
+        List of strings giving shell command
+    """
     cmd = base_cmd.copy()
 
     for key, value in options.items():

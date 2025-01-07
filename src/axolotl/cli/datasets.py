@@ -11,7 +11,7 @@ from axolotl.utils.dict import DictDefault
 from axolotl.utils.models import load_processor, load_tokenizer
 from axolotl.utils.tokenization import check_dataset_labels
 
-LOG = logging.getLogger("axolotl.scripts")
+LOG = logging.getLogger(__name__)
 
 
 def load_datasets(

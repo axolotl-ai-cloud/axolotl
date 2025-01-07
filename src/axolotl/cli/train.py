@@ -1,6 +1,5 @@
-"""
-CLI to run training on a model
-"""
+"""CLI to run training on a model."""
+
 import logging
 from pathlib import Path
 from typing import Union
@@ -9,18 +8,15 @@ import fire
 from dotenv import load_dotenv
 from transformers.hf_argparser import HfArgumentParser
 
-from axolotl.cli import (
-    check_accelerate_default_config,
-    check_user_token,
-    print_axolotl_text_art,
-)
+from axolotl.cli.art import print_axolotl_text_art
+from axolotl.cli.checks import check_accelerate_default_config, check_user_token
 from axolotl.cli.config import load_cfg
 from axolotl.cli.datasets import load_datasets, load_rl_datasets
 from axolotl.common.cli import TrainerCliArgs
 from axolotl.integrations.base import PluginManager
 from axolotl.train import train
 
-LOG = logging.getLogger("axolotl.cli.train")
+LOG = logging.getLogger(__name__)
 
 
 def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):

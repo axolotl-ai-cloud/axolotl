@@ -1,4 +1,5 @@
 """CLI to run inference on a trained model."""
+
 import importlib
 import logging
 import sys
@@ -12,7 +13,7 @@ import transformers
 from dotenv import load_dotenv
 from transformers import GenerationConfig, TextIteratorStreamer, TextStreamer
 
-from axolotl.cli import print_axolotl_text_art
+from axolotl.cli.art import print_axolotl_text_art
 from axolotl.cli.config import load_cfg
 from axolotl.common.cli import TrainerCliArgs, load_model_and_tokenizer
 from axolotl.utils.chat_templates import (
@@ -21,7 +22,7 @@ from axolotl.utils.chat_templates import (
 )
 from axolotl.utils.dict import DictDefault
 
-LOG = logging.getLogger("axolotl.cli.inference")
+LOG = logging.getLogger(__name__)
 
 
 def get_multi_line_input() -> Optional[str]:

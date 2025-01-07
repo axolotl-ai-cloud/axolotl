@@ -1,6 +1,5 @@
-"""
-CLI to shard a trained model into 10GiB chunks
-"""
+"""CLI to shard a trained model into 10GiB chunks."""
+
 import logging
 from pathlib import Path
 from typing import Union
@@ -9,12 +8,12 @@ import fire
 import transformers
 from dotenv import load_dotenv
 
-from axolotl.cli import print_axolotl_text_art
+from axolotl.cli.art import print_axolotl_text_art
 from axolotl.cli.config import load_cfg
 from axolotl.common.cli import TrainerCliArgs, load_model_and_tokenizer
 from axolotl.utils.dict import DictDefault
 
-LOG = logging.getLogger("axolotl.scripts")
+LOG = logging.getLogger(__name__)
 
 
 def shard(
