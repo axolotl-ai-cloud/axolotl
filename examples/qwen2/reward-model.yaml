@@ -51,7 +51,7 @@ early_stopping_patience:
 resume_from_checkpoint:
 local_rank:
 logging_steps: 1
-xformers_attention: 
+xformers_attention:
 flash_attention: true
 
 warmup_ratio: 0.1

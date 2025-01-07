@@ -610,7 +610,7 @@ class AxolotlInputConfig(
     rl: Optional[RLType] = None
     reward_model: Optional[bool] = None
     process_reward_model: Optional[bool] = None
-    num_labels: int = None
+    num_labels: Optional[int] = None
     dpo_use_weighting: Optional[
         bool
     ] = None  # whether to use weighting in DPO trainer. If none, default is false in the trainer.
