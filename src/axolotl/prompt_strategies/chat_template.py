@@ -239,7 +239,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         Public method that can handle either a single prompt or a batch of prompts.
         """
 
-        if not self.is_prompt_batched(prompt):
+        if not self.is_prompt_batched(prompt) or not self.supports_batched:
             return self._tokenize_single_prompt(prompt)
 
         res = defaultdict(lambda: [])

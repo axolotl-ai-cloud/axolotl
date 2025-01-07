@@ -21,6 +21,10 @@ class BTChatTemplateStrategy(ChatTemplateStrategy):
     Bradley-Terry reward model pairwise chat template prompt strategy.
     """
 
+    @property
+    def supports_batched(self) -> bool:
+        return False
+
     def _tokenize_single_prompt(self, prompt):
         """
 
