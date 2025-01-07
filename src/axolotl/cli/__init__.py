@@ -411,7 +411,7 @@ def load_cfg(config: Union[str, Path] = Path("examples/"), **kwargs):
 
     # load the config from the yaml file
     with open(config, encoding="utf-8") as file:
-        cfg: DictDefault = DictDefault(yaml.safe_load(file))
+        cfg = DictDefault(yaml.safe_load(file))
     # if there are any options passed in the cli, if it is something that seems valid from the yaml,
     # then overwrite the value
     cfg_keys = cfg.keys()

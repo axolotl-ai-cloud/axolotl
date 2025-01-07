@@ -395,6 +395,7 @@ class ModelInputConfig(BaseModel):
     trust_remote_code: Optional[bool] = None
 
     model_kwargs: Optional[Dict[str, Any]] = None
+    model_cfg: Optional[Dict[str, Any]] = None
 
     @field_validator("trust_remote_code")
     @classmethod

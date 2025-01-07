@@ -50,8 +50,8 @@ from transformers.integrations.deepspeed import (
 from axolotl.common.architectures import MOE_ARCH_BLOCK
 from axolotl.models.mamba import fix_mamba_attn_for_loss
 from axolotl.monkeypatch.multipack import (
-    SUPPORTED_MULTIPACK_MODEL_TYPES,
     patch_for_multipack,
+    SUPPORTED_MULTIPACK_MODEL_TYPES,
 )
 from axolotl.prompt_tokenizers import LLAMA_DEFAULT_EOS_TOKEN
 from axolotl.utils.bench import log_gpu_memory_usage
@@ -138,7 +138,9 @@ def load_model_config(cfg):
     config_kwargs = {}
     if cfg.revision_of_model:
         config_kwargs["revision"] = cfg.revision_of_model
-
+    if cfg.model_cfg:
+        for k, v in cfg.model_cfg.items():
+            config_kwargs[k] = v
     try:
         model_config = AutoConfig.from_pretrained(
             model_config_name,
@@ -641,9 +643,9 @@ class ModelLoader:
                 )
             else:
                 if self.cfg.gptq_disable_exllama is not None:
-                    self.model_config.quantization_config[
-                        "disable_exllama"
-                    ] = self.cfg.gptq_disable_exllama
+                    self.model_config.quantization_config["disable_exllama"] = (
+                        self.cfg.gptq_disable_exllama
+                    )
                 self.model_kwargs["quantization_config"] = GPTQConfig(
                     **self.model_config.quantization_config
                 )
@@ -1290,7 +1292,7 @@ def setup_quantized_peft_meta_for_training(model: nn.Module):
 def load_lora(model, cfg, inference=False, config_only=False):
     # type: (PreTrainedModel, DictDefault, bool, bool) -> Tuple[Optional[PreTrainedModel], Optional[PeftConfig]]
 
-    from peft import LoraConfig, get_peft_model
+    from peft import get_peft_model, LoraConfig
 
     lora_target_modules = cfg.lora_target_modules or []
 
