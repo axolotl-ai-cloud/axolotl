@@ -101,6 +101,7 @@ class TestKnowledgeDistillation:
                 "lora_target_linear": True,
                 "lora_r": 16,
                 "lora_alpha": 32,
+                "lora_dropout": 0.0,
             }
             | kd_min_cfg
         )
