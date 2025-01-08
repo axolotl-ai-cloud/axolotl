@@ -6,9 +6,9 @@ from pathlib import Path
 from typing import List, Tuple, Union
 
 from datasets import (
+    concatenate_datasets,
     Dataset,
     DatasetDict,
-    concatenate_datasets,
     load_dataset,
     load_from_disk,
 )
@@ -450,13 +450,6 @@ def get_dataset_wrapper(
     ) and bradley_terry_load(
         config_dataset.type.split(".", 1)[1], tokenizer, cfg, config_dataset
     ):
-        dataset_prompter = UnsupportedPrompter()
-        dataset_wrapper = TokenizedPromptDataset(
-            ds_strategy,
-            dataset,
-            **ds_kwargs,
-        )
-    elif ds_strategy := config_dataset.type == "stepwise_supervised":
         dataset_prompter = UnsupportedPrompter()
         dataset_wrapper = TokenizedPromptDataset(
             ds_strategy,
