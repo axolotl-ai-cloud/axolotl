@@ -92,6 +92,8 @@ def build_command(base_cmd: List[str], options: Dict[str, Any]) -> List[str]:
         if isinstance(value, bool):
             if value:
                 cmd.append(f"--{key}")
+            else:
+                cmd.append(f"--no{key}")
         else:
             cmd.extend([f"--{key}", str(value)])
 
