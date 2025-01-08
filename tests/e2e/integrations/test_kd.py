@@ -16,7 +16,8 @@ from axolotl.utils.dict import DictDefault
 @pytest.fixture(name="kd_min_cfg")
 def min_cfg(temp_dir):
     return {
-        "base_model": "unsloth/Llama-3.2-1B",
+        "base_model": "osllmai-community/Llama-3.2-1B",
+        "tokenizer_config": "osllmai-community/Llama-3.3-70B-Instruct",
         "plugins": [
             "axolotl.integrations.kd.KDPlugin",
             "axolotl.integrations.liger.LigerPlugin",
@@ -62,6 +63,7 @@ def min_cfg(temp_dir):
         },
         "max_steps": 5,
         "output_dir": temp_dir,
+        "save_safetensors": True,
     }
 
 
