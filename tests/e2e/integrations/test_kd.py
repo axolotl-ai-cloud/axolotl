@@ -52,7 +52,7 @@ def min_cfg(temp_dir):
         "num_epochs": 1,
         "optimizer": "adamw_8bit",
         "lr_scheduler": "cosine",
-        "learning_rate": 0.0001,
+        "learning_rate": 0.00001,
         "bf16": "auto",
         "gradient_checkpointing": True,
         "flash_attention": True,
