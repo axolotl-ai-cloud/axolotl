@@ -15,9 +15,9 @@ from transformers import AutoModelForCausalLM
 from axolotl.cli.art import print_axolotl_text_art
 from axolotl.cli.checks import check_accelerate_default_config, check_user_token
 from axolotl.cli.config import load_cfg
-from axolotl.cli.datasets import load_datasets, load_rl_datasets
 from axolotl.common.cli import PreprocessCliArgs
 from axolotl.common.const import DEFAULT_DATASET_PREPARED_PATH
+from axolotl.common.datasets import load_datasets, load_rl_datasets
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.trainer import disable_datasets_caching
 
@@ -77,7 +77,7 @@ def do_preprocess(cfg: DictDefault, cli_args: PreprocessCliArgs) -> None:
 
 def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs) -> None:
     """
-    Parses `axolotl` config, preprocessing-specific CLI args, and calls `do_preprocess` as a subroutine.
+    Parses `axolotl` config, CLI args, and calls `do_preprocess`.
 
     Args:
         config: Path to `axolotl` config YAML file.

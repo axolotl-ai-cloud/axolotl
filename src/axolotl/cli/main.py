@@ -28,7 +28,7 @@ def cli():
 @click.argument("config", type=click.Path(exists=True, path_type=str))
 @add_options_from_dataclass(PreprocessCliArgs)
 @add_options_from_config(AxolotlInputConfig)
-def preprocess(config: str, **kwargs):
+def preprocess(config: str, **kwargs) -> None:
     """
     Preprocess datasets before training.
 
@@ -146,39 +146,6 @@ def inference(config: str, accelerate: bool, gradio: bool, **kwargs) -> None:
         from axolotl.cli.inference import do_cli
 
         do_cli(config=config, gradio=gradio, **kwargs)
-
-
-@cli.command()
-@click.argument("config", type=click.Path(exists=True, path_type=str))
-@click.option(
-    "--accelerate/--no-accelerate",
-    default=False,
-    help="Use accelerate launch for multi-GPU operations",
-)
-@add_options_from_dataclass(TrainerCliArgs)
-@add_options_from_config(AxolotlInputConfig)
-def shard(config: str, accelerate: bool, **kwargs) -> None:
-    """
-    Shard model weights into chunks.
-
-    Args:
-        config: Path to `axolotl` config YAML file.
-        accelerate: Whether to use `accelerate` launcher.
-        kwargs: Additional keyword arguments which correspond to CLI args or `axolotl`
-            config options.
-    """
-    kwargs = {k: v for k, v in kwargs.items() if v is not None}
-
-    if accelerate:
-        base_cmd = ["accelerate", "launch", "-m", "axolotl.cli.shard"]
-        if config:
-            base_cmd.append(config)
-        cmd = build_command(base_cmd, kwargs)
-        subprocess.run(cmd, check=True)  # nosec B603
-    else:
-        from axolotl.cli.shard import do_cli
-
-        do_cli(config=config, **kwargs)
 
 
 @cli.command()

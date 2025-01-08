@@ -52,7 +52,7 @@ def do_inference(
 
     Args:
         cfg: Dictionary mapping `axolotl` config keys to values.
-        cli_args: Training-specific CLI arguments.
+        cli_args: Inference-specific CLI arguments.
     """
     model, tokenizer = load_model_and_tokenizer(cfg=cfg, inference=True)
     prompter = cli_args.prompter
@@ -145,7 +145,7 @@ def do_inference_gradio(
 
     Args:
         cfg: Dictionary mapping `axolotl` config keys to values.
-        cli_args: Training-specific CLI arguments.
+        cli_args: Inference-specific CLI arguments.
     """
     import gradio as gr
 
@@ -246,8 +246,7 @@ def do_cli(
     config: Union[Path, str] = Path("examples/"), gradio: bool = False, **kwargs
 ) -> None:
     """
-    Parses axolotl config, training-specific CLI args, and calls `do_inference` or
-    `do_inference_gradio` as a subroutine.
+    Parses axolotl config, CLI args, and calls `do_inference` or `do_inference_gradio`.
 
     Args:
         config: Path to `axolotl` config YAML file.

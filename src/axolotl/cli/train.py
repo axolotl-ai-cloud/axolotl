@@ -11,8 +11,8 @@ from transformers.hf_argparser import HfArgumentParser
 from axolotl.cli.art import print_axolotl_text_art
 from axolotl.cli.checks import check_accelerate_default_config, check_user_token
 from axolotl.cli.config import load_cfg
-from axolotl.cli.datasets import load_datasets, load_rl_datasets
 from axolotl.common.cli import TrainerCliArgs
+from axolotl.common.datasets import load_datasets, load_rl_datasets
 from axolotl.integrations.base import PluginManager
 from axolotl.train import train
 from axolotl.utils.dict import DictDefault
@@ -22,8 +22,8 @@ LOG = logging.getLogger(__name__)
 
 def do_train(cfg: DictDefault, cli_args: TrainerCliArgs) -> None:
     """
-    Trains transformer model by first loading the dataset(s) specified in the `axolotl`
-    config, and then calling `axolotl.train.train` as a subroutine. Also runs the plugin
+    Trains a `transformers` model by first loading the dataset(s) specified in the
+    `axolotl` config, and then calling `axolotl.train.train`. Also runs the plugin
     manager's `post_train_unload` once training completes.
 
     Args:
@@ -50,7 +50,7 @@ def do_train(cfg: DictDefault, cli_args: TrainerCliArgs) -> None:
 
 def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs) -> None:
     """
-    Parses `axolotl` config, training-specific CLI args, and calls `do_train` as a subroutine.
+    Parses `axolotl` config, CLI args, and calls `do_train`.
 
     Args:
         config: Path to `axolotl` config YAML file.

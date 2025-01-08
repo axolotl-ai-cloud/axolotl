@@ -49,9 +49,9 @@ def do_merge_lora(*, cfg: DictDefault) -> None:
 
 def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs) -> None:
     """
-    Parses `axolotl` config, training-specific CLI args, and calls `do_merge_lora` as a subroutine.
-    Note that various config values will be overwritten to allow the LoRA merge logic to work
-    as expected (`load_in_8bit=False`, `load_in4bit=False`, `flash_attention=False`, etc.).
+    Parses `axolotl` config, CLI args, and calls `do_merge_lora`. Note that various
+    config values will be overwritten to allow the LoRA merge logic to work as expected
+    (`load_in_8bit=False`, `load_in4bit=False`, `flash_attention=False`, etc.).
 
     Args:
         config: Path to `axolotl` config YAML file.

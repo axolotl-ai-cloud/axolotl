@@ -34,7 +34,12 @@ def print_dep_versions():
 
 
 def print_legacy_axolotl_text_art(suffix=None):
-    """Prints axolotl ASCII art and dependency versions."""
+    """
+    Prints axolotl ASCII art and dependency versions.
+
+    Args:
+        suffix: Text to append to ASCII art text.
+    """
     font = "nancyj"
     ascii_text = "  axolotl"
     if suffix:

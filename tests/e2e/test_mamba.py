@@ -8,8 +8,8 @@ import unittest
 
 import pytest
 
-from axolotl.cli.datasets import load_datasets
 from axolotl.common.cli import TrainerCliArgs
+from axolotl.common.datasets import load_datasets
 from axolotl.train import train
 from axolotl.utils.config import normalize_config
 from axolotl.utils.dict import DictDefault
@@ -63,5 +63,10 @@ class TestMamba(unittest.TestCase):
         cli_args = TrainerCliArgs()
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
+<<<<<<< HEAD
         train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
         check_model_output_exists(temp_dir, cfg)
+=======
+        train(cfg=cfg, dataset_meta=dataset_meta)
+        assert (Path(temp_dir) / "pytorch_model.bin").exists()
+>>>>>>> 2a421127 (continued cleanup and documentation)

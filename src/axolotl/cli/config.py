@@ -28,7 +28,24 @@ from axolotl.utils.wandb_ import setup_wandb_env_vars
 LOG = logging.getLogger(__name__)
 
 
-def check_remote_config(config: Union[str, Path]):
+def check_remote_config(config: Union[str, Path]) -> Union[str, Path]:
+    """
+    First, determines if the passed config is a valid HTTPS URL. Then, attempts to query
+    for it and parse its content, first as JSON, then as YAML (YAML is preferred).
+    Finally, the parsed content is written to a local file and its path is returned.
+
+    Args:
+        config: HTTPS URL to a YAML or JSON file.
+
+    Returns:
+        Either the original `config` if it's not a valid HTTPS URL, or the path to the
+        downloaded remote config.
+
+    Raises:
+        ValueError: If the remote configuration is neither valid JSON or YAML.
+        RuntimeError: If some request-related exception occurs from the file download.
+        Exception: Catch-all for any other exception.
+    """
     # Check if the config is a valid HTTPS URL to a .yml or .yaml file
     if not (isinstance(config, str) and config.startswith("https://")):
         return config  # Return the original value if it's not a valid URL
@@ -42,9 +59,12 @@ def check_remote_config(config: Union[str, Path]):
 
         content = response.content
         try:
-            # Try parsing as JSON first to catch cases where JSON content is mistakenly considered YAML
+            # Try parsing as JSON first to catch cases where JSON content is mistakenly
+            # considered YAML.
             json.loads(content)
-            # Log a warning but do not raise an error; JSON is technically valid YAML - this can happen when you forget to point to a raw github link
+
+            # Log a warning but do not raise an error; JSON is technically valid YAML.
+            # This can happen when you forget to point to a raw GitHub link.
             LOG.warning(
                 f"Warning: The content of the file at {config} is JSON, which is technically valid YAML but might not be intended."
             )
@@ -75,7 +95,22 @@ def check_remote_config(config: Union[str, Path]):
 
 
 def choose_config(path: Path):
-    yaml_files = list(path.glob("*.yml"))
+    """
+    Helper method for choosing a `axolotl` config YAML file (considering only files
+    ending with `.yml` or `.yaml`). If more than one config file exists in the passed
+    `path`, the user is prompted to choose one.
+
+    Args:
+        path: Directory in which config file(s) are stored.
+
+    Returns:
+        Path to either (1) the sole YAML file, or (2) if more than one YAML files exist,
+        the user-selected YAML file.
+
+    Raises:
+        ValueError: If no YAML files are found in the given `path`.
+    """
+    yaml_files = list(path.glob("*.yml")) + list(path.glob("*.yaml"))
 
     if not yaml_files:
         raise ValueError(
@@ -104,11 +139,13 @@ def choose_config(path: Path):
     return chosen_file
 
 
-def prepare_plugins(cfg):
+def prepare_plugins(cfg: DictDefault):
     """
-    Prepare the plugins for the configuration
-    """
+    Registers the plugins for the given configuration.
 
+    Args:
+        cfg: Dictionary mapping `axolotl` config keys to values.
+    """
     if cfg.get("plugins"):
         plugin_manager = PluginManager.get_instance()
         for plugin_name in cfg["plugins"]:
@@ -116,15 +153,27 @@ def prepare_plugins(cfg):
 
 
 def load_cfg(config: Union[str, Path] = Path("examples/"), **kwargs):
+    """
+    Loads the `axolotl` configuration stored at `config`, validates it, and performs
+    various setup.
+
+    Args:
+        config: Path (local or remote) to `axolotl` config YAML file.
+        kwargs: Additional keyword arguments to override config file values.
+
+    Returns:
+        `DictDefault` mapping configuration keys to values.
+    """
     config = check_remote_config(config)
     if Path(config).is_dir():
         config = choose_config(Path(config))
 
-    # load the config from the yaml file
+    # Load the config from the yaml file
     with open(config, encoding="utf-8") as file:
         cfg: DictDefault = DictDefault(yaml.safe_load(file))
-    # if there are any options passed in the cli, if it is something that seems valid from the yaml,
-    # then overwrite the value
+
+    # If there are any options passed in the cli, if it is something that seems valid
+    # from the yaml, then overwrite the value
     cfg_keys = cfg.keys()
     for k, _ in kwargs.items():
         # if not strict, allow writing to cfg even if it's not in the yml already

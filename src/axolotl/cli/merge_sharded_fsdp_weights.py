@@ -32,9 +32,7 @@ LOG = logging.getLogger(__name__)
 
 
 class BFloat16CastPlanner(_EmptyStateDictLoadPlanner):
-    """
-    A custom planner to cast tensors to bfloat16 on the fly during loading.
-    """
+    """A custom planner to cast tensors to bfloat16 on the fly during loading."""
 
     def commit_tensor(self, read_item, tensor):  # pylint: disable=unused-argument
         tensor.copy_(tensor.to(torch.bfloat16))
@@ -45,11 +43,19 @@ def _distributed_checkpoint_to_merged_weights(
     save_path: str,
     safe_serialization: bool = False,
     max_shard_size: str = "5GB",
-):
+) -> Path:
     """
-    Passthrough to `torch.distributed.checkpoint.format_utils.dcp_to_torch_save`
+    Passthrough to `torch.distributed.checkpoint.format_utils.dcp_to_torch_save`. Will
+    save under `save_path` as either `model.safetensors` or `pytorch_model.bin`.
 
-    Will save under `save_path` as either `model.safetensors` or `pytorch_model.bin`.
+    Args:
+        checkpoint_dir: Directory where distributed checkpoint is saved.
+        save_path: Path to save model to.
+        safe_serialization: Whether to save in safetensors format.
+        max_shard_size: Max size of model shards to save.
+
+    Returns:
+        Path where model is saved.
     """
 
     state_dict: Dict = {}
@@ -79,6 +85,7 @@ def _distributed_checkpoint_to_merged_weights(
     state_dict_split = split_torch_state_dict_into_shards(
         state_dict, filename_pattern=filename_pattern, max_shard_size=max_shard_size
     )
+
     # Save index if sharded
     index = None
     if state_dict_split.is_sharded:
@@ -135,6 +142,9 @@ def merge_fsdp_weights(
             Whether to save the merged weights with safetensors (recommended).
         remove_checkpoint_dir (`bool`, *optional*, defaults to `False`):
             Whether to remove the checkpoint directory after merging.
+
+    Raises:
+        ValueError: If torch version < 2.3.0, or if `checkpoint_dir` does not exist.
     """
     checkpoint_dir_ = Path(checkpoint_dir)
     from accelerate.state import PartialState
@@ -178,18 +188,21 @@ def merge_fsdp_weights(
 
 
 def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
+    """
+    Parses `axolotl` config, CLI args, and calls `merge_fsdp_weights`.
+
+    Args:
+        config: Path to `axolotl` config YAML file.
+        kwargs: Additional keyword arguments to override config file values.
+    """
     # pylint: disable=duplicate-code
     print_axolotl_text_art()
-    parser = transformers.HfArgumentParser((TrainerCliArgs))
+    parser = transformers.HfArgumentParser(TrainerCliArgs)
     parsed_cli_args, _ = parser.parse_args_into_dataclasses(
         return_remaining_strings=True
     )
     parsed_cli_args.merge_lora = True
-
-    parsed_cfg = load_cfg(
-        config,
-        **kwargs,
-    )
+    parsed_cfg = load_cfg(config, **kwargs)
 
     fsdp_dir = Path(parsed_cfg.output_dir) / "pytorch_model_fsdp_0"
     merge_fsdp_weights(

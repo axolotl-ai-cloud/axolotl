@@ -5,20 +5,19 @@ import os
 import signal
 import sys
 import weakref
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Tuple, Union
+from typing import Tuple, Union
 
 import torch
 import transformers.modelcard
 from accelerate.logging import get_logger
 from accelerate.utils import save_fsdp_model
-from datasets import Dataset
 from peft import PeftModel
 from pkg_resources import get_distribution  # type: ignore
 from transformers import PreTrainedModel, PreTrainedTokenizer
 from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
 
+from axolotl.common.datasets import TrainDatasetMeta
 from axolotl.contribs.lgpl.unsloth import (  # pylint: disable = no-name-in-module
     fix_untrained_tokens,
 )
@@ -39,15 +38,6 @@ sys.path.insert(0, src_dir)
 
 configure_logging()
 LOG = get_logger(__name__)
-
-
-@dataclass
-class TrainDatasetMeta:
-    """Dataclass with fields for training and validation datasets and metadata."""
-
-    train_dataset: Dataset
-    eval_dataset: Optional[Dataset] = None
-    total_num_steps: Optional[int] = None
 
 
 def train(
