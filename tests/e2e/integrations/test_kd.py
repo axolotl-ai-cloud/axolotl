@@ -17,7 +17,7 @@ from axolotl.utils.dict import DictDefault
 def min_cfg(temp_dir):
     return {
         "base_model": "osllmai-community/Llama-3.2-1B",
-        "tokenizer_config": "osllmai-community/Llama-3.3-70B-Instruct",
+        "tokenizer_config": "axolotl-ai-co/Llama-3.3-70B-Instruct-tokenizer",
         "plugins": [
             "axolotl.integrations.kd.KDPlugin",
             "axolotl.integrations.liger.LigerPlugin",
