@@ -52,8 +52,7 @@ class TokenizedPromptDataset(Dataset):
         if self.prompt_tokenizer.supports_batched:
             map_kwargs["batched"] = True
             map_kwargs["batch_size"] = 100
-        import pdb
-        pdb.set_trace()
+
         return dataset.map(
             self.prompt_tokenizer.tokenize_prompt,
             num_proc=num_proc,

@@ -1957,9 +1957,9 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         if eval_data_collator := self.build_collator(
             training_args, is_eval=True, **data_collator_kwargs
         ):
-            if not self.cfg.reward_model:
+            if not (self.cfg.reward_model or self.cfg.process_reward_model):
                 trainer_kwargs["eval_data_collator"] = eval_data_collator
-        if not self.cfg.reward_model:
+        if not (self.cfg.reward_model or self.cfg.process_reward_model):
             trainer_kwargs["bench_data_collator"] = transformers.DataCollatorForSeq2Seq(
                 self.tokenizer,
                 return_tensors="pt",
@@ -1970,8 +1970,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             trainer_kwargs["processing_class"] = self.tokenizer
         else:
             trainer_kwargs["tokenizer"] = self.tokenizer
-
-        if (trainer_cls is not AxolotlRewardTrainer) and self.cfg.datasets is not None:
+        if not (trainer_cls in [AxolotlRewardTrainer, AxolotlPRMTrainer]) and self.cfg.datasets is not None:
             trainer_kwargs["dataset_tags"] = [
                 d["path"] for d in self.cfg.datasets if not Path(d["path"]).is_dir()
             ]

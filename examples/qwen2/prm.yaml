@@ -34,16 +34,15 @@ wandb_log_model:
 gradient_accumulation_steps: 4
 micro_batch_size: 2
 num_epochs: 4
-optimizer: adamw_bnb_8bit
+optimizer: adamw_torch
 lr_scheduler: cosine
 learning_rate: 0.0002
 
 train_on_inputs: false
 group_by_length: false
-bf16:
-fp16: true
-tf32: true
-
+float32: true
+fp16: false
+tf32: false
 gradient_checkpointing: true
 gradient_checkpointing_kwargs:
   use_reentrant: false

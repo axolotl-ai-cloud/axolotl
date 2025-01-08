@@ -31,7 +31,6 @@ class StepwiseSupervisedPromptTokenizingStrategy:
         step_separator: str = "\n",
         max_completion_length: Optional[int] = None,
         train_on_last_step_only: bool = False,
-        is_eval: bool = False,
     ):
         self.tokenizer = tokenizer
         self.train_on_inputs = train_on_inputs
@@ -39,7 +38,6 @@ class StepwiseSupervisedPromptTokenizingStrategy:
         self.step_separator = step_separator
         self.max_completion_length = max_completion_length
         self.train_on_last_step_only = train_on_last_step_only
-        self.is_eval = is_eval
 
     def tokenize_prompt(
         self, prompt: Dict[str, Union[str, List[str]]]
@@ -56,7 +54,7 @@ class StepwiseSupervisedPromptTokenizingStrategy:
         ]
 
         # Handle labels
-        if self.train_on_last_step_only and not self.is_eval:
+        if self.train_on_last_step_only:
             labels = [-100] * (len(prompt["labels"]) - 1) + [int(prompt["labels"][-1])]
         else:
             labels = [int(label) for label in prompt["labels"]]
@@ -89,7 +87,6 @@ class StepwiseSupervisedPromptTokenizingStrategy:
         # Combine prompt and completion
         input_ids = prompt_ids + completion_ids
         full_labels = [-100] * len(prompt_ids) + labels
-
         # Apply max sequence length
         if self.sequence_len:
             input_ids = input_ids[: self.sequence_len]
