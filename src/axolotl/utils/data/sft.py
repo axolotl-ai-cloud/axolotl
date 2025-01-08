@@ -456,6 +456,13 @@ def get_dataset_wrapper(
             dataset,
             **ds_kwargs,
         )
+    elif ds_strategy := config_dataset.type == "stepwise_supervised":
+        dataset_prompter = UnsupportedPrompter()
+        dataset_wrapper = TokenizedPromptDataset(
+            ds_strategy,
+            dataset,
+            **ds_kwargs,
+        )
     elif ds_strategy := load(
         config_dataset.type, tokenizer, cfg, config_dataset, processor=processor
     ):

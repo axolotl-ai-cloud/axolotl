@@ -382,7 +382,7 @@ class ModelInputConfig(BaseModel):
 
     base_model: str
     base_model_config: Optional[str] = None
-    cls_model_config: Optional[str] = None
+    cls_model_config: Optional[str] = None  #
     tokenizer_config: Optional[str] = None
     tokenizer_use_fast: Optional[bool] = None
     tokenizer_legacy: Optional[bool] = None
@@ -395,7 +395,6 @@ class ModelInputConfig(BaseModel):
     trust_remote_code: Optional[bool] = None
 
     model_kwargs: Optional[Dict[str, Any]] = None
-    model_cfg: Optional[Dict[str, Any]] = None
 
     @field_validator("trust_remote_code")
     @classmethod

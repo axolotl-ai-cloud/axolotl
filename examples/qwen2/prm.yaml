@@ -1,6 +1,7 @@
 base_model: Qwen/Qwen2.5-0.5B
 # optionally might have model_type or tokenizer_type
-model_type: AutoModelForSequenceClassification
+model_type: AutoModelForTokenClassification
+num_labels: 2
 tokenizer_type: AutoTokenizer
 # Automatically upload checkpoint and final model to HF
 # hub_model_id: username/custom_model_name
@@ -12,8 +13,8 @@ strict: false
 process_reward_model: true
 chat_template:
 datasets:
-  - path: argilla/distilabel-intel-orca-dpo-pairs
-    type: bradley_terry.chat_template
+  - path: trl-lib/prm800k
+    type: stepwise_supervised
 val_set_size: 0.0
 output_dir: ./outputs/out
 remove_unused_columns: false

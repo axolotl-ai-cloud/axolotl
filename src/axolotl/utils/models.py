@@ -352,8 +352,8 @@ class ModelLoader:
     ) -> None:
         self.cfg = cfg
         self.tokenizer = tokenizer
-        self.inference = inference
-        self.reference_model = reference_model
+        self.inference: bool = inference
+        self.reference_model: bool = reference_model
 
         # init model kwargs
         self.model_kwargs: Dict[str, Any] = {}
