@@ -5,6 +5,7 @@ import dataclasses
 import hashlib
 import json
 import logging
+from functools import wraps
 from pathlib import Path
 from types import NoneType
 from typing import Any, Dict, List, Optional, Tuple, Type, Union, get_args, get_origin
@@ -14,6 +15,26 @@ import requests
 from pydantic import BaseModel
 
 LOG = logging.getLogger(__name__)
+
+
+def filter_none_kwargs(func):
+    """
+    Wraps function to remove `None`-valued `kwargs`.
+
+    Args:
+        func: Function to wrap.
+
+    Returns:
+        Wrapped function.
+    """
+
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        """Filters out `None`-valued `kwargs`."""
+        filtered_kwargs = {k: v for k, v in kwargs.items() if v is not None}
+        return func(*args, **filtered_kwargs)
+
+    return wrapper
 
 
 def add_options_from_dataclass(config_class: Type[Any]):

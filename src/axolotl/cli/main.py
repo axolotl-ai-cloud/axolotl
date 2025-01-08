@@ -12,6 +12,7 @@ from axolotl.cli.utils import (
     add_options_from_dataclass,
     build_command,
     fetch_from_github,
+    filter_none_kwargs,
 )
 from axolotl.common.cli import EvaluateCliArgs, PreprocessCliArgs, TrainerCliArgs
 from axolotl.utils import set_pytorch_cuda_alloc_conf
@@ -28,6 +29,7 @@ def cli():
 @click.argument("config", type=click.Path(exists=True, path_type=str))
 @add_options_from_dataclass(PreprocessCliArgs)
 @add_options_from_config(AxolotlInputConfig)
+@filter_none_kwargs
 def preprocess(config: str, **kwargs) -> None:
     """
     Preprocess datasets before training.
@@ -37,8 +39,6 @@ def preprocess(config: str, **kwargs) -> None:
         kwargs: Additional keyword arguments which correspond to CLI args or `axolotl`
             config options.
     """
-    kwargs = {k: v for k, v in kwargs.items() if v is not None}
-
     from axolotl.cli.preprocess import do_cli
 
     do_cli(config=config, **kwargs)
@@ -53,6 +53,7 @@ def preprocess(config: str, **kwargs) -> None:
 )
 @add_options_from_dataclass(TrainerCliArgs)
 @add_options_from_config(AxolotlInputConfig)
+@filter_none_kwargs
 def train(config: str, accelerate: bool, **kwargs) -> None:
     """
     Train or fine-tune a model.
@@ -63,8 +64,6 @@ def train(config: str, accelerate: bool, **kwargs) -> None:
         kwargs: Additional keyword arguments which correspond to CLI args or `axolotl`
             config options.
     """
-    kwargs = {k: v for k, v in kwargs.items() if v is not None}
-
     # Enable expandable segments for cuda allocation to improve VRAM usage
     set_pytorch_cuda_alloc_conf()
 
@@ -89,6 +88,7 @@ def train(config: str, accelerate: bool, **kwargs) -> None:
 )
 @add_options_from_dataclass(EvaluateCliArgs)
 @add_options_from_config(AxolotlInputConfig)
+@filter_none_kwargs
 def evaluate(config: str, accelerate: bool, **kwargs) -> None:
     """
     Evaluate a model.
@@ -99,8 +99,6 @@ def evaluate(config: str, accelerate: bool, **kwargs) -> None:
         kwargs: Additional keyword arguments which correspond to CLI args or `axolotl`
             config options.
     """
-    kwargs = {k: v for k, v in kwargs.items() if v is not None}
-
     if accelerate:
         base_cmd = ["accelerate", "launch", "-m", "axolotl.cli.evaluate"]
         if config:
@@ -123,6 +121,7 @@ def evaluate(config: str, accelerate: bool, **kwargs) -> None:
 @click.option("--gradio", is_flag=True, help="Launch Gradio interface")
 @add_options_from_dataclass(TrainerCliArgs)
 @add_options_from_config(AxolotlInputConfig)
+@filter_none_kwargs
 def inference(config: str, accelerate: bool, gradio: bool, **kwargs) -> None:
     """
     Run inference with a trained model.
@@ -157,6 +156,7 @@ def inference(config: str, accelerate: bool, gradio: bool, **kwargs) -> None:
 )
 @add_options_from_dataclass(TrainerCliArgs)
 @add_options_from_config(AxolotlInputConfig)
+@filter_none_kwargs
 def merge_sharded_fsdp_weights(config: str, accelerate: bool, **kwargs) -> None:
     """
     Merge sharded FSDP model weights.
@@ -167,8 +167,6 @@ def merge_sharded_fsdp_weights(config: str, accelerate: bool, **kwargs) -> None:
         kwargs: Additional keyword arguments which correspond to CLI args or `axolotl`
             config options.
     """
-    kwargs = {k: v for k, v in kwargs.items() if v is not None}
-
     if accelerate:
         base_cmd = [
             "accelerate",
@@ -190,6 +188,7 @@ def merge_sharded_fsdp_weights(config: str, accelerate: bool, **kwargs) -> None:
 @click.argument("config", type=click.Path(exists=True, path_type=str))
 @add_options_from_dataclass(TrainerCliArgs)
 @add_options_from_config(AxolotlInputConfig)
+@filter_none_kwargs
 def merge_lora(config: str, **kwargs) -> None:
     """
     Merge trained LoRA adapters into a base model.
@@ -200,8 +199,6 @@ def merge_lora(config: str, **kwargs) -> None:
         kwargs: Additional keyword arguments which correspond to CLI args or `axolotl`
             config options.
     """
-    kwargs = {k: v for k, v in kwargs.items() if v is not None}
-
     from axolotl.cli.merge_lora import do_cli
 
     do_cli(config=config, **kwargs)

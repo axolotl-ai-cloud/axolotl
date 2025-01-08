@@ -1,4 +1,5 @@
 """pytest tests for axolotl CLI inference command."""
+
 from unittest.mock import patch
 
 from axolotl.cli.main import cli
