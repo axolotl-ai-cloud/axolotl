@@ -72,6 +72,7 @@ class TestKnowledgeDistillation:
 
     def test_llama_kd(self, temp_dir, kd_min_cfg):
         cfg = DictDefault(kd_min_cfg)
+        # pylint: disable=duplicate-code
         prepare_plugins(cfg)
         normalize_config(cfg)
         cli_args = TrainerCliArgs()
