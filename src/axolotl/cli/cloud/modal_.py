@@ -168,7 +168,7 @@ class ModalCloud(Cloud):
     def get_train_timeout(self):
         if self.config.timeout:
             return int(self.config.timeout)
-        return 60 * 60 * 24  # 30 hours
+        return 60 * 60 * 24  # 24 hours
 
     def get_train_gpu(self):  # pylint: disable=too-many-return-statements
         count = self.config.gpu_count or 1
@@ -180,7 +180,7 @@ class ModalCloud(Cloud):
             return modal.gpu.A100(count=count, size="40GB")
         if family == "a100-80gb":
             return modal.gpu.A100(count=count, size="80GB")
-        if family == "a10g":
+        if family in ["a10", "a10g"]:
             return modal.gpu.A10G(count=count)
         if family == "h100":
             return modal.gpu.H100(count=count)
