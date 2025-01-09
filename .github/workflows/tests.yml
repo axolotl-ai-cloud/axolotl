@@ -220,7 +220,7 @@ jobs:
       - name: Install Modal
         run: |
           python -m pip install --upgrade pip
-          pip install modal==0.63.64 jinja2
+          pip install modal==0.71.8 jinja2
       - name: Update env vars
         run: |
           echo "BASE_TAG=main-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}" >> $GITHUB_ENV
@@ -266,7 +266,7 @@ jobs:
       - name: Install Modal
         run: |
           python -m pip install --upgrade pip
-          pip install modal==0.63.64 jinja2
+          pip install modal==0.71.8 jinja2
       - name: Update env vars
         run: |
           echo "BASE_TAG=main-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}" >> $GITHUB_ENV
