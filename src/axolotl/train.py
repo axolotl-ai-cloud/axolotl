@@ -141,8 +141,7 @@ def train(
         model.config.save_pretrained(str(Path(cfg.output_dir)))
 
     # In case we want to stop early with ctrl+c, this is a nice to have to save the pretrained model
-    if cfg.local_rank == 0:
-
+    if cfg.local_rank == 0 and not cfg.use_ray: # ray workers don't have access to this signal
         def terminate_handler(_, __, model_weakref):
             if model_weakref() is not None:
                 _model = model_weakref()

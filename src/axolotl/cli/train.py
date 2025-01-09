@@ -7,6 +7,7 @@ from typing import Union
 import fire
 from dotenv import load_dotenv
 from transformers.hf_argparser import HfArgumentParser
+from accelerate import Accelerator
 
 from axolotl.cli.args import TrainerCliArgs
 from axolotl.cli.art import print_axolotl_text_art
@@ -16,6 +17,7 @@ from axolotl.common.datasets import load_datasets, load_preference_datasets
 from axolotl.integrations.base import PluginManager
 from axolotl.train import train
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.config import normalize_config
 
 LOG = logging.getLogger(__name__)
 
@@ -63,7 +65,47 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs) -> None:
         return_remaining_strings=True
     )
 
-    do_train(parsed_cfg, parsed_cli_args)
+    if parsed_cfg.use_ray:
+        from ray.train import ScalingConfig, RunConfig
+        from ray.train.torch import TorchTrainer
+
+        train_loop_config = {"cfg": parsed_cfg.to_dict(), "cli_args": parsed_cli_args}
+        trainer = TorchTrainer(
+            ray_train_func,
+            train_loop_config=train_loop_config,
+            scaling_config=ScalingConfig(
+                num_workers=parsed_cfg.ray_num_workers,
+                resources_per_worker=parsed_cfg.resources_per_worker.to_dict(),
+                use_gpu=True,
+            ),
+            run_config=RunConfig(
+                name=parsed_cfg.ray_run_name,
+                storage_path=Path("./saves").absolute().as_posix(),
+            ),
+        )
+        trainer.fit()
+    else:
+        return do_train(parsed_cfg, parsed_cli_args)
+
+
+def ray_train_func(kwargs: dict):
+    # cast `cfg` back to DictDefault (ray tune deepcopy has issues with DictDefault so needed it to be dict)
+    # also renormalize the config now that TorchTrainer has spawned distributed workers
+    cfg = DictDefault(kwargs["cfg"])
+    normalize_config(cfg)
+
+    # ray serializing objects gets rid of frozen attribute - HF expects dict not DefaultDict
+    if cfg.deepspeed:
+        cfg.deepspeed = cfg.deepspeed.to_dict()
+    if cfg.fsdp:
+        cfg.fsdp = cfg.fsdp.to_dict()
+
+    # initialize accelerator before model instantiation
+    Accelerator(gradient_accumulation_steps=cfg.gradient_accumulation_steps)
+
+    kwargs["cfg"] = cfg
+
+    do_train(**kwargs)
 
 
 if __name__ == "__main__":
