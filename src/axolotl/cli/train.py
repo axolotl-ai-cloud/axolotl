@@ -10,6 +10,9 @@ from dotenv import load_dotenv
 from transformers.hf_argparser import HfArgumentParser
 from accelerate import Accelerator, DeepSpeedPlugin, FullyShardedDataParallelPlugin
 
+import json
+import os
+
 from axolotl.cli import (
     check_accelerate_default_config,
     check_user_token,
@@ -37,19 +40,8 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
     return do_train(parsed_cfg, parsed_cli_args)
 
 def initialize_accelerator(config: DictDefault) -> Accelerator:
-    accelerator_kwargs = {}
-
-    # Get deepspeed config to setup the batch size per device
-    if config.deepspeed:
-        ds_plugin = DeepSpeedPlugin(hf_ds_config=config.deepspeed)
-        accelerator_kwargs["deepspeed_plugin"] = ds_plugin
-    # elif config.fsdp:
-    #     fsdp_plugin = FullyShardedDataParallelPlugin(**config.fsdp)
-    #     accelerator_kwargs["fsdp_plugin"] = fsdp_plugin
-
-    # Initialize accelerator
+    # Initialize accelerator (needed for logging)
     accelerator = Accelerator(
-        **accelerator_kwargs,
         gradient_accumulation_steps=config.gradient_accumulation_steps,
     )
     return accelerator
@@ -61,6 +53,8 @@ def ray_train_func(kwargs: dict):
     normalize_config(kwargs["cfg"])
     kwargs["cfg"]["use_ray"] = True
 
+    # ray serializing objects gets rid of frozen attribute?
+    kwargs["cfg"].deepspeed = kwargs["cfg"].deepspeed.to_dict()
     # initialize accelerator before model instantiation
     accelerator = initialize_accelerator(kwargs["cfg"])
     kwargs["cfg"]["accelerator"] = accelerator
@@ -76,23 +70,23 @@ def do_train(cfg, cli_args) -> None:
         dataset_meta = load_rl_datasets(cfg=cfg, cli_args=cli_args)
     else:
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
+
     
+    # import ray
     from ray.train import RunConfig, ScalingConfig
     from ray.train.torch import TorchTrainer
     train_loop_config = {"cfg": cfg.to_dict(), "cli_args": cli_args, "dataset_meta": dataset_meta}
-    
+    # import axolotl
+    # ray.init(runtime_env={"py_modules": [axolotl]})
+
     trainer = TorchTrainer(
         ray_train_func,
         train_loop_config=train_loop_config,
         scaling_config=ScalingConfig(
-            num_workers=2,
+            num_workers=8,
             resources_per_worker={"GPU": 1},
             use_gpu=True,
         ),
-        # run_config=RunConfig(
-        #     name=None,
-        #     storage_path=Path("./saves").absolute().as_posix(),
-        # ),
     )
     trainer.fit()
     # model, tokenizer = train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)

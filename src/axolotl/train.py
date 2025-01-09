@@ -157,17 +157,6 @@ def train(
     if hasattr(model, "config"):
         model.config.save_pretrained(str(Path(cfg.output_dir)))
 
-    # if we are using ray, we need to call accelerator.prepare on the model
-    if cfg.use_ray:
-        assert "accelerator" in cfg, "accelerator must be passed in cfg for ray"
-        accelerator = cfg.accelerator
-        trainer.model, trainer.optimizer, trainer.lr_scheduler = accelerator.prepare(
-                model, trainer.optimizer, trainer.lr_scheduler
-            )
-        if cfg.deepspeed and cfg.gradient_checkpointing:
-            if hasattr(trainer.model, "gradient_checkpointing_enable"):
-                trainer.model.gradient_checkpointing_enable()
-
     # In case we want to stop early with ctrl+c, this is a nice to have to save the pretrained model
     if cfg.local_rank == 0 and not cfg.use_ray:
         def terminate_handler(_, __, model_weakref):

@@ -1,6 +1,7 @@
 """Module for working with config dicts"""
 import logging
 import os
+import json
 from typing import Optional
 
 import torch
@@ -109,6 +110,12 @@ def normalize_config(cfg):
         cfg.torch_dtype = torch.float16
     else:
         cfg.torch_dtype = torch.float32
+
+    if cfg.deepspeed:
+        if isinstance(cfg.deepspeed, str) and os.path.exists(cfg.deepspeed):
+            ds_config_path = cfg.deepspeed
+            with open(ds_config_path, encoding="utf-8") as f:
+                cfg.deepspeed = json.load(f)
 
     if cfg.saves_per_epoch:
         save_steps = 1.0 / (cfg.saves_per_epoch * cfg.num_epochs)
