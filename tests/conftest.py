@@ -37,7 +37,8 @@ def retry_on_request_exceptions(max_retries=3, delay=1):
 
 @retry_on_request_exceptions(max_retries=3, delay=5)
 def snapshot_download_w_retry(*args, **kwargs):
-    return snapshot_download(*args, **kwargs)
+    url = snapshot_download(*args, **kwargs)
+    raise f"{args[0]}: {url}"
 
 
 @pytest.fixture(scope="session", autouse=True)
