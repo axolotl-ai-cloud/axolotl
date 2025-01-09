@@ -1,6 +1,7 @@
 name: lint
 on:
   # check on PRs, and manual triggers
+  merge_group:
   pull_request:
       paths:
        - '**.py'

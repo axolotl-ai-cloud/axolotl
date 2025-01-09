@@ -1,6 +1,7 @@
 name: Tests
 on:
   # check on push/merge to main, PRs, and manual triggers
+  merge_group:
   push:
     branches:
       - "main"
