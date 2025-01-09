@@ -2,7 +2,7 @@
 
 # START section of dependencies that don't install on Darwin/MacOS
 bitsandbytes==0.45.0
-triton>=2.3.0
+triton>=3.0.0
 mamba-ssm==1.2.0.post1
 flash-attn==2.7.0.post2
 xformers>=0.0.23.post1
