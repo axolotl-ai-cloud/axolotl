@@ -50,7 +50,9 @@ class TestValidation:
             | minimal_liger_cfg
         )
 
-        with self._caplog.at_level(logging.WARNING):
+        with self._caplog.at_level(
+            logging.WARNING, logger="axolotl.integrations.liger.args"
+        ):
             prepare_plugins(test_cfg)
             updated_cfg = validate_config(test_cfg)
             assert (
