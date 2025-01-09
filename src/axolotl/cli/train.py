@@ -34,7 +34,22 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
     parsed_cli_args, _ = parser.parse_args_into_dataclasses(
         return_remaining_strings=True
     )
-    return do_train(parsed_cfg, parsed_cli_args)
+
+    from ray.train import ScalingConfig
+    from ray.train.torch import TorchTrainer
+
+    train_loop_config = {"cfg": parsed_cfg.to_dict(), "cli_args": parsed_cli_args}
+    trainer = TorchTrainer(
+        ray_train_func,
+        train_loop_config=train_loop_config,
+        scaling_config=ScalingConfig(
+            num_workers=4,
+            resources_per_worker={"GPU": 1},
+            use_gpu=True,
+        ),
+    )
+    trainer.fit()
+    # return do_train(parsed_cfg, parsed_cli_args)
 
 def initialize_accelerator(config: DictDefault) -> Accelerator:
     # Initialize accelerator (needed for logging)
@@ -59,36 +74,21 @@ def ray_train_func(kwargs: dict):
     accelerator = initialize_accelerator(config)
     config["accelerator"] = accelerator
 
-
-    if config.rl:  # and cfg.rl != "orpo":
-        dataset_meta = load_rl_datasets(cfg=config, cli_args=kwargs["cli_args"])
-    else:
-        dataset_meta = load_datasets(cfg=config, cli_args=kwargs["cli_args"])
-
-
-    kwargs["dataset_meta"] = dataset_meta
-    train(**kwargs)
+    do_train(**kwargs)
     
 def do_train(cfg, cli_args) -> None:
     print_axolotl_text_art()
     check_accelerate_default_config()
     check_user_token()
     
-    from ray.train import ScalingConfig
-    from ray.train.torch import TorchTrainer
-    train_loop_config = {"cfg": cfg.to_dict(), "cli_args": cli_args}
+    if cfg.rl:  # and cfg.rl != "orpo":
+        dataset_meta = load_rl_datasets(cfg=cfg, cli_args=cli_args)
+    else:
+        dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
-    trainer = TorchTrainer(
-        ray_train_func,
-        train_loop_config=train_loop_config,
-        scaling_config=ScalingConfig(
-            num_workers=8,
-            resources_per_worker={"GPU": 1},
-            use_gpu=True,
-        ),
-    )
-    trainer.fit()
-    # model, tokenizer = train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
+    # train_loop_config = {"cfg": cfg.to_dict(), "cli_args": cli_args, "dataset_meta": dataset_meta}
+    # ray_train_func(train_loop_config)
+    model, tokenizer = train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
     plugin_manager = PluginManager.get_instance()
 
     del model
