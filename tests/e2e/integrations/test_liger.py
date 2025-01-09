@@ -21,22 +21,19 @@ class LigerIntegrationTestCase:
     def test_llama_wo_flce(self, temp_dir):
         cfg = DictDefault(
             {
-                "base_model": "JackFram/llama-68m",
-                "tokenizer_type": "LlamaTokenizer",
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
                 "plugins": [
                     "axolotl.integrations.liger.LigerPlugin",
                 ],
                 "liger_rope": True,
                 "liger_rms_norm": True,
-                "liger_swiglu": True,
+                "liger_glu_activation": True,
                 "liger_cross_entropy": True,
                 "liger_fused_linear_cross_entropy": False,
                 "sequence_len": 1024,
-                "val_set_size": 0.1,
+                "val_set_size": 0.05,
                 "special_tokens": {
-                    "unk_token": "<unk>",
-                    "bos_token": "<s>",
-                    "eos_token": "</s>",
+                    "pad_token": "<|endoftext|>",
                 },
                 "datasets": [
                     {
@@ -45,15 +42,15 @@ class LigerIntegrationTestCase:
                     },
                 ],
                 "num_epochs": 1,
-                "micro_batch_size": 8,
-                "gradient_accumulation_steps": 1,
+                "micro_batch_size": 2,
+                "gradient_accumulation_steps": 2,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_torch",
                 "lr_scheduler": "cosine",
                 "save_safetensors": True,
                 "bf16": "auto",
-                "max_steps": 10,
+                "max_steps": 5,
             }
         )
         prepare_plugins(cfg)
@@ -68,22 +65,19 @@ class LigerIntegrationTestCase:
     def test_llama_w_flce(self, temp_dir):
         cfg = DictDefault(
             {
-                "base_model": "JackFram/llama-68m",
-                "tokenizer_type": "LlamaTokenizer",
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
                 "plugins": [
                     "axolotl.integrations.liger.LigerPlugin",
                 ],
                 "liger_rope": True,
                 "liger_rms_norm": True,
-                "liger_swiglu": True,
+                "liger_glu_activation": True,
                 "liger_cross_entropy": False,
                 "liger_fused_linear_cross_entropy": True,
                 "sequence_len": 1024,
-                "val_set_size": 0.1,
+                "val_set_size": 0.05,
                 "special_tokens": {
-                    "unk_token": "<unk>",
-                    "bos_token": "<s>",
-                    "eos_token": "</s>",
+                    "pad_token": "<|endoftext|>",
                 },
                 "datasets": [
                     {
@@ -92,15 +86,15 @@ class LigerIntegrationTestCase:
                     },
                 ],
                 "num_epochs": 1,
-                "micro_batch_size": 8,
-                "gradient_accumulation_steps": 1,
+                "micro_batch_size": 2,
+                "gradient_accumulation_steps": 2,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_torch",
                 "lr_scheduler": "cosine",
                 "save_safetensors": True,
                 "bf16": "auto",
-                "max_steps": 10,
+                "max_steps": 5,
             }
         )
         prepare_plugins(cfg)
