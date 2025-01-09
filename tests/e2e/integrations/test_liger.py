@@ -1,7 +1,6 @@
 """
 Simple end-to-end test for Liger integration
 """
-from pathlib import Path
 
 from e2e.utils import require_torch_2_4_1
 
@@ -11,6 +10,7 @@ from axolotl.train import train
 from axolotl.utils.config import normalize_config, prepare_plugins
 from axolotl.utils.dict import DictDefault
 
+from ..utils import check_model_output_exists
 
 class LigerIntegrationTestCase:
     """
@@ -60,7 +60,7 @@ class LigerIntegrationTestCase:
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
         train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-        assert (Path(temp_dir) / "model.safetensors").exists()
+        check_model_output_exists(temp_dir, cfg)
 
     @require_torch_2_4_1
     def test_llama_w_flce(self, temp_dir):
@@ -105,4 +105,4 @@ class LigerIntegrationTestCase:
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
         train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-        assert (Path(temp_dir) / "model.safetensors").exists()
+        check_model_output_exists(temp_dir, cfg)

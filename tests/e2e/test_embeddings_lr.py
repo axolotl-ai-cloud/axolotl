@@ -5,7 +5,6 @@ E2E tests for llama pretrain
 import logging
 import os
 import unittest
-from pathlib import Path
 
 from axolotl.cli import load_datasets
 from axolotl.common.cli import TrainerCliArgs
@@ -13,7 +12,7 @@ from axolotl.train import train
 from axolotl.utils.config import normalize_config
 from axolotl.utils.dict import DictDefault
 
-from .utils import check_tensorboard, with_temp_dir
+from .utils import check_model_output_exists, check_tensorboard, with_temp_dir
 
 LOG = logging.getLogger("axolotl.tests.e2e")
 os.environ["WANDB_DISABLED"] = "true"
@@ -62,7 +61,7 @@ class TestEmbeddingsLrScale(unittest.TestCase):
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
         train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-        assert (Path(temp_dir) / "model.safetensors").exists()
+        check_model_output_exists(temp_dir, cfg)
 
         check_tensorboard(
             temp_dir + "/runs", "train/train_loss", 2.0, "Loss is too high"
@@ -106,7 +105,7 @@ class TestEmbeddingsLrScale(unittest.TestCase):
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
         train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-        assert (Path(temp_dir) / "model.safetensors").exists()
+        check_model_output_exists(temp_dir, cfg)
 
         check_tensorboard(
             temp_dir + "/runs", "train/train_loss", 2.0, "Loss is too high"

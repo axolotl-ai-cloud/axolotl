@@ -2,9 +2,8 @@
 Simple end-to-end test for Cut Cross Entropy integration
 """
 
-from pathlib import Path
-
 import pytest
+from e2e.utils import check_model_output_exists
 
 from axolotl.cli import load_datasets
 from axolotl.common.cli import TrainerCliArgs
@@ -67,7 +66,7 @@ class TestCutCrossEntropyIntegration:
                 train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
         else:
             train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-            assert (Path(temp_dir) / "model.safetensors").exists()
+            check_model_output_exists(temp_dir, cfg)
 
     @pytest.mark.parametrize(
         "attention_type",
@@ -95,4 +94,4 @@ class TestCutCrossEntropyIntegration:
                 train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
         else:
             train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-            assert (Path(temp_dir) / "model.safetensors").exists()
+            check_model_output_exists(temp_dir, cfg)
