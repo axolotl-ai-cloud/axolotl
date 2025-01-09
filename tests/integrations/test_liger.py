@@ -30,9 +30,10 @@ def fixture_cfg():
     )
 
 
-class BaseValidation:
+# pylint: disable=too-many-public-methods
+class TestValidation:
     """
-    Base validation module to setup the log capture
+    Test the validation module for liger
     """
 
     _caplog: Optional[pytest.LogCaptureFixture] = None
@@ -40,13 +41,6 @@ class BaseValidation:
     @pytest.fixture(autouse=True)
     def inject_fixtures(self, caplog):
         self._caplog = caplog
-
-
-# pylint: disable=too-many-public-methods
-class TestValidation(BaseValidation):
-    """
-    Test the validation module for liger
-    """
 
     def test_deprecated_swiglu(self, minimal_liger_cfg):
         test_cfg = DictDefault(
