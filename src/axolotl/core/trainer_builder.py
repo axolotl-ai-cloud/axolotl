@@ -1970,7 +1970,10 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             trainer_kwargs["processing_class"] = self.tokenizer
         else:
             trainer_kwargs["tokenizer"] = self.tokenizer
-        if not (trainer_cls in [AxolotlRewardTrainer, AxolotlPRMTrainer]) and self.cfg.datasets is not None:
+        if (
+            not (trainer_cls in [AxolotlRewardTrainer, AxolotlPRMTrainer])
+            and self.cfg.datasets is not None
+        ):
             trainer_kwargs["dataset_tags"] = [
                 d["path"] for d in self.cfg.datasets if not Path(d["path"]).is_dir()
             ]

@@ -4,13 +4,11 @@ and (optionally) per-step, or per-prompt-trace labels for reward modelling.
 """
 
 from itertools import chain
-
-from typing import Dict, Generator, List, Optional, Union
+from typing import Dict, List, Optional, Union
 
 from transformers import BatchEncoding, PreTrainedTokenizer
 
-from axolotl.prompt_tokenizers import IGNORE_INDEX, PromptTokenizingStrategy
-from axolotl.prompters import Prompter
+from axolotl.prompt_tokenizers import IGNORE_INDEX
 from axolotl.utils.dict import DictDefault
 
 
@@ -55,7 +53,9 @@ class StepwiseSupervisedPromptTokenizingStrategy:
 
         # Handle labels
         if self.train_on_last_step_only:
-            labels = [-100] * (len(prompt["labels"]) - 1) + [int(prompt["labels"][-1])]
+            labels = [IGNORE_INDEX] * (len(prompt["labels"]) - 1) + [
+                int(prompt["labels"][-1])
+            ]
         else:
             labels = [int(label) for label in prompt["labels"]]
 
@@ -67,13 +67,13 @@ class StepwiseSupervisedPromptTokenizingStrategy:
 
         # Create step-wise labels
         labels = [
-            [-100] * (len(completion) - 1) + [label]
+            [IGNORE_INDEX] * (len(completion) - 1) + [label]  # type: ignore
             for completion, label in zip(completions_ids, labels)
         ]
 
         # Join all steps
         completion_ids = list(chain(*completions_ids))
-        labels = list(chain(*labels))
+        labels = list(chain(*labels))  # type: ignore
 
         # Handle max lengths
         if self.max_completion_length:
@@ -86,7 +86,8 @@ class StepwiseSupervisedPromptTokenizingStrategy:
 
         # Combine prompt and completion
         input_ids = prompt_ids + completion_ids
-        full_labels = [-100] * len(prompt_ids) + labels
+
+        full_labels = [IGNORE_INDEX] * len(prompt_ids) + labels
         # Apply max sequence length
         if self.sequence_len:
             input_ids = input_ids[: self.sequence_len]
