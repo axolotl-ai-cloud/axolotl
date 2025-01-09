@@ -46,15 +46,25 @@ def initialize_accelerator(config: DictDefault) -> Accelerator:
 def ray_train_func(kwargs: dict):
     # cast `cfg` back to DictDefault (ray tune deepcopy has issues with DictDefault so needed it to be dict)
     # also renormalize the config now that TorchTrainer has spawned distributed workers
+   
     kwargs["cfg"] = DictDefault(kwargs["cfg"])
     normalize_config(kwargs["cfg"])
-    kwargs["cfg"]["use_ray"] = True
+    config = kwargs["cfg"]
+
+    config["use_ray"] = True
 
     # ray serializing objects gets rid of frozen attribute?
-    kwargs["cfg"].deepspeed = kwargs["cfg"].deepspeed.to_dict()
+    config.deepspeed = config.deepspeed.to_dict()
     # initialize accelerator before model instantiation
-    accelerator = initialize_accelerator(kwargs["cfg"])
-    kwargs["cfg"]["accelerator"] = accelerator
+    accelerator = initialize_accelerator(config)
+    config["accelerator"] = accelerator
+
+
+    if config.rl:  # and cfg.rl != "orpo":
+        dataset_meta = load_rl_datasets(cfg=config, cli_args=kwargs["cli_args"])
+    else:
+        dataset_meta = load_datasets(cfg=config, cli_args=kwargs["cli_args"])
+
 
     train(**kwargs)
     
@@ -62,19 +72,10 @@ def do_train(cfg, cli_args) -> None:
     print_axolotl_text_art()
     check_accelerate_default_config()
     check_user_token()
-
-    if cfg.rl:  # and cfg.rl != "orpo":
-        dataset_meta = load_rl_datasets(cfg=cfg, cli_args=cli_args)
-    else:
-        dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
-
     
-    # import ray
     from ray.train import ScalingConfig
     from ray.train.torch import TorchTrainer
-    train_loop_config = {"cfg": cfg.to_dict(), "cli_args": cli_args, "dataset_meta": dataset_meta}
-    # import axolotl
-    # ray.init(runtime_env={"py_modules": [axolotl]})
+    train_loop_config = {"cfg": cfg.to_dict(), "cli_args": cli_args}
 
     trainer = TorchTrainer(
         ray_train_func,
