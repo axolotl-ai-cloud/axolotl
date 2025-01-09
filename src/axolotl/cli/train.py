@@ -8,10 +8,7 @@ from typing import Union
 import fire
 from dotenv import load_dotenv
 from transformers.hf_argparser import HfArgumentParser
-from accelerate import Accelerator, DeepSpeedPlugin, FullyShardedDataParallelPlugin
-
-import json
-import os
+from accelerate import Accelerator
 
 from axolotl.cli import (
     check_accelerate_default_config,
@@ -73,7 +70,7 @@ def do_train(cfg, cli_args) -> None:
 
     
     # import ray
-    from ray.train import RunConfig, ScalingConfig
+    from ray.train import ScalingConfig
     from ray.train.torch import TorchTrainer
     train_loop_config = {"cfg": cfg.to_dict(), "cli_args": cli_args, "dataset_meta": dataset_meta}
     # import axolotl
