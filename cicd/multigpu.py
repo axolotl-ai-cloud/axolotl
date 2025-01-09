@@ -28,6 +28,7 @@ df_args = {
     "CUDA": os.environ.get("CUDA", "121"),
     "GITHUB_REF": os.environ.get("GITHUB_REF", "refs/heads/main"),
     "GITHUB_SHA": os.environ.get("GITHUB_SHA", ""),
+    "HF_HOME": "/workspace/data/huggingface-cache/hub",
 }
 
 dockerfile_contents = df_template.render(**df_args)
@@ -48,6 +49,12 @@ cicd_image = (
 
 app = App("Axolotl CI/CD", secrets=[])
 
+hf_cache_volume = modal.Volume.from_name(
+    "axolotl-ci-hf-hub-cache", create_if_missing=True
+)
+VOLUME_CONFIG = {
+    "/workspace/data/huggingface-cache/hub": hf_cache_volume,
+}
 
 N_GPUS = int(os.environ.get("N_GPUS", 2))
 GPU_CONFIG = modal.gpu.H100(count=N_GPUS)
@@ -67,6 +74,7 @@ def run_cmd(cmd: str, run_folder: str):
     timeout=60 * 60,
     cpu=8.0,
     memory=131072 * N_GPUS,
+    volumes=VOLUME_CONFIG,
 )
 def cicd_pytest():
     run_cmd("./cicd/multigpu.sh", "/workspace/axolotl")

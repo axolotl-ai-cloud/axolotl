@@ -61,6 +61,15 @@ jobs:
       - name: Check out repository code
         uses: actions/checkout@v4
 
+      - name: Restore HF cache
+        id: hf-cache-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            /home/runner/.cache/huggingface/hub/datasets--*
+            /home/runner/.cache/huggingface/hub/models--*
+          key: ${{ runner.os }}-hf-hub-cache-${{ hashFiles('**/conftest.py') }}
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -101,6 +110,15 @@ jobs:
         run: |
           find "$(pip cache dir)/http-v2" -type f -mtime +14 -exec rm {} \;
 
+      - name: Save HF cache
+        id: hf-cache
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            /home/runner/.cache/huggingface/hub/datasets--*
+            /home/runner/.cache/huggingface/hub/models--*
+          key: ${{ steps.hf-cache-restore.outputs.cache-primary-key }}
+
   pytest-sdist:
     name: PyTest from Source Dist
     runs-on: ubuntu-latest
@@ -115,6 +133,15 @@ jobs:
     steps:
       - name: Check out repository code
         uses: actions/checkout@v4
+
+      - name: Restore HF cache
+        id: hf-cache-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            /home/runner/.cache/huggingface/hub/datasets--*
+            /home/runner/.cache/huggingface/hub/models--*
+          key: ${{ runner.os }}-hf-hub-cache-${{ hashFiles('**/conftest.py') }}
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -156,6 +183,15 @@ jobs:
       - name: cleanup pip cache
         run: |
           find "$(pip cache dir)/http-v2" -type f -mtime +14 -exec rm {} \;
+
+      - name: Save HF cache
+        id: hf-cache
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            /home/runner/.cache/huggingface/hub/datasets--*
+            /home/runner/.cache/huggingface/hub/models--*
+          key: ${{ steps.hf-cache-restore.outputs.cache-primary-key }}
 
   docker-e2e-tests-1st:
     if: ${{ ! contains(github.event.commits[0].message, '[skip e2e]') && github.repository_owner == 'axolotl-ai-cloud' }}
