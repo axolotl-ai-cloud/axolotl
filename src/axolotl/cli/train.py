@@ -66,6 +66,7 @@ def ray_train_func(kwargs: dict):
         dataset_meta = load_datasets(cfg=config, cli_args=kwargs["cli_args"])
 
 
+    kwargs["dataset_meta"] = dataset_meta
     train(**kwargs)
     
 def do_train(cfg, cli_args) -> None:
