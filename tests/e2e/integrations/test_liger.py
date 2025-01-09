@@ -1,8 +1,9 @@
 """
 Simple end-to-end test for Liger integration
 """
-import unittest
 from pathlib import Path
+
+from e2e.utils import require_torch_2_4_1
 
 from axolotl.cli import load_datasets
 from axolotl.common.cli import TrainerCliArgs
@@ -10,15 +11,13 @@ from axolotl.train import train
 from axolotl.utils.config import normalize_config, prepare_plugins
 from axolotl.utils.dict import DictDefault
 
-from ..utils import with_temp_dir
 
-
-class LigerIntegrationTestCase(unittest.TestCase):
+class LigerIntegrationTestCase:
     """
     e2e tests for liger integration with Axolotl
     """
 
-    @with_temp_dir
+    @require_torch_2_4_1
     def test_llama_wo_flce(self, temp_dir):
         cfg = DictDefault(
             {
@@ -65,7 +64,7 @@ class LigerIntegrationTestCase(unittest.TestCase):
         train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
         assert (Path(temp_dir) / "model.safetensors").exists()
 
-    @with_temp_dir
+    @require_torch_2_4_1
     def test_llama_w_flce(self, temp_dir):
         cfg = DictDefault(
             {
