@@ -40,6 +40,7 @@ class TestValidation:
 
     @pytest.fixture(autouse=True)
     def inject_fixtures(self, caplog):
+        caplog.set_level(logging.WARNING)
         self._caplog = caplog
 
     def test_deprecated_swiglu(self, minimal_liger_cfg):
