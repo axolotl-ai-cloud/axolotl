@@ -14,11 +14,11 @@ packaging==23.2
 
 peft==0.14.0
 transformers==4.47.1
-tokenizers>=0.20.1
+tokenizers>=0.21.0
 accelerate==1.2.1
-datasets==3.1.0
+datasets==3.2.0
 deepspeed==0.16.1
-trl==0.12.1
+trl==0.13.0
 
 optimum==1.16.2
 hf_transfer
@@ -53,7 +53,7 @@ zstandard==0.22.0
 fastcore
 
 # lm eval harness
-lm_eval==0.4.4
+lm_eval==0.4.7
 langdetect==1.0.9
 immutabledict==4.2.0
 antlr4-python3-runtime==4.13.2
@@ -61,4 +61,4 @@ antlr4-python3-runtime==4.13.2
 torchao==0.7.0
 schedulefree==1.3.0
 
-axolotl-contribs-lgpl==0.0.2
+axolotl-contribs-lgpl==0.0.3

@@ -120,13 +120,12 @@ def temp_dir():
 @pytest.fixture(scope="function", autouse=True)
 def cleanup_monkeypatches():
     from transformers import Trainer
-    from transformers.models.llama.modeling_llama import (
+    from transformers.models.llama.modeling_llama import (  # LlamaFlashAttention2,
         LlamaAttention,
-        LlamaFlashAttention2,
         LlamaForCausalLM,
     )
 
-    original_fa2_forward = LlamaFlashAttention2.forward
+    # original_fa2_forward = LlamaFlashAttention2.forward
     original_llama_attn_forward = LlamaAttention.forward
     original_llama_forward = LlamaForCausalLM.forward
     original_trainer_inner_training_loop = (
@@ -136,7 +135,7 @@ def cleanup_monkeypatches():
     # monkey patches can happen inside the tests
     yield
     # Reset LlamaFlashAttention2 forward
-    LlamaFlashAttention2.forward = original_fa2_forward
+    # LlamaFlashAttention2.forward = original_fa2_forward
     LlamaAttention.forward = original_llama_attn_forward
     LlamaForCausalLM.forward = original_llama_forward
     Trainer._inner_training_loop = (  # pylint: disable=protected-access
@@ -149,7 +148,10 @@ def cleanup_monkeypatches():
         ("transformers.models.llama",),
         (
             "transformers.models.llama.modeling_llama",
-            ["LlamaFlashAttention2", "LlamaAttention"],
+            [
+                # "LlamaFlashAttention2",
+                "LlamaAttention",
+            ],
         ),
         ("transformers.trainer",),
         ("transformers", ["Trainer"]),
