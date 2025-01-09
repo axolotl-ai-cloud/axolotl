@@ -8,6 +8,7 @@ from typing import Union
 import fire
 from dotenv import load_dotenv
 from transformers.hf_argparser import HfArgumentParser
+from accelerate import Accelerator, DeepSpeedPlugin, FullyShardedDataParallelPlugin
 
 from axolotl.cli import (
     check_accelerate_default_config,
@@ -20,6 +21,8 @@ from axolotl.cli import (
 from axolotl.common.cli import TrainerCliArgs
 from axolotl.integrations.base import PluginManager
 from axolotl.train import train
+from axolotl.utils.dict import DictDefault
+from axolotl.utils.config import normalize_config
 
 LOG = logging.getLogger("axolotl.cli.train")
 
@@ -33,7 +36,37 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
     )
     return do_train(parsed_cfg, parsed_cli_args)
 
+def initialize_accelerator(config: DictDefault) -> Accelerator:
+    accelerator_kwargs = {}
 
+    # Get deepspeed config to setup the batch size per device
+    if config.deepspeed:
+        ds_plugin = DeepSpeedPlugin(hf_ds_config=config.deepspeed)
+        accelerator_kwargs["deepspeed_plugin"] = ds_plugin
+    # elif config.fsdp:
+    #     fsdp_plugin = FullyShardedDataParallelPlugin(**config.fsdp)
+    #     accelerator_kwargs["fsdp_plugin"] = fsdp_plugin
+
+    # Initialize accelerator
+    accelerator = Accelerator(
+        **accelerator_kwargs,
+        gradient_accumulation_steps=config.gradient_accumulation_steps,
+    )
+    return accelerator
+
+def ray_train_func(kwargs: dict):
+    # cast `cfg` back to DictDefault (ray tune deepcopy has issues with DictDefault so needed it to be dict)
+    # also renormalize the config now that TorchTrainer has spawned distributed workers
+    kwargs["cfg"] = DictDefault(kwargs["cfg"])
+    normalize_config(kwargs["cfg"])
+    kwargs["cfg"]["use_ray"] = True
+
+    # initialize accelerator before model instantiation
+    accelerator = initialize_accelerator(kwargs["cfg"])
+    kwargs["cfg"]["accelerator"] = accelerator
+
+    train(**kwargs)
+    
 def do_train(cfg, cli_args) -> None:
     print_axolotl_text_art()
     check_accelerate_default_config()
@@ -43,8 +76,26 @@ def do_train(cfg, cli_args) -> None:
         dataset_meta = load_rl_datasets(cfg=cfg, cli_args=cli_args)
     else:
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
-
-    model, tokenizer = train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
+    
+    from ray.train import RunConfig, ScalingConfig
+    from ray.train.torch import TorchTrainer
+    train_loop_config = {"cfg": cfg.to_dict(), "cli_args": cli_args, "dataset_meta": dataset_meta}
+    
+    trainer = TorchTrainer(
+        ray_train_func,
+        train_loop_config=train_loop_config,
+        scaling_config=ScalingConfig(
+            num_workers=2,
+            resources_per_worker={"GPU": 1},
+            use_gpu=True,
+        ),
+        # run_config=RunConfig(
+        #     name=None,
+        #     storage_path=Path("./saves").absolute().as_posix(),
+        # ),
+    )
+    trainer.fit()
+    # model, tokenizer = train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
     plugin_manager = PluginManager.get_instance()
 
     del model
