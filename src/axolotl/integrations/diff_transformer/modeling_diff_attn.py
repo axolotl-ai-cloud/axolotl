@@ -36,6 +36,7 @@ class LlamaDifferentialConfig(LlamaConfig):
         split_heads: bool = False,
         sublayer_norm: bool = True,
         zero_init: bool = False,
+        mirror_weights: bool = False,
         **kwargs,
     ):
         """
@@ -45,12 +46,15 @@ class LlamaDifferentialConfig(LlamaConfig):
             split_heads: Whether to use split heads mode for attention computation.
             sublayer_norm: Whether to apply normalization to sublayers.
             zero_init: Whether to initialize new weights to zero.
+            mirror_weights: Whether to copy the positive attention component weights to
+                the negative attention component.
             **kwargs: Additional arguments passed to LlamaConfig.
         """
         super().__init__(**kwargs)
         self.split_heads = split_heads
         self.sublayer_norm = sublayer_norm
         self.zero_init = zero_init
+        self.mirror_weights = mirror_weights
         self.architectures = ["LlamaDifferentialModel"]
         self._attn_implementations = {
             "eager": "differential_eager",
@@ -250,7 +254,7 @@ class LlamaDifferentialModel(LlamaModel):
                         new_layer.self_attn.lambda_q2.zero_()
                         new_layer.self_attn.lambda_k2.zero_()
                         new_layer.self_attn.lambda_init.zero_()
-                else:
+                elif config.mirror_weights:
                     # Mirror weights for second component
                     new_layer.self_attn.q_proj.weight.data[old_q_size:].copy_(
                         old_layer.self_attn.q_proj.weight.data

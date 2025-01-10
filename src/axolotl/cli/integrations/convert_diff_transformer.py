@@ -50,6 +50,13 @@ def test_inference(model, tokenizer, prompt="The quick brown fox"):
 
 
 def convert_diff_transformer(cfg, cli_args, config_path):
+    assert not (
+        cli_args.split_heads and cli_args.zero_init
+    ), "Both `split_heads` and `zero_init` cannot be `True`"
+    assert not (
+        cli_args.zero_init and cli_args.mirror_weights
+    ), "Both `zero_init` and `mirror_weights` cannot be `True`"
+
     debug_info = {}
 
     # Load model and tokenizer
@@ -72,21 +79,16 @@ def convert_diff_transformer(cfg, cli_args, config_path):
             model, tokenizer
         )
 
-    # Convert attention
-    LOG.info("Converting to differential attention...")
-    if cli_args.split_heads and cli_args.zero_init:
-        LOG.warning(
-            Fore.YELLOW
-            + "Warning: Using split_heads with zero_init is not recommended; "
-            + "split_heads will preclude the effects of zero_init"
-            + Fore.RESET
-        )
     try:
+        # Convert attention
+        LOG.info("Converting to differential attention...")
+
         config = LlamaDifferentialConfig(
             **model.config.__dict__,
             zero_init=cli_args.zero_init,
             sublayer_norm=cli_args.sublayer_norm,
             split_heads=cli_args.split_heads,
+            mirror_weights=cli_args.mirror_weights,
         )
         model = LlamaDifferentialForCausalLM.from_llama(model, config)
         model.to(cfg.device, dtype=cfg.torch_dtype)
