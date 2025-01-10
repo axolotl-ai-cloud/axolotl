@@ -13,6 +13,7 @@ from datasets import Dataset
 
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.samplers.utils import get_dataset_lengths
+from axolotl.utils.trainer import drop_long_seq
 
 LOG = logging.getLogger(__name__)
 
@@ -155,15 +156,6 @@ def deduplicate_and_log_datasets(
         )
 
     return train_dataset, eval_dataset, dataset
-
-
-def drop_long_seq(sample, sequence_len=2048, min_sequence_len=None):
-    min_sequence_len = min_sequence_len or 2
-
-    return (
-        len(sample["input_ids"]) <= sequence_len
-        and len(sample["input_ids"]) >= min_sequence_len
-    )
 
 
 def drop_long_seq_in_dataset(dataset: Dataset, cfg: DictDefault):
