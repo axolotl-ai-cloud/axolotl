@@ -8,7 +8,7 @@ import unittest
 
 import pytest
 
-from axolotl.common.cli import TrainerCliArgs
+from axolotl.cli.args import TrainerCliArgs
 from axolotl.common.datasets import load_datasets
 from axolotl.train import train
 from axolotl.utils.config import normalize_config

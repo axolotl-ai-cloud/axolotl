@@ -9,7 +9,7 @@ import unittest
 import torch
 from transformers.utils import is_torch_bf16_gpu_available
 
-from axolotl.common.cli import TrainerCliArgs
+from axolotl.cli.args import TrainerCliArgs
 from axolotl.common.datasets import load_datasets
 from axolotl.train import train
 from axolotl.utils.config import normalize_config

@@ -4,7 +4,7 @@ Simple end-to-end test for Cut Cross Entropy integration
 
 import pytest
 
-from axolotl.common.cli import TrainerCliArgs
+from axolotl.cli.args import TrainerCliArgs
 from axolotl.common.datasets import load_datasets
 from axolotl.train import train
 from axolotl.utils import get_pytorch_version
