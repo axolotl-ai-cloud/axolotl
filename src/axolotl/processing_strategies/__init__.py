@@ -66,14 +66,10 @@ class ProcessingStrategy:
 
         processed_examples = []
         for example in examples:
-            # OpenAI format
-            if "messages" in example:
+            if "messages" in example:  # OpenAI format
                 processed_examples.append(example)
-
-            # Legacy format
-            elif "conversations" in example:
+            elif "conversations" in example:  # Legacy format
                 processed_examples.append(convert_legacy_format(example))
-
             else:
                 raise ValueError(
                     "Only `messages` and `conversations` message keys are currently supported."
