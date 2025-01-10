@@ -30,7 +30,8 @@ class ProcessingStrategy:
         2. Legacy format with 'conversations'
 
         Args:
-        examples: list of conversation dictionaries
+            examples: list of conversation dictionaries
+        
         Returns:
             dict in OpenAI format with 'messages' key
 
