@@ -27,7 +27,7 @@ def add_options_from_dataclass(config_class: Type[Any]):
                 field_type = next(
                     t for t in get_args(field_type) if not isinstance(t, NoneType)
                 )
-
+            print(f"Field: {field.name}, Type: {field_type}")
             if field_type == bool:
                 field_name = field.name.replace("_", "-")
                 option_name = f"--{field_name}/--no-{field_name}"

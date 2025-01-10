@@ -110,7 +110,12 @@ def check_model_output_exists(temp_dir: str, cfg: DictDefault) -> None:
         else:
             assert (Path(temp_dir) / "adapter_model.safetensors").exists()
     else:
+        # check for both, b/c in trl, it often defaults to saving safetensors
         if not cfg.adapter:
-            assert (Path(temp_dir) / "pytorch_model.bin").exists()
+            assert (Path(temp_dir) / "pytorch_model.bin").exists() or (
+                Path(temp_dir) / "model.safetensors"
+            ).exists()
         else:
-            assert (Path(temp_dir) / "adapter_model.bin").exists()
+            assert (Path(temp_dir) / "adapter_model.bin").exists() or (
+                Path(temp_dir) / "adapter_model.safetensors"
+            ).exists()
