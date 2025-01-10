@@ -3,7 +3,6 @@ Simple end-to-end test for Cut Cross Entropy integration
 """
 
 import pytest
-from e2e.utils import check_model_output_exists
 
 from axolotl.cli import load_datasets
 from axolotl.common.cli import TrainerCliArgs
@@ -11,6 +10,8 @@ from axolotl.train import train
 from axolotl.utils import get_pytorch_version
 from axolotl.utils.config import normalize_config, prepare_plugins
 from axolotl.utils.dict import DictDefault
+
+from ..utils import check_model_output_exists
 
 # pylint: disable=duplicate-code
 
