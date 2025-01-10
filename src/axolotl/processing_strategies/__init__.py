@@ -14,7 +14,7 @@ class ProcessingStrategy:
         self.chat_template = chat_template
         self.image_token = None
         self.image_token_id = None
-        
+
         if hasattr(processor, "image_token"):
             self.image_token = processor.image_token
             self.image_token_id = processor.tokenizer.convert_tokens_to_ids(
@@ -32,7 +32,7 @@ class ProcessingStrategy:
 
         Args:
             examples: list of conversation dictionaries
-        
+
         Returns:
             dict in OpenAI format with 'messages' key
 
@@ -205,4 +205,6 @@ def get_processing_strategy(
         return PixtralProcessingStrategy(processor, chat_template)
     if chat_template_type == "llava":
         return LlavaProcessingStrategy(processor, chat_template)
+    if chat_template_type == "qwen2_vl":
+        return Qwen2VLProcessingStrategy(processor, chat_template)
     return ProcessingStrategy(processor, chat_template)
