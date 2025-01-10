@@ -15,7 +15,7 @@ from axolotl.train import train
 from axolotl.utils.config import normalize_config
 from axolotl.utils.dict import DictDefault
 
-from .utils import with_temp_dir
+from .utils import check_model_output_exists, with_temp_dir
 
 LOG = logging.getLogger("axolotl.tests.e2e")
 os.environ["WANDB_DISABLED"] = "true"
@@ -68,7 +68,7 @@ class TestDPOLlamaLora(unittest.TestCase):
         dataset_meta = load_rl_datasets(cfg=cfg, cli_args=cli_args)
 
         train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-        assert (Path(temp_dir) / "checkpoint-20/adapter_model.safetensors").exists()
+        check_model_output_exists(Path(temp_dir) / "checkpoint-20", cfg)
 
     @with_temp_dir
     def test_dpo_nll_lora(self, temp_dir):
@@ -113,7 +113,7 @@ class TestDPOLlamaLora(unittest.TestCase):
         dataset_meta = load_rl_datasets(cfg=cfg, cli_args=cli_args)
 
         train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-        assert (Path(temp_dir) / "checkpoint-20/adapter_model.safetensors").exists()
+        check_model_output_exists(Path(temp_dir) / "checkpoint-20", cfg)
 
     @with_temp_dir
     def test_dpo_use_weighting(self, temp_dir):
@@ -158,7 +158,7 @@ class TestDPOLlamaLora(unittest.TestCase):
         dataset_meta = load_rl_datasets(cfg=cfg, cli_args=cli_args)
 
         train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-        assert (Path(temp_dir) / "checkpoint-20/adapter_model.safetensors").exists()
+        check_model_output_exists(Path(temp_dir) / "checkpoint-20", cfg)
 
     @pytest.mark.skip("kto_pair no longer supported in trl")
     @with_temp_dir
@@ -203,7 +203,7 @@ class TestDPOLlamaLora(unittest.TestCase):
         dataset_meta = load_rl_datasets(cfg=cfg, cli_args=cli_args)
 
         train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-        assert (Path(temp_dir) / "checkpoint-20/adapter_model.safetensors").exists()
+        check_model_output_exists(Path(temp_dir) / "checkpoint-20", cfg)
 
     @with_temp_dir
     def test_ipo_lora(self, temp_dir):
@@ -247,7 +247,7 @@ class TestDPOLlamaLora(unittest.TestCase):
         dataset_meta = load_rl_datasets(cfg=cfg, cli_args=cli_args)
 
         train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-        assert (Path(temp_dir) / "checkpoint-20/adapter_model.safetensors").exists()
+        check_model_output_exists(Path(temp_dir) / "checkpoint-20", cfg)
 
     @with_temp_dir
     def test_orpo_lora(self, temp_dir):
@@ -294,7 +294,7 @@ class TestDPOLlamaLora(unittest.TestCase):
         dataset_meta = load_rl_datasets(cfg=cfg, cli_args=cli_args)
 
         train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-        assert (Path(temp_dir) / "checkpoint-20/adapter_model.safetensors").exists()
+        check_model_output_exists(Path(temp_dir) / "checkpoint-20", cfg)
 
     @pytest.mark.skip(reason="Fix the implementation")
     @with_temp_dir
@@ -358,4 +358,4 @@ class TestDPOLlamaLora(unittest.TestCase):
         dataset_meta = load_rl_datasets(cfg=cfg, cli_args=cli_args)
 
         train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-        assert (Path(temp_dir) / "checkpoint-20/adapter_model.safetensors").exists()
+        check_model_output_exists(Path(temp_dir) / "checkpoint-20", cfg)

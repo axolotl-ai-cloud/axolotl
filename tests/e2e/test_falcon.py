@@ -5,7 +5,6 @@ E2E tests for falcon
 import logging
 import os
 import unittest
-from pathlib import Path
 
 from axolotl.cli import load_datasets
 from axolotl.common.cli import TrainerCliArgs
@@ -163,4 +162,4 @@ class TestFalcon(unittest.TestCase):
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
         train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-        assert (Path(temp_dir) / "pytorch_model.bin").exists()
+        check_model_output_exists(temp_dir, cfg)

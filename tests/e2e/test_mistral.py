@@ -5,7 +5,6 @@ E2E tests for lora llama
 import logging
 import os
 import unittest
-from pathlib import Path
 
 from transformers.utils import is_torch_bf16_gpu_available
 
@@ -112,4 +111,4 @@ class TestMistral(unittest.TestCase):
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
         train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-        assert (Path(temp_dir) / "pytorch_model.bin").exists()
+        check_model_output_exists(temp_dir, cfg)
