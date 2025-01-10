@@ -8,6 +8,7 @@ from typing import Optional, Union
 
 from datasets import Dataset
 
+import axolotl.monkeypatch.data.batch_dataset_fetcher  # pylint: disable=unused-import  # noqa: F401
 from axolotl.cli.args import PreprocessCliArgs, TrainerCliArgs
 from axolotl.utils.data import prepare_dataset
 from axolotl.utils.data.rl import load_prepare_dpo_datasets
