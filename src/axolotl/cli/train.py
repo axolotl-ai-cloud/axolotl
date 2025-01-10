@@ -76,7 +76,7 @@ def do_train(cfg, cli_args) -> None:
     print_axolotl_text_art()
     check_accelerate_default_config()
     check_user_token()
-    
+
     if cfg.rl:  # and cfg.rl != "orpo":
         dataset_meta = load_rl_datasets(cfg=cfg, cli_args=cli_args)
     else:
