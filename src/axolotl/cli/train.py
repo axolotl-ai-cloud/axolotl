@@ -36,7 +36,7 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
     )
 
     if parsed_cfg.use_ray:
-        from ray.train import ScalingConfig
+        from ray.train import ScalingConfig, RunConfig
         from ray.train.torch import TorchTrainer
 
         train_loop_config = {"cfg": parsed_cfg.to_dict(), "cli_args": parsed_cli_args}
@@ -47,6 +47,10 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
                 num_workers=parsed_cfg.ray_num_workers,
                 resources_per_worker=parsed_cfg.resources_per_worker.to_dict(),
                 use_gpu=True,
+            ),
+            run_config=RunConfig(
+                name=parsed_cfg.ray_run_name,
+                storage_path=Path("./saves").absolute().as_posix(),
             ),
         )
         trainer.fit()
