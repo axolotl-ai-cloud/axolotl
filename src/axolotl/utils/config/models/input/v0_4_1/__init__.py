@@ -383,7 +383,7 @@ class ModelInputConfig(BaseModel):
 
     base_model: str
     base_model_config: Optional[str] = None
-    cls_model_config: Optional[str] = None
+    cls_model_config: Optional[str] = None  #
     tokenizer_config: Optional[str] = None
     tokenizer_use_fast: Optional[bool] = None
     tokenizer_legacy: Optional[bool] = None
@@ -609,6 +609,8 @@ class AxolotlInputConfig(
 
     rl: Optional[RLType] = None
     reward_model: Optional[bool] = None
+    process_reward_model: Optional[bool] = None
+    num_labels: Optional[int] = None
     dpo_use_weighting: Optional[
         bool
     ] = None  # whether to use weighting in DPO trainer. If none, default is false in the trainer.

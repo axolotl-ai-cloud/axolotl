@@ -1,4 +1,4 @@
-base_model: google/gemma-2-2b
+base_model:  Qwen/Qwen2.5-0.5B
 # optionally might have model_type or tokenizer_type
 model_type: AutoModelForSequenceClassification
 num_labels: 1
@@ -11,7 +11,7 @@ load_in_4bit: false
 strict: false
 
 reward_model: true
-chat_template: gemma
+chat_template: qwen_25
 datasets:
   - path: argilla/distilabel-intel-orca-dpo-pairs
     type: bradley_terry.chat_template

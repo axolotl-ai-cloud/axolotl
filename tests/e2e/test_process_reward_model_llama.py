@@ -30,8 +30,8 @@ class TestRewardModelLoraLlama(unittest.TestCase):
         cfg = DictDefault(
             {
                 "base_model": "JackFram/llama-68m",
-                "model_type": "AutoModelForSequenceClassification",
-                "num_labels": 1,
+                "model_type": "AutoModelForTokenClassification",
+                "num_labels": 2,
                 "tokenizer_type": "LlamaTokenizer",
                 "chat_template": "alpaca",
                 "reward_model": True,
