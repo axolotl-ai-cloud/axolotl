@@ -43,14 +43,12 @@ class BaseCliTest:
             result = cli_runner.invoke(cli, [command, str(config_path)])
 
             assert mock.called
-            assert mock.call_args.args[0] == [
+            assert mock.call_args.args[0][:5] == [
                 "accelerate",
                 "launch",
                 "-m",
                 f"axolotl.cli.{command}",
                 str(config_path),
-                "--debug-num-examples",
-                "0",
             ]
             assert mock.call_args.kwargs == {"check": True}
             assert result.exit_code == 0

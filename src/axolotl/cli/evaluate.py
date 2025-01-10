@@ -3,7 +3,7 @@ CLI to run training on a model
 """
 import logging
 from pathlib import Path
-from typing import Union
+from typing import Dict, Union
 
 import fire
 from dotenv import load_dotenv
@@ -23,7 +23,7 @@ from axolotl.evaluate import evaluate
 LOG = logging.getLogger("axolotl.cli.evaluate")
 
 
-def do_evaluate(cfg, cli_args) -> None:
+def do_evaluate(cfg, cli_args) -> Dict[str, float]:
     # pylint: disable=duplicate-code
     print_axolotl_text_art()
     check_accelerate_default_config()
@@ -34,7 +34,7 @@ def do_evaluate(cfg, cli_args) -> None:
     else:
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
-    evaluate(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
+    return evaluate(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
 
 
 def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs) -> None:

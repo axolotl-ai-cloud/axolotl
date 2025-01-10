@@ -202,7 +202,7 @@ def do_inference(
         )
     elif cfg.chat_template:
         chat_template_str = get_chat_template(cfg.chat_template)
-    elif cfg.datasets[0].type == "chat_template":
+    elif cfg.datasets and cfg.datasets[0].type == "chat_template":
         chat_template_str = get_chat_template_from_config(
             cfg=cfg, ds_cfg=cfg.datasets[0], tokenizer=tokenizer
         )

@@ -1,4 +1,5 @@
 """General pytest tests for axolotl.cli.main interface."""
+
 from axolotl.cli.main import build_command, cli
 
 
@@ -22,6 +23,7 @@ def test_build_command():
         "--batch-size",
         "8",
         "--debug",
+        "--nouse-fp16",
     ]
 
 
