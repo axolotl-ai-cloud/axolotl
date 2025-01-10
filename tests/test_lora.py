@@ -5,6 +5,7 @@ from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.models import load_model, load_tokenizer
 
+# pylint: disable=duplicate-code
 minimal_config = DictDefault(
     {
         "base_model": "HuggingFaceTB/SmolLM2-135M",
