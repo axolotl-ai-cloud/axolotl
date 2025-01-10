@@ -1,6 +1,7 @@
 """Module for axolotl CLI command arguments."""
 
 from dataclasses import dataclass, field
+from typing import Optional
 
 
 @dataclass
@@ -10,8 +11,8 @@ class PreprocessCliArgs:
     debug: bool = field(default=False)
     debug_text_only: bool = field(default=False)
     debug_num_examples: int = field(default=1)
-    prompter: str | None = field(default=None)
-    download: bool | None = field(default=True)
+    prompter: Optional[str] = field(default=None)
+    download: Optional[bool] = field(default=True)
 
 
 @dataclass
@@ -22,7 +23,7 @@ class TrainerCliArgs:
     debug_text_only: bool = field(default=False)
     debug_num_examples: int = field(default=0)
     merge_lora: bool = field(default=False)
-    prompter: str | None = field(default=None)
+    prompter: Optional[str] = field(default=None)
     shard: bool = field(default=False)
 
 
@@ -39,4 +40,4 @@ class EvaluateCliArgs:
 class InferenceCliArgs:
     """Dataclass with CLI arguments for `axolotl inference` command."""
 
-    prompter: str | None = field(default=None)
+    prompter: Optional[str] = field(default=None)
