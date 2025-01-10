@@ -1,7 +1,11 @@
-"""Modeling for differential transformers."""
+"""
+Modeling for differential transformers.
+
+This module implements differential attention variants of the LLaMA model,
+providing various attention implementations for improved performance.
+"""
 
 import logging
-from typing import Optional, Union
 
 import torch
 from transformers import AutoConfig, AutoModel, AutoModelForCausalLM
@@ -18,7 +22,12 @@ logger = logging.getLogger(__name__)
 
 
 class LlamaDifferentialConfig(LlamaConfig):
-    """Configuration class for Differential LLaMA model."""
+    """
+    Configuration class for Differential LLaMA model.
+
+    Extends the base LLaMA configuration with additional parameters for differential
+    attention mechanisms.
+    """
 
     model_type = "llama-differential"
 
@@ -29,6 +38,15 @@ class LlamaDifferentialConfig(LlamaConfig):
         zero_init: bool = False,
         **kwargs,
     ):
+        """
+        Initialize differential LLaMA configuration.
+
+        Args:
+            split_heads: Whether to use split heads mode for attention computation.
+            sublayer_norm: Whether to apply normalization to sublayers.
+            zero_init: Whether to initialize new weights to zero.
+            **kwargs: Additional arguments passed to LlamaConfig.
+        """
         super().__init__(**kwargs)
         self.split_heads = split_heads
         self.sublayer_norm = sublayer_norm
@@ -42,12 +60,26 @@ class LlamaDifferentialConfig(LlamaConfig):
 
 
 class LlamaDifferentialModel(LlamaModel):
-    """LlamaModel with differential attention."""
+    """
+    LlamaModel with differential attention.
+
+    This class extends the base LLaMA model by replacing standard attention with
+    differential attention mechanisms.
+    """
 
     config_class = LlamaDifferentialConfig
     base_model_prefix = "llama_differential"
 
-    def __init__(self, config):
+    def __init__(self, config: LlamaDifferentialConfig):
+        """
+        Initialize a differential LLaMA model.
+
+        Args:
+            config: Configuration object for the model.
+
+        Raises:
+            ValueError: If specified attention implementation is not supported.
+        """
         super().__init__(config)
 
         # Handle attention implementation
@@ -76,11 +108,26 @@ class LlamaDifferentialModel(LlamaModel):
         for idx, layer in enumerate(self.layers):
             layer.self_attn = attn_class(config, idx)
 
-    # pylint: disable=protected-access
     @classmethod
+    # pylint: disable=protected-access
     def _autoset_attn_implementation(
-        cls, config, **kwargs
-    ):  # pylint: disable=unused-argument
+        cls,
+        config: LlamaDifferentialConfig,
+        **kwargs,  # pylint: disable=unused-argument
+    ) -> LlamaDifferentialConfig:
+        """
+        Automatically set the attention implementation based on config.
+
+        Args:
+            config: Model configuration object.
+            **kwargs: Additional arguments (unused).
+
+        Returns:
+            Updated configuration object.
+
+        Raises:
+            ValueError: If specified attention implementation is not supported.
+        """
         config._attn_implementation_autoset = True
         attn_implementation = getattr(config, "_attn_implementation", None)
 
@@ -110,10 +157,23 @@ class LlamaDifferentialModel(LlamaModel):
     @classmethod
     def from_llama(
         cls,
-        model: Union[LlamaModel, LlamaForCausalLM],
-        config: Optional[LlamaDifferentialConfig] = None,
+        model: LlamaModel | LlamaForCausalLM,
+        config: LlamaDifferentialConfig | None = None,
     ) -> "LlamaDifferentialModel":
-        """Convert a LlamaModel to use differential attention."""
+        """
+        Convert a `LlamaModel` to use differential attention.
+
+        Args:
+            model: Base LLaMA model to convert.
+            config: Configuration for differential attention. If `None`, created from
+                base model config.
+
+        Returns:
+            Converted model with differential attention.
+
+        Raises:
+            ValueError: If number of heads is not even when using `split_heads` mode.
+        """
         logger.info(f"Converting {type(model).__name__} to {cls.__name__}")
 
         # Handle LlamaForCausalLM
@@ -182,7 +242,6 @@ class LlamaDifferentialModel(LlamaModel):
 
                 if config.zero_init:
                     logger.debug(f"Layer {layer_idx}: Zero initializing")
-                    # Zero out components as needed
                     with torch.no_grad():
                         new_layer.self_attn.q_proj.weight.data[old_q_size:].zero_()
                         new_layer.self_attn.k_proj.weight.data[old_k_size:].zero_()
@@ -192,45 +251,60 @@ class LlamaDifferentialModel(LlamaModel):
                         new_layer.self_attn.lambda_k2.zero_()
                         new_layer.self_attn.lambda_init.zero_()
                 else:
-                    logger.debug(
-                        f"Layer {layer_idx}: Initializing with scale {config.init_scale}"
+                    # Mirror weights for second component
+                    new_layer.self_attn.q_proj.weight.data[old_q_size:].copy_(
+                        old_layer.self_attn.q_proj.weight.data
                     )
-                    # Initialize with small random values
-                    with torch.no_grad():
-                        new_layer.self_attn.q_proj.weight.data[old_q_size:].normal_(
-                            0, config.init_scale
-                        )
-                        new_layer.self_attn.k_proj.weight.data[old_k_size:].normal_(
-                            0, config.init_scale
-                        )
-                        new_layer.self_attn.lambda_q1.normal_(0, config.init_scale)
-                        new_layer.self_attn.lambda_k1.normal_(0, config.init_scale)
-                        new_layer.self_attn.lambda_q2.normal_(0, config.init_scale)
-                        new_layer.self_attn.lambda_k2.normal_(0, config.init_scale)
-                        if config.reinit_lambda_init:
-                            new_layer.self_attn.lambda_init.normal_(
-                                0, config.init_scale
-                            ).abs_()
+                    new_layer.self_attn.k_proj.weight.data[old_k_size:].copy_(
+                        old_layer.self_attn.k_proj.weight.data
+                    )
 
         logger.info("Conversion complete")
+
         return new_model
 
 
 class LlamaDifferentialForCausalLM(LlamaForCausalLM):
-    """LlamaForCausalLM with differential attention."""
+    """
+    `LlamaForCausalLM` with differential attention.
+
+    This class extends the base LLaMA causal language model by incorporating
+    differential attention mechanisms.
+    """
 
     config_class = LlamaDifferentialConfig
     base_model_prefix = "llama_differential"
 
-    def __init__(self, config):
+    def __init__(self, config: LlamaDifferentialConfig):
+        """
+        Initialize a differential LLaMA model for causal language modeling.
+
+        Args:
+            config: Configuration object for the model.
+        """
         super().__init__(config)
         self.model = LlamaDifferentialModel(config)
 
-    # pylint: disable=protected-access
     @classmethod
+    # pylint: disable=protected-access
     def _autoset_attn_implementation(
-        cls, config, **kwargs
-    ):  # pylint: disable=unused-argument
+        cls,
+        config: LlamaDifferentialConfig,
+        **kwargs,  # pylint: disable=unused-argument
+    ) -> LlamaDifferentialConfig:
+        """
+        Automatically set the attention implementation based on config.
+
+        Args:
+            config: Model configuration object.
+            **kwargs: Additional arguments (unused).
+
+        Returns:
+            Updated configuration object.
+
+        Raises:
+            ValueError: If specified attention implementation is not supported.
+        """
         config._attn_implementation_autoset = True
         attn_implementation = getattr(config, "_attn_implementation", None)
 
@@ -239,6 +313,7 @@ class LlamaDifferentialForCausalLM(LlamaForCausalLM):
             config._attn_implementation = config._attn_implementations[
                 attn_implementation
             ]
+
             return config
 
         # If no mapping, validate it's a valid differential type
@@ -259,9 +334,22 @@ class LlamaDifferentialForCausalLM(LlamaForCausalLM):
 
     @classmethod
     def from_llama(
-        cls, model: LlamaForCausalLM, config: Optional[LlamaDifferentialConfig] = None
+        cls, model: LlamaForCausalLM, config: LlamaDifferentialConfig | None = None
     ) -> "LlamaDifferentialForCausalLM":
-        """Convert a LlamaForCausalLM to use differential attention."""
+        """
+        Convert a `LlamaForCausalLM` to use differential attention.
+
+        Args:
+            model: Base LLaMA model to convert.
+            config: Configuration for differential attention. If `None`, created from
+                base model config.
+
+        Returns:
+            Converted model with differential attention.
+
+        Raises:
+            ValueError: If number of heads is not even when using `split_heads` mode.
+        """
         if config is None:
             config = LlamaDifferentialConfig(**model.config.__dict__)
 
@@ -285,7 +373,14 @@ class LlamaDifferentialForCausalLM(LlamaForCausalLM):
         return new_model
 
 
-def register_diff_attn():
+def register_diff_attn() -> None:
+    """
+    Register differential attention components with the transformers library.
+
+    This function registers the differential attention configurations and model classes
+    with the Auto* classes from `transformers`, making them available through the
+    standard model loading pipeline.
+    """
     # Register configs
     AutoConfig.register("llama-differential", LlamaDifferentialConfig)
 

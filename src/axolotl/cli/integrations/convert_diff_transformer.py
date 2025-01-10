@@ -87,8 +87,6 @@ def convert_diff_transformer(cfg, cli_args, config_path):
             zero_init=cli_args.zero_init,
             sublayer_norm=cli_args.sublayer_norm,
             split_heads=cli_args.split_heads,
-            init_scale=cli_args.init_scale,
-            reinit_lambda_init=cli_args.reinit_lambda_init,
         )
         model = LlamaDifferentialForCausalLM.from_llama(model, config)
         model.to(cfg.device, dtype=cfg.torch_dtype)
