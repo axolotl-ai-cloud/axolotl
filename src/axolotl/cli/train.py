@@ -35,44 +35,40 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
         return_remaining_strings=True
     )
 
-    from ray.train import ScalingConfig
-    from ray.train.torch import TorchTrainer
+    if parsed_cfg.use_ray:
+        from ray.train import ScalingConfig
+        from ray.train.torch import TorchTrainer
 
-    train_loop_config = {"cfg": parsed_cfg.to_dict(), "cli_args": parsed_cli_args}
-    trainer = TorchTrainer(
-        ray_train_func,
-        train_loop_config=train_loop_config,
-        scaling_config=ScalingConfig(
-            num_workers=4,
-            resources_per_worker={"GPU": 1},
-            use_gpu=True,
-        ),
-    )
-    trainer.fit()
-    # return do_train(parsed_cfg, parsed_cli_args)
-
-def initialize_accelerator(config: DictDefault) -> Accelerator:
-    # Initialize accelerator (needed for logging)
-    accelerator = Accelerator(
-        gradient_accumulation_steps=config.gradient_accumulation_steps,
-    )
-    return accelerator
+        train_loop_config = {"cfg": parsed_cfg.to_dict(), "cli_args": parsed_cli_args}
+        trainer = TorchTrainer(
+            ray_train_func,
+            train_loop_config=train_loop_config,
+            scaling_config=ScalingConfig(
+                num_workers=parsed_cfg.ray_num_workers,
+                resources_per_worker=parsed_cfg.resources_per_worker.to_dict(),
+                use_gpu=True,
+            ),
+        )
+        trainer.fit()
+    else:
+        return do_train(parsed_cfg, parsed_cli_args)
 
 def ray_train_func(kwargs: dict):
     # cast `cfg` back to DictDefault (ray tune deepcopy has issues with DictDefault so needed it to be dict)
     # also renormalize the config now that TorchTrainer has spawned distributed workers
-   
-    kwargs["cfg"] = DictDefault(kwargs["cfg"])
-    normalize_config(kwargs["cfg"])
-    config = kwargs["cfg"]
+    cfg = DictDefault(kwargs["cfg"])
+    normalize_config(cfg)
 
-    config["use_ray"] = True
+    # ray serializing objects gets rid of frozen attribute - HF expects dict not DefaultDict
+    if cfg.deepspeed:
+        cfg.deepspeed = cfg.deepspeed.to_dict()
+    if cfg.fsdp:
+        cfg.fsdp = cfg.fsdp.to_dict()
 
-    # ray serializing objects gets rid of frozen attribute?
-    config.deepspeed = config.deepspeed.to_dict()
     # initialize accelerator before model instantiation
-    accelerator = initialize_accelerator(config)
-    config["accelerator"] = accelerator
+    Accelerator(gradient_accumulation_steps=cfg.gradient_accumulation_steps)
+    
+    kwargs["cfg"] = cfg
 
     do_train(**kwargs)
     
