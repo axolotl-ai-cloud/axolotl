@@ -12,13 +12,14 @@ class ProcessingStrategy:
     def __init__(self, processor: ProcessorMixin, chat_template: Optional[str] = None):
         self.processor = processor
         self.chat_template = chat_template
-        try:
+        self.image_token = None
+        self.image_token_id = None
+        
+        if hasattr(processor, "image_token"):
             self.image_token = processor.image_token
             self.image_token_id = processor.tokenizer.convert_tokens_to_ids(
                 self.image_token
             )
-        except AttributeError:
-            pass
 
     @staticmethod
     def preprocess(examples: list[dict]) -> list[dict]:
