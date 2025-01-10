@@ -67,7 +67,7 @@ class MultiModalChatDataCollator(DataCollatorMixin):
 
         # The labels are the input_ids, and we mask the padding tokens in the loss computation
         labels = batch["input_ids"].clone()
-        labels[labels == processing_strategy.processor.tokenizer.pad_token_id] = -100  #
+        labels[labels == processing_strategy.processor.tokenizer.pad_token_id] = -100
         # Ignore the image token index in the loss computation (model specific)
         labels[labels == processing_strategy.image_token_id] = -100
         batch["labels"] = labels
