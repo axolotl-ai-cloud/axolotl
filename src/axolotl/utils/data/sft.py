@@ -46,6 +46,7 @@ from axolotl.utils.data.pretraining import wrap_pretraining_dataset
 from axolotl.utils.data.shared import load_dataset_w_config
 from axolotl.utils.data.utils import (
     deduplicate_and_log_datasets,
+    drop_long_seq_in_dataset,
     md5,
     retry_on_request_exceptions,
 )
@@ -53,7 +54,6 @@ from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import is_local_main_process, zero_first
 from axolotl.utils.trainer import (
     calculate_total_num_steps,
-    drop_long_seq_in_dataset,
     process_datasets_for_packing,
 )
 

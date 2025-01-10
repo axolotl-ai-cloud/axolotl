@@ -17,6 +17,7 @@ from torch.utils.data import DataLoader, RandomSampler
 from transformers.utils import is_torch_bf16_gpu_available
 
 from axolotl.core.trainer_builder import HFCausalTrainerBuilder, HFRLTrainerBuilder
+from axolotl.utils.data.utils import drop_long_seq
 from axolotl.utils.distributed import reduce_and_broadcast
 from axolotl.utils.environment import check_cuda_p2p_ib_support
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
