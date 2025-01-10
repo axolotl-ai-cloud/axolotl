@@ -46,6 +46,5 @@ class TestLoRALoad:
             }
         )
         normalize_config(cfg)
-        cli_args = TrainerCliArgs()
         tokenizer = load_tokenizer(cfg)
-        load_model(cfg, tokenizer, inference=cli_args.inference)
+        load_model(cfg, tokenizer)
