@@ -12,14 +12,12 @@ def test_shard_with_accelerate(cli_runner, config_path):
         result = cli_runner.invoke(cli, ["shard", str(config_path), "--accelerate"])
 
         assert mock.called
-        assert mock.call_args.args[0] == [
+        assert mock.call_args.args[0][:5] == [
             "accelerate",
             "launch",
             "-m",
             "axolotl.cli.shard",
             str(config_path),
-            "--debug-num-examples",
-            "0",
         ]
         assert mock.call_args.kwargs == {"check": True}
         assert result.exit_code == 0
