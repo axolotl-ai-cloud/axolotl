@@ -9,6 +9,7 @@ from typing import Any
 
 import torch
 import wandb
+from torch import nn
 from transformers import TrainerCallback
 
 from axolotl.utils.distributed import is_main_process
@@ -22,16 +23,23 @@ class DifferentialAttentionMonitorCallback(TrainerCallback):
     monitoring for a specified number of layers evenly spaced through the model.
     """
 
-    def __init__(self, log_every: int = 250, num_monitor_layers: int = 3):
+    def __init__(
+        self,
+        log_every: int = 250,
+        num_monitor_layers: int = 3,
+        warmup_steps: int | None = None,
+    ):
         """
         Initialize the differential attention monitor.
 
         Args:
             log_every: Number of steps between logging events.
             num_monitor_layers: Number of individual layers to monitor in detail.
+            warmup_steps: Optional parameter for negative attention component warmup.
         """
         self.log_every = log_every
         self.num_monitor_layers = num_monitor_layers
+        self.warmup_steps = warmup_steps
         self.monitor_layers: list[int] | None = None  # Will be set in on_train_begin
 
     # pylint: disable=unused-argument
@@ -101,7 +109,6 @@ class DifferentialAttentionMonitorCallback(TrainerCallback):
         all_lambda_full = []
 
         metrics = {}
-
         for layer_idx, layer in enumerate(model.model.layers):
             attn = layer.self_attn
 
@@ -168,4 +175,60 @@ class DifferentialAttentionMonitorCallback(TrainerCallback):
             }
         )
 
+        if self.warmup_steps:
+            metrics["aggregate/diff_attn_mix"] = attn.diff_attn_mix
+
         wandb.log(metrics, step=state.global_step)
+
+
+class DifferentialAttentionMixingCallback(TrainerCallback):
+    """
+    Callback to gradually increase the weight of negative attention components during
+    training.
+    """
+
+    def __init__(self, warmup_steps: int):
+        """
+        Args:
+            warmup_steps: Number of steps to linearly increase negative attention
+                weight from 0 to 1. If `None`, negative attention has full weight from
+                start.
+        """
+        self.warmup_steps = warmup_steps
+        self.diff_attention_layers: list[nn.Module] | None = None
+
+    # pylint: disable=unused-argument
+    def on_train_begin(
+        self,
+        args: Any,
+        state: Any,
+        control: Any,
+        model: torch.nn.Module,
+        **kwargs,
+    ) -> None:
+        """Cache the differential attention layers at the start of training."""
+        if model is not None:
+            # Get the actual model if it's wrapped
+            if hasattr(model, "module"):
+                model = model.module
+
+            # Cache all differential attention layers
+            self.diff_attention_layers = [
+                module for module in model.modules() if hasattr(module, "diff_attn_mix")
+            ]
+
+    def on_step_begin(
+        self,
+        args: Any,
+        state: Any,
+        control: Any,
+        model: torch.nn.Module = None,
+        **kwargs,
+    ) -> None:
+        if self.diff_attention_layers and self.warmup_steps:
+            # Calculate mixing parameter (0 to 1)
+            mix = min(1.0, state.global_step / self.warmup_steps)
+
+            # Update cached layers
+            for layer in self.diff_attention_layers:
+                layer.diff_attn_mix = mix

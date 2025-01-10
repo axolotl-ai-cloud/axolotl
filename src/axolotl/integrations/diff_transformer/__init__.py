@@ -6,7 +6,10 @@ from typing import List
 from transformers import PreTrainedModel, TrainerCallback
 
 from axolotl.integrations.base import BasePlugin
-from axolotl.utils.callbacks.differential import DifferentialAttentionMonitorCallback
+from axolotl.utils.callbacks.differential import (
+    DifferentialAttentionMixingCallback,
+    DifferentialAttentionMonitorCallback,
+)
 from axolotl.utils.dict import DictDefault
 
 LOG = logging.getLogger(__name__)
@@ -29,6 +32,7 @@ class DifferentialTransformerPlugin(BasePlugin):
         """Returns module path to diff transformer plugin args for `axolotl` config."""
         return "axolotl.integrations.diff_transformer.args.DifferentialTransformerArgs"
 
+    # pylint: disable=unused-argument
     def add_callbacks_pre_trainer(
         self, cfg: DictDefault, model: PreTrainedModel
     ) -> List[TrainerCallback]:
@@ -49,6 +53,14 @@ class DifferentialTransformerPlugin(BasePlugin):
                 DifferentialAttentionMonitorCallback(
                     log_every=cfg.diff_attn_log_every,
                     num_monitor_layers=cfg.diff_attn_num_monitor_layers,
+                    warmup_steps=cfg.diff_attn_warmup_steps,
+                )
+            )
+
+        if cfg.diff_attn_warmup_steps:
+            callbacks.append(
+                DifferentialAttentionMixingCallback(
+                    warmup_steps=cfg.diff_attn_warmup_steps
                 )
             )
 

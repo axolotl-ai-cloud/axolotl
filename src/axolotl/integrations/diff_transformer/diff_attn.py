@@ -71,19 +71,19 @@ class LlamaDifferentialAttentionBase(nn.Module):
     It supports both split heads and double projection modes for attention computation.
     """
 
-    def __init__(self, config: Any, layer_idx: int) -> None:
+    def __init__(self, config: Any, layer_idx: int):
         """
         Initializes the differential attention module.
 
         Args:
             config: Model configuration object containing hyperparameters, including:
-                - hidden_size: The size of hidden states
-                - num_attention_heads: Number of attention heads
-                - num_key_value_heads: Number of key/value heads
-                - attention_bias: Whether to use bias in attention projections
-                - split_heads: Whether to use split heads mode
-                - rms_norm_eps: Epsilon for RMS normalization
-            layer_idx: The index of this layer in the model
+                - hidden_size: The size of hidden states.
+                - num_attention_heads: Number of attention heads.
+                - num_key_value_heads: Number of key/value heads.
+                - attention_bias: Whether to use bias in attention projections.
+                - split_heads: Whether to use split heads mode.
+                - rms_norm_eps: Epsilon for RMS normalization.
+            layer_idx: The index of this layer in the model.
 
         Note:
             The initialization process consists of four steps:
@@ -111,12 +111,11 @@ class LlamaDifferentialAttentionBase(nn.Module):
         dimension sizes and head counts based on the provided config. Handles both
         split heads and double projection modes.
 
+        In split heads mode, the number of heads is divided by 2 (rounding down), which
+        differs from the original implementation that required an even number.
+
         Args:
             layer_idx: Index of the current layer.
-
-        Note:
-            In split heads mode, the number of heads is divided by 2 (rounding down),
-            which differs from the original implementation that required an even number.
         """
         self.head_dim = self.config.hidden_size // self.config.num_attention_heads
         self.base_num_heads = self.config.num_attention_heads
@@ -170,10 +169,13 @@ class LlamaDifferentialAttentionBase(nn.Module):
         Initializes parameters specific to differential attention.
 
         Creates learnable parameters for the differential attention mechanism:
-        - Lambda parameters for queries and keys
-        - Initial lambda value based on layer index
-        - Rotary position embedding layer
+        - Mixing parameter for negative attention component warmup phase.
+        - Lambda parameters for queries and keys.
+        - Initial lambda value based on layer index.
+        - Rotary position embedding layer.
         """
+        self.diff_attn_mix = 0.0  # Default to full mixing
+
         self.lambda_init = nn.Parameter(
             torch.full((), lambda_init_fn(self.layer_idx)),
             requires_grad=False,
@@ -190,6 +192,7 @@ class LlamaDifferentialAttentionBase(nn.Module):
         self.lambda_k2 = nn.Parameter(
             torch.zeros(self.head_dim).normal_(mean=0, std=0.1)
         )
+
         self.rotary_emb = LlamaRotaryEmbedding(config=self.config)
 
     def _init_normalization(self) -> None:
@@ -344,8 +347,9 @@ class LlamaDifferentialAttentionBase(nn.Module):
         """
         Computes lambda values for differential attention.
 
-        The lambda value is computed as λ₁ - λ₂ + λ_init, where λ₁ and λ₂ are
-        computed from the learned parameters.
+        The lambda value is computed as λ₁ - λ₂ + λ_init, where λ₁ and λ₂ are computed
+        from the learned parameters. `diff_attn_mix` is multiplied through the result
+        for negative attention component warmup phase (if applicable).
 
         Args:
             q1: Positive attention query component, used for type casting.
@@ -359,8 +363,9 @@ class LlamaDifferentialAttentionBase(nn.Module):
         lambda_2 = torch.exp(
             torch.sum(self.lambda_q2 * self.lambda_k2, dim=-1).float()
         ).type_as(q1)
+        lambda_full = lambda_1 - lambda_2 + self.lambda_init
 
-        return lambda_1 - lambda_2 + self.lambda_init
+        return self.diff_attn_mix * lambda_full
 
     def _process_attention_output(
         self, attn: torch.Tensor, bsz: int, q_len: int
@@ -378,7 +383,7 @@ class LlamaDifferentialAttentionBase(nn.Module):
             Processed attention output of shape (batch_size, seq_len, hidden_size)
         """
         attn = self.subln(attn)
-        attn = attn * (1 - self.lambda_init)
+        attn = attn * self.diff_attn_mix * (1 - self.lambda_init)
         attn = attn.transpose(1, 2).reshape(bsz, q_len, self.config.hidden_size)
 
         return self.o_proj(attn)
