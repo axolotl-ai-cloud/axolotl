@@ -31,7 +31,7 @@ class MultiModalChatDataCollator(DataCollatorMixin):
             raise ValueError("Packing is currently not supported.")
 
     def torch_call(
-        self, examples: list[Union[list[int], Any, dict[str, Any]]]
+        self, examples: list[dict]  # list[Union[list[int], Any, dict[str, Any]]]
     ) -> dict[str, Any]:
         # Handle dict or lists with proper padding and conversion to tensor.
         return self.__class__.process_rows(
@@ -42,9 +42,9 @@ class MultiModalChatDataCollator(DataCollatorMixin):
 
     @staticmethod
     def process_rows(
-        examples,
+        examples: list[dict],
         processing_strategy: ProcessingStrategy,
-        max_images,
+        max_images: int = -1,
         length_only=False,
     ):
         # HINT: use `_torch_collate_batch` to stack and pad tensors
