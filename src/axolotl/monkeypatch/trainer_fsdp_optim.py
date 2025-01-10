@@ -6,7 +6,7 @@ import logging
 
 from transformers import Trainer
 
-from axolotl.monkeypatch.unsloth_ import detab_code
+from axolotl.monkeypatch.utils import detab_code
 
 LOG = logging.getLogger("axolotl.monkeypatch.trainer_fsdp_save")
 

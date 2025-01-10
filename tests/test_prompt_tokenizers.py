@@ -4,9 +4,7 @@ import json
 import logging
 import unittest
 from pathlib import Path
-from typing import Optional
 
-import pytest
 from datasets import load_dataset
 from transformers import AddedToken, AutoTokenizer, LlamaTokenizer
 
@@ -64,12 +62,6 @@ class TestPromptTokenizationStrategies(unittest.TestCase):
     """
     Test class for prompt tokenization strategies.
     """
-
-    _caplog: Optional[pytest.LogCaptureFixture] = None
-
-    @pytest.fixture(autouse=True)
-    def inject_fixtures(self, caplog):
-        self._caplog = caplog
 
     def setUp(self) -> None:
         # pylint: disable=duplicate-code

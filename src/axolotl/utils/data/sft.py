@@ -88,6 +88,7 @@ def prepare_dataset(cfg, tokenizer, processor=None):
         path = cfg.pretraining_dataset
         split = "train"
         name = None
+        data_files = None
         if isinstance(cfg.pretraining_dataset, list) and isinstance(
             cfg.pretraining_dataset[0], dict
         ):
@@ -95,6 +96,8 @@ def prepare_dataset(cfg, tokenizer, processor=None):
             name = cfg.pretraining_dataset[0]["name"]
             if "split" in cfg.pretraining_dataset[0]:
                 split = cfg.pretraining_dataset[0]["split"]
+
+            data_files = cfg.pretraining_dataset[0].get("data_files")
 
         ds_wrapper_partial = functools.partial(
             get_dataset_wrapper,
@@ -105,7 +108,9 @@ def prepare_dataset(cfg, tokenizer, processor=None):
         )
 
         train_dataset = wrap_pretraining_dataset(
-            load_dataset(path, streaming=True, split=split, name=name),
+            load_dataset(
+                path, streaming=True, split=split, name=name, data_files=data_files
+            ),
             tokenizer,
             cfg,
             ds_wrapper_partial,
