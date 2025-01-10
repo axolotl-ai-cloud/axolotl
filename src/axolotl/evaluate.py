@@ -66,7 +66,7 @@ def evaluate(*, cfg: DictDefault, dataset_meta: TrainDatasetMeta) -> Dict[str, f
     Evaluate a model on training and validation datasets
 
     Args:
-        cfg: Config dictionary.
+        cfg: Dictionary mapping `axolotl` config keys to values.
         dataset_meta: Dataset metadata containing training and evaluation datasets.
 
     Returns:

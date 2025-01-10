@@ -12,12 +12,12 @@ from colorama import Fore
 from dotenv import load_dotenv
 from transformers import AutoModelForCausalLM
 
+from axolotl.cli.args import PreprocessCliArgs
 from axolotl.cli.art import print_axolotl_text_art
 from axolotl.cli.checks import check_accelerate_default_config, check_user_token
 from axolotl.cli.config import load_cfg
-from axolotl.common.cli import PreprocessCliArgs
 from axolotl.common.const import DEFAULT_DATASET_PREPARED_PATH
-from axolotl.common.datasets import load_datasets, load_rl_datasets
+from axolotl.common.datasets import load_datasets, load_dpo_datasets
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.trainer import disable_datasets_caching
 
@@ -47,8 +47,8 @@ def do_preprocess(cfg: DictDefault, cli_args: PreprocessCliArgs) -> None:
         cfg.dataset_prepared_path = DEFAULT_DATASET_PREPARED_PATH
 
     with disable_datasets_caching():
-        if cfg.rl:  # and cfg.rl != "orpo":
-            load_rl_datasets(cfg=cfg, cli_args=cli_args)
+        if cfg.rl:
+            load_dpo_datasets(cfg=cfg, cli_args=cli_args)
         else:
             load_datasets(cfg=cfg, cli_args=cli_args)
 

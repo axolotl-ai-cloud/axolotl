@@ -94,7 +94,7 @@ def check_remote_config(config: Union[str, Path]) -> Union[str, Path]:
         raise err
 
 
-def choose_config(path: Path):
+def choose_config(path: Path) -> str:
     """
     Helper method for choosing a `axolotl` config YAML file (considering only files
     ending with `.yml` or `.yaml`). If more than one config file exists in the passed
@@ -152,7 +152,7 @@ def prepare_plugins(cfg: DictDefault):
             plugin_manager.register(plugin_name)
 
 
-def load_cfg(config: Union[str, Path] = Path("examples/"), **kwargs):
+def load_cfg(config: Union[str, Path] = Path("examples/"), **kwargs) -> DictDefault:
     """
     Loads the `axolotl` configuration stored at `config`, validates it, and performs
     various setup.

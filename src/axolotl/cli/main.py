@@ -7,6 +7,7 @@ from typing import Optional
 import click
 
 import axolotl
+from axolotl.cli.args import EvaluateCliArgs, PreprocessCliArgs, TrainerCliArgs
 from axolotl.cli.utils import (
     add_options_from_config,
     add_options_from_dataclass,
@@ -14,7 +15,6 @@ from axolotl.cli.utils import (
     fetch_from_github,
     filter_none_kwargs,
 )
-from axolotl.common.cli import EvaluateCliArgs, PreprocessCliArgs, TrainerCliArgs
 from axolotl.utils import set_pytorch_cuda_alloc_conf
 from axolotl.utils.config.models.input.v0_4_1 import AxolotlInputConfig
 

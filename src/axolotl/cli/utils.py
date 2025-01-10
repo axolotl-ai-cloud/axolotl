@@ -8,16 +8,34 @@ import logging
 from functools import wraps
 from pathlib import Path
 from types import NoneType
-from typing import Any, Dict, List, Optional, Tuple, Type, Union, get_args, get_origin
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Tuple,
+    Type,
+    Union,
+    get_args,
+    get_origin,
+)
 
 import click
 import requests
 from pydantic import BaseModel
+from transformers import PreTrainedModel, PreTrainedTokenizer, PreTrainedTokenizerFast
 
+import axolotl.monkeypatch.data.batch_dataset_fetcher  # pylint: disable=unused-import  # noqa: F401
+from axolotl.logging_config import configure_logging
+from axolotl.utils.dict import DictDefault
+from axolotl.utils.models import load_model, load_tokenizer
+
+configure_logging()
 LOG = logging.getLogger(__name__)
 
 
-def filter_none_kwargs(func):
+def filter_none_kwargs(func: Callable) -> Callable:
     """
     Wraps function to remove `None`-valued `kwargs`.
 
@@ -29,15 +47,16 @@ def filter_none_kwargs(func):
     """
 
     @wraps(func)
-    def wrapper(*args, **kwargs):
+    def wrapper(*args, **kwargs) -> Callable:
         """Filters out `None`-valued `kwargs`."""
         filtered_kwargs = {k: v for k, v in kwargs.items() if v is not None}
+
         return func(*args, **filtered_kwargs)
 
     return wrapper
 
 
-def add_options_from_dataclass(config_class: Type[Any]):
+def add_options_from_dataclass(config_class: Type[Any]) -> Callable:
     """
     Create Click options from the fields of a dataclass.
 
@@ -75,7 +94,7 @@ def add_options_from_dataclass(config_class: Type[Any]):
     return decorator
 
 
-def add_options_from_config(config_class: Type[BaseModel]):
+def add_options_from_config(config_class: Type[BaseModel]) -> Callable:
     """
     Create Click options from the fields of a Pydantic model.
 
@@ -256,3 +275,28 @@ def fetch_from_github(
     LOG.info(f"Unchanged files: {len(files_processed['unchanged'])}")
     if files_processed["error"]:
         LOG.info(f"Failed files: {len(files_processed['error'])}")
+
+
+def load_model_and_tokenizer(
+    *,
+    cfg: DictDefault,
+    inference: bool = False,
+) -> Tuple[PreTrainedModel, PreTrainedTokenizer | PreTrainedTokenizerFast | Any]:
+    """
+    Helper function for loading a model and tokenizer specified in the given `axolotl`
+    config.
+
+    Args:
+        cfg: Dictionary mapping `axolotl` config keys to values.
+        inference: Boolean denoting inference mode.
+
+    Returns:
+        `transformers` model and tokenizer.
+    """
+    LOG.info(f"loading tokenizer... {cfg.tokenizer_config or cfg.base_model_config}")
+    tokenizer = load_tokenizer(cfg)
+
+    LOG.info("loading model...")
+    model, _ = load_model(cfg, tokenizer, inference=inference)
+
+    return model, tokenizer

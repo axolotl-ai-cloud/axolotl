@@ -24,9 +24,9 @@ from huggingface_hub import split_torch_state_dict_into_shards
 from safetensors.torch import save_file as safe_save_file
 from torch.distributed.checkpoint.format_utils import _EmptyStateDictLoadPlanner
 
+from axolotl.cli.args import TrainerCliArgs
 from axolotl.cli.art import print_axolotl_text_art
 from axolotl.cli.config import load_cfg
-from axolotl.common.cli import TrainerCliArgs
 
 LOG = logging.getLogger(__name__)
 

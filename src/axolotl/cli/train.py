@@ -8,11 +8,11 @@ import fire
 from dotenv import load_dotenv
 from transformers.hf_argparser import HfArgumentParser
 
+from axolotl.cli.args import TrainerCliArgs
 from axolotl.cli.art import print_axolotl_text_art
 from axolotl.cli.checks import check_accelerate_default_config, check_user_token
 from axolotl.cli.config import load_cfg
-from axolotl.common.cli import TrainerCliArgs
-from axolotl.common.datasets import load_datasets, load_rl_datasets
+from axolotl.common.datasets import load_datasets, load_dpo_datasets
 from axolotl.integrations.base import PluginManager
 from axolotl.train import train
 from axolotl.utils.dict import DictDefault
@@ -34,8 +34,8 @@ def do_train(cfg: DictDefault, cli_args: TrainerCliArgs) -> None:
     check_accelerate_default_config()
     check_user_token()
 
-    if cfg.rl:  # and cfg.rl != "orpo":
-        dataset_meta = load_rl_datasets(cfg=cfg, cli_args=cli_args)
+    if cfg.rl:
+        dataset_meta = load_dpo_datasets(cfg=cfg, cli_args=cli_args)
     else:
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 

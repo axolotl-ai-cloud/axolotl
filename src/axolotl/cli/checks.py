@@ -14,7 +14,7 @@ configure_logging()
 LOG = logging.getLogger(__name__)
 
 
-def check_accelerate_default_config():
+def check_accelerate_default_config() -> None:
     """Logs at warning level if no accelerate config file is found."""
     if Path(config_args.default_yaml_config_file).exists():
         LOG.warning(
@@ -22,7 +22,7 @@ def check_accelerate_default_config():
         )
 
 
-def check_user_token():
+def check_user_token() -> bool:
     """Checks for HF user info. Check is skipped if HF_HUB_OFFLINE=1.
 
     Returns:

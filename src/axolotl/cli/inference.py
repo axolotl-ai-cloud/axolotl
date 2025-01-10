@@ -13,9 +13,10 @@ import transformers
 from dotenv import load_dotenv
 from transformers import GenerationConfig, TextIteratorStreamer, TextStreamer
 
+from axolotl.cli.args import InferenceCliArgs
 from axolotl.cli.art import print_axolotl_text_art
 from axolotl.cli.config import load_cfg
-from axolotl.common.cli import InferenceCliArgs, load_model_and_tokenizer
+from axolotl.cli.utils import load_model_and_tokenizer
 from axolotl.utils.chat_templates import (
     get_chat_template,
     get_chat_template_from_config,
@@ -33,10 +34,11 @@ def get_multi_line_input() -> str:
         Possibly multi-line, possibly empty stdin input as a string.
     """
     print("Give me an instruction (Ctrl + D to submit): ")
+
     instruction = ""
     for line in sys.stdin:
         instruction += line  # pylint: disable=consider-using-join
-    # instruction = pathlib.Path("/proc/self/fd/0").read_text()
+
     return instruction
 
 

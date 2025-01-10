@@ -8,7 +8,7 @@ from typing import Optional, Union
 
 from datasets import Dataset
 
-from axolotl.common.cli import PreprocessCliArgs, TrainerCliArgs
+from axolotl.cli.args import PreprocessCliArgs, TrainerCliArgs
 from axolotl.utils.data import prepare_dataset
 from axolotl.utils.data.rl import load_prepare_dpo_datasets
 from axolotl.utils.dict import DictDefault
@@ -27,7 +27,7 @@ class TrainDatasetMeta:
     total_num_steps: Optional[int] = None
 
 
-def sample_dataset(dataset: Dataset, num_samples: int):
+def sample_dataset(dataset: Dataset, num_samples: int) -> Dataset:
     """
     Randomly sample `num_samples` samples from `dataset`.
 
@@ -96,7 +96,7 @@ def load_datasets(
     )
 
 
-def load_rl_datasets(
+def load_dpo_datasets(
     *,
     cfg: DictDefault,
     cli_args: Union[
@@ -104,7 +104,7 @@ def load_rl_datasets(
     ],  # pylint: disable=unused-argument
 ) -> TrainDatasetMeta:
     """
-    Loads one or more training or evaluation datasets for RL training, calling
+    Loads one or more training or evaluation datasets for DPO training, calling
     `axolotl.utils.data.rl.load_prepare_dpo_datasets`. Optionally, logs out debug
     information.
 
