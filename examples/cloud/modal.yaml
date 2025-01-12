@@ -1,0 +1,15 @@
+volumes:
+  - name: axolotl-data
+    mount: /workspace/data
+  - name: axolotl-artifacts
+    mount: /workspace/artifacts
+secrets:
+  - HF_TOKEN
+  - WANDB_API_KEY
+branch:
+gpu: h100
+gpu_count: 1
+memory: 128
+timeout: 86400
+timeout_preprocess: 14400
+memory_preprocess: 32
