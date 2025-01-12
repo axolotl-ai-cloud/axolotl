@@ -53,6 +53,7 @@ def build_lm_eval_command(
             str(batch_size),
             "--output_path",
             output_path,
+            "--apply_chat_template",
         ]
         wandb_args = []
         if wandb_project:
@@ -65,6 +66,7 @@ def build_lm_eval_command(
         if num_fewshot_val:
             lm_eval_args.append("--num_fewshot")
             lm_eval_args.append(str(num_fewshot_val))
+            # lm_eval_args.append("--fewshot_as_multiturn")
 
         yield lm_eval_args
 
