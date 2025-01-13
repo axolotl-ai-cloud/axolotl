@@ -5,21 +5,19 @@ import os
 import signal
 import sys
 import weakref
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Tuple, Union
+from typing import Tuple, Union
 
 import torch
 import transformers.modelcard
 from accelerate.logging import get_logger
 from accelerate.utils import save_fsdp_model
-from datasets import Dataset
 from peft import PeftModel
 from pkg_resources import get_distribution  # type: ignore
 from transformers import PreTrainedModel, PreTrainedTokenizer
 from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
 
-from axolotl.common.cli import TrainerCliArgs
+from axolotl.common.datasets import TrainDatasetMeta
 from axolotl.contribs.lgpl.unsloth import (  # pylint: disable = no-name-in-module
     fix_untrained_tokens,
 )
@@ -39,22 +37,11 @@ src_dir = os.path.join(project_root, "src")
 sys.path.insert(0, src_dir)
 
 configure_logging()
-LOG = get_logger("axolotl.train")
-
-
-@dataclass
-class TrainDatasetMeta:
-    """
-    dataclass to capture the dataset specific options for training
-    """
-
-    train_dataset: Dataset
-    eval_dataset: Optional[Dataset] = None
-    total_num_steps: Optional[int] = None
+LOG = get_logger(__name__)
 
 
 def train(
-    *, cfg: DictDefault, cli_args: TrainerCliArgs, dataset_meta: TrainDatasetMeta
+    *, cfg: DictDefault, dataset_meta: TrainDatasetMeta
 ) -> Tuple[Union[PeftModel, PreTrainedModel], PreTrainedTokenizer]:
     # Load tokenizer
     LOG.debug(
@@ -93,9 +80,7 @@ def train(
     if cfg.adapter:
         msg += " and peft_config..."
     LOG.debug(msg)
-    model, peft_config = load_model(
-        cfg, tokenizer, processor=processor, inference=cli_args.inference
-    )
+    model, peft_config = load_model(cfg, tokenizer, processor=processor)
     if model.generation_config is not None:
         model.generation_config.do_sample = True
 
@@ -107,9 +92,7 @@ def train(
             model_ref = None  # explicit setting to None
         else:
             # load the model again for model_ref/baseline
-            model_ref, _ = load_model(
-                cfg, tokenizer, inference=cli_args.inference, reference_model=True
-            )
+            model_ref, _ = load_model(cfg, tokenizer, reference_model=True)
 
     safe_serialization = cfg.save_safetensors is True
 

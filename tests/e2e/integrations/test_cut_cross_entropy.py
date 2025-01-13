@@ -4,8 +4,8 @@ Simple end-to-end test for Cut Cross Entropy integration
 
 import pytest
 
-from axolotl.cli import load_datasets
-from axolotl.common.cli import TrainerCliArgs
+from axolotl.cli.args import TrainerCliArgs
+from axolotl.common.datasets import load_datasets
 from axolotl.train import train
 from axolotl.utils import get_pytorch_version
 from axolotl.utils.config import normalize_config, prepare_plugins
@@ -64,9 +64,9 @@ class TestCutCrossEntropyIntegration:
         major, minor, _ = get_pytorch_version()
         if (major, minor) < (2, 4):
             with pytest.raises(ImportError):
-                train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
+                train(cfg=cfg, dataset_meta=dataset_meta)
         else:
-            train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
+            train(cfg=cfg, dataset_meta=dataset_meta)
             check_model_output_exists(temp_dir, cfg)
 
     @pytest.mark.parametrize(
@@ -92,7 +92,7 @@ class TestCutCrossEntropyIntegration:
         major, minor, _ = get_pytorch_version()
         if (major, minor) < (2, 4):
             with pytest.raises(ImportError):
-                train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
+                train(cfg=cfg, dataset_meta=dataset_meta)
         else:
-            train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
+            train(cfg=cfg, dataset_meta=dataset_meta)
             check_model_output_exists(temp_dir, cfg)

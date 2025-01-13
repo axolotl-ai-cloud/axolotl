@@ -9,7 +9,6 @@ from typing import Dict, Optional
 import torch
 from accelerate.logging import get_logger
 
-from axolotl.common.cli import TrainerCliArgs
 from axolotl.logging_config import configure_logging
 from axolotl.train import TrainDatasetMeta
 from axolotl.utils import set_pytorch_cuda_alloc_conf
@@ -62,16 +61,13 @@ def evaluate_dataset(
     return metrics
 
 
-def evaluate(
-    *, cfg: DictDefault, cli_args: TrainerCliArgs, dataset_meta: TrainDatasetMeta
-) -> Dict[str, float]:
+def evaluate(*, cfg: DictDefault, dataset_meta: TrainDatasetMeta) -> Dict[str, float]:
     """
     Evaluate a model on training and validation datasets
 
     Args:
-        cfg: Configuration dictionary
-        cli_args: Command line arguments
-        dataset_meta: Dataset metadata containing training and evaluation datasets
+        cfg: Dictionary mapping `axolotl` config keys to values.
+        dataset_meta: Dataset metadata containing training and evaluation datasets.
 
     Returns:
         Tuple containing:
@@ -102,9 +98,7 @@ def evaluate(
 
     # Load model
     LOG.debug("loading model for evaluation...")
-    model, _ = load_model(
-        cfg, tokenizer, processor=processor, inference=cli_args.inference
-    )
+    model, _ = load_model(cfg, tokenizer, processor=processor)
 
     # Set up trainer
     trainer = setup_trainer(

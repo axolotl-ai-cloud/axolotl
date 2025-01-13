@@ -1,32 +1,85 @@
-"""Utility methods for axoltl CLI."""
+"""Utility methods for axolotl CLI."""
+
 import concurrent.futures
 import dataclasses
 import hashlib
 import json
 import logging
+import typing
+from functools import wraps
 from pathlib import Path
 from types import NoneType
-from typing import Any, Dict, List, Optional, Tuple, Type, Union, get_args, get_origin
+from typing import Any, Callable, Type, Union, get_args, get_origin
 
 import click
 import requests
 from pydantic import BaseModel
+from transformers import PreTrainedModel, PreTrainedTokenizer, PreTrainedTokenizerFast
 
-LOG = logging.getLogger("axolotl.cli.utils")
+from axolotl.logging_config import configure_logging
+from axolotl.utils.dict import DictDefault
+from axolotl.utils.models import load_model, load_tokenizer
+
+configure_logging()
+LOG = logging.getLogger(__name__)
 
 
-def add_options_from_dataclass(config_class: Type[Any]):
-    """Create Click options from the fields of a dataclass."""
+def strip_optional_type(field_type: type | typing._SpecialForm | None):
+    """
+    Extracts the non-`None` type from an `Optional` / `Union` type.
 
-    def decorator(function):
+    Args:
+        field_type: Type of field for Axolotl CLI command.
+
+    Returns:
+        If the input type is `Union[T, None]` or `Optional[T]`, returns `T`. Otherwise
+            returns the input type unchanged.
+    """
+    if get_origin(field_type) is Union and type(None) in get_args(field_type):
+        field_type = next(
+            t for t in get_args(field_type) if not isinstance(t, NoneType)
+        )
+
+    return field_type
+
+
+def filter_none_kwargs(func: Callable) -> Callable:
+    """
+    Wraps function to remove `None`-valued `kwargs`.
+
+    Args:
+        func: Function to wrap.
+
+    Returns:
+        Wrapped function.
+    """
+
+    @wraps(func)
+    def wrapper(*args, **kwargs) -> Callable:
+        """Filters out `None`-valued `kwargs`."""
+        filtered_kwargs = {k: v for k, v in kwargs.items() if v is not None}
+
+        return func(*args, **filtered_kwargs)
+
+    return wrapper
+
+
+def add_options_from_dataclass(config_class: Type[Any]) -> Callable:
+    """
+    Create Click options from the fields of a dataclass.
+
+    Args:
+        config_class: Dataclass with fields to parse from the CLI.
+
+    Returns:
+        Function decorator for Axolotl CLI command.
+    """
+
+    def decorator(function: Callable) -> Callable:
         # Process dataclass fields in reverse order for correct option ordering
         for field in reversed(dataclasses.fields(config_class)):
-            field_type = field.type
+            field_type = strip_optional_type(field.type)
 
-            if get_origin(field_type) is Union and type(None) in get_args(field_type):
-                field_type = next(
-                    t for t in get_args(field_type) if not isinstance(t, NoneType)
-                )
             if field_type == bool:
                 field_name = field.name.replace("_", "-")
                 option_name = f"--{field_name}/--no-{field_name}"
@@ -43,18 +96,29 @@ def add_options_from_dataclass(config_class: Type[Any]):
                     default=field.default,
                     help=field.metadata.get("description"),
                 )(function)
+
         return function
 
     return decorator
 
 
-def add_options_from_config(config_class: Type[BaseModel]):
-    """Create Click options from the fields of a Pydantic model."""
+def add_options_from_config(config_class: Type[BaseModel]) -> Callable:
+    """
+    Create Click options from the fields of a Pydantic model.
 
-    def decorator(function):
+    Args:
+        config_class: PyDantic model with fields to parse from the CLI
+
+    Returns:
+        Function decorator for Axolotl CLI command.
+    """
+
+    def decorator(function: Callable) -> Callable:
         # Process model fields in reverse order for correct option ordering
         for name, field in reversed(config_class.model_fields.items()):
-            if field.annotation == bool:
+            field_type = strip_optional_type(field.annotation)
+
+            if field_type == bool:
                 field_name = name.replace("_", "-")
                 option_name = f"--{field_name}/--no-{field_name}"
                 function = click.option(
@@ -65,13 +129,23 @@ def add_options_from_config(config_class: Type[BaseModel]):
                 function = click.option(
                     option_name, default=None, help=field.description
                 )(function)
+
         return function
 
     return decorator
 
 
-def build_command(base_cmd: List[str], options: Dict[str, Any]) -> List[str]:
-    """Build command list from base command and options."""
+def build_command(base_cmd: list[str], options: dict[str, Any]) -> list[str]:
+    """
+    Build command list from base command and options.
+
+    Args:
+        base_cmd: Command without options.
+        options: Options to parse and append to base command.
+
+    Returns:
+        List of strings giving shell command.
+    """
     cmd = base_cmd.copy()
 
     for key, value in options.items():
@@ -91,18 +165,18 @@ def build_command(base_cmd: List[str], options: Dict[str, Any]) -> List[str]:
 
 def download_file(
     file_info: tuple, raw_base_url: str, dest_path: Path, dir_prefix: str
-) -> Tuple[str, str]:
+) -> tuple[str, str]:
     """
     Download a single file and return its processing status.
 
     Args:
-        file_info: Tuple of (file_path, remote_sha)
-        raw_base_url: Base URL for raw GitHub content
-        dest_path: Local destination directory
-        dir_prefix: Directory prefix to filter files
+        file_info: Tuple of (file_path, remote_sha).
+        raw_base_url: Base URL for raw GitHub content.
+        dest_path: Local destination directory.
+        dir_prefix: Directory prefix to filter files.
 
     Returns:
-        Tuple of (file_path, status) where status is 'new', 'updated', or 'unchanged'
+        Tuple of (file_path, status) where status is 'new', 'updated', or 'unchanged'.
     """
     file_path, remote_sha = file_info
     raw_url = f"{raw_base_url}/{file_path}"
@@ -144,16 +218,17 @@ def download_file(
 
 
 def fetch_from_github(
-    dir_prefix: str, dest_dir: Optional[str] = None, max_workers: int = 5
+    dir_prefix: str, dest_dir: str | None = None, max_workers: int = 5
 ) -> None:
     """
     Sync files from a specific directory in the GitHub repository.
     Only downloads files that don't exist locally or have changed.
 
     Args:
-        dir_prefix: Directory prefix to filter files (e.g., 'examples/', 'deepspeed_configs/')
-        dest_dir: Local destination directory
-        max_workers: Maximum number of concurrent downloads
+        dir_prefix: Directory prefix to filter files (e.g., 'examples/',
+            'deepspeed_configs/').
+        dest_dir: Local destination directory.
+        max_workers: Maximum number of concurrent downloads.
     """
     api_url = "https://api.github.com/repos/axolotl-ai-cloud/axolotl/git/trees/main?recursive=1"
     raw_base_url = "https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/main"
@@ -178,7 +253,7 @@ def fetch_from_github(
     dest_path = Path(dest_dir) if dest_dir else default_dest
 
     # Keep track of processed files for summary
-    files_processed: Dict[str, List[str]] = {
+    files_processed: dict[str, list[str]] = {
         "new": [],
         "updated": [],
         "unchanged": [],
@@ -215,3 +290,28 @@ def fetch_from_github(
     LOG.info(f"Unchanged files: {len(files_processed['unchanged'])}")
     if files_processed["error"]:
         LOG.info(f"Failed files: {len(files_processed['error'])}")
+
+
+def load_model_and_tokenizer(
+    *,
+    cfg: DictDefault,
+    inference: bool = False,
+) -> tuple[PreTrainedModel, PreTrainedTokenizer | PreTrainedTokenizerFast | Any]:
+    """
+    Helper function for loading a model and tokenizer specified in the given `axolotl`
+    config.
+
+    Args:
+        cfg: Dictionary mapping `axolotl` config keys to values.
+        inference: Boolean denoting inference mode.
+
+    Returns:
+        `transformers` model and tokenizer.
+    """
+    LOG.info(f"loading tokenizer... {cfg.tokenizer_config or cfg.base_model_config}")
+    tokenizer = load_tokenizer(cfg)
+
+    LOG.info("loading model...")
+    model, _ = load_model(cfg, tokenizer, inference=inference)
+
+    return model, tokenizer

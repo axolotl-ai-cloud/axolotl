@@ -9,8 +9,8 @@ import unittest
 import torch
 from transformers.utils import is_torch_bf16_gpu_available
 
-from axolotl.cli import load_datasets
-from axolotl.common.cli import TrainerCliArgs
+from axolotl.cli.args import TrainerCliArgs
+from axolotl.common.datasets import load_datasets
 from axolotl.train import train
 from axolotl.utils.config import normalize_config
 from axolotl.utils.dict import DictDefault
@@ -73,7 +73,7 @@ class TestMixtral(unittest.TestCase):
         cli_args = TrainerCliArgs()
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
-        model, _ = train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
+        model, _ = train(cfg=cfg, dataset_meta=dataset_meta)
         assert (
             model.base_model.model.model.layers[0].block_sparse_moe.gate.weight.dtype
             == torch.float32
@@ -127,7 +127,7 @@ class TestMixtral(unittest.TestCase):
         cli_args = TrainerCliArgs()
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
-        model, _ = train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
+        model, _ = train(cfg=cfg, dataset_meta=dataset_meta)
         assert (
             model.base_model.model.model.layers[0].block_sparse_moe.gate.weight.dtype
             == torch.float32
@@ -184,7 +184,7 @@ class TestMixtral(unittest.TestCase):
         cli_args = TrainerCliArgs()
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
-        model, _ = train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
+        model, _ = train(cfg=cfg, dataset_meta=dataset_meta)
         assert (
             model.base_model.model.model.layers[0].block_sparse_moe.gate.weight.dtype
             == torch.float32
@@ -241,7 +241,7 @@ class TestMixtral(unittest.TestCase):
         cli_args = TrainerCliArgs()
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
-        model, _ = train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
+        model, _ = train(cfg=cfg, dataset_meta=dataset_meta)
         assert (
             model.base_model.model.model.layers[0].block_sparse_moe.gate.weight.dtype
             == torch.float32
@@ -285,5 +285,5 @@ class TestMixtral(unittest.TestCase):
         cli_args = TrainerCliArgs()
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
-        train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
+        train(cfg=cfg, dataset_meta=dataset_meta)
         check_model_output_exists(temp_dir, cfg)
