@@ -63,7 +63,11 @@ def load_datasets(
     """
     tokenizer = load_tokenizer(cfg)
     processor = load_processor(cfg, tokenizer=tokenizer) if cfg.processor_type else None
-    preprocess_iterable = hasattr(cli_args, "iterable") and cli_args.iterable is not None and cli_args.iterable
+    preprocess_iterable = (
+        hasattr(cli_args, "iterable")
+        and cli_args.iterable is not None
+        and cli_args.iterable
+    )
 
     train_dataset, eval_dataset, total_num_steps, prompters = prepare_dataset(
         cfg,

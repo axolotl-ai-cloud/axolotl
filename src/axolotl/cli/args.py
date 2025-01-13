@@ -13,7 +13,12 @@ class PreprocessCliArgs:
     debug_num_examples: int = field(default=1)
     prompter: Optional[str] = field(default=None)
     download: Optional[bool] = field(default=True)
-    iterable: Optional[bool] = field(default=None, metadata={"help": "Use IterableDataset for streaming processing of large datasets"})
+    iterable: Optional[bool] = field(
+        default=None,
+        metadata={
+            "help": "Use IterableDataset for streaming processing of large datasets"
+        },
+    )
 
 
 @dataclass

@@ -3,7 +3,7 @@
 import functools
 import logging
 from pathlib import Path
-from typing import List, Tuple, Union, Optional
+from typing import List, Optional, Tuple, Union
 
 from datasets import (
     Dataset,
