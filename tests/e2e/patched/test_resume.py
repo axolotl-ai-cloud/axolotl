@@ -6,7 +6,6 @@ import logging
 import os
 import re
 import subprocess
-from pathlib import Path
 
 from transformers.utils import is_torch_bf16_gpu_available
 
@@ -16,7 +15,7 @@ from axolotl.train import train
 from axolotl.utils.config import normalize_config
 from axolotl.utils.dict import DictDefault
 
-from ..utils import most_recent_subdir
+from ..utils import check_model_output_exists, most_recent_subdir
 
 LOG = logging.getLogger("axolotl.tests.e2e")
 os.environ["WANDB_DISABLED"] = "true"
@@ -83,7 +82,7 @@ class TestResumeLlama:
         cli_args = TrainerCliArgs()
 
         train(cfg=resume_cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-        assert (Path(temp_dir) / "adapter_model.bin").exists()
+        check_model_output_exists(temp_dir, cfg)
 
         tb_log_path_1 = most_recent_subdir(temp_dir + "/runs")
         cmd = f"tensorboard --inspect  --logdir {tb_log_path_1}"

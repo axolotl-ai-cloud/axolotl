@@ -5,7 +5,6 @@ E2E tests for lora llama
 import logging
 import os
 import unittest
-from pathlib import Path
 
 import pytest
 
@@ -15,7 +14,7 @@ from axolotl.train import train
 from axolotl.utils.config import normalize_config
 from axolotl.utils.dict import DictDefault
 
-from .utils import with_temp_dir
+from .utils import check_model_output_exists, with_temp_dir
 
 LOG = logging.getLogger("axolotl.tests.e2e")
 os.environ["WANDB_DISABLED"] = "true"
@@ -65,4 +64,4 @@ class TestMamba(unittest.TestCase):
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
         train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-        assert (Path(temp_dir) / "pytorch_model.bin").exists()
+        check_model_output_exists(temp_dir, cfg)
