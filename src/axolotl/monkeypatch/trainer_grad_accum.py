@@ -14,15 +14,78 @@ LOG = logging.getLogger("axolotl.monkeypatch.trainer_grad_accum")
 
 ORIGINAL_CONTEXT_CODE = """
     with self.compute_loss_context_manager():
+        if self.model_accepts_loss_kwargs:
+            loss = self.compute_loss(model, inputs)
+        else:
+            loss = self.compute_loss(model, inputs, num_items_in_batch=num_items_in_batch)
         loss = self.compute_loss(model, inputs, num_items_in_batch=num_items_in_batch)
+
+    del inputs
+    if (
+        self.args.torch_empty_cache_steps is not None
+        and self.state.global_step % self.args.torch_empty_cache_steps == 0
+    ):
+        if is_torch_xpu_available():
+            torch.xpu.empty_cache()
+        elif is_torch_mlu_available():
+            torch.mlu.empty_cache()
+        elif is_torch_musa_available():
+            torch.musa.empty_cache()
+        elif is_torch_npu_available():
+            torch.npu.empty_cache()
+        elif is_torch_mps_available(min_version="2.0"):
+            torch.mps.empty_cache()
+        else:
+            torch.cuda.empty_cache()
+    kwargs = {}
+    # For LOMO optimizers you need to explicitly use the learnign rate
+    if self.args.optim in [OptimizerNames.LOMO, OptimizerNames.ADALOMO]:
+        kwargs["learning_rate"] = self._get_learning_rate()
+    if self.args.n_gpu > 1:
+        loss = loss.mean()  # mean() to average on multi-gpu parallel training
+    if self.use_apex:
+        with amp.scale_loss(loss, self.optimizer) as scaled_loss:
+            scaled_loss.backward()
+    else:
+        # Finally we need to normalize the loss for reporting
+        if num_items_in_batch is None:
+            loss = loss / self.args.gradient_accumulation_steps
 """
 
 PATCHED_CONTEXT_CODE = """
     with self.compute_loss_context_manager():
-        if self.model_accepts_loss_kwargs:
-            loss = self.compute_loss(model, inputs, num_items_in_batch=num_items_in_batch)
+        loss = self.compute_loss(model, inputs, num_items_in_batch=num_items_in_batch)
+
+    del inputs
+    if (
+        self.args.torch_empty_cache_steps is not None
+        and self.state.global_step % self.args.torch_empty_cache_steps == 0
+    ):
+        if is_torch_xpu_available():
+            torch.xpu.empty_cache()
+        elif is_torch_mlu_available():
+            torch.mlu.empty_cache()
+        elif is_torch_musa_available():
+            torch.musa.empty_cache()
+        elif is_torch_npu_available():
+            torch.npu.empty_cache()
+        elif is_torch_mps_available(min_version="2.0"):
+            torch.mps.empty_cache()
         else:
-            loss = self.compute_loss(model, inputs)
+            torch.cuda.empty_cache()
+    kwargs = {}
+    # For LOMO optimizers you need to explicitly use the learnign rate
+    if self.args.optim in [OptimizerNames.LOMO, OptimizerNames.ADALOMO]:
+        kwargs["learning_rate"] = self._get_learning_rate()
+    if self.args.n_gpu > 1:
+        loss = loss.mean()  # mean() to average on multi-gpu parallel training
+    if self.use_apex:
+        with amp.scale_loss(loss, self.optimizer) as scaled_loss:
+            scaled_loss.backward()
+    else:
+        # Finally we need to normalize the loss for reporting
+        if not self.model_accepts_loss_kwargs and self.compute_loss_func is None:
+            loss = loss / self.args.gradient_accumulation_steps
 """
 
 ORIGINAL_LLAMA_FCLM_CODE = """

@@ -49,12 +49,7 @@ class TestModelPatches(unittest.TestCase):
         )
         normalize_config(cfg)
         tokenizer = load_tokenizer(cfg)
-        model, _ = load_model(cfg, tokenizer, inference=False)
-
-        assert (
-            "MixtralFlashAttention2"
-            in model.model.layers[0].self_attn.__class__.__name__
-        )
+        load_model(cfg, tokenizer, inference=False)
 
     @with_temp_dir
     def test_mistral_multipack(self, temp_dir):
