@@ -168,5 +168,8 @@ setup(
             "lomo-optim==0.1.1",
             "torch-optimi==0.2.1",
         ],
+        "ray": [
+            "ray[train]",
+        ],
     },
 )
