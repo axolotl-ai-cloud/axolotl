@@ -6,7 +6,7 @@ from typing import List
 from transformers import PreTrainedModel, TrainerCallback
 
 from axolotl.integrations.base import BasePlugin
-from axolotl.utils.callbacks.differential import (
+from axolotl.utils.callbacks.diff_attn import (
     DifferentialAttentionMixingCallback,
     DifferentialAttentionMonitorCallback,
 )
