@@ -1,0 +1,11 @@
+lm_eval_model: axolotl-ai-co/numina-8b-ep1-exp1
+lm_eval_tasks:
+  - leaderboard_math_hard
+lm_eval_batch_size: 64
+
+apply_chat_template: false
+wandb_project: numina-kd-experiment
+wandb_entity: axolotl-ai
+bf16: true
+flash_attention: true
+output_dir: ./outputs/model-evals-out

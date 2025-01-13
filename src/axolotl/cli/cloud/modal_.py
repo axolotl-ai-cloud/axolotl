@@ -99,6 +99,7 @@ class ModalCloud(Cloud):
                     # Random id for cache busting of branch commits
                     f"RUN echo '{str(randint(0, 1000000))}'",  # nosec B311
                     f"RUN cd /workspace/axolotl && git fetch && git checkout {self.config.branch}",
+                    "RUN cd /workspace/ && git clone https://github.com/winglian/lm-evaluation-harness.git && cd lm-evaluation-harness && pip install -e .[math]",
                 ]
             )
 
