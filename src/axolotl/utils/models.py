@@ -1057,7 +1057,7 @@ class ModelLoader:
         )
         if (
             hasattr(self.model, "get_input_embeddings")
-            and self.model.get_input_embeddings().num_embeddings < embeddings_len
+            and self.model.get_input_embeddings().num_embeddings != embeddings_len
         ):
             resize_kwargs = {}
             if self.cfg.mean_resizing_embeddings is not None:
