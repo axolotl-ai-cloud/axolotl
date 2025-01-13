@@ -55,6 +55,7 @@ class LigerIntegrationTestCase:
                 "max_steps": 5,
             }
         )
+        # pylint: disable=duplicate-code
         prepare_plugins(cfg)
         normalize_config(cfg)
         cli_args = TrainerCliArgs()
@@ -100,6 +101,7 @@ class LigerIntegrationTestCase:
                 "max_steps": 5,
             }
         )
+        # pylint: disable=duplicate-code
         prepare_plugins(cfg)
         normalize_config(cfg)
         cli_args = TrainerCliArgs()

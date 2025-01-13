@@ -3,6 +3,7 @@ HF Chat Templates prompt strategy
 """
 
 import logging
+from collections import defaultdict
 from typing import Any, Dict, List, Optional
 
 from transformers import ProcessorMixin
@@ -193,7 +194,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
     def __init__(
         self,
-        prompter,
+        prompter: ChatTemplatePrompter,
         tokenizer,
         train_on_inputs,
         sequence_len,
@@ -220,22 +221,61 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
     def messages(self, messages):
         self._messages = messages
 
-    def tokenize_prompt(self, prompt):
+    @property
+    def supports_batched(self) -> bool:
+        # Let calling code know we can handle lists of examples
+        return True
+
+    def is_prompt_batched(self, prompt: dict[str, Any]) -> bool:
+        try:
+            return all(isinstance(v, list) for v in prompt.values()) and all(
+                isinstance(v, list) for v in prompt[self.messages]
+            )
+        except KeyError:
+            return False
+
+    def tokenize_prompt(self, prompt: dict[str, Any]):
+        """
+        Public method that can handle either a single prompt or a batch of prompts.
+        """
+
+        if not self.is_prompt_batched(prompt) or not self.supports_batched:
+            return self._tokenize_single_prompt(prompt)
+
+        res = defaultdict(lambda: [])
+        feature_names = list(prompt.keys())
+
+        # Process each prompt individually
+        for row in zip(*prompt.values()):
+            tokenized_prompt = self._tokenize_single_prompt(
+                dict(zip(feature_names, row))
+            )
+            for key, val in tokenized_prompt.items():
+                for i in range(0, len(val), self.sequence_len):
+                    res[key].append(val[i : i + self.sequence_len])
+
+        # If there are no examples left, return an empty dictionary
+        if not res:
+            return {}
+
+        return dict(res)
+
+    def _tokenize_single_prompt(self, prompt: dict) -> Dict[str, List[int]]:
         # Old simple legacy behavior that works reliably.
         if (
             not self.roles_to_train
             and not self.train_on_eos
-            and not self.prompter.message_field_training
-            and not self.prompter.message_field_training_detail
+            and not self.prompter.message_field_training  # type: ignore
+            and not self.prompter.message_field_training_detail  # type: ignore
         ):
             turns = self.get_conversation_thread(prompt)
             images = self.get_images(prompt)
-            prompt_ids = self.prompter.build_prompt(
+            prompt_ids = self.prompter.build_prompt(  # type: ignore
                 turns[:-1],
                 add_generation_prompt=True,
                 images=images,
             )
-            tokenized_res = self.prompter.build_prompt(turns, images=images)
+            tokenized_res = self.prompter.build_prompt(turns, images=images)  # type: ignore
             tokenized_prompt = {}
             if isinstance(tokenized_res, list):
                 input_ids = prompt_ids + tokenized_res[len(prompt_ids) :]
@@ -256,7 +296,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             return tokenized_prompt
 
         turns = self.get_conversation_thread(prompt)
-        input_ids = self.prompter.build_prompt(turns)
+        input_ids = self.prompter.build_prompt(turns)  # type: ignore
         labels = [IGNORE_TOKEN_ID] * len(input_ids)
 
         last_eos_idx = -1
@@ -286,7 +326,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
             if should_train and turn_start_idx != -1 and turn_end_idx != -1:
                 if train_detail:
-                    token_offsets = self.prompter.get_offsets_for_train_detail(
+                    token_offsets = self.prompter.get_offsets_for_train_detail(  # type: ignore
                         content, train_detail
                     )
                     LOG.debug(f"Token offsets: {token_offsets}")
@@ -459,43 +499,62 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         return prompt.get(self.images, None)
 
 
-def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None, processor=None):
-    # pylint: disable=duplicate-code
-    ds_cfg = ds_cfg or {}
-    chat_template_string = get_chat_template_from_config(
-        cfg=cfg, ds_cfg=ds_cfg, tokenizer=tokenizer
-    )
-    LOG.info(f"Using chat template:\n---\n{chat_template_string!s}\n---")
+class StrategyLoader:
+    """
+    Load chat template strategy based on configuration.
+    """
 
-    prompter_params = {
-        "tokenizer": tokenizer,
-        "chat_template": chat_template_string,
-        "message_field_role": ds_cfg.get("message_field_role", "role"),
-        "message_field_content": ds_cfg.get("message_field_content", "content"),
-        "message_field_training": ds_cfg.get("message_field_training", None),
-        "message_field_training_detail": ds_cfg.get(
-            "message_field_training_detail",
-            None,
-        ),
-        "roles": ds_cfg.get("roles"),
-        "drop_system_message": ds_cfg.get("drop_system_message", False),
-        # we need to add one for detecting sequences with exceeding the `sequence_len` limit.
-        "max_length": cfg.sequence_len + 1,
-        "processor": processor,
-    }
+    def _get_strategy_cls(self):
+        return ChatTemplateStrategy
 
-    strategy_params = {
-        "train_on_inputs": cfg.train_on_inputs,
-        "sequence_len": cfg.sequence_len,
-        "roles_to_train": ds_cfg.get("roles_to_train", ["assistant"]),
-        "train_on_eos": ds_cfg.get("train_on_eos", "turn"),
-    }
+    def _get_strategy_params(self, cfg, ds_cfg: Dict[str, Any]):
+        return {
+            "train_on_inputs": cfg.train_on_inputs,
+            "sequence_len": cfg.sequence_len,
+            "roles_to_train": ds_cfg.get("roles_to_train", ["assistant"]),
+            "train_on_eos": ds_cfg.get("train_on_eos", "turn"),
+        }
 
-    strategy = ChatTemplateStrategy(
-        ChatTemplatePrompter(**prompter_params), tokenizer=tokenizer, **strategy_params
-    )
+    def __call__(
+        self, tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None, processor=None
+    ):
+        # pylint: disable=duplicate-code
+        ds_cfg = ds_cfg or {}
+        chat_template_string = get_chat_template_from_config(
+            cfg=cfg, ds_cfg=ds_cfg, tokenizer=tokenizer
+        )
+        LOG.info(f"Using chat template:\n---\n{chat_template_string!s}\n---")
 
-    if "field_messages" in ds_cfg and hasattr(strategy, "messages"):
-        strategy.messages = ds_cfg["field_messages"]
+        prompter_params = {
+            "tokenizer": tokenizer,
+            "chat_template": chat_template_string,
+            "message_field_role": ds_cfg.get("message_field_role", "role"),
+            "message_field_content": ds_cfg.get("message_field_content", "content"),
+            "message_field_training": ds_cfg.get("message_field_training", None),
+            "message_field_training_detail": ds_cfg.get(
+                "message_field_training_detail",
+                None,
+            ),
+            "roles": ds_cfg.get("roles"),
+            "drop_system_message": ds_cfg.get("drop_system_message", False),
+            # we need to add one for detecting sequences with exceeding the `sequence_len` limit.
+            "max_length": cfg.sequence_len + 1,
+            "processor": processor,
+        }
 
-    return strategy
+        strategy_params = self._get_strategy_params(cfg, ds_cfg)
+        strategy_cls = self._get_strategy_cls()
+
+        strategy = strategy_cls(
+            ChatTemplatePrompter(**prompter_params),
+            tokenizer=tokenizer,
+            **strategy_params,
+        )
+
+        if "field_messages" in ds_cfg and hasattr(strategy, "messages"):
+            strategy.messages = ds_cfg["field_messages"]
+
+        return strategy
+
+
+load = StrategyLoader()
