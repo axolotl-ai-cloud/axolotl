@@ -17,7 +17,7 @@ from axolotl.cli.art import print_axolotl_text_art
 from axolotl.cli.checks import check_accelerate_default_config, check_user_token
 from axolotl.cli.config import load_cfg
 from axolotl.common.const import DEFAULT_DATASET_PREPARED_PATH
-from axolotl.common.datasets import load_datasets, load_dpo_datasets
+from axolotl.common.datasets import load_datasets, load_preference_datasets
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.trainer import disable_datasets_caching
 
@@ -48,7 +48,7 @@ def do_preprocess(cfg: DictDefault, cli_args: PreprocessCliArgs) -> None:
 
     with disable_datasets_caching():
         if cfg.rl:
-            load_dpo_datasets(cfg=cfg, cli_args=cli_args)
+            load_preference_datasets(cfg=cfg, cli_args=cli_args)
         else:
             load_datasets(cfg=cfg, cli_args=cli_args)
 

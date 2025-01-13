@@ -97,12 +97,10 @@ def load_datasets(
     )
 
 
-def load_dpo_datasets(
+def load_preference_datasets(
     *,
     cfg: DictDefault,
-    cli_args: Union[
-        PreprocessCliArgs, TrainerCliArgs
-    ],  # pylint: disable=unused-argument
+    cli_args: Union[PreprocessCliArgs, TrainerCliArgs],
 ) -> TrainDatasetMeta:
     """
     Loads one or more training or evaluation datasets for DPO training, calling

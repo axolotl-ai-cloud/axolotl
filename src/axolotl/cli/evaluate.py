@@ -12,7 +12,7 @@ from axolotl.cli.args import TrainerCliArgs
 from axolotl.cli.art import print_axolotl_text_art
 from axolotl.cli.checks import check_accelerate_default_config, check_user_token
 from axolotl.cli.config import load_cfg
-from axolotl.common.datasets import load_datasets, load_dpo_datasets
+from axolotl.common.datasets import load_datasets, load_preference_datasets
 from axolotl.evaluate import evaluate
 from axolotl.utils.dict import DictDefault
 
@@ -35,7 +35,7 @@ def do_evaluate(cfg: DictDefault, cli_args: TrainerCliArgs) -> None:
     check_user_token()
 
     if cfg.rl:
-        dataset_meta = load_dpo_datasets(cfg=cfg, cli_args=cli_args)
+        dataset_meta = load_preference_datasets(cfg=cfg, cli_args=cli_args)
     else:
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 

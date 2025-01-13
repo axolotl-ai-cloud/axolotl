@@ -5,6 +5,7 @@ import dataclasses
 import hashlib
 import json
 import logging
+import typing
 from functools import wraps
 from pathlib import Path
 from types import NoneType
@@ -21,6 +22,25 @@ from axolotl.utils.models import load_model, load_tokenizer
 
 configure_logging()
 LOG = logging.getLogger(__name__)
+
+
+def strip_optional_type(field_type: type | typing._SpecialForm | None):
+    """
+    Extracts the non-`None` type from an `Optional` / `Union` type.
+
+    Args:
+        field_type: Type of field for Axolotl CLI command.
+
+    Returns:
+        If the input type is `Union[T, None]` or `Optional[T]`, returns `T`. Otherwise
+            returns the input type unchanged.
+    """
+    if get_origin(field_type) is Union and type(None) in get_args(field_type):
+        field_type = next(
+            t for t in get_args(field_type) if not isinstance(t, NoneType)
+        )
+
+    return field_type
 
 
 def filter_none_kwargs(func: Callable) -> Callable:
@@ -49,18 +69,17 @@ def add_options_from_dataclass(config_class: Type[Any]) -> Callable:
     Create Click options from the fields of a dataclass.
 
     Args:
-        config_class: Dataclass with fields to parse from the CLI
+        config_class: Dataclass with fields to parse from the CLI.
+
+    Returns:
+        Function decorator for Axolotl CLI command.
     """
 
     def decorator(function: Callable) -> Callable:
         # Process dataclass fields in reverse order for correct option ordering
         for field in reversed(dataclasses.fields(config_class)):
-            field_type = field.type
+            field_type = strip_optional_type(field.type)
 
-            if get_origin(field_type) is Union and type(None) in get_args(field_type):
-                field_type = next(
-                    t for t in get_args(field_type) if not isinstance(t, NoneType)
-                )
             if field_type == bool:
                 field_name = field.name.replace("_", "-")
                 option_name = f"--{field_name}/--no-{field_name}"
@@ -89,12 +108,17 @@ def add_options_from_config(config_class: Type[BaseModel]) -> Callable:
 
     Args:
         config_class: PyDantic model with fields to parse from the CLI
+
+    Returns:
+        Function decorator for Axolotl CLI command.
     """
 
     def decorator(function: Callable) -> Callable:
         # Process model fields in reverse order for correct option ordering
         for name, field in reversed(config_class.model_fields.items()):
-            if field.annotation == bool:
+            field_type = strip_optional_type(field.annotation)
+
+            if field_type == bool:
                 field_name = name.replace("_", "-")
                 option_name = f"--{field_name}/--no-{field_name}"
                 function = click.option(
@@ -116,11 +140,11 @@ def build_command(base_cmd: list[str], options: dict[str, Any]) -> list[str]:
     Build command list from base command and options.
 
     Args:
-        base_cmd: Command without options
-        options: Options to parse and append to base command
+        base_cmd: Command without options.
+        options: Options to parse and append to base command.
 
     Returns:
-        List of strings giving shell command
+        List of strings giving shell command.
     """
     cmd = base_cmd.copy()
 
@@ -146,13 +170,13 @@ def download_file(
     Download a single file and return its processing status.
 
     Args:
-        file_info: Tuple of (file_path, remote_sha)
-        raw_base_url: Base URL for raw GitHub content
-        dest_path: Local destination directory
-        dir_prefix: Directory prefix to filter files
+        file_info: Tuple of (file_path, remote_sha).
+        raw_base_url: Base URL for raw GitHub content.
+        dest_path: Local destination directory.
+        dir_prefix: Directory prefix to filter files.
 
     Returns:
-        Tuple of (file_path, status) where status is 'new', 'updated', or 'unchanged'
+        Tuple of (file_path, status) where status is 'new', 'updated', or 'unchanged'.
     """
     file_path, remote_sha = file_info
     raw_url = f"{raw_base_url}/{file_path}"
@@ -201,9 +225,10 @@ def fetch_from_github(
     Only downloads files that don't exist locally or have changed.
 
     Args:
-        dir_prefix: Directory prefix to filter files (e.g., 'examples/', 'deepspeed_configs/')
-        dest_dir: Local destination directory
-        max_workers: Maximum number of concurrent downloads
+        dir_prefix: Directory prefix to filter files (e.g., 'examples/',
+            'deepspeed_configs/').
+        dest_dir: Local destination directory.
+        max_workers: Maximum number of concurrent downloads.
     """
     api_url = "https://api.github.com/repos/axolotl-ai-cloud/axolotl/git/trees/main?recursive=1"
     raw_base_url = "https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/main"
