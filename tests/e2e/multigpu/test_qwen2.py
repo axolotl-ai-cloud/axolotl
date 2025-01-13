@@ -86,14 +86,12 @@ class TestMultiGPUQwen2:
 
         execute_subprocess_async(
             [
-                "accelerate",
-                "launch",
+                "axolotl",
+                "train",
+                str(Path(temp_dir) / "config.yaml"),
                 "--num-processes",
                 "2",
-                "--main_process_port",
+                "--main-process-port",
                 f"{get_torch_dist_unique_port()}",
-                "-m",
-                "axolotl.cli.train",
-                str(Path(temp_dir) / "config.yaml"),
             ]
         )
