@@ -116,11 +116,6 @@ def normalize_config(cfg):
             ds_config_path = cfg.deepspeed
             with open(ds_config_path, encoding="utf-8") as f:
                 cfg.deepspeed = json.load(f)
-    if cfg.fsdp:
-        if isinstance(cfg.fsdp, str) and os.path.exists(cfg.fsdp):
-            fsdp_config_path = cfg.fsdp
-            with open(fsdp_config_path, encoding="utf-8") as f:
-                cfg.fsdp = json.load(f)
 
     if cfg.saves_per_epoch:
         save_steps = 1.0 / (cfg.saves_per_epoch * cfg.num_epochs)
