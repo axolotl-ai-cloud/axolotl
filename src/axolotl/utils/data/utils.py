@@ -1,4 +1,5 @@
 """data handling helpers"""
+
 import functools
 import hashlib
 import logging
@@ -6,10 +7,15 @@ import time
 from enum import Enum
 
 import huggingface_hub
+import numpy as np
 import requests
 from datasets import Dataset
 
-LOG = logging.getLogger("axolotl")
+from axolotl.utils.dict import DictDefault
+from axolotl.utils.samplers.utils import get_dataset_lengths
+from axolotl.utils.trainer import drop_long_seq
+
+LOG = logging.getLogger(__name__)
 
 
 class RetryStrategy(Enum):
@@ -150,3 +156,29 @@ def deduplicate_and_log_datasets(
         )
 
     return train_dataset, eval_dataset, dataset
+
+
+def drop_long_seq_in_dataset(dataset: Dataset, cfg: DictDefault):
+    drop_long = functools.partial(
+        drop_long_seq,
+        sequence_len=cfg.sequence_len,
+        min_sequence_len=cfg.min_sample_len,
+    )
+
+    min_input_len = np.min(get_dataset_lengths(dataset))
+    LOG.debug(f"min_input_len: {min_input_len}")
+    max_input_len = np.max(get_dataset_lengths(dataset))
+    LOG.debug(f"max_input_len: {max_input_len}")
+
+    prior_len = len(dataset)
+    dataset = dataset.filter(
+        drop_long,
+        num_proc=cfg.dataset_processes,
+        load_from_cache_file=not cfg.is_preprocess,
+        desc="Dropping Long Sequences",
+    )
+    dropped = prior_len - len(dataset)
+    if dropped:
+        LOG.warning(f"Dropped {dropped} long samples from dataset")
+
+    return dataset

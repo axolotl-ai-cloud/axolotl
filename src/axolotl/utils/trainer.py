@@ -1,4 +1,5 @@
 """Module containing the Trainer class and related functions"""
+
 import json
 import math
 import os
@@ -171,7 +172,9 @@ def add_length(sample):
     return sample
 
 
-def drop_long_seq(sample, sequence_len=2048, min_sequence_len=2):
+def drop_long_seq(sample, sequence_len=2048, min_sequence_len=None):
+    min_sequence_len = min_sequence_len or 2
+
     return (
         len(sample["input_ids"]) <= sequence_len
         and len(sample["input_ids"]) >= min_sequence_len
@@ -179,17 +182,6 @@ def drop_long_seq(sample, sequence_len=2048, min_sequence_len=2):
 
 
 def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
-    drop_long = partial(
-        drop_long_seq,
-        sequence_len=cfg.sequence_len,
-        min_sequence_len=cfg.min_sample_len or 2,
-    )
-
-    min_input_len = np.min(get_dataset_lengths(train_dataset))
-    LOG.debug(f"min_input_len: {min_input_len}", main_process_only=True)
-    max_input_len = np.max(get_dataset_lengths(train_dataset))
-    LOG.debug(f"max_input_len: {max_input_len}", main_process_only=True)
-
     if cfg.model_config_type == "mamba":
         LOG.info("dropping attention_mask column")
         train_dataset = train_dataset.remove_columns("attention_mask")
@@ -202,29 +194,6 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
             train_dataset = train_dataset.remove_columns("token_type_ids")
         if eval_dataset and "token_type_ids" in eval_dataset.column_names:
             eval_dataset = eval_dataset.remove_columns("token_type_ids")
-
-    prior_len = len(train_dataset)
-    train_dataset = train_dataset.filter(
-        drop_long,
-        num_proc=cfg.dataset_processes,
-        load_from_cache_file=not cfg.is_preprocess,
-        desc="Dropping Long Sequences",
-    )
-    dropped = prior_len - len(train_dataset)
-    if dropped:
-        LOG.warning(f"Dropped {dropped} long samples from train dataset")
-
-    if eval_dataset:
-        prior_len = len(eval_dataset)
-        eval_dataset = eval_dataset.filter(
-            drop_long,
-            num_proc=cfg.dataset_processes,
-            load_from_cache_file=not cfg.is_preprocess,
-            desc="Dropping Long Sequences",
-        )
-        dropped = prior_len - len(eval_dataset)
-        if dropped:
-            LOG.warning(f"Dropped {dropped} long samples from eval dataset")
 
     # drop samples with where the number of elements with labels not equal to -100 is zero
     def drop_no_trainable_tokens(sample):
