@@ -5,9 +5,9 @@ from pathlib import Path
 from typing import Union
 
 import fire
+from accelerate import Accelerator
 from dotenv import load_dotenv
 from transformers.hf_argparser import HfArgumentParser
-from accelerate import Accelerator
 
 from axolotl.cli.args import TrainerCliArgs
 from axolotl.cli.art import print_axolotl_text_art
@@ -16,8 +16,8 @@ from axolotl.cli.config import load_cfg
 from axolotl.common.datasets import load_datasets, load_preference_datasets
 from axolotl.integrations.base import PluginManager
 from axolotl.train import train
-from axolotl.utils.dict import DictDefault
 from axolotl.utils.config import normalize_config
+from axolotl.utils.dict import DictDefault
 
 LOG = logging.getLogger(__name__)
 
@@ -66,7 +66,7 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs) -> None:
     )
 
     if parsed_cfg.use_ray:
-        from ray.train import ScalingConfig, RunConfig
+        from ray.train import RunConfig, ScalingConfig
         from ray.train.torch import TorchTrainer
 
         train_loop_config = {"cfg": parsed_cfg.to_dict(), "cli_args": parsed_cli_args}
@@ -83,9 +83,8 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs) -> None:
                 storage_path=Path("./saves").absolute().as_posix(),
             ),
         )
-        trainer.fit()
-    else:
-        return do_train(parsed_cfg, parsed_cli_args)
+        return trainer.fit()
+    return do_train(parsed_cfg, parsed_cli_args)
 
 
 def ray_train_func(kwargs: dict):
