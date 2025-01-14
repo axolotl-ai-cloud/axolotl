@@ -44,6 +44,9 @@ datasets:
     field_messages: conversations
     message_field_role: from
     message_field_content: value
+    optional_message_fields:
+
+
 
 # new (if setting a new chat_template like chatml, gemma, etc)
 chat_template: chatml

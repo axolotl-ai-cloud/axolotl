@@ -47,10 +47,14 @@ class ChatTemplatePrompter(Prompter):
             }
 
         # Default optional fields, kept for compatibility
-        self._default_optional_fields = ["tool_calls", "name", "tool_call_id"]
+        self._default_optional_fields = [
+            "tool_calls",  # tool that 'assistant' calls
+            "name",  # name of tool given by 'tool'
+            "tool_call_id",  # mistral/mixtral requires this
+        ]
 
-        self.optional_message_fields = self._default_optional_fields + (
-            optional_message_fields or []
+        self.optional_message_fields = list(
+            set(self._default_optional_fields + (optional_message_fields or []))
         )
 
         self.message_field_role = message_field_role

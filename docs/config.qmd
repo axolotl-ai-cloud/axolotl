@@ -146,6 +146,8 @@ datasets:
     message_field_role: role
     # Key for content in each message (default:  "content")
     message_field_content: content
+    # Fields that will be passed to the chat template if present in the message. (Optional[List[str]], default: None)
+    optional_message_fields:
 
     # Optional[Dict[str, List]]. Roles mapping in the messages. The default is:
     roles:

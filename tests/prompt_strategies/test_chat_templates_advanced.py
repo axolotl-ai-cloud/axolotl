@@ -959,13 +959,13 @@ class TestOptionalMessageFields:
         labels = res["labels"]
         input_ids = res["input_ids"]
 
-        LOG.info(f"Labels: {labels}")
-        LOG.info(f"Input IDs: {input_ids}")
+        LOG.debug(f"Labels: {labels}")
+        LOG.debug(f"Input IDs: {input_ids}")
 
         # Verify both optional fields are in the tokenized output
         decoded_output = tokenizer.decode(input_ids)
 
-        LOG.info(f"Decoded output: {decoded_output}")
+        LOG.debug(f"Decoded output: {decoded_output}")
         assert (
             "[Thoughts: We should take care to convert the temperature to Fahrenheit]"
             in decoded_output
