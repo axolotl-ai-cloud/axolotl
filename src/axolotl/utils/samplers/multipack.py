@@ -160,19 +160,24 @@ class MultipackBatchSampler(BatchSampler):
             for i in range(0, len(batches), self.batch_size)
         ]
 
+        seq_lens = [
+            [[lengths[idx] for idx in sub_batch] for sub_batch in batch]
+            for batch in batches
+        ]
+
         # statistics
         if set_stats:
             self.eff_total_used += total_used
             self.eff_total_slots += total_slots
 
-        return batches
+        return batches, seq_lens
 
     def __iter__(self):
-        batches = self.generate_batches(set_stats=True)
+        batches, _ = self.generate_batches(set_stats=True)
         return iter(batches)
 
     def num_batches(self):
-        batches = self.generate_batches(set_stats=True)
+        batches, _ = self.generate_batches(set_stats=True)
         return len(batches)
 
     def efficiency(self):
