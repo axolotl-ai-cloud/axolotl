@@ -6,158 +6,13 @@ See "LoRA: Low-Rank Adaptation of Large Language Models"
 """
 # pylint: disable=invalid-name
 
-from dataclasses import dataclass
-from typing import Optional, Tuple
-
 import numpy as np
 import torch
-import triton
-import triton.language as tl
 
-from .geglu import GEGLU
-from .swiglu import SwiGLU
+from axolotl.kernels.quantize import dequantize
+
+from .swiglu import swiglu_backward, swiglu_forward
 from .utils import torch_amp_custom_bwd, torch_amp_custom_fwd
-
-
-@dataclass
-class QuantState:
-    """
-    Holds quantization parameters for a tensor.
-
-    Attributes:
-        scale: Scale factor(s) for dequantization. Can be per-tensor or per-channel.
-        zero_point: Zero point for asymmetric quantization.
-        bits: Number of bits used for quantization (4, 8).
-        scheme: Quantization scheme ('symmetric' or 'asymmetric').
-        axis: Axis for per-channel quantization (None for per-tensor).
-    """
-
-    scale: torch.Tensor
-    zero_point: Optional[torch.Tensor] = None
-    bits: int = 8
-    scheme: str = "symmetric"
-    axis: Optional[int] = None
-
-
-def fast_dequantize(
-    weight: torch.Tensor, quant_state: Optional[QuantState]
-) -> torch.Tensor:
-    """
-    Fast dequantization of weights supporting different quantization schemes.
-
-    Args:
-        weight: Quantized weight tensor.
-        quant_state: Quantization parameters. If None, returns original weight.
-
-    Returns:
-        Dequantized weight tensor.
-
-    Note:
-        Supports:
-        - 4, 8 bit quantization.
-        - Symmetric, asymmetric quantization.
-        - Per-tensor, per-channel scaling.
-    """
-    if quant_state is None:
-        return weight
-
-    # Get quantization parameters
-    scale = quant_state.scale
-    zero_point = quant_state.zero_point
-    bits = quant_state.bits
-
-    # Handle different bit widths
-    if bits == 8:
-        # 8-bit quantization
-        if quant_state.scheme == "symmetric":
-            return weight * scale  # Symmetric: w = q * s
-        return (weight - zero_point) * scale  # Asymmetric: w = (q - z) * s
-    if bits == 4:
-        # 4-bit quantization requires unpacking
-        # Each byte contains 2 4-bit values
-        # Convert to 8-bit first
-        weight_unpacked = torch.zeros(
-            weight.shape + (2,), dtype=torch.int8, device=weight.device
-        )
-        weight_unpacked[..., 0] = weight & 0xF  # Lower 4 bits
-        weight_unpacked[..., 1] = (weight >> 4) & 0xF  # Upper 4 bits
-
-        # Reshape to original dimensions
-        weight_8bit = weight_unpacked.reshape(-1, 2).squeeze(-1)
-
-        if quant_state.scheme == "symmetric":
-            return weight_8bit * scale
-        return (weight_8bit - zero_point) * scale
-
-    raise ValueError(f"Unsupported bit width: {bits}")
-
-
-def quantize_weight(
-    weight: torch.Tensor,
-    bits: int = 8,
-    scheme: str = "symmetric",
-    axis: Optional[int] = None,
-) -> Tuple[torch.Tensor, QuantState]:
-    """
-    Quantize weights and return quantization state.
-
-    Args:
-        weight: Weight tensor to quantize.
-        bits: Number of bits (4, 8).
-        scheme: "symmetric" or "asymmetric".
-        axis: Axis for per-channel quantization (`None` for per-tensor).
-
-    Returns:
-        Tuple of `(quantized_weight, quant_state)`.
-    """
-    if bits not in [4, 8]:
-        raise ValueError(f"Unsupported bit width: {bits}")
-
-    # Compute scale and optionally zero point
-    if axis is not None:
-        # Per-channel quantization
-        dim_size = weight.shape[axis]
-        weight_flatten = weight.transpose(axis, -1).reshape(-1, dim_size)
-
-        if scheme == "symmetric":
-            max_abs = torch.max(torch.abs(weight_flatten), dim=0)[0]
-            scale = max_abs / (2 ** (bits - 1) - 1)
-            zero_point = None
-        else:
-            min_val = torch.min(weight_flatten, dim=0)[0]
-            max_val = torch.max(weight_flatten, dim=0)[0]
-            scale = (max_val - min_val) / (2**bits - 1)
-            zero_point = torch.round(-min_val / scale)
-    else:
-        # Per-tensor quantization
-        if scheme == "symmetric":
-            max_abs = torch.max(torch.abs(weight))
-            scale = max_abs / (2 ** (bits - 1) - 1)
-            zero_point = None
-        else:
-            min_val = torch.min(weight)
-            max_val = torch.max(weight)
-            scale = (max_val - min_val) / (2**bits - 1)
-            zero_point = torch.round(-min_val / scale)
-
-    # Create quantization state
-    quant_state = QuantState(
-        scale=scale, zero_point=zero_point, bits=bits, scheme=scheme, axis=axis
-    )
-
-    # Quantize weights
-    if scheme == "symmetric":
-        q_weight = torch.round(weight / scale)
-    else:
-        q_weight = torch.round(weight / scale + zero_point)
-
-    # Pack 4-bit values if needed
-    if bits == 4:
-        q_weight = q_weight.reshape(-1, 2)
-        packed = (q_weight[:, 0] & 0xF) | ((q_weight[:, 1] & 0xF) << 4)
-        q_weight = packed.reshape(weight.shape)
-
-    return q_weight.to(torch.int8), quant_state
 
 
 def get_lora_parameters(layer):
@@ -171,110 +26,95 @@ def get_lora_parameters(layer):
     return weight, quant_state, lora_A, lora_B, scaling
 
 
-@triton.jit
-def swiglu_forward_kernel(e: tl.tensor, g: tl.tensor):
-    """SwiGLU forward activation function."""
-    f = e * tl.sigmoid(e)
+def matmul_lora(X, W, W_quant, A, B, s, out=None):
+    """
+    Efficient fused matmul + LoRA computation.
 
-    return f * g
+    Args:
+        X: Input tensor [*, in_features]
+        W: Base weight matrix [out_features, in_features]
+        W_quant: Quantization state for W
+        A: LoRA A matrix [rank, in_features]
+        B: LoRA B matrix [out_features, rank]
+        s: LoRA scaling factor
+        out: Optional output tensor for inplace operations
+    """
+    dtype = X.dtype
+    W = dequantize(W.t(), W_quant)
 
+    if X.dim() == 3:
+        batch, seq_len, _ = X.shape
+        X = X.view(-1, X.shape[-1])
+        reshape = True
+    else:
+        reshape = False
 
-@triton.jit
-def swiglu_backward_kernel(dW: tl.tensor, e: tl.tensor, g: tl.tensor):
-    """SwiGLU backward pass computation."""
-    sigmoid_e = tl.sigmoid(e)
-    f = e * sigmoid_e
-    df = sigmoid_e * (1 - f) + f
+    out = torch.matmul(X, W, out=out)
+    if W_quant is not None:
+        del W
 
-    return dW * df * g, dW * f, dW * df * g
+    if A is not None:
+        A, B = A.t(), B.t()
+        out += (X @ A.to(dtype)) @ (s * B.to(dtype))
 
-
-@triton.jit
-def geglu_exact_forward_kernel(e: tl.tensor, g: tl.tensor):
-    """GEGLU forward activation with exact GELU."""
-    x = e * 0.7978845608028654  # sqrt(2/π)
-    cdf = 0.5 * (1.0 + tl.erf(x))
-
-    return e * cdf * g
-
-
-@triton.jit
-def geglu_exact_backward_kernel(dW: tl.tensor, e: tl.tensor, g: tl.tensor):
-    """GEGLU backward pass with exact GELU derivative."""
-    x = e * 0.7978845608028654
-    cdf = 0.5 * (1.0 + tl.erf(x))
-    pdf = 0.7978845608028654 * tl.exp(-0.5 * x * x)
-
-    return dW * (cdf + e * pdf) * g, dW * e * cdf, dW * (cdf + e * pdf) * g
+    return out.view(batch, seq_len, -1) if reshape else out
 
 
 class LoRA_MLP(torch.autograd.Function):
-    """Optimized LoRA MLP implementation with support for SwiGLU and GEGLU."""
+    """Optimized LoRA MLP implementation with memory management."""
 
     @staticmethod
     @torch_amp_custom_fwd
     def forward(
         ctx,
-        X,
-        gate_weight,
-        gate_quant,
-        gate_A,
-        gate_B,
-        gate_scale,
-        up_weight,
-        up_quant,
-        up_A,
-        up_B,
-        up_scale,
-        down_weight,
-        down_quant,
-        down_A,
-        down_B,
-        down_scale,
-        activation_fn,  # This will be swiglu_fg_kernel
-        inplace=True,
-    ):
-        batch, seq_len, hidden_dim = X.shape
-        X_reshaped = X.view(-1, hidden_dim)
-        X_orig = X_reshaped.clone()
+        X: torch.Tensor,
+        gate_weight: torch.Tensor,
+        gate_quant: object | None,
+        gate_A: torch.Tensor | None,
+        gate_B: torch.Tensor | None,
+        gate_scale: float,
+        up_weight: torch.Tensor,
+        up_quant: object | None,
+        up_A: torch.Tensor | None,
+        up_B: torch.Tensor | None,
+        up_scale: float,
+        down_weight: torch.Tensor,
+        down_quant: object | None,
+        down_A: torch.Tensor | None,
+        down_B: torch.Tensor | None,
+        down_scale: float,
+        activation_fn,
+        activation_fn_backward,
+        inplace: bool = True,
+    ) -> torch.Tensor:
+        # Compute projections using helper function
+        gate = matmul_lora(X, gate_weight, gate_quant, gate_A, gate_B, gate_scale)
+        up = matmul_lora(X, up_weight, up_quant, up_A, up_B, up_scale)
 
-        # Gate projection
-        gate = torch.matmul(
-            X_reshaped,
-            fast_dequantize(gate_weight, gate_quant),
-        )
-        if gate_A is not None:
-            gate += X_orig @ gate_A @ gate_B * gate_scale
-
-        # Up projection
-        up = torch.matmul(X_orig, fast_dequantize(up_weight, up_quant))
-        if up_A is not None:
-            up += X_orig @ up_A @ up_B * up_scale
-
-        # Activation - using the kernel wrapper function directly
-        hidden = activation_fn(
-            gate, up
-        )  # This calls swiglu_fg_kernel which handles the grid
+        # Activation
+        hidden = activation_fn(gate, up)
 
         # Down projection
-        output = torch.matmul(hidden, fast_dequantize(down_weight, down_quant))
-        if down_A is not None:
-            output += hidden @ down_A @ down_B * down_scale
+        output = matmul_lora(
+            hidden, down_weight, down_quant, down_A, down_B, down_scale
+        )
 
+        # Save tensors needed for backward
         ctx.save_for_backward(
-            X_orig, gate, up, hidden, gate_A, gate_B, up_A, up_B, down_A, down_B
+            X, gate, up, hidden, gate_A, gate_B, up_A, up_B, down_A, down_B
         )
         ctx.scales = (gate_scale, up_scale, down_scale)
         ctx.quants = (gate_quant, up_quant, down_quant)
         ctx.weights = (gate_weight, up_weight, down_weight)
         ctx.activation_fn = activation_fn
+        ctx.activation_fn_backward = activation_fn_backward
         ctx.inplace = inplace
 
-        return output.view(batch, seq_len, -1)
+        return output
 
     @staticmethod
     @torch_amp_custom_bwd
-    def backward(ctx, grad_output):
+    def backward(ctx, grad_output: torch.Tensor):
         (
             X,
             gate,
@@ -291,39 +131,47 @@ class LoRA_MLP(torch.autograd.Function):
         gate_quant, up_quant, down_quant = ctx.quants
         gate_weight, up_weight, down_weight = ctx.weights
 
-        batch_size = grad_output.shape[0]
-        grad_output = grad_output.reshape(-1, grad_output.shape[-1])
-
         # Down projection gradients
-        d_hidden = torch.matmul(
+        d_hidden = matmul_lora(
             grad_output,
-            fast_dequantize(down_weight, down_quant).t(),
+            down_weight.t(),
+            down_quant,
+            down_B,
+            down_A,
+            down_scale,
             out=grad_output if ctx.inplace else None,
         )
+
         if down_A is not None:
             d_down_A = hidden.t() @ (grad_output @ down_B.t()) * down_scale
             d_down_B = (down_A.t() @ hidden.t()) @ grad_output * down_scale
-            d_hidden += grad_output @ down_B.t() @ (down_scale * down_A.t())
 
-        # Backprop through activation
-        d_gate, d_up = ctx.activation_fn.backward(d_hidden, gate, up)
+        # Activation gradients
+        d_gate, d_up = ctx.backward_activation_fn(d_hidden, gate, up)
 
-        # Up projection gradients
-        grad_X = torch.matmul(d_up, fast_dequantize(up_weight, up_quant).t())
+        # Up/gate projection gradients
+        grad_X = matmul_lora(d_up, up_weight.t(), up_quant, up_B, up_A, up_scale)
         if up_A is not None:
             d_up_A = X.t() @ (d_up @ up_B.t()) * up_scale
             d_up_B = (up_A.t() @ X.t()) @ d_up * up_scale
-            grad_X += d_up @ up_B.t() @ (up_scale * up_A.t())
 
-        # Gate projection gradients
-        grad_X += torch.matmul(d_gate, fast_dequantize(gate_weight, gate_quant).t())
+        grad_X_gate = matmul_lora(
+            d_gate,
+            gate_weight.t(),
+            gate_quant,
+            gate_B,
+            gate_A,
+            gate_scale,
+            out=d_gate if ctx.inplace else None,
+        )
+        grad_X += grad_X_gate
+
         if gate_A is not None:
             d_gate_A = X.t() @ (d_gate @ gate_B.t()) * gate_scale
             d_gate_B = (gate_A.t() @ X.t()) @ d_gate * gate_scale
-            grad_X += d_gate @ gate_B.t() @ (gate_scale * gate_A.t())
 
         return (
-            grad_X.view(batch_size, -1, X.shape[-1]),
+            grad_X,
             None,
             None,
             d_gate_A,
@@ -377,19 +225,19 @@ class LoRA_QKV(torch.autograd.Function):
         # Q projection
         Q = torch.matmul(
             X_reshaped,
-            fast_dequantize(q_weight, q_quant),
+            dequantize(q_weight, q_quant),
             out=X_reshaped if inplace else None,
         )
         if q_A is not None:
             Q += X_reshaped @ q_A @ q_B * q_scale
 
         # K projection
-        K = torch.matmul(X_reshaped, fast_dequantize(k_weight, k_quant))
+        K = torch.matmul(X_reshaped, dequantize(k_weight, k_quant))
         if k_A is not None:
             K += X_reshaped @ k_A @ k_B * k_scale
 
         # V projection
-        V = torch.matmul(X_reshaped, fast_dequantize(v_weight, v_quant))
+        V = torch.matmul(X_reshaped, dequantize(v_weight, v_quant))
         if v_A is not None:
             V += X_reshaped @ v_A @ v_B * v_scale
 
@@ -423,7 +271,7 @@ class LoRA_QKV(torch.autograd.Function):
         # Q gradients
         grad_X = torch.matmul(
             grad_Q,
-            fast_dequantize(q_weight, q_quant).t(),
+            dequantize(q_weight, q_quant).t(),
             out=grad_Q if ctx.inplace else None,
         )
         if q_A is not None:
@@ -432,14 +280,14 @@ class LoRA_QKV(torch.autograd.Function):
             grad_X += grad_Q @ q_B.t() @ (q_scale * q_A.t())
 
         # K gradients
-        grad_X += torch.matmul(grad_K, fast_dequantize(k_weight, k_quant).t())
+        grad_X += torch.matmul(grad_K, dequantize(k_weight, k_quant).t())
         if k_A is not None:
             d_k_A = X.t() @ (grad_K @ k_B.t()) * k_scale
             d_k_B = (k_A.t() @ X.t()) @ grad_K * k_scale
             grad_X += grad_K @ k_B.t() @ (k_scale * k_A.t())
 
         # V gradients
-        grad_X += torch.matmul(grad_V, fast_dequantize(v_weight, v_quant).t())
+        grad_X += torch.matmul(grad_V, dequantize(v_weight, v_quant).t())
         if v_A is not None:
             d_v_A = X.t() @ (grad_V @ v_B.t()) * v_scale
             d_v_B = (v_A.t() @ X.t()) @ grad_V * v_scale
@@ -488,24 +336,24 @@ def create_lora_mlp(
     # Main weights
     if gate_weight is None:
         gate_weight = 0.01 * torch.randn(
-            config["in_features"],
             config["hidden_features"],
+            config["in_features"],
             device=device,
             dtype=dtype,
         )
 
     if up_weight is None:
         up_weight = 0.01 * torch.randn(
-            config["in_features"],
             config["hidden_features"],
+            config["in_features"],
             device=device,
             dtype=dtype,
         )
 
     if down_weight is None:
         down_weight = 0.01 * torch.randn(
-            config["hidden_features"],
             config["out_features"],
+            config["hidden_features"],
             device=device,
             dtype=dtype,
         )
@@ -513,42 +361,42 @@ def create_lora_mlp(
     # Gate projection
     if gate_A is None:
         gate_A = torch.randn(
-            config["in_features"], rank, device=device, dtype=dtype  # (768, r)
+            rank, config["in_features"], device=device, dtype=dtype  # (768, r)
         ) / np.sqrt(config["in_features"])
     if gate_B is None:
         gate_B = torch.randn(
-            rank, config["hidden_features"], device=device, dtype=dtype  # (r, 3072)
+            config["hidden_features"], rank, device=device, dtype=dtype  # (r, 3072)
         ) / np.sqrt(rank)
 
     # Up projection
     if up_A is None:
         up_A = torch.randn(
-            config["in_features"], rank, device=device, dtype=dtype  # (768, r)
+            rank, config["in_features"], device=device, dtype=dtype  # (768, r)
         ) / np.sqrt(config["in_features"])
     if up_B is None:
         up_B = torch.randn(
-            rank, config["hidden_features"], device=device, dtype=dtype  # (r, 3072)
+            config["hidden_features"], rank, device=device, dtype=dtype  # (r, 3072)
         ) / np.sqrt(rank)
 
     # Down projection
     if down_A is None:
         down_A = torch.randn(
-            config["hidden_features"], rank, device=device, dtype=dtype  # (3072, r)
+            rank, config["hidden_features"], device=device, dtype=dtype  # (3072, r)
         ) / np.sqrt(config["hidden_features"])
     if down_B is None:
         down_B = torch.randn(
-            rank, config["out_features"], device=device, dtype=dtype  # (r, 768)
+            config["out_features"], rank, device=device, dtype=dtype  # (r, 768)
         ) / np.sqrt(rank)
 
     activation_fns = {
-        "swiglu": SwiGLU.forward,
-        "geglu_exact": GEGLU.forward,
+        "swiglu": (swiglu_forward, swiglu_backward),
+        # "geglu_exact": geglu_forward,
     }
 
     if activation not in activation_fns:
         raise ValueError(f"Unsupported activation: {activation}")
 
-    activation_fn = activation_fns[activation]
+    activation_fn, backward_activation_fn = activation_fns[activation]
 
     def forward_fn(x):
         return LoRA_MLP.apply(
@@ -569,6 +417,7 @@ def create_lora_mlp(
             down_B,
             1.0,
             activation_fn,
+            backward_activation_fn,
             True,  # inplace
         )
 
