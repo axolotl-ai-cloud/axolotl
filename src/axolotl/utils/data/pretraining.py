@@ -203,7 +203,7 @@ def wrap_pretraining_dataset(
             encode_pretraining,
             tokenizer,
             max_tokens,
-            text_column=cfg.pretraining_dataset[0].text_column,
+            text_column=cfg.pretraining_dataset[0].text_column or "text",
         )
 
     if cfg.shuffle_merged_datasets:
