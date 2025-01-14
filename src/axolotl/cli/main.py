@@ -81,8 +81,9 @@ def train(config: str, accelerate: bool, **kwargs) -> None:
             accelerate_args.append("--num-processes")
             accelerate_args.append(str(num_processes))
 
-        base_cmd = ["accelerate", "launch", "-m", "axolotl.cli.train"]
+        base_cmd = ["accelerate", "launch"]
         base_cmd.extend(accelerate_args)
+        base_cmd.extend(["-m", "axolotl.cli.train"])
         if config:
             base_cmd.append(config)
         cmd = build_command(base_cmd, kwargs)
