@@ -63,7 +63,7 @@ def preprocess(config: str, cloud: Optional[str] = None, **kwargs) -> None:
 @add_options_from_dataclass(TrainerCliArgs)
 @add_options_from_config(AxolotlInputConfig)
 @filter_none_kwargs
-def train(config: str, accelerate: bool, cloud: Optional[str], **kwargs) -> None:
+def train(config: str, accelerate: bool, cloud: Optional[str] = None, **kwargs) -> None:
     """
     Train or fine-tune a model.
 
