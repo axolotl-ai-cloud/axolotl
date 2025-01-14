@@ -20,6 +20,7 @@ def build_lm_eval_command(
     batch_size=8,
     wandb_project=None,
     wandb_entity=None,
+    wandb_name=None,
     model=None,
     revision=None,
     apply_chat_template=None,
@@ -63,6 +64,8 @@ def build_lm_eval_command(
             wandb_args.append(f"project={wandb_project}")
         if wandb_entity:
             wandb_args.append(f"entity={wandb_entity}")
+        if wandb_name:
+            wandb_args.append(f"name={wandb_name}")
         if wandb_args:
             lm_eval_args.append("--wandb_args")
             lm_eval_args.append(",".join(wandb_args))
@@ -102,6 +105,7 @@ def lm_eval(config: str, cloud: Optional[str] = None):
             batch_size=cfg.lm_eval_batch_size,
             wandb_project=cfg.wandb_project,
             wandb_entity=cfg.wandb_entity,
+            wandb_name=cfg.wandb_name,
             model=cfg.lm_eval_model or cfg.hub_model_id,
             revision=cfg.revision,
             apply_chat_template=cfg.apply_chat_template,

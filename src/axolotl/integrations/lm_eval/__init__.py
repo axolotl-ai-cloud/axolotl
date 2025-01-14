@@ -28,6 +28,7 @@ class LMEvalPlugin(BasePlugin):
                 batch_size=cfg.lm_eval_batch_size,
                 wandb_project=cfg.wandb_project,
                 wandb_entity=cfg.wandb_entity,
+                wandb_name=cfg.wandb_name,
                 model=cfg.lm_eval_model or cfg.hub_model_id,
             ):
                 subprocess.run(  # nosec

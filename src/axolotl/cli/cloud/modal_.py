@@ -176,7 +176,7 @@ class ModalCloud(Cloud):
 
         if family == "l40s":
             return modal.gpu.L40S(count=count)
-        if family == "a100":
+        if family in ["a100", "a100-40gb"]:
             return modal.gpu.A100(count=count, size="40GB")
         if family == "a100-80gb":
             return modal.gpu.A100(count=count, size="80GB")
