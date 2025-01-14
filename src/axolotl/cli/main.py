@@ -74,7 +74,7 @@ def train(config: str, accelerate: bool, **kwargs) -> None:
         accelerate_args = []
         if "main_process_port" in kwargs:
             main_process_port = kwargs.pop("main_process_port", None)
-            accelerate_args.append("--main-process-port")
+            accelerate_args.append("--main_process_port")
             accelerate_args.append(str(main_process_port))
         if "num_processes" in kwargs:
             num_processes = kwargs.pop("num_processes", None)
