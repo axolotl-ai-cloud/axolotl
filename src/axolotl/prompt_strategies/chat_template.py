@@ -32,6 +32,7 @@ class ChatTemplatePrompter(Prompter):
         message_field_training_detail: Optional[str] = None,
         roles: Optional[Dict[str, List[str]]] = None,
         drop_system_message: bool = False,
+        optional_message_fields: Optional[List[str]] = None,
     ):
         if roles:
             self.roles = {s: t for t, sources in roles.items() for s in sources}
@@ -44,6 +45,17 @@ class ChatTemplatePrompter(Prompter):
                 "system": "system",
                 "tool": "tool",
             }
+
+        # Default optional fields, kept for compatibility
+        self._default_optional_fields = [
+            "tool_calls",
+            "name",
+            "tool_call_id"
+        ]
+
+        self.optional_message_fields = (
+            self._default_optional_fields + (optional_message_fields or [])
+        )
 
         self.message_field_role = message_field_role
         self.message_field_content = message_field_content
@@ -462,13 +474,9 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
         return start_idx, end_idx
 
-    def get_conversation_thread(self, prompt):
+    def get_conversation_thread(self, prompt: dict):
         turns = []
-        optional_keys = [
-            "tool_calls",  # tool that 'assistant' calls
-            "name",  # name of tool given by 'tool'
-            "tool_call_id",  # mistral/mixtral requires this
-        ]
+
         for message in prompt[self.messages]:
             turn = {
                 "role": self.prompter.roles[message[self.prompter.message_field_role]],
@@ -480,10 +488,11 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
             # do not add content if None as it may conflict with some templates due to tools
             content = message.get(self.prompter.message_field_content, None)
+
             if content is not None:
                 turn["content"] = content
 
-            for key in optional_keys:
+            for key in self.prompter.optional_message_fields:
                 value = message.get(key, None)
                 if value is not None:
                     turn[key] = value
@@ -495,7 +504,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
         return turns
 
-    def get_images(self, prompt):
+    def get_images(self, prompt: dict):
         return prompt.get(self.images, None)
 
 
@@ -537,7 +546,8 @@ class StrategyLoader:
             ),
             "roles": ds_cfg.get("roles"),
             "drop_system_message": ds_cfg.get("drop_system_message", False),
-            # we need to add one for detecting sequences with exceeding the `sequence_len` limit.
+            "optional_message_fields": ds_cfg.get("optional_message_fields", []),
+        # we need to add one for detecting sequences with exceeding the `sequence_len` limit.
             "max_length": cfg.sequence_len + 1,
             "processor": processor,
         }

@@ -911,6 +911,100 @@ class TestChatTemplateConfigurations:
         LOG.debug(f"Final labels: {labels}")
         LOG.debug(f"Final input_ids: {input_ids}")
 
+class TestOptionalMessageFields:
+    """Test class for optional message fields functionality in chat templates."""
+
+    def test_combined_optional_fields_with_template(
+        self,
+        request
+    ):
+        """Test both default and custom optional fields with template rendering."""
+        LOG.info("Testing combined optional fields with template")
+
+        # Template that includes both tool_calls and thoughts
+        template = """{% for message in messages %}
+{{'<|im_start|>'}}{{ message['role'] }}
+{% if message['thoughts'] is defined %}[Thoughts: {{ message['thoughts'] }}]{% endif %}
+{{ message['content'] }}{{'<|im_end|>'}}
+{% endfor %}"""
+
+        tokenizer = deepcopy(request.getfixturevalue("llama3_tokenizer"))
+
+        test_data = {
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You are an AI assistant."
+                },
+                {
+                    "role": "user",
+                    "content": "What is the temperature in Paris?"
+                },
+                {
+                    "role": "assistant",
+                    "content": "Let me help with that calculation",
+                    "thoughts": "We should take care to convert the temperature to Fahrenheit",
+                }
+            ]
+        }
+
+        strategy = ChatTemplateStrategy(
+            ChatTemplatePrompter(
+                tokenizer,
+                chat_template=template,
+                message_field_role="role",
+                message_field_content="content",
+                optional_message_fields=["thoughts"],
+            ),
+            tokenizer=tokenizer,
+            train_on_inputs=False,
+            sequence_len=512,
+            roles_to_train=["assistant"]
+        )
+
+        res = strategy.tokenize_prompt(test_data)
+        turns = strategy.get_conversation_thread(test_data)
+        labels = res["labels"]
+        input_ids = res["input_ids"]
+
+        tokens = []
+        for _, (input_id, label_id) in enumerate(zip(input_ids, labels)):
+            decoded_input_token = tokenizer.decode(input_id)
+            # Choose the color based on whether the label has the ignore value or not
+            token = f"({label_id}, {decoded_input_token})"
+            tokens.append(token)
+
+        LOG.info("\n".join(tokens))
+        LOG.info("\n\n\n")
+
+        LOG.info(f"Labels: {labels}")
+        LOG.info(f"Input IDs: {input_ids}")
+
+        # Verify both optional fields are in the tokenized output
+        decoded_output = tokenizer.decode(input_ids)
+
+        LOG.info(f"Decoded output: {decoded_output}")
+        assert "[Thoughts: We should take care to convert the temperature to Fahrenheit]" in decoded_output, "Thoughts not found in output"
+
+        start_idx, end_idx = strategy.find_turn(turns=turns, turn_idx=0)
+        turn_labels = labels[start_idx:end_idx]
+        assert all(label == IGNORE_TOKEN_ID for label in turn_labels), (
+            "Expected system message content to be not to be trained on"
+        )
+
+        start_idx, end_idx = strategy.find_turn(turns=turns, turn_idx=1)
+        turn_labels = labels[start_idx:end_idx]
+        assert all(label == IGNORE_TOKEN_ID for label in turn_labels), (
+            "Expected user message content to be not to be trained on"
+        )
+
+        # Verify all content is properly labeled for assistant message
+        start_idx, end_idx = strategy.find_turn(turns=turns, turn_idx=2)
+        turn_labels = labels[start_idx:end_idx]
+        assert not all(label == IGNORE_TOKEN_ID for label in turn_labels), (
+            "Expected assistant message content to be trained on"
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

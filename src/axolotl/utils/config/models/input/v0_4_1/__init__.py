@@ -195,6 +195,7 @@ class SFTDataset(BaseModel):
     message_field_training_detail: Optional[str] = None
     logprobs_field: Optional[str] = None
     temperature: Optional[float] = None
+    optional_message_fields: Optional[List[str]] = None
     roles_to_train: Optional[List[str]] = None
     train_on_eos: Optional[str] = None
     roles: Optional[Dict[str, List[str]]] = None
