@@ -175,6 +175,7 @@ def fixture_llama3_2_vision_with_hardcoded_date() -> str:
 
     return modified_template
 
+
 @pytest.fixture(name="chat_template_jinja_with_optional_fields")
 def fixture_chat_template_jinja_with_optional_fields() -> str:
     return """{% for message in messages %}
