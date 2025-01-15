@@ -59,7 +59,7 @@ VOLUME_CONFIG = {
 }
 
 N_GPUS = int(os.environ.get("N_GPUS", 1))
-GPU_CONFIG = modal.gpu.A10G(count=N_GPUS)
+GPU_CONFIG = modal.gpu.L40S(count=N_GPUS)
 
 
 def run_cmd(cmd: str, run_folder: str):
