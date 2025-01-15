@@ -45,7 +45,7 @@ class AxolotlKDTrainer(AxolotlTrainer):
         inputs,
         return_outputs=False,
         num_items_in_batch=None,
-        shift_targets=False,
+        shift_targets=True,
     ):
         """
         How the loss is computed by Trainer. By default, all models return the loss in the first element.
