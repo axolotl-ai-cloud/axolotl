@@ -333,6 +333,26 @@ class LlamaRalaDecoderLayer(nn.Module):
             config.hidden_size, eps=config.rms_norm_eps
         )
 
+    @classmethod
+    def is_layer_idx_softmax(
+        cls, num_hidden_layers: int, layer_idx: int, softmax_every: int
+    ) -> bool:
+        inner_layers = num_hidden_layers - 2
+        if 1 + softmax_every * (inner_layers // softmax_every) == inner_layers:
+            softmax_start_idx = 1
+        elif 1 + softmax_every * (inner_layers // softmax_every) > inner_layers:
+            layer_group_size = 1 + softmax_every * ((inner_layers // softmax_every) - 1)
+            softmax_start_idx = 1 + (inner_layers - layer_group_size) // 2
+        elif 1 + softmax_every * (inner_layers // softmax_every) < inner_layers:
+            layer_group_size = 1 + softmax_every * (inner_layers // softmax_every)
+            softmax_start_idx = 1 + (inner_layers - layer_group_size) // 2
+
+        softmax_layers = set(range(softmax_start_idx, num_hidden_layers, softmax_every))
+        softmax_layers.add(0)
+        softmax_layers.add(num_hidden_layers - 1)
+
+        return layer_idx in softmax_layers
+
     def forward(
         self,
         hidden_states: torch.Tensor,
