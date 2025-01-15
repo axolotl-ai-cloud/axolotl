@@ -7,12 +7,13 @@ from pathlib import Path
 from typing import Any, List
 
 import yaml
-from datasets import DatasetDict, concatenate_datasets, load_dataset, load_from_disk
+from datasets import DatasetDict, concatenate_datasets, load_from_disk
 
 from axolotl.common.const import DEFAULT_DATASET_PREPARED_PATH
 from axolotl.prompt_strategies.dpo import load as load_dpo
 from axolotl.prompt_strategies.kto import load as load_kto
 from axolotl.prompt_strategies.orpo import load as load_orpo
+from axolotl.utils.data.shared import load_dataset_w_config
 from axolotl.utils.data.utils import deduplicate_and_log_datasets, md5
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import is_main_process, zero_first
@@ -118,40 +119,13 @@ def drop_long_rl_seq(
 def load_prepare_preference_datasets(cfg):
     def load_split(dataset_cfgs, _cfg):
         split_datasets: List[Any] = []
+        use_auth_token = _cfg.hf_use_auth_token
         for i, ds_cfg in enumerate(dataset_cfgs):
-            if ds_cfg["ds_type"] == "json":
-                for data_file in ds_cfg["data_files"]:
-                    data_files = {ds_cfg["split"]: data_file}
-                    ds = load_dataset(  # pylint: disable=invalid-name
-                        "json",
-                        data_files=data_files,
-                        split=ds_cfg["split"],
-                    )
-                    split_datasets.insert(i, ds)
-            else:
-                if Path(ds_cfg["path"]).exists():
-                    try:
-                        ds = load_from_disk(
-                            ds_cfg["path"]
-                        )
-                        if isinstance(ds, DatasetDict):
-                            if ds_cfg["split"] in ds:
-                                ds = ds[ds_cfg["split"]]
-                            else:
-                                raise ValueError(f"{ds_cfg["split"]} split does not exist in the dataset")
-                    except:
-                        ds = load_dataset(  # pylint: disable=invalid-name
-                            ds_cfg["path"],
-                            split=ds_cfg["split"],
-                            revision=ds_cfg.get("revision", None),
-                        )
-                else:
-                    ds = load_dataset(  # pylint: disable=invalid-name
-                        ds_cfg["path"],
-                        split=ds_cfg["split"],
-                        revision=ds_cfg.get("revision", None),
-                    )
-                split_datasets.insert(i, ds)
+            ds = load_dataset_w_config(ds_cfg, use_auth_token)
+            if isinstance(ds, DatasetDict):
+                if ds_cfg["split"] and ds_cfg["split"] in ds:
+                    ds = ds[ds_cfg["split"]]
+            split_datasets.insert(i, ds)
 
         tokenizer = load_tokenizer(cfg)
 
