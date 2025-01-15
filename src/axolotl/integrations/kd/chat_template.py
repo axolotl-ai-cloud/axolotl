@@ -52,6 +52,11 @@ class ChatTemplateStrategyWithKD(ChatTemplateStrategy):
             train_on_eos=train_on_eos,
         )
 
+    @property
+    def supports_batched(self) -> bool:
+        # batching doesn't work well for logprob data
+        return False
+
     def transform_logprobs(self, sample):
         """
         Transform logprobs to target format for KD training
