@@ -279,6 +279,7 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
         drop_long_kwargs["desc"] = "Dropping Long Sequences"
     train_dataset = train_dataset.filter(
         drop_long,
+        batched=True,
         **filter_map_kwargs,
         **drop_long_kwargs,
     )
@@ -310,8 +311,7 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
         """
         labels = sample["labels"]
         if not labels:
-            # Edge case: if labels is empty, decide if you want to keep or drop
-            return True  # or False
+            return True
 
         # Check if single example or batch
         # If first element is an int, we assume a single example

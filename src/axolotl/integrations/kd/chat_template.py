@@ -71,7 +71,7 @@ class ChatTemplateStrategyWithKD(ChatTemplateStrategy):
             # so we need to slice from the left/beginning of logprobs
             logprobs = logprobs[:-input_seq_len]
             input_padding_len = 0
-            target_seq_len = input_seq_len
+            # target_seq_len = input_seq_len
 
         # fill with -inf for padding_len tokens for top_k tokens
         # extend target_logprobs with a padding_len x top_k 2D list filled with -inf
@@ -84,9 +84,9 @@ class ChatTemplateStrategyWithKD(ChatTemplateStrategy):
             target_token_ids.append(list(range(top_k)))
             target_mask.append([0] * top_k)
 
-        for _ in range(target_seq_len):
-            # TODO also check against sample["labels"]
-            target_mask.append([1] * top_k)
+        # for _ in range(target_seq_len):
+        #     # TODO also check against sample["labels"]
+        #     target_mask.append([1] * top_k)
 
         for position in range(input_padding_len, input_seq_len):
             if sample["labels"][position] == -100:
