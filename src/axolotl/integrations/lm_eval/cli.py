@@ -27,6 +27,8 @@ def build_lm_eval_command(
     fewshot_as_multiturn=None,
 ):
     tasks_by_num_fewshot: dict[str, list] = defaultdict(list)
+    if isinstance(tasks, str):
+        tasks = [tasks]
     for task in tasks:
         num_fewshot = "-1"
         task_parts = task.split(":")
