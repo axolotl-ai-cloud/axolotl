@@ -1877,6 +1877,8 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         self, training_args: AxolotlTrainingArguments, is_eval=False, **kwargs
     ):
         if training_args.pretraining:
+            if self.cfg.pretraining_sample_concatenation is False:
+                return DataCollatorForSeq2Seq(self.tokenizer, **kwargs)
             return None
 
         if self.cfg.model_config_type == "mamba":
