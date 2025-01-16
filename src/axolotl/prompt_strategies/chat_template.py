@@ -4,10 +4,11 @@ HF Chat Templates prompt strategy
 
 import logging
 from collections import defaultdict
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 from transformers import ProcessorMixin
 
+from axolotl.prompt_strategies.jinja_template_analyzer import JinjaTemplateAnalyzer
 from axolotl.prompt_tokenizers import PromptTokenizingStrategy
 from axolotl.prompters import IGNORE_TOKEN_ID, Prompter
 from axolotl.utils.chat_templates import get_chat_template_from_config
@@ -26,13 +27,11 @@ class ChatTemplatePrompter(Prompter):
         processor=None,
         chat_template=None,
         max_length=2048,
-        message_field_role: str = "role",
-        message_field_content: str = "content",
+        message_property_mappings: Optional[Dict[str, str]] = None,
         message_field_training: Optional[str] = None,
         message_field_training_detail: Optional[str] = None,
         roles: Optional[Dict[str, List[str]]] = None,
         drop_system_message: bool = False,
-        optional_message_fields: Optional[List[str]] = None,
     ):
         if roles:
             self.roles = {s: t for t, sources in roles.items() for s in sources}
@@ -46,19 +45,10 @@ class ChatTemplatePrompter(Prompter):
                 "tool": "tool",
             }
 
-        # Default optional fields, kept for compatibility
-        self._default_optional_fields = [
-            "tool_calls",  # tool that 'assistant' calls
-            "name",  # name of tool given by 'tool'
-            "tool_call_id",  # mistral/mixtral requires this
-        ]
-
-        self.optional_message_fields = list(
-            set(self._default_optional_fields + (optional_message_fields or []))
+        self._chat_template_msg_variables = self.get_chat_template_msg_variables(
+            chat_template
         )
-
-        self.message_field_role = message_field_role
-        self.message_field_content = message_field_content
+        self.message_property_mappings = message_property_mappings
         self.message_field_training = message_field_training
         self.message_field_training_detail = message_field_training_detail
         self.tokenizer = tokenizer
@@ -66,6 +56,10 @@ class ChatTemplatePrompter(Prompter):
         self.chat_template = chat_template
         self.max_length = max_length
         self.drop_system_message = drop_system_message
+
+    @property
+    def chat_template_msg_variables(self) -> Set[str]:
+        return self._chat_template_msg_variables
 
     def build_prompt(self, conversation, add_generation_prompt=False, images=None):
         if self.processor:
@@ -196,6 +190,12 @@ class ChatTemplatePrompter(Prompter):
 
         return adjusted_details
 
+    def get_chat_template_msg_variables(
+        self, chat_template: str, messages_array_name: str = "messages"
+    ) -> Set[str]:
+        template_analyzer = JinjaTemplateAnalyzer(chat_template)
+        return template_analyzer.get_message_vars(messages_array_name)
+
 
 class ChatTemplateStrategy(PromptTokenizingStrategy):
     """
@@ -224,6 +224,10 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
         self.train_on_eos = train_on_eos
         self.images = "images"
+
+        LOG.info(
+            f"The chat template uses the following properites on the message: {self.prompter.chat_template_msg_variables}"
+        )
 
     @property
     def messages(self):
@@ -478,24 +482,17 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         turns = []
 
         for message in prompt[self.messages]:
+            transformed_message = self.transform_message(message)
+            LOG.warning(f"Message: {message}")
+            LOG.warning(f"Transformed message: {transformed_message}")
+
             turn = {
-                "role": self.prompter.roles[message[self.prompter.message_field_role]],
+                **transformed_message,
                 "training": message.get(self.prompter.message_field_training),
                 "training_detail": message.get(
                     self.prompter.message_field_training_detail
                 ),
             }
-
-            # do not add content if None as it may conflict with some templates due to tools
-            content = message.get(self.prompter.message_field_content, None)
-
-            if content is not None:
-                turn["content"] = content
-
-            for key in self.prompter.optional_message_fields:
-                value = message.get(key, None)
-                if value is not None:
-                    turn[key] = value
 
             turns.append(turn)
 
@@ -503,6 +500,39 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             turns = turns[1:]
 
         return turns
+
+    def transform_message(self, message):
+        new_message = {}
+
+        # If we have defined mappings from the input dataset to the
+        # chat template, we need to apply them first.
+        mapped_message = {}
+        for key, value in self.prompter.message_property_mappings.items():
+            if key in message:
+                mapped_message[value] = message[key]
+            else:
+                mapped_message[key] = message.get(key)
+
+        # Special handling for content
+        content = mapped_message.get("content") or message.get("content")
+        if content is not None:
+            new_message["content"] = content
+
+        # Map the roles if necessary
+        role = mapped_message.get("role") or message.get("role")
+        if role is not None:
+            new_message["role"] = self.prompter.roles.get(role, role)
+
+        # Keep only the properties that are defined in the chat template
+        # using the mapped elements if they exist and if not fall back to
+        # the original message (for unmapped properties).
+        for key in self.prompter.chat_template_msg_variables:
+            if key not in ["content", "role"]:
+                value = mapped_message.get(key) or message.get(key)
+                if value is not None:
+                    new_message[key] = value
+
+        return new_message
 
     def get_images(self, prompt):
         return prompt.get(self.images, None)

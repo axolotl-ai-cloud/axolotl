@@ -36,8 +36,10 @@ class TestAssistantChatTemplateLlama3:
             DictDefault(
                 {
                     "chat_template": "llama3",
-                    "message_field_role": "role",
-                    "message_field_content": "content",
+                    "message_property_mappings": {
+                        "from": "role",
+                        "value": "content",
+                    },
                     "roles": {
                         "user": ["user"],
                         "assistant": ["assistant"],
@@ -74,8 +76,10 @@ class TestAssistantChatTemplateLlama3:
             ChatTemplatePrompter(
                 llama3_tokenizer,
                 chat_template=get_chat_template("llama3"),
-                message_field_role="role",
-                message_field_content="content",
+                message_property_mappings={
+                    "from": "role",
+                    "value": "content",
+                },
                 roles={
                     "user": ["user"],
                     "assistant": ["assistant"],
@@ -114,8 +118,10 @@ class TestAssistantChatTemplateLlama3:
             ChatTemplatePrompter(
                 phi35_tokenizer,
                 chat_template=get_chat_template("phi_35"),
-                message_field_role="role",
-                message_field_content="content",
+                message_property_mappings={
+                    "from": "role",
+                    "value": "content",
+                },
                 roles={
                     "user": ["user"],
                     "assistant": ["assistant"],
@@ -170,8 +176,10 @@ class TestAssistantChatTemplateLlama3:
             ChatTemplatePrompter(
                 llama3_tokenizer,
                 chat_template=get_chat_template("llama3"),
-                message_field_role="role",
-                message_field_content="content",
+                message_property_mappings={
+                    "from": "role",
+                    "value": "content",
+                },
                 message_field_training="training",
                 roles={
                     "user": ["user"],
@@ -230,8 +238,10 @@ class TestSharegptChatTemplateLlama3:
             ChatTemplatePrompter(
                 llama3_tokenizer,
                 chat_template=get_chat_template("llama3"),
-                message_field_role="from",
-                message_field_content="value",
+                message_property_mappings={
+                    "from": "role",
+                    "value": "content",
+                },
             ),
             tokenizer=llama3_tokenizer,
             train_on_inputs=False,
@@ -287,8 +297,10 @@ class TestSharegptChatTemplateLlama3:
             ChatTemplatePrompter(
                 llama3_tokenizer,
                 chat_template=get_chat_template("llama3"),
-                message_field_role="from",
-                message_field_content="value",
+                message_property_mappings={
+                    "from": "role",
+                    "value": "content",
+                },
             ),
             tokenizer=llama3_tokenizer,
             train_on_inputs=False,
@@ -344,8 +356,10 @@ class TestSharegptChatTemplateLlama3:
             ChatTemplatePrompter(
                 llama3_tokenizer,
                 chat_template=get_chat_template("llama3"),
-                message_field_role="from",
-                message_field_content="value",
+                message_property_mappings={
+                    "from": "role",
+                    "value": "content",
+                },
             ),
             tokenizer=llama3_tokenizer,
             train_on_inputs=False,
@@ -417,8 +431,10 @@ class TestAssistantToolCallingChatTemplateLlama32Vision:
                 chat_template=get_chat_template(
                     "jinja", jinja_template=llama3_2_vision_chat_template_jinja
                 ),
-                message_field_role="role",
-                message_field_content="content",
+                message_property_mappings={
+                    "from": "role",
+                    "value": "content",
+                },
             ),
             tokenizer=llama3_tokenizer,
             train_on_inputs=False,
@@ -486,8 +502,7 @@ class TestAssistantToolCallingChatTemplateLlama32Vision:
                 chat_template=get_chat_template(
                     "jinja", jinja_template=llama3_2_vision_chat_template_jinja
                 ),
-                message_field_role="role",
-                message_field_content="content",
+                message_property_mappings={"from": "role", "value": "content"},
             ),
             tokenizer=llama3_tokenizer,
             train_on_inputs=False,

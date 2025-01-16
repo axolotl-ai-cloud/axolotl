@@ -191,6 +191,7 @@ class SFTDataset(BaseModel):
     field_messages: Optional[str] = None
     message_field_role: Optional[str] = None
     message_field_content: Optional[str] = None
+    message_property_mappings: Optional[Dict[str, str]] = None
     message_field_training: Optional[str] = None
     message_field_training_detail: Optional[str] = None
     logprobs_field: Optional[str] = None
@@ -202,6 +203,57 @@ class SFTDataset(BaseModel):
     drop_system_message: Optional[bool] = None
     trust_remote_code: Optional[bool] = False
     revision: Optional[str] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def handle_legacy_message_fields(cls, data):
+        """
+        Handle backwards compatibility between legacy message field mapping and new property mapping system.
+
+        Previously, the config only supported mapping 'role' and 'content' fields via dedicated config options:
+        - message_field_role: Mapped to the role field
+        - message_field_content: Mapped to the content field
+
+        The new system uses message_property_mappings to support arbitrary field mappings:
+        message_property_mappings:
+            role: source_role_field
+            content: source_content_field
+            additional_field: source_field
+
+        This validator:
+        1. Ensures legacy field mappings are converted to the new system
+        2. Validates there are no conflicts between legacy and new mappings
+        3. Maintains backwards compatibility while allowing new functionality
+        """
+        if data.get("message_property_mappings") is None:
+            data["message_property_mappings"] = {}
+
+        # Check for conflicts between legacy and new fields
+        if data.get("message_field_role"):
+            if (
+                "role" in data["message_property_mappings"]
+                and data["message_property_mappings"]["role"]
+                != data["message_field_role"]
+            ):
+                raise ValueError(
+                    f"Conflicting message role fields: message_field_role='{data['message_field_role']}' "
+                    f"conflicts with message_property_mappings.role='{data['message_property_mappings']['role']}'"
+                )
+            data["message_property_mappings"]["role"] = data["message_field_role"]
+
+        if data.get("message_field_content"):
+            if (
+                "content" in data["message_property_mappings"]
+                and data["message_property_mappings"]["content"]
+                != data["message_field_content"]
+            ):
+                raise ValueError(
+                    f"Conflicting message content fields: message_field_content='{data['message_field_content']}' "
+                    f"conflicts with message_property_mappings.content='{data['message_property_mappings']['content']}'"
+                )
+            data["message_property_mappings"]["content"] = data["message_field_content"]
+
+        return data
 
     @model_validator(mode="before")
     @classmethod
