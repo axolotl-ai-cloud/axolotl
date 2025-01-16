@@ -1,144 +1,111 @@
-"""Module for quantization state, quantization, and dequantization methods."""
+import ctypes
 
-from dataclasses import dataclass
-
+import bitsandbytes as bnb
 import torch
+from bitsandbytes.functional import QuantState, get_ptr
+from packaging.version import Version
+
+cdequantize_blockwise_fp32 = bnb.functional.lib.cdequantize_blockwise_fp32
+cdequantize_blockwise_fp16_nf4 = bnb.functional.lib.cdequantize_blockwise_fp16_nf4
+cdequantize_blockwise_bf16_nf4 = bnb.functional.lib.cdequantize_blockwise_bf16_nf4
+
+CUDA_STREAM = None
+HAS_CUDA_STREAM = Version(bnb.__version__) > Version("0.43.3")
 
 
-@dataclass
-class QuantState:
-    """
-    Holds quantization parameters for a tensor.
+def dequantize(
+    W: torch.Tensor,
+    quant_state: QuantState | None = None,
+    out: torch.Tensor | None = None,
+) -> torch.Tensor:
+    """Fast NF4 dequantization using bitsandbytes CUDA kernels"""
+    if quant_state is None:
+        return W
 
-    Attributes:
-        scale: Scale factor(s) for dequantization. Can be per-tensor or per-channel.
-        zero_point: Zero point for asymmetric quantization.
-        bits: Number of bits used for quantization (4, 8).
-        scheme: Quantization scheme ('symmetric' or 'asymmetric').
-        axis: Axis for per-channel quantization (None for per-tensor).
-    """
-
-    scale: torch.Tensor
-    zero_point: torch.Tensor | None = None
-    bits: int = 8
-    scheme: str = "symmetric"
-    axis: int | None = None
-
-
-def quantize(
-    weight: torch.Tensor,
-    bits: int = 8,
-    scheme: str = "symmetric",
-    axis: int | None = None,
-) -> tuple[torch.Tensor, QuantState]:
-    """
-    Quantize weights and return quantization state.
-
-    Args:
-        weight: Weight tensor to quantize.
-        bits: Number of bits (4, 8).
-        scheme: "symmetric" or "asymmetric".
-        axis: Axis for per-channel quantization (`None` for per-tensor).
-
-    Returns:
-        Tuple of `(quantized_weight, quant_state)`.
-    """
-    if bits not in [4, 8]:
-        raise ValueError(f"Unsupported bit width: {bits}")
-
-    # Compute scale and optionally zero point
-    if axis is not None:
-        # Per-channel quantization
-        dim_size = weight.shape[axis]
-        weight_flatten = weight.transpose(axis, -1).reshape(-1, dim_size)
-
-        if scheme == "symmetric":
-            max_abs = torch.max(torch.abs(weight_flatten), dim=0)[0]
-            scale = max_abs / (2 ** (bits - 1) - 1)
-            zero_point = None
-        else:
-            min_val = torch.min(weight_flatten, dim=0)[0]
-            max_val = torch.max(weight_flatten, dim=0)[0]
-            scale = (max_val - min_val) / (2**bits - 1)
-            zero_point = torch.round(-min_val / scale)
+    # Extract quantization state
+    if not isinstance(quant_state, list):
+        # New style quant_state class
+        absmax = quant_state.absmax
+        shape = quant_state.shape
+        dtype = quant_state.dtype
+        blocksize = quant_state.blocksize
+        offset = quant_state.offset
+        state2 = quant_state.state2
+        absmax2 = state2.absmax
+        code2 = state2.code
+        blocksize2 = state2.blocksize
     else:
-        # Per-tensor quantization
-        if scheme == "symmetric":
-            max_abs = torch.max(torch.abs(weight))
-            scale = max_abs / (2 ** (bits - 1) - 1)
-            zero_point = None
-        else:
-            min_val = torch.min(weight)
-            max_val = torch.max(weight)
-            scale = (max_val - min_val) / (2**bits - 1)
-            zero_point = torch.round(-min_val / scale)
+        # Legacy list format
+        absmax, shape, dtype, blocksize, compressed_stats, _, _ = quant_state
+        offset, state2 = compressed_stats
+        absmax2, code2, blocksize2, _, _, _, _ = state2
 
-    # Create quantization state
-    quant_state = QuantState(
-        scale=scale, zero_point=zero_point, bits=bits, scheme=scheme, axis=axis
+    # Setup output tensor
+    if out is None:
+        out = torch.empty(shape, dtype=dtype, device="cuda:0")
+    else:
+        assert out.shape == shape and out.dtype == dtype
+
+    # Dequantize statistics
+    n_elements_absmax = absmax.numel()
+    out_absmax = torch.empty(n_elements_absmax, dtype=torch.float32, device="cuda:0")
+    ptr_out_absmax = get_ptr(out_absmax)
+
+    # Use CUDA stream if available
+    if HAS_CUDA_STREAM:
+        global CUDA_STREAM
+        if CUDA_STREAM is None:
+            CUDA_STREAM = torch.cuda.current_stream("cuda:0")
+
+        cdequantize_blockwise_fp32(
+            get_ptr(code2),
+            get_ptr(absmax),
+            get_ptr(absmax2),
+            ptr_out_absmax,
+            ctypes.c_int(blocksize2),
+            ctypes.c_int(n_elements_absmax),
+            CUDA_STREAM,
+        )
+    else:
+        cdequantize_blockwise_fp32(
+            get_ptr(code2),
+            get_ptr(absmax),
+            get_ptr(absmax2),
+            ptr_out_absmax,
+            ctypes.c_int(blocksize2),
+            ctypes.c_int(n_elements_absmax),
+        )
+
+    out_absmax += offset
+
+    # Choose appropriate dequantization function
+    fx = (
+        cdequantize_blockwise_fp16_nf4
+        if dtype == torch.float16
+        else cdequantize_blockwise_bf16_nf4
     )
 
-    # Quantize weights
-    if scheme == "symmetric":
-        q_weight = torch.round(weight / scale)
-    else:
-        q_weight = torch.round(weight / scale + zero_point)
-
-    # Pack 4-bit values if needed
-    if bits == 4:
-        q_weight = q_weight.reshape(-1, 2)
-        packed = (q_weight[:, 0] & 0xF) | ((q_weight[:, 1] & 0xF) << 4)
-        q_weight = packed.reshape(weight.shape)
-
-    return q_weight.to(torch.int8), quant_state
-
-
-def dequantize(weight: torch.Tensor, quant_state: QuantState | None) -> torch.Tensor:
-    """
-    Fast dequantization of weights supporting different quantization schemes.
-
-    Args:
-        weight: Quantized weight tensor.
-        quant_state: Quantization parameters. If None, returns original weight.
-
-    Returns:
-        Dequantized weight tensor.
-
-    Note:
-        Supports:
-        - 4, 8 bit quantization.
-        - Symmetric, asymmetric quantization.
-        - Per-tensor, per-channel scaling.
-    """
-    if quant_state is None:
-        return weight
-
-    # Get quantization parameters
-    scale = quant_state.scale
-    zero_point = quant_state.zero_point
-    bits = quant_state.bits
-
-    # Handle different bit widths
-    if bits == 8:
-        # 8-bit quantization
-        if quant_state.scheme == "symmetric":
-            return weight * scale  # Symmetric: w = q * s
-        return (weight - zero_point) * scale  # Asymmetric: w = (q - z) * s
-    if bits == 4:
-        # 4-bit quantization requires unpacking
-        # Each byte contains 2 4-bit values
-        # Convert to 8-bit first
-        weight_unpacked = torch.zeros(
-            weight.shape + (2,), dtype=torch.int8, device=weight.device
+    # Dequantize weights
+    if HAS_CUDA_STREAM:
+        fx(
+            get_ptr(None),
+            get_ptr(W),
+            ptr_out_absmax,
+            get_ptr(out),
+            ctypes.c_int(blocksize),
+            ctypes.c_int(out.numel()),
+            CUDA_STREAM,
         )
-        weight_unpacked[..., 0] = weight & 0xF  # Lower 4 bits
-        weight_unpacked[..., 1] = (weight >> 4) & 0xF  # Upper 4 bits
+    else:
+        fx(
+            get_ptr(None),
+            get_ptr(W),
+            ptr_out_absmax,
+            get_ptr(out),
+            ctypes.c_int(blocksize),
+            ctypes.c_int(out.numel()),
+        )
 
-        # Reshape to original dimensions
-        weight_8bit = weight_unpacked.reshape(-1, 2).squeeze(-1)
-
-        if quant_state.scheme == "symmetric":
-            return weight_8bit * scale
-        return (weight_8bit - zero_point) * scale
-
-    raise ValueError(f"Unsupported bit width: {bits}")
+    # Handle transposed data
+    is_transposed = W.shape[0] == 1
+    return out.t() if is_transposed else out
