@@ -17,4 +17,5 @@ class RalaPlugin(BasePlugin):
         return "axolotl.integrations.rala.args.RalaArgs"
 
     def register(self):
+        LOG.info("Registering RALA model with AutoConfig & AutoModel")
         register_rala_model()
