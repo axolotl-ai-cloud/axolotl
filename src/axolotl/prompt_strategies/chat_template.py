@@ -480,7 +480,6 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
     def get_conversation_thread(self, prompt):
         turns = []
-
         for message in prompt[self.messages]:
             transformed_message = self.transform_message(message)
             LOG.warning(f"Message: {message}")
@@ -502,37 +501,32 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         return turns
 
     def transform_message(self, message):
-        new_message = {}
+        # Build the initial transformed message from the mappings
+        transformed_message = {
+            key: message[value]
+            for key, value in self.prompter.message_property_mappings.items()
+            if message.get(value) is not None
+        }
 
-        # If we have defined mappings from the input dataset to the
-        # chat template, we need to apply them first.
-        mapped_message = {}
-        for key, value in self.prompter.message_property_mappings.items():
-            if key in message:
-                mapped_message[value] = message[key]
-            else:
-                mapped_message[key] = message.get(key)
+        # Map the role if necessary
+        if "role" in transformed_message:
+            transformed_message["role"] = self.prompter.roles.get(
+                transformed_message["role"], transformed_message["role"]
+            )
 
-        # Special handling for content
-        content = mapped_message.get("content") or message.get("content")
-        if content is not None:
-            new_message["content"] = content
+        # Determine which keys in the original message were not mapped
+        mapped_values = set(self.prompter.message_property_mappings.values())
+        remaining_keys = set(message) - mapped_values
 
-        # Map the roles if necessary
-        role = mapped_message.get("role") or message.get("role")
-        if role is not None:
-            new_message["role"] = self.prompter.roles.get(role, role)
-
-        # Keep only the properties that are defined in the chat template
-        # using the mapped elements if they exist and if not fall back to
-        # the original message (for unmapped properties).
+        # Keep only the properties defined in the chat template
+        # and not already mapped
         for key in self.prompter.chat_template_msg_variables:
-            if key not in ["content", "role"]:
-                value = mapped_message.get(key) or message.get(key)
-                if value is not None:
-                    new_message[key] = value
+            if key in remaining_keys:
+                val = message.get(key)
+                if val is not None:
+                    transformed_message[key] = val
 
-        return new_message
+        return transformed_message
 
     def get_images(self, prompt):
         return prompt.get(self.images, None)

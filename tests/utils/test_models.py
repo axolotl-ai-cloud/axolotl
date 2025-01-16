@@ -151,7 +151,10 @@ class TestModelsUtils:
             message_field_role="same_role",
             message_property_mappings={"role": "same_role"},
         )
-        assert dataset.message_property_mappings == {"role": "same_role"}
+        assert dataset.message_property_mappings == {
+            "role": "same_role",
+            "content": "content",
+        }
 
         # Test both legacy and new fields work when they don't overlap
         dataset = SFTDataset(
@@ -162,6 +165,15 @@ class TestModelsUtils:
         assert dataset.message_property_mappings == {
             "role": "role_field",
             "content": "content_field",
+        }
+
+        # Test no role or content provided
+        dataset = SFTDataset(
+            path="test_path",
+        )
+        assert dataset.message_property_mappings == {
+            "role": "role",
+            "content": "content",
         }
 
         # Test error when legacy and new fields conflict

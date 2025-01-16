@@ -30,8 +30,10 @@ class TestMessagesChatLlama3:
             DictDefault(
                 {
                     "chat_template": "llama3",
-                    "message_field_role": "role",
-                    "message_field_content": "content",
+                    "message_property_mappings": {
+                        "role": "role",
+                        "content": "content",
+                    },
                     "field_messages": "messages",
                 }
             ),

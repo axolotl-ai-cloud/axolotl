@@ -122,7 +122,7 @@ class TestChatTemplateConfigurations:
                 chat_template=get_chat_template(
                     chat_template, jinja_template=chat_template_jinja
                 ),
-                message_property_mappings={"from": "role", "value": "content"},
+                message_property_mappings={"role": "from", "content": "value"},
             ),
             tokenizer=tokenizer,
             train_on_inputs=True,
@@ -178,7 +178,7 @@ class TestChatTemplateConfigurations:
                 chat_template=get_chat_template(
                     chat_template, jinja_template=chat_template_jinja
                 ),
-                message_property_mappings={"from": "role", "value": "content"},
+                message_property_mappings={"role": "from", "content": "value"},
             ),
             tokenizer=tokenizer,
             train_on_inputs=False,
@@ -238,7 +238,7 @@ class TestChatTemplateConfigurations:
                 chat_template=get_chat_template(
                     chat_template, jinja_template=chat_template_jinja
                 ),
-                message_property_mappings={"from": "role", "value": "content"},
+                message_property_mappings={"role": "from", "content": "value"},
             ),
             tokenizer=tokenizer,
             train_on_inputs=False,
@@ -303,7 +303,7 @@ class TestChatTemplateConfigurations:
                 chat_template=get_chat_template(
                     chat_template, jinja_template=chat_template_jinja
                 ),
-                message_property_mappings={"from": "role", "value": "content"},
+                message_property_mappings={"role": "from", "content": "value"},
             ),
             tokenizer=tokenizer,
             train_on_inputs=True,
@@ -355,7 +355,7 @@ class TestChatTemplateConfigurations:
                 chat_template=get_chat_template(
                     chat_template, jinja_template=chat_template_jinja
                 ),
-                message_property_mappings={"from": "role", "value": "content"},
+                message_property_mappings={"role": "from", "content": "value"},
             ),
             tokenizer=tokenizer,
             train_on_inputs=False,
@@ -394,7 +394,7 @@ class TestChatTemplateConfigurations:
                 chat_template=get_chat_template(
                     chat_template, jinja_template=chat_template_jinja
                 ),
-                message_property_mappings={"from": "role", "value": "content"},
+                message_property_mappings={"role": "from", "content": "value"},
             ),
             tokenizer=tokenizer,
             train_on_inputs=False,
@@ -439,7 +439,7 @@ class TestChatTemplateConfigurations:
                 chat_template=get_chat_template(
                     chat_template, jinja_template=chat_template_jinja
                 ),
-                message_property_mappings={"from": "role", "value": "content"},
+                message_property_mappings={"role": "from", "content": "value"},
             ),
             tokenizer=tokenizer,
             train_on_inputs=False,
@@ -518,7 +518,7 @@ class TestChatTemplateConfigurations:
                 chat_template=get_chat_template(
                     chat_template, jinja_template=chat_template_jinja
                 ),
-                message_property_mappings={"from": "role", "value": "content"},
+                message_property_mappings={"role": "from", "content": "value"},
             ),
             tokenizer=tokenizer,
             train_on_inputs=False,
@@ -569,7 +569,7 @@ class TestChatTemplateConfigurations:
                 chat_template=get_chat_template(
                     chat_template, jinja_template=chat_template_jinja
                 ),
-                message_property_mappings={"from": "role", "value": "content"},
+                message_property_mappings={"role": "from", "content": "value"},
             ),
             tokenizer=tokenizer,
             train_on_inputs=False,
@@ -614,7 +614,7 @@ class TestChatTemplateConfigurations:
                     chat_template, jinja_template=chat_template_jinja
                 ),
                 drop_system_message=True,
-                message_property_mappings={"from": "role", "value": "content"},
+                message_property_mappings={"role": "from", "content": "value"},
             ),
             tokenizer=tokenizer,
             train_on_inputs=False,
@@ -657,7 +657,7 @@ class TestChatTemplateConfigurations:
                     chat_template, jinja_template=chat_template_jinja
                 ),
                 roles=custom_roles,
-                message_property_mappings={"from": "role", "value": "content"},
+                message_property_mappings={"role": "from", "content": "value"},
             ),
             tokenizer=tokenizer,
             train_on_inputs=False,
@@ -729,7 +729,7 @@ class TestChatTemplateConfigurations:
                 ),
                 message_field_training="train",
                 message_field_training_detail="train_detail",
-                message_property_mappings={"from": "role", "value": "content"},
+                message_property_mappings={"role": "from", "content": "value"},
             ),
             tokenizer=tokenizer,
             train_on_inputs=False,

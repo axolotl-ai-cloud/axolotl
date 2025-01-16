@@ -228,8 +228,8 @@ class SFTDataset(BaseModel):
         if data.get("message_property_mappings") is None:
             data["message_property_mappings"] = {}
 
-        # Check for conflicts between legacy and new fields
-        if data.get("message_field_role"):
+        # Check for conflicts and handle role
+        if "message_field_role" in data:
             if (
                 "role" in data["message_property_mappings"]
                 and data["message_property_mappings"]["role"]
@@ -239,9 +239,14 @@ class SFTDataset(BaseModel):
                     f"Conflicting message role fields: message_field_role='{data['message_field_role']}' "
                     f"conflicts with message_property_mappings.role='{data['message_property_mappings']['role']}'"
                 )
-            data["message_property_mappings"]["role"] = data["message_field_role"]
+            data["message_property_mappings"]["role"] = (
+                data["message_field_role"] or "role"
+            )
+        elif "role" not in data["message_property_mappings"]:
+            data["message_property_mappings"]["role"] = "role"
 
-        if data.get("message_field_content"):
+        # Check for conflicts and handle content
+        if "message_field_content" in data:
             if (
                 "content" in data["message_property_mappings"]
                 and data["message_property_mappings"]["content"]
@@ -251,7 +256,11 @@ class SFTDataset(BaseModel):
                     f"Conflicting message content fields: message_field_content='{data['message_field_content']}' "
                     f"conflicts with message_property_mappings.content='{data['message_property_mappings']['content']}'"
                 )
-            data["message_property_mappings"]["content"] = data["message_field_content"]
+            data["message_property_mappings"]["content"] = (
+                data["message_field_content"] or "content"
+            )
+        elif "content" not in data["message_property_mappings"]:
+            data["message_property_mappings"]["content"] = "content"
 
         return data
 
@@ -744,9 +753,7 @@ class AxolotlInputConfig(
     dataset_shard_idx: Optional[int] = None
     skip_prepare_dataset: Optional[bool] = False
 
-    pretraining_dataset: Optional[  # type: ignore
-        conlist(Union[PretrainingDataset, SFTDataset], min_length=1)
-    ] = Field(
+    pretraining_dataset: Optional[List[Union[PretrainingDataset, SFTDataset]]] = Field(
         default=None,
         json_schema_extra={"description": "streaming dataset to use for pretraining"},
     )
@@ -1006,6 +1013,22 @@ class AxolotlInputConfig(
                     data["accelerator_config"]["split_batches"] = False
                 if accelerator_config.get("dispatch_batches") is None:
                     data["accelerator_config"]["dispatch_batches"] = False
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_pretraining_min_length(cls, data):
+        pretraining_dataset = data.get("pretraining_dataset")
+
+        if (
+            pretraining_dataset
+            and isinstance(pretraining_dataset, list)
+            and len(pretraining_dataset) < 1
+        ):
+            raise ValueError(
+                "pretraining_dataset must be a list with at least one element"
+            )
+
         return data
 
     @model_validator(mode="before")
