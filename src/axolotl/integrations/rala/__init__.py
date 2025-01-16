@@ -16,6 +16,5 @@ class RalaPlugin(BasePlugin):
     def get_input_args(self):
         return "axolotl.integrations.rala.args.RalaArgs"
 
-    def pre_model_load(self, cfg):
-        if cfg.rala_attention:
-            register_rala_model()
+    def register(self):
+        register_rala_model()

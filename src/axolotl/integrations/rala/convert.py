@@ -97,10 +97,10 @@ def convert_to_rala(
     model.config.architectures = [
         "LlamaRalaForCausalLM",
     ]
-    model.config.model_type = "llama_rala"
-    model.config.auto_map = {
-        "AutoConfig": "llama.configuration_rala.LlamaRalaConfig",
-        "AutoModel": "llama.modeling_rala.LlamaRalaModel",
-        "AutoModelForCausalLM": "llama.modeling_rala.LlamaRalaForCausalLM",
-    }
+    model.config.model_type = "llama-rala"
+    # model.config.auto_map = {
+    #     "AutoConfig": "llama.configuration_rala.LlamaRalaConfig",
+    #     "AutoModel": "llama.modeling_rala.LlamaRalaModel",
+    #     "AutoModelForCausalLM": "llama.modeling_rala.LlamaRalaForCausalLM",
+    # }
     return model
