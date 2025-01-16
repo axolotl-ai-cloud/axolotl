@@ -753,7 +753,7 @@ class AxolotlInputConfig(
     dataset_shard_idx: Optional[int] = None
     skip_prepare_dataset: Optional[bool] = False
 
-    pretraining_dataset: Optional[List[Union[PretrainingDataset, SFTDataset]]] = Field(
+    pretraining_dataset: Optional[conlist(Union[PretrainingDataset, SFTDataset], min_length=1)] = Field(  # type: ignore
         default=None,
         json_schema_extra={"description": "streaming dataset to use for pretraining"},
     )
@@ -1013,22 +1013,6 @@ class AxolotlInputConfig(
                     data["accelerator_config"]["split_batches"] = False
                 if accelerator_config.get("dispatch_batches") is None:
                     data["accelerator_config"]["dispatch_batches"] = False
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_pretraining_min_length(cls, data):
-        pretraining_dataset = data.get("pretraining_dataset")
-
-        if (
-            pretraining_dataset
-            and isinstance(pretraining_dataset, list)
-            and len(pretraining_dataset) < 1
-        ):
-            raise ValueError(
-                "pretraining_dataset must be a list with at least one element"
-            )
-
         return data
 
     @model_validator(mode="before")
