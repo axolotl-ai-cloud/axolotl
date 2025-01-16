@@ -206,20 +206,13 @@ def wrap_pretraining_dataset(
         )
         # set this to 1 so downstream data_loader doesn't try to increase the batch again
         cfg.micro_batch_size = 1
-    elif cfg.pretraining_sample_concatenation is False:
-        encode = functools.partial(
-            encode_pretraining,
-            tokenizer,
-            max_tokens,
-            text_column=cfg.pretraining_dataset[0].text_column or "text",
-            concatenate=False,
-        )
     else:
         encode = functools.partial(
             encode_pretraining,
             tokenizer,
             max_tokens,
             text_column=cfg.pretraining_dataset[0].text_column or "text",
+            concatenate=cfg.pretraining_sample_concatenation is True,
         )
 
     if cfg.shuffle_merged_datasets:
