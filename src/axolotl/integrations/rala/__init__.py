@@ -2,10 +2,8 @@
 
 import logging
 
-# from transformers.models.llama.modeling_llama import LLAMA_ATTENTION_CLASSES
-
 from axolotl.integrations.base import BasePlugin
-from axolotl.integrations.rala.auto.llama.modeling_rala import LlamaRALAAttention
+from axolotl.integrations.rala.auto.llama.modeling_rala import register_rala_model
 
 LOG = logging.getLogger(__name__)
 
@@ -18,7 +16,6 @@ class RalaPlugin(BasePlugin):
     def get_input_args(self):
         return "axolotl.integrations.rala.args.RalaArgs"
 
-    def set_attn_config(self, cfg, model_kwargs, model_config):
-        # if cfg.rala_attention:
-        #     model_kwargs["attn_implementation"] = "rala"
-        ...
+    def pre_model_load(self, cfg):
+        if cfg.rala_attention:
+            register_rala_model()

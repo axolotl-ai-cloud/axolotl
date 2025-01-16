@@ -7,8 +7,10 @@ from torch import nn
 from transformers import PreTrainedModel
 from transformers.models.llama.modeling_llama import LlamaAttention
 
-from axolotl.integrations.rala import LlamaRALAAttention
-from axolotl.integrations.rala.auto.llama.modeling_rala import LlamaRalaDecoderLayer
+from axolotl.integrations.rala.auto.llama.modeling_rala import (
+    LlamaRALAAttention,
+    LlamaRalaDecoderLayer,
+)
 
 logger = logging.getLogger(__name__)
 

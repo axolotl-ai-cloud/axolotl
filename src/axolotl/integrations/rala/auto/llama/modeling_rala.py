@@ -19,11 +19,18 @@ from typing import List, Optional, Tuple, Union, Unpack
 import torch
 import torch.nn.functional as F
 from torch import nn
-from transformers import Cache, GenerationMixin, LlamaModel
+from transformers import (
+    AutoConfig,
+    AutoModel,
+    AutoModelForCausalLM,
+    Cache,
+    GenerationMixin,
+    LlamaModel,
+)
 from transformers.modeling_outputs import CausalLMOutputWithPast
 from transformers.models.llama.modeling_llama import (
+    LLAMA_ATTENTION_CLASSES,
     KwargsForCausalLM,
-    LlamaAttention,
     LlamaDynamicNTKScalingRotaryEmbedding,
     LlamaLinearScalingRotaryEmbedding,
     LlamaMLP,
@@ -329,7 +336,10 @@ class LlamaRalaDecoderLayer(nn.Module):
         if LlamaRalaConfig.is_layer_idx_softmax(
             config.num_hidden_layers, layer_idx, config.softmax_every
         ):
-            self.self_attn = LlamaAttention(config=config, layer_idx=layer_idx)
+            self.self_attn = LLAMA_ATTENTION_CLASSES[config._attn_implementation](
+                config=config, layer_idx=layer_idx
+            )
+            # self.self_attn = LlamaAttention(config=config, layer_idx=layer_idx)
         else:
             self.self_attn = LlamaRALAAttention(config=config, layer_idx=layer_idx)
 
@@ -594,3 +604,20 @@ class LlamaRalaForCausalLM(LlamaPreTrainedModel, GenerationMixin):
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
         )
+
+
+def register_rala_model() -> None:
+    """
+    Register differential attention components with the transformers library.
+    This function registers the differential attention configurations and model classes
+    with the Auto* classes from `transformers`, making them available through the
+    standard model loading pipeline.
+    """
+    # Register configs
+    AutoConfig.register("llama-rala", LlamaRalaConfig)
+
+    # Register models
+    AutoModel.register(LlamaRalaConfig, LlamaRalaModel)
+    AutoModelForCausalLM.register(LlamaRalaConfig, LlamaRalaForCausalLM)
+
+    LLAMA_ATTENTION_CLASSES["rala"] = LlamaRALAAttention

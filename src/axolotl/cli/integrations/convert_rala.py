@@ -82,6 +82,7 @@ def convert_rala(cfg, cli_args, config_path):
             zero_init=cli_args.zero_init,
         )
         model.to(cfg.device, dtype=cfg.torch_dtype)
+        model.config.model_type = "llama-rala"
     except Exception as exc:
         LOG.error(Fore.RED + "Conversion failed: %s" + Fore.RESET, str(exc))
         raise
