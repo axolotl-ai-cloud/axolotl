@@ -69,7 +69,7 @@ def convert_to_rala(
 
                 layer_type = type(child).__name__
                 logger.info(
-                    f"Converting attention layer {layer_idx}: {layer_type} to {attention_class.__name__}"
+                    f"Converting attention layer {decoder_layer_idx}: {layer_type} to {attention_class.__name__}"
                 )
 
                 # Create new diff attn layer
