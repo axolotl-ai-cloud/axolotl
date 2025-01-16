@@ -706,6 +706,12 @@ class AxolotlInputConfig(
     pad_to_sequence_len: Optional[bool] = None
     curriculum_sampling: Optional[bool] = None
     multipack_real_batches: Optional[bool] = None
+    pretraining_sample_concatenation: Optional[bool] = Field(
+        default=None,
+        json_schema_extra={
+            "description": "whether to soft pack/concatenate samples during pretraining",
+        },
+    )
 
     batch_flattening: Optional[Union[Literal["auto"], bool]] = None
 
