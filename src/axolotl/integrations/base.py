@@ -75,6 +75,19 @@ class BasePlugin:
         None
         """
 
+    def set_attn_config(
+        self, cfg, model_kwargs, model_config
+    ):  # pylint: disable=unused-argument
+        """
+        Sets attention configuration for the model.
+        Parameters:
+        cfg (dict): The configuration for the plugin.
+        model_kwargs (dict): The model kwargs for the plugin.
+        model_config (object): The model configuration.
+        Returns:
+        None
+        """
+
     def post_model_load(self, cfg, model):  # pylint: disable=unused-argument
         """
         Performs actions after the model is loaded.
@@ -303,6 +316,17 @@ class PluginManager:
         """
         for plugin in self.plugins.values():
             plugin.pre_model_load(cfg)
+
+    def set_attn_config(self, cfg, model_kwargs, model_config):
+        """
+        modifies the attention configuration of the model kwargs for loading
+        Parameters:
+            cfg (dict): The configuration for the plugins.
+            model_kwargs (dict): The model's kwargs for construction the model
+            model_config (dict): The model's configuration.
+        """
+        for plugin in self.plugins.values():
+            plugin.set_attn_config(cfg, model_kwargs, model_config)
 
     def post_model_load(self, cfg, model):
         """
