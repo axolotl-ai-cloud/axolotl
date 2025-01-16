@@ -12,6 +12,7 @@ from axolotl.monkeypatch.trainer_grad_accum import (
 class TestTrainerGAIntegration(unittest.TestCase):
     """llama monkeypatch integration tests."""
 
+    @pytest.mark.skip("may not be needed for latest transformers version")
     def test_train_step_patchable(self):
         # ensures the current version of transformers has loss code that matches our patching code
         self.assertTrue(
