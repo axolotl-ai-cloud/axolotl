@@ -51,17 +51,16 @@ def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
     ds_cfg = ds_cfg or {}
 
     field_messages = ds_cfg.get("field_messages")
-    message_field_role = ds_cfg.get("message_field_role")
-    message_field_content = ds_cfg.get("message_field_content")
+    message_property_mappings = ds_cfg.get("message_property_mappings")
     message_field_training = ds_cfg.get("message_field_training")
 
     builder_kwargs = {}
     if field_messages:
         builder_kwargs["conversations_field"] = field_messages
-    if message_field_role:
-        builder_kwargs["message_field_role"] = message_field_role
-    if message_field_content:
-        builder_kwargs["message_field_content"] = message_field_content
+    if message_property_mappings and "role" in message_property_mappings:
+        builder_kwargs["message_field_role"] = message_property_mappings["role"]
+    if message_property_mappings and "content" in message_property_mappings:
+        builder_kwargs["message_field_content"] = message_property_mappings["content"]
     if message_field_training:
         builder_kwargs["message_field_training"] = message_field_training
 
