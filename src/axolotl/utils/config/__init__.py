@@ -272,11 +272,11 @@ def validate_config(
     # Convert datasets to proper format if needed
     if cfg.get("datasets"):
         for idx, ds_cfg in enumerate(cfg["datasets"]):
-            if cfg.get("rl") == "dpo":
+            if cfg.get("rl") == "dpo" and not isinstance(ds_cfg, DPODataset):
                 cfg["datasets"][idx] = DPODataset(**ds_cfg)
-            elif cfg.get("rl") == "kto":
+            elif cfg.get("rl") == "kto" and not isinstance(ds_cfg, KTODataset):
                 cfg["datasets"][idx] = KTODataset(**ds_cfg)
-            else:
+            elif not isinstance(ds_cfg, SFTDataset):
                 cfg["datasets"][idx] = SFTDataset(**ds_cfg)
 
     if capabilities or env_capabilities:

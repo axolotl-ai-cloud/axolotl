@@ -342,6 +342,9 @@ class KTODataset(BaseModel):
     revision: Optional[str] = None
 
 
+DatasetConfig = Union[SFTDataset, DPODataset, KTODataset]
+
+
 class LoftQConfig(BaseModel):
     """LoftQ configuration subset"""
 
