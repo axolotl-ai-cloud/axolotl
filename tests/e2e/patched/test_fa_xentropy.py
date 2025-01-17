@@ -76,7 +76,7 @@ class TestFAXentropyLlama:
         else:
             cfg.fp16 = True
 
-        validate_config(cfg)
+        cfg = validate_config(cfg)
         normalize_config(cfg)
 
         cli_args = TrainerCliArgs()
