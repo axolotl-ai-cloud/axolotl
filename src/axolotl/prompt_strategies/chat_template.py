@@ -554,14 +554,12 @@ class StrategyLoader:
         # pylint: disable=duplicate-code
         if ds_cfg is None:
         dataset_config = {}
-    elif hasattr(ds_cfg, "model_dump"):  # Pydantic v2
+    elif hasattr(ds_cfg, "model_dump"):
         dataset_config = ds_cfg.model_dump()
-    elif hasattr(ds_cfg, "dict"):  # Pydantic v1
-        dataset_config = ds_cfg.dict()
-        chat_template_string = get_chat_template_from_config(
-            cfg=cfg, ds_cfg=dataset_config, tokenizer=tokenizer
-        )
-        LOG.info(f"Using chat template:\n---\n{chat_template_string!s}\n---")
+    chat_template_string = get_chat_template_from_config(
+        cfg=cfg, ds_cfg=dataset_config, tokenizer=tokenizer
+    )
+    LOG.info(f"Using chat template:\n---\n{chat_template_string!s}\n---")
 
     prompter_params = {
         "tokenizer": tokenizer,
