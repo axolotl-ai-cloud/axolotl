@@ -25,7 +25,7 @@ class DictDefault(Dict):
 
         if isFrozen and name not in super().keys():
             raise KeyError(name)
-        super().__setitem__(name, value)
+        super(Dict, self).__setitem__(name, value)  # pylint: disable=bad-super-call
         try:
             p = object.__getattribute__(self, "__parent")
             key = object.__getattribute__(self, "__key")
