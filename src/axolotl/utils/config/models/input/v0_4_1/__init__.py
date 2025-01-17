@@ -954,10 +954,15 @@ class AxolotlInputConfig(
     @classmethod
     def deprecate_sharegpt_datasets(cls, datasets):
         for _, ds_cfg in enumerate(datasets):
-            if not ds_cfg.get("type"):
+            # Handle both dict and pydantic model cases
+            ds_type = (
+                ds_cfg.get("type")
+                if isinstance(ds_cfg, dict)
+                else getattr(ds_cfg, "type", None)
+            )
+            if not ds_type:
                 continue
 
-            ds_type = ds_cfg["type"]
             # skip if it's a dict (for custom user instruction prompt)
             if isinstance(ds_type, dict):
                 continue

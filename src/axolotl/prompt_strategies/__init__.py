@@ -41,6 +41,7 @@ def load(strategy, tokenizer, cfg, ds_cfg, processor=None):
                 load_kwargs["ds_cfg"] = ds_cfg
             if "processor" in sig.parameters:
                 load_kwargs["processor"] = processor
+
         return func(tokenizer, cfg, **load_kwargs)
     except ModuleNotFoundError:
         return None
