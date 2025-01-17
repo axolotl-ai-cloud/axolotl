@@ -12,7 +12,8 @@ def hijack_llama_prepare_4d_mask():
     from transformers import modeling_attn_mask_utils
     from transformers.models.llama import modeling_llama
 
-    modeling_llama._prepare_4d_causal_attention_mask_for_sdpa = (  # pylint: disable=protected-access
+    # modeling_llama._prepare_4d_causal_attention_mask_for_sdpa = (  # pylint: disable=protected-access
+    modeling_llama._prepare_4d_causal_attention_mask_with_cache_position = (  # pylint: disable=protected-access
         patched_prepare_4d_causal_attention_mask_for_sdpa
     )
     modeling_attn_mask_utils._prepare_4d_causal_attention_mask_for_sdpa = (  # pylint: disable=protected-access
