@@ -47,7 +47,7 @@ def iter_recursive_parameter_weights(model_path, modules_to_recurse: list[str], 
     rrt_avg_model_state_dict = {}
 
     # iterate over all parameter weights in the model shards
-    for key, weight, layer_idx in iter_parameter_weights(model_path):
+    for key, weight, layer_idx in iter_parameter_weights(model_path, device=device):
         # get the matching module name in modules_to_recurse for the current parameter key
         matched_module_name = next(
             (module for module in modules_to_recurse if module in key),
@@ -140,7 +140,7 @@ def iter_dora_parameter_weights(model_path, avg_recursive_weights, modules_to_re
     rrt_avg_model_state_dict = {}
 
     # iterate over all parameter weights in the model shards
-    for key, weight, layer_idx in iter_parameter_weights(model_path):
+    for key, weight, layer_idx in iter_parameter_weights(model_path, device=device):
         # get the matching module name in modules_to_recurse for the current parameter key
         matched_module_name = next(
             (module for module in modules_to_recurse if module in key),
@@ -260,9 +260,11 @@ def convert_llama_to_rrt(model_name, output_dir, recurse_layers: int = 12, rank=
     # create a new state_dict to store the RRT model weights
     rrt_model_state_dict = {}
 
+    logger.info(f"Calculating average recursive weights...")
     for key, weight in iter_recursive_parameter_weights(model_path, modules_to_recurse, device=device, recurse_layers=recurse_layers):
         rrt_model_state_dict[key] = weight.to(torch.bfloat16).detach().cpu()
 
+    logger.info(f"Calculating decomposed lora diff...")
     # now that we have the average weights, we need to loop over the shards again to calculate the decomposed lora diff
     rrt_lora_state_dict = {}
     for key, weight in iter_dora_parameter_weights(model_path, rrt_model_state_dict, modules_to_recurse, alpha=32, rank=rank, device=device, recurse_layers=recurse_layers):
@@ -277,4 +279,10 @@ def convert_llama_to_rrt(model_name, output_dir, recurse_layers: int = 12, rank=
 
 if __name__ == "__main__":
     # meta-llama/Llama-3.2-1B has 16 hidden layers
-    convert_llama_to_rrt("meta-llama/Llama-3.2-1B", "/tmp/rrt_model", recurse_layers=4, rank=256, alpha=512)
+    if torch.backends.mps.is_available():
+        device = "mps"
+    elif torch.cuda.is_available():
+        device = "cuda"
+    else:
+        device = "cpu"
+    convert_llama_to_rrt("meta-llama/Llama-3.2-1B", "/tmp/rrt_model", recurse_layers=4, rank=256, alpha=512, device=device)
