@@ -8,8 +8,11 @@ from transformers import AutoConfig, AutoModel, AutoModelForCausalLM
 
 from axolotl.integrations.base import BasePlugin
 from axolotl.integrations.rrt.modeling import register_rrt_model
-from axolotl.integrations.rrt.modeling.modeling_rrt_llama import RelaxedRecursiveLlamaConfig, \
-    RelaxedRecursiveLlamaModel, RelaxedRecursiveLlamaForCausalLM
+from axolotl.integrations.rrt.modeling.modeling_rrt_llama import (
+    RelaxedRecursiveLlamaConfig,
+    RelaxedRecursiveLlamaForCausalLM,
+    RelaxedRecursiveLlamaModel,
+)
 
 LOG = logging.getLogger(__name__)
 
@@ -39,4 +42,6 @@ def register_rrt_model():
 
     # Register models
     AutoModel.register(RelaxedRecursiveLlamaConfig, RelaxedRecursiveLlamaModel)
-    AutoModelForCausalLM.register(RelaxedRecursiveLlamaConfig, RelaxedRecursiveLlamaForCausalLM)
+    AutoModelForCausalLM.register(
+        RelaxedRecursiveLlamaConfig, RelaxedRecursiveLlamaForCausalLM
+    )
