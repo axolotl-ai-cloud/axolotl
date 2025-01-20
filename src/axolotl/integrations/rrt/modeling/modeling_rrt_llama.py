@@ -1,8 +1,9 @@
+import logging
 from typing import Tuple, Optional, Unpack, Callable, Union
 
 import torch
 from torch import nn
-from transformers import LlamaConfig, Cache, logger, DynamicCache
+from transformers import LlamaConfig, Cache, DynamicCache
 from transformers.activations import ACT2FN
 from transformers.modeling_flash_attention_utils import FlashAttentionKwargs
 from transformers.modeling_outputs import BaseModelOutputWithPast
@@ -12,6 +13,7 @@ from transformers.models.llama.modeling_llama import apply_rotary_pos_emb, eager
 
 from axolotl.integrations.rrt.modeling.linear import RelaxedRecursiveDoraLinear
 
+logger = logging.getLogger(__name__)
 
 class RelaxedRecursiveLlamaConfig(LlamaConfig):
     """
@@ -25,7 +27,7 @@ class RelaxedRecursiveLlamaConfig(LlamaConfig):
 class RelaxedRecursiveLlamaMLP(nn.Module):
     def __init__(self, config: RelaxedRecursiveLlamaConfig):
         super().__init__()
-        recurse_loops = config.num_layers // config.recurse_layers
+        recurse_loops = config.num_hidden_layers // config.recurse_layers
         self.config = config
         self.hidden_size = config.hidden_size
         self.intermediate_size = config.intermediate_size
@@ -46,7 +48,7 @@ class RelaxedRecursiveLlamaAttention(nn.Module):
 
     def __init__(self, config: RelaxedRecursiveLlamaConfig, layer_idx: int):
         super().__init__()
-        recurse_loops = config.num_layers // config.recurse_layers
+        recurse_loops = config.num_hidden_layers // config.recurse_layers
         self.config = config
         self.layer_idx = layer_idx
         self.head_dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
@@ -127,7 +129,7 @@ class RelaxedRecursiveLlamaDecoderLayer(nn.Module):
 
     def __init__(self, config: LlamaConfig, layer_idx: int):
         super().__init__()
-        recurse_loops = config.num_layers // config.recurse_layers
+        recurse_loops = config.num_hidden_layers // config.recurse_layers
         self.hidden_size = config.hidden_size
 
         self.self_attn = RelaxedRecursiveLlamaAttention(config=config, layer_idx=layer_idx)
@@ -185,7 +187,7 @@ class RelaxedRecursiveLlamaDecoderLayer(nn.Module):
 class RelaxedRecursiveLlamaModel(LlamaModel):
     def __init__(self, config):
         super(LlamaModel, self).__init__(config)
-        self.recurse_loops = config.num_layers // config.recurse_layers
+        self.recurse_loops = config.num_hidden_layers // config.recurse_layers
         self.padding_idx = config.pad_token_id
         self.vocab_size = config.vocab_size
 
