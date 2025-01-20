@@ -1,4 +1,5 @@
 import json
+import logging
 import math
 import os
 import re
@@ -15,6 +16,7 @@ from transformers.utils import SAFE_WEIGHTS_NAME, SAFE_WEIGHTS_INDEX_NAME
 
 from axolotl.integrations.rrt.modeling.modeling_rrt_llama import RelaxedRecursiveLlamaConfig
 
+logger = logging.getLogger(__name__)
 
 def extract_layer_number(key):
     """Extract layer number from parameter key."""

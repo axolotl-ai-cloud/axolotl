@@ -38,5 +38,5 @@ def register_rrt_model():
     AutoConfig.register("llama-rrt", RelaxedRecursiveLlamaConfig)
 
     # Register models
-    AutoModel.register("llama-rrt", RelaxedRecursiveLlamaConfig, RelaxedRecursiveLlamaModel)
-    AutoModelForCausalLM.register("llama-rrt", RelaxedRecursiveLlamaConfig, RelaxedRecursiveLlamaForCausalLM)
+    AutoModel.register(RelaxedRecursiveLlamaConfig, RelaxedRecursiveLlamaModel)
+    AutoModelForCausalLM.register(RelaxedRecursiveLlamaConfig, RelaxedRecursiveLlamaForCausalLM)
