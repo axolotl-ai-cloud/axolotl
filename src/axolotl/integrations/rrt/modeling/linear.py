@@ -1,6 +1,10 @@
+import math
+
 import torch
 import torch.nn.functional as F
-from torch import nn, transpose
+from peft.utils import transpose
+from torch import nn
+
 
 
 class RelaxedRecursiveDoraLinear(nn.Module):
@@ -23,6 +27,7 @@ class RelaxedRecursiveDoraLinear(nn.Module):
         out_features: int,
         B: int,
         rank: int,
+        alpha: int,
         fan_in_fan_out: bool = False,
         bias: bool = True,
         use_dora: bool = True,
@@ -41,8 +46,17 @@ class RelaxedRecursiveDoraLinear(nn.Module):
 
         self.lora_A_list = nn.ParameterList([nn.Parameter(torch.zeros(rank, in_features)) for _ in range(B)])
         self.lora_B_list = nn.ParameterList([nn.Parameter(torch.zeros(out_features, rank)) for _ in range(B)])
+        # rslora
+        self.scaling = alpha / math.sqrt(rank)
         if use_dora:
             self.lora_magnitude_vector_list = nn.ParameterList([nn.Parameter(torch.ones(out_features)) for _ in range(B)])
+
+    def get_weight_norm(self, weight, lora_weight, scaling) -> torch.Tensor:
+        # calculate L2 norm of weight matrix, column-wise
+        weight = transpose(weight, self.fan_in_fan_out)
+        weight = weight + scaling * lora_weight
+        weight_norm = torch.linalg.norm(weight, dim=1).to(weight.dtype)
+        return weight_norm
 
     def forward(self, x, loop_idx: int):
         """
@@ -58,14 +72,16 @@ class RelaxedRecursiveDoraLinear(nn.Module):
         lora_B: torch.Tensor = self.lora_B_list[loop_idx]
         magnitude_vector: torch.Tensor = self.lora_magnitude_vector_list[loop_idx]
 
-        base_out: torch.Tensor = F.linear(x, transpose(w_base, self.fan_in_fan_out), self.bias)
+        base_out: torch.Tensor = F.linear(x, w_base, self.bias)
 
         x_eye: torch.Tensor = torch.eye(lora_A.shape[1], device=lora_A.device, dtype=x.dtype)
-        w_dora_full: torch.Tensor = lora_B(lora_A(x_eye))
+        tmp = F.linear(x_eye, lora_A)  # [hidden_size, rank]
+        w_dora_full: torch.Tensor = F.linear(tmp, lora_B)
+        w_dora_full = w_dora_full.t()
 
         lora_out: torch.Tensor = F.linear(x, w_dora_full, bias=None)
 
-        w_dora_norm: torch.Tensor = self.get_weight_norm(w_base, w_dora_full.detach())
+        w_dora_norm: torch.Tensor = self.get_weight_norm(w_base, w_dora_full.detach(), self.scaling)
         w_dora_norm = w_dora_norm.detach()
         scale_factor = (magnitude_vector / w_dora_norm).unsqueeze(0)  # shape [1, out_features]
 

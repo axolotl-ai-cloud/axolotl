@@ -20,8 +20,9 @@ class RelaxedRecursiveLlamaConfig(LlamaConfig):
     Configuration for Relaxed Recursive Llama.
     """
 
-    recurse_layers: int
+    recurse_layers: int  = 4
     rank: int
+    alpha: int
 
 
 class RelaxedRecursiveLlamaMLP(nn.Module):
@@ -31,9 +32,9 @@ class RelaxedRecursiveLlamaMLP(nn.Module):
         self.config = config
         self.hidden_size = config.hidden_size
         self.intermediate_size = config.intermediate_size
-        self.gate_proj = RelaxedRecursiveDoraLinear(self.hidden_size, self.intermediate_size, recurse_loops, config.rank, bias=config.mlp_bias)
-        self.up_proj = RelaxedRecursiveDoraLinear(self.hidden_size, self.intermediate_size, recurse_loops, config.rank, bias=config.mlp_bias)
-        self.down_proj = RelaxedRecursiveDoraLinear(self.intermediate_size, self.hidden_size, recurse_loops, config.rank, bias=config.mlp_bias)
+        self.gate_proj = RelaxedRecursiveDoraLinear(self.hidden_size, self.intermediate_size, recurse_loops, config.rank, config.alpha, bias=config.mlp_bias)
+        self.up_proj = RelaxedRecursiveDoraLinear(self.hidden_size, self.intermediate_size, recurse_loops, config.rank, config.alpha, bias=config.mlp_bias)
+        self.down_proj = RelaxedRecursiveDoraLinear(self.intermediate_size, self.hidden_size, recurse_loops, config.rank, config.alpha, bias=config.mlp_bias)
         self.act_fn = ACT2FN[config.hidden_act]
 
     def forward(self, x, loop_idx: int):
@@ -58,16 +59,16 @@ class RelaxedRecursiveLlamaAttention(nn.Module):
         self.is_causal = True
 
         self.q_proj = RelaxedRecursiveDoraLinear(
-            config.hidden_size, config.num_attention_heads * self.head_dim, recurse_loops, config.rank, bias=config.attention_bias
+            config.hidden_size, config.num_attention_heads * self.head_dim, recurse_loops, config.rank, config.alpha, bias=config.attention_bias
         )
         self.k_proj = RelaxedRecursiveDoraLinear(
-            config.hidden_size, config.num_key_value_heads * self.head_dim, recurse_loops, config.rank, bias=config.attention_bias
+            config.hidden_size, config.num_key_value_heads * self.head_dim, recurse_loops, config.rank, config.alpha, bias=config.attention_bias
         )
         self.v_proj = RelaxedRecursiveDoraLinear(
-            config.hidden_size, config.num_key_value_heads * self.head_dim, recurse_loops, config.rank, bias=config.attention_bias
+            config.hidden_size, config.num_key_value_heads * self.head_dim, recurse_loops, config.rank, config.alpha, bias=config.attention_bias
         )
         self.o_proj = RelaxedRecursiveDoraLinear(
-            config.num_attention_heads * self.head_dim, config.hidden_size, recurse_loops, config.rank, bias=config.attention_bias
+            config.num_attention_heads * self.head_dim, config.hidden_size, recurse_loops, config.rank, config.alpha, bias=config.attention_bias
         )
 
     def forward(
@@ -185,6 +186,8 @@ class RelaxedRecursiveLlamaDecoderLayer(nn.Module):
 
 
 class RelaxedRecursiveLlamaModel(LlamaModel):
+    config_class = RelaxedRecursiveLlamaConfig
+
     def __init__(self, config):
         super(LlamaModel, self).__init__(config)
         self.recurse_loops = config.num_hidden_layers // config.recurse_layers
@@ -313,6 +316,8 @@ class RelaxedRecursiveLlamaModel(LlamaModel):
 
 
 class RelaxedRecursiveLlamaForCausalLM(LlamaForCausalLM):
+    config_class = RelaxedRecursiveLlamaConfig
+
     def __init__(self, config):
         super(LlamaForCausalLM, self).__init__(config)
         self.model = RelaxedRecursiveLlamaModel(config)

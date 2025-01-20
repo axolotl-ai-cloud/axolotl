@@ -1,3 +1,5 @@
+import json
+import math
 import os
 import re
 from pathlib import Path
@@ -9,7 +11,9 @@ from huggingface_hub import snapshot_download, split_torch_state_dict_into_shard
 from safetensors.torch import save_file
 from tqdm import tqdm
 from transformers import AutoConfig
-from transformers.utils import SAFE_WEIGHTS_NAME
+from transformers.utils import SAFE_WEIGHTS_NAME, SAFE_WEIGHTS_INDEX_NAME
+
+from axolotl.integrations.rrt.modeling.modeling_rrt_llama import RelaxedRecursiveLlamaConfig
 
 
 def extract_layer_number(key):
@@ -90,14 +94,20 @@ def low_rank_decomposition(
 
     U, S, Vh = torch.linalg.svd(weight.float(), full_matrices=False)
 
-    final_rank = min(min(weight.shape), max_rank)
-
     # Distribute S to both to improve numerical precision.
-    sqrt_S = torch.sqrt(torch.diag(S[:final_rank]))
-    L = sqrt_S @ Vh[:final_rank, :]
-    R = U[:, :final_rank] @ sqrt_S
+    sqrt_S = torch.sqrt(torch.diag(S[:max_rank]))
+    A = sqrt_S @ Vh[:max_rank, :]  # shape: [r, cols]
+    B = U[:, :max_rank] @ sqrt_S  # shape: [rows, r]
 
-    return L.to(dtype), R.to(dtype)
+    return A.to(dtype), B.to(dtype)
+
+
+def get_weight_norm(weight, lora_weight, scaling) -> torch.Tensor:
+    # calculate L2 norm of weight matrix, column-wise
+    weight = weight + scaling * lora_weight
+    weight_norm = torch.linalg.norm(weight, dim=1).to(weight.dtype)
+    return weight_norm
+
 
 def decompose_delta_weight(layer_weight, avg_weight, alpha, rank):
     """
@@ -106,25 +116,24 @@ def decompose_delta_weight(layer_weight, avg_weight, alpha, rank):
     """
     device = "cuda" if torch.cuda.is_available() else "mps"
 
+    # rslora
+    scaling = alpha / math.sqrt(rank)
+
     base_weight = avg_weight.to(device)
-    finetuned_weight = layer_weight.to(device)
+    final_weight = layer_weight.to(device)
 
-    # 1. Compute column norms and directions
-    #    (shape: base_norms, finetuned_norms => (k,))
-    base_norms = torch.norm(base_weight, dim=0) + 1e-9
-    finetuned_norms = torch.norm(finetuned_weight, dim=0) + 1e-9
+    delta_first_pass = final_weight - base_weight
 
-    # shape (d, k)
-    base_dir = base_weight / base_norms
-    finetuned_dir = finetuned_weight / finetuned_norms
-
-    # 2. Delta direction
-    delta_dir = finetuned_dir - base_dir
+    delta_for_svd = delta_first_pass / scaling
 
     # 3. Low-rank factorization of the delta direction
-    A, B = low_rank_decomposition(delta_dir, rank)
-    # The final magnitudes are just finetuned_norms
-    return A.cpu(), B.cpu(), finetuned_norms.cpu()
+    lora_A, lora_B = low_rank_decomposition(delta_for_svd, rank)
+
+    lora_weight = lora_B @ lora_A
+
+    weight_norm = get_weight_norm(base_weight.to(lora_A.device), lora_weight, scaling)
+
+    return lora_A.cpu(), lora_B.cpu(), weight_norm.cpu()
 
 
 def iter_dora_parameter_weights(model_path, avg_recursive_weights, modules_to_recurse: list[str], alpha, rank, device="mps", recurse_layers=12):
@@ -142,13 +151,13 @@ def iter_dora_parameter_weights(model_path, avg_recursive_weights, modules_to_re
                 # map to input_layernorm_list in the recursive layers and account for the layer_idx and loop_idx
                 loop_idx = layer_idx // recurse_layers
                 layer_idx = layer_idx % recurse_layers
-                layernorm_key = f"model.layers.{layer_idx}.input_layernorm_list.{loop_idx}"
+                layernorm_key = f"model.layers.{layer_idx}.input_layernorm_list.{loop_idx}.weight"
                 yield layernorm_key, weight
             elif "post_attention_layernorm" in key:
                 # map to input_layernorm_list in the recursive layers and account for the layer_idx and loop_idx
                 loop_idx = layer_idx // recurse_layers
                 layer_idx = layer_idx % recurse_layers
-                layernorm_key = f"model.layers.{layer_idx}.post_attention_layernorm_list.{loop_idx}"
+                layernorm_key = f"model.layers.{layer_idx}.post_attention_layernorm_list.{loop_idx}.weight"
                 yield layernorm_key, weight
             else:
                 yield key, weight
@@ -169,6 +178,7 @@ def iter_dora_parameter_weights(model_path, avg_recursive_weights, modules_to_re
         yield lora_magnitude_key, lora_magnitude
 
 def save_state_dict_to_safetensors(state_dict, save_directory):
+    os.makedirs(save_directory, exist_ok=True)
     weights_name = SAFE_WEIGHTS_NAME
 
     filename_pattern = weights_name.replace(".bin", "{suffix}.bin").replace(".safetensors", "{suffix}.safetensors")
@@ -211,7 +221,20 @@ def save_state_dict_to_safetensors(state_dict, save_directory):
 
         save_file(shard, os.path.join(save_directory, shard_file), metadata={"format": "pt"})
 
-def convert_llama_to_rrt(model_name, output_dir, recurse_layers: int = 12, rank=32):
+    del state_dict
+
+    if index is None:
+        path_to_weights = os.path.join(save_directory, weights_name)
+        logger.info(f"Model weights saved in {path_to_weights}")
+    else:
+        save_index_file = SAFE_WEIGHTS_INDEX_NAME
+        save_index_file = os.path.join(save_directory, save_index_file)
+        # Save the index as well
+        with open(save_index_file, "w", encoding="utf-8") as f:
+            content = json.dumps(index, indent=2, sort_keys=True) + "\n"
+            f.write(content)
+
+def convert_llama_to_rrt(model_name, output_dir, recurse_layers: int = 12, rank=32, alpha=32, device="mps"):
     modules_to_recurse = [
         "self_attn.q_proj",
         "self_attn.k_proj",
@@ -230,17 +253,19 @@ def convert_llama_to_rrt(model_name, output_dir, recurse_layers: int = 12, rank=
             f"divisible by the recurse layers ({recurse_layers})"
         )
 
+    config = RelaxedRecursiveLlamaConfig.from_dict({**config.to_dict(), "recurse_layers": recurse_layers, "rank": rank, "alpha": alpha})
+    config.save_pretrained(output_dir)
     model_path = Path(snapshot_download(model_name, ignore_patterns="*.pth"))
 
     # create a new state_dict to store the RRT model weights
     rrt_model_state_dict = {}
 
-    for key, weight in iter_recursive_parameter_weights(model_path, modules_to_recurse, device="mps", recurse_layers=recurse_layers):
+    for key, weight in iter_recursive_parameter_weights(model_path, modules_to_recurse, device=device, recurse_layers=recurse_layers):
         rrt_model_state_dict[key] = weight.to(torch.bfloat16).detach().cpu()
 
     # now that we have the average weights, we need to loop over the shards again to calculate the decomposed lora diff
     rrt_lora_state_dict = {}
-    for key, weight in iter_dora_parameter_weights(model_path, rrt_model_state_dict, modules_to_recurse, alpha=32, rank=rank, device="mps", recurse_layers=recurse_layers):
+    for key, weight in iter_dora_parameter_weights(model_path, rrt_model_state_dict, modules_to_recurse, alpha=32, rank=rank, device=device, recurse_layers=recurse_layers):
         rrt_lora_state_dict[key] = weight.to(torch.bfloat16).detach().cpu()
 
     # combine state dicts into a single state_dict
