@@ -20,7 +20,7 @@ class RelaxedRecursiveTransformerPlugin(BasePlugin):
     """
 
     def get_input_args(self):
-        return "axolotl.integrations.rrt.RelaxedRecursiveTransformerArgs"
+        return "axolotl.integrations.rrt.args.RelaxedRecursiveTransformerArgs"
 
     def register(self):
         LOG.info(
