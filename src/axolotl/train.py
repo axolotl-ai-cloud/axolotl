@@ -276,7 +276,7 @@ def train(
                 .decode("utf-8")
             }
             if cfg.datasets is not None:
-                if cfg.rl is not None or cfg.reward_model:
+                if cfg.rl is not None or cfg.reward_model or cfg.process_reward_model:
                     dataset_tags = [
                         d["path"] for d in cfg.datasets if not Path(d["path"]).is_dir()
                     ]

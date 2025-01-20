@@ -187,6 +187,12 @@ rl:
 # whether to perform weighting if doing DPO training. Boolean.
 dpo_use_weighting:
 
+# reward modelling: `True` or `False`
+reward_model: 
+
+# process reward modelling: `True` or `False`
+process_reward_model: 
+
 # The name of the chat template to use for training, following values are supported:
 # - tokenizer_default: Uses the chat template that is available in the tokenizer_config.json. If the chat template is not available in the tokenizer, it will raise an error. This is the default value.
 # - alpaca/inst/chatml/gemma/cohere/llama3/phi_3/deepseek_v2/jamba: These chat templates are available in the axolotl codebase at src/axolotl/utils/chat_templates.py
