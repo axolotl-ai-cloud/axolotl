@@ -48,6 +48,7 @@ class RelaxedRecursiveDoraLinear(nn.Module):
         self.lora_B_list = nn.ParameterList([nn.Parameter(torch.zeros(out_features, rank)) for _ in range(B)])
         # rslora
         self.scaling = alpha / math.sqrt(rank)
+        self.use_dora = use_dora
         if use_dora:
             self.lora_magnitude_vector_list = nn.ParameterList([nn.Parameter(torch.ones(out_features)) for _ in range(B)])
 
@@ -70,7 +71,6 @@ class RelaxedRecursiveDoraLinear(nn.Module):
 
         lora_A: torch.Tensor = self.lora_A_list[loop_idx]
         lora_B: torch.Tensor = self.lora_B_list[loop_idx]
-        magnitude_vector: torch.Tensor = self.lora_magnitude_vector_list[loop_idx]
 
         base_out: torch.Tensor = F.linear(x, w_base, self.bias)
 
@@ -81,9 +81,12 @@ class RelaxedRecursiveDoraLinear(nn.Module):
 
         lora_out: torch.Tensor = F.linear(x, w_dora_full, bias=None)
 
-        w_dora_norm: torch.Tensor = self.get_weight_norm(w_base, w_dora_full.detach(), self.scaling)
-        w_dora_norm = w_dora_norm.detach()
-        scale_factor = (magnitude_vector / w_dora_norm).unsqueeze(0)  # shape [1, out_features]
+        if self.use_dora:
+            magnitude_vector: torch.Tensor = self.lora_magnitude_vector_list[loop_idx]
+            w_dora_norm: torch.Tensor = self.get_weight_norm(w_base, w_dora_full.detach(), self.scaling)
+            w_dora_norm = w_dora_norm.detach()
+            scale_factor = (magnitude_vector / w_dora_norm).unsqueeze(0)  # shape [1, out_features]
 
-        result_dora = (scale_factor - 1) * base_out + scale_factor * lora_out
-        return result_dora
+            result_dora = (scale_factor - 1) * base_out + scale_factor * lora_out
+            return result_dora
+        return base_out + lora_out * self.scaling

@@ -276,4 +276,5 @@ def convert_llama_to_rrt(model_name, output_dir, recurse_layers: int = 12, rank=
 
 
 if __name__ == "__main__":
-    convert_llama_to_rrt("meta-llama/Llama-3.2-1B", "/tmp/rrt_model", recurse_layers=4, rank=32)
+    # meta-llama/Llama-3.2-1B has 16 hidden layers
+    convert_llama_to_rrt("meta-llama/Llama-3.2-1B", "/tmp/rrt_model", recurse_layers=4, rank=256, alpha=512)
