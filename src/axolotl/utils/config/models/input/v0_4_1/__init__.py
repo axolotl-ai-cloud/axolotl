@@ -782,6 +782,7 @@ class AxolotlInputConfig(
     save_only_model: Optional[bool] = False
     use_tensorboard: Optional[bool] = None
     profiler_steps: Optional[int] = None
+    include_tokens_per_second: Optional[bool] = None
 
     neftune_noise_alpha: Optional[float] = None
 
