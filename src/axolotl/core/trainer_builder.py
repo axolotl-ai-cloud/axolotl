@@ -491,14 +491,13 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
             ):
                 params["embeddings"][name] = param
             elif name in decay_parameters:
-                if lr_groups_lookup and any(
-                    group_modules in name for group_modules in lr_groups_lookup
-                ):
-                    lr_group_module = [
-                        group_modules
-                        for group_modules in lr_groups_lookup
-                        if group_modules in name
-                    ][0]
+                lr_group_modules = [
+                    group_modules
+                    for group_modules in lr_groups_lookup
+                    if group_modules in name
+                ]
+                if lr_groups_lookup and any(lr_group_modules):
+                    lr_group_module = lr_group_modules[0]
                     group_name = lr_groups_lookup[lr_group_module]
                     params[f"to_weight_decay_{group_name}"][name] = param
                 else:
