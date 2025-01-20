@@ -244,6 +244,8 @@ total_num_tokens:
 sample_packing_group_size: 100000
 # The number of samples which can be packed into one sequence. Increase if using a large sequence_len with many short samples.
 sample_packing_bin_size: 200
+# whether to concatenate samples during pretraining
+pretraining_sample_concatenation:
 
 # Use batch flattening for speedups when not using sample_packing
 batch_flattening:

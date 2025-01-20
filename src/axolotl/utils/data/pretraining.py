@@ -22,6 +22,7 @@ def encode_pretraining(
     max_tokens: int,
     examples: Dict[str, List],
     text_column: str = "text",
+    concatenate: bool = True,
 ) -> Dict[str, List]:
     res = tokenizer(
         examples[text_column],
@@ -33,6 +34,13 @@ def encode_pretraining(
     input_ids = [torch.tensor(seq) for seq in res["input_ids"]]
     targets = [torch.tensor(seq) for seq in res["input_ids"]]
     attention_mask = [torch.tensor(seq) for seq in res["attention_mask"]]
+    if not concatenate:
+        return {
+            "input_ids": [seq.tolist() for seq in input_ids],
+            "labels": [seq.tolist() for seq in targets],
+            "attention_mask": [seq.tolist() for seq in attention_mask],
+        }
+
     new_input_ids = []
     new_labels = []
     new_attention_mask = []
@@ -204,6 +212,7 @@ def wrap_pretraining_dataset(
             tokenizer,
             max_tokens,
             text_column=cfg.pretraining_dataset[0].text_column or "text",
+            concatenate=cfg.pretraining_sample_concatenation is True,
         )
 
     if cfg.shuffle_merged_datasets:
