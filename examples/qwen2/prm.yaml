@@ -13,7 +13,7 @@ strict: false
 process_reward_model: true
 chat_template:
 datasets:
-  - path: trl-lib/prm800k
+  - path: trl-lib/math_shepherd 
     type: stepwise_supervised
 val_set_size: 0.0
 output_dir: ./outputs/out
