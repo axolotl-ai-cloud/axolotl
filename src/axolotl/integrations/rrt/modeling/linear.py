@@ -98,6 +98,8 @@ class RelaxedRecursiveDoraLinear(nn.Module):
                 0
             )  # shape [1, out_features]
 
-            result_dora = (scale_factor - 1) * base_out + scale_factor * lora_out
+            result_dora = (
+                scale_factor - 1
+            ) * base_out + scale_factor * lora_out * self.scaling
             return result_dora
         return base_out + lora_out * self.scaling
