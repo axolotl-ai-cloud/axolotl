@@ -264,7 +264,13 @@ def save_state_dict_to_safetensors(state_dict, save_directory):
 
 
 def convert_llama_to_rrt(
-    model_name, output_dir, recurse_layers: int = 12, rank=32, alpha=32, device=None
+    model_name,
+    output_dir,
+    recurse_layers: int = 12,
+    rank=32,
+    alpha=32,
+    device=None,
+    use_dora=True,
 ):
     if not device:
         if torch.backends.mps.is_available():
@@ -299,6 +305,7 @@ def convert_llama_to_rrt(
             "recurse_layers": recurse_layers,
             "rank": rank,
             "alpha": alpha,
+            "use_dora": use_dora,
         }
     )
     config.save_pretrained(output_dir)
@@ -343,4 +350,5 @@ if __name__ == "__main__":
         recurse_layers=4,
         rank=256,
         alpha=512,
+        use_dora=False,
     )
