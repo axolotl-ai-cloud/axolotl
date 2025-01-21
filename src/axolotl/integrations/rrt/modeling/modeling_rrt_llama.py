@@ -12,19 +12,9 @@ from transformers.models.llama.modeling_llama import apply_rotary_pos_emb, eager
     LlamaForCausalLM, LlamaModel, LlamaRotaryEmbedding
 
 from axolotl.integrations.rrt.modeling.linear import RelaxedRecursiveDoraLinear
+from .configuration_rrt_llama import RelaxedRecursiveLlamaConfig
 
 logger = logging.getLogger(__name__)
-
-class RelaxedRecursiveLlamaConfig(LlamaConfig):
-    """
-    Configuration for Relaxed Recursive Llama.
-    """
-
-    model_type = "llama-rrt"
-    recurse_layers: int  = 4
-    rank: int
-    alpha: int
-    use_dora: bool = True
 
 
 class RelaxedRecursiveLlamaMLP(nn.Module):
