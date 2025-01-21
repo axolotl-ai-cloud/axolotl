@@ -162,14 +162,6 @@ class LrGroup(BaseModel):
     lr: float
 
 
-class BaseDatasetConfig(BaseModel):
-    """Base dataset configuration subset"""
-
-    # TODO: Add the common fields from SFTDataset, DPODataset, and KTODataset here
-    # and then minimize the number of fields in each dataset class (and determine what the
-    # minimum fields should be for each.  It feels like there is some spray and pray here.
-
-
 class SFTDataset(BaseModel):
     """SFT configuration subset"""
 
