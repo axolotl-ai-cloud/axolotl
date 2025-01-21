@@ -74,10 +74,12 @@ class ChatTemplateStrategyWithKD(ChatTemplateStrategy):
         if input_padding_len < 0:
             # logprobs is longer than target_seq_len,
             # so we need to slice from the left/beginning of logprobs
-            # and truncate the second dimension of the logprobs to top_k
-            logprobs = logprobs[:-input_seq_len, :top_k]
+            logprobs = logprobs[:-input_seq_len]
             input_padding_len = 0
             # target_seq_len = input_seq_len
+
+        # truncate the second dimension of the logprobs to top_k
+        logprobs = logprobs[:, :top_k]
 
         # fill with -inf for padding_len tokens for top_k tokens
         # extend target_logprobs with a padding_len x top_k 2D list filled with -inf
