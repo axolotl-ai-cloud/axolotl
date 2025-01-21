@@ -162,6 +162,14 @@ class LrGroup(BaseModel):
     lr: float
 
 
+class BaseDatasetConfig(BaseModel):
+    """Base dataset configuration subset"""
+
+    # TODO: Add the common fields from SFTDataset, DPODataset, and KTODataset here
+    # and then minimize the number of fields in each dataset class (and determine what the
+    # minimum fields should be for each.  It feels like there is some spray and pray here.
+
+
 class SFTDataset(BaseModel):
     """SFT configuration subset"""
 
@@ -208,66 +216,15 @@ class SFTDataset(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def handle_legacy_message_fields(cls, data):
-        """
-        Handle backwards compatibility between legacy message field mapping and new property mapping system.
-
-        Previously, the config only supported mapping 'role' and 'content' fields via dedicated config options:
-        - message_field_role: Mapped to the role field
-        - message_field_content: Mapped to the content field
-
-        The new system uses message_property_mappings to support arbitrary field mappings:
-        message_property_mappings:
-            role: source_role_field
-            content: source_content_field
-            additional_field: source_field
-
-        This validator:
-        1. Ensures legacy field mappings are converted to the new system
-        2. Validates there are no conflicts between legacy and new mappings
-        3. Maintains backwards compatibility while allowing new functionality
-        """
-        if data.get("message_property_mappings") is None:
-            data["message_property_mappings"] = {}
-
-        # Check for conflicts and handle role
-        if "message_field_role" in data:
-            if (
-                "role" in data["message_property_mappings"]
-                and data["message_property_mappings"]["role"]
-                != data["message_field_role"]
-            ):
-                raise ValueError(
-                    f"Conflicting message role fields: message_field_role='{data['message_field_role']}' "
-                    f"conflicts with message_property_mappings.role='{data['message_property_mappings']['role']}'"
-                )
-            data["message_property_mappings"]["role"] = (
-                data["message_field_role"] or "role"
-            )
-        elif "role" not in data["message_property_mappings"]:
-            data["message_property_mappings"]["role"] = "role"
-
-        # Check for conflicts and handle content
-        if "message_field_content" in data:
-            if (
-                "content" in data["message_property_mappings"]
-                and data["message_property_mappings"]["content"]
-                != data["message_field_content"]
-            ):
-                raise ValueError(
-                    f"Conflicting message content fields: message_field_content='{data['message_field_content']}' "
-                    f"conflicts with message_property_mappings.content='{data['message_property_mappings']['content']}'"
-                )
-            data["message_property_mappings"]["content"] = (
-                data["message_field_content"] or "content"
-            )
-        elif "content" not in data["message_property_mappings"]:
-            data["message_property_mappings"]["content"] = "content"
-
-        return data
+        """Handle backwards compatibility between legacy message field mapping and new property mapping system."""
+        return handle_legacy_message_fields_logic(data)
 
     @model_validator(mode="before")
     @classmethod
     def check_chat_template_config(cls, data):
+        if isinstance(data, BaseModel):
+            data = data.model_dump()
+
         # Set chat_template to tokenizer_default if not set
         if data.get("type") == "chat_template" and not data.get("chat_template"):
             data["chat_template"] = ChatTemplate.tokenizer_default
@@ -287,9 +244,14 @@ class SFTDataset(BaseModel):
         return data
 
 
-class UserDefinedDPOType(BaseModel):
-    """User defined typing for DPO"""
+class DPODataset(BaseModel):
+    """DPO configuration subset"""
 
+    path: Optional[str] = None
+    split: Optional[str] = None
+    type: Optional[str] = None
+    data_files: Optional[List[str]] = None
+    revision: Optional[str] = None
     field_system: Optional[str] = None
     field_prompt: Optional[str] = None
     field_chosen: Optional[str] = None
@@ -297,16 +259,25 @@ class UserDefinedDPOType(BaseModel):
     prompt_format: Optional[str] = None
     chosen_format: Optional[str] = None
     rejected_format: Optional[str] = None
+    field_messages: Optional[str] = None
 
 
-class DPODataset(BaseModel):
-    """DPO configuration subset"""
+class KTODataset(BaseModel):
+    """KTO configuration subset"""
 
     path: Optional[str] = None
     split: Optional[str] = None
-    type: Optional[Union[UserDefinedDPOType, str]] = None
+    type: Optional[str] = None
     data_files: Optional[List[str]] = None
+    trust_remote_code: Optional[bool] = False
     revision: Optional[str] = None
+    field_system: Optional[str] = None
+    field_prompt: Optional[str] = None
+    field_completion: Optional[str] = None
+    field_messages: Optional[str] = None
+    field_label: Optional[bool] = None
+    prompt_format: Optional[str] = None
+    completion_format: Optional[str] = None
 
 
 class StepwiseSupervisedDataset(BaseModel):
@@ -319,28 +290,6 @@ class StepwiseSupervisedDataset(BaseModel):
     step_separator: Optional[str] = None
     max_completion_length: Optional[int] = None
     train_on_last_step_only: Optional[bool] = None
-
-
-class UserDefinedKTOType(BaseModel):
-    """User defined typing for KTO"""
-
-    field_system: Optional[str] = None
-    field_prompt: Optional[str] = None
-    field_completion: Optional[str] = None
-    field_label: Optional[bool] = None
-    prompt_format: Optional[str] = None
-    completion_format: Optional[str] = None
-
-
-class KTODataset(BaseModel):
-    """KTO configuration subset"""
-
-    path: Optional[str] = None
-    split: Optional[str] = None
-    type: Optional[Union[UserDefinedKTOType, str]] = None
-    data_files: Optional[List[str]] = None
-    trust_remote_code: Optional[bool] = False
-    revision: Optional[str] = None
 
 
 DatasetConfig = Union[SFTDataset, DPODataset, KTODataset, StepwiseSupervisedDataset]
@@ -1785,3 +1734,65 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             else:
                 data["torch_compile"] = False
         return data
+
+
+def handle_legacy_message_fields_logic(data: dict) -> dict:
+    """
+    Handle backwards compatibility between legacy message field mapping and new property mapping system.
+
+    Previously, the config only supported mapping 'role' and 'content' fields via dedicated config options:
+    - message_field_role: Mapped to the role field
+    - message_field_content: Mapped to the content field
+
+    The new system uses message_property_mappings to support arbitrary field mappings:
+    message_property_mappings:
+        role: source_role_field
+        content: source_content_field
+        additional_field: source_field
+
+    Args:
+        data: Dictionary containing configuration data
+
+    Returns:
+        Updated dictionary with message field mappings consolidated
+
+    Raises:
+        ValueError: If there are conflicts between legacy and new mappings
+    """
+    data = data.copy()  # Create a copy to avoid modifying the original
+
+    if data.get("message_property_mappings") is None:
+        data["message_property_mappings"] = {}
+
+    # Check for conflicts and handle role
+    if "message_field_role" in data:
+        if (
+            "role" in data["message_property_mappings"]
+            and data["message_property_mappings"]["role"] != data["message_field_role"]
+        ):
+            raise ValueError(
+                f"Conflicting message role fields: message_field_role='{data['message_field_role']}' "
+                f"conflicts with message_property_mappings.role='{data['message_property_mappings']['role']}'"
+            )
+        data["message_property_mappings"]["role"] = data["message_field_role"] or "role"
+    elif "role" not in data["message_property_mappings"]:
+        data["message_property_mappings"]["role"] = "role"
+
+    # Check for conflicts and handle content
+    if "message_field_content" in data:
+        if (
+            "content" in data["message_property_mappings"]
+            and data["message_property_mappings"]["content"]
+            != data["message_field_content"]
+        ):
+            raise ValueError(
+                f"Conflicting message content fields: message_field_content='{data['message_field_content']}' "
+                f"conflicts with message_property_mappings.content='{data['message_property_mappings']['content']}'"
+            )
+        data["message_property_mappings"]["content"] = (
+            data["message_field_content"] or "content"
+        )
+    elif "content" not in data["message_property_mappings"]:
+        data["message_property_mappings"]["content"] = "content"
+
+    return data
