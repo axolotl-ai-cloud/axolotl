@@ -79,7 +79,7 @@ class ChatTemplateStrategyWithKD(ChatTemplateStrategy):
             # target_seq_len = input_seq_len
 
         # truncate the second dimension of the logprobs to top_k
-        logprobs = logprobs[:, :top_k]
+        logprobs = [row[:top_k] for row in logprobs]
 
         # fill with -inf for padding_len tokens for top_k tokens
         # extend target_logprobs with a padding_len x top_k 2D list filled with -inf
