@@ -134,7 +134,7 @@ def decompose_delta_weight(layer_weight, avg_weight, alpha, rank):
 
     delta_first_pass = final_weight - base_weight
 
-    delta_for_svd = delta_first_pass / scaling
+    delta_for_svd = delta_first_pass
 
     # 3. Low-rank factorization of the delta direction
     lora_A, lora_B = low_rank_decomposition(delta_for_svd, rank)
