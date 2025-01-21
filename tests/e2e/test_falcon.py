@@ -65,6 +65,8 @@ class TestFalcon(unittest.TestCase):
                 "bf16": "auto",
             }
         )
+
+        cfg = validate_config(cfg)
         normalize_config(cfg)
         cli_args = TrainerCliArgs()
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
@@ -159,6 +161,8 @@ class TestFalcon(unittest.TestCase):
                 "bf16": "auto",
             }
         )
+
+        cfg = validate_config(cfg)
         normalize_config(cfg)
         cli_args = TrainerCliArgs()
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
