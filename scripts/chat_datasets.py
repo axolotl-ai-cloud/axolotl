@@ -30,7 +30,7 @@ def parse_dataset(dataset=None, split="train"):
         )
     ds_cfg["field_messages"] = field_messages
 
-    message_fields = features["conversations"][0].keys()
+    message_fields = features[field_messages][0].keys()
     message_field_role = None
     for key in ["from", "role"]:
         if key in message_fields:
