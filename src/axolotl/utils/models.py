@@ -53,6 +53,7 @@ from axolotl.monkeypatch.multipack import (
     SUPPORTED_MULTIPACK_MODEL_TYPES,
     patch_for_multipack,
 )
+from axolotl.monkeypatch.transformers_fa_utils import patch_fa_peft_integration
 from axolotl.prompt_tokenizers import LLAMA_DEFAULT_EOS_TOKEN
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.chat_templates import get_chat_template_from_config
@@ -379,6 +380,9 @@ class ModelLoader:
 
         plugin_manager = PluginManager.get_instance()
         plugin_manager.pre_model_load(self.cfg)
+
+        if self.cfg.adapter:
+            patch_fa_peft_integration()
 
         if self.cfg.gradient_checkpointing == "unsloth":
             transformers.modeling_utils.checkpoint = hf_grad_checkpoint_unsloth_wrapper
