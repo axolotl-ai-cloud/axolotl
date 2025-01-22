@@ -128,6 +128,11 @@ def prepare_dataset(cfg, tokenizer, processor=None):
         # https://discuss.huggingface.co/t/how-to-use-huggingface-trainer-streaming-datasets-without-wrapping-it-with-torchdatas-iterablewrapper/25230
         train_dataset = train_dataset.with_format("torch")
 
+        if cfg.sample_packing and cfg.pretrain_multipack_attn:
+            # FIXME using attention mask unpad/pad with trainer and packed pretraining is broken atm
+            # workaround by using the position id logic for now in trainer
+            train_dataset = train_dataset.remove_columns("attention_mask")
+
         # Load eval dataset (non-streaming) if specified
         eval_dataset = None
         if cfg.test_datasets:
