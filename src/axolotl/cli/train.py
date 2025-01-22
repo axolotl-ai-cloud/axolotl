@@ -8,6 +8,7 @@ import fire
 from accelerate import Accelerator
 from dotenv import load_dotenv
 from transformers.hf_argparser import HfArgumentParser
+from transformers.utils import is_torch_bf16_gpu_available
 
 from axolotl.cli.args import TrainerCliArgs
 from axolotl.cli.art import print_axolotl_text_art
@@ -17,6 +18,7 @@ from axolotl.common.datasets import load_datasets, load_preference_datasets
 from axolotl.integrations.base import PluginManager
 from axolotl.train import train
 from axolotl.utils.config import normalize_config
+from axolotl.utils.trainer import prepare_optim_env
 from axolotl.utils.dict import DictDefault
 
 LOG = logging.getLogger(__name__)
@@ -92,6 +94,17 @@ def ray_train_func(kwargs: dict):
     # also renormalize the config now that TorchTrainer has spawned distributed workers
     cfg = DictDefault(kwargs["cfg"])
     normalize_config(cfg)
+
+    # now that we are on the worker node, we can check `is_torch_bf16_gpu_available` to see if we can use bf16
+    if cfg.bf16 == "auto":
+        if is_torch_bf16_gpu_available():
+            LOG.debug("bf16 support detected, enabling for this configuration.")
+            cfg.bf16 = True
+        else:
+            LOG.debug("bf16 support not detected, disabling for this configuration.")
+            cfg.bf16 = False
+            if cfg.fp16 is None:
+                cfg.fp16 = True
 
     # ray serializing objects gets rid of frozen attribute - HF expects dict not DefaultDict
     if cfg.deepspeed:

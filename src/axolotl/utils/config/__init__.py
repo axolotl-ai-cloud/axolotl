@@ -83,7 +83,7 @@ def normalize_config(cfg):
         cfg.device_map = {"": int(os.environ.get("LOCAL_RANK", 0))}
         cfg.batch_size = cfg.batch_size * cfg.world_size
 
-    if cfg.bf16 == "auto":
+    if cfg.bf16 == "auto" and not cfg.use_ray: # if we use ray we want to defer this check to the worker node
         if is_torch_bf16_gpu_available():
             LOG.debug("bf16 support detected, enabling for this configuration.")
             cfg.bf16 = True
