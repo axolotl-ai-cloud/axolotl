@@ -71,6 +71,7 @@ class RelaxedRecursiveDoraLinear(nn.Module):
         :param loop_idx:
         :return:
         """
+        eps = 1e-6
         w_base = self.weight_base
         w_base = w_base.to(x.dtype)
 
@@ -78,8 +79,7 @@ class RelaxedRecursiveDoraLinear(nn.Module):
         lora_B: torch.Tensor = self.lora_B_list[loop_idx]
 
         base_out: torch.Tensor = F.linear(x, w_base, self.bias)
-
-        lora_out: torch.Tensor = F.linear(F.linear(x, lora_A), lora_B)
+        lora_out: torch.Tensor = F.linear(F.linear(x, lora_A), lora_B) * self.scaling
 
         if self.use_dora:
             x_eye: torch.Tensor = torch.eye(
@@ -98,8 +98,12 @@ class RelaxedRecursiveDoraLinear(nn.Module):
                 0
             )  # shape [1, out_features]
 
-            result_dora = (
-                scale_factor - 1
-            ) * base_out + scale_factor * lora_out * self.scaling
+            result_dora = (scale_factor - 1) * base_out + scale_factor * lora_out
             return result_dora
-        return base_out + lora_out * self.scaling
+
+        # scale the lora norm to prevent gradient explosion
+        orig_norm = torch.linalg.norm(w_base)
+        update_norm = torch.linalg.norm(lora_out)
+        scale = orig_norm / (update_norm + eps)
+
+        return base_out + lora_out * scale
