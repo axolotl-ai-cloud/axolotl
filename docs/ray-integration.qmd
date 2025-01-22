@@ -3,13 +3,13 @@ title: Ray Train integration
 description: How to use Axolotl with Ray Train
 ---
 
-Axololt supports using Ray to orchestrate training. This is especially useful for multi-node training since you only have to setup code and dependencies in a single node and launch training as you would if you were using a single node. 
+Axolotl supports using Ray as an alternative to `accelerate` for orchestrating training. This is especially useful for multi-node training since you only have to setup code and dependencies in a single node and launch training as if you were using a single node. 
 
-With the `--use-ray` CLI flag, Axolotl will use Ray train's [`TorchTrainer`](https://docs.ray.io/en/latest/train/api/doc/ray.train.torch.TorchTrainer.html#ray.train.torch.TorchTrainer) to run training.
+With the `--use-ray` CLI flag, Axolotl will use Ray Train's [`TorchTrainer`](https://docs.ray.io/en/latest/train/api/doc/ray.train.torch.TorchTrainer.html#ray.train.torch.TorchTrainer) to run training.
 
 ## Ray cluster setup
 
-A prerequisite using the Ray train integration is to setup a Ray cluster on your desired node(s). For a detailed guide on how you can get started with ray clusters, check the official Ray docs here: https://docs.ray.io/en/latest/cluster/getting-started.html 
+A prerequisite using the Ray Train integration is to setup a Ray cluster on your desired node(s). For a detailed guide on how you can get started with ray clusters, check the official Ray docs here: https://docs.ray.io/en/latest/cluster/getting-started.html 
 
 Every Ray cluster has one _head_ node and a set of worker nodes. The head node is just like any other worker node, but it also runs certain special processes related to scheduling and orchestration. Ray-enabled scripts are run on the head node and depending on the resources (number of CPUs, GPUs, etc) they request, will be scheduled to run certain tasks on the worker nodes. For more on key concepts behind a Ray cluster, you can refer this [doc](https://docs.ray.io/en/latest/cluster/key-concepts.html#cluster-key-concepts). 
 
@@ -88,7 +88,7 @@ This will launch training on the head node and workers will be scheduled automat
 
 You can also monitor training progress on the Ray dashboard. 
 
-Coming back to the example on a Ray cluster with 1 head node and 2 4xL40S worker nodes, let's say I want to make use of all 8 GPUs. I would then set `ray_num_workers: 8` and run the previous command. The Cluster tab will show the following: 
+Coming back to the example on a Ray cluster with 1 head node and 2 4xL40S worker nodes, let's say you want to make use of all 8 GPUs. You would be able to just set `ray_num_workers: 8` and run the previous command. The Cluster tab will show the following: 
 
 ![Ray dashboard](./images/ray-cluster-dashboard.png)
 
