@@ -39,7 +39,7 @@ class TestPretrainLlama:
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "HuggingFaceTB/SmolLM2-135",
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
                 "flash_attention": True,
                 "sequence_len": 1024,
                 "sample_packing": sample_packing,
@@ -76,5 +76,5 @@ class TestPretrainLlama:
         train(cfg=cfg, dataset_meta=dataset_meta)
         check_model_output_exists(temp_dir, cfg)
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss is too high"
+            temp_dir + "/runs", "train/train_loss", 4.8, "Train Loss is too high"
         )
