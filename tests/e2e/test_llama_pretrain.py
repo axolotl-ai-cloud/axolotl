@@ -41,7 +41,7 @@ class TestPretrainLlama:
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
                 "flash_attention": True,
-                "sequence_len": 2048,
+                "sequence_len": 1024,
                 "sample_packing": sample_packing,
                 "pretrain_multipack_attn": pretrain_multipack_attn,
                 "dataset_processes": 1,
@@ -57,7 +57,7 @@ class TestPretrainLlama:
                 ],
                 "max_steps": 5,
                 "num_epochs": 1,
-                "micro_batch_size": 4,
+                "micro_batch_size": 2,
                 "gradient_accumulation_steps": 1,
                 "val_set_size": 0.0,
                 "output_dir": temp_dir,
