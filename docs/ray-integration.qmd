@@ -53,7 +53,7 @@ You should also be able to see the same on the [Ray dashboard](https://docs.ray.
 
 ## Configuring training with Ray Train
 
-We've provided an example configuration at `configs/llama-3/lora-1b-ray.yaml`.
+You can find an example configuration at `configs/llama-3/lora-1b-ray.yaml`.
 
 The key parameters to note here are:
 
