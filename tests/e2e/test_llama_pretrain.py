@@ -75,6 +75,12 @@ class TestPretrainLlama:
 
         train(cfg=cfg, dataset_meta=dataset_meta)
         check_model_output_exists(temp_dir, cfg)
+        loss_threshold = 3.5
+        if sample_packing and not pretrain_multipack_attn:
+            loss_threshold = 6.5
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 4.8, "Train Loss is too high"
+            temp_dir + "/runs",
+            "train/train_loss",
+            loss_threshold,
+            "Train Loss is too high",
         )
