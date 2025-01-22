@@ -10,7 +10,6 @@ Credit to `unsloth` (https://unsloth.ai/) for inspiration for this implementatio
 
 from typing import Callable
 
-import numpy as np
 import torch
 from bitsandbytes.functional import QuantState
 
@@ -515,78 +514,82 @@ class LoRA_QKV(torch.autograd.Function):
 
     @staticmethod
     @torch_amp_custom_fwd
-    def backward(ctx, grad_Q, grad_K, grad_V):
-        X, q_A, q_B, k_A, k_B, v_A, v_B = ctx.saved_tensors
-        q_scale, k_scale, v_scale = ctx.scales
-        q_quant, k_quant, v_quant = ctx.quants
+    def backward(ctx, q_grad, k_grad, v_grad):
+        X, A_q, B_q, A_k, B_k, A_v, B_v = ctx.saved_tensors
         q_weight, k_weight, v_weight = ctx.weights
+        q_quant, k_quant, v_quant = ctx.quants
+        q_scale, k_scale, v_scale = ctx.scales
+        dtype = X.dtype
 
-        batch_size = grad_Q.shape[0]
-        grad_Q = grad_Q.reshape(-1, grad_Q.shape[-1])
-        grad_K = grad_K.reshape(-1, grad_K.shape[-1])
-        grad_V = grad_V.reshape(-1, grad_V.shape[-1])
+        # Reshape gradients
+        batch, seq_len = X.shape[:2]
+        q_grad = q_grad.view(-1, q_grad.shape[-1])
+        k_grad = k_grad.reshape(-1, k_grad.shape[-1])
+        v_grad = v_grad.view(-1, v_grad.shape[-1])
+        X = X.view(-1, X.shape[-1])
 
-        # # Q Projection
-        # d_QA = X.t() @ (grad_Q @ q_B.t())
-        # d_QB = (q_A.t() @ X.t()) @ grad_Q
-        # d_QA *= q_scale
-        # d_QB *= q_scale
+        # Pre-transpose X once
+        X_t = X.t()
 
-        # # K Projection
-        # d_KA = X.t() @ (grad_K @ k_B.t())
-        # d_KB = (k_A.t() @ X.t()) @ grad_K
-        # d_KA *= k_scale
-        # d_KB *= k_scale
+        # Pre-compute scaled LoRA weights to avoid repeated dtype conversions
+        A_q_scaled = (q_scale * A_q).to(dtype)
+        B_q_scaled = B_q.to(dtype)
+        A_k_scaled = (k_scale * A_k).to(dtype)
+        B_k_scaled = B_k.to(dtype)
+        A_v_scaled = (v_scale * A_v).to(dtype)
+        B_v_scaled = B_v.to(dtype)
 
-        # # V Projection
-        # d_VA = X.t() @ (grad_V @ v_B.t())
-        # d_VB = (v_A.t() @ X.t()) @ grad_V
-        # d_VA *= v_scale
-        # d_VB *= v_scale
+        # Compute all LoRA gradients using efficient matrix ops
+        # Reuse buffers where possible
+        d_A_q = torch.mm(X_t, torch.mm(q_grad, B_q_scaled))
+        d_B_q = torch.mm(torch.mm(A_q_scaled, X_t), q_grad)
 
-        # Q gradients
-        grad_X = torch.matmul(
-            grad_Q,
-            dequantize(q_weight, q_quant).t(),
-            out=grad_Q if ctx.inplace else None,
-        )
-        if q_A is not None:
-            d_q_A = X.t() @ (grad_Q @ q_B.t()) * q_scale
-            d_q_B = (q_A.t() @ X.t()) @ grad_Q * q_scale
-            grad_X += grad_Q @ q_B.t() @ (q_scale * q_A.t())
+        d_A_k = torch.mm(X_t, torch.mm(k_grad, B_k_scaled))
+        d_B_k = torch.mm(torch.mm(A_k_scaled, X_t), k_grad)
 
-        # K gradients
-        grad_X += torch.matmul(grad_K, dequantize(k_weight, k_quant).t())
-        if k_A is not None:
-            d_k_A = X.t() @ (grad_K @ k_B.t()) * k_scale
-            d_k_B = (k_A.t() @ X.t()) @ grad_K * k_scale
-            grad_X += grad_K @ k_B.t() @ (k_scale * k_A.t())
+        d_A_v = torch.mm(X_t, torch.mm(v_grad, B_v_scaled))
+        d_B_v = torch.mm(torch.mm(A_v_scaled, X_t), v_grad)
 
-        # V gradients
-        grad_X += torch.matmul(grad_V, dequantize(v_weight, v_quant).t())
-        if v_A is not None:
-            d_v_A = X.t() @ (grad_V @ v_B.t()) * v_scale
-            d_v_B = (v_A.t() @ X.t()) @ grad_V * v_scale
-            grad_X += grad_V @ v_B.t() @ (v_scale * v_A.t())
+        # Compute input gradient, reusing X memory if possible
+        out_buffer = X if ctx.inplace else None
+
+        # Q path
+        q_weight_t = dequantize(q_weight, q_quant)
+        grad_X = torch.mm(q_grad, q_weight_t, out=out_buffer)
+        del q_weight
+        del q_weight_t
+        grad_X.addmm_(q_grad, torch.mm(B_q_scaled, A_q_scaled))
+
+        # K path
+        k_weight_t = dequantize(k_weight, k_quant)
+        grad_X.addmm_(k_grad, k_weight_t)
+        del k_weight
+        del k_weight_t
+        grad_X.addmm_(k_grad, torch.mm(B_k_scaled, A_k_scaled))
+
+        # V path
+        v_weight_t = dequantize(v_weight, v_quant)
+        grad_X.addmm_(v_grad, v_weight_t)
+        del v_weight
+        del v_weight_t
+        grad_X.addmm_(v_grad, torch.mm(B_v_scaled, A_v_scaled))
 
         return (
-            grad_X.view(batch_size, -1, X.shape[-1]),
+            grad_X.view(batch, seq_len, -1),
             None,
             None,
-            d_q_A,
-            d_q_B,
-            None,
-            None,
-            None,
-            d_k_A,
-            d_k_B,
+            d_A_q.t(),
+            d_B_q.t(),
             None,
             None,
             None,
-            d_v_A,
-            d_v_B,
+            d_A_k.t(),
+            d_B_k.t(),
             None,
             None,
+            None,
+            d_A_v.t(),
+            d_B_v.t(),
             None,
             None,
         )
@@ -691,27 +694,30 @@ def create_lora_qkv(config, *weights, activation="swiglu"):
 class LoRA_W(torch.autograd.Function):
     @staticmethod
     @torch_amp_custom_fwd
-    def forward(ctx, X : torch.Tensor, W, W_quant, A, B, S):
+    def forward(ctx, X: torch.Tensor, W, W_quant, A, B, S):
         XW = matmul_lora(X, W, W_quant, A, B, S)
-        ctx.custom_saved_tensors = (W, W_quant, S,)
+        ctx.custom_saved_tensors = (
+            W,
+            W_quant,
+            S,
+        )
         ctx.save_for_backward(A, B, X)
 
         return XW
 
     @staticmethod
     @torch_amp_custom_bwd
-    def backward(ctx, dY : torch.Tensor):
+    def backward(ctx, dY: torch.Tensor):
         W, W_quant, S = ctx.custom_saved_tensors
         A, B, X = ctx.saved_tensors
 
         A, B = A.t(), B.t()
 
         batch, seq_len, hd = X.shape
-        dY = dY.reshape(-1, dY.shape[-1]) # Must be reshape
-        X  = X .reshape(-1, X .shape[-1]) # Must be reshape
+        dY = dY.reshape(-1, dY.shape[-1])
+        X = X.reshape(-1, X.shape[-1])
         dtype = X.dtype
 
-        ### Weight projection LoRA weights
         # Weight projection
         d_A = X.t() @ (dY @ B.t())
         d_B = (A.t() @ X.t()) @ dY
@@ -730,6 +736,6 @@ class LoRA_W(torch.autograd.Function):
 
 def apply_lora_o(self, X):
     OW, OW_quant, OA, OB, OS = get_lora_parameters(self.o_proj)
-    O = LoRA_W.apply(X, OW, OW_quant, OA, OB, OS)
+    output = LoRA_W.apply(X, OW, OW_quant, OA, OB, OS)
 
-    return O
+    return output
