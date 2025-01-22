@@ -317,8 +317,9 @@ def process_pretraining_datasets_for_packing(
     train_dataset = train_dataset.filter(
         drop_long,
         desc="Dropping Long Sequences",
+        load_from_cache_file=False,
     )
-    if skip_position_ids:
+    if not skip_position_ids:
         train_dataset = train_dataset.map(
             add_position_ids,
             desc="Add position_id column (Pretraining Sample Packing)",
