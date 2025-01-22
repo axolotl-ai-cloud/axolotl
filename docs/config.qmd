@@ -188,10 +188,10 @@ rl:
 dpo_use_weighting:
 
 # reward modelling: `True` or `False`
-reward_model: 
+reward_model:
 
 # process reward modelling: `True` or `False`
-process_reward_model: 
+process_reward_model:
 
 # The name of the chat template to use for training, following values are supported:
 # - tokenizer_default: Uses the chat template that is available in the tokenizer_config.json. If the chat template is not available in the tokenizer, it will raise an error. This is the default value.

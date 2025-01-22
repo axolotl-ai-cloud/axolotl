@@ -1,4 +1,4 @@
-base_model: Qwen/Qwen2.5-0.5B
+base_model: Qwen/Qwen2.5-3B
 # optionally might have model_type or tokenizer_type
 model_type: AutoModelForTokenClassification
 num_labels: 2
@@ -13,9 +13,10 @@ strict: false
 process_reward_model: true
 chat_template:
 datasets:
-  - path: trl-lib/math_shepherd 
+  - path: trl-lib/math_shepherd
     type: stepwise_supervised
-val_set_size: 0.0
+
+val_set_size: 0.2
 output_dir: ./outputs/out
 remove_unused_columns: false
 
@@ -33,6 +34,7 @@ wandb_log_model:
 
 gradient_accumulation_steps: 1
 micro_batch_size: 8
+eval_batch_size: 8
 num_epochs: 1
 optimizer: adamw_torch
 lr_scheduler: cosine
@@ -57,6 +59,7 @@ warmup_ratio: 0.1
 evals_per_epoch:
 eval_table_size:
 eval_max_new_tokens: 128
+eval_steps: 100
 saves_per_epoch: 1
 debug:
 deepspeed:
