@@ -17,7 +17,7 @@ from huggingface_hub import snapshot_download
 from transformers import AutoTokenizer
 
 from axolotl.utils.data import load_tokenized_prepared_datasets
-from axolotl.utils.data.rl import load_prepare_dpo_datasets
+from axolotl.utils.data.rl import load_prepare_preference_datasets
 from axolotl.utils.dict import DictDefault
 
 
@@ -280,7 +280,7 @@ class TestDatasetPreparation(unittest.TestCase):
             }
         )
 
-        train_dataset, _ = load_prepare_dpo_datasets(cfg)
+        train_dataset, _ = load_prepare_preference_datasets(cfg)
 
         assert len(train_dataset) == 1800
         assert "conversation" in train_dataset.features
@@ -329,7 +329,7 @@ class TestDatasetPreparation(unittest.TestCase):
             }
         )
 
-        train_dataset, _ = load_prepare_dpo_datasets(cfg)
+        train_dataset, _ = load_prepare_preference_datasets(cfg)
 
         assert len(train_dataset) == 1800
         assert "conversation" in train_dataset.features

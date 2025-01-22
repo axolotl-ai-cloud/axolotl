@@ -14,6 +14,8 @@ import torch
 from packaging import version
 from tbparse import SummaryReader
 
+from axolotl.utils.dict import DictDefault
+
 
 def with_temp_dir(test_func):
     @wraps(test_func)
@@ -49,7 +51,19 @@ def require_torch_2_3_1(test_case):
         torch_version = version.parse(torch.__version__)
         return torch_version >= version.parse("2.3.1")
 
-    return unittest.skipUnless(is_min_2_3_1(), "test torch 2.3.1")(test_case)
+    return unittest.skipUnless(is_min_2_3_1(), "test requires torch>=2.3.1")(test_case)
+
+
+def require_torch_2_4_1(test_case):
+    """
+    Decorator marking a test that requires torch >= 2.5.1
+    """
+
+    def is_min_2_4_1():
+        torch_version = version.parse(torch.__version__)
+        return torch_version >= version.parse("2.4.1")
+
+    return unittest.skipUnless(is_min_2_4_1(), "test requires torch>=2.4.1")(test_case)
 
 
 def require_torch_2_5_1(test_case):
@@ -61,7 +75,7 @@ def require_torch_2_5_1(test_case):
         torch_version = version.parse(torch.__version__)
         return torch_version >= version.parse("2.5.1")
 
-    return unittest.skipUnless(is_min_2_5_1(), "test torch 2.5.1")(test_case)
+    return unittest.skipUnless(is_min_2_5_1(), "test requires torch>=2.5.1")(test_case)
 
 
 def is_hopper():
@@ -81,3 +95,27 @@ def check_tensorboard(
     df = reader.scalars  # pylint: disable=invalid-name
     df = df[(df.tag == tag)]  # pylint: disable=invalid-name
     assert df.value.values[-1] < lt_val, assertion_err
+
+
+def check_model_output_exists(temp_dir: str, cfg: DictDefault) -> None:
+    """
+    helper function to check if a model output file exists after training
+
+    checks based on adapter or not and if safetensors saves are enabled or not
+    """
+
+    if cfg.save_safetensors:
+        if not cfg.adapter:
+            assert (Path(temp_dir) / "model.safetensors").exists()
+        else:
+            assert (Path(temp_dir) / "adapter_model.safetensors").exists()
+    else:
+        # check for both, b/c in trl, it often defaults to saving safetensors
+        if not cfg.adapter:
+            assert (Path(temp_dir) / "pytorch_model.bin").exists() or (
+                Path(temp_dir) / "model.safetensors"
+            ).exists()
+        else:
+            assert (Path(temp_dir) / "adapter_model.bin").exists() or (
+                Path(temp_dir) / "adapter_model.safetensors"
+            ).exists()

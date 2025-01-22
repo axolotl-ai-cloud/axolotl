@@ -5,15 +5,14 @@ E2E tests for mixtral
 import logging
 import os
 import unittest
-from pathlib import Path
 
-from axolotl.cli import load_datasets
-from axolotl.common.cli import TrainerCliArgs
+from axolotl.cli.args import TrainerCliArgs
+from axolotl.common.datasets import load_datasets
 from axolotl.train import train
 from axolotl.utils.config import normalize_config
 from axolotl.utils.dict import DictDefault
 
-from ..utils import with_temp_dir
+from ..utils import check_model_output_exists, with_temp_dir
 
 LOG = logging.getLogger("axolotl.tests.e2e")
 os.environ["WANDB_DISABLED"] = "true"
@@ -65,8 +64,8 @@ class TestMixtral(unittest.TestCase):
         cli_args = TrainerCliArgs()
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
-        train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-        assert (Path(temp_dir) / "adapter_model.bin").exists()
+        train(cfg=cfg, dataset_meta=dataset_meta)
+        check_model_output_exists(temp_dir, cfg)
 
     @with_temp_dir
     def test_ft(self, temp_dir):
@@ -103,9 +102,9 @@ class TestMixtral(unittest.TestCase):
         cli_args = TrainerCliArgs()
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
-        model, _ = train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
+        model, _ = train(cfg=cfg, dataset_meta=dataset_meta)
         assert (
             "MixtralFlashAttention2"
             in model.model.layers[0].self_attn.__class__.__name__
         )
-        assert (Path(temp_dir) / "pytorch_model.bin").exists()
+        check_model_output_exists(temp_dir, cfg)

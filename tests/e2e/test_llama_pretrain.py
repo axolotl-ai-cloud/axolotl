@@ -4,28 +4,31 @@ E2E tests for llama pretrain
 
 import logging
 import os
-import unittest
-from pathlib import Path
 
-from axolotl.cli import load_datasets
-from axolotl.common.cli import TrainerCliArgs
+import pytest
+
+from axolotl.cli.args import TrainerCliArgs
+from axolotl.common.datasets import load_datasets
 from axolotl.train import train
 from axolotl.utils.config import normalize_config
 from axolotl.utils.dict import DictDefault
 
-from .utils import with_temp_dir
+from .utils import check_model_output_exists
 
 LOG = logging.getLogger("axolotl.tests.e2e")
 os.environ["WANDB_DISABLED"] = "true"
 
 
-class TestPretrainLlama(unittest.TestCase):
+class TestPretrainLlama:
     """
     Test case for Llama models w pretraining
     """
 
-    @with_temp_dir
-    def test_pretrain_w_sample_packing(self, temp_dir):
+    @pytest.mark.parametrize(
+        "sample_packing",
+        [True, False],
+    )
+    def test_pretrain(self, temp_dir, sample_packing):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
@@ -33,7 +36,7 @@ class TestPretrainLlama(unittest.TestCase):
                 "tokenizer_type": "LlamaTokenizer",
                 "flash_attention": True,
                 "sequence_len": 1024,
-                "sample_packing": True,
+                "sample_packing": sample_packing,
                 "special_tokens": {
                     "unk_token": "<unk>",
                     "bos_token": "<s>",
@@ -63,5 +66,5 @@ class TestPretrainLlama(unittest.TestCase):
         cli_args = TrainerCliArgs()
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
-        train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-        assert (Path(temp_dir) / "model.safetensors").exists()
+        train(cfg=cfg, dataset_meta=dataset_meta)
+        check_model_output_exists(temp_dir, cfg)

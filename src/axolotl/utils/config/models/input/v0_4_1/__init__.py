@@ -128,6 +128,8 @@ class PretrainingDataset(BaseModel):
     text_column: Optional[str] = "text"
     type: Optional[str] = "pretrain"
     trust_remote_code: Optional[bool] = False
+    data_files: Optional[str] = None
+    skip: Optional[int] = None
 
 
 class UserDefinedPrompterType(BaseModel):
@@ -365,6 +367,13 @@ class LoraConfig(BaseModel):
         if loraplus_lr_embedding and isinstance(loraplus_lr_embedding, str):
             loraplus_lr_embedding = float(loraplus_lr_embedding)
         return loraplus_lr_embedding
+
+    @model_validator(mode="before")
+    @classmethod
+    def validate_lora_dropout(cls, data):
+        if data.get("adapter") is not None and data.get("lora_dropout") is None:
+            data["lora_dropout"] = 0.0
+        return data
 
 
 class ReLoRAConfig(BaseModel):
@@ -699,6 +708,12 @@ class AxolotlInputConfig(
     pad_to_sequence_len: Optional[bool] = None
     curriculum_sampling: Optional[bool] = None
     multipack_real_batches: Optional[bool] = None
+    pretraining_sample_concatenation: Optional[bool] = Field(
+        default=None,
+        json_schema_extra={
+            "description": "whether to soft pack/concatenate samples during pretraining",
+        },
+    )
 
     batch_flattening: Optional[Union[Literal["auto"], bool]] = None
 

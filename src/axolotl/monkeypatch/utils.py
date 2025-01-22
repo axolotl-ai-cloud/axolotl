@@ -1,7 +1,8 @@
 """
 Shared utils for the monkeypatches
 """
-from typing import Optional
+import re
+from typing import Optional, Tuple
 
 import torch
 import torch.nn.functional as F
@@ -223,3 +224,12 @@ def patched_prepare_4d_causal_attention_mask_for_sdpa(
         mask_2d_to_4d(attention_mask, dtype=dtype),
         *args,
     )
+
+
+def detab_code(code: str) -> Tuple[str, str]:
+    try:
+        spaces = re.match(r"([\s\t]{1,})", code).group(0)
+        code = re.sub(r"^" + spaces, "", code, flags=re.MULTILINE)
+    except AttributeError:
+        return code, ""
+    return code, spaces

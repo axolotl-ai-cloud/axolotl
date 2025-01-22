@@ -1,15 +1,15 @@
 """module for patching with unsloth optimizations"""
 
 import inspect
-import re
 import types
-from typing import Tuple
 
 import torch
 from accelerate.logging import get_logger
 from peft import PeftModelForCausalLM
 from torch import nn
 from transformers.models.llama.modeling_llama import LlamaFlashAttention2
+
+from axolotl.monkeypatch.utils import detab_code
 
 LOG = get_logger("axolotl.monkeypatch.unsloth")
 
@@ -91,15 +91,6 @@ def integrate_cross_entropy_loss_patch(model_type: str = "llama") -> None:
         loss_utils.ForCausalLMLoss = UnslothForCausalLMLoss  # type: ignore[assignment]
     else:
         raise ValueError("Unsupported model type")
-
-
-def detab_code(code: str) -> Tuple[str, str]:
-    try:
-        spaces = re.match(r"([\s\t]{1,})", code).group(0)
-        code = re.sub(r"^" + spaces, "", code, flags=re.MULTILINE)
-    except AttributeError:
-        return code, ""
-    return code, spaces
 
 
 self_attn_lora_patched = False  # pylint: disable=invalid-name

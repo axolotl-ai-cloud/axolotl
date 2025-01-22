@@ -22,13 +22,6 @@ import inspect
 import logging
 import sys
 
-from liger_kernel.transformers.cross_entropy import LigerCrossEntropyLoss
-from liger_kernel.transformers.functional import liger_cross_entropy
-from liger_kernel.transformers.monkey_patch import MODEL_TYPE_TO_APPLY_LIGER_FN
-from liger_kernel.transformers.rms_norm import LigerRMSNorm
-from liger_kernel.transformers.rope import liger_rotary_pos_emb
-from liger_kernel.transformers.swiglu import LigerSwiGLUMLP
-
 from axolotl.integrations.base import BasePlugin
 
 from ...utils.distributed import zero_only
@@ -46,6 +39,13 @@ class LigerPlugin(BasePlugin):
         return "axolotl.integrations.liger.LigerArgs"
 
     def pre_model_load(self, cfg):
+        from liger_kernel.transformers.cross_entropy import LigerCrossEntropyLoss
+        from liger_kernel.transformers.functional import liger_cross_entropy
+        from liger_kernel.transformers.monkey_patch import MODEL_TYPE_TO_APPLY_LIGER_FN
+        from liger_kernel.transformers.rms_norm import LigerRMSNorm
+        from liger_kernel.transformers.rope import liger_rotary_pos_emb
+        from liger_kernel.transformers.swiglu import LigerSwiGLUMLP
+
         if cfg.model_config_type in MODEL_TYPE_TO_APPLY_LIGER_FN:
             apply_liger_fn = MODEL_TYPE_TO_APPLY_LIGER_FN[cfg.model_config_type]
             liger_fn_sig = inspect.signature(apply_liger_fn)

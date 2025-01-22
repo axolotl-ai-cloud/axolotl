@@ -1,43 +1,41 @@
 """
 Simple end-to-end test for Liger integration
 """
-import unittest
-from pathlib import Path
 
-from axolotl.cli import load_datasets
-from axolotl.common.cli import TrainerCliArgs
+from e2e.utils import require_torch_2_4_1
+
+from axolotl.cli.args import TrainerCliArgs
+from axolotl.common.datasets import load_datasets
 from axolotl.train import train
 from axolotl.utils.config import normalize_config, prepare_plugins
 from axolotl.utils.dict import DictDefault
 
-from ..utils import with_temp_dir
+from ..utils import check_model_output_exists
 
 
-class LigerIntegrationTestCase(unittest.TestCase):
+class LigerIntegrationTestCase:
     """
     e2e tests for liger integration with Axolotl
     """
 
-    @with_temp_dir
+    @require_torch_2_4_1
     def test_llama_wo_flce(self, temp_dir):
+        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "JackFram/llama-68m",
-                "tokenizer_type": "LlamaTokenizer",
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
                 "plugins": [
                     "axolotl.integrations.liger.LigerPlugin",
                 ],
                 "liger_rope": True,
                 "liger_rms_norm": True,
-                "liger_swiglu": True,
+                "liger_glu_activation": True,
                 "liger_cross_entropy": True,
                 "liger_fused_linear_cross_entropy": False,
                 "sequence_len": 1024,
-                "val_set_size": 0.1,
+                "val_set_size": 0.05,
                 "special_tokens": {
-                    "unk_token": "<unk>",
-                    "bos_token": "<s>",
-                    "eos_token": "</s>",
+                    "pad_token": "<|endoftext|>",
                 },
                 "datasets": [
                     {
@@ -46,15 +44,15 @@ class LigerIntegrationTestCase(unittest.TestCase):
                     },
                 ],
                 "num_epochs": 1,
-                "micro_batch_size": 8,
-                "gradient_accumulation_steps": 1,
+                "micro_batch_size": 2,
+                "gradient_accumulation_steps": 2,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_torch",
                 "lr_scheduler": "cosine",
                 "save_safetensors": True,
                 "bf16": "auto",
-                "max_steps": 10,
+                "max_steps": 5,
             }
         )
         prepare_plugins(cfg)
@@ -62,29 +60,27 @@ class LigerIntegrationTestCase(unittest.TestCase):
         cli_args = TrainerCliArgs()
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
-        train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-        assert (Path(temp_dir) / "model.safetensors").exists()
+        train(cfg=cfg, dataset_meta=dataset_meta)
+        check_model_output_exists(temp_dir, cfg)
 
-    @with_temp_dir
+    @require_torch_2_4_1
     def test_llama_w_flce(self, temp_dir):
+        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "JackFram/llama-68m",
-                "tokenizer_type": "LlamaTokenizer",
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
                 "plugins": [
                     "axolotl.integrations.liger.LigerPlugin",
                 ],
                 "liger_rope": True,
                 "liger_rms_norm": True,
-                "liger_swiglu": True,
+                "liger_glu_activation": True,
                 "liger_cross_entropy": False,
                 "liger_fused_linear_cross_entropy": True,
                 "sequence_len": 1024,
-                "val_set_size": 0.1,
+                "val_set_size": 0.05,
                 "special_tokens": {
-                    "unk_token": "<unk>",
-                    "bos_token": "<s>",
-                    "eos_token": "</s>",
+                    "pad_token": "<|endoftext|>",
                 },
                 "datasets": [
                     {
@@ -93,15 +89,15 @@ class LigerIntegrationTestCase(unittest.TestCase):
                     },
                 ],
                 "num_epochs": 1,
-                "micro_batch_size": 8,
-                "gradient_accumulation_steps": 1,
+                "micro_batch_size": 2,
+                "gradient_accumulation_steps": 2,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_torch",
                 "lr_scheduler": "cosine",
                 "save_safetensors": True,
                 "bf16": "auto",
-                "max_steps": 10,
+                "max_steps": 5,
             }
         )
         prepare_plugins(cfg)
@@ -109,5 +105,5 @@ class LigerIntegrationTestCase(unittest.TestCase):
         cli_args = TrainerCliArgs()
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
-        train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-        assert (Path(temp_dir) / "model.safetensors").exists()
+        train(cfg=cfg, dataset_meta=dataset_meta)
+        check_model_output_exists(temp_dir, cfg)
