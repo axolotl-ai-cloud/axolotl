@@ -16,4 +16,3 @@ The stepwise supervised format is designed for chain-of-thought (COT) reasoning 
   ],
   "labels": [true, false]
 }
-

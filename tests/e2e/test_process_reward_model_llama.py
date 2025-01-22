@@ -1,19 +1,18 @@
 """
-E2E tests for reward model lora llama
+E2E tests for process reward model w/ lora llama
 """
 
 import logging
 import os
 import unittest
-from pathlib import Path
 
-from axolotl.cli import load_datasets
-from axolotl.common.cli import TrainerCliArgs
+from axolotl.cli.args import TrainerCliArgs
+from axolotl.common.datasets import load_datasets
 from axolotl.train import train
 from axolotl.utils.config import normalize_config
 from axolotl.utils.dict import DictDefault
 
-from .utils import with_temp_dir
+from .utils import check_model_output_exists, with_temp_dir
 
 LOG = logging.getLogger("axolotl.tests.e2e")
 os.environ["WANDB_DISABLED"] = "true"
@@ -33,28 +32,20 @@ class TestRewardModelLoraLlama(unittest.TestCase):
                 "model_type": "AutoModelForTokenClassification",
                 "num_labels": 2,
                 "tokenizer_type": "LlamaTokenizer",
-                "chat_template": "alpaca",
-                "reward_model": True,
+                "process_reward_model": True,
                 "sequence_len": 1024,
-                "pad_to_sequence_len": True,
                 "adapter": "lora",
                 "lora_r": 8,
                 "lora_alpha": 16,
                 "lora_dropout": 0.05,
                 "lora_target_linear": True,
                 "val_set_size": 0.0,
-                "special_tokens": {
-                    "unk_token": "<unk>",
-                    "bos_token": "<s>",
-                    "eos_token": "</s>",
-                },
                 "datasets": [
                     {
-                        "path": "argilla/distilabel-intel-orca-dpo-pairs",
-                        "type": "bradley_terry.chat_template",
+                        "path": "trl-lib/math_shepherd ",
+                        "type": "stepwise_supervised",
                     },
                 ],
-                "remove_unused_columns": False,
                 "max_steps": 10,
                 "num_epochs": 1,
                 "micro_batch_size": 4,
@@ -71,5 +62,5 @@ class TestRewardModelLoraLlama(unittest.TestCase):
         cli_args = TrainerCliArgs()
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
-        train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-        assert (Path(temp_dir) / "adapter_model.bin").exists()
+        train(cfg=cfg, dataset_meta=dataset_meta)
+        check_model_output_exists(temp_dir, cfg)
