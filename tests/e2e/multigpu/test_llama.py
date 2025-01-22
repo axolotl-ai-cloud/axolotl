@@ -63,6 +63,7 @@ class TestMultiGPULlama:
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
                 "use_tensorboard": True,
+                "bf16": True,
             }
         )
 
@@ -127,6 +128,7 @@ class TestMultiGPULlama:
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
                 "use_tensorboard": True,
+                "bf16": True,
             }
         )
 
@@ -201,6 +203,7 @@ class TestMultiGPULlama:
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
                 "use_tensorboard": True,
+                "bf16": True,
             }
         )
 
@@ -275,6 +278,7 @@ class TestMultiGPULlama:
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
                 "use_tensorboard": True,
+                "bf16": True,
             }
         )
 
