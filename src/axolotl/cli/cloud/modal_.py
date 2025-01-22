@@ -221,7 +221,11 @@ class ModalCloud(Cloud):
         modal_fn = self.get_train_env()(_lm_eval)
         with modal.enable_output():
             with self.app.run(detach=True):
-                modal_fn.remote(
+                if self.config.get("spawn", False):
+                    modal_fn_exec = modal_fn.spawn
+                else:
+                    modal_fn_exec = modal_fn.remote
+                modal_fn_exec(
                     config_yaml,
                     volumes={k: v[0] for k, v in self.volumes.items()},
                 )
