@@ -24,14 +24,12 @@ class StepwiseSupervisedPromptTokenizingStrategy:
     def __init__(
         self,
         tokenizer,
-        train_on_inputs: bool = False,
         sequence_len: int = 2048,
         step_separator: str = "\n",
         max_completion_length: Optional[int] = None,
         train_on_last_step_only: bool = False,
     ):
         self.tokenizer = tokenizer
-        self.train_on_inputs = train_on_inputs
         self.sequence_len = sequence_len
         self.step_separator = step_separator
         self.max_completion_length = max_completion_length
@@ -92,14 +90,12 @@ class StepwiseSupervisedPromptTokenizingStrategy:
         if self.sequence_len:
             input_ids = input_ids[: self.sequence_len]
             full_labels = full_labels[: self.sequence_len]
-
-        return BatchEncoding(
-            {
-                "input_ids": input_ids,
-                "labels": full_labels,
-                "attention_mask": [1] * len(input_ids),
-            }
-        )
+            
+        return {
+            "input_ids": input_ids,
+            "labels": full_labels,
+            "attention_mask": [1] * len(input_ids),
+        }
 
     @property
     def supports_batched(self):
@@ -111,6 +107,5 @@ def load(
 ) -> StepwiseSupervisedPromptTokenizingStrategy:
     return StepwiseSupervisedPromptTokenizingStrategy(
         tokenizer,
-        cfg.train_on_inputs,
         cfg.sequence_len,
     )
