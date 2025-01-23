@@ -1,4 +1,5 @@
 """CLI definition for various axolotl commands."""
+
 # pylint: disable=redefined-outer-name
 import subprocess  # nosec B404
 from typing import Optional
@@ -256,7 +257,12 @@ def convert_diff_transformer(config: str, **kwargs):
     """Convert model attention layers to differential attention layers."""
     kwargs = {k: v for k, v in kwargs.items() if v is not None}
 
-    from axolotl.cli.integrations.convert_diff_transformer import do_cli
+    try:
+        from axolotl_diff_transformer.convert_diff_transformer import do_cli
+    except ImportError as exc:
+        raise ImportError(
+            "axolotl-diff-transformer not found, please install it: https://github.com/axolotl-ai-cloud/diff-transformer"
+        ) from exc
 
     do_cli(config=config, **kwargs)
 

@@ -24,7 +24,9 @@ class DifferentialTransformerPlugin(BasePlugin):
         to register differential attention custom modeling implementation to `AutoConfig`
         and `AutoModel`.
         """
-        from .modeling_diff_attn import register_diff_attn
+        from axolotl_diff_transformer.modeling.modeling_diff_attn import (
+            register_diff_attn,
+        )
 
         register_diff_attn()
 
