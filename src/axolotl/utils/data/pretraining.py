@@ -245,7 +245,7 @@ def encode_packed_pretraining(
     examples: Dict[str, List],
     max_seq_length: int = 2048,
     batch_size: int = 4,
-    multipack_attn: Optional[bool] = False,
+    multipack_attn: Optional[bool] = True,
 ) -> Dict[str, List]:
     # pylint: disable=duplicate-code
     # tokenize all the examples
@@ -256,6 +256,9 @@ def encode_packed_pretraining(
         train_dataset,
         max_seq_length,
         skip_position_ids=not multipack_attn,
+        # FIXME using attention mask unpad/pad with trainer and packed pretraining is broken atm
+        # workaround by using the position id logic for now in trainer
+        drop_attention_mask=multipack_attn,
     )
 
     sampler = MultipackBatchSampler(

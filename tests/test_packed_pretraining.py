@@ -88,6 +88,8 @@ class TestPretrainingPacking(unittest.TestCase):
             assert data["labels"].shape == torch.Size(
                 [1, original_bsz * cfg.sequence_len]
             )
+            assert "attention_mask" not in data
+            # FIXME add back once we fix packing unpad/pad with attention mask
             # assert data["attention_mask"].shape == torch.Size(
             #     [1, original_bsz * cfg.sequence_len]
             # )
