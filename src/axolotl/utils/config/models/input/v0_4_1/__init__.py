@@ -489,7 +489,7 @@ class HyperparametersConfig(BaseModel):
     adam_beta1: Optional[float] = None
     adam_beta2: Optional[float] = None
     max_grad_norm: Optional[float] = None
-    num_epochs: int = Field(default=1)
+    num_epochs: float = Field(default=1.0)
 
     @field_validator("batch_size")
     @classmethod
