@@ -1429,9 +1429,10 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
 
         training_arguments_kwargs = {}
 
-        training_arguments_kwargs[
-            "include_tokens_per_second"
-        ] = self.cfg.include_tokens_per_second
+        if self.cfg.include_tokens_per_second is not None:
+            training_arguments_kwargs[
+                "include_tokens_per_second"
+            ] = self.cfg.include_tokens_per_second
 
         if self.cfg.bf16 == "full":
             training_arguments_kwargs["bf16_full_eval"] = True
