@@ -1079,6 +1079,7 @@ class AxolotlDPOTrainer(SchedulerMixin, DPOTrainer):
         super().__init__(*args, **kwargs)
         self.dataset_tags = dataset_tags
         self.optimizer = None
+        self.model_accepts_loss_kwargs = False
 
     def create_optimizer(self):
         if self.args.loraplus_lr_ratio is None:
