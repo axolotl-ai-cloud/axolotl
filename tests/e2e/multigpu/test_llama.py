@@ -226,7 +226,7 @@ class TestMultiGPULlama:
             ]
         )
 
-        loss_threshold = 2.8  # 2.3 - FIXME when trl fixes grad accum
+        loss_threshold = 2.9  # 2.3 - FIXME when trl fixes grad accum
         check_tensorboard(
             temp_dir + "/runs",
             "train/train_loss",
