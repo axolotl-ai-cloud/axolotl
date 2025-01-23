@@ -380,10 +380,12 @@ class ModelLoader:
         plugin_manager = PluginManager.get_instance()
         plugin_manager.pre_model_load(self.cfg)
 
-        # if self.cfg.adapter:
-        #     from axolotl.monkeypatch.transformers_fa_utils import patch_fa_peft_integration
-        #
-        #     patch_fa_peft_integration()
+        if self.cfg.adapter:
+            from axolotl.monkeypatch.transformers_fa_utils import (
+                patch_fa_peft_integration,
+            )
+
+            patch_fa_peft_integration()
 
         if self.cfg.gradient_checkpointing == "unsloth":
             transformers.modeling_utils.checkpoint = hf_grad_checkpoint_unsloth_wrapper

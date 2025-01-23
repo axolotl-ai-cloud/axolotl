@@ -3,6 +3,7 @@ see https://github.com/huggingface/transformers/pull/35834
 """
 
 import logging
+from functools import partial
 from typing import Optional
 
 import torch
@@ -15,6 +16,7 @@ def fixed_fa_peft_integration_check(
     key: torch.Tensor,
     value: torch.Tensor,
     target_dtype: Optional[torch.dtype] = None,
+    preferred_dtype: Optional[torch.dtype] = None,
 ):
     """
     PEFT usually casts the layer norms in float32 for training stability reasons
@@ -32,9 +34,15 @@ def fixed_fa_peft_integration_check(
         target_dtype (`torch.dtype`, *optional*):
             The dtype to convert the attention tensors to. Conversion can be ignored by
             not providing the target dtype.
+        preferred_dtype (`torch.dtype`, *optional*):
+            The preferred dtype to convert the attention tensors to regardless of the
+            target dtype.
     """
-    if target_dtype is None:
+    if target_dtype is None and preferred_dtype is None:
         return query, key, value
+
+    if preferred_dtype and target_dtype != preferred_dtype:
+        target_dtype = preferred_dtype
 
     # check if any of query, key, or value are in float32. If so, cast them back to target dtype.
     if any(module.dtype == torch.float32 for module in [query, key, value]):
@@ -54,6 +62,6 @@ def fixed_fa_peft_integration_check(
 def patch_fa_peft_integration():
     import transformers.modeling_flash_attention_utils
 
-    transformers.modeling_flash_attention_utils.fa_peft_integration_check = (
-        fixed_fa_peft_integration_check
+    transformers.modeling_flash_attention_utils.fa_peft_integration_check = partial(
+        fixed_fa_peft_integration_check, preferred_dtype=torch.float16
     )
