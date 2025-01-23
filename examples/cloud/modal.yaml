@@ -13,6 +13,9 @@ secrets:
 # Which branch of axolotl to use remotely
 branch:
 
+# additional custom commands when building the image
+dockerfile_commands:
+
 gpu: h100
 gpu_count: 1
 

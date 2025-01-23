@@ -92,15 +92,22 @@ class ModalCloud(Cloud):
         else:
             image = modal.Image.from_registry(docker_image)
 
+        dockerfile_commands = []
+        if self.config.dockerfile_commands:
+            dockerfile_commands.extend(self.config.dockerfile_commands)
+
         # branch
         if self.config.branch:
-            image = image.dockerfile_commands(
+            dockerfile_commands.extend(
                 [
                     # Random id for cache busting of branch commits
                     f"RUN echo '{str(randint(0, 1000000))}'",  # nosec B311
                     f"RUN cd /workspace/axolotl && git fetch && git checkout {self.config.branch}",
                 ]
             )
+
+        if dockerfile_commands:
+            image = image.dockerfile_commands(dockerfile_commands)
 
         if env := self.get_env():
             image = image.env(env)
