@@ -56,8 +56,11 @@ def choose_device(cfg):
     if accelerate_vars:
         cfg.device_map = None
 
+
 def resolve_dtype(cfg):
-    if cfg.bf16 == "auto" and not cfg.use_ray: # if we use ray we want to defer this check to the worker node
+    if (
+        cfg.bf16 == "auto" and not cfg.use_ray
+    ):  # if we use ray we want to defer this check to the worker node
         if is_torch_bf16_gpu_available():
             LOG.debug("bf16 support detected, enabling for this configuration.")
             cfg.bf16 = True
@@ -84,7 +87,8 @@ def resolve_dtype(cfg):
         cfg.torch_dtype = torch.float16
     else:
         cfg.torch_dtype = torch.float32
-    
+
+
 def normalize_config(cfg):
     # setup some derived config / hyperparams
     cfg.gradient_accumulation_steps = cfg.gradient_accumulation_steps or (
