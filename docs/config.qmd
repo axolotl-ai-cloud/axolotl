@@ -371,7 +371,7 @@ save_total_limit: # Checkpoints saved at a time
 # e.g., when 1 epoch is 1000 steps => `num_epochs: 2` and `max_steps: 100` will train for 100 steps
 max_steps:
 
-# bool of whether to include tokens trainer per second in the training metrics
+# bool of whether to include tokens trainer per second in the training metrics. This iterates over the entire dataset once, so it takes some time.
 include_tokens_per_second:
 
 eval_table_size: # Approximate number of predictions sent to wandb depending on batch size. Enabled above 0. Default is 0
