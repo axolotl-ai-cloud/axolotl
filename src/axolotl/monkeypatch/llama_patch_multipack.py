@@ -4,7 +4,6 @@ Patched LlamaAttention to use torch.nn.functional.scaled_dot_product_attention
 
 
 from axolotl.monkeypatch.utils import (
-    mask_2d_to_4d,
     patched_prepare_4d_causal_attention_mask,
     patched_prepare_4d_causal_attention_mask_for_sdpa,
 )
@@ -20,6 +19,8 @@ def hijack_llama_prepare_4d_mask():
         _prepare_4d_causal_attention_mask_with_cache_position,
     )
     from transformers.utils import is_torch_bf16_gpu_available
+
+    from axolotl.monkeypatch.utils import mask_2d_to_4d
 
     # modeling_llama._prepare_4d_causal_attention_mask_for_sdpa = (  # pylint: disable=protected-access
     #    patched_prepare_4d_causal_attention_mask_for_sdpa
