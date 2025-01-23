@@ -27,12 +27,13 @@ def hijack_llama_prepare_4d_mask():
     #    patched_prepare_4d_causal_attention_mask_for_sdpa
     # )
 
+    @staticmethod
     def llama_patched_prepare_4d_causal_attention_mask_with_cache_position(
-        self, attention_mask: Optional[torch.Tensor], *args, **kwargs
+        attention_mask: Optional[torch.Tensor], *args, **kwargs
     ):
         dtype = torch.bfloat16 if is_torch_bf16_gpu_available() else torch.float32
         return LlamaModel._prepare_4d_causal_attention_mask_with_cache_position(
-            self, mask_2d_to_4d(attention_mask, dtype=dtype), *args, **kwargs
+            mask_2d_to_4d(attention_mask, dtype=dtype), *args, **kwargs
         )
 
     LlamaModel._prepare_4d_causal_attention_mask_with_cache_position = (  # pylint: disable=protected-access
