@@ -63,5 +63,5 @@ def patch_fa_peft_integration():
     import transformers.modeling_flash_attention_utils
 
     transformers.modeling_flash_attention_utils.fa_peft_integration_check = partial(
-        fixed_fa_peft_integration_check, preferred_dtype=torch.float16
+        fixed_fa_peft_integration_check, preferred_dtype=None
     )
