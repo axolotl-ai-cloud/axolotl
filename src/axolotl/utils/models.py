@@ -709,45 +709,19 @@ class ModelLoader:
         if self.cfg.flash_attention:
             if not self.cfg.sample_packing and self.cfg.s2_attention:
                 pass
-
-            if self.cfg.diff_attention:
-                self.model_kwargs[
-                    "attn_implementation"
-                ] = "differential_flash_attention_2"
-                self.model_config._attn_implementation = (  # pylint: disable=protected-access
-                    "differential_flash_attention_2"
-                )
-            else:
-                self.model_kwargs["attn_implementation"] = "flash_attention_2"
-                self.model_config._attn_implementation = (  # pylint: disable=protected-access
-                    "flash_attention_2"
-                )
-        elif self.cfg.sdp_attention:
-            if self.cfg.diff_attention:
-                self.model_kwargs["attn_implementation"] = "differential_sdpa"
-                self.model_config._attn_implementation = (  # pylint: disable=protected-access
-                    "differential_sdpa"
-                )
-            else:
-                self.model_kwargs["attn_implementation"] = "sdpa"
-                self.model_config._attn_implementation = (  # pylint: disable=protected-access
-                    "sdpa"
-                )
-        elif self.cfg.eager_attention:
-            if self.cfg.diff_attention:
-                self.model_kwargs["attn_implementation"] = "differential_eager"
-                self.model_config._attn_implementation = (  # pylint: disable=protected-access
-                    "differential_eager"
-                )
-            else:
-                self.model_kwargs["attn_implementation"] = "eager"
-                self.model_config._attn_implementation = (  # pylint: disable=protected-access
-                    "eager"
-                )
-        elif self.cfg.diff_attention:
-            self.model_kwargs["attn_implementation"] = "differential_eager"
+            self.model_kwargs["attn_implementation"] = "flash_attention_2"
             self.model_config._attn_implementation = (  # pylint: disable=protected-access
-                "differential_eager"
+                "flash_attention_2"
+            )
+        elif self.cfg.sdp_attention:
+            self.model_kwargs["attn_implementation"] = "sdpa"
+            self.model_config._attn_implementation = (  # pylint: disable=protected-access
+                "sdpa"
+            )
+        elif self.cfg.eager_attention:
+            self.model_kwargs["attn_implementation"] = "eager"
+            self.model_config._attn_implementation = (  # pylint: disable=protected-access
+                "eager"
             )
 
         if self.cfg.low_cpu_mem_usage:
