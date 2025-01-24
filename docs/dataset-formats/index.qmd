@@ -414,12 +414,12 @@ datasets:
     type:
       system_prompt: ""
 
-	  field_system:
+      field_system:
       field_instruction: input
       field_input:
       field_output: output
 
-	  # multi-line example with input
+      # multi-line example with input
       format: |-
         [INST] {instruction} {input} [/INST]
 
