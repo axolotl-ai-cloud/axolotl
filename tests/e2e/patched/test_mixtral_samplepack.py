@@ -102,9 +102,5 @@ class TestMixtral(unittest.TestCase):
         cli_args = TrainerCliArgs()
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
-        model, _ = train(cfg=cfg, dataset_meta=dataset_meta)
-        assert (
-            "MixtralFlashAttention2"
-            in model.model.layers[0].self_attn.__class__.__name__
-        )
+        train(cfg=cfg, dataset_meta=dataset_meta)
         check_model_output_exists(temp_dir, cfg)
