@@ -1767,9 +1767,9 @@ def handle_legacy_message_fields_logic(data: dict) -> dict:
     # Check for conflicts and handle role
     if "message_field_role" in data:
         LOG.warning(
-                "message_field_role is deprecated, use message_property_mappings instead. "
-                f"Example: message_property_mappings: {{role: {data['message_field_role']}}}"
-            )
+            "message_field_role is deprecated, use message_property_mappings instead. "
+            f"Example: message_property_mappings: {{role: {data['message_field_role']}}}"
+        )
         if (
             "role" in data["message_property_mappings"]
             and data["message_property_mappings"]["role"] != data["message_field_role"]
@@ -1785,9 +1785,9 @@ def handle_legacy_message_fields_logic(data: dict) -> dict:
     # Check for conflicts and handle content
     if "message_field_content" in data:
         LOG.warning(
-                "message_field_content is deprecated, use message_property_mappings instead. "
-                f"Example: message_property_mappings: {{content: {data['message_field_content']}}}"
-            )
+            "message_field_content is deprecated, use message_property_mappings instead. "
+            f"Example: message_property_mappings: {{content: {data['message_field_content']}}}"
+        )
         if (
             "content" in data["message_property_mappings"]
             and data["message_property_mappings"]["content"]

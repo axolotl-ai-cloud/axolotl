@@ -31,21 +31,22 @@ def parse_dataset(dataset=None, split="train"):
     ds_cfg["field_messages"] = field_messages
 
     message_fields = features[field_messages][0].keys()
-    message_property_mappings = {'role': None, 'content': None}
+
+    message_property_mappings = {"role": None, "content": None}
     for key in ["from", "role"]:
         if key in message_fields:
-            message_property_mappings['role'] = key
+            message_property_mappings["role"] = key
             break
-    if not message_property_mappings['role']:
+    if not message_property_mappings["role"]:
         raise ValueError(
             f'No role field found in messages: {", ".join(message_fields)}'
         )
 
     for key in ["content", "text", "value"]:
         if key in message_fields:
-            message_property_mappings['content'] = key
+            message_property_mappings["content"] = key
             break
-    if not message_property_mappings['content']:
+    if not message_property_mappings["content"]:
         raise ValueError(
             f'No content field found in messages: {", ".join(message_fields)}'
         )
