@@ -1079,6 +1079,7 @@ class AxolotlDPOTrainer(SchedulerMixin, DPOTrainer):
         super().__init__(*args, **kwargs)
         self.dataset_tags = dataset_tags
         self.optimizer = None
+        self.model_accepts_loss_kwargs = False
 
     def create_optimizer(self):
         if self.args.loraplus_lr_ratio is None:
@@ -1877,6 +1878,8 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         self, training_args: AxolotlTrainingArguments, is_eval=False, **kwargs
     ):
         if training_args.pretraining:
+            if self.cfg.pretraining_sample_concatenation is False:
+                return DataCollatorForSeq2Seq(self.tokenizer, **kwargs)
             return None
 
         if self.cfg.model_config_type == "mamba":

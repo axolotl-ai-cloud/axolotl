@@ -19,7 +19,14 @@ For pretraining, there is no prompt template or roles.  The only required field 
 Axolotl usually loads the entire dataset into memory. This will be challenging for large datasets. Use the following config to enable streaming:
 
 ```{.yaml filename="config.yaml"}
-pretraining_dataset: # hf path only
+pretraining_dataset:
+  - name:
+    path:
+    split:
+    text_column: # column in dataset with the data, usually `text`
+    type: pretrain
+    trust_remote_code:
+    skip: # number of rows of data to skip over from the beginning
 ...
 ```
 

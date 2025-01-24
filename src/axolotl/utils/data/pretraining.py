@@ -18,10 +18,14 @@ LOG = logging.getLogger("axolotl")
 
 
 def encode_pretraining(
-    tokenizer: PreTrainedTokenizerBase, max_tokens: int, examples: Dict[str, List]
+    tokenizer: PreTrainedTokenizerBase,
+    max_tokens: int,
+    examples: Dict[str, List],
+    text_column: str = "text",
+    concatenate: bool = True,
 ) -> Dict[str, List]:
     res = tokenizer(
-        examples["text"],
+        examples[text_column],
         truncation=True,
         max_length=max_tokens - 2,
         add_special_tokens=True,
@@ -30,6 +34,13 @@ def encode_pretraining(
     input_ids = [torch.tensor(seq) for seq in res["input_ids"]]
     targets = [torch.tensor(seq) for seq in res["input_ids"]]
     attention_mask = [torch.tensor(seq) for seq in res["attention_mask"]]
+    if not concatenate:
+        return {
+            "input_ids": [seq.tolist() for seq in input_ids],
+            "labels": [seq.tolist() for seq in targets],
+            "attention_mask": [seq.tolist() for seq in attention_mask],
+        }
+
     new_input_ids = []
     new_labels = []
     new_attention_mask = []
@@ -196,7 +207,13 @@ def wrap_pretraining_dataset(
         # set this to 1 so downstream data_loader doesn't try to increase the batch again
         cfg.micro_batch_size = 1
     else:
-        encode = functools.partial(encode_pretraining, tokenizer, max_tokens)
+        encode = functools.partial(
+            encode_pretraining,
+            tokenizer,
+            max_tokens,
+            text_column=cfg.pretraining_dataset[0].text_column or "text",
+            concatenate=cfg.pretraining_sample_concatenation is True,
+        )
 
     if cfg.shuffle_merged_datasets:
         dataset = dataset.shuffle(seed=seed, buffer_size=buffer_size)
