@@ -1,24 +1,20 @@
 """CLI definition for various axolotl commands."""
-
 # pylint: disable=redefined-outer-name
+
 import subprocess  # nosec B404
 from typing import Optional
 
 import click
 
 import axolotl
+from axolotl.cli.plugins import setup_plugin_commands
 from axolotl.cli.utils import (
     add_options_from_config,
     add_options_from_dataclass,
     build_command,
     fetch_from_github,
 )
-from axolotl.common.cli import (
-    ConvertDiffTransformerCliArgs,
-    EvaluateCliArgs,
-    PreprocessCliArgs,
-    TrainerCliArgs,
-)
+from axolotl.common.cli import EvaluateCliArgs, PreprocessCliArgs, TrainerCliArgs
 from axolotl.utils import set_pytorch_cuda_alloc_conf
 from axolotl.utils.config.models.input.v0_4_1 import AxolotlInputConfig
 
@@ -250,24 +246,6 @@ def merge_lora(
 
 
 @cli.command()
-@click.argument("config", type=click.Path(exists=True, path_type=str))
-@add_options_from_dataclass(ConvertDiffTransformerCliArgs)
-@add_options_from_config(AxolotlInputConfig)
-def convert_diff_transformer(config: str, **kwargs):
-    """Convert model attention layers to differential attention layers."""
-    kwargs = {k: v for k, v in kwargs.items() if v is not None}
-
-    try:
-        from axolotl_diff_transformer.convert_diff_transformer import do_cli
-    except ImportError as exc:
-        raise ImportError(
-            "axolotl-diff-transformer not found, please install it: https://github.com/axolotl-ai-cloud/diff-transformer"
-        ) from exc
-
-    do_cli(config=config, **kwargs)
-
-
-@cli.command()
 @click.argument("directory", type=click.Choice(["examples", "deepspeed_configs"]))
 @click.option("--dest", help="Destination directory")
 def fetch(directory: str, dest: Optional[str]):
@@ -279,6 +257,9 @@ def fetch(directory: str, dest: Optional[str]):
     - deepspeed_configs: DeepSpeed configuration files
     """
     fetch_from_github(f"{directory}/", dest)
+
+
+setup_plugin_commands(cli)
 
 
 def main():
