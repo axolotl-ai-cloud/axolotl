@@ -1,3 +1,6 @@
+"""
+cli script for converting a pretrained model to a relaxed recursive transformer model
+"""
 import json
 import logging
 import math
@@ -52,7 +55,7 @@ def iter_recursive_parameter_weights(
 ):
     # setup placeholder state_dict for recursive weights, need to keep in float32 precision
     # to avoid precision loss when averaging weights across layers
-    rrt_avg_model_state_dict = {}
+    rrt_avg_model_state_dict: dict[str, list[torch.Tensor]] = {}
 
     # iterate over all parameter weights in the model shards
     for key, weight, layer_idx in iter_parameter_weights(model_path, device=device):
@@ -93,6 +96,7 @@ def low_rank_decomposition(
     :param max_rank: The maximum rank of the decomposition
     :return: A tuple of tensors (L, R)
     """
+    # pylint: disable=invalid-name
     assert (
         weight.dim() == 2
     ), f"Only support 2D matrix, but input has {weight.dim()} dimensions."
@@ -135,7 +139,9 @@ def decompose_delta_weight(layer_weight, avg_weight, alpha, rank, use_dora=True)
     delta_for_svd = final_weight - base_weight
 
     # Low-rank factorization of the delta direction
-    lora_A, lora_B = low_rank_decomposition(delta_for_svd, rank)
+    lora_A, lora_B = low_rank_decomposition(  # pylint: disable=invalid-name
+        delta_for_svd, rank
+    )
 
     if use_dora:
         lora_weight = lora_B @ lora_A
@@ -218,6 +224,7 @@ def save_state_dict_to_safetensors(state_dict, save_directory):
     state_dict_split = split_torch_state_dict_into_shards(
         state_dict, filename_pattern=filename_pattern, max_shard_size="1GB"
     )
+    # pylint: disable=duplicate-code
     # Save index if sharded
     index = None
     if state_dict_split.is_sharded:
@@ -355,7 +362,7 @@ if __name__ == "__main__":
     # meta-llama/Llama-3.2-3B has 28 hidden layers
     convert_llama_to_rrt(
         "meta-llama/Llama-3.2-3B",
-        "/tmp/rrt_model",
+        "/tmp/rrt_model",  # nosec
         recurse_layers=4,
         rank=256,
         alpha=512,

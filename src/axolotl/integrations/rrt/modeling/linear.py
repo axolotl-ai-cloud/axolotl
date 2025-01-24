@@ -1,3 +1,6 @@
+"""
+module for the shared linear layer for the relaxed recursive transformers model
+"""
 import math
 
 import torch
@@ -24,7 +27,7 @@ class RelaxedRecursiveDoraLinear(nn.Module):
         self,
         in_features: int,
         out_features: int,
-        B: int,
+        B: int,  # pylint: disable=invalid-name
         rank: int,
         alpha: int,
         fan_in_fan_out: bool = False,
@@ -32,7 +35,7 @@ class RelaxedRecursiveDoraLinear(nn.Module):
         use_dora: bool = True,
     ):
         super().__init__()
-        self.B = B
+        self.B = B  # pylint: disable=invalid-name
         self.fan_in_fan_out = fan_in_fan_out
 
         self.weight_base = nn.Parameter(torch.empty(out_features, in_features))
@@ -43,10 +46,10 @@ class RelaxedRecursiveDoraLinear(nn.Module):
         else:
             self.register_parameter("bias", None)
 
-        self.lora_A_list = nn.ParameterList(
+        self.lora_A_list = nn.ParameterList(  # pylint: disable=invalid-name
             [nn.Parameter(torch.zeros(rank, in_features)) for _ in range(B)]
         )
-        self.lora_B_list = nn.ParameterList(
+        self.lora_B_list = nn.ParameterList(  # pylint: disable=invalid-name
             [nn.Parameter(torch.zeros(out_features, rank)) for _ in range(B)]
         )
         # rslora
@@ -75,8 +78,12 @@ class RelaxedRecursiveDoraLinear(nn.Module):
         w_base = self.weight_base
         w_base = w_base.to(x.dtype)
 
-        lora_A: torch.Tensor = self.lora_A_list[loop_idx]
-        lora_B: torch.Tensor = self.lora_B_list[loop_idx]
+        lora_A: torch.Tensor = self.lora_A_list[  # pylint: disable=invalid-name
+            loop_idx
+        ]
+        lora_B: torch.Tensor = self.lora_B_list[  # pylint: disable=invalid-name
+            loop_idx
+        ]
 
         base_out: torch.Tensor = F.linear(x, w_base, self.bias)
         lora_out: torch.Tensor = F.linear(F.linear(x, lora_A), lora_B) * self.scaling
