@@ -1,14 +1,431 @@
 ---
 title: Dataset Formats
-description: Supported dataset formats.
-listing:
-  fields: [title, description]
-  type: table
-  sort-ui: false
-  filter-ui: false
-  max-description-length: 250
+description: Guide to Dataset Formats in Axolotl
+back-to-top-navigation: true
+toc: true
+toc-depth: 5
 ---
 
-Axolotl supports a variety of dataset formats.  It is recommended to use a JSONL format.  The schema of the JSONL depends upon the task and the prompt template you wish to use. Instead of a JSONL, you can also use a HuggingFace dataset with columns for each JSONL field.
 
-Below are these various formats organized by task:
+Axolotl is a training framework that aims to make the process convenient yet flexible to users by simply passing a config yaml file.
+
+As there are a lot of available options in Axolotl, this guide aims to provide an simplify the user experience to choosing the proper choice.
+
+Axolotl supports 3 kind of training methods: pre-training, supervised fine-tuning, and preference tuning. Each method has their own dataset format which are described below.
+
+## [Pre-training](pretraining.qmd)
+
+When aiming to train on large corpuses of text datasets, pre-training is your go-to choice. As these datasets are large, Axolotl enables streaming for these datasets to only load batches into memory at a time.
+
+A sample file for a pre-training dataset is as follows:
+
+```json
+{"text": "first row"}
+{"text": "second row"}
+...
+```
+
+It is typically recommended to save your dataset as `.jsonl` due to its flexibility and simplicity.
+
+Axolotl supports loading from a Huggingface hub repo or from local files.
+
+::: {.callout-important}
+For pre-training only, Axolotl would split texts if it exceeds the context length into multiple smaller prompts.
+:::
+
+### Pre-training load from Huggingface hub
+
+To load from Huggingface dataset `hf_org/name`, you can pass the following config:
+
+```yaml
+pretraining_dataset: hf_org/name
+```
+
+### Pre-training load from local files
+
+Given a few corpus files: `A.jsonl`, `B.jsonl`, and `C.jsonl`, your config will look like the below:
+
+```yaml
+pretraining_dataset:
+  - path: json
+    data_files: ["A.jsonl", "B.jsonl", "C.jsonl"]
+```
+
+While we recommend `.jsonl`, you can also use the other formats (`csv`, `parquet`, `arrow`, `SQL`, `Webdataset`) that are supported by [`Dataset.load_dataset`](https://huggingface.co/docs/datasets/loading#local-and-remote-files)
+
+### Pre-training without streaming
+
+On the rare case that the dataset is small and can be loaded entirely into memory, another approach to running pre-training is to use the `completion` format. This would mean that the entire dataset is pre-tokenized instead of on-demand in streaming.
+
+One benefit of this is that: the tokenization can be performed separately on a CPU-only machine then transferred to a GPU machine for training to save costs.
+
+From huggingface:
+
+```yaml
+datasets:
+  - path: A.jsonl
+    type: completion
+```
+
+From local files:
+
+```yaml
+datasets:
+  - path: json
+    data_files: ["A.jsonl", "B.jsonl", "C.jsonl"]
+    type: completion
+```
+
+### Before running pre-train
+
+#### Setting max_steps
+
+As the dataset is streamed, Axolotl does not know in advance how large the dataset is and does not know when to stop.
+
+Therefore, it is necessary to set `max_steps: int` in your config for pre-training to run, so that Axolotl knows when to stop training.
+
+One step is equal to `sequence_len * micro_batch_size * gradient_accumulation_steps * total_num_gpus` tokens.
+
+#### Group_by_length
+
+It is recommended to leave this off if downloading from Huggingface hub as it would download the entire dataset which can be very large.
+
+## Supervised fine-tuning
+
+Supervised fine-tuning is the process of training models to respond to an instruction or chat input.
+
+As there are a wide variety of dataset formats, Axolotl tries to support or opens up the option to use a majority of the formats available in public datasets.
+
+Axolotl provide four various approaches for loading datasets, however, it's easier to work backwards from the dataset you have available to figure out which approach to use.
+
+A flow chart is as follows:
+
+1. Do you already have the dataset tokenized? If yes, check [Pre-Tokenized Dataset](#pre-tokenized-dataset).
+
+2. Do you want to format the dataset yourself and manually choose each section to mask? If yes, check [Template Free Dataset](#template-free-dataset)
+
+3. Is your dataset in a "conversation" format, containing a `list[messages]`? If yes, check [Conversation Dataset](#conversation-dataset)
+
+4. Is your dataset in an "instruct" format, containing `{ instruction, response }`? If yes, check [Instruction Dataset](#instruction-dataset)
+
+If you went through the flow chart and did not find one that matches, it is recommended to preprocess your dataset into one of the above or create a Github Discussion.
+
+::: {.callout-tip}
+You can mix and match within each approach or across approaches to train a model on a variety of datasets.
+:::
+
+### [Pre-Tokenized Dataset](tokenized.qmd)
+
+This approach is when you want to bring your own tokenized dataset.
+
+Axolotl expects the dataset to have three keys:
+- `input_ids`: from tokenizing formatted prompt
+- `attention_mask`: for masking padding. If you don't add padding, it would be equal to `len(input_ids) * [1]`
+- `labels`: this is the same as `input_ids`, however, if you want to mask certain tokens, you would set those indices to `-100`.
+
+Don't forget to add BOS/EOS and proper masking for it!
+
+A config for this would look like:
+
+```yaml
+datasets:
+  - path: A.jsonl
+    type:
+```
+
+::: {.callout-note}
+`type: ` is empty!
+:::
+
+### [Template Free Dataset](template_free.qmd)
+
+This approach is if you want granular control over the prompt formatting, special tokens, and masking while letting Axolotl handle the tokenization. This is very useful if your dataset have unique prompts that differ within, where one single general template wouldn't suffice for.
+
+In the example below, you could see that there is no proper structure. In the same time, it's very flexible as there are no constraints on how your prompt can look.
+
+```json
+{
+    "segments": [
+        {
+            "label": true,
+            "text": "<s>Hello\n"
+        },
+        {
+            "label": true,
+            "text": "hi there!. "
+        },
+        {
+            "label": false,
+            "text": "goodbye "
+        },
+        {
+            "label": true,
+            "text": "farewell</s>"
+        }
+    ]
+}
+```
+
+Each prompt must be have a key called `segments` which is a list of `{ text, label }`.
+
+```yaml
+datasets:
+  - path: A.jsonl
+    type: input_output
+```
+
+### [Conversation Dataset](conversation.qmd)
+
+`conversation` messages are a list of messages which usually contain a `role` and `content` key.
+
+::: {.callout-tip}
+Fun fact: Axolotl synonymously call "chat" messages as `conversation` messages due to how FastChat initially used this term to build a widely used method [fastchat conversation](https://github.com/lm-sys/FastChat/blob/main/fastchat/conversation.py) for formatting chat messages prior to the creation of `chat_templates`.
+:::
+
+#### What are `chat_templates`?
+
+The current most popular and convenient method for inference is to use `chat_templates` for formatting prompts. Therefore, Axolotl supports using `chat_templates` for training to ensure that the model performs in the same environment as in inference.
+
+Here's a quick rundown on `chat_template`. A `chat_template` is a Jinja2 template which formats a list of messages into a prompt.
+
+An example of a prompt formatted into a popular template called ChatML can be seen below:
+
+Single prompt (pretty-printed):
+```json
+{
+    "messages": [
+        {
+            "role": "user",
+            "content": "Hi"
+        },
+        {
+            "role": "assistant",
+            "content": "How can I help you?"
+        },
+        {
+            "role": "user",
+            "content": "Can you add 3+5?"
+        },
+        {
+            "role": "assistant",
+            "content": "The answer is 8."
+        }
+    ]
+}
+```
+
+The ChatML template is as follows:
+```jinja2
+{% if not add_generation_prompt is defined %}{% set add_generation_prompt = false %}{% endif %}{% for message in messages %}{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>' + '\n'}}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}
+```
+
+Formatted prompt into ChatML
+
+```
+<|im_start|>user
+Hi<|im_end|>
+<|im_start|>assistant
+How can I help you?<|im_end|>
+<|im_start|>user
+Can you add 3+5?<|im_end|>
+<|im_start|>assistant
+The answer is 8.<|im_end|>
+```
+
+By using delimiters (`<|im_start|>` and `<|im_end|>`), a prompt separates different speakers which helps the model identify which portion belongs to whom.
+
+#### Common Conversation Dataset formats
+
+Older conversation datasets with the following format are colloquially called `sharegpt` datasets.
+
+```json
+{"conversations": [{"from": "...", "value": "..."}]}
+```
+
+Newer conversation datasets usually follow the OpenAI format.
+
+```json
+{"messages": [{"role": "...", "content": "..."}]}
+```
+
+Axolotl supports both as well as allowing customization of any kind of key.
+
+#### Chat Template Usage
+
+To properly use this method, it is important to identify three things:
+1. Which `chat_template` would you use?
+2. What are the keys in your dataset, and what are the possible roles? For example, in OpenAI format, the keys would be `messages`, `role`, `content` respectively, whereas the possible roles are `system`, `user`, and `assistant`.
+3. What do you want to mask? For instance, only assistant messages, only last message, or nothing.
+
+##### Choosing `chat_template`
+
+There are a lot of `chat_templates` out there.
+
+Axolotl support the common ones: (https://github.com/axolotl-ai-cloud/axolotl/blob/860609392184cf62a7e0ca676658b170e059ce6c/src/axolotl/utils/chat_templates.py#L17). For example, to use ChatML, it would be `chat_template: chatml`.
+
+However, it is also possible to use the already configured template within the tokenizer by specifying `chat_template: tokenizer_default`. If you want a fallback (in case some tokenizer does not have it pre-configured), you can do `chat_template: tokenizer_default_fallback_chatml` to use the tokenizer or fallback to ChatML.
+
+One last but powerful approach is to bring your own template. This can be set via:
+
+```yaml
+chat_template_jinja: # your template
+```
+
+##### Setting `chat_template` dataset keys
+
+We currently default to OpenAI format for dataset keys, so if that's your current dataset format, there's nothing to do here.
+
+If your dataset format is different, here are the keys you should check (with their defaults):
+
+```yaml
+    field_messages: messages
+    message_field_role: role
+    message_field_content: content
+```
+
+In some `chat_templates` (like `gemma`), the roles are hardcoded to `user` and `assistant`. Consequently, you may find it necessary to map the roles in your dataset to these above. We currently have some defaults that should work for common datasets, but if you get a `KeyError`, it would be necessary to add mapping for your roles. Here is an example of how it would look like:
+
+```yaml
+    roles:
+      assistant:
+        - gpt
+        - model
+      user:
+        - human
+```
+
+In the example above, all `gpt` and `model` values are converted to `assistant`. All `human` values are converted to `user.`
+
+##### Handling masking
+
+The common use case for `chat_template` is for chat messages, therefore, it is common to mask all non-assistant messages. Assistant messages refer to the bot messages that you want the model to learn as.
+
+To train on all `assistant` messages, you would set the following configs.
+
+```yaml
+    roles_to_train: ["assistant"]
+    train_on_eos: "turn"
+```
+
+The second config means that it would mask all EOS tokens for turns that aren't assistant-turns. The other options are: `all` and `last` to choose which EOS to train on.
+
+Perhaps, you want to train on `assistant` and `narrator` roles, you can simply add `narrator` to the list of `roles_to_train`. You would also need to add it to the mapping of `roles` above.
+
+```yaml
+    roles:
+      narrator: ["narrator"]
+```
+
+#### Applying `chat_template`
+
+Once all the above are completed, you would combine all these configs together to form your dataset config. The last part would be to set the EOS token in the config to ensure that the code knows what your EOS token is.
+
+```yaml
+datasets:
+  - path: A.jsonl
+    type: chat_template
+
+	# step 1
+    chat_template: chatml
+
+	# step 2
+	field_messages: messages
+    message_field_role: role
+    message_field_content: content
+
+    roles:
+      assistant:
+        - gpt
+        - model
+        - assistant
+      user:
+        - human
+        - user
+
+	# step 3
+	roles_to_train: ["assistant"]
+    train_on_eos: "turn"
+
+special_tokens:
+  eos_token: <|im_end|>
+```
+
+If this config were to be applied to the sample dataset above, the output would look as such (which can be retrieved via `axolotl preprocess config.yaml --debug`):
+
+```
+<|im_start|>(-100, 128256) user(-100, 882)
+(-100, 198) Hi(-100, 13347) <|im_end|>(-100, 128257)
+(-100, 198) <|im_start|>(-100, 128256) assistant(-100, 78191)
+(-100, 198) How(4438, 4438)  can(649, 649)  I(358, 358)  help(1520, 1520)  you(499, 499) ?(30, 30) <|im_end|>(128257, 128257)
+(-100, 198) <|im_start|>(-100, 128256) user(-100, 882)
+(-100, 198) Can(-100, 6854)  you(-100, 499)  add(-100, 923)  (-100, 220) 3(-100, 18) +(-100, 10) 5(-100, 20) ?(-100, 30) <|im_end|>(-100, 128257)
+(-100, 198) <|im_start|>(-100, 128256) assistant(-100, 78191)
+(-100, 198) The(791, 791)  answer(4320, 4320)  is(374, 374)  (220, 220) 8(23, 23) .(13, 13) <|im_end|>(128257, 128257)
+(-100, 198)
+```
+
+The first number refers to the label, the second refers to the token_id. For example, `-100` labels appears on non-assistant portions, meaning that it's masked. For assistant portions, the label is the same as the token_id.
+
+Ref: https://axolotl-ai-cloud.github.io/axolotl/docs/dataset-formats/conversation.html#chat_template
+
+### [Instruction Dataset](inst_tune.qmd)
+
+An Instruction dataset is a kind of dataset which focuses on instruction and output, a single turn instead of multi-turn conversations.
+
+An example is of a common format called Alpaca:
+```json
+{"instruction": "...", "input": "...", "output": "..."}
+```
+
+Using those keys, a prompt can be built based on it.
+```
+Below is an instruction that describes a task, paired with an input that provides further context. Write a response that appropriately completes the request.
+
+### Instruction:
+{instruction}
+
+### Input:
+{input}
+
+### Response:
+{output}
+```
+
+This can be configured as such:
+```yaml
+datasets:
+  - path: A.jsonl
+    type: alpaca
+```
+
+Axolotl supports many kinds of instruction dataset. All of them can be found here (https://axolotl-ai-cloud.github.io/axolotl/docs/dataset-formats/inst_tune.html) with their respective type and sample row format.
+
+#### Custom Instruct Prompt Format
+
+Due to the myriad possibilities of instruction formats, Axolotl allows customizing your own instruction format without having to dive into the code directly.
+
+In the example below, a sample row is used to output in `mistral_v1` format.
+```json
+{"input": "...", "output": "..."}
+```
+
+```yaml
+datasets:
+  - path: repo
+    type:
+      system_prompt: ""
+
+	  field_system:
+      field_instruction: input
+      field_input:
+      field_output: output
+
+	  # multi-line example with input
+      format: |-
+        [INST] {instruction} {input} [/INST]
+
+      # single-line example without input
+      no_input_format: "[INST] {instruction} [/INST]"
+```
+
+The config sets that the `field_instruction` is actually named `input`, and the `field_input` is empty as we don't have an `input` in this sample. Generally, `instruction` can be thought as the question to the model, and `input` as the additional information with `output` being the response. It is not necessary to have an `input` nor `system`. In the end, the most important part is to understand what format you want it to look like and how you can customize this to your use case.
