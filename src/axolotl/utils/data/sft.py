@@ -6,13 +6,13 @@ from pathlib import Path
 from typing import List, Tuple, Union
 
 from datasets import (
-    concatenate_datasets,
     Dataset,
     DatasetDict,
-    load_dataset,
-    load_from_disk,
     Sequence,
     Value,
+    concatenate_datasets,
+    load_dataset,
+    load_from_disk,
 )
 from transformers import PreTrainedTokenizerBase
 
@@ -469,13 +469,14 @@ def get_dataset_wrapper(
             dataset,
             **ds_kwargs,
         )
-    elif ds_strategy := config_dataset.type.startswith("stepwise_supervised"):
+    elif config_dataset.type.startswith("stepwise_supervised"):
         dataset_prompter = UnsupportedPrompter()
-        # we need to explicitly cast boolean labels to int 
-        # for compatibility with how trl's PRMTrainer works
-        ds_strategy = ds_strategy.cast_column(
-            "labels", Sequence(Value("int64"))
+        ds_strategy = load(
+            config_dataset.type, tokenizer, cfg, config_dataset, processor=processor
         )
+        # we need to explicitly cast boolean labels to int
+        # for compatibility with how trl's PRMTrainer works
+        dataset = dataset.cast_column("labels", Sequence(Value("int64")))
         dataset_wrapper = TokenizedPromptDataset(
             ds_strategy,
             dataset,

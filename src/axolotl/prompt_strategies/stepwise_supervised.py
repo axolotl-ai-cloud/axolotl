@@ -90,7 +90,7 @@ class StepwiseSupervisedPromptTokenizingStrategy:
         if self.sequence_len:
             input_ids = input_ids[: self.sequence_len]
             full_labels = full_labels[: self.sequence_len]
-            
+
         return {
             "input_ids": input_ids,
             "labels": full_labels,

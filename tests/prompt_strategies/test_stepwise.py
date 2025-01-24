@@ -2,17 +2,15 @@
 tests for chat_template prompt strategy
 """
 
-import unittest
-
-import pytest
 import datasets
+import pytest
+from datasets import Dataset
+from transformers import AutoTokenizer
+
 from axolotl.datasets import TokenizedPromptDataset
 from axolotl.prompt_strategies.stepwise_supervised import (
     StepwiseSupervisedPromptTokenizingStrategy,
 )
-from axolotl.utils.dict import DictDefault
-from datasets import Dataset
-from transformers import AutoTokenizer
 
 
 @pytest.fixture(name="stepwise_supervised_dataset")
@@ -49,7 +47,9 @@ class TestStepWiseSupervisedPromptTokenizingStrategy:
             sequence_len=2048,
             step_separator="\n",
         )
-        stepwise_supervised_dataset = stepwise_supervised_dataset.cast_column("labels", datasets.Sequence(datasets.Value("int64")))
+        stepwise_supervised_dataset = stepwise_supervised_dataset.cast_column(
+            "labels", datasets.Sequence(datasets.Value("int64"))
+        )
         dataset_wrapper = TokenizedPromptDataset(
             strategy,
             stepwise_supervised_dataset,
@@ -61,5 +61,5 @@ class TestStepWiseSupervisedPromptTokenizingStrategy:
         # the second step, and its label (False)
         # the third step, and its label (False)
         expected = [-100] * 47 + [1] + [-100] * 29 + [0] + [-100] * 48 + [0]
-        
+
         assert labels == expected
