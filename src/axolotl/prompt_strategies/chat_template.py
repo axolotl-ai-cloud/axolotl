@@ -487,7 +487,7 @@ def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None, processor=None
     strategy_params = {
         "train_on_inputs": cfg.train_on_inputs,
         "sequence_len": cfg.sequence_len,
-        "roles_to_train": ds_cfg.get("roles_to_train", ["assistant"]),
+        "roles_to_train": ds_cfg.get("roles_to_train", None),
         "train_on_eos": ds_cfg.get("train_on_eos", "turn"),
     }
 
