@@ -250,18 +250,19 @@ Newer conversation datasets usually follow the OpenAI format.
 
 Axolotl supports both as well as allowing customization of any kind of key.
 
-#### Chat Template Usage
+#### [Chat Template Usage](conversation.qmd#chat_template)
 
 To properly use this method, it is important to identify three things:
+
 1. Which `chat_template` would you use?
+
 2. What are the keys in your dataset, and what are the possible roles? For example, in OpenAI format, the keys would be `messages`, `role`, `content` respectively, whereas the possible roles are `system`, `user`, and `assistant`.
+
 3. What do you want to mask? For instance, only assistant messages, only last message, or nothing.
 
 ##### Choosing `chat_template`
 
-There are a lot of `chat_templates` out there.
-
-Axolotl support the common ones: (https://github.com/axolotl-ai-cloud/axolotl/blob/860609392184cf62a7e0ca676658b170e059ce6c/src/axolotl/utils/chat_templates.py#L17). For example, to use ChatML, it would be `chat_template: chatml`.
+There are a lot of `chat_templates` out there. Axolotl supports the common ones: [supported chat templates](https://github.com/axolotl-ai-cloud/axolotl/blob/860609392184cf62a7e0ca676658b170e059ce6c/src/axolotl/utils/chat_templates.py#L17). For example, to use ChatML, it would be `chat_template: chatml`.
 
 However, it is also possible to use the already configured template within the tokenizer by specifying `chat_template: tokenizer_default`. If you want a fallback (in case some tokenizer does not have it pre-configured), you can do `chat_template: tokenizer_default_fallback_chatml` to use the tokenizer or fallback to ChatML.
 
@@ -365,8 +366,6 @@ If this config were to be applied to the sample dataset above, the output would 
 ```
 
 The first number refers to the label, the second refers to the token_id. For example, `-100` labels appears on non-assistant portions, meaning that it's masked. For assistant portions, the label is the same as the token_id.
-
-Ref: https://axolotl-ai-cloud.github.io/axolotl/docs/dataset-formats/conversation.html#chat_template
 
 ### [Instruction Dataset](inst_tune.qmd)
 
