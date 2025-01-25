@@ -18,9 +18,9 @@ LOG = logging.getLogger("axolotl.tests.e2e")
 os.environ["WANDB_DISABLED"] = "true"
 
 
-class TestRewardModelLoraLlama(unittest.TestCase):
+class TestProcessRewardModelLoraLlama(unittest.TestCase):
     """
-    Test case for Llama reward models using LoRA
+    Test case for Llama process reward models using LoRA
     """
 
     @with_temp_dir
@@ -28,7 +28,7 @@ class TestRewardModelLoraLlama(unittest.TestCase):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "JackFram/llama-68m",
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
                 "model_type": "AutoModelForTokenClassification",
                 "num_labels": 2,
                 "tokenizer_type": "LlamaTokenizer",
