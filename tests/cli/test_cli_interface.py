@@ -23,6 +23,7 @@ def test_build_command():
         "--batch-size",
         "8",
         "--debug",
+        "--nouse-fp16",
     ]
 
 

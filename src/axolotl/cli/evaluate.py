@@ -19,7 +19,7 @@ from axolotl.utils.dict import DictDefault
 LOG = logging.getLogger(__name__)
 
 
-def do_evaluate(cfg: DictDefault, cli_args: TrainerCliArgs) -> None:
+def do_evaluate(cfg: DictDefault, cli_args: TrainerCliArgs) -> dict[str, float]:
     """
     Evaluates a `transformers` model by first loading the dataset(s) specified in the
     `axolotl` config, and then calling `axolotl.evaluate.evaluate`, which computes
@@ -39,7 +39,7 @@ def do_evaluate(cfg: DictDefault, cli_args: TrainerCliArgs) -> None:
     else:
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
-    evaluate(cfg=cfg, dataset_meta=dataset_meta)
+    return evaluate(cfg=cfg, dataset_meta=dataset_meta)
 
 
 def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs) -> None:

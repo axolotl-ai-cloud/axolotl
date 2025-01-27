@@ -4,7 +4,7 @@ import csv
 import os
 import sys
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Optional
 
 import torch
 from accelerate.logging import get_logger
@@ -26,7 +26,7 @@ LOG = get_logger("axolotl.evaluate")
 
 def evaluate_dataset(
     trainer, dataset, dataset_type: str, flash_optimum: bool = False
-) -> Optional[Dict[str, float]]:
+) -> Optional[dict[str, float]]:
     """Helper function to evaluate a single dataset safely.
 
     Args:
@@ -61,7 +61,7 @@ def evaluate_dataset(
     return metrics
 
 
-def evaluate(*, cfg: DictDefault, dataset_meta: TrainDatasetMeta) -> Dict[str, float]:
+def evaluate(*, cfg: DictDefault, dataset_meta: TrainDatasetMeta) -> dict[str, float]:
     """
     Evaluate a model on training and validation datasets
 

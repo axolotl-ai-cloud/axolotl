@@ -8,6 +8,7 @@ import click
 
 import axolotl
 from axolotl.cli.args import EvaluateCliArgs, PreprocessCliArgs, TrainerCliArgs
+from axolotl.cli.plugins import setup_plugin_commands
 from axolotl.cli.utils import (
     add_options_from_config,
     add_options_from_dataclass,
@@ -220,6 +221,9 @@ def fetch(directory: str, dest: Optional[str]) -> None:
         dest: Optional destination directory.
     """
     fetch_from_github(f"{directory}/", dest)
+
+
+setup_plugin_commands(cli)
 
 
 def main():

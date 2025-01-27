@@ -812,6 +812,7 @@ class ModelLoader:
 
             if self.cfg.is_multimodal:
                 self.model_config.text_config = self.text_model_config
+
             self.model = self.AutoModelLoader.from_pretrained(
                 self.base_model,
                 config=self.model_config,
