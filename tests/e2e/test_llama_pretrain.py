@@ -13,7 +13,7 @@ from axolotl.train import train
 from axolotl.utils.config import normalize_config
 from axolotl.utils.dict import DictDefault
 
-from .utils import check_model_output_exists
+from .utils import check_model_output_exists, check_tensorboard
 
 LOG = logging.getLogger("axolotl.tests.e2e")
 os.environ["WANDB_DISABLED"] = "true"
@@ -28,19 +28,25 @@ class TestPretrainLlama:
         "sample_packing",
         [True, False],
     )
-    def test_pretrain(self, temp_dir, sample_packing):
+    @pytest.mark.parametrize(
+        "pretrain_multipack_attn",
+        [True, False],
+    )
+    def test_pretrain(self, temp_dir, sample_packing, pretrain_multipack_attn):
+        if not sample_packing and pretrain_multipack_attn:
+            return
+
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "JackFram/llama-68m",
-                "tokenizer_type": "LlamaTokenizer",
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
                 "flash_attention": True,
                 "sequence_len": 1024,
                 "sample_packing": sample_packing,
+                "pretrain_multipack_attn": pretrain_multipack_attn,
+                "dataset_processes": 1,
                 "special_tokens": {
-                    "unk_token": "<unk>",
-                    "bos_token": "<s>",
-                    "eos_token": "</s>",
+                    "pad_token": "<|endoftext|>",
                 },
                 "pretraining_dataset": [
                     {
@@ -51,7 +57,7 @@ class TestPretrainLlama:
                 ],
                 "max_steps": 5,
                 "num_epochs": 1,
-                "micro_batch_size": 1,
+                "micro_batch_size": 2,
                 "gradient_accumulation_steps": 1,
                 "val_set_size": 0.0,
                 "output_dir": temp_dir,
@@ -60,6 +66,7 @@ class TestPretrainLlama:
                 "lr_scheduler": "cosine",
                 "save_safetensors": True,
                 "bf16": "auto",
+                "use_tensorboard": True,
             }
         )
         normalize_config(cfg)
@@ -68,3 +75,12 @@ class TestPretrainLlama:
 
         train(cfg=cfg, dataset_meta=dataset_meta)
         check_model_output_exists(temp_dir, cfg)
+        loss_threshold = 3.5
+        if sample_packing and not pretrain_multipack_attn:
+            loss_threshold = 6.5
+        check_tensorboard(
+            temp_dir + "/runs",
+            "train/train_loss",
+            loss_threshold,
+            "Train Loss is too high",
+        )
