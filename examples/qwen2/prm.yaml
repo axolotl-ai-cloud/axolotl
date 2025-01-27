@@ -15,6 +15,9 @@ chat_template:
 datasets:
   - path: trl-lib/math_shepherd
     type: stepwise_supervised
+    step_separator: "\n"
+    max_completion_length:
+    train_on_last_step_only: false
 
 val_set_size: 0.2
 output_dir: ./outputs/out
