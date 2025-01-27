@@ -41,6 +41,7 @@ from transformers import (  # noqa: F401
     PreTrainedModel,
     PreTrainedTokenizerBase,
     ProcessorMixin,
+    Qwen2VLForConditionalGeneration,
 )
 from transformers.integrations.deepspeed import (
     HfTrainerDeepSpeedConfig,
@@ -570,6 +571,10 @@ class ModelLoader:
             elif self.model_config.model_type == "mllama":
                 self.AutoModelLoader = (  # pylint: disable=invalid-name
                     MllamaForConditionalGeneration
+                )
+            elif self.model_config.model_type == "qwen2_vl":
+                self.AutoModelLoader = (  # pylint: disable=invalid-name
+                    Qwen2VLForConditionalGeneration
                 )
             else:
                 self.AutoModelLoader = (
