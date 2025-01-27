@@ -1,0 +1,5 @@
+# validate_config { #axolotl.validate_config }
+
+```python
+validate_config(cfg, capabilities=None, env_capabilities=None)
+```

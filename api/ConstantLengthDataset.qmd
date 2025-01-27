@@ -1,0 +1,11 @@
+# ConstantLengthDataset { #axolotl.ConstantLengthDataset }
+
+```python
+ConstantLengthDataset(self, tokenizer, datasets, seq_length=2048)
+```
+
+Iterable dataset that returns constant length chunks of tokens from stream of text files.
+    Args:
+        tokenizer (Tokenizer): The processor used for processing the data.
+        dataset (dataset.Dataset): Dataset with text files.
+        seq_length (int): Length of token sequences to return.

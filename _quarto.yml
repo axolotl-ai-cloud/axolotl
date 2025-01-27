@@ -1,9 +1,6 @@
 project:
   type: website
 
-metadata-files:
-  - _sidebar.yml
-
 website:
   title: "Axolotl"
   description: "Fine-tuning"
@@ -22,31 +19,33 @@ website:
       href: https://discord.gg/7m9sfhzaf3
 
   sidebar:
-      pinned: true
-      collapse-level: 2
-      style: docked
-      contents:
-        - text: Home
-          href: index.qmd
-        - section: "How-To Guides"
-          contents:
-          # TODO Edit folder structure after we have more docs.
-            - docs/debugging.qmd
-            - docs/multipack.qmd
-            - docs/fsdp_qlora.qmd
-            - docs/input_output.qmd
-            - docs/rlhf.qmd
-            - docs/nccl.qmd
-            - docs/mac.qmd
-            - docs/multi-node.qmd
-            - docs/unsloth.qmd
-            - docs/amd_hpc.qmd
-        - section: "Dataset Formats"
-          contents: docs/dataset-formats/*
-        - section: "Reference"
-          contents:
-            - docs/config.qmd
-        - docs/faq.qmd
+    pinned: true
+    collapse-level: 2
+    style: docked
+    contents:
+      - text: Home
+        href: index.qmd
+      - section: "How-To Guides"
+        contents:
+          - docs/debugging.qmd
+          - docs/multipack.qmd
+          - docs/fsdp_qlora.qmd
+          - docs/input_output.qmd
+          - docs/rlhf.qmd
+          - docs/nccl.qmd
+          - docs/mac.qmd
+          - docs/multi-node.qmd
+          - docs/unsloth.qmd
+          - docs/amd_hpc.qmd
+      - section: "Dataset Formats"
+        contents: docs/dataset-formats/*
+      - section: "Reference"
+        contents:
+          - docs/config.qmd
+      - section: "API Reference"
+        contents: "{{ api_contents }}"
+      - text: "FAQ"
+        href: docs/faq.qmd
 
 format:
   html:
@@ -56,14 +55,11 @@ format:
 
 quartodoc:
   package: axolotl
-
-  sidebar: _sidebar.yml
-
+  parser: google
+  dir: api
   sections:
-    - title: Some functions
-      desc: Functions to inspect docstrings.
-      contents:
-        # the functions being documented in the package.
-        # you can refer to anything: class methods, modules, etc..
-        - get_object
-        - preview
+    - title: Core API
+      desc: Core functionality of Axolotl
+
+metadata-files:
+  - api/_sidebar.yml

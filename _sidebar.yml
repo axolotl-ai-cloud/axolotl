@@ -1,0 +1,17 @@
+website:
+  sidebar:
+  - collapse-level: 2
+    contents:
+    - href: introduction.qmd
+      text: Introduction
+    - contents:
+      - reference/index.qmd
+      - contents: []
+        section: axolotl
+      section: Reference
+    - href: basics-summary.qmd
+      text: Basics
+    id: reference
+    search: true
+    style: docked
+  - id: dummy-sidebar

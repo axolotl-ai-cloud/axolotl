@@ -1,0 +1,28 @@
+# choose_config { #axolotl.choose_config }
+
+```python
+choose_config(path)
+```
+
+Helper method for choosing a `axolotl` config YAML file (considering only files
+ending with `.yml` or `.yaml`). If more than one config file exists in the passed
+`path`, the user is prompted to choose one.
+
+## Parameters {.doc-section .doc-section-parameters}
+
+| Name   | Type   | Description                                   | Default    |
+|--------|--------|-----------------------------------------------|------------|
+| path   | Path   | Directory in which config file(s) are stored. | _required_ |
+
+## Returns {.doc-section .doc-section-returns}
+
+| Name   | Type   | Description                                                                      |
+|--------|--------|----------------------------------------------------------------------------------|
+|        | str    | Path to either (1) the sole YAML file, or (2) if more than one YAML files exist, |
+|        | str    | the user-selected YAML file.                                                     |
+
+## Raises {.doc-section .doc-section-raises}
+
+| Name   | Type       | Description                                     |
+|--------|------------|-------------------------------------------------|
+|        | ValueError | If no YAML files are found in the given `path`. |

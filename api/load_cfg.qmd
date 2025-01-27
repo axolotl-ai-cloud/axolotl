@@ -1,0 +1,21 @@
+# load_cfg { #axolotl.load_cfg }
+
+```python
+load_cfg(config=Path('examples/'), **kwargs)
+```
+
+Loads the `axolotl` configuration stored at `config`, validates it, and performs
+various setup.
+
+## Parameters {.doc-section .doc-section-parameters}
+
+| Name   | Type               | Description                                                  | Default             |
+|--------|--------------------|--------------------------------------------------------------|---------------------|
+| config | Union\[str, Path\] | Path (local or remote) to `axolotl` config YAML file.        | `Path('examples/')` |
+| kwargs |                    | Additional keyword arguments to override config file values. | `{}`                |
+
+## Returns {.doc-section .doc-section-returns}
+
+| Name   | Type        | Description                                         |
+|--------|-------------|-----------------------------------------------------|
+|        | DictDefault | `DictDefault` mapping configuration keys to values. |

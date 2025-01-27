@@ -1,0 +1,5 @@
+# Function reference {.doc .doc-index}
+
+## Core API
+
+Core functionality of Axolotl

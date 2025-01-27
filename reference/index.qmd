@@ -1,0 +1,3 @@
+# API Reference {.doc .doc-index}
+
+## Core API
