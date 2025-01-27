@@ -1,6 +1,9 @@
 project:
   type: website
 
+metadata-files:
+  - _sidebar.yml
+
 website:
   title: "Axolotl"
   description: "Fine-tuning"
@@ -45,9 +48,22 @@ website:
             - docs/config.qmd
         - docs/faq.qmd
 
-
 format:
   html:
     theme: materia
     css: styles.css
     toc: true
+
+quartodoc:
+  package: axolotl
+
+  sidebar: _sidebar.yml
+
+  sections:
+    - title: Some functions
+      desc: Functions to inspect docstrings.
+      contents:
+        # the functions being documented in the package.
+        # you can refer to anything: class methods, modules, etc..
+        - get_object
+        - preview
