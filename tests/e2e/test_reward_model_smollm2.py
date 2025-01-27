@@ -33,7 +33,7 @@ class TestRewardModelLoraSmolLM2(unittest.TestCase):
                 "num_labels": 1,
                 "chat_template": "alpaca",
                 "reward_model": True,
-                "sequence_len": 1024,
+                "sequence_len": 2048,
                 "pad_to_sequence_len": True,
                 "adapter": "lora",
                 "lora_r": 8,
