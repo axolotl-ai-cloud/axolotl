@@ -4,18 +4,17 @@ E2E tests for lora llama
 
 import logging
 import os
-from pathlib import Path
 
 import pytest
 from transformers.utils import is_torch_bf16_gpu_available
 
-from axolotl.cli import load_datasets
-from axolotl.common.cli import TrainerCliArgs
+from axolotl.cli.args import TrainerCliArgs
+from axolotl.common.datasets import load_datasets
 from axolotl.train import train
 from axolotl.utils.config import normalize_config
 from axolotl.utils.dict import DictDefault
 
-from ..utils import check_tensorboard
+from ..utils import check_model_output_exists, check_tensorboard
 
 LOG = logging.getLogger("axolotl.tests.e2e")
 os.environ["WANDB_DISABLED"] = "true"
@@ -81,8 +80,8 @@ class TestFAXentropyLlama:
         cli_args = TrainerCliArgs()
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
-        train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-        assert (Path(temp_dir) / "adapter_model.bin").exists()
+        train(cfg=cfg, dataset_meta=dataset_meta)
+        check_model_output_exists(temp_dir, cfg)
 
         check_tensorboard(
             temp_dir + "/runs", "train/train_loss", 1.5, "Train Loss is too high"

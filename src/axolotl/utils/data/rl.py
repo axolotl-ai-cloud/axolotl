@@ -115,7 +115,7 @@ def drop_long_rl_seq(
     raise ValueError("Unknown RL type")
 
 
-def load_prepare_dpo_datasets(cfg):
+def load_prepare_preference_datasets(cfg):
     def load_split(dataset_cfgs, _cfg):
         split_datasets: List[Any] = []
         for i, ds_cfg in enumerate(dataset_cfgs):

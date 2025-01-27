@@ -387,22 +387,18 @@ class ModelLoader:
         plugin_manager = PluginManager.get_instance()
         plugin_manager.pre_model_load(self.cfg)
 
+        if self.cfg.adapter:
+            from axolotl.monkeypatch.transformers_fa_utils import (
+                patch_fa_peft_integration,
+            )
+
+            patch_fa_peft_integration()
+
         if self.cfg.gradient_checkpointing == "unsloth":
             transformers.modeling_utils.checkpoint = hf_grad_checkpoint_unsloth_wrapper
 
         if self.cfg.flash_attention:
             self.patch_attention()
-
-        if self.cfg.model_config_type == "llama":
-            from axolotl.monkeypatch.trainer_grad_accum import (
-                patch_flash_attention_forward,
-                patch_forward_for_ga,
-                patch_training_step_for_ga,
-            )
-
-            patch_flash_attention_forward()
-            patch_forward_for_ga()
-            patch_training_step_for_ga()
 
         if self.cfg.sample_packing and self.cfg.s2_attention:
             raise ValueError(
@@ -1064,7 +1060,7 @@ class ModelLoader:
         )
         if (
             hasattr(self.model, "get_input_embeddings")
-            and self.model.get_input_embeddings().num_embeddings < embeddings_len
+            and self.model.get_input_embeddings().num_embeddings != embeddings_len
         ):
             resize_kwargs = {}
             if self.cfg.mean_resizing_embeddings is not None and not (
