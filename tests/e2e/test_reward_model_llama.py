@@ -12,7 +12,7 @@ from axolotl.train import train
 from axolotl.utils.config import normalize_config
 from axolotl.utils.dict import DictDefault
 
-from .utils import check_model_output_exists, with_temp_dir
+from .utils import check_model_output_exists, check_tensorboard, with_temp_dir
 
 LOG = logging.getLogger("axolotl.tests.e2e")
 os.environ["WANDB_DISABLED"] = "true"
@@ -24,14 +24,13 @@ class TestRewardModelLoraLlama(unittest.TestCase):
     """
 
     @with_temp_dir
-    def test_rm_fft(self, temp_dir):
+    def test_rm_lora(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "JackFram/llama-68m",
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
                 "model_type": "AutoModelForSequenceClassification",
                 "num_labels": 1,
-                "tokenizer_type": "LlamaTokenizer",
                 "chat_template": "alpaca",
                 "reward_model": True,
                 "sequence_len": 1024,
@@ -64,6 +63,7 @@ class TestRewardModelLoraLlama(unittest.TestCase):
                 "lr_scheduler": "cosine",
                 "gradient_checkpointing": True,
                 "warmup_ratio": 0.1,
+                "use_tensorboard": True,
             }
         )
         normalize_config(cfg)
@@ -71,4 +71,7 @@ class TestRewardModelLoraLlama(unittest.TestCase):
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
         train(cfg=cfg, dataset_meta=dataset_meta)
+        check_tensorboard(
+            temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss is too high"
+        )
         check_model_output_exists(temp_dir, cfg)

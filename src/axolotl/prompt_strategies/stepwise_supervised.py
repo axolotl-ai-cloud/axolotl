@@ -103,12 +103,14 @@ class StepwiseSupervisedPromptTokenizingStrategy:
 
 
 def load(
-    tokenizer: PreTrainedTokenizer, cfg: DictDefault, config_dataset: Dict
+    tokenizer: PreTrainedTokenizer,
+    cfg: DictDefault,
+    ds_cfg: DictDefault,
 ) -> StepwiseSupervisedPromptTokenizingStrategy:
     return StepwiseSupervisedPromptTokenizingStrategy(
         tokenizer,
         cfg.sequence_len,
-        config_dataset.step_separator,
-        config_dataset.max_completion_length,
-        config_dataset.train_on_last_step_only,
+        step_separator=ds_cfg.get("step_separator", "\n"),
+        max_completion_length=ds_cfg.max_completion_length,
+        train_on_last_step_only=ds_cfg.get("train_on_last_step_only", False),
     )

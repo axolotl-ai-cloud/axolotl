@@ -471,12 +471,9 @@ def get_dataset_wrapper(
         )
     elif config_dataset.type.startswith("stepwise_supervised"):
         dataset_prompter = UnsupportedPrompter()
-        ds_strategy = load(
-            config_dataset.type, tokenizer, cfg, config_dataset, processor=processor
-        )
+        ds_strategy = load(config_dataset.type, tokenizer, cfg, config_dataset)
         # we need to explicitly cast boolean labels to int
         # for compatibility with how trl's PRMTrainer works
-
         dataset = dataset.cast_column("labels", Sequence(Value("int64")))
         dataset_wrapper = TokenizedPromptDataset(
             ds_strategy,

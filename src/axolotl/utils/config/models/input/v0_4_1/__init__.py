@@ -228,6 +228,18 @@ class DPODataset(BaseModel):
     revision: Optional[str] = None
 
 
+class StepwiseSupervisedDataset(BaseModel):
+    """Stepwise supervised dataset configuration subset"""
+
+    path: Optional[str] = None
+    split: Optional[str] = None
+    data_files: Optional[List[str]] = None
+    revision: Optional[str] = None
+    step_separator: Optional[str] = None
+    max_completion_length: Optional[int] = None
+    train_on_last_step_only: Optional[bool] = None
+
+
 class UserDefinedKTOType(BaseModel):
     """User defined typing for KTO"""
 
@@ -623,8 +635,8 @@ class AxolotlInputConfig(
         bool
     ] = None  # whether to use weighting in DPO trainer. If none, default is false in the trainer.
 
-    datasets: Optional[conlist(Union[SFTDataset, DPODataset, KTODataset], min_length=1)] = None  # type: ignore
-    test_datasets: Optional[conlist(Union[SFTDataset, DPODataset, KTODataset], min_length=1)] = None  # type: ignore
+    datasets: Optional[conlist(Union[SFTDataset, DPODataset, KTODataset, StepwiseSupervisedDataset], min_length=1)] = None  # type: ignore
+    test_datasets: Optional[conlist(Union[SFTDataset, DPODataset, KTODataset, StepwiseSupervisedDataset], min_length=1)] = None  # type: ignore
     shuffle_merged_datasets: Optional[bool] = True
     dataset_prepared_path: Optional[str] = None
     dataset_shard_num: Optional[int] = None
