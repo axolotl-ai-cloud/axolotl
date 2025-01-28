@@ -12,7 +12,7 @@ from datasets import Dataset
 from transformers import AutoTokenizer
 
 from axolotl.utils.data import prepare_dataset
-from axolotl.utils.data.rl import load_prepare_dpo_datasets
+from axolotl.utils.data.rl import load_prepare_preference_datasets
 from axolotl.utils.data.utils import deduplicate_and_log_datasets
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.models import load_processor, load_tokenizer
@@ -236,7 +236,7 @@ class TestDeduplicateRLDataset(unittest.TestCase):
         """Verify that loading with deduplication removes duplicates."""
 
         # Load the dataset using the deduplication setting
-        train_dataset, _ = load_prepare_dpo_datasets(self.cfg)
+        train_dataset, _ = load_prepare_preference_datasets(self.cfg)
 
         # Verify that the dataset has been deduplicated
         assert len(train_dataset) == 1800, "Dataset was not properly deduplicated"
@@ -245,7 +245,7 @@ class TestDeduplicateRLDataset(unittest.TestCase):
         """Verify that loading without deduplication retains duplicates."""
         self.cfg.dataset_exact_deduplication = False
         # Load the dataset without deduplication
-        train_dataset, _ = load_prepare_dpo_datasets(self.cfg)
+        train_dataset, _ = load_prepare_preference_datasets(self.cfg)
 
         # Verify that the dataset retains duplicates
         assert (

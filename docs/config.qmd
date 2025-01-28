@@ -244,6 +244,8 @@ total_num_tokens:
 sample_packing_group_size: 100000
 # The number of samples which can be packed into one sequence. Increase if using a large sequence_len with many short samples.
 sample_packing_bin_size: 200
+# whether to concatenate samples during pretraining
+pretraining_sample_concatenation:
 
 # Use batch flattening for speedups when not using sample_packing
 batch_flattening:
@@ -358,10 +360,11 @@ warmup_ratio: 0.05  # cannot use with warmup_steps
 learning_rate: 0.00003
 lr_quadratic_warmup:
 logging_steps:
-eval_steps: # Leave empty to eval at each epoch, integers for every N steps. decimal for fraction of total steps
+eval_steps: # Leave empty to eval at each epoch, integer for every N steps. float for fraction of total steps
 evals_per_epoch: # number of times per epoch to run evals, mutually exclusive with eval_steps
-save_strategy: # Set to `"no"` to skip checkpoint saves
-save_steps: # Leave empty to save at each epoch
+eval_strategy: # Set to `"no"` to skip evaluation, `"epoch"` at end of each epoch, leave empty to infer from `eval_steps`.
+save_strategy: # Set to `"no"` to skip checkpoint saves, `"epoch"` at end of each epoch, `"best"` when better result is achieved, leave empty to infer from `save_steps`.
+save_steps: # Leave empty to save at each epoch, integer for every N steps. float for fraction of total steps
 saves_per_epoch: # number of times per epoch to save a checkpoint, mutually exclusive with save_steps
 save_total_limit: # Checkpoints saved at a time
 # Maximum number of iterations to train for. It precedes num_epochs which means that

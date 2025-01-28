@@ -147,6 +147,14 @@ class UserDefinedPrompterType(BaseModel):
     field: Optional[str] = None
 
 
+class LrGroup(BaseModel):
+    """Custom learning rate group configuration"""
+
+    name: str
+    modules: List[str]
+    lr: float
+
+
 class SFTDataset(BaseModel):
     """SFT configuration subset"""
 
@@ -475,6 +483,7 @@ class HyperparametersConfig(BaseModel):
     cosine_min_lr_ratio: Optional[float] = None
     cosine_constant_lr_ratio: Optional[float] = None
     lr_div_factor: Optional[float] = None
+    lr_groups: Optional[List[LrGroup]] = None
 
     adam_epsilon: Optional[float] = None
     adam_beta1: Optional[float] = None
@@ -731,6 +740,12 @@ class AxolotlInputConfig(
     pad_to_sequence_len: Optional[bool] = None
     curriculum_sampling: Optional[bool] = None
     multipack_real_batches: Optional[bool] = None
+    pretraining_sample_concatenation: Optional[bool] = Field(
+        default=None,
+        json_schema_extra={
+            "description": "whether to soft pack/concatenate samples during pretraining",
+        },
+    )
 
     batch_flattening: Optional[Union[Literal["auto"], bool]] = None
 

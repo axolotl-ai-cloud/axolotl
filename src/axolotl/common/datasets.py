@@ -11,7 +11,7 @@ from datasets import Dataset
 import axolotl.monkeypatch.data.batch_dataset_fetcher  # pylint: disable=unused-import  # noqa: F401
 from axolotl.cli.args import PreprocessCliArgs, TrainerCliArgs
 from axolotl.utils.data import prepare_dataset
-from axolotl.utils.data.rl import load_prepare_dpo_datasets
+from axolotl.utils.data.rl import load_prepare_preference_datasets
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.models import load_processor, load_tokenizer
 from axolotl.utils.tokenization import check_dataset_labels
@@ -103,9 +103,9 @@ def load_preference_datasets(
     cli_args: Union[PreprocessCliArgs, TrainerCliArgs],
 ) -> TrainDatasetMeta:
     """
-    Loads one or more training or evaluation datasets for DPO training, calling
-    `axolotl.utils.data.rl.load_prepare_dpo_datasets`. Optionally, logs out debug
-    information.
+    Loads one or more training or evaluation datasets for RL training using paired
+    preference data, calling `axolotl.utils.data.rl.load_prepare_preference_datasets`.
+    Optionally, logs out debug information.
 
     Args:
         cfg: Dictionary mapping `axolotl` config keys to values.
@@ -115,7 +115,7 @@ def load_preference_datasets(
         Dataclass with fields for training and evaluation datasets and the computed
         `total_num_steps`.
     """
-    train_dataset, eval_dataset = load_prepare_dpo_datasets(cfg)
+    train_dataset, eval_dataset = load_prepare_preference_datasets(cfg)
     total_num_steps = int(
         math.ceil(len(train_dataset) * cfg.num_epochs / cfg.batch_size)
     )

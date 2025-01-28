@@ -63,6 +63,7 @@ class TestMultiGPULlama:
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
                 "use_tensorboard": True,
+                "bf16": True,
             }
         )
 
@@ -125,6 +126,7 @@ class TestMultiGPULlama:
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
                 "use_tensorboard": True,
+                "bf16": True,
             }
         )
 
@@ -197,6 +199,7 @@ class TestMultiGPULlama:
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
                 "use_tensorboard": True,
+                "bf16": True,
             }
         )
 
@@ -217,8 +220,12 @@ class TestMultiGPULlama:
             ]
         )
 
+        loss_threshold = 2.3
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss is too high"
+            temp_dir + "/runs",
+            "train/train_loss",
+            loss_threshold,
+            "Train Loss is too high",
         )
 
     def test_dpo_qlora_ddp(self, temp_dir):
@@ -269,6 +276,7 @@ class TestMultiGPULlama:
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
                 "use_tensorboard": True,
+                "bf16": True,
             }
         )
 
@@ -289,8 +297,12 @@ class TestMultiGPULlama:
             ]
         )
 
+        loss_threshold = 2.3
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss is too high"
+            temp_dir + "/runs",
+            "train/train_loss",
+            loss_threshold,
+            "Train Loss is too high",
         )
 
     @pytest.mark.parametrize(

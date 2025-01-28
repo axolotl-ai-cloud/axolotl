@@ -16,7 +16,7 @@ from axolotl.cli.config import load_cfg
 from axolotl.common.datasets import load_datasets, load_preference_datasets
 from axolotl.integrations.base import PluginManager
 from axolotl.train import train
-from axolotl.utils.config import normalize_config
+from axolotl.utils.config import normalize_config, resolve_dtype
 from axolotl.utils.dict import DictDefault
 
 LOG = logging.getLogger(__name__)
@@ -80,7 +80,7 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs) -> None:
             ),
             run_config=RunConfig(
                 name=parsed_cfg.ray_run_name,
-                storage_path=Path("./saves").absolute().as_posix(),
+                storage_path=Path(parsed_cfg.output_dir).absolute().as_posix(),
             ),
         )
         return trainer.fit()
@@ -92,6 +92,9 @@ def ray_train_func(kwargs: dict):
     # also renormalize the config now that TorchTrainer has spawned distributed workers
     cfg = DictDefault(kwargs["cfg"])
     normalize_config(cfg)
+
+    # now that we are on the worker node, we can check `is_torch_bf16_gpu_available` to resolve dtype
+    resolve_dtype(cfg)
 
     # ray serializing objects gets rid of frozen attribute - HF expects dict not DefaultDict
     if cfg.deepspeed:

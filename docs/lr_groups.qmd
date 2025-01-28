@@ -1,0 +1,29 @@
+---
+title: Learning Rate Groups
+description: "Setting different learning rates by module name"
+---
+
+## Background
+
+Inspired by LoRA+, Axolotl allows practitioners to specify separate learning rates for each module or groups of
+modules in a model.
+
+## Example
+
+```yaml
+lr_groups:
+  - name: o_proj
+    modules:
+      - self_attn.o_proj.weight
+    lr: 1e-6
+  - name: q_proj
+    modules:
+      - model.layers.2.self_attn.q_proj.weight
+    lr: 1e-5
+
+learning_rate: 2e-5
+```
+
+In this example, we have a default learning rate of 2e-5 across the entire model, but we have a separate learning rate
+of 1e-6 for all the self attention `o_proj` modules across all layers, and a learning are of 1e-5 to the 3rd layer's
+self attention `q_proj` module.
