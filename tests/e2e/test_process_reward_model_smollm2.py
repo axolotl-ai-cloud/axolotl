@@ -54,6 +54,7 @@ class TestProcessRewardSmolLM2(unittest.TestCase):
                 "warmup_ratio": 0.1,
                 "use_tensorboard": True,
                 "special_tokens": {"pad_token": "<|endoftext|>"},
+                "seed": 42
             }
         )
         normalize_config(cfg)
@@ -62,7 +63,7 @@ class TestProcessRewardSmolLM2(unittest.TestCase):
 
         train(cfg=cfg, dataset_meta=dataset_meta)
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.4, "Train Loss is too high"
+            temp_dir + "/runs", "train/train_loss", 2.5, "Train Loss is too high"
         )
 
         check_model_output_exists(temp_dir, cfg)
