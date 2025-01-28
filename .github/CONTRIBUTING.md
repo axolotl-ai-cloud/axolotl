@@ -15,7 +15,7 @@ First of all, thank you for your interest in contributing to axolotl! We appreci
   - [Commit Messages](#commit-messages)
 - [Additional Resources](#additional-resources)
 
-## Code of Conductcode
+## Code of Conduct
 
 All contributors are expected to adhere to our [Code of Conduct](CODE_OF_CONDUCT.md). Please read it before participating in the axolotl community.
 
