@@ -528,7 +528,7 @@ class ModelOutputConfig(BaseModel):
     output_dir: str = Field(default="./model-out")
     hub_model_id: Optional[str] = None
     hub_strategy: Optional[str] = None
-    save_safetensors: Optional[bool] = None
+    save_safetensors: Optional[bool] = True
 
 
 class MLFlowConfig(BaseModel):

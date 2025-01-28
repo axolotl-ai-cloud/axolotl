@@ -92,7 +92,7 @@ def check_model_output_exists(temp_dir: str, cfg: DictDefault) -> None:
     checks based on adapter or not and if safetensors saves are enabled or not
     """
 
-    if cfg.save_safetensors:
+    if cfg.save_safetensors is not False:
         if not cfg.adapter:
             assert (Path(temp_dir) / "model.safetensors").exists()
         else:
