@@ -1,15 +1,16 @@
 """
 Simple end-to-end test for Liger integration
 """
-from pathlib import Path
 
 from e2e.utils import require_torch_2_4_1
 
-from axolotl.cli import load_datasets
-from axolotl.common.cli import TrainerCliArgs
+from axolotl.cli.args import TrainerCliArgs
+from axolotl.common.datasets import load_datasets
 from axolotl.train import train
 from axolotl.utils.config import normalize_config, prepare_plugins
 from axolotl.utils.dict import DictDefault
+
+from ..utils import check_model_output_exists
 
 
 class LigerIntegrationTestCase:
@@ -59,8 +60,8 @@ class LigerIntegrationTestCase:
         cli_args = TrainerCliArgs()
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
-        train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-        assert (Path(temp_dir) / "model.safetensors").exists()
+        train(cfg=cfg, dataset_meta=dataset_meta)
+        check_model_output_exists(temp_dir, cfg)
 
     @require_torch_2_4_1
     def test_llama_w_flce(self, temp_dir):
@@ -104,5 +105,5 @@ class LigerIntegrationTestCase:
         cli_args = TrainerCliArgs()
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
-        train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-        assert (Path(temp_dir) / "model.safetensors").exists()
+        train(cfg=cfg, dataset_meta=dataset_meta)
+        check_model_output_exists(temp_dir, cfg)

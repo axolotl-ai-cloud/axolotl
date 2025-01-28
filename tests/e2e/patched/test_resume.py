@@ -6,17 +6,16 @@ import logging
 import os
 import re
 import subprocess
-from pathlib import Path
 
 from transformers.utils import is_torch_bf16_gpu_available
 
-from axolotl.cli import load_datasets
-from axolotl.common.cli import TrainerCliArgs
+from axolotl.cli.args import TrainerCliArgs
+from axolotl.common.datasets import load_datasets
 from axolotl.train import train
 from axolotl.utils.config import normalize_config
 from axolotl.utils.dict import DictDefault
 
-from ..utils import most_recent_subdir
+from ..utils import check_model_output_exists, most_recent_subdir
 
 LOG = logging.getLogger("axolotl.tests.e2e")
 os.environ["WANDB_DISABLED"] = "true"
@@ -72,7 +71,7 @@ class TestResumeLlama:
         cli_args = TrainerCliArgs()
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
-        train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
+        train(cfg=cfg, dataset_meta=dataset_meta)
 
         resume_cfg = cfg | DictDefault(
             {
@@ -82,8 +81,8 @@ class TestResumeLlama:
         normalize_config(resume_cfg)
         cli_args = TrainerCliArgs()
 
-        train(cfg=resume_cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-        assert (Path(temp_dir) / "adapter_model.bin").exists()
+        train(cfg=resume_cfg, dataset_meta=dataset_meta)
+        check_model_output_exists(temp_dir, cfg)
 
         tb_log_path_1 = most_recent_subdir(temp_dir + "/runs")
         cmd = f"tensorboard --inspect  --logdir {tb_log_path_1}"

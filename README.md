@@ -519,8 +519,8 @@ See [examples](examples) for quick start. It is recommended to duplicate and mod
       train_on_split: validation
 
       # loading from s3 or gcs
-      # s3 creds will be loaded from the system default and gcs only supports public access
-    - path: s3://path_to_ds # Accepts folder with arrow/parquet or file path like above. Supports s3, gcs.
+      # s3 creds will be loaded from the system default / gcs will attempt to load from gcloud creds, google metadata service, or anon
+    - path: s3://path_to_ds # Accepts folder with arrow/parquet or file path like above
       ...
 
       # Loading Data From a Public URL

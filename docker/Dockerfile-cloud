@@ -20,7 +20,8 @@ RUN apt install --yes --no-install-recommends openssh-server tmux && \
     printf "\n[[ -z \"\$TMUX\"  ]] && { tmux attach-session -t ssh_tmux || tmux new-session -s ssh_tmux; exit; }\n" >> ~/.bashrc && \
     printf "[ ! -z \"\$TERM\" -a -r /etc/motd ] && cat /etc/motd\n" >> ~/.bashrc && \
     chmod +x /workspace/axolotl/scripts/cloud-entrypoint.sh && \
-    chmod +x /root/cloud-entrypoint.sh
+    chmod +x /root/cloud-entrypoint.sh && \
+    echo 'set-option -g history-limit 5000' >> ~/.tmux.conf
 
 ENTRYPOINT ["/root/cloud-entrypoint.sh"]
 CMD ["sleep", "infinity"]

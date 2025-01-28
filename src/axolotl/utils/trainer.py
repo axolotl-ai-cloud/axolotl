@@ -312,19 +312,22 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
 
 
 def process_pretraining_datasets_for_packing(
-    train_dataset, sequence_len, skip_position_ids=True
+    train_dataset, sequence_len, skip_position_ids=True, drop_attention_mask=False
 ):
     drop_long = partial(drop_long_seq, sequence_len=sequence_len)
 
     train_dataset = train_dataset.filter(
         drop_long,
         desc="Dropping Long Sequences",
+        load_from_cache_file=False,
     )
-    if skip_position_ids:
+    if not skip_position_ids:
         train_dataset = train_dataset.map(
             add_position_ids,
             desc="Add position_id column (Pretraining Sample Packing)",
         )
+    if drop_attention_mask:
+        train_dataset = train_dataset.remove_columns("attention_mask")
 
     return train_dataset
 
