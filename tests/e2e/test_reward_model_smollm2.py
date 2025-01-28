@@ -18,7 +18,7 @@ LOG = logging.getLogger("axolotl.tests.e2e")
 os.environ["WANDB_DISABLED"] = "true"
 
 
-class TestRewardModelLoraLlama(unittest.TestCase):
+class TestRewardModelLoraSmolLM2(unittest.TestCase):
     """
     Test case for Llama reward models using LoRA
     """
@@ -42,16 +42,16 @@ class TestRewardModelLoraLlama(unittest.TestCase):
                 "lora_target_linear": True,
                 "val_set_size": 0.0,
                 "special_tokens": {
-                    "unk_token": "<unk>",
-                    "bos_token": "<s>",
-                    "eos_token": "</s>",
+                    "pad_token": "<|endoftext|>",
                 },
                 "datasets": [
                     {
                         "path": "argilla/distilabel-intel-orca-dpo-pairs",
                         "type": "bradley_terry.chat_template",
+                        "split": "train[:10%]",
                     },
                 ],
+                "lora_modules_to_save": ["embed_tokens", "lm_head"],
                 "remove_unused_columns": False,
                 "max_steps": 10,
                 "num_epochs": 1,
@@ -59,7 +59,7 @@ class TestRewardModelLoraLlama(unittest.TestCase):
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
-                "optimizer": "adamw_bnb_8bit",
+                "optimizer": "adamw_torch",
                 "lr_scheduler": "cosine",
                 "gradient_checkpointing": True,
                 "warmup_ratio": 0.1,
@@ -72,6 +72,6 @@ class TestRewardModelLoraLlama(unittest.TestCase):
 
         train(cfg=cfg, dataset_meta=dataset_meta)
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss is too high"
+            temp_dir + "/runs", "train/train_loss", 1.5, "Train Loss is too high"
         )
         check_model_output_exists(temp_dir, cfg)
