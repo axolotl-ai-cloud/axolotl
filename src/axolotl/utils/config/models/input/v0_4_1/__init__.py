@@ -611,7 +611,7 @@ class RayConfig(BaseModel):
             "help": "The number of workers for Ray training. Default is 1 worker."
         },
     )
-    resources_per_worker: Union[dict, str] = Field(
+    resources_per_worker: dict = Field(
         default_factory=lambda: {"GPU": 1},
         metadata={
             "help": "The resources per worker for Ray training. Default is to use 1 GPU per worker."
