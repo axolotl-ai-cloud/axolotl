@@ -80,7 +80,7 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs) -> None:
             ),
             run_config=RunConfig(
                 name=parsed_cfg.ray_run_name,
-                storage_path=Path(cfg.output_dir).absolute().as_posix(),
+                storage_path=Path(parsed_cfg.output_dir).absolute().as_posix(),
             ),
         )
         return trainer.fit()
