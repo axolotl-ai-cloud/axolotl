@@ -54,7 +54,7 @@ class TestProcessRewardSmolLM2(unittest.TestCase):
                 "warmup_ratio": 0.1,
                 "use_tensorboard": True,
                 "special_tokens": {"pad_token": "<|endoftext|>"},
-                "seed": 42
+                "seed": 42,
             }
         )
         normalize_config(cfg)
