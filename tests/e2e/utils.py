@@ -42,18 +42,6 @@ def most_recent_subdir(path):
     return subdir
 
 
-def require_torch_2_3_1(test_case):
-    """
-    Decorator marking a test that requires torch >= 2.3.1
-    """
-
-    def is_min_2_3_1():
-        torch_version = version.parse(torch.__version__)
-        return torch_version >= version.parse("2.3.1")
-
-    return unittest.skipUnless(is_min_2_3_1(), "test requires torch>=2.3.1")(test_case)
-
-
 def require_torch_2_4_1(test_case):
     """
     Decorator marking a test that requires torch >= 2.5.1

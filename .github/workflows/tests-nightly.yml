@@ -26,7 +26,7 @@ jobs:
       max-parallel: 2
       matrix:
         python_version: ["3.10", "3.11"]
-        pytorch_version: ["2.3.1", "2.4.1", "2.5.1"]
+        pytorch_version: ["2.4.1", "2.5.1"]
         exclude:
           - python_version: "3.10"
             pytorch_version: "2.4.1"
@@ -98,13 +98,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - cuda: 121
-            cuda_version: 12.1.1
-            python_version: "3.10"
-            pytorch: 2.3.1
-            num_gpus: 1
-            axolotl_extras: mamba-ssm
-            nightly_build: "true"
           - cuda: 124
             cuda_version: 12.4.1
             python_version: "3.11"
