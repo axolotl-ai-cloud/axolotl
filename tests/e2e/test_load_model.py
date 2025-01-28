@@ -52,7 +52,7 @@ class TestLoadModelUtils:
                 "micro_batch_size": 8,
                 "gradient_accumulation_steps": 1,
                 "learning_rate": 0.00001,
-                "optimizer": "adamw_torch",
+                "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
             }
         )

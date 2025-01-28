@@ -30,7 +30,7 @@ lora_target_linear: true
 gradient_accumulation_steps: 4
 micro_batch_size: 1
 num_epochs: 2
-optimizer: adamw_torch
+optimizer: adamw_torch_fused
 lr_scheduler: cosine
 learning_rate: 0.00001
 

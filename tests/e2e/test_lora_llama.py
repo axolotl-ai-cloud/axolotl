@@ -54,7 +54,7 @@ class TestLoraLlama(unittest.TestCase):
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
-                "optimizer": "adamw_torch",
+                "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
                 "max_steps": 20,
             }
