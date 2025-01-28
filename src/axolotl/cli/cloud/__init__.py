@@ -21,7 +21,7 @@ def load_cloud_cfg(cloud_config: Union[Path, str]) -> DictDefault:
 
 def do_cli_preprocess(
     cloud_config: Union[Path, str],
-    config: Union[Path, str] = Path("examples/"),
+    config: Union[Path, str],
 ) -> None:
     print_axolotl_text_art()
     cloud_cfg = load_cloud_cfg(cloud_config)
@@ -33,7 +33,7 @@ def do_cli_preprocess(
 
 def do_cli_train(
     cloud_config: Union[Path, str],
-    config: Union[Path, str] = Path("examples/"),
+    config: Union[Path, str],
     accelerate: bool = True,
 ) -> None:
     print_axolotl_text_art()
@@ -46,7 +46,7 @@ def do_cli_train(
 
 def do_cli_lm_eval(
     cloud_config: Union[Path, str],
-    config: Union[Path, str] = Path("examples/"),
+    config: Union[Path, str],
 ) -> None:
     print_axolotl_text_art()
     cloud_cfg = load_cloud_cfg(cloud_config)
