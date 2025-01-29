@@ -227,7 +227,6 @@ def merge_lora(config: str, **kwargs) -> None:
 
     Args:
         config: Path to `axolotl` config YAML file.
-        accelerate: Whether to use `accelerate` launcher.
         kwargs: Additional keyword arguments which correspond to CLI args or `axolotl`
             config options.
     """
