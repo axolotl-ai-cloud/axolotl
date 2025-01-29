@@ -67,8 +67,23 @@ def train(config: str, accelerate: bool, **kwargs) -> None:
     # Enable expandable segments for cuda allocation to improve VRAM usage
     set_pytorch_cuda_alloc_conf()
 
+    if "use_ray" in kwargs and kwargs["use_ray"]:
+        accelerate = False
+
     if accelerate:
-        base_cmd = ["accelerate", "launch", "-m", "axolotl.cli.train"]
+        accelerate_args = []
+        if "main_process_port" in kwargs:
+            main_process_port = kwargs.pop("main_process_port", None)
+            accelerate_args.append("--main_process_port")
+            accelerate_args.append(str(main_process_port))
+        if "num_processes" in kwargs:
+            num_processes = kwargs.pop("num_processes", None)
+            accelerate_args.append("--num-processes")
+            accelerate_args.append(str(num_processes))
+
+        base_cmd = ["accelerate", "launch"]
+        base_cmd.extend(accelerate_args)
+        base_cmd.extend(["-m", "axolotl.cli.train"])
         if config:
             base_cmd.append(config)
         cmd = build_command(base_cmd, kwargs)

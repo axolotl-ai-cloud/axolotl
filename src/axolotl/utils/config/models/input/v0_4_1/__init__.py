@@ -607,6 +607,30 @@ class GradioConfig(BaseModel):
     gradio_temperature: Optional[float] = None
 
 
+class RayConfig(BaseModel):
+    """Ray launcher configuration subset"""
+
+    use_ray: bool = Field(default=False)
+    ray_run_name: Optional[str] = Field(
+        default=None,
+        metadata={
+            "help": "The training results will be saved at `saves/ray_run_name`."
+        },
+    )
+    ray_num_workers: int = Field(
+        default=1,
+        metadata={
+            "help": "The number of workers for Ray training. Default is 1 worker."
+        },
+    )
+    resources_per_worker: dict = Field(
+        default_factory=lambda: {"GPU": 1},
+        metadata={
+            "help": "The resources per worker for Ray training. Default is to use 1 GPU per worker."
+        },
+    )
+
+
 # pylint: disable=too-many-public-methods,too-many-ancestors
 class AxolotlInputConfig(
     ModelInputConfig,
@@ -619,6 +643,7 @@ class AxolotlInputConfig(
     CometConfig,
     LISAConfig,
     GradioConfig,
+    RayConfig,
     RemappedParameters,
     DeprecatedParameters,
     BaseModel,
