@@ -116,7 +116,7 @@ class MultipackBatchSampler(BatchSampler):
         lengths: np.ndarray,
         packing_efficiency_estimate: float = 1.0,
         drop_last: bool = False,
-        len_count_samples: int = 16,
+        num_count_samples: int = 16,
         **kwargs,
     ):
         super().__init__(sampler, batch_size, drop_last)
@@ -134,7 +134,7 @@ class MultipackBatchSampler(BatchSampler):
         self.eff_total_slots = 0
 
         # The number of times to calculate the batches to determine the minimum packed dataset length for the local rank
-        self.len_count_samples = len_count_samples
+        self.num_count_samples = num_count_samples
         # the minimum packed dataset length across all ranks determined by a gather/broadcast
         self.len_across_ranks = None
 
@@ -209,7 +209,7 @@ class MultipackBatchSampler(BatchSampler):
     def __len__(self):
         if not self.len_across_ranks:
             len_batches = min(
-                [self.num_batches() for _ in range(self.len_count_samples)]
+                [self.num_batches() for _ in range(self.num_count_samples)]
             )
             self.len_across_ranks = self.gather_len_batches(len_batches)
         return self.len_across_ranks
