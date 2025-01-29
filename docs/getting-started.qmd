@@ -17,12 +17,12 @@ Let's start by fine-tuning a small language model using LoRA. This example uses 
 Assuming `axolotl` is installed (if not, see our [Installation Guide](installation.qmd))
 
 1. Download example configs:
-```bash
+```shell
 axolotl fetch examples
 ```
 
 2. Run the training:
-```bash
+```shell
 axolotl train examples/llama-3/lora-1b.yml
 ```
 
@@ -70,8 +70,6 @@ Let's modify the example for your own data:
 ```yaml
 base_model: NousResearch/Nous-Hermes-llama-1b-v1
 adapter: lora
-model_type: LlamaForCausalLM
-tokenizer_type: LlamaTokenizer
 
 # Training settings
 micro_batch_size: 2
@@ -84,7 +82,22 @@ datasets:
     type: alpaca               # Or other format
 ```
 
-2. Prepare your data in JSONL format:
+This specific config is for LoRA fine-tuning a model with instruction tuning data using
+the `alpaca` dataset format, which has the following format:
+
+```json
+{
+    "instruction": "Write a description of alpacas.",
+    "input": "",
+    "output": "Alpacas are domesticated South American camelids..."
+}
+```
+
+Please see our [Dataset Formats](dataset-formats) for more dataset formats and how to
+format them.
+
+2. Prepare your JSONL data in the specified format (in this case, the expected `alpaca
+format):
 
 ```json
 {"instruction": "Classify this text", "input": "I love this!", "output": "positive"}
@@ -95,7 +108,7 @@ Please consult the supported [Dataset Formats](dataset-formats/) for more detail
 
 3. Run the training:
 
-```bash
+```shell
 axolotl train my_training.yml
 ```
 
@@ -105,7 +118,7 @@ axolotl train my_training.yml
 
 After training, test your model:
 
-```bash
+```shell
 axolotl inference my_training.yml --lora-model-dir="./outputs/lora-out"
 ```
 
@@ -113,7 +126,7 @@ axolotl inference my_training.yml --lora-model-dir="./outputs/lora-out"
 
 For large datasets, preprocess first:
 
-```bash
+```shell
 axolotl preprocess my_training.yml
 ```
 
@@ -121,7 +134,7 @@ axolotl preprocess my_training.yml
 
 Launch a Gradio interface:
 
-```bash
+```shell
 axolotl inference my_training.yml --lora-model-dir="./outputs/lora-out" --gradio
 ```
 
@@ -137,6 +150,6 @@ Now that you have the basics, you might want to:
 Check our other guides for details on these topics:
 
 - [Configuration Guide](config.qmd) - Full configuration options
-- [Dataset Guide](dataset-Formats) - Working with different data formats
+- [Dataset Formats](dataset-formats) - Working with different data formats
 - [Multi-GPU Training](multi-gpu.qmd)
 - [Multi-Node Training](multi-node.qmd)

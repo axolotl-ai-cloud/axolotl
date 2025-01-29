@@ -16,7 +16,7 @@ This guide covers all the ways you can install and set up Axolotl for your envir
 
 - NVIDIA GPU (Ampere architecture or newer for `bf16` and Flash Attention) or AMD GPU
 - Python ≥3.10
-- PyTorch ≥2.3.1
+- PyTorch ≥2.4.1
 
 ## Installation Methods {#sec-installation-methods}
 
@@ -25,6 +25,11 @@ This guide covers all the ways you can install and set up Axolotl for your envir
 ```{.bash}
 pip3 install --no-build-isolation axolotl[flash-attn,deepspeed]
 ```
+
+We use `--no-build-isolation` in order to detect the installed PyTorch version (if
+installed) in order not to clobber it, and so that we set the correct version of
+dependencies that are specific to the PyTorch version or other installed
+co-dependencies.
 
 ### Edge/Development Build {#sec-edge-build}
 

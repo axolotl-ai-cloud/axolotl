@@ -8,13 +8,11 @@ order: 3
 
 IMPORTANT: ShareGPT is deprecated!. Please see `chat_template` section below.
 
-
 ## pygmalion
 
 ```{.json filename="data.jsonl"}
 {"conversations": [{"role": "...", "value": "..."}]}
 ```
-
 
 ## chat_template
 
