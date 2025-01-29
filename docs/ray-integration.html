@@ -6,9 +6,9 @@
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
-<meta name="description" content="A comprehensive guide for using Axolotl on distributed systems with AMD GPUs">
+<meta name="description" content="How to use Axolotl with Ray Train">
 
-<title>Training with AMD GPUs on HPC Systems – Axolotl</title>
+<title>Ray Train integration – Axolotl</title>
 <style>
 code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
@@ -130,7 +130,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
       <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
         <i class="bi bi-layout-text-sidebar-reverse"></i>
       </button>
-        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/debugging.html">How-To Guides</a></li><li class="breadcrumb-item"><a href="../docs/amd_hpc.html">Training with AMD GPUs on HPC Systems</a></li></ol></nav>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/debugging.html">How-To Guides</a></li><li class="breadcrumb-item"><a href="../docs/ray-integration.html">Ray Train integration</a></li></ol></nav>
         <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
         </a>
     </div>
@@ -213,13 +213,13 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/amd_hpc.html" class="sidebar-item-text sidebar-link active">
+  <a href="../docs/amd_hpc.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Training with AMD GPUs on HPC Systems</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/ray-integration.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/ray-integration.html" class="sidebar-item-text sidebar-link active">
  <span class="menu-text">Ray Train integration</span></a>
   </div>
 </li>
@@ -305,35 +305,24 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#setup" id="toc-setup" class="nav-link active" data-scroll-target="#setup">Setup</a>
-  <ul class="collapse">
-  <li><a href="#install-python" id="toc-install-python" class="nav-link" data-scroll-target="#install-python">1. Install Python</a></li>
-  <li><a href="#configure-python-environment" id="toc-configure-python-environment" class="nav-link" data-scroll-target="#configure-python-environment">2. Configure Python Environment</a></li>
-  <li><a href="#load-amd-gpu-software" id="toc-load-amd-gpu-software" class="nav-link" data-scroll-target="#load-amd-gpu-software">3. Load AMD GPU Software</a></li>
-  <li><a href="#install-pytorch" id="toc-install-pytorch" class="nav-link" data-scroll-target="#install-pytorch">4. Install PyTorch</a></li>
-  <li><a href="#install-flash-attention" id="toc-install-flash-attention" class="nav-link" data-scroll-target="#install-flash-attention">5. Install Flash Attention</a></li>
-  <li><a href="#install-axolotl" id="toc-install-axolotl" class="nav-link" data-scroll-target="#install-axolotl">6. Install Axolotl</a></li>
-  <li><a href="#apply-xformers-workaround" id="toc-apply-xformers-workaround" class="nav-link" data-scroll-target="#apply-xformers-workaround">7. Apply xformers Workaround</a></li>
-  <li><a href="#prepare-job-submission-script" id="toc-prepare-job-submission-script" class="nav-link" data-scroll-target="#prepare-job-submission-script">8. Prepare Job Submission Script</a></li>
-  <li><a href="#download-base-model" id="toc-download-base-model" class="nav-link" data-scroll-target="#download-base-model">9. Download Base Model</a></li>
-  <li><a href="#create-axolotl-configuration" id="toc-create-axolotl-configuration" class="nav-link" data-scroll-target="#create-axolotl-configuration">10. Create Axolotl Configuration</a></li>
-  <li><a href="#preprocess-data" id="toc-preprocess-data" class="nav-link" data-scroll-target="#preprocess-data">11. Preprocess Data</a></li>
-  <li><a href="#train" id="toc-train" class="nav-link" data-scroll-target="#train">12. Train</a></li>
-  </ul></li>
+  <li><a href="#ray-cluster-setup" id="toc-ray-cluster-setup" class="nav-link active" data-scroll-target="#ray-cluster-setup">Ray cluster setup</a></li>
+  <li><a href="#sanity-check" id="toc-sanity-check" class="nav-link" data-scroll-target="#sanity-check">Sanity check</a></li>
+  <li><a href="#configuring-training-with-ray-train" id="toc-configuring-training-with-ray-train" class="nav-link" data-scroll-target="#configuring-training-with-ray-train">Configuring training with Ray Train</a></li>
+  <li><a href="#launching-training" id="toc-launching-training" class="nav-link" data-scroll-target="#launching-training">Launching training</a></li>
   </ul>
 </nav>
     </div>
 <!-- main -->
 <main class="content" id="quarto-document-content">
 
-<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/debugging.html">How-To Guides</a></li><li class="breadcrumb-item"><a href="../docs/amd_hpc.html">Training with AMD GPUs on HPC Systems</a></li></ol></nav>
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/debugging.html">How-To Guides</a></li><li class="breadcrumb-item"><a href="../docs/ray-integration.html">Ray Train integration</a></li></ol></nav>
 <div class="quarto-title">
-<h1 class="title">Training with AMD GPUs on HPC Systems</h1>
+<h1 class="title">Ray Train integration</h1>
 </div>
 
 <div>
   <div class="description">
-    A comprehensive guide for using Axolotl on distributed systems with AMD GPUs
+    How to use Axolotl with Ray Train
   </div>
 </div>
 
@@ -350,81 +339,75 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </header>
 
 
-<p>This guide provides step-by-step instructions for installing and configuring Axolotl on a High-Performance Computing (HPC) environment equipped with AMD GPUs.</p>
-<section id="setup" class="level2">
-<h2 class="anchored" data-anchor-id="setup">Setup</h2>
-<section id="install-python" class="level3">
-<h3 class="anchored" data-anchor-id="install-python">1. Install Python</h3>
-<p>We recommend using Miniforge, a minimal conda-based Python distribution:</p>
-<div class="sourceCode" id="cb1"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">curl</span> <span class="at">-L</span> <span class="at">-O</span> <span class="st">"https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-</span><span class="va">$(</span><span class="fu">uname</span><span class="va">)</span><span class="st">-</span><span class="va">$(</span><span class="fu">uname</span> <span class="at">-m</span><span class="va">)</span><span class="st">.sh"</span></span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="fu">bash</span> Miniforge3-<span class="va">$(</span><span class="fu">uname</span><span class="va">)</span>-<span class="va">$(</span><span class="fu">uname</span> <span class="at">-m</span><span class="va">)</span>.sh</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Axolotl supports using Ray as an alternative to <code>accelerate</code> for orchestrating training. This is especially useful for multi-node training since you only have to setup code and dependencies in a single node and launch training as if you were using a single node.</p>
+<p>With the <code>--use-ray</code> CLI flag, Axolotl will use Ray Train’s <a href="https://docs.ray.io/en/latest/train/api/doc/ray.train.torch.TorchTrainer.html#ray.train.torch.TorchTrainer"><code>TorchTrainer</code></a> to run training.</p>
+<section id="ray-cluster-setup" class="level2">
+<h2 class="anchored" data-anchor-id="ray-cluster-setup">Ray cluster setup</h2>
+<p>A prerequisite using the Ray Train integration is to setup a Ray cluster on your desired node(s). For a detailed guide on how you can get started with ray clusters, check the official Ray docs here: https://docs.ray.io/en/latest/cluster/getting-started.html</p>
+<p>Every Ray cluster has one <em>head</em> node and a set of worker nodes. The head node is just like any other worker node, but it also runs certain special processes related to scheduling and orchestration. Ray-enabled scripts are run on the head node and depending on the resources (number of CPUs, GPUs, etc) they request, will be scheduled to run certain tasks on the worker nodes. For more on key concepts behind a Ray cluster, you can refer this <a href="https://docs.ray.io/en/latest/cluster/key-concepts.html#cluster-key-concepts">doc</a>.</p>
 </section>
-<section id="configure-python-environment" class="level3">
-<h3 class="anchored" data-anchor-id="configure-python-environment">2. Configure Python Environment</h3>
-<p>Add Python to your PATH and ensure it’s available at login:</p>
-<div class="sourceCode" id="cb2"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="bu">echo</span> <span class="st">'export PATH=~/miniforge3/bin:$PATH'</span> <span class="op">&gt;&gt;</span> ~/.bashrc</span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="bu">echo</span> <span class="st">'if [ -f ~/.bashrc ]; then . ~/.bashrc; fi'</span> <span class="op">&gt;&gt;</span> ~/.bash_profile</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<section id="sanity-check" class="level2">
+<h2 class="anchored" data-anchor-id="sanity-check">Sanity check</h2>
+<p>To run a sanity check on whether your ray cluster is setup properly, execute the following on the head node:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">ray</span> status</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>The output should have a summary of your Ray cluster - list of all the nodes in your cluster, the number of CPUs and GPUs in your cluster, etc. For example, if you have a cluster with 1 CPU-only head node and 2 4xL40S worker nodes, the output can look like this:</p>
+<pre><code>Node status
+---------------------------------------------------------------
+Active:
+ 1 head
+Idle:
+ 2 4xL40S:48CPU-384GB
+Pending:
+ (no pending nodes)
+Recent failures:
+ (no failures)
+
+Resources
+---------------------------------------------------------------
+Usage:
+ 0.0/96.0 CPU
+ 0.0/8.0 GPU
+ 0B/800.00GiB memory
+ 0B/229.57GiB object_store_memory
+
+Demands:
+ (no resource demands)</code></pre>
+<p>You should also be able to see the same on the <a href="https://docs.ray.io/en/latest/ray-observability/getting-started.html">Ray dashboard</a>.</p>
 </section>
-<section id="load-amd-gpu-software" class="level3">
-<h3 class="anchored" data-anchor-id="load-amd-gpu-software">3. Load AMD GPU Software</h3>
-<p>Load the ROCm module:</p>
-<div class="sourceCode" id="cb3"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">module</span> load rocm/5.7.1</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Note: The specific module name and version may vary depending on your HPC system. Consult your system documentation for the correct module name.</p>
+<section id="configuring-training-with-ray-train" class="level2">
+<h2 class="anchored" data-anchor-id="configuring-training-with-ray-train">Configuring training with Ray Train</h2>
+<p>You can find an example configuration at <code>configs/llama-3/lora-1b-ray.yaml</code>.</p>
+<p>The key parameters to note here are:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="co">...</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="co">use_ray: true</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="co">ray_num_workers: 4</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="co"># optional</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="co">resources_per_worker:</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="co">    GPU: 1</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a><span class="co">...</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<ul>
+<li><code>use_ray</code>: This is the flag that enables the Ray Train integration. You can either use the corresponding <code>--use-ray</code> flag in the CLI or set <code>use_ray</code> in the config file.</li>
+<li><code>ray_num_workers</code>: This is the number of workers/GPUs to use for training.</li>
+<li><code>resources_per_worker</code>: This is the Ray <a href="https://docs.ray.io/en/latest/ray-core/scheduling/resources.html">resource request</a> for each worker. This can be used to request a specific GPU type or a custom resource for each worker. For example, if your ray cluster has GPUs of different types, and you only want to use NVIDIA L40S GPUs, you can do</li>
+</ul>
+<div class="sourceCode" id="cb4"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">resources_per_worker</span><span class="kw">:</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="at">    accelerator_type</span><span class="fu">:L40S</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.001</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </section>
-<section id="install-pytorch" class="level3">
-<h3 class="anchored" data-anchor-id="install-pytorch">4. Install PyTorch</h3>
-<p>Install PyTorch with ROCm support:</p>
-<div class="sourceCode" id="cb4"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> install <span class="at">-U</span> torch torchvision torchaudio <span class="at">--index-url</span> https://download.pytorch.org/whl/rocm5.7 <span class="at">--force-reinstall</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-</section>
-<section id="install-flash-attention" class="level3">
-<h3 class="anchored" data-anchor-id="install-flash-attention">5. Install Flash Attention</h3>
-<p>Clone and install the Flash Attention repository:</p>
-<div class="sourceCode" id="cb5"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="fu">git</span> clone <span class="at">--recursive</span> https://github.com/ROCmSoftwarePlatform/flash-attention.git</span>
-<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="bu">export</span> <span class="va">GPU_ARCHS</span><span class="op">=</span><span class="st">"gfx90a"</span></span>
-<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> flash-attention</span>
-<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a><span class="bu">export</span> <span class="va">PYTHON_SITE_PACKAGES</span><span class="op">=</span><span class="va">$(</span><span class="ex">python</span> <span class="at">-c</span> <span class="st">'import site; print(site.getsitepackages()[0])'</span><span class="va">)</span></span>
-<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a><span class="fu">patch</span> <span class="st">"</span><span class="va">${PYTHON_SITE_PACKAGES}</span><span class="st">/torch/utils/hipify/hipify_python.py"</span> hipify_patch.patch</span>
-<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> install <span class="at">--no-build-isolation</span> .</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-</section>
-<section id="install-axolotl" class="level3">
-<h3 class="anchored" data-anchor-id="install-axolotl">6. Install Axolotl</h3>
-<p>Clone and install Axolotl:</p>
-<div class="sourceCode" id="cb6"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">git</span> clone https://github.com/axolotl-ai-cloud/axolotl</span>
-<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> axolotl</span>
-<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> install packaging ninja</span>
-<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> install <span class="at">--no-build-isolation</span> <span class="at">-e</span> .</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-</section>
-<section id="apply-xformers-workaround" class="level3">
-<h3 class="anchored" data-anchor-id="apply-xformers-workaround">7. Apply xformers Workaround</h3>
-<p>xformers appears to be incompatible with ROCm. Apply the following workarounds: - Edit $HOME/packages/axolotl/src/axolotl/monkeypatch/llama_attn_hijack_flash.py modifying the code to always return <code>False</code> for SwiGLU availability from xformers. - Edit $HOME/miniforge3/lib/python3.10/site-packages/xformers/ops/swiglu_op.py replacing the “SwiGLU” function with a pass statement.</p>
-</section>
-<section id="prepare-job-submission-script" class="level3">
-<h3 class="anchored" data-anchor-id="prepare-job-submission-script">8. Prepare Job Submission Script</h3>
-<p>Create a script for job submission using your HPC’s particular software (e.g.&nbsp;Slurm, PBS). Include necessary environment setup and the command to run Axolotl training. If the compute node(s) do(es) not have internet access, it is recommended to include</p>
-<div class="sourceCode" id="cb7"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="bu">export</span> <span class="va">TRANSFORMERS_OFFLINE</span><span class="op">=</span>1</span>
-<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="bu">export</span> <span class="va">HF_DATASETS_OFFLINE</span><span class="op">=</span>1</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-</section>
-<section id="download-base-model" class="level3">
-<h3 class="anchored" data-anchor-id="download-base-model">9. Download Base Model</h3>
-<p>Download a base model using the Hugging Face CLI:</p>
-<div class="sourceCode" id="cb8"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="ex">huggingface-cli</span> download meta-llama/Meta-Llama-3.1-8B <span class="at">--local-dir</span> ~/hfdata/llama3.1-8B</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-</section>
-<section id="create-axolotl-configuration" class="level3">
-<h3 class="anchored" data-anchor-id="create-axolotl-configuration">10. Create Axolotl Configuration</h3>
-<p>Create an Axolotl configuration file (YAML format) tailored to your specific training requirements and dataset. Use FSDP for multi-node training.</p>
-<p>Note: Deepspeed did not work at the time of testing. However, if anyone managed to get it working, please let us know.</p>
-</section>
-<section id="preprocess-data" class="level3">
-<h3 class="anchored" data-anchor-id="preprocess-data">11. Preprocess Data</h3>
-<p>Run preprocessing on the login node:</p>
-<div class="sourceCode" id="cb9"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="va">CUDA_VISIBLE_DEVICES</span><span class="op">=</span><span class="st">""</span> <span class="ex">python</span> <span class="at">-m</span> axolotl.cli.preprocess /path/to/your/config.yaml</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-</section>
-<section id="train" class="level3">
-<h3 class="anchored" data-anchor-id="train">12. Train</h3>
-<p>You are now ready to submit your previously prepared job script. 🚂</p>
+<section id="launching-training" class="level2">
+<h2 class="anchored" data-anchor-id="launching-training">Launching training</h2>
+<p>You can simply run the following command on the head node:</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> train examples/llama-3/lora-1b-ray.yml <span class="at">--use-ray</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>This will launch training on the head node and workers will be scheduled automatically by Ray Train to run on the appropriate head or worker nodes.</p>
+<p>You can also monitor training progress on the Ray dashboard.</p>
+<p>Coming back to the example on a Ray cluster with 1 head node and 2 4xL40S worker nodes, let’s say you want to make use of all 8 GPUs. You would be able to just set <code>ray_num_workers: 8</code> and run the previous command. The Cluster tab will show the following:</p>
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="./images/ray-cluster-dashboard.png" class="img-fluid figure-img"></p>
+<figcaption>Ray dashboard</figcaption>
+</figure>
+</div>
 
 
-</section>
 </section>
 
 </main> <!-- /main -->
