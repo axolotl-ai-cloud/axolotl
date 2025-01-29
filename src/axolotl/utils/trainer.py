@@ -374,7 +374,7 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
         if cfg.sample_packing_eff_est:
             total_num_steps = (
                 # match count to len est in dataloader
-                (
+                int(
                     math.floor(
                         0.99
                         * cfg.total_num_tokens
