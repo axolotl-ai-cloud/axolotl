@@ -6,9 +6,9 @@
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
-<meta name="description" content="Multipack is a technique to pack multiple sequences into a single batch to increase training throughput.">
+<meta name="description" content="Reward models are used to guide models towards behaviors which is preferred by humans, by training over large datasets annotated with human preferences.">
 
-<title>Multipack (Sample Packing) – Axolotl</title>
+<title>Reward Modelling – Axolotl</title>
 <style>
 code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
@@ -20,6 +20,40 @@ ul.task-list li input[type="checkbox"] {
   width: 0.8em;
   margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
   vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { display: inline-block; text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
 }
 </style>
 
@@ -96,7 +130,7 @@ ul.task-list li input[type="checkbox"] {
       <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
         <i class="bi bi-layout-text-sidebar-reverse"></i>
       </button>
-        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/debugging.html">How-To Guides</a></li><li class="breadcrumb-item"><a href="../docs/multipack.html">Multipack (Sample Packing)</a></li></ol></nav>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item">Reward Modelling</li></ol></nav>
         <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
         </a>
     </div>
@@ -131,7 +165,7 @@ ul.task-list li input[type="checkbox"] {
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/multipack.html" class="sidebar-item-text sidebar-link active">
+  <a href="../docs/multipack.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Multipack (Sample Packing)</span></a>
   </div>
 </li>
@@ -265,22 +299,23 @@ ul.task-list li input[type="checkbox"] {
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#visualization-of-multipack-with-flash-attention" id="toc-visualization-of-multipack-with-flash-attention" class="nav-link active" data-scroll-target="#visualization-of-multipack-with-flash-attention">Visualization of Multipack with Flash Attention</a></li>
-  <li><a href="#multipack-without-flash-attention" id="toc-multipack-without-flash-attention" class="nav-link" data-scroll-target="#multipack-without-flash-attention">Multipack without Flash Attention</a></li>
+  <li><a href="#overview" id="toc-overview" class="nav-link active" data-scroll-target="#overview">Overview</a></li>
+  <li><a href="#outcome-reward-models" id="toc-outcome-reward-models" class="nav-link" data-scroll-target="#outcome-reward-models">(Outcome) Reward Models</a></li>
+  <li><a href="#process-reward-models-prm" id="toc-process-reward-models-prm" class="nav-link" data-scroll-target="#process-reward-models-prm">Process Reward Models (PRM)</a></li>
   </ul>
 </nav>
     </div>
 <!-- main -->
 <main class="content" id="quarto-document-content">
 
-<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/debugging.html">How-To Guides</a></li><li class="breadcrumb-item"><a href="../docs/multipack.html">Multipack (Sample Packing)</a></li></ol></nav>
+<header id="title-block-header" class="quarto-title-block default">
 <div class="quarto-title">
-<h1 class="title">Multipack (Sample Packing)</h1>
+<h1 class="title">Reward Modelling</h1>
 </div>
 
 <div>
   <div class="description">
-    Multipack is a technique to pack multiple sequences into a single batch to increase training throughput.
+    Reward models are used to guide models towards behaviors which is preferred by humans, by training over large datasets annotated with human preferences.
   </div>
 </div>
 
@@ -297,53 +332,42 @@ ul.task-list li input[type="checkbox"] {
 </header>
 
 
-<section id="visualization-of-multipack-with-flash-attention" class="level2">
-<h2 class="anchored" data-anchor-id="visualization-of-multipack-with-flash-attention">Visualization of Multipack with Flash Attention</h2>
-<p>Because Flash Attention simply drops the attention mask, we do not need to construct a 4d attention mask. We only need to concatenate the sequences into a single batch and let flash attention know where each new sequence begins.</p>
-<p>4k context, bsz =4, each character represents 256 tokens X represents a padding token</p>
-<pre><code>   0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5
-[[ A A A A A A A A A A A ]
-   B B B B B B ]
-   C C C C C C C ]
-   D D D D ]]
-
-[[ E E E E E E E E ]
- [ F F F F ]
- [ G G G ]
- [ H H H H ]]
-
-[[ I I I ]
- [ J J J ]
- [ K K K K K]
- [ L L L ]]</code></pre>
-<p>after padding to longest input in each step</p>
-<pre><code>   0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5
-[[ A A A A A A A A A A A ]
-   B B B B B B X X X X X X ]
-   C C C C C C C X X X X ]
-   D D D D X X X X X X X ]]
-
-[[ E E E E E E E E ]
- [ F F F F X X X X ]
- [ G G G X X X X X ]
- [ H H H H X X X X ]]
-
-[[ I I I X X ]
- [ J J J X X ]
- [ K K K K K ]
- [ L L L X X ]]</code></pre>
-<p>w packing ( note it’s the same effective number of tokens per step, but a true bsz of 1)</p>
-<pre><code>   0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5
-[[ A A A A A A A A A A A B B B B B
-   B C C C C C C C D D D D E E E E
-   E E E E F F F F F G G G H H H H
-   I I I J J J J K K K K K L L L X ]]</code></pre>
-<p>cu_seqlens: [[ 0, 11, 17, 24, 28, 36, 41 44, 48, 51, 55, 60, 64]]</p>
+<section id="overview" class="level3">
+<h3 class="anchored" data-anchor-id="overview">Overview</h3>
+<p>Reward modelling is a technique used to train models to predict the reward or value of a given input. This is particularly useful in reinforcement learning scenarios where the model needs to evaluate the quality of its actions or predictions. We support the reward modelling techniques supported by <code>trl</code>.</p>
 </section>
-<section id="multipack-without-flash-attention" class="level2">
-<h2 class="anchored" data-anchor-id="multipack-without-flash-attention">Multipack without Flash Attention</h2>
-<p>Multipack can still be achieved without Flash attention, but with lower packing efficiency as we are not able to join multiple batches into a single batch due to context length limits without flash attention. We can use either Pytorch’s Scaled Dot Product Attention implementation or native Pytorch attention implementation along with <a href="https://github.com/huggingface/transformers/pull/27539">4d attention masks</a> to pack sequences together and avoid cross attention.</p>
-<p><img src="./images/4d-mask.png" alt="axolotl" width="800"></p>
+<section id="outcome-reward-models" class="level3">
+<h3 class="anchored" data-anchor-id="outcome-reward-models">(Outcome) Reward Models</h3>
+<p>Outcome reward models are trained using data which contains preference annotations for an entire interaction between the user and model (e.g.&nbsp;rather than per-turn or per-step).</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">base_model</span><span class="kw">:</span><span class="at"> google/gemma-2-2b</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="fu">model_type</span><span class="kw">:</span><span class="at"> AutoModelForSequenceClassification</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="fu">num_labels</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="fu">tokenizer_type</span><span class="kw">:</span><span class="at"> AutoTokenizer</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="fu">reward_model</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="fu">chat_template</span><span class="kw">:</span><span class="at"> gemma</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> argilla/distilabel-intel-orca-dpo-pairs</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> bradley_terry.chat_template</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a><span class="fu">val_set_size</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.1</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a><span class="fu">eval_steps</span><span class="kw">:</span><span class="at"> </span><span class="dv">100</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</section>
+<section id="process-reward-models-prm" class="level3">
+<h3 class="anchored" data-anchor-id="process-reward-models-prm">Process Reward Models (PRM)</h3>
+<p>Process reward models are trained using data which contains preference annotations for each step in a series of interactions. Typically, PRMs are trained to provide reward signals over each step of a reasoning trace and are used for downstream reinforcement learning.</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">base_model</span><span class="kw">:</span><span class="at"> Qwen/Qwen2.5-3B</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="fu">model_type</span><span class="kw">:</span><span class="at"> AutoModelForTokenClassification</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="fu">num_labels</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="fu">process_reward_model</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> trl-lib/math_shepherd</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> stepwise_supervised</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">split</span><span class="kw">:</span><span class="at"> train</span></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a><span class="fu">val_set_size</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.1</span></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a><span class="fu">eval_steps</span><span class="kw">:</span><span class="at"> </span><span class="dv">100</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 
 
 </section>

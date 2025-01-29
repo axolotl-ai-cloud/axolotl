@@ -5,6 +5,7 @@
       "/docs/dataset-formats/pretraining.html",
       "/docs/dataset-formats/inst_tune.html",
       "/docs/dataset-formats/conversation.html",
+      "/docs/dataset-formats/stepwise_supervised.html",
       "/docs/dataset-formats/template_free.html",
       "/docs/dataset-formats/tokenized.html"
     ]

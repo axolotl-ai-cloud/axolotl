@@ -6,9 +6,9 @@
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
-<meta name="description" content="Multipack is a technique to pack multiple sequences into a single batch to increase training throughput.">
+<meta name="description" content="Format for datasets with stepwise completions and labels">
 
-<title>Multipack (Sample Packing) – Axolotl</title>
+<title>Stepwise Supervised Format – Axolotl</title>
 <style>
 code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
@@ -24,22 +24,22 @@ ul.task-list li input[type="checkbox"] {
 </style>
 
 
-<script src="../site_libs/quarto-nav/quarto-nav.js"></script>
-<script src="../site_libs/clipboard/clipboard.min.js"></script>
-<script src="../site_libs/quarto-search/autocomplete.umd.js"></script>
-<script src="../site_libs/quarto-search/fuse.min.js"></script>
-<script src="../site_libs/quarto-search/quarto-search.js"></script>
-<meta name="quarto:offset" content="../">
-<link href="../favicon.jpg" rel="icon" type="image/jpeg">
-<script src="../site_libs/quarto-html/quarto.js"></script>
-<script src="../site_libs/quarto-html/popper.min.js"></script>
-<script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
-<script src="../site_libs/quarto-html/anchor.min.js"></script>
-<link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="../site_libs/quarto-html/quarto-syntax-highlighting-549806ee2085284f45b00abea8c6df48.css" rel="stylesheet" id="quarto-text-highlighting-styles">
-<script src="../site_libs/bootstrap/bootstrap.min.js"></script>
-<link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../site_libs/bootstrap/bootstrap-1d8d3285ed62e8239ae07b1b029f75b0.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script src="../../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../../">
+<link href="../../favicon.jpg" rel="icon" type="image/jpeg">
+<script src="../../site_libs/quarto-html/quarto.js"></script>
+<script src="../../site_libs/quarto-html/popper.min.js"></script>
+<script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-549806ee2085284f45b00abea8c6df48.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../../site_libs/bootstrap/bootstrap-1d8d3285ed62e8239ae07b1b029f75b0.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -69,7 +69,7 @@ ul.task-list li input[type="checkbox"] {
 }</script>
 
 
-<link rel="stylesheet" href="../styles.css">
+<link rel="stylesheet" href="../../styles.css">
 </head>
 
 <body class="nav-sidebar docked nav-fixed">
@@ -79,7 +79,7 @@ ul.task-list li input[type="checkbox"] {
     <nav class="navbar navbar-expand " data-bs-theme="dark">
       <div class="navbar-container container-fluid">
       <div class="navbar-brand-container mx-auto">
-    <a class="navbar-brand" href="../index.html">
+    <a class="navbar-brand" href="../../index.html">
     <span class="navbar-title">Axolotl</span>
     </a>
   </div>
@@ -96,7 +96,7 @@ ul.task-list li input[type="checkbox"] {
       <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
         <i class="bi bi-layout-text-sidebar-reverse"></i>
       </button>
-        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/debugging.html">How-To Guides</a></li><li class="breadcrumb-item"><a href="../docs/multipack.html">Multipack (Sample Packing)</a></li></ol></nav>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../docs/dataset-formats/index.html">Dataset Formats</a></li><li class="breadcrumb-item"><a href="../../docs/dataset-formats/stepwise_supervised.html">Stepwise Supervised Format</a></li></ol></nav>
         <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
         </a>
     </div>
@@ -110,7 +110,7 @@ ul.task-list li input[type="checkbox"] {
     <ul class="list-unstyled mt-1">
         <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../index.html" class="sidebar-item-text sidebar-link">
+  <a href="../../index.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Home</span></a>
   </div>
 </li>
@@ -125,61 +125,61 @@ ul.task-list li input[type="checkbox"] {
       <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/debugging.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/debugging.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Debugging</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/multipack.html" class="sidebar-item-text sidebar-link active">
+  <a href="../../docs/multipack.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Multipack (Sample Packing)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/fsdp_qlora.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/fsdp_qlora.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">FDSP + QLoRA</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/input_output.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/input_output.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Template-free prompt construction</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/rlhf.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/rlhf.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">RLHF (Beta)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/nccl.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/nccl.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">NCCL</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/mac.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/mac.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Mac M-series</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/multi-node.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/multi-node.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Multi Node</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/unsloth.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/unsloth.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Unsloth</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/amd_hpc.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/amd_hpc.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Training with AMD GPUs on HPC Systems</span></a>
   </div>
 </li>
@@ -187,7 +187,7 @@ ul.task-list li input[type="checkbox"] {
   </li>
         <li class="sidebar-item sidebar-item-section">
       <div class="sidebar-item-container"> 
-            <a href="../docs/dataset-formats/index.html" class="sidebar-item-text sidebar-link">
+            <a href="../../docs/dataset-formats/index.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Dataset Formats</span></a>
           <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true" aria-label="Toggle section">
             <i class="bi bi-chevron-right ms-2"></i>
@@ -196,37 +196,37 @@ ul.task-list li input[type="checkbox"] {
       <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/dataset-formats/pretraining.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/dataset-formats/pretraining.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Pre-training</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/dataset-formats/inst_tune.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/dataset-formats/inst_tune.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Instruction Tuning</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/dataset-formats/conversation.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/dataset-formats/conversation.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Conversation</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/dataset-formats/stepwise_supervised.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/dataset-formats/stepwise_supervised.html" class="sidebar-item-text sidebar-link active">
  <span class="menu-text">Stepwise Supervised Format</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/dataset-formats/template_free.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/dataset-formats/template_free.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Template-Free</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/dataset-formats/tokenized.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/dataset-formats/tokenized.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Custom Pre-Tokenized Dataset</span></a>
   </div>
 </li>
@@ -243,7 +243,7 @@ ul.task-list li input[type="checkbox"] {
       <ul id="quarto-sidebar-section-3" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/config.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/config.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Config options</span></a>
   </div>
 </li>
@@ -251,7 +251,7 @@ ul.task-list li input[type="checkbox"] {
   </li>
         <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/faq.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/faq.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">FAQ</span></a>
   </div>
 </li>
@@ -265,22 +265,21 @@ ul.task-list li input[type="checkbox"] {
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#visualization-of-multipack-with-flash-attention" id="toc-visualization-of-multipack-with-flash-attention" class="nav-link active" data-scroll-target="#visualization-of-multipack-with-flash-attention">Visualization of Multipack with Flash Attention</a></li>
-  <li><a href="#multipack-without-flash-attention" id="toc-multipack-without-flash-attention" class="nav-link" data-scroll-target="#multipack-without-flash-attention">Multipack without Flash Attention</a></li>
+  <li><a href="#stepwise-supervised" id="toc-stepwise-supervised" class="nav-link active" data-scroll-target="#stepwise-supervised">Stepwise Supervised</a></li>
   </ul>
 </nav>
     </div>
 <!-- main -->
 <main class="content" id="quarto-document-content">
 
-<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/debugging.html">How-To Guides</a></li><li class="breadcrumb-item"><a href="../docs/multipack.html">Multipack (Sample Packing)</a></li></ol></nav>
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../docs/dataset-formats/index.html">Dataset Formats</a></li><li class="breadcrumb-item"><a href="../../docs/dataset-formats/stepwise_supervised.html">Stepwise Supervised Format</a></li></ol></nav>
 <div class="quarto-title">
-<h1 class="title">Multipack (Sample Packing)</h1>
+<h1 class="title">Stepwise Supervised Format</h1>
 </div>
 
 <div>
   <div class="description">
-    Multipack is a technique to pack multiple sequences into a single batch to increase training throughput.
+    Format for datasets with stepwise completions and labels
   </div>
 </div>
 
@@ -297,53 +296,9 @@ ul.task-list li input[type="checkbox"] {
 </header>
 
 
-<section id="visualization-of-multipack-with-flash-attention" class="level2">
-<h2 class="anchored" data-anchor-id="visualization-of-multipack-with-flash-attention">Visualization of Multipack with Flash Attention</h2>
-<p>Because Flash Attention simply drops the attention mask, we do not need to construct a 4d attention mask. We only need to concatenate the sequences into a single batch and let flash attention know where each new sequence begins.</p>
-<p>4k context, bsz =4, each character represents 256 tokens X represents a padding token</p>
-<pre><code>   0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5
-[[ A A A A A A A A A A A ]
-   B B B B B B ]
-   C C C C C C C ]
-   D D D D ]]
-
-[[ E E E E E E E E ]
- [ F F F F ]
- [ G G G ]
- [ H H H H ]]
-
-[[ I I I ]
- [ J J J ]
- [ K K K K K]
- [ L L L ]]</code></pre>
-<p>after padding to longest input in each step</p>
-<pre><code>   0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5
-[[ A A A A A A A A A A A ]
-   B B B B B B X X X X X X ]
-   C C C C C C C X X X X ]
-   D D D D X X X X X X X ]]
-
-[[ E E E E E E E E ]
- [ F F F F X X X X ]
- [ G G G X X X X X ]
- [ H H H H X X X X ]]
-
-[[ I I I X X ]
- [ J J J X X ]
- [ K K K K K ]
- [ L L L X X ]]</code></pre>
-<p>w packing ( note it’s the same effective number of tokens per step, but a true bsz of 1)</p>
-<pre><code>   0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5
-[[ A A A A A A A A A A A B B B B B
-   B C C C C C C C D D D D E E E E
-   E E E E F F F F F G G G H H H H
-   I I I J J J J K K K K K L L L X ]]</code></pre>
-<p>cu_seqlens: [[ 0, 11, 17, 24, 28, 36, 41 44, 48, 51, 55, 60, 64]]</p>
-</section>
-<section id="multipack-without-flash-attention" class="level2">
-<h2 class="anchored" data-anchor-id="multipack-without-flash-attention">Multipack without Flash Attention</h2>
-<p>Multipack can still be achieved without Flash attention, but with lower packing efficiency as we are not able to join multiple batches into a single batch due to context length limits without flash attention. We can use either Pytorch’s Scaled Dot Product Attention implementation or native Pytorch attention implementation along with <a href="https://github.com/huggingface/transformers/pull/27539">4d attention masks</a> to pack sequences together and avoid cross attention.</p>
-<p><img src="./images/4d-mask.png" alt="axolotl" width="800"></p>
+<section id="stepwise-supervised" class="level2">
+<h2 class="anchored" data-anchor-id="stepwise-supervised">Stepwise Supervised</h2>
+<p>The stepwise supervised format is designed for chain-of-thought (COT) reasoning datasets where each example contains multiple completion steps and a preference label for each step. ### ExampleHere’s a simple example of a stepwise supervised dataset entry:```json { “prompt”: “Which number is larger, 9.8 or 9.11?”, “completions”: [ “The fractional part of 9.8 is 0.8, while the fractional part of 9.11 is 0.11.”, “Since 0.11 is greater than 0.8, the number 9.11 is larger than 9.8.” ], “labels”: [true, false] }</p>
 
 
 </section>
