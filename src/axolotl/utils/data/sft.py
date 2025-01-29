@@ -8,6 +8,8 @@ from typing import List, Tuple, Union
 from datasets import (
     Dataset,
     DatasetDict,
+    Sequence,
+    Value,
     concatenate_datasets,
     load_dataset,
     load_from_disk,
@@ -462,6 +464,17 @@ def get_dataset_wrapper(
         config_dataset.type.split(".", 1)[1], tokenizer, cfg, config_dataset
     ):
         dataset_prompter = UnsupportedPrompter()
+        dataset_wrapper = TokenizedPromptDataset(
+            ds_strategy,
+            dataset,
+            **ds_kwargs,
+        )
+    elif config_dataset.type.startswith("stepwise_supervised"):
+        dataset_prompter = UnsupportedPrompter()
+        ds_strategy = load(config_dataset.type, tokenizer, cfg, config_dataset)
+        # we need to explicitly cast boolean labels to int
+        # for compatibility with how trl's PRMTrainer works
+        dataset = dataset.cast_column("labels", Sequence(Value("int64")))
         dataset_wrapper = TokenizedPromptDataset(
             ds_strategy,
             dataset,

@@ -1,7 +1,7 @@
-base_model: google/gemma-2-2b
+base_model: Qwen/Qwen2.5-3B
 # optionally might have model_type or tokenizer_type
-model_type: AutoModelForSequenceClassification
-num_labels: 1
+model_type: AutoModelForTokenClassification
+num_labels: 2
 tokenizer_type: AutoTokenizer
 # Automatically upload checkpoint and final model to HF
 # hub_model_id: username/custom_model_name
@@ -10,12 +10,16 @@ load_in_8bit: false
 load_in_4bit: false
 strict: false
 
-reward_model: true
-chat_template: gemma
+process_reward_model: true
+chat_template:
 datasets:
-  - path: argilla/distilabel-intel-orca-dpo-pairs
-    type: bradley_terry.chat_template
-val_set_size: 0.0
+  - path: trl-lib/math_shepherd
+    type: stepwise_supervised
+    step_separator: "\n"
+    max_completion_length:
+    train_on_last_step_only: false
+
+val_set_size: 0.2
 output_dir: ./outputs/out
 remove_unused_columns: false
 
@@ -31,10 +35,11 @@ wandb_name:
 wandb_log_model:
 
 
-gradient_accumulation_steps: 4
-micro_batch_size: 2
-num_epochs: 4
-optimizer: adamw_bnb_8bit
+gradient_accumulation_steps: 1
+micro_batch_size: 8
+eval_batch_size: 8
+num_epochs: 1
+optimizer: adamw_torch
 lr_scheduler: cosine
 learning_rate: 0.0002
 
@@ -42,8 +47,7 @@ train_on_inputs: false
 group_by_length: false
 bf16: true
 fp16:
-tf32: true
-
+tf32:
 gradient_checkpointing: true
 gradient_checkpointing_kwargs:
   use_reentrant: false
@@ -58,6 +62,7 @@ warmup_ratio: 0.1
 evals_per_epoch:
 eval_table_size:
 eval_max_new_tokens: 128
+eval_steps: 100
 saves_per_epoch: 1
 debug:
 deepspeed:
