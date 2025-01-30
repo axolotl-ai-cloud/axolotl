@@ -24,12 +24,15 @@
   </a>
 </p>
 
-Axolotl is a tool designed to streamline the fine-tuning of various AI models. With
-support for multiple model architectures and training configurations, Axolotl makes it
-easy to get started with model fine-tuning.
+Axolotl is a tool designed to streamline post-training for various AI models.
+Post-training refers to any modifications or additional training performed on
+pre-trained models - including full model fine-tuning, parameter-efficient tuning (like
+LoRA and QLoRA), supervised fine-tuning (SFT), instruction tuning, and alignment
+techniques. With support for multiple model architectures and training configurations,
+Axolotl makes it easy to get started with these techniques.
 
-Axolotl is designed to work with YAML config files that contain everything you need
-to preprocess a dataset, train or fine-tune a model, run model inference or evaluation,
+Axolotl is designed to work with YAML config files that contain everything you need to
+preprocess a dataset, train or fine-tune a model, run model inference or evaluation,
 and much more.
 
 Features:
