@@ -17,11 +17,19 @@ from pydantic import BaseModel
 from transformers import PreTrainedModel, PreTrainedTokenizer, PreTrainedTokenizerFast
 
 from axolotl.logging_config import configure_logging
+from axolotl.monkeypatch.bnb_triton_check import patch_is_triton_available
 from axolotl.utils.dict import DictDefault
-from axolotl.utils.models import load_model, load_tokenizer
 
 configure_logging()
 LOG = logging.getLogger(__name__)
+
+
+# patch bnb before we load it in utils.models
+patch_is_triton_available()
+from axolotl.utils.models import (  # noqa: E402  # pylint: disable=wrong-import-position
+    load_model,
+    load_tokenizer,
+)
 
 
 def strip_optional_type(field_type: type | typing._SpecialForm | None):
