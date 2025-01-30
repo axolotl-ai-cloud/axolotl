@@ -125,8 +125,8 @@ jobs:
     strategy:
       matrix:
         include:
-          - cuda: 121
-            cuda_version: 12.1.1
+          - cuda: 124
+            cuda_version: 12.4.1
             python_version: "3.11"
             pytorch: 2.4.1
             axolotl_extras:
