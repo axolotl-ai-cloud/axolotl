@@ -1,0 +1,28 @@
+project_name:
+volumes:
+  - name: axolotl-data
+    mount: /workspace/data
+  - name: axolotl-artifacts
+    mount: /workspace/artifacts
+
+# environment variables from local to set as secrets
+secrets:
+  - HF_TOKEN
+  - WANDB_API_KEY
+
+# Which branch of axolotl to use remotely
+branch:
+
+# additional custom commands when building the image
+dockerfile_commands:
+
+gpu: h100
+gpu_count: 1
+
+# Train specific configurations
+memory: 128
+timeout: 86400
+
+# Preprocess specific configurations
+memory_preprocess: 32
+timeout_preprocess: 14400
