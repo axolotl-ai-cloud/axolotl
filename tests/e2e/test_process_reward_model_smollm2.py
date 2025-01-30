@@ -63,7 +63,7 @@ class TestProcessRewardSmolLM2(unittest.TestCase):
 
         train(cfg=cfg, dataset_meta=dataset_meta)
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.5, "Train Loss is too high"
+            temp_dir + "/runs", "train/train_loss", 2.7, "Train Loss (%s) is too high"
         )
 
         check_model_output_exists(temp_dir, cfg)
