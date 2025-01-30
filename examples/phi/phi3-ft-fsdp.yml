@@ -39,7 +39,7 @@ wandb_log_model:
 gradient_accumulation_steps: 2
 micro_batch_size: 12
 num_epochs: 2
-optimizer: adamw_torch
+optimizer: adamw_torch_fused
 adam_beta2: 0.95
 adam_epsilon: 0.00001
 max_grad_norm: 1.0

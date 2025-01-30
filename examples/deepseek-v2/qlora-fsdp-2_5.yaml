@@ -47,7 +47,7 @@ peft_use_rslora: true
 gradient_accumulation_steps: 1
 micro_batch_size: 8
 num_epochs: 1
-optimizer: adamw_torch
+optimizer: adamw_torch_fused
 lr_scheduler: cosine
 learning_rate: 2e-5
 

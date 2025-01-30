@@ -39,7 +39,7 @@ def min_cfg(temp_dir):
         "micro_batch_size": 8,
         "gradient_accumulation_steps": 1,
         "learning_rate": 0.00001,
-        "optimizer": "adamw_torch",
+        "optimizer": "adamw_torch_fused",
         "output_dir": temp_dir,
         "lr_scheduler": "cosine",
         "save_safetensors": True,
