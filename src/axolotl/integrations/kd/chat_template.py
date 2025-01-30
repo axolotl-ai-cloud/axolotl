@@ -66,13 +66,18 @@ class ChatTemplateStrategyWithKD(ChatTemplateStrategy):
         target_seq_len = len(logprobs)
         input_seq_len = len(sample["input_ids"])
         input_padding_len = input_seq_len - target_seq_len
-        # get non-zero top-k
+        # get non-zero top-k (prune None logprobs from vllm data step)
         top_k_vals = [
             len(logprobs[i])
             for i in range(len(logprobs))
             if logprobs[i] is not None and len(logprobs[i])
         ]
-        top_k = max(set(top_k_vals), key=top_k_vals.count)
+        max_top_k = max(set(top_k_vals), key=top_k_vals.count)
+        min_top_k = min(set(top_k_vals), key=top_k_vals.count)
+        top_k = min(max_top_k, min_top_k)
+        if top_k == 0:
+            raise ValueError("No non-zero top-k logprobs found.")
+
         target_logprobs = []
         target_token_ids = []
         target_mask = []
@@ -97,10 +102,6 @@ class ChatTemplateStrategyWithKD(ChatTemplateStrategy):
             target_logprobs.append([-float("inf")] * top_k)
             target_token_ids.append(list(range(top_k)))
             target_mask.append([0] * top_k)
-
-        # for _ in range(target_seq_len):
-        #     # TODO also check against sample["labels"]
-        #     target_mask.append([1] * top_k)
 
         for position in range(input_padding_len, input_seq_len):
             if sample["labels"][position] == -100:

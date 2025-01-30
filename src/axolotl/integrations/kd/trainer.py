@@ -76,10 +76,10 @@ class AxolotlKDTrainer(AxolotlTrainer):
 
         if self.args.kd_zscore_base_temp:
             loss_kd = topk_kd_loss_with_zscore(
-                student_logits=shift_logits,
-                teacher_topk_ids=target_token_ids_for_loss,
-                teacher_topk_logprobs=target_logprobs_for_loss,
-                teacher_mask=target_mask_for_loss,
+                shift_logits,
+                target_token_ids_for_loss,
+                target_logprobs_for_loss,
+                target_mask_for_loss,
                 kd_temperature=self.args.kd_temperature,
                 zscore_base_temp=self.args.kd_zscore_base_temp,
                 num_items_in_batch=num_items_in_batch,
