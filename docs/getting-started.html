@@ -6,9 +6,8 @@
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
-<meta name="description" content="How to use Axolotl with Ray Train">
 
-<title>Ray Train integration – Axolotl</title>
+<title>Getting Started with Axolotl – Axolotl</title>
 <style>
 code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
@@ -130,7 +129,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
       <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
         <i class="bi bi-layout-text-sidebar-reverse"></i>
       </button>
-        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/getting-started.html">How-To Guides</a></li><li class="breadcrumb-item"><a href="../docs/ray-integration.html">Ray Train integration</a></li></ol></nav>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/getting-started.html">How-To Guides</a></li><li class="breadcrumb-item"><a href="../docs/getting-started.html">Getting Started with Axolotl</a></li></ol></nav>
         <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
         </a>
     </div>
@@ -159,7 +158,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
       <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/getting-started.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/getting-started.html" class="sidebar-item-text sidebar-link active">
  <span class="menu-text">Getting Started with Axolotl</span></a>
   </div>
 </li>
@@ -243,7 +242,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/ray-integration.html" class="sidebar-item-text sidebar-link active">
+  <a href="../docs/ray-integration.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Ray Train integration</span></a>
   </div>
 </li>
@@ -329,26 +328,31 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#ray-cluster-setup" id="toc-ray-cluster-setup" class="nav-link active" data-scroll-target="#ray-cluster-setup">Ray cluster setup</a></li>
-  <li><a href="#sanity-check" id="toc-sanity-check" class="nav-link" data-scroll-target="#sanity-check">Sanity check</a></li>
-  <li><a href="#configuring-training-with-ray-train" id="toc-configuring-training-with-ray-train" class="nav-link" data-scroll-target="#configuring-training-with-ray-train">Configuring training with Ray Train</a></li>
-  <li><a href="#launching-training" id="toc-launching-training" class="nav-link" data-scroll-target="#launching-training">Launching training</a></li>
+  <li><a href="#sec-quick-example" id="toc-sec-quick-example" class="nav-link active" data-scroll-target="#sec-quick-example"><span class="header-section-number">1</span> Quick Example</a></li>
+  <li><a href="#sec-understanding" id="toc-sec-understanding" class="nav-link" data-scroll-target="#sec-understanding"><span class="header-section-number">2</span> Understanding the Process</a>
+  <ul class="collapse">
+  <li><a href="#sec-config" id="toc-sec-config" class="nav-link" data-scroll-target="#sec-config"><span class="header-section-number">2.1</span> The Configuration File</a></li>
+  <li><a href="#sec-training" id="toc-sec-training" class="nav-link" data-scroll-target="#sec-training"><span class="header-section-number">2.2</span> Training</a></li>
+  </ul></li>
+  <li><a href="#sec-custom" id="toc-sec-custom" class="nav-link" data-scroll-target="#sec-custom"><span class="header-section-number">3</span> Your First Custom Training</a></li>
+  <li><a href="#sec-common-tasks" id="toc-sec-common-tasks" class="nav-link" data-scroll-target="#sec-common-tasks"><span class="header-section-number">4</span> Common Tasks</a>
+  <ul class="collapse">
+  <li><a href="#sec-testing" id="toc-sec-testing" class="nav-link" data-scroll-target="#sec-testing"><span class="header-section-number">4.1</span> Testing Your Model</a></li>
+  <li><a href="#sec-preprocessing" id="toc-sec-preprocessing" class="nav-link" data-scroll-target="#sec-preprocessing"><span class="header-section-number">4.2</span> Preprocessing Data</a></li>
+  <li><a href="#sec-ui" id="toc-sec-ui" class="nav-link" data-scroll-target="#sec-ui"><span class="header-section-number">4.3</span> Using a UI</a></li>
+  </ul></li>
+  <li><a href="#sec-next-steps" id="toc-sec-next-steps" class="nav-link" data-scroll-target="#sec-next-steps"><span class="header-section-number">5</span> Next Steps</a></li>
   </ul>
 </nav>
     </div>
 <!-- main -->
 <main class="content" id="quarto-document-content">
 
-<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/getting-started.html">How-To Guides</a></li><li class="breadcrumb-item"><a href="../docs/ray-integration.html">Ray Train integration</a></li></ol></nav>
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/getting-started.html">How-To Guides</a></li><li class="breadcrumb-item"><a href="../docs/getting-started.html">Getting Started with Axolotl</a></li></ol></nav>
 <div class="quarto-title">
-<h1 class="title">Ray Train integration</h1>
+<h1 class="title">Getting Started with Axolotl</h1>
 </div>
 
-<div>
-  <div class="description">
-    How to use Axolotl with Ray Train
-  </div>
-</div>
 
 
 <div class="quarto-title-meta">
@@ -363,73 +367,121 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </header>
 
 
-<p>Axolotl supports using Ray as an alternative to <code>accelerate</code> for orchestrating training. This is especially useful for multi-node training since you only have to setup code and dependencies in a single node and launch training as if you were using a single node.</p>
-<p>With the <code>--use-ray</code> CLI flag, Axolotl will use Ray Train’s <a href="https://docs.ray.io/en/latest/train/api/doc/ray.train.torch.TorchTrainer.html#ray.train.torch.TorchTrainer"><code>TorchTrainer</code></a> to run training.</p>
-<section id="ray-cluster-setup" class="level2">
-<h2 class="anchored" data-anchor-id="ray-cluster-setup">Ray cluster setup</h2>
-<p>A prerequisite using the Ray Train integration is to setup a Ray cluster on your desired node(s). For a detailed guide on how you can get started with ray clusters, check the official Ray docs here: https://docs.ray.io/en/latest/cluster/getting-started.html</p>
-<p>Every Ray cluster has one <em>head</em> node and a set of worker nodes. The head node is just like any other worker node, but it also runs certain special processes related to scheduling and orchestration. Ray-enabled scripts are run on the head node and depending on the resources (number of CPUs, GPUs, etc) they request, will be scheduled to run certain tasks on the worker nodes. For more on key concepts behind a Ray cluster, you can refer this <a href="https://docs.ray.io/en/latest/cluster/key-concepts.html#cluster-key-concepts">doc</a>.</p>
+<p>This guide will walk you through your first model fine-tuning project with Axolotl.</p>
+<section id="sec-quick-example" class="level2" data-number="1">
+<h2 data-number="1" class="anchored" data-anchor-id="sec-quick-example"><span class="header-section-number">1</span> Quick Example</h2>
+<p>Let’s start by fine-tuning a small language model using LoRA. This example uses a 1B parameter model to ensure it runs on most GPUs. Assuming <code>axolotl</code> is installed (if not, see our <a href="../docs/installation.html">Installation Guide</a>)</p>
+<ol type="1">
+<li>Download example configs:</li>
+</ol>
+<pre class="shell"><code>axolotl fetch examples</code></pre>
+<ol start="2" type="1">
+<li>Run the training:</li>
+</ol>
+<pre class="shell"><code>axolotl train examples/llama-3/lora-1b.yml</code></pre>
+<p>That’s it! Let’s understand what just happened.</p>
 </section>
-<section id="sanity-check" class="level2">
-<h2 class="anchored" data-anchor-id="sanity-check">Sanity check</h2>
-<p>To run a sanity check on whether your ray cluster is setup properly, execute the following on the head node:</p>
-<div class="sourceCode" id="cb1"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">ray</span> status</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>The output should have a summary of your Ray cluster - list of all the nodes in your cluster, the number of CPUs and GPUs in your cluster, etc. For example, if you have a cluster with 1 CPU-only head node and 2 4xL40S worker nodes, the output can look like this:</p>
-<pre><code>Node status
----------------------------------------------------------------
-Active:
- 1 head
-Idle:
- 2 4xL40S:48CPU-384GB
-Pending:
- (no pending nodes)
-Recent failures:
- (no failures)
-
-Resources
----------------------------------------------------------------
-Usage:
- 0.0/96.0 CPU
- 0.0/8.0 GPU
- 0B/800.00GiB memory
- 0B/229.57GiB object_store_memory
-
-Demands:
- (no resource demands)</code></pre>
-<p>You should also be able to see the same on the <a href="https://docs.ray.io/en/latest/ray-observability/getting-started.html">Ray dashboard</a>.</p>
+<section id="sec-understanding" class="level2" data-number="2">
+<h2 data-number="2" class="anchored" data-anchor-id="sec-understanding"><span class="header-section-number">2</span> Understanding the Process</h2>
+<section id="sec-config" class="level3" data-number="2.1">
+<h3 data-number="2.1" class="anchored" data-anchor-id="sec-config"><span class="header-section-number">2.1</span> The Configuration File</h3>
+<p>The YAML configuration file controls everything about your training. Here’s what (part of) our example config looks like:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">base_model</span><span class="kw">:</span><span class="at"> NousResearch/Llama-3.2-1B</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="co"># hub_model_id: username/custom_model_name</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> teknium/GPT4-LLM-Cleaned</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> alpaca</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a><span class="fu">dataset_prepared_path</span><span class="kw">:</span><span class="at"> last_run_prepared</span></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a><span class="fu">val_set_size</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.1</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a><span class="fu">output_dir</span><span class="kw">:</span><span class="at"> ./outputs/lora-out</span></span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a><span class="fu">adapter</span><span class="kw">:</span><span class="at"> lora</span></span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_model_dir</span><span class="kw">:</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>See our <a href="../docs/config.html">Config options</a> for more details.</p>
 </section>
-<section id="configuring-training-with-ray-train" class="level2">
-<h2 class="anchored" data-anchor-id="configuring-training-with-ray-train">Configuring training with Ray Train</h2>
-<p>You can find an example configuration at <code>configs/llama-3/lora-1b-ray.yaml</code>.</p>
-<p>The key parameters to note here are:</p>
-<div class="sourceCode" id="cb3"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="co">...</span></span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="co">use_ray: true</span></span>
-<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="co">ray_num_workers: 4</span></span>
-<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="co"># optional</span></span>
-<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="co">resources_per_worker:</span></span>
-<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="co">    GPU: 1</span></span>
-<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a><span class="co">...</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<section id="sec-training" class="level3" data-number="2.2">
+<h3 data-number="2.2" class="anchored" data-anchor-id="sec-training"><span class="header-section-number">2.2</span> Training</h3>
+<p>When you run <code>axolotl train</code>, Axolotl:</p>
+<ol type="1">
+<li>Downloads the base model</li>
+<li>(If specified) applies LoRA adapter layers</li>
+<li>Loads and processes the dataset</li>
+<li>Runs the training loop</li>
+<li>Saves the trained model and / or LoRA weights</li>
+</ol>
+</section>
+</section>
+<section id="sec-custom" class="level2" data-number="3">
+<h2 data-number="3" class="anchored" data-anchor-id="sec-custom"><span class="header-section-number">3</span> Your First Custom Training</h2>
+<p>Let’s modify the example for your own data:</p>
+<ol type="1">
+<li>Create a new config file <code>my_training.yml</code>:</li>
+</ol>
+<div class="sourceCode" id="cb4"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">base_model</span><span class="kw">:</span><span class="at"> NousResearch/Nous-Hermes-llama-1b-v1</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="fu">adapter</span><span class="kw">:</span><span class="at"> lora</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="co"># Training settings</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="fu">micro_batch_size</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a><span class="fu">num_epochs</span><span class="kw">:</span><span class="at"> </span><span class="dv">3</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a><span class="fu">learning_rate</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.0003</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a><span class="co"># Your dataset</span></span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> my_data.jsonl</span><span class="co">        # Your local data file</span></span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> alpaca</span><span class="co">               # Or other format</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>This specific config is for LoRA fine-tuning a model with instruction tuning data using the <code>alpaca</code> dataset format, which has the following format:</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    <span class="dt">"instruction"</span><span class="fu">:</span> <span class="st">"Write a description of alpacas."</span><span class="fu">,</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">"input"</span><span class="fu">:</span> <span class="st">""</span><span class="fu">,</span></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>    <span class="dt">"output"</span><span class="fu">:</span> <span class="st">"Alpacas are domesticated South American camelids..."</span></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Please see our <a href="dataset-formats">Dataset Formats</a> for more dataset formats and how to format them.</p>
+<ol start="2" type="1">
+<li>Prepare your JSONL data in the specified format (in this case, the expected `alpaca format):</li>
+</ol>
+<div class="sourceCode" id="cb6"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"instruction"</span><span class="fu">:</span> <span class="st">"Classify this text"</span><span class="fu">,</span> <span class="dt">"input"</span><span class="fu">:</span> <span class="st">"I love this!"</span><span class="fu">,</span> <span class="dt">"output"</span><span class="fu">:</span> <span class="st">"positive"</span><span class="fu">}</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"instruction"</span><span class="fu">:</span> <span class="st">"Classify this text"</span><span class="fu">,</span> <span class="dt">"input"</span><span class="fu">:</span> <span class="st">"Not good at all"</span><span class="fu">,</span> <span class="dt">"output"</span><span class="fu">:</span> <span class="st">"negative"</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Please consult the supported <a href="dataset-formats/">Dataset Formats</a> for more details.</p>
+<ol start="3" type="1">
+<li>Run the training:</li>
+</ol>
+<pre class="shell"><code>axolotl train my_training.yml</code></pre>
+</section>
+<section id="sec-common-tasks" class="level2" data-number="4">
+<h2 data-number="4" class="anchored" data-anchor-id="sec-common-tasks"><span class="header-section-number">4</span> Common Tasks</h2>
+<section id="sec-testing" class="level3" data-number="4.1">
+<h3 data-number="4.1" class="anchored" data-anchor-id="sec-testing"><span class="header-section-number">4.1</span> Testing Your Model</h3>
+<p>After training, test your model:</p>
+<pre class="shell"><code>axolotl inference my_training.yml --lora-model-dir="./outputs/lora-out"</code></pre>
+</section>
+<section id="sec-preprocessing" class="level3" data-number="4.2">
+<h3 data-number="4.2" class="anchored" data-anchor-id="sec-preprocessing"><span class="header-section-number">4.2</span> Preprocessing Data</h3>
+<p>For large datasets, preprocess first:</p>
+<pre class="shell"><code>axolotl preprocess my_training.yml</code></pre>
+</section>
+<section id="sec-ui" class="level3" data-number="4.3">
+<h3 data-number="4.3" class="anchored" data-anchor-id="sec-ui"><span class="header-section-number">4.3</span> Using a UI</h3>
+<p>Launch a Gradio interface:</p>
+<pre class="shell"><code>axolotl inference my_training.yml --lora-model-dir="./outputs/lora-out" --gradio</code></pre>
+</section>
+</section>
+<section id="sec-next-steps" class="level2" data-number="5">
+<h2 data-number="5" class="anchored" data-anchor-id="sec-next-steps"><span class="header-section-number">5</span> Next Steps</h2>
+<p>Now that you have the basics, you might want to:</p>
 <ul>
-<li><code>use_ray</code>: This is the flag that enables the Ray Train integration. You can either use the corresponding <code>--use-ray</code> flag in the CLI or set <code>use_ray</code> in the config file.</li>
-<li><code>ray_num_workers</code>: This is the number of workers/GPUs to use for training.</li>
-<li><code>resources_per_worker</code>: This is the Ray <a href="https://docs.ray.io/en/latest/ray-core/scheduling/resources.html">resource request</a> for each worker. This can be used to request a specific GPU type or a custom resource for each worker. For example, if your ray cluster has GPUs of different types, and you only want to use NVIDIA L40S GPUs, you can do</li>
+<li>Try different model architectures</li>
+<li>Experiment with hyperparameters</li>
+<li>Use more advanced training methods</li>
+<li>Scale up to larger models</li>
 </ul>
-<div class="sourceCode" id="cb4"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">resources_per_worker</span><span class="kw">:</span></span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="at">    accelerator_type</span><span class="fu">:L40S</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.001</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-</section>
-<section id="launching-training" class="level2">
-<h2 class="anchored" data-anchor-id="launching-training">Launching training</h2>
-<p>You can simply run the following command on the head node:</p>
-<div class="sourceCode" id="cb5"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> train examples/llama-3/lora-1b-ray.yml <span class="at">--use-ray</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>This will launch training on the head node and workers will be scheduled automatically by Ray Train to run on the appropriate head or worker nodes.</p>
-<p>You can also monitor training progress on the Ray dashboard.</p>
-<p>Coming back to the example on a Ray cluster with 1 head node and 2 4xL40S worker nodes, let’s say you want to make use of all 8 GPUs. You would be able to just set <code>ray_num_workers: 8</code> and run the previous command. The Cluster tab will show the following:</p>
-<div class="quarto-figure quarto-figure-center">
-<figure class="figure">
-<p><img src="./images/ray-cluster-dashboard.png" class="img-fluid figure-img"></p>
-<figcaption>Ray dashboard</figcaption>
-</figure>
-</div>
+<p>Check our other guides for details on these topics:</p>
+<ul>
+<li><a href="../docs/config.html">Configuration Guide</a> - Full configuration options</li>
+<li><a href="dataset-formats">Dataset Formats</a> - Working with different data formats</li>
+<li><a href="../docs/multi-gpu.html">Multi-GPU Training</a></li>
+<li><a href="../docs/multi-node.html">Multi-Node Training</a></li>
+</ul>
 
 
 </section>

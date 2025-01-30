@@ -6,9 +6,8 @@
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
-<meta name="description" content="Template-free prompt construction with the input_output format">
 
-<title>Template-free prompt construction – Axolotl</title>
+<title>Multi-GPU Training Guide – Axolotl</title>
 <style>
 code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
@@ -130,7 +129,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
       <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
         <i class="bi bi-layout-text-sidebar-reverse"></i>
       </button>
-        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/getting-started.html">How-To Guides</a></li><li class="breadcrumb-item"><a href="../docs/input_output.html">Template-free prompt construction</a></li></ol></nav>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/getting-started.html">How-To Guides</a></li><li class="breadcrumb-item"><a href="../docs/multi-gpu.html">Multi-GPU Training Guide</a></li></ol></nav>
         <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
         </a>
     </div>
@@ -195,7 +194,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/input_output.html" class="sidebar-item-text sidebar-link active">
+  <a href="../docs/input_output.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Template-free prompt construction</span></a>
   </div>
 </li>
@@ -219,7 +218,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/multi-gpu.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/multi-gpu.html" class="sidebar-item-text sidebar-link active">
  <span class="menu-text">Multi-GPU Training Guide</span></a>
   </div>
 </li>
@@ -329,17 +328,26 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#background" id="toc-background" class="nav-link active" data-scroll-target="#background">Background</a>
+  <li><a href="#sec-overview" id="toc-sec-overview" class="nav-link active" data-scroll-target="#sec-overview"><span class="header-section-number">1</span> Overview</a></li>
+  <li><a href="#sec-deepspeed" id="toc-sec-deepspeed" class="nav-link" data-scroll-target="#sec-deepspeed"><span class="header-section-number">2</span> DeepSpeed</a>
   <ul class="collapse">
-  <li><a href="#masking-inputs" id="toc-masking-inputs" class="nav-link" data-scroll-target="#masking-inputs">Masking Inputs</a></li>
-  <li><a href="#you-may-not-want-prompt-templates" id="toc-you-may-not-want-prompt-templates" class="nav-link" data-scroll-target="#you-may-not-want-prompt-templates">You may not want prompt templates</a></li>
-  <li><a href="#the-input_output-format" id="toc-the-input_output-format" class="nav-link" data-scroll-target="#the-input_output-format">The <code>input_output</code> format</a></li>
+  <li><a href="#sec-deepspeed-config" id="toc-sec-deepspeed-config" class="nav-link" data-scroll-target="#sec-deepspeed-config"><span class="header-section-number">2.1</span> Configuration</a></li>
+  <li><a href="#sec-deepspeed-usage" id="toc-sec-deepspeed-usage" class="nav-link" data-scroll-target="#sec-deepspeed-usage"><span class="header-section-number">2.2</span> Usage</a></li>
+  <li><a href="#sec-zero-stages" id="toc-sec-zero-stages" class="nav-link" data-scroll-target="#sec-zero-stages"><span class="header-section-number">2.3</span> ZeRO Stages</a></li>
   </ul></li>
-  <li><a href="#usage" id="toc-usage" class="nav-link" data-scroll-target="#usage">Usage</a>
+  <li><a href="#sec-fsdp" id="toc-sec-fsdp" class="nav-link" data-scroll-target="#sec-fsdp"><span class="header-section-number">3</span> FSDP</a>
   <ul class="collapse">
-  <li><a href="#prepare-data" id="toc-prepare-data" class="nav-link" data-scroll-target="#prepare-data">1. Prepare Data</a></li>
-  <li><a href="#use-type-input_output" id="toc-use-type-input_output" class="nav-link" data-scroll-target="#use-type-input_output">2. Use <code>type: input_output</code></a></li>
-  <li><a href="#check-the-prompts" id="toc-check-the-prompts" class="nav-link" data-scroll-target="#check-the-prompts">3. Check the prompts</a></li>
+  <li><a href="#sec-fsdp-config" id="toc-sec-fsdp-config" class="nav-link" data-scroll-target="#sec-fsdp-config"><span class="header-section-number">3.1</span> Basic FSDP Configuration</a></li>
+  <li><a href="#sec-fsdp-qlora" id="toc-sec-fsdp-qlora" class="nav-link" data-scroll-target="#sec-fsdp-qlora"><span class="header-section-number">3.2</span> FSDP + QLoRA</a></li>
+  </ul></li>
+  <li><a href="#sec-performance" id="toc-sec-performance" class="nav-link" data-scroll-target="#sec-performance"><span class="header-section-number">4</span> Performance Optimization</a>
+  <ul class="collapse">
+  <li><a href="#sec-liger" id="toc-sec-liger" class="nav-link" data-scroll-target="#sec-liger"><span class="header-section-number">4.1</span> Liger Kernel Integration</a></li>
+  </ul></li>
+  <li><a href="#sec-troubleshooting" id="toc-sec-troubleshooting" class="nav-link" data-scroll-target="#sec-troubleshooting"><span class="header-section-number">5</span> Troubleshooting</a>
+  <ul class="collapse">
+  <li><a href="#sec-nccl" id="toc-sec-nccl" class="nav-link" data-scroll-target="#sec-nccl"><span class="header-section-number">5.1</span> NCCL Issues</a></li>
+  <li><a href="#sec-common-problems" id="toc-sec-common-problems" class="nav-link" data-scroll-target="#sec-common-problems"><span class="header-section-number">5.2</span> Common Problems</a></li>
   </ul></li>
   </ul>
 </nav>
@@ -347,16 +355,11 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <!-- main -->
 <main class="content" id="quarto-document-content">
 
-<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/getting-started.html">How-To Guides</a></li><li class="breadcrumb-item"><a href="../docs/input_output.html">Template-free prompt construction</a></li></ol></nav>
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/getting-started.html">How-To Guides</a></li><li class="breadcrumb-item"><a href="../docs/multi-gpu.html">Multi-GPU Training Guide</a></li></ol></nav>
 <div class="quarto-title">
-<h1 class="title">Template-free prompt construction</h1>
+<div class="quarto-title-block"><div><h1 class="title">Multi-GPU Training Guide</h1><button type="button" class="btn code-tools-button" id="quarto-code-tools-source"><i class="bi"></i> Code</button></div></div>
 </div>
 
-<div>
-  <div class="description">
-    Template-free prompt construction with the <code>input_output</code> format
-  </div>
-</div>
 
 
 <div class="quarto-title-meta">
@@ -371,255 +374,120 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </header>
 
 
-<!-- TOC -->
+<p>This guide covers advanced training configurations for multi-GPU setups using Axolotl.</p>
+<section id="sec-overview" class="level2" data-number="1">
+<h2 data-number="1" class="anchored" data-anchor-id="sec-overview"><span class="header-section-number">1</span> Overview</h2>
+<p>Axolotl supports several methods for multi-GPU training:</p>
 <ul>
-<li><a href="#background">Background</a>
-<ul>
-<li><a href="#masking-inputs">Masking Inputs</a></li>
-<li><a href="#you-may-not-want-prompt-templates">You may not want prompt templates</a></li>
-<li><a href="#the-input_output-format">The <code>input_output</code> format</a></li>
-</ul></li>
-<li><a href="#usage">Usage</a>
-<ul>
-<li><a href="#1-prepare-data">1. Prepare Data</a></li>
-<li><a href="#2-use-type-input_output">2. Use <code>type: input_output</code></a></li>
-<li><a href="#3-check-the-prompts">3. Check the prompts</a></li>
-</ul></li>
+<li>DeepSpeed (recommended)</li>
+<li>FSDP (Fully Sharded Data Parallel)</li>
+<li>FSDP + QLoRA</li>
 </ul>
-<!-- /TOC -->
-<p><a id="markdown-background" name="background"></a></p>
-<section id="background" class="level2">
-<h2 class="anchored" data-anchor-id="background">Background</h2>
-<p><a id="markdown-masking-inputs" name="masking-inputs"></a></p>
-<section id="masking-inputs" class="level3">
-<h3 class="anchored" data-anchor-id="masking-inputs">Masking Inputs</h3>
-<p>One of the most popular features of <a href="https://github.com/axolotl-ai-cloud/axolotl">axolotl</a> is setting the following configuration value:</p>
-<div class="sourceCode" id="cb1"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">train_on_inputs</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>If you declare a <a href="https://github.com/axolotl-ai-cloud/axolotl?tab=readme-ov-file#dataset">dataset formats</a> such as <code>alpaca</code> or <code>chatml</code>, axolotl knows what is an input (i.e.&nbsp;human) vs.&nbsp;an output (i.e.&nbsp;the assistant) and masks the input labels so that your model can focus on predicting the outputs only.</p>
-<p><a id="markdown-you-may-not-want-prompt-templates" name="you-may-not-want-prompt-templates"></a></p>
 </section>
-<section id="you-may-not-want-prompt-templates" class="level3">
-<h3 class="anchored" data-anchor-id="you-may-not-want-prompt-templates">You may not want prompt templates</h3>
-<p>However, there are many situations where you don’t want to use one of these formats or templates. This is because they can:</p>
+<section id="sec-deepspeed" class="level2" data-number="2">
+<h2 data-number="2" class="anchored" data-anchor-id="sec-deepspeed"><span class="header-section-number">2</span> DeepSpeed</h2>
+<p>DeepSpeed is the recommended approach for multi-GPU training due to its stability and performance. It provides various optimization levels through ZeRO stages.</p>
+<section id="sec-deepspeed-config" class="level3" data-number="2.1">
+<h3 data-number="2.1" class="anchored" data-anchor-id="sec-deepspeed-config"><span class="header-section-number">2.1</span> Configuration</h3>
+<p>Add to your YAML config:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">deepspeed</span><span class="kw">:</span><span class="at"> deepspeed_configs/zero1.json</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</section>
+<section id="sec-deepspeed-usage" class="level3" data-number="2.2">
+<h3 data-number="2.2" class="anchored" data-anchor-id="sec-deepspeed-usage"><span class="header-section-number">2.2</span> Usage</h3>
+<div class="sourceCode" id="cb2"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="ex">accelerate</span> launch <span class="at">-m</span> axolotl.cli.train examples/llama-2/config.yml <span class="at">--deepspeed</span> deepspeed_configs/zero1.json</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</section>
+<section id="sec-zero-stages" class="level3" data-number="2.3">
+<h3 data-number="2.3" class="anchored" data-anchor-id="sec-zero-stages"><span class="header-section-number">2.3</span> ZeRO Stages</h3>
+<p>We provide default configurations for:</p>
 <ul>
-<li>Add unnecessary boilerplate to your prompts.</li>
-<li>Create artifacts like special delimiters <code>&lt;|im_start|&gt;</code> that can quickly become footguns if you don’t include them correctly at inference time.</li>
-<li>Enforce a <em>chat</em> interface when you do not want one. Sometimes you just want to fine-tune a model to a very specific task and do NOT want multi-turn conversations, roles, etc.</li>
-<li>Limit you to only certain roles that the template allows.</li>
+<li>ZeRO Stage 1 (<code>zero1.json</code>)</li>
+<li>ZeRO Stage 2 (<code>zero2.json</code>)</li>
+<li>ZeRO Stage 3 (<code>zero3.json</code>)</li>
 </ul>
-<p><a id="markdown-the-inputoutput-format" name="the-inputoutput-format"></a></p>
-</section>
-<section id="the-input_output-format" class="level3">
-<h3 class="anchored" data-anchor-id="the-input_output-format">The <code>input_output</code> format</h3>
-<p>You can construct your prompts without a template by using the <code>input_output</code> format, by setting <code>type: input_output</code> in your configuration file like this:</p>
-<p><strong>config.yml</strong></p>
-<div class="sourceCode" id="cb2"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">train_on_inputs</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span><span class="co"> # Mask segments of your data</span></span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> output.jsonl</span></span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> input_output</span><span class="co">  # use template free prompt construction</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Unlike <code>type: completion</code>, which is also template-free, <code>type: input_output</code> allows you to mask segments of your text. More details on how this works are described below.</p>
-<p><a id="markdown-usage" name="usage"></a></p>
+<p>Choose based on your memory requirements and performance needs.</p>
 </section>
 </section>
-<section id="usage" class="level2">
-<h2 class="anchored" data-anchor-id="usage">Usage</h2>
-<p>This is how you can use the <code>input_output</code> format:</p>
-<p><a id="markdown-1-prepare-data" name="1-prepare-data"></a></p>
-<section id="prepare-data" class="level3">
-<h3 class="anchored" data-anchor-id="prepare-data">1. Prepare Data</h3>
-<p>To use the <code>input_output</code> format, collect your data in the following format into a jsonl file (below is the first row from the file <code>output</code>.jsonl` pretty printed):</p>
-<div class="sourceCode" id="cb3"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">$</span> head <span class="at">-n1</span> output.jsonl <span class="kw">|</span> <span class="ex">python</span> <span class="at">-m</span> json.tool</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<div class="cell-output cell-output-stdout">
-<pre><code>{
-    "segments": [
-        {
-            "label": true,
-            "text": "&lt;s&gt;Hello\n"
-        },
-        {
-            "label": true,
-            "text": "hi there!. "
-        },
-        {
-            "label": false,
-            "text": "goodbye "
-        },
-        {
-            "label": true,
-            "text": "farewell&lt;/s&gt;"
-        }
-    ]
-}</code></pre>
+<section id="sec-fsdp" class="level2" data-number="3">
+<h2 data-number="3" class="anchored" data-anchor-id="sec-fsdp"><span class="header-section-number">3</span> FSDP</h2>
+<section id="sec-fsdp-config" class="level3" data-number="3.1">
+<h3 data-number="3.1" class="anchored" data-anchor-id="sec-fsdp-config"><span class="header-section-number">3.1</span> Basic FSDP Configuration</h3>
+<div class="sourceCode" id="cb3"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp</span><span class="kw">:</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> full_shard</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> auto_wrap</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp_config</span><span class="kw">:</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fsdp_offload_params</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fsdp_state_dict_type</span><span class="kw">:</span><span class="at"> FULL_STATE_DICT</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fsdp_transformer_layer_cls_to_wrap</span><span class="kw">:</span><span class="at"> LlamaDecoderLayer</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</section>
+<section id="sec-fsdp-qlora" class="level3" data-number="3.2">
+<h3 data-number="3.2" class="anchored" data-anchor-id="sec-fsdp-qlora"><span class="header-section-number">3.2</span> FSDP + QLoRA</h3>
+<p>For combining FSDP with QLoRA, see our <a href="../docs/fsdp_qlora.html">dedicated guide</a>.</p>
+</section>
+</section>
+<section id="sec-performance" class="level2" data-number="4">
+<h2 data-number="4" class="anchored" data-anchor-id="sec-performance"><span class="header-section-number">4</span> Performance Optimization</h2>
+<section id="sec-liger" class="level3" data-number="4.1">
+<h3 data-number="4.1" class="anchored" data-anchor-id="sec-liger"><span class="header-section-number">4.1</span> Liger Kernel Integration</h3>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
 </div>
-<p>Set <code>label:false</code> when you want to mask a segment of text so that the model isn’t trained on it. Some things to keep in mind:</p>
-<blockquote class="blockquote">
-<p>[!IMPORTANT] 1. <strong>EOS, BOS, spaces, newlines etc. are entirely up to you. Axolotl concatenates all the segments as-is.</strong> The tokenizer doesn’t add anything additional. Notice how I added spaces, newlines, <code>&lt;s&gt;</code> (BOS), and <code>&lt;/s&gt;</code> (EOS) myself. 2. Make sure you check the materialized output to validate that the prompt is getting assembled how you like.</p>
-</blockquote>
-<p><a id="markdown-2-use-type-inputoutput" name="2-use-type-inputoutput"></a></p>
-</section>
-<section id="use-type-input_output" class="level3">
-<h3 class="anchored" data-anchor-id="use-type-input_output">2. Use <code>type: input_output</code></h3>
-<p>Let’s materialize data with our <code>output.jsonl</code> file by setting <code>type: input_output</code> in our axolotl config:</p>
-<div class="sourceCode" id="cb5"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="co"># training_config.yaml</span></span>
-<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="fu">base_model</span><span class="kw">:</span><span class="at"> mistralai/Mistral-7B-v0.1</span></span>
-<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="fu">data_seed</span><span class="kw">:</span><span class="at"> </span><span class="dv">49</span></span>
-<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a><span class="fu">seed</span><span class="kw">:</span><span class="at"> </span><span class="dv">49</span></span>
-<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
-<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> output.jsonl</span></span>
-<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> input_output</span></span>
-<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a><span class="fu">val_set_size</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.1</span></span>
-<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a><span class="fu">sequence_len</span><span class="kw">:</span><span class="at"> </span><span class="dv">896</span></span>
-<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a><span class="fu">sample_packing</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span>
-<span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a><span class="fu">micro_batch_size</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
-<span id="cb5-15"><a href="#cb5-15" aria-hidden="true" tabindex="-1"></a><span class="fu">gradient_accumulation_steps</span><span class="kw">:</span><span class="at"> </span><span class="dv">3</span></span>
-<span id="cb5-16"><a href="#cb5-16" aria-hidden="true" tabindex="-1"></a><span class="fu">eval_batch_size</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
-<span id="cb5-17"><a href="#cb5-17" aria-hidden="true" tabindex="-1"></a><span class="fu">num_epochs</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span></span>
-<span id="cb5-18"><a href="#cb5-18" aria-hidden="true" tabindex="-1"></a><span class="fu">learning_rate</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.0002</span></span>
-<span id="cb5-19"><a href="#cb5-19" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-20"><a href="#cb5-20" aria-hidden="true" tabindex="-1"></a><span class="fu">train_on_inputs</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span>
-<span id="cb5-21"><a href="#cb5-21" aria-hidden="true" tabindex="-1"></a><span class="fu">special_tokens</span><span class="kw">:</span></span>
-<span id="cb5-22"><a href="#cb5-22" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">bos_token</span><span class="kw">:</span><span class="at"> </span><span class="st">"&lt;s&gt;"</span></span>
-<span id="cb5-23"><a href="#cb5-23" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">eos_token</span><span class="kw">:</span><span class="at"> </span><span class="st">"&lt;/s&gt;"</span></span>
-<span id="cb5-24"><a href="#cb5-24" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">unk_token</span><span class="kw">:</span><span class="at"> </span><span class="st">"&lt;unk&gt;"</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>You can use the following command to materialize your data. The <code>--debug</code> flag will print the tokens, along with the labels so you can verify that the correct items are being ignored:</p>
-<div class="sourceCode" id="cb6"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="ex">$</span> python <span class="at">-m</span> axolotl.cli.preprocess training_config.yaml <span class="at">--debug</span></span>
-<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a><span class="ex">...</span></span>
-<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a><span class="ex">[2024-03-05</span> 23:36:46,969] <span class="pp">[</span><span class="ss">INFO</span><span class="pp">]</span> <span class="pp">[</span><span class="ss">axolotl.check_example_labels:35</span><span class="pp">]</span> <span class="pp">[</span><span class="ss">PID:607731</span><span class="pp">]</span> <span class="pp">[</span><span class="ss">RANK:0</span><span class="pp">]</span> <span class="op">&lt;</span>s<span class="op">&gt;(</span><span class="ex">1,</span> 1<span class="op">)</span> Hello<span class="er">(</span><span class="ex">22557,</span> 22557<span class="kw">)</span></span>
-<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a><span class="kw">(</span><span class="ex">13,</span> 13<span class="kw">)</span> <span class="ex">hi</span><span class="er">(</span><span class="ex">12014,</span> 12014<span class="kw">)</span> <span class="ex">there</span><span class="er">(</span><span class="ex">736,</span> 736<span class="kw">)</span> <span class="ex">!</span><span class="er">(</span><span class="ex">28808,</span> 28808<span class="kw">)</span> <span class="bu">.</span><span class="er">(</span><span class="ex">28723,</span> 28723<span class="kw">)</span> <span class="kw">(</span><span class="ex">28705,</span> 28705<span class="kw">)</span> <span class="ex">good</span><span class="er">(</span><span class="ex">-100,</span> 1179<span class="kw">)</span> <span class="ex">bye</span><span class="er">(</span><span class="ex">-100,</span> 17664<span class="kw">)</span> <span class="kw">(</span><span class="ex">-100,</span> 28705<span class="kw">)</span> <span class="ex">fare</span><span class="er">(</span><span class="ex">19111,</span> 19111<span class="kw">)</span> <span class="ex">well</span><span class="er">(</span><span class="ex">5458,</span> 5458<span class="kw">)</span> <span class="op">&lt;</span>/s<span class="op">&gt;(</span><span class="ex">2,</span> 2<span class="op">)</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>The format is <code>decoded_token</code>(<code>label</code>, <code>token_id</code>), for example, <code>&lt;s&gt;(1, 1)</code> means that the token is <code>&lt;s&gt;</code>, the label is <code>1</code> and the token_id is <code>1</code>. When the label is <code>-100</code> then that token is ignored for training.</p>
-<p><a id="markdown-3-check-the-prompts" name="3-check-the-prompts"></a></p>
-</section>
-<section id="check-the-prompts" class="level3">
-<h3 class="anchored" data-anchor-id="check-the-prompts">3. Check the prompts</h3>
-<p>Here is another way to check the materialized output:</p>
-<div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> transformers <span class="im">import</span> AutoTokenizer</span>
-<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> datasets <span class="im">import</span> load_from_disk</span>
-<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> yaml</span>
-<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>directory <span class="op">=</span> <span class="op">!</span>ls last_run_prepared<span class="op">/</span></span>
-<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a><span class="cf">with</span> <span class="bu">open</span>(<span class="st">'training_config.yaml'</span>, <span class="st">'r'</span>) <span class="im">as</span> f:</span>
-<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a>    cfg <span class="op">=</span> yaml.safe_load(f)</span>
-<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a>model_id <span class="op">=</span> cfg[<span class="st">'base_model'</span>]</span>
-<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a>tok <span class="op">=</span> AutoTokenizer.from_pretrained(model_id)</span>
-<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a>ds <span class="op">=</span> load_from_disk(<span class="ss">f'last_run_prepared/</span><span class="sc">{</span>directory[<span class="dv">0</span>]<span class="sc">}</span><span class="ss">/'</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<div class="sourceCode" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="op">&gt;&gt;&gt;</span> row <span class="op">=</span> ds[<span class="dv">0</span>]</span>
-<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="op">&gt;&gt;&gt;</span> <span class="bu">print</span>(tok.decode(row[<span class="st">'input_ids'</span>]))</span>
-<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="op">&lt;</span>s<span class="op">&gt;</span> Hello</span>
-<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>    hi there<span class="op">!</span>.  goodbye  farewell<span class="op">&lt;/</span>s<span class="op">&gt;</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>We can check that the right tokens are ignored by comparing the labels to each token:</p>
-<div class="sourceCode" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> pandas <span class="im">as</span> pd</span>
-<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>pd.DataFrame([{<span class="st">'token'</span>: tok.decode(i), <span class="st">'label'</span>: l, <span class="st">'id'</span>:i} <span class="cf">for</span> i,l <span class="kw">in</span></span>
-<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>              <span class="bu">zip</span>(row[<span class="st">'input_ids'</span>], row[<span class="st">'labels'</span>])])</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>token</th>
-<th>label</th>
-<th>id</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>0</td>
-<td>&lt;s&gt;</td>
-<td>1</td>
-</tr>
-<tr class="even">
-<td>1</td>
-<td>Hello</td>
-<td>22557</td>
-</tr>
-<tr class="odd">
-<td>2</td>
-<td>\n</td>
-<td>13</td>
-</tr>
-<tr class="even">
-<td>3</td>
-<td>hi</td>
-<td>12014</td>
-</tr>
-<tr class="odd">
-<td>4</td>
-<td>there</td>
-<td>736</td>
-</tr>
-<tr class="even">
-<td>5</td>
-<td>!</td>
-<td>28808</td>
-</tr>
-<tr class="odd">
-<td>6</td>
-<td>.</td>
-<td>28723</td>
-</tr>
-<tr class="even">
-<td>7</td>
-<td></td>
-<td>28705</td>
-</tr>
-<tr class="odd">
-<td>8</td>
-<td>good</td>
-<td>-100</td>
-</tr>
-<tr class="even">
-<td>9</td>
-<td>bye</td>
-<td>-100</td>
-</tr>
-<tr class="odd">
-<td>10</td>
-<td></td>
-<td>-100</td>
-</tr>
-<tr class="even">
-<td>11</td>
-<td>fare</td>
-<td>19111</td>
-</tr>
-<tr class="odd">
-<td>12</td>
-<td>well</td>
-<td>5458</td>
-</tr>
-<tr class="even">
-<td>13</td>
-<td>&lt;/s&gt;</td>
-<td>2</td>
-</tr>
-</tbody>
-</table>
-<p>If we look at the input data, the above table seems correct! (The jsonl version is repeated below for reference):</p>
-<div class="sourceCode" id="cb10"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="ex">$</span> head <span class="at">-n1</span> output.jsonl <span class="kw">|</span> <span class="ex">python</span> <span class="at">-m</span> json.tool</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<div class="cell-output cell-output-stdout">
-<pre><code>{
-    "segments": [
-        {
-            "label": true,
-            "text": "&lt;s&gt;Hello\n"
-        },
-        {
-            "label": true,
-            "text": "hi there!. "
-        },
-        {
-            "label": false,
-            "text": "goodbye "
-        },
-        {
-            "label": true,
-            "text": "farewell&lt;/s&gt;"
-        }
-    ]
-}</code></pre>
+<div class="callout-title-container flex-fill">
+Note
 </div>
+</div>
+<div class="callout-body-container callout-body">
+<p>Liger Kernel provides efficient Triton kernels for LLM training, offering:</p>
+<ul>
+<li>20% increase in multi-GPU training throughput</li>
+<li>60% reduction in memory usage</li>
+<li>Compatibility with both FSDP and DeepSpeed</li>
+</ul>
+</div>
+</div>
+<p>Configuration:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">plugins</span><span class="kw">:</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> axolotl.integrations.liger.LigerPlugin</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="fu">liger_rope</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="fu">liger_rms_norm</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="fu">liger_glu_activation</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a><span class="fu">liger_layer_norm</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a><span class="fu">liger_fused_linear_cross_entropy</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</section>
+</section>
+<section id="sec-troubleshooting" class="level2" data-number="5">
+<h2 data-number="5" class="anchored" data-anchor-id="sec-troubleshooting"><span class="header-section-number">5</span> Troubleshooting</h2>
+<section id="sec-nccl" class="level3" data-number="5.1">
+<h3 data-number="5.1" class="anchored" data-anchor-id="sec-nccl"><span class="header-section-number">5.1</span> NCCL Issues</h3>
+<p>For NCCL-related problems, see our <a href="../docs/nccl.html">NCCL troubleshooting guide</a>.</p>
+</section>
+<section id="sec-common-problems" class="level3" data-number="5.2">
+<h3 data-number="5.2" class="anchored" data-anchor-id="sec-common-problems"><span class="header-section-number">5.2</span> Common Problems</h3>
+<div class="tabset-margin-container"></div><div class="panel-tabset">
+<ul class="nav nav-tabs" role="tablist"><li class="nav-item" role="presentation"><a class="nav-link active" id="tabset-1-1-tab" data-bs-toggle="tab" data-bs-target="#tabset-1-1" role="tab" aria-controls="tabset-1-1" aria-selected="true" aria-current="page">Memory Issues</a></li><li class="nav-item" role="presentation"><a class="nav-link" id="tabset-1-2-tab" data-bs-toggle="tab" data-bs-target="#tabset-1-2" role="tab" aria-controls="tabset-1-2" aria-selected="false">Training Instability</a></li></ul>
+<div class="tab-content">
+<div id="tabset-1-1" class="tab-pane active" role="tabpanel" aria-labelledby="tabset-1-1-tab">
+<ul>
+<li>Reduce <code>micro_batch_size</code></li>
+<li>Reduce <code>eval_batch_size</code></li>
+<li>Adjust <code>gradient_accumulation_steps</code></li>
+<li>Consider using a higher ZeRO stage</li>
+</ul>
+</div>
+<div id="tabset-1-2" class="tab-pane" role="tabpanel" aria-labelledby="tabset-1-2-tab">
+<ul>
+<li>Start with DeepSpeed ZeRO-2</li>
+<li>Monitor loss values</li>
+<li>Check learning rates</li>
+</ul>
+</div>
+</div>
+</div>
+<p>For more detailed troubleshooting, see our <a href="../docs/debugging.html">debugging guide</a>.</p>
 
+
+<!-- -->
 
 </section>
 </section>
@@ -712,6 +580,57 @@ window.document.addEventListener("DOMContentLoaded", function (event) {
       container: window.document.getElementById('quarto-embedded-source-code-modal')
     });
     clipboardModal.on('success', onCopySuccess);
+  }
+  const viewSource = window.document.getElementById('quarto-view-source') ||
+                     window.document.getElementById('quarto-code-tools-source');
+  if (viewSource) {
+    const sourceUrl = viewSource.getAttribute("data-quarto-source-url");
+    viewSource.addEventListener("click", function(e) {
+      if (sourceUrl) {
+        // rstudio viewer pane
+        if (/\bcapabilities=\b/.test(window.location)) {
+          window.open(sourceUrl);
+        } else {
+          window.location.href = sourceUrl;
+        }
+      } else {
+        const modal = new bootstrap.Modal(document.getElementById('quarto-embedded-source-code-modal'));
+        modal.show();
+      }
+      return false;
+    });
+  }
+  function toggleCodeHandler(show) {
+    return function(e) {
+      const detailsSrc = window.document.querySelectorAll(".cell > details > .sourceCode");
+      for (let i=0; i<detailsSrc.length; i++) {
+        const details = detailsSrc[i].parentElement;
+        if (show) {
+          details.open = true;
+        } else {
+          details.removeAttribute("open");
+        }
+      }
+      const cellCodeDivs = window.document.querySelectorAll(".cell > .sourceCode");
+      const fromCls = show ? "hidden" : "unhidden";
+      const toCls = show ? "unhidden" : "hidden";
+      for (let i=0; i<cellCodeDivs.length; i++) {
+        const codeDiv = cellCodeDivs[i];
+        if (codeDiv.classList.contains(fromCls)) {
+          codeDiv.classList.remove(fromCls);
+          codeDiv.classList.add(toCls);
+        } 
+      }
+      return false;
+    }
+  }
+  const hideAllCode = window.document.getElementById("quarto-hide-all-code");
+  if (hideAllCode) {
+    hideAllCode.addEventListener("click", toggleCodeHandler(false));
+  }
+  const showAllCode = window.document.getElementById("quarto-show-all-code");
+  if (showAllCode) {
+    showAllCode.addEventListener("click", toggleCodeHandler(true));
   }
     var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
     var mailtoRegex = new RegExp(/^mailto:/);
@@ -1041,7 +960,126 @@ window.document.addEventListener("DOMContentLoaded", function (event) {
     }
   }
 });
-</script>
+</script><div class="modal fade" id="quarto-embedded-source-code-modal" tabindex="-1" aria-labelledby="quarto-embedded-source-code-modal-label" aria-hidden="true"><div class="modal-dialog modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><h5 class="modal-title" id="quarto-embedded-source-code-modal-label">Source Code</h5><button class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><div class="">
+<div class="sourceCode" id="cb5" data-shortcodes="false"><pre class="sourceCode markdown code-with-copy"><code class="sourceCode markdown"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="co">---</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="an">title:</span><span class="co"> "Multi-GPU Training Guide"</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="an">format:</span></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a><span class="co">  html:</span></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a><span class="co">    toc: true</span></span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a><span class="co">    toc-depth: 3</span></span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a><span class="co">    number-sections: true</span></span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a><span class="co">    code-tools: true</span></span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a><span class="an">execute:</span></span>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a><span class="co">  enabled: false</span></span>
+<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a><span class="co">---</span></span>
+<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a>This guide covers advanced training configurations for multi-GPU setups using Axolotl.</span>
+<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-15"><a href="#cb5-15" aria-hidden="true" tabindex="-1"></a><span class="fu">## Overview {#sec-overview}</span></span>
+<span id="cb5-16"><a href="#cb5-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-17"><a href="#cb5-17" aria-hidden="true" tabindex="-1"></a>Axolotl supports several methods for multi-GPU training:</span>
+<span id="cb5-18"><a href="#cb5-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-19"><a href="#cb5-19" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>DeepSpeed (recommended)</span>
+<span id="cb5-20"><a href="#cb5-20" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>FSDP (Fully Sharded Data Parallel)</span>
+<span id="cb5-21"><a href="#cb5-21" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>FSDP + QLoRA</span>
+<span id="cb5-22"><a href="#cb5-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-23"><a href="#cb5-23" aria-hidden="true" tabindex="-1"></a><span class="fu">## DeepSpeed {#sec-deepspeed}</span></span>
+<span id="cb5-24"><a href="#cb5-24" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-25"><a href="#cb5-25" aria-hidden="true" tabindex="-1"></a>DeepSpeed is the recommended approach for multi-GPU training due to its stability and performance. It provides various optimization levels through ZeRO stages.</span>
+<span id="cb5-26"><a href="#cb5-26" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-27"><a href="#cb5-27" aria-hidden="true" tabindex="-1"></a><span class="fu">### Configuration {#sec-deepspeed-config}</span></span>
+<span id="cb5-28"><a href="#cb5-28" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-29"><a href="#cb5-29" aria-hidden="true" tabindex="-1"></a>Add to your YAML config:</span>
+<span id="cb5-30"><a href="#cb5-30" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-31"><a href="#cb5-31" aria-hidden="true" tabindex="-1"></a><span class="in">```{.yaml}</span></span>
+<span id="cb5-32"><a href="#cb5-32" aria-hidden="true" tabindex="-1"></a><span class="in">deepspeed: deepspeed_configs/zero1.json</span></span>
+<span id="cb5-33"><a href="#cb5-33" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb5-34"><a href="#cb5-34" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-35"><a href="#cb5-35" aria-hidden="true" tabindex="-1"></a><span class="fu">### Usage {#sec-deepspeed-usage}</span></span>
+<span id="cb5-36"><a href="#cb5-36" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-37"><a href="#cb5-37" aria-hidden="true" tabindex="-1"></a><span class="in">```{.bash}</span></span>
+<span id="cb5-38"><a href="#cb5-38" aria-hidden="true" tabindex="-1"></a><span class="in">accelerate launch -m axolotl.cli.train examples/llama-2/config.yml --deepspeed deepspeed_configs/zero1.json</span></span>
+<span id="cb5-39"><a href="#cb5-39" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb5-40"><a href="#cb5-40" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-41"><a href="#cb5-41" aria-hidden="true" tabindex="-1"></a><span class="fu">### ZeRO Stages {#sec-zero-stages}</span></span>
+<span id="cb5-42"><a href="#cb5-42" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-43"><a href="#cb5-43" aria-hidden="true" tabindex="-1"></a>We provide default configurations for:</span>
+<span id="cb5-44"><a href="#cb5-44" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-45"><a href="#cb5-45" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>ZeRO Stage 1 (<span class="in">`zero1.json`</span>)</span>
+<span id="cb5-46"><a href="#cb5-46" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>ZeRO Stage 2 (<span class="in">`zero2.json`</span>)</span>
+<span id="cb5-47"><a href="#cb5-47" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>ZeRO Stage 3 (<span class="in">`zero3.json`</span>)</span>
+<span id="cb5-48"><a href="#cb5-48" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-49"><a href="#cb5-49" aria-hidden="true" tabindex="-1"></a>Choose based on your memory requirements and performance needs.</span>
+<span id="cb5-50"><a href="#cb5-50" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-51"><a href="#cb5-51" aria-hidden="true" tabindex="-1"></a><span class="fu">## FSDP {#sec-fsdp}</span></span>
+<span id="cb5-52"><a href="#cb5-52" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-53"><a href="#cb5-53" aria-hidden="true" tabindex="-1"></a><span class="fu">### Basic FSDP Configuration {#sec-fsdp-config}</span></span>
+<span id="cb5-54"><a href="#cb5-54" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-55"><a href="#cb5-55" aria-hidden="true" tabindex="-1"></a><span class="in">```{.yaml}</span></span>
+<span id="cb5-56"><a href="#cb5-56" aria-hidden="true" tabindex="-1"></a><span class="in">fsdp:</span></span>
+<span id="cb5-57"><a href="#cb5-57" aria-hidden="true" tabindex="-1"></a><span class="in">  - full_shard</span></span>
+<span id="cb5-58"><a href="#cb5-58" aria-hidden="true" tabindex="-1"></a><span class="in">  - auto_wrap</span></span>
+<span id="cb5-59"><a href="#cb5-59" aria-hidden="true" tabindex="-1"></a><span class="in">fsdp_config:</span></span>
+<span id="cb5-60"><a href="#cb5-60" aria-hidden="true" tabindex="-1"></a><span class="in">  fsdp_offload_params: true</span></span>
+<span id="cb5-61"><a href="#cb5-61" aria-hidden="true" tabindex="-1"></a><span class="in">  fsdp_state_dict_type: FULL_STATE_DICT</span></span>
+<span id="cb5-62"><a href="#cb5-62" aria-hidden="true" tabindex="-1"></a><span class="in">  fsdp_transformer_layer_cls_to_wrap: LlamaDecoderLayer</span></span>
+<span id="cb5-63"><a href="#cb5-63" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb5-64"><a href="#cb5-64" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-65"><a href="#cb5-65" aria-hidden="true" tabindex="-1"></a><span class="fu">### FSDP + QLoRA {#sec-fsdp-qlora}</span></span>
+<span id="cb5-66"><a href="#cb5-66" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-67"><a href="#cb5-67" aria-hidden="true" tabindex="-1"></a>For combining FSDP with QLoRA, see our <span class="co">[</span><span class="ot">dedicated guide</span><span class="co">](fsdp_qlora.qmd)</span>.</span>
+<span id="cb5-68"><a href="#cb5-68" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-69"><a href="#cb5-69" aria-hidden="true" tabindex="-1"></a><span class="fu">## Performance Optimization {#sec-performance}</span></span>
+<span id="cb5-70"><a href="#cb5-70" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-71"><a href="#cb5-71" aria-hidden="true" tabindex="-1"></a><span class="fu">### Liger Kernel Integration {#sec-liger}</span></span>
+<span id="cb5-72"><a href="#cb5-72" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-73"><a href="#cb5-73" aria-hidden="true" tabindex="-1"></a>::: {.callout-note}</span>
+<span id="cb5-74"><a href="#cb5-74" aria-hidden="true" tabindex="-1"></a>Liger Kernel provides efficient Triton kernels for LLM training, offering:</span>
+<span id="cb5-75"><a href="#cb5-75" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-76"><a href="#cb5-76" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>20% increase in multi-GPU training throughput</span>
+<span id="cb5-77"><a href="#cb5-77" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>60% reduction in memory usage</span>
+<span id="cb5-78"><a href="#cb5-78" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>Compatibility with both FSDP and DeepSpeed</span>
+<span id="cb5-79"><a href="#cb5-79" aria-hidden="true" tabindex="-1"></a>:::</span>
+<span id="cb5-80"><a href="#cb5-80" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-81"><a href="#cb5-81" aria-hidden="true" tabindex="-1"></a>Configuration:</span>
+<span id="cb5-82"><a href="#cb5-82" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-83"><a href="#cb5-83" aria-hidden="true" tabindex="-1"></a><span class="in">```{.yaml}</span></span>
+<span id="cb5-84"><a href="#cb5-84" aria-hidden="true" tabindex="-1"></a><span class="in">plugins:</span></span>
+<span id="cb5-85"><a href="#cb5-85" aria-hidden="true" tabindex="-1"></a><span class="in">  - axolotl.integrations.liger.LigerPlugin</span></span>
+<span id="cb5-86"><a href="#cb5-86" aria-hidden="true" tabindex="-1"></a><span class="in">liger_rope: true</span></span>
+<span id="cb5-87"><a href="#cb5-87" aria-hidden="true" tabindex="-1"></a><span class="in">liger_rms_norm: true</span></span>
+<span id="cb5-88"><a href="#cb5-88" aria-hidden="true" tabindex="-1"></a><span class="in">liger_glu_activation: true</span></span>
+<span id="cb5-89"><a href="#cb5-89" aria-hidden="true" tabindex="-1"></a><span class="in">liger_layer_norm: true</span></span>
+<span id="cb5-90"><a href="#cb5-90" aria-hidden="true" tabindex="-1"></a><span class="in">liger_fused_linear_cross_entropy: true</span></span>
+<span id="cb5-91"><a href="#cb5-91" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb5-92"><a href="#cb5-92" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-93"><a href="#cb5-93" aria-hidden="true" tabindex="-1"></a><span class="fu">## Troubleshooting {#sec-troubleshooting}</span></span>
+<span id="cb5-94"><a href="#cb5-94" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-95"><a href="#cb5-95" aria-hidden="true" tabindex="-1"></a><span class="fu">### NCCL Issues {#sec-nccl}</span></span>
+<span id="cb5-96"><a href="#cb5-96" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-97"><a href="#cb5-97" aria-hidden="true" tabindex="-1"></a>For NCCL-related problems, see our <span class="co">[</span><span class="ot">NCCL troubleshooting guide</span><span class="co">](nccl.qmd)</span>.</span>
+<span id="cb5-98"><a href="#cb5-98" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-99"><a href="#cb5-99" aria-hidden="true" tabindex="-1"></a><span class="fu">### Common Problems {#sec-common-problems}</span></span>
+<span id="cb5-100"><a href="#cb5-100" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-101"><a href="#cb5-101" aria-hidden="true" tabindex="-1"></a>::: {.panel-tabset}</span>
+<span id="cb5-102"><a href="#cb5-102" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-103"><a href="#cb5-103" aria-hidden="true" tabindex="-1"></a><span class="fu">## Memory Issues</span></span>
+<span id="cb5-104"><a href="#cb5-104" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-105"><a href="#cb5-105" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>Reduce <span class="in">`micro_batch_size`</span></span>
+<span id="cb5-106"><a href="#cb5-106" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>Reduce <span class="in">`eval_batch_size`</span></span>
+<span id="cb5-107"><a href="#cb5-107" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>Adjust <span class="in">`gradient_accumulation_steps`</span></span>
+<span id="cb5-108"><a href="#cb5-108" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>Consider using a higher ZeRO stage</span>
+<span id="cb5-109"><a href="#cb5-109" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-110"><a href="#cb5-110" aria-hidden="true" tabindex="-1"></a><span class="fu">## Training Instability</span></span>
+<span id="cb5-111"><a href="#cb5-111" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-112"><a href="#cb5-112" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>Start with DeepSpeed ZeRO-2</span>
+<span id="cb5-113"><a href="#cb5-113" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>Monitor loss values</span>
+<span id="cb5-114"><a href="#cb5-114" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>Check learning rates</span>
+<span id="cb5-115"><a href="#cb5-115" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-116"><a href="#cb5-116" aria-hidden="true" tabindex="-1"></a>:::</span>
+<span id="cb5-117"><a href="#cb5-117" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-118"><a href="#cb5-118" aria-hidden="true" tabindex="-1"></a>For more detailed troubleshooting, see our <span class="co">[</span><span class="ot">debugging guide</span><span class="co">](debugging.qmd)</span>.</span></code><button title="Copy to Clipboard" class="code-copy-button" data-in-quarto-modal=""><i class="bi"></i></button></pre></div>
+</div></div></div></div></div>
 </div> <!-- /content -->
 
 

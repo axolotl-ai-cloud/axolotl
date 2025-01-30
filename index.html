@@ -20,40 +20,6 @@ ul.task-list li input[type="checkbox"] {
   margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
   vertical-align: middle;
 }
-/* CSS for syntax highlighting */
-pre > code.sourceCode { white-space: pre; position: relative; }
-pre > code.sourceCode > span { line-height: 1.25; }
-pre > code.sourceCode > span:empty { height: 1.2em; }
-.sourceCode { overflow: visible; }
-code.sourceCode > span { color: inherit; text-decoration: inherit; }
-div.sourceCode { margin: 1em 0; }
-pre.sourceCode { margin: 0; }
-@media screen {
-div.sourceCode { overflow: auto; }
-}
-@media print {
-pre > code.sourceCode { white-space: pre-wrap; }
-pre > code.sourceCode > span { display: inline-block; text-indent: -5em; padding-left: 5em; }
-}
-pre.numberSource code
-  { counter-reset: source-line 0; }
-pre.numberSource code > span
-  { position: relative; left: -4em; counter-increment: source-line; }
-pre.numberSource code > span > a:first-child::before
-  { content: counter(source-line);
-    position: relative; left: -1em; text-align: right; vertical-align: baseline;
-    border: none; display: inline-block;
-    -webkit-touch-callout: none; -webkit-user-select: none;
-    -khtml-user-select: none; -moz-user-select: none;
-    -ms-user-select: none; user-select: none;
-    padding: 0 4px; width: 4em;
-  }
-pre.numberSource { margin-left: 3em;  padding-left: 4px; }
-div.sourceCode
-  {   }
-@media screen {
-pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
-}
 </style>
 
 
@@ -158,8 +124,26 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
       <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="./docs/getting-started.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Getting Started with Axolotl</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./docs/installation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Installation Guide</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="./docs/debugging.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Debugging</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./docs/inference.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Inference Guide</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -196,6 +180,12 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <div class="sidebar-item-container"> 
   <a href="./docs/mac.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Mac M-series</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./docs/multi-gpu.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Multi-GPU Training Guide</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -304,31 +294,18 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
     <h2 id="toc-title">Table Of Contents</h2>
    
   <ul>
-  <li><a href="#quickstart" id="toc-quickstart" class="nav-link active" data-scroll-target="#quickstart">Quickstart ⚡</a>
+  <li><a href="#quick-start" id="toc-quick-start" class="nav-link active" data-scroll-target="#quick-start">🚀 Quick Start</a>
   <ul class="collapse">
-  <li><a href="#edge-builds" id="toc-edge-builds" class="nav-link" data-scroll-target="#edge-builds">Edge Builds 🏎️</a></li>
-  <li><a href="#axolotl-cli-usage" id="toc-axolotl-cli-usage" class="nav-link" data-scroll-target="#axolotl-cli-usage">Axolotl CLI Usage</a></li>
-  <li><a href="#legacy-usage" id="toc-legacy-usage" class="nav-link" data-scroll-target="#legacy-usage">Legacy Usage</a></li>
+  <li><a href="#installation" id="toc-installation" class="nav-link" data-scroll-target="#installation">Installation</a></li>
+  <li><a href="#your-first-fine-tune" id="toc-your-first-fine-tune" class="nav-link" data-scroll-target="#your-first-fine-tune">Your First Fine-tune</a></li>
   </ul></li>
-  <li><a href="#badge" id="toc-badge" class="nav-link" data-scroll-target="#badge">Badge ❤🏷️</a></li>
-  <li><a href="#sponsors" id="toc-sponsors" class="nav-link" data-scroll-target="#sponsors">Sponsors 🤝❤</a></li>
-  <li><a href="#contributing" id="toc-contributing" class="nav-link" data-scroll-target="#contributing">Contributing 🤝</a></li>
-  <li><a href="#axolotl-supports" id="toc-axolotl-supports" class="nav-link" data-scroll-target="#axolotl-supports">Axolotl supports</a></li>
-  <li><a href="#advanced-setup" id="toc-advanced-setup" class="nav-link" data-scroll-target="#advanced-setup">Advanced Setup</a>
-  <ul class="collapse">
-  <li><a href="#environment" id="toc-environment" class="nav-link" data-scroll-target="#environment">Environment</a></li>
-  <li><a href="#dataset" id="toc-dataset" class="nav-link" data-scroll-target="#dataset">Dataset</a></li>
-  <li><a href="#config" id="toc-config" class="nav-link" data-scroll-target="#config">Config</a></li>
-  <li><a href="#train" id="toc-train" class="nav-link" data-scroll-target="#train">Train</a></li>
-  <li><a href="#inference-playground" id="toc-inference-playground" class="nav-link" data-scroll-target="#inference-playground">Inference Playground</a></li>
-  <li><a href="#merge-lora-to-base" id="toc-merge-lora-to-base" class="nav-link" data-scroll-target="#merge-lora-to-base">Merge LORA to base</a></li>
-  </ul></li>
-  <li><a href="#common-errors" id="toc-common-errors" class="nav-link" data-scroll-target="#common-errors">Common Errors 🧰</a>
-  <ul class="collapse">
-  <li><a href="#tokenization-mismatch-bw-inference-training" id="toc-tokenization-mismatch-bw-inference-training" class="nav-link" data-scroll-target="#tokenization-mismatch-bw-inference-training">Tokenization Mismatch b/w Inference &amp; Training</a></li>
-  </ul></li>
-  <li><a href="#debugging-axolotl" id="toc-debugging-axolotl" class="nav-link" data-scroll-target="#debugging-axolotl">Debugging Axolotl</a></li>
-  <li><a href="#need-help" id="toc-need-help" class="nav-link" data-scroll-target="#need-help">Need help? 🙋</a></li>
+  <li><a href="#key-features" id="toc-key-features" class="nav-link" data-scroll-target="#key-features">✨ Key Features</a></li>
+  <li><a href="#documentation" id="toc-documentation" class="nav-link" data-scroll-target="#documentation">📚 Documentation</a></li>
+  <li><a href="#getting-help" id="toc-getting-help" class="nav-link" data-scroll-target="#getting-help">🤝 Getting Help</a></li>
+  <li><a href="#contributing" id="toc-contributing" class="nav-link" data-scroll-target="#contributing">🌟 Contributing</a></li>
+  <li><a href="#supported-models" id="toc-supported-models" class="nav-link" data-scroll-target="#supported-models">Supported Models</a></li>
+  <li><a href="#sponsors" id="toc-sponsors" class="nav-link" data-scroll-target="#sponsors">❤️ Sponsors</a></li>
+  <li><a href="#license" id="toc-license" class="nav-link" data-scroll-target="#license">📜 License</a></li>
   </ul>
 </nav>
     </div>
@@ -341,153 +318,103 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
     <h2 id="toc-title">Table Of Contents</h2>
    
   <ul>
-  <li><a href="#quickstart" id="toc-quickstart">Quickstart ⚡</a>
+  <li><a href="#quick-start" id="toc-quick-start">🚀 Quick Start</a>
   <ul>
-  <li><a href="#edge-builds" id="toc-edge-builds">Edge Builds 🏎️</a></li>
-  <li><a href="#axolotl-cli-usage" id="toc-axolotl-cli-usage">Axolotl CLI Usage</a></li>
-  <li><a href="#legacy-usage" id="toc-legacy-usage">Legacy Usage</a></li>
+  <li><a href="#installation" id="toc-installation">Installation</a></li>
+  <li><a href="#your-first-fine-tune" id="toc-your-first-fine-tune">Your First Fine-tune</a></li>
   </ul></li>
-  <li><a href="#badge" id="toc-badge">Badge ❤🏷️</a></li>
-  <li><a href="#sponsors" id="toc-sponsors">Sponsors 🤝❤</a></li>
-  <li><a href="#contributing" id="toc-contributing">Contributing 🤝</a></li>
-  <li><a href="#axolotl-supports" id="toc-axolotl-supports">Axolotl supports</a></li>
-  <li><a href="#advanced-setup" id="toc-advanced-setup">Advanced Setup</a>
-  <ul>
-  <li><a href="#environment" id="toc-environment">Environment</a></li>
-  <li><a href="#dataset" id="toc-dataset">Dataset</a></li>
-  <li><a href="#config" id="toc-config">Config</a></li>
-  <li><a href="#train" id="toc-train">Train</a></li>
-  <li><a href="#inference-playground" id="toc-inference-playground">Inference Playground</a></li>
-  <li><a href="#merge-lora-to-base" id="toc-merge-lora-to-base">Merge LORA to base</a></li>
-  </ul></li>
-  <li><a href="#common-errors" id="toc-common-errors">Common Errors 🧰</a>
-  <ul>
-  <li><a href="#tokenization-mismatch-bw-inference-training" id="toc-tokenization-mismatch-bw-inference-training">Tokenization Mismatch b/w Inference &amp; Training</a></li>
-  </ul></li>
-  <li><a href="#debugging-axolotl" id="toc-debugging-axolotl">Debugging Axolotl</a></li>
-  <li><a href="#need-help" id="toc-need-help">Need help? 🙋</a></li>
+  <li><a href="#key-features" id="toc-key-features">✨ Key Features</a></li>
+  <li><a href="#documentation" id="toc-documentation">📚 Documentation</a></li>
+  <li><a href="#getting-help" id="toc-getting-help">🤝 Getting Help</a></li>
+  <li><a href="#contributing" id="toc-contributing">🌟 Contributing</a></li>
+  <li><a href="#supported-models" id="toc-supported-models">Supported Models</a></li>
+  <li><a href="#sponsors" id="toc-sponsors">❤️ Sponsors</a></li>
+  <li><a href="#license" id="toc-license">📜 License</a></li>
   </ul>
 </nav>
 <p align="center">
-<picture> <source media="(prefers-color-scheme: dark)" srcset="image/axolotl_logo_digital_white.svg"> <source media="(prefers-color-scheme: light)" srcset="image/axolotl_logo_digital_black.svg"> <img alt="Axolotl" src="image/axolotl_logo_digital_black.svg" width="400" height="104" style="max-width: 100%;"> </picture>
+<picture> <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/887513285d98132142bf5db2a74eb5e0928787f1/image/axolotl_logo_digital_white.svg"> <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/887513285d98132142bf5db2a74eb5e0928787f1/image/axolotl_logo_digital_black.svg"> <img alt="Axolotl" src="https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/887513285d98132142bf5db2a74eb5e0928787f1/image/axolotl_logo_digital_black.svg" width="400" height="104" style="max-width: 100%;"> </picture>
 </p>
 <p align="center">
-<img src="https://img.shields.io/github/license/axolotl-ai-cloud/axolotl.svg?color=blue" alt="GitHub License"> <img src="https://github.com/axolotl-ai-cloud/axolotl/actions/workflows/tests.yml/badge.svg" alt="tests"> <a href="https://github.com/axolotl-ai-cloud/axolotl/releases"><img src="https://img.shields.io/github/release/axolotl-ai-cloud/axolotl.svg" alt="Releases"></a> <br> <a href="https://github.com/axolotl-ai-cloud/axolotl/graphs/contributors"><img src="https://img.shields.io/github/contributors-anon/axolotl-ai-cloud/axolotl?color=yellow&amp;style=flat-square" alt="contributors" style="height: 20px;"></a> <img src="https://img.shields.io/github/stars/axolotl-ai-cloud/axolotl" alt="GitHub Repo stars"> <br> <a href="https://discord.com/invite/HhrNrHJPRb"><img src="https://img.shields.io/badge/discord-7289da.svg?style=flat-square&amp;logo=discord" alt="discord" style="height: 20px;"></a> <a href="https://twitter.com/axolotl_ai"><img src="https://img.shields.io/twitter/follow/axolotl_ai?style=social" alt="twitter" style="height: 20px;"></a> <br> <img src="https://github.com/axolotl-ai-cloud/axolotl/actions/workflows/tests-nightly.yml/badge.svg" alt="tests-nightly"> <img src="https://github.com/axolotl-ai-cloud/axolotl/actions/workflows/multi-gpu-e2e.yml/badge.svg" alt="multigpu-semi-weekly tests">
+<img src="https://img.shields.io/github/license/axolotl-ai-cloud/axolotl.svg?color=blue" alt="GitHub License"> <img src="https://github.com/axolotl-ai-cloud/axolotl/actions/workflows/tests.yml/badge.svg" alt="tests"> <a href="https://github.com/axolotl-ai-cloud/axolotl/releases"><img src="https://img.shields.io/github/release/axolotl-ai-cloud/axolotl.svg" alt="Releases"></a> <br> <a href="https://github.com/axolotl-ai-cloud/axolotl/graphs/contributors"><img src="https://img.shields.io/github/contributors-anon/axolotl-ai-cloud/axolotl?color=yellow&amp;style=flat-square" alt="contributors" style="height: 20px;"></a> <img src="https://img.shields.io/github/stars/axolotl-ai-cloud/axolotl" alt="GitHub Repo stars"> <br> <a href="https://discord.com/invite/HhrNrHJPRb"><img src="https://img.shields.io/badge/discord-7289da.svg?style=flat-square&amp;logo=discord" alt="discord" style="height: 20px;"></a> <a href="https://twitter.com/axolotl_ai"><img src="https://img.shields.io/twitter/follow/axolotl_ai?style=social" alt="twitter" style="height: 20px;"></a> <br> <img src="https://github.com/axolotl-ai-cloud/axolotl/actions/workflows/tests-nightly.yml/badge.svg" alt="tests-nightly"> <img src="https://github.com/axolotl-ai-cloud/axolotl/actions/workflows/multi-gpu-e2e.yml/badge.svg" alt="multigpu-semi-weekly tests"> <a href="https://www.phorm.ai/query?projectId=e315ba4a-4e14-421f-ab05-38a1f9076f25"> <img alt="phorm.ai" src="https://img.shields.io/badge/Phorm-Ask_AI-%23F2777A.svg?&amp;logo=data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNSIgaGVpZ2h0PSI0IiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPgogIDxwYXRoIGQ9Ik00LjQzIDEuODgyYTEuNDQgMS40NCAwIDAgMS0uMDk4LjQyNmMtLjA1LjEyMy0uMTE1LjIzLS4xOTIuMzIyLS4wNzUuMDktLjE2LjE2NS0uMjU1LjIyNmExLjM1MyAxLjM1MyAwIDAgMS0uNTk1LjIxMmMtLjA5OS4wMTItLjE5Mi4wMTQtLjI3OS4wMDZsLTEuNTkzLS4xNHYtLjQwNmgxLjY1OGMuMDkuMDAxLjE3LS4xNjkuMjQ2LS4xOTFhLjYwMy42MDMgMCAwIDAgLjItLjEwNi41MjkuNTI5IDAgMCAwIC4xMzgtLjE3LjY1NC42NTQgMCAwIDAgLjA2NS0uMjRsLjAyOC0uMzJhLjkzLjkzIDAgMCAwLS4wMzYtLjI0OS41NjcuNTY3IDAgMCAwLS4xMDMtLjIuNTAyLjUwMiAwIDAgMC0uMTY4LS4xMzguNjA4LjYwOCAwIDAgMC0uMjQtLjA2N0wyLjQzNy43MjkgMS42MjUuNjcxYS4zMjIuMzIyIDAgMCAwLS4yMzIuMDU4LjM3NS4zNzUgMCAwIDAtLjExNi4yMzJsLS4xMTYgMS40NS0uMDU4LjY5Ny0uMDU4Ljc1NEwuNzA1IDRsLS4zNTctLjA3OUwuNjAyLjkwNkMuNjE3LjcyNi42NjMuNTc0LjczOS40NTRhLjk1OC45NTggMCAwIDEgLjI3NC0uMjg1Ljk3MS45NzEgMCAwIDEgLjMzNy0uMTRjLjExOS0uMDI2LjIyNy0uMDM0LjMyNS0uMDI2TDMuMjMyLjE2Yy4xNTkuMDE0LjMzNi4wMy40NTkuMDgyYTEuMTczIDEuMTczIDAgMCAxIC41NDUuNDQ3Yy4wNi4wOTQuMTA5LjE5Mi4xNDQuMjkzYTEuMzkyIDEuMzkyIDAgMCAxIC4wNzguNThsLS4wMjkuMzJaIiBmaWxsPSIjRjI3NzdBIi8+CiAgPHBhdGggZD0iTTQuMDgyIDIuMDA3YTEuNDU1IDEuNDU1IDAgMCAxLS4wOTguNDI3Yy0uMDUuMTI0LS4xMTQuMjMyLS4xOTIuMzI0YTEuMTMgMS4xMyAwIDAgMS0uMjU0LjIyNyAxLjM1MyAxLjM1MyAwIDAgMS0uNTk1LjIxNGMtLjEuMDEyLS4xOTMuMDE0LS4yOC4wMDZsLTEuNTYtLjEwOC4wMzQtLjQwNi4wMy0uMzQ4IDEuNTU5LjE1NGMuMDkgMCAuMTczLS4wMS4yNDgtLjAzM2EuNjAzLjYwMyAwIDAgMCAuMi0uMTA2LjUzMi41MzIgMCAwIDAgLjEzOS0uMTcyLjY2LjY2IDAgMCAwIC4wNjQtLjI0MWwuMDI5LS4zMjFhLjk0Ljk0IDAgMCAwLS4wMzYtLjI1LjU3LjU3IDAgMCAwLS4xMDMtLjIwMi41MDIuNTAyIDAgMCAwLS4xNjgtLjEzOC42MDUuNjA1IDAgMCAwLS4yNC0uMDY3TDEuMjczLjgyN2MtLjA5NC0uMDA4LS4xNjguMDEtLjIyMS4wNTUtLjA1My4wNDUtLjA4NC4xMTQtLjA5Mi4yMDZMLjcwNSA0IDAgMy45MzhsLjI1NS0yLjkxMUExLjAxIDEuMDEgMCAwIDEgLjM5My41NzIuOTYyLjk2MiAwIDAgMSAuNjY2LjI4NmEuOTcuOTcgMCAwIDEgLjMzOC0uMTRDMS4xMjIuMTIgMS4yMy4xMSAxLjMyOC4xMTlsMS41OTMuMTRjLjE2LjAxNC4zLjA0Ny40MjMuMWExLjE3IDEuMTcgMCAwIDEgLjU0NS40NDhjLjA2MS4wOTUuMTA5LjE5My4xNDQuMjk1YTEuNDA2IDEuNDA2IDAgMCAxIC4wNzcuNTgzbC0uMDI4LjMyMloiIGZpbGw9IndoaXRlIi8+CiAgPHBhdGggZD0iTTQuMDgyIDIuMDA3YTEuNDU1IDEuNDU1IDAgMCAxLS4wOTguNDI3Yy0uMDUuMTI0LS4xMTQuMjMyLS4xOTIuMzI0YTEuMTMgMS4xMyAwIDAgMS0uMjU0LjIyNyAxLjM1MyAxLjM1MyAwIDAgMS0uNTk1LjIxNGMtLjEuMDEyLS4xOTMuMDE0LS4yOC4wMDZsLTEuNTYtLjEwOC4wMzQtLjQwNi4wMy0uMzQ4IDEuNTU5LjE1NGMuMDkgMCAuMTczLS4wMS4yNDgtLjAzM2EuNjAzLjYwMyAwIDAgMCAuMi0uMTA2LjUzMi41MzIgMCAwIDAgLjEzOS0uMTcyLjY2LjY2IDAgMCAwIC4wNjQtLjI0MWwuMDI5LS4zMjFhLjk0Ljk0IDAgMCAwLS4wMzYtLjI1LjU3LjU3IDAgMCAwLS4xMDMtLjIwMi41MDIuNTAyIDAgMCAwLS4xNjgtLjEzOC42MDUuNjA1IDAgMCAwLS4yNC0uMDY3TDEuMjczLjgyN2MtLjA5NC0uMDA4LS4xNjguMDEtLjIyMS4wNTUtLjA1My4wNDUtLjA4NC4xMTQtLjA5Mi4yMDZMLjcwNSA0IDAgMy45MzhsLjI1NS0yLjkxMUExLjAxIDEuMDEgMCAwIDEgLjM5My41NzIuOTYyLjk2MiAwIDAgMSAuNjY2LjI4NmEuOTcuOTcgMCAwIDEgLjMzOC0uMTRDMS4xMjIuMTIgMS4yMy4xMSAxLjMyOC4xMTlsMS41OTMuMTRjLjE2LjAxNC4zLjA0Ny40MjMuMWExLjE3IDEuMTcgMCAwIDEgLjU0NS40NDhjLjA2MS4wOTUuMTA5LjE5My4xNDQuMjk1YTEuNDA2IDEuNDA2IDAgMCAxIC4wNzcuNTgzbC0uMDI4LjMyMloiIGZpbGw9IndoaXRlIi8+Cjwvc3ZnPgo="> </a>
 </p>
-<p>Axolotl is a tool designed to streamline the fine-tuning of various AI models, offering support for multiple configurations and architectures.</p>
-<p>Features: - Train various Huggingface models such as llama, pythia, falcon, mpt - Supports fullfinetune, lora, qlora, relora, and gptq - Customize configurations using a simple yaml file or CLI overwrite - Load different dataset formats, use custom formats, or bring your own tokenized datasets - Integrated with xformer, flash attention, <a href="https://github.com/linkedin/Liger-Kernel">liger kernel</a>, rope scaling, and multipacking - Works with single GPU or multiple GPUs via FSDP or Deepspeed - Easily run with Docker locally or on the cloud - Log results and optionally checkpoints to wandb, mlflow or Comet - And more!</p>
-<p><a href="https://www.phorm.ai/query?projectId=e315ba4a-4e14-421f-ab05-38a1f9076f25"> <img alt="phorm.ai" src="https://img.shields.io/badge/Phorm-Ask_AI-%23F2777A.svg?&amp;logo=data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNSIgaGVpZ2h0PSI0IiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPgogIDxwYXRoIGQ9Ik00LjQzIDEuODgyYTEuNDQgMS40NCAwIDAgMS0uMDk4LjQyNmMtLjA1LjEyMy0uMTE1LjIzLS4xOTIuMzIyLS4wNzUuMDktLjE2LjE2NS0uMjU1LjIyNmExLjM1MyAxLjM1MyAwIDAgMS0uNTk1LjIxMmMtLjA5OS4wMTItLjE5Mi4wMTQtLjI3OS4wMDZsLTEuNTkzLS4xNHYtLjQwNmgxLjY1OGMuMDkuMDAxLjE3LS4xNjkuMjQ2LS4xOTFhLjYwMy42MDMgMCAwIDAgLjItLjEwNi41MjkuNTI5IDAgMCAwIC4xMzgtLjE3LjY1NC42NTQgMCAwIDAgLjA2NS0uMjRsLjAyOC0uMzJhLjkzLjkzIDAgMCAwLS4wMzYtLjI0OS41NjcuNTY3IDAgMCAwLS4xMDMtLjIuNTAyLjUwMiAwIDAgMC0uMTY4LS4xMzguNjA4LjYwOCAwIDAgMC0uMjQtLjA2N0wyLjQzNy43MjkgMS42MjUuNjcxYS4zMjIuMzIyIDAgMCAwLS4yMzIuMDU4LjM3NS4zNzUgMCAwIDAtLjExNi4yMzJsLS4xMTYgMS40NS0uMDU4LjY5Ny0uMDU4Ljc1NEwuNzA1IDRsLS4zNTctLjA3OUwuNjAyLjkwNkMuNjE3LjcyNi42NjMuNTc0LjczOS40NTRhLjk1OC45NTggMCAwIDEgLjI3NC0uMjg1Ljk3MS45NzEgMCAwIDEgLjMzNy0uMTRjLjExOS0uMDI2LjIyNy0uMDM0LjMyNS0uMDI2TDMuMjMyLjE2Yy4xNTkuMDE0LjMzNi4wMy40NTkuMDgyYTEuMTczIDEuMTczIDAgMCAxIC41NDUuNDQ3Yy4wNi4wOTQuMTA5LjE5Mi4xNDQuMjkzYTEuMzkyIDEuMzkyIDAgMCAxIC4wNzguNThsLS4wMjkuMzJaIiBmaWxsPSIjRjI3NzdBIi8+CiAgPHBhdGggZD0iTTQuMDgyIDIuMDA3YTEuNDU1IDEuNDU1IDAgMCAxLS4wOTguNDI3Yy0uMDUuMTI0LS4xMTQuMjMyLS4xOTIuMzI0YTEuMTMgMS4xMyAwIDAgMS0uMjU0LjIyNyAxLjM1MyAxLjM1MyAwIDAgMS0uNTk1LjIxNGMtLjEuMDEyLS4xOTMuMDE0LS4yOC4wMDZsLTEuNTYtLjEwOC4wMzQtLjQwNi4wMy0uMzQ4IDEuNTU5LjE1NGMuMDkgMCAuMTczLS4wMS4yNDgtLjAzM2EuNjAzLjYwMyAwIDAgMCAuMi0uMTA2LjUzMi41MzIgMCAwIDAgLjEzOS0uMTcyLjY2LjY2IDAgMCAwIC4wNjQtLjI0MWwuMDI5LS4zMjFhLjk0Ljk0IDAgMCAwLS4wMzYtLjI1LjU3LjU3IDAgMCAwLS4xMDMtLjIwMi41MDIuNTAyIDAgMCAwLS4xNjgtLjEzOC42MDUuNjA1IDAgMCAwLS4yNC0uMDY3TDEuMjczLjgyN2MtLjA5NC0uMDA4LS4xNjguMDEtLjIyMS4wNTUtLjA1My4wNDUtLjA4NC4xMTQtLjA5Mi4yMDZMLjcwNSA0IDAgMy45MzhsLjI1NS0yLjkxMUExLjAxIDEuMDEgMCAwIDEgLjM5My41NzIuOTYyLjk2MiAwIDAgMSAuNjY2LjI4NmEuOTcuOTcgMCAwIDEgLjMzOC0uMTRDMS4xMjIuMTIgMS4yMy4xMSAxLjMyOC4xMTlsMS41OTMuMTRjLjE2LjAxNC4zLjA0Ny40MjMuMWExLjE3IDEuMTcgMCAwIDEgLjU0NS40NDhjLjA2MS4wOTUuMTA5LjE5My4xNDQuMjk1YTEuNDA2IDEuNDA2IDAgMCAxIC4wNzcuNTgzbC0uMDI4LjMyMloiIGZpbGw9IndoaXRlIi8+CiAgPHBhdGggZD0iTTQuMDgyIDIuMDA3YTEuNDU1IDEuNDU1IDAgMCAxLS4wOTguNDI3Yy0uMDUuMTI0LS4xMTQuMjMyLS4xOTIuMzI0YTEuMTMgMS4xMyAwIDAgMS0uMjU0LjIyNyAxLjM1MyAxLjM1MyAwIDAgMS0uNTk1LjIxNGMtLjEuMDEyLS4xOTMuMDE0LS4yOC4wMDZsLTEuNTYtLjEwOC4wMzQtLjQwNi4wMy0uMzQ4IDEuNTU5LjE1NGMuMDkgMCAuMTczLS4wMS4yNDgtLjAzM2EuNjAzLjYwMyAwIDAgMCAuMi0uMTA2LjUzMi41MzIgMCAwIDAgLjEzOS0uMTcyLjY2LjY2IDAgMCAwIC4wNjQtLjI0MWwuMDI5LS4zMjFhLjk0Ljk0IDAgMCAwLS4wMzYtLjI1LjU3LjU3IDAgMCAwLS4xMDMtLjIwMi41MDIuNTAyIDAgMCAwLS4xNjgtLjEzOC42MDUuNjA1IDAgMCAwLS4yNC0uMDY3TDEuMjczLjgyN2MtLjA5NC0uMDA4LS4xNjguMDEtLjIyMS4wNTUtLjA1My4wNDUtLjA4NC4xMTQtLjA5Mi4yMDZMLjcwNSA0IDAgMy45MzhsLjI1NS0yLjkxMUExLjAxIDEuMDEgMCAwIDEgLjM5My41NzIuOTYyLjk2MiAwIDAgMSAuNjY2LjI4NmEuOTcuOTcgMCAwIDEgLjMzOC0uMTRDMS4xMjIuMTIgMS4yMy4xMSAxLjMyOC4xMTlsMS41OTMuMTRjLjE2LjAxNC4zLjA0Ny40MjMuMWExLjE3IDEuMTcgMCAwIDEgLjU0NS40NDhjLjA2MS4wOTUuMTA5LjE5My4xNDQuMjk1YTEuNDA2IDEuNDA2IDAgMCAxIC4wNzcuNTgzbC0uMDI4LjMyMloiIGZpbGw9IndoaXRlIi8+Cjwvc3ZnPgo="> </a></p>
-<section id="quickstart" class="level2">
-<h2 class="anchored" data-anchor-id="quickstart">Quickstart ⚡</h2>
-<p>Get started with Axolotl in just a few steps! This quickstart guide will walk you through setting up and running a basic fine-tuning task.</p>
-<p><strong>Requirements</strong>: <em>Nvidia</em> GPU (Ampere architecture or newer for <code>bf16</code> and Flash Attention) or <em>AMD</em> GPU, Python &gt;=3.10 and PyTorch &gt;=2.4.1.</p>
-<div class="sourceCode" id="cb1"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip3</span> install <span class="at">--no-build-isolation</span> axolotl<span class="pp">[</span><span class="ss">flash</span><span class="pp">-</span><span class="ss">attn,deepspeed</span><span class="pp">]</span></span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="co"># download examples and optionally deepspeed configs to the local path</span></span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> fetch examples</span>
-<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> fetch deepspeed_configs  <span class="co"># OPTIONAL</span></span>
-<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="co"># finetune using lora</span></span>
-<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> train examples/llama-3/lora-1b.yml</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<section id="edge-builds" class="level3">
-<h3 class="anchored" data-anchor-id="edge-builds">Edge Builds 🏎️</h3>
-<p>If you’re looking for the latest features and updates between releases, you’ll need to install from source.</p>
-<div class="sourceCode" id="cb2"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">git</span> clone https://github.com/axolotl-ai-cloud/axolotl.git</span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> axolotl</span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="ex">pip3</span> install packaging ninja</span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="ex">pip3</span> install <span class="at">--no-build-isolation</span> <span class="at">-e</span> <span class="st">'.[flash-attn,deepspeed]'</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-</section>
-<section id="axolotl-cli-usage" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl-cli-usage">Axolotl CLI Usage</h3>
-<p>We now support a new, more streamlined CLI using <a href="https://click.palletsprojects.com/en/stable/">click</a>.</p>
-<div class="sourceCode" id="cb3"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="co"># preprocess datasets - optional but recommended</span></span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="va">CUDA_VISIBLE_DEVICES</span><span class="op">=</span><span class="st">"0"</span> <span class="ex">axolotl</span> preprocess examples/llama-3/lora-1b.yml</span>
-<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="co"># finetune lora</span></span>
-<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> train examples/llama-3/lora-1b.yml</span>
-<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a><span class="co"># inference</span></span>
-<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> inference examples/llama-3/lora-1b.yml <span class="dt">\</span></span>
-<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>    <span class="at">--lora-model-dir</span><span class="op">=</span><span class="st">"./outputs/lora-out"</span></span>
-<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a><span class="co"># gradio</span></span>
-<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> inference examples/llama-3/lora-1b.yml <span class="dt">\</span></span>
-<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a>    <span class="at">--lora-model-dir</span><span class="op">=</span><span class="st">"./outputs/lora-out"</span> <span class="at">--gradio</span></span>
-<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a><span class="co"># remote yaml files - the yaml config can be hosted on a public URL</span></span>
-<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a><span class="co"># Note: the yaml config must directly link to the **raw** yaml</span></span>
-<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> train https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/main/examples/llama-3/lora-1b.yml</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>We’ve also added a new command for fetching <code>examples</code> and <code>deepspeed_configs</code> to your local machine. This will come in handy when installing <code>axolotl</code> from PyPI.</p>
-<div class="sourceCode" id="cb4"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Fetch example YAML files (stores in "examples/" folder)</span></span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> fetch examples</span>
-<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="co"># Fetch deepspeed config files (stores in "deepspeed_configs/" folder)</span></span>
-<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> fetch deepspeed_configs</span>
-<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a><span class="co"># Optionally, specify a destination folder</span></span>
-<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> fetch examples <span class="at">--dest</span> path/to/folder</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-</section>
-<section id="legacy-usage" class="level3">
-<h3 class="anchored" data-anchor-id="legacy-usage">Legacy Usage</h3>
-<details>
-<summary>
-Click to Expand
-</summary>
-<p>While the Axolotl CLI is the preferred method for interacting with axolotl, we still support the legacy <code>-m axolotl.cli.*</code> usage.</p>
-<div class="sourceCode" id="cb5"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="co"># preprocess datasets - optional but recommended</span></span>
-<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="va">CUDA_VISIBLE_DEVICES</span><span class="op">=</span><span class="st">"0"</span> <span class="ex">python</span> <span class="at">-m</span> axolotl.cli.preprocess examples/llama-3/lora-1b.yml</span>
-<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a><span class="co"># finetune lora</span></span>
-<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a><span class="ex">accelerate</span> launch <span class="at">-m</span> axolotl.cli.train examples/llama-3/lora-1b.yml</span>
-<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a><span class="co"># inference</span></span>
-<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a><span class="ex">accelerate</span> launch <span class="at">-m</span> axolotl.cli.inference examples/llama-3/lora-1b.yml <span class="dt">\</span></span>
-<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a>    <span class="at">--lora_model_dir</span><span class="op">=</span><span class="st">"./outputs/lora-out"</span></span>
-<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a><span class="co"># gradio</span></span>
-<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a><span class="ex">accelerate</span> launch <span class="at">-m</span> axolotl.cli.inference examples/llama-3/lora-1b.yml <span class="dt">\</span></span>
-<span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a>    <span class="at">--lora_model_dir</span><span class="op">=</span><span class="st">"./outputs/lora-out"</span> <span class="at">--gradio</span></span>
-<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-15"><a href="#cb5-15" aria-hidden="true" tabindex="-1"></a><span class="co"># remote yaml files - the yaml config can be hosted on a public URL</span></span>
-<span id="cb5-16"><a href="#cb5-16" aria-hidden="true" tabindex="-1"></a><span class="co"># Note: the yaml config must directly link to the **raw** yaml</span></span>
-<span id="cb5-17"><a href="#cb5-17" aria-hidden="true" tabindex="-1"></a><span class="ex">accelerate</span> launch <span class="at">-m</span> axolotl.cli.train https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/main/examples/llama-3/lora-1b.yml</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-</details>
-</section>
-</section>
-<section id="badge" class="level2">
-<h2 class="anchored" data-anchor-id="badge">Badge ❤🏷️</h2>
-<p>Building something cool with Axolotl? Consider adding a badge to your model card.</p>
-<div class="sourceCode" id="cb6"><pre class="sourceCode markdown code-with-copy"><code class="sourceCode markdown"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="co">[</span><span class="ot">&lt;img src="https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/main/image/axolotl-badge-web.png" alt="Built with Axolotl" width="200" height="32"/&gt;</span><span class="co">](https://github.com/axolotl-ai-cloud/axolotl)</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p><a href="https://github.com/axolotl-ai-cloud/axolotl"><img src="https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/main/image/axolotl-badge-web.png" alt="Built with Axolotl" width="200" height="32"></a></p>
-</section>
-<section id="sponsors" class="level2">
-<h2 class="anchored" data-anchor-id="sponsors">Sponsors 🤝❤</h2>
-<p>If you love axolotl, consider sponsoring the project by reaching out directly to <a href="mailto:wing@axolotl.ai">wing@axolotl.ai</a>.</p>
-<hr>
+<p>Axolotl is a tool designed to streamline post-training for various AI models. Post-training refers to any modifications or additional training performed on pre-trained models - including full model fine-tuning, parameter-efficient tuning (like LoRA and QLoRA), supervised fine-tuning (SFT), instruction tuning, and alignment techniques. With support for multiple model architectures and training configurations, Axolotl makes it easy to get started with these techniques.</p>
+<p>Axolotl is designed to work with YAML config files that contain everything you need to preprocess a dataset, train or fine-tune a model, run model inference or evaluation, and much more.</p>
+<p>Features:</p>
 <ul>
-<li><a href="https://www.modal.com?utm_source=github&amp;utm_medium=github&amp;utm_campaign=axolotl">Modal</a> Modal lets you run data/AI jobs in the cloud, by just writing a few lines of Python. Customers use Modal to deploy Gen AI models at large scale, fine-tune large language models, run protein folding simulations, and much more.</li>
+<li>Train various Huggingface models such as llama, pythia, falcon, mpt</li>
+<li>Supports fullfinetune, lora, qlora, relora, and gptq</li>
+<li>Customize configurations using a simple yaml file or CLI overwrite</li>
+<li>Load different dataset formats, use custom formats, or bring your own tokenized datasets</li>
+<li>Integrated with <a href="https://github.com/facebookresearch/xformers">xformers</a>, flash attention, <a href="https://github.com/linkedin/Liger-Kernel">liger kernel</a>, rope scaling, and multipacking</li>
+<li>Works with single GPU or multiple GPUs via FSDP or Deepspeed</li>
+<li>Easily run with Docker locally or on the cloud</li>
+<li>Log results and optionally checkpoints to wandb, mlflow or Comet</li>
+<li>And more!</li>
 </ul>
-<hr>
+<section id="quick-start" class="level2">
+<h2 class="anchored" data-anchor-id="quick-start">🚀 Quick Start</h2>
+<p><strong>Requirements</strong>: - NVIDIA GPU (Ampere or newer for <code>bf16</code> and Flash Attention) or AMD GPU - Python ≥3.10 - PyTorch ≥2.4.1</p>
+<section id="installation" class="level3">
+<h3 class="anchored" data-anchor-id="installation">Installation</h3>
+<pre class="shell"><code>pip3 install --no-build-isolation axolotl[flash-attn,deepspeed]
+
+# Download example axolotl configs, deepspeed configs
+axolotl fetch examples
+axolotl fetch deepspeed_configs  # OPTIONAL</code></pre>
+<p>Other installation approaches are described <a href="https://axolotl-ai-cloud.github.io/axolotl/docs/installation.html">here</a>.</p>
+</section>
+<section id="your-first-fine-tune" class="level3">
+<h3 class="anchored" data-anchor-id="your-first-fine-tune">Your First Fine-tune</h3>
+<pre class="shell"><code># Fetch axolotl examples
+axolotl fetch examples
+
+# Or, specify a custom path
+axolotl fetch examples --dest path/to/folder
+
+# Train a model using LoRA
+axolotl train examples/llama-3/lora-1b.yml</code></pre>
+<p>That’s it! Check out our <a href="https://axolotl-ai-cloud.github.io/axolotl/docs/getting-started.html">Getting Started Guide</a> for a more detailed walkthrough.</p>
+</section>
+</section>
+<section id="key-features" class="level2">
+<h2 class="anchored" data-anchor-id="key-features">✨ Key Features</h2>
+<ul>
+<li><strong>Multiple Model Support</strong>: Train various models like LLaMA, Mistral, Mixtral, Pythia, and more</li>
+<li><strong>Training Methods</strong>: Full fine-tuning, LoRA, QLoRA, and more</li>
+<li><strong>Easy Configuration</strong>: Simple YAML files to control your training setup</li>
+<li><strong>Performance Optimizations</strong>: Flash Attention, xformers, multi-GPU training</li>
+<li><strong>Flexible Dataset Handling</strong>: Use various formats and custom datasets</li>
+<li><strong>Cloud Ready</strong>: Run on cloud platforms or local hardware</li>
+</ul>
+</section>
+<section id="documentation" class="level2">
+<h2 class="anchored" data-anchor-id="documentation">📚 Documentation</h2>
+<ul>
+<li><a href="https://axolotl-ai-cloud.github.io/axolotl/docs/installation.html">Installation Options</a> - Detailed setup instructions for different environments</li>
+<li><a href="https://axolotl-ai-cloud.github.io/axolotl/docs/config.html">Configuration Guide</a> - Full configuration options and examples</li>
+<li><a href="https://axolotl-ai-cloud.github.io/axolotl/docs/dataset-formats/">Dataset Guide</a> - Supported formats and how to use them</li>
+<li><a href="https://axolotl-ai-cloud.github.io/axolotl/docs/multi-gpu.html">Multi-GPU Training</a></li>
+<li><a href="https://axolotl-ai-cloud.github.io/axolotl/docs/multi-node.html">Multi-Node Training</a></li>
+<li><a href="https://axolotl-ai-cloud.github.io/axolotl/docs/multipack.html">Multipacking</a></li>
+<li><a href="https://axolotl-ai-cloud.github.io/axolotl/docs/faq.html">FAQ</a> - Frequently asked questions</li>
+</ul>
+</section>
+<section id="getting-help" class="level2">
+<h2 class="anchored" data-anchor-id="getting-help">🤝 Getting Help</h2>
+<ul>
+<li>Join our <a href="https://discord.gg/HhrNrHJPRb">Discord community</a> for support</li>
+<li>Check out our <a href="https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/">Examples</a> directory</li>
+<li>Read our <a href="https://axolotl-ai-cloud.github.io/axolotl/docs/debugging.html">Debugging Guide</a></li>
+<li>Need dedicated support? Please contact <a href="mailto:wing@axolotl.ai">✉️wing@axolotl.ai</a> for options</li>
+</ul>
 </section>
 <section id="contributing" class="level2">
-<h2 class="anchored" data-anchor-id="contributing">Contributing 🤝</h2>
-<p>Please read the <a href="./.github/CONTRIBUTING.md">contributing guide</a></p>
-<p>Bugs? Please check the <a href="https://github.com/axolotl-ai-cloud/axolotl/issues/bug">open issues</a> else create a new Issue.</p>
-<p>PRs are <strong>greatly welcome</strong>!</p>
-<p>Please run the quickstart instructions followed by the below to setup env:</p>
-<div class="sourceCode" id="cb7"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip3</span> install <span class="at">-r</span> requirements-dev.txt <span class="at">-r</span> requirements-tests.txt</span>
-<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="ex">pre-commit</span> install</span>
-<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a><span class="co"># test</span></span>
-<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a><span class="ex">pytest</span> tests/</span>
-<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a><span class="co"># optional: run against all files</span></span>
-<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a><span class="ex">pre-commit</span> run <span class="at">--all-files</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Thanks to all of our contributors to date. Help drive open source AI progress forward by contributing to Axolotl.</p>
-<p><a href="https://github.com/axolotl-ai-cloud/axolotl/graphs/contributors"> <img src="https://contrib.rocks/image?repo=openaccess-ai-collective/axolotl" alt="contributor chart by https://contrib.rocks"> </a></p>
+<h2 class="anchored" data-anchor-id="contributing">🌟 Contributing</h2>
+<p>Contributions are welcome! Please see our <a href="https://github.com/axolotl-ai-cloud/axolotl/blob/main/.github/CONTRIBUTING.md">Contributing Guide</a> for details.</p>
 </section>
-<section id="axolotl-supports" class="level2">
-<h2 class="anchored" data-anchor-id="axolotl-supports">Axolotl supports</h2>
+<section id="supported-models" class="level2">
+<h2 class="anchored" data-anchor-id="supported-models">Supported Models</h2>
 <table class="caption-top table">
 <colgroup>
 <col style="width: 14%">
@@ -676,410 +603,17 @@ Click to Expand
 </table>
 <p>✅: supported ❌: not supported ❓: untested</p>
 </section>
-<section id="advanced-setup" class="level2">
-<h2 class="anchored" data-anchor-id="advanced-setup">Advanced Setup</h2>
-<section id="environment" class="level3">
-<h3 class="anchored" data-anchor-id="environment">Environment</h3>
-<section id="docker" class="level4">
-<h4 class="anchored" data-anchor-id="docker">Docker</h4>
-<div class="sourceCode" id="cb8"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> run <span class="at">--gpus</span> <span class="st">'"all"'</span> <span class="at">--rm</span> <span class="at">-it</span> axolotlai/axolotl:main-latest</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Or run on the current files for development:</p>
-<div class="sourceCode" id="cb9"><pre class="sourceCode sh code-with-copy"><code class="sourceCode bash"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> compose up <span class="at">-d</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<blockquote class="blockquote">
-<p>[!Tip] If you want to debug axolotl or prefer to use Docker as your development environment, see the <a href="./docs/debugging.html#debugging-with-docker">debugging guide’s section on Docker</a>.</p>
-</blockquote>
-<details>
-<summary>
-Docker advanced
-</summary>
-<p>A more powerful Docker command to run would be this:</p>
-<div class="sourceCode" id="cb10"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> run <span class="at">--privileged</span> <span class="at">--gpus</span> <span class="st">'"all"'</span> <span class="at">--shm-size</span> 10g <span class="at">--rm</span> <span class="at">-it</span> <span class="at">--name</span> axolotl <span class="at">--ipc</span><span class="op">=</span>host <span class="at">--ulimit</span> memlock=-1 <span class="at">--ulimit</span> stack=67108864 <span class="at">--mount</span> type=bind,src=<span class="st">"</span><span class="va">${PWD}</span><span class="st">"</span>,target=/workspace/axolotl <span class="at">-v</span> <span class="va">${HOME}</span>/.cache/huggingface:/root/.cache/huggingface axolotlai/axolotl:main-latest</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>It additionally: * Prevents memory issues when running e.g.&nbsp;deepspeed (e.g.&nbsp;you could hit SIGBUS/signal 7 error) through <code>--ipc</code> and <code>--ulimit</code> args. * Persists the downloaded HF data (models etc.) and your modifications to axolotl code through <code>--mount</code>/<code>-v</code> args. * The <code>--name</code> argument simply makes it easier to refer to the container in vscode (<code>Dev Containers: Attach to Running Container...</code>) or in your terminal. * The <code>--privileged</code> flag gives all capabilities to the container. * The <code>--shm-size 10g</code> argument increases the shared memory size. Use this if you see <code>exitcode: -7</code> errors using deepspeed.</p>
-<p><a href="https://docs.nvidia.com/deeplearning/frameworks/user-guide/index.html#setincshmem">More information on nvidia website</a></p>
-</details>
-</section>
-<section id="condapip-venv" class="level4">
-<h4 class="anchored" data-anchor-id="condapip-venv">Conda/Pip venv</h4>
-<ol type="1">
-<li><p>Install python &gt;=<strong>3.10</strong></p></li>
-<li><p>Install pytorch stable https://pytorch.org/get-started/locally/</p></li>
-<li><p>Install Axolotl along with python dependencies <code>bash         pip3 install packaging         pip3 install --no-build-isolation -e '.[flash-attn,deepspeed]'</code></p></li>
-<li><p>(Optional) Login to Huggingface to use gated models/datasets. <code>bash         huggingface-cli login</code> Get the token at huggingface.co/settings/tokens</p></li>
-</ol>
-</section>
-<section id="cloud-gpu" class="level4">
-<h4 class="anchored" data-anchor-id="cloud-gpu">Cloud GPU</h4>
-<p>For cloud GPU providers that support docker images, use <a href="https://hub.docker.com/r/axolotlai/axolotl-cloud/tags"><code>axolotlai/axolotl-cloud:main-latest</code></a></p>
+<section id="sponsors" class="level2">
+<h2 class="anchored" data-anchor-id="sponsors">❤️ Sponsors</h2>
+<p>Thank you to our sponsors who help make Axolotl possible:</p>
 <ul>
-<li>on Latitude.sh use this <a href="https://latitude.sh/blueprint/989e0e79-3bf6-41ea-a46b-1f246e309d5c">direct link</a></li>
-<li>on JarvisLabs.ai use this <a href="https://jarvislabs.ai/templates/axolotl">direct link</a></li>
-<li>on RunPod use this <a href="https://runpod.io/gsc?template=v2ickqhz9s&amp;ref=6i7fkpdz">direct link</a></li>
+<li><a href="https://www.modal.com?utm_source=github&amp;utm_medium=github&amp;utm_campaign=axolotl">Modal</a> - Modal lets you run jobs in the cloud, by just writing a few lines of Python. Customers use Modal to deploy Gen AI models at large scale, fine-tune large language models, run protein folding simulations, and much more.</li>
 </ul>
+<p>Interested in sponsoring? Contact us at <a href="mailto:wing@axolotl.ai">wing@axolotl.ai</a></p>
 </section>
-<section id="bare-metal-cloud-gpu" class="level4">
-<h4 class="anchored" data-anchor-id="bare-metal-cloud-gpu">Bare Metal Cloud GPU</h4>
-<section id="lambdalabs" class="level5">
-<h5 class="anchored" data-anchor-id="lambdalabs">LambdaLabs</h5>
-<details>
-<summary>
-Click to Expand
-</summary>
-<ol type="1">
-<li>Install python</li>
-</ol>
-<div class="sourceCode" id="cb11"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="fu">sudo</span> apt update</span>
-<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="fu">sudo</span> apt install <span class="at">-y</span> python3.10</span>
-<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a><span class="fu">sudo</span> update-alternatives <span class="at">--install</span> /usr/bin/python python /usr/bin/python3.10 1</span>
-<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a><span class="fu">sudo</span> update-alternatives <span class="at">--config</span> python <span class="co"># pick 3.10 if given option</span></span>
-<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> <span class="at">-V</span> <span class="co"># should be 3.10</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<ol start="2" type="1">
-<li>Install pip</li>
-</ol>
-<div class="sourceCode" id="cb12"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="fu">wget</span> https://bootstrap.pypa.io/get-pip.py</span>
-<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> get-pip.py</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<ol start="3" type="1">
-<li><p>Install Pytorch https://pytorch.org/get-started/locally/</p></li>
-<li><p>Follow instructions on quickstart.</p></li>
-<li><p>Run</p></li>
-</ol>
-<div class="sourceCode" id="cb13"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip3</span> install protobuf==3.20.3</span>
-<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a><span class="ex">pip3</span> install <span class="at">-U</span> <span class="at">--ignore-installed</span> requests Pillow psutil scipy</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<ol start="6" type="1">
-<li>Set path</li>
-</ol>
-<div class="sourceCode" id="cb14"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="bu">export</span> <span class="va">LD_LIBRARY_PATH</span><span class="op">=</span>/usr/lib/x86_64-linux-gnu:<span class="va">$LD_LIBRARY_PATH</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-</details>
-</section>
-<section id="gcp" class="level5">
-<h5 class="anchored" data-anchor-id="gcp">GCP</h5>
-<details>
-<summary>
-Click to Expand
-</summary>
-<p>Use a Deeplearning linux OS with cuda and pytorch installed. Then follow instructions on quickstart.</p>
-<p>Make sure to run the below to uninstall xla.</p>
-<div class="sourceCode" id="cb15"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> uninstall <span class="at">-y</span> torch_xla<span class="pp">[</span><span class="ss">tpu</span><span class="pp">]</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-</details>
-</section>
-</section>
-<section id="windows" class="level4">
-<h4 class="anchored" data-anchor-id="windows">Windows</h4>
-<p>Please use WSL or Docker!</p>
-</section>
-<section id="mac" class="level4">
-<h4 class="anchored" data-anchor-id="mac">Mac</h4>
-<p>Use the below instead of the install method in QuickStart.</p>
-<pre><code>pip3 install --no-build-isolation -e '.'</code></pre>
-<p>More info: <a href="./docs/mac.html">mac.md</a></p>
-</section>
-<section id="google-colab" class="level4">
-<h4 class="anchored" data-anchor-id="google-colab">Google Colab</h4>
-<p>Please use this example <a href="./examples/colab-notebooks/colab-axolotl-example.html">notebook</a>.</p>
-</section>
-<section id="launching-on-public-clouds-via-skypilot" class="level4">
-<h4 class="anchored" data-anchor-id="launching-on-public-clouds-via-skypilot">Launching on public clouds via SkyPilot</h4>
-<p>To launch on GPU instances (both on-demand and spot instances) on 7+ clouds (GCP, AWS, Azure, OCI, and more), you can use <a href="https://skypilot.readthedocs.io/en/latest/index.html">SkyPilot</a>:</p>
-<div class="sourceCode" id="cb17"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> install <span class="st">"skypilot-nightly[gcp,aws,azure,oci,lambda,kubernetes,ibm,scp]"</span>  <span class="co"># choose your clouds</span></span>
-<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a><span class="ex">sky</span> check</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Get the <a href="https://github.com/skypilot-org/skypilot/tree/master/llm/axolotl">example YAMLs</a> of using Axolotl to finetune <code>mistralai/Mistral-7B-v0.1</code>:</p>
-<pre><code>git clone https://github.com/skypilot-org/skypilot.git
-cd skypilot/llm/axolotl</code></pre>
-<p>Use one command to launch:</p>
-<div class="sourceCode" id="cb19"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a><span class="co"># On-demand</span></span>
-<span id="cb19-2"><a href="#cb19-2" aria-hidden="true" tabindex="-1"></a><span class="va">HF_TOKEN</span><span class="op">=</span>xx <span class="ex">sky</span> launch axolotl.yaml <span class="at">--env</span> HF_TOKEN</span>
-<span id="cb19-3"><a href="#cb19-3" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-4"><a href="#cb19-4" aria-hidden="true" tabindex="-1"></a><span class="co"># Managed spot (auto-recovery on preemption)</span></span>
-<span id="cb19-5"><a href="#cb19-5" aria-hidden="true" tabindex="-1"></a><span class="va">HF_TOKEN</span><span class="op">=</span>xx <span class="va">BUCKET</span><span class="op">=&lt;</span>unique-name<span class="op">&gt;</span> sky <span class="ex">spot</span> launch axolotl-spot.yaml <span class="at">--env</span> HF_TOKEN <span class="at">--env</span> BUCKET</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-</section>
-<section id="launching-on-public-clouds-via-dstack" class="level4">
-<h4 class="anchored" data-anchor-id="launching-on-public-clouds-via-dstack">Launching on public clouds via dstack</h4>
-<p>To launch on GPU instance (both on-demand and spot instances) on public clouds (GCP, AWS, Azure, Lambda Labs, TensorDock, Vast.ai, and CUDO), you can use <a href="https://dstack.ai/">dstack</a>.</p>
-<p>Write a job description in YAML as below:</p>
-<div class="sourceCode" id="cb20"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a><span class="co"># dstack.yaml</span></span>
-<span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a><span class="fu">type</span><span class="kw">:</span><span class="at"> task</span></span>
-<span id="cb20-3"><a href="#cb20-3" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb20-4"><a href="#cb20-4" aria-hidden="true" tabindex="-1"></a><span class="fu">image</span><span class="kw">:</span><span class="at"> axolotlai/axolotl-cloud:main-latest</span></span>
-<span id="cb20-5"><a href="#cb20-5" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb20-6"><a href="#cb20-6" aria-hidden="true" tabindex="-1"></a><span class="fu">env</span><span class="kw">:</span></span>
-<span id="cb20-7"><a href="#cb20-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> HUGGING_FACE_HUB_TOKEN</span></span>
-<span id="cb20-8"><a href="#cb20-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> WANDB_API_KEY</span></span>
-<span id="cb20-9"><a href="#cb20-9" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb20-10"><a href="#cb20-10" aria-hidden="true" tabindex="-1"></a><span class="fu">commands</span><span class="kw">:</span></span>
-<span id="cb20-11"><a href="#cb20-11" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> accelerate launch -m axolotl.cli.train config.yaml</span></span>
-<span id="cb20-12"><a href="#cb20-12" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb20-13"><a href="#cb20-13" aria-hidden="true" tabindex="-1"></a><span class="fu">ports</span><span class="kw">:</span></span>
-<span id="cb20-14"><a href="#cb20-14" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="dv">6006</span></span>
-<span id="cb20-15"><a href="#cb20-15" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb20-16"><a href="#cb20-16" aria-hidden="true" tabindex="-1"></a><span class="fu">resources</span><span class="kw">:</span></span>
-<span id="cb20-17"><a href="#cb20-17" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">gpu</span><span class="kw">:</span></span>
-<span id="cb20-18"><a href="#cb20-18" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">memory</span><span class="kw">:</span><span class="at"> 24GB..</span></span>
-<span id="cb20-19"><a href="#cb20-19" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">count</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>then, simply run the job with <code>dstack run</code> command. Append <code>--spot</code> option if you want spot instance. <code>dstack run</code> command will show you the instance with cheapest price across multi cloud services:</p>
-<div class="sourceCode" id="cb21"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> install dstack</span>
-<span id="cb21-2"><a href="#cb21-2" aria-hidden="true" tabindex="-1"></a><span class="va">HUGGING_FACE_HUB_TOKEN</span><span class="op">=</span>xxx <span class="va">WANDB_API_KEY</span><span class="op">=</span>xxx <span class="ex">dstack</span> run . <span class="at">-f</span> dstack.yaml <span class="co"># --spot</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>For further and fine-grained use cases, please refer to the official <a href="https://dstack.ai/docs/">dstack documents</a> and the detailed description of <a href="https://github.com/dstackai/dstack/tree/master/examples/fine-tuning/axolotl">axolotl example</a> on the official repository.</p>
-</section>
-</section>
-<section id="dataset" class="level3">
-<h3 class="anchored" data-anchor-id="dataset">Dataset</h3>
-<p>Axolotl supports a variety of dataset formats. It is recommended to use a JSONL. The schema of the JSONL depends upon the task and the prompt template you wish to use. Instead of a JSONL, you can also use a HuggingFace dataset with columns for each JSONL field.</p>
-<p>See <a href="https://axolotl-ai-cloud.github.io/axolotl/docs/dataset-formats/">the documentation</a> for more information on how to use different dataset formats.</p>
-</section>
-<section id="config" class="level3">
-<h3 class="anchored" data-anchor-id="config">Config</h3>
-<p>See <a href="examples">examples</a> for quick start. It is recommended to duplicate and modify to your needs. The most important options are:</p>
-<ul>
-<li><p>model</p>
-<div class="sourceCode" id="cb22"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a><span class="fu">base_model</span><span class="kw">:</span><span class="at"> ./llama-7b-hf</span><span class="co"> # local or huggingface repo</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Note: The code will load the right architecture.</p></li>
-<li><p>dataset</p>
-<div class="sourceCode" id="cb23"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
-<span id="cb23-2"><a href="#cb23-2" aria-hidden="true" tabindex="-1"></a><span class="co">    # huggingface repo</span></span>
-<span id="cb23-3"><a href="#cb23-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> vicgalle/alpaca-gpt4</span></span>
-<span id="cb23-4"><a href="#cb23-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> alpaca</span></span>
-<span id="cb23-5"><a href="#cb23-5" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb23-6"><a href="#cb23-6" aria-hidden="true" tabindex="-1"></a><span class="co">    # huggingface repo with specific configuration/subset</span></span>
-<span id="cb23-7"><a href="#cb23-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> EleutherAI/pile</span></span>
-<span id="cb23-8"><a href="#cb23-8" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">name</span><span class="kw">:</span><span class="at"> enron_emails</span></span>
-<span id="cb23-9"><a href="#cb23-9" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> completion</span><span class="co"> # format from earlier</span></span>
-<span id="cb23-10"><a href="#cb23-10" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">field</span><span class="kw">:</span><span class="at"> text</span><span class="co"> # Optional[str] default: text, field to use for completion data</span></span>
-<span id="cb23-11"><a href="#cb23-11" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb23-12"><a href="#cb23-12" aria-hidden="true" tabindex="-1"></a><span class="co">    # huggingface repo with multiple named configurations/subsets</span></span>
-<span id="cb23-13"><a href="#cb23-13" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> bigcode/commitpackft</span></span>
-<span id="cb23-14"><a href="#cb23-14" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">name</span><span class="kw">:</span></span>
-<span id="cb23-15"><a href="#cb23-15" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> ruby</span></span>
-<span id="cb23-16"><a href="#cb23-16" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> python</span></span>
-<span id="cb23-17"><a href="#cb23-17" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> typescript</span></span>
-<span id="cb23-18"><a href="#cb23-18" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> ...</span><span class="co"> # unimplemented custom format</span></span>
-<span id="cb23-19"><a href="#cb23-19" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb23-20"><a href="#cb23-20" aria-hidden="true" tabindex="-1"></a><span class="co">    # chat_template https://axolotl-ai-cloud.github.io/axolotl/docs/dataset-formats/conversation.html#chat_template</span></span>
-<span id="cb23-21"><a href="#cb23-21" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> ...</span></span>
-<span id="cb23-22"><a href="#cb23-22" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> chat_template</span></span>
-<span id="cb23-23"><a href="#cb23-23" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">chat_template</span><span class="kw">:</span><span class="at"> chatml</span><span class="co"> # defaults to tokenizer's chat_template</span></span>
-<span id="cb23-24"><a href="#cb23-24" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb23-25"><a href="#cb23-25" aria-hidden="true" tabindex="-1"></a><span class="co">    # local</span></span>
-<span id="cb23-26"><a href="#cb23-26" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> data.jsonl</span><span class="co"> # or json</span></span>
-<span id="cb23-27"><a href="#cb23-27" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">ds_type</span><span class="kw">:</span><span class="at"> json</span><span class="co"> # see other options below</span></span>
-<span id="cb23-28"><a href="#cb23-28" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> alpaca</span></span>
-<span id="cb23-29"><a href="#cb23-29" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb23-30"><a href="#cb23-30" aria-hidden="true" tabindex="-1"></a><span class="co">    # dataset with splits, but no train split</span></span>
-<span id="cb23-31"><a href="#cb23-31" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> knowrohit07/know_sql</span></span>
-<span id="cb23-32"><a href="#cb23-32" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> context_qa.load_v2</span></span>
-<span id="cb23-33"><a href="#cb23-33" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">train_on_split</span><span class="kw">:</span><span class="at"> validation</span></span>
-<span id="cb23-34"><a href="#cb23-34" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb23-35"><a href="#cb23-35" aria-hidden="true" tabindex="-1"></a><span class="co">    # loading from s3 or gcs</span></span>
-<span id="cb23-36"><a href="#cb23-36" aria-hidden="true" tabindex="-1"></a><span class="co">    # s3 creds will be loaded from the system default / gcs will attempt to load from gcloud creds, google metadata service, or anon</span></span>
-<span id="cb23-37"><a href="#cb23-37" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> s3://path_to_ds</span><span class="co"> # Accepts folder with arrow/parquet or file path like above</span></span>
-<span id="cb23-38"><a href="#cb23-38" aria-hidden="true" tabindex="-1"></a><span class="at">    ...</span></span>
-<span id="cb23-39"><a href="#cb23-39" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb23-40"><a href="#cb23-40" aria-hidden="true" tabindex="-1"></a><span class="co">    # Loading Data From a Public URL</span></span>
-<span id="cb23-41"><a href="#cb23-41" aria-hidden="true" tabindex="-1"></a><span class="co">    # - The file format is `json` (which includes `jsonl`) by default. For different formats, adjust the `ds_type` option accordingly.</span></span>
-<span id="cb23-42"><a href="#cb23-42" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> https://some.url.com/yourdata.jsonl</span><span class="co"> # The URL should be a direct link to the file you wish to load. URLs must use HTTPS protocol, not HTTP.</span></span>
-<span id="cb23-43"><a href="#cb23-43" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">ds_type</span><span class="kw">:</span><span class="at"> json</span><span class="co"> # this is the default, see other options below.</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div></li>
-<li><p>loading</p>
-<div class="sourceCode" id="cb24"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a><span class="fu">load_in_4bit</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
-<span id="cb24-2"><a href="#cb24-2" aria-hidden="true" tabindex="-1"></a><span class="fu">load_in_8bit</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
-<span id="cb24-3"><a href="#cb24-3" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb24-4"><a href="#cb24-4" aria-hidden="true" tabindex="-1"></a><span class="fu">bf16</span><span class="kw">:</span><span class="at"> auto</span><span class="co"> # require &gt;=ampere, auto will detect if your GPU supports this and choose automatically.</span></span>
-<span id="cb24-5"><a href="#cb24-5" aria-hidden="true" tabindex="-1"></a><span class="fu">fp16</span><span class="kw">:</span><span class="co"> # leave empty to use fp16 when bf16 is 'auto'. set to false if you want to fallback to fp32</span></span>
-<span id="cb24-6"><a href="#cb24-6" aria-hidden="true" tabindex="-1"></a><span class="fu">tf32</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span><span class="co"> # require &gt;=ampere</span></span>
-<span id="cb24-7"><a href="#cb24-7" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb24-8"><a href="#cb24-8" aria-hidden="true" tabindex="-1"></a><span class="fu">bfloat16</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span><span class="co"> # require &gt;=ampere, use instead of bf16 when you don't want AMP (automatic mixed precision)</span></span>
-<span id="cb24-9"><a href="#cb24-9" aria-hidden="true" tabindex="-1"></a><span class="fu">float16</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span><span class="co"> # use instead of fp16 when you don't want AMP</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Note: Repo does not do 4-bit quantization.</p></li>
-<li><p>lora</p>
-<div class="sourceCode" id="cb25"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb25-1"><a href="#cb25-1" aria-hidden="true" tabindex="-1"></a><span class="fu">adapter</span><span class="kw">:</span><span class="at"> lora</span><span class="co"> # 'qlora' or leave blank for full finetune</span></span>
-<span id="cb25-2"><a href="#cb25-2" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_r</span><span class="kw">:</span><span class="at"> </span><span class="dv">8</span></span>
-<span id="cb25-3"><a href="#cb25-3" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_alpha</span><span class="kw">:</span><span class="at"> </span><span class="dv">16</span></span>
-<span id="cb25-4"><a href="#cb25-4" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_dropout</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.05</span></span>
-<span id="cb25-5"><a href="#cb25-5" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_target_modules</span><span class="kw">:</span></span>
-<span id="cb25-6"><a href="#cb25-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> q_proj</span></span>
-<span id="cb25-7"><a href="#cb25-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> v_proj</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div></li>
-</ul>
-<section id="all-config-options" class="level4">
-<h4 class="anchored" data-anchor-id="all-config-options">All Config Options</h4>
-<p>See <a href="./docs/config.html">these docs</a> for all config options.</p>
-</section>
-</section>
-<section id="train" class="level3">
-<h3 class="anchored" data-anchor-id="train">Train</h3>
-<p>Run</p>
-<div class="sourceCode" id="cb26"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a><span class="ex">accelerate</span> launch <span class="at">-m</span> axolotl.cli.train your_config.yml</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<blockquote class="blockquote">
-<p>[!TIP] You can also reference a config file that is hosted on a public URL, for example <code>accelerate launch -m axolotl.cli.train https://yourdomain.com/your_config.yml</code></p>
-</blockquote>
-<section id="preprocess-dataset" class="level4">
-<h4 class="anchored" data-anchor-id="preprocess-dataset">Preprocess dataset</h4>
-<p>You can optionally pre-tokenize dataset with the following before finetuning. This is recommended for large datasets.</p>
-<ul>
-<li>Set <code>dataset_prepared_path:</code> to a local folder for saving and loading pre-tokenized dataset.</li>
-<li>(Optional): Set <code>push_dataset_to_hub: hf_user/repo</code> to push it to Huggingface.</li>
-<li>(Optional): Use <code>--debug</code> to see preprocessed examples.</li>
-</ul>
-<div class="sourceCode" id="cb27"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb27-1"><a href="#cb27-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> <span class="at">-m</span> axolotl.cli.preprocess your_config.yml</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-</section>
-<section id="multi-gpu" class="level4">
-<h4 class="anchored" data-anchor-id="multi-gpu">Multi-GPU</h4>
-<p>Below are the options available in axolotl for training with multiple GPUs. Note that DeepSpeed is the recommended multi-GPU option currently because FSDP may experience <a href="https://github.com/huggingface/transformers/issues/26498">loss instability</a>.</p>
-<section id="deepspeed" class="level5">
-<h5 class="anchored" data-anchor-id="deepspeed">DeepSpeed</h5>
-<p>Deepspeed is an optimization suite for multi-gpu systems allowing you to train much larger models than you might typically be able to fit into your GPU’s VRAM. More information about the various optimization types for deepspeed is available at https://huggingface.co/docs/accelerate/main/en/usage_guides/deepspeed#what-is-integrated</p>
-<p>We provide several default deepspeed JSON configurations for ZeRO stage 1, 2, and 3.</p>
-<div class="sourceCode" id="cb28"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb28-1"><a href="#cb28-1" aria-hidden="true" tabindex="-1"></a><span class="fu">deepspeed</span><span class="kw">:</span><span class="at"> deepspeed_configs/zero1.json</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<pre class="shell"><code>accelerate launch -m axolotl.cli.train examples/llama-2/config.yml --deepspeed deepspeed_configs/zero1.json</code></pre>
-</section>
-<section id="fsdp" class="level5">
-<h5 class="anchored" data-anchor-id="fsdp">FSDP</h5>
-<ul>
-<li>llama FSDP</li>
-</ul>
-<div class="sourceCode" id="cb30"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb30-1"><a href="#cb30-1" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp</span><span class="kw">:</span></span>
-<span id="cb30-2"><a href="#cb30-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> full_shard</span></span>
-<span id="cb30-3"><a href="#cb30-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> auto_wrap</span></span>
-<span id="cb30-4"><a href="#cb30-4" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp_config</span><span class="kw">:</span></span>
-<span id="cb30-5"><a href="#cb30-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fsdp_offload_params</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
-<span id="cb30-6"><a href="#cb30-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fsdp_state_dict_type</span><span class="kw">:</span><span class="at"> FULL_STATE_DICT</span></span>
-<span id="cb30-7"><a href="#cb30-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fsdp_transformer_layer_cls_to_wrap</span><span class="kw">:</span><span class="at"> LlamaDecoderLayer</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-</section>
-<section id="fsdp-qlora" class="level5">
-<h5 class="anchored" data-anchor-id="fsdp-qlora">FSDP + QLoRA</h5>
-<p>Axolotl supports training with FSDP and QLoRA, see <a href="./docs/fsdp_qlora.html">these docs</a> for more information.</p>
-</section>
-<section id="weights-biases-logging" class="level5">
-<h5 class="anchored" data-anchor-id="weights-biases-logging">Weights &amp; Biases Logging</h5>
-<p>Make sure your <code>WANDB_API_KEY</code> environment variable is set (recommended) or you login to wandb with <code>wandb login</code>.</p>
-<ul>
-<li>wandb options</li>
-</ul>
-<div class="sourceCode" id="cb31"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb31-1"><a href="#cb31-1" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_mode</span><span class="kw">:</span></span>
-<span id="cb31-2"><a href="#cb31-2" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_project</span><span class="kw">:</span></span>
-<span id="cb31-3"><a href="#cb31-3" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_entity</span><span class="kw">:</span></span>
-<span id="cb31-4"><a href="#cb31-4" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_watch</span><span class="kw">:</span></span>
-<span id="cb31-5"><a href="#cb31-5" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_name</span><span class="kw">:</span></span>
-<span id="cb31-6"><a href="#cb31-6" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_log_model</span><span class="kw">:</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-</section>
-<section id="comet-logging" class="level5">
-<h5 class="anchored" data-anchor-id="comet-logging">Comet Logging</h5>
-<p>Make sure your <code>COMET_API_KEY</code> environment variable is set (recommended) or you login to wandb with <code>comet login</code>.</p>
-<ul>
-<li>wandb options</li>
-</ul>
-<div class="sourceCode" id="cb32"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb32-1"><a href="#cb32-1" aria-hidden="true" tabindex="-1"></a><span class="fu">use_comet</span><span class="kw">:</span></span>
-<span id="cb32-2"><a href="#cb32-2" aria-hidden="true" tabindex="-1"></a><span class="fu">comet_api_key</span><span class="kw">:</span></span>
-<span id="cb32-3"><a href="#cb32-3" aria-hidden="true" tabindex="-1"></a><span class="fu">comet_workspace</span><span class="kw">:</span></span>
-<span id="cb32-4"><a href="#cb32-4" aria-hidden="true" tabindex="-1"></a><span class="fu">comet_project_name</span><span class="kw">:</span></span>
-<span id="cb32-5"><a href="#cb32-5" aria-hidden="true" tabindex="-1"></a><span class="fu">comet_experiment_key</span><span class="kw">:</span></span>
-<span id="cb32-6"><a href="#cb32-6" aria-hidden="true" tabindex="-1"></a><span class="fu">comet_mode</span><span class="kw">:</span></span>
-<span id="cb32-7"><a href="#cb32-7" aria-hidden="true" tabindex="-1"></a><span class="fu">comet_online</span><span class="kw">:</span></span>
-<span id="cb32-8"><a href="#cb32-8" aria-hidden="true" tabindex="-1"></a><span class="fu">comet_experiment_config</span><span class="kw">:</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-</section>
-<section id="special-tokens" class="level5">
-<h5 class="anchored" data-anchor-id="special-tokens">Special Tokens</h5>
-<p>It is important to have special tokens like delimiters, end-of-sequence, beginning-of-sequence in your tokenizer’s vocabulary. This will help you avoid tokenization issues and help your model train better. You can do this in axolotl like this:</p>
-<div class="sourceCode" id="cb33"><pre class="sourceCode yml code-with-copy"><code class="sourceCode yaml"><span id="cb33-1"><a href="#cb33-1" aria-hidden="true" tabindex="-1"></a><span class="fu">special_tokens</span><span class="kw">:</span></span>
-<span id="cb33-2"><a href="#cb33-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">bos_token</span><span class="kw">:</span><span class="at"> </span><span class="st">"&lt;s&gt;"</span></span>
-<span id="cb33-3"><a href="#cb33-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">eos_token</span><span class="kw">:</span><span class="at"> </span><span class="st">"&lt;/s&gt;"</span></span>
-<span id="cb33-4"><a href="#cb33-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">unk_token</span><span class="kw">:</span><span class="at"> </span><span class="st">"&lt;unk&gt;"</span></span>
-<span id="cb33-5"><a href="#cb33-5" aria-hidden="true" tabindex="-1"></a><span class="fu">tokens</span><span class="kw">:</span><span class="co"> # these are delimiters</span></span>
-<span id="cb33-6"><a href="#cb33-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="st">"&lt;|im_start|&gt;"</span></span>
-<span id="cb33-7"><a href="#cb33-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="st">"&lt;|im_end|&gt;"</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>When you include these tokens in your axolotl config, axolotl adds these tokens to the tokenizer’s vocabulary.</p>
-</section>
-<section id="liger-kernel" class="level5">
-<h5 class="anchored" data-anchor-id="liger-kernel">Liger Kernel</h5>
-<p>Liger Kernel: Efficient Triton Kernels for LLM Training</p>
-<p>https://github.com/linkedin/Liger-Kernel</p>
-<p>Liger (LinkedIn GPU Efficient Runtime) Kernel is a collection of Triton kernels designed specifically for LLM training. It can effectively increase multi-GPU training throughput by 20% and reduces memory usage by 60%. The Liger Kernel composes well and is compatible with both FSDP and Deepspeed.</p>
-<div class="sourceCode" id="cb34"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb34-1"><a href="#cb34-1" aria-hidden="true" tabindex="-1"></a><span class="fu">plugins</span><span class="kw">:</span></span>
-<span id="cb34-2"><a href="#cb34-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> axolotl.integrations.liger.LigerPlugin</span></span>
-<span id="cb34-3"><a href="#cb34-3" aria-hidden="true" tabindex="-1"></a><span class="fu">liger_rope</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
-<span id="cb34-4"><a href="#cb34-4" aria-hidden="true" tabindex="-1"></a><span class="fu">liger_rms_norm</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
-<span id="cb34-5"><a href="#cb34-5" aria-hidden="true" tabindex="-1"></a><span class="fu">liger_glu_activation</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
-<span id="cb34-6"><a href="#cb34-6" aria-hidden="true" tabindex="-1"></a><span class="fu">liger_layer_norm</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
-<span id="cb34-7"><a href="#cb34-7" aria-hidden="true" tabindex="-1"></a><span class="fu">liger_fused_linear_cross_entropy</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-</section>
-</section>
-</section>
-<section id="inference-playground" class="level3">
-<h3 class="anchored" data-anchor-id="inference-playground">Inference Playground</h3>
-<p>Axolotl allows you to load your model in an interactive terminal playground for quick experimentation. The config file is the same config file used for training.</p>
-<p>Pass the appropriate flag to the inference command, depending upon what kind of model was trained:</p>
-<ul>
-<li><p>Pretrained LORA:</p>
-<div class="sourceCode" id="cb35"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb35-1"><a href="#cb35-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> <span class="at">-m</span> axolotl.cli.inference examples/your_config.yml <span class="at">--lora_model_dir</span><span class="op">=</span><span class="st">"./lora-output-dir"</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div></li>
-<li><p>Full weights finetune:</p>
-<div class="sourceCode" id="cb36"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb36-1"><a href="#cb36-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> <span class="at">-m</span> axolotl.cli.inference examples/your_config.yml <span class="at">--base_model</span><span class="op">=</span><span class="st">"./completed-model"</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div></li>
-<li><p>Full weights finetune w/ a prompt from a text file:</p>
-<div class="sourceCode" id="cb37"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb37-1"><a href="#cb37-1" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span> /tmp/prompt.txt <span class="kw">|</span> <span class="ex">python</span> <span class="at">-m</span> axolotl.cli.inference examples/your_config.yml <span class="dt">\</span></span>
-<span id="cb37-2"><a href="#cb37-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">--base_model</span><span class="op">=</span><span class="st">"./completed-model"</span> <span class="at">--prompter</span><span class="op">=</span>None <span class="at">--load_in_8bit</span><span class="op">=</span>True</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>– With gradio hosting</p>
-<div class="sourceCode" id="cb38"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb38-1"><a href="#cb38-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> <span class="at">-m</span> axolotl.cli.inference examples/your_config.yml <span class="at">--gradio</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div></li>
-</ul>
-<p>Please use <code>--sample_packing False</code> if you have it on and receive the error similar to below:</p>
-<blockquote class="blockquote">
-<p>RuntimeError: stack expects each tensor to be equal size, but got [1, 32, 1, 128] at entry 0 and [1, 32, 8, 128] at entry 1</p>
-</blockquote>
-</section>
-<section id="merge-lora-to-base" class="level3">
-<h3 class="anchored" data-anchor-id="merge-lora-to-base">Merge LORA to base</h3>
-<p>The following command will merge your LORA adapater with your base model. You can optionally pass the argument <code>--lora_model_dir</code> to specify the directory where your LORA adapter was saved, otherwhise, this will be inferred from <code>output_dir</code> in your axolotl config file. The merged model is saved in the sub-directory <code>{lora_model_dir}/merged</code>.</p>
-<div class="sourceCode" id="cb39"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb39-1"><a href="#cb39-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python3</span> <span class="at">-m</span> axolotl.cli.merge_lora your_config.yml <span class="at">--lora_model_dir</span><span class="op">=</span><span class="st">"./completed-model"</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>You may need to use the <code>gpu_memory_limit</code> and/or <code>lora_on_cpu</code> config options to avoid running out of memory. If you still run out of CUDA memory, you can try to merge in system RAM with</p>
-<div class="sourceCode" id="cb40"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb40-1"><a href="#cb40-1" aria-hidden="true" tabindex="-1"></a><span class="va">CUDA_VISIBLE_DEVICES</span><span class="op">=</span><span class="st">""</span> <span class="ex">python3</span> <span class="at">-m</span> axolotl.cli.merge_lora ...</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>although this will be very slow, and using the config options above are recommended instead.</p>
-</section>
-</section>
-<section id="common-errors" class="level2">
-<h2 class="anchored" data-anchor-id="common-errors">Common Errors 🧰</h2>
-<p>See also the <a href="./docs/faq.html">FAQ’s</a> and <a href="./docs/debugging.html">debugging guide</a>.</p>
-<blockquote class="blockquote">
-<p>If you encounter a ‘Cuda out of memory’ error, it means your GPU ran out of memory during the training process. Here’s how to resolve it:</p>
-</blockquote>
-<p>Please reduce any below - <code>micro_batch_size</code> - <code>eval_batch_size</code> - <code>gradient_accumulation_steps</code> - <code>sequence_len</code></p>
-<p>If it does not help, try running without deepspeed and without accelerate (replace “accelerate launch” with “python”) in the command.</p>
-<p>Using adamw_bnb_8bit might also save you some memory.</p>
-<blockquote class="blockquote">
-<p><code>failed (exitcode: -9)</code></p>
-</blockquote>
-<p>Usually means your system has run out of system memory. Similarly, you should consider reducing the same settings as when you run out of VRAM. Additionally, look into upgrading your system RAM which should be simpler than GPU upgrades.</p>
-<blockquote class="blockquote">
-<p>RuntimeError: expected scalar type Float but found Half</p>
-</blockquote>
-<p>Try set <code>fp16: true</code></p>
-<blockquote class="blockquote">
-<p>NotImplementedError: No operator found for <code>memory_efficient_attention_forward</code> …</p>
-</blockquote>
-<p>Try to turn off xformers.</p>
-<blockquote class="blockquote">
-<p>accelerate config missing</p>
-</blockquote>
-<p>It’s safe to ignore it.</p>
-<blockquote class="blockquote">
-<p>NCCL Timeouts during training</p>
-</blockquote>
-<p>See the <a href="./docs/nccl.html">NCCL</a> guide.</p>
-<section id="tokenization-mismatch-bw-inference-training" class="level3">
-<h3 class="anchored" data-anchor-id="tokenization-mismatch-bw-inference-training">Tokenization Mismatch b/w Inference &amp; Training</h3>
-<p>For many formats, Axolotl constructs prompts by concatenating token ids <em>after</em> tokenizing strings. The reason for concatenating token ids rather than operating on strings is to maintain precise accounting for attention masks.</p>
-<p>If you decode a prompt constructed by axolotl, you might see spaces between tokens (or lack thereof) that you do not expect, especially around delimiters and special tokens. When you are starting out with a new format, you should always do the following:</p>
-<ol type="1">
-<li>Materialize some data using <code>python -m axolotl.cli.preprocess your_config.yml --debug</code>, and then decode the first few rows with your model’s tokenizer.</li>
-<li>During inference, right before you pass a tensor of token ids to your model, decode these tokens back into a string.</li>
-<li>Make sure the inference string from #2 looks <strong>exactly</strong> like the data you fine tuned on from #1, including spaces and new lines. If they aren’t the same, adjust your inference server accordingly.</li>
-<li>As an additional troubleshooting step, you can look at the token ids between 1 and 2 to make sure they are identical.</li>
-</ol>
-<p>Having misalignment between your prompts during training and inference can cause models to perform very poorly, so it is worth checking this. See <a href="https://hamel.dev/notes/llm/finetuning/05_tokenizer_gotchas.html">this blog post</a> for a concrete example.</p>
-</section>
-</section>
-<section id="debugging-axolotl" class="level2">
-<h2 class="anchored" data-anchor-id="debugging-axolotl">Debugging Axolotl</h2>
-<p>See <a href="./docs/debugging.html">this debugging guide</a> for tips on debugging Axolotl, along with an example configuration for debugging with VSCode.</p>
-</section>
-<section id="need-help" class="level2">
-<h2 class="anchored" data-anchor-id="need-help">Need help? 🙋</h2>
-<p>Join our <a href="https://discord.gg/HhrNrHJPRb">Discord server</a> where our community members can help you.</p>
-<p>Need dedicated support? Please contact us at <a href="ailto:wing@axolotl.ai">✉️wing@axolotl.ai</a> for dedicated support options.</p>
+<section id="license" class="level2">
+<h2 class="anchored" data-anchor-id="license">📜 License</h2>
+<p>This project is licensed under the Apache 2.0 License - see the <a href="LICENSE">LICENSE</a> file for details.</p>
 
 
 </section>

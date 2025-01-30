@@ -21,6 +21,40 @@ ul.task-list li input[type="checkbox"] {
   margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
   vertical-align: middle;
 }
+/* CSS for syntax highlighting */
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { display: inline-block; text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
 </style>
 
 
@@ -125,8 +159,26 @@ ul.task-list li input[type="checkbox"] {
       <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/getting-started.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Getting Started with Axolotl</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/installation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Installation Guide</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/debugging.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Debugging</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/inference.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Inference Guide</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -163,6 +215,12 @@ ul.task-list li input[type="checkbox"] {
   <div class="sidebar-item-container"> 
   <a href="../../docs/mac.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Mac M-series</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/multi-gpu.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Multi-GPU Training Guide</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -271,7 +329,10 @@ ul.task-list li input[type="checkbox"] {
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#stepwise-supervised" id="toc-stepwise-supervised" class="nav-link active" data-scroll-target="#stepwise-supervised">Stepwise Supervised</a></li>
+  <li><a href="#stepwise-supervised" id="toc-stepwise-supervised" class="nav-link active" data-scroll-target="#stepwise-supervised">Stepwise Supervised</a>
+  <ul class="collapse">
+  <li><a href="#example" id="toc-example" class="nav-link" data-scroll-target="#example">Example</a></li>
+  </ul></li>
   </ul>
 </nav>
     </div>
@@ -304,9 +365,21 @@ ul.task-list li input[type="checkbox"] {
 
 <section id="stepwise-supervised" class="level2">
 <h2 class="anchored" data-anchor-id="stepwise-supervised">Stepwise Supervised</h2>
-<p>The stepwise supervised format is designed for chain-of-thought (COT) reasoning datasets where each example contains multiple completion steps and a preference label for each step. ### ExampleHere’s a simple example of a stepwise supervised dataset entry:```json { “prompt”: “Which number is larger, 9.8 or 9.11?”, “completions”: [ “The fractional part of 9.8 is 0.8, while the fractional part of 9.11 is 0.11.”, “Since 0.11 is greater than 0.8, the number 9.11 is larger than 9.8.” ], “labels”: [true, false] }</p>
+<p>The stepwise supervised format is designed for chain-of-thought (COT) reasoning datasets where each example contains multiple completion steps and a preference label for each step.</p>
+<section id="example" class="level3">
+<h3 class="anchored" data-anchor-id="example">Example</h3>
+<p>Here’s a simple example of a stepwise supervised dataset entry:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">"prompt"</span><span class="fu">:</span> <span class="st">"Which number is larger, 9.8 or 9.11?"</span><span class="fu">,</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">"completions"</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    <span class="st">"The fractional part of 9.8 is 0.8, while the fractional part of 9.11 is 0.11."</span><span class="ot">,</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    <span class="st">"Since 0.11 is greater than 0.8, the number 9.11 is larger than 9.8."</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>  <span class="dt">"labels"</span><span class="fu">:</span> <span class="ot">[</span><span class="kw">true</span><span class="ot">,</span> <span class="kw">false</span><span class="ot">]</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 
 
+</section>
 </section>
 
 </main> <!-- /main -->
