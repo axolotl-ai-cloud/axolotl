@@ -10,7 +10,7 @@ from accelerate.utils.environment import get_gpu_info
 def check_cuda_p2p_ib_support():
     if not accelerate_check_cuda_p2p_ib_support():
         return False
-    unsupported_devices = {"RTX 6000 Ada"}
+    unsupported_devices = {"RTX 6000 Ada", "L40S"}
     try:
         device_names, device_count = get_gpu_info()
         if 1 < device_count < 8:
