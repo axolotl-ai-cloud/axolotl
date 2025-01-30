@@ -18,6 +18,6 @@ def is_triton_available():
 
 
 def patch_is_triton_available():
-    import bitsandbytes.triton.triton_utils
+    from bitsandbytes.triton import triton_utils
 
-    bitsandbytes.triton.triton_utils.is_triton_available = is_triton_available
+    triton_utils.is_triton_available = is_triton_available
