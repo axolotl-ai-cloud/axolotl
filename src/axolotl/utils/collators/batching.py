@@ -11,6 +11,7 @@ from transformers import PreTrainedTokenizerBase
 from transformers.utils import PaddingStrategy
 
 from axolotl.monkeypatch.utils import get_seqlens_from_pos_ids
+from axolotl.monkeypatch.flex_attn import packed_block_causal_mask
 
 
 @dataclass
@@ -166,15 +167,8 @@ class FlexBatchSamplerDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):
         out_features = [{} for _ in features]
         for i, features_ in enumerate(features):
             for feature in features_[0].keys():
-                if feature == "length":
+                if feature in {"length" , "attention_mask"}:
                     continue
-                if feature == "attention_mask":
-                    arrays = [
-                        (i + 1) * np.array(item[feature])
-                        for i, item in enumerate(features_)
-                        if feature in item
-                    ]
-                    out_features[i][feature] = np.concatenate(arrays)
                 else:
                     arrays = [
                         np.array(item[feature]) for item in features_ if feature in item
@@ -183,10 +177,7 @@ class FlexBatchSamplerDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):
         out = super().__call__(out_features, return_tensors=return_tensors)
 
         collated_seq_lens = get_seqlens_from_pos_ids(out["position_ids"])
-
-        doc_mask = 
-
-        out["attention_mask"] 
+        out["attention_mask"] = packed_block_causal_mask(collated_seq_lens)
 
         return out
 
