@@ -1956,7 +1956,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         elif use_batch_sampler_collator:
             if self.cfg.flex_attention is True:
                 collator = FlexBatchSamplerDataCollatorForSeq2Seq
-            if self.cfg.model_config_type in SUPPORTED_MULTIPACK_MODEL_TYPES:
+            elif self.cfg.model_config_type in SUPPORTED_MULTIPACK_MODEL_TYPES:
                 collator = V2BatchSamplerDataCollatorForSeq2Seq
             elif (
                 self.cfg.model_config_type in ["llama"]
