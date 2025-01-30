@@ -6,8 +6,15 @@ order: 3
 
 ## Stepwise Supervised
 
-The stepwise supervised format is designed for chain-of-thought (COT) reasoning datasets where each example contains multiple completion steps and a preference label for each step.
-### ExampleHere's a simple example of a stepwise supervised dataset entry:```json
+The stepwise supervised format is designed for chain-of-thought (COT) reasoning
+datasets where each example contains multiple completion steps and a preference label
+for each step.
+
+### Example
+
+Here's a simple example of a stepwise supervised dataset entry:
+
+```json
 {
   "prompt": "Which number is larger, 9.8 or 9.11?",
   "completions": [
@@ -16,3 +23,4 @@ The stepwise supervised format is designed for chain-of-thought (COT) reasoning 
   ],
   "labels": [true, false]
 }
+```

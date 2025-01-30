@@ -1,0 +1,155 @@
+---
+title: "Getting Started with Axolotl"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+execute:
+  enabled: false
+---
+
+This guide will walk you through your first model fine-tuning project with Axolotl.
+
+## Quick Example {#sec-quick-example}
+
+Let's start by fine-tuning a small language model using LoRA. This example uses a 1B parameter model to ensure it runs on most GPUs.
+Assuming `axolotl` is installed (if not, see our [Installation Guide](installation.qmd))
+
+1. Download example configs:
+```shell
+axolotl fetch examples
+```
+
+2. Run the training:
+```shell
+axolotl train examples/llama-3/lora-1b.yml
+```
+
+That's it! Let's understand what just happened.
+
+## Understanding the Process {#sec-understanding}
+
+### The Configuration File {#sec-config}
+
+The YAML configuration file controls everything about your training. Here's what (part of) our example config looks like:
+
+```yaml
+base_model: NousResearch/Llama-3.2-1B
+# hub_model_id: username/custom_model_name
+
+datasets:
+  - path: teknium/GPT4-LLM-Cleaned
+    type: alpaca
+dataset_prepared_path: last_run_prepared
+val_set_size: 0.1
+output_dir: ./outputs/lora-out
+
+adapter: lora
+lora_model_dir:
+```
+
+See our [Config options](config.qmd) for more details.
+
+### Training {#sec-training}
+
+When you run `axolotl train`, Axolotl:
+
+1. Downloads the base model
+2. (If specified) applies LoRA adapter layers
+3. Loads and processes the dataset
+4. Runs the training loop
+5. Saves the trained model and / or LoRA weights
+
+## Your First Custom Training {#sec-custom}
+
+Let's modify the example for your own data:
+
+1. Create a new config file `my_training.yml`:
+
+```yaml
+base_model: NousResearch/Nous-Hermes-llama-1b-v1
+adapter: lora
+
+# Training settings
+micro_batch_size: 2
+num_epochs: 3
+learning_rate: 0.0003
+
+# Your dataset
+datasets:
+  - path: my_data.jsonl        # Your local data file
+    type: alpaca               # Or other format
+```
+
+This specific config is for LoRA fine-tuning a model with instruction tuning data using
+the `alpaca` dataset format, which has the following format:
+
+```json
+{
+    "instruction": "Write a description of alpacas.",
+    "input": "",
+    "output": "Alpacas are domesticated South American camelids..."
+}
+```
+
+Please see our [Dataset Formats](dataset-formats) for more dataset formats and how to
+format them.
+
+2. Prepare your JSONL data in the specified format (in this case, the expected `alpaca
+format):
+
+```json
+{"instruction": "Classify this text", "input": "I love this!", "output": "positive"}
+{"instruction": "Classify this text", "input": "Not good at all", "output": "negative"}
+```
+
+Please consult the supported [Dataset Formats](dataset-formats/) for more details.
+
+3. Run the training:
+
+```shell
+axolotl train my_training.yml
+```
+
+## Common Tasks {#sec-common-tasks}
+
+### Testing Your Model {#sec-testing}
+
+After training, test your model:
+
+```shell
+axolotl inference my_training.yml --lora-model-dir="./outputs/lora-out"
+```
+
+### Preprocessing Data {#sec-preprocessing}
+
+For large datasets, preprocess first:
+
+```shell
+axolotl preprocess my_training.yml
+```
+
+### Using a UI {#sec-ui}
+
+Launch a Gradio interface:
+
+```shell
+axolotl inference my_training.yml --lora-model-dir="./outputs/lora-out" --gradio
+```
+
+## Next Steps {#sec-next-steps}
+
+Now that you have the basics, you might want to:
+
+- Try different model architectures
+- Experiment with hyperparameters
+- Use more advanced training methods
+- Scale up to larger models
+
+Check our other guides for details on these topics:
+
+- [Configuration Guide](config.qmd) - Full configuration options
+- [Dataset Formats](dataset-formats) - Working with different data formats
+- [Multi-GPU Training](multi-gpu.qmd)
+- [Multi-Node Training](multi-node.qmd)
