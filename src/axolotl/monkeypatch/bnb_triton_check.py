@@ -2,6 +2,7 @@
 monkey patch bnb fix from https://github.com/bitsandbytes-foundation/bitsandbytes/pull/1497
 """
 import functools
+import sys
 
 
 @functools.lru_cache(None)
@@ -18,6 +19,7 @@ def is_triton_available():
 
 
 def patch_is_triton_available():
-    from bitsandbytes.triton import triton_utils
+    triton_utils = type(sys)("bitsandbytes.triton.triton_utils")
 
     triton_utils.is_triton_available = is_triton_available
+    sys.modules["bitsandbytes.triton.triton_utils"] = is_triton_available
