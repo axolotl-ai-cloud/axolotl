@@ -1,4 +1,5 @@
 """Module for working with config dicts"""
+
 import json
 import logging
 import os
@@ -129,10 +130,18 @@ def normalize_config(cfg):
         save_steps = 1.0 / (cfg.saves_per_epoch * cfg.num_epochs)
         if save_steps < 1.0:  # prevent saves on every step
             cfg.save_steps = save_steps
+        elif save_steps > 1:
+            LOG.warning(
+                f"Invalid value for save_steps ({save_steps}) from saves_per_epoch and/or num_epochs. Saving at training end only."
+            )
     if (cfg.val_set_size or cfg.test_datasets) and cfg.evals_per_epoch:
         eval_steps = 1.0 / (cfg.evals_per_epoch * cfg.num_epochs)
         if eval_steps < 1.0:  # prevent evals on every step
             cfg.eval_steps = eval_steps
+        elif eval_steps > 1:
+            LOG.warning(
+                f"Invalid value for eval_steps ({eval_steps}) from evals_per_epoch and/or num_epochs. Skipping evaluations."
+            )
 
     cfg.dataset_processes = cfg.dataset_processes or os.cpu_count()
 
