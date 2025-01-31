@@ -92,7 +92,7 @@ class AxolotlKDTrainer(AxolotlTrainer):
                 target_mask_for_loss,
                 num_items_in_batch=num_items_in_batch,
                 kd_temperature=self.args.kd_temperature,
-                top_k_before_softmax=int(self.args.kd_top_k_before_softmax),
+                top_k_before_softmax=1 if self.args.kd_top_k_before_softmax else 0,
             )
 
         if self.args.kd_ce_alpha > 0:
