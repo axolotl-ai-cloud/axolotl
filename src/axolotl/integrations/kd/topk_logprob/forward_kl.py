@@ -58,6 +58,7 @@ def loss(
     target_mask: torch.Tensor,
     num_items_in_batch: int = -1,  # Use -1 to indicate "None"
     kd_temperature: float = 1.0,
+    top_k_before_softmax: int = 0,
 ) -> torch.Tensor:
     """
     A KD loss function that is TorchScript-friendly.
@@ -74,6 +75,8 @@ def loss(
         num_items_in_batch (int, optional): The number of items in the batch.
         kd_temperature (float, optional): The temperature for KD.
             Default: 1.0
+        top_k_before_softmax (int, optional): Flag of whether to apply softmax before gathering student top-k logits
+            Default: 0, i.e., gather student logits directly
     """
 
     target_logprobs = target_logprobs.float()
@@ -88,21 +91,37 @@ def loss(
         :, :teacher_seq_len, :
     ]  # [B, teacher_seq_len, vocab_size]
 
-    # Gather student logits for teacher's top-K tokens
-    student_logits_topk = torch.gather(
-        student_logits_for_kd, dim=-1, index=target_token_ids
-    )  # [B, teacher_seq_len, K]
+    if top_k_before_softmax:
+        # Gather student logits for teacher's top-K tokens
+        student_logits_topk = torch.gather(
+            student_logits_for_kd, dim=-1, index=target_token_ids
+        )  # [B, teacher_seq_len, K]
 
-    student_logits_topk = student_logits_topk.float()
+        student_logits_topk = student_logits_topk.float()
 
-    # Apply KD temperature to student’s logits
-    if kd_temperature != 1.0:
-        student_logits_topk = student_logits_topk / kd_temperature
+        # Apply KD temperature to student’s logits
+        if kd_temperature != 1.0:
+            student_logits_topk = student_logits_topk / kd_temperature
 
-    # Convert student top-k logits to logprobs
-    student_logprobs_topk = student_logits_topk - torch.logsumexp(
-        student_logits_topk, dim=-1, keepdim=True
-    )  # [B, teacher_seq_len, K]
+        # Convert student top-k logits to logprobs
+        student_logprobs_topk = student_logits_topk - torch.logsumexp(
+            student_logits_topk, dim=-1, keepdim=True
+        )  # [B, teacher_seq_len, K]
+    else:
+        # keep in full precision for numerical stability of loss
+        student_logits_for_kd = student_logits_for_kd.float()
+
+        # Gather student logits for teacher's top-K tokens
+        student_logits_topk = (
+            torch.gather(student_logits_for_kd, dim=-1, index=target_token_ids)
+            / kd_temperature
+        )  # [B, teacher_seq_len, K]
+
+        # Compute logsumexp across full vocabulary
+        student_lse = torch.logsumexp(student_logits_for_kd, dim=-1, keepdim=True)
+
+        #  Convert just the top-k logits to logprobs
+        student_logprobs_topk = student_logits_topk - student_lse
 
     # Convert teacher_mask to boolean for indexing
     # In TorchScript, .bool() is sometimes unsupported, so we do:

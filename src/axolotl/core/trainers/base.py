@@ -21,7 +21,14 @@ from torch.utils.data import BatchSampler, DataLoader, RandomSampler, Sequential
 from transformers import Trainer
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, seed_worker
 from transformers.utils import is_sagemaker_mp_enabled
-from trl import CPOTrainer, DPOTrainer, KTOTrainer, ORPOTrainer, RewardTrainer
+from trl import (
+    CPOTrainer,
+    DPOTrainer,
+    KTOTrainer,
+    ORPOTrainer,
+    PRMTrainer,
+    RewardTrainer,
+)
 from trl.trainer.utils import pad_to_length
 
 from axolotl.monkeypatch.relora import ReLoRAScheduler
@@ -979,4 +986,3 @@ class AxolotlPRMTrainer(SchedulerMixin, PRMTrainer):
     """
 
     tag_names = ["axolotl", "prm"]
-

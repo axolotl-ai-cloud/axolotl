@@ -43,17 +43,19 @@ from axolotl.core.trainers.base import (
     AxolotlKTOTrainer,
     AxolotlMambaTrainer,
     AxolotlORPOTrainer,
+    AxolotlPRMTrainer,
     AxolotlRewardTrainer,
     AxolotlTrainer,
-    ReLoRATrainer, AxolotlPRMTrainer,
+    ReLoRATrainer,
 )
 from axolotl.core.training_args import (
     AxolotlCPOConfig,
     AxolotlDPOConfig,
     AxolotlKTOConfig,
     AxolotlORPOConfig,
+    AxolotlPRMConfig,
     AxolotlRewardConfig,
-    AxolotlTrainingArguments, AxolotlPRMConfig,
+    AxolotlTrainingArguments,
 )
 from axolotl.integrations.base import PluginManager
 from axolotl.monkeypatch.multipack import SUPPORTED_MULTIPACK_MODEL_TYPES
@@ -89,7 +91,6 @@ except ImportError:
     pass
 
 LOG = logging.getLogger("axolotl.core.trainer_builder")
-
 
 
 class TrainerBuilderBase(abc.ABC):
@@ -708,6 +709,10 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             training_arguments_kwargs[
                 "kd_zscore_base_temp"
             ] = self.cfg.kd_zscore_base_temp
+        if self.cfg.kd_top_k_before_softmax is not None:
+            training_arguments_kwargs[
+                "kd_top_k_before_softmax"
+            ] = self.cfg.kd_top_k_before_softmax
 
         if self.cfg.reward_model:
             training_args_cls = AxolotlRewardConfig
