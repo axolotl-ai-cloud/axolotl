@@ -29,7 +29,7 @@ def min_cfg(temp_dir):
         "kd_trainer": True,
         "kd_ce_alpha": 0.1,
         "kd_alpha": 0.9,
-        "kd_temperature": 2.0,
+        "kd_temperature": 1.0,
         "dataloader_prefetch_factor": 8,
         "dataloader_num_workers": 4,
         "dataloader_pin_memory": True,
