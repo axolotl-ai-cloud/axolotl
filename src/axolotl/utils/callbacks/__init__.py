@@ -846,6 +846,12 @@ class GCCallback(TrainerCallback):
     def on_step_end(
         self, args, state, control, **kwargs  # pylint: disable=unused-argument
     ):
-        if state.global_step % self.gc_steps == 0:
+        if self.gc_steps > 0 and state.global_step % self.gc_steps == 0:
             torch.cuda.empty_cache()
             gc.collect()
+
+    def on_epoch_end(
+        self, args, state, control, **kwargs  # pylint: disable=unused-argument
+    ):
+        torch.cuda.empty_cache()
+        gc.collect()
