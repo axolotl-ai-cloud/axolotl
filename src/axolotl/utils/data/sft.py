@@ -8,9 +8,9 @@ from typing import List, Optional, Tuple, Union
 from datasets import (
     Dataset,
     DatasetDict,
+    IterableDataset,
     Sequence,
     Value,
-    IterableDataset,
     concatenate_datasets,
     load_dataset,
     load_from_disk,
@@ -18,7 +18,7 @@ from datasets import (
 from transformers import PreTrainedTokenizerBase
 
 from axolotl.common.const import DEFAULT_DATASET_PREPARED_PATH
-from axolotl.datasets import wrap_dataset_for_tokenized_prompt, TokenizedPromptDataset
+from axolotl.datasets import TokenizedPromptDataset, wrap_dataset_for_tokenized_prompt
 from axolotl.prompt_strategies import load
 from axolotl.prompt_strategies.bradley_terry import load as bradley_terry_load
 from axolotl.prompt_tokenizers import (

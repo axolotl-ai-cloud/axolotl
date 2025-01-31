@@ -53,7 +53,10 @@ class TokenizedPromptDataset(Dataset):
             map_kwargs["batched"] = True
             map_kwargs["batch_size"] = 1_000
 
-        if self.prompt_tokenizer.filter_rows:
+        if (
+            hasattr(self.prompt_tokenizer, "filter_rows")
+            and self.prompt_tokenizer.filter_rows
+        ):
             dataset = dataset.filter(
                 self.prompt_tokenizer.filter_rows,
                 num_proc=num_proc,
