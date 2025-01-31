@@ -67,7 +67,7 @@ class AxolotlKDTrainer(AxolotlTrainer):
         outputs = model(**inputs)
 
         # FIXME: account for tokenizer.padding_side
-        student_logits = outputs["logits"][:, :seq_len, :].contiguous()
+        student_logits = outputs["logits"][:, : seq_len - 1, :].contiguous()
 
         shift_logits = student_logits.contiguous()
         target_logprobs_for_loss = target_logprobs[..., 1:, :].contiguous()
