@@ -76,7 +76,7 @@ def loss(
         kd_temperature (float, optional): The temperature for KD.
             Default: 1.0
         top_k_before_softmax (int, optional): Flag of whether to apply softmax before gathering student top-k logits
-            Default: 0, i.e., gather student logits directly
+            Default: 0
     """
 
     target_logprobs = target_logprobs.float()

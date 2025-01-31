@@ -33,7 +33,6 @@ def min_cfg(temp_dir):
         "dataloader_prefetch_factor": 8,
         "dataloader_num_workers": 4,
         "dataloader_pin_memory": True,
-        # "dataset_prepared_path": str(Path(temp_dir) / "last_run_prepared"),
         "datasets": [
             {
                 "path": "axolotl-ai-co/evolkit-logprobs-pipeline-75k-v2-sample",

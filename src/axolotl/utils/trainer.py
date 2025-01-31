@@ -100,16 +100,11 @@ def add_position_ids(sample):
     - single example: sample['input_ids'] is a list[int]
     - batched data: sample['input_ids'] is a list[list[int]]
     """
-    if "input_ids" not in sample:
-        # If there's no "input_ids", just return sample unchanged
+    # Return sample unchanged if "input_ids" is not present, or is empty
+    if "input_ids" not in sample or not sample["input_ids"]:
         return sample
 
     input_ids = sample["input_ids"]
-
-    # Detect if it's a single example or a batch
-    if not input_ids:
-        # Edge case: empty
-        return sample
 
     # If first element is an int, it’s a single example
     # If first element is a list, it’s a batch
@@ -318,14 +313,11 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
         # If it's a list, we assume we're dealing with a batch
         if isinstance(labels[0], int):
             # Single example: return a single bool
-            return np.sum(np.array(labels) != -100) > 0
+            return np.any(labels != -100)
 
         # Batched: 'labels' is a list of lists
         # Return a list of booleans, one per sub-list
-        results = []
-        for row_labels in labels:
-            # Each row_labels is a list[int]
-            results.append(np.sum(np.array(row_labels) != -100) > 0)
+        results = [np.any(row_labels != -100) for row_labels in labels]
         return results
 
     try:
