@@ -48,9 +48,9 @@ class BasePlugin:
         Initializes the BasePlugin.
         """
 
-    def register(self, cfg):  # pylint: disable=unused-argument
+    def register(self):  # pylint: disable=unused-argument
         """
-        Registers the plugin with the given configuration.
+        Registers the plugin
 
         Parameters:
         cfg (dict): The configuration for the plugin.
@@ -274,6 +274,7 @@ class PluginManager:
         try:
             plugin = load_plugin(plugin_name)
             self.plugins[plugin_name] = plugin
+            plugin.register()
         except ImportError:
             logging.error(f"Failed to load plugin: {plugin_name}")
 
