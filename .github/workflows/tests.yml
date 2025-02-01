@@ -228,6 +228,7 @@ jobs:
           echo "AXOLOTL_ARGS=${{ matrix.axolotl_args}}" >> $GITHUB_ENV
           echo "AXOLOTL_EXTRAS=${{ matrix.axolotl_extras}}" >> $GITHUB_ENV
           echo "CUDA=${{ matrix.cuda }}" >> $GITHUB_ENV
+          echo "MODAL_IMAGE_BUILDER_VERSION=2024.10" >> $GITHUB_ENV
           echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
       - name: Run tests job on Modal
         run: |
@@ -268,6 +269,7 @@ jobs:
           echo "AXOLOTL_ARGS=${{ matrix.axolotl_args}}" >> $GITHUB_ENV
           echo "AXOLOTL_EXTRAS=${{ matrix.axolotl_extras}}" >> $GITHUB_ENV
           echo "CUDA=${{ matrix.cuda }}" >> $GITHUB_ENV
+          echo "MODAL_IMAGE_BUILDER_VERSION=2024.10" >> $GITHUB_ENV
           echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
       - name: Run tests job on Modal
         run: |
