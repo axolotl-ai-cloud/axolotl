@@ -6,9 +6,8 @@
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
-<meta name="description" content="Supported dataset formats.">
 
-<title>Dataset Formats – Axolotl</title>
+<title>license – Axolotl</title>
 <style>
 code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
@@ -24,24 +23,22 @@ ul.task-list li input[type="checkbox"] {
 </style>
 
 
-<script src="../../site_libs/quarto-nav/quarto-nav.js"></script>
-<script src="../../site_libs/clipboard/clipboard.min.js"></script>
-<script src="../../site_libs/quarto-search/autocomplete.umd.js"></script>
-<script src="../../site_libs/quarto-search/fuse.min.js"></script>
-<script src="../../site_libs/quarto-search/quarto-search.js"></script>
-<meta name="quarto:offset" content="../../">
-<link href="../../favicon.jpg" rel="icon" type="image/jpeg">
-<script src="../../site_libs/quarto-listing/list.min.js"></script>
-<script src="../../site_libs/quarto-listing/quarto-listing.js"></script>
-<script src="../../site_libs/quarto-html/quarto.js"></script>
-<script src="../../site_libs/quarto-html/popper.min.js"></script>
-<script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
-<script src="../../site_libs/quarto-html/anchor.min.js"></script>
-<link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-549806ee2085284f45b00abea8c6df48.css" rel="stylesheet" id="quarto-text-highlighting-styles">
-<script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
-<link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../../site_libs/bootstrap/bootstrap-1d8d3285ed62e8239ae07b1b029f75b0.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script src="../../../../../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../../../../../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../../../../../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../../../../../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../../../../../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../../../../../">
+<link href="../../../../../favicon.jpg" rel="icon" type="image/jpeg">
+<script src="../../../../../site_libs/quarto-html/quarto.js"></script>
+<script src="../../../../../site_libs/quarto-html/popper.min.js"></script>
+<script src="../../../../../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../../../../../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../../../../../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../../../../../site_libs/quarto-html/quarto-syntax-highlighting-549806ee2085284f45b00abea8c6df48.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../../../../../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../../../../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../../../../../site_libs/bootstrap/bootstrap-1d8d3285ed62e8239ae07b1b029f75b0.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -69,67 +66,9 @@ ul.task-list li input[type="checkbox"] {
     "search-label": "Search"
   }
 }</script>
-<script>
 
-  window.document.addEventListener("DOMContentLoaded", function (_event) {
-    const listingTargetEl = window.document.querySelector('#listing-listing .list');
-    if (!listingTargetEl) {
-      // No listing discovered, do not attach.
-      return; 
-    }
 
-    const options = {
-      valueNames: ['listing-title','listing-description',{ data: ['index'] },{ data: ['categories'] },{ data: ['listing-date-sort'] },{ data: ['listing-title-sort'] }],
-      
-      searchColumns: ["listing-title","listing-author"],
-    };
-
-    window['quarto-listings'] = window['quarto-listings'] || {};
-    window['quarto-listings']['listing-listing'] = new List('listing-listing', options);
-
-    if (window['quarto-listing-loaded']) {
-      window['quarto-listing-loaded']();
-    }
-  });
-
-  window.addEventListener('hashchange',() => {
-    if (window['quarto-listing-loaded']) {
-      window['quarto-listing-loaded']();
-    }
-  })
-  </script>
-
-  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
-  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js" type="text/javascript"></script>
-
-<script type="text/javascript">
-const typesetMath = (el) => {
-  if (window.MathJax) {
-    // MathJax Typeset
-    window.MathJax.typeset([el]);
-  } else if (window.katex) {
-    // KaTeX Render
-    var mathElements = el.getElementsByClassName("math");
-    var macros = [];
-    for (var i = 0; i < mathElements.length; i++) {
-      var texText = mathElements[i].firstChild;
-      if (mathElements[i].tagName == "SPAN") {
-        window.katex.render(texText.data, mathElements[i], {
-          displayMode: mathElements[i].classList.contains('display'),
-          throwOnError: false,
-          macros: macros,
-          fleqn: false
-        });
-      }
-    }
-  }
-}
-window.Quarto = {
-  typesetMath
-};
-</script>
-
-<link rel="stylesheet" href="../../styles.css">
+<link rel="stylesheet" href="../../../../../styles.css">
 </head>
 
 <body class="nav-sidebar docked nav-fixed">
@@ -139,7 +78,7 @@ window.Quarto = {
     <nav class="navbar navbar-expand " data-bs-theme="dark">
       <div class="navbar-container container-fluid">
       <div class="navbar-brand-container mx-auto">
-    <a class="navbar-brand" href="../../index.html">
+    <a class="navbar-brand" href="../../../../../index.html">
     <span class="navbar-title">Axolotl</span>
     </a>
   </div>
@@ -156,7 +95,7 @@ window.Quarto = {
       <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
         <i class="bi bi-layout-text-sidebar-reverse"></i>
       </button>
-        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../docs/dataset-formats/index.html">Dataset Formats</a></li></ol></nav>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"></ol></nav>
         <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
         </a>
     </div>
@@ -170,7 +109,7 @@ window.Quarto = {
     <ul class="list-unstyled mt-1">
         <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../index.html" class="sidebar-item-text sidebar-link">
+  <a href="../../../../../index.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Home</span></a>
   </div>
 </li>
@@ -185,91 +124,91 @@ window.Quarto = {
       <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/getting-started.html" class="sidebar-item-text sidebar-link">
+  <a href="../../../../../docs/getting-started.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Getting Started with Axolotl</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/installation.html" class="sidebar-item-text sidebar-link">
+  <a href="../../../../../docs/installation.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Installation Guide</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/debugging.html" class="sidebar-item-text sidebar-link">
+  <a href="../../../../../docs/debugging.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Debugging</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/inference.html" class="sidebar-item-text sidebar-link">
+  <a href="../../../../../docs/inference.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Inference Guide</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/multipack.html" class="sidebar-item-text sidebar-link">
+  <a href="../../../../../docs/multipack.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Multipack (Sample Packing)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/fsdp_qlora.html" class="sidebar-item-text sidebar-link">
+  <a href="../../../../../docs/fsdp_qlora.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">FDSP + QLoRA</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/input_output.html" class="sidebar-item-text sidebar-link">
+  <a href="../../../../../docs/input_output.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Template-free prompt construction</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/rlhf.html" class="sidebar-item-text sidebar-link">
+  <a href="../../../../../docs/rlhf.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">RLHF (Beta)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/nccl.html" class="sidebar-item-text sidebar-link">
+  <a href="../../../../../docs/nccl.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">NCCL</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/mac.html" class="sidebar-item-text sidebar-link">
+  <a href="../../../../../docs/mac.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Mac M-series</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/multi-gpu.html" class="sidebar-item-text sidebar-link">
+  <a href="../../../../../docs/multi-gpu.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Multi-GPU Training Guide</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/multi-node.html" class="sidebar-item-text sidebar-link">
+  <a href="../../../../../docs/multi-node.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Multi Node</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/unsloth.html" class="sidebar-item-text sidebar-link">
+  <a href="../../../../../docs/unsloth.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Unsloth</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/amd_hpc.html" class="sidebar-item-text sidebar-link">
+  <a href="../../../../../docs/amd_hpc.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Training with AMD GPUs on HPC Systems</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/ray-integration.html" class="sidebar-item-text sidebar-link">
+  <a href="../../../../../docs/ray-integration.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Ray Train integration</span></a>
   </div>
 </li>
@@ -277,7 +216,7 @@ window.Quarto = {
   </li>
         <li class="sidebar-item sidebar-item-section">
       <div class="sidebar-item-container"> 
-            <a href="../../docs/dataset-formats/index.html" class="sidebar-item-text sidebar-link active">
+            <a href="../../../../../docs/dataset-formats/index.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Dataset Formats</span></a>
           <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true" aria-label="Toggle section">
             <i class="bi bi-chevron-right ms-2"></i>
@@ -286,37 +225,37 @@ window.Quarto = {
       <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset-formats/pretraining.html" class="sidebar-item-text sidebar-link">
+  <a href="../../../../../docs/dataset-formats/pretraining.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Pre-training</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset-formats/inst_tune.html" class="sidebar-item-text sidebar-link">
+  <a href="../../../../../docs/dataset-formats/inst_tune.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Instruction Tuning</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset-formats/conversation.html" class="sidebar-item-text sidebar-link">
+  <a href="../../../../../docs/dataset-formats/conversation.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Conversation</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset-formats/stepwise_supervised.html" class="sidebar-item-text sidebar-link">
+  <a href="../../../../../docs/dataset-formats/stepwise_supervised.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Stepwise Supervised Format</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset-formats/template_free.html" class="sidebar-item-text sidebar-link">
+  <a href="../../../../../docs/dataset-formats/template_free.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Template-Free</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset-formats/tokenized.html" class="sidebar-item-text sidebar-link">
+  <a href="../../../../../docs/dataset-formats/tokenized.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Custom Pre-Tokenized Dataset</span></a>
   </div>
 </li>
@@ -333,7 +272,7 @@ window.Quarto = {
       <ul id="quarto-sidebar-section-3" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/config.html" class="sidebar-item-text sidebar-link">
+  <a href="../../../../../docs/config.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Config options</span></a>
   </div>
 </li>
@@ -341,7 +280,7 @@ window.Quarto = {
   </li>
         <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/faq.html" class="sidebar-item-text sidebar-link">
+  <a href="../../../../../docs/faq.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">FAQ</span></a>
   </div>
 </li>
@@ -350,109 +289,40 @@ window.Quarto = {
 </nav>
 <div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
 <!-- margin-sidebar -->
-    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar zindex-bottom">
-        
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#axolotl-community-license-agreement" id="toc-axolotl-community-license-agreement" class="nav-link active" data-scroll-target="#axolotl-community-license-agreement">AXOLOTL COMMUNITY LICENSE AGREEMENT</a></li>
+  </ul>
+</nav>
     </div>
 <!-- main -->
-<main class="content" id="quarto-document-content">
-
-<header id="title-block-header" class="quarto-title-block default">
-<div class="quarto-title">
-<h1 class="title">Dataset Formats</h1>
-</div>
-
-<div>
-  <div class="description">
-    Supported dataset formats.
-  </div>
-</div>
-
-
-<div class="quarto-title-meta">
-
-    
-  
-    
-  </div>
-  
-
-
-</header>
-
-
-<p>Axolotl supports a variety of dataset formats. It is recommended to use a JSONL format. The schema of the JSONL depends upon the task and the prompt template you wish to use. Instead of a JSONL, you can also use a HuggingFace dataset with columns for each JSONL field.</p>
-<p>Below are these various formats organized by task:</p>
+<main class="content" id="quarto-document-content"><header id="title-block-header" class="quarto-title-block"></header>
 
 
 
 
-<div class="quarto-listing quarto-listing-container-table" id="listing-listing">
-<table class="quarto-listing-table table">
-<thead>
-<tr>
-<th>
-Title
-</th>
-<th>
-Description
-</th>
-</tr>
-</thead>
-<tbody class="list">
-<tr data-index="0" data-listing-file-modified-sort="1738372742714" data-listing-reading-time-sort="1" data-listing-word-count-sort="92" data-listing-title-sort="Pre-training" data-listing-filename-sort="pretraining.qmd">
-<td>
-<a href="../../docs/dataset-formats/pretraining.html" class="title listing-title">Pre-training</a>
-</td>
-<td>
-<span class="listing-description">Data format for a pre-training completion task.</span>
-</td>
-</tr>
-<tr data-index="1" data-listing-file-modified-sort="1738372742714" data-listing-reading-time-sort="2" data-listing-word-count-sort="308" data-listing-title-sort="Instruction Tuning" data-listing-filename-sort="inst_tune.qmd">
-<td>
-<a href="../../docs/dataset-formats/inst_tune.html" class="title listing-title">Instruction Tuning</a>
-</td>
-<td>
-<span class="listing-description">Instruction tuning formats for supervised fine-tuning.</span>
-</td>
-</tr>
-<tr data-index="2" data-listing-file-modified-sort="1738372742714" data-listing-reading-time-sort="4" data-listing-word-count-sort="625" data-listing-title-sort="Conversation" data-listing-filename-sort="conversation.qmd">
-<td>
-<a href="../../docs/dataset-formats/conversation.html" class="title listing-title">Conversation</a>
-</td>
-<td>
-<span class="listing-description">Conversation format for supervised fine-tuning.</span>
-</td>
-</tr>
-<tr data-index="3" data-listing-file-modified-sort="1738372742714" data-listing-reading-time-sort="1" data-listing-word-count-sort="85" data-listing-title-sort="Stepwise Supervised Format" data-listing-filename-sort="stepwise_supervised.qmd">
-<td>
-<a href="../../docs/dataset-formats/stepwise_supervised.html" class="title listing-title">Stepwise Supervised Format</a>
-</td>
-<td>
-<span class="listing-description">Format for datasets with stepwise completions and labels</span>
-</td>
-</tr>
-<tr data-index="4" data-listing-file-modified-sort="1738372742714" data-listing-reading-time-sort="1" data-listing-word-count-sort="3" data-listing-title-sort="Template-Free" data-listing-filename-sort="template_free.qmd">
-<td>
-<a href="../../docs/dataset-formats/template_free.html" class="title listing-title">Template-Free</a>
-</td>
-<td>
-<span class="listing-description">Construct prompts without a template.</span>
-</td>
-</tr>
-<tr data-index="5" data-listing-file-modified-sort="1738372742714" data-listing-reading-time-sort="1" data-listing-word-count-sort="92" data-listing-title-sort="Custom Pre-Tokenized Dataset" data-listing-filename-sort="tokenized.qmd">
-<td>
-<a href="../../docs/dataset-formats/tokenized.html" class="title listing-title">Custom Pre-Tokenized Dataset</a>
-</td>
-<td>
-<span class="listing-description">How to use a custom pre-tokenized dataset.</span>
-</td>
-</tr>
-</tbody>
-</table>
-<div class="listing-no-matching d-none">
-No matching items
-</div>
-</div></main> <!-- /main -->
+<section id="axolotl-community-license-agreement" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl-community-license-agreement">AXOLOTL COMMUNITY LICENSE AGREEMENT</h3>
+<p>This Axolotl Community License Agreement (“Agreement”) is entered into by and between Axolotl AI Corp.&nbsp;(“Axolotl”) and any individual or entity (“Licensee”) who wishes to use the Software (as defined below) in accordance with the terms and conditions set forth in this Agreement.</p>
+<ol type="1">
+<li>Definitions 1.1 “Licensee” refers to any individual or entity who has obtained a copy of the Software under this Agreement. 1.2 “Plugin Integration” means independent integration software modules which may or may not be offered by Axolotl, which may be licensed separately by their respective authors and/or licensors. 1.3 “Software” refers to the specific sub-directory of the Axolotl, Inc.&nbsp;software located at https://github.com/axolotl-ai-cloud/axolotl/tree/main/src/axolotl/integrations and its subdirectories which permits Plugin Integrations to integrate with the Axolotl service.</li>
+<li>Grant of License 2.1 Axolotl hereby grants Licensee a worldwide, non-exclusive, royalty-free, license to use, copy, modify, merge, publish, distribute, sublicense, and/or otherwise exploit the Software, subject to the following conditions: - Licensee must comply with all the terms and conditions of this Agreement. - Licensee must include the original copyright notice and disclaimer of warranty in all copies or substantial portions of the Software. 2.2 Licensee may use the Software for any lawful purpose, except as restricted in Section 3.</li>
+<li>Restrictions 3.1 Licensee shall not use the Software for any activity that constitutes a commercial activity of offering for free or for sale any services, platform, or equivalent to third parties for the purposes of allowing such third parties to fine-tune artificial intelligence models. 3.2 Licensee shall not: - Use the Software for any illegal or unauthorized purpose. - Reverse engineer, decompile, or disassemble the Software. - Remove or modify any copyright, trademark, or other proprietary notices contained in the Software. - Use the Software in a way that could damage, disable, overburden, or impair the functionality of the Software or interfere with any third-party use of the Software. 3.3 Axolotl reserves the right to restrict certain Plugin Integrations for use with the Software. To the extent Licensee integrates a permitted, applicable Plugin Integration with the Software, Licensee shall comply with any additional terms and conditions imposed by the licensors of such Plugin Integration for use of such Plugin Integrations. Licensee shall contact Axolotl if it has questions about whether its use of the Software falls beyond the scope of this Agreement.</li>
+<li>Intellectual Property Rights 4.1 Axolotl and its contributors retain all intellectual property rights in and to the Software. Licensee acknowledges that this Agreement does not transfer any ownership rights or intellectual property rights to Licensee.</li>
+<li>Disclaimer of Warranty 5.1 THE SOFTWARE IS PROVIDED “AS IS,” WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.</li>
+<li>Termination 6.1 Axolotl may terminate this Agreement at any time if Licensee fails to comply with any of the terms and conditions set forth herein. Upon termination, Licensee shall cease all use of the Software and destroy any copies in its possession.</li>
+<li>Governing Law 7.1 This Agreement shall be governed by and construed in accordance with the laws of the State of California, without regards to conflicts of laws provisions thereof.</li>
+<li>Entire Agreement 8.1 This Agreement constitutes the entire agreement between Axolotl and Licensee with respect to the subject matter hereof and supersedes all prior or contemporaneous understandings or agreements between the parties concerning the Software, whether written or oral. Axolotl may update the terms of this Agreement from time to time, and Licensee’s continued use of the Software after any such updates shall constitute acceptance of updated terms on a go-forward basis. Axolotl will use commercially reasonable efforts to provide Licensee notice of any material updates. By using the Software, Licensee acknowledges that it has read, understood, and agrees to be bound by the terms and conditions of this Agreement.</li>
+</ol>
+<p>This Agreement was last updated on August 23, 2024.</p>
+
+
+</section>
+
+</main> <!-- /main -->
 <script id="quarto-html-after-body" type="application/javascript">
 window.document.addEventListener("DOMContentLoaded", function (event) {
   const toggleBodyColorMode = (bsSheetEl) => {
