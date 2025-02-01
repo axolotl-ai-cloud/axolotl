@@ -10,8 +10,11 @@ import torch
 from transformers import PreTrainedTokenizerBase
 from transformers.utils import PaddingStrategy
 
+from axolotl.monkeypatch.flex_attn import (
+    create_block_causal_mask,
+    packed_block_causal_mask,
+)
 from axolotl.monkeypatch.utils import get_seqlens_from_pos_ids
-from axolotl.monkeypatch.flex_attn import create_block_causal_mask, packed_block_causal_mask
 
 
 @dataclass
@@ -167,7 +170,7 @@ class FlexBatchSamplerDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):
         out_features = [{} for _ in features]
         for i, features_ in enumerate(features):
             for feature in features_[0].keys():
-                if feature in {"length" , "attention_mask"}:
+                if feature in {"length", "attention_mask"}:
                     continue
                 else:
                     arrays = [
