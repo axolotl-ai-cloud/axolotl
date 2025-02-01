@@ -11,7 +11,7 @@ from transformers import PreTrainedTokenizerBase
 from transformers.utils import PaddingStrategy
 
 from axolotl.monkeypatch.utils import get_seqlens_from_pos_ids
-from axolotl.monkeypatch.flex_attn import packed_block_causal_mask
+from axolotl.monkeypatch.flex_attn import create_block_causal_mask, packed_block_causal_mask
 
 
 @dataclass
@@ -177,7 +177,8 @@ class FlexBatchSamplerDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):
         out = super().__call__(out_features, return_tensors=return_tensors)
 
         collated_seq_lens = get_seqlens_from_pos_ids(out["position_ids"])
-        out["attention_mask"] = packed_block_causal_mask(collated_seq_lens)
+        # out["attention_mask"] = packed_block_causal_mask(collated_seq_lens)
+        out["attention_mask"] = create_block_causal_mask(collated_seq_lens)
 
         return out
 
