@@ -3,6 +3,18 @@ title: Multi Node
 description: How to use Axolotl on multiple machines
 ---
 
+The below are three ways to train multi-node in Axolotl.
+
+::: {.callout-important}
+Each machine needs a copy of Axolotl, we suggest using the same commit to ensure compatibility.
+
+You will also need to have the same configuration file for your model on each machine.
+
+Make sure the main machine is reachable by other machines.
+:::
+
+# Accelerate
+
 You will need to create a configuration for accelerate, either by using `accelerate config` and follow the instructions or you can use one of the preset below:
 
 ~/.cache/huggingface/accelerate/default_config.yaml
@@ -26,7 +38,7 @@ tpu_use_sudo: false
 use_cpu: false
 ```
 
-Configure your model to use FSDP with for example:
+Configure your model to use FSDP in the Axolotl yaml. For example:
 ```yaml
 fsdp:
   - full_shard
@@ -37,12 +49,40 @@ fsdp_config:
   fsdp_transformer_layer_cls_to_wrap: LlamaDecoderLayer
 ```
 
-## Machine configuration
-
-On each machine you need a copy of Axolotl, we suggest using the same commit to ensure compatibility.
-
-You will also need to have the same configuration file for your model on each machine.
-
-On the main machine only, make sure the port you set as `main_process_port` is open in TCP and reachable by other machines.
-
 All you have to do now is launch using accelerate as you would usually do on each machine and voila, the processes will start once you have launched accelerate on every machine.
+
+# Raytrain
+
+Please see ray train doc [here](ray-integration.qmd).
+
+# Torchrun
+
+If you are using Infiniband, we recommend torchrun to utilize the full bandwidth.
+
+Set the following env (change buffersize/socketname depending on your system):
+
+```yaml
+export NCCL_IB_DISABLE=0
+export NCCL_SOCKET_IFNAME="eth0,en,eth,em,bond"
+export NCCL_BUFFSIZE=2097152
+```
+
+Run the following on each node:
+
+```bash
+torchrun --nnodes $num_nodes --nproc_per_node $gpu_per_node --rdzv_id $rdzv_id --rdzv_backend c10d --rdzv_endpoint "$head_node_ip:$head_node_port" -m axolotl.cli.train config.yaml
+```
+
+Please make sure to substitute the placeholder variables.
+
+- `num_nodes`: Number of nodes (containing GPUs)
+- `gpu_per_node`: Number of gpus per node
+- `head_node_ip`: IP of the head node (make sure other machines can connect to this)
+- `head_node_port`: Port of the head node (make sure other machines can connect to this. Default 29400)
+- `rdzv_id`: A unique job ID that is used by the job across nodes.
+
+::: {.callout-note}
+You need to call `axolotl.cli.train` instead of `axolotl train` as the latter calls accelerate under the hood
+:::
+
+More info on the available configs can be found on the Pytorch docs [here](https://pytorch.org/docs/stable/elastic/run.html)
