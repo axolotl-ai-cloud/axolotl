@@ -207,7 +207,7 @@ jobs:
           - cuda: 124
             cuda_version: 12.4.1
             python_version: "3.11"
-            pytorch: 2.4.1
+            pytorch: 2.5.1
             num_gpus: 1
             axolotl_extras:
     steps:
@@ -247,7 +247,7 @@ jobs:
           - cuda: 124
             cuda_version: 12.4.1
             python_version: "3.11"
-            pytorch: 2.5.1
+            pytorch: 2.4.1
             num_gpus: 1
             axolotl_extras:
     steps:

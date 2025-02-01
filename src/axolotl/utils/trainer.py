@@ -11,7 +11,7 @@ import numpy as np
 import torch
 import torch.cuda
 from accelerate.logging import get_logger
-from datasets import disable_caching, enable_caching
+from datasets import IterableDataset, disable_caching, enable_caching
 from torch.utils.data import DataLoader, RandomSampler
 from transformers.utils import is_torch_bf16_gpu_available
 
@@ -95,9 +95,41 @@ def disable_datasets_caching():
 
 
 def add_position_ids(sample):
-    sample_len = len(sample["input_ids"])
-    sample["position_ids"] = torch.arange(len(sample["input_ids"]))
-    sample["length"] = sample_len
+    """
+    Handle both single-example and batched data.
+    - single example: sample['input_ids'] is a list[int]
+    - batched data: sample['input_ids'] is a list[list[int]]
+    """
+    # Return sample unchanged if "input_ids" is not present, or is empty
+    if "input_ids" not in sample or not sample["input_ids"]:
+        return sample
+
+    input_ids = sample["input_ids"]
+
+    # If first element is an int, it’s a single example
+    # If first element is a list, it’s a batch
+    if isinstance(input_ids[0], int):
+        # ---- SINGLE EXAMPLE ----
+        seq_len = len(input_ids)
+        # Position IDs for a single example
+        # As a list
+        sample["position_ids"] = list(range(seq_len))
+        sample["length"] = seq_len
+
+    else:
+        # ---- BATCHED EXAMPLES ----
+        # input_ids is a list of lists
+        position_ids_batch = []
+        lengths_batch = []
+        for seq in input_ids:
+            seq_len = len(seq)
+            position_ids_batch.append(list(range(seq_len)))
+            lengths_batch.append(seq_len)
+
+        # Now store them back
+        sample["position_ids"] = position_ids_batch
+        sample["length"] = lengths_batch
+
     return sample
 
 
@@ -172,10 +204,31 @@ def add_length(sample):
 
 
 def drop_long_seq(sample, sequence_len=2048, min_sequence_len=2):
-    return (
-        len(sample["input_ids"]) <= sequence_len
-        and len(sample["input_ids"]) >= min_sequence_len
-    )
+    """
+    Drop samples whose sequence length is either too long (> sequence_len)
+    or too short (< min_sequence_len).
+
+    Works for both single-example (list[int]) or batched (list[list[int]]).
+    """
+    input_ids = sample["input_ids"]
+
+    # Edge case: if input_ids is empty
+    if not input_ids:
+        # Decide if you want to drop or keep empty. Let's drop.
+        return False
+
+    # Check if single example or batched by looking at the first element
+    if isinstance(input_ids[0], int):
+        # Single example (input_ids is a list of int)
+        length = len(input_ids)
+        return min_sequence_len <= length <= sequence_len
+
+    # Batched (input_ids is a list of lists)
+    results = []
+    for seq in input_ids:
+        length = len(seq)
+        results.append(min_sequence_len <= length <= sequence_len)
+    return results
 
 
 def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
@@ -185,10 +238,13 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
         min_sequence_len=cfg.min_sample_len or 2,
     )
 
-    min_input_len = np.min(get_dataset_lengths(train_dataset))
-    LOG.debug(f"min_input_len: {min_input_len}", main_process_only=True)
-    max_input_len = np.max(get_dataset_lengths(train_dataset))
-    LOG.debug(f"max_input_len: {max_input_len}", main_process_only=True)
+    try:
+        min_input_len = np.min(get_dataset_lengths(train_dataset))
+        LOG.debug(f"min_input_len: {min_input_len}", main_process_only=True)
+        max_input_len = np.max(get_dataset_lengths(train_dataset))
+        LOG.debug(f"max_input_len: {max_input_len}", main_process_only=True)
+    except AttributeError:
+        pass
 
     if cfg.model_config_type == "mamba":
         LOG.info("dropping attention_mask column")
@@ -203,59 +259,105 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
         if eval_dataset and "token_type_ids" in eval_dataset.column_names:
             eval_dataset = eval_dataset.remove_columns("token_type_ids")
 
-    prior_len = len(train_dataset)
+    filter_map_kwargs = {}
+    if not isinstance(train_dataset, IterableDataset):
+        filter_map_kwargs["num_proc"] = cfg.dataset_processes
+        filter_map_kwargs["load_from_cache_file"] = not cfg.is_preprocess
+
+    try:
+        prior_len = len(train_dataset)
+    except TypeError:
+        # handle iterable datasets case
+        prior_len = None
+    drop_long_kwargs = {}
+    if filter_map_kwargs:
+        drop_long_kwargs["desc"] = "Dropping Long Sequences"
     train_dataset = train_dataset.filter(
         drop_long,
-        num_proc=cfg.dataset_processes,
-        load_from_cache_file=not cfg.is_preprocess,
-        desc="Dropping Long Sequences",
+        batched=True,
+        **filter_map_kwargs,
+        **drop_long_kwargs,
     )
-    dropped = prior_len - len(train_dataset)
-    if dropped:
-        LOG.warning(f"Dropped {dropped} long samples from train dataset")
+    if prior_len:
+        dropped = prior_len - len(train_dataset)
+        if dropped:
+            LOG.warning(f"Dropped {dropped} long samples from train dataset")
 
     if eval_dataset:
-        prior_len = len(eval_dataset)
+        try:
+            prior_len = len(eval_dataset)
+        except TypeError:
+            # handle iterable datasets case
+            prior_len = None
         eval_dataset = eval_dataset.filter(
             drop_long,
-            num_proc=cfg.dataset_processes,
-            load_from_cache_file=not cfg.is_preprocess,
-            desc="Dropping Long Sequences",
+            **filter_map_kwargs,
+            **drop_long_kwargs,
         )
-        dropped = prior_len - len(eval_dataset)
-        if dropped:
-            LOG.warning(f"Dropped {dropped} long samples from eval dataset")
+        if prior_len:
+            dropped = prior_len - len(eval_dataset)
+            if dropped:
+                LOG.warning(f"Dropped {dropped} long samples from eval dataset")
 
-    # drop samples with where the number of elements with labels not equal to -100 is zero
     def drop_no_trainable_tokens(sample):
-        return np.sum(np.array(sample["labels"]) != -100) > 0
+        """
+        Drop samples if all labels are -100 (i.e., zero trainable tokens).
+        Works for both single-example or batched input.
+        """
+        labels = sample["labels"]
+        if not labels:
+            return True
 
-    prior_len = len(train_dataset)
+        # Check if single example or batch
+        # If first element is an int, we assume a single example
+        # If it's a list, we assume we're dealing with a batch
+        if isinstance(labels[0], int):
+            # Single example: return a single bool
+            return np.any(labels != -100)
+
+        # Batched: 'labels' is a list of lists
+        # Return a list of booleans, one per sub-list
+        results = [np.any(row_labels != -100) for row_labels in labels]
+        return results
+
+    try:
+        prior_len = len(train_dataset)
+    except TypeError:
+        # handle iterable datasets case
+        prior_len = None
+    drop_long_kwargs = {}
+    if filter_map_kwargs:
+        drop_long_kwargs["desc"] = "Drop Samples with Zero Trainable Tokens"
     train_dataset = train_dataset.filter(
         drop_no_trainable_tokens,
-        num_proc=cfg.dataset_processes,
-        load_from_cache_file=not cfg.is_preprocess,
-        desc="Drop Samples with Zero Trainable Tokens",
+        batched=True,
+        **filter_map_kwargs,
+        **drop_long_kwargs,
     )
-    dropped = prior_len - len(train_dataset)
-    if dropped:
-        LOG.warning(
-            f"Dropped {dropped} samples with no trainable tokens from train dataset"
-        )
-
-    if eval_dataset:
-        prior_len = len(eval_dataset)
-        eval_dataset = eval_dataset.filter(
-            drop_no_trainable_tokens,
-            num_proc=cfg.dataset_processes,
-            load_from_cache_file=not cfg.is_preprocess,
-            desc="Drop Samples with Zero Trainable Tokens",
-        )
-        dropped = prior_len - len(eval_dataset)
+    if prior_len:
+        dropped = prior_len - len(train_dataset)
         if dropped:
             LOG.warning(
-                f"Dropped {dropped} samples with no trainable tokens from eval dataset"
+                f"Dropped {dropped} samples with no trainable tokens from train dataset"
             )
+
+    if eval_dataset:
+        try:
+            prior_len = len(eval_dataset)
+        except TypeError:
+            # handle iterable datasets case
+            prior_len = None
+        eval_dataset = eval_dataset.filter(
+            drop_no_trainable_tokens,
+            **filter_map_kwargs,
+            **drop_long_kwargs,
+        )
+        if prior_len:
+            dropped = prior_len - len(eval_dataset)
+            if dropped:
+                LOG.warning(
+                    f"Dropped {dropped} samples with no trainable tokens from eval dataset"
+                )
 
     if cfg.group_by_length:
         train_dataset = train_dataset.map(
@@ -291,19 +393,21 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
                     desc="Add position_id column (PoSE)",
                 )
     elif cfg.sample_packing:
+        drop_long_kwargs = {}
+        if filter_map_kwargs:
+            drop_long_kwargs["desc"] = "Add position_id column (Sample Packing)"
         train_dataset = train_dataset.map(
             add_position_ids,
-            num_proc=cfg.dataset_processes,
-            load_from_cache_file=not cfg.is_preprocess,
-            desc="Add position_id column (Sample Packing)",
+            batched=True,
+            **filter_map_kwargs,
+            **drop_long_kwargs,
         )
         if cfg.eval_sample_packing is not False:
             if eval_dataset:
                 eval_dataset = eval_dataset.map(
                     add_position_ids,
-                    num_proc=cfg.dataset_processes,
-                    load_from_cache_file=not cfg.is_preprocess,
-                    desc="Add position_id column (Sample Packing)",
+                    **filter_map_kwargs,
+                    **drop_long_kwargs,
                 )
 
     return train_dataset, eval_dataset
@@ -337,7 +441,7 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
         and not cfg.reward_model
     ):
         total_num_tokens = np.sum(
-            train_dataset.data.column("input_ids")
+            train_dataset.select_columns("input_ids")
             .to_pandas()
             .apply(lambda x: len(x))  # pylint: disable=unnecessary-lambda
             .values

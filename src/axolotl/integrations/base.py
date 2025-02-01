@@ -111,6 +111,17 @@ class BasePlugin:
         None
         """
 
+    def get_trainer_cls(self, cfg):  # pylint: disable=unused-argument):
+        """
+        Returns a custom class for the trainer.
+
+        Parameters:
+        cfg (dict): The global axolotl configuration.
+
+        Returns:
+        class: The class for the trainer.
+        """
+
     def create_optimizer(self, cfg, trainer):  # pylint: disable=unused-argument
         """
         Creates and returns an optimizer for training.
@@ -212,7 +223,17 @@ def load_plugin(plugin_name: str) -> BasePlugin:
     module_name, class_name = plugin_name.rsplit(".", 1)
 
     # import the module
-    module = importlib.import_module(module_name)
+    try:
+        module = importlib.import_module(module_name)
+    except ModuleNotFoundError as orig_exc:
+        try:
+            if not module_name.startswith("axolotl.integrations."):
+                module = importlib.import_module("axolotl.integrations." + module_name)
+            else:
+                raise orig_exc
+        except ModuleNotFoundError as exc:
+            raise orig_exc from exc
+
     # instantiate the class
     plugin_class = getattr(module, class_name)
     # create an instance of the class
@@ -272,8 +293,10 @@ class PluginManager:
         ImportError: If the plugin module cannot be imported.
         """
         try:
+            logging.info(f"Attempting to load plugin: {plugin_name}")
             plugin = load_plugin(plugin_name)
             self.plugins[plugin_name] = plugin
+            logging.info(f"Plugin loaded successfully: {plugin_name}")
         except ImportError:
             logging.error(f"Failed to load plugin: {plugin_name}")
 
@@ -345,6 +368,22 @@ class PluginManager:
         """
         for plugin in self.plugins.values():
             plugin.post_lora_load(cfg, model)
+
+    def get_trainer_cls(self, cfg):
+        """
+        Calls the get_trainer_cls method of all registered plugins and returns the first non-None trainer class.
+
+        Parameters:
+        cfg (dict): The configuration for the plugins.
+
+        Returns:
+        object: The trainer class, or None if none was found.
+        """
+        for plugin in self.plugins.values():
+            trainer_cls = plugin.get_trainer_cls(cfg)
+            if trainer_cls is not None:
+                return trainer_cls
+        return None
 
     def create_optimizer(self, cfg, trainer):
         """
