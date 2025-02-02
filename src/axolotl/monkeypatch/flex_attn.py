@@ -48,14 +48,14 @@ def create_block_causal_mask(
             for seq_len in seq_lens[sample_idx]
         ]
 
-        residue_len = max_seq_len - torch.sum(seq_lens[sample_idx])
+        """residue_len = max_seq_len - torch.sum(seq_lens[sample_idx])
         block_attn_masks.append(
             torch.tril(
                 torch.ones(
                     residue_len, residue_len, dtype=torch.bool, device=seq_lens[sample_idx].device
                 )
             )
-        )
+        )"""
 
         batch_block_attn_masks.append(torch.block_diag(*block_attn_masks))
 
