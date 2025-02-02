@@ -24,8 +24,8 @@ class ChatTemplatePrompter(Prompter):
     def __init__(
         self,
         tokenizer,
+        chat_template: str,
         processor=None,
-        chat_template=None,
         max_length=2048,
         message_property_mappings: Optional[Dict[str, str]] = None,
         message_field_training: Optional[str] = None,
@@ -34,6 +34,12 @@ class ChatTemplatePrompter(Prompter):
         roles: Optional[Dict[str, List[str]]] = None,
         drop_system_message: bool = False,
     ):
+        if message_property_mappings is None:
+            message_property_mappings = {
+                "role": "role",
+                "content": "content",
+            }
+
         if roles:
             self.roles = {s: t for t, sources in roles.items() for s in sources}
         else:
@@ -52,8 +58,9 @@ class ChatTemplatePrompter(Prompter):
         self.message_property_mappings = message_property_mappings
         self.message_field_training = message_field_training
         self.message_field_training_detail = message_field_training_detail
+        self.messages_array_name = messages_array_name
         self.tokenizer = tokenizer
-        self.processor: ProcessorMixin = processor
+        self.processor: Optional[ProcessorMixin] = processor
         self.chat_template = chat_template
         self.max_length = max_length
         self.drop_system_message = drop_system_message
@@ -64,6 +71,9 @@ class ChatTemplatePrompter(Prompter):
 
     def build_prompt(self, conversation, add_generation_prompt=False, images=None):
         if self.processor:
+            if not callable(self.processor):
+                raise TypeError("Processor must be callable")
+
             text = self.processor.apply_chat_template(
                 conversation,
                 chat_template=self.chat_template,
@@ -203,11 +213,9 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
     Tokenizing strategy for instruction-based prompts.
     """
 
-    _messages = "messages"
-
     def __init__(
         self,
-        prompter: ChatTemplatePrompter,
+        prompter: "ChatTemplatePrompter",
         tokenizer,
         train_on_inputs,
         sequence_len,
@@ -215,6 +223,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         train_on_eos=None,
     ):
         super().__init__(prompter, tokenizer, train_on_inputs, sequence_len)
+        self.prompter: ChatTemplatePrompter = prompter
 
         self.roles_to_train = []
         if roles_to_train:
@@ -229,14 +238,6 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         LOG.debug(
             f"The chat template uses the following properites on the message: {self.prompter.chat_template_msg_variables}"
         )
-
-    @property
-    def messages(self):
-        return self._messages
-
-    @messages.setter
-    def messages(self, messages):
-        self._messages = messages
 
     @property
     def supports_batched(self) -> bool:
@@ -481,7 +482,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
     def get_conversation_thread(self, prompt):
         turns = []
-        for message in prompt[self.messages]:
+        for message in prompt[self.prompter.messages_array_name]:
             transformed_message = self.transform_message(message)
 
             turn = {
@@ -589,9 +590,6 @@ class StrategyLoader:
     strategy = ChatTemplateStrategy(
         ChatTemplatePrompter(**prompter_params), tokenizer=tokenizer, **strategy_params
     )
-
-    if "field_messages" in dataset_config and hasattr(strategy, "messages"):
-        strategy.messages = dataset_config["field_messages"]
 
         return strategy
 
