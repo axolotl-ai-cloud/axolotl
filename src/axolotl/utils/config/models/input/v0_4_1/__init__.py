@@ -238,11 +238,6 @@ class SFTDataset(BaseModel):
 
 class DPODataset(BaseModel):
     """DPO configuration subset"""
-    path: Optional[str] = None
-    split: Optional[str] = None
-    type: Optional[str] = None
-    data_files: Optional[List[str]] = None
-    revision: Optional[str] = None
     field_system: Optional[str] = None
     field_prompt: Optional[str] = None
     field_chosen: Optional[str] = None
@@ -257,18 +252,8 @@ class KTODataset(BaseModel):
     """KTO configuration subset"""
     path: Optional[str] = None
     split: Optional[str] = None
-    type: Optional[str] = None
     data_files: Optional[List[str]] = None
-    trust_remote_code: Optional[bool] = False
     revision: Optional[str] = None
-    field_system: Optional[str] = None
-    field_prompt: Optional[str] = None
-    field_completion: Optional[str] = None
-    field_messages: Optional[str] = None
-    field_label: Optional[bool] = None
-    prompt_format: Optional[str] = None
-    completion_format: Optional[str] = None
-
 
 class StepwiseSupervisedDataset(BaseModel):
     """Stepwise supervised dataset configuration subset"""
