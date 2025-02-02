@@ -34,15 +34,16 @@ class BTChatTemplateStrategy(ChatTemplateStrategy):
 
         max_length = self.prompter.max_length
 
-        self.messages = "chosen_messages"
         # pylint: disable=duplicate-code
-        prompt[self.messages] = []
+        prompt["chosen_messages"] = []
         if prompt["system"]:
-            prompt[self.messages].append(
+            prompt["chosen_messages"].append(
                 {"role": "system", "content": prompt["system"]}
             )
-        prompt[self.messages].append({"role": "user", "content": prompt["input"]})
-        prompt[self.messages].append({"role": "assistant", "content": prompt["chosen"]})
+        prompt["chosen_messages"].append({"role": "user", "content": prompt["input"]})
+        prompt["chosen_messages"].append(
+            {"role": "assistant", "content": prompt["chosen"]}
+        )
         chosen_tokenized = super()._tokenize_single_prompt(prompt)
 
         if len(chosen_tokenized["input_ids"]) > max_length:
@@ -55,15 +56,14 @@ class BTChatTemplateStrategy(ChatTemplateStrategy):
                 :max_length
             ]
 
-        self.messages = "rejected_messages"
         # pylint: disable=duplicate-code
-        prompt[self.messages] = []
+        prompt["rejected_messages"] = []
         if prompt["system"]:
-            prompt[self.messages].append(
+            prompt["rejected_messages"].append(
                 {"role": "system", "content": prompt["system"]}
             )
-        prompt[self.messages].append({"role": "user", "content": prompt["input"]})
-        prompt[self.messages].append(
+        prompt["rejected_messages"].append({"role": "user", "content": prompt["input"]})
+        prompt["rejected_messages"].append(
             {"role": "assistant", "content": prompt["rejected"]}
         )
         rejected_tokenized = super()._tokenize_single_prompt(prompt)
@@ -100,6 +100,7 @@ def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
         "tokenizer": tokenizer,
         "chat_template": chat_template_string,
         "message_property_mappings": ds_cfg.get("message_property_mappings", {}),
+        "messages_array_name": ds_cfg.get("field_messages", "messages"),
         "message_field_training": ds_cfg.get("message_field_training", None),
         "message_field_training_detail": ds_cfg.get(
             "message_field_training_detail", None
@@ -122,8 +123,5 @@ def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
     strategy = BTChatTemplateStrategy(
         ChatTemplatePrompter(**prompter_params), tokenizer=tokenizer, **strategy_params
     )
-
-    if "field_messages" in ds_cfg and hasattr(strategy, "messages"):
-        strategy.messages = ds_cfg["field_messages"]
 
     return strategy
