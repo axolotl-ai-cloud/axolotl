@@ -76,7 +76,7 @@ class TestModelsUtils:
             mocked_load_model_config.return_value = {}
             with pytest.raises(ValueError) as exc:
                 # Should error before hitting tokenizer, so we pass in an empty str
-                load_model(cfg, tokenizer="")
+                load_model(cfg, tokenizer="")  # type: ignore
             assert (
                 "shifted-sparse attention does not currently support sample packing"
                 in str(exc.value)
