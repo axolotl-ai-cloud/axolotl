@@ -226,7 +226,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         self.train_on_eos = train_on_eos
         self.images = "images"
 
-        LOG.info(
+        LOG.debug(
             f"The chat template uses the following properites on the message: {self.prompter.chat_template_msg_variables}"
         )
 
