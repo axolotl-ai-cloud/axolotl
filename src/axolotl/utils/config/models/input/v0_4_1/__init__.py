@@ -12,7 +12,6 @@ from typing import Annotated, Any, Dict, List, Literal, Optional, Tuple, Union
 from packaging import version
 from pydantic import (
     BaseModel,
-    ConfigDict,
     Field,
     StringConstraints,
     conlist,
@@ -165,6 +164,7 @@ class LrGroup(BaseModel):
 
 class SFTDataset(BaseModel):
     """SFT configuration subset"""
+
     path: Optional[str] = None
     split: Optional[str] = None
     type: Optional[Union[str, UserDefinedPrompterType]] = None
@@ -238,6 +238,7 @@ class SFTDataset(BaseModel):
 
 class DPODataset(BaseModel):
     """DPO configuration subset"""
+
     field_system: Optional[str] = None
     field_prompt: Optional[str] = None
     field_chosen: Optional[str] = None
@@ -250,13 +251,16 @@ class DPODataset(BaseModel):
 
 class KTODataset(BaseModel):
     """KTO configuration subset"""
+
     path: Optional[str] = None
     split: Optional[str] = None
     data_files: Optional[List[str]] = None
     revision: Optional[str] = None
 
+
 class StepwiseSupervisedDataset(BaseModel):
     """Stepwise supervised dataset configuration subset"""
+
     path: Optional[str] = None
     split: Optional[str] = None
     data_files: Optional[List[str]] = None
