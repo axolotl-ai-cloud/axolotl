@@ -19,7 +19,6 @@ from axolotl.utils.config.models.input.v0_4_1 import (
     AxolotlInputConfig as AxolotlInputConfigBase,
 )
 from axolotl.utils.config.models.input.v0_4_1 import DPODataset, KTODataset, SFTDataset
-from axolotl.utils.config.models.internals import EnvCapabilities, GPUCapabilities
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.models import load_model_config
 
@@ -292,8 +291,8 @@ def validate_config(
             dict(
                 AxolotlConfigWCapabilities(
                     **cfg.to_dict(),
-                    capabilities=GPUCapabilities(*capabilities),
-                    env_capabilities=EnvCapabilities(*env_capabilities),
+                    capabilities=capabilities,  # type: ignore
+                    env_capabilities=env_capabilities,  # type: ignore
                 ).model_dump(exclude_none=True)
             )
         )
