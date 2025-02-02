@@ -19,6 +19,7 @@ from axolotl.utils.config.models.input.v0_4_1 import (
     AxolotlInputConfig as AxolotlInputConfigBase,
 )
 from axolotl.utils.config.models.input.v0_4_1 import DPODataset, KTODataset, SFTDataset
+from axolotl.utils.config.models.internals import EnvCapabilities, GPUCapabilities
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.models import load_model_config
 
@@ -275,9 +276,9 @@ def validate_config(
             if cfg.get("rl") == "dpo" and not isinstance(ds_cfg, DPODataset):
                 cfg["datasets"][idx] = DPODataset(**ds_cfg)
             elif cfg.get("rl") == "kto" and not isinstance(ds_cfg, KTODataset):
-                cfg["datasets"][idx] = KTODataset(**ds_cfg)
+                cfg["datasets"][idx] = KTODataset(**dict(ds_cfg))
             elif not isinstance(ds_cfg, SFTDataset):
-                cfg["datasets"][idx] = SFTDataset(**ds_cfg)
+                cfg["datasets"][idx] = SFTDataset(**dict(ds_cfg))
 
     if capabilities or env_capabilities:
         if (capabilities and env_capabilities is None) or (
@@ -291,8 +292,8 @@ def validate_config(
             dict(
                 AxolotlConfigWCapabilities(
                     **cfg.to_dict(),
-                    capabilities=capabilities,
-                    env_capabilities=env_capabilities,
+                    capabilities=GPUCapabilities(*capabilities),
+                    env_capabilities=EnvCapabilities(*env_capabilities),
                 ).model_dump(exclude_none=True)
             )
         )
