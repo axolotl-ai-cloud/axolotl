@@ -179,9 +179,9 @@ class FlexBatchSamplerDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):
                     out_features[i][feature] = np.concatenate(arrays)
         out = super().__call__(out_features, return_tensors=return_tensors)
 
-        collated_seq_lens = get_seqlens_from_pos_ids(out["position_ids"])
+        collated_seq_lens, max_seq_len = get_seqlens_from_pos_ids(out["position_ids"])
         # out["attention_mask"] = packed_block_causal_mask(collated_seq_lens)
-        out["attention_mask"] = create_block_causal_mask(collated_seq_lens)
+        out["attention_mask"] = create_block_causal_mask(collated_seq_lens, max_seq_len)
 
         return out
 

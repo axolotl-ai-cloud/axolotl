@@ -99,6 +99,7 @@ def get_seqlens_from_pos_ids(position_ids):
     """generate a sequence length set using pos ids for doc mask creation in flex attention"""
     if len(position_ids.shape) == 1:
         position_ids = position_ids.unsqueeze(0)
+    max_seq_len = position_ids.shape[1]
 
     device = position_ids.device
     results = []
@@ -126,22 +127,10 @@ def get_seqlens_from_pos_ids(position_ids):
         )
         # Calculate the sequence lengths
         seq_lengths = start_indices[1:] - start_indices[:-1]
-        # Append the padding length to the sequence lengths
-        if padding_length:
-            seq_lengths = torch.cat(
-                [
-                    seq_lengths,
-                    torch.tensor(
-                        [len(row) - torch.sum(seq_lengths)],
-                        dtype=torch.int32,
-                        device=device,
-                    ),
-                ]
-            )
 
         results.append(seq_lengths)
 
-    return results
+    return results , max_seq_len
 
 
 def get_cu_seqlens_from_pos_ids(position_ids):
