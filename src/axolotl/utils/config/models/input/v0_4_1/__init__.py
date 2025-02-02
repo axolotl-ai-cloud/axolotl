@@ -9,6 +9,7 @@ from typing import Annotated, Any, Dict, List, Literal, Optional, Tuple, Union
 from packaging import version
 from pydantic import (
     BaseModel,
+    ConfigDict,
     Field,
     StringConstraints,
     conlist,
@@ -637,19 +638,19 @@ class RayConfig(BaseModel):
     use_ray: bool = Field(default=False)
     ray_run_name: Optional[str] = Field(
         default=None,
-        metadata={
+        json_schema_extra={
             "help": "The training results will be saved at `saves/ray_run_name`."
         },
     )
     ray_num_workers: int = Field(
         default=1,
-        metadata={
+        json_schema_extra={
             "help": "The number of workers for Ray training. Default is 1 worker."
         },
     )
     resources_per_worker: dict = Field(
         default_factory=lambda: {"GPU": 1},
-        metadata={
+        json_schema_extra={
             "help": "The resources per worker for Ray training. Default is to use 1 GPU per worker."
         },
     )
@@ -674,10 +675,7 @@ class AxolotlInputConfig(
 ):
     """wrapper of all config options"""
 
-    class Config:
-        """Config for alias"""
-
-        populate_by_name = True
+    config: ConfigDict = ConfigDict(populate_by_name=True)
 
     strict: Optional[bool] = Field(default=False)
     resume_from_checkpoint: Optional[str] = None
