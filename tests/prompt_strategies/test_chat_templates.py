@@ -92,7 +92,7 @@ class TestAssistantChatTemplateLlama3:
             train_on_inputs=False,
             sequence_len=512,
         )
-        strategy.messages = "messages"
+
         res = strategy.tokenize_prompt(assistant_dataset[0])
         input_ids = res["input_ids"]
         # fmt: off
@@ -134,7 +134,7 @@ class TestAssistantChatTemplateLlama3:
             train_on_inputs=False,
             sequence_len=512,
         )
-        strategy.messages = "messages"
+
         res = strategy.tokenize_prompt(assistant_dataset[0])
         input_ids = res["input_ids"]
         labels = res["labels"]
@@ -195,7 +195,7 @@ class TestAssistantChatTemplateLlama3:
             sequence_len=512,
             roles_to_train=["assistant"],
         )
-        strategy.messages = "messages"
+
         prompt_tokens = strategy.prompter.build_prompt(
             assistant_dataset[0]["messages"], False
         )
@@ -244,6 +244,7 @@ class TestSharegptChatTemplateLlama3:
                     "role": "from",
                     "content": "value",
                 },
+                messages_array_name="conversations",
             ),
             tokenizer=llama3_tokenizer,
             train_on_inputs=False,
@@ -251,7 +252,7 @@ class TestSharegptChatTemplateLlama3:
             sequence_len=512,
             roles_to_train=["gpt"],
         )
-        strategy.messages = "conversations"
+
         res = strategy.tokenize_prompt(sharegpt_dataset[0])
         input_ids = res["input_ids"]
         labels = res["labels"]
@@ -303,6 +304,7 @@ class TestSharegptChatTemplateLlama3:
                     "role": "from",
                     "content": "value",
                 },
+                messages_array_name="conversations",
             ),
             tokenizer=llama3_tokenizer,
             train_on_inputs=False,
@@ -310,7 +312,7 @@ class TestSharegptChatTemplateLlama3:
             sequence_len=512,
             roles_to_train=["human"],
         )
-        strategy.messages = "conversations"
+
         res = strategy.tokenize_prompt(sharegpt_dataset[0])
         input_ids = res["input_ids"]
         labels = res["labels"]
@@ -362,6 +364,7 @@ class TestSharegptChatTemplateLlama3:
                     "role": "from",
                     "content": "value",
                 },
+                messages_array_name="conversations",
             ),
             tokenizer=llama3_tokenizer,
             train_on_inputs=False,
@@ -369,7 +372,7 @@ class TestSharegptChatTemplateLlama3:
             sequence_len=512,
             roles_to_train=["system", "human"],
         )
-        strategy.messages = "conversations"
+
         res = strategy.tokenize_prompt(basic_dataset[0])
         input_ids = res["input_ids"]
         labels = res["labels"]
