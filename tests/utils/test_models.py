@@ -121,7 +121,7 @@ class TestModelsUtils:
         """Test message property mapping configuration validation"""
         from axolotl.utils.config.models.input.v0_4_1 import SFTDataset
 
-        # Test legacy fields are mapped correctly
+        # Test legacy fields are mapped orrectly
         dataset = SFTDataset(
             path="test_path",
             message_field_role="role_field",

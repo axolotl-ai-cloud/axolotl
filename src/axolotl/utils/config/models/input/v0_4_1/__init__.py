@@ -12,6 +12,7 @@ from typing import Annotated, Any, Dict, List, Literal, Optional, Tuple, Union
 from packaging import version
 from pydantic import (
     BaseModel,
+    ConfigDict,
     Field,
     StringConstraints,
     conlist,
@@ -164,7 +165,6 @@ class LrGroup(BaseModel):
 
 class SFTDataset(BaseModel):
     """SFT configuration subset"""
-
     path: Optional[str] = None
     split: Optional[str] = None
     type: Optional[Union[str, UserDefinedPrompterType]] = None
@@ -238,7 +238,6 @@ class SFTDataset(BaseModel):
 
 class DPODataset(BaseModel):
     """DPO configuration subset"""
-
     path: Optional[str] = None
     split: Optional[str] = None
     type: Optional[str] = None
@@ -256,7 +255,6 @@ class DPODataset(BaseModel):
 
 class KTODataset(BaseModel):
     """KTO configuration subset"""
-
     path: Optional[str] = None
     split: Optional[str] = None
     type: Optional[str] = None
@@ -274,7 +272,6 @@ class KTODataset(BaseModel):
 
 class StepwiseSupervisedDataset(BaseModel):
     """Stepwise supervised dataset configuration subset"""
-
     path: Optional[str] = None
     split: Optional[str] = None
     data_files: Optional[List[str]] = None
@@ -924,7 +921,7 @@ class AxolotlInputConfig(
         self, ds_configs: Optional[List[DatasetConfig]]
     ) -> Optional[List[Dict[str, Any]]]:
         if ds_configs:
-            return [ds_config.model_dump() for ds_config in ds_configs]
+            return [ds_config.model_dump(exclude_none=True) for ds_config in ds_configs]
         return None
 
     @model_validator(mode="before")
