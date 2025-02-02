@@ -103,6 +103,7 @@ def get_seqlens_from_pos_ids(position_ids):
 
     device = position_ids.device
     results = []
+    totalseqlens = []
 
     for row in position_ids:
         # Count the number of consecutive zeros from the right side
@@ -128,7 +129,7 @@ def get_seqlens_from_pos_ids(position_ids):
         # Calculate the sequence lengths
         seq_lengths = start_indices[1:] - start_indices[:-1]
         # Append the padding length to the sequence lengths
-        """if padding_length:
+        if padding_length:
             seq_lengths = torch.cat(
                 [
                     seq_lengths,
@@ -138,11 +139,12 @@ def get_seqlens_from_pos_ids(position_ids):
                         device=device,
                     ),
                 ]
-            )"""
+            )
 
         results.append(seq_lengths)
+        totalseqlens.append(len(adjusted_row))
 
-    return results , max_seq_len
+    return results , totalseqlens
 
 
 def get_cu_seqlens_from_pos_ids(position_ids):

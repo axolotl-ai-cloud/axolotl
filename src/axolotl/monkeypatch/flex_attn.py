@@ -94,7 +94,7 @@ def _get_document_ids_from_seq_lens(
 
 
 def packed_block_causal_mask(
-    seq_lens: list[torch.Tensor], max_seq_len: int
+    seq_lens: list[torch.Tensor], totalseqlens: list[int]
 ) -> _MaskType:
     """
     Create a block causal document mask for a batch of packed sequences. If
@@ -113,7 +113,7 @@ def packed_block_causal_mask(
     """
 
     document_ids = _get_document_ids_from_seq_lens(seq_lens)
-    batch_size, _ = document_ids.shape
+    batch_size , max_seq_len = document_ids
     document_ids = document_ids.to("cuda")
 
     # Instead of passing a tensor mask, flex attention requires a mask_mod function
@@ -131,7 +131,7 @@ def packed_block_causal_mask(
         """
         causal_mask = q_idx >= kv_idx
         document_mask = document_ids[b, q_idx] == document_ids[b, kv_idx]
-        return causal_mask & document_mask
+        return causal_mask & document_mask & (q_idx < totalseqlens[b])
 
     return create_block_causal_mask_flex(
         mask_mod,
