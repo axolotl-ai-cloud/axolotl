@@ -24,7 +24,7 @@ import math
 import sys
 from abc import abstractmethod
 from pathlib import Path
-from typing import Type, Union
+from typing import Any, Type, Union
 
 import torch
 import transformers
