@@ -11,6 +11,8 @@ from axolotl.integrations.lolcats.trainer.distill_attention_xent_mse import (
     DistillAttentionXentMSETrainer,
 )
 
+from .args import LinearAttentionArgs  # pylint: disable=unused-import. # noqa: F401
+
 LOG = logging.getLogger("axolotl.integrations.lolcats")
 
 
