@@ -969,7 +969,8 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             # default to saving each epoch if not defined
             training_args_kwargs["save_strategy"] = "epoch"
 
-        training_args_kwargs["dataset_num_proc"] = self.cfg.dataset_processes
+        if self.cfg.dataset_processes:
+            training_args_kwargs["dataset_num_proc"] = self.cfg.dataset_processes
 
         if self.cfg.rl_beta:
             training_args_kwargs["beta"] = self.cfg.rl_beta
@@ -1005,7 +1006,6 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
                 self.cfg.kto_undesirable_weight or 1.0
             )
 
-            training_args_kwargs["dataset_num_proc"] = self.cfg.dataset_processes
             training_args_kwargs["max_length"] = self.cfg.sequence_len
             if self.cfg.max_prompt_len:
                 training_args_kwargs["max_prompt_length"] = self.cfg.max_prompt_len
