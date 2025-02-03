@@ -1048,7 +1048,10 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             dpo_trainer_kwargs[
                 "precompute_ref_log_probs"
             ] = self.cfg.precompute_ref_log_probs
-        if self.cfg.rl in ["dpo", "ipo"]:
+        if self.cfg.rl == "grpo":
+            trainer_cls = GRPOStrategy.get_trainer_class()
+            dpo_trainer_kwargs.update(GRPOStrategy.set_trainer_kwargs(self.cfg))
+        elif self.cfg.rl in ["dpo", "ipo"]:
             trainer_cls = DPOStrategy.get_trainer_class()
             trainer_cls_args = [self.model, self.model_ref]
         elif self.cfg.rl == "orpo":
