@@ -797,6 +797,9 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
     def build_collator(
         self, training_args: AxolotlTrainingArguments, is_eval=False, **kwargs
     ):
+        if self.cfg.rl == "grpo":
+            return GRPOStrategy.get_collator(self.cfg, training_args, **kwargs)
+
         if training_args.pretraining:
             if self.cfg.pretraining_sample_concatenation is False:
                 return DataCollatorForSeq2Seq(self.tokenizer, **kwargs)
