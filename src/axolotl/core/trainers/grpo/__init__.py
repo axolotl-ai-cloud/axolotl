@@ -48,13 +48,11 @@ class GRPOStrategy:
                 reward_func = getattr(reward_func_module, reward_func_module_name)
                 reward_funcs.append(reward_func)
             trainer_kwargs["reward_funcs"] = reward_funcs
-
+        trainer_kwargs["data_collator"] = cls.get_collator(cfg)
         return trainer_kwargs
 
     @classmethod
-    def get_collator(
-        cls, cfg, training_args, **kwargs
-    ):  # pylint: disable=unused-argument
+    def get_collator(cls, *args, **kwargs):  # pylint: disable=unused-argument
         def data_collator(features):  # No data collation is needed in GRPO
             return features
 
