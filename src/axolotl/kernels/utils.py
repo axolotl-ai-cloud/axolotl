@@ -1,4 +1,4 @@
-"""Utilities for kernel submodules."""
+"""Utilities for `axolotl.kernels` submodules."""
 
 import torch
 from packaging.version import Version

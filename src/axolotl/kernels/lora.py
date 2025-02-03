@@ -12,6 +12,7 @@ from typing import Callable
 
 import torch
 from bitsandbytes.functional import QuantState
+from torch import nn
 
 from .geglu import geglu_backward, geglu_forward
 from .quantize import dequantize
@@ -19,18 +20,33 @@ from .swiglu import swiglu_backward, swiglu_forward
 from .utils import torch_amp_custom_bwd, torch_amp_custom_fwd
 
 
-def quant_state(W):
-    return getattr(W, "quant_state", None)
+def get_lora_parameters(
+    proj: nn.Module,
+) -> tuple[
+    torch.Tensor,
+    QuantState | None,
+    torch.Tensor | None,
+    torch.Tensor | None,
+    float | None,
+]:
+    """
+    Gets LoRA parameters from a projection module.
 
+    Args:
+        proj: The projection module to extract parameters from.
 
-def get_lora_parameters(proj):
+    Returns:
+        A tuple containing the base weight matrix, quantization state, LoRA A matrix,
+        LoRA B matrix, and scaling factor. States and matrices may be None if not
+        available.
+    """
     # For DPO or disabled adapters
     base_layer = proj.base_layer if hasattr(proj, "base_layer") else proj
     W = base_layer.weight
 
     if not hasattr(proj, "disable_adapters") or proj.disable_adapters or proj.merged:
-        return W, quant_state(W), None, None, None
-    pass
+        quant_state = getattr(W, "quant_state", None)
+        return W, quant_state, None, None, None
 
     active_adapter = (
         proj.active_adapters[0]
@@ -41,7 +57,9 @@ def get_lora_parameters(proj):
     B = proj.lora_B[active_adapter].weight
     s = proj.scaling[active_adapter]
 
-    return W, quant_state(W), A, B, s
+    quant_state = getattr(W, "quant_state", None)
+
+    return W, quant_state, A, B, s
 
 
 def matmul_lora(
@@ -52,12 +70,23 @@ def matmul_lora(
     B: torch.Tensor,
     s: float,
     out: torch.Tensor | None = None,
-    process_group: torch.distributed.ProcessGroup | None = None,
 ) -> torch.Tensor:
-    """Enhanced matmul_lora with distributed support"""
-    dtype = X.dtype
-    device = X.device
+    """
+    Matrix multiplication with LoRA.
 
+    Args:
+        X: Input tensor
+        W: Base weight matrix
+        W_quant: Quantization state
+        A: LoRA A matrix
+        B: LoRA B matrix
+        s: LoRA scaling factor
+        out: Optional output tensor for in-place ops
+
+    Returns:
+        Result of `X @ W + s * X @ A @ B` computation
+    """
+    device = X.device
     W = W.to(device)
     W = dequantize(W.t(), W_quant)
 
@@ -74,41 +103,13 @@ def matmul_lora(
 
     if A is not None:
         A, B = A.t(), B.t()
-
-        # Split computation across GPUs if in distributed mode
-        if process_group is not None:
-            # Shard the LoRA matrices across GPUs
-            rank = torch.distributed.get_rank(process_group)
-            world_size = torch.distributed.get_world_size(process_group)
-
-            # Compute local shard
-            shard_size = A.size(1) // world_size
-            start_idx = rank * shard_size
-            end_idx = start_idx + shard_size if rank < world_size - 1 else A.size(1)
-
-            A_local = A[:, start_idx:end_idx].to(device)
-            B_local = B[start_idx:end_idx, :].to(device)
-
-            local_out = (X @ A_local.to(dtype)) @ (s * B_local.to(dtype))
-            del A_local
-            del B_local
-
-            # Use in-place add for reduced memory
-            torch.distributed.all_reduce(
-                local_out,
-                op=torch.distributed.ReduceOp.SUM,
-                group=process_group,
-                async_op=True,  # Allow overlap with computation
-            )
-            out += local_out
-        else:
-            out += (X @ A.to(dtype)) @ (s * B.to(dtype))
+        out += (X @ A.to(X.dtype)) @ (s * B.to(X.dtype))
 
     return out.view(batch, seq_len, -1) if reshape else out
 
 
 class LoRA_MLP(torch.autograd.Function):
-    """Optimized LoRA MLP implementation with memory management."""
+    """Optimized LoRA MLP implementation."""
 
     @staticmethod
     @torch_amp_custom_fwd
@@ -133,21 +134,38 @@ class LoRA_MLP(torch.autograd.Function):
         activation_fn: Callable,
         activation_fn_backward: Callable,
         inplace: bool | None = True,
-        process_group: torch.distributed.ProcessGroup | None = None,
     ) -> torch.Tensor:
-        # Compute projections using helper function
-        gate = matmul_lora(
-            X,
-            gate_weight,
-            gate_quant,
-            gate_A,
-            gate_B,
-            gate_scale,
-            process_group=process_group,
-        )
-        up = matmul_lora(
-            X, up_weight, up_quant, up_A, up_B, up_scale, process_group=process_group
-        )
+        """
+        Forward pass for LoRA MLP.
+
+        Args:
+            ctx: Autograd context
+            X: Input features
+            gate_weight: Gate projection weight
+            gate_quant: Gate quantization state
+            gate_A: Gate LoRA A matrix
+            gate_B: Gate LoRA B matrix
+            gate_scale: Gate LoRA scale
+            up_weight: Up-projection weight
+            up_quant: Up-projection quantization state
+            up_A: Up-projection LoRA A matrix
+            up_B: Up-projection LoRA B matrix
+            up_scale: Up-projection LoRA scale
+            down_weight: Down-projection weight
+            down_quant: Down-projection quantization state
+            down_A: Down-projection LoRA A matrix
+            down_B: Down-projection LoRA B matrix
+            down_scale: Down-projection LoRA scale
+            activation_fn: Forward activation function
+            activation_fn_backward: Backward activation function
+            inplace: Whether to perform operations in-place
+
+        Returns:
+            Output transformed by multi-layer perceptron and activation function
+        """
+        # Compute projections
+        gate = matmul_lora(X, gate_weight, gate_quant, gate_A, gate_B, gate_scale)
+        up = matmul_lora(X, up_weight, up_quant, up_A, up_B, up_scale)
 
         # Activation
         hidden = activation_fn(gate, up)
@@ -157,7 +175,7 @@ class LoRA_MLP(torch.autograd.Function):
             hidden, down_weight, down_quant, down_A, down_B, down_scale
         )
 
-        # Save tensors needed for backward
+        # Save for backward
         ctx.save_for_backward(X, gate, up, gate_A, gate_B, up_A, up_B, down_A, down_B)
         ctx.scales = (gate_scale, up_scale, down_scale)
         ctx.quants = (gate_quant, up_quant, down_quant)
@@ -165,13 +183,50 @@ class LoRA_MLP(torch.autograd.Function):
         ctx.activation_fn = activation_fn
         ctx.activation_fn_backward = activation_fn_backward
         ctx.inplace = inplace
-        ctx.process_group = process_group
 
         return output
 
     @staticmethod
     @torch_amp_custom_bwd
-    def backward(ctx, grad_output: torch.Tensor):
+    def backward(
+        ctx: torch.autograd.function.FunctionCtx,
+        grad_output: torch.Tensor,
+    ) -> tuple[
+        torch.Tensor | None,
+        None,
+        None,
+        torch.Tensor | None,
+        torch.Tensor | None,
+        None,
+        None,
+        None,
+        torch.Tensor | None,
+        torch.Tensor | None,
+        None,
+        None,
+        None,
+        torch.Tensor | None,
+        torch.Tensor | None,
+        None,
+        None,
+        None,
+        None,
+    ]:
+        """
+        Performs backward pass computation for LoRA MLP.
+
+        Args:
+            ctx: Context object storing tensors saved during forward pass
+            grad_output: Gradient of loss with respect to layer output
+
+        Returns:
+            Tuple containing gradients for all inputs from forward pass:
+            - Input gradient tensor (or `None`)
+            - `None` for weights/quantization states
+            - LoRA A/B matrix gradients (or `None`)
+            - `None` for scaling factors
+            - `None` for activation functions and flags
+        """
         (
             X,
             gate,
@@ -186,7 +241,6 @@ class LoRA_MLP(torch.autograd.Function):
         gate_scale, up_scale, down_scale = ctx.scales
         gate_quant, up_quant, down_quant = ctx.quants
         gate_weight, up_weight, down_weight = ctx.weights
-        process_group = ctx.process_group
 
         # Transpose all LoRA matrices
         gate_A, gate_B = (
@@ -210,7 +264,7 @@ class LoRA_MLP(torch.autograd.Function):
         up = up.view(-1, up.shape[-1])
         dtype = X.dtype
 
-        # Down projection with distributed support
+        # Down projection
         DW = matmul_lora(
             grad_output,
             down_weight.t(),
@@ -218,88 +272,32 @@ class LoRA_MLP(torch.autograd.Function):
             down_B,
             down_A,
             down_scale,
-            process_group=process_group,
         )
 
         # Activation backward
         DW, gate, up = ctx.activation_fn_backward(DW, gate, up)
         h, df, de = DW, gate, up
 
-        # Initialize gradient accumulators
-        d_down_A = torch.zeros_like(down_A) if down_A is not None else None
-        d_down_B = torch.zeros_like(down_B) if down_B is not None else None
-        d_up_A = torch.zeros_like(up_A) if up_A is not None else None
-        d_up_B = torch.zeros_like(up_B) if up_B is not None else None
-        d_gate_A = torch.zeros_like(gate_A) if gate_A is not None else None
-        d_gate_B = torch.zeros_like(gate_B) if gate_B is not None else None
+        # Initialize and compute LoRA gradients
+        d_down_A = d_down_B = d_up_A = d_up_B = d_gate_A = d_gate_B = None
 
-        # Compute LoRA gradients with distributed handling
-        if process_group is not None:
-            rank = torch.distributed.get_rank(process_group)
-            world_size = torch.distributed.get_world_size(process_group)
+        if down_A is not None:
+            d_down_A = h.t() @ (grad_output @ down_B.t())
+            d_down_B = (down_A.t() @ h.t()) @ grad_output
+            d_down_A *= down_scale
+            d_down_B *= down_scale
 
-            # Shard computations across GPUs
-            shard_size = h.size(0) // world_size
-            start_idx = rank * shard_size
-            end_idx = start_idx + shard_size if rank < world_size - 1 else h.size(0)
+        if up_A is not None:
+            d_up_A = X.t() @ (df @ up_B.t())
+            d_up_B = (up_A.t() @ X.t()) @ df
+            d_up_A *= up_scale
+            d_up_B *= up_scale
 
-            # Compute local gradients
-            if down_A is not None:
-                d_down_A = h[start_idx:end_idx].t() @ (
-                    grad_output[start_idx:end_idx] @ down_B.t()
-                )
-                d_down_B = (down_A.t() @ h[start_idx:end_idx].t()) @ grad_output[
-                    start_idx:end_idx
-                ]
-                d_down_A *= down_scale
-                d_down_B *= down_scale
-
-            if up_A is not None:
-                d_up_A = X[start_idx:end_idx].t() @ (df[start_idx:end_idx] @ up_B.t())
-                d_up_B = (up_A.t() @ X[start_idx:end_idx].t()) @ df[start_idx:end_idx]
-                d_up_A *= up_scale
-                d_up_B *= up_scale
-
-            if gate_A is not None:
-                d_gate_A = X[start_idx:end_idx].t() @ (
-                    de[start_idx:end_idx] @ gate_B.t()
-                )
-                d_gate_B = (gate_A.t() @ X[start_idx:end_idx].t()) @ de[
-                    start_idx:end_idx
-                ]
-                d_gate_A *= gate_scale
-                d_gate_B *= gate_scale
-
-            # All-reduce gradients
-            grads_to_reduce = [
-                grad
-                for grad in [d_down_A, d_down_B, d_up_A, d_up_B, d_gate_A, d_gate_B]
-                if grad is not None
-            ]
-
-            for grad in grads_to_reduce:
-                torch.distributed.all_reduce(
-                    grad, op=torch.distributed.ReduceOp.SUM, group=process_group
-                )
-        else:
-            # Non-distributed gradient computation
-            if down_A is not None:
-                d_down_A = h.t() @ (grad_output @ down_B.t())
-                d_down_B = (down_A.t() @ h.t()) @ grad_output
-                d_down_A *= down_scale
-                d_down_B *= down_scale
-
-            if up_A is not None:
-                d_up_A = X.t() @ (df @ up_B.t())
-                d_up_B = (up_A.t() @ X.t()) @ df
-                d_up_A *= up_scale
-                d_up_B *= up_scale
-
-            if gate_A is not None:
-                d_gate_A = X.t() @ (de @ gate_B.t())
-                d_gate_B = (gate_A.t() @ X.t()) @ de
-                d_gate_A *= gate_scale
-                d_gate_B *= gate_scale
+        if gate_A is not None:
+            d_gate_A = X.t() @ (de @ gate_B.t())
+            d_gate_B = (gate_A.t() @ X.t()) @ de
+            d_gate_A *= gate_scale
+            d_gate_B *= gate_scale
 
         # Compute input gradients
         dX = torch.zeros_like(X) if ctx.needs_input_grad[0] else None
@@ -352,7 +350,17 @@ class LoRA_MLP(torch.autograd.Function):
         )
 
 
-def apply_lora_mlp_swiglu(self, X, inplace=True):
+def apply_lora_mlp_swiglu(self, X: torch.Tensor, inplace: bool = True) -> torch.Tensor:
+    """
+    Applies LoRA to MLP layer with SwiGLU activation.
+
+    Args:
+        X: Input tensor for the MLP layer
+        inplace: Whether to perform operations in-place to save memory
+
+    Returns:
+        Output tensor after applying LoRA-adapted MLP with SwiGLU activation
+    """
     gateW, gateW_quant, gateA, gateB, gateS = get_lora_parameters(self.gate_proj)
     upW, upW_quant, upA, upB, upS = get_lora_parameters(self.up_proj)
     downW, downW_quant, downA, downB, downS = get_lora_parameters(self.down_proj)
@@ -382,8 +390,17 @@ def apply_lora_mlp_swiglu(self, X, inplace=True):
     return out
 
 
-# TODO: Add approximate GEGLU implementation like unsloth does?
-def apply_lora_mlp_geglu(self, X, inplace=True):
+def apply_lora_mlp_geglu(self, X: torch.Tensor, inplace: bool = True) -> torch.Tensor:
+    """
+    Applies LoRA to MLP layer with GEGLU activation.
+
+    Args:
+        X: Input tensor for the MLP layer
+        inplace: Whether to perform operations in-place to save memory
+
+    Returns:
+        Output tensor after applying LoRA-adapted MLP with GEGLU activation
+    """
     gateW, gateW_quant, gateA, gateB, gateS = get_lora_parameters(self.gate_proj)
     upW, upW_quant, upA, upB, upS = get_lora_parameters(self.up_proj)
     downW, downW_quant, downA, downB, downS = get_lora_parameters(self.down_proj)
@@ -412,102 +429,62 @@ def apply_lora_mlp_geglu(self, X, inplace=True):
     return out
 
 
-class LoRAMLPWrapper(torch.nn.Module):
-    def __init__(self, config, weights, activation="swiglu"):
-        super().__init__()
-
-        self.quant_config = config.get("quant_config")
-
-        # Change to match reference model naming
-        self.gate_proj = torch.nn.Linear(
-            config["in_features"], config["hidden_features"], bias=False
-        )
-        self.up_proj = torch.nn.Linear(
-            config["in_features"], config["hidden_features"], bias=False
-        )
-        self.down_proj = torch.nn.Linear(
-            config["hidden_features"], config["out_features"], bias=False
-        )
-
-        # Base weights
-        self.gate_proj.weight.data = weights[0]
-        self.up_proj.weight.data = weights[1]
-        self.down_proj.weight.data = weights[2]
-
-        # Store weights as parameters
-        self.gate_A = torch.nn.Parameter(weights[3])
-        self.gate_B = torch.nn.Parameter(weights[4])
-        self.up_A = torch.nn.Parameter(weights[5])
-        self.up_B = torch.nn.Parameter(weights[6])
-        self.down_A = torch.nn.Parameter(weights[7])
-        self.down_B = torch.nn.Parameter(weights[8])
-
-        self.gate_weight_q = self.gate_proj.weight.data
-        self.up_weight_q = self.up_proj.weight.data
-        self.down_weight_q = self.down_proj.weight.data
-        self.gate_quant = self.up_quant = self.down_quant = None
-
-        # Store activation function
-        activation_fns = {
-            "swiglu": (swiglu_forward, swiglu_backward),
-            "geglu": (geglu_forward, geglu_backward),
-        }
-        self.activation_fn, self.backward_activation_fn = activation_fns[activation]
-
-    def forward(self, x):
-        return LoRA_MLP.apply(
-            x,
-            self.gate_weight_q,
-            self.gate_quant,
-            self.gate_A,
-            self.gate_B,
-            1.0,
-            self.up_weight_q,
-            self.up_quant,
-            self.up_A,
-            self.up_B,
-            1.0,
-            self.down_weight_q,
-            self.down_quant,
-            self.down_A,
-            self.down_B,
-            1.0,
-            self.activation_fn,
-            self.backward_activation_fn,
-            True,
-        )
-
-
-def create_lora_mlp(config, *weights, activation="swiglu"):
-    """Create a module wrapper for LoRA MLP."""
-    return LoRAMLPWrapper(config, weights, activation=activation)
-
-
 class LoRA_QKV(torch.autograd.Function):
-    """Optimized LoRA QKV implementation with quantization support."""
+    """
+    Optimized LoRA QKV implementation with quantization support.
+
+    Implements efficient computation of query, key, value projections with LoRA,
+    supporting quantization and memory optimization.
+    """
 
     @staticmethod
     @torch_amp_custom_fwd
     def forward(
-        ctx,
-        X,
-        q_weight,
-        q_quant,
-        q_A,
-        q_B,
-        q_scale,
-        k_weight,
-        k_quant,
-        k_A,
-        k_B,
-        k_scale,
-        v_weight,
-        v_quant,
-        v_A,
-        v_B,
-        v_scale,
-        inplace=True,
-    ):
+        ctx: torch.autograd.function.FunctionCtx,
+        X: torch.Tensor,
+        q_weight: torch.Tensor,
+        q_quant: QuantState | None,
+        q_A: torch.Tensor | None,
+        q_B: torch.Tensor | None,
+        q_scale: float,
+        k_weight: torch.Tensor,
+        k_quant: QuantState | None,
+        k_A: torch.Tensor | None,
+        k_B: torch.Tensor | None,
+        k_scale: float,
+        v_weight: torch.Tensor,
+        v_quant: QuantState | None,
+        v_A: torch.Tensor | None,
+        v_B: torch.Tensor | None,
+        v_scale: float,
+        inplace: bool = True,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Forward pass computing Q, K, V projections with LoRA.
+
+        Args:
+            ctx: Autograd context
+            X: Input tensor
+            q_weight: Query projection weight
+            q_quant: Query quantization state
+            q_A: Query LoRA A matrix
+            q_B: Query LoRA B matrix
+            q_scale: Query LoRA scale
+            k_weight: Key projection weight
+            k_quant: Key quantization state
+            k_A: Key LoRA A matrix
+            k_B: Key LoRA B matrix
+            k_scale: Key LoRA scale
+            v_weight: Value projection weight
+            v_quant: Value quantization state
+            v_A: Value LoRA A matrix
+            v_B: Value LoRA B matrix
+            v_scale: Value LoRA scale
+            inplace: Whether to perform operations in-place
+
+        Returns:
+            Tuple of (Query, Key, Value) projection tensors
+        """
         Q = matmul_lora(X, q_weight, q_quant, q_A, q_B, q_scale)
         K = matmul_lora(X, k_weight, k_quant, k_A, k_B, k_scale)
         V = matmul_lora(X, v_weight, v_quant, v_A, v_B, v_scale)
@@ -522,7 +499,42 @@ class LoRA_QKV(torch.autograd.Function):
 
     @staticmethod
     @torch_amp_custom_fwd
-    def backward(ctx, q_grad, k_grad, v_grad):
+    def backward(
+        ctx: torch.autograd.function.FunctionCtx,
+        q_grad: torch.Tensor,
+        k_grad: torch.Tensor,
+        v_grad: torch.Tensor,
+    ) -> tuple[
+        torch.Tensor,
+        None,
+        None,
+        torch.Tensor | None,
+        torch.Tensor | None,
+        None,
+        None,
+        None,
+        torch.Tensor | None,
+        torch.Tensor | None,
+        None,
+        None,
+        None,
+        torch.Tensor | None,
+        torch.Tensor | None,
+        None,
+        None,
+    ]:
+        """
+        Backward pass computing gradients for LoRA QKV.
+
+        Args:
+            ctx: Autograd context
+            q_grad: Gradient for query projection
+            k_grad: Gradient for key projection
+            v_grad: Gradient for value projection
+
+        Returns:
+            Tuple containing gradients for all forward inputs
+        """
         X, A_q, B_q, A_k, B_k, A_v, B_v = ctx.saved_tensors
         q_weight, k_weight, v_weight = ctx.weights
         q_quant, k_quant, v_quant = ctx.quants
@@ -603,7 +615,19 @@ class LoRA_QKV(torch.autograd.Function):
         )
 
 
-def apply_lora_qkv(self, X, inplace=True):
+def apply_lora_qkv(
+    self, X: torch.Tensor, inplace: bool = True
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """
+    Applies LoRA to compute Query, Key, Value projections.
+
+    Args:
+        X: Input tensor
+        inplace: Whether to perform operations in-place
+
+    Returns:
+        Tuple of (Query, Key, Value) projection tensors
+    """
     QW, QW_quant, QA, QB, QS = get_lora_parameters(self.q_proj)
     KW, KW_quant, KA, KB, KS = get_lora_parameters(self.k_proj)
     VW, VW_quant, VA, VB, VS = get_lora_parameters(self.v_proj)
@@ -630,71 +654,35 @@ def apply_lora_qkv(self, X, inplace=True):
     return Q, K, V
 
 
-class LoRAQKVWrapper(torch.nn.Module):
-    def __init__(self, config, weights, activation="swiglu"):
-        super().__init__()
-
-        self.quant_config = config.get("quant_config")
-
-        # Change to match reference model naming
-        self.q_proj = torch.nn.Linear(
-            config["in_features"], config["hidden_features"], bias=False
-        )
-        self.k_proj = torch.nn.Linear(
-            config["in_features"], config["hidden_features"], bias=False
-        )
-        self.v_proj = torch.nn.Linear(
-            config["hidden_features"], config["out_features"], bias=False
-        )
-
-        # Base weights
-        self.q_proj.weight.data = weights[0]
-        self.k_proj.weight.data = weights[1]
-        self.v_proj.weight.data = weights[2]
-
-        # Store weights as parameters
-        self.q_A = torch.nn.Parameter(weights[3])
-        self.q_B = torch.nn.Parameter(weights[4])
-        self.k_A = torch.nn.Parameter(weights[5])
-        self.k_B = torch.nn.Parameter(weights[6])
-        self.v_A = torch.nn.Parameter(weights[7])
-        self.v_B = torch.nn.Parameter(weights[8])
-
-        self.q_weight = self.q_proj.weight.data
-        self.k_weight = self.k_proj.weight.data
-        self.v_weight = self.v_proj.weight.data
-        self.q_quant = self.k_quant = self.v_quant = None
-
-    def forward(self, x):
-        return LoRA_QKV.apply(
-            x,
-            self.q_weight,
-            self.q_quant,
-            self.q_A,
-            self.q_B,
-            1.0,
-            self.k_weight,
-            self.k_quant,
-            self.k_A,
-            self.k_B,
-            1.0,
-            self.v_weight,
-            self.v_quant,
-            self.v_A,
-            self.v_B,
-            1.0,
-        )
-
-
-def create_lora_qkv(config, *weights, activation="swiglu"):
-    """Create a module wrapper for LoRA QKV."""
-    return LoRAQKVWrapper(config, weights, activation=activation)
-
-
 class LoRA_O(torch.autograd.Function):
+    """Optimized LoRA implementation for output projection."""
+
     @staticmethod
     @torch_amp_custom_fwd
-    def forward(ctx, X: torch.Tensor, W, W_quant, A, B, S):
+    def forward(
+        ctx: torch.autograd.function.FunctionCtx,
+        X: torch.Tensor,
+        W: torch.Tensor,
+        W_quant: QuantState | None,
+        A: torch.Tensor | None,
+        B: torch.Tensor | None,
+        S: float,
+    ) -> torch.Tensor:
+        """
+        Forward pass for output projection with LoRA.
+
+        Args:
+            ctx: Autograd context
+            X: Input tensor
+            W: Output projection weight
+            W_quant: Weight quantization state
+            A: LoRA A matrix
+            B: LoRA B matrix
+            S: LoRA scaling factor
+
+        Returns:
+            Output projection tensor
+        """
         XW = matmul_lora(X, W, W_quant, A, B, S)
         ctx.custom_saved_tensors = (
             W,
@@ -707,7 +695,27 @@ class LoRA_O(torch.autograd.Function):
 
     @staticmethod
     @torch_amp_custom_bwd
-    def backward(ctx, dY: torch.Tensor):
+    def backward(
+        ctx: torch.autograd.function.FunctionCtx,
+        dY: torch.Tensor,
+    ) -> tuple[
+        torch.Tensor,
+        None,
+        None,
+        torch.Tensor | None,
+        torch.Tensor | None,
+        None,
+    ]:
+        """
+        Backward pass computing gradients for LoRA output projection.
+
+        Args:
+            ctx: Autograd context
+            dY: Gradient of loss with respect to output
+
+        Returns:
+            Tuple containing gradients for all forward inputs
+        """
         W, W_quant, S = ctx.custom_saved_tensors
         A, B, X = ctx.saved_tensors
 
@@ -731,45 +739,17 @@ class LoRA_O(torch.autograd.Function):
         return dX.view(batch, seq_len, hd), None, None, d_A.t(), d_B.t(), None
 
 
-def apply_lora_o(self, X):
+def apply_lora_o(self, X: torch.Tensor) -> torch.Tensor:
+    """
+    Applies LoRA to output projection layer.
+
+    Args:
+        X: Input tensor
+
+    Returns:
+        Transformed output tensor
+    """
     OW, OW_quant, OA, OB, OS = get_lora_parameters(self.o_proj)
     output = LoRA_O.apply(X, OW, OW_quant, OA, OB, OS)
 
     return output
-
-
-class LoRAOWrapper(torch.nn.Module):
-    def __init__(self, config, weights, activation="swiglu"):
-        super().__init__()
-
-        self.quant_config = config.get("quant_config")
-
-        # Change to match reference model naming
-        self.o_proj = torch.nn.Linear(
-            config["in_features"], config["hidden_features"], bias=False
-        )
-
-        # Base weights
-        self.o_proj.weight.data = weights[0]
-
-        # Store weights as parameters
-        self.o_A = torch.nn.Parameter(weights[1])
-        self.o_B = torch.nn.Parameter(weights[2])
-
-        self.o_weight = self.o_proj.weight.data
-        self.o_quant = None
-
-    def forward(self, x):
-        return LoRA_O.apply(
-            x,
-            self.o_weight,
-            self.o_quant,
-            self.o_A,
-            self.o_B,
-            1.0,
-        )
-
-
-def create_lora_o(config, *weights, activation="swiglu"):
-    """Create a module wrapper for LoRA O."""
-    return LoRAOWrapper(config, weights, activation=activation)
