@@ -123,7 +123,7 @@ class TestChatTemplateConfigurations:
                     chat_template, jinja_template=chat_template_jinja
                 ),
                 message_property_mappings={"role": "from", "content": "value"},
-                messages_array_name="conversations",
+                field_messages="conversations",
             ),
             tokenizer=tokenizer,
             train_on_inputs=True,
@@ -180,7 +180,7 @@ class TestChatTemplateConfigurations:
                     chat_template, jinja_template=chat_template_jinja
                 ),
                 message_property_mappings={"role": "from", "content": "value"},
-                messages_array_name="conversations",
+                field_messages="conversations",
             ),
             tokenizer=tokenizer,
             train_on_inputs=False,
@@ -241,7 +241,7 @@ class TestChatTemplateConfigurations:
                     chat_template, jinja_template=chat_template_jinja
                 ),
                 message_property_mappings={"role": "from", "content": "value"},
-                messages_array_name="conversations",
+                field_messages="conversations",
             ),
             tokenizer=tokenizer,
             train_on_inputs=False,
@@ -302,7 +302,7 @@ class TestChatTemplateConfigurations:
                     chat_template, jinja_template=chat_template_jinja
                 ),
                 message_property_mappings={"role": "from", "content": "value"},
-                messages_array_name="conversations",
+                field_messages="conversations",
             ),
             tokenizer=tokenizer,
             train_on_inputs=True,
@@ -355,7 +355,7 @@ class TestChatTemplateConfigurations:
                     chat_template, jinja_template=chat_template_jinja
                 ),
                 message_property_mappings={"role": "from", "content": "value"},
-                messages_array_name="conversations",
+                field_messages="conversations",
             ),
             tokenizer=tokenizer,
             train_on_inputs=False,
@@ -395,7 +395,7 @@ class TestChatTemplateConfigurations:
                     chat_template, jinja_template=chat_template_jinja
                 ),
                 message_property_mappings={"role": "from", "content": "value"},
-                messages_array_name="conversations",
+                field_messages="conversations",
             ),
             tokenizer=tokenizer,
             train_on_inputs=False,
@@ -441,7 +441,7 @@ class TestChatTemplateConfigurations:
                     chat_template, jinja_template=chat_template_jinja
                 ),
                 message_property_mappings={"role": "from", "content": "value"},
-                messages_array_name="conversations",
+                field_messages="conversations",
             ),
             tokenizer=tokenizer,
             train_on_inputs=False,
@@ -520,7 +520,7 @@ class TestChatTemplateConfigurations:
                     chat_template, jinja_template=chat_template_jinja
                 ),
                 message_property_mappings={"role": "from", "content": "value"},
-                messages_array_name="conversations",
+                field_messages="conversations",
             ),
             tokenizer=tokenizer,
             train_on_inputs=False,
@@ -572,7 +572,7 @@ class TestChatTemplateConfigurations:
                     chat_template, jinja_template=chat_template_jinja
                 ),
                 message_property_mappings={"role": "from", "content": "value"},
-                messages_array_name="conversations",
+                field_messages="conversations",
             ),
             tokenizer=tokenizer,
             train_on_inputs=False,
@@ -618,7 +618,7 @@ class TestChatTemplateConfigurations:
                 ),
                 drop_system_message=True,
                 message_property_mappings={"role": "from", "content": "value"},
-                messages_array_name="conversations",
+                field_messages="conversations",
             ),
             tokenizer=tokenizer,
             train_on_inputs=False,

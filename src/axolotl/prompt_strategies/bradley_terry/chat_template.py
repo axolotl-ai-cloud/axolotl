@@ -100,7 +100,7 @@ def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
         "tokenizer": tokenizer,
         "chat_template": chat_template_string,
         "message_property_mappings": ds_cfg.get("message_property_mappings", {}),
-        "messages_array_name": ds_cfg.get("field_messages", "messages"),
+        "field_messages": ds_cfg.get("field_messages", "messages"),
         "message_field_training": ds_cfg.get("message_field_training", None),
         "message_field_training_detail": ds_cfg.get(
             "message_field_training_detail", None

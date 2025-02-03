@@ -32,7 +32,7 @@ class ChatTemplatePrompter(Prompter):
         message_property_mappings: Optional[Dict[str, str]] = None,
         message_field_training: Optional[str] = None,
         message_field_training_detail: Optional[str] = None,
-        messages_array_name: str = "messages",
+        field_messages: str = "messages",
         roles: Optional[Dict[str, List[str]]] = None,
         drop_system_message: bool = False,
     ):
@@ -55,12 +55,12 @@ class ChatTemplatePrompter(Prompter):
             }
 
         self._chat_template_msg_variables = self.get_chat_template_msg_variables(
-            chat_template, messages_array_name
+            chat_template, field_messages
         )
         self.message_property_mappings = message_property_mappings
         self.message_field_training = message_field_training
         self.message_field_training_detail = message_field_training_detail
-        self.messages_array_name = messages_array_name
+        self.field_messages = field_messages
         self.tokenizer = tokenizer
         self.processor: Optional[ProcessorMixin] = processor
         self.chat_template = chat_template
@@ -204,10 +204,10 @@ class ChatTemplatePrompter(Prompter):
         return adjusted_details
 
     def get_chat_template_msg_variables(
-        self, chat_template: str, messages_array_name: str
+        self, chat_template: str, field_messages: str
     ) -> Set[str]:
         template_analyzer = JinjaTemplateAnalyzer(chat_template)
-        return template_analyzer.get_message_vars(messages_array_name)
+        return template_analyzer.get_message_vars(field_messages)
 
 
 class ChatTemplateStrategy(PromptTokenizingStrategy):
@@ -249,7 +249,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
     def is_prompt_batched(self, prompt: dict[str, Any]) -> bool:
         try:
             return all(isinstance(v, list) for v in prompt.values()) and all(
-                isinstance(v, list) for v in prompt[self.prompter.messages_array_name]
+                isinstance(v, list) for v in prompt[self.prompter.field_messages]
             )
         except KeyError:
             return False
@@ -484,7 +484,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
     def get_conversation_thread(self, prompt):
         turns = []
-        for message in prompt[self.prompter.messages_array_name]:
+        for message in prompt[self.prompter.field_messages]:
             transformed_message = self.transform_message(message)
 
             turn = {
@@ -582,7 +582,7 @@ class StrategyLoader:
                 "message_field_training_detail",
                 None,
             ),
-            "messages_array_name": dataset_config.get("field_messages", "messages"),
+            "field_messages": dataset_config.get("field_messages", "messages"),
             "roles": dataset_config.get("roles"),
             "drop_system_message": dataset_config.get("drop_system_message", False),
             # we need to add one for detecting sequences with exceeding the `sequence_len` limit.

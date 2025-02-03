@@ -299,11 +299,11 @@ class JinjaTemplateAnalyzer:
         trace_variable(start_var)
         return properties
 
-    def get_message_vars(self, messages_array_name: str = "messages") -> Set[str]:
+    def get_message_vars(self, field_messages: str = "messages") -> Set[str]:
         """
         Get all properties accessed on messages and derived variables.
         """
-        all_properties = self.get_downstream_properties(messages_array_name)
+        all_properties = self.get_downstream_properties(field_messages)
 
         # Combine all properties from all related variables
         combined_properties = set()
