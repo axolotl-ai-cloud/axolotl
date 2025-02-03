@@ -810,6 +810,10 @@ class AxolotlInputConfig(
     unsloth_rms_norm: Optional[bool] = None
     unsloth_rope: Optional[bool] = None
 
+    lora_mlp_kernel: Optional[bool] = None
+    lora_qkv_kernel: Optional[bool] = None
+    lora_o_kernel: Optional[bool] = None
+
     deepspeed: Optional[Union[str, Dict[str, Any]]] = None
     fsdp: Optional[List[str]] = None
     fsdp_config: Optional[Dict[str, Any]] = None
@@ -1538,6 +1542,36 @@ class AxolotlInputConfig(
                 raise ValueError(
                     "unsloth_lora_mlp, unsloth_lora_qkv, and unsloth_lora_o are not compatible with 8-bit LoRA"
                 )
+        return data
+
+    # @model_validator(mode="before")
+    # @classmethod
+    # def check_lora_8bit(cls, data):
+    #     if (
+    #         data.get("lora_mlp")
+    #         or data.get("lora_qkv")
+    #         or data.get("lora_o")
+    #     ):
+    #         if data.get("adapter") == "lora" or data.get("load_in_8bit"):
+    #             raise ValueError(
+    #                 "lora_mlp, lora_mlp, and lora_mlp are not compatible with 8-bit LoRA"
+    #             )
+    #     return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_lora_axolotl_unsloth(cls, data):
+        is_lora_kernel = any(
+            data.get(k) for k in ["lora_mlp_kernel", "lora_qkv_kernel", "lora_o_kernel"]
+        )
+        is_unsloth_lora = any(
+            data.get(k)
+            for k in ["unsloth_lora_mlp", "unsloth_lora_qkv", "unsloth_lora_o"]
+        )
+        if is_lora_kernel and is_unsloth_lora:
+            raise ValueError(
+                "both lora_mlp_kernel and unsloth_lora_mlp cannot be true (similarly for lora_qkv, lora_o)"
+            )
         return data
 
     @model_validator(mode="before")

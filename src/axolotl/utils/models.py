@@ -425,10 +425,7 @@ class ModelLoader:
 
             if self.cfg.is_llama_derived_model:
                 self.patch_loss_llama()
-                if self.cfg.unsloth_lora_qkv or self.cfg.unsloth_lora_o:
-                    from axolotl.monkeypatch.unsloth_ import patch_self_attn_lora
 
-                    patch_self_attn_lora()
         elif self.cfg.is_llama_derived_model:
             self.patch_llama_derived_model()
 
@@ -494,8 +491,14 @@ class ModelLoader:
             from axolotl.monkeypatch.unsloth_ import patch_unsloth_layernorm
 
             patch_unsloth_layernorm()
+
         if self.cfg.unsloth_lora_qkv or self.cfg.unsloth_lora_o:
             from axolotl.monkeypatch.unsloth_ import patch_self_attn_lora
+
+            patch_self_attn_lora()
+
+        if self.cfg.lora_qkv_kernel or self.cfg.lora_o_kernel:
+            from axolotl.monkeypatch.lora_kernels import patch_self_attn_lora
 
             patch_self_attn_lora()
 
@@ -1027,6 +1030,20 @@ class ModelLoader:
 
             integrate_rope_embeddings()
 
+    def apply_axolotl_lora_patch(self) -> None:
+        if (
+            self.cfg.lora_mlp_kernel
+            or self.cfg.lora_qkv_kernel
+            or self.cfg.lora_o_kernel
+        ):
+            import ipdb
+
+            from axolotl.monkeypatch.lora_kernels import apply_lora_kernel_patches
+
+            ipdb.set_trace()
+
+            apply_lora_kernel_patches(self.model, self.cfg)
+
     def load_model(self) -> Tuple[PreTrainedModel, Optional[PeftConfig]]:
         self.apply_patches()
         self.set_auto_model_loader()
@@ -1172,6 +1189,7 @@ class ModelLoader:
             log_gpu_memory_usage(LOG, "after adapters", self.model.device)
 
         self.apply_lora_patch()
+        self.apply_axolotl_lora_patch()
 
         for _ in range(3):
             gc.collect()
