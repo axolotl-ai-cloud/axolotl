@@ -797,9 +797,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
     def build_collator(
         self, training_args: AxolotlTrainingArguments, is_eval=False, **kwargs
     ):
-        if self.cfg.rl == "grpo":
-            return GRPOStrategy.get_collator(self.cfg, training_args, **kwargs)
-
         if training_args.pretraining:
             if self.cfg.pretraining_sample_concatenation is False:
                 return DataCollatorForSeq2Seq(self.tokenizer, **kwargs)
@@ -982,6 +979,7 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             training_args_kwargs["rpo_alpha"] = self.cfg.rpo_alpha
 
         training_args_cls = None
+        blocklist_args_kwargs = []
         if self.cfg.rl == "simpo":
             training_args_cls = AxolotlCPOConfig
             training_args_kwargs["loss_type"] = "simpo"
@@ -1014,13 +1012,14 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             training_args_cls = GRPOStrategy.get_training_args_class()
             training_args_kwargs.update(GRPOStrategy.set_training_args_kwargs(self.cfg))
             blocklist_args_kwargs = GRPOStrategy.get_blocklist_args_kwargs()
-            for blocklist_key in blocklist_args_kwargs:
-                if blocklist_key in training_args_kwargs:
-                    del training_args_kwargs[blocklist_key]
 
         else:
             training_args_cls = DPOConfig.get_training_args_class()
             training_args_kwargs.update(DPOConfig.set_training_args_kwargs(self.cfg))
+
+        for blocklist_key in blocklist_args_kwargs:
+            if blocklist_key in training_args_kwargs:
+                del training_args_kwargs[blocklist_key]
 
         training_args = training_args_cls(  # pylint: disable=unexpected-keyword-arg
             self.cfg.output_dir,
@@ -1054,6 +1053,7 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             ] = self.cfg.precompute_ref_log_probs
         if self.cfg.rl == "grpo":
             trainer_cls = GRPOStrategy.get_trainer_class()
+            trainer_cls_args = [self.model]
             dpo_trainer_kwargs.update(GRPOStrategy.set_trainer_kwargs(self.cfg))
         elif self.cfg.rl in ["dpo", "ipo"]:
             trainer_cls = DPOStrategy.get_trainer_class()
