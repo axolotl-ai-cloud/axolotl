@@ -90,7 +90,7 @@ One step is equal to `sequence_len * micro_batch_size * gradient_accumulation_st
 
 It is recommended to leave this off if downloading from Huggingface hub as it would download the entire dataset which can be very large.
 
-## Supervised fine-tuning
+## Supervised fine-tuning (SFT)
 
 Supervised fine-tuning is the process of training models to respond to an instruction or chat input.
 
@@ -428,3 +428,7 @@ datasets:
 ```
 
 The config sets that the `field_instruction` is actually named `input`, and the `field_input` is empty as we don't have an `input` in this sample. Generally, `instruction` can be thought as the question to the model, and `input` as the additional information with `output` being the response. It is not necessary to have an `input` nor `system`. In the end, the most important part is to understand what format you want it to look like and how you can customize this to your use case.
+
+## Reinforcement Learning from Human Feedback (RLHF)
+
+As there are multiple RLHF methods with their own dataset requirements. Please see RLHF doc [here](../rlhf.qmd).
