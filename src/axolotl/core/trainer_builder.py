@@ -35,6 +35,7 @@ from transformers import (
     EarlyStoppingCallback,
     TrainerCallback,
 )
+from trl import DPOConfig
 from trl.trainer.utils import RewardDataCollatorWithPadding
 
 from axolotl.core.trainers.base import (
@@ -47,10 +48,10 @@ from axolotl.core.trainers.base import (
     AxolotlTrainer,
     ReLoRATrainer,
 )
-from axolotl.core.trainers.dpo_trainer import AxolotlDPOTrainer
+from axolotl.core.trainers.dpo import DPOStrategy
+from axolotl.core.trainers.grpo import GRPOStrategy
 from axolotl.core.training_args import (
     AxolotlCPOConfig,
-    AxolotlDPOConfig,
     AxolotlKTOConfig,
     AxolotlORPOConfig,
     AxolotlPRMConfig,
@@ -1006,16 +1007,13 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             if self.cfg.max_prompt_len:
                 training_args_kwargs["max_prompt_length"] = self.cfg.max_prompt_len
 
+        elif self.cfg.rl == "grpo":
+            training_args_cls = GRPOStrategy.get_training_args_class()
+            training_args_kwargs.update(GRPOStrategy.set_training_args_kwargs(self.cfg))
+
         else:
-            training_args_cls = AxolotlDPOConfig
-            if self.cfg.rl == "ipo":
-                training_args_kwargs["loss_type"] = "ipo"
-            training_args_kwargs["max_length"] = self.cfg.sequence_len
-            training_args_kwargs["max_completion_length"] = None
-            training_args_kwargs["max_prompt_length"] = self.cfg.sequence_len
-            training_args_kwargs["generate_during_eval"] = self.cfg.use_wandb
-            if self.cfg.dpo_use_weighting is not None:
-                training_args_kwargs["use_weighting"] = self.cfg.dpo_use_weighting
+            training_args_cls = DPOConfig.get_training_args_class()
+            training_args_kwargs.update(DPOConfig.set_training_args_kwargs(self.cfg))
 
         training_args = training_args_cls(  # pylint: disable=unexpected-keyword-arg
             output_dir=self.cfg.output_dir,
@@ -1048,7 +1046,7 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
                 "precompute_ref_log_probs"
             ] = self.cfg.precompute_ref_log_probs
         if self.cfg.rl in ["dpo", "ipo"]:
-            trainer_cls = AxolotlDPOTrainer
+            trainer_cls = DPOStrategy.get_trainer_class()
             trainer_cls_args = [self.model, self.model_ref]
         elif self.cfg.rl == "orpo":
             trainer_cls = AxolotlORPOTrainer
@@ -1068,7 +1066,9 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         else:
             dpo_trainer_kwargs["tokenizer"] = self.tokenizer
 
-        if self.cfg.datasets is not None and (trainer_cls is AxolotlDPOTrainer):
+        if self.cfg.datasets is not None and (
+            trainer_cls is DPOStrategy.get_trainer_class()
+        ):
             dpo_trainer_kwargs["dataset_tags"] = [
                 d["path"] for d in self.cfg.datasets if not Path(d["path"]).is_dir()
             ]

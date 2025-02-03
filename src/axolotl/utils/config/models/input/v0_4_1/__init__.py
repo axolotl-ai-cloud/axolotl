@@ -24,6 +24,8 @@ from transformers.utils.import_utils import is_torch_npu_available
 
 from axolotl.utils.config.models.internals import EnvCapabilities, GPUCapabilities
 
+from .grpo import GRPOConfig
+
 LOG = logging.getLogger("axolotl.utils.config.models.input")
 
 SUPPORTED_METRICS = {"sacrebleu", "comet", "ter", "chrf", "perplexity"}
@@ -33,6 +35,7 @@ class RLType(str, Enum):
     """RL trainer type configuration subset"""
 
     dpo = "dpo"  # pylint: disable=invalid-name
+    grpo = "grpo"  # pylint: disable=invalid-name
     ipo = "ipo"  # pylint: disable=invalid-name
     orpo = "orpo"  # pylint: disable=invalid-name
     kto = "kto"  # pylint: disable=invalid-name
@@ -646,6 +649,7 @@ class AxolotlInputConfig(
     MLFlowConfig,
     CometConfig,
     LISAConfig,
+    GRPOConfig,
     GradioConfig,
     RayConfig,
     RemappedParameters,
