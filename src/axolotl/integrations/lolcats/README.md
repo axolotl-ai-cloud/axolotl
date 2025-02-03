@@ -4,6 +4,8 @@ https://github.com/HazyResearch/lolcats/
 
 ### Usage
 
+TODO: Add instruction to install `causal_dot_product`.
+
 Step 1:
 
 ```yaml
