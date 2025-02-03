@@ -1053,9 +1053,12 @@ class ModelLoader:
             if self.cfg.resize_token_embeddings_to_32x
             else len(self.tokenizer)
         )
-        if (
-            hasattr(self.model, "get_input_embeddings")
-            and self.model.get_input_embeddings().num_embeddings != embeddings_len
+        if hasattr(self.model, "get_input_embeddings") and (
+            self.model.get_input_embeddings().num_embeddings < embeddings_len
+            or (
+                self.model.get_input_embeddings().num_embeddings > embeddings_len
+                and self.cfg.shrink_embeddings
+            )
         ):
             resize_kwargs = {}
             if self.cfg.mean_resizing_embeddings is not None:
