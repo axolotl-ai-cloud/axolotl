@@ -25,7 +25,7 @@ import os
 import sys
 from abc import abstractmethod
 from pathlib import Path
-from typing import List, Type, Union
+from typing import Type, Union
 
 import torch
 import transformers
@@ -155,7 +155,7 @@ class TrainerBuilderBase(abc.ABC):
     def build(self, total_num_steps):
         pass
 
-    def get_callbacks(self) -> List[TrainerCallback]:
+    def get_callbacks(self) -> list[TrainerCallback]:
         callbacks = []
 
         plugin_manager = PluginManager.get_instance()
