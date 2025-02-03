@@ -13,7 +13,6 @@ from annotated_types import MinLen
 from packaging import version
 from pydantic import (
     BaseModel,
-    ConfigDict,
     Field,
     StringConstraints,
     field_validator,
@@ -413,6 +412,8 @@ class ReLoRAConfig(BaseModel):
 class ModelInputConfig(BaseModel):
     """model to train on configuration subset"""
 
+    model_config = {"protected_namespaces": ()}
+
     base_model: str
     base_model_config: Optional[str] = None
     cls_model_config: Optional[str] = None
@@ -656,7 +657,7 @@ class AxolotlInputConfig(
 ):
     """wrapper of all config options"""
 
-    config: ConfigDict = ConfigDict(populate_by_name=True)
+    model_config = {"populate_by_name": True}
 
     strict: Optional[bool] = Field(default=False)
     resume_from_checkpoint: Optional[str] = None
