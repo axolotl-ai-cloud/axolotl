@@ -590,14 +590,10 @@ class StrategyLoader:
             "processor": processor,
         }
 
-        strategy_params = {
-            "train_on_inputs": cfg.train_on_inputs,
-            "sequence_len": cfg.sequence_len,
-            "roles_to_train": dataset_config.get("roles_to_train", ["assistant"]),
-            "train_on_eos": dataset_config.get("train_on_eos", "turn"),
-        }
+        strategy_params = self._get_strategy_params(cfg, dataset_config)
+        strategy_cls = self._get_strategy_cls()
 
-        strategy = ChatTemplateStrategy(
+        strategy = strategy_cls(
             ChatTemplatePrompter(**prompter_params),
             tokenizer=tokenizer,
             **strategy_params,
