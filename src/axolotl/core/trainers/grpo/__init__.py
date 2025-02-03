@@ -44,19 +44,18 @@ class GRPOStrategy:
             for reward_func_module in cfg.grpo_reward_funcs:
                 # use importlib to dynamically load the reward function from the module
                 reward_func_module_name = reward_func_module.split(".")[-1]
-                reward_func_module = importlib.import_module(reward_func_module)
+                reward_func_module = importlib.import_module(
+                    reward_func_module.split(".")[-2]
+                )
                 reward_func = getattr(reward_func_module, reward_func_module_name)
                 reward_funcs.append(reward_func)
             trainer_kwargs["reward_funcs"] = reward_funcs
-        trainer_kwargs["data_collator"] = cls.get_collator(cfg)
         return trainer_kwargs
 
     @classmethod
     def get_collator(cls, *args, **kwargs):  # pylint: disable=unused-argument
-        def data_collator(features):  # No data collation is needed in GRPO
-            return features
-
-        return data_collator
+        # No data collation is needed in GRPO, handled by trl's trainer __init__
+        return None
 
     @classmethod
     def get_blocklist_args_kwargs(cls):
