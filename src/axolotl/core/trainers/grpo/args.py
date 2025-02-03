@@ -9,7 +9,7 @@ from axolotl.core.training_args import AxolotlTrainingMixins
 
 
 @dataclass
-class AxolotlGRPOConfig(GRPOConfig, AxolotlTrainingMixins):
+class AxolotlGRPOConfig(AxolotlTrainingMixins, GRPOConfig):
     """
     Axolotl GRPO Config for GRPO training
     """

@@ -1019,7 +1019,7 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             training_args_kwargs.update(DPOConfig.set_training_args_kwargs(self.cfg))
 
         training_args = training_args_cls(  # pylint: disable=unexpected-keyword-arg
-            output_dir=self.cfg.output_dir,
+            self.cfg.output_dir,
             per_device_train_batch_size=self.cfg.micro_batch_size,
             max_steps=self.cfg.max_steps or total_num_steps,
             gradient_accumulation_steps=self.cfg.gradient_accumulation_steps,
