@@ -12,6 +12,7 @@ from typing import Optional
 
 import click
 import yaml
+from dotenv import load_dotenv
 
 import axolotl
 from axolotl.cli.args import EvaluateCliArgs, PreprocessCliArgs, TrainerCliArgs
@@ -381,4 +382,5 @@ def main():
 
 
 if __name__ == "__main__":
+    load_dotenv()
     main()
