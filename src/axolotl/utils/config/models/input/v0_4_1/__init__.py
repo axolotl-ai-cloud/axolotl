@@ -668,6 +668,8 @@ class AxolotlInputConfig(
     auto_resume_from_checkpoints: Optional[bool] = None
     resize_token_embeddings_to_32x: Optional[bool] = None
     mean_resizing_embeddings: Optional[bool] = False
+    # optionally shrink the embeddings when the tokenizer vocab size is smaller
+    shrink_embeddings: Optional[bool] = None
 
     rl: Optional[RLType] = None
     reward_model: Optional[bool] = None
