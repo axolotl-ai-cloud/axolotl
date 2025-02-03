@@ -10,3 +10,5 @@ class AxolotlGRPOTrainer(SchedulerMixin, GRPOTrainer):
     """
     Extend the base GRPOTrainer for axolotl helpers
     """
+
+    _tag_names = ["trl", "grpo", "axolotl"]
