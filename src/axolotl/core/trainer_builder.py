@@ -1013,6 +1013,10 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         elif self.cfg.rl == "grpo":
             training_args_cls = GRPOStrategy.get_training_args_class()
             training_args_kwargs.update(GRPOStrategy.set_training_args_kwargs(self.cfg))
+            blocklist_args_kwargs = GRPOStrategy.get_blocklist_args_kwargs()
+            for blocklist_key in blocklist_args_kwargs:
+                if blocklist_key in training_args_kwargs:
+                    del training_args_kwargs[blocklist_key]
 
         else:
             training_args_cls = DPOConfig.get_training_args_class()

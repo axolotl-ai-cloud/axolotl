@@ -57,3 +57,7 @@ class GRPOStrategy:
             return features
 
         return data_collator
+
+    @classmethod
+    def get_blocklist_args_kwargs(cls):
+        return ["dataset_num_proc"]
