@@ -256,6 +256,7 @@ class DPODataset(BaseModel):
     type: Optional[Union[UserDefinedDPOType, str]] = None
     data_files: Optional[List[str]] = None
     revision: Optional[str] = None
+    field_messages: Optional[str] = None
 
 
 class StepwiseSupervisedDataset(BaseModel):

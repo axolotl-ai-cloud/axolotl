@@ -35,15 +35,11 @@ class BTChatTemplateStrategy(ChatTemplateStrategy):
         max_length = self.prompter.max_length
 
         # pylint: disable=duplicate-code
-        prompt["chosen_messages"] = []
+        prompt["messages"] = []
         if prompt["system"]:
-            prompt["chosen_messages"].append(
-                {"role": "system", "content": prompt["system"]}
-            )
-        prompt["chosen_messages"].append({"role": "user", "content": prompt["input"]})
-        prompt["chosen_messages"].append(
-            {"role": "assistant", "content": prompt["chosen"]}
-        )
+            prompt["messages"].append({"role": "system", "content": prompt["system"]})
+        prompt["messages"].append({"role": "user", "content": prompt["input"]})
+        prompt["messages"].append({"role": "assistant", "content": prompt["chosen"]})
         chosen_tokenized = super()._tokenize_single_prompt(prompt)
 
         if len(chosen_tokenized["input_ids"]) > max_length:
@@ -57,15 +53,11 @@ class BTChatTemplateStrategy(ChatTemplateStrategy):
             ]
 
         # pylint: disable=duplicate-code
-        prompt["rejected_messages"] = []
+        prompt["messages"] = []
         if prompt["system"]:
-            prompt["rejected_messages"].append(
-                {"role": "system", "content": prompt["system"]}
-            )
-        prompt["rejected_messages"].append({"role": "user", "content": prompt["input"]})
-        prompt["rejected_messages"].append(
-            {"role": "assistant", "content": prompt["rejected"]}
-        )
+            prompt["messages"].append({"role": "system", "content": prompt["system"]})
+        prompt["messages"].append({"role": "user", "content": prompt["input"]})
+        prompt["messages"].append({"role": "assistant", "content": prompt["rejected"]})
         rejected_tokenized = super()._tokenize_single_prompt(prompt)
 
         if len(rejected_tokenized["input_ids"]) > max_length:
@@ -99,8 +91,13 @@ def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
     prompter_params = {
         "tokenizer": tokenizer,
         "chat_template": chat_template_string,
-        "message_property_mappings": ds_cfg.get("message_property_mappings", {}),
-        "field_messages": ds_cfg.get("field_messages", "messages"),
+        "message_property_mappings": ds_cfg.get(
+            "message_property_mappings",
+            {
+                "role": "role",
+                "content": "content",
+            },
+        ),
         "message_field_training": ds_cfg.get("message_field_training", None),
         "message_field_training_detail": ds_cfg.get(
             "message_field_training_detail", None
