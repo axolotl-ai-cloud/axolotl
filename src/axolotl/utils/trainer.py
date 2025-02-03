@@ -211,6 +211,8 @@ def drop_long_seq(sample, sequence_len=2048, min_sequence_len=2):
 
     Works for both single-example (list[int]) or batched (list[list[int]]).
     """
+    min_sequence_len = min_sequence_len or 2
+
     input_ids = sample["input_ids"]
 
     # Edge case: if input_ids is empty
