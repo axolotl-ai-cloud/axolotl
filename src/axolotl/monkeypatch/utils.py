@@ -144,7 +144,7 @@ def get_seqlens_from_pos_ids(position_ids):
         results.append(seq_lengths)
         totalseqlens.append(len(adjusted_row))
 
-    return results , totalseqlens
+    return results , torch.tensor(totalseqlens, dtype=torch.int32, device=device)
 
 
 def get_cu_seqlens_from_pos_ids(position_ids):
