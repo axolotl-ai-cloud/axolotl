@@ -1036,11 +1036,7 @@ class ModelLoader:
             or self.cfg.lora_qkv_kernel
             or self.cfg.lora_o_kernel
         ):
-            import ipdb
-
             from axolotl.monkeypatch.lora_kernels import apply_lora_kernel_patches
-
-            ipdb.set_trace()
 
             apply_lora_kernel_patches(self.model, self.cfg)
 

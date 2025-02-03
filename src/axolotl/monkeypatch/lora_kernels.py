@@ -1,4 +1,4 @@
-"""module for patching with unsloth optimizations"""
+"""Module for patching custom LoRA Triton kernels and torch.autograd functions."""
 
 import inspect
 import logging
