@@ -75,6 +75,10 @@ class LinearLlamaModel(LlamaModel):
 
 
 class LinearLlamaForCausalLM(LlamaForCausalLM):
+    """
+    Linear LLaMA model for causal language modeling.
+    """
+
     def __init__(self, config):
         super().__init__(config)
         self.model = LinearLlamaModel(config)
@@ -113,3 +117,21 @@ class LinearLlamaForCausalLM(LlamaForCausalLM):
         )
 
         return new_model
+
+    def toggle_attention(self, train: bool = True):
+        """
+        Toggle attention to be trainable or not
+        """
+        from axolotl.integrations.lolcats.linearize_attention import toggle_attention
+
+        toggle_attention(self.model, train=train)
+
+    def remove_base_attention(self):
+        """
+        Remove base attention after distillation
+        """
+        from axolotl.integrations.lolcats.linearize_attention import (
+            remove_base_attention,
+        )
+
+        remove_base_attention(self.model)

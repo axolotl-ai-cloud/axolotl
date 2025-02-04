@@ -62,3 +62,18 @@ class LinearLlamaConfig(LlamaConfig):
 
         # Set default attention config if none provided
         self.attention_config = attention_config
+
+    @classmethod
+    def from_llama(cls, llama_config: LlamaConfig, attention_config: dict):
+        """
+        Instantiate a LinearLlamaConfig from a LlamaConfig and additional attention config.
+
+        Args:
+            llama_config (:class:`~transformers.LlamaConfig`):
+                The LlamaConfig to inherit from.
+
+            attention_config (`dict`):
+                Dictionary containing the configuration for linear attention mechanism.
+        """
+
+        return cls(attention_config=attention_config, **llama_config.to_dict())
