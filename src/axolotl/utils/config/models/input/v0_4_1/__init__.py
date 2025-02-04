@@ -678,6 +678,7 @@ class AxolotlInputConfig(
     dpo_use_weighting: Optional[
         bool
     ] = None  # whether to use weighting in DPO trainer. If none, default is false in the trainer.
+    dpo_use_logits_to_keep: Optional[bool] = None
 
     datasets: Optional[conlist(Union[SFTDataset, DPODataset, KTODataset, StepwiseSupervisedDataset], min_length=1)] = None  # type: ignore
     test_datasets: Optional[conlist(Union[SFTDataset, DPODataset, KTODataset, StepwiseSupervisedDataset], min_length=1)] = None  # type: ignore
