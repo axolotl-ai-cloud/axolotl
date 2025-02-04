@@ -15,3 +15,4 @@ class GRPOConfig(BaseModel):
     grpo_vllm_device: Optional[str] = "auto"
     grpo_vllm_gpu_memory_utilization: Optional[float] = 0.9
     grpo_reward_funcs: Optional[List[str]] = None
+    grpo_num_generations: Optional[int] = None

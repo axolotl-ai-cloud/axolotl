@@ -34,6 +34,8 @@ class GRPOStrategy:
                 grpo_args_kwargs[
                     "vllm_gpu_memory_utilization"
                 ] = cfg.grpo_vllm_gpu_memory_utilization
+        if cfg.grpo_num_generations:
+            grpo_args_kwargs["num_generations"] = cfg.grpo_num_generations
         return grpo_args_kwargs
 
     @classmethod
