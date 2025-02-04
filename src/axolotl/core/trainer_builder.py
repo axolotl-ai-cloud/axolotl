@@ -653,7 +653,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         trainer_kwargs = {}
 
         if self.cfg.reward_model:
-            trainer_kwargs["max_length"] = self.cfg.sequence_len
+            training_arguments_kwargs["max_length"] = self.cfg.sequence_len
 
         # pylint: disable=duplicate-code
         if self.cfg.optimizer in [
