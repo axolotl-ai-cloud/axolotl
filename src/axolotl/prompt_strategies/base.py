@@ -22,7 +22,7 @@ def load(strategy, cfg, module_base=None, **kwargs):
                 module_base = ".".join(strategy.split(".")[:-2])
                 strategy = strategy.split(".")[-2]
             except ModuleNotFoundError:
-                pass
+                strategy = "." + ".".join(strategy.split(".")[:-1])
         else:
             strategy = "." + ".".join(strategy.split(".")[:-1])
         mod = importlib.import_module(strategy, module_base)
