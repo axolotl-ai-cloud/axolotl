@@ -46,6 +46,7 @@ from axolotl.utils.data.pretraining import wrap_pretraining_dataset
 from axolotl.utils.data.shared import load_dataset_w_config
 from axolotl.utils.data.utils import (
     deduplicate_and_log_datasets,
+    drop_long_seq_in_dataset,
     md5,
     retry_on_request_exceptions,
 )
@@ -56,7 +57,7 @@ from axolotl.utils.trainer import (
     process_datasets_for_packing,
 )
 
-LOG = logging.getLogger("axolotl")
+LOG = logging.getLogger(__name__)
 
 
 @retry_on_request_exceptions(max_retries=3, delay=5)
@@ -339,8 +340,11 @@ def load_tokenized_prepared_datasets(
             else:
                 LOG.debug("NOT shuffling merged datasets")
 
-        if cfg.sample_packing and not cfg.skip_prepare_dataset:
-            dataset, _ = process_datasets_for_packing(cfg, dataset, None)
+        if not cfg.skip_prepare_dataset:
+            dataset = drop_long_seq_in_dataset(dataset, cfg)
+
+            if cfg.sample_packing:
+                dataset, _ = process_datasets_for_packing(cfg, dataset, None)
 
         if cfg.local_rank == 0 and not cfg.skip_prepare_dataset:
             LOG.info(f"Saving merged prepared dataset to disk... {prepared_ds_path}")
