@@ -156,5 +156,8 @@ setup(
         "ray": [
             "ray[train]",
         ],
+        "vllm": [
+            "vllm>=0.7.1",
+        ],
     },
 )

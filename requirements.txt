@@ -26,7 +26,7 @@ sentencepiece
 gradio==3.50.2
 
 modal==0.70.5
-pydantic==2.6.3
+pydantic==2.10.6
 addict
 fire
 PyYAML>=6.0
