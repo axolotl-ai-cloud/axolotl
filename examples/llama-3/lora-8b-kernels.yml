@@ -37,7 +37,7 @@ pad_to_sequence_len: true
 
 lora_r: 16
 lora_alpha: 32
-lora_dropout: 0.05
+# lora_dropout: 0.05
 lora_fan_in_fan_out:
 lora_target_modules:
   - gate_proj
@@ -47,6 +47,12 @@ lora_target_modules:
   - v_proj
   - k_proj
   - o_proj
+
+# These options enable our custom Triton kernels / autograd
+# functions for MLP and attention calculations
+lora_mlp_kernel: true
+lora_qkv_kernel: true
+lora_o_kernel: true
 
 wandb_project:
 wandb_entity:
