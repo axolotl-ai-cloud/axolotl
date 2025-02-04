@@ -134,41 +134,39 @@ def get_attention(attention_type: str, **kwargs):
     kwargs["attention_type"] = attention_type
 
     if attention_type == "lolcats_llama":
-        from .linear_attention import LolcatsLinearAttention
+        from .linear_llama.attention import LolcatsLinearAttention
 
         return partial(LolcatsLinearAttention, **kwargs)
 
     elif attention_type == "lolcats_llama_window_tk":
-        from .linear_attention import LolcatsTKWindowAttention
+        from .linear_llama.attention import LolcatsTKWindowAttention
 
         return partial(LolcatsTKWindowAttention, **kwargs)
 
     elif attention_type == "lolcats_llama_window_sw":
-        from .linear_attention import LolcatsSlidingWindowAttention
+        from .linear_llama.attention import LolcatsSlidingWindowAttention
 
         return partial(LolcatsSlidingWindowAttention, **kwargs)
 
     elif attention_type == "lolcats_llama_window_sw_linear":
-        from .linear_attention.linear_window_attention_sw_linear import (
-            LolcatsLinearSlidingWindowAttention,
-        )
+        from .linear_llama.attention import LolcatsLinearSlidingWindowAttention
 
         return partial(LolcatsLinearSlidingWindowAttention, **kwargs)
 
     # Experimental chunked linear attentions below
     elif attention_type == "lolcats_long_llama_window_tk":
-        from .linear_attention import LolcatsTKWindowLongAttention
+        from .linear_llama.attention import LolcatsTKWindowLongAttention
 
         return partial(LolcatsTKWindowLongAttention, **kwargs)
 
     elif attention_type == "lolcats_long_llama_window_sw":
-        from .linear_attention import LolcatsSlidingWindowLongAttention
+        from .linear_llama.attention import LolcatsSlidingWindowLongAttention
 
         return partial(LolcatsSlidingWindowLongAttention, **kwargs)
 
     # TK generation build (requires Thunderkittens)
     elif attention_type == "lolcats_llama_window_tk_gen":
-        from .linear_attention import LolcatsWindowAttentionTKGen
+        from .linear_llama.attention import LolcatsWindowAttentionTKGen
 
         return partial(LolcatsWindowAttentionTKGen, **kwargs)
 
@@ -186,30 +184,28 @@ def get_attention_cache(attention_type: str, past_key_values: Any = None):
 
     # LOG.info(f'Returning attention cache based on attention_type == {attention_type}')
     elif "lolcats_llama_window_tk_gen" in attention_type:
-        from .linear_attention import LinearAttentionTKWindowGenerationCache
+        from .linear_llama.attention import LinearAttentionTKWindowGenerationCache
 
         return LinearAttentionTKWindowGenerationCache()
 
     elif "llama_window_tk" in attention_type:
-        from .linear_attention import LinearAttentionTKWindowCache
+        from .linear_llama.attention import LinearAttentionTKWindowCache
 
         return LinearAttentionTKWindowCache()
 
     elif "llama_window_sw" in attention_type:
-        from .linear_attention import LinearAttentionSlidingWindowCache
+        from .linear_llama.attention import LinearAttentionSlidingWindowCache
 
         return LinearAttentionSlidingWindowCache()
 
     elif "llama_window_sw_linear" in attention_type:
-        from .linear_attention import LinearAttentionSlidingWindowCache
+        from .linear_llama.attention import LinearAttentionSlidingWindowCache
 
         return LinearAttentionSlidingWindowCache()
 
     # TK generation build (requires Thunderkittens)
     elif attention_type == "lolcats_llama_window_tk_gen":
-        from .linear_attention.linear_window_attention_tk_gen import (
-            LinearAttentionTKWindowGenerationCache,
-        )
+        from .linear_llama.attention import LinearAttentionTKWindowGenerationCache
 
         return LinearAttentionTKWindowGenerationCache()
 
@@ -217,6 +213,6 @@ def get_attention_cache(attention_type: str, past_key_values: Any = None):
         return past_key_values
 
     else:
-        from .linear_attention import LinearAttentionState
+        from .linear_llama.attention import LinearAttentionState
 
         return LinearAttentionState()

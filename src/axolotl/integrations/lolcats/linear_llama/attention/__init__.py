@@ -6,6 +6,7 @@ from .linear_window_attention_sw import (
     LinearAttentionSlidingWindowCache,
     LolcatsSlidingWindowAttention,
 )
+from .linear_window_attention_sw_linear import LolcatsLinearSlidingWindowAttention
 from .linear_window_attention_sw_long import LolcatsSlidingWindowLongAttention
 from .linear_window_attention_tk import (
     LinearAttentionTKWindowCache,
