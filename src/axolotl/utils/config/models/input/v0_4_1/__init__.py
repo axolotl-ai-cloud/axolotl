@@ -758,6 +758,12 @@ class AxolotlInputConfig(
         default=512,
         json_schema_extra={"description": "maximum prompt length for RL training"},
     )
+    max_completion_length: Optional[int] = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Maximum length of the completion for RL training"
+        },
+    )
     sample_packing: Optional[bool] = None
     sample_packing_group_size: Optional[int] = 100_000
     sample_packing_bin_size: Optional[int] = 200
