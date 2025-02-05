@@ -44,4 +44,4 @@ class LinearAttentionArgs(BaseModel):
 
     attention_config: AttentionConfig
 
-    linearize: bool
+    linearize: Optional[bool] = False
