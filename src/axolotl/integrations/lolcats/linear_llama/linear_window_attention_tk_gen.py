@@ -11,9 +11,7 @@ import torch.nn.functional as F
 from .linear_attention import LinearAttentionState
 from .linear_window_attention_tk_long import LolcatsTKWindowLongAttention
 
-LOG = logging.getLogger(
-    "axolotl.integrations.lolcats.linear_attention.linear_attention_tk_gen"
-)
+LOG = logging.getLogger(__name__)
 
 try:
     from thunderkittens import hedgehog as tk_window_hedgehog_attention

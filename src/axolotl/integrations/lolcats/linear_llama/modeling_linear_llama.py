@@ -11,7 +11,7 @@
 
 import logging
 from functools import partial
-from typing import Any
+from typing import Any, Optional
 
 from torch import nn
 from tqdm import tqdm
@@ -23,7 +23,6 @@ from transformers.models.llama.modeling_llama import (
     LlamaRotaryEmbedding,
 )
 
-from .attention import LolcatsLinearAttention
 from .configuration_linear_llama import LinearLlamaConfig
 
 LOG = logging.getLogger(__name__)
@@ -36,11 +35,10 @@ class LinearLlamaDecoderLayer(LlamaDecoderLayer):
 
     def __init__(self, config: LinearLlamaConfig, layer_idx: int):
         super().__init__(config, layer_idx)
+
         # Replace the attention layer with our custom attention
-        self.self_attn = LolcatsLinearAttention(
-            base_attn=self.self_attn,  # type: ignore
-            layer_idx=layer_idx,
-            **config.attention_config,
+        self.self_attn = convert_llama_attention(
+            layer=self, attention_config=config.attention_config
         )
 
 
@@ -229,7 +227,7 @@ def traverse_layers(model: nn.Module, verbose: bool = False):
 def convert_llama_attention(
     layer: nn.Module,
     attention_config: dict,
-    layers: list[nn.Module],  # list of layers
+    layers: Optional[list[nn.Module]] = None,  # list of layers
     train_attention: bool = False,
     remove_base_attn: bool = True,
 ):
@@ -239,7 +237,7 @@ def convert_llama_attention(
     return get_attention(**attention_config)(
         base_attn=layer.self_attn,
         layer_idx=layer.self_attn.layer_idx,  # Transformers v4.36
-        max_layer_idx=len(layers) - 1,
+        max_layer_idx=len(layers) - 1 if layers else None,
         train_attention=train_attention,
         remove_base_attn=remove_base_attn,
     )
@@ -254,39 +252,41 @@ def get_attention(attention_type: str, **kwargs):
     kwargs["attention_type"] = attention_type
 
     if attention_type == "lolcats_llama":
-        from .attention import LolcatsLinearAttention
+        from .linear_attention import LolcatsLinearAttention
 
         return partial(LolcatsLinearAttention, **kwargs)
 
     elif attention_type == "lolcats_llama_window_tk":
-        from .attention import LolcatsTKWindowAttention
+        from .linear_window_attention_tk import LolcatsTKWindowAttention
 
         return partial(LolcatsTKWindowAttention, **kwargs)
 
     elif attention_type == "lolcats_llama_window_sw":
-        from .attention import LolcatsSlidingWindowAttention
+        from .linear_window_attention_sw import LolcatsSlidingWindowAttention
 
         return partial(LolcatsSlidingWindowAttention, **kwargs)
 
     elif attention_type == "lolcats_llama_window_sw_linear":
-        from .attention import LolcatsLinearSlidingWindowAttention
+        from .linear_window_attention_sw_linear import (
+            LolcatsLinearSlidingWindowAttention,
+        )
 
         return partial(LolcatsLinearSlidingWindowAttention, **kwargs)
 
     # Experimental chunked linear attentions below
     elif attention_type == "lolcats_long_llama_window_tk":
-        from .attention import LolcatsTKWindowLongAttention
+        from .linear_window_attention_tk_long import LolcatsTKWindowLongAttention
 
         return partial(LolcatsTKWindowLongAttention, **kwargs)
 
     elif attention_type == "lolcats_long_llama_window_sw":
-        from .attention import LolcatsSlidingWindowLongAttention
+        from .linear_window_attention_sw_long import LolcatsSlidingWindowLongAttention
 
         return partial(LolcatsSlidingWindowLongAttention, **kwargs)
 
     # TK generation build (requires Thunderkittens)
     elif attention_type == "lolcats_llama_window_tk_gen":
-        from .attention import LolcatsWindowAttentionTKGen
+        from .linear_window_attention_tk_gen import LolcatsWindowAttentionTKGen
 
         return partial(LolcatsWindowAttentionTKGen, **kwargs)
 
@@ -304,28 +304,32 @@ def get_attention_cache(attention_type: str, past_key_values: Any = None):
 
     # LOG.info(f'Returning attention cache based on attention_type == {attention_type}')
     elif "lolcats_llama_window_tk_gen" in attention_type:
-        from .attention import LinearAttentionTKWindowGenerationCache
+        from .linear_window_attention_tk_gen import (
+            LinearAttentionTKWindowGenerationCache,
+        )
 
         return LinearAttentionTKWindowGenerationCache()
 
     elif "llama_window_tk" in attention_type:
-        from .attention import LinearAttentionTKWindowCache
+        from .linear_window_attention_tk import LinearAttentionTKWindowCache
 
         return LinearAttentionTKWindowCache()
 
     elif "llama_window_sw" in attention_type:
-        from .attention import LinearAttentionSlidingWindowCache
+        from .linear_window_attention_sw import LinearAttentionSlidingWindowCache
 
         return LinearAttentionSlidingWindowCache()
 
     elif "llama_window_sw_linear" in attention_type:
-        from .attention import LinearAttentionSlidingWindowCache
+        from .linear_window_attention_sw import LinearAttentionSlidingWindowCache
 
         return LinearAttentionSlidingWindowCache()
 
     # TK generation build (requires Thunderkittens)
     elif attention_type == "lolcats_llama_window_tk_gen":
-        from .attention import LinearAttentionTKWindowGenerationCache
+        from .linear_window_attention_tk_gen import (
+            LinearAttentionTKWindowGenerationCache,
+        )
 
         return LinearAttentionTKWindowGenerationCache()
 
@@ -333,7 +337,7 @@ def get_attention_cache(attention_type: str, past_key_values: Any = None):
         return past_key_values
 
     else:
-        from .attention import LinearAttentionState
+        from .linear_attention import LinearAttentionState
 
         return LinearAttentionState()
 
@@ -348,3 +352,10 @@ def register_linear_llama():
     AutoConfig.register("linear_llama", LinearLlamaConfig)
     AutoModel.register(LinearLlamaConfig, LinearLlamaModel)
     AutoModelForCausalLM.register(LinearLlamaConfig, LinearLlamaForCausalLM)
+
+    # registering for auto classes to save files
+    LinearLlamaConfig.register_for_auto_class("AutoConfig")
+    LinearLlamaModel.register_for_auto_class("AutoModel")
+    LinearLlamaForCausalLM.register_for_auto_class("AutoModelForCausalLM")
+
+    print("registered transformers")

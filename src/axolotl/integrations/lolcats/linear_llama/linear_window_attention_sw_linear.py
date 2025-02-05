@@ -23,18 +23,15 @@ try:
 except ModuleNotFoundError:
     _flash_attention_forward = None  # Transformers v4.36
 
-from ..model.rotary import apply_rotary_pos_emb
-
 # Causal linear attention dot product CUDA kernel from fast-transformers
 from .linear_attention import (
     LinearAttentionState,
     LolcatsLinearAttention,
     causal_dot_product,
 )
+from .rotary import apply_rotary_pos_emb
 
-LOG = logging.getLogger(
-    "axolotl.integrations.lolcats.linear_attention.linear_window_attention_sw_long"
-)
+LOG = logging.getLogger(__name__)
 
 
 # ----------------------

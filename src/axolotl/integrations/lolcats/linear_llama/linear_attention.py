@@ -15,8 +15,8 @@ try:
 except ImportError:
     fast_causal_dot_product = None
 
-from ..model.feature_map import init_feature_map, init_learned_kernel
-from ..model.rotary import apply_rotary_pos_emb
+from .feature_map import init_feature_map, init_learned_kernel
+from .rotary import apply_rotary_pos_emb
 from .utils import repeat_kv
 
 # -------------------
