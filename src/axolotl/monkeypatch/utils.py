@@ -133,7 +133,7 @@ def get_packed_mask_from_pos_ids(position_ids):
                 i * doc_mask[start_id : start_id + seq_len]
             )
         if padding_length:
-            doc_mask[len(adjusted_row) :] = -100 * doc_mask[seq_lengths[-1] :]
+            doc_mask[len(adjusted_row) :] = -100 * doc_mask[len(adjusted_row) :]
 
         results.append(doc_mask)
 
