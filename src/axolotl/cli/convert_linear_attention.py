@@ -60,12 +60,6 @@ def do_linearize(cfg: DictDefault, cli_args: TrainerCliArgs) -> None:
         model, config=linear_llama_config, train_attention=True
     )
 
-    # register model
-    from transformers import AutoConfig, AutoModel
-
-    AutoConfig.register("linear_llama", LinearLlamaConfig)
-    AutoModel.register(LinearLlamaConfig, LinearLlamaForCausalLM)
-
     # set save_path, save tokenizer and model config.
     save_path = str(os.path.join(cfg.output_dir, "distilled"))
     tokenizer.save_pretrained(save_path)

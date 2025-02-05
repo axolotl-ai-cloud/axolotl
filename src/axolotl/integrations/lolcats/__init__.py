@@ -21,6 +21,16 @@ class LinearizePlugin(BasePlugin):
     Plugin for lolcats integration with Axolotl.
     """
 
+    def __init__(self):
+        super().__init__()
+
+        # Register the Linear Llama model with transformers
+        from axolotl.integrations.lolcats.linear_llama.modeling_linear_llama import (
+            register_linear_llama,
+        )
+
+        register_linear_llama()
+
     def get_input_args(self):
         return "axolotl.integrations.lolcats.LinearAttentionArgs"
 
