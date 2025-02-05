@@ -22,9 +22,10 @@ try:
 except ModuleNotFoundError:
     _flash_attention_forward = None  # Transformers v4.36
 
+from transformers.models.llama.modeling_llama import apply_rotary_pos_emb
+
 from .linear_attention import softmax_attention
 from .linear_window_attention_tk import LolcatsTKWindowAttention
-from .rotary import apply_rotary_pos_emb
 
 LOG = logging.getLogger(
     "axolotl.integrations.lolcats.linear_attention.linear_window_attention_tk_long"

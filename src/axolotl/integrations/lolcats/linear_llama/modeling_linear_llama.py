@@ -357,5 +357,3 @@ def register_linear_llama():
     LinearLlamaConfig.register_for_auto_class("AutoConfig")
     LinearLlamaModel.register_for_auto_class("AutoModel")
     LinearLlamaForCausalLM.register_for_auto_class("AutoModelForCausalLM")
-
-    print("registered transformers")
