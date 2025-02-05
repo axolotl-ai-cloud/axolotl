@@ -43,6 +43,9 @@ class GRPOStrategy:
                 ] = cfg.grpo_vllm_gpu_memory_utilization
         if cfg.grpo_num_generations:
             grpo_args_kwargs["num_generations"] = cfg.grpo_num_generations
+        grpo_args_kwargs["max_completion_length"] = (
+            cfg.max_completion_length or cfg.sequence_len
+        )
         return grpo_args_kwargs
 
     @classmethod
