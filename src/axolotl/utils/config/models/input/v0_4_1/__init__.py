@@ -24,7 +24,7 @@ from transformers.utils.import_utils import is_torch_npu_available
 
 from axolotl.utils.config.models.internals import EnvCapabilities, GPUCapabilities
 
-from .grpo import GRPOConfig
+from .trl import TrlConfig
 
 LOG = logging.getLogger("axolotl.utils.config.models.input")
 
@@ -648,7 +648,6 @@ class AxolotlInputConfig(
     MLFlowConfig,
     CometConfig,
     LISAConfig,
-    GRPOConfig,
     GradioConfig,
     RayConfig,
     RemappedParameters,
@@ -671,6 +670,9 @@ class AxolotlInputConfig(
     shrink_embeddings: Optional[bool] = None
 
     rl: Optional[RLType] = None
+    trl: Optional[TrlConfig] = Field(
+        default_factory=lambda: TrlConfig()  # pylint: disable=unnecessary-lambda
+    )
     reward_model: Optional[bool] = None
     process_reward_model: Optional[bool] = None
     num_labels: Optional[int] = None
@@ -756,12 +758,6 @@ class AxolotlInputConfig(
     max_prompt_len: int = Field(
         default=512,
         json_schema_extra={"description": "maximum prompt length for RL training"},
-    )
-    max_completion_length: Optional[int] = Field(
-        default=None,
-        json_schema_extra={
-            "description": "Maximum length of the completion for RL training"
-        },
     )
     sample_packing: Optional[bool] = None
     sample_packing_group_size: Optional[int] = 100_000

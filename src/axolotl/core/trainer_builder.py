@@ -969,8 +969,8 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         if self.cfg.dataset_processes:
             training_args_kwargs["dataset_num_proc"] = self.cfg.dataset_processes
 
-        if self.cfg.rl_beta:
-            training_args_kwargs["beta"] = self.cfg.rl_beta
+        if self.cfg.trl.beta or self.cfg.rl_beta:
+            training_args_kwargs["beta"] = self.cfg.trl.beta or self.cfg.rl_beta
         if self.cfg.orpo_alpha:
             # trl does some odd mapping of alpha to beta to reuse the beta parameter ???
             training_args_kwargs["beta"] = self.cfg.orpo_alpha
