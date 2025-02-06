@@ -292,6 +292,8 @@ datasets:
 In some `chat_templates` (like `gemma`), the roles are hardcoded to `user` and `assistant`. Consequently, you may find it necessary to map the roles in your dataset to these above. We currently have some defaults that should work for common datasets, but if you get a `KeyError`, it would be necessary to add mapping for your roles. Here is an example of how it would look like:
 
 ```yaml
+datasets:
+    ...
     roles:
       assistant:
         - gpt
@@ -309,6 +311,8 @@ The common use case for `chat_template` is for chat messages, therefore, it is c
 To train on all `assistant` messages, you would set the following configs.
 
 ```yaml
+datasets:
+    ...
     roles_to_train: ["assistant"]
     train_on_eos: "turn"
 ```
@@ -318,6 +322,8 @@ The second config means that it would mask all EOS tokens for turns that aren't 
 Perhaps, you want to train on `assistant` and `narrator` roles, you can simply add `narrator` to the list of `roles_to_train`. You would also need to add it to the mapping of `roles` above.
 
 ```yaml
+datasets:
+    ...
     roles:
       narrator: ["narrator"]
 ```
