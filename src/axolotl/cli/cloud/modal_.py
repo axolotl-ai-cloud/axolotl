@@ -217,7 +217,7 @@ class ModalCloud(Cloud):
             secrets=self.get_secrets(),
         )
 
-    def train(self, config_yaml: str, accelerate: bool = True):
+    def train(self, config_yaml: str, accelerate: bool = True, **kwargs):
         modal_fn = self.get_train_env()(_train)
         with modal.enable_output():
             with self.app.run(detach=True):
@@ -225,6 +225,7 @@ class ModalCloud(Cloud):
                     config_yaml,
                     accelerate=accelerate,
                     volumes={k: v[0] for k, v in self.volumes.items()},
+                    **kwargs,
                 )
 
     def lm_eval(self, config_yaml: str):
@@ -255,7 +256,7 @@ def _preprocess(config_yaml: str, volumes=None):
     )
 
 
-def _train(config_yaml: str, accelerate: bool = True, volumes=None):
+def _train(config_yaml: str, accelerate: bool = True, volumes=None, **kwargs):
     with open(
         "/workspace/artifacts/axolotl/config.yaml", "w", encoding="utf-8"
     ) as f_out:
@@ -265,8 +266,11 @@ def _train(config_yaml: str, accelerate: bool = True, volumes=None):
         accelerate_args = "--accelerate"
     else:
         accelerate_args = "--no-accelerate"
+    num_processes_args = ""
+    if num_processes := kwargs.pop("num_processes", None):
+        num_processes_args = f"--num-processes {num_processes}"
     run_cmd(
-        f"axolotl train {accelerate_args} /workspace/artifacts/axolotl/config.yaml",
+        f"axolotl train {accelerate_args} {num_processes_args} /workspace/artifacts/axolotl/config.yaml",
         run_folder,
         volumes,
     )
