@@ -23,7 +23,10 @@ def run_cmd(cmd: str, run_folder: str, volumes=None):
     # modal workaround so it doesn't use the automounted axolotl
     new_env = copy.deepcopy(os.environ)
     if "PYTHONPATH" in new_env:
-        del new_env["PYTHONPATH"]
+        python_path = Path(new_env["PYTHONPATH"].split(":")[0])
+        if python_path.joinpath("src", "axolotl").exists():
+            # we don't want to use the automounted axolotl or unexpected behavior happens
+            del new_env["PYTHONPATH"]
 
     # Propagate errors from subprocess.
     if exit_code := subprocess.call(  # nosec B603
