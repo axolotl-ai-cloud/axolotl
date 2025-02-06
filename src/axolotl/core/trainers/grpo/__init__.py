@@ -31,33 +31,43 @@ class GRPOStrategy:
     @classmethod
     def set_training_args_kwargs(cls, cfg):
         grpo_args_kwargs = {}
-        if cfg.grpo_use_vllm:
-            grpo_args_kwargs["use_vllm"] = cfg.grpo_use_vllm
-            if cfg.grpo_vllm_device:
-                grpo_args_kwargs["vllm_device"] = cfg.grpo_vllm_device
+        if cfg.trl and cfg.trl.use_vllm:
+            grpo_args_kwargs["use_vllm"] = cfg.trl.use_vllm
+            if cfg.trl.vllm_device:
+                grpo_args_kwargs["vllm_device"] = cfg.trl.vllm_device
             else:
                 grpo_args_kwargs["vllm_device"] = "auto"
-            if cfg.grpo_vllm_gpu_memory_utilization:
+            if cfg.trl.vllm_gpu_memory_utilization:
                 grpo_args_kwargs[
                     "vllm_gpu_memory_utilization"
-                ] = cfg.grpo_vllm_gpu_memory_utilization
-        if cfg.grpo_num_generations:
-            grpo_args_kwargs["num_generations"] = cfg.grpo_num_generations
-        grpo_args_kwargs["max_completion_length"] = cfg.max_completion_length
+                ] = cfg.trl.vllm_gpu_memory_utilization
+            if cfg.trl.vllm_max_model_len:
+                grpo_args_kwargs["vllm_max_model_len"] = cfg.trl.vllm_max_model_len
+        if cfg.trl and cfg.trl.num_generations:
+            grpo_args_kwargs["num_generations"] = cfg.trl.num_generations
+        if cfg.trl and cfg.trl.sync_ref_model:
+            grpo_args_kwargs["sync_ref_model"] = cfg.trl.sync_ref_model
+            if cfg.trl.ref_model_mixup_alpha:
+                grpo_args_kwargs[
+                    "ref_model_mixup_alpha"
+                ] = cfg.trl.ref_model_mixup_alpha
+            if cfg.trl.ref_model_sync_steps:
+                grpo_args_kwargs["ref_model_sync_steps"] = cfg.trl.ref_model_sync_steps
+        grpo_args_kwargs["max_completion_length"] = cfg.trl.max_completion_length
         return grpo_args_kwargs
 
     @classmethod
     def set_trainer_kwargs(cls, cfg):
         trainer_kwargs = {}
-        if cfg.grpo_reward_funcs:
+        if cfg.trl and cfg.trl.reward_funcs:
             reward_funcs = []
-            for reward_func_fqn in cfg.grpo_reward_funcs:
+            for reward_func_fqn in cfg.trl.reward_funcs:
                 reward_funcs.append(cls.get_reward_func(reward_func_fqn))
             trainer_kwargs["reward_funcs"] = reward_funcs
-        if cfg.grpo_reward_processing_classes:
+        if cfg.trl and cfg.trl.reward_processing_classes:
             trainer_kwargs[
                 "reward_processing_classes"
-            ] = cfg.grpo_reward_processing_classes
+            ] = cfg.trl.reward_processing_classes
         return trainer_kwargs
 
     @classmethod
