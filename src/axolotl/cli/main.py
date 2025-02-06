@@ -200,7 +200,9 @@ def train(
         try:
             if accelerate:
                 if cloud:
-                    do_cli_train(cloud_config=cloud, config=config, accelerate=True)
+                    do_cli_train(
+                        cloud_config=cloud, config=config, accelerate=True, **kwargs
+                    )
                 else:
                     accelerate_args = []
                     if "main_process_port" in kwargs:
