@@ -48,7 +48,10 @@ Given a few corpus files: `A.jsonl`, `B.jsonl`, and `C.jsonl`, your config will 
 ```yaml
 pretraining_dataset:
   - path: json
-    data_files: ["A.jsonl", "B.jsonl", "C.jsonl"]
+    data_files:
+      - A.jsonl
+      - B.jsonl
+      - C.jsonl
 ```
 
 While we recommend `.jsonl`, you can also use the other formats (`csv`, `parquet`, `arrow`, `SQL`, `Webdataset`) that are supported by [`Dataset.load_dataset`](https://huggingface.co/docs/datasets/loading#local-and-remote-files)
