@@ -282,6 +282,8 @@ We currently default to OpenAI format for dataset keys, so if that's your curren
 If your dataset format is different, here are the keys you should check (with their defaults):
 
 ```yaml
+datasets:
+    ...
     field_messages: messages
     message_field_role: role
     message_field_content: content
