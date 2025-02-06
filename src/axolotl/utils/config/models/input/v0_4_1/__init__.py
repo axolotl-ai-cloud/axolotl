@@ -672,7 +672,7 @@ class AxolotlInputConfig(
 
     rl: Optional[RLType] = None
     trl: Optional[TrlConfig] = Field(
-        default_factory=lambda: TrlConfig()  # pylint: disable=unnecessary-lambda
+        default_factory=lambda: TrlConfig(),  # pylint: disable=unnecessary-lambda
     )
     reward_model: Optional[bool] = None
     process_reward_model: Optional[bool] = None
