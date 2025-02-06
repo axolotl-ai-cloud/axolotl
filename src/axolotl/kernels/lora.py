@@ -13,6 +13,7 @@ from typing import Callable
 import torch
 from bitsandbytes.functional import QuantState
 from torch import nn
+from torch.distributed.fsdp import FullyShardedDataParallel
 
 from .geglu import geglu_backward, geglu_forward
 from .quantize import dequantize
@@ -71,24 +72,40 @@ def matmul_lora(
     s: float,
     out: torch.Tensor | None = None,
 ) -> torch.Tensor:
-    """
-    Matrix multiplication with LoRA.
-
+    """Matrix multiplication handling both sharded base weights and LoRA.
+    
     Args:
         X: Input tensor
-        W: Base weight matrix
+        W: Base weight matrix (sharded by FSDP)
         W_quant: Quantization state
-        A: LoRA A matrix
-        B: LoRA B matrix
+        A: LoRA A matrix (may be sharded by FSDP)
+        B: LoRA B matrix (may be sharded by FSDP)
         s: LoRA scaling factor
-        out: Optional output tensor for in-place ops
-
-    Returns:
-        Result of `X @ W + s * X @ A @ B` computation
     """
     device = X.device
+    dtype = X.dtype
+
+    print(f"Initial tensors:")
+    print(f"X: {X.shape}, {X.dtype}, {X.device}, requires_grad={X.requires_grad}")
+    print(f"W: {W.shape}, {W.dtype}, {W.device}, requires_grad={W.requires_grad}")
+    if A is not None:
+        print(f"A: {A.shape}, {A.dtype}, {A.device}, requires_grad={A.requires_grad}")
+        print(f"A is_leaf={A.is_leaf}, gradient_fn={A.grad_fn}")
+    if B is not None:
+        print(f"B: {B.shape}, {B.dtype}, {B.device}, requires_grad={B.requires_grad}")
+        print(f"B is_leaf={B.is_leaf}, gradient_fn={B.grad_fn}")
+
+    # Handle base weights (which may be sharded)
     W = W.to(device)
     W = dequantize(W.t(), W_quant)
+    W = W.to(dtype)
+
+    # Handle FSDP flattened weights
+    if W.dim() <= 2 and W.size(0) == 1:
+        input_dim = X.size(-1)
+        W = W.view(input_dim, -1)
+
+    print(f"After W reshape: {W.shape}")
 
     if X.dim() == 3:
         batch, seq_len, _ = X.shape
@@ -96,16 +113,47 @@ def matmul_lora(
         reshape = True
     else:
         reshape = False
+    
+    print(f"After X reshape: {X.shape}")
 
+    # Base projection with reshaped weights
     out = torch.matmul(X, W, out=out)
+    print(f"After base matmul: {out.shape}")
+
     if W_quant is not None:
         del W
 
-    if A is not None:
+    # Handle sharded LoRA matrices - no explicit gathering needed
+    if A is not None and B is not None:
+        A = A.to(device).to(dtype)
+        B = B.to(device).to(dtype)
         A, B = A.t(), B.t()
-        out += (X @ A.to(X.dtype)) @ (s * B.to(X.dtype))
 
-    return out.view(batch, seq_len, -1) if reshape else out
+        print(f"LoRA shapes:")
+        print(f"A transposed: {A.shape}")
+        print(f"B transposed: {B.shape}")
+
+        try:
+            print(f"X.dtype: {X.dtype}")
+            print(f"X.device: {X.device}")
+            print(f"A.dtype: {A.dtype}")
+            print(f"A.device: {A.device}")
+            print(f"X: {X}")
+            print(f"A: {A}")
+            print()
+
+            temp = X @ A
+            print(f"X @ A shape: {temp.shape}")
+            temp = temp @ (s * B)
+            print(f"(X @ A) @ B shape: {temp.shape}")
+            out += temp
+        except RuntimeError as e:
+            print(f"Error in LoRA matmul: {e}")
+            raise
+
+    result = out.view(batch, seq_len, -1) if reshape else out
+    print(f"Final shape: {result.shape}")
+    return result
 
 
 class LoRA_MLP(torch.autograd.Function):
