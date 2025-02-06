@@ -221,7 +221,9 @@ def train(
                     subprocess.run(cmd, check=True)  # nosec B603
             else:
                 if cloud:
-                    do_cli_train(cloud_config=cloud, config=config, accelerate=False)
+                    do_cli_train(
+                        cloud_config=cloud, config=config, accelerate=False, **kwargs
+                    )
                 else:
                     from axolotl.cli.train import do_cli
 
