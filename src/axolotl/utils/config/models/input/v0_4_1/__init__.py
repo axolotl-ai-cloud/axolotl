@@ -1696,3 +1696,19 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             else:
                 data["torch_compile"] = False
         return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_hymba_torch_version(cls, data):
+        if "hymba" in data.get("base_model", {}).lower():
+            env_capabilities = data.get("env_capabilities", {})
+            torch_version = env_capabilities.get("torch_version")
+
+            if torch_version is None:
+                import torch
+
+                torch_version = str(torch.__version__).split("+", maxsplit=1)[0]
+
+            if version.parse(torch_version) < version.parse("2.5.0"):
+                raise ValueError("Hymba requires torch version >= 2.5")
+        return data
