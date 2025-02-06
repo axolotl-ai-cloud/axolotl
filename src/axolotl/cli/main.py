@@ -2,6 +2,7 @@
 # pylint: disable=redefined-outer-name
 
 import logging
+import os
 import random
 import subprocess  # nosec B404
 import tempfile
@@ -200,8 +201,9 @@ def train(
         try:
             if accelerate:
                 if cloud:
+                    cwd = os.getcwd()
                     do_cli_train(
-                        cloud_config=cloud, config=config, accelerate=True, **kwargs
+                        cloud_config=cloud, config=config, accelerate=True, cwd=cwd, **kwargs
                     )
                 else:
                     accelerate_args = []

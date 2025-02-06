@@ -7,6 +7,7 @@ import os
 import subprocess  # nosec B404
 from pathlib import Path
 from random import randint
+from typing import Optional
 
 import modal
 
@@ -22,11 +23,16 @@ def run_cmd(cmd: str, run_folder: str, volumes=None):
 
     # modal workaround so it doesn't use the automounted axolotl
     new_env = copy.deepcopy(os.environ)
+
     if "PYTHONPATH" in new_env:
-        python_path = Path(new_env["PYTHONPATH"].split(":")[0])
-        if python_path.joinpath("src", "axolotl").exists():
-            # we don't want to use the automounted axolotl or unexpected behavior happens
-            del new_env["PYTHONPATH"]
+        paths = ["/workspace/mounts"]
+        for sub_python_path_str in new_env["PYTHONPATH"].split(":"):
+            sub_python_path = Path(sub_python_path_str)
+            if not sub_python_path.joinpath("src", "axolotl").exists():
+                # we don't want to use the automounted axolotl or unexpected behavior happens
+                paths.append(str(sub_python_path))
+        if paths:
+            new_env["PYTHONPATH"] = ":".join(paths)
 
     # Propagate errors from subprocess.
     if exit_code := subprocess.call(  # nosec B603
@@ -206,9 +212,12 @@ class ModalCloud(Cloud):
             memory = int(self.config.memory)
         return 1024 * memory
 
-    def get_train_env(self):
+    def get_train_env(self, local_dirs=None):
+        image = self.get_image()
+        for mount, local_dir in (local_dirs or {}).items():
+            image = image.add_local_dir(local_dir, mount)
         return self.app.function(
-            image=self.get_image(),
+            image=image,
             volumes={k: v[0] for k, v in self.volumes.items()},
             cpu=16.0,
             gpu=self.get_train_gpu(),
@@ -217,8 +226,14 @@ class ModalCloud(Cloud):
             secrets=self.get_secrets(),
         )
 
-    def train(self, config_yaml: str, accelerate: bool = True, **kwargs):
-        modal_fn = self.get_train_env()(_train)
+    def train(
+        self,
+        config_yaml: str,
+        accelerate: bool = True,
+        local_dirs: Optional[dict[str, str]] = None,
+        **kwargs,
+    ):
+        modal_fn = self.get_train_env(local_dirs)(_train)
         with modal.enable_output():
             with self.app.run(detach=True):
                 modal_fn.remote(
