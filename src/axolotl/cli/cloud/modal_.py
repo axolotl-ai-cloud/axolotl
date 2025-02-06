@@ -33,6 +33,8 @@ def run_cmd(cmd: str, run_folder: str, volumes=None):
                 paths.append(str(sub_python_path))
         if paths:
             new_env["PYTHONPATH"] = ":".join(paths)
+        else:
+            del new_env["PYTHONPATH"]
 
     # Propagate errors from subprocess.
     if exit_code := subprocess.call(  # nosec B603
