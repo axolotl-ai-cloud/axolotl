@@ -50,34 +50,42 @@ def dequantize(
     if quant_state is None:
         return W
 
+    # Get the target device from input tensor W
+    target_device = W.device
+
     # Extract quantization state
     if not isinstance(quant_state, list):
         # New style quant_state class
-        absmax = quant_state.absmax
+        absmax = quant_state.absmax.to(target_device)
         shape = quant_state.shape
         dtype = quant_state.dtype
         blocksize = quant_state.blocksize
-        offset = quant_state.offset
+        offset = quant_state.offset.to(target_device)
         state2 = quant_state.state2
-        absmax2 = state2.absmax
-        code2 = state2.code
+        absmax2 = state2.absmax.to(target_device)
+        code2 = state2.code.to(target_device)
         blocksize2 = state2.blocksize
     else:
         # Legacy list format
         absmax, shape, dtype, blocksize, compressed_stats, _, _ = quant_state
+        absmax = absmax.to(target_device)
         offset, state2 = compressed_stats
+        offset = offset.to(target_device)
         absmax2, code2, blocksize2, _, _, _, _ = state2
+        absmax2 = absmax2.to(target_device)
+        code2 = code2.to(target_device)
 
-    # Setup output tensor
+    # Setup output tensor on the same device as input
     if out is None:
-        out = torch.empty(shape, dtype=dtype, device="cuda:0")
+        out = torch.empty(shape, dtype=dtype, device=target_device)
     else:
         assert out.shape == shape and out.dtype == dtype
+        out = out.to(target_device)
 
-    # Dequantize statistics
+    # Dequantize statistics on the target device
     n_elements_absmax: int = absmax.numel()
     out_absmax: torch.Tensor = torch.empty(
-        n_elements_absmax, dtype=torch.float32, device="cuda:0"
+        n_elements_absmax, dtype=torch.float32, device=target_device
     )
     ptr_out_absmax: int = get_ptr(out_absmax)
 
@@ -85,7 +93,7 @@ def dequantize(
     if HAS_CUDA_STREAM:
         global CUDA_STREAM
         if CUDA_STREAM is None:
-            CUDA_STREAM = torch.cuda.current_stream("cuda:0")
+            CUDA_STREAM = torch.cuda.current_stream(target_device)
 
         cdequantize_blockwise_fp32(
             get_ptr(code2),

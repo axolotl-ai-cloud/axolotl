@@ -13,7 +13,6 @@ from typing import Callable
 import torch
 from bitsandbytes.functional import QuantState
 from torch import nn
-from torch.distributed.fsdp import FullyShardedDataParallel
 
 from .geglu import geglu_backward, geglu_forward
 from .quantize import dequantize
@@ -72,40 +71,20 @@ def matmul_lora(
     s: float,
     out: torch.Tensor | None = None,
 ) -> torch.Tensor:
-    """Matrix multiplication handling both sharded base weights and LoRA.
-    
-    Args:
-        X: Input tensor
-        W: Base weight matrix (sharded by FSDP)
-        W_quant: Quantization state
-        A: LoRA A matrix (may be sharded by FSDP)
-        B: LoRA B matrix (may be sharded by FSDP)
-        s: LoRA scaling factor
     """
-    device = X.device
+    Efficient fused matmul + LoRA computation.
+
+    Args:
+        X: Input tensor [*, in_features]
+        W: Base weight matrix [out_features, in_features]
+        W_quant: Quantization state for W
+        A: LoRA A matrix [rank, in_features]
+        B: LoRA B matrix [out_features, rank]
+        s: LoRA scaling factor
+        out: Optional output tensor for inplace operations
+    """
     dtype = X.dtype
-
-    print(f"Initial tensors:")
-    print(f"X: {X.shape}, {X.dtype}, {X.device}, requires_grad={X.requires_grad}")
-    print(f"W: {W.shape}, {W.dtype}, {W.device}, requires_grad={W.requires_grad}")
-    if A is not None:
-        print(f"A: {A.shape}, {A.dtype}, {A.device}, requires_grad={A.requires_grad}")
-        print(f"A is_leaf={A.is_leaf}, gradient_fn={A.grad_fn}")
-    if B is not None:
-        print(f"B: {B.shape}, {B.dtype}, {B.device}, requires_grad={B.requires_grad}")
-        print(f"B is_leaf={B.is_leaf}, gradient_fn={B.grad_fn}")
-
-    # Handle base weights (which may be sharded)
-    W = W.to(device)
     W = dequantize(W.t(), W_quant)
-    W = W.to(dtype)
-
-    # Handle FSDP flattened weights
-    if W.dim() <= 2 and W.size(0) == 1:
-        input_dim = X.size(-1)
-        W = W.view(input_dim, -1)
-
-    print(f"After W reshape: {W.shape}")
 
     if X.dim() == 3:
         batch, seq_len, _ = X.shape
@@ -113,47 +92,16 @@ def matmul_lora(
         reshape = True
     else:
         reshape = False
-    
-    print(f"After X reshape: {X.shape}")
 
-    # Base projection with reshaped weights
     out = torch.matmul(X, W, out=out)
-    print(f"After base matmul: {out.shape}")
-
     if W_quant is not None:
         del W
 
-    # Handle sharded LoRA matrices - no explicit gathering needed
-    if A is not None and B is not None:
-        A = A.to(device).to(dtype)
-        B = B.to(device).to(dtype)
+    if A is not None:
         A, B = A.t(), B.t()
+        out += (X @ A.to(dtype)) @ (s * B.to(dtype))
 
-        print(f"LoRA shapes:")
-        print(f"A transposed: {A.shape}")
-        print(f"B transposed: {B.shape}")
-
-        try:
-            print(f"X.dtype: {X.dtype}")
-            print(f"X.device: {X.device}")
-            print(f"A.dtype: {A.dtype}")
-            print(f"A.device: {A.device}")
-            print(f"X: {X}")
-            print(f"A: {A}")
-            print()
-
-            temp = X @ A
-            print(f"X @ A shape: {temp.shape}")
-            temp = temp @ (s * B)
-            print(f"(X @ A) @ B shape: {temp.shape}")
-            out += temp
-        except RuntimeError as e:
-            print(f"Error in LoRA matmul: {e}")
-            raise
-
-    result = out.view(batch, seq_len, -1) if reshape else out
-    print(f"Final shape: {result.shape}")
-    return result
+    return out.view(batch, seq_len, -1) if reshape else out
 
 
 class LoRA_MLP(torch.autograd.Function):
@@ -599,24 +547,29 @@ class LoRA_QKV(torch.autograd.Function):
         # Pre-transpose X once
         X_t = X.t()
 
-        # Pre-compute scaled LoRA weights to avoid repeated dtype conversions
-        A_q_scaled = (q_scale * A_q).to(dtype)
-        B_q_scaled = B_q.to(dtype)
-        A_k_scaled = (k_scale * A_k).to(dtype)
-        B_k_scaled = B_k.to(dtype)
-        A_v_scaled = (v_scale * A_v).to(dtype)
-        B_v_scaled = B_v.to(dtype)
+        # Initialize LoRA gradients as None
+        d_A_q = d_B_q = d_A_k = d_B_k = d_A_v = d_B_v = None
 
-        # Compute all LoRA gradients using efficient matrix ops
-        # Reuse buffers where possible
-        d_A_q = torch.mm(X_t, torch.mm(q_grad, B_q_scaled))
-        d_B_q = torch.mm(torch.mm(A_q_scaled, X_t), q_grad)
+        # Compute q path LoRA gradients if adapters exist
+        if A_q is not None and B_q is not None:
+            A_q_scaled = (q_scale * A_q).to(dtype)
+            B_q_scaled = B_q.to(dtype)
+            d_A_q = torch.mm(X_t, torch.mm(q_grad, B_q_scaled))
+            d_B_q = torch.mm(torch.mm(A_q_scaled, X_t), q_grad)
 
-        d_A_k = torch.mm(X_t, torch.mm(k_grad, B_k_scaled))
-        d_B_k = torch.mm(torch.mm(A_k_scaled, X_t), k_grad)
+        # Compute k path LoRA gradients if adapters exist
+        if A_k is not None and B_k is not None:
+            A_k_scaled = (k_scale * A_k).to(dtype)
+            B_k_scaled = B_k.to(dtype)
+            d_A_k = torch.mm(X_t, torch.mm(k_grad, B_k_scaled))
+            d_B_k = torch.mm(torch.mm(A_k_scaled, X_t), k_grad)
 
-        d_A_v = torch.mm(X_t, torch.mm(v_grad, B_v_scaled))
-        d_B_v = torch.mm(torch.mm(A_v_scaled, X_t), v_grad)
+        # Compute v path LoRA gradients if adapters exist
+        if A_v is not None and B_v is not None:
+            A_v_scaled = (v_scale * A_v).to(dtype)
+            B_v_scaled = B_v.to(dtype)
+            d_A_v = torch.mm(X_t, torch.mm(v_grad, B_v_scaled))
+            d_B_v = torch.mm(torch.mm(A_v_scaled, X_t), v_grad)
 
         # Compute input gradient, reusing X memory if possible
         out_buffer = X if ctx.inplace else None
@@ -626,38 +579,55 @@ class LoRA_QKV(torch.autograd.Function):
         grad_X = torch.mm(q_grad, q_weight_t, out=out_buffer)
         del q_weight
         del q_weight_t
-        grad_X.addmm_(q_grad, torch.mm(B_q_scaled, A_q_scaled))
+        if A_q is not None and B_q is not None:
+            grad_X.addmm_(q_grad, torch.mm(B_q_scaled, A_q_scaled))
 
         # K path
         k_weight_t = dequantize(k_weight, k_quant)
         grad_X.addmm_(k_grad, k_weight_t)
         del k_weight
         del k_weight_t
-        grad_X.addmm_(k_grad, torch.mm(B_k_scaled, A_k_scaled))
+        if A_k is not None and B_k is not None:
+            grad_X.addmm_(k_grad, torch.mm(B_k_scaled, A_k_scaled))
 
         # V path
         v_weight_t = dequantize(v_weight, v_quant)
         grad_X.addmm_(v_grad, v_weight_t)
         del v_weight
         del v_weight_t
-        grad_X.addmm_(v_grad, torch.mm(B_v_scaled, A_v_scaled))
+        if A_v is not None and B_v is not None:
+            grad_X.addmm_(v_grad, torch.mm(B_v_scaled, A_v_scaled))
+
+        # Transpose gradients if needed
+        if d_A_q is not None:
+            d_A_q = d_A_q.t()
+        if d_B_q is not None:
+            d_B_q = d_B_q.t()
+        if d_A_k is not None:
+            d_A_k = d_A_k.t()
+        if d_B_k is not None:
+            d_B_k = d_B_k.t()
+        if d_A_v is not None:
+            d_A_v = d_A_v.t()
+        if d_B_v is not None:
+            d_B_v = d_B_v.t()
 
         return (
             grad_X.view(batch, seq_len, -1),
             None,
             None,
-            d_A_q.t(),
-            d_B_q.t(),
+            d_A_q,
+            d_B_q,
             None,
             None,
             None,
-            d_A_k.t(),
-            d_B_k.t(),
+            d_A_k,
+            d_B_k,
             None,
             None,
             None,
-            d_A_v.t(),
-            d_B_v.t(),
+            d_A_v,
+            d_B_v,
             None,
             None,
         )

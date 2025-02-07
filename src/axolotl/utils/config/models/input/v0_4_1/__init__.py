@@ -1,7 +1,4 @@
-"""
-Module for pydantic models for configuration
-"""
-
+"""Module with Pydantic models for configuration."""
 # pylint: disable=too-many-lines
 
 import logging
@@ -1544,19 +1541,19 @@ class AxolotlInputConfig(
                 )
         return data
 
-    # @model_validator(mode="before")
-    # @classmethod
-    # def check_lora_8bit(cls, data):
-    #     if (
-    #         data.get("lora_mlp")
-    #         or data.get("lora_qkv")
-    #         or data.get("lora_o")
-    #     ):
-    #         if data.get("adapter") == "lora" or data.get("load_in_8bit"):
-    #             raise ValueError(
-    #                 "lora_mlp, lora_mlp, and lora_mlp are not compatible with 8-bit LoRA"
-    #             )
-    #     return data
+    @model_validator(mode="before")
+    @classmethod
+    def check_lora_8bit(cls, data):
+        if (
+            data.get("lora_mlp_kernel")
+            or data.get("lora_qkv_kernel")
+            or data.get("lora_o_kernel")
+        ):
+            if data.get("adapter") == "lora" or data.get("load_in_8bit"):
+                raise ValueError(
+                    "lora_mlp_kernel, lora_mlp_kernel, and lora_mlp_kernel are not compatible with 8-bit LoRA"
+                )
+        return data
 
     @model_validator(mode="before")
     @classmethod
@@ -1570,7 +1567,7 @@ class AxolotlInputConfig(
         )
         if is_lora_kernel and is_unsloth_lora:
             raise ValueError(
-                "both lora_mlp_kernel and unsloth_lora_mlp cannot be true (similarly for lora_qkv, lora_o)"
+                "both lora_mlp_kernel and unsloth_lora_mlp cannot be true (similarly for lora_qkv_kernel, lora_o_kernel)"
             )
         return data
 
@@ -1704,6 +1701,29 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 raise ValueError(
                     "unsloth_lora_mlp, unsloth_lora_qkv, and unsloth_lora_o are not compatible with multi-GPU training."
                 )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_multigpu_lora_kernels(cls, data):
+        if (
+            data.get("lora_mlp_kernel")
+            or data.get("lora_qkv_kernel")
+            or data.get("lora_o_kernel")
+        ):
+            capabilities = data.get("capabilities")
+            is_fsdp = data.get("fsdp") is not None
+            is_deepspeed = data.get("deepspeed") is not None
+
+            if capabilities and capabilities.get("n_gpu", 0) > 1:
+                if is_fsdp:
+                    raise ValueError(
+                        "lora_mlp_kernel, lora_qkv_kernel, and lora_o_kernel are not compatible with FSDP."
+                    )
+                if is_deepspeed:
+                    raise ValueError(
+                        "lora_mlp_kernel, lora_qkv_kernel, and lora_o_kernel are not compatible with DeepSpeed."
+                    )
         return data
 
     @model_validator(mode="before")
