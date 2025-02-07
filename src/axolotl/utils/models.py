@@ -357,8 +357,8 @@ class ModelLoader:
 
         # init model kwargs
         self.model_kwargs: Dict[str, Any] = {}
-        if cfg.model_kwargs:
-            for key, val in cfg.model_kwargs.items():
+        if cfg.overrides_of_model_kwargs:
+            for key, val in cfg.overrides_of_model_kwargs.items():
                 self.model_kwargs[key] = val
 
         # init model

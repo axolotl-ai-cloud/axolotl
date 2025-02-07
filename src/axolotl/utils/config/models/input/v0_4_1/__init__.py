@@ -115,6 +115,9 @@ class RemappedParameters(BaseModel):
     overrides_of_model_config: Optional[Dict[str, Any]] = Field(
         default=None, alias="model_config"
     )
+    overrides_of_model_kwargs: Optional[Dict[str, Any]] = Field(
+        default=None, alias="model_kwargs"
+    )
     type_of_model: Optional[str] = Field(default=None, alias="model_type")
     revision_of_model: Optional[str] = Field(default=None, alias="model_revision")
 
