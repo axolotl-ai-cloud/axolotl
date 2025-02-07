@@ -157,7 +157,7 @@ setup(
             "ray[train]",
         ],
         "vllm": [
-            "vllm>=0.6.3.post1",
+            "vllm==0.7.2",
         ],
     },
 )
