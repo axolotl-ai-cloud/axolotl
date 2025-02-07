@@ -1,7 +1,7 @@
 --extra-index-url https://huggingface.github.io/autogptq-index/whl/cu118/
 
 # START section of dependencies that don't install on Darwin/MacOS
-bitsandbytes==0.45.1
+bitsandbytes==0.45.2
 triton>=3.0.0
 mamba-ssm==1.2.0.post1
 flash-attn==2.7.0.post2
