@@ -108,6 +108,6 @@ class GRPOStrategy:
         except ModuleNotFoundError:
             # the user has passed a string (ideally indicating the path of a reward model)
             LOG.info(
-                f"Reward function {reward_func} is a pre-trained model path - if this is unexpected, please check the reward function path."
+                f"Reward function {reward_func_fqn} is a pre-trained model path - if this is unexpected, please check the reward function path."
             )
             return reward_func
