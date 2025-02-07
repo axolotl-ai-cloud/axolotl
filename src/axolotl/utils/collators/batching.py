@@ -16,7 +16,6 @@ from axolotl.monkeypatch.flex_attn import (
 )
 from axolotl.monkeypatch.utils import (
     get_packed_mask_from_pos_ids,
-    get_seqlens_from_pos_ids,
 )
 
 
@@ -194,7 +193,6 @@ class FlexBatchSamplerDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):
         # out["attention_mask"] = packed_block_causal_mask(collated_seq_lens, totalseqlens)
         out["attention_mask"] = get_packed_mask_from_pos_ids(out["position_ids"])
         # out["attention_mask"] = create_block_causal_mask(collated_seq_lens, max_seq_len)
-        # raise ValueError(f"{out['attention_mask'].shape}")
         return out
 
 
