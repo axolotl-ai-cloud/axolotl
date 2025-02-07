@@ -203,7 +203,11 @@ def train(
                 if cloud:
                     cwd = os.getcwd()
                     do_cli_train(
-                        cloud_config=cloud, config=config, accelerate=True, cwd=cwd, **kwargs
+                        cloud_config=cloud,
+                        config=config,
+                        accelerate=True,
+                        cwd=cwd,
+                        **kwargs,
                     )
                 else:
                     accelerate_args = []
