@@ -54,6 +54,7 @@ class GRPOStrategy:
             if cfg.trl and cfg.trl.ref_model_sync_steps:
                 grpo_args_kwargs["ref_model_sync_steps"] = cfg.trl.ref_model_sync_steps
         grpo_args_kwargs["max_completion_length"] = cfg.trl.max_completion_length
+        grpo_args_kwargs["log_completions"] = cfg.trl.log_completions
         return grpo_args_kwargs
 
     @classmethod
