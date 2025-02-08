@@ -733,7 +733,7 @@
     "href": "index.html#quick-start",
     "title": "Axolotl",
     "section": "🚀 Quick Start",
-    "text": "🚀 Quick Start\nRequirements: - NVIDIA GPU (Ampere or newer for bf16 and Flash Attention) or AMD GPU - Python ≥3.10 - PyTorch ≥2.4.1\n\nInstallation\npip3 install --no-build-isolation axolotl[flash-attn,deepspeed]\n\n# Download example axolotl configs, deepspeed configs\naxolotl fetch examples\naxolotl fetch deepspeed_configs  # OPTIONAL\nOther installation approaches are described here.\n\n\nYour First Fine-tune\n# Fetch axolotl examples\naxolotl fetch examples\n\n# Or, specify a custom path\naxolotl fetch examples --dest path/to/folder\n\n# Train a model using LoRA\naxolotl train examples/llama-3/lora-1b.yml\nThat’s it! Check out our Getting Started Guide for a more detailed walkthrough.",
+    "text": "🚀 Quick Start\nRequirements: - NVIDIA GPU (Ampere or newer for bf16 and Flash Attention) or AMD GPU - Python 3.11 - PyTorch ≥2.4.1\n\nInstallation\npip3 install --no-build-isolation axolotl[flash-attn,deepspeed]\n\n# Download example axolotl configs, deepspeed configs\naxolotl fetch examples\naxolotl fetch deepspeed_configs  # OPTIONAL\nOther installation approaches are described here.\n\n\nYour First Fine-tune\n# Fetch axolotl examples\naxolotl fetch examples\n\n# Or, specify a custom path\naxolotl fetch examples --dest path/to/folder\n\n# Train a model using LoRA\naxolotl train examples/llama-3/lora-1b.yml\nThat’s it! Check out our Getting Started Guide for a more detailed walkthrough.",
     "crumbs": [
       "Home"
     ]
