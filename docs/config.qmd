@@ -46,6 +46,10 @@ overrides_of_model_config:
     type: # linear | dynamic
     factor: # float
 
+# optional overrides the base model loading from_pretrained
+overrides_of_model_kwargs:
+  # use_cache: False
+
 # optional overrides to the bnb 4bit quantization configuration
 # https://huggingface.co/docs/transformers/main/main_classes/quantization#transformers.BitsAndBytesConfig
 bnb_config_kwargs:

@@ -115,6 +115,9 @@ class RemappedParameters(BaseModel):
     overrides_of_model_config: Optional[Dict[str, Any]] = Field(
         default=None, alias="model_config"
     )
+    overrides_of_model_kwargs: Optional[Dict[str, Any]] = Field(
+        default=None, alias="model_kwargs"
+    )
     type_of_model: Optional[str] = Field(default=None, alias="model_type")
     revision_of_model: Optional[str] = Field(default=None, alias="model_revision")
 
@@ -425,8 +428,6 @@ class ModelInputConfig(BaseModel):
         default=None, json_schema_extra={"description": "transformers processor class"}
     )
     trust_remote_code: Optional[bool] = None
-
-    model_kwargs: Optional[Dict[str, Any]] = None
 
     @field_validator("trust_remote_code")
     @classmethod
