@@ -34,6 +34,13 @@ jobs:
             axolotl_extras:
             num_gpus: 2
             nightly_build: "true"
+          - cuda: 124
+            cuda_version: 12.4.1
+            python_version: "3.11"
+            pytorch: 2.6.0
+            axolotl_extras:
+            num_gpus: 2
+            nightly_build: "true"
     runs-on: [self-hosted, modal]
     timeout-minutes: 120
     steps:
@@ -42,7 +49,7 @@ jobs:
       - name: Install Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: "3.11"
       - name: Install Modal
         run: |
           python -m pip install --upgrade pip
