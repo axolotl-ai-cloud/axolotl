@@ -1312,6 +1312,7 @@ def load_lora(model, cfg, inference=False, config_only=False):
         lora_config_kwargs["init_lora_weights"] = "loftq"
     if cfg.peft_use_dora:
         lora_config_kwargs["use_dora"] = cfg.peft_use_dora
+        LOG.info("Initializing LoRA weights using dora. This might take longer.")
     if cfg.peft_use_rslora:
         lora_config_kwargs["use_rslora"] = cfg.peft_use_rslora
     if cfg.peft_layer_replication:
