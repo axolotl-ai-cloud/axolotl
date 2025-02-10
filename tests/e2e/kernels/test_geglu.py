@@ -1,14 +1,12 @@
 """Tests for GEGLU activation function Triton kernels."""
 # pylint: disable=duplicate-code
 
-import pytest
 import torch
 import torch.nn.functional as F
 
 from axolotl.kernels.geglu import geglu_backward, geglu_forward
 
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
 def test_geglu_forward_shape():
     """Test that GEGLU forward pass preserves expected shapes."""
     batch, seq_len, hidden_dim = 2, 3, 64
@@ -21,7 +19,6 @@ def test_geglu_forward_shape():
     assert out.device == gate.device
 
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
 def test_geglu_forward_values():
     """Test GEGLU forward pass matches PyTorch reference implementation."""
     gate = torch.randn(2, 3, 64, device="cuda", requires_grad=True)
@@ -36,7 +33,6 @@ def test_geglu_forward_values():
     assert torch.allclose(triton_out, torch_out, rtol=1e-4)
 
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
 def test_geglu_backward():
     """Test GEGLU backward pass matches PyTorch autograd."""
     gate = torch.randn(2, 3, 64, device="cuda", requires_grad=True)
@@ -63,7 +59,6 @@ def test_geglu_backward():
     assert torch.allclose(grad_up, up.grad, rtol=1e-4)
 
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
 def test_geglu_inplace_preservation():
     """Test that GEGLU backward doesn't modify original tensors unexpectedly."""
     gate = torch.randn(2, 3, 64, device="cuda")

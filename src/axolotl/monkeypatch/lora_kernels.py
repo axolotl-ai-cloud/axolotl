@@ -6,7 +6,6 @@ import types
 
 from accelerate.logging import get_logger
 from peft import PeftModelForCausalLM
-from torch.distributed.fsdp import FullyShardedDataParallel
 from transformers.models.llama.modeling_llama import LlamaAttention
 
 from axolotl.kernels.lora import (
@@ -124,7 +123,7 @@ def patch_self_attn_lora():
 
 
 def apply_lora_kernel_patches(model: PeftModelForCausalLM, cfg: DictDefault):
-    """Patches a PEFT model with optimized MLP and Attention kernels, handling FSDP"""
+    """Patches a PEFT model with optimized MLP and Attention kernels"""
     if not isinstance(model, PeftModelForCausalLM):
         raise TypeError("Model must be a PeftModelForCausalLM")
 
@@ -134,12 +133,6 @@ def apply_lora_kernel_patches(model: PeftModelForCausalLM, cfg: DictDefault):
         if hasattr(model, "active_adapters")
         else model.active_adapter
     )
-    
-    # Handle potential FSDP wrapping
-    base_model = model.model.model
-    if isinstance(base_model, FullyShardedDataParallel):
-        base_model = base_model._fsdp_wrapped_module
-        
     lora_config = model.model.peft_config[active_adapter]
 
     # Only patch if conditions are met
@@ -162,24 +155,12 @@ def apply_lora_kernel_patches(model: PeftModelForCausalLM, cfg: DictDefault):
         raise NotImplementedError(f"Model type {model_type} not supported")
 
     # Patch each layer
-    for layer in base_model.layers:
-        # Unwrap FSDP if needed
-        if isinstance(layer, FullyShardedDataParallel):
-            layer = layer._fsdp_wrapped_module
-            
+    for layer in model.model.model.layers:
         if cfg.lora_mlp_kernel:
             # MLP patching
             gate_proj = layer.mlp.gate_proj
             up_proj = layer.mlp.up_proj
             down_proj = layer.mlp.down_proj
-
-            # Unwrap FSDP for mlp components if needed
-            if isinstance(gate_proj, FullyShardedDataParallel):
-                gate_proj = gate_proj._fsdp_wrapped_module
-            if isinstance(up_proj, FullyShardedDataParallel):
-                up_proj = up_proj._fsdp_wrapped_module
-            if isinstance(down_proj, FullyShardedDataParallel):
-                down_proj = down_proj._fsdp_wrapped_module
 
             can_patch_mlp = all(
                 hasattr(proj, "lora_A")
@@ -201,24 +182,12 @@ def apply_lora_kernel_patches(model: PeftModelForCausalLM, cfg: DictDefault):
                 LOG.warning_once(
                     "Cannot patch some MLP layers - requires LoRA adapters with no bias"
                 )
-
         if cfg.lora_qkv_kernel:
-            # Query, key, value patching with FSDP handling
-            attention = layer.self_attn
-            if isinstance(attention, FullyShardedDataParallel):
-                attention = attention._fsdp_wrapped_module
-                
+            # Query, key, value patching
             layer_modules = [
-                getattr(attention, linear_proj)
+                getattr(layer.self_attn, linear_proj)
                 for linear_proj in ["q_proj", "k_proj", "v_proj"]
             ]
-            
-            # Unwrap FSDP for each projection
-            layer_modules = [
-                module._fsdp_wrapped_module if isinstance(module, FullyShardedDataParallel) else module
-                for module in layer_modules
-            ]
-
             can_patch_qkv = all(
                 hasattr(module, "lora_A")
                 and getattr(module, "base_layer", module).bias is None
@@ -227,154 +196,38 @@ def apply_lora_kernel_patches(model: PeftModelForCausalLM, cfg: DictDefault):
             )
 
             if can_patch_qkv:
-                attention.apply_qkv = types.MethodType(
-                    apply_lora_qkv, attention
+                # Add optimized implementation
+                layer.self_attn.apply_qkv = types.MethodType(
+                    apply_lora_qkv, layer.self_attn
                 )
             else:
-                attention.apply_qkv = types.MethodType(
-                    original_apply_qkv, attention
+                # Add fallback implementation
+                layer.self_attn.apply_qkv = types.MethodType(
+                    original_apply_qkv, layer.self_attn
                 )
                 LOG.warning_once(
                     "Cannot patch some attention QKV projections - requires LoRA adapters with no bias"
                 )
-
         if cfg.lora_o_kernel:
-            # Output patching with FSDP handling
-            attention = layer.self_attn
-            if isinstance(attention, FullyShardedDataParallel):
-                attention = attention._fsdp_wrapped_module
-                
-            o_proj = attention.o_proj
-            if isinstance(o_proj, FullyShardedDataParallel):
-                o_proj = o_proj._fsdp_wrapped_module
-
-            can_patch_o = (
-                hasattr(o_proj, "lora_A")
-                and getattr(o_proj, "base_layer", o_proj).bias is None
-                and len(getattr(o_proj, "lora_magnitude_vector", []) or []) == 0
+            # Output patching
+            layer_modules = [
+                getattr(layer.self_attn, linear_proj) for linear_proj in ["o_proj"]
+            ]
+            can_patch_o = all(
+                hasattr(module, "lora_A")
+                and getattr(module, "base_layer", module).bias is None
+                and len(getattr(module, "lora_magnitude_vector", []) or []) == 0
+                for module in layer_modules
             )
 
             if can_patch_o:
-                attention.apply_o = types.MethodType(
-                    apply_lora_o, attention
+                layer.self_attn.apply_o = types.MethodType(
+                    apply_lora_o, layer.self_attn
                 )
             else:
-                attention.apply_o = types.MethodType(
-                    original_apply_o, attention
-                )
+                layer.self_attn.apply_o = original_apply_o
                 LOG.warning_once(
                     "Cannot patch some attention output projection - requires LoRA adapters with no bias"
                 )
 
     return model
-
-
-# def apply_lora_kernel_patches(model: PeftModelForCausalLM, cfg: DictDefault):
-#     """Patches a PEFT model with optimized MLP and Attention kernels"""
-#     if not isinstance(model, PeftModelForCausalLM):
-#         raise TypeError("Model must be a PeftModelForCausalLM")
-
-#     # Get active adapter config
-#     active_adapter = (
-#         model.active_adapters[0]
-#         if hasattr(model, "active_adapters")
-#         else model.active_adapter
-#     )
-#     lora_config = model.model.peft_config[active_adapter]
-
-#     # Only patch if conditions are met
-#     can_patch = lora_config.lora_dropout == 0 and lora_config.bias == "none"
-
-#     if not can_patch:
-#         LOG.warning("Cannot patch layers - requires no dropout and no bias")
-#         return model
-
-#     # This needs to be reset after patching
-#     LOG.setLevel(logging.INFO)
-
-#     # Choose activation based on model type
-#     model_type = model.config.model_type
-#     if model_type in ["llama", "mistral", "qwen2"]:
-#         activation = "swiglu"
-#     elif model_type in ["gemma", "gemma2"]:
-#         activation = "geglu"
-#     else:
-#         raise NotImplementedError(f"Model type {model_type} not supported")
-
-#     # Patch each layer
-#     for layer in model.model.model.layers:
-#         if cfg.lora_mlp_kernel:
-#             # MLP patching
-#             gate_proj = layer.mlp.gate_proj
-#             up_proj = layer.mlp.up_proj
-#             down_proj = layer.mlp.down_proj
-
-#             can_patch_mlp = all(
-#                 hasattr(proj, "lora_A")
-#                 and getattr(proj, "base_layer", proj).bias is None
-#                 and len(getattr(proj, "lora_magnitude_vector", []) or []) == 0
-#                 for proj in (gate_proj, up_proj, down_proj)
-#             )
-
-#             if can_patch_mlp:
-#                 if activation == "swiglu":
-#                     layer.mlp.forward = types.MethodType(
-#                         apply_lora_mlp_swiglu, layer.mlp
-#                     )
-#                 else:
-#                     layer.mlp.forward = types.MethodType(
-#                         apply_lora_mlp_geglu, layer.mlp
-#                     )
-#             else:
-#                 LOG.warning_once(
-#                     "Cannot patch some MLP layers - requires LoRA adapters with no bias"
-#                 )
-#         if cfg.lora_qkv_kernel:
-#             # Query, key, value patching
-#             layer_modules = [
-#                 getattr(layer.self_attn, linear_proj)
-#                 for linear_proj in ["q_proj", "k_proj", "v_proj"]
-#             ]
-#             can_patch_qkv = all(
-#                 hasattr(module, "lora_A")
-#                 and getattr(module, "base_layer", module).bias is None
-#                 and len(getattr(module, "lora_magnitude_vector", []) or []) == 0
-#                 for module in layer_modules
-#             )
-
-#             if can_patch_qkv:
-#                 # Add optimized implementation
-#                 layer.self_attn.apply_qkv = types.MethodType(
-#                     apply_lora_qkv, layer.self_attn
-#                 )
-#             else:
-#                 # Add fallback implementation
-#                 layer.self_attn.apply_qkv = types.MethodType(
-#                     original_apply_qkv, layer.self_attn
-#                 )
-#                 LOG.warning_once(
-#                     "Cannot patch some attention QKV projections - requires LoRA adapters with no bias"
-#                 )
-#         if cfg.lora_o_kernel:
-#             # Output patching
-#             layer_modules = [
-#                 getattr(layer.self_attn, linear_proj) for linear_proj in ["o_proj"]
-#             ]
-#             can_patch_o = all(
-#                 hasattr(module, "lora_A")
-#                 and getattr(module, "base_layer", module).bias is None
-#                 and len(getattr(module, "lora_magnitude_vector", []) or []) == 0
-#                 for module in layer_modules
-#             )
-
-#             if can_patch_o:
-#                 layer.self_attn.apply_o = types.MethodType(
-#                     apply_lora_o, layer.self_attn
-#                 )
-#             else:
-#                 layer.self_attn.apply_o = original_apply_o
-#                 LOG.warning_once(
-#                     "Cannot patch some attention output projection - requires LoRA adapters with no bias"
-#                 )
-
-#     return model

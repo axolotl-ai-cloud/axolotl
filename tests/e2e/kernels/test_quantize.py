@@ -13,23 +13,23 @@ def test_dequantize_null_state():
     assert torch.equal(dequantize(W, None), W)
 
 
-def test_dequantize_shape_preservation(device):
+def test_dequantize_shape_preservation():
     """Test that dequantization preserves expected shapes"""
     shape = (32, 32)
-    W = torch.randn(shape, device=device)
+    W = torch.randn(shape, device="cuda")
 
     quant_state = QuantState(
-        absmax=torch.ones(shape[0], device=device),
+        absmax=torch.ones(shape[0], device="cuda"),
         shape=shape,
-        code=torch.randint(0, 15, shape, device=device),
+        code=torch.randint(0, 15, shape, device="cuda"),
         dtype=torch.float16,
         blocksize=32,
         quant_type="nf4",
-        offset=torch.zeros(shape[0], dtype=torch.int32, device=device),
+        offset=torch.zeros(shape[0], dtype=torch.int32, device="cuda"),
         state2=QuantState(
-            absmax=torch.ones(shape[0], device=device),
+            absmax=torch.ones(shape[0], device="cuda"),
             shape=shape,
-            code=torch.randint(0, 15, shape, device=device),
+            code=torch.randint(0, 15, shape, device="cuda"),
             dtype=torch.float16,
             blocksize=32,
             quant_type="nf4",
@@ -47,7 +47,7 @@ def test_dequantize_shape_preservation(device):
 def test_dequantize_transposed():
     """Test that transposed input produces transposed output"""
     shape = (32, 32)
-    W = torch.randn(1, shape[1])  # Transposed input
+    W = torch.randn(1, shape[1], device="cuda")  # Transposed input
 
     quant_state = QuantState(
         absmax=torch.ones(1),
@@ -76,8 +76,8 @@ def test_dequantize_transposed():
 def test_dequantize_output_tensor():
     """Test dequantization with provided output tensor"""
     shape = (32, 32)
-    W = torch.randn(shape)
-    out = torch.empty(shape, dtype=torch.float16)
+    W = torch.randn(shape, device="cuda")
+    out = torch.empty(shape, dtype=torch.float16, device="cuda")
 
     quant_state = QuantState(
         absmax=torch.ones(shape[0]),
