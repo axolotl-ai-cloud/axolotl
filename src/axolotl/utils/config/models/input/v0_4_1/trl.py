@@ -6,7 +6,7 @@ from typing import List, Optional
 from pydantic import BaseModel, Field
 
 
-class TrlConfig(BaseModel):
+class TRLConfig(BaseModel):
     """
     Input args for TRL.
     """

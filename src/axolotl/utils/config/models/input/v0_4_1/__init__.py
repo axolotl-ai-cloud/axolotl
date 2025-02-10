@@ -24,7 +24,7 @@ from transformers.utils.import_utils import is_torch_npu_available
 
 from axolotl.utils.config.models.internals import EnvCapabilities, GPUCapabilities
 
-from .trl import TrlConfig
+from .trl import TRLConfig
 
 LOG = logging.getLogger("axolotl.utils.config.models.input")
 
@@ -671,8 +671,8 @@ class AxolotlInputConfig(
     shrink_embeddings: Optional[bool] = None
 
     rl: Optional[RLType] = None
-    trl: Optional[TrlConfig] = Field(
-        default_factory=lambda: TrlConfig(),  # pylint: disable=unnecessary-lambda
+    trl: Optional[TRLConfig] = Field(
+        default_factory=lambda: TRLConfig(),  # pylint: disable=unnecessary-lambda
     )
     reward_model: Optional[bool] = None
     process_reward_model: Optional[bool] = None
