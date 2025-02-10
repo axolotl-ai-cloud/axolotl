@@ -52,7 +52,7 @@ class TestMultiGPUQwen2:
                 "gradient_accumulation_steps": 2,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
-                "optimizer": "adamw_torch",
+                "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
                 "bf16": "auto",
@@ -86,14 +86,12 @@ class TestMultiGPUQwen2:
 
         execute_subprocess_async(
             [
-                "accelerate",
-                "launch",
+                "axolotl",
+                "train",
+                str(Path(temp_dir) / "config.yaml"),
                 "--num-processes",
                 "2",
-                "--main_process_port",
+                "--main-process-port",
                 f"{get_torch_dist_unique_port()}",
-                "-m",
-                "axolotl.cli.train",
-                str(Path(temp_dir) / "config.yaml"),
             ]
         )

@@ -22,7 +22,7 @@ def fixture_cfg():
             "output_dir": "./model-out",
             "warmup_steps": 10,
             "gradient_checkpointing": False,
-            "optimizer": "adamw_torch",
+            "optimizer": "adamw_torch_fused",
             "sequence_len": 2048,
             "rl": True,
             "adam_beta1": 0.998,

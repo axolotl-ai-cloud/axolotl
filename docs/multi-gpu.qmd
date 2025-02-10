@@ -1,0 +1,118 @@
+---
+title: "Multi-GPU Training Guide"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    code-tools: true
+execute:
+  enabled: false
+---
+
+This guide covers advanced training configurations for multi-GPU setups using Axolotl.
+
+## Overview {#sec-overview}
+
+Axolotl supports several methods for multi-GPU training:
+
+- DeepSpeed (recommended)
+- FSDP (Fully Sharded Data Parallel)
+- FSDP + QLoRA
+
+## DeepSpeed {#sec-deepspeed}
+
+DeepSpeed is the recommended approach for multi-GPU training due to its stability and performance. It provides various optimization levels through ZeRO stages.
+
+### Configuration {#sec-deepspeed-config}
+
+Add to your YAML config:
+
+```{.yaml}
+deepspeed: deepspeed_configs/zero1.json
+```
+
+### Usage {#sec-deepspeed-usage}
+
+```{.bash}
+accelerate launch -m axolotl.cli.train examples/llama-2/config.yml --deepspeed deepspeed_configs/zero1.json
+```
+
+### ZeRO Stages {#sec-zero-stages}
+
+We provide default configurations for:
+
+- ZeRO Stage 1 (`zero1.json`)
+- ZeRO Stage 2 (`zero2.json`)
+- ZeRO Stage 3 (`zero3.json`)
+
+Choose based on your memory requirements and performance needs.
+
+## FSDP {#sec-fsdp}
+
+### Basic FSDP Configuration {#sec-fsdp-config}
+
+```{.yaml}
+fsdp:
+  - full_shard
+  - auto_wrap
+fsdp_config:
+  fsdp_offload_params: true
+  fsdp_state_dict_type: FULL_STATE_DICT
+  fsdp_transformer_layer_cls_to_wrap: LlamaDecoderLayer
+```
+
+### FSDP + QLoRA {#sec-fsdp-qlora}
+
+For combining FSDP with QLoRA, see our [dedicated guide](fsdp_qlora.qmd).
+
+## Performance Optimization {#sec-performance}
+
+### Liger Kernel Integration {#sec-liger}
+
+::: {.callout-note}
+Liger Kernel provides efficient Triton kernels for LLM training, offering:
+
+- 20% increase in multi-GPU training throughput
+- 60% reduction in memory usage
+- Compatibility with both FSDP and DeepSpeed
+:::
+
+Configuration:
+
+```{.yaml}
+plugins:
+  - axolotl.integrations.liger.LigerPlugin
+liger_rope: true
+liger_rms_norm: true
+liger_glu_activation: true
+liger_layer_norm: true
+liger_fused_linear_cross_entropy: true
+```
+
+## Troubleshooting {#sec-troubleshooting}
+
+### NCCL Issues {#sec-nccl}
+
+For NCCL-related problems, see our [NCCL troubleshooting guide](nccl.qmd).
+
+### Common Problems {#sec-common-problems}
+
+::: {.panel-tabset}
+
+## Memory Issues
+
+- Reduce `micro_batch_size`
+- Reduce `eval_batch_size`
+- Adjust `gradient_accumulation_steps`
+- Consider using a higher ZeRO stage
+
+## Training Instability
+
+- Start with DeepSpeed ZeRO-2
+- Monitor loss values
+- Check learning rates
+
+:::
+
+For more detailed troubleshooting, see our [debugging guide](debugging.qmd).

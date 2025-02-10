@@ -1,0 +1,26 @@
+---
+title: Stepwise Supervised Format
+description: Format for datasets with stepwise completions and labels
+order: 3
+---
+
+## Stepwise Supervised
+
+The stepwise supervised format is designed for chain-of-thought (COT) reasoning
+datasets where each example contains multiple completion steps and a preference label
+for each step.
+
+### Example
+
+Here's a simple example of a stepwise supervised dataset entry:
+
+```json
+{
+  "prompt": "Which number is larger, 9.8 or 9.11?",
+  "completions": [
+    "The fractional part of 9.8 is 0.8, while the fractional part of 9.11 is 0.11.",
+    "Since 0.11 is greater than 0.8, the number 9.11 is larger than 9.8."
+  ],
+  "labels": [true, false]
+}
+```

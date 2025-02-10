@@ -46,6 +46,10 @@ overrides_of_model_config:
     type: # linear | dynamic
     factor: # float
 
+# optional overrides the base model loading from_pretrained
+overrides_of_model_kwargs:
+  # use_cache: False
+
 # optional overrides to the bnb 4bit quantization configuration
 # https://huggingface.co/docs/transformers/main/main_classes/quantization#transformers.BitsAndBytesConfig
 bnb_config_kwargs:
@@ -186,6 +190,12 @@ test_datasets:
 rl:
 # whether to perform weighting if doing DPO training. Boolean.
 dpo_use_weighting:
+
+# reward modelling: `True` or `False`
+reward_model:
+
+# process reward modelling: `True` or `False`
+process_reward_model:
 
 # The name of the chat template to use for training, following values are supported:
 # - tokenizer_default: Uses the chat template that is available in the tokenizer_config.json. If the chat template is not available in the tokenizer, it will raise an error. This is the default value.

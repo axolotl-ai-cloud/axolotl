@@ -3,11 +3,14 @@
 import functools
 import logging
 from pathlib import Path
-from typing import List, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
 from datasets import (
     Dataset,
     DatasetDict,
+    IterableDataset,
+    Sequence,
+    Value,
     concatenate_datasets,
     load_dataset,
     load_from_disk,
@@ -15,7 +18,7 @@ from datasets import (
 from transformers import PreTrainedTokenizerBase
 
 from axolotl.common.const import DEFAULT_DATASET_PREPARED_PATH
-from axolotl.datasets import TokenizedPromptDataset
+from axolotl.datasets import TokenizedPromptDataset, wrap_dataset_for_tokenized_prompt
 from axolotl.prompt_strategies import load
 from axolotl.prompt_strategies.bradley_terry import load as bradley_terry_load
 from axolotl.prompt_tokenizers import (
@@ -43,6 +46,7 @@ from axolotl.utils.data.pretraining import wrap_pretraining_dataset
 from axolotl.utils.data.shared import load_dataset_w_config
 from axolotl.utils.data.utils import (
     deduplicate_and_log_datasets,
+    drop_long_seq_in_dataset,
     md5,
     retry_on_request_exceptions,
 )
@@ -53,11 +57,11 @@ from axolotl.utils.trainer import (
     process_datasets_for_packing,
 )
 
-LOG = logging.getLogger("axolotl")
+LOG = logging.getLogger(__name__)
 
 
 @retry_on_request_exceptions(max_retries=3, delay=5)
-def prepare_dataset(cfg, tokenizer, processor=None):
+def prepare_dataset(cfg, tokenizer, processor=None, preprocess_iterable=None):
     prompters = []
     if not cfg.pretraining_dataset:
         with zero_first(is_local_main_process()):
@@ -68,6 +72,7 @@ def prepare_dataset(cfg, tokenizer, processor=None):
                     DEFAULT_DATASET_PREPARED_PATH,
                     split="train",
                     processor=processor,
+                    preprocess_iterable=preprocess_iterable,
                 )
                 _, eval_dataset, _ = load_prepare_datasets(
                     tokenizer,
@@ -75,6 +80,7 @@ def prepare_dataset(cfg, tokenizer, processor=None):
                     DEFAULT_DATASET_PREPARED_PATH,
                     split="test",
                     processor=processor,
+                    preprocess_iterable=preprocess_iterable,
                 )
             else:
                 train_dataset, eval_dataset, prompters = load_prepare_datasets(
@@ -82,6 +88,7 @@ def prepare_dataset(cfg, tokenizer, processor=None):
                     cfg,
                     DEFAULT_DATASET_PREPARED_PATH,
                     processor=processor,
+                    preprocess_iterable=preprocess_iterable,
                 )
     else:
         # Load streaming dataset if pretraining_dataset is given
@@ -137,6 +144,7 @@ def prepare_dataset(cfg, tokenizer, processor=None):
                 DEFAULT_DATASET_PREPARED_PATH,
                 split="test",
                 processor=processor,
+                preprocess_iterable=preprocess_iterable,
             )
 
         if cfg.dataset_exact_deduplication:
@@ -168,6 +176,7 @@ def load_tokenized_prepared_datasets(
     default_dataset_prepared_path,
     split="train",
     processor=None,
+    preprocess_iterable: Optional[bool] = None,
 ) -> Tuple[DatasetDict, List[Prompter]]:
     cfg_datasets = cfg.test_datasets if split == "test" else cfg.datasets
     tokenizer_name = cfg.tokenizer_config
@@ -182,10 +191,11 @@ def load_tokenized_prepared_datasets(
                 + "@"
                 + str(cfg.group_by_length)
                 + "@"
+                + str(cfg.kd_temperature or 1.0)
                 + "|".join(
                     sorted(
                         [
-                            f"{d.path}:{d.type}:{d.shards}:{d.conversation}{d.split}"
+                            f"{d.path}:{d.type}:{d.shards}:{d.conversation}:{d.split}:{d.temperature or 1.0}"
                             for d in cfg_datasets
                         ]
                     )
@@ -260,13 +270,25 @@ def load_tokenized_prepared_datasets(
                     # at the same time for a given dataset
                     for name in dataset.name:
                         yield DictDefault({**dataset, "name": name})
+                elif dataset.preprocess_shards and not dataset.shards:
+                    for shard in range(dataset.preprocess_shards):
+                        yield DictDefault(
+                            {
+                                **dataset,
+                                "shards": dataset.preprocess_shards,
+                                "shards_idx": shard,
+                            }
+                        )
                 else:
                     yield dataset
 
+        streaming_ds = False
+        if preprocess_iterable:
+            streaming_ds = True
         # pylint: disable=invalid-name
         for config_dataset in for_d_in_datasets(cfg_datasets):
             ds: Union[Dataset, DatasetDict] = load_dataset_w_config(
-                config_dataset, use_auth_token
+                config_dataset, use_auth_token, streaming=streaming_ds
             )
 
             d_base_type = d_prompt_style = None
@@ -318,12 +340,29 @@ def load_tokenized_prepared_datasets(
             else:
                 LOG.debug("NOT shuffling merged datasets")
 
-        if cfg.sample_packing and not cfg.skip_prepare_dataset:
-            dataset, _ = process_datasets_for_packing(cfg, dataset, None)
+        if not cfg.skip_prepare_dataset:
+            dataset = drop_long_seq_in_dataset(dataset, cfg)
+
+            if cfg.sample_packing:
+                dataset, _ = process_datasets_for_packing(cfg, dataset, None)
 
         if cfg.local_rank == 0 and not cfg.skip_prepare_dataset:
             LOG.info(f"Saving merged prepared dataset to disk... {prepared_ds_path}")
-            dataset.save_to_disk(str(prepared_ds_path))
+            if isinstance(dataset, IterableDataset):
+
+                def gen_from_iter_ds(_ds, _=None):
+                    yield from _ds
+
+                ds_from_iter = Dataset.from_generator(
+                    functools.partial(gen_from_iter_ds, dataset),
+                    features=dataset.features,
+                    num_proc=cfg.dataset_processes,
+                    split=split,
+                    gen_kwargs={"_": list(range(cfg.dataset_processes))},
+                )
+                ds_from_iter.save_to_disk(str(prepared_ds_path))
+            else:
+                dataset.save_to_disk(str(prepared_ds_path))
             if cfg.push_dataset_to_hub:
                 LOG.info(
                     f"Pushing merged prepared dataset to Huggingface hub at {cfg.push_dataset_to_hub} (version {ds_hash})..."
@@ -343,6 +382,7 @@ def load_prepare_datasets(
     default_dataset_prepared_path,
     split="train",
     processor=None,
+    preprocess_iterable: Optional[bool] = False,
 ) -> Tuple[Dataset, Dataset, List[Prompter]]:
     dataset, prompters = load_tokenized_prepared_datasets(
         tokenizer,
@@ -350,6 +390,7 @@ def load_prepare_datasets(
         default_dataset_prepared_path,
         split=split,
         processor=processor,
+        preprocess_iterable=preprocess_iterable,
     )
 
     if cfg.dataset_shard_num and cfg.dataset_shard_idx is not None:
@@ -449,7 +490,7 @@ def get_dataset_wrapper(
             "user_defined", tokenizer, cfg, config_dataset.type.to_dict()
         )
         dataset_prompter = UnsupportedPrompter()
-        dataset_wrapper = TokenizedPromptDataset(
+        dataset_wrapper = wrap_dataset_for_tokenized_prompt(
             ds_strategy,
             dataset,
             **ds_kwargs,
@@ -462,6 +503,17 @@ def get_dataset_wrapper(
         config_dataset.type.split(".", 1)[1], tokenizer, cfg, config_dataset
     ):
         dataset_prompter = UnsupportedPrompter()
+        dataset_wrapper = wrap_dataset_for_tokenized_prompt(
+            ds_strategy,
+            dataset,
+            **ds_kwargs,
+        )
+    elif config_dataset.type.startswith("stepwise_supervised"):
+        dataset_prompter = UnsupportedPrompter()
+        ds_strategy = load(config_dataset.type, tokenizer, cfg, config_dataset)
+        # we need to explicitly cast boolean labels to int
+        # for compatibility with how trl's PRMTrainer works
+        dataset = dataset.cast_column("labels", Sequence(Value("int64")))
         dataset_wrapper = TokenizedPromptDataset(
             ds_strategy,
             dataset,
@@ -474,7 +526,7 @@ def get_dataset_wrapper(
             dataset_wrapper = ds_strategy.wrap_dataset(dataset, **ds_kwargs)
         else:
             dataset_prompter = UnsupportedPrompter()
-            dataset_wrapper = TokenizedPromptDataset(
+            dataset_wrapper = wrap_dataset_for_tokenized_prompt(
                 ds_strategy,
                 dataset,
                 **ds_kwargs,
@@ -487,7 +539,7 @@ def get_dataset_wrapper(
             cfg.train_on_inputs,
             cfg.sequence_len,
         )
-        ds_wrapper = TokenizedPromptDataset(
+        ds_wrapper = wrap_dataset_for_tokenized_prompt(
             ds_strategy,
             dataset,
             **ds_kwargs,
@@ -501,7 +553,7 @@ def get_dataset_wrapper(
             cfg.train_on_inputs,
             cfg.sequence_len,
         )
-        ds_wrapper = TokenizedPromptDataset(
+        ds_wrapper = wrap_dataset_for_tokenized_prompt(
             ds_strategy,
             dataset,
             **ds_kwargs,
@@ -515,7 +567,7 @@ def get_dataset_wrapper(
             cfg.train_on_inputs,
             cfg.sequence_len,
         )
-        ds_wrapper = TokenizedPromptDataset(
+        ds_wrapper = wrap_dataset_for_tokenized_prompt(
             ds_strategy,
             dataset,
             **ds_kwargs,
@@ -529,7 +581,7 @@ def get_dataset_wrapper(
             cfg.train_on_inputs,
             cfg.sequence_len,
         )
-        ds_wrapper = TokenizedPromptDataset(
+        ds_wrapper = wrap_dataset_for_tokenized_prompt(
             ds_strategy,
             dataset,
             **ds_kwargs,
@@ -543,7 +595,7 @@ def get_dataset_wrapper(
             cfg.train_on_inputs,
             cfg.sequence_len,
         )
-        ds_wrapper = TokenizedPromptDataset(
+        ds_wrapper = wrap_dataset_for_tokenized_prompt(
             ds_strategy,
             dataset,
             **ds_kwargs,
@@ -557,7 +609,7 @@ def get_dataset_wrapper(
             cfg.train_on_inputs,
             cfg.sequence_len,
         )
-        ds_wrapper = TokenizedPromptDataset(
+        ds_wrapper = wrap_dataset_for_tokenized_prompt(
             ds_strategy,
             dataset,
             **ds_kwargs,
@@ -571,7 +623,7 @@ def get_dataset_wrapper(
             cfg.train_on_inputs,
             cfg.sequence_len,
         )
-        ds_wrapper = TokenizedPromptDataset(
+        ds_wrapper = wrap_dataset_for_tokenized_prompt(
             ds_strategy,
             dataset,
             **ds_kwargs,
@@ -585,7 +637,7 @@ def get_dataset_wrapper(
             cfg.train_on_inputs,
             cfg.sequence_len,
         )
-        ds_wrapper = TokenizedPromptDataset(
+        ds_wrapper = wrap_dataset_for_tokenized_prompt(
             ds_strategy,
             dataset,
             **ds_kwargs,

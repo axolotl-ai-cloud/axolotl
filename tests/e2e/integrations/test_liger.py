@@ -48,13 +48,14 @@ class LigerIntegrationTestCase:
                 "gradient_accumulation_steps": 2,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
-                "optimizer": "adamw_torch",
+                "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
                 "save_safetensors": True,
                 "bf16": "auto",
                 "max_steps": 5,
             }
         )
+        # pylint: disable=duplicate-code
         prepare_plugins(cfg)
         normalize_config(cfg)
         cli_args = TrainerCliArgs()
@@ -93,13 +94,14 @@ class LigerIntegrationTestCase:
                 "gradient_accumulation_steps": 2,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
-                "optimizer": "adamw_torch",
+                "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
                 "save_safetensors": True,
                 "bf16": "auto",
                 "max_steps": 5,
             }
         )
+        # pylint: disable=duplicate-code
         prepare_plugins(cfg)
         normalize_config(cfg)
         cli_args = TrainerCliArgs()

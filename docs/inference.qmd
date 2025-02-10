@@ -1,0 +1,148 @@
+---
+title: "Inference Guide"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    code-tools: true
+execute:
+  enabled: false
+---
+
+This guide covers how to use your trained models for inference, including model loading, interactive testing, and common troubleshooting steps.
+
+## Quick Start {#sec-quickstart}
+
+### Basic Inference {#sec-basic}
+
+::: {.panel-tabset}
+
+## LoRA Models
+
+```{.bash}
+axolotl inference your_config.yml --lora-model-dir="./lora-output-dir"
+```
+
+## Full Fine-tuned Models
+
+```{.bash}
+axolotl inference your_config.yml --base-model="./completed-model"
+```
+
+:::
+
+## Advanced Usage {#sec-advanced}
+
+### Gradio Interface {#sec-gradio}
+
+Launch an interactive web interface:
+
+```{.bash}
+axolotl inference your_config.yml --gradio
+```
+
+### File-based Prompts {#sec-file-prompts}
+
+Process prompts from a text file:
+
+```{.bash}
+cat /tmp/prompt.txt | axolotl inference your_config.yml \
+  --base-model="./completed-model" --prompter=None
+```
+
+### Memory Optimization {#sec-memory}
+
+For large models or limited memory:
+
+```{.bash}
+axolotl inference your_config.yml --load-in-8bit=True
+```
+
+## Merging LoRA Weights {#sec-merging}
+
+Merge LoRA adapters with the base model:
+
+```{.bash}
+axolotl merge-lora your_config.yml --lora-model-dir="./completed-model"
+```
+
+### Memory Management for Merging {#sec-memory-management}
+
+::: {.panel-tabset}
+
+## Configuration Options
+
+```{.yaml}
+gpu_memory_limit: 20GiB  # Adjust based on your GPU
+lora_on_cpu: true        # Process on CPU if needed
+```
+
+## Force CPU Merging
+
+```{.bash}
+CUDA_VISIBLE_DEVICES="" axolotl merge-lora ...
+```
+
+:::
+
+## Tokenization {#sec-tokenization}
+
+### Common Issues {#sec-tokenization-issues}
+
+::: {.callout-warning}
+Tokenization mismatches between training and inference are a common source of problems.
+:::
+
+To debug:
+
+1. Check training tokenization:
+```{.bash}
+axolotl preprocess your_config.yml --debug
+```
+
+2. Verify inference tokenization by decoding tokens before model input
+
+3. Compare token IDs between training and inference
+
+### Special Tokens {#sec-special-tokens}
+
+Configure special tokens in your YAML:
+
+```{.yaml}
+special_tokens:
+  bos_token: "<s>"
+  eos_token: "</s>"
+  unk_token: "<unk>"
+tokens:
+  - "<|im_start|>"
+  - "<|im_end|>"
+```
+
+## Troubleshooting {#sec-troubleshooting}
+
+### Common Problems {#sec-common-problems}
+
+::: {.panel-tabset}
+
+## Memory Issues
+
+- Use 8-bit loading
+- Reduce batch sizes
+- Try CPU offloading
+
+## Token Issues
+
+- Verify special tokens
+- Check tokenizer settings
+- Compare training and inference preprocessing
+
+## Performance Issues
+
+- Verify model loading
+- Check prompt formatting
+- Ensure temperature/sampling settings
+
+:::
+
+For more details, see our [debugging guide](debugging.qmd).

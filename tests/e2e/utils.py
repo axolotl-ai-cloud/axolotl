@@ -42,18 +42,6 @@ def most_recent_subdir(path):
     return subdir
 
 
-def require_torch_2_3_1(test_case):
-    """
-    Decorator marking a test that requires torch >= 2.3.1
-    """
-
-    def is_min_2_3_1():
-        torch_version = version.parse(torch.__version__)
-        return torch_version >= version.parse("2.3.1")
-
-    return unittest.skipUnless(is_min_2_3_1(), "test requires torch>=2.3.1")(test_case)
-
-
 def require_torch_2_4_1(test_case):
     """
     Decorator marking a test that requires torch >= 2.5.1
@@ -94,7 +82,10 @@ def check_tensorboard(
     reader = SummaryReader(event_file)
     df = reader.scalars  # pylint: disable=invalid-name
     df = df[(df.tag == tag)]  # pylint: disable=invalid-name
-    assert df.value.values[-1] < lt_val, assertion_err
+    if "%s" in assertion_err:
+        assert df.value.values[-1] < lt_val, assertion_err % df.value.values[-1]
+    else:
+        assert df.value.values[-1] < lt_val, assertion_err
 
 
 def check_model_output_exists(temp_dir: str, cfg: DictDefault) -> None:

@@ -118,6 +118,9 @@ class RemappedParameters(BaseModel):
     overrides_of_model_config: Optional[Dict[str, Any]] = Field(
         default=None, alias="model_config"
     )
+    overrides_of_model_kwargs: Optional[Dict[str, Any]] = Field(
+        default=None, alias="model_kwargs"
+    )
     type_of_model: Optional[str] = Field(default=None, alias="model_type")
     revision_of_model: Optional[str] = Field(default=None, alias="model_revision")
 
@@ -166,6 +169,7 @@ class SFTDataset(BaseModel):
     type: Optional[Union[str, UserDefinedPrompterType]] = None
     input_transform: Optional[str] = None
     shards: Optional[int] = None
+    preprocess_shards: Optional[int] = None
     conversation: Optional[str] = None
     # Do not make this too strict or it will break the validator to choose different dataset class
     chat_template: Optional[
@@ -188,6 +192,8 @@ class SFTDataset(BaseModel):
     message_field_content: Optional[str] = None
     message_field_training: Optional[str] = None
     message_field_training_detail: Optional[str] = None
+    logprobs_field: Optional[str] = None
+    temperature: Optional[float] = None
     roles_to_train: Optional[List[str]] = None
     train_on_eos: Optional[str] = None
     roles: Optional[Dict[str, List[str]]] = None
@@ -237,6 +243,18 @@ class DPODataset(BaseModel):
     type: Optional[Union[UserDefinedDPOType, str]] = None
     data_files: Optional[List[str]] = None
     revision: Optional[str] = None
+
+
+class StepwiseSupervisedDataset(BaseModel):
+    """Stepwise supervised dataset configuration subset"""
+
+    path: Optional[str] = None
+    split: Optional[str] = None
+    data_files: Optional[List[str]] = None
+    revision: Optional[str] = None
+    step_separator: Optional[str] = None
+    max_completion_length: Optional[int] = None
+    train_on_last_step_only: Optional[bool] = None
 
 
 class UserDefinedKTOType(BaseModel):
@@ -414,8 +432,6 @@ class ModelInputConfig(BaseModel):
     )
     trust_remote_code: Optional[bool] = None
 
-    model_kwargs: Optional[Dict[str, Any]] = None
-
     @field_validator("trust_remote_code")
     @classmethod
     def hint_trust_remote_code(cls, trust_remote_code):
@@ -492,7 +508,7 @@ class HyperparametersConfig(BaseModel):
     adam_beta1: Optional[float] = None
     adam_beta2: Optional[float] = None
     max_grad_norm: Optional[float] = None
-    num_epochs: int = Field(default=1)
+    num_epochs: float = Field(default=1.0)
 
     @field_validator("batch_size")
     @classmethod
@@ -519,7 +535,7 @@ class ModelOutputConfig(BaseModel):
     output_dir: str = Field(default="./model-out")
     hub_model_id: Optional[str] = None
     hub_strategy: Optional[str] = None
-    save_safetensors: Optional[bool] = None
+    save_safetensors: Optional[bool] = True
 
 
 class MLFlowConfig(BaseModel):
@@ -598,6 +614,30 @@ class GradioConfig(BaseModel):
     gradio_temperature: Optional[float] = None
 
 
+class RayConfig(BaseModel):
+    """Ray launcher configuration subset"""
+
+    use_ray: bool = Field(default=False)
+    ray_run_name: Optional[str] = Field(
+        default=None,
+        metadata={
+            "help": "The training results will be saved at `saves/ray_run_name`."
+        },
+    )
+    ray_num_workers: int = Field(
+        default=1,
+        metadata={
+            "help": "The number of workers for Ray training. Default is 1 worker."
+        },
+    )
+    resources_per_worker: dict = Field(
+        default_factory=lambda: {"GPU": 1},
+        metadata={
+            "help": "The resources per worker for Ray training. Default is to use 1 GPU per worker."
+        },
+    )
+
+
 # pylint: disable=too-many-public-methods,too-many-ancestors
 class AxolotlInputConfig(
     ModelInputConfig,
@@ -610,6 +650,7 @@ class AxolotlInputConfig(
     CometConfig,
     LISAConfig,
     GradioConfig,
+    RayConfig,
     RemappedParameters,
     DeprecatedParameters,
     BaseModel,
@@ -629,12 +670,14 @@ class AxolotlInputConfig(
 
     rl: Optional[RLType] = None
     reward_model: Optional[bool] = None
+    process_reward_model: Optional[bool] = None
+    num_labels: Optional[int] = None
     dpo_use_weighting: Optional[
         bool
     ] = None  # whether to use weighting in DPO trainer. If none, default is false in the trainer.
 
-    datasets: Optional[conlist(Union[SFTDataset, DPODataset, KTODataset], min_length=1)] = None  # type: ignore
-    test_datasets: Optional[conlist(Union[SFTDataset, DPODataset, KTODataset], min_length=1)] = None  # type: ignore
+    datasets: Optional[conlist(Union[SFTDataset, DPODataset, KTODataset, StepwiseSupervisedDataset], min_length=1)] = None  # type: ignore
+    test_datasets: Optional[conlist(Union[SFTDataset, DPODataset, KTODataset, StepwiseSupervisedDataset], min_length=1)] = None  # type: ignore
     shuffle_merged_datasets: Optional[bool] = True
     dataset_prepared_path: Optional[str] = None
     dataset_shard_num: Optional[int] = None
@@ -825,6 +868,7 @@ class AxolotlInputConfig(
 
     # INTERNALS - document for now, generally not set externally
     is_preprocess: Optional[bool] = None
+    preprocess_iterable: Optional[bool] = None
 
     total_num_tokens: Optional[int] = None
     total_supervised_tokens: Optional[int] = None

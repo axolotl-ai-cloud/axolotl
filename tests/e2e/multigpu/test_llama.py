@@ -74,15 +74,13 @@ class TestMultiGPULlama:
 
         execute_subprocess_async(
             [
-                "accelerate",
-                "launch",
+                "axolotl",
+                "train",
+                str(Path(temp_dir) / "config.yaml"),
                 "--num-processes",
                 "2",
-                "--main_process_port",
+                "--main-process-port",
                 f"{get_torch_dist_unique_port()}",
-                "-m",
-                "axolotl.cli.train",
-                str(Path(temp_dir) / "config.yaml"),
             ]
         )
 
@@ -139,15 +137,13 @@ class TestMultiGPULlama:
 
         execute_subprocess_async(
             [
-                "accelerate",
-                "launch",
+                "axolotl",
+                "train",
+                str(Path(temp_dir) / "config.yaml"),
                 "--num-processes",
                 "2",
-                "--main_process_port",
+                "--main-process-port",
                 f"{get_torch_dist_unique_port()}",
-                "-m",
-                "axolotl.cli.train",
-                str(Path(temp_dir) / "config.yaml"),
             ]
         )
 
@@ -214,15 +210,13 @@ class TestMultiGPULlama:
 
         execute_subprocess_async(
             [
-                "accelerate",
-                "launch",
+                "axolotl",
+                "train",
+                str(Path(temp_dir) / "config.yaml"),
                 "--num-processes",
                 "2",
-                "--main_process_port",
+                "--main-process-port",
                 f"{get_torch_dist_unique_port()}",
-                "-m",
-                "axolotl.cli.train",
-                str(Path(temp_dir) / "config.yaml"),
             ]
         )
 
@@ -293,15 +287,13 @@ class TestMultiGPULlama:
 
         execute_subprocess_async(
             [
-                "accelerate",
-                "launch",
+                "axolotl",
+                "train",
+                str(Path(temp_dir) / "config.yaml"),
                 "--num-processes",
                 "2",
-                "--main_process_port",
+                "--main-process-port",
                 f"{get_torch_dist_unique_port()}",
-                "-m",
-                "axolotl.cli.train",
-                str(Path(temp_dir) / "config.yaml"),
             ]
         )
 
@@ -339,7 +331,7 @@ class TestMultiGPULlama:
                 "gradient_accumulation_steps": gradient_accumulation_steps,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
-                "optimizer": "adamw_torch",
+                "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
                 "fsdp": [
@@ -367,15 +359,13 @@ class TestMultiGPULlama:
 
         execute_subprocess_async(
             [
-                "accelerate",
-                "launch",
+                "axolotl",
+                "train",
+                str(Path(temp_dir) / "config.yaml"),
                 "--num-processes",
                 "2",
-                "--main_process_port",
+                "--main-process-port",
                 f"{get_torch_dist_unique_port()}",
-                "-m",
-                "axolotl.cli.train",
-                str(Path(temp_dir) / "config.yaml"),
             ]
         )
 
@@ -411,7 +401,7 @@ class TestMultiGPULlama:
                 "gradient_accumulation_steps": 4,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
-                "optimizer": "adamw_torch",
+                "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
                 "fsdp": [
@@ -439,15 +429,13 @@ class TestMultiGPULlama:
 
         execute_subprocess_async(
             [
-                "accelerate",
-                "launch",
+                "axolotl",
+                "train",
+                str(Path(temp_dir) / "config.yaml"),
                 "--num-processes",
                 "2",
-                "--main_process_port",
+                "--main-process-port",
                 f"{get_torch_dist_unique_port()}",
-                "-m",
-                "axolotl.cli.train",
-                str(Path(temp_dir) / "config.yaml"),
             ]
         )
 
@@ -492,7 +480,7 @@ class TestMultiGPULlama:
                 "gradient_accumulation_steps": 4,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
-                "optimizer": "adamw_torch",
+                "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
                 "fsdp": [
@@ -520,15 +508,13 @@ class TestMultiGPULlama:
 
         execute_subprocess_async(
             [
-                "accelerate",
-                "launch",
+                "axolotl",
+                "train",
+                str(Path(temp_dir) / "config.yaml"),
                 "--num-processes",
                 "2",
-                "--main_process_port",
+                "--main-process-port",
                 f"{get_torch_dist_unique_port()}",
-                "-m",
-                "axolotl.cli.train",
-                str(Path(temp_dir) / "config.yaml"),
             ]
         )
 
@@ -589,7 +575,7 @@ class TestMultiGPULlama:
                 "gradient_accumulation_steps": gradient_accumulation_steps,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
-                "optimizer": "adamw_torch",
+                "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
                 "deepspeed": str(AXOLOTL_ROOT / deepspeed),
@@ -605,15 +591,13 @@ class TestMultiGPULlama:
 
         execute_subprocess_async(
             [
-                "accelerate",
-                "launch",
+                "axolotl",
+                "train",
+                str(Path(temp_dir) / "config.yaml"),
                 "--num-processes",
                 "2",
-                "--main_process_port",
+                "--main-process-port",
                 f"{get_torch_dist_unique_port()}",
-                "-m",
-                "axolotl.cli.train",
-                str(Path(temp_dir) / "config.yaml"),
             ]
         )
 
@@ -664,7 +648,7 @@ class TestMultiGPULlama:
                 "gradient_accumulation_steps": gradient_accumulation_steps,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
-                "optimizer": "adamw_torch",
+                "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
                 "deepspeed": str(AXOLOTL_ROOT / "deepspeed_configs/zero2.json"),
@@ -680,15 +664,13 @@ class TestMultiGPULlama:
 
         execute_subprocess_async(
             [
-                "accelerate",
-                "launch",
+                "axolotl",
+                "train",
+                str(Path(temp_dir) / "config.yaml"),
                 "--num-processes",
                 "2",
-                "--main_process_port",
+                "--main-process-port",
                 f"{get_torch_dist_unique_port()}",
-                "-m",
-                "axolotl.cli.train",
-                str(Path(temp_dir) / "config.yaml"),
             ]
         )
 
@@ -739,7 +721,7 @@ class TestMultiGPULlama:
                 "gradient_accumulation_steps": gradient_accumulation_steps,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
-                "optimizer": "adamw_torch",
+                "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
                 "deepspeed": str(AXOLOTL_ROOT / "deepspeed_configs/zero1.json"),
@@ -755,15 +737,13 @@ class TestMultiGPULlama:
 
         execute_subprocess_async(
             [
-                "accelerate",
-                "launch",
+                "axolotl",
+                "train",
+                str(Path(temp_dir) / "config.yaml"),
                 "--num-processes",
                 "2",
-                "--main_process_port",
+                "--main-process-port",
                 f"{get_torch_dist_unique_port()}",
-                "-m",
-                "axolotl.cli.train",
-                str(Path(temp_dir) / "config.yaml"),
             ]
         )
 

@@ -23,8 +23,8 @@ df_template = template_env.get_template("Dockerfile.jinja")
 df_args = {
     "AXOLOTL_EXTRAS": os.environ.get("AXOLOTL_EXTRAS", ""),
     "AXOLOTL_ARGS": os.environ.get("AXOLOTL_ARGS", ""),
-    "PYTORCH_VERSION": os.environ.get("PYTORCH_VERSION", "2.3.1"),
-    "BASE_TAG": os.environ.get("BASE_TAG", "main-base-py3.11-cu121-2.3.1"),
+    "PYTORCH_VERSION": os.environ.get("PYTORCH_VERSION", "2.4.1"),
+    "BASE_TAG": os.environ.get("BASE_TAG", "main-base-py3.11-cu121-2.4.1"),
     "CUDA": os.environ.get("CUDA", "121"),
     "GITHUB_REF": os.environ.get("GITHUB_REF", "refs/heads/main"),
     "GITHUB_SHA": os.environ.get("GITHUB_SHA", ""),
@@ -38,16 +38,12 @@ temp_dir = tempfile.mkdtemp()
 with open(pathlib.Path(temp_dir) / "Dockerfile", "w", encoding="utf-8") as f:
     f.write(dockerfile_contents)
 
-cicd_image = (
-    Image.from_dockerfile(
-        pathlib.Path(temp_dir) / "Dockerfile",
-        context_mount=None,
-        force_build=True,
-        gpu="A10G",
-    )
-    .env(df_args)
-    .pip_install("fastapi==0.110.0", "pydantic==2.6.3")
-)
+cicd_image = Image.from_dockerfile(
+    pathlib.Path(temp_dir) / "Dockerfile",
+    context_mount=None,
+    force_build=True,
+    gpu="A10G",
+).env(df_args)
 
 app = App("Axolotl CI/CD", secrets=[])
 
@@ -59,7 +55,7 @@ VOLUME_CONFIG = {
 }
 
 N_GPUS = int(os.environ.get("N_GPUS", 1))
-GPU_CONFIG = modal.gpu.A10G(count=N_GPUS)
+GPU_CONFIG = modal.gpu.L40S(count=N_GPUS)
 
 
 def run_cmd(cmd: str, run_folder: str):

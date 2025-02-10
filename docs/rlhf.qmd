@@ -29,7 +29,7 @@ datasets:
     type: chatml.intel
   - path: argilla/ultrafeedback-binarized-preferences
     split: train
-    type: chatml.argilla
+    type: chatml
 ```
 
 #### IPO

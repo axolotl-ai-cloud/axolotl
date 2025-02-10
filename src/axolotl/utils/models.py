@@ -142,7 +142,9 @@ def load_model_config(cfg):
     config_kwargs = {}
     if cfg.revision_of_model:
         config_kwargs["revision"] = cfg.revision_of_model
-
+    if cfg.num_labels:
+        # num_labels is used to initialize classifier models
+        config_kwargs["num_labels"] = cfg.num_labels
     try:
         model_config = AutoConfig.from_pretrained(
             model_config_name,
@@ -359,8 +361,8 @@ class ModelLoader:
 
         # init model kwargs
         self.model_kwargs: Dict[str, Any] = {}
-        if cfg.model_kwargs:
-            for key, val in cfg.model_kwargs.items():
+        if cfg.overrides_of_model_kwargs:
+            for key, val in cfg.overrides_of_model_kwargs.items():
                 self.model_kwargs[key] = val
 
         # init model
