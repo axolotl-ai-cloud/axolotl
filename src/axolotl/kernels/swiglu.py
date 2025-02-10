@@ -5,7 +5,7 @@ See "GLU Variants Improve Transformer" (https://arxiv.org/abs/2002.05202).
 
 Credit to `unsloth` (https://unsloth.ai/) for inspiration for this implementation.
 """
-# pylint: disable=invalid-name,unnecessary-lambda-assignment
+# pylint: disable=invalid-name,unnecessary-lambda-assignment,duplicate-code
 
 import torch
 import triton
@@ -20,7 +20,17 @@ def _swiglu_fwd_kernel(
     n_elements,
     BLOCK_SIZE: tl.constexpr,
 ):
-    """SwiGLU forward kernel."""
+    """
+    SwiGLU forward kernel. The kernel computes activation in fp32 precision for better
+    numerical stability, then converts back to original dtype for the final result.
+
+    Args:
+        gate_ptr: Pointer to gate tensor `[*, hidden_dim]`.
+        up_ptr: Pointer to up-projection tensor `[`*, hidden_dim]`.
+        out_ptr: Pointer to output tensor `[*, hidden_dim]`.
+        n_elements: Total number of elements in the input tensors.
+        BLOCK_SIZE: Size of thread blocks for parallel computation.
+    """
     block_idx = tl.program_id(0)
     offsets = block_idx * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
     mask = offsets < n_elements
@@ -45,36 +55,63 @@ def _swiglu_bwd_kernel(
     n_elements,
     BLOCK_SIZE: tl.constexpr,
 ):
-    """SwiGLU backward kernel - storing results in-place following unsloth."""
+    """
+    SwiGLU backward kernel. Stores gradient results in-place.
+
+    Args:
+        grad_out_ptr: Pointer to gradient output tensor `[*, hidden_dim]`.
+        gate_ptr: Pointer to gate tensor `[*, hidden_dim]`.
+        up_ptr: Pointer to up-projection tensor `[*, hidden_dim]`.
+        n_elements: Total number of elements in the input tensors.
+        BLOCK_SIZE: Size of thread blocks for parallel computation.
+
+    Note:
+        After kernel execution, tensors are modified in-place:
+        - `grad_out_ptr` contains forward output (`h`)
+        - `gate_ptr` contains gradient w.r.t gate (`grad_gate`)
+        - `up_ptr` contains gradient w.r.t up (`grad_up`)
+    """
     block_idx = tl.program_id(0)
     offsets = block_idx * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
     mask = offsets < n_elements
 
-    # Load values
+    # Load values - only convert gate to fp32
     grad_out = tl.load(grad_out_ptr + offsets, mask=mask, other=0)
     gate = tl.load(gate_ptr + offsets, mask=mask, other=0).to(tl.float32)
     up = tl.load(up_ptr + offsets, mask=mask, other=0)
 
-    # Forward pass computations needed for backward
+    # Compute SiLU and forward output
     sigmoid_gate = tl.sigmoid(gate)
-    f = sigmoid_gate * gate
-    f = f.to(grad_out.dtype)
-    h = f * up
+    silu_gate = sigmoid_gate * gate
+    silu_gate = silu_gate.to(grad_out.dtype)
+    h = silu_gate * up
 
     # Compute gradients
-    df = grad_out * f  # grad wrt f
-    dg = grad_out * up  # grad wrt up
-    de = dg.to(tl.float32) * sigmoid_gate * (1.0 + gate * (1.0 - sigmoid_gate))
-    de = de.to(grad_out.dtype)
+    grad_up = grad_out * silu_gate  # gradient for up is grad_out * SiLU(gate)
 
-    # Store results in-place
-    tl.store(grad_out_ptr + offsets, h, mask=mask)  # forward output
-    tl.store(gate_ptr + offsets, df, mask=mask)  # grad wrt gate
-    tl.store(up_ptr + offsets, de, mask=mask)  # grad wrt up
+    # Compute gate gradient
+    temp = grad_out * up
+    grad_gate = temp.to(tl.float32) * sigmoid_gate * (1.0 + gate * (1.0 - sigmoid_gate))
+    grad_gate = grad_gate.to(grad_out.dtype)
+
+    # Store results with correct gradient ordering
+    tl.store(grad_out_ptr + offsets, h, mask=mask)
+    tl.store(gate_ptr + offsets, grad_gate, mask=mask)  # grad wrt gate
+    tl.store(up_ptr + offsets, grad_up, mask=mask)  # grad wrt up
 
 
 def swiglu_forward(gate: torch.Tensor, up: torch.Tensor) -> torch.Tensor:
-    """SwiGLU forward pass."""
+    """
+    SwiGLU forward pass. Computes SwiGLU activation: `x * sigmoid(x) * up`, where
+    `x` is the gate tensor.
+
+    Args:
+        gate: Input gate tensor of shape `[batch, seq_len, hidden_dim]`.
+        up: Up-projection tensor of shape `[batch, seq_len, hidden_dim]`.
+
+    Returns:
+        Output tensor of shape `[batch, seq_len, hidden_dim]`.
+    """
     batch, seq_len, hidden_dim = gate.shape
     n_elements = gate.numel()
     out = torch.empty((batch, seq_len, hidden_dim), dtype=gate.dtype, device="cuda")
@@ -87,11 +124,27 @@ def swiglu_forward(gate: torch.Tensor, up: torch.Tensor) -> torch.Tensor:
         n_elements=n_elements,
         BLOCK_SIZE=1024,
     )
+
     return out
 
 
-def swiglu_backward(grad_output: torch.Tensor, gate: torch.Tensor, up: torch.Tensor):
-    """SwiGLU backward pass using in-place operations."""
+def swiglu_backward(
+    grad_output: torch.Tensor, gate: torch.Tensor, up: torch.Tensor
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """
+    SwiGLU backward pass using in-place operations.
+
+    Args:
+        grad_output: Gradient of loss with respect to output, shape `[batch, seq_len, hidden_dim]`.
+        gate: Gate tensor from forward pass, shape `[batch, seq_len, hidden_dim]`.
+        up: Up-projection tensor from forward pass, shape `[batch, seq_len, hidden_dim]`.
+
+    Returns:
+        Tuple containing:
+            - Forward pass output (`h`)
+            - Gradient with respect to gate (`df`)
+            - Gradient with respect to up-projection (`de`)
+    """
     n_elements = grad_output.numel()
 
     grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)  # noqa: E731
@@ -105,6 +158,6 @@ def swiglu_backward(grad_output: torch.Tensor, gate: torch.Tensor, up: torch.Ten
 
     # After kernel execution, tensors contain:
     # grad_output: h (forward output)
-    # gate: df (grad wrt gate)
-    # up: de (grad wrt up)
+    # gate: grad_gate (grad wrt gate)
+    # up: grad_up (grad wrt up)
     return grad_output, gate, up

@@ -1,8 +1,12 @@
+"""Tests for LoRA custom autograd."""
+# pylint: disable=invalid-name,redefined-outer-name
+
 import pytest
 import torch
-import torch.nn as nn
 from bitsandbytes.functional import QuantState
+from torch import nn
 
+from axolotl.kernels.geglu import geglu_backward, geglu_forward
 from axolotl.kernels.lora import (
     LoRA_MLP,
     LoRA_O,
@@ -12,12 +16,7 @@ from axolotl.kernels.lora import (
     get_lora_parameters,
     matmul_lora,
 )
-
-
-@pytest.fixture
-def device():
-    """Returns the appropriate device for testing"""
-    return "cuda" if torch.cuda.is_available() else "cpu"
+from axolotl.kernels.swiglu import swiglu_backward, swiglu_forward
 
 
 @pytest.fixture
@@ -30,25 +29,23 @@ def mock_quantstate(device):
     nested_state = QuantState(
         absmax=torch.ones(n_blocks, device=device),  # One value per block
         shape=shape,
-        code=torch.randint(-127, 127, shape, device=device),
-        dtype=torch.float32,
+        code=torch.randint(0, 15, shape, device=device),  # NF4 range is 0-15
+        dtype=torch.float16,
         blocksize=64,
-        quant_type="fp4",
+        quant_type="nf4",
         offset=None,
         state2=None,
     )
 
     # Create main state with nested state
     return QuantState(
-        absmax=torch.ones(n_blocks, device=device),  # One value per block
+        absmax=torch.ones(n_blocks, device=device),
         shape=shape,
-        code=torch.randint(-127, 127, shape, device=device),
-        dtype=torch.float32,
+        code=torch.randint(0, 15, shape, device=device),
+        dtype=torch.float16,
         blocksize=64,
-        quant_type="fp4",
-        offset=torch.zeros(
-            n_blocks, dtype=torch.int32, device=device
-        ),  # Match absmax shape
+        quant_type="nf4",
+        offset=torch.zeros(n_blocks, dtype=torch.int32, device=device),
         state2=nested_state,
     )
 
@@ -59,12 +56,13 @@ def sample_tensors(device):
     torch.manual_seed(42)
     batch_size, seq_len, hidden_dim = 2, 3, 64
     rank = 8
-    out_dim = hidden_dim  # Make output dimension match input for QKV testing
+    out_dim = hidden_dim
 
     return {
-        "X": torch.randn(batch_size, seq_len, hidden_dim, device=device),
-        "W": torch.randn(out_dim, hidden_dim, device=device),
-        # Note: A and B shapes will be created as needed in specific tests
+        "X": torch.randn(
+            batch_size, seq_len, hidden_dim, device=device, dtype=torch.float16
+        ),
+        "W": torch.randn(out_dim, hidden_dim, device=device, dtype=torch.float16),
         "scale": 0.5,
         "shapes": {
             "batch": batch_size,
@@ -78,9 +76,11 @@ def sample_tensors(device):
 
 @pytest.fixture
 def mock_proj(device):
-    """Creates a mock projection module for testing"""
+    """Creates a mock projection module for testing."""
 
     class MockProj(nn.Module):
+        """Mock projection class."""
+
         def __init__(self, in_features=64, out_features=128, rank=8):
             super().__init__()
             self.base_layer = nn.Linear(in_features, out_features)
@@ -99,10 +99,10 @@ def mock_proj(device):
     return MockProj()
 
 
-def test_get_lora_parameters(mock_proj, mock_quantstate):
+def test_get_lora_parameters(mock_proj):
     """Tests get_lora_parameters function"""
     # Test with LoRA enabled
-    W, quant_state, A, B, s = get_lora_parameters(mock_proj)
+    W, _, A, B, s = get_lora_parameters(mock_proj)
 
     assert isinstance(W, torch.Tensor)
     assert W.shape == (128, 64)
@@ -112,23 +112,29 @@ def test_get_lora_parameters(mock_proj, mock_quantstate):
 
     # Test with LoRA disabled
     mock_proj.disable_adapters = True
-    W, quant_state, A, B, s = get_lora_parameters(mock_proj)
+    W, _, A, B, s = get_lora_parameters(mock_proj)
     assert A is None and B is None and s is None
 
     # Test with merged state
     mock_proj.disable_adapters = False
     mock_proj.merged = True
-    W, quant_state, A, B, s = get_lora_parameters(mock_proj)
+    W, _, A, B, s = get_lora_parameters(mock_proj)
     assert A is None and B is None and s is None
 
 
-def test_matmul_lora(sample_tensors):
+def test_matmul_lora(sample_tensors, device):
     """Tests matmul_lora function"""
     X = sample_tensors["X"]
     W = sample_tensors["W"]
-    A = sample_tensors["A"]
-    B = sample_tensors["B"]
     scale = sample_tensors["scale"]
+
+    shapes = sample_tensors["shapes"]
+    hidden_dim = shapes["hidden"]
+    out_dim = shapes["out"]
+    rank = shapes["rank"]
+
+    A = torch.randn(rank, hidden_dim, device=device, dtype=torch.float16)
+    B = torch.randn(out_dim, rank, device=device, dtype=torch.float16)
 
     # Test base matmul
     out1 = matmul_lora(X, W, None, None, None, None)
@@ -148,7 +154,13 @@ def test_matmul_lora(sample_tensors):
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
-def test_lora_mlp_direct(sample_tensors, device):
+@pytest.mark.parametrize(
+    "activation_forward,activation_backward",
+    [(swiglu_forward, swiglu_backward), (geglu_forward, geglu_backward)],
+)
+def test_lora_mlp_direct(
+    sample_tensors, device, activation_forward, activation_backward
+):
     """Tests LoRA_MLP directly with different activation functions"""
     X = sample_tensors["X"]
     shapes = sample_tensors["shapes"]
@@ -156,9 +168,9 @@ def test_lora_mlp_direct(sample_tensors, device):
     out_dim = shapes["out"]
 
     # Create linear layers
-    gate_proj = nn.Linear(hidden_dim, out_dim).to(device)
-    up_proj = nn.Linear(hidden_dim, out_dim).to(device)
-    down_proj = nn.Linear(out_dim, hidden_dim).to(device)
+    gate_proj = nn.Linear(hidden_dim, out_dim).to(device=device, dtype=torch.float16)
+    up_proj = nn.Linear(hidden_dim, out_dim).to(device=device, dtype=torch.float16)
+    down_proj = nn.Linear(out_dim, hidden_dim).to(device=device, dtype=torch.float16)
 
     # Test SwiGLU path
     X.requires_grad = True
@@ -179,44 +191,9 @@ def test_lora_mlp_direct(sample_tensors, device):
         None,  # down_A
         None,  # down_B
         None,  # down_scale
-        lambda x, y: torch.nn.functional.silu(x) * y,  # swiglu forward
-        lambda dw, x, y: (dw * torch.nn.functional.silu(x), dw * y),  # swiglu backward
+        activation_forward,
+        activation_backward,
         True,  # inplace
-    )
-
-    assert output.shape == X.shape
-    assert not torch.isnan(output).any()
-
-    # Test backward pass
-    loss = output.sum()
-    loss.backward()
-    assert X.grad is not None
-    assert not torch.isnan(X.grad).any()
-
-    # Clear gradients
-    X.grad = None
-
-    # Test GEGLU path
-    output = LoRA_MLP.apply(
-        X,
-        gate_proj.weight,
-        None,
-        None,
-        None,
-        None,
-        up_proj.weight,
-        None,
-        None,
-        None,
-        None,
-        down_proj.weight,
-        None,
-        None,
-        None,
-        None,
-        lambda x, y: torch.nn.functional.gelu(x) * y,  # geglu forward
-        lambda dw, x, y: (dw * torch.nn.functional.gelu(x), dw * y),  # geglu backward
-        True,
     )
 
     assert output.shape == X.shape
@@ -230,7 +207,13 @@ def test_lora_mlp_direct(sample_tensors, device):
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
-def test_lora_mlp_with_adapters(sample_tensors, device):
+@pytest.mark.parametrize(
+    "activation_forward,activation_backward",
+    [(swiglu_forward, swiglu_backward), (geglu_forward, geglu_backward)],
+)
+def test_lora_mlp_with_adapters(
+    sample_tensors, device, activation_forward, activation_backward
+):
     """Tests LoRA_MLP with LoRA adapters"""
     X = sample_tensors["X"]
     shapes = sample_tensors["shapes"]
@@ -239,17 +222,17 @@ def test_lora_mlp_with_adapters(sample_tensors, device):
     rank = shapes["rank"]
 
     # Create LoRA components
-    gate_A = torch.randn(rank, hidden_dim, device=device)
-    gate_B = torch.randn(out_dim, rank, device=device)
-    up_A = torch.randn(rank, hidden_dim, device=device)
-    up_B = torch.randn(out_dim, rank, device=device)
-    down_A = torch.randn(rank, out_dim, device=device)
-    down_B = torch.randn(hidden_dim, rank, device=device)
+    gate_A = torch.randn(rank, hidden_dim, device=device, dtype=torch.float16)
+    gate_B = torch.randn(out_dim, rank, device=device, dtype=torch.float16)
+    up_A = torch.randn(rank, hidden_dim, device=device, dtype=torch.float16)
+    up_B = torch.randn(out_dim, rank, device=device, dtype=torch.float16)
+    down_A = torch.randn(rank, out_dim, device=device, dtype=torch.float16)
+    down_B = torch.randn(hidden_dim, rank, device=device, dtype=torch.float16)
     scale = 0.5
 
-    gate_proj = nn.Linear(hidden_dim, out_dim).to(device)
-    up_proj = nn.Linear(hidden_dim, out_dim).to(device)
-    down_proj = nn.Linear(out_dim, hidden_dim).to(device)
+    gate_proj = nn.Linear(hidden_dim, out_dim).to(device=device, dtype=torch.float16)
+    up_proj = nn.Linear(hidden_dim, out_dim).to(device=device, dtype=torch.float16)
+    down_proj = nn.Linear(out_dim, hidden_dim).to(device=device, dtype=torch.float16)
 
     X.requires_grad = True
     gate_A.requires_grad = True
@@ -277,8 +260,8 @@ def test_lora_mlp_with_adapters(sample_tensors, device):
         down_A,
         down_B,
         scale,
-        lambda x, y: torch.nn.functional.silu(x) * y,
-        lambda dw, x, y: (dw * torch.nn.functional.silu(x), dw * y),
+        activation_forward,
+        activation_backward,
         True,
     )
 
@@ -308,7 +291,6 @@ def test_lora_mlp_with_adapters(sample_tensors, device):
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
 def test_lora_qkv(sample_tensors, device):
     """Tests LoRA QKV implementation with and without adapters"""
     X = sample_tensors["X"]
@@ -317,17 +299,29 @@ def test_lora_qkv(sample_tensors, device):
     rank = shapes["rank"]
 
     # Create base weights
-    q_weight = torch.randn(hidden_dim, hidden_dim, device=device)
-    k_weight = torch.randn(hidden_dim, hidden_dim, device=device)
-    v_weight = torch.randn(hidden_dim, hidden_dim, device=device)
+    q_weight = torch.randn(hidden_dim, hidden_dim, device=device, dtype=torch.float16)
+    k_weight = torch.randn(hidden_dim, hidden_dim, device=device, dtype=torch.float16)
+    v_weight = torch.randn(hidden_dim, hidden_dim, device=device, dtype=torch.float16)
 
     # Create LoRA matrices
-    q_A = torch.randn(rank, hidden_dim, device=device, requires_grad=True)
-    q_B = torch.randn(hidden_dim, rank, device=device, requires_grad=True)
-    k_A = torch.randn(rank, hidden_dim, device=device, requires_grad=True)
-    k_B = torch.randn(hidden_dim, rank, device=device, requires_grad=True)
-    v_A = torch.randn(rank, hidden_dim, device=device, requires_grad=True)
-    v_B = torch.randn(hidden_dim, rank, device=device, requires_grad=True)
+    q_A = torch.randn(
+        rank, hidden_dim, device=device, dtype=torch.float16, requires_grad=True
+    )
+    q_B = torch.randn(
+        hidden_dim, rank, device=device, dtype=torch.float16, requires_grad=True
+    )
+    k_A = torch.randn(
+        rank, hidden_dim, device=device, dtype=torch.float16, requires_grad=True
+    )
+    k_B = torch.randn(
+        hidden_dim, rank, device=device, dtype=torch.float16, requires_grad=True
+    )
+    v_A = torch.randn(
+        rank, hidden_dim, device=device, dtype=torch.float16, requires_grad=True
+    )
+    v_B = torch.randn(
+        hidden_dim, rank, device=device, dtype=torch.float16, requires_grad=True
+    )
     scale = 0.5
 
     X.requires_grad = True
@@ -405,13 +399,19 @@ def test_lora_qkv(sample_tensors, device):
     assert not torch.isnan(v_B.grad).any()
 
 
-def test_lora_o(sample_tensors):
+def test_lora_o(sample_tensors, device):
     """Tests LoRA output projection"""
     X = sample_tensors["X"]
     W = sample_tensors["W"]
-    A = sample_tensors["A"]
-    B = sample_tensors["B"]
     scale = sample_tensors["scale"]
+
+    shapes = sample_tensors["shapes"]
+    hidden_dim = shapes["hidden"]
+    out_dim = shapes["out"]
+    rank = shapes["rank"]
+
+    A = torch.randn(rank, hidden_dim, device=device, dtype=torch.float16)
+    B = torch.randn(out_dim, rank, device=device, dtype=torch.float16)
 
     # Test forward pass
     X.requires_grad = True
@@ -425,19 +425,19 @@ def test_lora_o(sample_tensors):
     assert X.grad is not None
 
 
-def test_with_quantization(sample_tensors, mock_quantstate):
+def test_with_quantization(sample_tensors, mock_quantstate, device):
     """Tests LoRA with quantized weights"""
     X = sample_tensors["X"]  # [batch, seq, hidden]
     W = sample_tensors["W"]  # [out, hidden]
+    scale = 0.5
+
     shapes = sample_tensors["shapes"]
     hidden_dim = shapes["hidden"]
     out_dim = shapes["out"]
     rank = shapes["rank"]
 
-    # Create LoRA matrices with correct shapes
-    A = torch.randn(rank, hidden_dim, device=X.device)  # [rank, hidden]
-    B = torch.randn(out_dim, rank, device=X.device)  # [out, rank]
-    scale = 0.5
+    A = torch.randn(rank, hidden_dim, device=device, dtype=torch.float16)
+    B = torch.randn(out_dim, rank, device=device, dtype=torch.float16)
 
     # Test matmul with quantization
     out = matmul_lora(X, W, mock_quantstate, A, B, scale)
@@ -445,7 +445,7 @@ def test_with_quantization(sample_tensors, mock_quantstate):
     assert not torch.isnan(out).any()
 
     # Test with different batch sizes
-    X2 = torch.randn(4, 6, hidden_dim, device=X.device)
+    X2 = torch.randn(4, 6, hidden_dim, device=device, dtype=torch.float16)
     out2 = matmul_lora(X2, W, mock_quantstate, A, B, scale)
     assert out2.shape == (4, 6, W.shape[0])
     assert not torch.isnan(out2).any()
@@ -461,23 +461,29 @@ def test_with_quantization(sample_tensors, mock_quantstate):
 )
 def test_shapes_and_dimensions(batch, seq, hidden, rank, out, device):
     """Tests various input shapes and dimensions"""
-    X = torch.randn(batch, seq, hidden, device=device)
-    W = torch.randn(out, hidden, device=device)
-    A = torch.randn(rank, hidden, device=device)
-    B = torch.randn(out, rank, device=device)
+    X = torch.randn(batch, seq, hidden, device=device, dtype=torch.float16)
+    W = torch.randn(out, hidden, device=device, dtype=torch.float16)
+    A = torch.randn(rank, hidden, device=device, dtype=torch.float16)
+    B = torch.randn(out, rank, device=device, dtype=torch.float16)
     scale = 0.5
 
     result = matmul_lora(X, W, None, A, B, scale)
     assert result.shape == (batch, seq, out)
 
 
-def test_gradient_flow(sample_tensors):
+def test_gradient_flow(sample_tensors, device):
     """Tests gradient flow through LoRA layers"""
     X = sample_tensors["X"].clone()
     W = sample_tensors["W"].clone()
-    A = sample_tensors["A"].clone()
-    B = sample_tensors["B"].clone()
     scale = sample_tensors["scale"]
+
+    shapes = sample_tensors["shapes"]
+    hidden_dim = shapes["hidden"]
+    out_dim = shapes["out"]
+    rank = shapes["rank"]
+
+    A = torch.randn(rank, hidden_dim, device=device, dtype=torch.float16)
+    B = torch.randn(out_dim, rank, device=device, dtype=torch.float16)
 
     X.requires_grad = True
     A.requires_grad = True
@@ -499,7 +505,11 @@ def test_gradient_flow(sample_tensors):
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
-def test_inplace_operations(sample_tensors, device):
+@pytest.mark.parametrize(
+    "apply_function",
+    [apply_lora_mlp_swiglu, apply_lora_mlp_geglu],
+)
+def test_inplace_operations(sample_tensors, device, apply_function):
     """Tests inplace operation behavior"""
     X = sample_tensors["X"]
     shapes = sample_tensors["shapes"]
@@ -509,13 +519,19 @@ def test_inplace_operations(sample_tensors, device):
         "MLPModule",
         (),
         {
-            "gate_proj": nn.Linear(shapes["hidden"], shapes["out"]).to(device),
-            "up_proj": nn.Linear(shapes["hidden"], shapes["out"]).to(device),
-            "down_proj": nn.Linear(shapes["out"], shapes["hidden"]).to(device),
+            "gate_proj": nn.Linear(shapes["hidden"], shapes["out"]).to(
+                device=device, dtype=torch.float16
+            ),
+            "up_proj": nn.Linear(shapes["hidden"], shapes["out"]).to(
+                device=device, dtype=torch.float16
+            ),
+            "down_proj": nn.Linear(shapes["out"], shapes["hidden"]).to(
+                device=device, dtype=torch.float16
+            ),
         },
     )
 
-    out1 = apply_lora_mlp_swiglu(mlp, X.clone(), inplace=True)
-    out2 = apply_lora_mlp_swiglu(mlp, X.clone(), inplace=False)
+    out1 = apply_function(mlp, X.clone(), inplace=True)
+    out2 = apply_function(mlp, X.clone(), inplace=False)
 
     assert torch.allclose(out1, out2, rtol=1e-4)

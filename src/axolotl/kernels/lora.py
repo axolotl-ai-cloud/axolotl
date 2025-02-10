@@ -271,8 +271,7 @@ class LoRA_MLP(torch.autograd.Function):
         )
 
         # Activation backward
-        DW, gate, up = ctx.activation_fn_backward(DW, gate, up)
-        h, df, de = DW, gate, up
+        h, grad_gate, grad_up = ctx.activation_fn_backward(DW, gate, up)
 
         # Initialize and compute LoRA gradients
         d_down_A = d_down_B = d_up_A = d_up_B = d_gate_A = d_gate_B = None
@@ -284,14 +283,14 @@ class LoRA_MLP(torch.autograd.Function):
             d_down_B *= down_scale
 
         if up_A is not None:
-            d_up_A = X.t() @ (df @ up_B.t())
-            d_up_B = (up_A.t() @ X.t()) @ df
+            d_up_A = X.t() @ (grad_up @ up_B.t())
+            d_up_B = (up_A.t() @ X.t()) @ grad_up
             d_up_A *= up_scale
             d_up_B *= up_scale
 
         if gate_A is not None:
-            d_gate_A = X.t() @ (de @ gate_B.t())
-            d_gate_B = (gate_A.t() @ X.t()) @ de
+            d_gate_A = X.t() @ (grad_gate @ gate_B.t())
+            d_gate_B = (gate_A.t() @ X.t()) @ grad_gate
             d_gate_A *= gate_scale
             d_gate_B *= gate_scale
 
@@ -302,22 +301,26 @@ class LoRA_MLP(torch.autograd.Function):
             # Up projection gradients
             up_weight = dequantize(up_weight.t(), up_quant)
             if ctx.inplace:
-                dX = torch.matmul(df, up_weight.t(), out=X)
+                dX = torch.matmul(grad_up, up_weight.t(), out=X)
             else:
-                dX = torch.matmul(df, up_weight.t())
+                dX = torch.matmul(grad_up, up_weight.t())
             del up_weight
 
             # Note the .to(dtype) only where mixing LoRA with base weights
             if up_A is not None:
-                dX += df @ up_B.to(dtype).t() @ (up_scale * up_A.to(dtype).t())
+                dX += grad_up @ up_B.to(dtype).t() @ (up_scale * up_A.to(dtype).t())
 
             # Gate projection gradients
             gate_weight = dequantize(gate_weight.t(), gate_quant)
-            dX += de @ gate_weight.t()
+            dX += grad_gate @ gate_weight.t()
             del gate_weight
 
             if gate_A is not None:
-                dX += de @ gate_B.to(dtype).t() @ (gate_scale * gate_A.to(dtype).t())
+                dX += (
+                    grad_gate
+                    @ gate_B.to(dtype).t()
+                    @ (gate_scale * gate_A.to(dtype).t())
+                )
 
             # Reshape back
             dX = dX.view(batch, seq_len, hd)
