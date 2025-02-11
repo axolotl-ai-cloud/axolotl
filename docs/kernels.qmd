@@ -1,4 +1,64 @@
 ---
-title: "Axolotl Kernels"
-description: "Various custom Triton kernels in Axolotl for post-traning speed and memory savings"
+title: "LoRA Optimizations"
+description: "Custom autograd functions and Triton kernels in Axolotl for optimized
+LoRA fine-tuning"
 ---
+
+Inspired by [Unsloth](https://unsloth.ai/), we've implemented two optimizations for
+LoRA and QLoRA fine-tuning, supporting both single GPU and multi-GPU (in the DDP
+setting) training. These include (1) SwiGLU and GEGLU activation function Triton
+kernels, and (2) LoRA MLP and attention custom autograd functions. Our goal was to
+leverage operator fusion and tensor re-use in order to improve speed and reduce
+memory usage during the forward and backward passes of these calculations.
+
+## Custom autograd functions
+
+The LoRA MLP autograd function optimizes the entire MLP computation path. It fuses the
+LoRA and base weight computations together and provides a single, efficient backward
+pass for the entire MLP block.
+
+For attention components, similar optimizations are provided through a function that
+handles the query, key, and value projections, and a function that handles the output
+projection. They are designed to work with the existing `transformers` attention
+implementation via some monkey-patching logic.
+
+## Triton kernels
+
+Two activation functions (SwiGLU and GeGLU) are implemented with Triton kernels for
+improved speed and memory performance. These kernels handle both the forward and
+backward passes.
+
+## Integration
+
+The custom autograd functions and Triton kernels are designed to work together. The
+autograd function manages the high-level computation flow and gradient tracking, while
+calling the Triton kernels for the activation function computation. During the backward
+pass, the kernel computes both the activation output and the required gradients, which
+the autograd function then uses to compute the final gradients for the entire
+computation path.
+
+## Axolotl config
+
+These optimizations can be enabled in your Axolotl config YAML file. The
+`lora_mlp_kernel` option enables the optimized MLP path, while `lora_qkv_kernel` and
+`lora_o_kernel` enable the fused query-key-value projection and optimized output
+projection, respectively.
+
+```yaml
+lora_mlp_kernel: true
+lora_qkv_kernel: true
+lora_o_kernel: true
+```
+
+Several requirements must be met for these optimizations to be applied:
+- A GPU (in order to use the Triton kernels)
+- Targeted LoRA adapters cannot use Dropout
+- Targeted LoRA adapters cannot have bias terms
+
+## Future Work
+
+- Support for more architectures
+- Support for FSDP and DeepSpeed multi-GPU settings
+- Support for dropout and bias
+- Use Triton autotune to improve kernel performance
+- Additional operator fusions

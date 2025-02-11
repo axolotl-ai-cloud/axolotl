@@ -16,37 +16,21 @@ dataset_prepared_path:
 val_set_size: 0.05
 output_dir: ./outputs/lora-out
 
-adapter: lora
-lora_model_dir:
-
 sequence_len: 4096
 sample_packing: true
 eval_sample_packing: false
 pad_to_sequence_len: true
 
-# adapter: lora
-# lora_model_dir:
-# lora_r: 32
-# lora_alpha: 16
-# lora_dropout: 0.05
-# lora_target_linear: true
-# lora_fan_in_fan_out:
-# lora_modules_to_save:
-#   - embed_tokens
-#   - lm_head
-
-lora_r: 16
-lora_alpha: 32
+adapter: lora
+lora_model_dir:
+lora_r: 32
+lora_alpha: 16
 lora_dropout: 0.05
+lora_target_linear: true
 lora_fan_in_fan_out:
-lora_target_modules:
-  - gate_proj
-  - down_proj
-  - up_proj
-  - q_proj
-  - v_proj
-  - k_proj
-  - o_proj
+lora_modules_to_save:
+  - embed_tokens
+  - lm_head
 
 wandb_project:
 wandb_entity:
