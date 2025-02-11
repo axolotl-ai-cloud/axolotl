@@ -1016,7 +1016,8 @@ class ModelLoader:
                 if hasattr(module, "weight"):
                     module.to(dist_dtype)
 
-    def apply_lora_patch(self) -> None:
+    # TODO: Deprecate this.
+    def apply_unsloth_lora_patch(self) -> None:
         if self.cfg.unsloth_lora_mlp:
             from axolotl.monkeypatch.unsloth_ import integrate_lora_mlp_patch
 
@@ -1030,7 +1031,7 @@ class ModelLoader:
 
             integrate_rope_embeddings()
 
-    def apply_axolotl_lora_patch(self) -> None:
+    def apply_lora_patch(self) -> None:
         if (
             self.cfg.lora_mlp_kernel
             or self.cfg.lora_qkv_kernel
@@ -1184,8 +1185,8 @@ class ModelLoader:
         if self.cfg.adapter is not None:
             log_gpu_memory_usage(LOG, "after adapters", self.model.device)
 
+        self.apply_unsloth_lora_patch()
         self.apply_lora_patch()
-        self.apply_axolotl_lora_patch()
 
         for _ in range(3):
             gc.collect()
