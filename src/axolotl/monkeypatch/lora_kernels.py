@@ -156,6 +156,13 @@ def apply_lora_kernel_patches(model: PeftModelForCausalLM, cfg: DictDefault):
 
     # Patch each layer
     for layer in model.model.model.layers:
+        # Add QKV, O fallback implementations to start
+        # These will be overwritten later (if some conditions apply)
+        layer.self_attn.apply_qkv = types.MethodType(
+            original_apply_qkv, layer.self_attn
+        )
+        layer.self_attn.apply_o = types.MethodType(original_apply_o, layer.self_attn)
+
         if cfg.lora_mlp_kernel:
             # MLP patching
             gate_proj = layer.mlp.gate_proj
@@ -201,10 +208,6 @@ def apply_lora_kernel_patches(model: PeftModelForCausalLM, cfg: DictDefault):
                     apply_lora_qkv, layer.self_attn
                 )
             else:
-                # Add fallback implementation
-                layer.self_attn.apply_qkv = types.MethodType(
-                    original_apply_qkv, layer.self_attn
-                )
                 LOG.warning_once(
                     "Cannot patch some attention QKV projections - requires LoRA adapters with no bias"
                 )
@@ -225,7 +228,6 @@ def apply_lora_kernel_patches(model: PeftModelForCausalLM, cfg: DictDefault):
                     apply_lora_o, layer.self_attn
                 )
             else:
-                layer.self_attn.apply_o = original_apply_o
                 LOG.warning_once(
                     "Cannot patch some attention output projection - requires LoRA adapters with no bias"
                 )
