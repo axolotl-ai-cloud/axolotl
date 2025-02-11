@@ -11,33 +11,7 @@ kernels, and (2) LoRA MLP and attention custom autograd functions. Our goal was 
 leverage operator fusion and tensor re-use in order to improve speed and reduce
 memory usage during the forward and backward passes of these calculations.
 
-## Custom autograd functions
-
-The LoRA MLP autograd function optimizes the entire MLP computation path. It fuses the
-LoRA and base weight computations together and provides a single, efficient backward
-pass for the entire MLP block.
-
-For attention components, similar optimizations are provided through a function that
-handles the query, key, and value projections, and a function that handles the output
-projection. They are designed to work with the existing `transformers` attention
-implementation via some monkey-patching logic.
-
-## Triton kernels
-
-Two activation functions (SwiGLU and GeGLU) are implemented with Triton kernels for
-improved speed and memory performance. These kernels handle both the forward and
-backward passes.
-
-## Integration
-
-The custom autograd functions and Triton kernels are designed to work together. The
-autograd function manages the high-level computation flow and gradient tracking, while
-calling the Triton kernels for the activation function computation. During the backward
-pass, the kernel computes both the activation output and the required gradients, which
-the autograd function then uses to compute the final gradients for the entire
-computation path.
-
-## Axolotl config
+## Usage
 
 These optimizations can be enabled in your Axolotl config YAML file. The
 `lora_mlp_kernel` option enables the optimized MLP path, while `lora_qkv_kernel` and
@@ -50,14 +24,54 @@ lora_qkv_kernel: true
 lora_o_kernel: true
 ```
 
-Several requirements must be met for these optimizations to be applied:
-- A GPU (in order to use the Triton kernels)
+## Requirements
+
+- One or more NVIDIA GPUs (in order to use the Triton kernels)
 - Targeted LoRA adapters cannot use Dropout
+    - This may limit model expressivity / cause overfitting
 - Targeted LoRA adapters cannot have bias terms
+    - This may limit model expressivity
+- One of the following model architectures (`model.config.model_type`):
+    - `llama`
+    - `mistral`
+    - `qwen2`
+    - `gemma`
+    - `gemma2`
+
+Models with pre-existing LoRA adapters that use Dropout or have bias terms may need to
+be re-finetuned without these features in order to be useful.
+
+## Implementation details
+
+### Custom autograd functions
+
+The LoRA MLP autograd function optimizes the entire MLP computation path. It fuses the
+LoRA and base weight computations together and provides a single, efficient backward
+pass for the entire MLP block.
+
+For attention components, similar optimizations are provided through a function that
+handles the query, key, and value projections, and a function that handles the output
+projection. They are designed to work with the existing `transformers` attention
+implementation via some monkey-patching logic.
+
+### Triton kernels
+
+Two activation functions (SwiGLU and GeGLU) are implemented with Triton kernels for
+improved speed and memory performance. These kernels handle both the forward and
+backward passes.
+
+### Integration
+
+The custom autograd functions and Triton kernels are designed to work together. The
+autograd function manages the high-level computation flow and gradient tracking, while
+calling the Triton kernels for the activation function computation. During the backward
+pass, the kernel computes both the activation output and the required gradients, which
+the autograd function then uses to compute the final gradients for the entire
+computation path.
 
 ## Future Work
 
-- Support for more architectures
+- Support for additional model architectures
 - Support for FSDP and DeepSpeed multi-GPU settings
 - Support for dropout and bias
 - Use Triton autotune to improve kernel performance

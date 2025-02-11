@@ -140,9 +140,11 @@ def apply_lora_kernel_patches(model: PeftModelForCausalLM, cfg: DictDefault):
 
     if not can_patch:
         LOG.warning("Cannot patch layers - requires no dropout and no bias")
+        LOG.warning("Please specify `lora_dropout: 0` in your axolotl config file")
         return model
 
     # This needs to be reset after patching
+    original_level = LOG.getEffectiveLevel()
     LOG.setLevel(logging.INFO)
 
     # Choose activation based on model type
@@ -231,5 +233,7 @@ def apply_lora_kernel_patches(model: PeftModelForCausalLM, cfg: DictDefault):
                 LOG.warning_once(
                     "Cannot patch some attention output projection - requires LoRA adapters with no bias"
                 )
+
+    LOG.setLevel(original_level)
 
     return model

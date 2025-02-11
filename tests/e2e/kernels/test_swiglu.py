@@ -21,8 +21,8 @@ def test_swiglu_forward_shape():
 
 def test_swiglu_forward_values():
     """Test SwiGLU forward pass matches PyTorch reference implementation"""
-    gate = torch.randn(2, 3, 64, device="cuda", requires_grad=True)
-    up = torch.randn(2, 3, 64, device="cuda", requires_grad=True)
+    gate = torch.randn(2, 3, 64, device="cuda")
+    up = torch.randn(2, 3, 64, device="cuda")
 
     # Custom implementation
     triton_out = swiglu_forward(gate.clone(), up.clone())

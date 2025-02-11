@@ -469,9 +469,7 @@ class ModelLoader:
         return importlib.util.find_spec("flash_attn") is not None
 
     def patch_loss_llama(self) -> None:
-        """
-        Patch loss functions
-        """
+        """Patch loss functions and other optimizations"""
         if self.has_flash_attn:
             from axolotl.monkeypatch.llama_attn_hijack_flash import (
                 patch_fa_llama_cross_entropy,

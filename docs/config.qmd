@@ -307,7 +307,7 @@ lora_fan_in_fan_out: false
 
 # Apply custom LoRA autograd functions and activation function Triton kernels for
 # speed and memory savings
-# See: https://axolotl-ai-cloud.github.io/axolotl/docs/kernels.html
+# See: https://axolotl-ai-cloud.github.io/axolotl/docs/lora_optims.html
 lora_mlp_kernel: true
 lora_qkv_kernel: true
 lora_o_kernel: true

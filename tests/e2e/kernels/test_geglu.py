@@ -21,13 +21,13 @@ def test_geglu_forward_shape():
 
 def test_geglu_forward_values():
     """Test GEGLU forward pass matches PyTorch reference implementation."""
-    gate = torch.randn(2, 3, 64, device="cuda", requires_grad=True)
-    up = torch.randn(2, 3, 64, device="cuda", requires_grad=True)
+    gate = torch.randn(2, 3, 64, device="cuda")
+    up = torch.randn(2, 3, 64, device="cuda")
 
     # Custom implementation
     triton_out = geglu_forward(gate.clone(), up.clone())
 
-    # PyTorch reference - GELU instead of SiLU
+    # PyTorch reference
     torch_out = F.gelu(gate) * up
 
     assert torch.allclose(triton_out, torch_out, rtol=1e-4)
@@ -49,9 +49,7 @@ def test_geglu_backward():
     up_clone = up.clone().detach()
     grad_output_clone = grad_output.clone()
 
-    h, grad_gate, grad_up = geglu_backward(
-        grad_output_clone.clone(), gate_clone.clone(), up_clone.clone()
-    )
+    h, grad_gate, grad_up = geglu_backward(grad_output_clone, gate_clone, up_clone)
 
     # Compare outputs and gradients
     assert torch.allclose(h, torch_out, rtol=1e-4)

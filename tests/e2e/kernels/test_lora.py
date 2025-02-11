@@ -153,7 +153,6 @@ def test_matmul_lora(sample_tensors):
     assert out3.shape == (X.shape[0], X.shape[1], W.shape[0])
 
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
 @pytest.mark.parametrize(
     "activation_forward,activation_backward",
     [(swiglu_forward, swiglu_backward), (geglu_forward, geglu_backward)],
@@ -204,7 +203,6 @@ def test_lora_mlp_direct(sample_tensors, activation_forward, activation_backward
     assert not torch.isnan(X.grad).any()
 
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
 @pytest.mark.parametrize(
     "activation_forward,activation_backward",
     [(swiglu_forward, swiglu_backward), (geglu_forward, geglu_backward)],
@@ -288,7 +286,6 @@ def test_lora_mlp_with_adapters(
     assert not torch.isnan(down_B.grad).any()
 
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
 def test_lora_qkv(sample_tensors):
     """Tests LoRA QKV implementation with and without adapters"""
     X = sample_tensors["X"]
@@ -502,7 +499,6 @@ def test_gradient_flow(sample_tensors):
     assert not torch.isnan(B.grad).any()
 
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
 @pytest.mark.parametrize(
     "apply_function",
     [apply_lora_mlp_swiglu, apply_lora_mlp_geglu],
