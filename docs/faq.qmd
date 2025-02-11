@@ -22,4 +22,4 @@ description: Frequently asked questions
 
 **Q: The codes is stuck on saving preprocessed datasets.**
 
-> A: This is usually an issue with the GPU. This can be resolved by preprocessing on CPU only through setting the os environment variable `CUDA_VISIBLE_DEVICES=""`or `NCCL_P2P_DISABLE=1`. If you would like to preprocess on GPU and are running on the cloud, you can simply start a new machine instance which usually bypasses the issue.
+> A: This is usually an issue with the GPU. This can be resolved through setting the os environment variable `CUDA_VISIBLE_DEVICES=0`. If you are on runpod, this is usually pod issue and starting a new pod should solve the issue. 
