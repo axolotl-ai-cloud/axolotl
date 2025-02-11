@@ -336,6 +336,10 @@ ul.task-list li input[type="checkbox"] {
 <blockquote class="blockquote">
 <p>A: You may be using deepspeed with single gpu. Please don’t set <code>deepspeed:</code> in yaml or cli.</p>
 </blockquote>
+<p><strong>Q: The codes is stuck on saving preprocessed datasets.</strong></p>
+<blockquote class="blockquote">
+<p>A: This is usually an issue with the GPU. This can be resolved through setting the os environment variable <code>CUDA_VISIBLE_DEVICES=0</code>. If you are on runpod, this is usually a pod issue. Starting a new pod should take care of it.</p>
+</blockquote>
 
 
 
