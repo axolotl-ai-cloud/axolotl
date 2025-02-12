@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 import yaml
 from accelerate.test_utils import execute_subprocess_async
-from e2e.utils import check_tensorboard
+from e2e.utils import check_tensorboard, require_torch_lt_2_6_0
 
 from axolotl.utils.dict import DictDefault
 
@@ -19,6 +19,7 @@ os.environ["WANDB_DISABLED"] = "true"
 AXOLOTL_ROOT = Path(__file__).parent.parent.parent.parent
 
 
+@require_torch_lt_2_6_0
 class TestMultiGPURay:
     """
     Test cases for AnyScale Ray post training
