@@ -8,16 +8,15 @@ import logging
 
 import trl
 
+# TODO (@winglian @SalmanMohammadi) remove after TRL release
 if not trl.__version__ >= "0.15.0.dev":
     raise ImportError(
         "TRL version 0.15 or higher is required to use GRPO training. "
         "Please install the latest version of TRL from main with "
         "pip install git+https://github.com/huggingface/trl.git"
     )
-
-from trl.trainer.grpo_trainer import RewardFunc
-
-from axolotl.core.trainers.grpo.trainer import AxolotlGRPOTrainer
+from trl.trainer.grpo_trainer import RewardFunc # pylint: disable=wrong-import-position
+from axolotl.core.trainers.grpo.trainer import AxolotlGRPOTrainer # pylint: disable=wrong-import-position
 
 LOG = logging.getLogger("axolotl")
 
