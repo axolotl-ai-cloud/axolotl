@@ -6,6 +6,15 @@ import importlib
 import inspect
 import logging
 
+import trl
+
+if not trl.__version__ >= "0.15.0.dev":
+    raise ImportError(
+        "TRL version 0.15 or higher is required to use GRPO training. "
+        "Please install the latest version of TRL from main with "
+        "pip install git+https://github.com/huggingface/trl.git"
+    )
+
 from trl.trainer.grpo_trainer import RewardFunc
 
 from axolotl.core.trainers.grpo.trainer import AxolotlGRPOTrainer
