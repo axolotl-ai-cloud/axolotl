@@ -7,7 +7,6 @@ from trl import GRPOTrainer
 from trl.models import unwrap_model_for_generation
 
 from axolotl.core.trainers.base import SchedulerMixin
-from axolotl.utils.lora import get_lora_merged_state_dict
 
 
 # mypy: ignore-errors
@@ -29,7 +28,18 @@ class AxolotlGRPOTrainer(SchedulerMixin, GRPOTrainer):
                     unwrapped_model._orig_mod  # pylint: disable=protected-access
                 )
             if is_peft_model(unwrapped_model):
-                state_dict = get_lora_merged_state_dict(unwrapped_model)
+                unwrapped_model.merge_adapter()
+                state_dict = unwrapped_model.state_dict()
+                state_dict = {
+                    k.removeprefix("base_model.model.")
+                    .removeprefix("base_model.model.")
+                    .replace(".default", "")
+                    .replace(".base_layer", "")
+                    .replace(".modules_to_save", ""): v
+                    for k, v in state_dict.items()
+                    if unwrapped_model.prefix not in k and "original_module" not in k
+                }
+                unwrapped_model.unmerge_adapter()
             else:
                 state_dict = unwrapped_model.state_dict()
         if self.accelerator.is_main_process:
