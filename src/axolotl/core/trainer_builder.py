@@ -648,9 +648,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 tokenizer=self.tokenizer,
             )
 
-        if self.cfg.rl == "orpo":
-            training_arguments_kwargs["orpo_alpha"] = self.cfg.orpo_alpha
-
         if self.cfg.neftune_noise_alpha is not None:
             training_arguments_kwargs[
                 "neftune_noise_alpha"
