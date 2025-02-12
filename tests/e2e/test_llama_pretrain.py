@@ -62,7 +62,7 @@ class TestPretrainLlama:
                 "val_set_size": 0.0,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
-                "optimizer": "adamw_torch",
+                "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
                 "save_safetensors": True,
                 "bf16": "auto",

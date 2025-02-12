@@ -1,4 +1,6 @@
 """Module for working with config dicts"""
+
+import json
 import logging
 import os
 from typing import Optional
@@ -56,33 +58,10 @@ def choose_device(cfg):
         cfg.device_map = None
 
 
-def normalize_config(cfg):
-    # setup some derived config / hyperparams
-    cfg.gradient_accumulation_steps = cfg.gradient_accumulation_steps or (
-        cfg.batch_size // cfg.micro_batch_size
-    )
-    cfg.batch_size = (
-        cfg.batch_size or cfg.micro_batch_size * cfg.gradient_accumulation_steps
-    )
-    if cfg.eval_batch_size is None:
-        cfg.eval_batch_size = cfg.micro_batch_size
-    cfg.world_size = int(os.environ.get("WORLD_SIZE", 1))
-    cfg.local_rank = int(os.environ.get("LOCAL_RANK", 0))
-    cfg.eval_table_size = cfg.eval_table_size or 0
-    cfg.eval_max_new_tokens = cfg.eval_max_new_tokens or 128
-    cfg.eval_causal_lm_metrics = cfg.eval_causal_lm_metrics or [
-        "sacrebleu",
-        "comet",
-        "ter",
-        "chrf",
-    ]
-    choose_device(cfg)
-    cfg.ddp = cfg.ddp if cfg.ddp is not None else cfg.world_size != 1
-    if cfg.ddp:
-        cfg.device_map = {"": int(os.environ.get("LOCAL_RANK", 0))}
-        cfg.batch_size = cfg.batch_size * cfg.world_size
-
-    if cfg.bf16 == "auto":
+def resolve_dtype(cfg):
+    if (
+        cfg.bf16 == "auto" and not cfg.use_ray
+    ):  # if we use ray we want to defer this check to the worker node
         if is_torch_bf16_gpu_available():
             LOG.debug("bf16 support detected, enabling for this configuration.")
             cfg.bf16 = True
@@ -110,14 +89,59 @@ def normalize_config(cfg):
     else:
         cfg.torch_dtype = torch.float32
 
+
+def normalize_config(cfg):
+    # setup some derived config / hyperparams
+    cfg.gradient_accumulation_steps = cfg.gradient_accumulation_steps or (
+        cfg.batch_size // cfg.micro_batch_size
+    )
+    cfg.batch_size = (
+        cfg.batch_size or cfg.micro_batch_size * cfg.gradient_accumulation_steps
+    )
+    if cfg.eval_batch_size is None:
+        cfg.eval_batch_size = cfg.micro_batch_size
+    cfg.world_size = int(os.environ.get("WORLD_SIZE", 1))
+    cfg.local_rank = int(os.environ.get("LOCAL_RANK", 0))
+    cfg.eval_table_size = cfg.eval_table_size or 0
+    cfg.eval_max_new_tokens = cfg.eval_max_new_tokens or 128
+    cfg.eval_causal_lm_metrics = cfg.eval_causal_lm_metrics or [
+        "sacrebleu",
+        "comet",
+        "ter",
+        "chrf",
+    ]
+    choose_device(cfg)
+    cfg.ddp = cfg.ddp if cfg.ddp is not None else cfg.world_size != 1
+    if cfg.ddp:
+        cfg.device_map = {"": int(os.environ.get("LOCAL_RANK", 0))}
+        cfg.batch_size = cfg.batch_size * cfg.world_size
+
+    if not cfg.use_ray:
+        # delay resolving dtype until on worker node when launching with ray
+        resolve_dtype(cfg)
+
+    if cfg.deepspeed:
+        if isinstance(cfg.deepspeed, str) and os.path.exists(cfg.deepspeed):
+            ds_config_path = cfg.deepspeed
+            with open(ds_config_path, encoding="utf-8") as f:
+                cfg.deepspeed = json.load(f)
+
     if cfg.saves_per_epoch:
         save_steps = 1.0 / (cfg.saves_per_epoch * cfg.num_epochs)
         if save_steps < 1.0:  # prevent saves on every step
             cfg.save_steps = save_steps
+        elif save_steps > 1:
+            LOG.warning(
+                f"Invalid value for save_steps ({save_steps}) from saves_per_epoch and/or num_epochs. Saving at training end only."
+            )
     if (cfg.val_set_size or cfg.test_datasets) and cfg.evals_per_epoch:
         eval_steps = 1.0 / (cfg.evals_per_epoch * cfg.num_epochs)
         if eval_steps < 1.0:  # prevent evals on every step
             cfg.eval_steps = eval_steps
+        elif eval_steps > 1:
+            LOG.warning(
+                f"Invalid value for eval_steps ({eval_steps}) from evals_per_epoch and/or num_epochs. Skipping evaluations."
+            )
 
     cfg.dataset_processes = cfg.dataset_processes or os.cpu_count()
 

@@ -15,16 +15,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - cuda: 121
-            cuda_version: 12.1.1
-            python_version: "3.10"
-            pytorch: 2.3.1
-            axolotl_extras: mamba-ssm
-          - cuda: 121
-            cuda_version: 12.1.1
-            python_version: "3.11"
-            pytorch: 2.3.1
-            axolotl_extras: mamba-ssm
           - cuda: 124
             cuda_version: 12.4.1
             python_version: "3.11"
@@ -36,6 +26,11 @@ jobs:
             pytorch: 2.5.1
             axolotl_extras:
             is_latest: true
+          - cuda: 124
+            cuda_version: 12.4.1
+            python_version: "3.11"
+            pytorch: 2.6.0
+            axolotl_extras:
     runs-on: axolotl-gpu-runner
     steps:
       - name: Checkout
@@ -82,16 +77,6 @@ jobs:
     strategy:
       matrix:
         include:
-          - cuda: 121
-            cuda_version: 12.1.1
-            python_version: "3.10"
-            pytorch: 2.3.1
-            axolotl_extras:
-          - cuda: 121
-            cuda_version: 12.1.1
-            python_version: "3.11"
-            pytorch: 2.3.1
-            axolotl_extras:
           - cuda: 124
             cuda_version: 12.4.1
             python_version: "3.11"
@@ -145,10 +130,10 @@ jobs:
     strategy:
       matrix:
         include:
-          - cuda: 121
-            cuda_version: 12.1.1
+          - cuda: 124
+            cuda_version: 12.4.1
             python_version: "3.11"
-            pytorch: 2.3.1
+            pytorch: 2.4.1
             axolotl_extras:
     runs-on: axolotl-gpu-runner
     steps:

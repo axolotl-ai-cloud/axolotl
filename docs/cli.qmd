@@ -1,0 +1,256 @@
+# Axolotl CLI Documentation
+
+The Axolotl CLI provides a streamlined interface for training and fine-tuning large language models. This guide covers
+the CLI commands, their usage, and common examples.
+
+### Table of Contents
+
+- Basic Commands
+- Command Reference
+  - fetch
+  - preprocess
+  - train
+  - inference
+  - merge-lora
+  - merge-sharded-fsdp-weights
+  - evaluate
+  - lm-eval
+- Legacy CLI Usage
+- Remote Compute with Modal Cloud
+  - Cloud Configuration
+  - Running on Modal Cloud
+  - Cloud Configuration Options
+
+
+### Basic Commands
+
+All Axolotl commands follow this general structure:
+
+```bash
+axolotl <command> [config.yml] [options]
+```
+
+The config file can be local or a URL to a raw YAML file.
+
+### Command Reference
+
+#### fetch
+
+Downloads example configurations and deepspeed configs to your local machine.
+
+```bash
+# Get example YAML files
+axolotl fetch examples
+
+# Get deepspeed config files
+axolotl fetch deepspeed_configs
+
+# Specify custom destination
+axolotl fetch examples --dest path/to/folder
+```
+
+#### preprocess
+
+Preprocesses and tokenizes your dataset before training. This is recommended for large datasets.
+
+```bash
+# Basic preprocessing
+axolotl preprocess config.yml
+
+# Preprocessing with one GPU
+CUDA_VISIBLE_DEVICES="0" axolotl preprocess config.yml
+
+# Debug mode to see processed examples
+axolotl preprocess config.yml --debug
+
+# Debug with limited examples
+axolotl preprocess config.yml --debug --debug-num-examples 5
+```
+
+Configuration options:
+
+```yaml
+dataset_prepared_path: Local folder for saving preprocessed data
+push_dataset_to_hub: HuggingFace repo to push preprocessed data (optional)
+```
+
+#### train
+
+Trains or fine-tunes a model using the configuration specified in your YAML file.
+
+```bash
+# Basic training
+axolotl train config.yml
+
+# Train and set/override specific options
+axolotl train config.yml \
+    --learning-rate 1e-4 \
+    --micro-batch-size 2 \
+    --num-epochs 3
+
+# Training without accelerate
+axolotl train config.yml --no-accelerate
+
+# Resume training from checkpoint
+axolotl train config.yml --resume-from-checkpoint path/to/checkpoint
+```
+
+#### inference
+
+Runs inference using your trained model in either CLI or Gradio interface mode.
+
+```bash
+# CLI inference with LoRA
+axolotl inference config.yml --lora-model-dir="./outputs/lora-out"
+
+# CLI inference with full model
+axolotl inference config.yml --base-model="./completed-model"
+
+# Gradio web interface
+axolotl inference config.yml --gradio \
+    --lora-model-dir="./outputs/lora-out"
+
+# Inference with input from file
+cat prompt.txt | axolotl inference config.yml \
+    --base-model="./completed-model"
+```
+
+#### merge-lora
+
+Merges trained LoRA adapters into the base model.
+
+```bash
+# Basic merge
+axolotl merge-lora config.yml
+
+# Specify LoRA directory (usually used with checkpoints)
+axolotl merge-lora config.yml --lora-model-dir="./lora-output/checkpoint-100"
+
+# Merge using CPU (if out of GPU memory)
+CUDA_VISIBLE_DEVICES="" axolotl merge-lora config.yml
+```
+
+Configuration options:
+
+```yaml
+gpu_memory_limit: Limit GPU memory usage
+lora_on_cpu: Load LoRA weights on CPU
+```
+
+#### merge-sharded-fsdp-weights
+
+Merges sharded FSDP model checkpoints into a single combined checkpoint.
+
+```bash
+# Basic merge
+axolotl merge-sharded-fsdp-weights config.yml
+```
+
+#### evaluate
+
+Evaluates a model's performance using metrics specified in the config.
+
+```bash
+# Basic evaluation
+axolotl evaluate config.yml
+```
+
+#### lm-eval
+
+Runs LM Evaluation Harness on your model.
+
+```bash
+# Basic evaluation
+axolotl lm-eval config.yml
+
+# Evaluate specific tasks
+axolotl lm-eval config.yml --tasks arc_challenge,hellaswag
+```
+
+Configuration options:
+
+```yaml
+lm_eval_tasks: List of tasks to evaluate
+lm_eval_batch_size: Batch size for evaluation
+output_dir: Directory to save evaluation results
+```
+
+### Legacy CLI Usage
+
+While the new Click-based CLI is preferred, Axolotl still supports the legacy module-based CLI:
+
+```bash
+# Preprocess
+python -m axolotl.cli.preprocess config.yml
+
+# Train
+accelerate launch -m axolotl.cli.train config.yml
+
+# Inference
+accelerate launch -m axolotl.cli.inference config.yml \
+    --lora_model_dir="./outputs/lora-out"
+
+# Gradio interface
+accelerate launch -m axolotl.cli.inference config.yml \
+    --lora_model_dir="./outputs/lora-out" --gradio
+```
+
+### Remote Compute with Modal Cloud
+
+Axolotl supports running training and inference workloads on Modal cloud infrastructure. This is configured using a
+cloud YAML file alongside your regular Axolotl config.
+
+#### Cloud Configuration
+
+Create a cloud config YAML with your Modal settings:
+
+```yaml
+# cloud_config.yml
+provider: modal
+gpu: a100  # Supported: l40s, a100-40gb, a100-80gb, a10g, h100, t4, l4
+gpu_count: 1    # Number of GPUs to use
+timeout: 86400  # Maximum runtime in seconds (24 hours)
+branch: main    # Git branch to use (optional)
+
+volumes:        # Persistent storage volumes
+  - name: axolotl-cache
+    mount: /workspace/cache
+
+env:            # Environment variables
+  - WANDB_API_KEY
+  - HF_TOKEN
+```
+
+#### Running on Modal Cloud
+
+Commands that support the --cloud flag:
+
+```bash
+# Preprocess on cloud
+axolotl preprocess config.yml --cloud cloud_config.yml
+
+# Train on cloud
+axolotl train config.yml --cloud cloud_config.yml
+
+# Train without accelerate on cloud
+axolotl train config.yml --cloud cloud_config.yml --no-accelerate
+
+# Run lm-eval on cloud
+axolotl lm-eval config.yml --cloud cloud_config.yml
+```
+
+#### Cloud Configuration Options
+
+```yaml
+provider: compute provider, currently only `modal` is supported
+gpu: GPU type to use
+gpu_count: Number of GPUs (default: 1)
+memory: RAM in GB (default: 128)
+timeout: Maximum runtime in seconds
+timeout_preprocess: Preprocessing timeout
+branch: Git branch to use
+docker_tag: Custom Docker image tag
+volumes: List of persistent storage volumes
+env: Environment variables to pass
+secrets: Secrets to inject
+```

@@ -28,23 +28,27 @@ website:
         - section: "How-To Guides"
           contents:
           # TODO Edit folder structure after we have more docs.
+            - docs/getting-started.qmd
+            - docs/installation.qmd
             - docs/debugging.qmd
+            - docs/inference.qmd
             - docs/multipack.qmd
             - docs/fsdp_qlora.qmd
             - docs/input_output.qmd
             - docs/rlhf.qmd
             - docs/nccl.qmd
             - docs/mac.qmd
+            - docs/multi-gpu.qmd
             - docs/multi-node.qmd
             - docs/unsloth.qmd
             - docs/amd_hpc.qmd
+            - docs/ray-integration.qmd
         - section: "Dataset Formats"
           contents: docs/dataset-formats/*
         - section: "Reference"
           contents:
             - docs/config.qmd
         - docs/faq.qmd
-
 
 format:
   html:

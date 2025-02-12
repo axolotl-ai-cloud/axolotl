@@ -12,7 +12,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: "3.11"
           cache: 'pip' # caching pip dependencies
       - uses: pre-commit/action@v3.0.1
         env:
@@ -25,13 +25,8 @@ jobs:
       fail-fast: false
       max-parallel: 2
       matrix:
-        python_version: ["3.10", "3.11"]
-        pytorch_version: ["2.3.1", "2.4.1", "2.5.1"]
-        exclude:
-          - python_version: "3.10"
-            pytorch_version: "2.4.1"
-          - python_version: "3.10"
-            pytorch_version: "2.5.1"
+        python_version: ["3.11"]
+        pytorch_version: ["2.4.1", "2.5.1", "2.6.0"]
     timeout-minutes: 20
 
     steps:
@@ -98,13 +93,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - cuda: 121
-            cuda_version: 12.1.1
-            python_version: "3.10"
-            pytorch: 2.3.1
-            num_gpus: 1
-            axolotl_extras: mamba-ssm
-            nightly_build: "true"
           - cuda: 124
             cuda_version: 12.4.1
             python_version: "3.11"
@@ -119,13 +107,20 @@ jobs:
             num_gpus: 1
             axolotl_extras:
             nightly_build: "true"
+          - cuda: 124
+            cuda_version: 12.4.1
+            python_version: "3.11"
+            pytorch: 2.6.0
+            num_gpus: 1
+            axolotl_extras:
+            nightly_build: "true"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Install Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: "3.11"
       - name: Install Modal
         run: |
           python -m pip install --upgrade pip

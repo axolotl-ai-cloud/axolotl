@@ -42,7 +42,7 @@ output_dir: ./outputs/model-out
 gradient_accumulation_steps: 1
 micro_batch_size: 1
 num_epochs: 4
-optimizer: adamw_torch
+optimizer: adamw_torch_fused
 adam_beta2: 0.95
 adam_eps: 0.00001
 max_grad_norm: 1.0

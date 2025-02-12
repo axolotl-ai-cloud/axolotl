@@ -2,7 +2,7 @@
 
 import logging
 import os
-from typing import List, Optional
+from typing import List, Optional, Union
 
 import torch
 from datasets import Dataset, IterableDataset
@@ -51,7 +51,18 @@ class TokenizedPromptDataset(Dataset):
         map_kwargs = {}
         if self.prompt_tokenizer.supports_batched:
             map_kwargs["batched"] = True
-            map_kwargs["batch_size"] = 100
+            map_kwargs["batch_size"] = 1_000
+
+        if (
+            hasattr(self.prompt_tokenizer, "filter_rows")
+            and self.prompt_tokenizer.filter_rows
+        ):
+            dataset = dataset.filter(
+                self.prompt_tokenizer.filter_rows,
+                num_proc=num_proc,
+                desc="Strategy Filtering Rows",
+            )
+
         return dataset.map(
             self.prompt_tokenizer.tokenize_prompt,
             num_proc=num_proc,
@@ -60,6 +71,24 @@ class TokenizedPromptDataset(Dataset):
             desc="Tokenizing Prompts",
             **map_kwargs,
         )
+
+
+def wrap_dataset_for_tokenized_prompt(
+    prompt_tokenizer: PromptTokenizingStrategy,
+    dataset: Union[Dataset, IterableDataset],
+    **kwargs,
+):
+    if isinstance(dataset, IterableDataset):
+        map_kwargs = {}
+        if prompt_tokenizer.supports_batched:
+            map_kwargs["batched"] = True
+        features = dataset.features.keys()
+        return dataset.map(
+            prompt_tokenizer.tokenize_prompt,
+            remove_columns=features,
+            **map_kwargs,
+        )
+    return TokenizedPromptDataset(prompt_tokenizer, dataset, **kwargs)
 
 
 # TODO this isn't the best since it can't interleave datasets

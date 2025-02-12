@@ -13,6 +13,12 @@ class PreprocessCliArgs:
     debug_num_examples: int = field(default=1)
     prompter: Optional[str] = field(default=None)
     download: Optional[bool] = field(default=True)
+    iterable: Optional[bool] = field(
+        default=None,
+        metadata={
+            "help": "Use IterableDataset for streaming processing of large datasets"
+        },
+    )
 
 
 @dataclass
@@ -25,6 +31,8 @@ class TrainerCliArgs:
     merge_lora: bool = field(default=False)
     prompter: Optional[str] = field(default=None)
     shard: bool = field(default=False)
+    main_process_port: Optional[int] = field(default=None)
+    num_processes: Optional[int] = field(default=None)
 
 
 @dataclass
