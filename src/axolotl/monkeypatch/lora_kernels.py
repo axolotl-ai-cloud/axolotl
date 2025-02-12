@@ -4,12 +4,12 @@ import importlib
 import inspect
 import logging
 import types
-from typing import Type
 
 import torch
 from accelerate.logging import get_logger
 from peft import PeftModelForCausalLM
 from torch import nn
+from transformers import AutoConfig
 
 from axolotl.kernels.lora import (
     apply_lora_mlp_geglu,
@@ -51,6 +51,10 @@ PATCHED_O_CODE = """
     "\n"
 )
 
+SUPPORTED_SWIGLU_MODEL_TYPES = ["llama", "mistral", "qwen2"]
+SUPPORTED_GEGLU_MODEL_TYPES = ["gemma", "gemma2"]
+SUPPORTED_MODEL_TYPES = SUPPORTED_SWIGLU_MODEL_TYPES + SUPPORTED_GEGLU_MODEL_TYPES
+
 
 def original_apply_qkv(
     self: nn.Module, hidden_states: torch.Tensor
@@ -89,21 +93,69 @@ def original_apply_o(self: nn.Module, hidden_states: torch.Tensor) -> torch.Tens
     return attn_output
 
 
-# pylint: disable=protected-access
-def patch_self_attn_lora(attention_cls: Type[nn.Module]):
+def get_attention_cls_from_config(cfg):
     """
-    Patches the `attention_cls` forward pass with optimized LoRA implementations.
-
-    Modifies the `attention_cls` class to use optimized QKV and output projections.
-    The original implementation is preserved and can be restored if needed.
+    Get the appropriate attention class by inspecting the model config.
 
     Args:
-        attention_cls: Self attention module type to patch with custom QKV and O code.
+        cfg: Dictionary mapping `axolotl` config keys to values.
+
+    Returns:
+        The appropriate attention class for the model
+
+    Raises:
+        ValueError: If no matching attention class is found or base_model not specified
+    """
+    # Get model config without loading the model
+    model_config = AutoConfig.from_pretrained(cfg["base_model"])
+
+    # Model type is stored in model_config.model_type
+    model_type = model_config.model_type
+
+    if model_type == "llama":
+        from transformers.models.llama.modeling_llama import LlamaAttention
+
+        return LlamaAttention
+    if model_type == "gemma":
+        from transformers.models.gemma.modeling_gemma import GemmaAttention
+
+        return GemmaAttention
+    if model_type == "mistral":
+        from transformers.models.mistral.modeling_mistral import MistralAttention
+
+        return MistralAttention
+    if model_type == "phi":
+        from transformers.models.phi.modeling_phi import PhiAttention
+
+        return PhiAttention
+    if model_type == "qwen2":
+        from transformers.models.qwen2.modeling_qwen2 import Qwen2Attention
+
+        return Qwen2Attention
+
+    raise ValueError(
+        f"Axolotl doesn't support attn class LoRA patching for model_type: {model_type}"
+    )
+
+
+# pylint: disable=protected-access
+def patch_self_attn_lora(cfg: DictDefault):
+    """
+    Given an `axolotl` config, this method patches the inferred attention class forward
+    pass with optimized LoRA implementations.
+
+    It modifies the attention class to use optimized QKV and output projections. The
+    original implementation is preserved and can be restored if needed.
+
+    Args:
+        cfg: Dictionary mapping `axolotl` config keys to values.
 
     Raises:
         AssertionError: If the required code blocks are not found in the attention
             implementation.
     """
+    attention_cls = get_attention_cls_from_config(cfg)
+
     # Check if already patched
     if hasattr(attention_cls, "_original_forward"):
         LOG.info(f"{attention_cls.__name__} already patched")
@@ -113,8 +165,8 @@ def patch_self_attn_lora(attention_cls: Type[nn.Module]):
     attention_cls._original_forward = self_attn_forward
     self_attn_forward, _ = detab_code(self_attn_forward)
 
-    assert ORIGINAL_QKV_CODE in self_attn_forward, "Original qkv code not found"
-    assert ORIGINAL_O_CODE in self_attn_forward, "Original o code not found"
+    assert ORIGINAL_QKV_CODE in self_attn_forward, "Original QKV code not found"
+    assert ORIGINAL_O_CODE in self_attn_forward, "Original O code not found"
 
     self_attn_forward = self_attn_forward.replace(ORIGINAL_QKV_CODE, PATCHED_QKV_CODE)
     self_attn_forward = self_attn_forward.replace(ORIGINAL_O_CODE, PATCHED_O_CODE)
@@ -124,7 +176,7 @@ def patch_self_attn_lora(attention_cls: Type[nn.Module]):
         1,
     )
 
-    # load imports necessary
+    # Load necessary imports
     module_name = attention_cls.__module__
     module = importlib.import_module(module_name)
 
@@ -198,9 +250,9 @@ def apply_lora_kernel_patches(
 
     # Choose activation based on model type
     model_type = model.config.model_type
-    if model_type in ["llama", "mistral", "qwen2"]:
+    if model_type in SUPPORTED_SWIGLU_MODEL_TYPES:
         activation = "swiglu"
-    elif model_type in ["gemma", "gemma2"]:
+    elif model_type in SUPPORTED_GEGLU_MODEL_TYPES:
         activation = "geglu"
     else:
         raise NotImplementedError(f"Model type {model_type} not supported")

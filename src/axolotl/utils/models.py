@@ -49,6 +49,7 @@ from transformers.integrations.deepspeed import (
 
 from axolotl.common.architectures import MOE_ARCH_BLOCK
 from axolotl.models.mamba import fix_mamba_attn_for_loss
+from axolotl.monkeypatch.lora_kernels import SUPPORTED_MODEL_TYPES
 from axolotl.monkeypatch.multipack import (
     SUPPORTED_MULTIPACK_MODEL_TYPES,
     patch_for_multipack,
@@ -414,6 +415,7 @@ class ModelLoader:
                 has_remote_code = "AutoModelForCausalLM" in auto_map_config
             else:
                 has_remote_code = False
+
             if has_remote_code and self.cfg.trust_remote_code is False:
                 # if explicitly set in the YAML, we should prefer that, for example if explicitly disabled
                 has_remote_code = self.cfg.trust_remote_code
@@ -425,7 +427,6 @@ class ModelLoader:
 
             if self.cfg.is_llama_derived_model:
                 self.patch_loss_llama()
-
         elif self.cfg.is_llama_derived_model:
             self.patch_llama_derived_model()
 
@@ -438,6 +439,12 @@ class ModelLoader:
             )
 
             patch_mistral_cross_entropy()
+
+        if self.cfg.unsloth_lora_qkv or self.cfg.unsloth_lora_o:
+            if self.cfg.model_type in SUPPORTED_MODEL_TYPES:
+                from axolotl.monkeypatch.lora_kernels import patch_self_attn_lora
+
+                patch_self_attn_lora(self.cfg)
 
     def patch_attention(self) -> None:
         if hasattr(self.model_config, "model_type"):
@@ -495,15 +502,8 @@ class ModelLoader:
 
             patch_self_attn_lora()
 
-        if self.cfg.lora_qkv_kernel or self.cfg.lora_o_kernel:
-            from axolotl.monkeypatch.lora_kernels import patch_self_attn_lora
-
-            patch_self_attn_lora()
-
     def patch_llama_derived_model(self) -> None:
-        """
-        Modify all llama derived models in one block
-        """
+        """Modify all llama derived models in one block"""
         self.patch_loss_llama()
 
         if self.cfg.flash_attention:

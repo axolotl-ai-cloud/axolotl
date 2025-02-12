@@ -17,10 +17,36 @@ from axolotl.kernels.lora import (
     apply_lora_qkv,
 )
 from axolotl.monkeypatch.lora_kernels import (
+    SUPPORTED_GEGLU_MODEL_TYPES,
+    SUPPORTED_MODEL_TYPES,
+    SUPPORTED_SWIGLU_MODEL_TYPES,
     apply_lora_kernel_patches,
     patch_self_attn_lora,
 )
 from axolotl.utils.dict import DictDefault
+
+MODEL_CONFIGS = [
+    {
+        "name": "openaccess-ai-collective/tiny-mistral",
+        "expected_activation": apply_lora_mlp_swiglu,
+        "dtype": torch.float16,
+    },
+    {
+        "name": "Qwen/Qwen2-7B",
+        "expected_activation": apply_lora_mlp_swiglu,
+        "dtype": torch.float16,
+    },
+    {
+        "name": "HuggingFaceTB/SmolLM2-135M",
+        "expected_activation": apply_lora_mlp_swiglu,
+        "dtype": torch.float32,
+    },
+    {
+        "name": "mhenrichsen/gemma-2b",
+        "expected_activation": apply_lora_mlp_geglu,
+        "dtype": torch.float16,
+    },
+]
 
 
 @pytest.fixture(autouse=True)
@@ -46,6 +72,8 @@ def small_llama_model():
 # pylint: disable=protected-access
 def test_attention_patching_integration(small_llama_model):
     """Test attention patching in integration context."""
+    cfg = {"base_model": "TinyLlama/TinyLlama-1.1B-Chat-v1.0"}
+
     peft_config = get_peft_config(
         {
             "peft_type": "LORA",
@@ -65,7 +93,7 @@ def test_attention_patching_integration(small_llama_model):
     original_code = inspect.getsource(original_forward)
 
     # Apply patch
-    patch_self_attn_lora(attn_cls)
+    patch_self_attn_lora(cfg)
 
     # Check the forward method was replaced
     assert attn_cls.forward != original_forward
@@ -309,3 +337,80 @@ def test_kernel_config_options():
         del model
         del small_llama_model
         del patched_model
+
+
+def get_lora_config():
+    """Get standard LoRA configuration for testing."""
+    return {
+        "peft_type": "LORA",
+        "task_type": "CAUSAL_LM",
+        "r": 8,
+        "lora_alpha": 16,
+        "target_modules": ["gate_proj", "up_proj", "down_proj"],
+        "lora_dropout": 0,
+        "bias": "none",
+    }
+
+
+def get_test_inputs(model, seq_length=20):
+    """Generate test inputs for model evaluation."""
+    return torch.randint(
+        0,
+        model.config.vocab_size,
+        (1, seq_length),
+        device=model.device,
+        dtype=torch.long,
+    )
+
+
+@pytest.mark.parametrize("model_config", MODEL_CONFIGS)
+def test_model_architecture(model_config):
+    """Test LoRA kernel patches across different model architectures."""
+    # Load model with appropriate dtype
+    model = AutoModelForCausalLM.from_pretrained(
+        model_config["name"], torch_dtype=model_config["dtype"], device_map="cuda"
+    )
+
+    # Apply LoRA configuration
+    peft_config = get_peft_config(get_lora_config())
+    model = PeftModelForCausalLM(model, peft_config)
+
+    # Apply kernel patches
+    cfg = DictDefault({"lora_mlp_kernel": True})
+    patched_model = apply_lora_kernel_patches(model, cfg)
+
+    # Verify correct activation function
+    layer = patched_model.model.model.layers[0]
+    assert (
+        layer.mlp.forward.__func__ is model_config["expected_activation"]
+    ), f"Wrong activation for {model_config['name']}"
+
+    # Test forward pass
+    inputs = get_test_inputs(model)
+    with torch.no_grad():
+        original_output = model(inputs).logits
+        patched_output = patched_model(inputs).logits
+
+    # Check outputs match
+    assert torch.allclose(
+        original_output, patched_output, rtol=1e-4
+    ), f"Outputs don't match for {model_config['name']}"
+
+
+@pytest.mark.parametrize("model_config", MODEL_CONFIGS)
+def test_model_specific_kernels(model_config):
+    """Test that models get appropriate kernel optimizations."""
+    # Test model type detection
+    model = AutoModelForCausalLM.from_pretrained(
+        model_config["name"], torch_dtype=model_config["dtype"]
+    )
+
+    # Verify model type is in supported list
+    model_type = model.config.model_type
+    assert model_type in SUPPORTED_MODEL_TYPES
+
+    # Verify correct activation assignment
+    if model_type in SUPPORTED_SWIGLU_MODEL_TYPES:
+        assert model_config["expected_activation"] is apply_lora_mlp_swiglu
+    elif model_type in SUPPORTED_GEGLU_MODEL_TYPES:
+        assert model_config["expected_activation"] is apply_lora_mlp_geglu
