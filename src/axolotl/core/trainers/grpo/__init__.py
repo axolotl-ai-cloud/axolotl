@@ -15,8 +15,11 @@ if not trl.__version__ >= "0.15.0.dev":
         "Please install the latest version of TRL from main with "
         "pip install git+https://github.com/huggingface/trl.git"
     )
-from trl.trainer.grpo_trainer import RewardFunc # pylint: disable=wrong-import-position
-from axolotl.core.trainers.grpo.trainer import AxolotlGRPOTrainer # pylint: disable=wrong-import-position
+from trl.trainer.grpo_trainer import RewardFunc  # pylint: disable=wrong-import-position
+
+from axolotl.core.trainers.grpo.trainer import (  # pylint: disable=wrong-import-position
+    AxolotlGRPOTrainer,
+)
 
 LOG = logging.getLogger("axolotl")
 
