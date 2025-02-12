@@ -7,6 +7,7 @@ from transformers import AutoTokenizer
 from axolotl.datasets import TokenizedPromptDataset
 from axolotl.prompt_strategies.completion import load
 from axolotl.utils.collators import V2BatchSamplerDataCollatorForSeq2Seq
+from axolotl.utils.data.utils import drop_long_seq_in_dataset
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 
@@ -16,11 +17,6 @@ def fixture_tokenizer():
     tokenizer = AutoTokenizer.from_pretrained("huggyllama/llama-7b")
     tokenizer.pad_token = "</s>"
     return tokenizer
-
-
-@pytest.fixture(name="max_seq_length")
-def fixture_max_seq_length():
-    return 4096
 
 
 class TestBatchedSamplerPacking:
@@ -37,6 +33,7 @@ class TestBatchedSamplerPacking:
             (2, 2),
         ],
     )
+    @pytest.mark.parametrize("max_seq_length", [4096, 512])
     def test_packing(self, batch_size, num_workers, tokenizer, max_seq_length):
         import axolotl.monkeypatch.data.batch_dataset_fetcher  # pylint: disable=unused-import  # noqa: F401
 
@@ -62,6 +59,9 @@ class TestBatchedSamplerPacking:
             dataset,
         )
         train_dataset = concatenate_datasets([dataset_wrapper])
+
+        train_dataset = drop_long_seq_in_dataset(train_dataset, cfg)
+
         lengths = get_dataset_lengths(train_dataset)
         batch_sampler = MultipackBatchSampler(
             sampler=RandomSampler(train_dataset),
@@ -90,7 +90,7 @@ class TestBatchedSamplerPacking:
                 batch_idxs.extend(pack)
 
         for batch in loader:
-            assert len(batch["input_ids"]) <= batch_size * max_seq_length
+            assert batch["input_ids"].numel() <= batch_size * max_seq_length
             assert batch["input_ids"].shape[1] == max_seq_length
 
         original_idxs = set(range(len(train_dataset)))
