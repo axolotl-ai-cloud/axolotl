@@ -50,7 +50,7 @@ def test_swiglu_backward():
     grad_output_clone = grad_output.clone()
 
     h, our_grad_gate, our_grad_up = swiglu_backward(
-        grad_output_clone.clone(), gate_clone.clone(), up_clone.clone()
+        grad_output_clone, gate_clone, up_clone
     )
 
     # Compare outputs and gradients

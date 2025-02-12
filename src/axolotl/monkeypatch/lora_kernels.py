@@ -1,12 +1,15 @@
-"""Module for patching custom LoRA Triton kernels and torch.autograd functions."""
+"""Module for patching custom LoRA Triton kernels and `torch.autograd` functions."""
 
+import importlib
 import inspect
 import logging
 import types
+from typing import Type
 
+import torch
 from accelerate.logging import get_logger
 from peft import PeftModelForCausalLM
-from transformers.models.llama.modeling_llama import LlamaAttention
+from torch import nn
 
 from axolotl.kernels.lora import (
     apply_lora_mlp_geglu,
@@ -49,7 +52,20 @@ PATCHED_O_CODE = """
 )
 
 
-def original_apply_qkv(self, hidden_states):
+def original_apply_qkv(
+    self: nn.Module, hidden_states: torch.Tensor
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """
+    Original implementation of QKV projection without optimizations.
+
+    Args:
+        self: The attention module instance.
+        hidden_states: Input tensor of shape [batch_size, seq_len, hidden_dim].
+
+    Returns:
+        A tuple `(query_states, key_states, value_states)` containing the projected
+            states for query, key, and value.
+    """
     query_states = self.q_proj(hidden_states)
     key_states = self.k_proj(hidden_states)
     value_states = self.v_proj(hidden_states)
@@ -57,38 +73,46 @@ def original_apply_qkv(self, hidden_states):
     return query_states, key_states, value_states
 
 
-def original_apply_o(self, hidden_states):
+def original_apply_o(self: nn.Module, hidden_states: torch.Tensor) -> torch.Tensor:
+    """
+    Original implementation of output projection without optimizations.
+
+    Args:
+        self: The attention module instance.
+        hidden_states: Input tensor of shape `[`batch_size, seq_len, hidden_dim]`.
+
+    Returns:
+        The output projection result.
+    """
     attn_output = self.o_proj(hidden_states)
 
     return attn_output
 
 
-def get_self_attn_code() -> str:
-    forward = inspect.getsource(LlamaAttention.forward)
+# pylint: disable=protected-access
+def patch_self_attn_lora(attention_cls: Type[nn.Module]):
+    """
+    Patches the `attention_cls` forward pass with optimized LoRA implementations.
 
-    return forward
+    Modifies the `attention_cls` class to use optimized QKV and output projections.
+    The original implementation is preserved and can be restored if needed.
 
+    Args:
+        attention_cls: Self attention module type to patch with custom QKV and O code.
 
-def check_self_attn_is_patchable() -> bool:
-    qkv = get_self_attn_code()
-    qkv, _ = detab_code(qkv)
-
-    return ORIGINAL_QKV_CODE in qkv and ORIGINAL_O_CODE in qkv
-
-
-self_attn_lora_patched = False  # pylint: disable=invalid-name
-
-
-def patch_self_attn_lora():
-    global self_attn_lora_patched  # pylint: disable=global-statement
-    if self_attn_lora_patched:
-        # prevent patching multiple times
+    Raises:
+        AssertionError: If the required code blocks are not found in the attention
+            implementation.
+    """
+    # Check if already patched
+    if hasattr(attention_cls, "_original_forward"):
+        LOG.info(f"{attention_cls.__name__} already patched")
         return
-    self_attn_forward = get_self_attn_code()
-    LlamaAttention._original_forward = (  # pylint: disable=protected-access
-        self_attn_forward
-    )
+
+    self_attn_forward = inspect.getsource(attention_cls.forward)
+    attention_cls._original_forward = self_attn_forward
     self_attn_forward, _ = detab_code(self_attn_forward)
+
     assert ORIGINAL_QKV_CODE in self_attn_forward, "Original qkv code not found"
     assert ORIGINAL_O_CODE in self_attn_forward, "Original o code not found"
 
@@ -101,38 +125,63 @@ def patch_self_attn_lora():
     )
 
     # load imports necessary
-    import transformers.models.llama.modeling_llama
+    module_name = attention_cls.__module__
+    module = importlib.import_module(module_name)
 
     items_to_import = []
-    for item in dir(transformers.models.llama.modeling_llama):
+    for item in dir(module):
         if item in self_attn_forward:
             items_to_import.append(item)
 
     exec(  # pylint: disable=exec-used  # nosec B102
-        "from transformers.models.llama.modeling_llama import ("
-        + ", ".join(x for x in items_to_import)
-        + ")",
+        f"from {module_name} import ({', '.join(items_to_import)})",
         globals(),
     )
     exec(self_attn_forward, globals())  # pylint: disable=exec-used  # nosec B102
-    self_attn_lora_patched = True
-    LOG.info("patching attention for axolotl LoRA kernels", main_process_only=True)
-    LlamaAttention.forward = (
+
+    LOG.info(f"Patched attention class with LoRA optims: {attention_cls.__name__}")
+    attention_cls.forward = (
         axolotl_attn_forward  # pylint: disable=undefined-variable  # noqa: F821
     )
 
 
-def apply_lora_kernel_patches(model: PeftModelForCausalLM, cfg: DictDefault):
-    """Patches a PEFT model with optimized MLP and Attention kernels"""
+def apply_lora_kernel_patches(
+    model: PeftModelForCausalLM, cfg: DictDefault
+) -> PeftModelForCausalLM:
+    """
+    Applies optimized Triton kernel patches to a PEFT model.
+
+    Patches a PEFT model with optimized implementations for MLP and attention
+    computations. The optimizations include custom Triton kernels for activation
+    functions and specialized autograd functions for LoRA computations.
+
+    Args:
+        model: A PEFT model to be patched with optimized kernels.
+        cfg: Dictionary mapping `axolotl` config keys to values.
+
+    Returns:
+        PeftModelForCausalLM: The patched model with optimized kernels.
+
+    Raises:
+        TypeError: If the provided model is not a `PeftModelForCausalLM`.
+        NotImplementedError: If the model type is not supported.
+        AssertionError: If multiple adapters are active (currently unsupported).
+
+    Note:
+        The optimizations require LoRA adapters with no dropout and no bias terms. The
+            function will skip patching if these conditions aren't met.
+    """
     if not isinstance(model, PeftModelForCausalLM):
         raise TypeError("Model must be a PeftModelForCausalLM")
 
-    # Get active adapter config
-    active_adapter = (
-        model.active_adapters[0]
-        if hasattr(model, "active_adapters")
-        else model.active_adapter
-    )
+    # Get active LoRA adapter config
+    if hasattr(model, "active_adapters"):
+        assert (
+            len(model.active_adapters) == 1
+        ), "Axolotl currently does not support LoRA Triton kernels for multiple adapters"
+        active_adapter = model.active_adapters[0]
+    else:
+        active_adapter = model.active_adapter
     lora_config = model.model.peft_config[active_adapter]
 
     # Only patch if conditions are met
