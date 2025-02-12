@@ -19,3 +19,7 @@ description: Frequently asked questions
 **Q: AttributeError: 'DummyOptim' object has no attribute 'step'**
 
 > A: You may be using deepspeed with single gpu. Please don't set `deepspeed:` in yaml or cli.
+
+**Q: The codes is stuck on saving preprocessed datasets.**
+
+> A: This is usually an issue with the GPU. This can be resolved through setting the os environment variable `CUDA_VISIBLE_DEVICES=0`. If you are on runpod, this is usually a pod issue. Starting a new pod should take care of it. 
