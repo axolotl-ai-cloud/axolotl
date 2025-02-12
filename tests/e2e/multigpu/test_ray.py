@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 import yaml
 from accelerate.test_utils import execute_subprocess_async
-from e2e.utils import check_tensorboard
+from e2e.utils import check_tensorboard, require_torch_lt_2_6_0
 
 from axolotl.utils.dict import DictDefault
 
@@ -24,6 +24,7 @@ class TestMultiGPURay:
     Test cases for AnyScale Ray post training
     """
 
+    @require_torch_lt_2_6_0
     def test_lora_ddp(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
@@ -80,6 +81,7 @@ class TestMultiGPURay:
             temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss is too high"
         )
 
+    @require_torch_lt_2_6_0
     @pytest.mark.parametrize(
         "gradient_accumulation_steps",
         [1, 2],
