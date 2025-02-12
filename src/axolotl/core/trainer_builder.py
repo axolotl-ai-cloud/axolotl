@@ -49,7 +49,13 @@ from axolotl.core.trainers.base import (
 )
 from axolotl.core.trainers.dpo import DPOStrategy
 from axolotl.core.trainers.dpo.args import AxolotlDPOConfig
-from axolotl.core.trainers.grpo import GRPOStrategy
+
+# TODO (@winglian @SalmanMohammadi) remove for new TRL release
+try:
+    from axolotl.core.trainers.grpo import GRPOStrategy
+except ImportError:
+    pass
+
 from axolotl.core.training_args import (
     AxolotlCPOConfig,
     AxolotlKTOConfig,
