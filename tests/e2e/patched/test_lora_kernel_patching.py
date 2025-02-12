@@ -12,14 +12,13 @@ from transformers.models.llama.configuration_llama import LlamaConfig
 
 from axolotl.kernels.lora import (
     apply_lora_mlp_geglu,
+    apply_lora_mlp_gelu,
+    apply_lora_mlp_silu,
     apply_lora_mlp_swiglu,
     apply_lora_o,
     apply_lora_qkv,
 )
 from axolotl.monkeypatch.lora_kernels import (
-    SUPPORTED_GEGLU_MODEL_TYPES,
-    SUPPORTED_MODEL_TYPES,
-    SUPPORTED_SWIGLU_MODEL_TYPES,
     apply_lora_kernel_patches,
     patch_self_attn_lora,
 )
@@ -28,22 +27,22 @@ from axolotl.utils.dict import DictDefault
 MODEL_CONFIGS = [
     {
         "name": "openaccess-ai-collective/tiny-mistral",
-        "expected_activation": apply_lora_mlp_swiglu,
+        "expected_activation": apply_lora_mlp_silu,
         "dtype": torch.float16,
     },
     {
         "name": "Qwen/Qwen2-7B",
-        "expected_activation": apply_lora_mlp_swiglu,
+        "expected_activation": apply_lora_mlp_silu,
         "dtype": torch.float16,
     },
     {
         "name": "HuggingFaceTB/SmolLM2-135M",
-        "expected_activation": apply_lora_mlp_swiglu,
+        "expected_activation": apply_lora_mlp_silu,
         "dtype": torch.float32,
     },
     {
         "name": "mhenrichsen/gemma-2b",
-        "expected_activation": apply_lora_mlp_geglu,
+        "expected_activation": apply_lora_mlp_silu,
         "dtype": torch.float16,
     },
 ]
@@ -133,7 +132,7 @@ def test_swiglu_mlp_integration(small_llama_model):
 
     # Verify patches
     layer = patched_model.model.model.layers[0]
-    assert layer.mlp.forward.__func__ is apply_lora_mlp_swiglu
+    assert layer.mlp.forward.__func__ is apply_lora_mlp_silu
 
     # Test forward pass
     batch_size, seq_len = 2, 10
@@ -185,7 +184,7 @@ def test_geglu_model_integration():
 
     # Verify patches
     layer = patched_model.model.model.layers[0]
-    assert layer.mlp.forward.__func__ is apply_lora_mlp_geglu
+    assert layer.mlp.forward.__func__ is apply_lora_mlp_gelu
 
     # Test end-to-end
     inputs = torch.randint(0, 100, (1, 20), device=model.device, dtype=torch.long)
@@ -395,22 +394,3 @@ def test_model_architecture(model_config):
     assert torch.allclose(
         original_output, patched_output, rtol=1e-4
     ), f"Outputs don't match for {model_config['name']}"
-
-
-@pytest.mark.parametrize("model_config", MODEL_CONFIGS)
-def test_model_specific_kernels(model_config):
-    """Test that models get appropriate kernel optimizations."""
-    # Test model type detection
-    model = AutoModelForCausalLM.from_pretrained(
-        model_config["name"], torch_dtype=model_config["dtype"]
-    )
-
-    # Verify model type is in supported list
-    model_type = model.config.model_type
-    assert model_type in SUPPORTED_MODEL_TYPES
-
-    # Verify correct activation assignment
-    if model_type in SUPPORTED_SWIGLU_MODEL_TYPES:
-        assert model_config["expected_activation"] is apply_lora_mlp_swiglu
-    elif model_type in SUPPORTED_GEGLU_MODEL_TYPES:
-        assert model_config["expected_activation"] is apply_lora_mlp_geglu

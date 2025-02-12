@@ -13,6 +13,8 @@ from transformers import AutoConfig
 
 from axolotl.kernels.lora import (
     apply_lora_mlp_geglu,
+    apply_lora_mlp_gelu,
+    apply_lora_mlp_silu,
     apply_lora_mlp_swiglu,
     apply_lora_o,
     apply_lora_qkv,
@@ -51,9 +53,13 @@ PATCHED_O_CODE = """
     "\n"
 )
 
-SUPPORTED_SWIGLU_MODEL_TYPES = ["llama", "mistral", "qwen2"]
-SUPPORTED_GEGLU_MODEL_TYPES = ["gemma", "gemma2"]
-SUPPORTED_MODEL_TYPES = SUPPORTED_SWIGLU_MODEL_TYPES + SUPPORTED_GEGLU_MODEL_TYPES
+SUPPORTED_ACTIVATIONS = ["silu", "swiglu", "gelu", "geglu"]
+APPLY_FN_MAPPING = {
+    "silu": apply_lora_mlp_silu,
+    "swiglu": apply_lora_mlp_swiglu,
+    "gelu": apply_lora_mlp_gelu,
+    "geglu": apply_lora_mlp_geglu,
+}
 
 
 def original_apply_qkv(
@@ -249,13 +255,9 @@ def apply_lora_kernel_patches(
     LOG.setLevel(logging.INFO)
 
     # Choose activation based on model type
-    model_type = model.config.model_type
-    if model_type in SUPPORTED_SWIGLU_MODEL_TYPES:
-        activation = "swiglu"
-    elif model_type in SUPPORTED_GEGLU_MODEL_TYPES:
-        activation = "geglu"
-    else:
-        raise NotImplementedError(f"Model type {model_type} not supported")
+    activation = model.config.hidden_act
+    if activation not in SUPPORTED_ACTIVATIONS:
+        raise NotImplementedError(f"Activation {activation} is not supported")
 
     # Patch each layer
     for layer in model.model.model.layers:
@@ -280,14 +282,8 @@ def apply_lora_kernel_patches(
             )
 
             if can_patch_mlp:
-                if activation == "swiglu":
-                    layer.mlp.forward = types.MethodType(
-                        apply_lora_mlp_swiglu, layer.mlp
-                    )
-                else:
-                    layer.mlp.forward = types.MethodType(
-                        apply_lora_mlp_geglu, layer.mlp
-                    )
+                apply_fn = APPLY_FN_MAPPING[activation]
+                layer.mlp.forward = types.MethodType(apply_fn, layer.mlp)
             else:
                 LOG.warning_once(
                     "Cannot patch some MLP layers - requires LoRA adapters with no bias"
