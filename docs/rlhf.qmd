@@ -504,7 +504,7 @@ datasets:
     type: chatml.intel
 ```
 
-## Trl autounwrap for peft
+## TRL auto-unwrapping for PEFT
 
 Trl supports autounwrapping peft models, so that a ref model does not need to be additionally loaded, leading to less VRAM needed. This is on by default. To turn it off, pass the following config.
 
