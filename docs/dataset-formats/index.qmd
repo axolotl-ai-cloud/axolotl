@@ -15,7 +15,7 @@ Axolotl supports 3 kinds of training methods: pre-training, supervised fine-tuni
 
 ## [Pre-training](pretraining.qmd)
 
-When aiming to train on large corpuses of text datasets, pre-training is your go-to choice. As these datasets are large, Axolotl enables streaming for these datasets to only load batches into memory at a time.
+When aiming to train on large corpora of text datasets, pre-training is your go-to choice. Due to the size of these datasets, downloading the entire-datasets before beginning training would be prohibitively time-consuming. Axolotl supports [streaming](https://huggingface.co/docs/datasets/en/stream) to only load batches into memory at a time.
 
 A sample file for a pre-training dataset is as follows:
 
