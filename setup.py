@@ -125,7 +125,7 @@ setup(
     },
     extras_require={
         "flash-attn": [
-            "flash-attn==2.7.0.post2",
+            "flash-attn==2.7.4.post1",
         ],
         "deepspeed": [
             "deepspeed==0.16.1",
