@@ -200,7 +200,8 @@ def train(
         try:
             if accelerate:
                 if cloud:
-<<<<<<< HEAD
+                    from axolotl.cli.cloud import do_cli_train
+
                     cwd = os.getcwd()
                     do_cli_train(
                         cloud_config=cloud,
@@ -209,11 +210,6 @@ def train(
                         cwd=cwd,
                         **kwargs,
                     )
-=======
-                    from axolotl.cli.cloud import do_cli_train
-
-                    do_cli_train(cloud_config=cloud, config=config, accelerate=True)
->>>>>>> 119bf439 (adding monkey patching logic)
                 else:
                     accelerate_args = []
                     if "main_process_port" in kwargs:
@@ -234,15 +230,11 @@ def train(
                     subprocess.run(cmd, check=True)  # nosec B603
             else:
                 if cloud:
-<<<<<<< HEAD
+                    from axolotl.cli.cloud import do_cli_train
+
                     do_cli_train(
                         cloud_config=cloud, config=config, accelerate=False, **kwargs
                     )
-=======
-                    from axolotl.cli.cloud import do_cli_train
-
-                    do_cli_train(cloud_config=cloud, config=config, accelerate=False)
->>>>>>> 119bf439 (adding monkey patching logic)
                 else:
                     from axolotl.cli.train import do_cli
 
