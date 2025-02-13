@@ -24,7 +24,7 @@ feedback. Various methods include, but not limited to:
 This is a BETA feature and many features are not fully implemented. You are encouraged to open new PRs to improve the integration and functionality.
 :::
 
-The various RL training methods are implemented in trl and wrapped via axolotl. Each method has their own supported ways of loading datasets and prompt format.
+We rely on the [TRL](https://github.com/huggingface/trl) library for implementations of various RL training methods, which we wrap around to expose in axolotl. Each method has their own supported ways of loading datasets and prompt formats.
 
 ::: {.callout-tip}
 You can find what each method supports by going into `src/axolotl/prompt_strategies/{method}` where `{method}` is one of our supported methods. The `type: ` can be retrieved from `{method}.{function_name}`.
