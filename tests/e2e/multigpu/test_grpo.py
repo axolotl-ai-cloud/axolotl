@@ -155,7 +155,7 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
             }
         )
 
-        self._utils_write_yaml_and_rewards(cfg, temp_dir)
+        self._utils_write_yaml_and_rewards(cfg, temp_dir, suffix=rnd_reward_suffix)
 
         execute_subprocess_async(
             [
