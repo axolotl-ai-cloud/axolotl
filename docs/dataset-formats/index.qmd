@@ -35,7 +35,7 @@ For pre-training only, Axolotl would split texts if it exceeds the context lengt
 
 ### Pre-training from Hugging Face hub datasets
 
-To load from Huggingface dataset `hf_org/name`, you can pass the following config:
+As an example, to train using a Hugging Face dataset `hf_org/name`, you can pass the following config:
 
 ```yaml
 pretraining_dataset: hf_org/name
