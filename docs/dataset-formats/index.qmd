@@ -451,4 +451,4 @@ The config sets that the `field_instruction` is actually named `input`, and the 
 
 ## Reinforcement Learning from Human Feedback (RLHF)
 
-As there are multiple RLHF methods with their own dataset requirements. Please see RLHF doc [here](../rlhf.qmd).
+As there are multiple RLHF methods with their own dataset requirements. Please see [RLHF datasets](../rlhf.qmd) documentation for more detail.
