@@ -27,7 +27,7 @@ A sample file for a pre-training dataset is as follows:
 
 It is typically recommended to save your dataset as `.jsonl` due to its flexibility and simplicity.
 
-Axolotl supports loading from a Huggingface hub repo or from local files.
+Axolotl supports loading from a Hugging Face hub repo or from local files.
 
 ::: {.callout-important}
 For pre-training only, Axolotl would split texts if it exceeds the context length into multiple smaller prompts.
