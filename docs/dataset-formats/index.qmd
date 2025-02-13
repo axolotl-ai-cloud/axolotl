@@ -264,7 +264,7 @@ To properly use this method, it is important to identify three things:
 
 1. Which `chat_template` would you use?
 
-2. What are the keys in your dataset, and what are the possible roles? For example, in OpenAI format, the keys would be `messages`, `role`, `content` respectively, whereas the possible roles are `system`, `user`, and `assistant`.
+2. What are the keys in your dataset, and what are the possible roles? For example, in OpenAI format, the keys would be `messages`, `role`, and `content`, respectively, whereas the possible roles are `system`, `user`, and `assistant`.
 
 3. What do you want to mask? For instance, only assistant messages, only last message, or nothing.
 
