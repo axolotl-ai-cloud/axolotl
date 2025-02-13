@@ -58,7 +58,7 @@ def _save_preprocessed_ds(cfg, sub_cfg, dataset):
         dataset.save_to_disk(str(prepared_ds_path))
 
 
-def map_dataset(cfg, data_set, ds_transform_fn, tokenizer):
+def map_dataset(cfg, data_set, ds_transform_fn, tokenizer, **map_kwargs):
     sig = inspect.signature(ds_transform_fn)
     if "tokenizer" in sig.parameters:
         if not tokenizer:
@@ -71,6 +71,7 @@ def map_dataset(cfg, data_set, ds_transform_fn, tokenizer):
     data_set = data_set.map(
         ds_transform_fn,
         desc="Mapping RL Dataset",
+        **map_kwargs,
     )
 
     return data_set
@@ -113,6 +114,9 @@ def drop_long_rl_seq(
 
         return (len_prompt + len_completion) <= sequence_len
 
+    if rl == "grpo":
+        return True
+
     raise ValueError("Unknown RL type")
 
 
@@ -140,36 +144,45 @@ def load_prepare_preference_datasets(cfg):
                 else:
                     ds_transform_fn = load_dpo(_type, _cfg, dataset_idx=i)
 
+                map_kwargs = {}
+                if isinstance(ds_transform_fn, tuple):
+                    ds_transform_fn, map_kwargs = ds_transform_fn
                 split_datasets[i] = map_dataset(
-                    cfg, data_set, ds_transform_fn, tokenizer
+                    cfg, data_set, ds_transform_fn, tokenizer, **map_kwargs
                 )
             elif _cfg.rl == "kto":
                 ds_transform_fn = load_kto(_type, _cfg, dataset_idx=i)
+                map_kwargs = {}
+                if isinstance(ds_transform_fn, tuple):
+                    ds_transform_fn, map_kwargs = ds_transform_fn
                 split_datasets[i] = map_dataset(
-                    cfg, data_set, ds_transform_fn, tokenizer
+                    cfg, data_set, ds_transform_fn, tokenizer, **map_kwargs
                 )
             else:
                 # If no `type` is provided, assume the dataset is already in the expected format with
                 # "prompt", "chosen" and "rejected" already preprocessed
                 split_datasets[i] = data_set
 
-            drop_long = partial(
-                drop_long_rl_seq,
-                rl=_cfg.rl,
-                tokenizer=tokenizer,
-                sequence_len=cfg.sequence_len,
-            )
+            if not cfg.skip_prepare_dataset:
+                drop_long = partial(
+                    drop_long_rl_seq,
+                    rl=_cfg.rl,
+                    tokenizer=tokenizer,
+                    sequence_len=cfg.sequence_len,
+                )
 
-            prior_len = len(split_datasets[i])
-            split_datasets[i] = split_datasets[i].filter(
-                drop_long,
-                num_proc=cfg.dataset_processes,
-                load_from_cache_file=not cfg.is_preprocess,
-                desc="Dropping Long Sequences",
-            )
-            dropped = prior_len - len(split_datasets[i])
-            if dropped:
-                LOG.warning(f"Dropped {dropped} long samples from dataset index {i}")
+                prior_len = len(split_datasets[i])
+                split_datasets[i] = split_datasets[i].filter(
+                    drop_long,
+                    num_proc=cfg.dataset_processes,
+                    load_from_cache_file=not cfg.is_preprocess,
+                    desc="Dropping Long Sequences",
+                )
+                dropped = prior_len - len(split_datasets[i])
+                if dropped:
+                    LOG.warning(
+                        f"Dropped {dropped} long samples from dataset index {i}"
+                    )
 
         combined_datasets = concatenate_datasets(split_datasets)
         combined_datasets = combined_datasets.shuffle(seed=cfg.seed)

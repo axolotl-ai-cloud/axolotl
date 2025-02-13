@@ -24,6 +24,8 @@ from transformers.utils.import_utils import is_torch_npu_available
 
 from axolotl.utils.config.models.internals import EnvCapabilities, GPUCapabilities
 
+from .trl import TRLConfig
+
 LOG = logging.getLogger("axolotl.utils.config.models.input")
 
 SUPPORTED_METRICS = {"sacrebleu", "comet", "ter", "chrf", "perplexity"}
@@ -33,6 +35,7 @@ class RLType(str, Enum):
     """RL trainer type configuration subset"""
 
     dpo = "dpo"  # pylint: disable=invalid-name
+    grpo = "grpo"  # pylint: disable=invalid-name
     ipo = "ipo"  # pylint: disable=invalid-name
     orpo = "orpo"  # pylint: disable=invalid-name
     kto = "kto"  # pylint: disable=invalid-name
@@ -664,14 +667,20 @@ class AxolotlInputConfig(
     auto_resume_from_checkpoints: Optional[bool] = None
     resize_token_embeddings_to_32x: Optional[bool] = None
     mean_resizing_embeddings: Optional[bool] = False
+    # optionally shrink the embeddings when the tokenizer vocab size is smaller
+    shrink_embeddings: Optional[bool] = None
 
     rl: Optional[RLType] = None
+    trl: Optional[TRLConfig] = Field(
+        default_factory=lambda: TRLConfig(),  # pylint: disable=unnecessary-lambda
+    )
     reward_model: Optional[bool] = None
     process_reward_model: Optional[bool] = None
     num_labels: Optional[int] = None
     dpo_use_weighting: Optional[
         bool
     ] = None  # whether to use weighting in DPO trainer. If none, default is false in the trainer.
+    dpo_use_logits_to_keep: Optional[bool] = None
 
     datasets: Optional[conlist(Union[SFTDataset, DPODataset, KTODataset, StepwiseSupervisedDataset], min_length=1)] = None  # type: ignore
     test_datasets: Optional[conlist(Union[SFTDataset, DPODataset, KTODataset, StepwiseSupervisedDataset], min_length=1)] = None  # type: ignore

@@ -1053,9 +1053,12 @@ class ModelLoader:
             if self.cfg.resize_token_embeddings_to_32x
             else len(self.tokenizer)
         )
-        if (
-            hasattr(self.model, "get_input_embeddings")
-            and self.model.get_input_embeddings().num_embeddings != embeddings_len
+        if hasattr(self.model, "get_input_embeddings") and (
+            self.model.get_input_embeddings().num_embeddings < embeddings_len
+            or (
+                self.model.get_input_embeddings().num_embeddings > embeddings_len
+                and self.cfg.shrink_embeddings
+            )
         ):
             resize_kwargs = {}
             if self.cfg.mean_resizing_embeddings is not None:
@@ -1309,6 +1312,7 @@ def load_lora(model, cfg, inference=False, config_only=False):
         lora_config_kwargs["init_lora_weights"] = "loftq"
     if cfg.peft_use_dora:
         lora_config_kwargs["use_dora"] = cfg.peft_use_dora
+        LOG.info("Initializing LoRA weights using dora. This might take longer.")
     if cfg.peft_use_rslora:
         lora_config_kwargs["use_rslora"] = cfg.peft_use_rslora
     if cfg.peft_layer_replication:
