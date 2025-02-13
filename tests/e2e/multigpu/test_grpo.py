@@ -1,6 +1,7 @@
 """
 GRPO test suite
 """
+import random
 from pathlib import Path
 
 import pytest
@@ -16,12 +17,12 @@ class TestGRPO:
     Test case for GRPO training using multilpe GPUs
     """
 
-    def _utils_write_yaml_and_rewards(self, cfg, temp_dir):
+    def _utils_write_yaml_and_rewards(self, cfg, temp_dir, suffix=""):
         # write cfg to yaml file
         Path(temp_dir).mkdir(parents=True, exist_ok=True)
         with open(Path(temp_dir) / "config.yaml", "w", encoding="utf-8") as fout:
             fout.write(yaml.dump(cfg.to_dict(), Dumper=yaml.Dumper))
-        with open(Path(temp_dir) / "rewards.py", "w", encoding="utf-8") as fout:
+        with open(f"rewards_{suffix}", "w", encoding="utf-8") as fout:
             fout.write(
                 """import random
 def rand_reward_func(completions, **kwargs) -> list[float]:
@@ -43,6 +44,7 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
         [1, 2],
     )
     def test_llama_dora(self, temp_dir, num_gpus):
+        rnd_reward_suffix = str(random.randint(1000, 9999))
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -54,13 +56,13 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
                     "vllm_device": "auto",
                     "vllm_gpu_memory_utilization": 0.15,
                     "num_generations": 4,
-                    "reward_funcs": ["rewards.rand_reward_func"],
+                    "reward_funcs": [f"rewards_{rnd_reward_suffix}.rand_reward_func"],
                 },
                 "datasets": [
                     {
                         "path": "openai/gsm8k",
                         "name": "main",
-                        "type": "rewards.oai_gsm8k_transform",
+                        "type": f"rewards_{rnd_reward_suffix}.oai_gsm8k_transform",
                     },
                 ],
                 "adapter": "lora",
@@ -89,7 +91,7 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
             }
         )
 
-        self._utils_write_yaml_and_rewards(cfg, temp_dir)
+        self._utils_write_yaml_and_rewards(cfg, temp_dir, suffix=rnd_reward_suffix)
 
         execute_subprocess_async(
             [
@@ -108,6 +110,7 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
         [1, 2],
     )
     def test_llama_fft(self, temp_dir, num_gpus):
+        rnd_reward_suffix = str(random.randint(1000, 9999))
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -119,13 +122,13 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
                     "vllm_device": "auto",
                     "vllm_gpu_memory_utilization": 0.15,
                     "num_generations": 4,
-                    "reward_funcs": ["rewards.rand_reward_func"],
+                    "reward_funcs": [f"rewards_{rnd_reward_suffix}.rand_reward_func"],
                 },
                 "datasets": [
                     {
                         "path": "openai/gsm8k",
                         "name": "main",
-                        "type": "rewards.oai_gsm8k_transform",
+                        "type": f"rewards_{rnd_reward_suffix}.oai_gsm8k_transform",
                     },
                 ],
                 "flash_attention": True,
