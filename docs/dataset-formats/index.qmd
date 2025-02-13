@@ -129,7 +129,9 @@ Axolotl expects the dataset to have three keys:
 - `attention_mask`: for masking padding. If you don't add padding, it would be equal to `len(input_ids) * [1]`
 - `labels`: this is the same as `input_ids`, however, if you want to mask certain tokens, you would set those indices to `-100`.
 
-Don't forget to add BOS/EOS and proper masking for it!
+::: {.callout-tip}
+Make sure to add BOS/EOS tokens to your prompt and mask it appropriately.
+:::
 
 A config for this would look like:
 
