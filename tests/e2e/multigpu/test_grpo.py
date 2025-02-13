@@ -59,6 +59,7 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
                 "datasets": [
                     {
                         "path": "openai/gsm8k",
+                        "name": "main",
                         "type": "rewards.oai_gsm8k_transform",
                     },
                 ],
@@ -123,6 +124,7 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
                 "datasets": [
                     {
                         "path": "openai/gsm8k",
+                        "name": "main",
                         "type": "rewards.oai_gsm8k_transform",
                     },
                 ],
