@@ -309,7 +309,7 @@ In the example above, all `gpt` and `model` values are converted to `assistant`.
 
 ##### Handling masking
 
-The common use case for `chat_template` is for chat messages, therefore, it is common to mask all non-assistant messages. Assistant messages refer to the bot messages that you want the model to learn as.
+The common use case for `chat_template` is for chat messages, therefore, it is common to mask all non-assistant messages. Assistant messages refer to the bot messages that you want the model to learn on.
 
 To train on all `assistant` messages, you would set the following configs.
 
