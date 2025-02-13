@@ -339,7 +339,7 @@ datasets:
 
 #### Applying `chat_template`
 
-Once all the above are completed, you would combine all these configs together to form your dataset config. The last part would be to set the EOS token in the config to ensure that the code knows what your EOS token is.
+Once all the above steps are completed, you could combine all these configs together to form a bespoke configuration for your  custom dataset. The final step would be to correctly set the EOS token in your config: 
 
 ```yaml
 datasets:
