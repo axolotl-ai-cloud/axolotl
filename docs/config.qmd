@@ -344,6 +344,9 @@ comet_mode: # Create a new experiment ("create") or log to an existing one ("get
 comet_online: # Set to True to log data to Comet server, or False for offline storage. Default is True.
 comet_experiment_config: # Dictionary for additional configuration settings, see the doc for more details.
 
+# Tensorboard
+use_tensorboard: # Optional[bool]
+
 # Where to save the full-finetuned model to
 output_dir: ./completed-model
 
