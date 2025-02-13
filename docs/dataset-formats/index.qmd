@@ -86,7 +86,7 @@ datasets:
 
 #### Setting max_steps
 
-As the dataset is streamed, Axolotl does not know in advance how large the dataset is and does not know when to stop.
+When using streaming for large datasets, Axolotl does not know in advance how large the dataset is and does not know when to stop.
 
 Therefore, it is necessary to set `max_steps: int` in your config for pre-training to run, so that Axolotl knows when to stop training.
 
