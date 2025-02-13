@@ -33,7 +33,7 @@ Axolotl supports loading from a Huggingface hub repo or from local files.
 For pre-training only, Axolotl would split texts if it exceeds the context length into multiple smaller prompts.
 :::
 
-### Pre-training load from Huggingface hub
+### Pre-training from Hugging Face hub datasets
 
 To load from Huggingface dataset `hf_org/name`, you can pass the following config:
 
