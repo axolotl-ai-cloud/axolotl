@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 import yaml
 from accelerate.test_utils import execute_subprocess_async
+from e2e.utils import require_vllm
 from transformers.testing_utils import get_torch_dist_unique_port
 
 from axolotl.utils.dict import DictDefault
@@ -43,6 +44,7 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
         "num_gpus",
         [1, 2],
     )
+    @require_vllm
     def test_llama_dora(self, temp_dir, num_gpus):
         rnd_reward_suffix = str(random.randint(1000, 9999))
         cfg = DictDefault(
@@ -111,6 +113,7 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
         "num_gpus",
         [1, 2],
     )
+    @require_vllm
     def test_llama_fft(self, temp_dir, num_gpus):
         rnd_reward_suffix = str(random.randint(1000, 9999))
         cfg = DictDefault(
