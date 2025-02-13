@@ -100,7 +100,7 @@ It is recommended to leave this off if downloading from Huggingface hub as it wo
 
 Supervised fine-tuning is the process of training models to respond to an instruction or chat input.
 
-As there are a wide variety of dataset formats, Axolotl tries to support or opens up the option to use a majority of the formats available in public datasets.
+As there are a wide variety of dataset formats, Axolotl tries to support a majority of the formats available in public datasets.
 
 Axolotl provide four various approaches for loading datasets, however, it's easier to work backwards from the dataset you have available to figure out which approach to use.
 
