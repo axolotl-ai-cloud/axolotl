@@ -1,6 +1,7 @@
 """
 dataset loading shared utils
 """
+
 from pathlib import Path
 from typing import Optional, Union
 
@@ -29,7 +30,13 @@ def get_ds_type(config_dataset: DictDefault):
     return ds_type
 
 
-def datasets_w_name_generator(dataset_configs):
+def datasets_w_name_generator(dataset_configs: list[DictDefault]):
+    """
+    Yields dataset configs handling multiple names or preprocess_shards
+
+    Args:
+        dataset_configs: list of dataset configs (equivalent to cfg.datasets)
+    """
     for dataset in dataset_configs:
         if dataset.name and isinstance(dataset.name, list):
             # load_dataset doesn't properly handle multiple named configurations
@@ -50,8 +57,16 @@ def datasets_w_name_generator(dataset_configs):
 
 
 def load_dataset_w_config(
-    config_dataset, auth_token, streaming=False
+    config_dataset: DictDefault, use_auth_token: bool, streaming=False
 ) -> Union[Dataset, DatasetDict]:
+    """
+    Load a dataset from a config
+
+    Args:
+        config_dataset: single dataset config
+        use_auth_token: whether to use HF auth token
+        streaming: whether to stream the dataset
+    """
     # pylint: disable=invalid-name
     ds: Optional[Union[Dataset, DatasetDict]] = None  # pylint: disable=invalid-name
     ds_from_hub = False
@@ -63,7 +78,7 @@ def load_dataset_w_config(
             config_dataset.path,
             name=config_dataset.name,
             streaming=True,
-            token=auth_token,
+            token=use_auth_token,
             revision=config_dataset.revision,
             trust_remote_code=ds_trust_remote_code,
         )
@@ -181,7 +196,7 @@ def load_dataset_w_config(
             name=config_dataset.name,
             streaming=streaming,
             data_files=config_dataset.data_files,
-            token=auth_token,
+            token=use_auth_token,
             revision=config_dataset.revision,
             trust_remote_code=config_dataset.trust_remote_code,
             **load_ds_kwargs,
