@@ -41,7 +41,7 @@ As an example, to train using a Hugging Face dataset `hf_org/name`, you can pass
 pretraining_dataset: hf_org/name
 ```
 
-### Pre-training load from local files
+### Pre-training from local dataset files
 
 Given a few corpus files: `A.jsonl`, `B.jsonl`, and `C.jsonl`, your config will look like the below:
 
