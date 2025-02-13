@@ -22,7 +22,7 @@ class TestGRPO:
         Path(temp_dir).mkdir(parents=True, exist_ok=True)
         with open(Path(temp_dir) / "config.yaml", "w", encoding="utf-8") as fout:
             fout.write(yaml.dump(cfg.to_dict(), Dumper=yaml.Dumper))
-        with open(f"rewards_{suffix}", "w", encoding="utf-8") as fout:
+        with open(f"rewards_{suffix}.py", "w", encoding="utf-8") as fout:
             fout.write(
                 """import random
 def rand_reward_func(completions, **kwargs) -> list[float]:
@@ -48,6 +48,7 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "chat_template": "llama3",
                 "rl": "grpo",
                 "trl": {
                     "beta": 0.001,
@@ -80,6 +81,7 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
                 "num_epochs": 1,
                 "micro_batch_size": 4,
                 "gradient_accumulation_steps": 2,
+                "warmup_steps": 10,
                 "val_set_size": 0.0,
                 "output_dir": temp_dir,
                 "learning_rate": 0.0001,
@@ -114,6 +116,7 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "chat_template": "llama3",
                 "rl": "grpo",
                 "trl": {
                     "beta": 0.001,
@@ -140,6 +143,7 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
                 "num_epochs": 1,
                 "micro_batch_size": 4,
                 "gradient_accumulation_steps": 2,
+                "warmup_steps": 10,
                 "val_set_size": 0.0,
                 "output_dir": temp_dir,
                 "learning_rate": 0.0001,

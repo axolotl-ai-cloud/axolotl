@@ -114,6 +114,9 @@ def drop_long_rl_seq(
 
         return (len_prompt + len_completion) <= sequence_len
 
+    if rl == "grpo":
+        return True
+
     raise ValueError("Unknown RL type")
 
 
