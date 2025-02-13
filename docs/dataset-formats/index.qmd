@@ -339,7 +339,7 @@ datasets:
 
 #### Applying `chat_template`
 
-Once all the above steps are completed, you could combine all these configs together to form a bespoke configuration for your  custom dataset. The final step would be to correctly set the EOS token in your config: 
+Once all the above steps are completed, you could combine all these configs together to form a bespoke configuration for your  custom dataset. The final step would be to correctly set the EOS token in your config:
 
 ```yaml
 datasets:
@@ -389,7 +389,7 @@ The first number refers to the label, the second refers to the `token_id`. For e
 
 ### [Instruction Dataset](inst_tune.qmd)
 
-An Instruction dataset is a kind of dataset which focuses on instruction and output, a single turn instead of multi-turn conversations.
+Instruction datasets are used to train instruction-following models and comprise a prompt, containing an instruction, and a single response. In contrast to chat datasets which may be multi-turn, instruct datasets are typically single-turn.
 
 An example is of a common format called Alpaca:
 ```json
