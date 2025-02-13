@@ -187,7 +187,7 @@ datasets:
 `conversation` messages are a list of messages which usually contain a `role` and `content` key.
 
 ::: {.callout-tip}
-Fun fact: Axolotl synonymously call "chat" messages as `conversation` messages due to how FastChat initially used this term to build a widely used method [fastchat conversation](https://github.com/lm-sys/FastChat/blob/main/fastchat/conversation.py) for formatting chat messages prior to the creation of `chat_templates`.
+Fun fact: Axolotl synonymously refers to "chat" messages as `conversation` messages due to how FastChat initially used this term to build a widely used [fastchat conversation](https://github.com/lm-sys/FastChat/blob/main/fastchat/conversation.py) method for formatting chat messages prior to the creation of `chat_templates`.
 :::
 
 #### What are `chat_templates`?
