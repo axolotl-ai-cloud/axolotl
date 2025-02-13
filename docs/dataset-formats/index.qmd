@@ -66,14 +66,17 @@ From Hugging Face:
 
 ```yaml
 datasets:
-  - path: A.jsonl
+  - path: hf_org/name
     type: completion
 ```
 
-From local files:
+From local files (either example works):
 
 ```yaml
 datasets:
+  - path: A.jsonl
+    type: completion
+
   - path: json
     data_files: ["A.jsonl", "B.jsonl", "C.jsonl"]
     type: completion
