@@ -29,6 +29,26 @@ def get_ds_type(config_dataset: DictDefault):
     return ds_type
 
 
+def datasets_w_name_generator(dataset_configs):
+    for dataset in dataset_configs:
+        if dataset.name and isinstance(dataset.name, list):
+            # load_dataset doesn't properly handle multiple named configurations
+            # at the same time for a given dataset
+            for name in dataset.name:
+                yield DictDefault({**dataset, "name": name})
+        elif dataset.preprocess_shards and not dataset.shards:
+            for shard in range(dataset.preprocess_shards):
+                yield DictDefault(
+                    {
+                        **dataset,
+                        "shards": dataset.preprocess_shards,
+                        "shards_idx": shard,
+                    }
+                )
+        else:
+            yield dataset
+
+
 def load_dataset_w_config(
     config_dataset, auth_token, streaming=False
 ) -> Union[Dataset, DatasetDict]:
