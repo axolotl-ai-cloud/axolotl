@@ -62,7 +62,7 @@ On the rare case that the dataset is small and can be loaded entirely into memor
 
 One benefit of this is that the tokenization can be performed separately on a CPU-only machine, and then transferred to a GPU machine for training to save costs.
 
-From huggingface:
+From Hugging Face:
 
 ```yaml
 datasets:
