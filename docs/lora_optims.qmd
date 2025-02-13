@@ -11,6 +11,14 @@ kernels, and (2) LoRA MLP and attention custom autograd functions. Our goal was 
 leverage operator fusion and tensor re-use in order to improve speed and reduce
 memory usage during the forward and backward passes of these calculations.
 
+We currently support many common model architectures, including (but not limited to):
+
+- `llama`
+- `mistral`
+- `qwen2`
+- `gemma`
+- `gemma2`
+
 ## Usage
 
 These optimizations can be enabled in your Axolotl config YAML file. The
@@ -26,7 +34,8 @@ lora_o_kernel: true
 
 ## Requirements
 
-- One or more NVIDIA GPUs (in order to use the Triton kernels)
+- One or more NVIDIA or AMD GPUs (in order to use the Triton kernels)
+    - AMD can be used with experimental Triton support by setting the environment variable `TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1`
 - Targeted LoRA adapters cannot use Dropout
     - This may limit model expressivity / cause overfitting
 - Targeted LoRA adapters cannot have bias terms
