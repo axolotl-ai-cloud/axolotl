@@ -11,7 +11,7 @@ Axolotl is a training framework that aims to make the process convenient yet fle
 
 As there are a lot of available options in Axolotl, this guide aims to provide an simplify the user experience to choosing the proper choice.
 
-Axolotl supports 3 kind of training methods: pre-training, supervised fine-tuning, and preference tuning. Each method has their own dataset format which are described below.
+Axolotl supports 3 kinds of training methods: pre-training, supervised fine-tuning, and preference-based post-training (e.g. DPO, ORPO, PRMs). Each method has their own dataset format which are described below.
 
 ## [Pre-training](pretraining.qmd)
 
