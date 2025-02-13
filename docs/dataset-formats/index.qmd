@@ -266,7 +266,7 @@ To properly use this method, it is important to identify three things:
 
 3. What do you want to mask? For instance, only assistant messages, only last message, or nothing.
 
-##### Choosing `chat_template`
+##### Choosing a `chat_template`
 
 There are a lot of `chat_templates` out there. Axolotl supports the common ones: [supported chat templates](https://github.com/axolotl-ai-cloud/axolotl/blob/860609392184cf62a7e0ca676658b170e059ce6c/src/axolotl/utils/chat_templates.py#L17). For example, to use ChatML, it would be `chat_template: chatml`.
 
