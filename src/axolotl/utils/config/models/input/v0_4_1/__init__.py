@@ -166,6 +166,7 @@ class SFTDataset(BaseModel):
     type: Optional[Union[str, UserDefinedPrompterType]] = None
     input_transform: Optional[str] = None
     shards: Optional[int] = None
+    shards_idx: Optional[int] = None
     preprocess_shards: Optional[int] = None
     conversation: Optional[str] = None
     # Do not make this too strict or it will break the validator to choose different dataset class
