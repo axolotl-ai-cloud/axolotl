@@ -58,13 +58,18 @@ class GRPOStrategy:
         return grpo_args_kwargs
 
     @classmethod
-    def set_trainer_kwargs(cls, cfg):
-        trainer_kwargs = {}
+    def set_trainer_args(cls, cfg):
+        trainer_args = []
         if cfg.trl and cfg.trl.reward_funcs:
             reward_funcs = []
             for reward_func_fqn in cfg.trl.reward_funcs:
                 reward_funcs.append(cls.get_reward_func(reward_func_fqn))
-            trainer_kwargs["reward_funcs"] = reward_funcs
+            trainer_args.append(reward_funcs)
+        return trainer_args
+
+    @classmethod
+    def set_trainer_kwargs(cls, cfg):
+        trainer_kwargs = {}
         if cfg.trl and cfg.trl.reward_processing_classes:
             trainer_kwargs[
                 "reward_processing_classes"

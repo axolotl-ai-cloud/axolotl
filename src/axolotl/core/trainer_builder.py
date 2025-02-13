@@ -1064,6 +1064,7 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         if self.cfg.rl == "grpo":
             trainer_cls = GRPOStrategy.get_trainer_class()
             trainer_cls_args = [self.model]
+            trainer_cls_args.extend(GRPOStrategy.set_trainer_args(self.cfg))
             dpo_trainer_kwargs.update(GRPOStrategy.set_trainer_kwargs(self.cfg))
         elif self.cfg.rl in ["dpo", "ipo"]:
             trainer_cls = DPOStrategy.get_trainer_class()
@@ -1081,10 +1082,10 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             raise ValueError(f"Unsupported RL: {self.cfg.rl}")
 
         sig = inspect.signature(trainer_cls)
-        if "processing_class" in sig.parameters.keys():
-            dpo_trainer_kwargs["processing_class"] = self.tokenizer
-        else:
+        if "tokenizer" in sig.parameters.keys():
             dpo_trainer_kwargs["tokenizer"] = self.tokenizer
+        else:
+            dpo_trainer_kwargs["processing_class"] = self.tokenizer
 
         if self.cfg.datasets is not None and (
             trainer_cls is DPOStrategy.get_trainer_class()
