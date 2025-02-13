@@ -82,7 +82,7 @@ datasets:
     type: completion
 ```
 
-### Before running pre-train
+### Pre-training dataset configuration tips
 
 #### Setting max_steps
 
