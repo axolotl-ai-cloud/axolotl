@@ -13,8 +13,6 @@ from transformers import AutoConfig
 
 from axolotl.kernels.lora import (
     apply_lora_mlp_geglu,
-    apply_lora_mlp_gelu,
-    apply_lora_mlp_silu,
     apply_lora_mlp_swiglu,
     apply_lora_o,
     apply_lora_qkv,
@@ -53,12 +51,10 @@ PATCHED_O_CODE = """
     "\n"
 )
 
-SUPPORTED_ACTIVATIONS = ["silu", "swiglu", "gelu", "geglu"]
+SUPPORTED_ACTIVATIONS = ["silu", "gelu"]
 APPLY_FN_MAPPING = {
-    "silu": apply_lora_mlp_silu,
-    "swiglu": apply_lora_mlp_swiglu,
-    "gelu": apply_lora_mlp_gelu,
-    "geglu": apply_lora_mlp_geglu,
+    "silu": apply_lora_mlp_swiglu,
+    "gelu": apply_lora_mlp_geglu,
 }
 
 

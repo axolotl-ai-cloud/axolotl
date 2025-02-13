@@ -5,8 +5,6 @@ See "GLU Variants Improve Transformer" (https://arxiv.org/abs/2002.05202).
 
 Credit to `unsloth` (https://unsloth.ai/) for inspiration for this implementation.
 """
-# pylint: disable=invalid-name,unnecessary-lambda-assignment,duplicate-code
-
 import torch
 import triton
 import triton.language as tl
@@ -18,7 +16,7 @@ def _swiglu_fwd_kernel(
     up_ptr,
     out_ptr,
     n_elements,
-    BLOCK_SIZE: tl.constexpr,
+    block_size: tl.constexpr,
 ):
     """
     SwiGLU forward kernel. The kernel computes activation in fp32 precision for better
@@ -26,13 +24,13 @@ def _swiglu_fwd_kernel(
 
     Args:
         gate_ptr: Pointer to gate tensor `[*, hidden_dim]`.
-        up_ptr: Pointer to up-projection tensor `[`*, hidden_dim]`.
+        up_ptr: Pointer to up-projection tensor `[*, hidden_dim]`.
         out_ptr: Pointer to output tensor `[*, hidden_dim]`.
         n_elements: Total number of elements in the input tensors.
-        BLOCK_SIZE: Size of thread blocks for parallel computation.
+        block_size: Size of thread blocks for parallel computation.
     """
     block_idx = tl.program_id(0)
-    offsets = block_idx * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
+    offsets = block_idx * block_size + tl.arange(0, block_size)
     mask = offsets < n_elements
 
     # Load gate in fp32, keep up in original dtype
@@ -53,7 +51,7 @@ def _swiglu_bwd_kernel(
     gate_ptr,
     up_ptr,
     n_elements,
-    BLOCK_SIZE: tl.constexpr,
+    block_size: tl.constexpr,
 ):
     """
     SwiGLU backward kernel. Stores gradient results in-place.
@@ -63,7 +61,7 @@ def _swiglu_bwd_kernel(
         gate_ptr: Pointer to gate tensor `[*, hidden_dim]`.
         up_ptr: Pointer to up-projection tensor `[*, hidden_dim]`.
         n_elements: Total number of elements in the input tensors.
-        BLOCK_SIZE: Size of thread blocks for parallel computation.
+        block_size: Size of thread blocks for parallel computation.
 
     Note:
         After kernel execution, tensors are modified in-place:
@@ -72,7 +70,7 @@ def _swiglu_bwd_kernel(
         - `up_ptr` contains gradient w.r.t up (`grad_up`)
     """
     block_idx = tl.program_id(0)
-    offsets = block_idx * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
+    offsets = block_idx * block_size + tl.arange(0, block_size)
     mask = offsets < n_elements
 
     # Load values - only convert gate to fp32
@@ -100,6 +98,7 @@ def _swiglu_bwd_kernel(
     tl.store(up_ptr + offsets, grad_up, mask=mask)  # grad wrt up
 
 
+# pylint: disable=unnecessary-lambda-assignment
 def swiglu_forward(gate: torch.Tensor, up: torch.Tensor) -> torch.Tensor:
     """
     SwiGLU forward pass. Computes SwiGLU activation: `x * sigmoid(x) * up`, where
@@ -116,18 +115,19 @@ def swiglu_forward(gate: torch.Tensor, up: torch.Tensor) -> torch.Tensor:
     n_elements = gate.numel()
     out = torch.empty((batch, seq_len, hidden_dim), dtype=gate.dtype, device="cuda")
 
-    grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)  # noqa: E731
+    grid = lambda meta: (triton.cdiv(n_elements, meta["block_size"]),)  # noqa: E731
     _swiglu_fwd_kernel[grid](
         gate_ptr=gate,
         up_ptr=up,
         out_ptr=out,
         n_elements=n_elements,
-        BLOCK_SIZE=1024,
+        block_size=1024,
     )
 
     return out
 
 
+# pylint: disable=unnecessary-lambda-assignment
 def swiglu_backward(
     grad_output: torch.Tensor, gate: torch.Tensor, up: torch.Tensor
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -147,13 +147,13 @@ def swiglu_backward(
     """
     n_elements = grad_output.numel()
 
-    grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)  # noqa: E731
+    grid = lambda meta: (triton.cdiv(n_elements, meta["block_size"]),)  # noqa: E731
     _swiglu_bwd_kernel[grid](
         grad_out_ptr=grad_output,
         gate_ptr=gate,
         up_ptr=up,
         n_elements=n_elements,
-        BLOCK_SIZE=1024,
+        block_size=1024,
     )
 
     # After kernel execution, tensors contain:

@@ -49,7 +49,6 @@ from transformers.integrations.deepspeed import (
 
 from axolotl.common.architectures import MOE_ARCH_BLOCK
 from axolotl.models.mamba import fix_mamba_attn_for_loss
-from axolotl.monkeypatch.lora_kernels import SUPPORTED_MODEL_TYPES
 from axolotl.monkeypatch.multipack import (
     SUPPORTED_MULTIPACK_MODEL_TYPES,
     patch_for_multipack,
@@ -441,10 +440,9 @@ class ModelLoader:
             patch_mistral_cross_entropy()
 
         if self.cfg.unsloth_lora_qkv or self.cfg.unsloth_lora_o:
-            if self.cfg.model_type in SUPPORTED_MODEL_TYPES:
-                from axolotl.monkeypatch.lora_kernels import patch_self_attn_lora
+            from axolotl.monkeypatch.lora_kernels import patch_self_attn_lora
 
-                patch_self_attn_lora(self.cfg)
+            patch_self_attn_lora(self.cfg)
 
     def patch_attention(self) -> None:
         if hasattr(self.model_config, "model_type"):

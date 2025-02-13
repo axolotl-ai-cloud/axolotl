@@ -12,8 +12,6 @@ from transformers.models.llama.configuration_llama import LlamaConfig
 
 from axolotl.kernels.lora import (
     apply_lora_mlp_geglu,
-    apply_lora_mlp_gelu,
-    apply_lora_mlp_silu,
     apply_lora_mlp_swiglu,
     apply_lora_o,
     apply_lora_qkv,
@@ -27,22 +25,22 @@ from axolotl.utils.dict import DictDefault
 MODEL_CONFIGS = [
     {
         "name": "openaccess-ai-collective/tiny-mistral",
-        "expected_activation": apply_lora_mlp_silu,
+        "expected_activation": apply_lora_mlp_swiglu,
         "dtype": torch.float16,
     },
     {
         "name": "Qwen/Qwen2-7B",
-        "expected_activation": apply_lora_mlp_silu,
+        "expected_activation": apply_lora_mlp_swiglu,
         "dtype": torch.float16,
     },
     {
         "name": "HuggingFaceTB/SmolLM2-135M",
-        "expected_activation": apply_lora_mlp_silu,
+        "expected_activation": apply_lora_mlp_swiglu,
         "dtype": torch.float32,
     },
     {
         "name": "mhenrichsen/gemma-2b",
-        "expected_activation": apply_lora_mlp_silu,
+        "expected_activation": apply_lora_mlp_geglu,
         "dtype": torch.float16,
     },
 ]
@@ -132,7 +130,7 @@ def test_swiglu_mlp_integration(small_llama_model):
 
     # Verify patches
     layer = patched_model.model.model.layers[0]
-    assert layer.mlp.forward.__func__ is apply_lora_mlp_silu
+    assert layer.mlp.forward.__func__ is apply_lora_mlp_swiglu
 
     # Test forward pass
     batch_size, seq_len = 2, 10
@@ -184,7 +182,7 @@ def test_geglu_model_integration():
 
     # Verify patches
     layer = patched_model.model.model.layers[0]
-    assert layer.mlp.forward.__func__ is apply_lora_mlp_gelu
+    assert layer.mlp.forward.__func__ is apply_lora_mlp_geglu
 
     # Test end-to-end
     inputs = torch.randint(0, 100, (1, 20), device=model.device, dtype=torch.long)
@@ -394,3 +392,42 @@ def test_model_architecture(model_config):
     assert torch.allclose(
         original_output, patched_output, rtol=1e-4
     ), f"Outputs don't match for {model_config['name']}"
+
+
+# pylint: disable=duplicate-code
+def test_kernel_training_integration():
+    """Test model loading with kernel patches enabled."""
+    from axolotl.cli.utils import load_model_and_tokenizer
+
+    # Create minimal config
+    cfg = DictDefault(
+        {
+            "base_model": "HuggingFaceTB/SmolLM2-135M",
+            "tokenizer_config": "HuggingFaceTB/SmolLM2-135M",
+            "learning_rate": 0.000001,
+            "datasets": [
+                {
+                    "path": "mhenrichsen/alpaca_2k_test",
+                    "type": "alpaca",
+                }
+            ],
+            "micro_batch_size": 1,
+            "gradient_accumulation_steps": 1,
+            "adapter": "lora",
+            "lora_r": 8,
+            "lora_alpha": 16,
+            "lora_dropout": 0.0,
+            "lora_target_linear": True,
+            "sequence_len": 1024,
+            "lora_mlp_kernel": True,
+            "lora_qkv_kernel": True,
+            "lora_o_kernel": True,
+        }
+    )
+
+    # Load model
+    model, _ = load_model_and_tokenizer(cfg=cfg)
+
+    # Verify correct activation function
+    layer = model.model.model.layers[0]
+    assert layer.mlp.forward.__func__ is apply_lora_mlp_swiglu
