@@ -327,6 +327,7 @@ Perhaps, you want to train on `assistant` and `narrator` roles, you can simply a
 ```yaml
 datasets:
     ...
+    roles_to_train: ["narrator"]
     roles:
       narrator: ["narrator"]
 ```
