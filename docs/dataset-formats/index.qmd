@@ -194,7 +194,7 @@ Fun fact: Axolotl synonymously refers to "chat" messages as `conversation` messa
 
 The current most popular and convenient method for inference is to use `chat_templates` for formatting prompts. Axolotl supports using `chat_templates` for training to ensure that the model performs in the same environment as in inference.
 
-Here's a quick rundown on `chat_template`. A `chat_template` is a Jinja2 template which formats a list of messages into a prompt.
+Here's a quick rundown on `chat_template`: A `chat_template` is a Jinja2 template which formats a list of messages into a prompt.
 
 An example of a prompt formatted into a popular template called ChatML can be seen below:
 
