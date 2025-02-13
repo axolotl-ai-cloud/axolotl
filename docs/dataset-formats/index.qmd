@@ -94,7 +94,7 @@ One step is equal to `sequence_len * micro_batch_size * gradient_accumulation_st
 
 #### Group_by_length
 
-It is recommended to leave this off if downloading from Huggingface hub as it would download the entire dataset which can be very large.
+It is recommended to leave this off if downloading from Hugging Face hub as it would download the entire dataset which can be very large.
 
 ## Supervised fine-tuning (SFT)
 
