@@ -4,15 +4,16 @@ import inspect
 import logging
 from functools import partial
 from pathlib import Path
-from typing import Any, List
+from typing import Any, List, Union
 
 import yaml
-from datasets import DatasetDict, concatenate_datasets, load_dataset, load_from_disk
+from datasets import Dataset, DatasetDict, concatenate_datasets, load_from_disk
 
 from axolotl.common.const import DEFAULT_DATASET_PREPARED_PATH
 from axolotl.prompt_strategies.dpo import load as load_dpo
 from axolotl.prompt_strategies.kto import load as load_kto
 from axolotl.prompt_strategies.orpo import load as load_orpo
+from axolotl.utils.data.shared import datasets_w_name_generator, load_dataset_w_config
 from axolotl.utils.data.utils import deduplicate_and_log_datasets, md5
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import is_main_process, zero_first
@@ -118,23 +119,12 @@ def drop_long_rl_seq(
 def load_prepare_preference_datasets(cfg):
     def load_split(dataset_cfgs, _cfg):
         split_datasets: List[Any] = []
-        for i, ds_cfg in enumerate(dataset_cfgs):
-            if ds_cfg["ds_type"] == "json":
-                for data_file in ds_cfg["data_files"]:
-                    data_files = {ds_cfg["split"]: data_file}
-                    ds = load_dataset(  # pylint: disable=invalid-name
-                        "json",
-                        data_files=data_files,
-                        split=ds_cfg["split"],
-                    )
-                    split_datasets.insert(i, ds)
-            else:
-                ds = load_dataset(  # pylint: disable=invalid-name
-                    ds_cfg["path"],
-                    split=ds_cfg["split"],
-                    revision=ds_cfg.get("revision", None),
-                )
-                split_datasets.insert(i, ds)
+        use_auth_token = _cfg.hf_use_auth_token
+        for config_dataset in datasets_w_name_generator(dataset_cfgs):
+            ds: Union[Dataset, DatasetDict] = load_dataset_w_config(
+                config_dataset, use_auth_token, streaming=False
+            )
+            split_datasets.append(ds)
 
         tokenizer = load_tokenizer(cfg)
 
