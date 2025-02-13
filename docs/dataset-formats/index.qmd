@@ -385,7 +385,7 @@ If this config were to be applied to the sample dataset above, the output would 
 (-100, 198)
 ```
 
-The first number refers to the label, the second refers to the token_id. For example, `-100` labels appears on non-assistant portions, meaning that it's masked. For assistant portions, the label is the same as the token_id.
+The first number refers to the label, the second refers to the `token_id`. For example, `-100` labels appear on non-assistant portions, meaning that they are masked during. For assistant portions, the label is the same as the `token_id`.
 
 ### [Instruction Dataset](inst_tune.qmd)
 
