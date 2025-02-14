@@ -190,8 +190,12 @@ class SFTDataset(BaseModel):
     field_human: Optional[str] = None
     field_model: Optional[str] = None
     field_messages: Optional[str] = None
-    message_field_role: Optional[str] = None
-    message_field_content: Optional[str] = None
+    message_field_role: Optional[
+        str
+    ] = None  # deprecated, use message_property_mappings
+    message_field_content: Optional[
+        str
+    ] = None  # deprecated, use message_property_mappings
     message_property_mappings: Optional[Dict[str, str]] = None
     message_field_training: Optional[str] = None
     message_field_training_detail: Optional[str] = None
@@ -1779,6 +1783,8 @@ def handle_legacy_message_fields_logic(data: dict) -> dict:
                 f"conflicts with message_property_mappings.role='{data['message_property_mappings']['role']}'"
             )
         data["message_property_mappings"]["role"] = data["message_field_role"] or "role"
+
+        del data["message_field_role"]
     elif "role" not in data["message_property_mappings"]:
         data["message_property_mappings"]["role"] = "role"
 
@@ -1800,6 +1806,8 @@ def handle_legacy_message_fields_logic(data: dict) -> dict:
         data["message_property_mappings"]["content"] = (
             data["message_field_content"] or "content"
         )
+
+        del data["message_field_content"]
     elif "content" not in data["message_property_mappings"]:
         data["message_property_mappings"]["content"] = "content"
 
