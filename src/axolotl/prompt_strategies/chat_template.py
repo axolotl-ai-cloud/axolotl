@@ -36,7 +36,8 @@ class ChatTemplatePrompter(Prompter):
         roles: Optional[Dict[str, List[str]]] = None,
         drop_system_message: bool = False,
     ):
-        if message_property_mappings is None:
+        # check if message_property_mappings is None or empty dict
+        if message_property_mappings is None or (not message_property_mappings):
             message_property_mappings = {
                 "role": "role",
                 "content": "content",
