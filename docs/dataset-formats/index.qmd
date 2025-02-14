@@ -114,7 +114,7 @@ A flow chart is as follows:
 
 4. Is your dataset in an "instruct" format, containing `{ instruction, response }`? If yes, check [Instruction Dataset](#instruction-dataset)
 
-If you went through the flow chart and did not find one that matches, it is recommended to preprocess your dataset into one of the above or create a Github Discussion.
+If you went through the flow chart and did not find one that matches, it is recommended to preprocess your dataset into one of the above or create a thread on Github Discussion.
 
 ::: {.callout-tip}
 You can mix and match within each approach or across approaches to train a model on a variety of datasets.
@@ -289,9 +289,10 @@ If your dataset format is different, here are the keys you should check (with th
 ```yaml
 datasets:
     ...
-    field_messages: messages
-    message_field_role: role
-    message_field_content: content
+    field_messages: messages  # this should point to the key containing the list of conversations
+    message_property_mappings:  # this is a mapping from keys in your dataset to keys in chat_template
+      role: role
+      content: content
 ```
 
 In some `chat_templates` (e.g. [Gemma](https://huggingface.co/google/gemma-2b-it/blob/main/tokenizer_config.json#L1507)), the roles are hardcoded to `user` and `assistant`. Consequently, you may find it necessary to map the roles in your dataset to these above. We currently have some defaults that should work for common datasets, but if you get a `KeyError`, it would be necessary to add mapping for your roles. Here is an example of how it would look like:
@@ -348,13 +349,14 @@ datasets:
   - path: A.jsonl
     type: chat_template
 
-	# step 1
+    # step 1
     chat_template: chatml
 
-	# step 2
-	field_messages: messages
-    message_field_role: role
-    message_field_content: content
+    # step 2
+    field_messages: messages
+    message_property_mappings:
+      role: role
+      content: content
 
     roles:
       assistant:
@@ -365,8 +367,8 @@ datasets:
         - human
         - user
 
-	# step 3
-	roles_to_train: ["assistant"]
+    # step 3
+    roles_to_train: ["assistant"]
     train_on_eos: "turn"
 
 special_tokens:
