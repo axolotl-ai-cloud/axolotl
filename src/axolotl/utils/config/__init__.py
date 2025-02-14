@@ -291,8 +291,8 @@ def validate_config(
             dict(
                 AxolotlConfigWCapabilities(
                     **cfg.to_dict(),
-                    capabilities=capabilities,  # type: ignore
-                    env_capabilities=env_capabilities,  # type: ignore
+                    capabilities=capabilities,
+                    env_capabilities=env_capabilities,
                 ).model_dump(exclude_none=True)
             )
         )
