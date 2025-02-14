@@ -505,11 +505,14 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
     def transform_message(self, message):
         # Build the initial transformed message from the mappings
-        transformed_message = {
-            key: message[value]
-            for key, value in self.prompter.message_property_mappings.items()
-            if message.get(value) is not None
-        }
+        transformed_message = {}
+        for key, value in self.prompter.message_property_mappings.items():
+            if message.get(value) is not None:
+                transformed_message[key] = message[value]
+            else:
+                LOG.debug(
+                    f"Could not find value for property {value} in message: {message}"
+                )
 
         # Map the role if necessary
         if "role" in transformed_message:
