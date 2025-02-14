@@ -333,9 +333,7 @@ class TrainerBuilderBase(abc.ABC):
             self.cfg.save_total_limit if self.cfg.save_total_limit else 4
         )
 
-        training_args_kwargs["max_steps"] = (
-            total_num_steps if self.cfg.max_steps else -1
-        )
+        training_args_kwargs["max_steps"] = self.cfg.max_steps or total_num_steps
 
         # max_length is not used in CausalTrainer
         if self.cfg.reward_model or self.cfg.rl:
