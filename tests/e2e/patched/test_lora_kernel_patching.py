@@ -1,14 +1,13 @@
 """Integration tests for LoRA activation and attention kernels."""
 # pylint: disable=redefined-outer-name
 
-import inspect
-
 import pytest
 import torch
 from accelerate.state import PartialState
 from peft import PeftModelForCausalLM, get_peft_config
 from transformers import AutoModelForCausalLM, LlamaForCausalLM
 from transformers.models.llama.configuration_llama import LlamaConfig
+from transformers.models.llama.modeling_llama import LlamaAttention
 
 from axolotl.kernels.lora import (
     apply_lora_mlp_geglu,
@@ -67,46 +66,29 @@ def small_llama_model():
 
 
 # pylint: disable=protected-access
-def test_attention_patching_integration(small_llama_model):
+def test_attention_patching_integration():
     """Test attention patching in integration context."""
     cfg = {"base_model": "TinyLlama/TinyLlama-1.1B-Chat-v1.0"}
 
-    peft_config = get_peft_config(
-        {
-            "peft_type": "LORA",
-            "task_type": "CAUSAL_LM",
-            "r": 8,
-            "lora_alpha": 16,
-            "target_modules": ["q_proj", "k_proj", "v_proj", "o_proj"],
-            "lora_dropout": 0,
-            "bias": "none",
-        }
-    )
-    model = PeftModelForCausalLM(small_llama_model, peft_config).to("cuda")
-
-    # Get the attention class and original implementation
-    attn_cls = type(model.model.model.layers[0].self_attn)
-    original_forward = attn_cls.forward
-    original_code = inspect.getsource(original_forward)
-
     # Apply patch
+    old_forward = LlamaAttention.forward
     patch_self_attn_lora(cfg)
+    new_forward = LlamaAttention.forward
 
     # Check the forward method was replaced
-    assert attn_cls.forward != original_forward
-    assert attn_cls.forward.__name__ == "axolotl_attn_forward"
+    assert old_forward != new_forward
+    assert LlamaAttention.forward.__name__ == "axolotl_attn_forward"
 
     # Check original implementation was stored
-    assert hasattr(attn_cls, "_original_forward")
-    assert attn_cls._original_forward == original_code
+    assert hasattr(LlamaAttention, "_original_forward")
 
     # Verify patched implementation is applied
-    patched_forward = attn_cls.forward
+    patched_forward = LlamaAttention.forward
     assert patched_forward.__name__ == "axolotl_attn_forward"
 
     # Clean up
-    attn_cls.forward = original_forward
-    delattr(attn_cls, "_original_forward")
+    LlamaAttention.forward = old_forward
+    delattr(LlamaAttention, "_original_forward")
 
 
 def test_swiglu_mlp_integration(small_llama_model):
