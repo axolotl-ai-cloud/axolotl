@@ -12,5 +12,5 @@ def get_dataset_lengths(dataset):
         lengths = np.array([x[-1] + 1 for x in position_ids])
     else:
         input_ids = dataset["input_ids"]
-        lengths = np.vectorize(len)(np.array(input_ids, dtype=object))
+        lengths = np.array([len(seq) for seq in input_ids])
     return lengths
