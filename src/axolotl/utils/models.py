@@ -41,6 +41,7 @@ from transformers import (  # noqa: F401
     PreTrainedModel,
     PreTrainedTokenizerBase,
     ProcessorMixin,
+    Qwen2VLForConditionalGeneration,
 )
 from transformers.integrations.deepspeed import (
     HfTrainerDeepSpeedConfig,
@@ -91,7 +92,10 @@ def get_module_class_from_name(module, name):
 
 def check_model_config(cfg: DictDefault, model_config: Union[AutoConfig, DictDefault]):
     if cfg.is_multimodal:
-        model_config = model_config.text_config
+        if hasattr(model_config, "text_config"):
+            model_config = model_config.text_config
+        elif hasattr(model_config, "get_text_config"):
+            model_config = model_config.get_text_config()
 
     quant_config_exists = (
         hasattr(model_config, "quantization_config")
@@ -369,7 +373,11 @@ class ModelLoader:
         # init model config
         self.model_config = load_model_config(cfg)
         if cfg.is_multimodal:
-            self.text_model_config = self.model_config.text_config
+            if hasattr(self.model_config, "text_config"):
+                self.text_model_config = self.model_config.text_config
+            else:
+                # for qwen2_vl
+                self.text_model_config = self.model_config.get_text_config()
         else:
             self.text_model_config = self.model_config
 
@@ -565,6 +573,10 @@ class ModelLoader:
             elif self.model_config.model_type == "mllama":
                 self.AutoModelLoader = (  # pylint: disable=invalid-name
                     MllamaForConditionalGeneration
+                )
+            elif self.model_config.model_type == "qwen2_vl":
+                self.AutoModelLoader = (  # pylint: disable=invalid-name
+                    Qwen2VLForConditionalGeneration
                 )
             else:
                 self.AutoModelLoader = (
@@ -1061,7 +1073,9 @@ class ModelLoader:
             )
         ):
             resize_kwargs = {}
-            if self.cfg.mean_resizing_embeddings is not None:
+            if self.cfg.mean_resizing_embeddings is not None and not (
+                self.model_config.model_type == "llava"
+            ):
                 resize_kwargs["mean_resizing"] = self.cfg.mean_resizing_embeddings
             self.model.resize_token_embeddings(embeddings_len, **resize_kwargs)
         else:

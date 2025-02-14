@@ -156,7 +156,7 @@ def normalize_config(cfg):
 
     cfg.is_multimodal = (
         hasattr(model_config, "model_type")
-        and model_config.model_type in ["llava", "mllama"]
+        and model_config.model_type in ["llava", "mllama", "qwen2_vl"]
         or any(
             multimodal_name in cfg.base_model.lower()
             for multimodal_name in [
@@ -169,7 +169,10 @@ def normalize_config(cfg):
         cfg.processor_config = (
             cfg.processor_config or cfg.base_model_config or cfg.base_model
         )
-        model_config = model_config.text_config
+        if hasattr(model_config, "text_config"):
+            model_config = model_config.text_config
+        elif hasattr(model_config, "get_text_config"):
+            model_config = model_config.get_text_config()
 
     cfg.model_config_type = model_config.model_type
 
