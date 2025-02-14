@@ -744,9 +744,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             # https://docs.nvidia.com/deeplearning/performance/dl-performance-matrix-multiplication/index.html
             data_collator_kwargs["pad_to_multiple_of"] = 64
 
-        if self.cfg.reward_model:
-            data_collator_kwargs["max_length"] = self.cfg.sequence_len
-
         trainer_cls = self._get_trainer_cls()
         trainer_kwargs, trainer_cls = self.hook_pre_create_trainer(
             trainer_kwargs, trainer_cls
@@ -825,8 +822,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         collator_args = [self.tokenizer]
         if self.cfg.reward_model:
             collator = RewardDataCollatorWithPadding
-            if "max_length" in kwargs:
-                kwargs.pop("max_length")
         elif use_batch_sampler_collator:
             if self.cfg.model_config_type in SUPPORTED_MULTIPACK_MODEL_TYPES:
                 collator = V2BatchSamplerDataCollatorForSeq2Seq
