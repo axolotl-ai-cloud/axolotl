@@ -65,29 +65,28 @@ def small_llama_model():
     return LlamaForCausalLM(LlamaConfig(**config))
 
 
-# pylint: disable=protected-access
 def test_attention_patching_integration():
     """Test attention patching in integration context."""
     cfg = {"base_model": "TinyLlama/TinyLlama-1.1B-Chat-v1.0"}
 
+    # Store the original implementation
+    original_forward = getattr(LlamaAttention, "forward")
+
     # Apply patch
-    old_forward = LlamaAttention.forward
     patch_self_attn_lora(cfg)
-    new_forward = LlamaAttention.forward
+
+    # Get the new forward method
+    patched_forward = LlamaAttention.forward
 
     # Check the forward method was replaced
-    assert old_forward != new_forward
-    assert LlamaAttention.forward.__name__ == "axolotl_attn_forward"
+    assert original_forward is not patched_forward
+    assert patched_forward.__name__ == "axolotl_attn_forward"
 
     # Check original implementation was stored
     assert hasattr(LlamaAttention, "_original_forward")
 
-    # Verify patched implementation is applied
-    patched_forward = LlamaAttention.forward
-    assert patched_forward.__name__ == "axolotl_attn_forward"
-
     # Clean up
-    LlamaAttention.forward = old_forward
+    setattr(LlamaAttention, "forward", original_forward)
     delattr(LlamaAttention, "_original_forward")
 
 
