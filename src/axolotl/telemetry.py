@@ -24,7 +24,7 @@ class TelemetryConfig:
 
     enabled: bool
     project_api_key: str
-    host: str = "https://app.posthog.com"
+    host: str = "https://app.posthog.com"  # TODO: replace with self-hosted endpoint?
     queue_size: int = 100
     batch_size: int = 10
     whitelist_path: str = "telemetry_whitelist.yaml"
