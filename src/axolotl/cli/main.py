@@ -167,7 +167,6 @@ def train(
     """
     # Enable expandable segments for cuda allocation to improve VRAM usage
     set_pytorch_cuda_alloc_conf()
-    from axolotl.cli.cloud import do_cli_train
 
     if "use_ray" in kwargs and kwargs["use_ray"]:
         accelerate = False
@@ -201,6 +200,8 @@ def train(
         try:
             if accelerate:
                 if cloud:
+                    from axolotl.cli.cloud import do_cli_train
+
                     cwd = os.getcwd()
                     do_cli_train(
                         cloud_config=cloud,
@@ -229,6 +230,8 @@ def train(
                     subprocess.run(cmd, check=True)  # nosec B603
             else:
                 if cloud:
+                    from axolotl.cli.cloud import do_cli_train
+
                     do_cli_train(
                         cloud_config=cloud, config=config, accelerate=False, **kwargs
                     )
