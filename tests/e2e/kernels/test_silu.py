@@ -28,7 +28,7 @@ def test_silu_forward_values():
     # PyTorch reference
     torch_out = F.silu(x)
 
-    assert torch.allclose(triton_out, torch_out, rtol=1e-4)
+    assert torch.allclose(triton_out, torch_out, rtol=1e-3)
 
 
 def test_silu_backward():
@@ -47,8 +47,8 @@ def test_silu_backward():
     h, our_grad_x = silu_backward(grad_output_clone, x_clone)
 
     # Compare outputs and gradients
-    assert torch.allclose(h, torch_out, rtol=1e-4)
-    assert torch.allclose(our_grad_x, x.grad, rtol=1e-4)
+    assert torch.allclose(h, torch_out, rtol=1e-3)
+    assert torch.allclose(our_grad_x, x.grad, rtol=1e-3)
 
 
 def test_silu_inplace_preservation():

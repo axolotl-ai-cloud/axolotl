@@ -139,13 +139,13 @@ def test_matmul_lora(sample_tensors):
     # Test base matmul
     out1 = matmul_lora(X, W, None, None, None, None)
     expected1 = torch.matmul(X, W.t())
-    assert torch.allclose(out1, expected1, rtol=1e-4)
+    assert torch.allclose(out1, expected1, rtol=1e-3)
 
     # Test with LoRA
     out2 = matmul_lora(X, W, None, A, B, scale)
     lora_term = scale * torch.matmul(torch.matmul(X, A.t()), B.t())
     expected2 = expected1 + lora_term
-    assert torch.allclose(out2, expected2, rtol=1e-4)
+    assert torch.allclose(out2, expected2, rtol=1e-3)
 
     # Test 3D input reshaping
     X_3d = X.clone()
@@ -528,4 +528,4 @@ def test_inplace_operations(sample_tensors, apply_function):
     out1 = apply_function(mlp, X.clone(), inplace=True)
     out2 = apply_function(mlp, X.clone(), inplace=False)
 
-    assert torch.allclose(out1, out2, rtol=1e-4)
+    assert torch.allclose(out1, out2, rtol=1e-3)

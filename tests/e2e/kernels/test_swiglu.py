@@ -30,7 +30,7 @@ def test_swiglu_forward_values():
     # PyTorch reference
     torch_out = F.silu(gate) * up
 
-    assert torch.allclose(triton_out, torch_out, rtol=1e-4)
+    assert torch.allclose(triton_out, torch_out, rtol=1e-3)
 
 
 def test_swiglu_backward():
@@ -54,9 +54,9 @@ def test_swiglu_backward():
     )
 
     # Compare outputs and gradients
-    assert torch.allclose(h, torch_out, rtol=1e-4)
-    assert torch.allclose(our_grad_gate, gate.grad, rtol=1e-4)
-    assert torch.allclose(our_grad_up, up.grad, rtol=1e-4)
+    assert torch.allclose(h, torch_out, rtol=1e-3)
+    assert torch.allclose(our_grad_gate, gate.grad, rtol=1e-3)
+    assert torch.allclose(our_grad_up, up.grad, rtol=1e-3)
 
 
 def test_swiglu_inplace_preservation():

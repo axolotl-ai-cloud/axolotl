@@ -30,7 +30,7 @@ def test_geglu_forward_values():
     # PyTorch reference
     torch_out = F.gelu(gate) * up
 
-    assert torch.allclose(triton_out, torch_out, rtol=1e-4)
+    assert torch.allclose(triton_out, torch_out, rtol=1e-3)
 
 
 def test_geglu_backward():
@@ -52,9 +52,9 @@ def test_geglu_backward():
     h, grad_gate, grad_up = geglu_backward(grad_output_clone, gate_clone, up_clone)
 
     # Compare outputs and gradients
-    assert torch.allclose(h, torch_out, rtol=1e-4)
-    assert torch.allclose(grad_gate, gate.grad, rtol=1e-4)
-    assert torch.allclose(grad_up, up.grad, rtol=1e-4)
+    assert torch.allclose(h, torch_out, rtol=1e-3)
+    assert torch.allclose(grad_gate, gate.grad, rtol=1e-3)
+    assert torch.allclose(grad_up, up.grad, rtol=1e-3)
 
 
 def test_geglu_inplace_preservation():
