@@ -95,49 +95,49 @@ def original_apply_o(self: nn.Module, hidden_states: torch.Tensor) -> torch.Tens
     return attn_output
 
 
-def get_attention_cls_from_config(cfg):
+def get_attention_cls_from_config(cfg: DictDefault) -> nn.Module:
     """
     Get the appropriate attention class by inspecting the model config.
+    Uses dynamic import to support any model architecture that follows
+    the standard transformers naming convention.
 
     Args:
         cfg: Dictionary mapping `axolotl` config keys to values.
 
     Returns:
-        The appropriate attention class for the model
+        The appropriate attention class for the model.
 
     Raises:
-        ValueError: If no matching attention class is found or base_model not specified
+        ValueError: If `base_model` not specified or attention class cannot be imported
+        ImportError: If the model module or attention class doesn't exist
     """
+    if "base_model" not in cfg:
+        raise ValueError("base_model must be specified in config")
+
     # Get model config without loading the model
     model_config = AutoConfig.from_pretrained(cfg["base_model"])
-
-    # Model type is stored in model_config.model_type
     model_type = model_config.model_type
 
-    if model_type == "llama":
-        from transformers.models.llama.modeling_llama import LlamaAttention
-
-        return LlamaAttention
-    if model_type == "gemma":
-        from transformers.models.gemma.modeling_gemma import GemmaAttention
-
-        return GemmaAttention
-    if model_type == "mistral":
-        from transformers.models.mistral.modeling_mistral import MistralAttention
-
-        return MistralAttention
-    if model_type == "phi":
-        from transformers.models.phi.modeling_phi import PhiAttention
-
-        return PhiAttention
+    # Special case for model_type = "qwen2"
     if model_type == "qwen2":
         from transformers.models.qwen2.modeling_qwen2 import Qwen2Attention
 
         return Qwen2Attention
 
-    raise ValueError(
-        f"Axolotl doesn't support attn class LoRA patching for model_type: {model_type}"
-    )
+    try:
+        # Dynamically import the module and attention class
+        module_path = f"transformers.models.{model_type}.modeling_{model_type}"
+        module = __import__(
+            module_path, fromlist=[f"{model_type.capitalize()}Attention"]
+        )
+        attention_cls = getattr(module, f"{model_type.capitalize()}Attention")
+
+        return attention_cls
+    except (ImportError, AttributeError) as e:
+        raise ValueError(
+            f"Could not import attention class for model_type: {model_type}. "
+            f"Error: {str(e)}"
+        ) from e
 
 
 # pylint: disable=protected-access
