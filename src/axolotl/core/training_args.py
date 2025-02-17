@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from transformers import TrainingArguments
-from trl import CPOConfig, DPOConfig, KTOConfig, ORPOConfig, PRMConfig, RewardConfig
+from trl import CPOConfig, KTOConfig, ORPOConfig, PRMConfig, RewardConfig
 
 
 @dataclass
@@ -214,13 +214,6 @@ class AxolotlTrainingArguments(AxolotlTrainingMixins, TrainingArguments):
 
     This code is duplicated due to HF TrainingArguments not setting output_dir with a defaujlt value
     so it can't be used as a mixin.
-    """
-
-
-@dataclass
-class AxolotlDPOConfig(AxolotlTrainingMixins, DPOConfig):
-    """
-    DPO config for DPO training
     """
 
 

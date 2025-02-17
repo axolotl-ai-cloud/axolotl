@@ -13,5 +13,4 @@ def get_dataset_lengths(dataset):
     else:
         input_ids = dataset.data.column("input_ids")
         lengths = np.vectorize(len)(np.array(input_ids, dtype=object))
-        return lengths
     return lengths

@@ -35,13 +35,18 @@ def do_cli_train(
     cloud_config: Union[Path, str],
     config: Union[Path, str],
     accelerate: bool = True,
+    cwd=None,
+    **kwargs,
 ) -> None:
     print_axolotl_text_art()
     cloud_cfg = load_cloud_cfg(cloud_config)
     cloud = ModalCloud(cloud_cfg)
     with open(config, "r", encoding="utf-8") as file:
         config_yaml = file.read()
-    cloud.train(config_yaml, accelerate=accelerate)
+    local_dirs = {}
+    if cwd and not Path(cwd).joinpath("src", "axolotl").exists():
+        local_dirs = {"/workspace/mounts": cwd}
+    cloud.train(config_yaml, accelerate=accelerate, local_dirs=local_dirs, **kwargs)
 
 
 def do_cli_lm_eval(

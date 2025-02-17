@@ -6,7 +6,7 @@ order: 3
 
 ## sharegpt
 
-IMPORTANT: ShareGPT is deprecated!. Please see `chat_template` section below.
+IMPORTANT: ShareGPT is deprecated!. Please see [chat_template](#chat_template) section below.
 
 ## pygmalion
 
@@ -22,7 +22,7 @@ Chat Template strategy uses a jinja2 template that converts a list of messages i
 {"conversations": [{"role": "...", "content": "..."}]}
 ```
 
-See `config.qmd` for full configs and supported templates.
+See [configs](../config.qmd) for full configs and supported templates.
 
 ### Migrating from sharegpt
 

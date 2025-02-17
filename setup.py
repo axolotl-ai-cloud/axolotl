@@ -71,12 +71,15 @@ def parse_requirements():
             else:
                 raise ValueError("Invalid version format")
 
-            if (major, minor) >= (2, 5):
+            if (major, minor) >= (2, 6):
+                _install_requires.pop(_install_requires.index(xformers_version))
+                _install_requires.append("xformers==0.0.29.post2")
+            elif (major, minor) >= (2, 5):
                 _install_requires.pop(_install_requires.index(xformers_version))
                 if patch == 0:
                     _install_requires.append("xformers==0.0.28.post2")
                 else:
-                    _install_requires.append("xformers==0.0.28.post3")
+                    _install_requires.append("xformers>=0.0.28.post3")
                 _install_requires.pop(_install_requires.index(autoawq_version))
             elif (major, minor) >= (2, 4):
                 if patch == 0:
@@ -122,7 +125,7 @@ setup(
     },
     extras_require={
         "flash-attn": [
-            "flash-attn==2.7.0.post2",
+            "flash-attn==2.7.4.post1",
         ],
         "deepspeed": [
             "deepspeed==0.16.1",
@@ -152,6 +155,9 @@ setup(
         ],
         "ray": [
             "ray[train]",
+        ],
+        "vllm": [
+            "vllm==0.7.2",
         ],
     },
 )

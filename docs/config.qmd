@@ -46,6 +46,10 @@ overrides_of_model_config:
     type: # linear | dynamic
     factor: # float
 
+# optional overrides the base model loading from_pretrained
+overrides_of_model_kwargs:
+  # use_cache: False
+
 # optional overrides to the bnb 4bit quantization configuration
 # https://huggingface.co/docs/transformers/main/main_classes/quantization#transformers.BitsAndBytesConfig
 bnb_config_kwargs:
@@ -87,7 +91,12 @@ datasets:
     type: alpaca # format | format:<prompt_style> (chat/instruct) | <prompt_strategies>.load_<load_fn>
     ds_type: # Optional[str] (json|arrow|parquet|text|csv) defines the datatype when path is a file
     data_files: # Optional[str] path to source data files
-    shards: # Optional[int] number of shards to split data into
+
+    shards: # Optional[int] split dataset into N pieces (use with shards_idx)
+    shards_idx: # Optional[int] = 0 the index of sharded dataset to use
+
+    preprocess_shards: # Optional[int] process dataset in N sequential chunks for memory efficiency (exclusive with `shards`)
+
     name: # Optional[str] name of dataset configuration to load
     train_on_split: train # Optional[str] name of dataset split to load from
     revision: # Optional[str] The specific revision of the dataset to use when loading from the Hugging Face Hub. This can be a commit hash, tag, or branch name. If not specified, the latest version will be used. This parameter is ignored for local datasets.
@@ -344,6 +353,9 @@ comet_mode: # Create a new experiment ("create") or log to an existing one ("get
 comet_online: # Set to True to log data to Comet server, or False for offline storage. Default is True.
 comet_experiment_config: # Dictionary for additional configuration settings, see the doc for more details.
 
+# Tensorboard
+use_tensorboard: # Optional[bool]
+
 # Where to save the full-finetuned model to
 output_dir: ./completed-model
 
@@ -377,6 +389,9 @@ save_total_limit: # Checkpoints saved at a time
 # if both are set, num_epochs will not be guaranteed.
 # e.g., when 1 epoch is 1000 steps => `num_epochs: 2` and `max_steps: 100` will train for 100 steps
 max_steps:
+
+# bool of whether to include tokens trainer per second in the training metrics. This iterates over the entire dataset once, so it takes some time.
+include_tokens_per_second:
 
 eval_table_size: # Approximate number of predictions sent to wandb depending on batch size. Enabled above 0. Default is 0
 eval_max_new_tokens: # Total number of tokens generated for predictions sent to wandb. Default is 128

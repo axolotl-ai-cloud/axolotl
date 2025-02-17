@@ -2,6 +2,7 @@
 # pylint: disable=redefined-outer-name
 
 import logging
+import os
 import random
 import subprocess  # nosec B404
 import tempfile
@@ -12,6 +13,7 @@ from typing import Optional
 
 import click
 import yaml
+from dotenv import load_dotenv
 
 import axolotl
 from axolotl.cli.args import EvaluateCliArgs, PreprocessCliArgs, TrainerCliArgs
@@ -199,7 +201,14 @@ def train(
         try:
             if accelerate:
                 if cloud:
-                    do_cli_train(cloud_config=cloud, config=config, accelerate=True)
+                    cwd = os.getcwd()
+                    do_cli_train(
+                        cloud_config=cloud,
+                        config=config,
+                        accelerate=True,
+                        cwd=cwd,
+                        **kwargs,
+                    )
                 else:
                     accelerate_args = []
                     if "main_process_port" in kwargs:
@@ -208,7 +217,7 @@ def train(
                         accelerate_args.append(str(main_process_port))
                     if "num_processes" in kwargs:
                         num_processes = kwargs.pop("num_processes", None)
-                        accelerate_args.append("--num-processes")
+                        accelerate_args.append("--num_processes")
                         accelerate_args.append(str(num_processes))
 
                     base_cmd = ["accelerate", "launch"]
@@ -220,7 +229,9 @@ def train(
                     subprocess.run(cmd, check=True)  # nosec B603
             else:
                 if cloud:
-                    do_cli_train(cloud_config=cloud, config=config, accelerate=False)
+                    do_cli_train(
+                        cloud_config=cloud, config=config, accelerate=False, **kwargs
+                    )
                 else:
                     from axolotl.cli.train import do_cli
 
@@ -381,4 +392,5 @@ def main():
 
 
 if __name__ == "__main__":
+    load_dotenv()
     main()
