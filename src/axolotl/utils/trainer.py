@@ -396,8 +396,8 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
     ):
         total_num_tokens = np.sum(
             train_dataset.select_columns("input_ids")
-            .to_pandas()
-            .apply(lambda x: len(x))  # pylint: disable=unnecessary-lambda
+            .to_pandas()["input_ids"]
+            .apply(len)
             .values
         )
         LOG.debug(f"total_num_tokens: {total_num_tokens:_}", main_process_only=True)
