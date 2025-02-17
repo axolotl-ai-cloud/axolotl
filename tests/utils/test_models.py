@@ -76,7 +76,7 @@ class TestModelsUtils:
             mocked_load_model_config.return_value = {}
             with pytest.raises(ValueError) as exc:
                 # Should error before hitting tokenizer, so we pass in an empty str
-                load_model(cfg, tokenizer="")
+                load_model(cfg, tokenizer="")  # type: ignore
             assert (
                 "shifted-sparse attention does not currently support sample packing"
                 in str(exc.value)
@@ -116,3 +116,79 @@ class TestModelsUtils:
             assert self.model_loader.model_kwargs.get(
                 "quantization_config", BitsAndBytesConfig
             )
+
+    def test_message_property_mapping(self):
+        """Test message property mapping configuration validation"""
+        from axolotl.utils.config.models.input.v0_4_1 import SFTDataset
+
+        # Test legacy fields are mapped orrectly
+        dataset = SFTDataset(
+            path="test_path",
+            message_field_role="role_field",
+            message_field_content="content_field",
+        )
+        assert dataset.message_property_mappings == {
+            "role": "role_field",
+            "content": "content_field",
+        }
+
+        # Test direct message_property_mapping works
+        dataset = SFTDataset(
+            path="test_path",
+            message_property_mappings={
+                "role": "custom_role",
+                "content": "custom_content",
+            },
+        )
+        assert dataset.message_property_mappings == {
+            "role": "custom_role",
+            "content": "custom_content",
+        }
+
+        # Test both legacy and new fields work when they match
+        dataset = SFTDataset(
+            path="test_path",
+            message_field_role="same_role",
+            message_property_mappings={"role": "same_role"},
+        )
+        assert dataset.message_property_mappings == {
+            "role": "same_role",
+            "content": "content",
+        }
+
+        # Test both legacy and new fields work when they don't overlap
+        dataset = SFTDataset(
+            path="test_path",
+            message_field_role="role_field",
+            message_property_mappings={"content": "content_field"},
+        )
+        assert dataset.message_property_mappings == {
+            "role": "role_field",
+            "content": "content_field",
+        }
+
+        # Test no role or content provided
+        dataset = SFTDataset(
+            path="test_path",
+        )
+        assert dataset.message_property_mappings == {
+            "role": "role",
+            "content": "content",
+        }
+
+        # Test error when legacy and new fields conflict
+        with pytest.raises(ValueError) as exc_info:
+            SFTDataset(
+                path="test_path",
+                message_field_role="legacy_role",
+                message_property_mappings={"role": "different_role"},
+            )
+        assert "Conflicting message role fields" in str(exc_info.value)
+
+        with pytest.raises(ValueError) as exc_info:
+            SFTDataset(
+                path="test_path",
+                message_field_content="legacy_content",
+                message_property_mappings={"content": "different_content"},
+            )
+        assert "Conflicting message content fields" in str(exc_info.value)

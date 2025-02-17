@@ -9,7 +9,7 @@ from e2e.utils import check_tensorboard, require_torch_2_5_1
 from axolotl.cli.args import TrainerCliArgs
 from axolotl.common.datasets import load_datasets
 from axolotl.train import train
-from axolotl.utils.config import normalize_config, prepare_plugins
+from axolotl.utils.config import normalize_config, prepare_plugins, validate_config
 from axolotl.utils.dict import DictDefault
 
 
@@ -79,6 +79,7 @@ class TestKnowledgeDistillation:
     def test_llama_kd(self, temp_dir, kd_min_cfg):
         cfg = DictDefault(kd_min_cfg)
         # pylint: disable=duplicate-code
+        cfg = validate_config(cfg)
         prepare_plugins(cfg)
         normalize_config(cfg)
         cli_args = TrainerCliArgs()
@@ -109,6 +110,7 @@ class TestKnowledgeDistillation:
             | kd_min_cfg
         )
         # pylint: disable=duplicate-code
+        cfg = validate_config(cfg)
         prepare_plugins(cfg)
         normalize_config(cfg)
         cli_args = TrainerCliArgs()

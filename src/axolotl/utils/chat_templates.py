@@ -38,7 +38,7 @@ def get_chat_template(
     user_choice: str,
     jinja_template: Optional[str] = None,
     tokenizer: Optional["PreTrainedTokenizerBase"] = None,
-):
+) -> str:
     """
     Finds the correct chat_template based on the user's choice, jinja_template, and tokenizer.
 
@@ -70,7 +70,7 @@ def get_chat_template(
                 f"`chat_template choice is {_DEFAULT_TEMPLATE_CHOICE} but tokenizer's chat_template is null. "
                 f"Please add a chat_template in tokenizer config"
             )
-        return tokenizer.chat_template
+        return tokenizer.chat_template  # type: ignore
 
     if user_choice.startswith(_DEFAULT_FALLBACK_CHATML_TEMPLATE_CHOICE_PREFIX):
         if not tokenizer:
@@ -78,7 +78,7 @@ def get_chat_template(
                 f"`tokenizer` cannot be None when chat_template choice starts with {_DEFAULT_FALLBACK_CHATML_TEMPLATE_CHOICE_PREFIX}"
             )
         if tokenizer.chat_template:
-            return tokenizer.chat_template
+            return tokenizer.chat_template  # type: ignore
 
         user_choice = user_choice[
             len(_DEFAULT_FALLBACK_CHATML_TEMPLATE_CHOICE_PREFIX) :

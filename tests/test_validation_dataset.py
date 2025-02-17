@@ -302,3 +302,22 @@ class TestValidationCheckDatasetConfig(BaseValidation):
         )
 
         validate_config(cfg)
+
+    def test_message_property_mappings(self, minimal_cfg):
+        cfg = DictDefault(
+            minimal_cfg
+            | {
+                "datasets": [
+                    {
+                        "path": "mhenrichsen/alpaca_2k_test",
+                        "type": "alpaca",
+                        "message_property_mappings": {
+                            "role": "role",
+                            "content": "content",
+                        },
+                    }
+                ],
+            }
+        )
+
+        validate_config(cfg)

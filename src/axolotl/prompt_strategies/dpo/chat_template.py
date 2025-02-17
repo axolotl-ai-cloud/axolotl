@@ -3,20 +3,28 @@ DPO prompt strategies for using tokenizer chat templates.
 """
 
 from axolotl.utils.chat_templates import extract_chat_template_args, get_chat_template
+from axolotl.utils.config.models.input.v0_4_1 import handle_legacy_message_fields_logic
 
 
 def default(
     cfg, dataset_idx=0, **kwargs
 ):  # pylint: disable=possibly-unused-variable,unused-argument
     ds_cfg = cfg["datasets"][dataset_idx]
+    ds_cfg = handle_legacy_message_fields_logic(ds_cfg)
+
     chat_template_choice, chat_template_jinja = extract_chat_template_args(
         cfg=cfg, ds_cfg=ds_cfg
     )
     field_messages = ds_cfg.get("field_messages", "messages")
     field_chosen = ds_cfg.get("field_chosen", "chosen")
     field_rejected = ds_cfg.get("field_rejected", "rejected")
-    field_message_role = ds_cfg.get("message_field_role", "role")
-    field_message_content = ds_cfg.get("message_field_content", "content")
+    message_property_mappings = ds_cfg.get(
+        "message_property_mappings",
+        {
+            "role": "role",
+            "content": "content",
+        },
+    )
     role_map_inv = ds_cfg.get(
         "roles",
         {
@@ -40,18 +48,18 @@ def default(
         messages = sample[field_messages]
         messages = [
             {
-                "role": role_map[m[field_message_role]],
-                "content": m[field_message_content],
+                "role": role_map[m[message_property_mappings["role"]]],
+                "content": m[message_property_mappings["content"]],
             }
             for m in messages
         ]
         chosen = {
-            "role": role_map[sample[field_chosen][field_message_role]],
-            "content": sample[field_chosen][field_message_content],
+            "role": role_map[sample[field_chosen][message_property_mappings["role"]]],
+            "content": sample[field_chosen][message_property_mappings["content"]],
         }
         rejected = {
-            "role": role_map[sample[field_rejected][field_message_role]],
-            "content": sample[field_rejected][field_message_content],
+            "role": role_map[sample[field_rejected][message_property_mappings["role"]]],
+            "content": sample[field_rejected][message_property_mappings["content"]],
         }
         dummy_user_message = {"role": "user", "content": "[[dummy_message]]"}
 

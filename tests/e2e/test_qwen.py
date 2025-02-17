@@ -40,8 +40,10 @@ class TestE2eQwen:
                         "field_messages": "conversation",
                         "field_chosen": "chosen",
                         "field_rejected": "rejected",
-                        "message_field_role": "role",
-                        "message_field_content": "content",
+                        "message_property_mappings": {
+                            "role": "role",
+                            "content": "content",
+                        },
                         "roles": {
                             "system": ["system"],
                             "user": ["user"],

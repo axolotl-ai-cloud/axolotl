@@ -42,8 +42,9 @@ datasets:
     type: chat_template
 
     field_messages: conversations
-    message_field_role: from
-    message_field_content: value
+    message_property_mappings:
+      role: from
+      content: value
 
 # new (if setting a new chat_template like chatml, gemma, etc)
 chat_template: chatml
@@ -52,8 +53,9 @@ datasets:
     type: chat_template
 
     field_messages: conversations
-    message_field_role: from
-    message_field_content: value
+    message_property_mappings:
+      role: from
+      content: value
 ```
 
 We recommend checking the below examples for other usecases.
@@ -138,8 +140,9 @@ datasets:
     type: chat_template
     chat_template: tokenizer_default
     field_messages: conversations
-    message_field_role: from
-    message_field_content: value
+    message_property_mappings:
+      role: from
+      content: value
     roles_to_train: []
     train_on_eos: turn
     message_field_training: train

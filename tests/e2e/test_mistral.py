@@ -11,7 +11,7 @@ from transformers.utils import is_torch_bf16_gpu_available
 from axolotl.cli.args import TrainerCliArgs
 from axolotl.common.datasets import load_datasets
 from axolotl.train import train
-from axolotl.utils.config import normalize_config
+from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 
 from .utils import check_model_output_exists, with_temp_dir
@@ -63,6 +63,8 @@ class TestMistral(unittest.TestCase):
                 "eval_steps": 10,
             }
         )
+
+        cfg = validate_config(cfg)
         normalize_config(cfg)
         cli_args = TrainerCliArgs()
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
@@ -106,6 +108,8 @@ class TestMistral(unittest.TestCase):
             cfg.bf16 = True
         else:
             cfg.fp16 = True
+
+        cfg = validate_config(cfg)
         normalize_config(cfg)
         cli_args = TrainerCliArgs()
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)

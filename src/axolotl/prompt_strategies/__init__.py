@@ -41,10 +41,10 @@ def load(strategy, tokenizer, cfg, ds_cfg, processor=None):
                 load_kwargs["ds_cfg"] = ds_cfg
             if "processor" in sig.parameters:
                 load_kwargs["processor"] = processor
+
         return func(tokenizer, cfg, **load_kwargs)
     except ModuleNotFoundError:
         return None
     except Exception as exc:  # pylint: disable=broad-exception-caught
         LOG.error(f"Failed to load prompt strategy `{strategy}`: {str(exc)}")
         raise exc
-    return None
