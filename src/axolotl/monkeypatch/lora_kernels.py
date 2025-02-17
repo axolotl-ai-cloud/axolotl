@@ -4,6 +4,7 @@ import importlib
 import inspect
 import logging
 import types
+from typing import Type
 
 import torch
 from accelerate.logging import get_logger
@@ -95,7 +96,7 @@ def original_apply_o(self: nn.Module, hidden_states: torch.Tensor) -> torch.Tens
     return attn_output
 
 
-def get_attention_cls_from_config(cfg: DictDefault) -> nn.Module:
+def get_attention_cls_from_config(cfg: DictDefault) -> Type[nn.Module]:
     """
     Get the appropriate attention class by inspecting the model config.
     Uses dynamic import to support any model architecture that follows

@@ -14,9 +14,6 @@ import torch
 from bitsandbytes.functional import QuantState
 from torch import nn
 
-from axolotl.kernels.gelu import gelu_backward, gelu_forward
-from axolotl.kernels.silu import silu_backward, silu_forward
-
 from .geglu import geglu_backward, geglu_forward
 from .quantize import dequantize
 from .swiglu import swiglu_backward, swiglu_forward
@@ -85,6 +82,9 @@ def matmul_lora(
         B: LoRA B matrix [out_features, rank]
         s: LoRA scaling factor
         out: Optional output tensor for inplace operations
+
+    Returns:
+        Result of X @ W + X @ A @ B
     """
     dtype = X.dtype
     W = dequantize(W.t(), W_quant)
@@ -352,46 +352,6 @@ class LoRA_MLP(torch.autograd.Function):
         )
 
 
-def apply_lora_mlp_silu(self, X: torch.Tensor, inplace: bool = True) -> torch.Tensor:
-    """
-    Applies LoRA to MLP layer with SiLU activation.
-
-    Args:
-        X: Input tensor for the MLP layer
-        inplace: Whether to perform operations in-place to save memory
-
-    Returns:
-        Output tensor after applying LoRA-adapted MLP with SiLU activation
-    """
-    gateW, gateW_quant, gateA, gateB, gateS = get_lora_parameters(self.gate_proj)
-    upW, upW_quant, upA, upB, upS = get_lora_parameters(self.up_proj)
-    downW, downW_quant, downA, downB, downS = get_lora_parameters(self.down_proj)
-
-    out = LoRA_MLP.apply(
-        X,
-        gateW,
-        gateW_quant,
-        gateA,
-        gateB,
-        gateS,
-        upW,
-        upW_quant,
-        upA,
-        upB,
-        upS,
-        downW,
-        downW_quant,
-        downA,
-        downB,
-        downS,
-        silu_forward,
-        silu_backward,
-        inplace,
-    )
-
-    return out
-
-
 def apply_lora_mlp_swiglu(self, X: torch.Tensor, inplace: bool = True) -> torch.Tensor:
     """
     Applies LoRA to MLP layer with SwiGLU activation.
@@ -426,45 +386,6 @@ def apply_lora_mlp_swiglu(self, X: torch.Tensor, inplace: bool = True) -> torch.
         downS,
         swiglu_forward,
         swiglu_backward,
-        inplace,
-    )
-
-    return out
-
-
-def apply_lora_mlp_gelu(self, X: torch.Tensor, inplace: bool = True) -> torch.Tensor:
-    """
-    Applies LoRA to MLP layer with GELU activation.
-
-    Args:
-        X: Input tensor for the MLP layer
-        inplace: Whether to perform operations in-place to save memory
-
-    Returns:
-        Output tensor after applying LoRA-adapted MLP with GELU activation
-    """
-    gateW, gateW_quant, gateA, gateB, gateS = get_lora_parameters(self.gate_proj)
-    upW, upW_quant, upA, upB, upS = get_lora_parameters(self.up_proj)
-    downW, downW_quant, downA, downB, downS = get_lora_parameters(self.down_proj)
-    out = LoRA_MLP.apply(
-        X,
-        gateW,
-        gateW_quant,
-        gateA,
-        gateB,
-        gateS,
-        upW,
-        upW_quant,
-        upA,
-        upB,
-        upS,
-        downW,
-        downW_quant,
-        downA,
-        downB,
-        downS,
-        gelu_forward,
-        gelu_backward,
         inplace,
     )
 
