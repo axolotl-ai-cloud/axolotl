@@ -124,6 +124,12 @@ def fixture_llama3_tokenizer():
     return tokenizer
 
 
+@pytest.fixture(name="smollm2_tokenizer", scope="session", autouse=True)
+def fixture_smollm2_tokenizer():
+    tokenizer = AutoTokenizer.from_pretrained("HuggingFaceTB/SmolLM2-135M")
+    return tokenizer
+
+
 @pytest.fixture(name="mistralv03_tokenizer", scope="session", autouse=True)
 def fixture_mistralv03_tokenizer():
     tokenizer = AutoTokenizer.from_pretrained(
