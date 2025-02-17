@@ -80,6 +80,7 @@ from axolotl.utils.chat_templates import get_chat_template_from_config
 from axolotl.utils.collators import (
     BatchSamplerDataCollatorForSeq2Seq,
     DataCollatorForSeq2Seq,
+    FlexBatchSamplerDataCollatorForSeq2Seq,
     MambaDataCollator,
     V2BatchSamplerDataCollatorForSeq2Seq,
 )
@@ -820,6 +821,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             Union[
                 V2BatchSamplerDataCollatorForSeq2Seq,
                 BatchSamplerDataCollatorForSeq2Seq,
+                FlexBatchSamplerDataCollatorForSeq2Seq,
                 DataCollatorForSeq2Seq,
                 DataCollatorWithFlattening,
                 RewardDataCollatorWithPadding,
@@ -831,7 +833,9 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             if "max_length" in kwargs:
                 kwargs.pop("max_length")
         elif use_batch_sampler_collator:
-            if self.cfg.model_config_type in SUPPORTED_MULTIPACK_MODEL_TYPES:
+            if self.cfg.flex_attention is True:
+                collator = V2BatchSamplerDataCollatorForSeq2Seq
+            elif self.cfg.model_config_type in SUPPORTED_MULTIPACK_MODEL_TYPES:
                 collator = V2BatchSamplerDataCollatorForSeq2Seq
             elif (
                 self.cfg.model_config_type in ["llama"]

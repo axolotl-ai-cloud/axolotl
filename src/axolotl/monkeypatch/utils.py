@@ -95,6 +95,103 @@ def get_cu_seqlens(attn_mask):
     return torch.stack(results).to(dtype=torch.int32), torch.stack(max_seq_lens)
 
 
+def get_packed_mask_from_pos_ids(position_ids):
+    if len(position_ids.shape) == 1:
+        position_ids = position_ids.unsqueeze(0)
+
+    device = position_ids.device
+    results = []
+
+    for i, row in enumerate(position_ids):
+        # Count the number of consecutive zeros from the right side
+        padding_length = (row == 0).int().flip(dims=[0]).cumprod(dim=0).sum().item()
+
+        # Adjust the row to exclude padding
+        adjusted_row = row[:-padding_length] if padding_length else row.clone()
+
+        # Find where the position resets to 0 (indicating a new sequence)
+        seq_starts = torch.cat(
+            [
+                torch.tensor([True], dtype=torch.bool, device=device),
+                adjusted_row[1:] == 0,
+            ]
+        )
+        # Get the indices where the sequence starts
+        start_indices = torch.cat(
+            [
+                torch.nonzero(seq_starts).unbind(dim=1)[0],
+                torch.tensor([len(adjusted_row)], dtype=torch.int32, device=device),
+            ]
+        )
+        # Calculate the sequence lengths
+        seq_lengths = start_indices[1:] - start_indices[:-1]
+        # Append the padding length to the sequence lengths
+        doc_mask = torch.ones(len(row), dtype=torch.int32, device=device)
+        for i, seq_len in enumerate(seq_lengths):
+            start_id = start_indices[i]
+            doc_mask[start_id : start_id + seq_len] = (
+                (i+1) * doc_mask[start_id : start_id + seq_len]
+            )
+        if padding_length:
+            doc_mask[len(adjusted_row) :] = 0 * doc_mask[len(adjusted_row) :]
+
+        results.append(doc_mask)
+
+    return torch.stack(results)
+
+
+def get_seqlens_from_pos_ids(position_ids):
+    """generate a sequence length set using pos ids for doc mask creation in flex attention"""
+    if len(position_ids.shape) == 1:
+        position_ids = position_ids.unsqueeze(0)
+    max_seq_len = position_ids.shape[1]
+
+    device = position_ids.device
+    results = []
+    totalseqlens = []
+
+    for row in position_ids:
+        # Count the number of consecutive zeros from the right side
+        padding_length = (row == 0).int().flip(dims=[0]).cumprod(dim=0).sum().item()
+
+        # Adjust the row to exclude padding
+        adjusted_row = row[:-padding_length] if padding_length else row.clone()
+
+        # Find where the position resets to 0 (indicating a new sequence)
+        seq_starts = torch.cat(
+            [
+                torch.tensor([True], dtype=torch.bool, device=device),
+                adjusted_row[1:] == 0,
+            ]
+        )
+        # Get the indices where the sequence starts
+        start_indices = torch.cat(
+            [
+                torch.nonzero(seq_starts).unbind(dim=1)[0],
+                torch.tensor([len(adjusted_row)], dtype=torch.int32, device=device),
+            ]
+        )
+        # Calculate the sequence lengths
+        seq_lengths = start_indices[1:] - start_indices[:-1]
+        # Append the padding length to the sequence lengths
+        if padding_length:
+            seq_lengths = torch.cat(
+                [
+                    seq_lengths,
+                    torch.tensor(
+                        [len(row) - torch.sum(seq_lengths)],
+                        dtype=torch.int32,
+                        device=device,
+                    ),
+                ]
+            )
+
+        results.append(seq_lengths)
+        totalseqlens.append(len(adjusted_row))
+
+    return results, torch.tensor(totalseqlens, dtype=torch.int32, device=device)
+
+
 def get_cu_seqlens_from_pos_ids(position_ids):
     """generate a cumulative sequence length mask for flash attention using pos ids"""
     if len(position_ids.shape) == 1:
@@ -176,7 +273,10 @@ def mask_2d_to_4d(
     when they attend to each other within that sequence.
     This expansion transforms the mask to lower triangular form to prevent future peeking.
     """
-    bsz, src_len = mask.size()
+
+    if len(mask.size()) == 4:
+        return mask
+    bsz, src_len = int(mask.size()[0]), int(mask.size()[1])
     tgt_len = tgt_len if tgt_len is not None else src_len
 
     mask = mask.unsqueeze(1).unsqueeze(2)
