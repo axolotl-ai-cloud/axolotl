@@ -12,7 +12,6 @@ from pydantic import (
     BaseModel,
     Field,
     StringConstraints,
-    conlist,
     field_serializer,
     field_validator,
     model_validator,
