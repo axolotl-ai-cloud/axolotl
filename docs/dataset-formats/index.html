@@ -476,7 +476,7 @@ Important
 <li><p>Is your dataset in a “conversation” format, containing a <code>list[messages]</code>? If yes, check <a href="#conversation-dataset">Conversation Dataset</a></p></li>
 <li><p>Is your dataset in an “instruct” format, containing <code>{ instruction, response }</code>? If yes, check <a href="#instruction-dataset">Instruction Dataset</a></p></li>
 </ol>
-<p>If you went through the flow chart and did not find one that matches, it is recommended to preprocess your dataset into one of the above or create a Github Discussion.</p>
+<p>If you went through the flow chart and did not find one that matches, it is recommended to preprocess your dataset into one of the above or create a thread on Github Discussion.</p>
 <div class="callout callout-style-default callout-tip callout-titled">
 <div class="callout-header d-flex align-content-center">
 <div class="callout-icon-container">
@@ -638,9 +638,10 @@ The answer is 8.&lt;|im_end|&gt;</code></pre>
 <p>If your dataset format is different, here are the keys you should check (with their defaults):</p>
 <div class="sourceCode" id="cb15"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
 <span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a><span class="at">    ...</span></span>
-<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">field_messages</span><span class="kw">:</span><span class="at"> messages</span></span>
-<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">message_field_role</span><span class="kw">:</span><span class="at"> role</span></span>
-<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">message_field_content</span><span class="kw">:</span><span class="at"> content</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">field_messages</span><span class="kw">:</span><span class="at"> messages</span><span class="co">  # this should point to the key containing the list of conversations</span></span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">message_property_mappings</span><span class="kw">:</span><span class="co">  # this is a mapping from keys in your dataset to keys in chat_template</span></span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">role</span><span class="kw">:</span><span class="at"> role</span></span>
+<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">content</span><span class="kw">:</span><span class="at"> content</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>In some <code>chat_templates</code> (e.g.&nbsp;<a href="https://huggingface.co/google/gemma-2b-it/blob/main/tokenizer_config.json#L1507">Gemma</a>), the roles are hardcoded to <code>user</code> and <code>assistant</code>. Consequently, you may find it necessary to map the roles in your dataset to these above. We currently have some defaults that should work for common datasets, but if you get a <code>KeyError</code>, it would be necessary to add mapping for your roles. Here is an example of how it would look like:</p>
 <div class="sourceCode" id="cb16"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
 <span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a><span class="at">    ...</span></span>
@@ -686,24 +687,25 @@ The answer is 8.&lt;|im_end|&gt;</code></pre>
 <span id="cb19-7"><a href="#cb19-7" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb19-8"><a href="#cb19-8" aria-hidden="true" tabindex="-1"></a><span class="co">    # step 2</span></span>
 <span id="cb19-9"><a href="#cb19-9" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">field_messages</span><span class="kw">:</span><span class="at"> messages</span></span>
-<span id="cb19-10"><a href="#cb19-10" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">message_field_role</span><span class="kw">:</span><span class="at"> role</span></span>
-<span id="cb19-11"><a href="#cb19-11" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">message_field_content</span><span class="kw">:</span><span class="at"> content</span></span>
-<span id="cb19-12"><a href="#cb19-12" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-13"><a href="#cb19-13" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">roles</span><span class="kw">:</span></span>
-<span id="cb19-14"><a href="#cb19-14" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">assistant</span><span class="kw">:</span></span>
-<span id="cb19-15"><a href="#cb19-15" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">-</span><span class="at"> gpt</span></span>
-<span id="cb19-16"><a href="#cb19-16" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">-</span><span class="at"> model</span></span>
-<span id="cb19-17"><a href="#cb19-17" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">-</span><span class="at"> assistant</span></span>
-<span id="cb19-18"><a href="#cb19-18" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">user</span><span class="kw">:</span></span>
-<span id="cb19-19"><a href="#cb19-19" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">-</span><span class="at"> human</span></span>
-<span id="cb19-20"><a href="#cb19-20" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">-</span><span class="at"> user</span></span>
-<span id="cb19-21"><a href="#cb19-21" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-22"><a href="#cb19-22" aria-hidden="true" tabindex="-1"></a><span class="co">    # step 3</span></span>
-<span id="cb19-23"><a href="#cb19-23" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">roles_to_train</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="st">"assistant"</span><span class="kw">]</span></span>
-<span id="cb19-24"><a href="#cb19-24" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">train_on_eos</span><span class="kw">:</span><span class="at"> </span><span class="st">"turn"</span></span>
-<span id="cb19-25"><a href="#cb19-25" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-26"><a href="#cb19-26" aria-hidden="true" tabindex="-1"></a><span class="fu">special_tokens</span><span class="kw">:</span></span>
-<span id="cb19-27"><a href="#cb19-27" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">eos_token</span><span class="kw">:</span><span class="at"> &lt;|im_end|&gt;</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb19-10"><a href="#cb19-10" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">message_property_mappings</span><span class="kw">:</span></span>
+<span id="cb19-11"><a href="#cb19-11" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">role</span><span class="kw">:</span><span class="at"> role</span></span>
+<span id="cb19-12"><a href="#cb19-12" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">content</span><span class="kw">:</span><span class="at"> content</span></span>
+<span id="cb19-13"><a href="#cb19-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-14"><a href="#cb19-14" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">roles</span><span class="kw">:</span></span>
+<span id="cb19-15"><a href="#cb19-15" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">assistant</span><span class="kw">:</span></span>
+<span id="cb19-16"><a href="#cb19-16" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">-</span><span class="at"> gpt</span></span>
+<span id="cb19-17"><a href="#cb19-17" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">-</span><span class="at"> model</span></span>
+<span id="cb19-18"><a href="#cb19-18" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">-</span><span class="at"> assistant</span></span>
+<span id="cb19-19"><a href="#cb19-19" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">user</span><span class="kw">:</span></span>
+<span id="cb19-20"><a href="#cb19-20" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">-</span><span class="at"> human</span></span>
+<span id="cb19-21"><a href="#cb19-21" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">-</span><span class="at"> user</span></span>
+<span id="cb19-22"><a href="#cb19-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-23"><a href="#cb19-23" aria-hidden="true" tabindex="-1"></a><span class="co">    # step 3</span></span>
+<span id="cb19-24"><a href="#cb19-24" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">roles_to_train</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="st">"assistant"</span><span class="kw">]</span></span>
+<span id="cb19-25"><a href="#cb19-25" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">train_on_eos</span><span class="kw">:</span><span class="at"> </span><span class="st">"turn"</span></span>
+<span id="cb19-26"><a href="#cb19-26" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-27"><a href="#cb19-27" aria-hidden="true" tabindex="-1"></a><span class="fu">special_tokens</span><span class="kw">:</span></span>
+<span id="cb19-28"><a href="#cb19-28" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">eos_token</span><span class="kw">:</span><span class="at"> &lt;|im_end|&gt;</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>If this config were to be applied to the sample dataset above, the output would look as such (which can be retrieved via <code>axolotl preprocess config.yaml --debug</code>):</p>
 <pre><code>&lt;|im_start|&gt;(-100, 128256) user(-100, 882)
 (-100, 198) Hi(-100, 13347) &lt;|im_end|&gt;(-100, 128257)

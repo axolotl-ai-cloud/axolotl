@@ -340,6 +340,10 @@ ul.task-list li input[type="checkbox"] {
 <blockquote class="blockquote">
 <p>A: This is usually an issue with the GPU. This can be resolved through setting the os environment variable <code>CUDA_VISIBLE_DEVICES=0</code>. If you are on runpod, this is usually a pod issue. Starting a new pod should take care of it.</p>
 </blockquote>
+<p><strong>Q: <code>jinja2.exceptions.UndefinedError: 'dict object' has no attribute 'content' / 'role' / ____</code></strong></p>
+<blockquote class="blockquote">
+<p>A: This means that the property mapping for the stated attribute does not exist when building <code>chat_template</code> prompt. For example, if <code>no attribute 'content'</code>, please check you have added the correct mapping for <code>content</code> under <code>message_property_mappings</code>.</p>
+</blockquote>
 
 
 
