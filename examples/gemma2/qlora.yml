@@ -16,8 +16,9 @@ datasets:
     type: chat_template
     drop_system_message: true
     field_messages: conversations
-    message_field_role: from
-    message_field_content: value
+    message_property_mappings:
+      role: from
+      content: value
 
 val_set_size: 0.0
 output_dir: ./outputs/out

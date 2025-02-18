@@ -142,10 +142,19 @@ datasets:
 
     # Key containing the messages (default: "messages")
     field_messages: messages
-    # Key for role in each message (default: "role")
-    message_field_role: role
-    # Key for content in each message (default:  "content")
-    message_field_content: content
+
+    # Mapping of properties from the input dataset to the chat template.
+    # (default: message_property_mappings={'role':'role', 'content':'content'})
+    # If a property exists in the template but not in this mapping, the system will attempt
+    # to load it directly from the message using the property name as the key.
+    # Example: In the mapping below, 'from' is loaded from input dataset and used as 'role',
+    # while 'value' is loaded and used as 'content' in the chat template.
+    message_property_mappings:
+      role: from
+      content: value
+      # ...
+
+    message_property_mappings:
 
     # Optional[Dict[str, List]]. Roles mapping in the messages. The default is:
     roles:

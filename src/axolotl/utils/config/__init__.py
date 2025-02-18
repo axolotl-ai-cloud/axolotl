@@ -18,6 +18,7 @@ from axolotl.utils.config.models.input.v0_4_1 import (
 from axolotl.utils.config.models.input.v0_4_1 import (
     AxolotlInputConfig as AxolotlInputConfigBase,
 )
+from axolotl.utils.config.models.input.v0_4_1 import DPODataset, KTODataset, SFTDataset
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.models import load_model_config
 
@@ -258,7 +259,7 @@ def validate_config(
     cfg: DictDefault,
     capabilities: Optional[dict] = None,
     env_capabilities: Optional[dict] = None,
-):
+) -> DictDefault:
     AxolotlConfigWCapabilities = AxolotlConfigWCapabilitiesBase
     AxolotlInputConfig = AxolotlInputConfigBase
 
@@ -267,6 +268,16 @@ def validate_config(
             AxolotlConfigWCapabilities,  # pylint: disable=invalid-name
             AxolotlInputConfig,  # pylint: disable=invalid-name
         ) = merge_input_args()
+
+    # Convert datasets to proper format if needed
+    if cfg.get("datasets"):
+        for idx, ds_cfg in enumerate(cfg["datasets"]):
+            if cfg.get("rl") == "dpo" and not isinstance(ds_cfg, DPODataset):
+                cfg["datasets"][idx] = DPODataset(**ds_cfg)
+            elif cfg.get("rl") == "kto" and not isinstance(ds_cfg, KTODataset):
+                cfg["datasets"][idx] = KTODataset(**dict(ds_cfg))
+            elif not isinstance(ds_cfg, SFTDataset):
+                cfg["datasets"][idx] = SFTDataset(**dict(ds_cfg))
 
     if capabilities or env_capabilities:
         if (capabilities and env_capabilities is None) or (

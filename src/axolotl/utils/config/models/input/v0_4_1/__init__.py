@@ -12,6 +12,7 @@ from pydantic import (
     Field,
     StringConstraints,
     conlist,
+    field_serializer,
     field_validator,
     model_validator,
 )
@@ -186,8 +187,13 @@ class SFTDataset(BaseModel):
     field_human: Optional[str] = None
     field_model: Optional[str] = None
     field_messages: Optional[str] = None
-    message_field_role: Optional[str] = None
-    message_field_content: Optional[str] = None
+    message_field_role: Optional[
+        str
+    ] = None  # deprecated, use message_property_mappings
+    message_field_content: Optional[
+        str
+    ] = None  # deprecated, use message_property_mappings
+    message_property_mappings: Optional[Dict[str, str]] = None
     message_field_training: Optional[str] = None
     message_field_training_detail: Optional[str] = None
     logprobs_field: Optional[str] = None
@@ -201,7 +207,16 @@ class SFTDataset(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
+    def handle_legacy_message_fields(cls, data):
+        """Handle backwards compatibility between legacy message field mapping and new property mapping system."""
+        return handle_legacy_message_fields_logic(data)
+
+    @model_validator(mode="before")
+    @classmethod
     def check_chat_template_config(cls, data):
+        if isinstance(data, BaseModel):
+            data = data.model_dump()
+
         # Set chat_template to tokenizer_default if not set
         if data.get("type") == "chat_template" and not data.get("chat_template"):
             data["chat_template"] = ChatTemplate.tokenizer_default
@@ -241,6 +256,7 @@ class DPODataset(BaseModel):
     type: Optional[Union[UserDefinedDPOType, str]] = None
     data_files: Optional[List[str]] = None
     revision: Optional[str] = None
+    field_messages: Optional[str] = None
 
 
 class StepwiseSupervisedDataset(BaseModel):
@@ -275,6 +291,9 @@ class KTODataset(BaseModel):
     data_files: Optional[List[str]] = None
     trust_remote_code: Optional[bool] = False
     revision: Optional[str] = None
+
+
+DatasetConfig = Union[SFTDataset, DPODataset, KTODataset, StepwiseSupervisedDataset]
 
 
 class LoftQConfig(BaseModel):
@@ -680,17 +699,15 @@ class AxolotlInputConfig(
     ] = None  # whether to use weighting in DPO trainer. If none, default is false in the trainer.
     dpo_use_logits_to_keep: Optional[bool] = None
 
-    datasets: Optional[conlist(Union[SFTDataset, DPODataset, KTODataset, StepwiseSupervisedDataset], min_length=1)] = None  # type: ignore
-    test_datasets: Optional[conlist(Union[SFTDataset, DPODataset, KTODataset, StepwiseSupervisedDataset], min_length=1)] = None  # type: ignore
+    datasets: Optional[conlist(DatasetConfig, min_length=1)] = None  # type: ignore
+    test_datasets: Optional[conlist(DatasetConfig, min_length=1)] = None  # type: ignore
     shuffle_merged_datasets: Optional[bool] = True
     dataset_prepared_path: Optional[str] = None
     dataset_shard_num: Optional[int] = None
     dataset_shard_idx: Optional[int] = None
     skip_prepare_dataset: Optional[bool] = False
 
-    pretraining_dataset: Optional[  # type: ignore
-        conlist(Union[PretrainingDataset, SFTDataset], min_length=1)
-    ] = Field(
+    pretraining_dataset: Optional[conlist(Union[PretrainingDataset, SFTDataset], min_length=1)] = Field(  # type: ignore
         default=None,
         json_schema_extra={"description": "streaming dataset to use for pretraining"},
     )
@@ -895,10 +912,15 @@ class AxolotlInputConfig(
     @classmethod
     def deprecate_sharegpt_datasets(cls, datasets):
         for _, ds_cfg in enumerate(datasets):
-            if not ds_cfg.get("type"):
+            # Handle both dict and pydantic model cases
+            ds_type = (
+                ds_cfg.get("type")
+                if isinstance(ds_cfg, dict)
+                else getattr(ds_cfg, "type", None)
+            )
+            if not ds_type:
                 continue
 
-            ds_type = ds_cfg["type"]
             # skip if it's a dict (for custom user instruction prompt)
             if isinstance(ds_type, dict):
                 continue
@@ -909,6 +931,14 @@ class AxolotlInputConfig(
                 )
 
         return datasets
+
+    @field_serializer("datasets")
+    def datasets_serializer(
+        self, ds_configs: Optional[List[DatasetConfig]]
+    ) -> Optional[List[Dict[str, Any]]]:
+        if ds_configs:
+            return [ds_config.model_dump(exclude_none=True) for ds_config in ds_configs]
+        return None
 
     @model_validator(mode="before")
     @classmethod
@@ -1762,3 +1792,77 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             else:
                 data["torch_compile"] = False
         return data
+
+
+def handle_legacy_message_fields_logic(data: dict) -> dict:
+    """
+    Handle backwards compatibility between legacy message field mapping and new property mapping system.
+
+    Previously, the config only supported mapping 'role' and 'content' fields via dedicated config options:
+    - message_field_role: Mapped to the role field
+    - message_field_content: Mapped to the content field
+
+    The new system uses message_property_mappings to support arbitrary field mappings:
+    message_property_mappings:
+        role: source_role_field
+        content: source_content_field
+        additional_field: source_field
+
+    Args:
+        data: Dictionary containing configuration data
+
+    Returns:
+        Updated dictionary with message field mappings consolidated
+
+    Raises:
+        ValueError: If there are conflicts between legacy and new mappings
+    """
+    data = data.copy()  # Create a copy to avoid modifying the original
+
+    if data.get("message_property_mappings") is None:
+        data["message_property_mappings"] = {}
+
+    # Check for conflicts and handle role
+    if "message_field_role" in data:
+        LOG.warning(
+            "message_field_role is deprecated, use message_property_mappings instead. "
+            f"Example: message_property_mappings: {{role: {data['message_field_role']}}}"
+        )
+        if (
+            "role" in data["message_property_mappings"]
+            and data["message_property_mappings"]["role"] != data["message_field_role"]
+        ):
+            raise ValueError(
+                f"Conflicting message role fields: message_field_role='{data['message_field_role']}' "
+                f"conflicts with message_property_mappings.role='{data['message_property_mappings']['role']}'"
+            )
+        data["message_property_mappings"]["role"] = data["message_field_role"] or "role"
+
+        del data["message_field_role"]
+    elif "role" not in data["message_property_mappings"]:
+        data["message_property_mappings"]["role"] = "role"
+
+    # Check for conflicts and handle content
+    if "message_field_content" in data:
+        LOG.warning(
+            "message_field_content is deprecated, use message_property_mappings instead. "
+            f"Example: message_property_mappings: {{content: {data['message_field_content']}}}"
+        )
+        if (
+            "content" in data["message_property_mappings"]
+            and data["message_property_mappings"]["content"]
+            != data["message_field_content"]
+        ):
+            raise ValueError(
+                f"Conflicting message content fields: message_field_content='{data['message_field_content']}' "
+                f"conflicts with message_property_mappings.content='{data['message_property_mappings']['content']}'"
+            )
+        data["message_property_mappings"]["content"] = (
+            data["message_field_content"] or "content"
+        )
+
+        del data["message_field_content"]
+    elif "content" not in data["message_property_mappings"]:
+        data["message_property_mappings"]["content"] = "content"
+
+    return data
