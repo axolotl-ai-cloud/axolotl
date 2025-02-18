@@ -64,7 +64,7 @@ def small_llama_model():
 
 
 @pytest.fixture
-def minimal_config():
+def minimal_cfg():
     "Config of real HuggingFace Hub model"
     cfg = DictDefault(
         {
