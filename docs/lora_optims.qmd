@@ -82,7 +82,6 @@ lora_o_kernel: true
 ## Requirements
 
 - One or more NVIDIA or AMD GPUs (in order to use the Triton kernels)
-    - AMD can be used with experimental Triton support by setting the environment variable `TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1`
 - Targeted LoRA adapters cannot use Dropout
     - This may limit model expressivity / cause overfitting
 - Targeted LoRA adapters cannot have bias terms
