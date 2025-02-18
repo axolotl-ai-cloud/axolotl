@@ -762,6 +762,9 @@ class ModelLoader:
             return hf_ds_cfg
 
         skip_move_to_device = False
+        if self.cfg.tp_size is not None:
+            self.model_kwargs["tp_plan"] = "auto"
+
         if (  # pylint: disable=condition-evals-to-constant)
             (self.cfg.fsdp and self.cfg.fsdp_config.fsdp_cpu_ram_efficient_loading)
             and not qlora_fsdp
