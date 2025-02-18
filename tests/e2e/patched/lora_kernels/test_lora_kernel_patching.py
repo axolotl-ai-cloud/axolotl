@@ -63,6 +63,7 @@ def small_llama_model():
     return LlamaForCausalLM(LlamaConfig(**config))
 
 
+# pylint: disable=duplicate-code
 @pytest.fixture
 def minimal_cfg():
     "Config of real HuggingFace Hub model"
