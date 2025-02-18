@@ -156,7 +156,7 @@ def normalize_config(cfg):
 
     cfg.is_multimodal = (
         hasattr(model_config, "model_type")
-        and model_config.model_type in ["llava", "mllama", "qwen2_vl"]
+        and model_config.model_type in ["llava", "mllama", "qwen2_vl", "qwen2_5_vl"]
         or any(
             multimodal_name in cfg.base_model.lower()
             for multimodal_name in [
