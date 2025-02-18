@@ -1335,7 +1335,7 @@
     "href": "docs/lora_optims.html#requirements",
     "title": "LoRA Optimizations",
     "section": "Requirements",
-    "text": "Requirements\n\nOne or more NVIDIA or AMD GPUs (in order to use the Triton kernels)\n\nAMD can be used with experimental Triton support by setting the environment variable TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1\n\nTargeted LoRA adapters cannot use Dropout\n\nThis may limit model expressivity / cause overfitting\n\nTargeted LoRA adapters cannot have bias terms\n\nThis may limit model expressivity\n\n\nModels with pre-existing LoRA adapters that use Dropout or have bias terms may need to be re-finetuned without these features in order to be useful."
+    "text": "Requirements\n\nOne or more NVIDIA or AMD GPUs (in order to use the Triton kernels)\n\nNote: Set TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1 to enable memory-efficient attention on AMD GPUs\n\nTargeted LoRA adapters cannot use Dropout\n\nThis may limit model expressivity / cause overfitting\n\nTargeted LoRA adapters cannot have bias terms\n\nThis may limit model expressivity\n\n\nModels with pre-existing LoRA adapters that use Dropout or have bias terms may need to be re-finetuned without these features in order to be useful."
   },
   {
     "objectID": "docs/lora_optims.html#implementation-details",

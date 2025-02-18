@@ -415,7 +415,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <ul>
 <li>One or more NVIDIA or AMD GPUs (in order to use the Triton kernels)
 <ul>
-<li>AMD can be used with experimental Triton support by setting the environment variable <code>TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1</code></li>
+<li>Note: Set <code>TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1</code> to enable <a href="https://github.com/ROCm/aotriton/issues/16#issuecomment-2346675491">memory-efficient attention on AMD GPUs</a></li>
 </ul></li>
 <li>Targeted LoRA adapters cannot use Dropout
 <ul>
