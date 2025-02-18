@@ -6,12 +6,12 @@ import os
 from enum import Enum
 from typing import Annotated, Any, Dict, List, Literal, Optional, Tuple, Union
 
+from annotated_types import MinLen
 from packaging import version
 from pydantic import (
     BaseModel,
     Field,
     StringConstraints,
-    conlist,
     field_serializer,
     field_validator,
     model_validator,
@@ -435,6 +435,8 @@ class ReLoRAConfig(BaseModel):
 class ModelInputConfig(BaseModel):
     """model to train on configuration subset"""
 
+    model_config = {"protected_namespaces": ()}
+
     base_model: str
     base_model_config: Optional[str] = None
     cls_model_config: Optional[str] = None
@@ -501,7 +503,7 @@ class HyperparametersConfig(BaseModel):
                 "adopt_adamw",
             ],
         ]
-    ] = OptimizerNames.ADAMW_HF.value
+    ] = OptimizerNames.ADAMW_HF
     optim_args: Optional[Union[str, Dict[str, Any]]] = Field(
         default=None,
         json_schema_extra={"description": "Optional arguments to supply to optimizer."},
@@ -513,7 +515,9 @@ class HyperparametersConfig(BaseModel):
         },
     )
     torchdistx_path: Optional[str] = None
-    lr_scheduler: Optional[Union[SchedulerType, Literal["one_cycle"]]] = "cosine"
+    lr_scheduler: Optional[
+        Union[SchedulerType, Literal["one_cycle"]]
+    ] = SchedulerType.COSINE
     lr_scheduler_kwargs: Optional[Dict[str, Any]] = None
     lr_quadratic_warmup: Optional[bool] = None
     cosine_min_lr_ratio: Optional[float] = None
@@ -637,19 +641,19 @@ class RayConfig(BaseModel):
     use_ray: bool = Field(default=False)
     ray_run_name: Optional[str] = Field(
         default=None,
-        metadata={
+        json_schema_extra={
             "help": "The training results will be saved at `saves/ray_run_name`."
         },
     )
     ray_num_workers: int = Field(
         default=1,
-        metadata={
+        json_schema_extra={
             "help": "The number of workers for Ray training. Default is 1 worker."
         },
     )
     resources_per_worker: dict = Field(
         default_factory=lambda: {"GPU": 1},
-        metadata={
+        json_schema_extra={
             "help": "The resources per worker for Ray training. Default is to use 1 GPU per worker."
         },
     )
@@ -674,10 +678,7 @@ class AxolotlInputConfig(
 ):
     """wrapper of all config options"""
 
-    class Config:
-        """Config for alias"""
-
-        populate_by_name = True
+    model_config = {"populate_by_name": True}
 
     strict: Optional[bool] = Field(default=False)
     resume_from_checkpoint: Optional[str] = None
@@ -699,15 +700,28 @@ class AxolotlInputConfig(
     ] = None  # whether to use weighting in DPO trainer. If none, default is false in the trainer.
     dpo_use_logits_to_keep: Optional[bool] = None
 
-    datasets: Optional[conlist(DatasetConfig, min_length=1)] = None  # type: ignore
-    test_datasets: Optional[conlist(DatasetConfig, min_length=1)] = None  # type: ignore
+    datasets: Optional[
+        Annotated[
+            list[Union[SFTDataset, DPODataset, KTODataset, StepwiseSupervisedDataset]],
+            MinLen(1),
+        ]
+    ] = None
+
+    test_datasets: Optional[
+        Annotated[
+            list[Union[SFTDataset, DPODataset, KTODataset, StepwiseSupervisedDataset]],
+            MinLen(1),
+        ]
+    ] = None
     shuffle_merged_datasets: Optional[bool] = True
     dataset_prepared_path: Optional[str] = None
     dataset_shard_num: Optional[int] = None
     dataset_shard_idx: Optional[int] = None
     skip_prepare_dataset: Optional[bool] = False
 
-    pretraining_dataset: Optional[conlist(Union[PretrainingDataset, SFTDataset], min_length=1)] = Field(  # type: ignore
+    pretraining_dataset: Optional[
+        Annotated[list[Union[PretrainingDataset, SFTDataset]], MinLen(1)]
+    ] = Field(
         default=None,
         json_schema_extra={"description": "streaming dataset to use for pretraining"},
     )
@@ -850,7 +864,7 @@ class AxolotlInputConfig(
     warmup_steps: Optional[int] = None
     warmup_ratio: Optional[float] = None
     eval_steps: Optional[Union[int, float]] = None
-    evals_per_epoch: Optional[Union[int]] = None
+    evals_per_epoch: Optional[int] = None
     eval_strategy: Optional[str] = None
     save_steps: Optional[Union[int, float]] = None
     saves_per_epoch: Optional[int] = None
