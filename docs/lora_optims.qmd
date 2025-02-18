@@ -82,6 +82,7 @@ lora_o_kernel: true
 ## Requirements
 
 - One or more NVIDIA or AMD GPUs (in order to use the Triton kernels)
+    - Note: Set `TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1` to enable [memory-efficient attention on AMD GPUs](https://github.com/ROCm/aotriton/issues/16#issuecomment-2346675491)
 - Targeted LoRA adapters cannot use Dropout
     - This may limit model expressivity / cause overfitting
 - Targeted LoRA adapters cannot have bias terms
