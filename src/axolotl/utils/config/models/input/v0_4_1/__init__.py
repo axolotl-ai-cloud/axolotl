@@ -748,6 +748,8 @@ class AxolotlInputConfig(
     local_rank: Optional[int] = None
     ddp: Optional[bool] = None
 
+    tp_size: Optional[int] = None
+
     seed: Optional[int] = None
     ddp_timeout: Optional[int] = None
     ddp_bucket_cap_mb: Optional[int] = None
@@ -1369,6 +1371,13 @@ class AxolotlInputConfig(
             raise ValueError(
                 "peft_layers_pattern requires peft_layers_to_transform to be set"
             )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_fsdp_tp(cls, data):
+        if data.get("fsdp") and data.get("tp_size"):
+            raise ValueError("FSDP is not compatible with tensor parallelism")
         return data
 
     @model_validator(mode="after")

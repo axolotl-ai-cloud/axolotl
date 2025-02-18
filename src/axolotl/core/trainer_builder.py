@@ -703,6 +703,9 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 "accelerator_config"
             ] = self.cfg.accelerator_config
 
+        if self.cfg.tp_size is not None:
+            training_arguments_kwargs["tp_size"] = self.cfg.tp_size
+
         if self.cfg.kd_ce_alpha is not None:
             training_arguments_kwargs["kd_ce_alpha"] = self.cfg.kd_ce_alpha
         if self.cfg.kd_alpha is not None:
