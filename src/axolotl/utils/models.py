@@ -1023,6 +1023,12 @@ class ModelLoader:
             integrate_rope_embeddings()
 
     def apply_lora_patch(self) -> None:
+        """Applies patching relevant to LoRA Triton kernels if enabled."""
+        if self.cfg.lora_qkv_kernel or self.cfg.lora_o_kernel:
+            from axolotl.monkeypatch.lora_kernels import patch_self_attn_lora
+
+            patch_self_attn_lora(self.model)
+
         if (
             self.cfg.lora_mlp_kernel
             or self.cfg.lora_qkv_kernel
@@ -1176,11 +1182,7 @@ class ModelLoader:
         if self.cfg.adapter is not None:
             log_gpu_memory_usage(LOG, "after adapters", self.model.device)
 
-        if self.cfg.lora_qkv_kernel or self.cfg.lora_o_kernel:
-            from axolotl.monkeypatch.lora_kernels import patch_self_attn_lora
-
-            patch_self_attn_lora(self.model)
-
+        # TODO: Deprecate this.
         self.apply_unsloth_lora_patch()
         self.apply_lora_patch()
 

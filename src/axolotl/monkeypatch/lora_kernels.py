@@ -141,6 +141,9 @@ def patch_self_attn_lora(model: PreTrainedModel):
     """
     Patches the attention classes in a transformer model with optimized LoRA implementations.
 
+    It modifies the attention class to use optimized QKV and output projections. The
+    original implementation is preserved and can be restored if needed.
+
     Args:
         model: A HuggingFace transformers model.
 
