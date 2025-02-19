@@ -161,9 +161,9 @@ axolotl lm-eval config.yml --tasks arc_challenge,hellaswag
 Configuration options:
 
 ```yaml
-lm_eval_tasks: List of tasks to evaluate
-lm_eval_batch_size: Batch size for evaluation
-output_dir: Directory to save evaluation results
+lm_eval_tasks: # List of tasks to evaluate
+lm_eval_batch_size: # Batch size for evaluation
+output_dir: # Directory to save evaluation results
 ```
 
 # Legacy CLI Usage

@@ -14,6 +14,9 @@ lm_eval_tasks:
   - gsm8k
   - hellaswag
   - arc_easy
+
+lm_eval_batch_size: # Batch size for evaluation
+output_dir: # Directory to save evaluation results
 ```
 
 ## Citation
