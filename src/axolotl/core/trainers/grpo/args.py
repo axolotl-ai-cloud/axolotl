@@ -13,3 +13,4 @@ class AxolotlGRPOConfig(AxolotlTrainingMixins, GRPOConfig):
     """
     Axolotl GRPO Config for GRPO training
     """
+    use_liger_loss: bool = False

@@ -33,3 +33,4 @@ class TRLConfig(BaseModel):
     sync_ref_model: Optional[bool] = False
     ref_model_mixup_alpha: Optional[float] = 0.9
     ref_model_sync_steps: Optional[int] = 64
+    use_liger_loss: Optional[bool] = False
