@@ -19,7 +19,7 @@ Please see [here](https://github.com/axolotl-ai-cloud/axolotl/tree/main/src/axol
 
 Please see [here](https://github.com/axolotl-ai-cloud/axolotl/tree/main/src/axolotl/integrations/kd)
 
-## Liger
+## Liger Kernels
 
 Please see [here](https://github.com/axolotl-ai-cloud/axolotl/tree/main/src/axolotl/integrations/liger)
 
