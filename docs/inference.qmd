@@ -1,11 +1,10 @@
 ---
-title: "Inference Guide"
+title: "Inference"
 format:
   html:
     toc: true
     toc-depth: 3
     number-sections: true
-    code-tools: true
 execute:
   enabled: false
 ---

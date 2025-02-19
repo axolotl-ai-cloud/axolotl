@@ -1,5 +1,5 @@
 ---
-title: "Multi-GPU Training Guide"
+title: "Multi-GPU"
 format:
   html:
     toc: true
@@ -89,6 +89,8 @@ liger_glu_activation: true
 liger_layer_norm: true
 liger_fused_linear_cross_entropy: true
 ```
+
+Please see [docs](custom_integrations.qmd#liger) for more info.
 
 ## Troubleshooting {#sec-troubleshooting}
 

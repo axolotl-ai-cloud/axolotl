@@ -1,5 +1,5 @@
 ---
-title: Training with AMD GPUs on HPC Systems
+title: AMD GPUs on HPC Systems
 description: A comprehensive guide for using Axolotl on distributed systems with AMD GPUs
 ---
 
