@@ -1,5 +1,5 @@
 ---
-title: "Getting Started with Axolotl"
+title: "Quickstart"
 format:
   html:
     toc: true

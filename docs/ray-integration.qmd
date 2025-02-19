@@ -1,5 +1,5 @@
 ---
-title: Ray Train integration
+title: Ray Train
 description: How to use Axolotl with Ray Train
 ---
 
