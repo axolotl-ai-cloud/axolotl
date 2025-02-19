@@ -1,0 +1,11 @@
+organizations:
+  - "meta-llama"
+  - "huggingface"
+  - "nvidia"
+  - "facebook"
+  - "briaai"
+  - "unsloth"
+  - "NousResearch"
+  - "allenai"
+  - "amd"
+  - "tiiuae"
