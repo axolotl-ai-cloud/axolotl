@@ -369,7 +369,14 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 
 
 <p>Inspired by <a href="https://github.com/unslothai/unsloth">Unsloth</a>, we’ve implemented two optimizations for LoRA and QLoRA fine-tuning, supporting both single GPU and multi-GPU (in the DDP and DeepSpeed settings) training. These include (1) SwiGLU and GEGLU activation function Triton kernels, and (2) LoRA MLP and attention custom autograd functions. Our goal was to leverage operator fusion and tensor re-use in order to improve speed and reduce memory usage during the forward and backward passes of these calculations.</p>
-<p>We currently support several common model architectures, including (but not limited to): - <code>llama</code> - <code>mistral</code> - <code>qwen2</code> - <code>gemma</code> - <code>gemma2</code></p>
+<p>We currently support several common model architectures, including (but not limited to):</p>
+<ul>
+<li><code>llama</code></li>
+<li><code>mistral</code></li>
+<li><code>qwen2</code></li>
+<li><code>gemma</code></li>
+<li><code>gemma2</code></li>
+</ul>
 <details>
 <p>The set of models we support is currently limited by our attention patching strategy, which assumes (and replaces) specific code blocks for query / key / value and output projections:</p>
 <div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>ORIGINAL_QKV_CODE <span class="op">=</span> <span class="st">"""</span></span>
