@@ -12,6 +12,7 @@ to leverage operator fusion and tensor re-use in order to improve speed and redu
 memory usage during the forward and backward passes of these calculations.
 
 We currently support several common model architectures, including (but not limited to):
+
 - `llama`
 - `mistral`
 - `qwen2`
