@@ -10,6 +10,7 @@ from contextlib import ExitStack
 from pathlib import Path
 from typing import Any, Dict
 
+from axolotl.telemetry.manager import track_errors
 import torch
 import transformers.modelcard
 from accelerate.utils import save_fsdp_model
@@ -47,6 +48,7 @@ except ImportError:
 
 LOG = get_logger(__name__)
 
+TELEMETRY_MANAGER = TelemetryManager.get_instance()
 
 def setup_model_and_tokenizer(
     cfg: DictDefault,
@@ -64,7 +66,10 @@ def setup_model_and_tokenizer(
             `None`), and processor (if multimodal, else `None`).
     """
     # Load tokenizer
-    LOG.debug(f"loading tokenizer... {cfg.tokenizer_config or cfg.base_model_config}")
+    LOG.debug(
+        f"loading tokenizer... {cfg.tokenizer_cocnfig or cfg.base_model_config}",
+        main_process_only=True,
+    )
     tokenizer = load_tokenizer(cfg)
 
     # Load processor for multimodal models if needed
@@ -82,6 +87,14 @@ def setup_model_and_tokenizer(
     model, peft_config = model_loader.load()
     if model.generation_config is not None:
         model.generation_config.do_sample = True
+
+    TELEMETRY_MANAGER.track_event(
+        event_type="model-load", properties=model.config.to_dict()
+    )
+    if peft_config:
+        TELEMETRY_MANAGER.track_event(
+            event_type="peft-config-load", properties=peft_config.to_dict()
+        )
 
     # Apply freezing if specified
     if cfg.unfrozen_parameters:
@@ -527,6 +540,7 @@ def setup_model_and_trainer(cfg: DictDefault, dataset_meta: TrainDatasetMeta) ->
     )
 
 
+@track_errors
 def train(
     cfg: DictDefault, dataset_meta: TrainDatasetMeta
 ) -> tuple[PeftModel | PreTrainedModel, PreTrainedTokenizer, Trainer]:
@@ -565,10 +579,12 @@ def train(
     save_initial_configs(cfg, tokenizer, model, peft_config, processor)
     setup_signal_handler(cfg, model, safe_serialization)
     setup_model_card(cfg)
+    resume_from_checkpoint = determine_resume_checkpoint(cfg)
 
     # Execute the training
-    resume_from_checkpoint = determine_resume_checkpoint(cfg)
+    TELEMETRY_MANAGER.track_event(event_type="train-start")
     execute_training(cfg, trainer, resume_from_checkpoint)
+    TELEMETRY_MANAGER.track_event(event_type="train-end")
 
     # Save the trained model and cleanup
     save_trained_model(cfg, trainer, model, safe_serialization)

@@ -14,6 +14,8 @@ import yaml
 from transformers.utils import is_torch_bf16_gpu_available
 
 from axolotl.integrations.base import PluginManager
+from axolotl.telemetry import TelemetryManager
+from axolotl.telemetry.manager import track_errors
 from axolotl.utils.comet_ import setup_comet_env_vars
 from axolotl.utils.config import (
     normalize_cfg_datasets,
@@ -27,6 +29,8 @@ from axolotl.utils.trainer import prepare_opinionated_env, prepare_optim_env
 from axolotl.utils.wandb_ import setup_wandb_env_vars
 
 LOG = get_logger(__name__, use_environ=True)
+
+TELEMETRY_MANAGER = TelemetryManager.get_instance()
 
 
 def check_remote_config(config: Union[str, Path]) -> Union[str, Path]:
@@ -159,6 +163,7 @@ def plugin_set_cfg(cfg: DictDefault):
         plugin_manager.cfg = cfg
 
 
+@track_errors
 def load_cfg(
     config: str | Path | DictDefault = Path("examples/"), **kwargs
 ) -> DictDefault:
@@ -191,6 +196,8 @@ def load_cfg(
             temp_file.write(yaml.dump(config.to_dict()))
             temp_file.close()
         cfg.axolotl_config_path = temp_file.name
+
+    TELEMETRY_MANAGER.track_event(event_type="config-loaded", properties=cfg)
 
     # If there are any options passed in the cli, if it is something that seems valid
     # from the yaml, then overwrite the value
@@ -232,5 +239,7 @@ def load_cfg(
     setup_mlflow_env_vars(cfg)
     setup_comet_env_vars(cfg)
     plugin_set_cfg(cfg)
+
+    TELEMETRY_MANAGER.track_event(event_type="config-processed", properties=cfg)
 
     return cfg

@@ -1,0 +1,6 @@
+---
+title: Telemetry
+description: A description of the opt-out telemetry implementation in Axolotl.
+---
+
+TODO.

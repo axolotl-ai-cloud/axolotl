@@ -117,6 +117,7 @@ def modify_tokenizer_files(
     return tokenizer_dir
 
 
+@send_errors
 def load_tokenizer(cfg):
     """Load and configure the tokenizer based on the provided config."""
     model_config = load_model_config(cfg)

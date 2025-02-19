@@ -145,6 +145,7 @@ class ModelLoader:
         """Property that determines if FSDP with QLoRA is enabled."""
         return self.cfg.fsdp and self.cfg.adapter == "qlora"
 
+    @send_errors
     def load(self) -> tuple[PreTrainedModel | PeftModelForCausalLM, PeftConfig | None]:
         """Load and prepare the model with all configurations and patches.
 

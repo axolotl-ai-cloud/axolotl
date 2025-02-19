@@ -162,6 +162,7 @@ def load_lora(
     return model, lora_config
 
 
+@send_errors
 def load_adapter(
     model: PreTrainedModel,
     cfg: DictDefault,
