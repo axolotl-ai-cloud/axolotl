@@ -1,0 +1,32 @@
+---
+title: Custom Integrations
+---
+
+
+Axolotl adds custom features through `integrations`. They are located within the `src/axolotl/integrations` directory.
+
+To enable them, please check the respective documentations.
+
+## Cut Cross Entropy
+
+Please see [here](https://github.com/axolotl-ai-cloud/axolotl/tree/main/src/axolotl/integrations/cut_cross_entropy)
+
+## Grokfast
+
+Please see [here](https://github.com/axolotl-ai-cloud/axolotl/tree/main/src/axolotl/integrations/grokfast)
+
+## Knowledge Distillation (KD)
+
+Please see [here](https://github.com/axolotl-ai-cloud/axolotl/tree/main/src/axolotl/integrations/kd)
+
+## Liger
+
+Please see [here](https://github.com/axolotl-ai-cloud/axolotl/tree/main/src/axolotl/integrations/liger)
+
+## Language Model Evaluation Harness (LM Eval)
+
+Please see [here](https://github.com/axolotl-ai-cloud/axolotl/tree/main/src/axolotl/integrations/lm_eval)
+
+## Spectrum
+
+Please see [here](https://github.com/axolotl-ai-cloud/axolotl/tree/main/src/axolotl/integrations/spectrum)
