@@ -407,7 +407,10 @@ save_total_limit: # Checkpoints saved at a time
 max_steps:
 
 # bool of whether to include tokens trainer per second in the training metrics. This iterates over the entire dataset once, so it takes some time.
-include_tokens_per_second:
+include_tokens_per_second: # Optional[bool]
+
+# whether to find batch size that fits in memory. Passed to underlying transformers Trainer
+auto_find_batch_size: # Optional[bool]
 
 eval_table_size: # Approximate number of predictions sent to wandb depending on batch size. Enabled above 0. Default is 0
 eval_max_new_tokens: # Total number of tokens generated for predictions sent to wandb. Default is 128
