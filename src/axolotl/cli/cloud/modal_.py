@@ -260,14 +260,14 @@ class ModalCloud(Cloud):
 
 
 def _preprocess(config_yaml: str, volumes=None):
-    Path("/workspace/artifacts/axolotl").mkdir(parents=True, exist_ok=True)
+    Path("/workspace/mounts").mkdir(parents=True, exist_ok=True)
     with open(
-        "/workspace/artifacts/axolotl/config.yaml", "w", encoding="utf-8"
+        "/workspace/mounts/config.yaml", "w", encoding="utf-8"
     ) as f_out:
         f_out.write(config_yaml)
-    run_folder = "/workspace/artifacts/axolotl"
+    run_folder = "/workspace/mounts"
     run_cmd(
-        "axolotl preprocess /workspace/artifacts/axolotl/config.yaml --dataset-processes=8",
+        "axolotl preprocess /workspace/mounts/config.yaml --dataset-processes=8",
         run_folder,
         volumes,
     )
@@ -275,10 +275,10 @@ def _preprocess(config_yaml: str, volumes=None):
 
 def _train(config_yaml: str, accelerate: bool = True, volumes=None, **kwargs):
     with open(
-        "/workspace/artifacts/axolotl/config.yaml", "w", encoding="utf-8"
+        "/workspace/mounts/config.yaml", "w", encoding="utf-8"
     ) as f_out:
         f_out.write(config_yaml)
-    run_folder = "/workspace/artifacts/axolotl"
+    run_folder = "/workspace/mounts"
     if accelerate:
         accelerate_args = "--accelerate"
     else:
@@ -287,7 +287,7 @@ def _train(config_yaml: str, accelerate: bool = True, volumes=None, **kwargs):
     if num_processes := kwargs.pop("num_processes", None):
         num_processes_args = f"--num-processes {num_processes}"
     run_cmd(
-        f"axolotl train {accelerate_args} {num_processes_args} /workspace/artifacts/axolotl/config.yaml",
+        f"axolotl train {accelerate_args} {num_processes_args} /workspace/mounts/config.yaml",
         run_folder,
         volumes,
     )
