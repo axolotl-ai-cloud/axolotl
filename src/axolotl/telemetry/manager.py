@@ -126,8 +126,7 @@ class TelemetryManager:
 
         base_model = base_model.lower()
         return any(
-            org.lower() in base_model 
-            for org in self.whitelist.get("organizations", [])
+            org.lower() in base_model for org in self.whitelist.get("organizations", [])
         )
 
     def _init_posthog(self):
@@ -192,7 +191,7 @@ class TelemetryManager:
                         "run_id": self.run_id,
                         "system_info": system_info,
                         **properties,
-                    }
+                    },
                 )
             except Exception as e:
                 logger.warning(f"Failed to send telemetry event: {e}")
