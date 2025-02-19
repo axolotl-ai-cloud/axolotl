@@ -16,6 +16,10 @@ from transformers.utils import is_liger_kernel_available
 if is_liger_kernel_available():
     from liger_kernel.chunked_loss.grpo_loss import LigerFusedLinearGRPOLoss
 
+from trl.data_utils import apply_chat_template, is_conversational, maybe_apply_chat_template
+from accelerate.utils import broadcast_object_list, gather_object
+from trl.trainer.utils import pad
+
 
 # mypy: ignore-errors
 class AxolotlGRPOTrainer(SchedulerMixin, GRPOTrainer):
@@ -27,9 +31,9 @@ class AxolotlGRPOTrainer(SchedulerMixin, GRPOTrainer):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-
-        # Import Liger loss if enabled
-        if self.args.use_liger_loss:
+        
+        self.use_liger_loss = kwargs["args"].use_liger_loss
+        if self.use_liger_loss:
             if not is_liger_kernel_available():
                 raise ValueError(
                     "You set `use_liger_loss=True` but the liger kernel is not available. "
@@ -110,7 +114,7 @@ class AxolotlGRPOTrainer(SchedulerMixin, GRPOTrainer):
             llm_model.load_weights(state_dict.items())
 
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
-        if self.args.use_liger_loss:
+        if self.use_liger_loss:
             if return_outputs:
                 raise ValueError("The GRPOTrainer does not support returning outputs")
 
@@ -199,7 +203,9 @@ class AxolotlGRPOTrainer(SchedulerMixin, GRPOTrainer):
                     )
                 else:
                     with self.accelerator.unwrap_model(model).disable_adapter():
-                        ref_per_token_logps, ref_hidden_states = get_per_token_logps(model, prompt_completion_ids, num_logits_to_keep)
+                        ref_per_token_logps, ref_hidden_states = get_per_token_logps(
+                            model, prompt_completion_ids, num_logits_to_keep
+                        )
 
             # done in liger
             # Compute the KL divergence between the model and the reference model
@@ -261,7 +267,7 @@ class AxolotlGRPOTrainer(SchedulerMixin, GRPOTrainer):
             # mean_grouped_rewards = mean_grouped_rewards.repeat_interleave(self.num_generations, dim=0)
             # std_grouped_rewards = std_grouped_rewards.repeat_interleave(self.num_generations, dim=0)
             # advantages = (rewards - mean_grouped_rewards) / (std_grouped_rewards + 1e-4)
-            
+
             # done in liger
             # x - x.detach() allows for preserving gradients from x
             # per_token_loss = torch.exp(per_token_logps - per_token_logps.detach()) * advantages.unsqueeze(1)
@@ -282,7 +288,6 @@ class AxolotlGRPOTrainer(SchedulerMixin, GRPOTrainer):
 
             self._metrics["reward"].append(self.accelerator.gather_for_metrics(rewards).mean().item())
 
-            
             lm_head = model.get_output_embeddings()
 
             if self.ref_model is not None:
