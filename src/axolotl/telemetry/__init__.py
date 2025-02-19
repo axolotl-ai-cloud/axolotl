@@ -1,15 +1,8 @@
 """Init for axolotl.telemetry module."""
 
-from .manager import (
-    ModelConfig,
-    TelemetryConfig,
-    TelemetryManager,
-    init_telemetry_manager,
-)
+from .manager import TelemetryConfig, TelemetryManager
 
 __all__ = [
     "TelemetryConfig",
     "TelemetryManager",
-    "ModelConfig",
-    "init_telemetry_manager",
 ]
