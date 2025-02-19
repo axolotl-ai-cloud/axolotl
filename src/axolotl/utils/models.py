@@ -54,6 +54,7 @@ from axolotl.monkeypatch.multipack import (
     patch_for_multipack,
 )
 from axolotl.prompt_tokenizers import LLAMA_DEFAULT_EOS_TOKEN
+from axolotl.telemetry.manager import track_errors
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.chat_templates import get_chat_template_from_config
 from axolotl.utils.dict import DictDefault
@@ -165,6 +166,7 @@ def load_model_config(cfg):
     return model_config
 
 
+@track_errors
 def load_tokenizer(cfg):
     model_config = load_model_config(cfg)
     tokenizer_kwargs = {}
@@ -318,6 +320,7 @@ def load_tokenizer(cfg):
     return tokenizer
 
 
+@track_errors
 def load_processor(cfg: DictDefault, tokenizer: PreTrainedTokenizerBase):
     processor_kwargs: Dict[str, Any] = {}  # do we actually need this?
 
@@ -1192,18 +1195,17 @@ class ModelLoader:
         return self.model, lora_config
 
 
+@track_errors
 def load_model(
     cfg: DictDefault,
     tokenizer: PreTrainedTokenizerBase,
     *,
-    processor: ProcessorMixin = None,  # pylint: disable=unused-argument
+    processor: ProcessorMixin = None,
     inference: bool = False,
     reference_model: bool = False,
-    **kwargs,  # pylint: disable=unused-argument
-) -> Tuple[PreTrainedModel, Optional[PeftConfig]]:
-    """
-    Load a model for a given configuration and tokenizer.
-    """
+    **kwargs,
+) -> Tuple[PreTrainedModel, PeftConfig | None]:
+    """Load a model for a given configuration and tokenizer"""
     loader = ModelLoader(
         cfg,
         tokenizer,
@@ -1215,6 +1217,7 @@ def load_model(
     return loader.load_model()
 
 
+@track_errors
 def load_adapter(model, cfg, adapter, inference=False):
     # type: (PreTrainedModel, DictDefault, Optional[str], bool) -> Tuple[PreTrainedModel, Optional[PeftConfig]]
 

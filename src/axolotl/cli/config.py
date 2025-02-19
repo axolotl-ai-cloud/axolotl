@@ -14,6 +14,8 @@ import yaml
 from transformers.utils import is_torch_bf16_gpu_available
 
 from axolotl.integrations.base import PluginManager
+from axolotl.telemetry import TelemetryManager
+from axolotl.telemetry.manager import track_errors
 from axolotl.utils.comet_ import setup_comet_env_vars
 from axolotl.utils.config import (
     normalize_cfg_datasets,
@@ -26,6 +28,8 @@ from axolotl.utils.trainer import prepare_opinionated_env, prepare_optim_env
 from axolotl.utils.wandb_ import setup_wandb_env_vars
 
 LOG = logging.getLogger(__name__)
+
+TELEMETRY_MANAGER = TelemetryManager.get_instance()
 
 
 def check_remote_config(config: Union[str, Path]) -> Union[str, Path]:
@@ -152,6 +156,7 @@ def prepare_plugins(cfg: DictDefault):
             plugin_manager.register(plugin_name)
 
 
+@track_errors
 def load_cfg(config: Union[str, Path] = Path("examples/"), **kwargs) -> DictDefault:
     """
     Loads the `axolotl` configuration stored at `config`, validates it, and performs
@@ -171,6 +176,8 @@ def load_cfg(config: Union[str, Path] = Path("examples/"), **kwargs) -> DictDefa
     # Load the config from the yaml file
     with open(config, encoding="utf-8") as file:
         cfg: DictDefault = DictDefault(yaml.safe_load(file))
+
+    TELEMETRY_MANAGER.track_event(event_type="config-loaded", properties=cfg)
 
     # If there are any options passed in the cli, if it is something that seems valid
     # from the yaml, then overwrite the value
@@ -213,5 +220,7 @@ def load_cfg(config: Union[str, Path] = Path("examples/"), **kwargs) -> DictDefa
     setup_wandb_env_vars(cfg)
     setup_mlflow_env_vars(cfg)
     setup_comet_env_vars(cfg)
+
+    TELEMETRY_MANAGER.track_event(event_type="config-processed", properties=cfg)
 
     return cfg

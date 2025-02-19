@@ -3,6 +3,7 @@ organizations:
   - "huggingface"
   - "nvidia"
   - "facebook"
+  - "mistralai"
   - "briaai"
   - "unsloth"
   - "NousResearch"

@@ -1683,7 +1683,7 @@ class AxolotlInputConfig(
 
 
 class AxolotlConfigWCapabilities(AxolotlInputConfig):
-    """wrapper to valdiate gpu capabilities with the configured options"""
+    """Wrapper to validate GPU capabilities with the config options"""
 
     capabilities: GPUCapabilities
     env_capabilities: EnvCapabilities

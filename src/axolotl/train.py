@@ -22,6 +22,8 @@ from axolotl.contribs.lgpl.unsloth import (  # pylint: disable = no-name-in-modu
     fix_untrained_tokens,
 )
 from axolotl.logging_config import configure_logging
+from axolotl.telemetry import TelemetryManager
+from axolotl.telemetry.manager import track_errors
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.freeze import freeze_layers_except
 from axolotl.utils.models import load_model, load_processor, load_tokenizer
@@ -39,13 +41,16 @@ sys.path.insert(0, src_dir)
 configure_logging()
 LOG = get_logger(__name__)
 
+TELEMETRY_MANAGER = TelemetryManager.get_instance()
 
+
+@track_errors
 def train(
     *, cfg: DictDefault, dataset_meta: TrainDatasetMeta
 ) -> Tuple[Union[PeftModel, PreTrainedModel], PreTrainedTokenizer]:
     # Load tokenizer
     LOG.debug(
-        f"loading tokenizer... {cfg.tokenizer_config or cfg.base_model_config}",
+        f"loading tokenizer... {cfg.tokenizer_cocnfig or cfg.base_model_config}",
         main_process_only=True,
     )
     tokenizer = load_tokenizer(cfg)
@@ -75,7 +80,7 @@ def train(
             )
     resume_from_checkpoint = cfg.resume_from_checkpoint
 
-    # Load the model and tokenizer
+    # Load model
     msg = "loading model"
     if cfg.adapter:
         msg += " and peft_config..."
@@ -84,6 +89,14 @@ def train(
     if model.generation_config is not None:
         model.generation_config.do_sample = True
 
+    TELEMETRY_MANAGER.track_event(
+        event_type="model-load", properties=model.config.to_dict()
+    )
+    if peft_config:
+        TELEMETRY_MANAGER.track_event(
+            event_type="peft-config-load", properties=peft_config.to_dict()
+        )
+
     model_ref = None
     if cfg.rl and cfg.rl != "orpo":
         if cfg.adapter and not cfg.rl_adapter_ref_model:
@@ -91,7 +104,7 @@ def train(
             LOG.debug("Passing model_ref: None to RL trainer")
             model_ref = None  # explicit setting to None
         else:
-            # load the model again for model_ref/baseline
+            # load the model again for model_ref / baseline
             model_ref, _ = load_model(cfg, tokenizer, reference_model=True)
 
     safe_serialization = cfg.save_safetensors is True
@@ -174,6 +187,8 @@ def train(
     if cfg.group_by_length:
         LOG.info("hang tight... sorting dataset for group_by_length")
 
+    TELEMETRY_MANAGER.track_event(event_type="train-start")
+
     pretrain_hooks(cfg, trainer)
 
     if cfg.flash_optimum:
@@ -188,6 +203,8 @@ def train(
         trainer.train(resume_from_checkpoint=resume_from_checkpoint)
 
     post_train_hooks(cfg, trainer)
+
+    TELEMETRY_MANAGER.track_event(event_type="train-end")
 
     LOG.info(f"Training Completed!!! Saving pre-trained model to {cfg.output_dir}")
 
