@@ -295,12 +295,12 @@ def _train(config_yaml: str, accelerate: bool = True, volumes=None, **kwargs):
 
 def _lm_eval(config_yaml: str, volumes=None):
     with open(
-        "/workspace/artifacts/axolotl/config.yaml", "w", encoding="utf-8"
+        "/workspace/mounts/config.yaml", "w", encoding="utf-8"
     ) as f_out:
         f_out.write(config_yaml)
-    run_folder = "/workspace/artifacts/axolotl"
+    run_folder = "/workspace/mounts"
     run_cmd(
-        "axolotl lm-eval /workspace/artifacts/axolotl/config.yaml",
+        "axolotl lm-eval /workspace/mounts/config.yaml",
         run_folder,
         volumes,
     )
