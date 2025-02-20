@@ -763,9 +763,9 @@ class ModelLoader:
 
         skip_move_to_device = False
         if self.cfg.tp_size is not None:
-            self.model_kwargs["tp_plan"] = "auto"
+            # self.model_kwargs["tp_plan"] = "auto"
             del self.model_kwargs["device_map"]
-            skip_move_to_device = True
+            # skip_move_to_device = True
 
         if (  # pylint: disable=condition-evals-to-constant)
             (self.cfg.fsdp and self.cfg.fsdp_config.fsdp_cpu_ram_efficient_loading)
