@@ -746,7 +746,7 @@ class AxolotlInputConfig(
     local_rank: Optional[int] = None
     ddp: Optional[bool] = None
 
-    tp_size: Optional[int] = None
+    tensor_parallel: Optional[bool] = None
 
     seed: Optional[int] = None
     ddp_timeout: Optional[int] = None
@@ -1374,7 +1374,7 @@ class AxolotlInputConfig(
     @model_validator(mode="before")
     @classmethod
     def check_fsdp_tp(cls, data):
-        if data.get("fsdp") and data.get("tp_size"):
+        if data.get("fsdp") and data.get("tensor_parallel"):
             raise ValueError("FSDP is not compatible with tensor parallelism")
         return data
 
