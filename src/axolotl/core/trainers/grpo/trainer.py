@@ -78,7 +78,6 @@ class AxolotlGRPOTrainer(SchedulerMixin, GRPOTrainer):
             if is_peft_model(unwrapped_model):
                 unwrapped_model.merge_adapter()
                 state_dict = unwrapped_model.state_dict()
-                unwrapped_model.unmerge_adapter()
                 # Remove base_model and base_layer prefixes
                 state_dict = {
                     k.removeprefix("base_model.model.")
@@ -100,8 +99,10 @@ class AxolotlGRPOTrainer(SchedulerMixin, GRPOTrainer):
                 }
             else:
                 state_dict = unwrapped_model.state_dict()
-        if self.accelerator.is_main_process:
-            llm_model = (
-                self.llm.llm_engine.model_executor.driver_worker.model_runner.model
-            )
-            llm_model.load_weights(state_dict.items())
+            if self.accelerator.is_main_process:
+                llm_model = (
+                    self.llm.llm_engine.model_executor.driver_worker.model_runner.model
+                )
+                llm_model.load_weights(state_dict.items())
+            if is_peft_model(unwrapped_model):
+                unwrapped_model.unmerge_adapter()
