@@ -78,6 +78,9 @@ tf32: true # require >=ampere
 bfloat16: true # require >=ampere
 float16: true
 
+# Tensor parallel
+tp_size: 1 # should be set to the number of cuda devices available
+
 # Limit the memory for all available GPUs to this amount (if an integer, expressed in gigabytes); default: unset
 gpu_memory_limit: 20GiB
 # Do the LoRA/PEFT loading on CPU -- this is required if the base model is so large it takes up most or all of the available GPU VRAM, e.g. during a model and LoRA merge
