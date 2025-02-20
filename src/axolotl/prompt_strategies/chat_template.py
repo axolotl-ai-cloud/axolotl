@@ -272,8 +272,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                 dict(zip(feature_names, row))
             )
             for key, val in tokenized_prompt.items():
-                for i in range(0, len(val), self.sequence_len):
-                    res[key].append(val[i : i + self.sequence_len])
+                res[key].append(val)
 
         # If there are no examples left, return an empty dictionary
         if not res:
