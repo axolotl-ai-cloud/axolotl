@@ -14,8 +14,8 @@ import yaml
 from transformers.utils import is_torch_bf16_gpu_available
 
 from axolotl.integrations.base import PluginManager
-from axolotl.telemetry import TelemetryManager
 from axolotl.telemetry.errors import send_errors
+from axolotl.telemetry.manager import TelemetryManager
 from axolotl.utils.comet_ import setup_comet_env_vars
 from axolotl.utils.config import (
     normalize_cfg_datasets,

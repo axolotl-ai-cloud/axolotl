@@ -22,8 +22,8 @@ from axolotl.contribs.lgpl.unsloth import (  # pylint: disable = no-name-in-modu
     fix_untrained_tokens,
 )
 from axolotl.logging_config import configure_logging
-from axolotl.telemetry import TelemetryManager
 from axolotl.telemetry.errors import send_errors
+from axolotl.telemetry.manager import TelemetryManager
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.freeze import freeze_layers_except
 from axolotl.utils.models import load_model, load_processor, load_tokenizer
@@ -90,11 +90,11 @@ def train(
         model.generation_config.do_sample = True
 
     TELEMETRY_MANAGER.send_event(
-        event_type="model-load", properties=model.config.to_dict()
+        event_type="model-loaded", properties=model.config.to_dict()
     )
     if peft_config:
         TELEMETRY_MANAGER.send_event(
-            event_type="peft-config-load", properties=peft_config.to_dict()
+            event_type="peft-config-loaded", properties=peft_config.to_dict()
         )
 
     model_ref = None

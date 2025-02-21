@@ -45,7 +45,7 @@ class TelemetryCallback(TrainerCallback):
         **kwargs,  # pylint: disable=unused-argument
     ):
         """Handle training start."""
-        self.telemetry_manager.send_event(event_type="train-start")
+        self.telemetry_manager.send_event(event_type="train-started")
 
     def on_train_end(
         self,
@@ -57,7 +57,7 @@ class TelemetryCallback(TrainerCallback):
         """Handle training end."""
         # Send training completion event
         self.telemetry_manager.send_event(
-            event_type="train-end",
+            event_type="train-ended",
             properties={
                 "loss": state.log_history[-1].get("loss", 0)
                 if state.log_history
