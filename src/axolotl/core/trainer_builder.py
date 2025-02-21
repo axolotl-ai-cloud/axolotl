@@ -61,6 +61,8 @@ from axolotl.core.training_args import (
 from axolotl.integrations.base import PluginManager
 from axolotl.monkeypatch.multipack import SUPPORTED_MULTIPACK_MODEL_TYPES
 from axolotl.monkeypatch.relora import ReLoRACallback
+from axolotl.telemetry.callbacks import TelemetryCallback
+from axolotl.telemetry.manager import TelemetryManager
 from axolotl.utils import is_comet_available, is_mlflow_available
 from axolotl.utils.callbacks import (
     EvalFirstStepCallback,
@@ -176,10 +178,8 @@ class TrainerBuilderBase(abc.ABC):
                 SaveAxolotlConfigtoMlflowCallback,
             )
 
-            callbacks.extend(
-                [
-                    SaveAxolotlConfigtoMlflowCallback(self.cfg.axolotl_config_path),
-                ]
+            callbacks.append(
+                SaveAxolotlConfigtoMlflowCallback(self.cfg.axolotl_config_path)
             )
         if self.cfg.use_comet and is_comet_available():
             from axolotl.utils.callbacks.comet_ import SaveAxolotlConfigtoCometCallback
@@ -187,6 +187,10 @@ class TrainerBuilderBase(abc.ABC):
             callbacks.append(
                 SaveAxolotlConfigtoCometCallback(self.cfg.axolotl_config_path)
             )
+
+        telemetry_manager = TelemetryManager.get_instance()
+        if telemetry_manager.enabled:
+            callbacks.append(TelemetryCallback())
 
         return callbacks
 
