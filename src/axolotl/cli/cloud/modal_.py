@@ -261,9 +261,7 @@ class ModalCloud(Cloud):
 
 def _preprocess(config_yaml: str, volumes=None):
     Path("/workspace/mounts").mkdir(parents=True, exist_ok=True)
-    with open(
-        "/workspace/mounts/config.yaml", "w", encoding="utf-8"
-    ) as f_out:
+    with open("/workspace/mounts/config.yaml", "w", encoding="utf-8") as f_out:
         f_out.write(config_yaml)
     run_folder = "/workspace/mounts"
     run_cmd(
@@ -274,9 +272,7 @@ def _preprocess(config_yaml: str, volumes=None):
 
 
 def _train(config_yaml: str, accelerate: bool = True, volumes=None, **kwargs):
-    with open(
-        "/workspace/mounts/config.yaml", "w", encoding="utf-8"
-    ) as f_out:
+    with open("/workspace/mounts/config.yaml", "w", encoding="utf-8") as f_out:
         f_out.write(config_yaml)
     run_folder = "/workspace/mounts"
     if accelerate:
@@ -294,9 +290,7 @@ def _train(config_yaml: str, accelerate: bool = True, volumes=None, **kwargs):
 
 
 def _lm_eval(config_yaml: str, volumes=None):
-    with open(
-        "/workspace/mounts/config.yaml", "w", encoding="utf-8"
-    ) as f_out:
+    with open("/workspace/mounts/config.yaml", "w", encoding="utf-8") as f_out:
         f_out.write(config_yaml)
     run_folder = "/workspace/mounts"
     run_cmd(
