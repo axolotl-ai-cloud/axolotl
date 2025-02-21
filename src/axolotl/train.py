@@ -32,8 +32,9 @@ from axolotl.loaders import (
     load_processor,
     load_tokenizer,
 )
-from axolotl.telemetry import TelemetryManager
 from axolotl.telemetry.errors import send_errors
+from axolotl.telemetry.errors import send_errors
+from axolotl.telemetry.manager import TelemetryManager
 from axolotl.utils.ctx_managers.sequence_parallel import SequenceParallelContextManager
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import cleanup_distributed
