@@ -141,7 +141,7 @@ class TelemetryManager:
         return enabled, explicit_enabled
 
     def _load_whitelist(self) -> dict:
-        """Load organization/model whitelist"""
+        """Load HuggingFace Hub organization whitelist"""
         with open(self.config.whitelist_path, encoding="utf-8") as f:
             return yaml.safe_load(f)
 
