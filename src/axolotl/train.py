@@ -10,7 +10,6 @@ from contextlib import ExitStack
 from pathlib import Path
 from typing import Any, Dict
 
-from axolotl.telemetry.manager import track_errors
 import torch
 import transformers.modelcard
 from accelerate.utils import save_fsdp_model
@@ -33,6 +32,8 @@ from axolotl.loaders import (
     load_processor,
     load_tokenizer,
 )
+from axolotl.telemetry import TelemetryManager
+from axolotl.telemetry.errors import send_errors
 from axolotl.utils.ctx_managers.sequence_parallel import SequenceParallelContextManager
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import cleanup_distributed
@@ -540,7 +541,7 @@ def setup_model_and_trainer(cfg: DictDefault, dataset_meta: TrainDatasetMeta) ->
     )
 
 
-@track_errors
+@send_errors
 def train(
     cfg: DictDefault, dataset_meta: TrainDatasetMeta
 ) -> tuple[PeftModel | PreTrainedModel, PreTrainedTokenizer, Trainer]:
@@ -565,8 +566,22 @@ def train(
         processor,
     ) = setup_model_and_trainer(cfg, dataset_meta)
 
+    TELEMETRY_MANAGER.send_event(
+        event_type="model-load", properties=model.config.to_dict()
+    )
+    if peft_config:
+        TELEMETRY_MANAGER.send_event(
+            event_type="peft-config-load", properties=peft_config.to_dict()
+        )
+
     plugin_manager = PluginManager.get_instance()
     plugin_manager.post_trainer_create(cfg, trainer)
+
+    # Determine if we need to resume from a checkpoint
+    resume_from_checkpoint = determine_resume_checkpoint(cfg)
+
+    # Configuration for saving
+    safe_serialization = cfg.save_safetensors is True
 
     # Handle untrained tokens if configured
     safe_serialization = cfg.save_safetensors is True
@@ -579,12 +594,11 @@ def train(
     save_initial_configs(cfg, tokenizer, model, peft_config, processor)
     setup_signal_handler(cfg, model, safe_serialization)
     setup_model_card(cfg)
-    resume_from_checkpoint = determine_resume_checkpoint(cfg)
 
     # Execute the training
-    TELEMETRY_MANAGER.track_event(event_type="train-start")
+    TELEMETRY_MANAGER.send_event(event_type="train-start")
     execute_training(cfg, trainer, resume_from_checkpoint)
-    TELEMETRY_MANAGER.track_event(event_type="train-end")
+    TELEMETRY_MANAGER.send_event(event_type="train-end")
 
     # Save the trained model and cleanup
     save_trained_model(cfg, trainer, model, safe_serialization)

@@ -18,6 +18,7 @@ from axolotl.cli.config import load_cfg
 from axolotl.common.const import DEFAULT_DATASET_PREPARED_PATH
 from axolotl.common.datasets import load_datasets, load_preference_datasets
 from axolotl.integrations.base import PluginManager
+from axolotl.telemetry.errors import send_errors
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 from axolotl.utils.trainer import disable_datasets_caching
@@ -25,6 +26,7 @@ from axolotl.utils.trainer import disable_datasets_caching
 LOG = get_logger(__name__)
 
 
+@send_errors
 def do_preprocess(cfg: DictDefault, cli_args: PreprocessCliArgs) -> None:
     """
     Preprocesses dataset specified in axolotl config.

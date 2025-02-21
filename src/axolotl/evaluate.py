@@ -15,6 +15,8 @@ from axolotl.train import (
     TrainDatasetMeta,
     setup_model_and_tokenizer,
 )
+from axolotl.telemetry.errors import send_errors
+from axolotl.train import TrainDatasetMeta
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import cleanup_distributed
 from axolotl.utils.trainer import setup_trainer
@@ -63,6 +65,7 @@ def evaluate_dataset(
     return metrics
 
 
+@send_errors
 def evaluate(*, cfg: DictDefault, dataset_meta: TrainDatasetMeta) -> Dict[str, float]:
     """
     Evaluate a model on training and validation datasets.
