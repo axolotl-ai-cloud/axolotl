@@ -214,7 +214,7 @@ class TestHFRLTrainerBuilder:
         assert training_arguments.warmup_steps == 10
         assert training_arguments.cosine_min_lr_ratio == 0.1
 
-        # Hardware settings
+        # Other settings
         assert training_arguments.dataloader_num_workers == 1
         assert training_arguments.dataloader_pin_memory is True
         assert training_arguments.gradient_checkpointing is False
