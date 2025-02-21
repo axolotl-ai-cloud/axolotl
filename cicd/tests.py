@@ -1,6 +1,4 @@
-"""
- modal application to run axolotl gpu tests in Modal
- """
+"""Modal app to run axolotl GPU tests"""
 # pylint: disable=duplicate-code
 
 import os

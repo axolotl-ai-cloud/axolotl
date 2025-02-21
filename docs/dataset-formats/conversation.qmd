@@ -6,7 +6,7 @@ order: 3
 
 ## sharegpt
 
-IMPORTANT: ShareGPT is deprecated!. Please see `chat_template` section below.
+IMPORTANT: ShareGPT is deprecated!. Please see [chat_template](#chat_template) section below.
 
 ## pygmalion
 
@@ -22,7 +22,7 @@ Chat Template strategy uses a jinja2 template that converts a list of messages i
 {"conversations": [{"role": "...", "content": "..."}]}
 ```
 
-See `config.qmd` for full configs and supported templates.
+See [configs](../config.qmd) for full configs and supported templates.
 
 ### Migrating from sharegpt
 
@@ -42,8 +42,9 @@ datasets:
     type: chat_template
 
     field_messages: conversations
-    message_field_role: from
-    message_field_content: value
+    message_property_mappings:
+      role: from
+      content: value
 
 # new (if setting a new chat_template like chatml, gemma, etc)
 chat_template: chatml
@@ -52,8 +53,9 @@ datasets:
     type: chat_template
 
     field_messages: conversations
-    message_field_role: from
-    message_field_content: value
+    message_property_mappings:
+      role: from
+      content: value
 ```
 
 We recommend checking the below examples for other usecases.
@@ -138,8 +140,9 @@ datasets:
     type: chat_template
     chat_template: tokenizer_default
     field_messages: conversations
-    message_field_role: from
-    message_field_content: value
+    message_property_mappings:
+      role: from
+      content: value
     roles_to_train: []
     train_on_eos: turn
     message_field_training: train

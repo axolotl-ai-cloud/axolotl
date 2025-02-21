@@ -175,6 +175,7 @@ def train(
         LOG.info("hang tight... sorting dataset for group_by_length")
 
     pretrain_hooks(cfg, trainer)
+
     if cfg.flash_optimum:
         with torch.backends.cuda.sdp_kernel(
             # TODO configure these from the YAML w/ sdp_kernel_kwargs: ...
@@ -185,6 +186,7 @@ def train(
             trainer.train(resume_from_checkpoint=resume_from_checkpoint)
     else:
         trainer.train(resume_from_checkpoint=resume_from_checkpoint)
+
     post_train_hooks(cfg, trainer)
 
     LOG.info(f"Training Completed!!! Saving pre-trained model to {cfg.output_dir}")

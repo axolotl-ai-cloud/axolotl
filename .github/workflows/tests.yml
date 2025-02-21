@@ -204,7 +204,7 @@ jobs:
             python_version: "3.11"
             pytorch: 2.5.1
             num_gpus: 1
-            axolotl_extras:
+            axolotl_extras: vllm
     steps:
       - name: Checkout
         uses: actions/checkout@v4

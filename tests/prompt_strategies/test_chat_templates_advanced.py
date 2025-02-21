@@ -3,7 +3,6 @@ tests for chat_template prompt strategy
 """
 
 import logging
-import unittest
 from copy import deepcopy
 
 import pytest
@@ -123,15 +122,15 @@ class TestChatTemplateConfigurations:
                 chat_template=get_chat_template(
                     chat_template, jinja_template=chat_template_jinja
                 ),
-                message_field_role="from",
-                message_field_content="value",
+                message_property_mappings={"role": "from", "content": "value"},
+                field_messages="conversations",
             ),
             tokenizer=tokenizer,
             train_on_inputs=True,
             sequence_len=512,
             roles_to_train=["assistant"],
         )
-        strategy.messages = "conversations"
+
         res = strategy.tokenize_prompt(basic_dataset[0])
         turns = strategy.get_conversation_thread(basic_dataset[0])
         labels = res["labels"]
@@ -180,15 +179,15 @@ class TestChatTemplateConfigurations:
                 chat_template=get_chat_template(
                     chat_template, jinja_template=chat_template_jinja
                 ),
-                message_field_role="from",
-                message_field_content="value",
+                message_property_mappings={"role": "from", "content": "value"},
+                field_messages="conversations",
             ),
             tokenizer=tokenizer,
             train_on_inputs=False,
             sequence_len=512,
             roles_to_train=["assistant"],
         )
-        strategy.messages = "conversations"
+
         res = strategy.tokenize_prompt(basic_dataset[0])
         turns = strategy.get_conversation_thread(basic_dataset[0])
         labels = res["labels"]
@@ -241,20 +240,15 @@ class TestChatTemplateConfigurations:
                 chat_template=get_chat_template(
                     chat_template, jinja_template=chat_template_jinja
                 ),
-                message_field_role="from",
-                message_field_content="value",
+                message_property_mappings={"role": "from", "content": "value"},
+                field_messages="conversations",
             ),
             tokenizer=tokenizer,
             train_on_inputs=False,
             sequence_len=512,
             roles_to_train=["assistant", "human"],
         )
-        strategy.messages = "conversations"
-        res = strategy.tokenize_prompt(basic_dataset[0])
-        labels = res["labels"]
-        input_ids = res["input_ids"]
 
-        strategy.messages = "conversations"
         res = strategy.tokenize_prompt(basic_dataset[0])
         turns = strategy.get_conversation_thread(basic_dataset[0])
         labels = res["labels"]
@@ -307,15 +301,15 @@ class TestChatTemplateConfigurations:
                 chat_template=get_chat_template(
                     chat_template, jinja_template=chat_template_jinja
                 ),
-                message_field_role="from",
-                message_field_content="value",
+                message_property_mappings={"role": "from", "content": "value"},
+                field_messages="conversations",
             ),
             tokenizer=tokenizer,
             train_on_inputs=True,
             sequence_len=512,
             roles_to_train=["human", "assistant"],
         )
-        strategy.messages = "conversations"
+
         res = strategy.tokenize_prompt(basic_dataset[0])
         turns = strategy.get_conversation_thread(basic_dataset[0])
         labels = res["labels"]
@@ -360,8 +354,8 @@ class TestChatTemplateConfigurations:
                 chat_template=get_chat_template(
                     chat_template, jinja_template=chat_template_jinja
                 ),
-                message_field_role="from",
-                message_field_content="value",
+                message_property_mappings={"role": "from", "content": "value"},
+                field_messages="conversations",
             ),
             tokenizer=tokenizer,
             train_on_inputs=False,
@@ -369,7 +363,7 @@ class TestChatTemplateConfigurations:
             roles_to_train=[],
             train_on_eos="none",  # Add this line
         )
-        strategy.messages = "conversations"
+
         res = strategy.tokenize_prompt(basic_dataset[0])
         labels = res["labels"]
 
@@ -400,8 +394,8 @@ class TestChatTemplateConfigurations:
                 chat_template=get_chat_template(
                     chat_template, jinja_template=chat_template_jinja
                 ),
-                message_field_role="from",
-                message_field_content="value",
+                message_property_mappings={"role": "from", "content": "value"},
+                field_messages="conversations",
             ),
             tokenizer=tokenizer,
             train_on_inputs=False,
@@ -409,7 +403,7 @@ class TestChatTemplateConfigurations:
             roles_to_train=["assistant"],
             train_on_eos="all",
         )
-        strategy.messages = "conversations"
+
         res = strategy.tokenize_prompt(basic_dataset[0])
         labels = res["labels"]
         input_ids = res["input_ids"]
@@ -446,8 +440,8 @@ class TestChatTemplateConfigurations:
                 chat_template=get_chat_template(
                     chat_template, jinja_template=chat_template_jinja
                 ),
-                message_field_role="from",
-                message_field_content="value",
+                message_property_mappings={"role": "from", "content": "value"},
+                field_messages="conversations",
             ),
             tokenizer=tokenizer,
             train_on_inputs=False,
@@ -455,7 +449,6 @@ class TestChatTemplateConfigurations:
             roles_to_train=["assistant"],
             train_on_eos="turn",
         )
-        strategy.messages = "conversations"
         res = strategy.tokenize_prompt(basic_dataset[0])
         turns = strategy.get_conversation_thread(basic_dataset[0])
         labels = res["labels"]
@@ -526,8 +519,8 @@ class TestChatTemplateConfigurations:
                 chat_template=get_chat_template(
                     chat_template, jinja_template=chat_template_jinja
                 ),
-                message_field_role="from",
-                message_field_content="value",
+                message_property_mappings={"role": "from", "content": "value"},
+                field_messages="conversations",
             ),
             tokenizer=tokenizer,
             train_on_inputs=False,
@@ -535,7 +528,7 @@ class TestChatTemplateConfigurations:
             roles_to_train=["assistant"],
             train_on_eos="last",
         )
-        strategy.messages = "conversations"
+
         res = strategy.tokenize_prompt(basic_dataset[0])
         labels = res["labels"]
         input_ids = res["input_ids"]
@@ -578,8 +571,8 @@ class TestChatTemplateConfigurations:
                 chat_template=get_chat_template(
                     chat_template, jinja_template=chat_template_jinja
                 ),
-                message_field_role="from",
-                message_field_content="value",
+                message_property_mappings={"role": "from", "content": "value"},
+                field_messages="conversations",
             ),
             tokenizer=tokenizer,
             train_on_inputs=False,
@@ -587,7 +580,7 @@ class TestChatTemplateConfigurations:
             roles_to_train=["assistant"],
             train_on_eos="none",
         )
-        strategy.messages = "conversations"
+
         res = strategy.tokenize_prompt(basic_dataset[0])
         labels = res["labels"]
         input_ids = res["input_ids"]
@@ -624,15 +617,15 @@ class TestChatTemplateConfigurations:
                     chat_template, jinja_template=chat_template_jinja
                 ),
                 drop_system_message=True,
-                message_field_role="from",
-                message_field_content="value",
+                message_property_mappings={"role": "from", "content": "value"},
+                field_messages="conversations",
             ),
             tokenizer=tokenizer,
             train_on_inputs=False,
             sequence_len=512,
             roles_to_train=["assistant"],
         )
-        strategy.messages = "conversations"
+
         res = strategy.tokenize_prompt(basic_dataset[0])
         input_ids = res["input_ids"]
 
@@ -668,8 +661,7 @@ class TestChatTemplateConfigurations:
                     chat_template, jinja_template=chat_template_jinja
                 ),
                 roles=custom_roles,
-                message_field_role="from",
-                message_field_content="value",
+                message_property_mappings={"role": "from", "content": "value"},
             ),
             tokenizer=tokenizer,
             train_on_inputs=False,
@@ -741,8 +733,7 @@ class TestChatTemplateConfigurations:
                 ),
                 message_field_training="train",
                 message_field_training_detail="train_detail",
-                message_field_role="from",
-                message_field_content="value",
+                message_property_mappings={"role": "from", "content": "value"},
             ),
             tokenizer=tokenizer,
             train_on_inputs=False,
@@ -911,6 +902,64 @@ class TestChatTemplateConfigurations:
         LOG.debug(f"Final labels: {labels}")
         LOG.debug(f"Final input_ids: {input_ids}")
 
+    def test_get_chat_template_variables(
+        self, tokenizer, chat_template, chat_template_jinja, eos_token, request
+    ):
+        LOG.info("Testing get_chat_template_variables")
 
-if __name__ == "__main__":
-    unittest.main()
+        actual_tokenizer, actual_jinja_template = self.setup_tokenizer(
+            tokenizer, chat_template, chat_template_jinja, eos_token, request
+        )
+
+        prompter = ChatTemplatePrompter(
+            actual_tokenizer,
+            chat_template=get_chat_template(
+                chat_template, jinja_template=actual_jinja_template
+            ),
+            message_property_mappings={"from": "role", "value": "content"},
+        )
+
+        variables = prompter.get_chat_template_msg_variables(
+            actual_jinja_template
+            if actual_jinja_template
+            else actual_tokenizer.get_chat_template(),
+            "messages",
+        )
+
+        if chat_template == "llama3":
+            assert variables == {"role", "content"}, (
+                f"Expected variables: {'role', 'content'} from {tokenizer}/{chat_template}\n"
+                f"Got: {variables}\n"
+                f"Chat template: {actual_jinja_template}"
+            )
+        elif chat_template == "chatml":
+            assert variables == {"role", "content"}, (
+                f"Expected variables: {'role', 'content'} from {tokenizer}/{chat_template}\n"
+                f"Got: {variables}\n"
+                f"Chat template: {actual_jinja_template}"
+            )
+        elif chat_template == "jinja" and tokenizer == "mistralv03_tokenizer":
+            assert variables == {"role", "content", "tool_call_id", "tool_calls"}, (
+                f"Expected variables: {'role', 'content', 'tool_call_id', 'tool_calls'} from {tokenizer}/{chat_template}\n"
+                f"Got: {variables}\n"
+                f"Chat template: {actual_jinja_template}"
+            )
+        elif chat_template == "jinja" and tokenizer == "gemma2_tokenizer":
+            assert variables == {"role", "content"}, (
+                f"Expected variables: {'role', 'content'} from {tokenizer}/{chat_template}\n"
+                f"Got: {variables}\n"
+                f"Chat template: {actual_jinja_template}"
+            )
+        elif chat_template == "phi_35":
+            assert variables == {"role", "content"}, (
+                f"Expected variables: {'role', 'content'} from {tokenizer}/{chat_template}\n"
+                f"Got: {variables}\n"
+                f"Chat template: {actual_jinja_template}"
+            )
+        else:
+            LOG.warning(
+                f"Unsupported chat template: {chat_template} with {chat_template_jinja}"
+            )
+            raise ValueError(
+                f"Unsupported chat template: {chat_template} with {chat_template_jinja}"
+            )

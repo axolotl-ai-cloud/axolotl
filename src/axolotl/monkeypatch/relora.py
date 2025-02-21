@@ -127,6 +127,8 @@ class ReLoRACallback(TrainerCallback):
         optimizer: torch.optim.Optimizer,
         **_kwargs,
     ):
+        if not optimizer:
+            optimizer = state.optimizer
         if state.global_step > 0 and state.global_step % self.relora_steps == 0:
             checkpoint_folder = os.path.join(
                 args.output_dir,

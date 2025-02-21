@@ -414,6 +414,7 @@ class ModelLoader:
                 has_remote_code = "AutoModelForCausalLM" in auto_map_config
             else:
                 has_remote_code = False
+
             if has_remote_code and self.cfg.trust_remote_code is False:
                 # if explicitly set in the YAML, we should prefer that, for example if explicitly disabled
                 has_remote_code = self.cfg.trust_remote_code
@@ -425,10 +426,6 @@ class ModelLoader:
 
             if self.cfg.is_llama_derived_model:
                 self.patch_loss_llama()
-                if self.cfg.unsloth_lora_qkv or self.cfg.unsloth_lora_o:
-                    from axolotl.monkeypatch.unsloth_ import patch_self_attn_lora
-
-                    patch_self_attn_lora()
         elif self.cfg.is_llama_derived_model:
             self.patch_llama_derived_model()
 
@@ -441,6 +438,11 @@ class ModelLoader:
             )
 
             patch_mistral_cross_entropy()
+
+        if self.cfg.unsloth_lora_qkv or self.cfg.unsloth_lora_o:
+            from axolotl.monkeypatch.lora_kernels import patch_self_attn_lora
+
+            patch_self_attn_lora(self.cfg)
 
     def patch_attention(self) -> None:
         if hasattr(self.model_config, "model_type"):
@@ -472,9 +474,7 @@ class ModelLoader:
         return importlib.util.find_spec("flash_attn") is not None
 
     def patch_loss_llama(self) -> None:
-        """
-        Patch loss functions
-        """
+        """Patch loss functions and other optimizations"""
         if self.has_flash_attn:
             from axolotl.monkeypatch.llama_attn_hijack_flash import (
                 patch_fa_llama_cross_entropy,
@@ -494,15 +494,14 @@ class ModelLoader:
             from axolotl.monkeypatch.unsloth_ import patch_unsloth_layernorm
 
             patch_unsloth_layernorm()
+
         if self.cfg.unsloth_lora_qkv or self.cfg.unsloth_lora_o:
             from axolotl.monkeypatch.unsloth_ import patch_self_attn_lora
 
             patch_self_attn_lora()
 
     def patch_llama_derived_model(self) -> None:
-        """
-        Modify all llama derived models in one block
-        """
+        """Modify all llama derived models in one block"""
         self.patch_loss_llama()
 
         if self.cfg.flash_attention:
@@ -1019,7 +1018,8 @@ class ModelLoader:
                 if hasattr(module, "weight"):
                     module.to(dist_dtype)
 
-    def apply_lora_patch(self) -> None:
+    # TODO: Deprecate this.
+    def apply_unsloth_lora_patch(self) -> None:
         if self.cfg.unsloth_lora_mlp:
             from axolotl.monkeypatch.unsloth_ import integrate_lora_mlp_patch
 
@@ -1032,6 +1032,16 @@ class ModelLoader:
             from axolotl.monkeypatch.unsloth_ import integrate_rope_embeddings
 
             integrate_rope_embeddings()
+
+    def apply_lora_patch(self) -> None:
+        if (
+            self.cfg.lora_mlp_kernel
+            or self.cfg.lora_qkv_kernel
+            or self.cfg.lora_o_kernel
+        ):
+            from axolotl.monkeypatch.lora_kernels import apply_lora_kernel_patches
+
+            apply_lora_kernel_patches(self.model, self.cfg)
 
     def load_model(self) -> Tuple[PreTrainedModel, Optional[PeftConfig]]:
         self.apply_patches()
@@ -1059,9 +1069,12 @@ class ModelLoader:
             if self.cfg.resize_token_embeddings_to_32x
             else len(self.tokenizer)
         )
-        if (
-            hasattr(self.model, "get_input_embeddings")
-            and self.model.get_input_embeddings().num_embeddings != embeddings_len
+        if hasattr(self.model, "get_input_embeddings") and (
+            self.model.get_input_embeddings().num_embeddings < embeddings_len
+            or (
+                self.model.get_input_embeddings().num_embeddings > embeddings_len
+                and self.cfg.shrink_embeddings
+            )
         ):
             resize_kwargs = {}
             if self.cfg.mean_resizing_embeddings is not None:
@@ -1174,6 +1187,7 @@ class ModelLoader:
         if self.cfg.adapter is not None:
             log_gpu_memory_usage(LOG, "after adapters", self.model.device)
 
+        self.apply_unsloth_lora_patch()
         self.apply_lora_patch()
 
         for _ in range(3):
@@ -1313,8 +1327,11 @@ def load_lora(model, cfg, inference=False, config_only=False):
     if loftq_bits:
         lora_config_kwargs["loftq_config"] = LoftQConfig(loftq_bits=loftq_bits)
         lora_config_kwargs["init_lora_weights"] = "loftq"
+    if cfg.peft_init_lora_weights:
+        lora_config_kwargs["init_lora_weights"] = cfg.peft_init_lora_weights
     if cfg.peft_use_dora:
         lora_config_kwargs["use_dora"] = cfg.peft_use_dora
+        LOG.info("Initializing LoRA weights using dora. This might take longer.")
     if cfg.peft_use_rslora:
         lora_config_kwargs["use_rslora"] = cfg.peft_use_rslora
     if cfg.peft_layer_replication:
