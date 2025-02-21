@@ -131,8 +131,8 @@ class GRPOStrategy:
         return None
 
     @classmethod
-    def get_blocklist_args_kwargs(cls) -> list[str]:
-        return ["dataset_num_proc"]
+    def get_blocklist_args_kwargs(cls):
+        return ["dataset_num_proc", "max_length"]
 
     @classmethod
     def get_reward_func(cls, reward_func_fqn: str) -> RewardFunc:
@@ -167,4 +167,4 @@ class GRPOStrategy:
             LOG.info(
                 f"Reward function {reward_func_fqn} is a pre-trained model path - if this is unexpected, please check the reward function path."
             )
-            return reward_func
+            return reward_func_fqn
