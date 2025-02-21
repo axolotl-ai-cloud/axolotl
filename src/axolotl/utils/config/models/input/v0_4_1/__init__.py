@@ -1377,7 +1377,7 @@ class AxolotlInputConfig(
     @classmethod
     def check_fsdp_tp(cls, data):
         if data.get("fsdp") and data.get("tensor_parallel"):
-            raise ValueError("FSDP is not compatible with tensor parallelism")
+            raise ValueError("FSDP with tensor parallelism is not supported yet.")
         return data
 
     @model_validator(mode="after")
