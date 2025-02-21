@@ -1,7 +1,4 @@
-"""
-Module for pydantic models for configuration
-"""
-
+"""Module with Pydantic models for configuration."""
 # pylint: disable=too-many-lines
 
 import logging
@@ -9,12 +6,13 @@ import os
 from enum import Enum
 from typing import Annotated, Any, Dict, List, Literal, Optional, Tuple, Union
 
+from annotated_types import MinLen
 from packaging import version
 from pydantic import (
     BaseModel,
     Field,
     StringConstraints,
-    conlist,
+    field_serializer,
     field_validator,
     model_validator,
 )
@@ -23,6 +21,8 @@ from transformers.training_args import OptimizerNames
 from transformers.utils.import_utils import is_torch_npu_available
 
 from axolotl.utils.config.models.internals import EnvCapabilities, GPUCapabilities
+
+from .trl import TRLConfig
 
 LOG = logging.getLogger("axolotl.utils.config.models.input")
 
@@ -33,6 +33,7 @@ class RLType(str, Enum):
     """RL trainer type configuration subset"""
 
     dpo = "dpo"  # pylint: disable=invalid-name
+    grpo = "grpo"  # pylint: disable=invalid-name
     ipo = "ipo"  # pylint: disable=invalid-name
     orpo = "orpo"  # pylint: disable=invalid-name
     kto = "kto"  # pylint: disable=invalid-name
@@ -169,6 +170,7 @@ class SFTDataset(BaseModel):
     type: Optional[Union[str, UserDefinedPrompterType]] = None
     input_transform: Optional[str] = None
     shards: Optional[int] = None
+    shards_idx: Optional[int] = None
     preprocess_shards: Optional[int] = None
     conversation: Optional[str] = None
     # Do not make this too strict or it will break the validator to choose different dataset class
@@ -188,8 +190,13 @@ class SFTDataset(BaseModel):
     field_human: Optional[str] = None
     field_model: Optional[str] = None
     field_messages: Optional[str] = None
-    message_field_role: Optional[str] = None
-    message_field_content: Optional[str] = None
+    message_field_role: Optional[
+        str
+    ] = None  # deprecated, use message_property_mappings
+    message_field_content: Optional[
+        str
+    ] = None  # deprecated, use message_property_mappings
+    message_property_mappings: Optional[Dict[str, str]] = None
     message_field_training: Optional[str] = None
     message_field_training_detail: Optional[str] = None
     logprobs_field: Optional[str] = None
@@ -203,7 +210,16 @@ class SFTDataset(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
+    def handle_legacy_message_fields(cls, data):
+        """Handle backwards compatibility between legacy message field mapping and new property mapping system."""
+        return handle_legacy_message_fields_logic(data)
+
+    @model_validator(mode="before")
+    @classmethod
     def check_chat_template_config(cls, data):
+        if isinstance(data, BaseModel):
+            data = data.model_dump()
+
         # Set chat_template to tokenizer_default if not set
         if data.get("type") == "chat_template" and not data.get("chat_template"):
             data["chat_template"] = ChatTemplate.tokenizer_default
@@ -243,6 +259,7 @@ class DPODataset(BaseModel):
     type: Optional[Union[UserDefinedDPOType, str]] = None
     data_files: Optional[List[str]] = None
     revision: Optional[str] = None
+    field_messages: Optional[str] = None
 
 
 class StepwiseSupervisedDataset(BaseModel):
@@ -277,6 +294,9 @@ class KTODataset(BaseModel):
     data_files: Optional[List[str]] = None
     trust_remote_code: Optional[bool] = False
     revision: Optional[str] = None
+
+
+DatasetConfig = Union[SFTDataset, DPODataset, KTODataset, StepwiseSupervisedDataset]
 
 
 class LoftQConfig(BaseModel):
@@ -325,6 +345,7 @@ class LoraConfig(BaseModel):
     peft_use_dora: Optional[bool] = None
     peft_use_rslora: Optional[bool] = None
     peft_layer_replication: Optional[List[Tuple[int, int]]] = None
+    peft_init_lora_weights: Optional[Union[bool, str]] = None
 
     qlora_sharded_model_loading: Optional[bool] = Field(
         default=False,
@@ -418,6 +439,8 @@ class ReLoRAConfig(BaseModel):
 class ModelInputConfig(BaseModel):
     """model to train on configuration subset"""
 
+    model_config = {"protected_namespaces": ()}
+
     base_model: str
     base_model_config: Optional[str] = None
     cls_model_config: Optional[str] = None
@@ -484,7 +507,7 @@ class HyperparametersConfig(BaseModel):
                 "adopt_adamw",
             ],
         ]
-    ] = OptimizerNames.ADAMW_HF.value
+    ] = OptimizerNames.ADAMW_HF
     optim_args: Optional[Union[str, Dict[str, Any]]] = Field(
         default=None,
         json_schema_extra={"description": "Optional arguments to supply to optimizer."},
@@ -496,7 +519,9 @@ class HyperparametersConfig(BaseModel):
         },
     )
     torchdistx_path: Optional[str] = None
-    lr_scheduler: Optional[Union[SchedulerType, Literal["one_cycle"]]] = "cosine"
+    lr_scheduler: Optional[
+        Union[SchedulerType, Literal["one_cycle"]]
+    ] = SchedulerType.COSINE
     lr_scheduler_kwargs: Optional[Dict[str, Any]] = None
     lr_quadratic_warmup: Optional[bool] = None
     cosine_min_lr_ratio: Optional[float] = None
@@ -620,19 +645,19 @@ class RayConfig(BaseModel):
     use_ray: bool = Field(default=False)
     ray_run_name: Optional[str] = Field(
         default=None,
-        metadata={
+        json_schema_extra={
             "help": "The training results will be saved at `saves/ray_run_name`."
         },
     )
     ray_num_workers: int = Field(
         default=1,
-        metadata={
+        json_schema_extra={
             "help": "The number of workers for Ray training. Default is 1 worker."
         },
     )
     resources_per_worker: dict = Field(
         default_factory=lambda: {"GPU": 1},
-        metadata={
+        json_schema_extra={
             "help": "The resources per worker for Ray training. Default is to use 1 GPU per worker."
         },
     )
@@ -657,35 +682,49 @@ class AxolotlInputConfig(
 ):
     """wrapper of all config options"""
 
-    class Config:
-        """Config for alias"""
-
-        populate_by_name = True
+    model_config = {"populate_by_name": True}
 
     strict: Optional[bool] = Field(default=False)
     resume_from_checkpoint: Optional[str] = None
     auto_resume_from_checkpoints: Optional[bool] = None
     resize_token_embeddings_to_32x: Optional[bool] = None
     mean_resizing_embeddings: Optional[bool] = False
+    # optionally shrink the embeddings when the tokenizer vocab size is smaller
+    shrink_embeddings: Optional[bool] = None
 
     rl: Optional[RLType] = None
+    trl: Optional[TRLConfig] = Field(
+        default_factory=lambda: TRLConfig(),  # pylint: disable=unnecessary-lambda
+    )
     reward_model: Optional[bool] = None
     process_reward_model: Optional[bool] = None
     num_labels: Optional[int] = None
     dpo_use_weighting: Optional[
         bool
     ] = None  # whether to use weighting in DPO trainer. If none, default is false in the trainer.
+    dpo_use_logits_to_keep: Optional[bool] = None
 
-    datasets: Optional[conlist(Union[SFTDataset, DPODataset, KTODataset, StepwiseSupervisedDataset], min_length=1)] = None  # type: ignore
-    test_datasets: Optional[conlist(Union[SFTDataset, DPODataset, KTODataset, StepwiseSupervisedDataset], min_length=1)] = None  # type: ignore
+    datasets: Optional[
+        Annotated[
+            list[Union[SFTDataset, DPODataset, KTODataset, StepwiseSupervisedDataset]],
+            MinLen(1),
+        ]
+    ] = None
+
+    test_datasets: Optional[
+        Annotated[
+            list[Union[SFTDataset, DPODataset, KTODataset, StepwiseSupervisedDataset]],
+            MinLen(1),
+        ]
+    ] = None
     shuffle_merged_datasets: Optional[bool] = True
     dataset_prepared_path: Optional[str] = None
     dataset_shard_num: Optional[int] = None
     dataset_shard_idx: Optional[int] = None
     skip_prepare_dataset: Optional[bool] = False
 
-    pretraining_dataset: Optional[  # type: ignore
-        conlist(Union[PretrainingDataset, SFTDataset], min_length=1)
+    pretraining_dataset: Optional[
+        Annotated[list[Union[PretrainingDataset, SFTDataset]], MinLen(1)]
     ] = Field(
         default=None,
         json_schema_extra={"description": "streaming dataset to use for pretraining"},
@@ -803,6 +842,10 @@ class AxolotlInputConfig(
     unsloth_rms_norm: Optional[bool] = None
     unsloth_rope: Optional[bool] = None
 
+    lora_mlp_kernel: Optional[bool] = None
+    lora_qkv_kernel: Optional[bool] = None
+    lora_o_kernel: Optional[bool] = None
+
     deepspeed: Optional[Union[str, Dict[str, Any]]] = None
     fsdp: Optional[List[str]] = None
     fsdp_config: Optional[Dict[str, Any]] = None
@@ -825,7 +868,7 @@ class AxolotlInputConfig(
     warmup_steps: Optional[int] = None
     warmup_ratio: Optional[float] = None
     eval_steps: Optional[Union[int, float]] = None
-    evals_per_epoch: Optional[Union[int]] = None
+    evals_per_epoch: Optional[int] = None
     eval_strategy: Optional[str] = None
     save_steps: Optional[Union[int, float]] = None
     saves_per_epoch: Optional[int] = None
@@ -837,6 +880,7 @@ class AxolotlInputConfig(
     save_only_model: Optional[bool] = False
     use_tensorboard: Optional[bool] = None
     profiler_steps: Optional[int] = None
+    include_tokens_per_second: Optional[bool] = None
 
     neftune_noise_alpha: Optional[float] = None
 
@@ -886,10 +930,15 @@ class AxolotlInputConfig(
     @classmethod
     def deprecate_sharegpt_datasets(cls, datasets):
         for _, ds_cfg in enumerate(datasets):
-            if not ds_cfg.get("type"):
+            # Handle both dict and pydantic model cases
+            ds_type = (
+                ds_cfg.get("type")
+                if isinstance(ds_cfg, dict)
+                else getattr(ds_cfg, "type", None)
+            )
+            if not ds_type:
                 continue
 
-            ds_type = ds_cfg["type"]
             # skip if it's a dict (for custom user instruction prompt)
             if isinstance(ds_type, dict):
                 continue
@@ -900,6 +949,14 @@ class AxolotlInputConfig(
                 )
 
         return datasets
+
+    @field_serializer("datasets")
+    def datasets_serializer(
+        self, ds_configs: Optional[List[DatasetConfig]]
+    ) -> Optional[List[Dict[str, Any]]]:
+        if ds_configs:
+            return [ds_config.model_dump(exclude_none=True) for ds_config in ds_configs]
+        return None
 
     @model_validator(mode="before")
     @classmethod
@@ -1526,10 +1583,40 @@ class AxolotlInputConfig(
             or data.get("unsloth_lora_qkv")
             or data.get("unsloth_lora_o")
         ):
-            if data.get("adapter") == "lora" or data.get("load_in_8bit"):
+            if data.get("adapter") == "lora" and data.get("load_in_8bit"):
                 raise ValueError(
                     "unsloth_lora_mlp, unsloth_lora_qkv, and unsloth_lora_o are not compatible with 8-bit LoRA"
                 )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_lora_8bit(cls, data):
+        if (
+            data.get("lora_mlp_kernel")
+            or data.get("lora_qkv_kernel")
+            or data.get("lora_o_kernel")
+        ):
+            if data.get("adapter") == "lora" and data.get("load_in_8bit"):
+                raise ValueError(
+                    "lora_mlp_kernel, lora_mlp_kernel, and lora_mlp_kernel are not compatible with 8-bit LoRA"
+                )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_lora_axolotl_unsloth(cls, data):
+        is_lora_kernel = any(
+            data.get(k) for k in ["lora_mlp_kernel", "lora_qkv_kernel", "lora_o_kernel"]
+        )
+        is_unsloth_lora = any(
+            data.get(k)
+            for k in ["unsloth_lora_mlp", "unsloth_lora_qkv", "unsloth_lora_o"]
+        )
+        if is_lora_kernel and is_unsloth_lora:
+            raise ValueError(
+                "both lora_mlp_kernel and unsloth_lora_mlp cannot be true (similarly for lora_qkv_kernel, lora_o_kernel)"
+            )
         return data
 
     @model_validator(mode="before")
@@ -1666,6 +1753,29 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
 
     @model_validator(mode="before")
     @classmethod
+    def check_multigpu_lora_kernels(cls, data):
+        if (
+            data.get("lora_mlp_kernel")
+            or data.get("lora_qkv_kernel")
+            or data.get("lora_o_kernel")
+        ):
+            capabilities = data.get("capabilities")
+            is_fsdp = data.get("fsdp") is not None
+            is_deepspeed = data.get("deepspeed") is not None
+
+            if capabilities and capabilities.get("n_gpu", 0) > 1:
+                if is_fsdp:
+                    raise ValueError(
+                        "lora_mlp_kernel, lora_qkv_kernel, and lora_o_kernel are not compatible with FSDP."
+                    )
+                if is_deepspeed:
+                    raise ValueError(
+                        "lora_mlp_kernel, lora_qkv_kernel, and lora_o_kernel are not compatible with DeepSpeed."
+                    )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def check_adopt_torch_version(cls, data):
         if (data.get("optimizer") is not None) and ("adopt" in data.get("optimizer")):
             env_capabilities = data.get("env_capabilities", {})
@@ -1700,3 +1810,77 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             else:
                 data["torch_compile"] = False
         return data
+
+
+def handle_legacy_message_fields_logic(data: dict) -> dict:
+    """
+    Handle backwards compatibility between legacy message field mapping and new property mapping system.
+
+    Previously, the config only supported mapping 'role' and 'content' fields via dedicated config options:
+    - message_field_role: Mapped to the role field
+    - message_field_content: Mapped to the content field
+
+    The new system uses message_property_mappings to support arbitrary field mappings:
+    message_property_mappings:
+        role: source_role_field
+        content: source_content_field
+        additional_field: source_field
+
+    Args:
+        data: Dictionary containing configuration data
+
+    Returns:
+        Updated dictionary with message field mappings consolidated
+
+    Raises:
+        ValueError: If there are conflicts between legacy and new mappings
+    """
+    data = data.copy()  # Create a copy to avoid modifying the original
+
+    if data.get("message_property_mappings") is None:
+        data["message_property_mappings"] = {}
+
+    # Check for conflicts and handle role
+    if "message_field_role" in data:
+        LOG.warning(
+            "message_field_role is deprecated, use message_property_mappings instead. "
+            f"Example: message_property_mappings: {{role: {data['message_field_role']}}}"
+        )
+        if (
+            "role" in data["message_property_mappings"]
+            and data["message_property_mappings"]["role"] != data["message_field_role"]
+        ):
+            raise ValueError(
+                f"Conflicting message role fields: message_field_role='{data['message_field_role']}' "
+                f"conflicts with message_property_mappings.role='{data['message_property_mappings']['role']}'"
+            )
+        data["message_property_mappings"]["role"] = data["message_field_role"] or "role"
+
+        del data["message_field_role"]
+    elif "role" not in data["message_property_mappings"]:
+        data["message_property_mappings"]["role"] = "role"
+
+    # Check for conflicts and handle content
+    if "message_field_content" in data:
+        LOG.warning(
+            "message_field_content is deprecated, use message_property_mappings instead. "
+            f"Example: message_property_mappings: {{content: {data['message_field_content']}}}"
+        )
+        if (
+            "content" in data["message_property_mappings"]
+            and data["message_property_mappings"]["content"]
+            != data["message_field_content"]
+        ):
+            raise ValueError(
+                f"Conflicting message content fields: message_field_content='{data['message_field_content']}' "
+                f"conflicts with message_property_mappings.content='{data['message_property_mappings']['content']}'"
+            )
+        data["message_property_mappings"]["content"] = (
+            data["message_field_content"] or "content"
+        )
+
+        del data["message_field_content"]
+    elif "content" not in data["message_property_mappings"]:
+        data["message_property_mappings"]["content"] = "content"
+
+    return data

@@ -4,13 +4,16 @@ HF Chat Templates prompt strategy
 
 import logging
 from collections import defaultdict
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set, Union
 
+from pydantic import BaseModel
 from transformers import ProcessorMixin
 
+from axolotl.prompt_strategies.jinja_template_analyzer import JinjaTemplateAnalyzer
 from axolotl.prompt_tokenizers import PromptTokenizingStrategy
 from axolotl.prompters import IGNORE_TOKEN_ID, Prompter
 from axolotl.utils.chat_templates import get_chat_template_from_config
+from axolotl.utils.config.models.input.v0_4_1 import DatasetConfig
 
 # Configure the logger
 LOG = logging.getLogger("axolotl")
@@ -23,16 +26,23 @@ class ChatTemplatePrompter(Prompter):
     def __init__(
         self,
         tokenizer,
+        chat_template: str,
         processor=None,
-        chat_template=None,
         max_length=2048,
-        message_field_role: str = "role",
-        message_field_content: str = "content",
+        message_property_mappings: Optional[Dict[str, str]] = None,
         message_field_training: Optional[str] = None,
         message_field_training_detail: Optional[str] = None,
+        field_messages: str = "messages",
         roles: Optional[Dict[str, List[str]]] = None,
         drop_system_message: bool = False,
     ):
+        # check if message_property_mappings is None or empty dict
+        if message_property_mappings is None or (not message_property_mappings):
+            message_property_mappings = {
+                "role": "role",
+                "content": "content",
+            }
+
         if roles:
             self.roles = {s: t for t, sources in roles.items() for s in sources}
         else:
@@ -45,18 +55,28 @@ class ChatTemplatePrompter(Prompter):
                 "tool": "tool",
             }
 
-        self.message_field_role = message_field_role
-        self.message_field_content = message_field_content
+        self._chat_template_msg_variables = self.get_chat_template_msg_variables(
+            chat_template, field_messages
+        )
+        self.message_property_mappings = message_property_mappings
         self.message_field_training = message_field_training
         self.message_field_training_detail = message_field_training_detail
+        self.field_messages = field_messages
         self.tokenizer = tokenizer
-        self.processor: ProcessorMixin = processor
+        self.processor: Optional[ProcessorMixin] = processor
         self.chat_template = chat_template
         self.max_length = max_length
         self.drop_system_message = drop_system_message
 
+    @property
+    def chat_template_msg_variables(self) -> Set[str]:
+        return self._chat_template_msg_variables
+
     def build_prompt(self, conversation, add_generation_prompt=False, images=None):
         if self.processor:
+            if not callable(self.processor):
+                raise TypeError("Processor must be callable")
+
             text = self.processor.apply_chat_template(
                 conversation,
                 chat_template=self.chat_template,
@@ -184,17 +204,21 @@ class ChatTemplatePrompter(Prompter):
 
         return adjusted_details
 
+    def get_chat_template_msg_variables(
+        self, chat_template: str, field_messages: str
+    ) -> Set[str]:
+        template_analyzer = JinjaTemplateAnalyzer(chat_template)
+        return template_analyzer.get_message_vars(field_messages)
+
 
 class ChatTemplateStrategy(PromptTokenizingStrategy):
     """
     Tokenizing strategy for instruction-based prompts.
     """
 
-    _messages = "messages"
-
     def __init__(
         self,
-        prompter: ChatTemplatePrompter,
+        prompter: "ChatTemplatePrompter",
         tokenizer,
         train_on_inputs,
         sequence_len,
@@ -202,6 +226,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         train_on_eos=None,
     ):
         super().__init__(prompter, tokenizer, train_on_inputs, sequence_len)
+        self.prompter: ChatTemplatePrompter = prompter
 
         self.roles_to_train = []
         if roles_to_train:
@@ -213,13 +238,9 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         self.train_on_eos = train_on_eos
         self.images = "images"
 
-    @property
-    def messages(self):
-        return self._messages
-
-    @messages.setter
-    def messages(self, messages):
-        self._messages = messages
+        LOG.debug(
+            f"The chat template uses the following properites on the message: {self.prompter.chat_template_msg_variables}"
+        )
 
     @property
     def supports_batched(self) -> bool:
@@ -229,7 +250,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
     def is_prompt_batched(self, prompt: dict[str, Any]) -> bool:
         try:
             return all(isinstance(v, list) for v in prompt.values()) and all(
-                isinstance(v, list) for v in prompt[self.messages]
+                isinstance(v, list) for v in prompt[self.prompter.field_messages]
             )
         except KeyError:
             return False
@@ -251,8 +272,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                 dict(zip(feature_names, row))
             )
             for key, val in tokenized_prompt.items():
-                for i in range(0, len(val), self.sequence_len):
-                    res[key].append(val[i : i + self.sequence_len])
+                res[key].append(val)
 
         # If there are no examples left, return an empty dictionary
         if not res:
@@ -464,29 +484,16 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
     def get_conversation_thread(self, prompt):
         turns = []
-        optional_keys = [
-            "tool_calls",  # tool that 'assistant' calls
-            "name",  # name of tool given by 'tool'
-            "tool_call_id",  # mistral/mixtral requires this
-        ]
-        for message in prompt[self.messages]:
+        for message in prompt[self.prompter.field_messages]:
+            transformed_message = self.transform_message(message)
+
             turn = {
-                "role": self.prompter.roles[message[self.prompter.message_field_role]],
+                **transformed_message,
                 "training": message.get(self.prompter.message_field_training),
                 "training_detail": message.get(
                     self.prompter.message_field_training_detail
                 ),
             }
-
-            # do not add content if None as it may conflict with some templates due to tools
-            content = message.get(self.prompter.message_field_content, None)
-            if content is not None:
-                turn["content"] = content
-
-            for key in optional_keys:
-                value = message.get(key, None)
-                if value is not None:
-                    turn[key] = value
 
             turns.append(turn)
 
@@ -494,6 +501,37 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             turns = turns[1:]
 
         return turns
+
+    def transform_message(self, message):
+        # Build the initial transformed message from the mappings
+        transformed_message = {}
+        for key, value in self.prompter.message_property_mappings.items():
+            if message.get(value) is not None:
+                transformed_message[key] = message[value]
+            else:
+                LOG.debug(
+                    f"Could not find value for property {value} in message: {message}"
+                )
+
+        # Map the role if necessary
+        if "role" in transformed_message:
+            transformed_message["role"] = self.prompter.roles.get(
+                transformed_message["role"], transformed_message["role"]
+            )
+
+        # Determine which keys in the original message were not mapped
+        mapped_values = set(self.prompter.message_property_mappings.values())
+        remaining_keys = set(message) - mapped_values
+
+        # Keep only the properties defined in the chat template
+        # and not already mapped
+        for key in self.prompter.chat_template_msg_variables:
+            if key in remaining_keys:
+                val = message.get(key)
+                if val is not None:
+                    transformed_message[key] = val
+
+        return transformed_message
 
     def get_images(self, prompt):
         return prompt.get(self.images, None)
@@ -516,33 +554,46 @@ class StrategyLoader:
         }
 
     def __call__(
-        self, tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None, processor=None
+        self,
+        tokenizer,
+        cfg,
+        ds_cfg: Optional[Union[Dict[str, Any], DatasetConfig]] = None,
+        processor=None,
     ):
-        # pylint: disable=duplicate-code
-        ds_cfg = ds_cfg or {}
+        if ds_cfg is None:
+            dataset_config = {}
+        elif isinstance(ds_cfg, BaseModel):
+            dataset_config = ds_cfg.model_dump()
+        else:
+            dataset_config = ds_cfg
+
         chat_template_string = get_chat_template_from_config(
-            cfg=cfg, ds_cfg=ds_cfg, tokenizer=tokenizer
+            cfg=cfg, ds_cfg=dataset_config, tokenizer=tokenizer
         )
         LOG.info(f"Using chat template:\n---\n{chat_template_string!s}\n---")
 
         prompter_params = {
             "tokenizer": tokenizer,
             "chat_template": chat_template_string,
-            "message_field_role": ds_cfg.get("message_field_role", "role"),
-            "message_field_content": ds_cfg.get("message_field_content", "content"),
-            "message_field_training": ds_cfg.get("message_field_training", None),
-            "message_field_training_detail": ds_cfg.get(
+            "message_property_mappings": dataset_config.get(
+                "message_property_mappings", {}
+            ),
+            "message_field_training": dataset_config.get(
+                "message_field_training", None
+            ),
+            "message_field_training_detail": dataset_config.get(
                 "message_field_training_detail",
                 None,
             ),
-            "roles": ds_cfg.get("roles"),
-            "drop_system_message": ds_cfg.get("drop_system_message", False),
+            "field_messages": dataset_config.get("field_messages", "messages"),
+            "roles": dataset_config.get("roles"),
+            "drop_system_message": dataset_config.get("drop_system_message", False),
             # we need to add one for detecting sequences with exceeding the `sequence_len` limit.
             "max_length": cfg.sequence_len + 1,
             "processor": processor,
         }
 
-        strategy_params = self._get_strategy_params(cfg, ds_cfg)
+        strategy_params = self._get_strategy_params(cfg, dataset_config)
         strategy_cls = self._get_strategy_cls()
 
         strategy = strategy_cls(
@@ -550,9 +601,6 @@ class StrategyLoader:
             tokenizer=tokenizer,
             **strategy_params,
         )
-
-        if "field_messages" in ds_cfg and hasattr(strategy, "messages"):
-            strategy.messages = ds_cfg["field_messages"]
 
         return strategy
 

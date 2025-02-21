@@ -7,6 +7,7 @@ from datasets import Dataset
 from huggingface_hub import hf_hub_download
 from transformers import AutoTokenizer
 
+from axolotl.prompt_strategies.jinja_template_analyzer import JinjaTemplateAnalyzer
 from axolotl.utils.chat_templates import _CHAT_TEMPLATES
 
 
@@ -124,6 +125,12 @@ def fixture_llama3_tokenizer():
     return tokenizer
 
 
+@pytest.fixture(name="smollm2_tokenizer", scope="session", autouse=True)
+def fixture_smollm2_tokenizer():
+    tokenizer = AutoTokenizer.from_pretrained("HuggingFaceTB/SmolLM2-135M")
+    return tokenizer
+
+
 @pytest.fixture(name="mistralv03_tokenizer", scope="session", autouse=True)
 def fixture_mistralv03_tokenizer():
     tokenizer = AutoTokenizer.from_pretrained(
@@ -174,3 +181,32 @@ def fixture_llama3_2_vision_with_hardcoded_date() -> str:
     modified_template = template.replace(old_date_logic, new_date_logic)
 
     return modified_template
+
+
+@pytest.fixture(name="chat_template_jinja_with_optional_fields")
+def fixture_chat_template_jinja_with_optional_fields() -> str:
+    return """{% for message in messages %}
+{{'<|im_start|>'}}{{ message['role'] }}
+{% if message['thoughts'] is defined %}[Thoughts: {{ message['thoughts'] }}]{% endif %}
+{% if message['tool_calls'] is defined %}[Tool: {{ message['tool_calls'][0]['type'] }}]{% endif %}
+{{ message['content'] }}{{'<|im_end|>'}}
+{% endfor %}"""
+
+
+@pytest.fixture(name="basic_jinja_template_analyzer")
+def basic_jinja_template_analyzer():
+    return JinjaTemplateAnalyzer(
+        """{% for message in messages %}{% if message['role'] == 'system' and message['content'] %}{{'<|system|>
+' + message['content'] + '<|end|>
+'}}{% elif message['role'] == 'user' %}{{'<|user|>
+' + message['content'] + '<|end|>
+'}}{% elif message['role'] == 'assistant' %}{{'<|assistant|>
+' + message['content'] + '<|end|>
+'}}{% endif %}{% endfor %}{% if add_generation_prompt %}{{ '<|assistant|>
+' }}{% else %}{{ eos_token }}{% endif %}"""
+    )
+
+
+@pytest.fixture(name="mistral_jinja_template_analyzer")
+def mistral_jinja_template_analyzer(mistralv03_tokenizer_chat_template_jinja):
+    return JinjaTemplateAnalyzer(mistralv03_tokenizer_chat_template_jinja)

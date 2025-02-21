@@ -396,8 +396,8 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
     ):
         total_num_tokens = np.sum(
             train_dataset.select_columns("input_ids")
-            .to_pandas()
-            .apply(lambda x: len(x))  # pylint: disable=unnecessary-lambda
+            .to_pandas()["input_ids"]
+            .apply(len)
             .values
         )
         LOG.debug(f"total_num_tokens: {total_num_tokens:_}", main_process_only=True)
@@ -576,7 +576,7 @@ def prepare_opinionated_env(cfg):
 def setup_trainer(
     cfg, train_dataset, eval_dataset, model, tokenizer, processor, total_num_steps
 ):
-    if cfg.rl in ("dpo", "ipo", "orpo", "kto", "simpo"):
+    if cfg.rl:
         trainer_builder = HFRLTrainerBuilder(cfg, model[0], tokenizer, processor)
         trainer_builder.model_ref = model[1]
         trainer_builder.peft_config = model[2]

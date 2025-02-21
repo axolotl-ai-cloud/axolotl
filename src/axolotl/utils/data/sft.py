@@ -43,7 +43,7 @@ from axolotl.prompters import (
     UnsupportedPrompter,
 )
 from axolotl.utils.data.pretraining import wrap_pretraining_dataset
-from axolotl.utils.data.shared import load_dataset_w_config
+from axolotl.utils.data.shared import datasets_w_name_generator, load_dataset_w_config
 from axolotl.utils.data.utils import (
     deduplicate_and_log_datasets,
     drop_long_seq_in_dataset,
@@ -180,6 +180,7 @@ def load_tokenized_prepared_datasets(
 ) -> Tuple[DatasetDict, List[Prompter]]:
     cfg_datasets = cfg.test_datasets if split == "test" else cfg.datasets
     tokenizer_name = cfg.tokenizer_config
+
     ds_hash = str(
         md5(
             (
@@ -263,30 +264,11 @@ def load_tokenized_prepared_datasets(
 
         datasets = []
 
-        def for_d_in_datasets(dataset_configs):
-            for dataset in dataset_configs:
-                if dataset.name and isinstance(dataset.name, list):
-                    # load_dataset doesn't properly handle multiple named configurations
-                    # at the same time for a given dataset
-                    for name in dataset.name:
-                        yield DictDefault({**dataset, "name": name})
-                elif dataset.preprocess_shards and not dataset.shards:
-                    for shard in range(dataset.preprocess_shards):
-                        yield DictDefault(
-                            {
-                                **dataset,
-                                "shards": dataset.preprocess_shards,
-                                "shards_idx": shard,
-                            }
-                        )
-                else:
-                    yield dataset
-
         streaming_ds = False
         if preprocess_iterable:
             streaming_ds = True
         # pylint: disable=invalid-name
-        for config_dataset in for_d_in_datasets(cfg_datasets):
+        for config_dataset in datasets_w_name_generator(cfg_datasets):
             ds: Union[Dataset, DatasetDict] = load_dataset_w_config(
                 config_dataset, use_auth_token, streaming=streaming_ds
             )
