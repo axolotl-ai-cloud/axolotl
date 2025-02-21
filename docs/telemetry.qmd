@@ -3,4 +3,44 @@ title: Telemetry
 description: A description of the opt-out telemetry implementation in Axolotl.
 ---
 
-TODO.
+# Telemetry in Axolotl
+
+Axolotl implements anonymous telemetry to help maintainers understand how the library
+is used and where users encounter issues. This data helps prioritize features, optimize
+performance, and fix bugs.
+
+## Data Collection
+
+We collect:
+
+- **System info**: OS, Python version, PyTorch version, Transformers version, Axolotl version
+- **Hardware info**: CPU count, memory, GPU count and models
+- **Usage patterns**: Models (from a whitelist) and configurations used
+- **Error tracking**: Stack traces and error messages (sanitized to remove personal information)
+
+No personally identifiable information (PII) is collected.
+
+## Implementation
+
+Telemetry is implemented using PostHog and consists of:
+
+1. `axolotl.telemetry.TelemetryManager`: A singleton class that initializes the telemetry system and provides methods for tracking events.
+2. `axolotl.telemetry.errors.track_errors`: A decorator that captures exceptions and sends sanitized stack traces.
+
+## Opt-Out Mechanism
+
+Telemetry is **enabled by default** on an opt-out basis. To disable it, set either:
+
+- `AXOLOTL_DO_NOT_TRACK=1` (Axolotl-specific)
+- `DO_NOT_TRACK=1` (Global standard)
+
+To acknowledge and explicitly enable telemetry (and remove the warning message), set:
+`AXOLOTL_DO_NOT_TRACK=0`
+
+## Privacy
+
+- Stack traces are sanitized to remove personal file paths, keeping only the Axolotl code paths
+- Each run generates a unique anonymous ID
+- Only whitelisted organization information is tracked
+    - See `axolotl/telemetry/whitelist.yaml` for the set of whitelisted organizations
+- Telemetry is only sent from the main process to avoid duplicate events

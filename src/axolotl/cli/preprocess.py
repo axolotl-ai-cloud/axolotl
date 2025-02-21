@@ -18,12 +18,14 @@ from axolotl.cli.checks import check_accelerate_default_config, check_user_token
 from axolotl.cli.config import load_cfg
 from axolotl.common.const import DEFAULT_DATASET_PREPARED_PATH
 from axolotl.common.datasets import load_datasets, load_preference_datasets
+from axolotl.telemetry.errors import send_errors
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.trainer import disable_datasets_caching
 
 LOG = logging.getLogger(__name__)
 
 
+@send_errors
 def do_preprocess(cfg: DictDefault, cli_args: PreprocessCliArgs) -> None:
     """
     Preprocesses dataset specified in axolotl config.

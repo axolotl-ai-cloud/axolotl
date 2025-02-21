@@ -23,7 +23,7 @@ from axolotl.contribs.lgpl.unsloth import (  # pylint: disable = no-name-in-modu
 )
 from axolotl.logging_config import configure_logging
 from axolotl.telemetry import TelemetryManager
-from axolotl.telemetry.manager import track_errors
+from axolotl.telemetry.errors import send_errors
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.freeze import freeze_layers_except
 from axolotl.utils.models import load_model, load_processor, load_tokenizer
@@ -44,7 +44,7 @@ LOG = get_logger(__name__)
 TELEMETRY_MANAGER = TelemetryManager.get_instance()
 
 
-@track_errors
+@send_errors
 def train(
     *, cfg: DictDefault, dataset_meta: TrainDatasetMeta
 ) -> Tuple[Union[PeftModel, PreTrainedModel], PreTrainedTokenizer]:
@@ -89,11 +89,11 @@ def train(
     if model.generation_config is not None:
         model.generation_config.do_sample = True
 
-    TELEMETRY_MANAGER.track_event(
+    TELEMETRY_MANAGER.send_event(
         event_type="model-load", properties=model.config.to_dict()
     )
     if peft_config:
-        TELEMETRY_MANAGER.track_event(
+        TELEMETRY_MANAGER.send_event(
             event_type="peft-config-load", properties=peft_config.to_dict()
         )
 
@@ -187,7 +187,7 @@ def train(
     if cfg.group_by_length:
         LOG.info("hang tight... sorting dataset for group_by_length")
 
-    TELEMETRY_MANAGER.track_event(event_type="train-start")
+    TELEMETRY_MANAGER.send_event(event_type="train-start")
 
     pretrain_hooks(cfg, trainer)
 
@@ -204,7 +204,7 @@ def train(
 
     post_train_hooks(cfg, trainer)
 
-    TELEMETRY_MANAGER.track_event(event_type="train-end")
+    TELEMETRY_MANAGER.send_event(event_type="train-end")
 
     LOG.info(f"Training Completed!!! Saving pre-trained model to {cfg.output_dir}")
 

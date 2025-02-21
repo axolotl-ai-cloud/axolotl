@@ -27,6 +27,7 @@ from torch.distributed.checkpoint.format_utils import _EmptyStateDictLoadPlanner
 from axolotl.cli.args import TrainerCliArgs
 from axolotl.cli.art import print_axolotl_text_art
 from axolotl.cli.config import load_cfg
+from axolotl.telemetry.errors import send_errors
 
 LOG = logging.getLogger(__name__)
 
@@ -120,6 +121,7 @@ def _distributed_checkpoint_to_merged_weights(
     return save_path_
 
 
+@send_errors
 def merge_fsdp_weights(
     checkpoint_dir: str,
     output_path: str,

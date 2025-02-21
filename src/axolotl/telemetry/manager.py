@@ -5,13 +5,10 @@ import logging
 import os
 import platform
 import time
-import traceback
 import uuid
 from dataclasses import dataclass
-from functools import wraps
-from inspect import getmodule
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import posthog
 import psutil
@@ -24,8 +21,8 @@ from axolotl.utils.distributed import is_main_process
 
 LOG = logging.getLogger(__name__)
 
-POSTHOG_WRITE_KEY = "phc_RbAa7Bxu6TLIN9xd8gbg1PLemrStaymi8pxQbRbIwfC"
-ENABLED_WARNING_SLEEP_SECONDS = 10
+POSTHOG_WRITE_KEY = "phc_1kUR0o04oJKKTTeSsIz2Mfm5mpiVsQEf2WOlzljMD7y"
+ENABLED_WARNING_SLEEP_SECONDS = 15
 ENABLED_WARNING = (
     "\nTelemetry is enabled. This helps Axolotl's maintainers by providing insights into:\n"
     "- Which models and configurations are most commonly used\n"
@@ -166,18 +163,6 @@ class TelemetryManager:
         """Remove personal information from file paths"""
         return Path(path).name
 
-    def _sanitize_error(self, error: str) -> str:
-        """Remove personal information from error messages"""
-        # Replace file paths with just filename
-        sanitized = error
-        try:
-            for path in Path(error).parents:
-                sanitized = sanitized.replace(str(path), "")
-        except (ValueError, RuntimeError) as e:
-            LOG.debug(f"Could not parse path in error message: {e}")
-
-        return sanitized
-
     def _get_system_info(self) -> dict[str, Any]:
         """Collect system information"""
         gpu_info = []
@@ -202,8 +187,8 @@ class TelemetryManager:
             "gpu_info": gpu_info,
         }
 
-    def track_event(self, event_type: str, properties: dict[str, Any] | None = None):
-        """Track a telemetry event"""
+    def send_event(self, event_type: str, properties: dict[str, Any] | None = None):
+        """Send a telemetry event"""
         if not self.enabled:
             return
 
@@ -218,63 +203,16 @@ class TelemetryManager:
             posthog.capture(
                 distinct_id=self.run_id,
                 event=event_type,
-                properties={
-                    "system_info": self.system_info,
-                    **properties,
-                },
+                properties=properties,
             )
         except Exception as e:  # pylint: disable=broad-exception-caught
             LOG.warning(f"Failed to send telemetry event: {e}")
+
+    def send_system_info(self):
+        """Helper method for sending system info"""
+        self.send_event(event_type="system-info", properties=self.system_info)
 
     def shutdown(self):
         """Ensure all queued events are processed before shutdown"""
         if self.enabled:
             posthog.flush()
-
-
-ERROR_HANDLED = False
-
-
-def track_errors(func: Callable) -> Callable:
-    """Decorator to track errors in a function"""
-
-    @wraps(func)
-    def wrapper(*args, **kwargs) -> Any:
-        telemetry_manager = TelemetryManager.get_instance()
-        if not telemetry_manager.enabled:
-            return func(*args, **kwargs)
-
-        try:
-            return func(*args, **kwargs)
-        except Exception as exception:
-            # Only track if we're not already handling an error. This prevents us from
-            # capturing an error more than once in nested decorated function calls.
-            global ERROR_HANDLED  # pylint: disable=global-statement
-            if not ERROR_HANDLED:
-                ERROR_HANDLED = True
-
-                # Get function module path
-                module = getmodule(func)
-                module_path = (
-                    f"{module.__name__}.{func.__name__}" if module else func.__name__
-                )
-
-                # Get stack trace
-                stack_trace = "".join(
-                    traceback.format_exception(
-                        type(exception), exception, exception.__traceback__
-                    )
-                )
-
-                # Send error telemetry
-                telemetry_manager.track_event(
-                    event_type=f"{module_path}-error",
-                    properties={
-                        "exception": str(exception),
-                        "stack_trace": stack_trace,
-                    },
-                )
-
-            raise
-
-    return wrapper
