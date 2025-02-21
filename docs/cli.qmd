@@ -243,7 +243,7 @@ axolotl lm-eval config.yml --cloud cloud_config.yml
 ## Cloud Configuration Options
 
 ```yaml
-provider: #compute provider, currently only `modal` is supported
+provider: # compute provider, currently only `modal` is supported
 gpu: # GPU type to use
 gpu_count: # Number of GPUs (default: 1)
 memory: # RAM in GB (default: 128)
