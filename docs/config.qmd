@@ -78,8 +78,8 @@ tf32: true # require >=ampere
 bfloat16: true # require >=ampere
 float16: true
 
-# Tensor parallel
-tp_size: 1 # should be set to the number of cuda devices available
+# Use Tensor parallel
+tensor_parallel: true # require multi-gGPU
 
 # Limit the memory for all available GPUs to this amount (if an integer, expressed in gigabytes); default: unset
 gpu_memory_limit: 20GiB
