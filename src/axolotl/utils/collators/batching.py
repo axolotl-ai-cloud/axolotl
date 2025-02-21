@@ -3,20 +3,11 @@ DataCollator for axolotl to pad labels and position_ids for packed sequences
 """
 
 from dataclasses import dataclass
-from typing import Any, List, Optional, Union
+from typing import Any, Optional, Union
 
 import numpy as np
-import torch
 from transformers import PreTrainedTokenizerBase
 from transformers.utils import PaddingStrategy
-
-from axolotl.monkeypatch.flex_attn import (
-    create_block_causal_mask,
-    packed_block_causal_mask,
-)
-from axolotl.monkeypatch.utils import (
-    get_packed_mask_from_pos_ids,
-)
 
 
 @dataclass
@@ -158,42 +149,6 @@ class BatchSamplerDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):
                     ]
                     out_features[i][feature] = np.concatenate(arrays)
         return super().__call__(out_features, return_tensors=return_tensors)
-
-
-@dataclass
-class FlexBatchSamplerDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):
-    """
-    Collator for multipack specific to Flex Attention using the BatchSampler
-    """
-
-    def __call__(self, features, return_tensors=None):
-        if not isinstance(features[0], list):
-            features = [features]
-        out_features = [{} for _ in features]
-        for i, features_ in enumerate(features):
-            for feature in features_[0].keys():
-                if feature == "length":
-                    continue
-                elif feature == "attention_mask":
-                    """arrays = [
-                        i * np.array(item[feature])
-                        for i, item in enumerate(features_)
-                        if feature in item
-                    ]
-                    out_features[i][feature] = np.concatenate(arrays)"""
-                    continue
-                else:
-                    arrays = [
-                        np.array(item[feature]) for item in features_ if feature in item
-                    ]
-                    out_features[i][feature] = np.concatenate(arrays)
-        out = super().__call__(out_features, return_tensors=return_tensors)
-
-        # collated_seq_lens, totalseqlens = get_seqlens_from_pos_ids(out["position_ids"])
-        # out["attention_mask"] = packed_block_causal_mask(collated_seq_lens, totalseqlens)
-        out["attention_mask"] = get_packed_mask_from_pos_ids(out["position_ids"])
-        # out["attention_mask"] = create_block_causal_mask(collated_seq_lens, max_seq_len)
-        return out
 
 
 @dataclass

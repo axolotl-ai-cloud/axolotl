@@ -79,7 +79,6 @@ from axolotl.utils.chat_templates import get_chat_template_from_config
 from axolotl.utils.collators import (
     BatchSamplerDataCollatorForSeq2Seq,
     DataCollatorForSeq2Seq,
-    FlexBatchSamplerDataCollatorForSeq2Seq,
     MambaDataCollator,
     V2BatchSamplerDataCollatorForSeq2Seq,
 )
@@ -817,7 +816,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             Union[
                 V2BatchSamplerDataCollatorForSeq2Seq,
                 BatchSamplerDataCollatorForSeq2Seq,
-                FlexBatchSamplerDataCollatorForSeq2Seq,
                 DataCollatorForSeq2Seq,
                 DataCollatorWithFlattening,
                 RewardDataCollatorWithPadding,
