@@ -4,6 +4,10 @@ on:
   pull_request:
     paths:
       - 'tests/e2e/multigpu/*.py'
+      - 'requirements.txt'
+      - 'setup.py'
+      - 'pyproject.toml'
+      - '.github/workflows/multi-gpu-e2e.yml'
   workflow_dispatch:
   schedule:
     - cron: '0 0 * * 1,4'  # Runs at 00:00 UTC every monday & thursday
