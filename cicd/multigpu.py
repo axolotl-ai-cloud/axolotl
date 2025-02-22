@@ -37,15 +37,11 @@ temp_dir = tempfile.mkdtemp()
 with open(pathlib.Path(temp_dir) / "Dockerfile", "w", encoding="utf-8") as f:
     f.write(dockerfile_contents)
 
-cicd_image = (
-    Image.from_dockerfile(
-        pathlib.Path(temp_dir) / "Dockerfile",
-        force_build=True,
-        gpu="A10G",
-    )
-    .env(df_args)
-    .pip_install("fastapi==0.110.0", "pydantic==2.6.3")
-)
+cicd_image = Image.from_dockerfile(
+    pathlib.Path(temp_dir) / "Dockerfile",
+    force_build=True,
+    gpu="A10G",
+).env(df_args)
 
 app = App("Axolotl CI/CD", secrets=[])
 

@@ -123,8 +123,6 @@ class ModalCloud(Cloud):
         if env := self.get_env():
             image = image.env(env)
 
-        image = image.pip_install("fastapi==0.110.0", "pydantic==2.6.3")
-
         return image
 
     def get_secrets(self):
