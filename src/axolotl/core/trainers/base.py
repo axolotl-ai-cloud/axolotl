@@ -25,6 +25,7 @@ from trl.trainer.utils import pad_to_length
 from axolotl.monkeypatch.relora import ReLoRAScheduler
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 from axolotl.utils.schedulers import (
+    JaggedLRRestartScheduler,
     get_cosine_schedule_with_min_lr,
     get_cosine_schedule_with_quadratic_warmup,
     get_cosine_schedule_with_warmup_decay_constant,
@@ -143,7 +144,21 @@ class SchedulerMixin(Trainer):
                     min_lr_ratio=self.args.cosine_min_lr_ratio,
                 )
             else:
-                return super().create_scheduler(num_training_steps, optimizer=optimizer)
+                super().create_scheduler(num_training_steps, optimizer=optimizer)
+                if self.args.jagged_restart_steps:
+                    warmup_steps = (
+                        self.args.jagged_restarts_warmup_steps or 10
+                    )
+                    anneal_steps = (
+                        self.args.jagged_restarts_anneal_steps or 1
+                    )
+                    self.lr_scheduler = JaggedLRRestartScheduler(  # pylint: disable=attribute-defined-outside-init
+                        optimizer,
+                        self.lr_scheduler,
+                        self.args.jagged_restart_steps,
+                        warmup_steps,
+                        anneal_steps,
+                    )
         else:
             if use_cosine_quadratic:
                 LOG.warning("axolotl's cosine scheduler with quadratic warmup not used (e.g., because of deepspeed).")

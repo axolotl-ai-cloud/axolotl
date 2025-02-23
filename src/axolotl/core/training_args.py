@@ -76,6 +76,22 @@ class AxolotlTrainingMixins:
         default=0.9,
         metadata={"help": "prune ratio for magnitude pruning of the optimizer"},
     )
+    jagged_restart_steps: Optional[int] = field(
+        default=None,
+        metadata={"help": "how often to reset for jagged restarts"},
+    )
+    jagged_restarts_warmup_steps: Optional[int] = field(
+        default=None,
+        metadata={
+            "help": "how many warmup steps to take after reset for jagged restarts"
+        },
+    )
+    jagged_restarts_anneal_steps: Optional[int] = field(
+        default=None,
+        metadata={
+            "help": "how many anneal steps to take before reset for jagged restarts"
+        },
+    )
     bench_split: Optional[str] = field(
         default="eval", metadata={"help": "The benchmark split to run on"}
     )
