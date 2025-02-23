@@ -253,7 +253,7 @@ class TrainerBuilderBase(abc.ABC):
         logging_steps = (
             self.cfg.logging_steps
             if self.cfg.logging_steps is not None
-            else None
+            else 500  # transformers defaults to 500
             if not total_num_steps
             else max(min(int(0.005 * total_num_steps), 10), 1)
         )
