@@ -68,11 +68,6 @@ class TelemetryManager:
         self.enabled, self.explicit_enable = self._check_telemetry_enabled()
 
         if self.enabled:
-            # Warn about telemetry collection
-            if not self.explicit_enable:
-                LOG.warning(ENABLED_WARNING)
-                time.sleep(ENABLED_WARNING_SLEEP_SECONDS)
-
             self.run_id = str(uuid.uuid4())
             self.whitelist = self._load_whitelist()
             self.system_info = self._get_system_info()
@@ -105,10 +100,6 @@ class TelemetryManager:
                 - Boolean denoting whether telemetry is enabled or disabled.
                 - Boolean denoting whether telemetry is explicitly enabled or not.
         """
-        # In the distributed setting, check whether we're running on rank 0
-        if not is_main_process():
-            return False, False
-
         # Parse relevant env vars and fill opt-out default values
         axolotl_do_not_track = os.getenv("AXOLOTL_DO_NOT_TRACK")
         do_not_track = os.getenv("DO_NOT_TRACK")
@@ -127,6 +118,16 @@ class TelemetryManager:
             "1",
             "true",
         ) and do_not_track.lower() not in ("1", "true")
+
+        # Show warning (and sleep on all ranks) unless explicitly enabled
+        if enabled and not explicit_enabled:
+            if is_main_process():
+                LOG.warning(ENABLED_WARNING)
+            time.sleep(ENABLED_WARNING_SLEEP_SECONDS)
+
+        # Only rank 0 will send telemetry
+        if not is_main_process():
+            return False, False
 
         return enabled, explicit_enabled
 
