@@ -89,13 +89,14 @@ def train(
     if model.generation_config is not None:
         model.generation_config.do_sample = True
 
-    TELEMETRY_MANAGER.send_event(
-        event_type="model-load", properties=model.config.to_dict()
-    )
-    if peft_config:
+    if TELEMETRY_MANAGER.enabled:
         TELEMETRY_MANAGER.send_event(
-            event_type="peft-config-load", properties=peft_config.to_dict()
+            event_type="model-load", properties=model.config.to_dict()
         )
+        if peft_config:
+            TELEMETRY_MANAGER.send_event(
+                event_type="peft-config-load", properties=peft_config.to_dict()
+            )
 
     model_ref = None
     if cfg.rl and cfg.rl != "orpo":
@@ -187,9 +188,8 @@ def train(
     if cfg.group_by_length:
         LOG.info("hang tight... sorting dataset for group_by_length")
 
-    TELEMETRY_MANAGER.send_event(event_type="train-start")
-
-    pretrain_hooks(cfg, trainer)
+    if TELEMETRY_MANAGER.enabled:
+        TELEMETRY_MANAGER.send_event(event_type="train-start")
 
     if cfg.flash_optimum:
         with torch.backends.cuda.sdp_kernel(
@@ -202,9 +202,8 @@ def train(
     else:
         trainer.train(resume_from_checkpoint=resume_from_checkpoint)
 
-    post_train_hooks(cfg, trainer)
-
-    TELEMETRY_MANAGER.send_event(event_type="train-end")
+    if TELEMETRY_MANAGER.enabled:
+        TELEMETRY_MANAGER.send_event(event_type="train-end")
 
     LOG.info(f"Training Completed!!! Saving pre-trained model to {cfg.output_dir}")
 
@@ -309,21 +308,3 @@ def train(
         trainer.push_to_hub()
 
     return model, tokenizer
-
-
-def pretrain_hooks(_cfg, _trainer):
-    """
-    Run hooks right before kicking off the training
-    :param cfg:
-    :param trainer:
-    :return:
-    """
-
-
-def post_train_hooks(_cfg, _trainer):
-    """
-    Run hooks right after training completes
-    :param cfg:
-    :param trainer:
-    :return:
-    """
