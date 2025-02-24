@@ -176,7 +176,6 @@ def load_cfg(config: Union[str, Path] = Path("examples/"), **kwargs) -> DictDefa
     # Load the config from the yaml file
     with open(config, encoding="utf-8") as file:
         cfg: DictDefault = DictDefault(yaml.safe_load(file))
-
     TELEMETRY_MANAGER.send_event(event_type="config-loaded", properties=cfg)
 
     # If there are any options passed in the cli, if it is something that seems valid

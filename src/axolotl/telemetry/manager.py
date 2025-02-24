@@ -42,6 +42,14 @@ ENABLED_WARNING = (
 
 WHITELIST_PATH = str(Path(__file__).parent / "whitelist.yaml")
 
+FIELDS_WITH_ORGS = [
+    "base_model",
+    "tokenizer_config",
+    "base_model_config",
+]
+FIELDS_TO_REDACT = ["resume_from_checkpoint", "hub_model_id"]
+PREFIXES_TO_REDACT = ["wandb_", "comet_", "mlflow_", "gradio_"]
+
 
 class TelemetryManager:
     """Manages telemetry collection and transmission"""
@@ -154,13 +162,14 @@ class TelemetryManager:
     def _redact_paths(self, properties: dict[str, Any]) -> dict[str, Any]:
         """
         Redact properties to remove any paths, so as to avoid inadvertently collecting
-        private or personally identifiable information (PII).
+        private or personally identifiable information (PII). We also remove
+        information related to Wandb, MLflow, etc. configuration.
 
         Args:
             properties: Dictionary of properties to redact.
 
         Returns:
-            Properties dictionary with paths redacted.
+            Properties dictionary with redaction applied.
         """
         if not properties:
             return {}
@@ -170,15 +179,19 @@ class TelemetryManager:
 
         def redact_value(value: Any, key: str = "") -> Any:
             """Recursively sanitize values, redacting those with path-like keys"""
-            # Special case: base_model should be redacted if org is not whitelisted
-            if key == "base_model":
-                org = value.split("/")[0]
-                if org not in self.whitelist["organizations"]:
-                    return "[REDACTED]"
+            if isinstance(key, str) and isinstance(value, str):
+                # Fields that should be redacted if org is not whitelisted
+                if key in FIELDS_WITH_ORGS:
+                    org = value.split("/")[0]
+                    if org not in self.whitelist["organizations"]:
+                        return "[REDACTED]"
 
-            if isinstance(value, str):
-                # If the key suggests this is a path, redact it
-                if any(indicator in key.lower() for indicator in path_indicators):
+                # Other redaction special cases
+                if (
+                    key in FIELDS_TO_REDACT
+                    or any(prefix in key for prefix in PREFIXES_TO_REDACT)
+                    or any(indicator in key.lower() for indicator in path_indicators)
+                ):
                     return "[REDACTED]"
 
             # Handle nested structures
@@ -231,16 +244,20 @@ class TelemetryManager:
 
         # Wrap PostHog errors in try / except to not raise errors during Axolotl usage
         try:
-            LOG.warning(f"*** Sending telemetry for {event_type} ***")
-
             # Send event via PostHog
             posthog.capture(
                 distinct_id=self.run_id,
                 event=event_type,
                 properties=properties,
+                disable_geoip=True,
             )
         except Exception as e:  # pylint: disable=broad-exception-caught
             LOG.warning(f"Failed to send telemetry event: {e}")
+
+        # Additionally, send system info telemetry when loading config.
+        # NOTE: Is this the best place for this?
+        if event_type == "config-loaded":
+            self.send_system_info()
 
     def send_system_info(self):
         """Helper method for sending system info"""
