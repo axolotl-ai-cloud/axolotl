@@ -1,6 +1,7 @@
 """Telemetry manager and associated utilities."""
 
 import atexit
+import importlib
 import logging
 import os
 import platform
@@ -12,10 +13,8 @@ from typing import Any
 import posthog
 import psutil
 import torch
-import transformers
 import yaml
 
-import axolotl
 from axolotl.utils.distributed import is_main_process
 
 LOG = logging.getLogger(__name__)
@@ -32,7 +31,7 @@ ENABLED_WARNING = (
     "This data helps us prioritize features, optimize performance, and fix bugs.\n\n"
     "To disable telemetry, set either:\n"
     "- AXOLOTL_DO_NOT_TRACK=1 (Axolotl-specific)\n"
-    "- DO_NOT_TRACK=1 (Global standard)\n\n"
+    "- DO_NOT_TRACK=1 (Global standard; see https://consoledonottrack.com/)\n\n"
     "To remove this warning and continue with telemetry enabled,"
     "explicitly set AXOLOTL_DO_NOT_TRACK=0 (and leave DO_NOT_TRACK unset / set to 0)\n\n"
     "No personally identifiable information is collected."
@@ -42,13 +41,39 @@ ENABLED_WARNING = (
 
 WHITELIST_PATH = str(Path(__file__).parent / "whitelist.yaml")
 
-FIELDS_WITH_ORGS = [
+# NOTE: Keep these up to date with any config schema changes
+FIELDS_WITH_ORGS = {
     "base_model",
     "tokenizer_config",
     "base_model_config",
-]
-FIELDS_TO_REDACT = ["resume_from_checkpoint", "hub_model_id"]
-PREFIXES_TO_REDACT = ["wandb_", "comet_", "mlflow_", "gradio_"]
+    "pretraining_dataset",  # NOTE: this field may be a string or a dictionary
+}
+FIELDS_TO_REDACT = {"resume_from_checkpoint", "hub_model_id"}
+PREFIXES_TO_REDACT = {"wandb_", "comet_", "mlflow_", "gradio_"}
+PATH_INDICATORS = {"path", "dir"}
+
+RELEVANT_PACKAGES = {
+    "torch",
+    "transformers",
+    "trl",
+    "datasets",
+    "peft",
+    "bitsandbytes",
+    "accelerate",
+    "optimum",
+    "deepspeed",
+    "ray",
+    "axolotl",
+    "triton",
+    "mamba-ssm",
+    "flash-attn",
+    "xformers",
+    "autoawq",
+    "tokenizers",
+    "sentencepiece",
+    "torchao",
+    "lm_eval",
+}
 
 
 class TelemetryManager:
@@ -78,7 +103,13 @@ class TelemetryManager:
         if self.enabled:
             self.run_id = str(uuid.uuid4())
             self.whitelist = self._load_whitelist()
-            self.system_info = self._get_system_info()
+
+            try:
+                self.system_info = self._get_system_info()
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                LOG.warning(f"Error during system info collection: {e}")
+                self.system_info = None
+
             self._init_posthog()
 
             # Register shutdown method to flush posthog telemetry
@@ -174,9 +205,6 @@ class TelemetryManager:
         if not properties:
             return {}
 
-        # NOTE: Keep this up to date with any config schema changes
-        path_indicators = {"path", "dir"}
-
         def redact_value(value: Any, key: str = "") -> Any:
             """Recursively sanitize values, redacting those with path-like keys"""
             if isinstance(key, str) and isinstance(value, str):
@@ -190,7 +218,7 @@ class TelemetryManager:
                 if (
                     key in FIELDS_TO_REDACT
                     or any(prefix in key for prefix in PREFIXES_TO_REDACT)
-                    or any(indicator in key.lower() for indicator in path_indicators)
+                    or any(indicator in key.lower() for indicator in PATH_INDICATORS)
                 ):
                     return "[REDACTED]"
 
@@ -208,27 +236,100 @@ class TelemetryManager:
         return redacted
 
     def _get_system_info(self) -> dict[str, Any]:
-        """Collect system information"""
+        """Collect system information for various hardware accelerators"""
         gpu_info = []
+        accelerator_type = "none"
+
+        # NVIDIA GPUs
         if torch.cuda.is_available():
+            accelerator_type = "cuda"
             for i in range(torch.cuda.device_count()):
                 gpu_info.append(
                     {
                         "name": torch.cuda.get_device_name(i),
                         "memory": torch.cuda.get_device_properties(i).total_memory,
+                        "type": "cuda",
                     }
                 )
+
+        # AMD GPUs
+        elif hasattr(torch, "hip") and torch.hip.is_available():
+            accelerator_type = "hip"
+            for i in range(torch.hip.device_count()):
+                gpu_info.append(
+                    {
+                        "name": torch.hip.get_device_name(i),
+                        "memory": torch.hip.get_device_properties(i).total_memory
+                        if hasattr(torch.hip, "get_device_properties")
+                        else None,
+                        "type": "hip",
+                    }
+                )
+
+        # Apple Silicon
+        elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            accelerator_type = "mps"
+            gpu_info.append(
+                {
+                    "name": "Apple Silicon",
+                    # NOTE: this is memory allocated to this process, not total memory
+                    "memory": torch.mps.driver_allocated_memory(),
+                    "type": "mps",
+                }
+            )
+
+        # Intel GPUs
+        elif hasattr(torch, "xpu") and torch.xpu.is_available():
+            accelerator_type = "xpu"
+            for i in range(torch.xpu.device_count()):
+                memory = None
+                if hasattr(torch.xpu, "get_device_properties"):
+                    memory = torch.xpu.get_device_properties(i).total_memory
+
+                gpu_info.append(
+                    {
+                        "name": torch.xpu.get_device_name(i),
+                        "memory": memory,
+                        "type": "xpu",
+                    }
+                )
+
+        # NPUs
+        elif hasattr(torch, "npu") and torch.npu.is_available():
+            accelerator_type = "npu"
+            for i in range(torch.npu.device_count()):
+                name = getattr(torch.npu, "get_device_name", lambda x: "NPU")(i)
+
+                memory = None
+                if hasattr(torch.npu, "get_device_properties"):
+                    memory = torch.npu.get_device_properties(i).total_memory
+
+                gpu_info.append(
+                    {
+                        "name": name,
+                        "memory": memory,
+                        "type": "npu",
+                    }
+                )
+
+        # Get relevant package versions
+        installed_packages = {}
+        for package in RELEVANT_PACKAGES:
+            try:
+                version = importlib.metadata.version(package)
+                installed_packages[f"{package}_version"] = version
+            except importlib.metadata.PackageNotFoundError:
+                pass
 
         return {
             "os": platform.system(),
             "python_version": platform.python_version(),
-            "pytorch_version": torch.__version__,
-            "transformers_version": transformers.__version__,
-            "axolotl_version": axolotl.__version__,
             "cpu_count": psutil.cpu_count(),
             "memory_total": psutil.virtual_memory().total,
-            "gpu_count": len(gpu_info),
-            "gpu_info": gpu_info,
+            "accelerator_type": accelerator_type,
+            "accelerator_count": len(gpu_info),
+            "accelerator_info": gpu_info,
+            **installed_packages,
         }
 
     def send_event(self, event_type: str, properties: dict[str, Any] | None = None):
