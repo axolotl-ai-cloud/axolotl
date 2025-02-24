@@ -11,7 +11,7 @@ import pytest
 from axolotl.cli.args import TrainerCliArgs
 from axolotl.common.datasets import load_datasets
 from axolotl.train import train
-from axolotl.utils.config import normalize_config
+from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 
 LOG = logging.getLogger("axolotl.tests.e2e")
@@ -35,7 +35,7 @@ class TestDeepseekV3:
                 "trust_remote_code": True,
                 "sample_packing": sample_packing,
                 "flash_attention": True,
-                "sequence_len": 1024,
+                "sequence_len": 2048,
                 "adapter": "lora",
                 "lora_r": 8,
                 "lora_alpha": 16,
@@ -44,7 +44,7 @@ class TestDeepseekV3:
                 "val_set_size": 0,
                 "datasets": [
                     {
-                        "path": "LDJnr/Puffin",
+                        "path": "mlabonne/FineTome-100k",
                         "type": "chat_template",
                         "field_messages": "conversations",
                         "message_property_mappings": {
@@ -52,6 +52,7 @@ class TestDeepseekV3:
                             "content": "value",
                         },
                         "drop_system_message": True,
+                        "split": "train[:1%]",
                     },
                 ],
                 "special_tokens": {
@@ -71,6 +72,7 @@ class TestDeepseekV3:
                 "bf16": True,
             }
         )
+        cfg = validate_config(cfg)
         normalize_config(cfg)
         cli_args = TrainerCliArgs()
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
@@ -90,15 +92,16 @@ class TestDeepseekV3:
                 "trust_remote_code": True,
                 "sample_packing": sample_packing,
                 "flash_attention": True,
-                "sequence_len": 1024,
+                "sequence_len": 2048,
                 "val_set_size": 0,
                 "datasets": [
                     {
-                        "path": "LDJnr/Puffin",
+                        "path": "mlabonne/FineTome-100k",
                         "type": "chat_template",
                         "field_messages": "conversations",
                         "message_field_role": "from",
                         "message_field_content": "value",
+                        "split": "train[:1%]",
                     },
                 ],
                 "chat_template": "deepseek_v3",
@@ -118,6 +121,7 @@ class TestDeepseekV3:
                 "bf16": True,
             }
         )
+        cfg = validate_config(cfg)
         normalize_config(cfg)
         cli_args = TrainerCliArgs()
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
