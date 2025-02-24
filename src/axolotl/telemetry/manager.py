@@ -52,6 +52,7 @@ FIELDS_TO_REDACT = {"resume_from_checkpoint", "hub_model_id"}
 PREFIXES_TO_REDACT = {"wandb_", "comet_", "mlflow_", "gradio_"}
 PATH_INDICATORS = {"path", "dir"}
 
+# pylint: disable=duplicate-code
 RELEVANT_PACKAGES = {
     "torch",
     "transformers",
