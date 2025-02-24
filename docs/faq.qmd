@@ -3,6 +3,7 @@ title: FAQ
 description: Frequently asked questions
 ---
 
+### General
 
 **Q: The trainer stopped and hasn't progressed in several minutes.**
 
@@ -24,6 +25,24 @@ description: Frequently asked questions
 
 > A: This is usually an issue with the GPU. This can be resolved through setting the os environment variable `CUDA_VISIBLE_DEVICES=0`. If you are on runpod, this is usually a pod issue. Starting a new pod should take care of it.
 
+### Chat templates
+
 **Q: `jinja2.exceptions.UndefinedError: 'dict object' has no attribute 'content' / 'role' / ____`**
 
 > A: This means that the property mapping for the stated attribute does not exist when building `chat_template` prompt. For example, if `no attribute 'content'`, please check you have added the correct mapping for `content` under `message_property_mappings`.
+
+**Q: `Empty template generated for turn ___`**
+
+> A: The `content` is empty for that turn.
+
+**Q: `Could not find content start/end boundary for turn __`**
+
+> A: The specific turn's start/end could not be detected. Please ensure you have set the `eos_token` following your `chat_template`. Otherwise, this could be a `chat_template` which doesn't use proper boundaries for each turn (like system). On the rare occurrence, make sure your content is not `[[dummy_message]]`. Please let us know about this.
+
+**Q: `Content end boundary is before start boundary for turn ___`**
+
+> A: This is an edge case which should not occur. Please create an Issue if this happens.
+
+**Q: `Content end boundary is the same as start boundary for turn ___. This is likely an empty turn.`**
+
+> A: This is likely an empty turn.
