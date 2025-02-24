@@ -4,6 +4,7 @@ import atexit
 import logging
 import os
 import platform
+import re
 import time
 import uuid
 from dataclasses import dataclass
@@ -122,6 +123,9 @@ class TelemetryManager:
         axolotl_do_not_track = os.getenv("AXOLOTL_DO_NOT_TRACK")
         do_not_track = os.getenv("DO_NOT_TRACK")
 
+        # If explicitly enabled, we'll disable the telemetry warning message
+        explicit_enabled = axolotl_do_not_track in ["0", "false"]
+
         if axolotl_do_not_track is None:
             axolotl_do_not_track = "0"
 
@@ -134,9 +138,6 @@ class TelemetryManager:
             "true",
         ) and do_not_track.lower() not in ("1", "true")
 
-        # If explicitly enabled, we'll disable the telemetry warning message
-        explicit_enabled = axolotl_do_not_track in ["0", "false"]
-
         return enabled, explicit_enabled
 
     def _load_whitelist(self) -> dict:
@@ -145,7 +146,7 @@ class TelemetryManager:
             return yaml.safe_load(f)
 
     def _is_whitelisted(self, base_model: str) -> bool:
-        """Check if model/org is in whitelist"""
+        """Check if model org is in whitelist"""
         if not base_model:
             return False
 
@@ -159,9 +160,66 @@ class TelemetryManager:
         posthog.project_api_key = POSTHOG_WRITE_KEY
         posthog.host = self.config.host
 
-    def _sanitize_path(self, path: str) -> str:
-        """Remove personal information from file paths"""
-        return Path(path).name
+    def _sanitize_properties(self, properties: dict[str, Any]) -> dict[str, Any]:
+        """
+        Sanitize properties to remove any personally identifiable information such as:
+        - File paths
+        - URLs / Links
+        - Cloud storage locations
+
+        Args:
+            properties: Dictionary of properties to sanitize.
+
+        Returns:
+            Sanitized properties dictionary.
+        """
+        if not properties:
+            return {}
+
+        # Define regex patterns for different types of personal information
+        patterns = {
+            # File paths (Unix and Windows)
+            "file_path": re.compile(r"(?:/|\\)(?:[^/\\]+(?:/|\\))+[^/\\]+"),
+            # URLs/Links
+            "url": re.compile(r"https?://(?:[-\w.]|(?:%[\da-fA-F]{2}))+(?:/[^/\s]*)*"),
+            # Cloud storage paths (S3, GCS, Azure)
+            "cloud_path": re.compile(r"s3://|gs://|azure://|blob.core.windows.net"),
+        }
+
+        # Deep copy isn't needed; we'll create a new dict with sanitized values
+        sanitized = {}
+
+        def sanitize_value(value):
+            """Recursively sanitize values within nested structures"""
+            if isinstance(value, str):
+                # For file paths, extract just the filename
+                path_match = patterns["file_path"].search(value)
+                if path_match:
+                    try:
+                        # Try to extract just the filename
+                        path_str = path_match.group(0)
+                        value = value.replace(path_str, Path(path_str).name)
+                    except (ValueError, RuntimeError):
+                        # If path extraction fails, just redact the path
+                        value = patterns["file_path"].sub("[REDACTED_PATH]", value)
+
+                # Redact other sensitive information
+                value = patterns["url"].sub("[REDACTED_URL]", value)
+                value = patterns["cloud_path"].sub("[REDACTED_CLOUD]", value)
+
+                return value
+            if isinstance(value, dict):
+                return {k: sanitize_value(v) for k, v in value.items()}
+            if isinstance(value, list):
+                return [sanitize_value(item) for item in value]
+
+            return value
+
+        # Apply the sanitization to all properties
+        for key, value in properties.items():
+            sanitized[key] = sanitize_value(value)
+
+        return sanitized
 
     def _get_system_info(self) -> dict[str, Any]:
         """Collect system information"""
@@ -194,6 +252,9 @@ class TelemetryManager:
 
         if properties is None:
             properties = {}
+
+        # Sanitize properties to remove PII
+        properties = self._sanitize_properties(properties)
 
         # Wrap PostHog errors in try / except to not raise errors during Axolotl usage
         try:
