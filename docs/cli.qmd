@@ -3,8 +3,8 @@ title: "CLI Reference"
 format:
   html:
     toc: true
-    toc-expand: 1
-    toc-depth: 2
+    toc-expand: 2
+    toc-depth: 3
 execute:
   enabled: false
 ---
@@ -13,7 +13,7 @@ The Axolotl CLI provides a streamlined interface for training and fine-tuning la
 the CLI commands, their usage, and common examples.
 
 
-# Basic Commands
+## Basic Commands
 
 All Axolotl commands follow this general structure:
 
@@ -23,9 +23,9 @@ axolotl <command> [config.yml] [options]
 
 The config file can be local or a URL to a raw YAML file.
 
-# Command Reference
+## Command Reference
 
-## fetch
+### fetch
 
 Downloads example configurations and deepspeed configs to your local machine.
 
@@ -40,7 +40,7 @@ axolotl fetch deepspeed_configs
 axolotl fetch examples --dest path/to/folder
 ```
 
-## preprocess
+### preprocess
 
 Preprocesses and tokenizes your dataset before training. This is recommended for large datasets.
 
@@ -65,7 +65,7 @@ dataset_prepared_path: Local folder for saving preprocessed data
 push_dataset_to_hub: HuggingFace repo to push preprocessed data (optional)
 ```
 
-## train
+### train
 
 Trains or fine-tunes a model using the configuration specified in your YAML file.
 
@@ -117,7 +117,7 @@ lora_alpha:
 
 
 
-## inference
+### inference
 
 Runs inference using your trained model in either CLI or Gradio interface mode.
 
@@ -137,7 +137,7 @@ cat prompt.txt | axolotl inference config.yml \
     --base-model="./completed-model"
 ```
 
-## merge-lora
+### merge-lora
 
 Merges trained LoRA adapters into the base model.
 
@@ -159,7 +159,7 @@ gpu_memory_limit: Limit GPU memory usage
 lora_on_cpu: Load LoRA weights on CPU
 ```
 
-## merge-sharded-fsdp-weights
+### merge-sharded-fsdp-weights
 
 Merges sharded FSDP model checkpoints into a single combined checkpoint.
 
@@ -168,7 +168,7 @@ Merges sharded FSDP model checkpoints into a single combined checkpoint.
 axolotl merge-sharded-fsdp-weights config.yml
 ```
 
-## evaluate
+### evaluate
 
 Evaluates a model's performance using metrics specified in the config.
 
@@ -177,7 +177,7 @@ Evaluates a model's performance using metrics specified in the config.
 axolotl evaluate config.yml
 ```
 
-## lm-eval
+### lm-eval
 
 Runs LM Evaluation Harness on your model.
 
@@ -197,7 +197,7 @@ lm_eval_batch_size: # Batch size for evaluation
 output_dir: # Directory to save evaluation results
 ```
 
-# Legacy CLI Usage
+## Legacy CLI Usage
 
 While the new Click-based CLI is preferred, Axolotl still supports the legacy module-based CLI:
 
@@ -223,12 +223,12 @@ When overriding CLI parameters in the legacy CLI, use same notation as in yaml f
 **Note:** This differs from the new Click-based CLI, which uses dash notation (e.g., `--lora-model-dir`). Keep this in mind if you're referencing newer documentation or switching between CLI versions.
 :::
 
-# Remote Compute with Modal Cloud
+## Remote Compute with Modal Cloud
 
 Axolotl supports running training and inference workloads on Modal cloud infrastructure. This is configured using a
 cloud YAML file alongside your regular Axolotl config.
 
-## Cloud Configuration
+### Cloud Configuration
 
 Create a cloud config YAML with your Modal settings:
 
@@ -253,7 +253,7 @@ env:            # Environment variables
   - HF_TOKEN
 ```
 
-## Running on Modal Cloud
+### Running on Modal Cloud
 
 Commands that support the --cloud flag:
 
@@ -271,7 +271,7 @@ axolotl train config.yml --cloud cloud_config.yml --no-accelerate
 axolotl lm-eval config.yml --cloud cloud_config.yml
 ```
 
-## Cloud Configuration Options
+### Cloud Configuration Options
 
 ```yaml
 provider: # compute provider, currently only `modal` is supported
