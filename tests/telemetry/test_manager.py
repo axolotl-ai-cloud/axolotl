@@ -196,8 +196,9 @@ def test_redacted_properties(manager):
             "path_to_model": "models/llama/7b",
             "message": "Training started",  # Should not be redacted
             "metrics": {"loss": 0.5, "accuracy": 0.95},  # Should not be redacted
+            "base_model": "models/local_model",
             "nested": {
-                "model_path": "/models/local/weights.pt",
+                "model_path": "/models/my_model",
                 "root_dir": "/home/user/projects",
                 "stats": {"steps": 1000, "epochs": 3},  # Should not be redacted
             },
@@ -211,10 +212,11 @@ def test_redacted_properties(manager):
         # Get the sanitized properties that were sent
         sanitized = mock_capture.call_args[1]["properties"]
 
-        # Check that path-like keys were redacted
+        # Check that path-like and base_model keys were redacted
         assert sanitized["filepath"] == "[REDACTED]"
         assert sanitized["windows_path"] == "[REDACTED]"
         assert sanitized["path_to_model"] == "[REDACTED]"
+        assert sanitized["base_model"] == "[REDACTED]"
 
         # Check that non-path values were preserved
         assert sanitized["message"] == "Training started"
