@@ -47,10 +47,16 @@ class TestDeepseekV3:
                         "path": "LDJnr/Puffin",
                         "type": "chat_template",
                         "field_messages": "conversations",
-                        "message_field_role": "from",
-                        "message_field_content": "value",
+                        "message_property_mappings": {
+                            "role": "from",
+                            "content": "value",
+                        },
+                        "drop_system_message": True,
                     },
                 ],
+                "special_tokens": {
+                    "bos_token": "<｜end▁of▁sentence｜>",
+                },
                 "chat_template": "deepseek_v3",
                 "num_epochs": 1,
                 "micro_batch_size": 1,
