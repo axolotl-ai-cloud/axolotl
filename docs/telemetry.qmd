@@ -13,10 +13,13 @@ performance, and fix bugs.
 
 We collect:
 
-- **System info**: OS, Python version, PyTorch version, Transformers version, Axolotl version
-- **Hardware info**: CPU count, memory, GPU count and models
-- **Usage patterns**: Models (from a whitelist) and configurations used
-- **Error tracking**: Stack traces and error messages (sanitized to remove personal information)
+- System info: OS, Python version, Axolotl version, PyTorch version, Transformers
+version, etc.
+- Hardware info: CPU count, memory, GPU count and models
+- Runtime metrics: Training progress, memory usage, timing information
+- Usage patterns: Models (from a whitelist) and configurations used
+- Error tracking: Stack traces and error messages (sanitized to remove personal
+information)
 
 No personally identifiable information (PII) is collected.
 
@@ -24,8 +27,17 @@ No personally identifiable information (PII) is collected.
 
 Telemetry is implemented using PostHog and consists of:
 
-1. `axolotl.telemetry.TelemetryManager`: A singleton class that initializes the telemetry system and provides methods for tracking events.
-2. `axolotl.telemetry.errors.track_errors`: A decorator that captures exceptions and sends sanitized stack traces.
+- `axolotl.telemetry.TelemetryManager`: A singleton class that initializes the
+telemetry system and provides methods for tracking events.
+- `axolotl.telemetry.errors.send_errors`: A decorator that captures exceptions and
+sends sanitized stack traces.
+- `axolotl.telemetry.runtime_metrics.RuntimeMetrics`: A dataclass that tracks runtime
+metrics during training.
+- `axolotl.telemetry.callbacks.TelemetryCallback`: A Trainer callback that sends
+runtime metrics telemetry.
+
+The telemetry system will block training startup for 15 seconds to ensure users are
+aware of data collection, unless telemetry is explicitly enabled or disabled.
 
 ## Opt-Out Mechanism
 
@@ -35,12 +47,13 @@ Telemetry is **enabled by default** on an opt-out basis. To disable it, set eith
 - `DO_NOT_TRACK=1` (Global standard)
 
 To acknowledge and explicitly enable telemetry (and remove the warning message), set:
-`AXOLOTL_DO_NOT_TRACK=0`
+`AXOLOTL_DO_NOT_TRACK=0`.
 
 ## Privacy
 
-- Stack traces are sanitized to remove personal file paths, keeping only the Axolotl code paths
-- Each run generates a unique anonymous ID
-- Only whitelisted organization information is tracked
+- All path-like config information is automatically redacted from telemetry data
+- Model information is only collected for whitelisted organizations
     - See `axolotl/telemetry/whitelist.yaml` for the set of whitelisted organizations
+- Each run generates a unique anonymous ID
+    - This allows us to link different telemetry events in a single same training run
 - Telemetry is only sent from the main process to avoid duplicate events
