@@ -76,7 +76,9 @@ def test_telemetry_disabled_with_do_not_track(telemetry_manager_class):
 
 def test_telemetry_disabled_for_non_main_process(telemetry_manager_class):
     """Test that telemetry is disabled for non-main processes"""
-    with patch("axolotl.telemetry.manager.is_main_process", return_value=False):
+    with patch.dict(os.environ, {"AXOLOTL_DO_NOT_TRACK": "0"}), patch(
+        "axolotl.telemetry.manager.is_main_process", return_value=False
+    ):
         manager = telemetry_manager_class()
         assert not manager.enabled
 
