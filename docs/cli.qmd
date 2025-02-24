@@ -86,6 +86,37 @@ axolotl train config.yml --no-accelerate
 axolotl train config.yml --resume-from-checkpoint path/to/checkpoint
 ```
 
+It is possible to run sweeps over multiple hyperparameters by passing in a sweeps config.
+
+```bash
+# Basic training with sweeps
+axolotl train config.yml --sweep path/to/sweep.yaml
+```
+
+Example sweep config:
+```yaml
+_:
+  # This section is for dependent variables we need to fix
+  - load_in_8bit: false
+    load_in_4bit: false
+    adapter: lora
+  - load_in_8bit: true
+    load_in_4bit: false
+    adapter: lora
+
+# These are independent variables
+learning_rate: [0.0003, 0.0006]
+lora_r:
+  - 16
+  - 32
+lora_alpha:
+  - 16
+  - 32
+  - 64
+```
+
+
+
 ## inference
 
 Runs inference using your trained model in either CLI or Gradio interface mode.
