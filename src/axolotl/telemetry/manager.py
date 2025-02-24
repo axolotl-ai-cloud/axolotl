@@ -168,17 +168,24 @@ class TelemetryManager:
         # TODO: Keep this up to date with any config schema changes
         path_indicators = {"path", "dir"}
 
-        def redact_value(value: Any, key: str = "") -> Any:
+        def redact_value(value: str, key: Any = None) -> Any:
             """Recursively sanitize values, redacting those with path-like keys"""
-            # If the key suggests this is a path, redact it
-            if any(indicator in key.lower() for indicator in path_indicators):
-                return "[REDACTED]"
+            # Special case: base_model should be redacted if org is not whitelisted
+            if key == "base_model":
+                org = value.split("/")[0]
+                if org not in self.whitelist["organizations"]:
+                    return "[REDACTED]"
 
-            # Handle nested structures
-            if isinstance(value, dict):
-                return {k: redact_value(v, k) for k, v in value.items()}
-            if isinstance(value, list):
-                return [redact_value(item) for item in value]
+            if isinstance(value, str):
+                # If the key suggests this is a path, redact it
+                if any(indicator in key.lower() for indicator in path_indicators):
+                    return "[REDACTED]"
+
+                # Handle nested structures
+                if isinstance(value, dict):
+                    return {k: redact_value(v, k) for k, v in value.items()}
+                if isinstance(value, list):
+                    return [redact_value(item) for item in value]
 
             return value
 
