@@ -112,6 +112,8 @@ class RuntimeMetrics:
 class RuntimeMetricsTracker:
     """Tracker for runtime metrics during training."""
 
+    update_interval = 100
+
     def __init__(self):
         """Initialize the runtime metrics tracker."""
         self.metrics = RuntimeMetrics(start_time=time.time())
@@ -132,9 +134,49 @@ class RuntimeMetricsTracker:
         self.metrics.current_step = step
         self.metrics.total_steps += 1
 
-        # Periodically update memory metrics (e.g., every 100 steps)
-        if step % 100 == 0:
+        # Periodically update memory metrics
+        if step % self.update_interval == 0:
             self.update_memory_metrics()
+
+    def _get_allocated_memory(self) -> dict[int, int]:
+        """
+        Helper function for getting accelerator-agnostic allocated memory.
+
+        Returns:
+            A dictionary mapping device IDs to allocated memory in bytes
+        """
+        memory_used: dict[int, int] = {}
+
+        # NVIDIA GPUs
+        if torch.cuda.is_available():
+            for i in range(torch.cuda.device_count()):
+                memory_used[i] = torch.cuda.memory_allocated(i)
+
+        # AMD GPUs
+        elif hasattr(torch, "hip") and torch.hip.is_available():
+            for i in range(torch.hip.device_count()):
+                if hasattr(torch.hip, "memory_allocated"):
+                    memory_used[i] = torch.hip.memory_allocated(i)
+
+        # Apple Silicon
+        elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            # MPS doesn't have per-device memory stats since there's only one device
+            if hasattr(torch.mps, "current_allocated_memory"):
+                memory_used[0] = torch.mps.current_allocated_memory()
+
+        # Intel GPUs
+        elif hasattr(torch, "xpu") and torch.xpu.is_available():
+            for i in range(torch.xpu.device_count()):
+                if hasattr(torch.xpu, "memory_allocated"):
+                    memory_used[i] = torch.xpu.memory_allocated(i)
+
+        # NPUs
+        elif hasattr(torch, "npu") and torch.npu.is_available():
+            for i in range(torch.npu.device_count()):
+                if hasattr(torch.npu, "memory_allocated"):
+                    memory_used[i] = torch.npu.memory_allocated(i)
+
+        return memory_used
 
     def update_memory_metrics(self):
         """Update peak memory usage metrics."""
@@ -142,13 +184,12 @@ class RuntimeMetricsTracker:
         cpu_memory = psutil.Process().memory_info().rss
         self.metrics.peak_cpu_memory = max(self.metrics.peak_cpu_memory, cpu_memory)
 
-        # GPU memory if available
-        if torch.cuda.is_available():
-            for i in range(torch.cuda.device_count()):
-                memory_used = torch.cuda.memory_allocated(i)
-                self.metrics.peak_gpu_memory[i] = max(
-                    self.metrics.peak_gpu_memory.get(i, 0), memory_used
-                )
+        # GPU memory (if available)
+        memory_used = self._get_allocated_memory()
+        for i, memory in memory_used.items():
+            self.metrics.peak_gpu_memory[i] = max(
+                self.metrics.peak_gpu_memory.get(i, 0), memory
+            )
 
     def get_memory_metrics(self) -> dict[str, Any]:
         """Get the current memory metrics as a dictionary."""
@@ -157,11 +198,12 @@ class RuntimeMetricsTracker:
             "peak_cpu_memory_bytes": self.metrics.peak_cpu_memory,
         }
 
-        if torch.cuda.is_available():
-            for i in range(torch.cuda.device_count()):
-                memory_metrics[f"gpu_{i}_memory_bytes"] = torch.cuda.memory_allocated(i)
-                memory_metrics[
-                    f"gpu_{i}_peak_memory_bytes"
-                ] = self.metrics.peak_gpu_memory.get(i, 0)
+        # GPU memory (if available)
+        memory_used = self._get_allocated_memory()
+        for i, memory in memory_used.items():
+            memory_metrics[f"gpu_{i}_memory_bytes"] = memory
+            memory_metrics[
+                f"gpu_{i}_peak_memory_bytes"
+            ] = self.metrics.peak_gpu_memory.get(i, 0)
 
-        return {"memory": memory_metrics}
+        return memory_metrics

@@ -331,30 +331,26 @@ class TestRuntimeMetricsTracker:
         }
 
         # Get memory metrics
-        result = tracker.get_memory_metrics()
-
-        # Verify structure
-        assert "memory" in result
-        memory = result["memory"]
+        memory_metrics = tracker.get_memory_metrics()
 
         # Verify CPU memory
         assert (
-            memory["cpu_memory_bytes"] == 1 * 1024 * 1024 * 1024
+            memory_metrics["cpu_memory_bytes"] == 1 * 1024 * 1024 * 1024
         )  # Current value from mock
         assert (
-            memory["peak_cpu_memory_bytes"] == 2 * 1024 * 1024 * 1024
+            memory_metrics["peak_cpu_memory_bytes"] == 2 * 1024 * 1024 * 1024
         )  # Peak value we set
 
         # Verify GPU memory
         assert (
-            memory["gpu_0_memory_bytes"] == 1 * 1024 * 1024 * 1024
+            memory_metrics["gpu_0_memory_bytes"] == 1 * 1024 * 1024 * 1024
         )  # Current value from mock
         assert (
-            memory["gpu_0_peak_memory_bytes"] == 3 * 1024 * 1024 * 1024
+            memory_metrics["gpu_0_peak_memory_bytes"] == 3 * 1024 * 1024 * 1024
         )  # Peak value we set
         assert (
-            memory["gpu_1_memory_bytes"] == 2 * 1024 * 1024 * 1024
+            memory_metrics["gpu_1_memory_bytes"] == 2 * 1024 * 1024 * 1024
         )  # Current value from mock
         assert (
-            memory["gpu_1_peak_memory_bytes"] == 4 * 1024 * 1024 * 1024
+            memory_metrics["gpu_1_peak_memory_bytes"] == 4 * 1024 * 1024 * 1024
         )  # Peak value we set

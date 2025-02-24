@@ -131,17 +131,20 @@ class TelemetryCallback(TrainerCallback):
                 # Update memory metrics
                 self.tracker.update_memory_metrics()
 
+                loss = state.log_history[-1].get("loss", 0) if state.log_history else 0
+                learning_rate = (
+                    state.log_history[-1].get("learning_rate", 0)
+                    if state.log_history
+                    else 0
+                )
+
                 # Prepare metrics to report
                 metrics = {
                     "step": step,
                     "epoch": self.current_epoch,
                     "progress": state.epoch,  # Fractional epoch progress
-                    "loss": state.log_history[-1].get("loss", 0)
-                    if state.log_history
-                    else 0,
-                    "learning_rate": state.log_history[-1].get("learning_rate", 0)
-                    if state.log_history
-                    else 0,
+                    "loss": loss,
+                    "learning_rate": learning_rate,
                     "steps_per_second": steps_per_second,
                     "elapsed_time": current_time - self.start_time,
                     "time_since_last_report": time_since_last_report,
@@ -149,7 +152,7 @@ class TelemetryCallback(TrainerCallback):
 
                 # Add memory metrics
                 memory_metrics = self.tracker.get_memory_metrics()
-                metrics.update(memory_metrics)
+                metrics.update({"memory": memory_metrics})
 
                 # Send telemetry
                 self.telemetry_manager.send_event(

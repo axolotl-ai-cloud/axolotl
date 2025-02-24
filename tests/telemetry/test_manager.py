@@ -151,12 +151,12 @@ def test_system_info_collection(manager):
     # Check essential keys
     assert "os" in system_info
     assert "python_version" in system_info
-    assert "pytorch_version" in system_info
+    assert "torch_version" in system_info
     assert "transformers_version" in system_info
     assert "axolotl_version" in system_info
     assert "cpu_count" in system_info
     assert "memory_total" in system_info
-    assert "gpu_count" in system_info
+    assert "accelerator_count" in system_info
 
 
 def test_send_event(manager):

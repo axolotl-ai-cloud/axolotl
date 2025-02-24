@@ -31,8 +31,8 @@ Telemetry is implemented using PostHog and consists of:
 telemetry system and provides methods for tracking events.
 - `axolotl.telemetry.errors.send_errors`: A decorator that captures exceptions and
 sends sanitized stack traces.
-- `axolotl.telemetry.runtime_metrics.RuntimeMetrics`: A dataclass that tracks runtime
-metrics during training.
+- `axolotl.telemetry.runtime_metrics.RuntimeMetricsTracker`: A class that tracks
+runtime metrics during training.
 - `axolotl.telemetry.callbacks.TelemetryCallback`: A Trainer callback that sends
 runtime metrics telemetry.
 
@@ -44,7 +44,7 @@ aware of data collection, unless telemetry is explicitly enabled or disabled.
 Telemetry is **enabled by default** on an opt-out basis. To disable it, set either:
 
 - `AXOLOTL_DO_NOT_TRACK=1` (Axolotl-specific)
-- `DO_NOT_TRACK=1` (Global standard)
+- `DO_NOT_TRACK=1` (Global standard; see https://consoledonottrack.com/)
 
 To acknowledge and explicitly enable telemetry (and remove the warning message), set:
 `AXOLOTL_DO_NOT_TRACK=0`.
