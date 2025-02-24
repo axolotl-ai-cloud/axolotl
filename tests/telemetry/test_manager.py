@@ -7,7 +7,7 @@ from unittest.mock import patch
 import pytest
 import yaml
 
-from axolotl.telemetry.manager import TelemetryConfig, TelemetryManager
+from axolotl.telemetry.manager import TelemetryManager
 
 
 @pytest.fixture
@@ -38,11 +38,9 @@ def telemetry_manager_class():
 @pytest.fixture
 def manager(telemetry_manager_class, mock_whitelist):
     """Create a TelemetryManager instance with mocked dependencies"""
-    with patch("posthog.capture"), patch("posthog.flush"), patch(
-        "time.sleep"
-    ), patch.object(TelemetryConfig, "whitelist_path", mock_whitelist), patch(
-        "axolotl.telemetry.manager.is_main_process", return_value=True
-    ):
+    with patch("posthog.capture"), patch("posthog.flush"), patch("time.sleep"), patch(
+        "axolotl.telemetry.manager.WHITELIST_PATH", mock_whitelist
+    ), patch("axolotl.telemetry.manager.is_main_process", return_value=True):
         manager = telemetry_manager_class()
         # Manually enable for most tests
         manager.enabled = True
@@ -131,7 +129,7 @@ def test_warning_displayed_for_implicit_enable(telemetry_manager_class):
 
 def test_is_whitelisted(manager, mock_whitelist):
     """Test org whitelist functionality"""
-    with patch.object(TelemetryConfig, "whitelist_path", mock_whitelist):
+    with patch("axolotl.telemetry.manager.WHITELIST_PATH", mock_whitelist):
         # Should match organizations from the mock whitelist
         assert manager._is_whitelisted("meta-llama/llama-7b")
         assert manager._is_whitelisted("mistralai/mistral-7b-instruct")
@@ -185,19 +183,21 @@ def test_send_system_info(manager):
         assert mock_capture.call_args[1]["properties"] == manager.system_info
 
 
-def test_sanitize_properties(manager):
-    """Test property sanitization in send_event method"""
+def test_redacted_properties(manager):
+    """Test path redaction in send_event method"""
     with patch("posthog.capture") as mock_capture:
-        # Test with properties containing various PII
+        # Test with properties containing various paths and non-paths
         test_properties = {
             "filepath": "/home/user/sensitive/data.txt",
             "windows_path": "C:\\Users\\name\\Documents\\project\\file.py",
-            "url": "https://example.com/private/user123",
-            "message": "Error loading /tmp/axolotl/data.csv - check permissions",
-            "cloud_path": "s3://my-bucket/data/user-files/",
+            "output_dir": "/var/lib/data",
+            "path_to_model": "models/llama/7b",
+            "message": "Training started",  # Should not be redacted
+            "metrics": {"loss": 0.5, "accuracy": 0.95},  # Should not be redacted
             "nested": {
-                "deep_path": "/var/log/axolotl/training.log",
-                "list_paths": ["/home/user1/file1.txt", "/home/user2/file2.txt"],
+                "model_path": "/models/local/weights.pt",
+                "root_dir": "/home/user/projects",
+                "stats": {"steps": 1000, "epochs": 3},  # Should not be redacted
             },
         }
 
@@ -209,20 +209,19 @@ def test_sanitize_properties(manager):
         # Get the sanitized properties that were sent
         sanitized = mock_capture.call_args[1]["properties"]
 
-        # Check that PII was removed/sanitized
-        assert "/home/user/sensitive" not in str(sanitized)
-        assert "C:\\Users\\name" not in str(sanitized)
-        assert "https://example.com/private" not in str(sanitized)
-        assert "s3://my-bucket" not in str(sanitized)
+        # Check that path-like keys were redacted
+        assert sanitized["filepath"] == "[REDACTED]"
+        assert sanitized["windows_path"] == "[REDACTED]"
+        assert sanitized["path_to_model"] == "[REDACTED]"
 
-        # Check that filenames were preserved
-        assert "data.txt" in str(sanitized)
-        assert "file.py" in str(sanitized)
-        assert "data.csv" in str(sanitized)
+        # Check that non-path values were preserved
+        assert sanitized["message"] == "Training started"
+        assert sanitized["metrics"] == {"loss": 0.5, "accuracy": 0.95}
 
-        # Check that nested structures were properly sanitized
-        assert "/var/log/axolotl" not in str(sanitized["nested"])
-        assert "/home/user1" not in str(sanitized["nested"]["list_paths"])
+        # Check nested structure handling
+        assert sanitized["nested"]["model_path"] == "[REDACTED]"
+        assert sanitized["nested"]["root_dir"] == "[REDACTED]"
+        assert sanitized["nested"]["stats"] == {"steps": 1000, "epochs": 3}
 
 
 def test_disable_telemetry(manager):

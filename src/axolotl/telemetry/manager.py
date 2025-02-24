@@ -4,10 +4,8 @@ import atexit
 import logging
 import os
 import platform
-import re
 import time
 import uuid
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -22,7 +20,9 @@ from axolotl.utils.distributed import is_main_process
 
 LOG = logging.getLogger(__name__)
 
+POSTHOG_HOST = "https://app.posthog.com"
 POSTHOG_WRITE_KEY = "phc_1kUR0o04oJKKTTeSsIz2Mfm5mpiVsQEf2WOlzljMD7y"
+
 ENABLED_WARNING_SLEEP_SECONDS = 15
 ENABLED_WARNING = (
     "\nTelemetry is enabled. This helps Axolotl's maintainers by providing insights into:\n"
@@ -40,16 +40,7 @@ ENABLED_WARNING = (
     f"Sleeping for {ENABLED_WARNING_SLEEP_SECONDS}s..."
 )
 
-
-@dataclass
-class TelemetryConfig:
-    """Configuration for telemetry manager"""
-
-    host: str = "https://app.posthog.com"
-    queue_size: int = 100
-    batch_size: int = 10
-    whitelist_path: str = str(Path(__file__).parent / "whitelist.yaml")
-    retention_days: int = 365
+WHITELIST_PATH = str(Path(__file__).parent / "whitelist.yaml")
 
 
 class TelemetryManager:
@@ -82,7 +73,6 @@ class TelemetryManager:
                 LOG.warning(ENABLED_WARNING)
                 time.sleep(ENABLED_WARNING_SLEEP_SECONDS)
 
-            self.config = TelemetryConfig()
             self.run_id = str(uuid.uuid4())
             self.whitelist = self._load_whitelist()
             self.system_info = self._get_system_info()
@@ -142,7 +132,7 @@ class TelemetryManager:
 
     def _load_whitelist(self) -> dict:
         """Load HuggingFace Hub organization whitelist"""
-        with open(self.config.whitelist_path, encoding="utf-8") as f:
+        with open(WHITELIST_PATH, encoding="utf-8") as f:
             return yaml.safe_load(f)
 
     def _is_whitelisted(self, base_model: str) -> bool:
@@ -157,69 +147,44 @@ class TelemetryManager:
 
     def _init_posthog(self):
         """Initialize PostHog client"""
+        posthog.host = POSTHOG_HOST
         posthog.project_api_key = POSTHOG_WRITE_KEY
-        posthog.host = self.config.host
 
-    def _sanitize_properties(self, properties: dict[str, Any]) -> dict[str, Any]:
+    def _redact_paths(self, properties: dict[str, Any]) -> dict[str, Any]:
         """
-        Sanitize properties to remove any personally identifiable information such as:
-        - File paths
-        - URLs / Links
-        - Cloud storage locations
+        Redact properties to remove any paths, so as to avoid inadvertently collecting
+        private or personally identifiable information (PII).
 
         Args:
-            properties: Dictionary of properties to sanitize.
+            properties: Dictionary of properties to redact.
 
         Returns:
-            Sanitized properties dictionary.
+            Properties dictionary with paths redacted.
         """
         if not properties:
             return {}
 
-        # Define regex patterns for different types of personal information
-        patterns = {
-            # File paths (Unix and Windows)
-            "file_path": re.compile(r"(?:/|\\)(?:[^/\\]+(?:/|\\))+[^/\\]+"),
-            # URLs/Links
-            "url": re.compile(r"https?://(?:[-\w.]|(?:%[\da-fA-F]{2}))+(?:/[^/\s]*)*"),
-            # Cloud storage paths (S3, GCS, Azure)
-            "cloud_path": re.compile(r"s3://|gs://|azure://|blob.core.windows.net"),
-        }
+        # TODO: Keep this up to date with any config schema changes
+        path_indicators = {"path", "dir"}
 
-        # Deep copy isn't needed; we'll create a new dict with sanitized values
-        sanitized = {}
+        def redact_value(value: Any, key: str = "") -> Any:
+            """Recursively sanitize values, redacting those with path-like keys"""
+            # If the key suggests this is a path, redact it
+            if any(indicator in key.lower() for indicator in path_indicators):
+                return "[REDACTED]"
 
-        def sanitize_value(value):
-            """Recursively sanitize values within nested structures"""
-            if isinstance(value, str):
-                # For file paths, extract just the filename
-                path_match = patterns["file_path"].search(value)
-                if path_match:
-                    try:
-                        # Try to extract just the filename
-                        path_str = path_match.group(0)
-                        value = value.replace(path_str, Path(path_str).name)
-                    except (ValueError, RuntimeError):
-                        # If path extraction fails, just redact the path
-                        value = patterns["file_path"].sub("[REDACTED_PATH]", value)
-
-                # Redact other sensitive information
-                value = patterns["url"].sub("[REDACTED_URL]", value)
-                value = patterns["cloud_path"].sub("[REDACTED_CLOUD]", value)
-
-                return value
+            # Handle nested structures
             if isinstance(value, dict):
-                return {k: sanitize_value(v) for k, v in value.items()}
+                return {k: redact_value(v, k) for k, v in value.items()}
             if isinstance(value, list):
-                return [sanitize_value(item) for item in value]
+                return [redact_value(item) for item in value]
 
             return value
 
-        # Apply the sanitization to all properties
-        for key, value in properties.items():
-            sanitized[key] = sanitize_value(value)
+        # Create new dict with redacted values
+        redacted = {k: redact_value(v, k) for k, v in properties.items()}
 
-        return sanitized
+        return redacted
 
     def _get_system_info(self) -> dict[str, Any]:
         """Collect system information"""
@@ -254,7 +219,7 @@ class TelemetryManager:
             properties = {}
 
         # Sanitize properties to remove PII
-        properties = self._sanitize_properties(properties)
+        properties = self._redact_paths(properties)
 
         # Wrap PostHog errors in try / except to not raise errors during Axolotl usage
         try:

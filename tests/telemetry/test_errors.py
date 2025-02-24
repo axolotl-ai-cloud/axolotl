@@ -253,7 +253,7 @@ def test_send_errors_with_exception(mock_telemetry_manager):
 
     # Check that the error info was passed correctly
     call_args = mock_telemetry_manager.send_event.call_args[1]
-    assert "test_func-error" in call_args["event_type"]
+    assert "test_func-errored" in call_args["event_type"]
     assert "Test error" in call_args["properties"]["exception"]
     assert "stack_trace" in call_args["properties"]
 
@@ -336,5 +336,5 @@ def test_module_path_resolution(mock_telemetry_manager):
     assert mock_telemetry_manager.send_event.called
     event_type = mock_telemetry_manager.send_event.call_args[1]["event_type"]
 
-    expected_event_type = f"{current_module}.test_func-error"
+    expected_event_type = f"{current_module}.test_func-errored"
     assert expected_event_type == event_type

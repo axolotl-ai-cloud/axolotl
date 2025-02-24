@@ -113,7 +113,7 @@ class TestTelemetryCallback:
         callback.on_train_begin(training_args, trainer_state, trainer_control)
 
         mock_telemetry_manager.send_event.assert_called_once_with(
-            event_type="train-start"
+            event_type="train-started"
         )
 
     def test_on_train_end(
@@ -130,7 +130,7 @@ class TestTelemetryCallback:
         mock_telemetry_manager.send_event.assert_called_once()
         call_args = mock_telemetry_manager.send_event.call_args[1]
 
-        assert call_args["event_type"] == "train-end"
+        assert call_args["event_type"] == "train-ended"
         assert "loss" in call_args["properties"]
         assert call_args["properties"]["loss"] == 2.5
         assert "learning_rate" in call_args["properties"]
