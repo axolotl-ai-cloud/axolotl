@@ -298,15 +298,13 @@ class TelemetryManager:
         elif hasattr(torch, "npu") and torch.npu.is_available():
             accelerator_type = "npu"
             for i in range(torch.npu.device_count()):
-                name = getattr(torch.npu, "get_device_name", lambda x: "NPU")(i)
-
                 memory = None
                 if hasattr(torch.npu, "get_device_properties"):
                     memory = torch.npu.get_device_properties(i).total_memory
 
                 gpu_info.append(
                     {
-                        "name": name,
+                        "name": torch.npu.get_device_name(i),
                         "memory": memory,
                         "type": "npu",
                     }
