@@ -55,7 +55,7 @@ class TestDeepseekV3:
                     },
                 ],
                 "special_tokens": {
-                    "bos_token": "<｜end▁of▁sentence｜>",
+                    "eos_token": "<｜end▁of▁sentence｜>",
                 },
                 "chat_template": "deepseek_v3",
                 "num_epochs": 1,
@@ -101,6 +101,9 @@ class TestDeepseekV3:
                     },
                 ],
                 "chat_template": "deepseek_v3",
+                "special_tokens": {
+                    "eos_token": "<｜end▁of▁sentence｜>",
+                },
                 "num_epochs": 1,
                 "micro_batch_size": 1,
                 "gradient_accumulation_steps": 4,
