@@ -1,6 +1,4 @@
-"""
-shared pytest fixtures
-"""
+"""Shared pytest fixtures"""
 
 import functools
 import importlib
@@ -559,3 +557,9 @@ def test_load_fixtures(
     download_llama2_model_fixture,
 ):
     pass
+
+
+@pytest.fixture(autouse=True)
+def disable_telemetry(monkeypatch):
+    monkeypatch.setenv("AXOLOTL_DO_NOT_TRACK", "1")
+    yield

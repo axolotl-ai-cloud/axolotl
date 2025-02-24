@@ -146,7 +146,7 @@ def test_is_whitelisted(manager, mock_whitelist):
 
 def test_system_info_collection(manager):
     """Test system information collection"""
-    system_info = manager.system_info
+    system_info = manager._get_system_info()
 
     # Check essential keys
     assert "os" in system_info
