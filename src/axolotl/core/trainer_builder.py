@@ -1000,10 +1000,6 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             total_num_steps=total_num_steps
         )
 
-        training_args_kwargs["lr_scheduler_type"] = (
-            self.cfg.lr_scheduler if self.cfg.lr_scheduler else "cosine"
-        )
-
         if self.cfg.remove_unused_columns is not None:
             training_args_kwargs["remove_unused_columns"] = (
                 self.cfg.remove_unused_columns
