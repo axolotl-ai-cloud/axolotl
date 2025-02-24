@@ -248,7 +248,6 @@ class TelemetryManager:
                     {
                         "name": torch.cuda.get_device_name(i),
                         "memory": torch.cuda.get_device_properties(i).total_memory,
-                        "type": "cuda",
                     }
                 )
 
@@ -262,7 +261,6 @@ class TelemetryManager:
                         "memory": torch.hip.get_device_properties(i).total_memory
                         if hasattr(torch.hip, "get_device_properties")
                         else None,
-                        "type": "hip",
                     }
                 )
 
@@ -274,7 +272,6 @@ class TelemetryManager:
                     "name": "Apple Silicon",
                     # NOTE: this is memory allocated to this process, not total memory
                     "memory": torch.mps.driver_allocated_memory(),
-                    "type": "mps",
                 }
             )
 
@@ -290,7 +287,6 @@ class TelemetryManager:
                     {
                         "name": torch.xpu.get_device_name(i),
                         "memory": memory,
-                        "type": "xpu",
                     }
                 )
 
@@ -306,7 +302,6 @@ class TelemetryManager:
                     {
                         "name": torch.npu.get_device_name(i),
                         "memory": memory,
-                        "type": "npu",
                     }
                 )
 
