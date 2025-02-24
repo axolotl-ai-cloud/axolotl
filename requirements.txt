@@ -68,4 +68,5 @@ schedulefree==1.4.1
 axolotl-contribs-lgpl==0.0.6
 axolotl-contribs-mit==0.0.3
 
-posthog-3.13.0
+# telemetry
+posthog>=3.15.1
