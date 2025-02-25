@@ -156,5 +156,5 @@ datasets:
 ```
 
 ::: {.callout-tip}
-It is not necessary to use both `message_field_training` and `message_field_training_detail` at a time.
+It is not necessary to set both `message_field_training` and `message_field_training_detail` at once.
 :::
