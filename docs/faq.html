@@ -36,10 +36,10 @@ ul.task-list li input[type="checkbox"] {
 <script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
 <script src="../site_libs/quarto-html/anchor.min.js"></script>
 <link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="../site_libs/quarto-html/quarto-syntax-highlighting-2f5df379a58b258e96c21c0638c20c03.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-dark-b53751a350365c71b6c909e95f209ed1.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../site_libs/bootstrap/bootstrap-141b2cdb37a94fcfd6825c1581ff795f.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<link href="../site_libs/bootstrap/bootstrap-0cda210ced8960466d2ee7bf22d15016.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -79,8 +79,8 @@ ul.task-list li input[type="checkbox"] {
     <nav class="navbar navbar-expand " data-bs-theme="dark">
       <div class="navbar-container container-fluid">
       <div class="navbar-brand-container mx-auto">
-    <a class="navbar-brand" href="../index.html">
-    <span class="navbar-title">Axolotl</span>
+    <a href="../index.html" class="navbar-brand navbar-brand-logo">
+    <img src="../image/axolotl_logo_digital_white.svg" alt="" class="navbar-logo">
     </a>
   </div>
         <div class="quarto-navbar-tools tools-wide tools-end">
@@ -96,7 +96,7 @@ ul.task-list li input[type="checkbox"] {
       <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
         <i class="bi bi-layout-text-sidebar-reverse"></i>
       </button>
-        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/faq.html">FAQ</a></li></ol></nav>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/faq.html">Troubleshooting</a></li><li class="breadcrumb-item"><a href="../docs/faq.html">FAQ</a></li></ol></nav>
         <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
         </a>
     </div>
@@ -117,7 +117,7 @@ ul.task-list li input[type="checkbox"] {
         <li class="sidebar-item sidebar-item-section">
       <div class="sidebar-item-container"> 
             <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true">
- <span class="menu-text">How-To Guides</span></a>
+ <span class="menu-text">Getting Started</span></a>
           <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true" aria-label="Toggle section">
             <i class="bi bi-chevron-right ms-2"></i>
           </a> 
@@ -126,91 +126,25 @@ ul.task-list li input[type="checkbox"] {
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../docs/getting-started.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Getting Started with Axolotl</span></a>
+ <span class="menu-text">Quickstart</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../docs/installation.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Installation Guide</span></a>
+ <span class="menu-text">Installation</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/debugging.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Debugging</span></a>
+  <a href="../docs/cli.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">CLI Reference</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../docs/inference.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Inference Guide</span></a>
-  </div>
-</li>
-          <li class="sidebar-item">
-  <div class="sidebar-item-container"> 
-  <a href="../docs/multipack.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Multipack (Sample Packing)</span></a>
-  </div>
-</li>
-          <li class="sidebar-item">
-  <div class="sidebar-item-container"> 
-  <a href="../docs/fsdp_qlora.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">FDSP + QLoRA</span></a>
-  </div>
-</li>
-          <li class="sidebar-item">
-  <div class="sidebar-item-container"> 
-  <a href="../docs/input_output.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Template-free prompt construction</span></a>
-  </div>
-</li>
-          <li class="sidebar-item">
-  <div class="sidebar-item-container"> 
-  <a href="../docs/rlhf.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">RLHF (Beta)</span></a>
-  </div>
-</li>
-          <li class="sidebar-item">
-  <div class="sidebar-item-container"> 
-  <a href="../docs/nccl.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">NCCL</span></a>
-  </div>
-</li>
-          <li class="sidebar-item">
-  <div class="sidebar-item-container"> 
-  <a href="../docs/mac.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Mac M-series</span></a>
-  </div>
-</li>
-          <li class="sidebar-item">
-  <div class="sidebar-item-container"> 
-  <a href="../docs/multi-gpu.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Multi-GPU Training Guide</span></a>
-  </div>
-</li>
-          <li class="sidebar-item">
-  <div class="sidebar-item-container"> 
-  <a href="../docs/multi-node.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Multi Node</span></a>
-  </div>
-</li>
-          <li class="sidebar-item">
-  <div class="sidebar-item-container"> 
-  <a href="../docs/unsloth.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Unsloth</span></a>
-  </div>
-</li>
-          <li class="sidebar-item">
-  <div class="sidebar-item-container"> 
-  <a href="../docs/amd_hpc.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Training with AMD GPUs on HPC Systems</span></a>
-  </div>
-</li>
-          <li class="sidebar-item">
-  <div class="sidebar-item-container"> 
-  <a href="../docs/ray-integration.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Ray Train integration</span></a>
+ <span class="menu-text">Inference</span></a>
   </div>
 </li>
       </ul>
@@ -265,12 +199,187 @@ ul.task-list li input[type="checkbox"] {
         <li class="sidebar-item sidebar-item-section">
       <div class="sidebar-item-container"> 
             <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="true">
- <span class="menu-text">Reference</span></a>
+ <span class="menu-text">Deployments</span></a>
           <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="true" aria-label="Toggle section">
             <i class="bi bi-chevron-right ms-2"></i>
           </a> 
       </div>
       <ul id="quarto-sidebar-section-3" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/multi-gpu.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Multi-GPU</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/multi-node.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Multi Node</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/ray-integration.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Ray Train</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/amd_hpc.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">AMD GPUs on HPC Systems</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/mac.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Mac M-series</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="true">
+ <span class="menu-text">How To Guides</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-4" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/multimodal.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">MultiModal / Vision Language Models (BETA)</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/rlhf.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">RLHF (Beta)</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/reward_modelling.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Reward Modelling</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/lr_groups.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Learning Rate Groups</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/lora_optims.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">LoRA Optimizations</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="true">
+ <span class="menu-text">Core Concepts</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-5" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/batch_vs_grad.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Batch size vs Gradient accumulation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/dataset_preprocessing.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Dataset Preprocessing</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/multipack.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Multipack (Sample Packing)</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-6" role="navigation" aria-expanded="true">
+ <span class="menu-text">Advanced Features</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-6" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-6" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/fsdp_qlora.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">FDSP + QLoRA</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/unsloth.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Unsloth</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/torchao.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">PyTorch ao</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/custom_integrations.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Custom Integrations</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-7" role="navigation" aria-expanded="true">
+ <span class="menu-text">Troubleshooting</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-7" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-7" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/faq.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">FAQ</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/debugging.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Debugging</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/nccl.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">NCCL</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-8" role="navigation" aria-expanded="true">
+ <span class="menu-text">Reference</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-8" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-8" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../docs/config.html" class="sidebar-item-text sidebar-link">
@@ -279,24 +388,25 @@ ul.task-list li input[type="checkbox"] {
 </li>
       </ul>
   </li>
-        <li class="sidebar-item">
-  <div class="sidebar-item-container"> 
-  <a href="../docs/faq.html" class="sidebar-item-text sidebar-link active">
- <span class="menu-text">FAQ</span></a>
-  </div>
-</li>
     </ul>
     </div>
 </nav>
 <div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
 <!-- margin-sidebar -->
-    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar zindex-bottom">
-        
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#general" id="toc-general" class="nav-link active" data-scroll-target="#general">General</a></li>
+  <li><a href="#chat-templates" id="toc-chat-templates" class="nav-link" data-scroll-target="#chat-templates">Chat templates</a></li>
+  </ul>
+</nav>
     </div>
 <!-- main -->
 <main class="content" id="quarto-document-content">
 
-<header id="title-block-header" class="quarto-title-block default">
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/faq.html">Troubleshooting</a></li><li class="breadcrumb-item"><a href="../docs/faq.html">FAQ</a></li></ol></nav>
 <div class="quarto-title">
 <h1 class="title">FAQ</h1>
 </div>
@@ -320,6 +430,8 @@ ul.task-list li input[type="checkbox"] {
 </header>
 
 
+<section id="general" class="level3">
+<h3 class="anchored" data-anchor-id="general">General</h3>
 <p><strong>Q: The trainer stopped and hasn’t progressed in several minutes.</strong></p>
 <blockquote class="blockquote">
 <p>A: Usually an issue with the GPUs communicating with each other. See the <a href="../docs/nccl.html">NCCL doc</a></p>
@@ -340,12 +452,32 @@ ul.task-list li input[type="checkbox"] {
 <blockquote class="blockquote">
 <p>A: This is usually an issue with the GPU. This can be resolved through setting the os environment variable <code>CUDA_VISIBLE_DEVICES=0</code>. If you are on runpod, this is usually a pod issue. Starting a new pod should take care of it.</p>
 </blockquote>
+</section>
+<section id="chat-templates" class="level3">
+<h3 class="anchored" data-anchor-id="chat-templates">Chat templates</h3>
 <p><strong>Q: <code>jinja2.exceptions.UndefinedError: 'dict object' has no attribute 'content' / 'role' / ____</code></strong></p>
 <blockquote class="blockquote">
 <p>A: This means that the property mapping for the stated attribute does not exist when building <code>chat_template</code> prompt. For example, if <code>no attribute 'content'</code>, please check you have added the correct mapping for <code>content</code> under <code>message_property_mappings</code>.</p>
 </blockquote>
+<p><strong>Q: <code>Empty template generated for turn ___</code></strong></p>
+<blockquote class="blockquote">
+<p>A: The <code>content</code> is empty for that turn.</p>
+</blockquote>
+<p><strong>Q: <code>Could not find content start/end boundary for turn __</code></strong></p>
+<blockquote class="blockquote">
+<p>A: The specific turn’s start/end could not be detected. Please ensure you have set the <code>eos_token</code> following your <code>chat_template</code>. Otherwise, this could be a <code>chat_template</code> which doesn’t use proper boundaries for each turn (like system). On the rare occurrence, make sure your content is not <code>[[dummy_message]]</code>. Please let us know about this.</p>
+</blockquote>
+<p><strong>Q: <code>Content end boundary is before start boundary for turn ___</code></strong></p>
+<blockquote class="blockquote">
+<p>A: This is an edge case which should not occur. Please create an Issue if this happens.</p>
+</blockquote>
+<p><strong>Q: <code>Content end boundary is the same as start boundary for turn ___. This is likely an empty turn.</code></strong></p>
+<blockquote class="blockquote">
+<p>A: This is likely an empty turn.</p>
+</blockquote>
 
 
+</section>
 
 </main> <!-- /main -->
 <script id="quarto-html-after-body" type="application/javascript">

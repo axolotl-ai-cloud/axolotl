@@ -21,6 +21,40 @@ ul.task-list li input[type="checkbox"] {
   margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
   vertical-align: middle;
 }
+/* CSS for syntax highlighting */
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { display: inline-block; text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
 </style>
 
 
@@ -36,10 +70,10 @@ ul.task-list li input[type="checkbox"] {
 <script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
 <script src="../../site_libs/quarto-html/anchor.min.js"></script>
 <link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-2f5df379a58b258e96c21c0638c20c03.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-b53751a350365c71b6c909e95f209ed1.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../../site_libs/bootstrap/bootstrap-141b2cdb37a94fcfd6825c1581ff795f.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<link href="../../site_libs/bootstrap/bootstrap-0cda210ced8960466d2ee7bf22d15016.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -79,8 +113,8 @@ ul.task-list li input[type="checkbox"] {
     <nav class="navbar navbar-expand " data-bs-theme="dark">
       <div class="navbar-container container-fluid">
       <div class="navbar-brand-container mx-auto">
-    <a class="navbar-brand" href="../../index.html">
-    <span class="navbar-title">Axolotl</span>
+    <a href="../../index.html" class="navbar-brand navbar-brand-logo">
+    <img src="../../image/axolotl_logo_digital_white.svg" alt="" class="navbar-logo">
     </a>
   </div>
         <div class="quarto-navbar-tools tools-wide tools-end">
@@ -117,7 +151,7 @@ ul.task-list li input[type="checkbox"] {
         <li class="sidebar-item sidebar-item-section">
       <div class="sidebar-item-container"> 
             <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true">
- <span class="menu-text">How-To Guides</span></a>
+ <span class="menu-text">Getting Started</span></a>
           <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true" aria-label="Toggle section">
             <i class="bi bi-chevron-right ms-2"></i>
           </a> 
@@ -126,91 +160,25 @@ ul.task-list li input[type="checkbox"] {
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../../docs/getting-started.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Getting Started with Axolotl</span></a>
+ <span class="menu-text">Quickstart</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../../docs/installation.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Installation Guide</span></a>
+ <span class="menu-text">Installation</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/debugging.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Debugging</span></a>
+  <a href="../../docs/cli.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">CLI Reference</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../../docs/inference.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Inference Guide</span></a>
-  </div>
-</li>
-          <li class="sidebar-item">
-  <div class="sidebar-item-container"> 
-  <a href="../../docs/multipack.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Multipack (Sample Packing)</span></a>
-  </div>
-</li>
-          <li class="sidebar-item">
-  <div class="sidebar-item-container"> 
-  <a href="../../docs/fsdp_qlora.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">FDSP + QLoRA</span></a>
-  </div>
-</li>
-          <li class="sidebar-item">
-  <div class="sidebar-item-container"> 
-  <a href="../../docs/input_output.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Template-free prompt construction</span></a>
-  </div>
-</li>
-          <li class="sidebar-item">
-  <div class="sidebar-item-container"> 
-  <a href="../../docs/rlhf.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">RLHF (Beta)</span></a>
-  </div>
-</li>
-          <li class="sidebar-item">
-  <div class="sidebar-item-container"> 
-  <a href="../../docs/nccl.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">NCCL</span></a>
-  </div>
-</li>
-          <li class="sidebar-item">
-  <div class="sidebar-item-container"> 
-  <a href="../../docs/mac.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Mac M-series</span></a>
-  </div>
-</li>
-          <li class="sidebar-item">
-  <div class="sidebar-item-container"> 
-  <a href="../../docs/multi-gpu.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Multi-GPU Training Guide</span></a>
-  </div>
-</li>
-          <li class="sidebar-item">
-  <div class="sidebar-item-container"> 
-  <a href="../../docs/multi-node.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Multi Node</span></a>
-  </div>
-</li>
-          <li class="sidebar-item">
-  <div class="sidebar-item-container"> 
-  <a href="../../docs/unsloth.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Unsloth</span></a>
-  </div>
-</li>
-          <li class="sidebar-item">
-  <div class="sidebar-item-container"> 
-  <a href="../../docs/amd_hpc.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Training with AMD GPUs on HPC Systems</span></a>
-  </div>
-</li>
-          <li class="sidebar-item">
-  <div class="sidebar-item-container"> 
-  <a href="../../docs/ray-integration.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Ray Train integration</span></a>
+ <span class="menu-text">Inference</span></a>
   </div>
 </li>
       </ul>
@@ -265,12 +233,187 @@ ul.task-list li input[type="checkbox"] {
         <li class="sidebar-item sidebar-item-section">
       <div class="sidebar-item-container"> 
             <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="true">
- <span class="menu-text">Reference</span></a>
+ <span class="menu-text">Deployments</span></a>
           <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="true" aria-label="Toggle section">
             <i class="bi bi-chevron-right ms-2"></i>
           </a> 
       </div>
       <ul id="quarto-sidebar-section-3" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/multi-gpu.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Multi-GPU</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/multi-node.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Multi Node</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/ray-integration.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Ray Train</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/amd_hpc.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">AMD GPUs on HPC Systems</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/mac.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Mac M-series</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="true">
+ <span class="menu-text">How To Guides</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-4" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/multimodal.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">MultiModal / Vision Language Models (BETA)</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/rlhf.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">RLHF (Beta)</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/reward_modelling.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Reward Modelling</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/lr_groups.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Learning Rate Groups</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/lora_optims.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">LoRA Optimizations</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="true">
+ <span class="menu-text">Core Concepts</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-5" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/batch_vs_grad.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Batch size vs Gradient accumulation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/dataset_preprocessing.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Dataset Preprocessing</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/multipack.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Multipack (Sample Packing)</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-6" role="navigation" aria-expanded="true">
+ <span class="menu-text">Advanced Features</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-6" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-6" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/fsdp_qlora.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">FDSP + QLoRA</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/unsloth.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Unsloth</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/torchao.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">PyTorch ao</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/custom_integrations.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Custom Integrations</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-7" role="navigation" aria-expanded="true">
+ <span class="menu-text">Troubleshooting</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-7" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-7" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/faq.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">FAQ</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/debugging.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Debugging</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/nccl.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">NCCL</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-8" role="navigation" aria-expanded="true">
+ <span class="menu-text">Reference</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-8" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-8" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../../docs/config.html" class="sidebar-item-text sidebar-link">
@@ -279,19 +422,30 @@ ul.task-list li input[type="checkbox"] {
 </li>
       </ul>
   </li>
-        <li class="sidebar-item">
-  <div class="sidebar-item-container"> 
-  <a href="../../docs/faq.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">FAQ</span></a>
-  </div>
-</li>
     </ul>
     </div>
 </nav>
 <div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
 <!-- margin-sidebar -->
-    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar zindex-bottom">
-        
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#sec-background" id="toc-sec-background" class="nav-link active" data-scroll-target="#sec-background">Background</a>
+  <ul class="collapse">
+  <li><a href="#masking-inputs" id="toc-masking-inputs" class="nav-link" data-scroll-target="#masking-inputs">Masking Inputs</a></li>
+  <li><a href="#sec-you-may-not-want-prompt-templates" id="toc-sec-you-may-not-want-prompt-templates" class="nav-link" data-scroll-target="#sec-you-may-not-want-prompt-templates">You may not want prompt templates</a></li>
+  <li><a href="#sec-the-inputoutput-format" id="toc-sec-the-inputoutput-format" class="nav-link" data-scroll-target="#sec-the-inputoutput-format">The <code>input_output</code> format</a></li>
+  </ul></li>
+  <li><a href="#sec-usage" id="toc-sec-usage" class="nav-link" data-scroll-target="#sec-usage">Usage</a>
+  <ul class="collapse">
+  <li><a href="#sec-1-prepare-data" id="toc-sec-1-prepare-data" class="nav-link" data-scroll-target="#sec-1-prepare-data">1. Prepare Data</a></li>
+  <li><a href="#sec-2-use-type-inputoutput" id="toc-sec-2-use-type-inputoutput" class="nav-link" data-scroll-target="#sec-2-use-type-inputoutput">2. Use <code>type: input_output</code></a></li>
+  <li><a href="#sec-3-check-the-prompts" id="toc-sec-3-check-the-prompts" class="nav-link" data-scroll-target="#sec-3-check-the-prompts">3. Check the prompts</a></li>
+  </ul></li>
+  </ul>
+</nav>
     </div>
 <!-- main -->
 <main class="content" id="quarto-document-content">
@@ -320,9 +474,234 @@ ul.task-list li input[type="checkbox"] {
 </header>
 
 
-<p>See <a href="../../docs/input_output.html">these docs</a>.</p>
+<section id="sec-background" class="level2">
+<h2 class="anchored" data-anchor-id="sec-background">Background</h2>
+<section id="masking-inputs" class="level3">
+<h3 class="anchored" data-anchor-id="masking-inputs">Masking Inputs</h3>
+<p>One of the most popular features of <a href="https://github.com/axolotl-ai-cloud/axolotl">axolotl</a> is setting the following configuration value:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">train_on_inputs</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>If you declare a <a href="https://github.com/axolotl-ai-cloud/axolotl?tab=readme-ov-file#dataset">dataset formats</a> such as <code>alpaca</code> or <code>chatml</code>, axolotl knows what is an input (i.e.&nbsp;human) vs.&nbsp;an output (i.e.&nbsp;the assistant) and masks the input labels so that your model can focus on predicting the outputs only.</p>
+</section>
+<section id="sec-you-may-not-want-prompt-templates" class="level3">
+<h3 class="anchored" data-anchor-id="sec-you-may-not-want-prompt-templates">You may not want prompt templates</h3>
+<p>However, there are many situations where you don’t want to use one of these formats or templates. This is because they can:</p>
+<ul>
+<li>Add unnecessary boilerplate to your prompts.</li>
+<li>Create artifacts like special delimiters <code>&lt;|im_start|&gt;</code> that can quickly become footguns if you don’t include them correctly at inference time.</li>
+<li>Enforce a <em>chat</em> interface when you do not want one. Sometimes you just want to fine-tune a model to a very specific task and do NOT want multi-turn conversations, roles, etc.</li>
+<li>Limit you to only certain roles that the template allows.</li>
+</ul>
+</section>
+<section id="sec-the-inputoutput-format" class="level3">
+<h3 class="anchored" data-anchor-id="sec-the-inputoutput-format">The <code>input_output</code> format</h3>
+<p>You can construct your prompts without a template by using the <code>input_output</code> format, by setting <code>type: input_output</code> in your configuration file like this:</p>
+<p><strong>config.yml</strong></p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">train_on_inputs</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span><span class="co"> # Mask segments of your data</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> output.jsonl</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> input_output</span><span class="co">  # use template free prompt construction</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Unlike <code>type: completion</code>, which is also template-free, <code>type: input_output</code> allows you to mask segments of your text. More details on how this works are described below.</p>
+</section>
+</section>
+<section id="sec-usage" class="level2">
+<h2 class="anchored" data-anchor-id="sec-usage">Usage</h2>
+<p>This is how you can use the <code>input_output</code> format:</p>
+<section id="sec-1-prepare-data" class="level3">
+<h3 class="anchored" data-anchor-id="sec-1-prepare-data">1. Prepare Data</h3>
+<p>To use the <code>input_output</code> format, collect your data in the following format into a jsonl file (below is the first row from the file <code>output</code>.jsonl` pretty printed):</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">$</span> head <span class="at">-n1</span> output.jsonl <span class="kw">|</span> <span class="ex">python</span> <span class="at">-m</span> json.tool</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>{
+    "segments": [
+        {
+            "label": true,
+            "text": "&lt;s&gt;Hello\n"
+        },
+        {
+            "label": true,
+            "text": "hi there!. "
+        },
+        {
+            "label": false,
+            "text": "goodbye "
+        },
+        {
+            "label": true,
+            "text": "farewell&lt;/s&gt;"
+        }
+    ]
+}</code></pre>
+</div>
+<p>Set <code>label:false</code> when you want to mask a segment of text so that the model isn’t trained on it. Some things to keep in mind:</p>
+<blockquote class="blockquote">
+<p>[!IMPORTANT] 1. <strong>EOS, BOS, spaces, newlines etc. are entirely up to you. Axolotl concatenates all the segments as-is.</strong> The tokenizer doesn’t add anything additional. Notice how I added spaces, newlines, <code>&lt;s&gt;</code> (BOS), and <code>&lt;/s&gt;</code> (EOS) myself. 2. Make sure you check the materialized output to validate that the prompt is getting assembled how you like.</p>
+</blockquote>
+</section>
+<section id="sec-2-use-type-inputoutput" class="level3">
+<h3 class="anchored" data-anchor-id="sec-2-use-type-inputoutput">2. Use <code>type: input_output</code></h3>
+<p>Let’s materialize data with our <code>output.jsonl</code> file by setting <code>type: input_output</code> in our axolotl config:</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="co"># training_config.yaml</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="fu">base_model</span><span class="kw">:</span><span class="at"> mistralai/Mistral-7B-v0.1</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="fu">data_seed</span><span class="kw">:</span><span class="at"> </span><span class="dv">49</span></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a><span class="fu">seed</span><span class="kw">:</span><span class="at"> </span><span class="dv">49</span></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> output.jsonl</span></span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> input_output</span></span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a><span class="fu">val_set_size</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.1</span></span>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a><span class="fu">sequence_len</span><span class="kw">:</span><span class="at"> </span><span class="dv">896</span></span>
+<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a><span class="fu">sample_packing</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span>
+<span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a><span class="fu">micro_batch_size</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
+<span id="cb5-15"><a href="#cb5-15" aria-hidden="true" tabindex="-1"></a><span class="fu">gradient_accumulation_steps</span><span class="kw">:</span><span class="at"> </span><span class="dv">3</span></span>
+<span id="cb5-16"><a href="#cb5-16" aria-hidden="true" tabindex="-1"></a><span class="fu">eval_batch_size</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
+<span id="cb5-17"><a href="#cb5-17" aria-hidden="true" tabindex="-1"></a><span class="fu">num_epochs</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span></span>
+<span id="cb5-18"><a href="#cb5-18" aria-hidden="true" tabindex="-1"></a><span class="fu">learning_rate</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.0002</span></span>
+<span id="cb5-19"><a href="#cb5-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-20"><a href="#cb5-20" aria-hidden="true" tabindex="-1"></a><span class="fu">train_on_inputs</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span>
+<span id="cb5-21"><a href="#cb5-21" aria-hidden="true" tabindex="-1"></a><span class="fu">special_tokens</span><span class="kw">:</span></span>
+<span id="cb5-22"><a href="#cb5-22" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">bos_token</span><span class="kw">:</span><span class="at"> </span><span class="st">"&lt;s&gt;"</span></span>
+<span id="cb5-23"><a href="#cb5-23" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">eos_token</span><span class="kw">:</span><span class="at"> </span><span class="st">"&lt;/s&gt;"</span></span>
+<span id="cb5-24"><a href="#cb5-24" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">unk_token</span><span class="kw">:</span><span class="at"> </span><span class="st">"&lt;unk&gt;"</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>You can use the following command to materialize your data. The <code>--debug</code> flag will print the tokens, along with the labels so you can verify that the correct items are being ignored:</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> preprocess training_config.yaml <span class="at">--debug</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a><span class="ex">...</span></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a><span class="ex">[2024-03-05</span> 23:36:46,969] <span class="pp">[</span><span class="ss">INFO</span><span class="pp">]</span> <span class="pp">[</span><span class="ss">axolotl.check_example_labels:35</span><span class="pp">]</span> <span class="pp">[</span><span class="ss">PID:607731</span><span class="pp">]</span> <span class="pp">[</span><span class="ss">RANK:0</span><span class="pp">]</span> <span class="op">&lt;</span>s<span class="op">&gt;(</span><span class="ex">1,</span> 1<span class="op">)</span> Hello<span class="er">(</span><span class="ex">22557,</span> 22557<span class="kw">)</span></span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a><span class="kw">(</span><span class="ex">13,</span> 13<span class="kw">)</span> <span class="ex">hi</span><span class="er">(</span><span class="ex">12014,</span> 12014<span class="kw">)</span> <span class="ex">there</span><span class="er">(</span><span class="ex">736,</span> 736<span class="kw">)</span> <span class="ex">!</span><span class="er">(</span><span class="ex">28808,</span> 28808<span class="kw">)</span> <span class="bu">.</span><span class="er">(</span><span class="ex">28723,</span> 28723<span class="kw">)</span> <span class="kw">(</span><span class="ex">28705,</span> 28705<span class="kw">)</span> <span class="ex">good</span><span class="er">(</span><span class="ex">-100,</span> 1179<span class="kw">)</span> <span class="ex">bye</span><span class="er">(</span><span class="ex">-100,</span> 17664<span class="kw">)</span> <span class="kw">(</span><span class="ex">-100,</span> 28705<span class="kw">)</span> <span class="ex">fare</span><span class="er">(</span><span class="ex">19111,</span> 19111<span class="kw">)</span> <span class="ex">well</span><span class="er">(</span><span class="ex">5458,</span> 5458<span class="kw">)</span> <span class="op">&lt;</span>/s<span class="op">&gt;(</span><span class="ex">2,</span> 2<span class="op">)</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>The format is <code>decoded_token</code>(<code>label</code>, <code>token_id</code>), for example, <code>&lt;s&gt;(1, 1)</code> means that the token is <code>&lt;s&gt;</code>, the label is <code>1</code> and the token_id is <code>1</code>. When the label is <code>-100</code> then that token is ignored for training.</p>
+</section>
+<section id="sec-3-check-the-prompts" class="level3">
+<h3 class="anchored" data-anchor-id="sec-3-check-the-prompts">3. Check the prompts</h3>
+<p>Here is another way to check the materialized output:</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> transformers <span class="im">import</span> AutoTokenizer</span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> datasets <span class="im">import</span> load_from_disk</span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> yaml</span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>directory <span class="op">=</span> <span class="op">!</span>ls last_run_prepared<span class="op">/</span></span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a><span class="cf">with</span> <span class="bu">open</span>(<span class="st">'training_config.yaml'</span>, <span class="st">'r'</span>) <span class="im">as</span> f:</span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a>    cfg <span class="op">=</span> yaml.safe_load(f)</span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a>model_id <span class="op">=</span> cfg[<span class="st">'base_model'</span>]</span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a>tok <span class="op">=</span> AutoTokenizer.from_pretrained(model_id)</span>
+<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a>ds <span class="op">=</span> load_from_disk(<span class="ss">f'last_run_prepared/</span><span class="sc">{</span>directory[<span class="dv">0</span>]<span class="sc">}</span><span class="ss">/'</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="op">&gt;&gt;&gt;</span> row <span class="op">=</span> ds[<span class="dv">0</span>]</span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="op">&gt;&gt;&gt;</span> <span class="bu">print</span>(tok.decode(row[<span class="st">'input_ids'</span>]))</span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="op">&lt;</span>s<span class="op">&gt;</span> Hello</span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>    hi there<span class="op">!</span>.  goodbye  farewell<span class="op">&lt;/</span>s<span class="op">&gt;</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>We can check that the right tokens are ignored by comparing the labels to each token:</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> pandas <span class="im">as</span> pd</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>pd.DataFrame([{<span class="st">'token'</span>: tok.decode(i), <span class="st">'label'</span>: l, <span class="st">'id'</span>:i} <span class="cf">for</span> i,l <span class="kw">in</span></span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>              <span class="bu">zip</span>(row[<span class="st">'input_ids'</span>], row[<span class="st">'labels'</span>])])</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>token</th>
+<th>label</th>
+<th>id</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>0</td>
+<td>&lt;s&gt;</td>
+<td>1</td>
+</tr>
+<tr class="even">
+<td>1</td>
+<td>Hello</td>
+<td>22557</td>
+</tr>
+<tr class="odd">
+<td>2</td>
+<td>\n</td>
+<td>13</td>
+</tr>
+<tr class="even">
+<td>3</td>
+<td>hi</td>
+<td>12014</td>
+</tr>
+<tr class="odd">
+<td>4</td>
+<td>there</td>
+<td>736</td>
+</tr>
+<tr class="even">
+<td>5</td>
+<td>!</td>
+<td>28808</td>
+</tr>
+<tr class="odd">
+<td>6</td>
+<td>.</td>
+<td>28723</td>
+</tr>
+<tr class="even">
+<td>7</td>
+<td></td>
+<td>28705</td>
+</tr>
+<tr class="odd">
+<td>8</td>
+<td>good</td>
+<td>-100</td>
+</tr>
+<tr class="even">
+<td>9</td>
+<td>bye</td>
+<td>-100</td>
+</tr>
+<tr class="odd">
+<td>10</td>
+<td></td>
+<td>-100</td>
+</tr>
+<tr class="even">
+<td>11</td>
+<td>fare</td>
+<td>19111</td>
+</tr>
+<tr class="odd">
+<td>12</td>
+<td>well</td>
+<td>5458</td>
+</tr>
+<tr class="even">
+<td>13</td>
+<td>&lt;/s&gt;</td>
+<td>2</td>
+</tr>
+</tbody>
+</table>
+<p>If we look at the input data, the above table seems correct! (The jsonl version is repeated below for reference):</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="ex">$</span> head <span class="at">-n1</span> output.jsonl <span class="kw">|</span> <span class="ex">python</span> <span class="at">-m</span> json.tool</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>{
+    "segments": [
+        {
+            "label": true,
+            "text": "&lt;s&gt;Hello\n"
+        },
+        {
+            "label": true,
+            "text": "hi there!. "
+        },
+        {
+            "label": false,
+            "text": "goodbye "
+        },
+        {
+            "label": true,
+            "text": "farewell&lt;/s&gt;"
+        }
+    ]
+}</code></pre>
+</div>
 
 
+</section>
+</section>
 
 </main> <!-- /main -->
 <script id="quarto-html-after-body" type="application/javascript">

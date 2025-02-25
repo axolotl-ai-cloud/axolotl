@@ -70,10 +70,10 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
 <script src="../site_libs/quarto-html/anchor.min.js"></script>
 <link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="../site_libs/quarto-html/quarto-syntax-highlighting-2f5df379a58b258e96c21c0638c20c03.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-dark-b53751a350365c71b6c909e95f209ed1.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../site_libs/bootstrap/bootstrap-141b2cdb37a94fcfd6825c1581ff795f.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<link href="../site_libs/bootstrap/bootstrap-0cda210ced8960466d2ee7bf22d15016.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -113,8 +113,8 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
     <nav class="navbar navbar-expand " data-bs-theme="dark">
       <div class="navbar-container container-fluid">
       <div class="navbar-brand-container mx-auto">
-    <a class="navbar-brand" href="../index.html">
-    <span class="navbar-title">Axolotl</span>
+    <a href="../index.html" class="navbar-brand navbar-brand-logo">
+    <img src="../image/axolotl_logo_digital_white.svg" alt="" class="navbar-logo">
     </a>
   </div>
         <div class="quarto-navbar-tools tools-wide tools-end">
@@ -130,7 +130,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
       <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
         <i class="bi bi-layout-text-sidebar-reverse"></i>
       </button>
-        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/getting-started.html">How-To Guides</a></li><li class="breadcrumb-item"><a href="../docs/debugging.html">Debugging</a></li></ol></nav>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/faq.html">Troubleshooting</a></li><li class="breadcrumb-item"><a href="../docs/debugging.html">Debugging</a></li></ol></nav>
         <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
         </a>
     </div>
@@ -151,7 +151,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
         <li class="sidebar-item sidebar-item-section">
       <div class="sidebar-item-container"> 
             <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true">
- <span class="menu-text">How-To Guides</span></a>
+ <span class="menu-text">Getting Started</span></a>
           <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true" aria-label="Toggle section">
             <i class="bi bi-chevron-right ms-2"></i>
           </a> 
@@ -160,91 +160,25 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../docs/getting-started.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Getting Started with Axolotl</span></a>
+ <span class="menu-text">Quickstart</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../docs/installation.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Installation Guide</span></a>
+ <span class="menu-text">Installation</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/debugging.html" class="sidebar-item-text sidebar-link active">
- <span class="menu-text">Debugging</span></a>
+  <a href="../docs/cli.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">CLI Reference</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../docs/inference.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Inference Guide</span></a>
-  </div>
-</li>
-          <li class="sidebar-item">
-  <div class="sidebar-item-container"> 
-  <a href="../docs/multipack.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Multipack (Sample Packing)</span></a>
-  </div>
-</li>
-          <li class="sidebar-item">
-  <div class="sidebar-item-container"> 
-  <a href="../docs/fsdp_qlora.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">FDSP + QLoRA</span></a>
-  </div>
-</li>
-          <li class="sidebar-item">
-  <div class="sidebar-item-container"> 
-  <a href="../docs/input_output.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Template-free prompt construction</span></a>
-  </div>
-</li>
-          <li class="sidebar-item">
-  <div class="sidebar-item-container"> 
-  <a href="../docs/rlhf.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">RLHF (Beta)</span></a>
-  </div>
-</li>
-          <li class="sidebar-item">
-  <div class="sidebar-item-container"> 
-  <a href="../docs/nccl.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">NCCL</span></a>
-  </div>
-</li>
-          <li class="sidebar-item">
-  <div class="sidebar-item-container"> 
-  <a href="../docs/mac.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Mac M-series</span></a>
-  </div>
-</li>
-          <li class="sidebar-item">
-  <div class="sidebar-item-container"> 
-  <a href="../docs/multi-gpu.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Multi-GPU Training Guide</span></a>
-  </div>
-</li>
-          <li class="sidebar-item">
-  <div class="sidebar-item-container"> 
-  <a href="../docs/multi-node.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Multi Node</span></a>
-  </div>
-</li>
-          <li class="sidebar-item">
-  <div class="sidebar-item-container"> 
-  <a href="../docs/unsloth.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Unsloth</span></a>
-  </div>
-</li>
-          <li class="sidebar-item">
-  <div class="sidebar-item-container"> 
-  <a href="../docs/amd_hpc.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Training with AMD GPUs on HPC Systems</span></a>
-  </div>
-</li>
-          <li class="sidebar-item">
-  <div class="sidebar-item-container"> 
-  <a href="../docs/ray-integration.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Ray Train integration</span></a>
+ <span class="menu-text">Inference</span></a>
   </div>
 </li>
       </ul>
@@ -299,12 +233,187 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
         <li class="sidebar-item sidebar-item-section">
       <div class="sidebar-item-container"> 
             <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="true">
- <span class="menu-text">Reference</span></a>
+ <span class="menu-text">Deployments</span></a>
           <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="true" aria-label="Toggle section">
             <i class="bi bi-chevron-right ms-2"></i>
           </a> 
       </div>
       <ul id="quarto-sidebar-section-3" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/multi-gpu.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Multi-GPU</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/multi-node.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Multi Node</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/ray-integration.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Ray Train</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/amd_hpc.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">AMD GPUs on HPC Systems</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/mac.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Mac M-series</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="true">
+ <span class="menu-text">How To Guides</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-4" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/multimodal.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">MultiModal / Vision Language Models (BETA)</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/rlhf.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">RLHF (Beta)</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/reward_modelling.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Reward Modelling</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/lr_groups.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Learning Rate Groups</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/lora_optims.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">LoRA Optimizations</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="true">
+ <span class="menu-text">Core Concepts</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-5" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/batch_vs_grad.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Batch size vs Gradient accumulation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/dataset_preprocessing.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Dataset Preprocessing</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/multipack.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Multipack (Sample Packing)</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-6" role="navigation" aria-expanded="true">
+ <span class="menu-text">Advanced Features</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-6" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-6" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/fsdp_qlora.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">FDSP + QLoRA</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/unsloth.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Unsloth</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/torchao.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">PyTorch ao</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/custom_integrations.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Custom Integrations</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-7" role="navigation" aria-expanded="true">
+ <span class="menu-text">Troubleshooting</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-7" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-7" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/faq.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">FAQ</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/debugging.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Debugging</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/nccl.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">NCCL</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-8" role="navigation" aria-expanded="true">
+ <span class="menu-text">Reference</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-8" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-8" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../docs/config.html" class="sidebar-item-text sidebar-link">
@@ -313,12 +422,6 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </li>
       </ul>
   </li>
-        <li class="sidebar-item">
-  <div class="sidebar-item-container"> 
-  <a href="../docs/faq.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">FAQ</span></a>
-  </div>
-</li>
     </ul>
     </div>
 </nav>
@@ -351,7 +454,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <!-- main -->
 <main class="content" id="quarto-document-content">
 
-<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/getting-started.html">How-To Guides</a></li><li class="breadcrumb-item"><a href="../docs/debugging.html">Debugging</a></li></ol></nav>
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/faq.html">Troubleshooting</a></li><li class="breadcrumb-item"><a href="../docs/debugging.html">Debugging</a></li></ol></nav>
 <div class="quarto-title">
 <h1 class="title">Debugging</h1>
 </div>
@@ -402,21 +505,24 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <p>[!Important] All of these tips are incorporated into the <a href="#configuration">example configuration</a> for debugging with VSCode below.</p>
 </blockquote>
 <ol type="1">
-<li><strong>Make sure you are using the latest version of axolotl</strong>: This project changes often and bugs get fixed fast. Check your git branch and make sure you have pulled the latest changes from <code>main</code>.</li>
-<li><strong>Eliminate concurrency</strong>: Restrict the number of processes to 1 for both training and data preprocessing:
+<li><p><strong>Make sure you are using the latest version of axolotl</strong>: This project changes often and bugs get fixed fast. Check your git branch and make sure you have pulled the latest changes from <code>main</code>.</p></li>
+<li><p><strong>Eliminate concurrency</strong>: Restrict the number of processes to 1 for both training and data preprocessing:</p>
 <ul>
 <li>Set <code>CUDA_VISIBLE_DEVICES</code> to a single GPU, ex: <code>export CUDA_VISIBLE_DEVICES=0</code>.</li>
 <li>Set <code>dataset_processes: 1</code> in your axolotl config or run the training command with <code>--dataset_processes=1</code>.</li>
 </ul></li>
-<li><strong>Use a small dataset</strong>: Construct or use a small dataset from HF Hub. When using a small dataset, you will often have to make sure <code>sample_packing: False</code> and <code>eval_sample_packing: False</code> to avoid errors. If you are in a pinch and don’t have time to construct a small dataset but want to use from the HF Hub, you can shard the data (this will still tokenize the entire dataset, but will only use a fraction of the data for training. For example, to shard the dataset into 20 pieces, add the following to your axolotl config): <code>yaml     dataset:         ...         shards: 20</code></li>
-<li><strong>Use a small model</strong>: A good example of a small model is <a href="https://huggingface.co/TinyLlama/TinyLlama-1.1B-Chat-v1.0">TinyLlama/TinyLlama-1.1B-Chat-v1.0</a>.</li>
-<li><strong>Minimize iteration time</strong>: Make sure the training loop finishes as fast as possible, with these settings.
+<li><p><strong>Use a small dataset</strong>: Construct or use a small dataset from HF Hub. When using a small dataset, you will often have to make sure <code>sample_packing: False</code> and <code>eval_sample_packing: False</code> to avoid errors. If you are in a pinch and don’t have time to construct a small dataset but want to use from the HF Hub, you can shard the data (this will still tokenize the entire dataset, but will only use a fraction of the data for training. For example, to shard the dataset into 20 pieces, add the following to your axolotl config):</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="at">    ...</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">shards</span><span class="kw">:</span><span class="at"> </span><span class="dv">20</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div></li>
+<li><p><strong>Use a small model</strong>: A good example of a small model is <a href="https://huggingface.co/TinyLlama/TinyLlama-1.1B-Chat-v1.0">TinyLlama/TinyLlama-1.1B-Chat-v1.0</a>.</p></li>
+<li><p><strong>Minimize iteration time</strong>: Make sure the training loop finishes as fast as possible, with these settings.</p>
 <ul>
 <li><code>micro_batch_size: 1</code></li>
 <li><code>max_steps: 1</code></li>
 <li><code>val_set_size: 0</code></li>
 </ul></li>
-<li><strong>Clear Caches:</strong> Axolotl caches certain steps and so does the underlying HuggingFace trainer. You may want to clear some of these caches when debugging.
+<li><p><strong>Clear Caches:</strong> Axolotl caches certain steps and so does the underlying HuggingFace trainer. You may want to clear some of these caches when debugging.</p>
 <ul>
 <li>Data preprocessing: When debugging data preprocessing, which includes prompt template formation, you may want to delete the directory set in <code>dataset_prepared_path:</code> in your axolotl config. If you didn’t set this value, the default is <code>last_run_prepared</code>.</li>
 <li>HF Hub: If you are debugging data preprocessing, you should clear the relevant HF cache <a href="https://huggingface.co/docs/datasets/cache">HuggingFace cache</a>, by deleting the appropriate <code>~/.cache/huggingface/datasets/...</code> folder(s).</li>
@@ -429,9 +535,9 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <section id="background" class="level3">
 <h3 class="anchored" data-anchor-id="background">Background</h3>
 <p>The below example shows how to configure VSCode to debug data preprocessing of the <code>chat_template</code> format. This is the format used when you have the following in your axolotl config:</p>
-<div class="sourceCode" id="cb1"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> &lt;path to your chat_template formatted dataset&gt;</span><span class="co"> # example on HF Hub: fozziethebeat/alpaca_messages_2k_test</span></span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> chat_template</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb2"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> &lt;path to your chat_template formatted dataset&gt;</span><span class="co"> # example on HF Hub: fozziethebeat/alpaca_messages_2k_test</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> chat_template</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <blockquote class="blockquote">
 <p>[!Important] If you are already familiar with advanced VSCode debugging, you can skip the below explanation and look at the files <a href="../.vscode/launch.json">.vscode/launch.json</a> and <a href="../.vscode/tasks.json">.vscode/tasks.json</a> for an example configuration.</p>
 </blockquote>
@@ -442,8 +548,8 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <section id="setup" class="level3">
 <h3 class="anchored" data-anchor-id="setup">Setup</h3>
 <p>Make sure you have an <a href="https://setuptools.pypa.io/en/latest/userguide/development_mode.html">editable install</a> of Axolotl, which ensures that changes you make to the code are reflected at runtime. Run the following commands from the root of this project:</p>
-<div class="sourceCode" id="cb2"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip3</span> install packaging</span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="ex">pip3</span> install <span class="at">--no-build-isolation</span> <span class="at">-e</span> <span class="st">'.[flash-attn,deepspeed]'</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb3"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip3</span> install packaging</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="ex">pip3</span> install <span class="at">--no-build-isolation</span> <span class="at">-e</span> <span class="st">'.[flash-attn,deepspeed]'</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <section id="remote-hosts" class="level4">
 <h4 class="anchored" data-anchor-id="remote-hosts">Remote Hosts</h4>
 <p>If you developing on a remote host, you can easily use VSCode to debug remotely. To do so, you will need to follow this <a href="https://code.visualstudio.com/docs/remote/ssh">remote - SSH guide</a>. You can also see the video below on <a href="#video---attaching-to-docker-on-remote-host">Docker and Remote SSH debugging</a>.</p>
@@ -453,38 +559,38 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <h3 class="anchored" data-anchor-id="configuration">Configuration</h3>
 <p>The easiest way to get started is to modify the <a href="../.vscode/launch.json">.vscode/launch.json</a> file in this project. This is just an example configuration, so you may need to modify or copy it to suit your needs.</p>
 <p>For example, to mimic the command <code>cd devtools &amp;&amp; CUDA_VISIBLE_DEVICES=0 accelerate launch -m axolotl.cli.train dev_chat_template.yml</code>, you would use the below configuration<a href="#fn1" class="footnote-ref" id="fnref1" role="doc-noteref"><sup>1</sup></a>. Note that we add additional flags that override the axolotl config and incorporate the tips above (see the comments). We also set the working directory to <code>devtools</code> and set the <code>env</code> variable <code>HF_HOME</code> to a temporary folder that is later partially deleted. This is because we want to delete the HF dataset cache before each run in order to ensure that the data preprocessing code is run from scratch.</p>
-<pre class="jsonc"><code>// .vscode/launch.json
-{
-    "version": "0.2.0",
-    "configurations": [
-        {
-            "name": "Debug axolotl prompt - chat_template",
-            "type": "python",
-            "module": "accelerate.commands.launch",
-            "request": "launch",
-            "args": [
-                "-m", "axolotl.cli.train", "dev_chat_template.yml",
-                // The flags below simplify debugging by overriding the axolotl config
-                // with the debugging tips above.  Modify as needed.
-                "--dataset_processes=1",      // limits data preprocessing to one process
-                "--max_steps=1",              // limits training to just one step
-                "--batch_size=1",             // minimizes batch size
-                "--micro_batch_size=1",       // minimizes batch size
-                "--val_set_size=0",           // disables validation
-                "--sample_packing=False",     // disables sample packing which is necessary for small datasets
-                "--eval_sample_packing=False",// disables sample packing on eval set
-                "--dataset_prepared_path=temp_debug/axolotl_outputs/data", // send data outputs to a temp folder
-                "--output_dir=temp_debug/axolotl_outputs/model" // send model outputs to a temp folder
-                ],
-            "console": "integratedTerminal",      // show output in the integrated terminal
-            "cwd": "${workspaceFolder}/devtools", // set working directory to devtools from the root of the project
-            "justMyCode": true,                   // step through only axolotl code
-            "env": {"CUDA_VISIBLE_DEVICES": "0",  // Since we aren't doing distributed training, we need to limit to one GPU
-                    "HF_HOME": "${workspaceFolder}/devtools/temp_debug/.hf-cache"}, // send HF cache to a temp folder
-            "preLaunchTask": "cleanup-for-dataprep", // delete temp folders (see below)
-        }
-    ]
-}</code></pre>
+<div class="sourceCode" id="cb4"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="er">//</span> <span class="er">.vscode/launch.json</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">"version"</span><span class="fu">:</span> <span class="st">"0.2.0"</span><span class="fu">,</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    <span class="dt">"configurations"</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>        <span class="fu">{</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>            <span class="dt">"name"</span><span class="fu">:</span> <span class="st">"Debug axolotl prompt - chat_template"</span><span class="fu">,</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>            <span class="dt">"type"</span><span class="fu">:</span> <span class="st">"python"</span><span class="fu">,</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>            <span class="dt">"module"</span><span class="fu">:</span> <span class="st">"accelerate.commands.launch"</span><span class="fu">,</span></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>            <span class="dt">"request"</span><span class="fu">:</span> <span class="st">"launch"</span><span class="fu">,</span></span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>            <span class="dt">"args"</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>                <span class="st">"-m"</span><span class="ot">,</span> <span class="st">"axolotl.cli.train"</span><span class="ot">,</span> <span class="st">"dev_chat_template.yml"</span><span class="ot">,</span></span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>                <span class="er">//</span> <span class="er">The</span> <span class="er">flags</span> <span class="er">below</span> <span class="er">simplify</span> <span class="er">debugging</span> <span class="er">by</span> <span class="er">overriding</span> <span class="er">the</span> <span class="er">axolotl</span> <span class="er">config</span></span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a>                <span class="er">//</span> <span class="er">with</span> <span class="er">the</span> <span class="er">debugging</span> <span class="er">tips</span> <span class="er">above.</span>  <span class="er">Modify</span> <span class="er">as</span> <span class="er">needed.</span></span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a>                <span class="st">"--dataset_processes=1"</span><span class="ot">,</span>      <span class="er">//</span> <span class="er">limits</span> <span class="er">data</span> <span class="er">preprocessing</span> <span class="er">to</span> <span class="er">one</span> <span class="er">process</span></span>
+<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a>                <span class="st">"--max_steps=1"</span><span class="ot">,</span>              <span class="er">//</span> <span class="er">limits</span> <span class="er">training</span> <span class="er">to</span> <span class="er">just</span> <span class="er">one</span> <span class="er">step</span></span>
+<span id="cb4-16"><a href="#cb4-16" aria-hidden="true" tabindex="-1"></a>                <span class="st">"--batch_size=1"</span><span class="ot">,</span>             <span class="er">//</span> <span class="er">minimizes</span> <span class="er">batch</span> <span class="er">size</span></span>
+<span id="cb4-17"><a href="#cb4-17" aria-hidden="true" tabindex="-1"></a>                <span class="st">"--micro_batch_size=1"</span><span class="ot">,</span>       <span class="er">//</span> <span class="er">minimizes</span> <span class="er">batch</span> <span class="er">size</span></span>
+<span id="cb4-18"><a href="#cb4-18" aria-hidden="true" tabindex="-1"></a>                <span class="st">"--val_set_size=0"</span><span class="ot">,</span>           <span class="er">//</span> <span class="er">disables</span> <span class="er">validation</span></span>
+<span id="cb4-19"><a href="#cb4-19" aria-hidden="true" tabindex="-1"></a>                <span class="st">"--sample_packing=False"</span><span class="ot">,</span>     <span class="er">//</span> <span class="er">disables</span> <span class="er">sample</span> <span class="er">packing</span> <span class="er">which</span> <span class="er">is</span> <span class="er">necessary</span> <span class="er">for</span> <span class="er">small</span> <span class="er">datasets</span></span>
+<span id="cb4-20"><a href="#cb4-20" aria-hidden="true" tabindex="-1"></a>                <span class="st">"--eval_sample_packing=False"</span><span class="ot">,</span><span class="er">//</span> <span class="er">disables</span> <span class="er">sample</span> <span class="er">packing</span> <span class="er">on</span> <span class="er">eval</span> <span class="er">set</span></span>
+<span id="cb4-21"><a href="#cb4-21" aria-hidden="true" tabindex="-1"></a>                <span class="st">"--dataset_prepared_path=temp_debug/axolotl_outputs/data"</span><span class="ot">,</span> <span class="er">//</span> <span class="er">send</span> <span class="er">data</span> <span class="er">outputs</span> <span class="er">to</span> <span class="er">a</span> <span class="er">temp</span> <span class="er">folder</span></span>
+<span id="cb4-22"><a href="#cb4-22" aria-hidden="true" tabindex="-1"></a>                <span class="st">"--output_dir=temp_debug/axolotl_outputs/model"</span> <span class="er">//</span> <span class="er">send</span> <span class="er">model</span> <span class="er">outputs</span> <span class="er">to</span> <span class="er">a</span> <span class="er">temp</span> <span class="er">folder</span></span>
+<span id="cb4-23"><a href="#cb4-23" aria-hidden="true" tabindex="-1"></a>                <span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb4-24"><a href="#cb4-24" aria-hidden="true" tabindex="-1"></a>            <span class="dt">"console"</span><span class="fu">:</span> <span class="st">"integratedTerminal"</span><span class="fu">,</span>      <span class="er">//</span> <span class="er">show</span> <span class="er">output</span> <span class="er">in</span> <span class="er">the</span> <span class="er">integrated</span> <span class="er">terminal</span></span>
+<span id="cb4-25"><a href="#cb4-25" aria-hidden="true" tabindex="-1"></a>            <span class="dt">"cwd"</span><span class="fu">:</span> <span class="st">"${workspaceFolder}/devtools"</span><span class="fu">,</span> <span class="er">//</span> <span class="er">set</span> <span class="er">working</span> <span class="er">directory</span> <span class="er">to</span> <span class="er">devtools</span> <span class="er">from</span> <span class="er">the</span> <span class="er">root</span> <span class="er">of</span> <span class="er">the</span> <span class="er">project</span></span>
+<span id="cb4-26"><a href="#cb4-26" aria-hidden="true" tabindex="-1"></a>            <span class="dt">"justMyCode"</span><span class="fu">:</span> <span class="kw">true</span><span class="fu">,</span>                   <span class="er">//</span> <span class="er">step</span> <span class="er">through</span> <span class="er">only</span> <span class="er">axolotl</span> <span class="er">code</span></span>
+<span id="cb4-27"><a href="#cb4-27" aria-hidden="true" tabindex="-1"></a>            <span class="dt">"env"</span><span class="fu">:</span> <span class="fu">{</span><span class="dt">"CUDA_VISIBLE_DEVICES"</span><span class="fu">:</span> <span class="st">"0"</span><span class="fu">,</span>  <span class="er">//</span> <span class="er">Since</span> <span class="er">we</span> <span class="er">aren't</span> <span class="er">doing</span> <span class="er">distributed</span> <span class="er">training</span><span class="fu">,</span> <span class="er">we</span> <span class="er">need</span> <span class="er">to</span> <span class="er">limit</span> <span class="er">to</span> <span class="er">one</span> <span class="er">GPU</span></span>
+<span id="cb4-28"><a href="#cb4-28" aria-hidden="true" tabindex="-1"></a>                    <span class="dt">"HF_HOME"</span><span class="fu">:</span> <span class="st">"${workspaceFolder}/devtools/temp_debug/.hf-cache"</span><span class="fu">},</span> <span class="er">//</span> <span class="er">send</span> <span class="er">HF</span> <span class="er">cache</span> <span class="er">to</span> <span class="er">a</span> <span class="er">temp</span> <span class="er">folder</span></span>
+<span id="cb4-29"><a href="#cb4-29" aria-hidden="true" tabindex="-1"></a>            <span class="dt">"preLaunchTask"</span><span class="fu">:</span> <span class="st">"cleanup-for-dataprep"</span><span class="fu">,</span> <span class="er">//</span> <span class="er">delete</span> <span class="er">temp</span> <span class="er">folders</span> <span class="er">(see</span> <span class="er">below)</span></span>
+<span id="cb4-30"><a href="#cb4-30" aria-hidden="true" tabindex="-1"></a>        <span class="fu">}</span></span>
+<span id="cb4-31"><a href="#cb4-31" aria-hidden="true" tabindex="-1"></a>    <span class="ot">]</span></span>
+<span id="cb4-32"><a href="#cb4-32" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p><strong>Additional notes about this configuration:</strong></p>
 <ul>
 <li>The argument <code>justMyCode</code> is set to <code>true</code> such that you step through only the axolotl code. If you want to step into dependencies, set this to <code>false</code>.</li>
@@ -498,34 +604,34 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <p>[!Tip] You may not want to delete these folders. For example, if you are debugging model training instead of data pre-processing, you may NOT want to delete the cache or output folders. You may also need to add additional tasks to the <code>tasks.json</code> file depending on your use case.</p>
 </blockquote>
 <p>Below is the <a href="../.vscode/tasks.json">./vscode/tasks.json</a> file that defines the <code>cleanup-for-dataprep</code> task. This task is run before each debugging session when you use the above configuration. Note how there are two tasks that delete the two folders mentioned above. The third task <code>cleanup-for-dataprep</code> is a composite task that combines the two tasks. A composite task is necessary because VSCode does not allow you to specify multiple tasks in the <code>preLaunchTask</code> argument of the <code>launch.json</code> file.</p>
-<pre class="jsonc"><code>// .vscode/tasks.json
-// this file is used by launch.json
-{
-    "version": "2.0.0",
-    "tasks": [
-      // this task changes into the devtools directory and deletes the temp_debug/axolotl_outputs folder
-      {
-        "label": "delete-outputs",
-        "type": "shell",
-        "command": "rm -rf temp_debug/axolotl_outputs",
-        "options":{ "cwd": "${workspaceFolder}/devtools"},
-        "problemMatcher": []
-      },
-      // this task changes into the devtools directory and deletes the `temp_debug/.hf-cache/datasets` folder
-      {
-        "label": "delete-temp-hf-dataset-cache",
-        "type": "shell",
-        "command": "rm -rf temp_debug/.hf-cache/datasets",
-        "options":{ "cwd": "${workspaceFolder}/devtools"},
-        "problemMatcher": []
-      },
-        // this task combines the two tasks above
-      {
-       "label": "cleanup-for-dataprep",
-       "dependsOn": ["delete-outputs", "delete-temp-hf-dataset-cache"],
-      }
-    ]
-}</code></pre>
+<div class="sourceCode" id="cb5"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="er">//</span> <span class="er">.vscode/tasks.json</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="er">//</span> <span class="er">this</span> <span class="er">file</span> <span class="er">is</span> <span class="er">used</span> <span class="er">by</span> <span class="er">launch.json</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>    <span class="dt">"version"</span><span class="fu">:</span> <span class="st">"2.0.0"</span><span class="fu">,</span></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>    <span class="dt">"tasks"</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>      <span class="er">//</span> <span class="er">this</span> <span class="er">task</span> <span class="er">changes</span> <span class="er">into</span> <span class="er">the</span> <span class="er">devtools</span> <span class="er">directory</span> <span class="er">and</span> <span class="er">deletes</span> <span class="er">the</span> <span class="er">temp_debug/axolotl_outputs</span> <span class="er">folder</span></span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>      <span class="fu">{</span></span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a>        <span class="dt">"label"</span><span class="fu">:</span> <span class="st">"delete-outputs"</span><span class="fu">,</span></span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a>        <span class="dt">"type"</span><span class="fu">:</span> <span class="st">"shell"</span><span class="fu">,</span></span>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a>        <span class="dt">"command"</span><span class="fu">:</span> <span class="st">"rm -rf temp_debug/axolotl_outputs"</span><span class="fu">,</span></span>
+<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a>        <span class="dt">"options"</span><span class="fu">:{</span> <span class="dt">"cwd"</span><span class="fu">:</span> <span class="st">"${workspaceFolder}/devtools"</span><span class="fu">},</span></span>
+<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a>        <span class="dt">"problemMatcher"</span><span class="fu">:</span> <span class="ot">[]</span></span>
+<span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a>      <span class="fu">}</span><span class="ot">,</span></span>
+<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a>      <span class="er">//</span> <span class="er">this</span> <span class="er">task</span> <span class="er">changes</span> <span class="er">into</span> <span class="er">the</span> <span class="er">devtools</span> <span class="er">directory</span> <span class="er">and</span> <span class="er">deletes</span> <span class="er">the</span> <span class="er">`temp_debug/.hf-cache/datasets`</span> <span class="er">folder</span></span>
+<span id="cb5-15"><a href="#cb5-15" aria-hidden="true" tabindex="-1"></a>      <span class="fu">{</span></span>
+<span id="cb5-16"><a href="#cb5-16" aria-hidden="true" tabindex="-1"></a>        <span class="dt">"label"</span><span class="fu">:</span> <span class="st">"delete-temp-hf-dataset-cache"</span><span class="fu">,</span></span>
+<span id="cb5-17"><a href="#cb5-17" aria-hidden="true" tabindex="-1"></a>        <span class="dt">"type"</span><span class="fu">:</span> <span class="st">"shell"</span><span class="fu">,</span></span>
+<span id="cb5-18"><a href="#cb5-18" aria-hidden="true" tabindex="-1"></a>        <span class="dt">"command"</span><span class="fu">:</span> <span class="st">"rm -rf temp_debug/.hf-cache/datasets"</span><span class="fu">,</span></span>
+<span id="cb5-19"><a href="#cb5-19" aria-hidden="true" tabindex="-1"></a>        <span class="dt">"options"</span><span class="fu">:{</span> <span class="dt">"cwd"</span><span class="fu">:</span> <span class="st">"${workspaceFolder}/devtools"</span><span class="fu">},</span></span>
+<span id="cb5-20"><a href="#cb5-20" aria-hidden="true" tabindex="-1"></a>        <span class="dt">"problemMatcher"</span><span class="fu">:</span> <span class="ot">[]</span></span>
+<span id="cb5-21"><a href="#cb5-21" aria-hidden="true" tabindex="-1"></a>      <span class="fu">}</span><span class="ot">,</span></span>
+<span id="cb5-22"><a href="#cb5-22" aria-hidden="true" tabindex="-1"></a>        <span class="er">//</span> <span class="er">this</span> <span class="er">task</span> <span class="er">combines</span> <span class="er">the</span> <span class="er">two</span> <span class="er">tasks</span> <span class="er">above</span></span>
+<span id="cb5-23"><a href="#cb5-23" aria-hidden="true" tabindex="-1"></a>      <span class="fu">{</span></span>
+<span id="cb5-24"><a href="#cb5-24" aria-hidden="true" tabindex="-1"></a>       <span class="dt">"label"</span><span class="fu">:</span> <span class="st">"cleanup-for-dataprep"</span><span class="fu">,</span></span>
+<span id="cb5-25"><a href="#cb5-25" aria-hidden="true" tabindex="-1"></a>       <span class="dt">"dependsOn"</span><span class="fu">:</span> <span class="ot">[</span><span class="st">"delete-outputs"</span><span class="ot">,</span> <span class="st">"delete-temp-hf-dataset-cache"</span><span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb5-26"><a href="#cb5-26" aria-hidden="true" tabindex="-1"></a>      <span class="fu">}</span></span>
+<span id="cb5-27"><a href="#cb5-27" aria-hidden="true" tabindex="-1"></a>    <span class="ot">]</span></span>
+<span id="cb5-28"><a href="#cb5-28" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </section>
 <section id="customizing-your-debugger" class="level3">
 <h3 class="anchored" data-anchor-id="customizing-your-debugger">Customizing your debugger</h3>
@@ -549,19 +655,19 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <section id="setup-1" class="level3">
 <h3 class="anchored" data-anchor-id="setup-1">Setup</h3>
 <p>On the host that is running axolotl (ex: if you are using a remote host), clone the axolotl repo and change your current directory to the root:</p>
-<div class="sourceCode" id="cb5"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="fu">git</span> clone https://github.com/axolotl-ai-cloud/axolotl</span>
-<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> axolotl</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb6"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">git</span> clone https://github.com/axolotl-ai-cloud/axolotl</span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> axolotl</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <blockquote class="blockquote">
 <p>[!Tip] If you already have axolotl cloned on your host, make sure you have the latest changes and change into the root of the project.</p>
 </blockquote>
 <p>Next, run the desired docker image and mount the current directory. Below is a docker command you can run to do this:<a href="#fn2" class="footnote-ref" id="fnref2" role="doc-noteref"><sup>2</sup></a></p>
-<div class="sourceCode" id="cb6"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> run <span class="at">--privileged</span> <span class="at">--gpus</span> <span class="st">'"all"'</span> <span class="at">--shm-size</span> 10g <span class="at">--rm</span> <span class="at">-it</span> <span class="at">--name</span> axolotl <span class="at">--ipc</span><span class="op">=</span>host <span class="at">--ulimit</span> memlock=-1 <span class="at">--ulimit</span> stack=67108864 <span class="at">--mount</span> type=bind,src=<span class="st">"</span><span class="va">${PWD}</span><span class="st">"</span>,target=/workspace/axolotl <span class="at">-v</span> <span class="va">${HOME}</span>/.cache/huggingface:/root/.cache/huggingface axolotlai/axolotl:main-py3.10-cu118-2.0.1</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb7"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> run <span class="at">--privileged</span> <span class="at">--gpus</span> <span class="st">'"all"'</span> <span class="at">--shm-size</span> 10g <span class="at">--rm</span> <span class="at">-it</span> <span class="at">--name</span> axolotl <span class="at">--ipc</span><span class="op">=</span>host <span class="at">--ulimit</span> memlock=-1 <span class="at">--ulimit</span> stack=67108864 <span class="at">--mount</span> type=bind,src=<span class="st">"</span><span class="va">${PWD}</span><span class="st">"</span>,target=/workspace/axolotl <span class="at">-v</span> <span class="va">${HOME}</span>/.cache/huggingface:/root/.cache/huggingface axolotlai/axolotl:main-py3.10-cu118-2.0.1</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <blockquote class="blockquote">
 <p>[!Tip] To understand which containers are available, see the <a href="../README.md#docker">Docker section of the README</a> and the <a href="https://hub.docker.com/r/axolotlai/axolotl/tags">DockerHub repo</a>. For details of how the Docker containers are built, see axolotl’s <a href="../.github/workflows/main.yml">Docker CI builds</a>.</p>
 </blockquote>
 <p>You will now be in the container. Next, perform an editable install of Axolotl:</p>
-<div class="sourceCode" id="cb7"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip3</span> install packaging</span>
-<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="ex">pip3</span> install <span class="at">--no-build-isolation</span> <span class="at">-e</span> <span class="st">'.[flash-attn,deepspeed]'</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb8"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip3</span> install packaging</span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="ex">pip3</span> install <span class="at">--no-build-isolation</span> <span class="at">-e</span> <span class="st">'.[flash-attn,deepspeed]'</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </section>
 <section id="attach-to-container" class="level3">
 <h3 class="anchored" data-anchor-id="attach-to-container">Attach To Container</h3>
