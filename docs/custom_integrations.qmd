@@ -1,9 +1,7 @@
 ---
 title: Custom Integrations
-format:
-  html:
-    toc: true
-    toc-depth: 2
+toc: true
+toc-depth: 3
 ---
 
 ```{python}

@@ -1,16 +1,14 @@
 ---
 title: Template-Free
 description: Construct prompts without a template.
-format:
-  html:
-    toc: true
-    toc-depth: 2
+toc: true
+toc-depth: 3
 order: 4
 ---
 
-# Background {#sec-background}
+## Background {#sec-background}
 
-## Masking Inputs {#masking-inputs}
+### Masking Inputs {#masking-inputs}
 
 One of the most popular features of
 [axolotl](https://github.com/axolotl-ai-cloud/axolotl) is
@@ -26,7 +24,7 @@ such as `alpaca` or `chatml`, axolotl knows what is an input
 (i.e. human) vs. an output (i.e. the assistant) and masks the input
 labels so that your model can focus on predicting the outputs only.
 
-## You may not want prompt templates {#sec-you-may-not-want-prompt-templates}
+### You may not want prompt templates {#sec-you-may-not-want-prompt-templates}
 
 However, there are many situations where you don't want to use one of
 these formats or templates. This is because they can:
@@ -40,7 +38,7 @@ these formats or templates. This is because they can:
     want multi-turn conversations, roles, etc.
 -   Limit you to only certain roles that the template allows.
 
-## The `input_output` format {#sec-the-inputoutput-format}
+### The `input_output` format {#sec-the-inputoutput-format}
 
 You can construct your prompts without a template by using the
 `input_output` format, by setting `type: input_output` in your
@@ -59,11 +57,11 @@ Unlike `type: completion`, which is also template-free,
 `type: input_output` allows you to mask segments of your text. More
 details on how this works are described below.
 
-# Usage {#sec-usage}
+## Usage {#sec-usage}
 
 This is how you can use the `input_output` format:
 
-## 1. Prepare Data {#sec-1-prepare-data}
+### 1. Prepare Data {#sec-1-prepare-data}
 
 To use the `input_output` format, collect your data in the following
 format into a jsonl file (below is the first row from the file
@@ -107,7 +105,7 @@ model isn't trained on it. Some things to keep in mind:
 > 2.  Make sure you check the materialized output to validate that the
     prompt is getting assembled how you like.
 
-## 2. Use `type: input_output` {#sec-2-use-type-inputoutput}
+### 2. Use `type: input_output` {#sec-2-use-type-inputoutput}
 
 Let's materialize data with our `output.jsonl` file by setting
 `type: input_output` in our axolotl config:
@@ -157,7 +155,7 @@ The format is `decoded_token`(`label`, `token_id`), for example,
 token_id is `1`. When the label is `-100` then that token is ignored for
 training.
 
-## 3. Check the prompts {#sec-3-check-the-prompts}
+### 3. Check the prompts {#sec-3-check-the-prompts}
 
 Here is another way to check the materialized output:
 
