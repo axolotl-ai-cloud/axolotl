@@ -144,7 +144,7 @@ You can use the following command to materialize your data. The
 verify that the correct items are being ignored:
 
 ```bash
-$ python -m axolotl.cli.preprocess training_config.yaml --debug
+axolotl preprocess training_config.yaml --debug
 
 ...
 [2024-03-05 23:36:46,969] [INFO] [axolotl.check_example_labels:35] [PID:607731] [RANK:0] <s>(1, 1) Hello(22557, 22557)
