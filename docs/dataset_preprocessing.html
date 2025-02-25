@@ -39,7 +39,7 @@ ul.task-list li input[type="checkbox"] {
 <link href="../site_libs/quarto-html/quarto-syntax-highlighting-dark-b53751a350365c71b6c909e95f209ed1.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../site_libs/bootstrap/bootstrap-0cda210ced8960466d2ee7bf22d15016.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
+<link href="../site_libs/bootstrap/bootstrap-71f806479865a0e7fd52beea5cc266f1.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -393,8 +393,18 @@ ul.task-list li input[type="checkbox"] {
 </nav>
 <div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
 <!-- margin-sidebar -->
-    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar zindex-bottom">
-        
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#overview" id="toc-overview" class="nav-link active" data-scroll-target="#overview">Overview</a>
+  <ul class="collapse">
+  <li><a href="#what-are-the-benefits-of-pre-processing" id="toc-what-are-the-benefits-of-pre-processing" class="nav-link" data-scroll-target="#what-are-the-benefits-of-pre-processing">What are the benefits of pre-processing?</a></li>
+  <li><a href="#what-are-the-edge-cases" id="toc-what-are-the-edge-cases" class="nav-link" data-scroll-target="#what-are-the-edge-cases">What are the edge cases?</a></li>
+  </ul></li>
+  </ul>
+</nav>
     </div>
 <!-- main -->
 <main class="content" id="quarto-document-content">
@@ -423,18 +433,34 @@ ul.task-list li input[type="checkbox"] {
 </header>
 
 
-<p>Dataset pre-processing is the step where Axolotl takes each dataset you’ve configured alongside the (dataset format)[../dataset-formats/] and prompt strategies to: - parse the dataset based on the <em>dataset format</em> - transform the dataset to how you would interact with the model based on the <em>prompt strategy</em> - tokenize the dataset based on the configured model &amp; tokenizer - shuffle and merge multiple datasets together if using more than one</p>
+<section id="overview" class="level2">
+<h2 class="anchored" data-anchor-id="overview">Overview</h2>
+<p>Dataset pre-processing is the step where Axolotl takes each dataset you’ve configured alongside the <a href="docs/dataset-formats">dataset format</a> and prompt strategies to:</p>
+<ul>
+<li>parse the dataset based on the <em>dataset format</em></li>
+<li>transform the dataset to how you would interact with the model based on the <em>prompt strategy</em></li>
+<li>tokenize the dataset based on the configured model &amp; tokenizer</li>
+<li>shuffle and merge multiple datasets together if using more than one</li>
+</ul>
 <p>The processing of the datasets can happen one of two ways:</p>
 <ol type="1">
-<li>Before kicking off training by calling <code>python -m axolotl.cli.preprocess /path/to/your.yaml --debug</code></li>
+<li>Before kicking off training by calling <code>axolotl preprocess config.yaml --debug</code></li>
 <li>When training is started</li>
 </ol>
-<p>What are the benefits of pre-processing? When training interactively or for sweeps (e.g.&nbsp;you are restarting the trainer often), processing the datasets can oftentimes be frustratingly slow. Pre-processing will cache the tokenized/formatted datasets according to a hash of dependent training parameters so that it will intelligently pull from its cache when possible.</p>
+<section id="what-are-the-benefits-of-pre-processing" class="level3">
+<h3 class="anchored" data-anchor-id="what-are-the-benefits-of-pre-processing">What are the benefits of pre-processing?</h3>
+<p>When training interactively or for sweeps (e.g.&nbsp;you are restarting the trainer often), processing the datasets can oftentimes be frustratingly slow. Pre-processing will cache the tokenized/formatted datasets according to a hash of dependent training parameters so that it will intelligently pull from its cache when possible.</p>
 <p>The path of the cache is controlled by <code>dataset_prepared_path:</code> and is often left blank in example YAMLs as this leads to a more robust solution that prevents unexpectedly reusing cached data.</p>
 <p>If <code>dataset_prepared_path:</code> is left empty, when training, the processed dataset will be cached in a default path of <code>./last_run_prepared/</code>, but will ignore anything already cached there. By explicitly setting <code>dataset_prepared_path: ./last_run_prepared</code>, the trainer will use whatever pre-processed data is in the cache.</p>
-<p>What are the edge cases? Let’s say you are writing a custom prompt strategy or using a user-defined prompt template. Because the trainer cannot readily detect these changes, we cannot change the calculated hash value for the pre-processed dataset. If you have <code>dataset_prepared_path: ...</code> set and change your prompt templating logic, it may not pick up the changes you made and you will be training over the old prompt.</p>
+</section>
+<section id="what-are-the-edge-cases" class="level3">
+<h3 class="anchored" data-anchor-id="what-are-the-edge-cases">What are the edge cases?</h3>
+<p>Let’s say you are writing a custom prompt strategy or using a user-defined prompt template. Because the trainer cannot readily detect these changes, we cannot change the calculated hash value for the pre-processed dataset.</p>
+<p>If you have <code>dataset_prepared_path: ...</code> set and change your prompt templating logic, it may not pick up the changes you made and you will be training over the old prompt.</p>
 
 
+</section>
+</section>
 
 </main> <!-- /main -->
 <script id="quarto-html-after-body" type="application/javascript">

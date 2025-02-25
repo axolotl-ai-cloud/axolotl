@@ -39,7 +39,7 @@ ul.task-list li input[type="checkbox"] {
 <link href="../site_libs/quarto-html/quarto-syntax-highlighting-dark-b53751a350365c71b6c909e95f209ed1.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../site_libs/bootstrap/bootstrap-0cda210ced8960466d2ee7bf22d15016.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
+<link href="../site_libs/bootstrap/bootstrap-71f806479865a0e7fd52beea5cc266f1.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -474,6 +474,10 @@ ul.task-list li input[type="checkbox"] {
 <p><strong>Q: <code>Content end boundary is the same as start boundary for turn ___. This is likely an empty turn.</code></strong></p>
 <blockquote class="blockquote">
 <p>A: This is likely an empty turn.</p>
+</blockquote>
+<p><strong>Q: The EOS/EOT token is incorrectly being masked or not being masked.</strong></p>
+<blockquote class="blockquote">
+<p>A: This is because of the mismatch between <code>tokenizer.eos_token</code> and EOS/EOT token in template. Please make sure to set <code>eos_token</code> under <code>special_tokens</code> to the same EOS/EOT token as in template.</p>
 </blockquote>
 
 
