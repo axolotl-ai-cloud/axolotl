@@ -184,15 +184,15 @@ Runs LM Evaluation Harness on your model.
 ```bash
 # Basic evaluation
 axolotl lm-eval config.yml
-
-# Evaluate specific tasks
-axolotl lm-eval config.yml --tasks arc_challenge,hellaswag
 ```
 
 Configuration options:
 
 ```yaml
-lm_eval_tasks: # List of tasks to evaluate
+# List of tasks to evaluate
+lm_eval_tasks:
+  - arc_challenge
+  - hellaswag
 lm_eval_batch_size: # Batch size for evaluation
 output_dir: # Directory to save evaluation results
 ```
