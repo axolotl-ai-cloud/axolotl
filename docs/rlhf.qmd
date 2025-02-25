@@ -494,6 +494,48 @@ The input format is a simple JSON input with customizable fields based on the ab
 }
 ```
 
+### GRPO
+
+GRPO uses custom reward functions and transformations. Please have them ready locally.
+
+For ex, to load OpenAI's GSM8K and use a random reward for completions:
+
+```python
+# rewards.py
+import random
+
+def rand_reward_func(completions, **kwargs) -> list[float]:
+    return [random.uniform(0, 1) for _ in completions]
+
+def oai_gsm8k_transform(cfg, *args, **kwargs):
+    def transform_fn(example, tokenizer=None):
+        label = example["answer"].split("####")[-1].strip().replace(",", "")
+        return {
+            "prompt": [{"role": "user", "content": example["question"]},],
+            "answer": label,
+        }
+    return transform_fn, {"remove_columns": ["question"]}
+```
+
+```yaml
+rl: grpo
+
+trl:
+    beta: 0.001
+    max_completion_length: 256
+    use_vllm: True
+    vllm_device: auto
+    vllm_gpu_memory_utilization: 0.15
+    num_generations: 4
+    reward_funcs: ["rewards.rand_reward_func"]    # format: '{file_name}.{fn_name}'
+datasets:
+  - path: openai/gsm8k
+    name: main
+    type: rewards.oai_gsm8k_transform  # format: '{file_name}.{fn_name}'
+```
+
+To see other examples of custom reward functions, please see [TRL GRPO Docs](https://github.com/huggingface/trl/blob/main/docs/source/grpo_trainer.md#using-a-custom-reward-function).
+
 ### Using local dataset files
 
 ```yaml
