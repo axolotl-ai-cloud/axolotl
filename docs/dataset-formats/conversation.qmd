@@ -6,7 +6,9 @@ order: 3
 
 ## sharegpt
 
-IMPORTANT: ShareGPT is deprecated!. Please see [chat_template](#chat_template) section below.
+::: {.callout-important}
+ShareGPT is deprecated!. Please see [chat_template](#chat_template) section below.
+:::
 
 ## pygmalion
 

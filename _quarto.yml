@@ -3,10 +3,12 @@ project:
 
 website:
   title: "Axolotl"
-  description: "Fine-tuning"
+  description: "We make fine-tuning accessible, scalable, and fun"
   favicon: favicon.jpg
+
   navbar:
-    title: Axolotl
+    logo: image/axolotl_logo_digital_white.svg
+    title: false
     background: dark
     pinned: false
     collapse: false
@@ -25,33 +27,58 @@ website:
       contents:
         - text: Home
           href: index.qmd
-        - section: "How-To Guides"
+
+        - section: "Getting Started"
           contents:
-          # TODO Edit folder structure after we have more docs.
             - docs/getting-started.qmd
             - docs/installation.qmd
-            - docs/debugging.qmd
+            - docs/cli.qmd
             - docs/inference.qmd
-            - docs/multipack.qmd
-            - docs/fsdp_qlora.qmd
-            - docs/input_output.qmd
-            - docs/rlhf.qmd
-            - docs/nccl.qmd
-            - docs/mac.qmd
-            - docs/multi-gpu.qmd
-            - docs/multi-node.qmd
-            - docs/unsloth.qmd
-            - docs/amd_hpc.qmd
-            - docs/ray-integration.qmd
+
         - section: "Dataset Formats"
           contents: docs/dataset-formats/*
+
+        - section: "Deployments"
+          contents:
+            - docs/multi-gpu.qmd
+            - docs/multi-node.qmd
+            - docs/ray-integration.qmd
+            - docs/amd_hpc.qmd
+            - docs/mac.qmd
+
+        - section: "How To Guides"
+          contents:
+            - docs/multimodal.qmd
+            - docs/rlhf.qmd
+            - docs/reward_modelling.qmd
+            - docs/lr_groups.qmd
+            - docs/lora_optims.qmd
+
+        - section: "Core Concepts"
+          contents:
+            - docs/batch_vs_grad.qmd
+            - docs/dataset_preprocessing.qmd
+            - docs/multipack.qmd
+
+        - section: "Advanced Features"
+          contents:
+            - docs/fsdp_qlora.qmd
+            - docs/unsloth.qmd
+            - docs/torchao.qmd
+            - docs/custom_integrations.qmd
+
+        - section: "Troubleshooting"
+          contents:
+            - docs/faq.qmd
+            - docs/debugging.qmd
+            - docs/nccl.qmd
+
         - section: "Reference"
           contents:
             - docs/config.qmd
-        - docs/faq.qmd
 
 format:
   html:
-    theme: materia
+    theme: darkly
     css: styles.css
     toc: true

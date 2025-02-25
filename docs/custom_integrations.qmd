@@ -1,0 +1,57 @@
+---
+title: Custom Integrations
+toc: true
+toc-depth: 3
+---
+
+```{python}
+#| echo: false
+
+import re
+
+def process_readme(integration_name):
+    try:
+        path = f'../src/axolotl/integrations/{integration_name}/README.md'
+        with open(path, 'r') as f:
+            txt = f.read()
+            # Remove h1 headings
+            txt = re.sub(r'^# .*\n?', '', txt, flags=re.MULTILINE)
+            # Convert h2 to h3
+            txt = re.sub(r'^## ', '### ', txt, flags=re.MULTILINE)
+            return txt
+    except FileNotFoundError:
+        return None
+
+def print_section(name, folder_name):
+    output = f"\n## {name}\n"
+    content = process_readme(folder_name)
+    if content:
+        output += content
+    output += f"\nPlease see reference [here](https://github.com/axolotl-ai-cloud/axolotl/tree/main/src/axolotl/integrations/{folder_name})\n"
+    return output
+```
+
+```{python}
+#| output: asis
+#| echo: false
+
+# Introduction text
+print("""
+Axolotl adds custom features through `integrations`. They are located within the `src/axolotl/integrations` directory.
+
+To enable them, please check the respective documentations.
+""")
+
+# Sections
+sections = [
+    ("Cut Cross Entropy", "cut_cross_entropy"),
+    ("Grokfast", "grokfast"),
+    ("Knowledge Distillation (KD)", "kd"),
+    ("Liger Kernels", "liger"),
+    ("Language Model Evaluation Harness (LM Eval)", "lm_eval"),
+    ("Spectrum", "spectrum")
+]
+
+for section_name, folder_name in sections:
+    print(print_section(section_name, folder_name))
+```

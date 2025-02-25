@@ -1,5 +1,5 @@
 ---
-title: "Getting Started with Axolotl"
+title: "Quickstart"
 format:
   html:
     toc: true
@@ -17,12 +17,12 @@ Let's start by fine-tuning a small language model using LoRA. This example uses 
 Assuming `axolotl` is installed (if not, see our [Installation Guide](installation.qmd))
 
 1. Download example configs:
-```shell
+```bash
 axolotl fetch examples
 ```
 
 2. Run the training:
-```shell
+```bash
 axolotl train examples/llama-3/lora-1b.yml
 ```
 
@@ -108,7 +108,7 @@ Please consult the supported [Dataset Formats](dataset-formats/) for more detail
 
 3. Run the training:
 
-```shell
+```bash
 axolotl train my_training.yml
 ```
 
@@ -118,7 +118,7 @@ axolotl train my_training.yml
 
 After training, test your model:
 
-```shell
+```bash
 axolotl inference my_training.yml --lora-model-dir="./outputs/lora-out"
 ```
 
@@ -126,7 +126,7 @@ axolotl inference my_training.yml --lora-model-dir="./outputs/lora-out"
 
 For large datasets, preprocess first:
 
-```shell
+```bash
 axolotl preprocess my_training.yml
 ```
 
@@ -134,7 +134,7 @@ axolotl preprocess my_training.yml
 
 Launch a Gradio interface:
 
-```shell
+```bash
 axolotl inference my_training.yml --lora-model-dir="./outputs/lora-out" --gradio
 ```
 

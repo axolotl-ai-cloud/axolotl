@@ -1,11 +1,10 @@
 ---
-title: "Installation Guide"
+title: "Installation"
 format:
   html:
     toc: true
     toc-depth: 3
     number-sections: true
-    code-tools: true
 execute:
   enabled: false
 ---

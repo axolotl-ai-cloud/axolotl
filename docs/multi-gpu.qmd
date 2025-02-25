@@ -1,5 +1,5 @@
 ---
-title: "Multi-GPU Training Guide"
+title: "Multi-GPU"
 format:
   html:
     toc: true
@@ -35,7 +35,11 @@ deepspeed: deepspeed_configs/zero1.json
 ### Usage {#sec-deepspeed-usage}
 
 ```{.bash}
-accelerate launch -m axolotl.cli.train examples/llama-2/config.yml --deepspeed deepspeed_configs/zero1.json
+# Passing arg via config
+axolotl train config.yml
+
+# Passing arg via cli
+axolotl train config.yml --deepspeed deepspeed_configs/zero1.json
 ```
 
 ### ZeRO Stages {#sec-zero-stages}
@@ -70,25 +74,7 @@ For combining FSDP with QLoRA, see our [dedicated guide](fsdp_qlora.qmd).
 
 ### Liger Kernel Integration {#sec-liger}
 
-::: {.callout-note}
-Liger Kernel provides efficient Triton kernels for LLM training, offering:
-
-- 20% increase in multi-GPU training throughput
-- 60% reduction in memory usage
-- Compatibility with both FSDP and DeepSpeed
-:::
-
-Configuration:
-
-```{.yaml}
-plugins:
-  - axolotl.integrations.liger.LigerPlugin
-liger_rope: true
-liger_rms_norm: true
-liger_glu_activation: true
-liger_layer_norm: true
-liger_fused_linear_cross_entropy: true
-```
+Please see [docs](custom_integrations.qmd#liger) for more info.
 
 ## Troubleshooting {#sec-troubleshooting}
 

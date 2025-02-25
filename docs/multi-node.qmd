@@ -13,7 +13,7 @@ You will also need to have the same configuration file for your model on each ma
 Make sure the main machine is reachable by other machines.
 :::
 
-# Accelerate
+## Accelerate
 
 You will need to create a configuration for accelerate, either by using `accelerate config` and follow the instructions or you can use one of the preset below:
 
@@ -51,17 +51,17 @@ fsdp_config:
 
 All you have to do now is launch using accelerate as you would usually do on each machine and voila, the processes will start once you have launched accelerate on every machine.
 
-# Raytrain
+## Raytrain
 
 Please see ray train doc [here](ray-integration.qmd).
 
-# Torchrun
+## Torchrun
 
 If you are using Infiniband, we recommend torchrun to utilize the full bandwidth.
 
 Set the following env (change buffersize/socketname depending on your system):
 
-```yaml
+```bash
 export NCCL_IB_DISABLE=0
 export NCCL_SOCKET_IFNAME="eth0,en,eth,em,bond"
 export NCCL_BUFFSIZE=2097152

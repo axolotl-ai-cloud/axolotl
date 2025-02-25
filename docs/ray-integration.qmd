@@ -1,5 +1,5 @@
 ---
-title: Ray Train integration
+title: Ray Train
 description: How to use Axolotl with Ray Train
 ---
 
@@ -9,7 +9,7 @@ With the `--use-ray` CLI flag, Axolotl will use Ray Train's [`TorchTrainer`](htt
 
 ## Ray cluster setup
 
-A prerequisite using the Ray Train integration is to setup a Ray cluster on your desired node(s). For a detailed guide on how you can get started with ray clusters, check the official Ray docs here: https://docs.ray.io/en/latest/cluster/getting-started.html
+A prerequisite using the Ray Train integration is to setup a Ray cluster on your desired node(s). For a detailed guide on how you can get started with ray clusters, check the official Ray docs [here](https://docs.ray.io/en/latest/cluster/getting-started.html).
 
 Every Ray cluster has one _head_ node and a set of worker nodes. The head node is just like any other worker node, but it also runs certain special processes related to scheduling and orchestration. Ray-enabled scripts are run on the head node and depending on the resources (number of CPUs, GPUs, etc) they request, will be scheduled to run certain tasks on the worker nodes. For more on key concepts behind a Ray cluster, you can refer this [doc](https://docs.ray.io/en/latest/cluster/key-concepts.html#cluster-key-concepts).
 
@@ -58,13 +58,11 @@ You can find an example configuration at `configs/llama-3/lora-1b-ray.yaml`.
 The key parameters to note here are:
 
 ```yaml
-...
 use_ray: true
 ray_num_workers: 4
 # optional
 resources_per_worker:
     GPU: 1
-...
 ```
 
 - `use_ray`: This is the flag that enables the Ray Train integration. You can either use the corresponding `--use-ray` flag in the CLI or set `use_ray` in the config file.

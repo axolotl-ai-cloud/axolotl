@@ -1,7 +1,6 @@
 ---
 title: "LoRA Optimizations"
-description: "Custom autograd functions and Triton kernels in Axolotl for optimized
-LoRA fine-tuning"
+description: "Custom autograd functions and Triton kernels in Axolotl for optimized LoRA fine-tuning"
 ---
 
 Inspired by [Unsloth](https://github.com/unslothai/unsloth), we've implemented two
