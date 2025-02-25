@@ -3,8 +3,11 @@ title: Dataset Preprocessing
 description: How datasets are processed
 ---
 
+## Overview
+
 Dataset pre-processing is the step where Axolotl takes each dataset you've configured alongside
-the (dataset format)[../dataset-formats/] and prompt strategies to:
+the [dataset format](docs/dataset-formats) and prompt strategies to:
+
  - parse the dataset based on the *dataset format*
  - transform the dataset to how you would interact with the model based on the *prompt strategy*
  - tokenize the dataset based on the configured model & tokenizer
@@ -12,10 +15,12 @@ the (dataset format)[../dataset-formats/] and prompt strategies to:
 
 The processing of the datasets can happen one of two ways:
 
-1. Before kicking off training by calling `python -m axolotl.cli.preprocess /path/to/your.yaml --debug`
+1. Before kicking off training by calling `axolotl preprocess config.yaml --debug`
 2. When training is started
 
-What are the benefits of pre-processing? When training interactively or for sweeps
+### What are the benefits of pre-processing?
+
+When training interactively or for sweeps
 (e.g. you are restarting the trainer often), processing the datasets can oftentimes be frustratingly
 slow. Pre-processing will cache the tokenized/formatted datasets according to a hash of dependent
 training parameters so that it will intelligently pull from its cache when possible.
@@ -28,8 +33,12 @@ default path of `./last_run_prepared/`, but will ignore anything already cached 
 setting `dataset_prepared_path: ./last_run_prepared`, the trainer will use whatever pre-processed
 data is in the cache.
 
-What are the edge cases? Let's say you are writing a custom prompt strategy or using a user-defined
+### What are the edge cases?
+
+Let's say you are writing a custom prompt strategy or using a user-defined
 prompt template. Because the trainer cannot readily detect these changes, we cannot change the
-calculated hash value for the pre-processed dataset. If you have `dataset_prepared_path: ...` set
+calculated hash value for the pre-processed dataset.
+
+If you have `dataset_prepared_path: ...` set
 and change your prompt templating logic, it may not pick up the changes you made and you will be
 training over the old prompt.
