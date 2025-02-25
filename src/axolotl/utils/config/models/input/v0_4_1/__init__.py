@@ -55,6 +55,7 @@ class ChatTemplate(str, Enum):
     phi_3 = "phi_3"  # pylint: disable=invalid-name
     phi_35 = "phi_35"  # pylint: disable=invalid-name
     deepseek_v2 = "deepseek_v2"  # pylint: disable=invalid-name
+    deepseek_v3 = "deepseek_v3"  # pylint: disable=invalid-name
     jamba = "jamba"  # pylint: disable=invalid-name
     jinja = "jinja"  # pylint: disable=invalid-name
     qwen_25 = "qwen_25"  # pylint: disable=invalid-name

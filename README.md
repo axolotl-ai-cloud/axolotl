@@ -50,13 +50,14 @@ Features:
 ## 🚀 Quick Start
 
 **Requirements**:
+
 - NVIDIA GPU (Ampere or newer for `bf16` and Flash Attention) or AMD GPU
 - Python 3.11
 - PyTorch ≥2.4.1
 
 ### Installation
 
-```shell
+```bash
 pip3 install --no-build-isolation axolotl[flash-attn,deepspeed]
 
 # Download example axolotl configs, deepspeed configs
@@ -68,7 +69,7 @@ Other installation approaches are described [here](https://axolotl-ai-cloud.gith
 
 ### Your First Fine-tune
 
-```shell
+```bash
 # Fetch axolotl examples
 axolotl fetch examples
 
