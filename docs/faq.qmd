@@ -46,3 +46,7 @@ description: Frequently asked questions
 **Q: `Content end boundary is the same as start boundary for turn ___. This is likely an empty turn.`**
 
 > A: This is likely an empty turn.
+
+**Q: The EOS/EOT token is incorrectly being masked or not being masked.**
+
+> A: This is because of the mismatch between `tokenizer.eos_token` and EOS/EOT token in template. Please make sure to set `eos_token` under `special_tokens` to the same EOS/EOT token as in template.
