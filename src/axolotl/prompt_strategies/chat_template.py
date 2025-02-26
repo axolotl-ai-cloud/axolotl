@@ -261,7 +261,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         - Checks for potential conflicts between train_on_eos and train_on_eot.
         """
         if self.prompter.chat_template is None:
-            # return  # Can't validate without chat template
+            # Usually this should not happen
             LOG.warning(
                 "No chat template provided, skipping EOT and EOS token validation"
             )
@@ -275,8 +275,8 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                 self.tokenizer.eos_token not in self.prompter.chat_template
                 and "eos_token" not in self.prompter.chat_template
             ):
-                LOG.warning(
-                    f"EOT token '{self.tokenizer.eos_token}' not found in chat template: {self.prompter.chat_template}"
+                raise ValueError(
+                    f"EOS token '{self.tokenizer.eos_token}' not found in chat template"
                 )
             return
 
