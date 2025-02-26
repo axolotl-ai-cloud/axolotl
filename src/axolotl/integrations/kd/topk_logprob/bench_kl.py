@@ -32,6 +32,7 @@ def benchmark_kl_div_loss_with_backward():
             student_logits = torch.randn(
                 batch_size, seq_len, vocab_size, device="cuda", requires_grad=True
             )
+            # pylint: disable=duplicate-code
             target_token_ids = torch.randint(
                 0, vocab_size, (batch_size, seq_len, top_k), device="cuda"
             )
@@ -56,6 +57,7 @@ def benchmark_kl_div_loss_with_backward():
 
             def run_triton():
                 # Forward pass
+                # pylint: disable=duplicate-code
                 loss_triton = triton_loss(
                     student_logits_triton,
                     target_token_ids,
@@ -132,6 +134,7 @@ def benchmark_forward_backward_separately():
             student_logits = torch.randn(
                 batch_size, seq_len, vocab_size, device="cuda", requires_grad=True
             )
+            # pylint: disable=duplicate-code
             target_token_ids = torch.randint(
                 0, vocab_size, (batch_size, seq_len, top_k), device="cuda"
             )

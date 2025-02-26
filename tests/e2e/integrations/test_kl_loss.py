@@ -27,6 +27,7 @@ def test_kl_loss_gradient():
     student_logits_triton = student_logits.detach().clone().requires_grad_(True)
 
     # Generate random target token IDs, ensuring they're valid indices
+    # pylint: disable=duplicate-code
     target_token_ids = torch.randint(
         0, vocab_size, (batch_size, seq_len, top_k), device="cuda"
     )

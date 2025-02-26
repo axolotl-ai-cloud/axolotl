@@ -422,6 +422,7 @@ class TopKKLDivergence(torch.autograd.Function):
         kd_loss = token_losses.sum()
 
         # Apply temperature scaling
+        # pylint: disable=duplicate-code
         if kd_temperature != 1.0:
             kd_loss = kd_loss * (kd_temperature**2)
 
