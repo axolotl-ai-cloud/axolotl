@@ -12,11 +12,13 @@ from axolotl.cli.args import TrainerCliArgs
 from axolotl.cli.art import print_axolotl_text_art
 from axolotl.cli.config import load_cfg
 from axolotl.cli.utils import load_model_and_tokenizer
+from axolotl.telemetry.errors import send_errors
 from axolotl.utils.dict import DictDefault
 
 LOG = logging.getLogger(__name__)
 
 
+@send_errors
 def do_merge_lora(*, cfg: DictDefault) -> None:
     """
     Calls `transformers`' `merge_and_unload` on the model given in the `axolotl` config

@@ -34,6 +34,7 @@ website:
             - docs/installation.qmd
             - docs/cli.qmd
             - docs/inference.qmd
+            - docs/telemetry.qmd
 
         - section: "Dataset Formats"
           contents: docs/dataset-formats/*

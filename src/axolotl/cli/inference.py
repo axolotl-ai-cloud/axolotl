@@ -17,6 +17,7 @@ from axolotl.cli.args import InferenceCliArgs
 from axolotl.cli.art import print_axolotl_text_art
 from axolotl.cli.config import load_cfg
 from axolotl.cli.utils import load_model_and_tokenizer
+from axolotl.telemetry.errors import send_errors
 from axolotl.utils.chat_templates import (
     get_chat_template,
     get_chat_template_from_config,
@@ -42,6 +43,7 @@ def get_multi_line_input() -> str:
     return instruction
 
 
+@send_errors
 def do_inference(
     *,
     cfg: DictDefault,
@@ -135,6 +137,7 @@ def do_inference(
         print(tokenizer.decode(generated["sequences"].cpu().tolist()[0]))
 
 
+@send_errors
 def do_inference_gradio(
     *,
     cfg: DictDefault,

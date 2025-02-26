@@ -1,0 +1,59 @@
+---
+title: Telemetry
+description: A description of the opt-in telemetry implementation in Axolotl.
+---
+
+# Telemetry in Axolotl
+
+Axolotl implements anonymous telemetry to help maintainers understand how the library
+is used and where users encounter issues. This data helps prioritize features, optimize
+performance, and fix bugs.
+
+## Data Collection
+
+We collect:
+
+- System info: OS, Python version, Axolotl version, PyTorch version, Transformers
+version, etc.
+- Hardware info: CPU count, memory, GPU count and models
+- Runtime metrics: Training progress, memory usage, timing information
+- Usage patterns: Models (from a whitelist) and configurations used
+- Error tracking: Stack traces and error messages (sanitized to remove personal
+information)
+
+No personally identifiable information (PII) is collected.
+
+## Implementation
+
+Telemetry is implemented using PostHog and consists of:
+
+- `axolotl.telemetry.TelemetryManager`: A singleton class that initializes the
+telemetry system and provides methods for tracking events.
+- `axolotl.telemetry.errors.send_errors`: A decorator that captures exceptions and
+sends sanitized stack traces.
+- `axolotl.telemetry.runtime_metrics.RuntimeMetricsTracker`: A class that tracks
+runtime metrics during training.
+- `axolotl.telemetry.callbacks.TelemetryCallback`: A Trainer callback that sends
+runtime metrics telemetry.
+
+The telemetry system will block training startup for 15 seconds to ensure users are
+aware of data collection, unless telemetry is explicitly enabled or disabled.
+
+## Opt-In Mechanism
+
+Telemetry is **disabled by default** on an opt-in basis. To enable it, set `AXOLOTL_DO_NOT_TRACK=0`.
+
+To remove the warning message about telemetry that is displayed on train, etc. startup,
+explicitly set: `AXOLOTL_DO_NOT_TRACK=0` (enable telemetry) or `AXOLOTL_DO_NOT_TRACK=1`
+(explicitly disable telemetry).
+
+**Note**: Telemetry will move to an opt-out model in a later release.
+
+## Privacy
+
+- All path-like config information is automatically redacted from telemetry data
+- Model information is only collected for whitelisted organizations
+    - See `axolotl/telemetry/whitelist.yaml` for the set of whitelisted organizations
+- Each run generates a unique anonymous ID
+    - This allows us to link different telemetry events in a single same training run
+- Telemetry is only sent from the main process to avoid duplicate events

@@ -10,6 +10,7 @@ import torch
 from accelerate.logging import get_logger
 
 from axolotl.logging_config import configure_logging
+from axolotl.telemetry.errors import send_errors
 from axolotl.train import TrainDatasetMeta
 from axolotl.utils import set_pytorch_cuda_alloc_conf
 from axolotl.utils.dict import DictDefault
@@ -61,6 +62,7 @@ def evaluate_dataset(
     return metrics
 
 
+@send_errors
 def evaluate(*, cfg: DictDefault, dataset_meta: TrainDatasetMeta) -> Dict[str, float]:
     """
     Evaluate a model on training and validation datasets
