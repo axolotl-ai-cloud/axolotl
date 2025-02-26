@@ -227,8 +227,8 @@ class TrainerBuilderBase(abc.ABC):
 
 class HFCausalTrainerBuilder(TrainerBuilderBase):
     """
-    Build the HuggingFace training args/trainer for causal models
-    and reward modelling using TRL.
+    Build the HuggingFace training args/trainer for causal models and reward modeling
+    using TRL.
     """
 
     def get_callbacks(self):
