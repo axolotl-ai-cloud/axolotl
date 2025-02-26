@@ -174,7 +174,7 @@ class TelemetryManager:
             Tuple containing:
                 - Boolean denoting whether telemetry is enabled or not.
         """
-        # Parse relevant env vars and fill opt-out default values
+        # Parse relevant env vars
         axolotl_do_not_track = os.getenv("AXOLOTL_DO_NOT_TRACK")
         do_not_track = os.getenv("DO_NOT_TRACK")
 

@@ -39,9 +39,9 @@ runtime metrics telemetry.
 The telemetry system will block training startup for 15 seconds to ensure users are
 aware of data collection, unless telemetry is explicitly enabled or disabled.
 
-## Opt-Out Mechanism
+## Opt-In Mechanism
 
-Telemetry is **disable by default** on an opt-in basis. To enable it, set: `AXOLOTL_DO_NOT_TRACK=0`.
+Telemetry is **disabled by default** on an opt-in basis. To enable it, set `AXOLOTL_DO_NOT_TRACK=0`.
 
 To remove the warning message about telemetry that is displayed on train, etc. startup,
 explicitly set: `AXOLOTL_DO_NOT_TRACK=0` (enable telemetry) or `AXOLOTL_DO_NOT_TRACK=1`
