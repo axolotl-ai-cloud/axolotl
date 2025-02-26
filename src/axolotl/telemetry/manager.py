@@ -23,17 +23,16 @@ POSTHOG_WRITE_KEY = "phc_1kUR0o04oJKKTTeSsIz2Mfm5mpiVsQEf2WOlzljMD7y"
 OPT_IN_WARNING_SLEEP_SECONDS = 15
 OPT_IN_INFO = (
     "\nTelemetry is currently disabled by default. If you'd like to help improve "
-    "Axolotl, consider enabling it by setting:\n"
-    "AXOLOTL_DO_NOT_TRACK=0\n\n"
+    "Axolotl, consider enabling it by setting AXOLOTL_DO_NOT_TRACK=0 in your environment.\n\n"
     "Telemetry data helps us understand:\n"
     "- Which features are most used\n"
     "- What hardware configurations to prioritize\n"
     "- Where users encounter errors\n\n"
-    "No personally identifiable information is collected.\n"
+    "No personally identifiable information is collected.\n\n"
     "To remove this warning, explicitly set AXOLOTL_DO_NOT_TRACK=0 (enable telemetry) "
     "or AXOLOTL_DO_NOT_TRACK=1 (explicitly disable telemetry).\n\n"
-    "NOTE: Telemetry will move to an opt-out in a later release.\n"
-    "For details, see: https://axolotl-ai-cloud.github.io/axolotl/docs/telemetry.html\n"
+    "Note: Telemetry will move to an opt-out in a later release.\n\n"
+    "For details, see: https://axolotl-ai-cloud.github.io/axolotl/docs/telemetry.html\n\n"
     f"Sleeping for {OPT_IN_WARNING_SLEEP_SECONDS}s..."
 )
 
@@ -180,12 +179,21 @@ class TelemetryManager:
         do_not_track = os.getenv("DO_NOT_TRACK")
 
         # Default to disabled (opt-in model for initial release)
-        if axolotl_do_not_track is None:
+        if axolotl_do_not_track is None or axolotl_do_not_track.lower() not in (
+            "0",
+            "1",
+            "false",
+            "true",
+        ):
             # Print opt-in info message for main process only
             if is_main_process():
                 LOG.info(OPT_IN_INFO)
             time.sleep(OPT_IN_WARNING_SLEEP_SECONDS)
 
+            return False
+
+        # Only rank 0 will send telemetry
+        if not is_main_process():
             return False
 
         if do_not_track is None:
@@ -196,10 +204,6 @@ class TelemetryManager:
             "1",
             "true",
         ) and do_not_track.lower() not in ("1", "true")
-
-        # Only rank 0 will send telemetry
-        if not is_main_process():
-            return False
 
         return enabled
 
