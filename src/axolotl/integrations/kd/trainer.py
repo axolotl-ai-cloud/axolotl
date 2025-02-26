@@ -18,6 +18,7 @@ KD trainer
 
 from axolotl.core.trainers.base import AxolotlTrainer
 
+from .topk_logprob.forward_kl import loss as topk_kd_loss
 from .topk_logprob.forward_kl import topk_kd_loss_with_zscore
 from .topk_logprob.forward_kl_triton import loss as topk_kd_loss_triton
 
@@ -85,7 +86,12 @@ class AxolotlKDTrainer(AxolotlTrainer):
                 num_items_in_batch=num_items_in_batch,
             )
         else:
-            loss_kd = topk_kd_loss_triton(
+            loss_fn = (
+                topk_kd_loss
+                if self.args.kd_top_k_before_softmax
+                else topk_kd_loss_triton
+            )
+            loss_kd = loss_fn(
                 shift_logits,
                 target_token_ids_for_loss,
                 target_logprobs_for_loss,

@@ -51,7 +51,6 @@ def grad_softmax_kernel(
     grad_logits_base = (
         grad_student_logits_ptr + batch_idx * stride_gl_b + seq_idx * stride_gl_s
     )
-    # logits_base = student_logits_ptr + batch_idx * stride_l_b + seq_idx * stride_l_s
     token_ids_base = (
         target_token_ids_ptr + batch_idx * stride_t_b + seq_idx * stride_t_s
     )
@@ -63,26 +62,43 @@ def grad_softmax_kernel(
     )
     mask_base = mask_ptr + batch_idx * stride_m_b + seq_idx * stride_m_s
 
-    # Softmax over full vocab case
+    # Process each teacher probability one at a time, computing all gradients for it
     for k in range(0, K):
-        # Load token ID, teacher prob, and mask for this position
+        # Load data for current position k
         teacher_prob = tl.load(teacher_probs_base + k * stride_p_k)
         student_prob_k = tl.load(student_probs_base + k * stride_sp_k)
         mask_val = tl.load(mask_base + k * stride_m_k)
+
+        # Precompute the self-influence term (multiplied by scale)
+        self_term = teacher_prob * (1.0 - student_prob_k) * scale
+
+        # Calculate gradient contributions for all positions j
         for j in range(0, K):
-            other_token_id = tl.load(token_ids_base + j * stride_t_k)
+            token_id_j = tl.load(token_ids_base + j * stride_t_k)
             student_prob_j = tl.load(student_probs_base + j * stride_sp_k)
             mask_j = tl.load(mask_base + j * stride_m_k)
+
+            # Calculate the masking factor
             combined_mask = mask_val * mask_j
-            is_diagonal = tl.where(j == k, 1.0, 0.0)
-            self_grad = teacher_prob * (1.0 - student_prob_k)
-            cross_grad = -teacher_prob * student_prob_j
-            grad_val = (
-                -(self_grad * is_diagonal + cross_grad * (1.0 - is_diagonal))
-                * scale
+
+            # Determine if this is a diagonal or off-diagonal term
+            is_k_equals_j = tl.where(k == j, 1.0, 0.0)
+
+            # Compute the gradient contribution
+            # For diagonal (k==j): -teacher_prob * (1-student_prob_k) * scale * mask
+            # For off-diagonal: -(-teacher_prob * student_prob_j) * scale * mask
+            grad_contribution = (
+                -(
+                    self_term * is_k_equals_j
+                    - teacher_prob * student_prob_j * scale * (1.0 - is_k_equals_j)
+                )
                 * combined_mask
             )
-            tl.atomic_add(grad_logits_base + other_token_id * stride_gl_v, grad_val)
+
+            # Atomically update the gradient for this token
+            tl.atomic_add(
+                grad_logits_base + token_id_j * stride_gl_v, grad_contribution
+            )
 
 
 @triton.jit
@@ -315,7 +331,6 @@ class TopKKLDivergence(torch.autograd.Function):
             student_probs,
         ) = ctx.saved_tensors
         kd_temperature = ctx.kd_temperature
-        top_k_before_softmax = ctx.top_k_before_softmax
         num_items_in_batch = ctx.num_items_in_batch
 
         batch_size, seq_len, vocab_size = student_logits.shape
@@ -346,72 +361,36 @@ class TopKKLDivergence(torch.autograd.Function):
         teacher_probs = torch.exp(target_logprobs)
 
         # Depending on which mode was used in forward, we use different gradient calculation
-        if top_k_before_softmax:
-            # Case 1: Softmax over top-k tokens
-            grid = (batch_size * seq_len,)
-            grad_topk_softmax_kernel[grid](
-                grad_student_logits.contiguous(),
-                student_logits.contiguous(),
-                target_token_ids.contiguous(),
-                teacher_probs.contiguous(),
-                student_probs.contiguous(),
-                target_mask.contiguous(),
-                batch_size,
-                seq_len,
-                vocab_size,
-                top_k,
-                scale,
-                grad_student_logits.stride(0),
-                grad_student_logits.stride(1),
-                grad_student_logits.stride(2),
-                student_logits.stride(0),
-                student_logits.stride(1),
-                student_logits.stride(2),
-                target_token_ids.stride(0),
-                target_token_ids.stride(1),
-                target_token_ids.stride(2),
-                teacher_probs.stride(0),
-                teacher_probs.stride(1),
-                teacher_probs.stride(2),
-                student_probs.stride(0),
-                student_probs.stride(1),
-                student_probs.stride(2),
-                target_mask.stride(0),
-                target_mask.stride(1),
-                target_mask.stride(2),
-                min(1024, triton.next_power_of_2(top_k)),
-            )
-        else:
-            # Case 2: Softmax over full vocab
-            grid = (batch_size * seq_len,)
-            grad_softmax_kernel[grid](
-                grad_student_logits.contiguous(),
-                target_token_ids.contiguous(),
-                teacher_probs.contiguous(),
-                student_probs.contiguous(),
-                target_mask.contiguous(),
-                batch_size,
-                seq_len,
-                vocab_size,
-                top_k,
-                scale,
-                grad_student_logits.stride(0),
-                grad_student_logits.stride(1),
-                grad_student_logits.stride(2),
-                target_token_ids.stride(0),
-                target_token_ids.stride(1),
-                target_token_ids.stride(2),
-                teacher_probs.stride(0),
-                teacher_probs.stride(1),
-                teacher_probs.stride(2),
-                student_probs.stride(0),
-                student_probs.stride(1),
-                student_probs.stride(2),
-                target_mask.stride(0),
-                target_mask.stride(1),
-                target_mask.stride(2),
-                min(1024, triton.next_power_of_2(top_k)),
-            )
+        # FIXME: top_k_before_softmax not correctly yet?
+        grid = (batch_size * seq_len,)
+        grad_softmax_kernel[grid](
+            grad_student_logits.contiguous(),
+            target_token_ids.contiguous(),
+            teacher_probs.contiguous(),
+            student_probs.contiguous(),
+            target_mask.contiguous(),
+            batch_size,
+            seq_len,
+            vocab_size,
+            top_k,
+            scale,
+            grad_student_logits.stride(0),
+            grad_student_logits.stride(1),
+            grad_student_logits.stride(2),
+            target_token_ids.stride(0),
+            target_token_ids.stride(1),
+            target_token_ids.stride(2),
+            teacher_probs.stride(0),
+            teacher_probs.stride(1),
+            teacher_probs.stride(2),
+            student_probs.stride(0),
+            student_probs.stride(1),
+            student_probs.stride(2),
+            target_mask.stride(0),
+            target_mask.stride(1),
+            target_mask.stride(2),
+            min(1024, triton.next_power_of_2(top_k)),
+        )
 
         # Return gradients for student_logits and None for other inputs
         return grad_student_logits, None, None, None, None, None, None
