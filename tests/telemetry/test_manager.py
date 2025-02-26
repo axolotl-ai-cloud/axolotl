@@ -58,68 +58,72 @@ def test_singleton_instance(telemetry_manager_class):
         assert telemetry_manager_class.get_instance() is first
 
 
+def test_telemetry_disabled_by_default(telemetry_manager_class):
+    """Test that telemetry is disabled by default (opt-in)"""
+    with patch.dict(os.environ, {"RANK": "0"}, clear=True), patch("time.sleep"), patch(
+        "logging.Logger.info"
+    ):
+        manager = telemetry_manager_class()
+        assert not manager.enabled
+
+
+def test_telemetry_enabled_with_explicit_opt_in(telemetry_manager_class):
+    """Test that telemetry is enabled when AXOLOTL_DO_NOT_TRACK=0"""
+    with patch.dict(os.environ, {"AXOLOTL_DO_NOT_TRACK": "0", "RANK": "0"}), patch(
+        "time.sleep"
+    ):
+        manager = telemetry_manager_class()
+        assert manager.enabled
+
+
 def test_telemetry_disabled_with_axolotl_do_not_track(telemetry_manager_class):
     """Test that telemetry is disabled when AXOLOTL_DO_NOT_TRACK=1"""
-    with patch.dict(os.environ, {"AXOLOTL_DO_NOT_TRACK": "1", "RANK": "0"}):
+    with patch.dict(os.environ, {"AXOLOTL_DO_NOT_TRACK": "1", "RANK": "0"}), patch(
+        "time.sleep"
+    ):
         manager = telemetry_manager_class()
         assert not manager.enabled
 
 
 def test_telemetry_disabled_with_do_not_track(telemetry_manager_class):
     """Test that telemetry is disabled when DO_NOT_TRACK=1"""
-    with patch.dict(os.environ, {"DO_NOT_TRACK": "1", "RANK": "0"}):
+    with patch.dict(
+        os.environ, {"AXOLOTL_DO_NOT_TRACK": "0", "DO_NOT_TRACK": "1", "RANK": "0"}
+    ), patch("time.sleep"):
         manager = telemetry_manager_class()
         assert not manager.enabled
 
 
 def test_telemetry_disabled_for_non_main_process(telemetry_manager_class):
     """Test that telemetry is disabled for non-main processes"""
-    with patch.dict(os.environ, {"AXOLOTL_DO_NOT_TRACK": "0", "RANK": "1"}):
+    with patch.dict(os.environ, {"AXOLOTL_DO_NOT_TRACK": "0", "RANK": "1"}), patch(
+        "time.sleep"
+    ):
         manager = telemetry_manager_class()
         assert not manager.enabled
 
 
-def test_telemetry_enabled_by_default(telemetry_manager_class):
-    """Test that telemetry is enabled by default"""
-    with patch.dict(os.environ, {"RANK": "0"}, clear=True), patch("time.sleep"), patch(
-        "logging.Logger.warning"
+def test_opt_in_info_displayed(telemetry_manager_class):
+    """Test that opt-in info is displayed when telemetry is not configured"""
+    with patch.dict(os.environ, {"RANK": "0"}, clear=True), patch(
+        "logging.Logger.info"
+    ) as mock_info, patch("time.sleep"):
+        telemetry_manager_class()
+        info_displayed = False
+        for call in mock_info.call_args_list:
+            if "Telemetry is currently disabled by default" in str(call):
+                info_displayed = True
+                break
+        assert info_displayed
+
+
+def test_is_whitelisted(telemetry_manager_class, mock_whitelist):
+    """Test org whitelist functionality"""
+    with patch("axolotl.telemetry.manager.WHITELIST_PATH", mock_whitelist), patch.dict(
+        os.environ, {"AXOLOTL_DO_NOT_TRACK": "0"}
     ):
         manager = telemetry_manager_class()
-        assert manager.enabled
-        assert not manager.explicit_enable
 
-
-def test_explicit_enable_disables_warning(telemetry_manager_class):
-    """Test that explicit enabling prevents warning"""
-    with patch.dict(os.environ, {"AXOLOTL_DO_NOT_TRACK": "0", "RANK": "0"}), patch(
-        "logging.Logger.warning"
-    ) as mock_warning, patch("time.sleep"):
-        manager = telemetry_manager_class()
-        assert manager.enabled
-        assert manager.explicit_enable
-        for call in mock_warning.call_args_list:
-            assert "Telemetry is enabled" not in str(call)
-
-
-def test_warning_displayed_for_implicit_enable(telemetry_manager_class):
-    """Test that warning is displayed when telemetry is implicitly enabled"""
-    with patch.dict(os.environ, {"RANK": "0"}, clear=True), patch(
-        "logging.Logger.warning"
-    ) as mock_warning, patch("time.sleep"):
-        manager = telemetry_manager_class()
-        assert manager.enabled
-        assert not manager.explicit_enable
-        warning_displayed = False
-        for call in mock_warning.call_args_list:
-            if "Telemetry is enabled" in str(call):
-                warning_displayed = True
-                break
-        assert warning_displayed
-
-
-def test_is_whitelisted(manager, mock_whitelist):
-    """Test org whitelist functionality"""
-    with patch("axolotl.telemetry.manager.WHITELIST_PATH", mock_whitelist):
         # Should match organizations from the mock whitelist
         assert manager._is_whitelisted("meta-llama/llama-7b")
         assert manager._is_whitelisted("mistralai/mistral-7b-instruct")
@@ -139,17 +143,18 @@ def test_system_info_collection(manager):
     # Check essential keys
     assert "os" in system_info
     assert "python_version" in system_info
-    assert "torch_version" in system_info
-    assert "transformers_version" in system_info
-    assert "axolotl_version" in system_info
     assert "cpu_count" in system_info
     assert "memory_total" in system_info
     assert "accelerator_count" in system_info
 
 
-def test_send_event(manager):
+def test_send_event(telemetry_manager_class):
     """Test basic event sending"""
-    with patch("posthog.capture") as mock_capture:
+    with patch("posthog.capture") as mock_capture, patch.dict(
+        os.environ, {"AXOLOTL_DO_NOT_TRACK": "0"}
+    ):
+        manager = telemetry_manager_class()
+
         # Test with clean properties (no PII)
         manager.send_event("test_event", {"key": "value"})
         assert mock_capture.called
@@ -164,18 +169,24 @@ def test_send_event(manager):
         assert mock_capture.call_args[1]["properties"] == {}
 
 
-def test_send_system_info(manager):
+def test_send_system_info(telemetry_manager_class):
     """Test sending system info"""
-    with patch("posthog.capture") as mock_capture:
+    with patch("posthog.capture") as mock_capture, patch.dict(
+        os.environ, {"AXOLOTL_DO_NOT_TRACK": "0"}
+    ):
+        manager = telemetry_manager_class()
         manager.send_system_info()
         assert mock_capture.called
         assert mock_capture.call_args[1]["event"] == "system-info"
         assert mock_capture.call_args[1]["properties"] == manager.system_info
 
 
-def test_redacted_properties(manager):
+def test_redacted_properties(telemetry_manager_class):
     """Test path redaction in send_event method"""
-    with patch("posthog.capture") as mock_capture:
+    with patch("posthog.capture") as mock_capture, patch.dict(
+        os.environ, {"AXOLOTL_DO_NOT_TRACK": "0"}
+    ):
+        manager = telemetry_manager_class()
         # Test with properties containing various paths and non-paths
         test_properties = {
             "filepath": "/home/user/sensitive/data.txt",

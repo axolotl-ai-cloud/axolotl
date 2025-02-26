@@ -20,21 +20,21 @@ LOG = logging.getLogger(__name__)
 POSTHOG_HOST = "https://app.posthog.com"
 POSTHOG_WRITE_KEY = "phc_1kUR0o04oJKKTTeSsIz2Mfm5mpiVsQEf2WOlzljMD7y"
 
-ENABLED_WARNING_SLEEP_SECONDS = 15
-ENABLED_WARNING = (
-    "\nTelemetry is enabled. This helps Axolotl's maintainers by providing insights into:\n"
-    "- Which models and configurations are most commonly used\n"
-    "- What hardware setups need to be supported\n"
+OPT_IN_WARNING_SLEEP_SECONDS = 15
+OPT_IN_INFO = (
+    "\nTelemetry is currently disabled by default. If you'd like to help improve "
+    "Axolotl, consider enabling it by setting:\n"
+    "AXOLOTL_DO_NOT_TRACK=0\n\n"
+    "Telemetry data helps us understand:\n"
+    "- Which features are most used\n"
+    "- What hardware configurations to prioritize\n"
     "- Where users encounter errors\n\n"
-    "This data helps us prioritize features, optimize performance, and fix bugs.\n\n"
-    "To disable telemetry, set either:\n"
-    "- AXOLOTL_DO_NOT_TRACK=1 (Axolotl-specific)\n"
-    "- DO_NOT_TRACK=1 (Global standard; see https://consoledonottrack.com/)\n\n"
-    "To remove this warning and continue with telemetry enabled,"
-    "explicitly set AXOLOTL_DO_NOT_TRACK=0 (and leave DO_NOT_TRACK unset / set to 0)\n\n"
-    "No personally identifiable information is collected."
-    "For details, see: https://axolotl-ai-cloud.github.io/axolotl/docs/telemetry.html\n\n"
-    f"Sleeping for {ENABLED_WARNING_SLEEP_SECONDS}s..."
+    "No personally identifiable information is collected.\n"
+    "To remove this warning, explicitly set AXOLOTL_DO_NOT_TRACK=0 (enable telemetry) "
+    "or AXOLOTL_DO_NOT_TRACK=1 (explicitly disable telemetry).\n\n"
+    "NOTE: Telemetry will move to an opt-out in a later release.\n"
+    "For details, see: https://axolotl-ai-cloud.github.io/axolotl/docs/telemetry.html\n"
+    f"Sleeping for {OPT_IN_WARNING_SLEEP_SECONDS}s..."
 )
 
 WHITELIST_PATH = str(Path(__file__).parent / "whitelist.yaml")
@@ -134,7 +134,7 @@ class TelemetryManager:
         if self._initialized:
             return
 
-        self.enabled, self.explicit_enable = self._check_telemetry_enabled()
+        self.enabled = self._check_telemetry_enabled()
 
         if self.enabled:
             self.run_id = str(uuid.uuid4())
@@ -160,30 +160,33 @@ class TelemetryManager:
 
         return cls._instance
 
-    def _check_telemetry_enabled(self) -> tuple[bool, bool]:
+    def _check_telemetry_enabled(self) -> bool:
         """
         Check if telemetry is enabled based on environment variables. We also check
         whether this is the main process (for the distributed setting and to avoid
         sending duplicate PostHog events per GPU).
 
-        Note: This is enabled by default on an opt-out basis. Set either
-        `AXOLOTL_DO_NOT_TRACK=1` or `DO_NOT_TRACK=1` to disable telemetry. For more
-        details, see https://axolotl-ai-cloud.github.io/axolotl/docs/telemetry.html.
+        Note: This is disabled by default on an opt-in basis. Set
+        `AXOLOTL_DO_NOT_TRACK=0` to enable telemetry. We plan to move to an opt-out
+        model in a later release. For more details, see
+        https://axolotl-ai-cloud.github.io/axolotl/docs/telemetry.html.
 
         Returns:
             Tuple containing:
-                - Boolean denoting whether telemetry is enabled or disabled.
-                - Boolean denoting whether telemetry is explicitly enabled or not.
+                - Boolean denoting whether telemetry is enabled or not.
         """
         # Parse relevant env vars and fill opt-out default values
         axolotl_do_not_track = os.getenv("AXOLOTL_DO_NOT_TRACK")
         do_not_track = os.getenv("DO_NOT_TRACK")
 
-        # If explicitly enabled, we'll disable the telemetry warning message
-        explicit_enabled = axolotl_do_not_track in ["0", "false"]
-
+        # Default to disabled (opt-in model for initial release)
         if axolotl_do_not_track is None:
-            axolotl_do_not_track = "0"
+            # Print opt-in info message for main process only
+            if is_main_process():
+                LOG.info(OPT_IN_INFO)
+            time.sleep(OPT_IN_WARNING_SLEEP_SECONDS)
+
+            return False
 
         if do_not_track is None:
             do_not_track = "0"
@@ -194,17 +197,11 @@ class TelemetryManager:
             "true",
         ) and do_not_track.lower() not in ("1", "true")
 
-        # Show warning (and sleep on all ranks) unless explicitly enabled
-        if enabled and not explicit_enabled:
-            if is_main_process():
-                LOG.warning(ENABLED_WARNING)
-            time.sleep(ENABLED_WARNING_SLEEP_SECONDS)
-
         # Only rank 0 will send telemetry
         if not is_main_process():
-            return False, False
+            return False
 
-        return enabled, explicit_enabled
+        return enabled
 
     def _load_whitelist(self) -> dict:
         """Load HuggingFace Hub organization whitelist"""
