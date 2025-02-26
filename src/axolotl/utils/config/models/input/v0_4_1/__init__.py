@@ -201,6 +201,7 @@ class SFTDataset(BaseModel):
     temperature: Optional[float] = None
     roles_to_train: Optional[List[str]] = None
     train_on_eos: Optional[str] = None
+    train_on_eot: Optional[str] = None
     roles: Optional[Dict[str, List[str]]] = None
     drop_system_message: Optional[bool] = None
     trust_remote_code: Optional[bool] = False
@@ -904,6 +905,7 @@ class AxolotlInputConfig(
         ]
     ] = None
     chat_template_jinja: Optional[str] = None
+    eot_tokens: Optional[List[str]] = None
     default_system_message: Optional[str] = None
 
     fix_untrained_tokens: Optional[Union[int, List[int]]] = None
