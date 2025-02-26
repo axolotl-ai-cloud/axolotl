@@ -183,7 +183,7 @@ datasets:
     # IMPORTANT: The following fields determine which parts of the conversation to train on.
     # Priority order: message_field_training > message_field_training_detail > train_on_inputs or role in roles_to_train
     # See examples at `docs/dataset-formats/conversation.qmd`
-    # Note: If the below 4 fields are set to empty, defaults to training only on the last message.
+    # Note: If the below 5 fields are empty, defaults to training only on the last message.
 
     # Optional[List[str]]. Roles to train on. The tokens from these roles will be considered for the loss.
     roles_to_train: ["assistant"]  # default
@@ -192,7 +192,13 @@ datasets:
     # - turn (default): train on the EOS token at the end of each trainable turn
     # - last: train on the last EOS token in the conversation
     # TIP: Please make sure that your `tokenizer.eos_token` is same as EOS/EOT token in template. Otherwise, set `eos_token` under `special_tokens`.
-    train_on_eos: last
+    train_on_eos: turn
+    # Optional[str]. Which EOT (End-of-Turn) tokens to train on in the conversation. Possible values are:
+    # - all: train on all EOT tokens
+    # - turn: train on the EOT token at the end of each trainable turn
+    # - last: train on the last EOT token in the conversation
+    # If not specified, defaults to the value of train_on_eos for backward compatibility.
+    train_on_eot:
     # The key in the message turn that indicates via boolean whether tokens of a turn should be considered for training. Useful to selectively train on certain turns besides the `roles_to_train`.
     message_field_training: training
     # The key in the message turn that contains the training details. Useful to selectively train on certain tokens in a turn.
@@ -275,8 +281,17 @@ process_reward_model:
 chat_template: tokenizer_default
 # custom jinja template for chat template. This will be only used if chat_template is set to `jinja` or `null` (in which case chat_template is automatically set to `jinja`). Default is null.
 chat_template_jinja: null
-# Changes the default system message. Currently only supports chatml.
-default_system_message: You are a helpful assistant. Please give a long and detailed answer.
+# Optional[List[str]]. Custom EOT (End-of-Turn) tokens to mask/unmask during training.
+# These tokens mark the boundaries between conversation turns.
+# For example: ["/INST", "</s>", "[/SYSTEM_PROMPT]"]
+# If not specified, defaults to just the model's eos_token.
+# This is useful for templates that use multiple delimiter tokens.
+eot_tokens:
+  # - "</s>"
+  # - "[/INST]"
+  # - "[/SYSTEM_PROMPT]"
+# Changes the default system message
+default_system_message: You are a helpful assistant. Please give a long and detailed answer. # Currently only supports chatml.
 # Axolotl attempts to save the dataset as an arrow after packing the data together so
 # subsequent training attempts load faster, relative path
 dataset_prepared_path: data/last_run_prepared

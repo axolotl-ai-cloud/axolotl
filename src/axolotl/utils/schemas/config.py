@@ -309,6 +309,7 @@ class AxolotlInputConfig(
         | Annotated[str, StringConstraints(pattern="^tokenizer_default_fallback_")]
     ) | None = None
     chat_template_jinja: str | None = None
+    eot_tokens: list[str] | None = None
     default_system_message: str | None = None
 
     fix_untrained_tokens: int | list[int] | None = None
