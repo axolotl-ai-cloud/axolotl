@@ -855,6 +855,7 @@ class AxolotlInputConfig(
 
     special_tokens: Optional[SpecialTokensConfig] = None
     tokens: Optional[List[str]] = None
+    tokenizer_overrides: Optional[Dict[int, str]] = None
 
     torch_compile: Optional[Union[Literal["auto"], bool]] = None
     torch_compile_backend: Optional[str] = None
