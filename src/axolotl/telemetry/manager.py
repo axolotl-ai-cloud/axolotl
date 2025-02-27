@@ -20,7 +20,7 @@ LOG = logging.getLogger(__name__)
 POSTHOG_HOST = "https://app.posthog.com"
 POSTHOG_WRITE_KEY = "phc_1kUR0o04oJKKTTeSsIz2Mfm5mpiVsQEf2WOlzljMD7y"
 
-OPT_IN_WARNING_SLEEP_SECONDS = 15
+OPT_IN_WARNING_SLEEP_SECONDS = 10
 OPT_IN_INFO = (
     "\nTelemetry is currently disabled by default. If you'd like to help improve "
     "Axolotl, consider enabling it by setting AXOLOTL_DO_NOT_TRACK=0 in your environment.\n\n"
@@ -28,7 +28,7 @@ OPT_IN_INFO = (
     "- Which features are most used\n"
     "- What hardware configurations to prioritize\n"
     "- Where users encounter errors\n\n"
-    "No personally identifiable information is collected.\n\n"
+    "Personally identifiable information (PII) is not collected.\n\n"
     "To remove this warning, explicitly set AXOLOTL_DO_NOT_TRACK=0 (enable telemetry) "
     "or AXOLOTL_DO_NOT_TRACK=1 (explicitly disable telemetry).\n\n"
     "Note: Telemetry will move to an opt-out in a later release.\n\n"
@@ -210,17 +210,31 @@ class TelemetryManager:
     def _load_whitelist(self) -> dict:
         """Load HuggingFace Hub organization whitelist"""
         with open(WHITELIST_PATH, encoding="utf-8") as f:
-            return yaml.safe_load(f)
+            whitelist = yaml.safe_load(f)
 
-    def _is_whitelisted(self, base_model: str) -> bool:
-        """Check if model org is in whitelist"""
-        if not base_model:
-            return False
+            # Send org strings to lowercase since model names are case insensitive
+            whitelist["organizations"] = {
+                org.lower() for org in whitelist["organizations"]
+            }
 
-        base_model = base_model.lower()
-        return any(
-            org.lower() in base_model for org in self.whitelist.get("organizations", [])
-        )
+            return whitelist
+
+    def _is_whitelisted(self, value: str) -> bool:
+        """
+        Check if model / dataset / etc. org is in whitelist.
+
+        Args:
+            value: Value for one of FIELDS_WITH_ORGS ("base_model", etc.).
+
+        Returns:
+            Boolean indicating whitelist membership.
+        """
+        # NOTE: This membership-checking logic can be improved.
+        # What happens when a local model path matches a whitelisted org?
+        org = value.split("/")[0]
+        whitelisted = org.lower() in self.whitelist["organizations"]
+
+        return whitelisted
 
     def _init_posthog(self):
         """Initialize PostHog client"""
@@ -247,8 +261,7 @@ class TelemetryManager:
             if isinstance(key, str) and isinstance(value, str):
                 # Fields that should be redacted if org is not whitelisted
                 if key in FIELDS_WITH_ORGS:
-                    org = value.split("/")[0]
-                    if org not in self.whitelist["organizations"]:
+                    if not self._is_whitelisted(value):
                         return "[REDACTED]"
 
                 # Other redaction special cases

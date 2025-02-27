@@ -21,7 +21,7 @@ version, etc.
 - Error tracking: Stack traces and error messages (sanitized to remove personal
 information)
 
-No personally identifiable information (PII) is collected.
+Personally identifiable information (PII) is not collected.
 
 ## Implementation
 

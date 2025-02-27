@@ -133,7 +133,6 @@ def test_is_whitelisted(telemetry_manager_class, mock_whitelist):
         assert manager._is_whitelisted("META-LLAMA/Llama-7B")
         # Should handle empty input
         assert not manager._is_whitelisted("")
-        assert not manager._is_whitelisted(None)
 
 
 def test_system_info_collection(manager):
