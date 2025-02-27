@@ -206,6 +206,16 @@ class AxolotlTrainingMixins:
         },
     )
 
+    sp_ulysses_degree: Optional[int] = field(
+        default=None,
+        metadata={"help": "Ulysses parallelism for hybrid sequence parallel long context attn"},
+    )
+
+    sp_ring_degree: Optional[int] = field(
+        default=None,
+        metadata={"help": "Ring attention parallelism for sequence parallel long context attn"},
+    )
+
 
 @dataclass
 class AxolotlTrainingArguments(AxolotlTrainingMixins, TrainingArguments):

@@ -346,7 +346,7 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
                     load_from_cache_file=not cfg.is_preprocess,
                     desc="Add position_id column (PoSE)",
                 )
-    elif cfg.sample_packing:
+    elif cfg.sample_packing or cfg.sp_ulysses_degree:
         drop_long_kwargs = {}
         if filter_map_kwargs:
             drop_long_kwargs["desc"] = "Add position_id column (Sample Packing)"

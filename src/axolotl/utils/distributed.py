@@ -86,6 +86,12 @@ def get_world_size():
     return int(os.getenv("WORLD_SIZE", "1"))
 
 
+def get_rank():
+    if not is_distributed():
+        return 0
+    return dist.get_rank()
+
+
 @contextmanager
 def zero_only():
     """

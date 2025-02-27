@@ -3,7 +3,7 @@ DataCollator for axolotl to pad labels and position_ids for packed sequences
 """
 
 from dataclasses import dataclass
-from typing import Any, Optional, Union
+from typing import Any, Optional, Union, Callable
 
 import numpy as np
 from transformers import PreTrainedTokenizerBase
@@ -53,6 +53,7 @@ class DataCollatorForSeq2Seq:
     label_pad_token_id: int = -100
     position_pad_token_id: int = 0
     return_tensors: str = "pt"
+    sp_extract_fn: Optional[Callable] = None
 
     def __call__(self, features, return_tensors=None):
         labels = None
@@ -121,6 +122,10 @@ class DataCollatorForSeq2Seq:
 
         return features
 
+    def seq_parallel_split(self, features):
+        if self.sp_extract_fn:
+            pass
+        return features
 
 @dataclass
 class BatchSamplerDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):

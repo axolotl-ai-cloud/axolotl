@@ -59,6 +59,7 @@ from axolotl.core.training_args import (
     AxolotlTrainingArguments,
 )
 from axolotl.integrations.base import PluginManager
+from axolotl.monkeypatch.attention.sequence_parallel import USPRingAttnType, get_extract_fn
 from axolotl.monkeypatch.multipack import SUPPORTED_MULTIPACK_MODEL_TYPES
 from axolotl.monkeypatch.relora import ReLoRACallback
 from axolotl.utils import is_comet_available, is_mlflow_available
@@ -746,6 +747,11 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             # A100 is best at 64, while others at 8. Let's use the larger so we don't have to check
             # https://docs.nvidia.com/deeplearning/performance/dl-performance-matrix-multiplication/index.html
             data_collator_kwargs["pad_to_multiple_of"] = 64
+        if self.cfg.sp_ulysses_degree:
+            data_collator_kwargs["sp_extract_fn"] = get_extract_fn(
+                USPRingAttnType.ZIGZAG,
+                sp_ulysses_degree=self.cfg.sp_ulysses_degree
+            )
 
         if self.cfg.reward_model:
             data_collator_kwargs["max_length"] = self.cfg.sequence_len
