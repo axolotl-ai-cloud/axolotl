@@ -1,6 +1,7 @@
 """
 Test cases for the tokenizer loading
 """
+
 import unittest
 
 import pytest
@@ -9,7 +10,7 @@ from axolotl.utils.dict import DictDefault
 from axolotl.utils.models import load_tokenizer
 
 
-class TestTokenizers(unittest.TestCase):
+class TestTokenizers:
     """
     test class for the load_tokenizer fn
     """
@@ -75,12 +76,48 @@ class TestTokenizers(unittest.TestCase):
             }
         )
         tokenizer = load_tokenizer(cfg)
-        self.assertEqual(tokenizer("<|im_start|>user")["input_ids"], [1, 32000, 1404])
-        self.assertEqual(len(tokenizer), 32001)
+        assert tokenizer("<|im_start|>user")["input_ids"] == [1, 32000, 1404]
+        assert len(tokenizer) == 32001
 
         # ensure reloading the tokenizer again from cfg results in same vocab length
         tokenizer = load_tokenizer(cfg)
-        self.assertEqual(len(tokenizer), 32001)
+        assert len(tokenizer) == 32001
+
+    def test_tokenizer_overrides(self, temp_dir):
+        cfg = DictDefault(
+            {
+                # use with tokenizer that has reserved_tokens in added_tokens
+                "tokenizer_config": "NousResearch/Llama-3.2-1B",
+                "tokenizer_overrides": {
+                    128041: "RANDOM_OVERRIDE_1",
+                    128042: "RANDOM_OVERRIDE_2",
+                },
+                "output_dir": temp_dir,
+            }
+        )
+
+        tokenizer = load_tokenizer(cfg)
+        assert tokenizer.encode("RANDOM_OVERRIDE_1", add_special_tokens=False) == [
+            128041
+        ]
+        assert tokenizer.encode("RANDOM_OVERRIDE_2", add_special_tokens=False) == [
+            128042
+        ]
+
+    def test_tokenizer_overrides_with_toolargeid(self, temp_dir):
+        cfg = DictDefault(
+            {
+                # use with tokenizer that has reserved_tokens in added_tokens
+                "tokenizer_config": "NousResearch/Llama-3.2-1B",
+                "tokenizer_overrides": {1000000: "BROKEN_RANDOM_OVERRIDE_1"},
+                "output_dir": temp_dir,
+            }
+        )
+
+        with pytest.raises(
+            ValueError, match=r".*Token ID 1000000 not found in added_tokens.*"
+        ):
+            load_tokenizer(cfg)
 
 
 if __name__ == "__main__":
