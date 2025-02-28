@@ -1,4 +1,4 @@
-pre-commit
 black
 mypy
+pre-commit
 types-requests

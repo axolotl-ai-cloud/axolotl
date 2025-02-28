@@ -98,8 +98,15 @@ jobs:
 
       - name: Run tests
         run: |
-          pytest -v -n8 --dist loadfile --ignore=tests/e2e/ --ignore=tests/patched/ tests/
-          pytest -v tests/patched/
+          pytest -v -n8 --dist loadfile --ignore=tests/e2e/ --ignore=tests/patched/ tests/ --cov=axolotl --cov-report=xml
+          pytest -v tests/patched/ --cov=axolotl --cov-append --cov-report=xml
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.xml
+          flags: unittests,pytorch-${{ matrix.pytorch_version }}
+          fail_ci_if_error: false
 
       - name: cleanup pip cache
         run: |
