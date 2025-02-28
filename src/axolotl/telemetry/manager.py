@@ -21,7 +21,7 @@ POSTHOG_HOST = "https://app.posthog.com"
 POSTHOG_WRITE_KEY = "phc_1kUR0o04oJKKTTeSsIz2Mfm5mpiVsQEf2WOlzljMD7y"
 
 OPT_IN_WARNING_SLEEP_SECONDS = 10
-OPT_IN_INFO = (
+OPT_IN_WARNING = (
     "\nTelemetry is currently disabled by default. If you'd like to help improve "
     "Axolotl, consider enabling it by setting AXOLOTL_DO_NOT_TRACK=0 in your environment.\n\n"
     "Telemetry data helps us understand:\n"
@@ -38,14 +38,15 @@ OPT_IN_INFO = (
 
 WHITELIST_PATH = str(Path(__file__).parent / "whitelist.yaml")
 
-# NOTE: Keep these up to date with any config schema changes
-FIELDS_WITH_ORGS = {
+# NOTE: Need to keep these up to date with any config schema changes
+FIELDS_TO_REDACT = {
     "base_model",
     "tokenizer_config",
     "base_model_config",
     "pretraining_dataset",  # NOTE: this field may be a string or a dictionary
+    "resume_from_checkpoint",
+    "hub_model_id",
 }
-FIELDS_TO_REDACT = {"resume_from_checkpoint", "hub_model_id"}
 PREFIXES_TO_REDACT = {"wandb_", "comet_", "mlflow_", "gradio_"}
 PATH_INDICATORS = {"path", "dir"}
 
@@ -187,7 +188,7 @@ class TelemetryManager:
         ):
             # Print opt-in info message for main process only
             if is_main_process():
-                LOG.info(OPT_IN_INFO)
+                LOG.warning(OPT_IN_WARNING)
             time.sleep(OPT_IN_WARNING_SLEEP_SECONDS)
 
             return False
@@ -224,7 +225,8 @@ class TelemetryManager:
         Check if model / dataset / etc. org is in whitelist.
 
         Args:
-            value: Value for one of FIELDS_WITH_ORGS ("base_model", etc.).
+            value: Value for one of `axolotl.telemetry.manager.FIELDS_WITH_ORGS`
+                ("base_model", etc.).
 
         Returns:
             Boolean indicating whitelist membership.
@@ -259,20 +261,17 @@ class TelemetryManager:
         def redact_value(value: Any, key: str = "") -> Any:
             """Recursively sanitize values, redacting those with path-like keys"""
             if isinstance(key, str) and isinstance(value, str):
-                # Fields that should be redacted if org is not whitelisted
-                if key in FIELDS_WITH_ORGS:
-                    if not self._is_whitelisted(value):
-                        return "[REDACTED]"
-
                 # Other redaction special cases
                 if (
                     key in FIELDS_TO_REDACT
                     or any(prefix in key for prefix in PREFIXES_TO_REDACT)
                     or any(indicator in key.lower() for indicator in PATH_INDICATORS)
                 ):
-                    return "[REDACTED]"
+                    # Fields with whitelisted orgs don't need to be redacted
+                    if not self._is_whitelisted(value):
+                        return "[REDACTED]"
 
-            # Handle nested structures
+            # Handle nested values
             if isinstance(value, dict):
                 return {k: redact_value(v, k) for k, v in value.items()}
             if isinstance(value, list):

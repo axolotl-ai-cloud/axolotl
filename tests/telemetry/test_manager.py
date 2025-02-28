@@ -106,11 +106,12 @@ def test_telemetry_disabled_for_non_main_process(telemetry_manager_class):
 def test_opt_in_info_displayed(telemetry_manager_class):
     """Test that opt-in info is displayed when telemetry is not configured"""
     with patch.dict(os.environ, {"RANK": "0"}, clear=True), patch(
-        "logging.Logger.info"
-    ) as mock_info, patch("time.sleep"):
+        "logging.Logger.warning"
+    ) as mock_warning, patch("time.sleep"):
         telemetry_manager_class()
         info_displayed = False
-        for call in mock_info.call_args_list:
+        for call in mock_warning.call_args_list:
+            print(f"call: {call}")
             if "Telemetry is currently disabled by default" in str(call):
                 info_displayed = True
                 break
