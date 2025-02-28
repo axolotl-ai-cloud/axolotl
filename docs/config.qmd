@@ -528,6 +528,8 @@ flash_attn_fuse_mlp: # Whether to fuse part of the MLP into a single operation
 sdp_attention:
 # Shifted-sparse attention (only llama) - https://arxiv.org/pdf/2309.12307.pdf
 s2_attention:
+# Optional[bool]. Whether to use low_cpu_mem_usage
+low_cpu_mem_usage:
 # Resume from a specific checkpoint dir
 resume_from_checkpoint:
 # If resume_from_checkpoint isn't set and you simply want it to start where it left off.
