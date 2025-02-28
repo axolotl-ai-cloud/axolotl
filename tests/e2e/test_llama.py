@@ -26,8 +26,7 @@ class TestLlama:
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "JackFram/llama-68m",
-                "tokenizer_type": "LlamaTokenizer",
+                "base_model": "HuggingFaceTB/SmolLM2-135M-Instruct",
                 "trust_remote_code": True,
                 "sequence_len": 512,
                 "val_set_size": 0.1,

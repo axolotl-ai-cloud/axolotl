@@ -47,9 +47,9 @@ def download_smollm2_135m_model():
 
 
 @pytest.fixture(scope="session", autouse=True)
-def download_llama_68m_random_model():
+def download_smollm2_135m_instruct_model():
     # download the model
-    snapshot_download_w_retry("JackFram/llama-68m")
+    snapshot_download_w_retry("HuggingFaceTB/SmolLM2-135M-Instruct")
 
 
 @pytest.fixture(scope="session", autouse=True)

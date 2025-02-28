@@ -28,8 +28,7 @@ class TestCustomOptimizers(unittest.TestCase):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "JackFram/llama-68m",
-                "tokenizer_type": "LlamaTokenizer",
+                "base_model": "HuggingFaceTB/SmolLM2-135M-Instruct",
                 "sequence_len": 1024,
                 "load_in_8bit": True,
                 "adapter": "lora",
@@ -74,8 +73,7 @@ class TestCustomOptimizers(unittest.TestCase):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "JackFram/llama-68m",
-                "tokenizer_type": "LlamaTokenizer",
+                "base_model": "HuggingFaceTB/SmolLM2-135M-Instruct",
                 "sequence_len": 1024,
                 "load_in_8bit": True,
                 "adapter": "lora",

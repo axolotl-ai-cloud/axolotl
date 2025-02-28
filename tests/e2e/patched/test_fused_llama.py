@@ -32,7 +32,7 @@ class TestFusedLlama(unittest.TestCase):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "JackFram/llama-68m",
+                "base_model": "HuggingFaceTB/SmolLM2-135M-Instruct",
                 "flash_attention": True,
                 "pad_to_sequence_len": True,
                 "flash_attn_fuse_qkv": True,

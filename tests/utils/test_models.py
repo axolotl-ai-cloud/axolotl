@@ -18,9 +18,8 @@ class TestModelsUtils:
         # load config
         self.cfg = DictDefault(  # pylint: disable=attribute-defined-outside-init
             {
-                "base_model": "JackFram/llama-68m",
+                "base_model": "HuggingFaceTB/SmolLM2-135M-Instruct",
                 "model_type": "LlamaForCausalLM",
-                "tokenizer_type": "LlamaTokenizer",
                 "load_in_8bit": True,
                 "load_in_4bit": False,
                 "adapter": "lora",
