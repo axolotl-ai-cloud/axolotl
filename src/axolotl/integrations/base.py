@@ -23,6 +23,8 @@ import importlib
 import logging
 from typing import OrderedDict
 
+import torch
+
 
 class BasePlugin:
     """
@@ -469,3 +471,14 @@ class PluginManager:
         """
         for plugin in self.plugins.values():
             plugin.post_train_unload(cfg)
+
+
+class BaseOptimizerFactory:
+    """
+    Base class for factories to create custom optimizers
+    """
+
+    def __call__(
+        self, opt_model, training_args, **optimizer_kwargs
+    ) -> "torch.optim.Optimizer":
+        pass

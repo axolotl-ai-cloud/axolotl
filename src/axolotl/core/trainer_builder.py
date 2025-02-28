@@ -35,6 +35,7 @@ from transformers import (
     EarlyStoppingCallback,
     TrainerCallback,
 )
+from transformers.training_args import OptimizerNames
 from trl.trainer.utils import RewardDataCollatorWithPadding
 
 from axolotl.core.trainers.base import (
@@ -84,6 +85,7 @@ from axolotl.utils.collators import (
     V2BatchSamplerDataCollatorForSeq2Seq,
 )
 from axolotl.utils.collators.mm_chat import MultiModalChatDataCollator
+from axolotl.utils.config.models.input.v0_4_1 import CustomSupportedOptimizers
 from axolotl.utils.models import ensure_dtype
 
 try:
@@ -549,28 +551,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             training_arguments_kwargs["run_name"] = self.cfg.mlflow_run_name
         else:
             training_arguments_kwargs["run_name"] = None
-        training_arguments_kwargs["optim"] = (
-            self.cfg.optimizer if self.cfg.optimizer else "adamw_hf"
-        )
-        if self.cfg.optim_args:
-            if isinstance(self.cfg.optim_args, dict):
-                optim_args = ",".join(
-                    [f"{key}={value}" for key, value in self.cfg.optim_args.items()]
-                )
-            else:
-                optim_args = self.cfg.optim_args
-            training_arguments_kwargs["optim_args"] = optim_args
-        if self.cfg.optim_target_modules:
-            training_arguments_kwargs[
-                "optim_target_modules"
-            ] = self.cfg.optim_target_modules
-        training_arguments_kwargs["loraplus_lr_ratio"] = self.cfg.loraplus_lr_ratio
-        training_arguments_kwargs[
-            "loraplus_lr_embedding"
-        ] = self.cfg.loraplus_lr_embedding
-        training_arguments_kwargs["embedding_lr"] = self.cfg.embedding_lr
-        training_arguments_kwargs["embedding_lr_scale"] = self.cfg.embedding_lr_scale
-        training_arguments_kwargs["lr_groups"] = self.cfg.lr_groups
 
         if self.cfg.lr_scheduler in ["one_cycle", "rex", "log_sweep"]:
             training_arguments_kwargs["lr_scheduler_type"] = "cosine"
@@ -656,45 +636,113 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         if self.cfg.reward_model:
             training_arguments_kwargs["max_length"] = self.cfg.sequence_len
 
-        # pylint: disable=duplicate-code
-        if self.cfg.optimizer in [
-            "optimi_adamw",
-            "ao_adamw_4bit",
-            "ao_adamw_8bit",
-            "ao_adamw_fp8",
-            "adopt_adamw",
-        ]:
-            # Set default so transformers doesn't throw
-            training_arguments_kwargs["optim"] = "adamw_hf"
-            training_arguments_kwargs["alternate_optimizer"] = self.cfg.optimizer
+        # Handle custom optimizer
+        custom_supported_optimizers = [opt.value for opt in CustomSupportedOptimizers]
+        if self.cfg.optimizer in custom_supported_optimizers:
+            # Common optimizer kwargs
+            optimizer_kwargs = {
+                "lr": training_arguments_kwargs.get("learning_rate"),
+                "weight_decay": training_arguments_kwargs.get("weight_decay"),
+            }
 
-        if self.cfg.optimizer == "lion_pytorch":
-            from lion_pytorch import Lion
+            # Adam-specific kwargs
+            adam_kwargs = {}
+            if training_arguments_kwargs.get(
+                "adam_beta1"
+            ) and training_arguments_kwargs.get("adam_beta2"):
+                adam_kwargs["betas"] = (
+                    training_arguments_kwargs.get("adam_beta1"),
+                    training_arguments_kwargs.get("adam_beta2"),
+                )
+            if training_arguments_kwargs.get("adam_epsilon"):
+                adam_kwargs["eps"] = training_arguments_kwargs.get("adam_epsilon")
 
-            lion_kwargs = {"lr": training_arguments_kwargs["learning_rate"]}
-            if "weight_decay" in training_arguments_kwargs:
-                lion_kwargs["weight_decay"] = training_arguments_kwargs["weight_decay"]
-
-            if (
-                "adam_beta1" in training_arguments_kwargs
-                and "adam_beta2" in training_arguments_kwargs
-            ):
-                lion_kwargs["betas"] = (
-                    training_arguments_kwargs["adam_beta1"],
-                    training_arguments_kwargs["adam_beta2"],
+            if self.cfg.optimizer == "muon":
+                from axolotl.contribs.mit.muon import (  # pylint: disable=no-name-in-module
+                    MuonOptimizerFactory,
                 )
 
-            trainer_kwargs["optimizers"] = (
-                Lion(params=self.model.parameters(), **lion_kwargs),
-                None,
+                optimizer_cls = MuonOptimizerFactory
+                optimizer_kwargs.update(adam_kwargs)
+            elif self.cfg.optimizer == "optimi_adamw":
+                from optimi import AdamW
+
+                optimizer_kwargs["foreach"] = False
+                optimizer_cls = AdamW
+                optimizer_kwargs.update(adam_kwargs)
+            elif self.cfg.optimizer == "ao_adamw_4bit":
+                # TODO remove 20250401
+                from torchao.prototype.low_bit_optim import AdamW4bit
+
+                optimizer_cls = AdamW4bit
+                optimizer_kwargs.update(adam_kwargs)
+
+                LOG.warning(
+                    f"`ao_adamw_4bit` will be deprecated soon. Please use `{OptimizerNames.ADAMW_TORCH_4BIT}` instead."
+                )
+            elif self.cfg.optimizer == "ao_adamw_8bit":
+                from torchao.prototype.low_bit_optim import AdamW8bit
+
+                optimizer_cls = AdamW8bit
+                optimizer_kwargs.update(adam_kwargs)
+            elif self.cfg.optimizer == "ao_adamw_fp8":
+                from torchao.prototype.low_bit_optim import AdamWFp8
+
+                optimizer_cls = AdamWFp8
+                optimizer_kwargs.update(adam_kwargs)
+            elif self.cfg.optimizer == "adopt_adamw":
+                from axolotl.utils.optimizers.adopt import ADOPT
+
+                optimizer_cls = ADOPT
+                adam_kwargs["decouple"] = True
+                optimizer_kwargs.update(adam_kwargs)
+
+            # Parse any additional optimizer args from config
+            if self.cfg.optim_args:
+                if isinstance(self.cfg.optim_args, dict):
+                    optimizer_kwargs.update(self.cfg.optim_args)
+                else:
+                    # Parse string format "key1=value1,key2=value2"
+                    for mapping in self.cfg.optim_args.replace(" ", "").split(","):
+                        key, value = mapping.split("=")
+                        optimizer_kwargs[key] = value
+
+            trainer_kwargs["optimizer_cls_and_kwargs"] = (
+                optimizer_cls,
+                optimizer_kwargs,
             )
-            # Set default so transformers doesn't throw
-            training_arguments_kwargs["optim"] = "adamw_hf"
+        else:
+            # Use transformers' optimizer
+            training_arguments_kwargs["optim"] = self.cfg.optimizer
+
+            # Parse any additional optimizer args from config
+            if self.cfg.optim_args:
+                if isinstance(self.cfg.optim_args, dict):
+                    optim_args = ",".join(
+                        [f"{key}={value}" for key, value in self.cfg.optim_args.items()]
+                    )
+                else:
+                    optim_args = self.cfg.optim_args
+                training_arguments_kwargs["optim_args"] = optim_args
 
         if self.cfg.optimizer == "adamw_anyprecision":
             if Path(self.cfg.torchdistx_path).exists():
                 sys.path.append(self.cfg.torchdistx_path)
                 importlib.import_module("torchdistx")
+
+        if self.cfg.optim_target_modules:
+            training_arguments_kwargs[
+                "optim_target_modules"
+            ] = self.cfg.optim_target_modules
+
+        training_arguments_kwargs["embedding_lr"] = self.cfg.embedding_lr
+        training_arguments_kwargs["embedding_lr_scale"] = self.cfg.embedding_lr_scale
+
+        training_arguments_kwargs["loraplus_lr_ratio"] = self.cfg.loraplus_lr_ratio
+        training_arguments_kwargs[
+            "loraplus_lr_embedding"
+        ] = self.cfg.loraplus_lr_embedding
+        training_arguments_kwargs["lr_groups"] = self.cfg.lr_groups
 
         if self.cfg.accelerator_config:
             training_arguments_kwargs[
