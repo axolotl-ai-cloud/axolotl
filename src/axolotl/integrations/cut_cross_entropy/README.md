@@ -4,6 +4,24 @@ Cut Cross Entropy reduces VRAM usage through optimization on the cross-entropy o
 
 See https://github.com/apple/ml-cross-entropy
 
+## Requirements
+
+- PyTorch 2.4.0 or higher
+
+## Installation
+
+Run the following command to install `cut_cross_entropy[transformers]` if you don't have it already.
+
+```bash
+# if you are in dev environment
+python scripts/cutcrossentropy_install.py | sh
+
+# if you are not in dev environment
+pip3 uninstall -y cut-cross-entropy && pip3 install "cut-cross-entropy @ git+https://github.com/apple/ml-cross-entropy.git@9c297c905f55b73594b5d650722d1e78183b77bd"'
+```
+
+
+
 ## Usage
 
 ```yaml
