@@ -20,8 +20,6 @@ python scripts/cutcrossentropy_install.py | sh
 pip3 uninstall -y cut-cross-entropy && pip3 install "cut-cross-entropy @ git+https://github.com/apple/ml-cross-entropy.git@9c297c905f55b73594b5d650722d1e78183b77bd"'
 ```
 
-
-
 ## Usage
 
 ```yaml
