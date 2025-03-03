@@ -1,0 +1,132 @@
+---
+title: "Docker"
+format:
+  html:
+    toc: true
+    toc-depth: 4
+---
+
+This section describes the different Docker images that are released by AxolotlAI.
+
+## Base
+
+The base image is the most minimal image that can install Axolotl. It is based on the `nvidia/cuda` image. It includes python, torch, git, git-lfs, awscli, pydantic, and more.
+
+#### Image
+
+```
+axolotlai/axolotl-base
+```
+
+#### Tags format
+
+```bash
+main-base-py{python_version}-cu{cuda_version}-{pytorch_version}
+```
+
+Tags examples:
+
+- `main-base-py3.11-cu124-2.6.0`
+- `main-base-py3.11-cu124-2.5.1`
+- `main-base-py3.11-cu124-2.4.1`
+
+## Main
+
+The main image is the image that is used to run Axolotl. It is based on the `axolotlai/axolotl-base` image and includes the Axolotl codebase, dependencies, and more.
+
+#### Image
+
+```
+axolotlai/axolotl
+```
+
+#### Tags format {#sec-main-tags}
+
+```bash
+# on push to main
+main-py{python_version}-cu{cuda_version}-{pytorch_version}
+
+# latest main (currently torch 2.5.1, python 3.11, cuda 12.4)
+main-latest
+
+# nightly build
+{branch}-{date_in_YYYYMMDD}-py{python_version}-cu{cuda_version}-{pytorch_version}
+
+# tagged release
+{version}
+```
+
+:::{.callout-tip}
+
+There may be some extra tags appended to the image, like `-vllm` which installs those packages.
+
+:::
+
+Tags examples:
+
+- `main-py3.11-cu124-2.6.0`
+- `main-py3.11-cu124-2.5.1`
+- `main-py3.11-cu124-2.4.1`
+- `main-latest`
+- `main-20250303-py3.11-cu124-2.6.0`
+- `main-20250303-py3.11-cu124-2.5.1`
+- `main-20250303-py3.11-cu124-2.4.1`
+- `0.7.1`
+
+## Cloud
+
+The cloud image is the image that is used to run Axolotl in the cloud. It is based on the `axolotlai/axolotl` image and sets ENV variables like HuggingFace cache directories for volume mounts, tmux, and more for different cloud providers.
+
+:::{.callout-tip}
+
+Jupyter lab is run by default. Set `JUPYTER_DISABLE=1` in the environment variables to disable it.
+
+:::
+
+#### Image
+
+```
+axolotlai/axolotl-cloud
+```
+
+#### Tags format
+
+This uses the same tags as the [`main` image](#sec-main-tags).
+
+#### Environment variables
+
+- `JUPYTER_DISABLE`: Disable Jupyter lab.
+- `JUPYTER_PASSWORD`: Set a password for the Jupyter lab.
+- `PUBLIC_KEY`: Add a public key for the SSH service.
+- `SSH_KEY`: Add a private key for the SSH service.
+
+#### Volume mounts
+
+:::{.callout-tip}
+
+We recommend mounting volumes to `/workspace/data` for data persistence. `/workspace/axolotl` contains the source code and is ephemeral.
+
+:::
+
+- `/workspace/data/axolotl-artifacts`: Directory to store Axolotl artifacts.
+- `/workspace/data/huggingface-cache`: Directory to store HuggingFace cache.
+
+## Cloud-no-tmux
+
+This is the same as the [`cloud` image](#sec-cloud) but without tmux.
+
+#### Image
+
+```
+axolotlai/axolotl-cloud-term
+```
+
+:::{.callout-note}
+
+The naming may be a bit confusing as it has `-term` appended to the end.
+
+:::
+
+#### Tags format
+
+This uses the same tags as the [`cloud` image](#sec-cloud-tags).

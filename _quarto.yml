@@ -40,6 +40,7 @@ website:
 
         - section: "Deployments"
           contents:
+            - docs/docker.qmd
             - docs/multi-gpu.qmd
             - docs/multi-node.qmd
             - docs/ray-integration.qmd
