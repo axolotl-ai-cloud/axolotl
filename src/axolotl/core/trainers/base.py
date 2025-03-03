@@ -37,7 +37,7 @@ LOG = logging.getLogger("axolotl.core.trainer_builder")
 
 
 # https://github.com/IvanVassi/REX_LR - Apache 2.0
-class RexLR(torch.optim.lr_scheduler._LRScheduler):
+class RexLR(torch.optim.lr_scheduler.LRScheduler):
     """
     Reverse exponential learning rate scheduler.
 
