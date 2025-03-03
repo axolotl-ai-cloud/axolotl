@@ -6,7 +6,7 @@ format:
     toc-depth: 4
 ---
 
-This section describes the different Docker images that are released by AxolotlAI.
+This section describes the different Docker images that are released by AxolotlAI at [Docker Hub](https://hub.docker.com/u/axolotlai).
 
 ## Base
 
@@ -17,6 +17,8 @@ The base image is the most minimal image that can install Axolotl. It is based o
 ```
 axolotlai/axolotl-base
 ```
+
+Link: [Docker Hub](https://hub.docker.com/r/axolotlai/axolotl-base)
 
 #### Tags format
 
@@ -39,6 +41,8 @@ The main image is the image that is used to run Axolotl. It is based on the `axo
 ```
 axolotlai/axolotl
 ```
+
+Link: [Docker Hub](https://hub.docker.com/r/axolotlai/axolotl)
 
 #### Tags format {#sec-main-tags}
 
@@ -89,6 +93,8 @@ Jupyter lab is run by default. Set `JUPYTER_DISABLE=1` in the environment variab
 axolotlai/axolotl-cloud
 ```
 
+Link: [Docker Hub](https://hub.docker.com/r/axolotlai/axolotl-cloud)
+
 #### Tags format
 
 This uses the same tags as the [`main` image](#sec-main-tags).
@@ -120,6 +126,8 @@ This is the same as the [`cloud` image](#sec-cloud) but without tmux.
 ```
 axolotlai/axolotl-cloud-term
 ```
+
+Link: [Docker Hub](https://hub.docker.com/r/axolotlai/axolotl-cloud-term)
 
 :::{.callout-note}
 
