@@ -679,7 +679,7 @@ class AxolotlInputConfig(
     DeprecatedParameters,
     BaseModel,
 ):
-    """wrapper of all config options"""
+    """Wrapper of all config options"""
 
     model_config = {"populate_by_name": True}
 
@@ -851,6 +851,9 @@ class AxolotlInputConfig(
     fsdp_final_state_dict_type: Optional[
         Literal["FULL_STATE_DICT", "LOCAL_STATE_DICT", "SHARDED_STATE_DICT"]
     ] = None
+
+    sequence_parallel_size: Optional[int] = 1
+    sequence_parallel_mode: Optional[str] = "zigzag"
 
     val_set_size: Optional[float] = Field(default=0.0)
 

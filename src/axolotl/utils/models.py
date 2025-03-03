@@ -548,6 +548,20 @@ class ModelLoader:
 
             patch_self_attn_lora(self.cfg)
 
+        if self.cfg.sequence_parallel_size > 1:
+            from axolotl.integrations.easy_context import (
+                apply_seq_parallel_monkey_patch,
+            )
+
+            method = self.cfg.sequence_parallel_mode
+            model_type = self.cfg.model_type
+
+            # Apply the monkey patch
+            apply_seq_parallel_monkey_patch(method, model_type)
+
+            # Ensure flash attention is enabled when loading the model
+            self.cfg.attn_implementation = "flash_attention_2"
+
     def patch_attention(self) -> None:
         if hasattr(self.model_config, "model_type"):
             if self.model_config.model_type == "mllama" and self.cfg.flash_attention:
