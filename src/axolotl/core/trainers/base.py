@@ -38,17 +38,47 @@ LOG = logging.getLogger("axolotl.core.trainer_builder")
 
 # https://github.com/IvanVassi/REX_LR - Apache 2.0
 class RexLR(_LRScheduler):
-    def __init__(self, optimizer, max_lr, min_lr, total_steps=1, last_step=0):
+    def __init__(self, optimizer, max_lr, min_lr, total_steps=1, num_warmup_steps=0, last_step=-2):
         if min_lr > max_lr:
             raise ValueError(f'Value of "min_lr" should be less than value of "max_lr". Got min_lr={min_lr} and max_lr={max_lr}')
+        if num_warmup_steps > total_steps:
+            raise ValueError(f'num_warmup_steps ({num_warmup_steps}) must be less than or equal to total_steps ({total_steps}).')
         self.total_steps = total_steps
+        self.num_warmup_steps = num_warmup_steps
         self.min_lr = min_lr
         self.max_lr = max_lr
-        super().__init__(optimizer, last_step)
+
+        # Ensure each parameter group has an 'initial_lr' key to avoid issues when resuming.
+        for group in optimizer.param_groups:
+            group.setdefault('initial_lr', group['lr'])
+
+        # Pass last_step as last_epoch to the parent.
+        super().__init__(optimizer, last_epoch=last_step)
+
+    @property
+    def last_step(self):
+        return self.last_epoch
+
+    @last_step.setter
+    def last_step(self, value):
+        self.last_epoch = value
 
     def get_lr(self):
-        mod_iter = self.last_step % self.total_steps
-        z = (self.total_steps - mod_iter) / self.total_steps
+        # Warmup phase: if defined, increase lr linearly from min_lr to max_lr.
+        if self.num_warmup_steps > 0 and self.last_step < self.num_warmup_steps:
+            warmup_lr = self.min_lr + (self.max_lr - self.min_lr) * (self.last_step / self.num_warmup_steps)
+            return [warmup_lr]
+
+        # Post-warmup phase: adjust step relative to the end of warmup.
+        step_after = self.last_step - self.num_warmup_steps
+        remaining_steps = self.total_steps - self.num_warmup_steps
+
+        # Avoid division by zero if remaining_steps is zero (i.e., total_steps == num_warmup_steps)
+        if remaining_steps <= 0:
+            return [self.max_lr]
+
+        mod_iter = step_after % remaining_steps
+        z = (remaining_steps - mod_iter) / remaining_steps
         lr = self.min_lr + (self.max_lr - self.min_lr) * (z / (1 - 0.9 + 0.9 * z))
         return [lr]
 
