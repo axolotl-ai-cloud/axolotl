@@ -38,7 +38,7 @@ LOG = logging.getLogger("axolotl.core.trainer_builder")
 
 # https://github.com/IvanVassi/REX_LR - Apache 2.0
 class RexLR(_LRScheduler):
-    def __init__(self, optimizer, max_lr, min_lr, total_steps=1, num_warmup_steps=0, last_step=-2):
+    def __init__(self, optimizer, max_lr, min_lr, total_steps=1, num_warmup_steps=0, last_step=-1):
         if min_lr > max_lr:
             raise ValueError(f'Value of "min_lr" should be less than value of "max_lr". Got min_lr={min_lr} and max_lr={max_lr}')
         if num_warmup_steps > total_steps:
@@ -163,10 +163,13 @@ class SchedulerMixin(Trainer):
                     **self.args.lr_scheduler_kwargs,
                 )
             elif self.args.alternate_lr_scheduler_type == "rex":
+                if use_cosine_min_lr:
+                    assert 0 <= self.args.cosine_min_lr_ratio <= 1.0, "cosine_min_lr_ratio must be between 0.0 and 1.0"
+
                 self.lr_scheduler = RexLR(
                     optimizer=optimizer,
                     max_lr=self.args.learning_rate,
-                    min_lr=0 if not self.args.cosine_min_lr_ratio else (self.args.learning_rate * self.args.cosine_min_lr_ratio),
+                    min_lr=0 if not use_cosine_min_lr else (self.args.learning_rate * self.args.cosine_min_lr_ratio),
                     total_steps=num_training_steps,
                     num_warmup_steps=self.args.get_warmup_steps(num_training_steps),
                 )
