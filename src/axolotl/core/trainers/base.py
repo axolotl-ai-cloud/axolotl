@@ -38,11 +38,17 @@ LOG = logging.getLogger("axolotl.core.trainer_builder")
 
 # https://github.com/IvanVassi/REX_LR - Apache 2.0
 class RexLR(torch.optim.lr_scheduler._LRScheduler):
-    def __init__(self, optimizer, max_lr, min_lr, total_steps=0, num_warmup_steps=0, last_step=0):
+    def __init__(
+        self, optimizer, max_lr, min_lr, total_steps=0, num_warmup_steps=0, last_step=0
+     ):
         if min_lr > max_lr:
-            raise ValueError(f'Value of "min_lr" should be less than value of "max_lr". Got min_lr={min_lr} and max_lr={max_lr}')
+            raise ValueError(
+                f'Value of "min_lr" should be less than value of "max_lr". Got min_lr={min_lr} and max_lr={max_lr}'
+            )
         if num_warmup_steps > total_steps:
-            raise ValueError(f'num_warmup_steps ({num_warmup_steps}) must be less than or equal to total_steps ({total_steps}).')
+            raise ValueError(
+                f'num_warmup_steps ({num_warmup_steps}) must be less than or equal to total_steps ({total_steps}).'
+            )
 
         self.min_lr = min_lr
         self.max_lr = max_lr
@@ -50,9 +56,9 @@ class RexLR(torch.optim.lr_scheduler._LRScheduler):
         self.num_warmup_steps = num_warmup_steps
         self.last_step = last_step
 
-        # Ensure each parameter group has an 'initial_lr' key to avoid issues when resuming.
+        # Ensure each parameter group has an "initial_lr" key to avoid issues when resuming.
         for group in optimizer.param_groups:
-            group.setdefault('initial_lr', group['lr'])
+            group.setdefault("initial_lr", group["lr"])
 
         # Pass last_step as last_epoch to the parent.
         super().__init__(optimizer, last_epoch=last_step)
