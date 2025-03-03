@@ -14,7 +14,7 @@ from typing import Dict, Literal, Optional
 import torch
 from datasets import Dataset
 from peft.optimizers import create_loraplus_optimizer
-from torch.optim.lr_scheduler import OneCycleLR
+from torch.optim.lr_scheduler import OneCycleLR, _LRScheduler
 from torch.utils.data import BatchSampler, DataLoader, RandomSampler, SequentialSampler
 from transformers import Trainer
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, seed_worker
@@ -34,6 +34,23 @@ if is_sagemaker_mp_enabled():
     import smdistributed.modelparallel.torch as smp
 
 LOG = logging.getLogger("axolotl.core.trainer_builder")
+
+
+# https://github.com/IvanVassi/REX_LR - Apache 2.0
+class RexLR(_LRScheduler):
+    def __init__(self, optimizer, max_val, min_val, num_epochs=1, last_epoch=-1):
+        if min_val > max_val:
+            raise ValueError(f'Value of "min_val" should be less than value of "max_val". Got min_val={min_val} and max_val={max_val}')
+        self.num_epochs = num_epochs
+        self.min_val = min_val
+        self.max_val = max_val
+        super().__init__(optimizer, last_epoch)
+
+    def get_lr(self):
+        mod_iter = self.last_epoch % self.num_epochs
+        z = (self.num_epochs - mod_iter) / self.num_epochs
+        lr = self.min_val + (self.max_val - self.min_val) * (z / (1 - 0.9 + 0.9 * z))
+        return [lr]
 
 
 def _sanitize_kwargs_for_tagging(tag_names, kwargs=None):
@@ -114,6 +131,13 @@ class SchedulerMixin(Trainer):
                     total_steps=num_training_steps,
                     **extra_lr_kwargs,
                     **self.args.lr_scheduler_kwargs,
+                )
+            elif self.args.alternate_lr_scheduler_type == "rex":
+                self.lr_scheduler = RexLR(
+                    optimizer=optimizer,
+                    max_val=self.args.learning_rate,
+                    min_val=0 if not self.args.cosine_min_lr_ratio else (self.args.learning_rate * self.args.cosine_min_lr_ratio),
+                    num_epochs=num_training_steps + 1,
                 )
             elif use_cosine_quadratic:
                 if use_cosine_min_lr:
