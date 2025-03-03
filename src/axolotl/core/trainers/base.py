@@ -40,7 +40,7 @@ LOG = logging.getLogger("axolotl.core.trainer_builder")
 class RexLR(torch.optim.lr_scheduler._LRScheduler):
     def __init__(
         self, optimizer, max_lr, min_lr, total_steps=0, num_warmup_steps=0, last_step=0
-     ):
+    ):
         if min_lr > max_lr:
             raise ValueError(
                 f"Value of \"min_lr\" should be less than value of \"max_lr\". Got min_lr={min_lr} and max_lr={max_lr}"
