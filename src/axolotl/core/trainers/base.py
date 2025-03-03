@@ -38,6 +38,21 @@ LOG = logging.getLogger("axolotl.core.trainer_builder")
 
 # https://github.com/IvanVassi/REX_LR - Apache 2.0
 class RexLR(torch.optim.lr_scheduler._LRScheduler):
+    """
+    Reverse exponential learning rate scheduler.
+
+    Original implementation: https://github.com/IvanVassi/REX_LR
+    Based on: https://arxiv.org/abs/2107.04197
+
+    Args:
+        optimizer (torch.optim.Optimizer): The optimizer to schedule the learning rate for.
+        max_lr (float): The maximum learning rate.
+        min_lr (float): The minimum learning rate.
+        total_steps (int): The total number of training steps.
+        num_warmup_steps (int): The number of warmup steps.
+        last_step (int): The index of last step. Defaults to 0.
+    """
+
     def __init__(
         self, optimizer, max_lr, min_lr, total_steps=0, num_warmup_steps=0, last_step=0
     ):
