@@ -14,7 +14,7 @@ from typing import Dict, Literal, Optional
 import torch
 from datasets import Dataset
 from peft.optimizers import create_loraplus_optimizer
-from torch.optim.lr_scheduler import OneCycleLR, _LRScheduler
+from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import BatchSampler, DataLoader, RandomSampler, SequentialSampler
 from transformers import Trainer
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, seed_worker
@@ -37,16 +37,18 @@ LOG = logging.getLogger("axolotl.core.trainer_builder")
 
 
 # https://github.com/IvanVassi/REX_LR - Apache 2.0
-class RexLR(_LRScheduler):
-    def __init__(self, optimizer, max_lr, min_lr, total_steps=1, num_warmup_steps=0, last_step=-1):
+class RexLR(torch.optim.lr_scheduler._LRScheduler):
+    def __init__(self, optimizer, max_lr, min_lr, total_steps=0, num_warmup_steps=0, last_step=0):
         if min_lr > max_lr:
             raise ValueError(f'Value of "min_lr" should be less than value of "max_lr". Got min_lr={min_lr} and max_lr={max_lr}')
         if num_warmup_steps > total_steps:
             raise ValueError(f'num_warmup_steps ({num_warmup_steps}) must be less than or equal to total_steps ({total_steps}).')
-        self.total_steps = total_steps
-        self.num_warmup_steps = num_warmup_steps
+
         self.min_lr = min_lr
         self.max_lr = max_lr
+        self.total_steps = total_steps
+        self.num_warmup_steps = num_warmup_steps
+        self.last_step = last_step
 
         # Ensure each parameter group has an 'initial_lr' key to avoid issues when resuming.
         for group in optimizer.param_groups:
@@ -70,16 +72,20 @@ class RexLR(_LRScheduler):
             return [warmup_lr]
 
         # Post-warmup phase: adjust step relative to the end of warmup.
-        step_after = self.last_step - self.num_warmup_steps
-        remaining_steps = self.total_steps - self.num_warmup_steps
+        step_after = (self.last_step - self.num_warmup_steps) - 2
+        remaining_steps = (self.total_steps - self.num_warmup_steps) - 1
 
         # Avoid division by zero if remaining_steps is zero (i.e., total_steps == num_warmup_steps)
         if remaining_steps <= 0:
-            return [self.max_lr]
+            return [self.min_lr]
+
+        # Avoid LR spiking
+        if step_after >= remaining_steps or step_after == -1:
+            return [self.min_lr]
 
         mod_iter = step_after % remaining_steps
         z = (remaining_steps - mod_iter) / remaining_steps
-        lr = self.min_lr + (self.max_lr - self.min_lr) * (z / (1 - 0.9 + 0.9 * z))
+        lr = self.min_lr + (self.max_lr - self.min_lr) * (z / (0.1 + 0.9 * z))
         return [lr]
 
 
@@ -170,7 +176,7 @@ class SchedulerMixin(Trainer):
                     optimizer=optimizer,
                     max_lr=self.args.learning_rate,
                     min_lr=0 if not use_cosine_min_lr else (self.args.learning_rate * self.args.cosine_min_lr_ratio),
-                    total_steps=num_training_steps + 1,
+                    total_steps=num_training_steps,
                     num_warmup_steps=self.args.get_warmup_steps(num_training_steps),
                 )
             elif use_cosine_quadratic:
