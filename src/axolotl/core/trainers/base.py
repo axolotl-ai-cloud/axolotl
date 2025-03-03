@@ -75,12 +75,8 @@ class RexLR(torch.optim.lr_scheduler._LRScheduler):
         step_after = (self.last_step - self.num_warmup_steps) - 2
         remaining_steps = (self.total_steps - self.num_warmup_steps) - 1
 
-        # Avoid division by zero if remaining_steps is zero (i.e., total_steps == num_warmup_steps)
-        if remaining_steps <= 0:
-            return [self.min_lr]
-
         # Avoid LR spiking
-        if step_after >= remaining_steps or step_after == -1:
+        if step_after >= remaining_steps or step_after == -1 or remaining_steps <= 0:
             return [self.min_lr]
 
         mod_iter = step_after % remaining_steps
