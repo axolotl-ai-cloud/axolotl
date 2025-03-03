@@ -66,10 +66,9 @@ class RexLR(torch.optim.lr_scheduler._LRScheduler):
         self.last_epoch = value
 
     def get_lr(self):
-        # Warmup phase: if defined, increase lr linearly from min_lr to max_lr.
-        if self.num_warmup_steps > 0 and self.last_step < self.num_warmup_steps:
-            warmup_lr = self.min_lr + (self.max_lr - self.min_lr) * (self.last_step / self.num_warmup_steps)
-            return [warmup_lr]
+        # Warmup phase: if defined, increase lr linearly from 0 to max_lr.
+        if 0 <= (self.last_step - 2) <= (self.num_warmup_steps - 1):
+            return [self.max_lr * (self.last_step - 2) / (self.num_warmup_steps - 1)]
 
         # Post-warmup phase: adjust step relative to the end of warmup.
         step_after = (self.last_step - self.num_warmup_steps) - 2
@@ -81,8 +80,7 @@ class RexLR(torch.optim.lr_scheduler._LRScheduler):
 
         mod_iter = step_after % remaining_steps
         z = (remaining_steps - mod_iter) / remaining_steps
-        lr = self.min_lr + (self.max_lr - self.min_lr) * (z / (0.1 + 0.9 * z))
-        return [lr]
+        return [self.min_lr + (self.max_lr - self.min_lr) * (z / (0.1 + 0.9 * z))]
 
 
 def _sanitize_kwargs_for_tagging(tag_names, kwargs=None):
