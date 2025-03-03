@@ -170,8 +170,8 @@ class SchedulerMixin(Trainer):
                     optimizer=optimizer,
                     max_lr=self.args.learning_rate,
                     min_lr=0 if not use_cosine_min_lr else (self.args.learning_rate * self.args.cosine_min_lr_ratio),
-                    total_steps=num_training_steps,
-                    num_warmup_steps=self.args.get_warmup_steps(num_training_steps) + 1,
+                    total_steps=num_training_steps + 1,
+                    num_warmup_steps=self.args.get_warmup_steps(num_training_steps),
                 )
             elif use_cosine_quadratic:
                 if use_cosine_min_lr:
