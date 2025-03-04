@@ -749,6 +749,6 @@ def forward(
 
 def apply_dist_flash_attn_monkey_patch_llama():
     initialize_distributed()
-    
+
     LlamaModel.forward = forward
     LlamaDecoderLayer.forward = llama_layer_forward

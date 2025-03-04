@@ -8,7 +8,6 @@ from contextlib import contextmanager
 from functools import partial
 from typing import List, Optional
 
-from axolotl.integrations.easy_context import prepare_seq_parallel_inputs
 import numpy as np
 import torch
 import torch.cuda
@@ -18,6 +17,7 @@ from torch.utils.data import DataLoader, RandomSampler
 from transformers.utils import is_torch_bf16_gpu_available
 
 from axolotl.core.trainer_builder import HFCausalTrainerBuilder, HFRLTrainerBuilder
+from axolotl.integrations.easy_context import prepare_seq_parallel_inputs
 from axolotl.utils.distributed import reduce_and_broadcast
 from axolotl.utils.environment import check_cuda_p2p_ib_support
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
