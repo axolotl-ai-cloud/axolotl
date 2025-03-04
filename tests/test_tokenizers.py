@@ -83,12 +83,12 @@ class TestTokenizers:
         tokenizer = load_tokenizer(cfg)
         assert len(tokenizer) == 32001
 
-    def test_tokenizer_overrides(self, temp_dir):
+    def test_added_tokens_overrides(self, temp_dir):
         cfg = DictDefault(
             {
                 # use with tokenizer that has reserved_tokens in added_tokens
                 "tokenizer_config": "NousResearch/Llama-3.2-1B",
-                "tokenizer_overrides": {
+                "added_tokens_overrides": {
                     128041: "RANDOM_OVERRIDE_1",
                     128042: "RANDOM_OVERRIDE_2",
                 },
@@ -104,12 +104,12 @@ class TestTokenizers:
             128042
         ]
 
-    def test_tokenizer_overrides_with_toolargeid(self, temp_dir):
+    def test_added_tokens_overrides_with_toolargeid(self, temp_dir):
         cfg = DictDefault(
             {
                 # use with tokenizer that has reserved_tokens in added_tokens
                 "tokenizer_config": "NousResearch/Llama-3.2-1B",
-                "tokenizer_overrides": {1000000: "BROKEN_RANDOM_OVERRIDE_1"},
+                "added_tokens_overrides": {1000000: "BROKEN_RANDOM_OVERRIDE_1"},
                 "output_dir": temp_dir,
             }
         )

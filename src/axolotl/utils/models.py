@@ -278,10 +278,10 @@ def load_tokenizer(cfg):
     tokenizer_path = cfg.tokenizer_config
 
     # Apply token string overrides if specified
-    if cfg.tokenizer_overrides:
+    if cfg.added_tokens_overrides:
         # Modify tokenizer files and get path to modified tokenizer
         tokenizer_path = modify_tokenizer_files(
-            tokenizer_path, cfg.tokenizer_overrides, output_dir=cfg.output_dir
+            tokenizer_path, cfg.added_tokens_overrides, output_dir=cfg.output_dir
         )
 
     tokenizer = tokenizer_cls.from_pretrained(
