@@ -11,7 +11,6 @@ from functools import cached_property
 from typing import Any, Dict, Optional, Tuple, Union  # noqa: F401
 
 import addict
-from axolotl.utils.ring_attn import register_ring_attn
 import bitsandbytes as bnb
 import torch
 import transformers
@@ -68,6 +67,7 @@ from axolotl.utils.distributed import (
 from axolotl.utils.gradient_checkpointing import hf_grad_checkpoint_offload_wrapper
 from axolotl.utils.lora_embeddings import get_linear_embedding_layers
 from axolotl.utils.model_shard_quant import load_sharded_model, load_sharded_model_quant
+from axolotl.utils.ring_attn import register_ring_attn
 
 LOG = logging.getLogger("axolotl")
 
@@ -559,7 +559,7 @@ class ModelLoader:
 
             # # Apply the monkey patch
             # apply_seq_parallel_monkey_patch(method, model_type)
-            
+
             register_ring_attn(self.cfg.sequence_parallel_size)
 
     def patch_attention(self) -> None:
