@@ -206,12 +206,10 @@ class AxolotlTrainingMixins:
             "help": "Whether to apply top_k_before_softmax to the logits when using KD"
         },
     )
-    
+
     sequence_parallel_size: Optional[int] = field(
         default=1,
-        metadata={
-            "help": "The number of workers to use in sequence parallelism"
-        },
+        metadata={"help": "The number of workers to use in sequence parallelism"},
     )
 
 

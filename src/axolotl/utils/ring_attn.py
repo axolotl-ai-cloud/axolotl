@@ -22,9 +22,10 @@ def register_ring_attn(sequence_parallel_size):
         return
 
     world_size = dist.get_world_size()
-    assert world_size % sequence_parallel_size == 0, \
-        f"sequence_parallel_size ({sequence_parallel_size}) " \
+    assert world_size % sequence_parallel_size == 0, (
+        f"sequence_parallel_size ({sequence_parallel_size}) "
         f"must evenly divide world_size ({world_size})"
+    )
 
     for i in range(world_size // sequence_parallel_size):
         ring_attn_ranks = list(
