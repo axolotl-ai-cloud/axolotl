@@ -129,6 +129,7 @@ You can mix and match within each approach or across approaches to train a model
 We suggest this approach when you want to bring your own tokenized dataset.
 
 Axolotl expects the dataset to have three keys:
+
 - `input_ids`: from tokenizing formatted prompt
 - `attention_mask`: for masking padding. If you don't add padding, it would be equal to `len(input_ids) * [1]`
 - `labels`: this is the same as `input_ids`, however, if you want to mask certain tokens, you would set those indices to `-100`.
