@@ -67,16 +67,16 @@ class RexLR(torch.optim.lr_scheduler.LRScheduler):
 
         self.min_lr = min_lr
         self.max_lr = max_lr
-        self.total_steps = total_steps
-        self.num_warmup_steps = num_warmup_steps
-        self.last_step = last_step
+        self.total_steps = total_steps - 1
+        self.num_warmup_steps = num_warmup_steps - 1
+        self.last_step = last_step - 2
 
         # Ensure each parameter group has an "initial_lr" key to avoid issues when resuming.
         for group in optimizer.param_groups:
             group.setdefault("initial_lr", group["lr"])
 
-        # Pass last_step as last_epoch to the parent.
-        super().__init__(optimizer, last_epoch=last_step)
+        # Pass self.last_step as last_epoch to the parent.
+        super().__init__(optimizer, last_epoch=self.last_step)
 
     @property
     def last_step(self):
@@ -88,20 +88,21 @@ class RexLR(torch.optim.lr_scheduler.LRScheduler):
 
     def get_lr(self):
         # Warmup phase: if defined, increase lr linearly from 0 to max_lr.
-        if 0 <= (self.last_step - 2) <= (self.num_warmup_steps - 1):
-            return [self.max_lr * (self.last_step - 2) / (self.num_warmup_steps - 1)]
+        if 0 <= self.last_step <= self.num_warmup_steps:
+            return [base_lr * self.last_step / self.num_warmup_steps for base_lr in self.base_lrs]
 
         # Post-warmup phase: adjust step relative to the end of warmup.
-        step_after = (self.last_step - self.num_warmup_steps) - 2
-        remaining_steps = (self.total_steps - self.num_warmup_steps) - 1
+        step_after = self.last_step - self.num_warmup_steps
+        remaining_steps = self.total_steps - self.num_warmup_steps
 
         # Avoid LR spiking
         if step_after >= remaining_steps or step_after == -1 or remaining_steps <= 0:
-            return [self.min_lr]
+            return [self.min_lr for _ in self.base_lrs]
 
         mod_iter = step_after % remaining_steps
         z = (remaining_steps - mod_iter) / remaining_steps
-        return [self.min_lr + (self.max_lr - self.min_lr) * (z / (0.1 + 0.9 * z))]
+        rex_factor = self.min_lr / self.max_lr + (1.0 - self.min_lr / self.max_lr) * (z / (0.1 + 0.9 * z))
+        return [base_lr * rex_factor for base_lr in self.base_lrs]
 
 
 def _sanitize_kwargs_for_tagging(tag_names, kwargs=None):
