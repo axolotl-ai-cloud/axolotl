@@ -206,6 +206,13 @@ class AxolotlTrainingMixins:
             "help": "Whether to apply top_k_before_softmax to the logits when using KD"
         },
     )
+    
+    sequence_parallel_size: Optional[int] = field(
+        default=1,
+        metadata={
+            "help": "The number of workers to use in sequence parallelism"
+        },
+    )
 
 
 @dataclass
@@ -213,8 +220,8 @@ class AxolotlTrainingArguments(AxolotlTrainingMixins, TrainingArguments):
     """
     Training arguments for Causal trainer
 
-    This code is duplicated due to HF TrainingArguments not setting output_dir with a defaujlt value
-    so it can't be used as a mixin.
+    This code is duplicated due to HF TrainingArguments not setting output_dir with a
+    default value so it can't be used as a mixin.
     """
 
 

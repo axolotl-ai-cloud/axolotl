@@ -758,9 +758,13 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 self.cfg.kd_zscore_base_temp
             )
         if self.cfg.kd_top_k_before_softmax is not None:
-            training_arguments_kwargs["kd_top_k_before_softmax"] = (
-                self.cfg.kd_top_k_before_softmax
-            )
+            training_arguments_kwargs[
+                "kd_top_k_before_softmax"
+            ] = self.cfg.kd_top_k_before_softmax
+        
+        training_arguments_kwargs[
+            "sequence_parallel_size"
+        ] = self.cfg.sequence_parallel_size
 
         if self.cfg.reward_model:
             training_args_cls = AxolotlRewardConfig
@@ -793,7 +797,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
 
         if self.cfg.reward_model:
             data_collator_kwargs["max_length"] = self.cfg.sequence_len
-
+        
         trainer_cls = self._get_trainer_cls()
         trainer_kwargs, trainer_cls = self.hook_pre_create_trainer(
             trainer_kwargs, trainer_cls
@@ -845,9 +849,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         self, training_args: AxolotlTrainingArguments, is_eval=False, **kwargs
     ):
         if training_args.pretraining:
-            if self.cfg.pretraining_sample_concatenation is False:
-                return DataCollatorForSeq2Seq(self.tokenizer, **kwargs)
-            if self.cfg.micro_batch_size > 1:
+            if self.cfg.pretraining_sample_concatenation is False or self.cfg.micro_batch_size > 1:
                 return DataCollatorForSeq2Seq(self.tokenizer, **kwargs)
             return None
 

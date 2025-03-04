@@ -9,11 +9,14 @@ import logging
 import os
 from collections import defaultdict
 from functools import wraps
-from typing import Dict, Literal, Optional
+from typing import Any, Dict, Literal, Optional
+from typing_extensions import override
 
 import torch
+import torch.nn.functional as F
 from datasets import Dataset
 from peft.optimizers import create_loraplus_optimizer
+from ring_flash_attn import update_ring_flash_attn_params
 from torch import nn
 from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import BatchSampler, DataLoader, RandomSampler, SequentialSampler
@@ -25,6 +28,7 @@ from trl.trainer.utils import pad_to_length
 
 from axolotl.integrations.base import BaseOptimizerFactory
 from axolotl.monkeypatch.relora import ReLoRAScheduler
+from axolotl.utils.ring_attn import get_ring_attn_group
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 from axolotl.utils.schedulers import (
     RexLR,
@@ -796,6 +800,58 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, Trainer):
         output_dir = os.path.join(run_dir, checkpoint_folder)
         os.makedirs(output_dir, exist_ok=True)
         return super()._save_checkpoint(model, trial, **kwargs)
+    
+    @override
+    def training_step(
+        self, model: nn.Module, inputs: dict[str, torch.Tensor | Any], num_items_in_batch=None
+    ) -> torch.Tensor:
+        """
+        Perform a training step on a batch of inputs.
+
+        Note: we are subclassing `transformers.trainer.Trainer` in order to compute
+            parameters needed for the ring flash attention implementation we're using.
+        
+        Args:
+            model (`nn.Module`):
+                The model to train.
+            inputs (`Dict[str, Union[torch.Tensor, Any]]`):
+                The inputs and targets of the model.
+
+                The dictionary will be unpacked before being fed to the model. Most models expect the targets under the
+                argument `labels`. Check your model's documentation for all accepted arguments.
+
+        Return:
+            `torch.Tensor`: The tensor with training loss on this batch.
+        """
+        if self.args.sequence_parallel_size > 1:
+            if "attention_mask" in inputs:
+                # Calculate sequence lengths from attention mask
+                seq_lens = inputs["attention_mask"].sum(dim=1).tolist()
+                total_seq_len = inputs["attention_mask"].shape[0] * inputs["attention_mask"].shape[1]
+            else:
+                # Assume all sequences are the same length if no mask is provided
+                batch_size = inputs["input_ids"].shape[0]
+                seq_len = inputs["input_ids"].shape[1]
+                seq_lens = [seq_len] * batch_size
+                total_seq_len = batch_size * seq_len
+
+            self._update_ring_flash_attn_params(seq_lens, total_seq_len)
+
+        return super().training_step(model, inputs, num_items_in_batch)
+    
+    def _update_ring_flash_attn_params(self, packed_seq_lens, total_seq_len):
+        """
+        Calculate the cu_seqlens for the current forward pass and pass the value to
+        the substituted ring_flash_attn.
+        """
+        cu_seqlens = torch.cumsum(
+            torch.tensor(packed_seq_lens, device=torch.cuda.current_device(), dtype=torch.int32),
+            dim=-1,
+            dtype=torch.int32,
+        )
+        cu_seqlens = F.pad(F.pad(cu_seqlens, (1, 0), value=0), (0, 1), value=total_seq_len)
+
+        update_ring_flash_attn_params(cu_seqlens, get_ring_attn_group())
 
 
 class AxolotlMambaTrainer(AxolotlTrainer):

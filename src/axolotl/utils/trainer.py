@@ -8,6 +8,7 @@ from contextlib import contextmanager
 from functools import partial
 from typing import List, Optional
 
+from axolotl.integrations.easy_context import prepare_seq_parallel_inputs
 import numpy as np
 import torch
 import torch.cuda
@@ -346,7 +347,7 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
                     load_from_cache_file=not cfg.is_preprocess,
                     desc="Add position_id column (PoSE)",
                 )
-    elif cfg.sample_packing:
+    elif cfg.sample_packing or cfg.sequence_parallel_size > 1:
         drop_long_kwargs = {}
         if filter_map_kwargs:
             drop_long_kwargs["desc"] = "Add position_id column (Sample Packing)"
@@ -356,7 +357,18 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
             **filter_map_kwargs,
             **drop_long_kwargs,
         )
-        if cfg.eval_sample_packing is not False:
+        if cfg.sequence_parallel_size > 1:
+            train_dataset.map(
+                prepare_seq_parallel_inputs,
+                "dist_flash_attn",
+                lambda batch: batch["input_ids"],
+                lambda batch: batch["position_ids"],
+                lambda batch: batch["target_ids"],
+                accelerator.process_index,
+                accelerator.num_processes,
+                accelerator.device,
+            )
+        if cfg.eval_sample_packing or cfg.sequence_parallel_size > 1:
             if eval_dataset:
                 eval_dataset = eval_dataset.map(
                     add_position_ids,
