@@ -190,60 +190,63 @@ def modify_tokenizer_files(
     tokenizer_dir = os.path.join(output_dir, "tokenizer")
     os.makedirs(tokenizer_dir, exist_ok=True)
 
-    # Load the tokenizer
-    temp_tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, use_fast=True)
+    with zero_only():
+        # Load the tokenizer
+        temp_tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, use_fast=True)
 
-    # Save the tokenizer to the output directory
-    temp_tokenizer.save_pretrained(tokenizer_dir)
+        # Save the tokenizer to the output directory
+        temp_tokenizer.save_pretrained(tokenizer_dir)
 
-    # Get the token IDs and map them to their new values
-    token_id_mappings = {
-        int(token_id): new_value for token_id, new_value in token_mappings.items()
-    }
+        # Get the token IDs and map them to their new values
+        token_id_mappings = {
+            int(token_id): new_value for token_id, new_value in token_mappings.items()
+        }
 
-    # 1. Update tokenizer_config.json - added_tokens_decoder
-    config_path = os.path.join(tokenizer_dir, "tokenizer_config.json")
-    if os.path.exists(config_path):
-        with open(config_path, "r", encoding="utf-8") as f:
-            config_data = json.load(f)
+        # 1. Update tokenizer_config.json - added_tokens_decoder
+        config_path = os.path.join(tokenizer_dir, "tokenizer_config.json")
+        if os.path.exists(config_path):
+            with open(config_path, "r", encoding="utf-8") as f:
+                config_data = json.load(f)
 
-        # Update added_tokens_decoder
-        if "added_tokens_decoder" in config_data:
-            for token_id, new_value in token_id_mappings.items():
-                token_id_str = str(token_id)
-                if token_id_str in config_data["added_tokens_decoder"]:
-                    config_data["added_tokens_decoder"][token_id_str][
-                        "content"
-                    ] = new_value
-                else:
-                    raise ValueError(
-                        f"Token ID {token_id_str} not found in added_tokens_decoder"
-                    )
+            # Update added_tokens_decoder
+            if "added_tokens_decoder" in config_data:
+                for token_id, new_value in token_id_mappings.items():
+                    token_id_str = str(token_id)
+                    if token_id_str in config_data["added_tokens_decoder"]:
+                        config_data["added_tokens_decoder"][token_id_str][
+                            "content"
+                        ] = new_value
+                    else:
+                        raise ValueError(
+                            f"Token ID {token_id_str} not found in added_tokens_decoder"
+                        )
 
-        # Write the updated config back
-        with open(config_path, "w", encoding="utf-8") as f:
-            json.dump(config_data, f, indent=2)
+            # Write the updated config back
+            with open(config_path, "w", encoding="utf-8") as f:
+                json.dump(config_data, f, indent=2)
 
-    # 2. Update tokenizer.json - added_tokens
-    tokenizer_path = os.path.join(tokenizer_dir, "tokenizer.json")
-    if os.path.exists(tokenizer_path):
-        with open(tokenizer_path, "r", encoding="utf-8") as f:
-            tokenizer_data = json.load(f)
+        # 2. Update tokenizer.json - added_tokens
+        tokenizer_path = os.path.join(tokenizer_dir, "tokenizer.json")
+        if os.path.exists(tokenizer_path):
+            with open(tokenizer_path, "r", encoding="utf-8") as f:
+                tokenizer_data = json.load(f)
 
-        # Update added_tokens
-        if "added_tokens" in tokenizer_data:
-            for token_id, new_value in token_id_mappings.items():
-                for i, token_entry in enumerate(tokenizer_data["added_tokens"]):
-                    if token_entry["id"] == token_id:
-                        tokenizer_data["added_tokens"][i]["content"] = new_value
-                        break
-                else:
-                    # Reaching this section means the token_id was not found in tokenizer.json added_tokens
-                    raise ValueError(f"Token ID {token_id} not found in added_tokens")
+            # Update added_tokens
+            if "added_tokens" in tokenizer_data:
+                for token_id, new_value in token_id_mappings.items():
+                    for i, token_entry in enumerate(tokenizer_data["added_tokens"]):
+                        if token_entry["id"] == token_id:
+                            tokenizer_data["added_tokens"][i]["content"] = new_value
+                            break
+                    else:
+                        # Reaching this section means the token_id was not found in tokenizer.json added_tokens
+                        raise ValueError(
+                            f"Token ID {token_id} not found in added_tokens"
+                        )
 
-        # Write the updated tokenizer data back
-        with open(tokenizer_path, "w", encoding="utf-8") as f:
-            json.dump(tokenizer_data, f, indent=2)
+            # Write the updated tokenizer data back
+            with open(tokenizer_path, "w", encoding="utf-8") as f:
+                json.dump(tokenizer_data, f, indent=2)
 
     return tokenizer_dir
 
