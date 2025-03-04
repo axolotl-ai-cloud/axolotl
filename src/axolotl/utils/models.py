@@ -97,6 +97,23 @@ def check_model_config(cfg: DictDefault, model_config: Union[AutoConfig, DictDef
         hasattr(model_config, "quantization_config")
         and model_config.quantization_config
     )
+    # TODO: Use a better fix to handle
+    # config.json produced by compressed-tensors
+    # sparse-only model -> will also have a quantization_config 
+    
+    is_sparse_only_quant_config = bool(
+        not quant_config_exists
+        or (
+            quant_config_exists
+            and model_config.quantization_config["quant_method"] == "compressed-tensors"
+            and not model_config.quantization_config.get("config_groups", False)
+            and model_config.quantization_config.get("sparsity_config", False)
+        )
+    )
+
+    if is_sparse_only_quant_config:
+        quant_config_exists = False
+
     quant_config_method_is_gptq = (
         quant_config_exists
         and "quant_method" in model_config.quantization_config
