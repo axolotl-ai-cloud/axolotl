@@ -1,10 +1,14 @@
-import warnings
-from typing import List, Optional, Tuple, Union
+from typing import Optional, Tuple
 
 import torch
 import torch.utils.checkpoint
-import transformers
 from ring_flash_attn.zigzag_ring_flash_attn import zigzag_ring_flash_attn_func
+from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
+from transformers.models.llama.modeling_llama import LlamaAttention, LlamaDecoderLayer
+from transformers.models.mistral.modeling_mistral import (
+    MistralAttention,
+    MistralDecoderLayer,
+)
 
 
 def new_flash_attn_forward(
@@ -18,6 +22,10 @@ def new_flash_attn_forward(
     softmax_scale=None,
     use_sliding_windows=False,
 ):
+    assert (
+        self.config._attn_implementation == "flash_attention_2"
+    ), "Only Flash Attention is supported."
+
     if not self._flash_attn_uses_top_left_mask:
         causal = self.is_causal
     else:
@@ -48,26 +56,19 @@ def new_decoder_forward(
     output_attentions: Optional[bool] = False,
     use_cache: Optional[bool] = False,
     cache_position: Optional[torch.LongTensor] = None,
+    position_embeddings: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
     **kwargs,
 ) -> Tuple[torch.FloatTensor, Optional[Tuple[torch.FloatTensor, torch.FloatTensor]]]:
-    assert isinstance(
-        self.self_attn, transformers.models.llama.modeling_llama.LlamaFlashAttention2
-    ) or isinstance(
+    assert isinstance(self.self_attn, LlamaAttention) or isinstance(
         self.self_attn,
-        transformers.models.mistral.modeling_mistral.MistralFlashAttention2,
-    ), "Please toggle on the Flash Attention 2 implementation when using zigzag ring attention monkey patch."
-
-    if "padding_mask" in kwargs:
-        warnings.warn(
-            "Passing `padding_mask` is deprecated and will be removed in v4.37. Please make sure use `attention_mask` instead.`"
-        )
+        MistralAttention,
+    ), "Llama and Mistral attention only are supported."
 
     residual = hidden_states
-
     hidden_states = self.input_layernorm(hidden_states)
 
     # Self Attention
-    hidden_states, self_attn_weights, present_key_value = self.self_attn(
+    hidden_states, self_attn_weights = self.self_attn(
         hidden_states=hidden_states,
         attention_mask=attention_mask,
         position_ids=position_ids,
@@ -75,6 +76,7 @@ def new_decoder_forward(
         output_attentions=output_attentions,
         use_cache=use_cache,
         cache_position=cache_position,
+        position_embeddings=position_embeddings,
         **kwargs,
     )
     hidden_states = residual + hidden_states
@@ -86,29 +88,19 @@ def new_decoder_forward(
     hidden_states = residual + hidden_states
 
     outputs = (hidden_states,)
-
     if output_attentions:
         outputs += (self_attn_weights,)
-
-    if use_cache:
-        outputs += (present_key_value,)
 
     return outputs
 
 
 def apply_zigzag_ring_attn_monkey_patch_llama():
-    transformers.models.llama.modeling_llama.LlamaFlashAttention2._flash_attention_forward = (
-        new_flash_attn_forward
-    )
-    transformers.models.llama.modeling_llama.LlamaDecoderLayer.forward = (
-        new_decoder_forward
-    )
+    # LlamaAttention._flash_attention_forward = new_flash_attn_forward
+    ALL_ATTENTION_FUNCTIONS.update({"flash_attention_2": new_flash_attn_forward})
+    LlamaDecoderLayer.forward = new_decoder_forward
 
 
 def apply_zigzag_ring_attn_monkey_patch_mistral():
-    transformers.models.mistral.modeling_mistral.MistralFlashAttention2._flash_attention_forward = (
-        new_flash_attn_forward
-    )
-    transformers.models.mistral.modeling_mistral.MistralDecoderLayer.forward = (
-        new_decoder_forward
-    )
+    # MistralAttention._flash_attention_forward = new_flash_attn_forward
+    ALL_ATTENTION_FUNCTIONS.update({"flash_attention_2": new_flash_attn_forward})
+    MistralDecoderLayer.forward = new_decoder_forward
