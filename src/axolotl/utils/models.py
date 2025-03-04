@@ -11,6 +11,7 @@ from functools import cached_property
 from typing import Any, Dict, Optional, Tuple, Union  # noqa: F401
 
 import addict
+from axolotl.utils.ring_attn import register_ring_attn
 import bitsandbytes as bnb
 import torch
 import transformers
@@ -549,18 +550,17 @@ class ModelLoader:
             patch_self_attn_lora(self.cfg)
 
         if self.cfg.sequence_parallel_size > 1:
-            from axolotl.integrations.easy_context import (
-                apply_seq_parallel_monkey_patch,
-            )
+            # from axolotl.integrations.easy_context import (
+            #     apply_seq_parallel_monkey_patch,
+            # )
 
-            method = self.cfg.sequence_parallel_mode
-            model_type = self.cfg.model_type
+            # method = self.cfg.sequence_parallel_mode
+            # model_type = self.cfg.model_config_type
 
-            # Apply the monkey patch
-            apply_seq_parallel_monkey_patch(method, model_type)
-
-            # Ensure flash attention is enabled when loading the model
-            self.cfg.attn_implementation = "flash_attention_2"
+            # # Apply the monkey patch
+            # apply_seq_parallel_monkey_patch(method, model_type)
+            
+            register_ring_attn(self.cfg.sequence_parallel_size)
 
     def patch_attention(self) -> None:
         if hasattr(self.model_config, "model_type"):

@@ -4,9 +4,7 @@ Materialization-aware gradient checkpointing monkey patch.
 from typing import List, Optional, Tuple
 
 import torch
-import transformers
 from einops import rearrange
-from torch import nn
 from torch.utils.checkpoint import (
     _get_autocast_kwargs,
     check_backward_validity,
@@ -16,10 +14,12 @@ from torch.utils.checkpoint import (
 )
 from transformers.models.llama.modeling_llama import (
     BaseModelOutputWithPast,
+    LlamaDecoderLayer,
+    LlamaModel,
     apply_rotary_pos_emb,
 )
 
-from .async_communication import initialize_distributed, reset_global_memory_buffer
+from .async_communication import initialize_distributed
 from .lightseq_async_attn import _lightseq_backward, _lightseq_forward
 
 # define a global buffer to save flash attention outputs
@@ -749,7 +749,6 @@ def forward(
 
 def apply_dist_flash_attn_monkey_patch_llama():
     initialize_distributed()
-    transformers.models.llama.modeling_llama.LlamaModel.forward = forward
-    transformers.models.llama.modeling_llama.LlamaDecoderLayer.forward = (
-        llama_layer_forward
-    )
+    
+    LlamaModel.forward = forward
+    LlamaDecoderLayer.forward = llama_layer_forward

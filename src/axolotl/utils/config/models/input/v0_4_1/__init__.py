@@ -853,7 +853,7 @@ class AxolotlInputConfig(
     ] = None
 
     sequence_parallel_size: Optional[int] = 1
-    sequence_parallel_mode: Optional[str] = "zigzag"
+    sequence_parallel_mode: Optional[str] = "zigzag_ring_attn"
 
     val_set_size: Optional[float] = Field(default=0.0)
 
