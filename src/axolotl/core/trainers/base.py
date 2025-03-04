@@ -89,7 +89,10 @@ class RexLR(torch.optim.lr_scheduler.LRScheduler):
     def get_lr(self):
         # Warmup phase: if defined, increase lr linearly from 0 to max_lr.
         if 0 <= self.last_step <= self.num_warmup_steps:
-            return [base_lr * self.last_step / self.num_warmup_steps for base_lr in self.base_lrs]
+            return [
+                base_lr * self.last_step / self.num_warmup_steps
+                for base_lr in self.base_lrs
+            ]
 
         # Post-warmup phase: adjust step relative to the end of warmup.
         step_after = self.last_step - self.num_warmup_steps
@@ -101,7 +104,9 @@ class RexLR(torch.optim.lr_scheduler.LRScheduler):
 
         mod_iter = step_after % remaining_steps
         z = (remaining_steps - mod_iter) / remaining_steps
-        rex_factor = self.min_lr / self.max_lr + (1.0 - self.min_lr / self.max_lr) * (z / (0.1 + 0.9 * z))
+        rex_factor = self.min_lr / self.max_lr + (1.0 - self.min_lr / self.max_lr) * (
+            z / (0.1 + 0.9 * z)
+        )
         return [base_lr * rex_factor for base_lr in self.base_lrs]
 
 
