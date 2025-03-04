@@ -57,7 +57,13 @@ from axolotl.prompt_tokenizers import LLAMA_DEFAULT_EOS_TOKEN
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.chat_templates import get_chat_template_from_config
 from axolotl.utils.dict import DictDefault
-from axolotl.utils.distributed import get_device_count, get_device_type, zero_only
+from axolotl.utils.distributed import (
+    barrier,
+    get_device_count,
+    get_device_type,
+    is_local_main_process,
+    zero_only,
+)
 from axolotl.utils.gradient_checkpointing import hf_grad_checkpoint_unsloth_wrapper
 from axolotl.utils.lora_embeddings import get_linear_embedding_layers
 from axolotl.utils.model_shard_quant import load_sharded_model, load_sharded_model_quant
@@ -190,7 +196,7 @@ def modify_tokenizer_files(
     tokenizer_dir = os.path.join(output_dir, "tokenizer")
     os.makedirs(tokenizer_dir, exist_ok=True)
 
-    with zero_only():
+    if is_local_main_process():  # pylint: disable=too-many-nested-blocks
         # Load the tokenizer
         temp_tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, use_fast=True)
 
@@ -248,6 +254,7 @@ def modify_tokenizer_files(
             with open(tokenizer_path, "w", encoding="utf-8") as f:
                 json.dump(tokenizer_data, f, indent=2)
 
+    barrier()
     return tokenizer_dir
 
 
