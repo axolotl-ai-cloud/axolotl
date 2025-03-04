@@ -19,7 +19,9 @@ description: Frequently asked questions
 
 **Q: AttributeError: 'DummyOptim' object has no attribute 'step'**
 
-> A: You may be using deepspeed with single gpu. Please don't set `deepspeed:` in yaml or cli.
+**Q: ModuleNotFoundError: No module named 'mpi4py' using single GPU with deepspeed**
+
+> A: You may be using deepspeed with single gpu. Please remove the `deepspeed:` section in the yaml file or `--deepspeed` CLI flag.
 
 **Q: The codes is stuck on saving preprocessed datasets.**
 
