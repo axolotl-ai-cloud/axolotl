@@ -148,7 +148,7 @@ def send_errors(func: Callable) -> Callable:
 
                 # Send error telemetry
                 telemetry_manager.send_event(
-                    event_type=f"{module_path}-errored",
+                    event_type=f"{module_path}-error",
                     properties={
                         "exception": str(exception),
                         "stack_trace": stack_trace,
