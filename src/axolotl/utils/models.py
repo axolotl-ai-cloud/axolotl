@@ -550,16 +550,6 @@ class ModelLoader:
             patch_self_attn_lora(self.cfg)
 
         if self.cfg.sequence_parallel_size > 1:
-            # from axolotl.integrations.easy_context import (
-            #     apply_seq_parallel_monkey_patch,
-            # )
-
-            # method = self.cfg.sequence_parallel_mode
-            # model_type = self.cfg.model_config_type
-
-            # # Apply the monkey patch
-            # apply_seq_parallel_monkey_patch(method, model_type)
-
             register_ring_attn(self.cfg.sequence_parallel_size)
 
     def patch_attention(self) -> None:
