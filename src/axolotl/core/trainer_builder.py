@@ -91,13 +91,11 @@ try:
 except ImportError:
     pass
 
-LOG = logging.getLogger("axolotl.core.trainer_builder")
+LOG = logging.getLogger(__name__)
 
 
 class TrainerBuilderBase(abc.ABC):
-    """
-    Base class for trainer builder
-    """
+    """Base class for trainer builder."""
 
     _train_dataset = None
     _eval_dataset = None
@@ -110,9 +108,9 @@ class TrainerBuilderBase(abc.ABC):
         self.tokenizer = tokenizer
         self.processor = processor
 
-        # in case the model supports tagging, add the axolotl tag.
+        # If the model supports tagging, add the axolotl tag.
         # This makes sure the tag is correctly pushed even if a user calls
-        # model.push_to_hub instad of  trainer.push_to_hub.
+        # model.push_to_hub instead of trainer.push_to_hub.
         if hasattr(model, "add_model_tags"):
             model.add_model_tags(["axolotl"])
 
@@ -227,8 +225,8 @@ class TrainerBuilderBase(abc.ABC):
 
 class HFCausalTrainerBuilder(TrainerBuilderBase):
     """
-    Build the HuggingFace training args/trainer for causal models
-    and reward modelling using TRL.
+    Build the HuggingFace training args/trainer for causal models and reward modeling
+    using TRL.
     """
 
     def get_callbacks(self):
@@ -872,9 +870,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
 
 
 class HFRLTrainerBuilder(TrainerBuilderBase):
-    """
-    Trainer factory class for TRL-based RLHF trainers (e.g. DPO)
-    """
+    """Trainer factory class for TRL-based RLHF trainers (e.g. DPO)"""
 
     def get_callbacks(self):
         callbacks = super().get_callbacks()

@@ -574,14 +574,40 @@ def prepare_opinionated_env(cfg):
 
 
 def setup_trainer(
-    cfg, train_dataset, eval_dataset, model, tokenizer, processor, total_num_steps
+    cfg,
+    train_dataset,
+    eval_dataset,
+    model,
+    tokenizer,
+    processor,
+    total_num_steps,
+    model_ref=None,
+    peft_config=None,
 ):
+    """
+    Helper method for instantiating and building a (causal or RLHF) trainer.
+
+    Args:
+        cfg: Axolotl config object containing training parameters.
+        train_dataset: Dataset to use for training.
+        eval_dataset: Dataset to use for evaluation.
+        model: The model to train.
+        tokenizer: Tokenizer for processing text input.
+        processor: Processor for data preparation.
+        total_num_steps: The total number of training steps.
+        model_ref: Optional reference model for RLHF training. Default is None.
+        peft_config: Optional PEFT (Parameter-Efficient Fine-Tuning) configuration. Default is None.
+
+    Returns:
+        A trainer instance (either `HFRLTrainer` or `HFCausalTrainer`) configured based
+            on the provided parameters.
+    """
     if cfg.rl:
-        trainer_builder = HFRLTrainerBuilder(cfg, model[0], tokenizer, processor)
-        trainer_builder.model_ref = model[1]
-        trainer_builder.peft_config = model[2]
+        trainer_builder = HFRLTrainerBuilder(cfg, model, tokenizer, processor)
+        trainer_builder.model_ref = model_ref
+        trainer_builder.peft_config = peft_config
     else:
-        trainer_builder = HFCausalTrainerBuilder(cfg, model[0], tokenizer, processor)
+        trainer_builder = HFCausalTrainerBuilder(cfg, model, tokenizer, processor)
 
     trainer_builder.train_dataset = train_dataset
     trainer_builder.eval_dataset = eval_dataset

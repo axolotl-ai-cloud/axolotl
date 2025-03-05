@@ -24,8 +24,8 @@ class TrainDatasetMeta:
     """Dataclass with fields for training and validation datasets and metadata."""
 
     train_dataset: Dataset
-    eval_dataset: Optional[Dataset] = None
-    total_num_steps: Optional[int] = None
+    eval_dataset: Dataset | None = None
+    total_num_steps: int | None = None
 
 
 def sample_dataset(dataset: Dataset, num_samples: int) -> Dataset:
