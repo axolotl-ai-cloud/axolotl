@@ -778,9 +778,9 @@ class AxolotlInputConfig(
 
     # torch_dtype: Optional[torch.dtype]
 
-    gradient_checkpointing: Optional[Union[Literal["unsloth"], bool]] = Field(
-        default=False
-    )
+    gradient_checkpointing: Optional[
+        Union[Literal["unsloth", "offload"], bool]
+    ] = Field(default=False)
     gradient_checkpointing_kwargs: Optional[Dict[str, Any]] = None
 
     unfrozen_parameters: Optional[List[str]] = None
@@ -1152,6 +1152,15 @@ class AxolotlInputConfig(
             self.base_model and "mpt" in self.base_model.lower()
         ) and self.gradient_checkpointing:
             raise ValueError("gradient_checkpointing is not supported for MPT models")
+        return self
+
+    @model_validator(mode="after")
+    def check_offload_grad_checkpointing(self):
+        if self.gradient_checkpointing and self.gradient_checkpointing == "unsloth":
+            LOG.warning(
+                "`unsloth` is deprecated for gradient_checkpointing, use `offload`"
+            )
+            self.gradient_checkpointing = "offload"
         return self
 
     @model_validator(mode="after")
