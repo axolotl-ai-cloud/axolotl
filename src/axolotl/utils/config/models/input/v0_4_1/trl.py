@@ -27,6 +27,7 @@ class TRLConfig(BaseModel):
     vllm_dtype: Optional[str] = "auto"
 
     reward_funcs: Optional[List[str]] = None
+    reward_weights: Optional[List[float]] = None
     num_generations: Optional[int] = None
     log_completions: Optional[bool] = False
 
