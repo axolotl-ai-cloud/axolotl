@@ -61,7 +61,6 @@ from axolotl.utils.distributed import get_device_count, get_device_type, zero_on
 from axolotl.utils.gradient_checkpointing import hf_grad_checkpoint_unsloth_wrapper
 from axolotl.utils.lora_embeddings import get_linear_embedding_layers
 from axolotl.utils.model_shard_quant import load_sharded_model, load_sharded_model_quant
-from axolotl.utils.ring_attn import register_ring_attn
 
 LOG = logging.getLogger("axolotl")
 
@@ -446,6 +445,12 @@ class ModelLoader:
             patch_self_attn_lora(self.cfg)
 
         if self.cfg.sequence_parallel_size > 1:
+            from axolotl.utils.ring_attn import register_ring_attn
+
+            # Initialize ring attention for sequence parallelism if enabled.
+            # This must be done after model initialization but before the first forward pass,
+            # as it modifies the flash attention implementation to use ring communication
+            # patterns for efficient sequence-parallel training across multiple GPUs.
             register_ring_attn(self.cfg.sequence_parallel_size)
 
     def patch_attention(self) -> None:

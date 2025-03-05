@@ -1,5 +1,13 @@
+"""Ring attention group registration and utils."""
+
 import torch.distributed as dist
+from accelerate.logging import get_logger
 from ring_flash_attn import substitute_hf_flash_attn
+
+from axolotl.logging_config import configure_logging
+
+configure_logging()
+LOG = get_logger(__name__)
 
 RING_ATTN_GROUP = None
 
@@ -9,17 +17,21 @@ def get_ring_attn_group():
 
 
 def set_ring_attn_group(ring_attn_group):
-    global RING_ATTN_GROUP
+    global RING_ATTN_GROUP  # pylint: disable=global-statement
     RING_ATTN_GROUP = ring_attn_group
 
 
-def register_ring_attn(sequence_parallel_size):
+def register_ring_attn(sequence_parallel_size: int):
     """
-    Create ring attention group and substitute flash attention with ring flash
-    attention.
+    Create ring attention group and substitute flash attn with ring flash attn.
+
+    Args:
+        sequence_parallel_size: Sequence parallelism factor.
     """
-    if sequence_parallel_size == 1:
-        return
+    LOG.info(
+        "Enabling ring attention sequence parallelism: "
+        f"each sequence will be processed across {sequence_parallel_size} GPUs"
+    )
 
     world_size = dist.get_world_size()
     assert world_size % sequence_parallel_size == 0, (
