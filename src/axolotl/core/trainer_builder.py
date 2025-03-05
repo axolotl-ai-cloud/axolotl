@@ -735,9 +735,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             if "weight_decay" in training_arguments_kwargs:
                 came_kwargs["weight_decay"] = training_arguments_kwargs["weight_decay"]
 
-            # TODO: Un-hardcode these
-            came_kwargs["betas"] = (0.9, 0.999, 0.9999)
-            came_kwargs["eps"] = (1e-30, 1e-16)
+            # TODO: Add ability to set "betas" and "eps"
 
             trainer_kwargs["optimizers"] = (
                 CAME(params=self.model.parameters(), **came_kwargs),
