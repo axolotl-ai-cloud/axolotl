@@ -6,9 +6,8 @@
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
-<meta name="description" content="Custom autograd functions and Triton kernels in Axolotl for optimized LoRA fine-tuning">
 
-<title>LoRA Optimizations – Axolotl</title>
+<title>Docker – Axolotl</title>
 <style>
 code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
@@ -130,7 +129,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
       <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
         <i class="bi bi-layout-text-sidebar-reverse"></i>
       </button>
-        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/multimodal.html">How To Guides</a></li><li class="breadcrumb-item"><a href="../docs/lora_optims.html">LoRA Optimizations</a></li></ol></nav>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/docker.html">Deployments</a></li><li class="breadcrumb-item"><a href="../docs/docker.html">Docker</a></li></ol></nav>
         <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
         </a>
     </div>
@@ -241,7 +240,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
       <ul id="quarto-sidebar-section-3" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/docker.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/docker.html" class="sidebar-item-text sidebar-link active">
  <span class="menu-text">Docker</span></a>
   </div>
 </li>
@@ -312,7 +311,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/lora_optims.html" class="sidebar-item-text sidebar-link active">
+  <a href="../docs/lora_optims.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">LoRA Optimizations</span></a>
   </div>
 </li>
@@ -438,31 +437,39 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#usage" id="toc-usage" class="nav-link active" data-scroll-target="#usage">Usage</a></li>
-  <li><a href="#requirements" id="toc-requirements" class="nav-link" data-scroll-target="#requirements">Requirements</a></li>
-  <li><a href="#implementation-details" id="toc-implementation-details" class="nav-link" data-scroll-target="#implementation-details">Implementation details</a>
-  <ul class="collapse">
-  <li><a href="#custom-autograd-functions" id="toc-custom-autograd-functions" class="nav-link" data-scroll-target="#custom-autograd-functions">Custom autograd functions</a></li>
-  <li><a href="#triton-kernels" id="toc-triton-kernels" class="nav-link" data-scroll-target="#triton-kernels">Triton kernels</a></li>
-  <li><a href="#integration" id="toc-integration" class="nav-link" data-scroll-target="#integration">Integration</a></li>
+  <li><a href="#base" id="toc-base" class="nav-link active" data-scroll-target="#base">Base</a>
+  <ul>
+  <li><a href="#image" id="toc-image" class="nav-link" data-scroll-target="#image">Image</a></li>
+  <li><a href="#tags-format" id="toc-tags-format" class="nav-link" data-scroll-target="#tags-format">Tags format</a></li>
   </ul></li>
-  <li><a href="#future-work" id="toc-future-work" class="nav-link" data-scroll-target="#future-work">Future Work</a></li>
+  <li><a href="#main" id="toc-main" class="nav-link" data-scroll-target="#main">Main</a>
+  <ul>
+  <li><a href="#image-1" id="toc-image-1" class="nav-link" data-scroll-target="#image-1">Image</a></li>
+  <li><a href="#sec-main-tags" id="toc-sec-main-tags" class="nav-link" data-scroll-target="#sec-main-tags">Tags format</a></li>
+  </ul></li>
+  <li><a href="#cloud" id="toc-cloud" class="nav-link" data-scroll-target="#cloud">Cloud</a>
+  <ul>
+  <li><a href="#image-2" id="toc-image-2" class="nav-link" data-scroll-target="#image-2">Image</a></li>
+  <li><a href="#tags-format-1" id="toc-tags-format-1" class="nav-link" data-scroll-target="#tags-format-1">Tags format</a></li>
+  <li><a href="#environment-variables" id="toc-environment-variables" class="nav-link" data-scroll-target="#environment-variables">Environment variables</a></li>
+  <li><a href="#volume-mounts" id="toc-volume-mounts" class="nav-link" data-scroll-target="#volume-mounts">Volume mounts</a></li>
+  </ul></li>
+  <li><a href="#cloud-no-tmux" id="toc-cloud-no-tmux" class="nav-link" data-scroll-target="#cloud-no-tmux">Cloud-no-tmux</a>
+  <ul>
+  <li><a href="#image-3" id="toc-image-3" class="nav-link" data-scroll-target="#image-3">Image</a></li>
+  <li><a href="#tags-format-2" id="toc-tags-format-2" class="nav-link" data-scroll-target="#tags-format-2">Tags format</a></li>
+  </ul></li>
   </ul>
 </nav>
     </div>
 <!-- main -->
 <main class="content" id="quarto-document-content">
 
-<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/multimodal.html">How To Guides</a></li><li class="breadcrumb-item"><a href="../docs/lora_optims.html">LoRA Optimizations</a></li></ol></nav>
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/docker.html">Deployments</a></li><li class="breadcrumb-item"><a href="../docs/docker.html">Docker</a></li></ol></nav>
 <div class="quarto-title">
-<h1 class="title">LoRA Optimizations</h1>
+<h1 class="title">Docker</h1>
 </div>
 
-<div>
-  <div class="description">
-    Custom autograd functions and Triton kernels in Axolotl for optimized LoRA fine-tuning
-  </div>
-</div>
 
 
 <div class="quarto-title-meta">
@@ -477,99 +484,155 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </header>
 
 
-<p>Inspired by <a href="https://github.com/unslothai/unsloth">Unsloth</a>, we’ve implemented two optimizations for LoRA and QLoRA fine-tuning, supporting both single GPU and multi-GPU (in the DDP and DeepSpeed settings) training. These include (1) SwiGLU and GEGLU activation function Triton kernels, and (2) LoRA MLP and attention custom autograd functions. Our goal was to leverage operator fusion and tensor re-use in order to improve speed and reduce memory usage during the forward and backward passes of these calculations.</p>
-<p>We currently support several common model architectures, including (but not limited to):</p>
+<p>This section describes the different Docker images that are released by AxolotlAI at <a href="https://hub.docker.com/u/axolotlai">Docker Hub</a>.</p>
+<section id="base" class="level2">
+<h2 class="anchored" data-anchor-id="base">Base</h2>
+<p>The base image is the most minimal image that can install Axolotl. It is based on the <code>nvidia/cuda</code> image. It includes python, torch, git, git-lfs, awscli, pydantic, and more.</p>
+<section id="image" class="level4">
+<h4 class="anchored" data-anchor-id="image">Image</h4>
+<pre><code>axolotlai/axolotl-base</code></pre>
+<p>Link: <a href="https://hub.docker.com/r/axolotlai/axolotl-base">Docker Hub</a></p>
+</section>
+<section id="tags-format" class="level4">
+<h4 class="anchored" data-anchor-id="tags-format">Tags format</h4>
+<div class="sourceCode" id="cb2"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="ex">main-base-py{python_version}-cu{cuda_version}-{pytorch_version}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Tags examples:</p>
 <ul>
-<li><code>llama</code></li>
-<li><code>mistral</code></li>
-<li><code>qwen2</code></li>
-<li><code>gemma</code></li>
-<li><code>gemma2</code></li>
+<li><code>main-base-py3.11-cu124-2.6.0</code></li>
+<li><code>main-base-py3.11-cu124-2.5.1</code></li>
+<li><code>main-base-py3.11-cu124-2.4.1</code></li>
 </ul>
-<details>
-<p>The set of models we support is currently limited by our attention patching strategy, which assumes (and replaces) specific code blocks for query / key / value and output projections:</p>
-<div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>ORIGINAL_QKV_CODE <span class="op">=</span> <span class="st">"""</span></span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="st">    query_states = self.q_proj(hidden_states).view(hidden_shape).transpose(1, 2)</span></span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="st">    key_states = self.k_proj(hidden_states).view(hidden_shape).transpose(1, 2)</span></span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="st">    value_states = self.v_proj(hidden_states).view(hidden_shape).transpose(1, 2)</span></span>
-<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="st">"""</span>.lstrip(</span>
-<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    <span class="st">"</span><span class="ch">\n</span><span class="st">"</span></span>
-<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>)</span>
-<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>ORIGINAL_O_CODE <span class="op">=</span> <span class="st">"""</span></span>
-<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="st">    attn_output = self.o_proj(attn_output)</span></span>
-<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a><span class="st">"""</span>.lstrip(</span>
-<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>    <span class="st">"</span><span class="ch">\n</span><span class="st">"</span></span>
-<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Is replaced with:</p>
-<div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>PATCHED_QKV_CODE <span class="op">=</span> <span class="st">"""</span></span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="st">    query_states, key_states, value_states = self.apply_qkv(hidden_states)</span></span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="st">    query_states = query_states.view(hidden_shape).transpose(1, 2)</span></span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="st">    key_states = key_states.view(hidden_shape).transpose(1, 2)</span></span>
-<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="st">    value_states = value_states.view(hidden_shape).transpose(1, 2)</span></span>
-<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="st">"""</span>.lstrip(</span>
-<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>    <span class="st">"</span><span class="ch">\n</span><span class="st">"</span></span>
-<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>)</span>
-<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>PATCHED_O_CODE <span class="op">=</span> <span class="st">"""</span></span>
-<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a><span class="st">    attn_output = self.apply_o(attn_output)</span></span>
-<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a><span class="st">"""</span>.lstrip(</span>
-<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>    <span class="st">"</span><span class="ch">\n</span><span class="st">"</span></span>
-<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Where <code>apply_qkv</code> and <code>apply_o</code> are defined in the <code>axolotl.kernels.lora</code> module.</p>
-<p>We welcome testing of other model architectures and / or PRs to expand our patching logic to be compatible with more of them.</p>
-</details>
-<section id="usage" class="level2">
-<h2 class="anchored" data-anchor-id="usage">Usage</h2>
-<p>These optimizations can be enabled in your Axolotl config YAML file. The <code>lora_mlp_kernel</code> option enables the optimized MLP path, while <code>lora_qkv_kernel</code> and <code>lora_o_kernel</code> enable the fused query-key-value projection and optimized output projection, respectively.</p>
-<div class="sourceCode" id="cb3"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_mlp_kernel</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_qkv_kernel</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
-<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_o_kernel</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </section>
-<section id="requirements" class="level2">
-<h2 class="anchored" data-anchor-id="requirements">Requirements</h2>
+</section>
+<section id="main" class="level2">
+<h2 class="anchored" data-anchor-id="main">Main</h2>
+<p>The main image is the image that is used to run Axolotl. It is based on the <code>axolotlai/axolotl-base</code> image and includes the Axolotl codebase, dependencies, and more.</p>
+<section id="image-1" class="level4">
+<h4 class="anchored" data-anchor-id="image-1">Image</h4>
+<pre><code>axolotlai/axolotl</code></pre>
+<p>Link: <a href="https://hub.docker.com/r/axolotlai/axolotl">Docker Hub</a></p>
+</section>
+<section id="sec-main-tags" class="level4">
+<h4 class="anchored" data-anchor-id="sec-main-tags">Tags format</h4>
+<div class="sourceCode" id="cb4"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="co"># on push to main</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="ex">main-py{python_version}-cu{cuda_version}-{pytorch_version}</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="co"># latest main (currently torch 2.5.1, python 3.11, cuda 12.4)</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="ex">main-latest</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a><span class="co"># nightly build</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a><span class="ex">{branch}-{date_in_YYYYMMDD}-py{python_version}-cu{cuda_version}-{pytorch_version}</span></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a><span class="co"># tagged release</span></span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a><span class="ex">{version}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Tip
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>There may be some extra tags appended to the image, like <code>-vllm</code> which installs those packages.</p>
+</div>
+</div>
+<p>Tags examples:</p>
 <ul>
-<li>One or more NVIDIA or AMD GPUs (in order to use the Triton kernels)
-<ul>
-<li>Note: Set <code>TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1</code> to enable <a href="https://github.com/ROCm/aotriton/issues/16#issuecomment-2346675491">memory-efficient attention on AMD GPUs</a></li>
-</ul></li>
-<li>Targeted LoRA adapters cannot use Dropout
-<ul>
-<li>This may limit model expressivity / cause overfitting</li>
-</ul></li>
-<li>Targeted LoRA adapters cannot have bias terms
-<ul>
-<li>This may limit model expressivity</li>
-</ul></li>
+<li><code>main-py3.11-cu124-2.6.0</code></li>
+<li><code>main-py3.11-cu124-2.5.1</code></li>
+<li><code>main-py3.11-cu124-2.4.1</code></li>
+<li><code>main-latest</code></li>
+<li><code>main-20250303-py3.11-cu124-2.6.0</code></li>
+<li><code>main-20250303-py3.11-cu124-2.5.1</code></li>
+<li><code>main-20250303-py3.11-cu124-2.4.1</code></li>
+<li><code>0.7.1</code></li>
 </ul>
-<p>Models with pre-existing LoRA adapters that use Dropout or have bias terms may need to be re-finetuned without these features in order to be useful.</p>
-</section>
-<section id="implementation-details" class="level2">
-<h2 class="anchored" data-anchor-id="implementation-details">Implementation details</h2>
-<section id="custom-autograd-functions" class="level3">
-<h3 class="anchored" data-anchor-id="custom-autograd-functions">Custom autograd functions</h3>
-<p>The LoRA MLP autograd function optimizes the entire MLP computation path. It fuses the LoRA and base weight computations together and provides a single, efficient backward pass for the entire MLP block.</p>
-<p>For attention components, similar optimizations are provided through a function that handles the query, key, and value projections, and a function that handles the output projection. They are designed to work with the existing <code>transformers</code> attention implementation via some monkey-patching logic.</p>
-</section>
-<section id="triton-kernels" class="level3">
-<h3 class="anchored" data-anchor-id="triton-kernels">Triton kernels</h3>
-<p>Two activation functions (SwiGLU and GeGLU) are implemented with Triton kernels for improved speed and memory performance. These kernels handle both the forward and backward passes.</p>
-</section>
-<section id="integration" class="level3">
-<h3 class="anchored" data-anchor-id="integration">Integration</h3>
-<p>The custom autograd functions and Triton kernels are designed to work together. The autograd function manages the high-level computation flow and gradient tracking, while calling the Triton kernels for the activation function computation. During the backward pass, the kernel computes both the activation output and the required gradients, which the autograd function then uses to compute the final gradients for the entire computation path.</p>
 </section>
 </section>
-<section id="future-work" class="level2">
-<h2 class="anchored" data-anchor-id="future-work">Future Work</h2>
+<section id="cloud" class="level2">
+<h2 class="anchored" data-anchor-id="cloud">Cloud</h2>
+<p>The cloud image is the image that is used to run Axolotl in the cloud. It is based on the <code>axolotlai/axolotl</code> image and sets ENV variables like HuggingFace cache directories for volume mounts, tmux, and more for different cloud providers.</p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Tip
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>Jupyter lab is run by default. Set <code>JUPYTER_DISABLE=1</code> in the environment variables to disable it.</p>
+</div>
+</div>
+<section id="image-2" class="level4">
+<h4 class="anchored" data-anchor-id="image-2">Image</h4>
+<pre><code>axolotlai/axolotl-cloud</code></pre>
+<p>Link: <a href="https://hub.docker.com/r/axolotlai/axolotl-cloud">Docker Hub</a></p>
+</section>
+<section id="tags-format-1" class="level4">
+<h4 class="anchored" data-anchor-id="tags-format-1">Tags format</h4>
+<p>This uses the same tags as the <a href="#sec-main-tags"><code>main</code> image</a>.</p>
+</section>
+<section id="environment-variables" class="level4">
+<h4 class="anchored" data-anchor-id="environment-variables">Environment variables</h4>
 <ul>
-<li>Support for additional model architectures</li>
-<li>Support for the FSDP setting</li>
-<li>Support for dropout and bias</li>
-<li>Additional operator fusions</li>
+<li><code>JUPYTER_DISABLE</code>: Disable Jupyter lab.</li>
+<li><code>JUPYTER_PASSWORD</code>: Set a password for the Jupyter lab.</li>
+<li><code>PUBLIC_KEY</code>: Add a public key for the SSH service.</li>
+<li><code>SSH_KEY</code>: Add a private key for the SSH service.</li>
 </ul>
+</section>
+<section id="volume-mounts" class="level4">
+<h4 class="anchored" data-anchor-id="volume-mounts">Volume mounts</h4>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Tip
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>We recommend mounting volumes to <code>/workspace/data</code> for data persistence. <code>/workspace/axolotl</code> contains the source code and is ephemeral.</p>
+</div>
+</div>
+<ul>
+<li><code>/workspace/data/axolotl-artifacts</code>: Directory to store Axolotl artifacts.</li>
+<li><code>/workspace/data/huggingface-cache</code>: Directory to store HuggingFace cache.</li>
+</ul>
+</section>
+</section>
+<section id="cloud-no-tmux" class="level2">
+<h2 class="anchored" data-anchor-id="cloud-no-tmux">Cloud-no-tmux</h2>
+<p>This is the same as the <a href="#sec-cloud"><code>cloud</code> image</a> but without tmux.</p>
+<section id="image-3" class="level4">
+<h4 class="anchored" data-anchor-id="image-3">Image</h4>
+<pre><code>axolotlai/axolotl-cloud-term</code></pre>
+<p>Link: <a href="https://hub.docker.com/r/axolotlai/axolotl-cloud-term">Docker Hub</a></p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Note
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>The naming may be a bit confusing as it has <code>-term</code> appended to the end.</p>
+</div>
+</div>
+</section>
+<section id="tags-format-2" class="level4">
+<h4 class="anchored" data-anchor-id="tags-format-2">Tags format</h4>
+<p>This uses the same tags as the <a href="#sec-cloud-tags"><code>cloud</code> image</a>.</p>
 
 
+</section>
 </section>
 
 </main> <!-- /main -->

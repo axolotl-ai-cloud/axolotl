@@ -207,6 +207,12 @@ ul.task-list li input[type="checkbox"] {
       <ul id="quarto-sidebar-section-3" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../docs/docker.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Docker</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../docs/multi-gpu.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Multi-GPU</span></a>
   </div>
@@ -445,8 +451,9 @@ ul.task-list li input[type="checkbox"] {
 <p>A: Try upgrading deepspeed w: <code>pip install -U deepspeed</code></p>
 </blockquote>
 <p><strong>Q: AttributeError: ‘DummyOptim’ object has no attribute ‘step’</strong></p>
+<p><strong>Q: ModuleNotFoundError: No module named ‘mpi4py’ using single GPU with deepspeed</strong></p>
 <blockquote class="blockquote">
-<p>A: You may be using deepspeed with single gpu. Please don’t set <code>deepspeed:</code> in yaml or cli.</p>
+<p>A: You may be using deepspeed with single gpu. Please remove the <code>deepspeed:</code> section in the yaml file or <code>--deepspeed</code> CLI flag.</p>
 </blockquote>
 <p><strong>Q: The codes is stuck on saving preprocessed datasets.</strong></p>
 <blockquote class="blockquote">

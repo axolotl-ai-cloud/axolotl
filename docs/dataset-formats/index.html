@@ -241,6 +241,12 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
       <ul id="quarto-sidebar-section-3" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/docker.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Docker</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/multi-gpu.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Multi-GPU</span></a>
   </div>
@@ -602,7 +608,12 @@ Tip
 <section id="pre-tokenized-dataset" class="level3">
 <h3 class="anchored" data-anchor-id="pre-tokenized-dataset">Pre-Tokenized Dataset</h3>
 <p>We suggest this approach when you want to bring your own tokenized dataset.</p>
-<p>Axolotl expects the dataset to have three keys: - <code>input_ids</code>: from tokenizing formatted prompt - <code>attention_mask</code>: for masking padding. If you don’t add padding, it would be equal to <code>len(input_ids) * [1]</code> - <code>labels</code>: this is the same as <code>input_ids</code>, however, if you want to mask certain tokens, you would set those indices to <code>-100</code>.</p>
+<p>Axolotl expects the dataset to have three keys:</p>
+<ul>
+<li><code>input_ids</code>: from tokenizing formatted prompt</li>
+<li><code>attention_mask</code>: for masking padding. If you don’t add padding, it would be equal to <code>len(input_ids) * [1]</code></li>
+<li><code>labels</code>: this is the same as <code>input_ids</code>, however, if you want to mask certain tokens, you would set those indices to <code>-100</code>.</li>
+</ul>
 <div class="callout callout-style-default callout-tip callout-titled">
 <div class="callout-header d-flex align-content-center">
 <div class="callout-icon-container">
