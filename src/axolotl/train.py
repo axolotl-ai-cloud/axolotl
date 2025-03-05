@@ -52,6 +52,7 @@ LOG = get_logger(__name__)
 
 TELEMETRY_MANAGER = TelemetryManager.get_instance()
 
+
 def setup_model_and_tokenizer(
     cfg: DictDefault,
 ) -> tuple[
