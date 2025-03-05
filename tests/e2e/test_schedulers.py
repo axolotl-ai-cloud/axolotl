@@ -55,8 +55,10 @@ class TestCustomSchedulers(unittest.TestCase):
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_hf",
-                "max_steps": 5,
+                "max_steps": 20,
                 "lr_scheduler": "rex",
+                "warmup_steps": 5,
+                "cosine_min_lr_ratio": 0.05
             }
         )
 
