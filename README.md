@@ -109,6 +109,13 @@ That's it! Check out our [Getting Started Guide](https://axolotl-ai-cloud.github
 
 Contributions are welcome! Please see our [Contributing Guide](https://github.com/axolotl-ai-cloud/axolotl/blob/main/.github/CONTRIBUTING.md) for details.
 
+## 📈 Telemetry
+
+Axolotl has opt-in telemetry that helps us understand how the project is being used
+and prioritize improvements. We collect basic system information, model types, and
+error rates—never personal data or file paths. Telemetry is disabled by default. To
+enable it, set AXOLOTL_DO_NOT_TRACK=0. For more details, see our [telemetry documentation](https://axolotl-ai-cloud.github.io/axolotl/docs/telemetry.html).
+
 ## Supported Models
 
 |             | fp16/fp32 | lora | qlora | gptq | gptq w/flash attn | flash attn | xformers attn |

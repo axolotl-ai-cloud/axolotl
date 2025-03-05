@@ -1,6 +1,5 @@
-"""
-shared pytest fixtures
-"""
+"""Shared pytest fixtures"""
+
 import functools
 import importlib
 import shutil
@@ -171,3 +170,9 @@ def cleanup_monkeypatches():
             module_globals = module_name_tuple[1]
             for module_global in module_globals:
                 globals().pop(module_global, None)
+
+
+@pytest.fixture(autouse=True)
+def disable_telemetry(monkeypatch):
+    monkeypatch.setenv("AXOLOTL_DO_NOT_TRACK", "1")
+    yield
