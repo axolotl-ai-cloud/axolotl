@@ -518,7 +518,7 @@ class HyperparametersConfig(BaseModel):
     )
     torchdistx_path: Optional[str] = None
     lr_scheduler: Optional[
-        Union[SchedulerType, Literal["one_cycle"]]
+        Union[SchedulerType, Literal["one_cycle"], Literal["rex"]]
     ] = SchedulerType.COSINE
     lr_scheduler_kwargs: Optional[Dict[str, Any]] = None
     lr_quadratic_warmup: Optional[bool] = None

@@ -25,6 +25,7 @@ from trl.trainer.utils import pad_to_length
 from axolotl.monkeypatch.relora import ReLoRAScheduler
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 from axolotl.utils.schedulers import (
+    RexLR,
     get_cosine_schedule_with_min_lr,
     get_cosine_schedule_with_quadratic_warmup,
     get_cosine_schedule_with_warmup_decay_constant,
@@ -114,6 +115,17 @@ class SchedulerMixin(Trainer):
                     total_steps=num_training_steps,
                     **extra_lr_kwargs,
                     **self.args.lr_scheduler_kwargs,
+                )
+            elif self.args.alternate_lr_scheduler_type == "rex":
+                if use_cosine_min_lr:
+                    assert 0 <= self.args.cosine_min_lr_ratio <= 1.0, "cosine_min_lr_ratio must be between 0.0 and 1.0"
+
+                self.lr_scheduler = RexLR(
+                    optimizer=optimizer,
+                    max_lr=self.args.learning_rate,
+                    min_lr=0 if not use_cosine_min_lr else (self.args.learning_rate * self.args.cosine_min_lr_ratio),
+                    total_steps=num_training_steps,
+                    num_warmup_steps=self.args.get_warmup_steps(num_training_steps),
                 )
             elif use_cosine_quadratic:
                 if use_cosine_min_lr:

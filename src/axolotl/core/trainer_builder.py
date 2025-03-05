@@ -572,7 +572,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         training_arguments_kwargs["embedding_lr_scale"] = self.cfg.embedding_lr_scale
         training_arguments_kwargs["lr_groups"] = self.cfg.lr_groups
 
-        if self.cfg.lr_scheduler in ["one_cycle", "log_sweep"]:
+        if self.cfg.lr_scheduler in ["one_cycle", "rex", "log_sweep"]:
             training_arguments_kwargs["lr_scheduler_type"] = "cosine"
             training_arguments_kwargs[
                 "alternate_lr_scheduler_type"
