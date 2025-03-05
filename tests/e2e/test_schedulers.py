@@ -54,7 +54,7 @@ class TestCustomSchedulers(unittest.TestCase):
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
-                "optimizer": "optimi_adamw",
+                "optimizer": "adamw_hf",
                 "max_steps": 5,
                 "lr_scheduler": "rex",
             }
