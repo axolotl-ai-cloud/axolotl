@@ -15,7 +15,7 @@ from accelerate.logging import get_logger
 from accelerate.utils import save_fsdp_model
 from datasets import Dataset
 from peft import PeftConfig, PeftModel
-from transformers import PreTrainedModel, PreTrainedTokenizer, ProcessorMixin, Trainer
+from transformers import PreTrainedModel, PreTrainedTokenizer, ProcessorMixin
 from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
 from transformers.trainer import Trainer
 
