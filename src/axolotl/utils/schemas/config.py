@@ -245,6 +245,8 @@ class AxolotlInputConfig(
 
     val_set_size: float | None = Field(default=0.0)
 
+    sequence_parallel_size: int | None = 1
+
     special_tokens: SpecialTokensConfig | None = None
     tokens: list[str] | None = None
     added_tokens_overrides: dict[int, str] | None = None
