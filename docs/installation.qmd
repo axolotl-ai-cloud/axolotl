@@ -65,6 +65,8 @@ docker run --privileged --gpus '"all"' --shm-size 10g --rm -it \
 ```
 :::
 
+Please refer to the [Docker documentation](docker.qmd) for more information on the different Docker images that are available.
+
 ## Cloud Environments {#sec-cloud}
 
 ### Cloud GPU Providers {#sec-cloud-gpu}
