@@ -58,7 +58,7 @@ class TestCustomSchedulers(unittest.TestCase):
                 "max_steps": 20,
                 "lr_scheduler": "rex",
                 "warmup_steps": 5,
-                "cosine_min_lr_ratio": 0.05
+                "cosine_min_lr_ratio": 0.05,
             }
         )
 
