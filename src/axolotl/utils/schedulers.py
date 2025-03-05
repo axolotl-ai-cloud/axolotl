@@ -8,11 +8,11 @@ from torch.optim.lr_scheduler import LambdaLR, LRScheduler
 
 class RexLR(LRScheduler):
     """
-    Reflected exponential learning rate scheduler.
+    Reflected Exponential (REX) learning rate scheduler.
 
-    Original implementation: https://github.com/IvanVassi/REX_LR
-    Original license: Apache 2.0
-    Based on: https://arxiv.org/abs/2107.04197
+    - Original implementation: https://github.com/IvanVassi/REX_LR
+    - Original license: Apache 2.0
+    - Based on: https://arxiv.org/abs/2107.04197
 
     Args:
         optimizer (torch.optim.Optimizer): The optimizer to schedule the learning rate for.
@@ -20,7 +20,7 @@ class RexLR(LRScheduler):
         min_lr (float): The minimum learning rate.
         total_steps (int): The total number of training steps.
         num_warmup_steps (int): The number of warmup steps.
-        last_step (int): The index of last step. Defaults to 0.
+        last_step (int): The index of last step.
     """
 
     def __init__(
