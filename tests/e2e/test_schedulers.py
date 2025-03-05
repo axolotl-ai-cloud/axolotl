@@ -12,7 +12,7 @@ from axolotl.train import train
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 
-from .utils import check_model_output_exists, require_torch_2_5_1, with_temp_dir
+from .utils import check_model_output_exists, with_temp_dir
 
 LOG = logging.getLogger("axolotl.tests.e2e")
 os.environ["WANDB_DISABLED"] = "true"
