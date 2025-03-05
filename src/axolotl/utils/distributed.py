@@ -79,7 +79,7 @@ def is_main_process():
 
 
 def is_local_main_process():
-    return PartialState().is_main_process
+    return PartialState().is_local_main_process
 
 
 def get_world_size():
