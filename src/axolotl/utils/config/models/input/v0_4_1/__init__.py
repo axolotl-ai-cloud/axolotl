@@ -1701,6 +1701,17 @@ class AxolotlInputConfig(
 
         return data
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_sequence_parallel_config(cls, data):
+        if data.get("sequence_parallel_size") > 1:
+            if not data.get("flash_attention"):
+                raise ValueError(
+                    "flash_attention: true must be set with sequence_parallel_size > 1"
+                )
+
+        return data
+
 
 class AxolotlConfigWCapabilities(AxolotlInputConfig):
     """wrapper to valdiate gpu capabilities with the configured options"""
