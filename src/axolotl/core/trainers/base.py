@@ -28,7 +28,7 @@ from axolotl.utils.schedulers import (
     get_cosine_schedule_with_min_lr,
     get_cosine_schedule_with_quadratic_warmup,
     get_cosine_schedule_with_warmup_decay_constant,
-    RexLR
+    RexLR,
 )
 
 if is_sagemaker_mp_enabled():
