@@ -691,6 +691,22 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             # Set default so transformers doesn't throw
             training_arguments_kwargs["optim"] = "adamw_hf"
 
+        if self.cfg.optimizer == "came_pytorch":
+            from came_pytorch import CAME
+
+            came_kwargs = {"lr": training_arguments_kwargs["learning_rate"]}
+            if "weight_decay" in training_arguments_kwargs:
+                came_kwargs["weight_decay"] = training_arguments_kwargs["weight_decay"]
+
+            # TODO: Add ability to set "betas" and "eps"
+
+            trainer_kwargs["optimizers"] = (
+                CAME(params=self.model.parameters(), **came_kwargs),
+                None,
+            )
+            # Set default so transformers doesn't throw
+            training_arguments_kwargs["optim"] = "adamw_hf"
+
         if self.cfg.optimizer == "adamw_anyprecision":
             if Path(self.cfg.torchdistx_path).exists():
                 sys.path.append(self.cfg.torchdistx_path)
