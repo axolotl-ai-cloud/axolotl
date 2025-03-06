@@ -7,7 +7,7 @@ import signal
 import sys
 import weakref
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict
 
 import torch
 import transformers.modelcard
@@ -382,21 +382,23 @@ def handle_untrained_tokens_fix(
     if not cfg.fix_untrained_tokens:
         return
 
+    is_ds_zero3: bool = False
+    if os.environ.get("ACCELERATE_DEEPSPEED_ZERO_STAGE") == "3":
+        is_ds_zero3 = True
+
     # Check if the `token_ids_to_fix` kwarg exists in the fix_untrained_tokens args
     sig = inspect.signature(fix_untrained_tokens)
 
+    fix_kwargs: Dict[str, Any] = {}
     # If the function has the `token_ids_to_fix` arg, and fix_untrained_tokens is a list
     if "token_ids_to_fix" in sig.parameters and isinstance(
         cfg.fix_untrained_tokens, list
     ):
-        fix_untrained_tokens(
-            model,
-            tokenizer,
-            train_dataset,
-            token_ids_to_fix=cfg.fix_untrained_tokens,
-        )
-    else:
-        fix_untrained_tokens(model, tokenizer, train_dataset)
+        fix_kwargs["token_ids_to_fix"] = cfg.fix_untrained_tokens
+    if "is_ds_zero3" in sig.parameters:
+        fix_kwargs["is_ds_zero3"] = is_ds_zero3
+
+    fix_untrained_tokens(model, tokenizer, train_dataset, **fix_kwargs)
 
     if cfg.local_rank == 0:
         model.save_pretrained(
