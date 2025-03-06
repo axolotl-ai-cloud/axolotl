@@ -34,7 +34,7 @@ class SpectrumArgs(BaseModel):
         if (
             data.get("fsdp")
             and data.get("fsdp_config")
-            and data["fsdp_config"].get("use_orig_params") is False
+            and not data["fsdp_config"].get("use_orig_params")
             and data.get("plugins")
             and any("SpectrumPlugin" in plugin for plugin in data["plugins"])
         ):
