@@ -1,6 +1,4 @@
-"""
-module for customized trainers
-"""
+"""Module for customized trainers."""
 
 from __future__ import annotations
 
@@ -12,6 +10,7 @@ from functools import wraps
 from typing import Any, Dict, Literal, Optional
 
 import torch
+import torch.distributed as dist
 import torch.nn.functional as F
 from datasets import Dataset
 from peft.optimizers import create_loraplus_optimizer
@@ -27,8 +26,8 @@ from trl.trainer.utils import pad_to_length
 from typing_extensions import override
 
 from axolotl.integrations.base import BaseOptimizerFactory
+from axolotl.monkeypatch.attention.ring_attn import get_ring_attn_group
 from axolotl.monkeypatch.relora import ReLoRAScheduler
-from axolotl.utils.ring_attn import get_ring_attn_group
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 from axolotl.utils.schedulers import (
     RexLR,
@@ -40,7 +39,7 @@ from axolotl.utils.schedulers import (
 if is_sagemaker_mp_enabled():
     import smdistributed.modelparallel.torch as smp
 
-LOG = logging.getLogger("axolotl.core.trainer_builder")
+LOG = logging.getLogger(__name__)
 
 
 def _sanitize_kwargs_for_tagging(tag_names, kwargs=None):
@@ -810,40 +809,57 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, Trainer):
     ) -> torch.Tensor:
         """
         Perform a training step on a batch of inputs.
-
-        Note: we are subclassing `transformers.trainer.Trainer` in order to compute
-            parameters needed for the ring flash attention implementation we're using.
-
-        Args:
-            model (`nn.Module`):
-                The model to train.
-            inputs (`Dict[str, Union[torch.Tensor, Any]]`):
-                The inputs and targets of the model.
-
-                The dictionary will be unpacked before being fed to the model. Most models expect the targets under the
-                argument `labels`. Check your model's documentation for all accepted arguments.
-
-        Return:
-            `torch.Tensor`: The tensor with training loss on this batch.
         """
         if self.args.sequence_parallel_size > 1:
-            if "attention_mask" in inputs:
-                # Calculate sequence lengths from attention mask
-                seq_lens = inputs["attention_mask"].sum(dim=1).tolist()
-                total_seq_len = (
-                    inputs["attention_mask"].shape[0]
-                    * inputs["attention_mask"].shape[1]
-                )
-            else:
-                # Assume all sequences are the same length if no mask is provided
-                batch_size = inputs["input_ids"].shape[0]
-                seq_len = inputs["input_ids"].shape[1]
-                seq_lens = [seq_len] * batch_size
-                total_seq_len = batch_size * seq_len
+            # At this point, inputs should already be partitioned by the sequence parallel data collator
+            # We'll just log some information about the partitioned data
+            batch_size = inputs["input_ids"].shape[0]
+            seq_len = inputs["input_ids"].shape[1]
 
-            self._update_ring_flash_attn_params(seq_lens, total_seq_len)
+            # Get rank and SP information
+            sp_group = get_ring_attn_group()
+            rank = dist.get_rank()
+            sp_rank = dist.get_rank(group=sp_group) if sp_group else rank
+            world_size = (
+                dist.get_world_size(group=sp_group)
+                if sp_group
+                else dist.get_world_size()
+            )
 
-        return super().training_step(model, inputs, num_items_in_batch)
+            # Sample tokens from our slice to verify partitioning
+            sample_start = (
+                inputs["input_ids"][0, :5].tolist()
+                if seq_len >= 5
+                else inputs["input_ids"][0, :].tolist()
+            )
+            sample_end = (
+                inputs["input_ids"][0, -5:].tolist()
+                if seq_len >= 5
+                else inputs["input_ids"][0, :].tolist()
+            )
+
+            LOG.info(
+                f"GPU {rank} (SP rank {sp_rank}) | Step {self.state.global_step} | "
+                f"Slice shape: batch_size={batch_size}, seq_len={seq_len} | "
+                f"Sample start: {sample_start}, end: {sample_end}"
+            )
+
+            # Calculate the full sequence length across all GPUs in this SP group
+            full_seq_len = seq_len * world_size
+
+            # Pass the partitioned sequence information to ring flash attention
+            self._update_ring_flash_attn_params([seq_len] * batch_size, full_seq_len)
+
+        # Get the loss from the parent implementation
+        loss = super().training_step(model, inputs, num_items_in_batch)
+
+        if self.args.sequence_parallel_size > 1:
+            rank = dist.get_rank()
+            LOG.info(
+                f"GPU {rank} | Step {self.state.global_step} | Loss: {loss.item()}"
+            )
+
+        return loss
 
     def _update_ring_flash_attn_params(self, packed_seq_lens, total_seq_len):
         """

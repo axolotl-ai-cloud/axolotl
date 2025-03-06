@@ -82,7 +82,10 @@ from axolotl.utils.collators import (
     BatchSamplerDataCollatorForSeq2Seq,
     DataCollatorForSeq2Seq,
     MambaDataCollator,
+    SequenceParallelDataCollator,
+    SequenceParallelPackedDataCollator,
     V2BatchSamplerDataCollatorForSeq2Seq,
+    V2SequenceParallelPackedDataCollator,
 )
 from axolotl.utils.collators.mm_chat import MultiModalChatDataCollator
 from axolotl.utils.config.models.input.v0_4_1 import CustomSupportedOptimizers
@@ -882,15 +885,19 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             if "max_length" in kwargs:
                 kwargs.pop("max_length")
         elif use_batch_sampler_collator:
-            if self.cfg.model_config_type in SUPPORTED_MULTIPACK_MODEL_TYPES:
-                collator = V2BatchSamplerDataCollatorForSeq2Seq
-            elif (
+            if self.cfg.model_config_type in SUPPORTED_MULTIPACK_MODEL_TYPES or (
                 self.cfg.model_config_type in ["llama"]
                 and self.cfg.flash_attention is not True
             ):
-                collator = V2BatchSamplerDataCollatorForSeq2Seq
+                if self.cfg.sequence_parallel_size > 1:
+                    collator = V2SequenceParallelPackedDataCollator
+                else:
+                    collator = V2BatchSamplerDataCollatorForSeq2Seq
             else:
-                collator = BatchSamplerDataCollatorForSeq2Seq
+                if self.cfg.sequence_parallel_size > 1:
+                    collator = SequenceParallelPackedDataCollator
+                else:
+                    collator = BatchSamplerDataCollatorForSeq2Seq
         else:
             if self.cfg.processor_type and self.processor:
                 collator = MultiModalChatDataCollator
@@ -912,7 +919,10 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 else:
                     collator = DataCollatorForKD
             else:
-                collator = DataCollatorForSeq2Seq
+                if self.cfg.sequence_parallel_size > 1:
+                    collator = SequenceParallelDataCollator
+                else:
+                    collator = DataCollatorForSeq2Seq
 
         kwargs["return_tensors"] = "pt"
 

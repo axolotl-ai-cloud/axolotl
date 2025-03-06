@@ -549,7 +549,7 @@ class ModelLoader:
             patch_self_attn_lora(self.cfg)
 
         if self.cfg.sequence_parallel_size > 1:
-            from axolotl.utils.ring_attn import register_ring_attn
+            from axolotl.monkeypatch.attention.ring_attn import register_ring_attn
 
             # Initialize ring attention for sequence parallelism if enabled.
             # This must be done after model initialization but before the first forward pass,
