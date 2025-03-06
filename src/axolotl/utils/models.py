@@ -64,7 +64,7 @@ from axolotl.utils.distributed import (
     is_local_main_process,
     zero_only,
 )
-from axolotl.utils.gradient_checkpointing import hf_grad_checkpoint_unsloth_wrapper
+from axolotl.utils.gradient_checkpointing import hf_grad_checkpoint_offload_wrapper
 from axolotl.utils.lora_embeddings import get_linear_embedding_layers
 from axolotl.utils.model_shard_quant import load_sharded_model, load_sharded_model_quant
 
@@ -493,8 +493,8 @@ class ModelLoader:
 
             patch_fa_peft_integration()
 
-        if self.cfg.gradient_checkpointing == "unsloth":
-            transformers.modeling_utils.checkpoint = hf_grad_checkpoint_unsloth_wrapper
+        if self.cfg.gradient_checkpointing in ["unsloth", "offload"]:
+            transformers.modeling_utils.checkpoint = hf_grad_checkpoint_offload_wrapper
 
         if self.cfg.flash_attention:
             self.patch_attention()
