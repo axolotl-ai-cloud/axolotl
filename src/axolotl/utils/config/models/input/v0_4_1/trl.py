@@ -50,7 +50,7 @@ class TRLConfig(BaseModel):
 
     reward_funcs: Optional[list[str]] = Field(
         default=None,
-        json_schema_extra={"description": "list of reward functions to load"},
+        json_schema_extra={"description": "List of reward functions to load"},
     )
     reward_weights: Optional[list[float]] = Field(
         default=None,
