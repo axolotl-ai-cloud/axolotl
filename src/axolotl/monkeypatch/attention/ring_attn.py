@@ -1,4 +1,6 @@
-"""Ring attention group registration and utils."""
+"""Ring attention group registration and flash attention patching."""
+
+from typing import Any
 
 import torch.distributed as dist
 from accelerate.logging import get_logger
@@ -12,11 +14,11 @@ LOG = get_logger(__name__)
 RING_ATTN_GROUP = None
 
 
-def get_ring_attn_group():
+def get_ring_attn_group() -> Any:
     return RING_ATTN_GROUP
 
 
-def set_ring_attn_group(ring_attn_group):
+def set_ring_attn_group(ring_attn_group: Any):
     global RING_ATTN_GROUP  # pylint: disable=global-statement
     RING_ATTN_GROUP = ring_attn_group
 
@@ -39,6 +41,10 @@ def register_ring_attn(sequence_parallel_size: int):
         f"must evenly divide world_size ({world_size})"
     )
 
+    # Detailed logging of group formation
+    rank = dist.get_rank()
+    group_assignments = {}
+
     for i in range(world_size // sequence_parallel_size):
         ring_attn_ranks = list(
             range(
@@ -47,7 +53,19 @@ def register_ring_attn(sequence_parallel_size: int):
             )
         )
         group = dist.new_group(ranks=ring_attn_ranks, backend="nccl")
-        if dist.get_rank() in ring_attn_ranks:
+
+        # Track which GPUs are in which groups
+        for r in ring_attn_ranks:
+            group_assignments[r] = i
+
+        if rank in ring_attn_ranks:
             set_ring_attn_group(group)
+            LOG.info(
+                f"GPU {rank} assigned to sequence parallel group {i} with ranks {ring_attn_ranks}"
+            )
+
+    # Log the full group assignment structure
+    if rank == 0:
+        LOG.info(f"Sequence parallel group assignments: {group_assignments}")
 
     substitute_hf_flash_attn(get_ring_attn_group(), sequence_parallel_size)
