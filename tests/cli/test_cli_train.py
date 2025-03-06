@@ -28,7 +28,7 @@ class TestTrainCommand(BaseCliTest):
         config_path.write_text(valid_test_config)
 
         with patch("axolotl.cli.train.train") as mock_train:
-            mock_train.return_value = (MagicMock(), MagicMock())
+            mock_train.return_value = (MagicMock(), MagicMock(), MagicMock())
 
             result = cli_runner.invoke(
                 cli,
@@ -48,7 +48,7 @@ class TestTrainCommand(BaseCliTest):
         config_path = self._test_cli_overrides(tmp_path, valid_test_config)
 
         with patch("axolotl.cli.train.train") as mock_train:
-            mock_train.return_value = (MagicMock(), MagicMock())
+            mock_train.return_value = (MagicMock(), MagicMock(), MagicMock())
 
             result = cli_runner.invoke(
                 cli,

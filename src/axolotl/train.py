@@ -461,7 +461,7 @@ def setup_model_and_trainer(
 
 def train(
     cfg: DictDefault, dataset_meta: TrainDatasetMeta
-) -> tuple[PeftModel | PreTrainedModel, PreTrainedTokenizer]:
+) -> tuple[PeftModel | PreTrainedModel, PreTrainedTokenizer, Trainer]:
     """
     Train a model on the given dataset.
 
@@ -510,4 +510,4 @@ def train(
     # Create model card
     create_model_card(cfg, trainer)
 
-    return model, tokenizer
+    return model, tokenizer, trainer

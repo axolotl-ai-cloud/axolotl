@@ -64,6 +64,18 @@ class ChatTemplate(str, Enum):
     metharme = "metharme"  # pylint: disable=invalid-name
 
 
+class CustomSupportedOptimizers(str, Enum):
+    """Custom supported optimizers"""
+
+    optimi_adamw = "optimi_adamw"  # pylint: disable=invalid-name
+    ao_adamw_4bit = "ao_adamw_4bit"  # pylint: disable=invalid-name
+    ao_adamw_8bit = "ao_adamw_8bit"  # pylint: disable=invalid-name
+    ao_adamw_fp8 = "ao_adamw_fp8"  # pylint: disable=invalid-name
+    adopt_adamw = "adopt_adamw"  # pylint: disable=invalid-name
+    lion_pytorch = "lion_pytorch"  # pylint: disable=invalid-name
+    muon = "muon"  # pylint: disable=invalid-name
+
+
 class DeprecatedParameters(BaseModel):
     """configurations that are deprecated"""
 
@@ -494,17 +506,7 @@ class HyperparametersConfig(BaseModel):
     embedding_lr_scale: Optional[float] = None
     weight_decay: Optional[float] = 0.0
     optimizer: Optional[
-        Union[
-            OptimizerNames,
-            Literal[
-                "lion_pytorch",
-                "optimi_adamw",
-                "ao_adamw_4bit",
-                "ao_adamw_8bit",
-                "ao_adamw_fp8",
-                "adopt_adamw",
-            ],
-        ]
+        Union[OptimizerNames, CustomSupportedOptimizers]
     ] = OptimizerNames.ADAMW_HF
     optim_args: Optional[Union[str, Dict[str, Any]]] = Field(
         default=None,
@@ -1186,6 +1188,13 @@ class AxolotlInputConfig(
         ):
             LOG.warning("adamw hyperparameters found, but no adamw optimizer set")
         return self
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_lr_groups(cls, data):
+        if data.get("lr_groups") and data.get("loraplus_lr_ratio"):
+            raise ValueError("lr_groups and loraplus_lr_ratio cannot be used together.")
+        return data
 
     @model_validator(mode="before")
     @classmethod

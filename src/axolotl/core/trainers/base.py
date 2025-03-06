@@ -14,6 +14,7 @@ from typing import Dict, Literal, Optional
 import torch
 from datasets import Dataset
 from peft.optimizers import create_loraplus_optimizer
+from torch import nn
 from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import BatchSampler, DataLoader, RandomSampler, SequentialSampler
 from transformers import Trainer
@@ -22,6 +23,7 @@ from transformers.utils import is_sagemaker_mp_enabled
 from trl import CPOTrainer, KTOTrainer, ORPOTrainer, PRMTrainer, RewardTrainer
 from trl.trainer.utils import pad_to_length
 
+from axolotl.integrations.base import BaseOptimizerFactory
 from axolotl.monkeypatch.relora import ReLoRAScheduler
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 from axolotl.utils.schedulers import (
@@ -166,47 +168,18 @@ class SchedulerMixin(Trainer):
         return self.lr_scheduler
 
 
-class AxolotlTrainer(SchedulerMixin, Trainer):
+class OptimizerMixin(Trainer):
     """
-    Extend the base Trainer for axolotl helpers
+    Mixin class for shared handling of building custom optimizers
     """
 
     args = None  # type: "AxolotlTrainingArguments"  # type: ignore[name-defined]
-    tag_names = ["axolotl"]
 
-    def __init__(
-        self,
-        *_args,
-        bench_data_collator=None,
-        eval_data_collator=None,
-        dataset_tags=None,
-        **kwargs,
-    ):
-        self.bench_data_collator = bench_data_collator
-        self.eval_data_collator = eval_data_collator
-        self.dataset_tags = dataset_tags
-        self._signature_columns = None  # workaround for pylint
-        super().__init__(*_args, **kwargs)
-        self.train_data_collator = self.data_collator
-        self._stored_metrics = defaultdict(lambda: defaultdict(list))
-        if self.args.orpo_alpha:
-            self.loss_fct = torch.nn.CrossEntropyLoss(reduction="none")
-
-    def _wrap_model(self, model, training=True, dataloader=None):
-        if self.args.torch_compile:
-            torch._dynamo.config.accumulated_cache_size_limit = (  # pylint: disable=protected-access
-                256
-            )
-            model = torch.compile(
-                model,
-                backend=self.args.torch_compile_backend,
-                mode=self.args.torch_compile_mode,
-            )
-        return super()._wrap_model(model, training=training, dataloader=dataloader)
-
-    def create_optimizer_grouped_parameters(self, opt_model, optimizer_kwargs):
+    def create_optimizer_grouped_parameters(
+        self, opt_model, optimizer_kwargs
+    ) -> list[dict]:
         decay_parameters = self.get_decay_parameter_names(opt_model)
-        params = {
+        params: dict = {
             "to_weight_decay": {},  # LayerNorm and bias
             "embeddings": {},  # lm_head, embed_tokens,
             "no_weight_decay": {},
@@ -293,23 +266,30 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
             and self.args.embedding_lr_scale is None
             and self.args.embedding_lr is None
             and self.args.lr_groups is None
-            and self.args.alternate_optimizer
-            not in [
-                "optimi_adamw",
-                "ao_adamw_8bit",
-                "ao_adamw_4bit",
-                "ao_adamw_fp8",
-                "adopt_adamw",
-            ]
+            and self.optimizer_cls_and_kwargs is None
         ):
             return super().create_optimizer()
 
         opt_model = self.model_wrapped if is_sagemaker_mp_enabled() else self.model
-        if self.optimizer is None:  # pylint: disable=access-member-before-definition
-            optimizer_cls, optimizer_kwargs = Trainer.get_optimizer_cls_and_kwargs(
-                self.args,
-                opt_model,
+
+        if (
+            not self.optimizer
+            and self.optimizer_cls_and_kwargs is not None
+            and issubclass(self.optimizer_cls_and_kwargs[0], BaseOptimizerFactory)
+        ):
+            optimizer_factory_cls, optimizer_kwargs = self.optimizer_cls_and_kwargs
+            self.optimizer = optimizer_factory_cls()(
+                opt_model, self.args, **optimizer_kwargs
             )
+
+        if not self.optimizer:
+            if self.optimizer_cls_and_kwargs is not None:
+                optimizer_cls, optimizer_kwargs = self.optimizer_cls_and_kwargs
+            else:
+                optimizer_cls, optimizer_kwargs = self.get_optimizer_cls_and_kwargs(
+                    self.args, opt_model
+                )
+
             optimizer_grouped_parameters = self.create_optimizer_grouped_parameters(
                 opt_model, optimizer_kwargs
             )
@@ -326,50 +306,47 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
                     loraplus_lr_embedding=loraplus_lr_embedding,
                     **optimizer_kwargs,
                 )
-            elif (
-                self.args.embedding_lr_scale is not None
-                or self.args.embedding_lr is not None
-                or self.args.lr_groups is not None
-            ):
-                self.optimizer = (  # pylint: disable=attribute-defined-outside-init
-                    optimizer_cls(optimizer_grouped_parameters, **optimizer_kwargs)
-                )
-            elif self.args.alternate_optimizer == "optimi_adamw":
-                from optimi import AdamW
+            else:
+                # Overwrite `params` in case it's created by `get_optimizer_cls_and_kwargs`
+                # e.g. for GaLore optimizer.
+                if "params" in optimizer_kwargs:
+                    optimizer_grouped_parameters = optimizer_kwargs.pop("params")
 
-                self.optimizer = (  # pylint: disable=attribute-defined-outside-init
-                    AdamW(
-                        optimizer_grouped_parameters, foreach=False, **optimizer_kwargs
+                # Overwrite `model` in case it's created by `get_optimizer_cls_and_kwargs`
+                # e.g. for LOMO optimizer.
+                if "model" in optimizer_kwargs:
+                    optimizer_grouped_parameters = optimizer_kwargs.pop("model")
+
+                # For layer-wise dummy optimizers we overwrite optimizer_grouped_parameters with `optimizer_dict`
+                # to avoid arguments conflicts.
+                if "optimizer_dict" in optimizer_kwargs:
+                    optimizer_grouped_parameters = optimizer_kwargs.pop(
+                        "optimizer_dict"
                     )
-                )
-            elif self.args.alternate_optimizer == "ao_adamw_4bit":
-                from torchao.prototype.low_bit_optim import AdamW4bit
 
-                self.optimizer = (  # pylint: disable=attribute-defined-outside-init
-                    AdamW4bit(optimizer_grouped_parameters, **optimizer_kwargs)
+                self.optimizer = optimizer_cls(
+                    optimizer_grouped_parameters, **optimizer_kwargs
                 )
-            elif self.args.alternate_optimizer == "ao_adamw_8bit":
-                from torchao.prototype.low_bit_optim import AdamW8bit
 
-                self.optimizer = (  # pylint: disable=attribute-defined-outside-init
-                    AdamW8bit(optimizer_grouped_parameters, **optimizer_kwargs)
-                )
-            elif self.args.alternate_optimizer == "ao_adamw_fp8":
-                from torchao.prototype.low_bit_optim import AdamWFp8
+            if optimizer_cls.__name__ == "Adam8bit":
+                import bitsandbytes
 
-                self.optimizer = (  # pylint: disable=attribute-defined-outside-init
-                    AdamWFp8(optimizer_grouped_parameters, **optimizer_kwargs)
-                )
-            elif self.args.alternate_optimizer == "adopt_adamw":
-                from axolotl.utils.optimizers.adopt import ADOPT
+                manager = bitsandbytes.optim.GlobalOptimManager.get_instance()
 
-                self.optimizer = (  # pylint: disable=attribute-defined-outside-init
-                    ADOPT(
-                        optimizer_grouped_parameters,
-                        decouple=True,
-                        **optimizer_kwargs,
-                    )
-                )
+                skipped = 0
+                for module in opt_model.modules():
+                    if isinstance(module, nn.Embedding):
+                        skipped += sum(
+                            {
+                                p.data_ptr(): p.numel() for p in module.parameters()
+                            }.values()
+                        )
+                        LOG.info(f"skipped {module}: {skipped/2**20}M params")
+                        manager.register_module_override(
+                            module, "weight", {"optim_bits": 32}
+                        )
+                        LOG.debug(f"bitsandbytes: will optimize {module} in fp32")
+                LOG.info(f"skipped: {skipped/2**20}M params")
 
         if is_sagemaker_mp_enabled():
             self.optimizer = smp.DistributedOptimizer(  # pylint: disable=attribute-defined-outside-init
@@ -377,6 +354,45 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
             )
 
         return self.optimizer
+
+
+class AxolotlTrainer(SchedulerMixin, OptimizerMixin, Trainer):
+    """
+    Extend the base Trainer for axolotl helpers
+    """
+
+    args = None  # type: "AxolotlTrainingArguments"  # type: ignore[name-defined]
+    tag_names = ["axolotl"]
+
+    def __init__(
+        self,
+        *_args,
+        bench_data_collator=None,
+        eval_data_collator=None,
+        dataset_tags=None,
+        **kwargs,
+    ):
+        self.bench_data_collator = bench_data_collator
+        self.eval_data_collator = eval_data_collator
+        self.dataset_tags = dataset_tags
+        self._signature_columns = None  # workaround for pylint
+        super().__init__(*_args, **kwargs)
+        self.train_data_collator = self.data_collator
+        self._stored_metrics = defaultdict(lambda: defaultdict(list))
+        if self.args.orpo_alpha:
+            self.loss_fct = torch.nn.CrossEntropyLoss(reduction="none")
+
+    def _wrap_model(self, model, training=True, dataloader=None):
+        if self.args.torch_compile:
+            torch._dynamo.config.accumulated_cache_size_limit = (  # pylint: disable=protected-access
+                256
+            )
+            model = torch.compile(
+                model,
+                backend=self.args.torch_compile_backend,
+                mode=self.args.torch_compile_mode,
+            )
+        return super()._wrap_model(model, training=training, dataloader=dataloader)
 
     def _get_train_sampler(self) -> Optional[torch.utils.data.Sampler]:
         if self.args.sample_packing and not self.args.pretraining:
