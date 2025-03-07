@@ -33,7 +33,7 @@ LOG = logging.getLogger("axolotl.integrations.cut_cross_entropy")
 
 _CCE_INSTALL_MESSAGE = (
     "Please install cut_cross_entropy with transformers support using "
-    '`pip install "cut-cross-entropy[transformers]==24.11.4"`'
+    '`pip install "cut-cross-entropy[transformers] @ git+https://github.com/apple/ml-cross-entropy.git@24fbe4b5dab9a6c250a014573613c1890190536c"`'
 )
 
 
