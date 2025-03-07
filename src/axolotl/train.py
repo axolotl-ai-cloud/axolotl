@@ -20,7 +20,7 @@ from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
 from transformers.trainer import Trainer
 
 from axolotl.common.datasets import TrainDatasetMeta
-from axolotl.contribs.lgpl.unsloth import (  # pylint: disable = no-name-in-module
+from axolotl.contribs.lgpl import (  # pylint: disable = no-name-in-module
     fix_untrained_tokens,
 )
 from axolotl.core.trainer_builder import HFCausalTrainerBuilder, HFRLTrainerBuilder
