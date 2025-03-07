@@ -4,18 +4,6 @@ description: Conversation format for supervised fine-tuning.
 order: 3
 ---
 
-## sharegpt
-
-::: {.callout-important}
-ShareGPT is deprecated!. Please see [chat_template](#chat_template) section below.
-:::
-
-## pygmalion
-
-```{.json filename="data.jsonl"}
-{"conversations": [{"role": "...", "value": "..."}]}
-```
-
 ## chat_template
 
 Chat Template strategy uses a jinja2 template that converts a list of messages into a prompt. Support using tokenizer's template, a supported template, or custom jinja2.
@@ -64,7 +52,7 @@ We recommend checking the below examples for other usecases.
 
 ### Examples
 
-1. Using the default chat template in the tokenizer_config.json on OpenAI messages format, training on only last message.
+1. (Legacy) Using the default chat template in the tokenizer_config.json on OpenAI messages format, training on only last message.
 
 ```yaml
 datasets:
@@ -105,10 +93,55 @@ datasets:
 ```
 
 ::: {.callout-important}
-Please make sure that your `tokenizer.eos_token` is same as EOS/EOT token in template. Otherwise, set `eos_token` under `special_tokens`.
+Please make sure that your `tokenizer.eos_token` is same as EOS (End-of-Sequence) token in template. Otherwise, set `eos_token` under `special_tokens: `.
 :::
 
-5. (Advanced) Using fine-grained control over tokens and turns to train in a conversation
+5. If you are using a template that has a different EOT (End-of-Turn) token from EOS token or multiple EOT tokens (like Mistral V7 Tekken), set the `eot_tokens: ` config. The handling of EOT tokens follows `train_on_eos: ` which defaults to turn.
+
+```yaml
+eot_tokens:
+  - "[/INST]"
+  # - "[/SYSTEM_PROMPT]"
+
+datasets:
+  - path: ...
+    type: chat_template
+
+    # optional
+    train_on_eot: turn  # defaults read from train_on_eos (which defaults to turn)
+```
+
+::: {.callout-tip}
+See [config documentation](../config.qmd) for detailed explanations of "turn", "last", and "all" options for training on tokens.
+:::
+
+::: {.callout-note}
+Using `eot_tokens` requires each token that exists in `chat_template` to be a single token in the tokenizer. Otherwise, the tokenizer will split the token and cause unexpected behavior.
+
+You can add those tokens as new tokens under `tokens: ` or (recommended) override unused added_tokens via `added_tokens_overrides: `. See [config](../config.qmd) for more details.
+:::
+
+6. Continuing from the previous example, if you want to train on all EOT token trainable turns but only last EOS token, set `train_on_eos: last`.
+
+```yaml
+eot_tokens:
+  - "[/INST]"
+  # ...
+
+datasets:
+  - path: ...
+    type: chat_template
+
+    train_on_eos: last
+    train_on_eot: turn
+```
+
+::: {.callout-tip}
+If EOS token only appears at the end of a prompt, `train_on_eos: last` is equivalent to `train_on_eos: turn`. Therefore, generally, you can leave them to their defaults and omit them.
+:::
+
+
+7. (Advanced) Using fine-grained control over tokens and turns to train in a conversation
 
 For a data sample that looks like:
 
@@ -158,3 +191,15 @@ datasets:
 ::: {.callout-tip}
 It is not necessary to set both `message_field_training` and `message_field_training_detail` at once.
 :::
+
+## sharegpt
+
+::: {.callout-important}
+ShareGPT is deprecated!. Please see [chat_template](#chat_template) section.
+:::
+
+## pygmalion
+
+```{.json filename="data.jsonl"}
+{"conversations": [{"role": "...", "value": "..."}]}
+```
