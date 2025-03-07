@@ -303,7 +303,8 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                 )
             if token_ids and len(token_ids) > 1:
                 raise ValueError(
-                    f"EOT token '{token}' is encoded as multiple tokens: {token_ids}. Please add it under `tokens: ` in the config."
+                    f"EOT token '{token}' is encoded as multiple tokens: {token_ids}. Please add it under `tokens: ` in the config "
+                    "or (recommended) override unused added_tokens via `added_tokens_overrides: `."
                 )
 
         # If eos_token is in eot_tokens and conflict between train_on_eos and train_on_eot, raise an error
