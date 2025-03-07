@@ -28,7 +28,7 @@ class Test4dMultipackLlama(unittest.TestCase):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "JackFram/llama-68m",
+                "base_model": "HuggingFaceTB/SmolLM2-135M-Instruct",
                 "flash_attention": False,
                 "sdp_attention": True,
                 "sample_packing": True,
@@ -72,7 +72,7 @@ class Test4dMultipackLlama(unittest.TestCase):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "JackFram/llama-68m",
+                "base_model": "HuggingFaceTB/SmolLM2-135M-Instruct",
                 "flash_attention": False,
                 "sdp_attention": False,
                 "sample_packing": True,

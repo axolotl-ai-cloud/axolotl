@@ -16,9 +16,8 @@ class NormalizeConfigTestCase(unittest.TestCase):
     def _get_base_cfg(self):
         return DictDefault(
             {
-                "base_model": "JackFram/llama-68m",
-                "base_model_config": "JackFram/llama-68m",
-                "tokenizer_type": "LlamaTokenizer",
+                "base_model": "HuggingFaceTB/SmolLM2-135M-Instruct",
+                "base_model_config": "HuggingFaceTB/SmolLM2-135M-Instruct",
                 "num_epochs": 1,
                 "micro_batch_size": 1,
                 "gradient_accumulation_steps": 1,
