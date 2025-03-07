@@ -14,7 +14,7 @@ COPY scripts/motd /etc/motd
 
 RUN pip install jupyterlab notebook ipywidgets && \
     jupyter lab clean
-RUN apt install --yes --no-install-recommends openssh-server tmux && \
+RUN apt install --yes --no-install-recommends openssh-server tmux iproute2 nvtop && \
     mkdir -p ~/.ssh && \
     chmod 700 ~/.ssh && \
     printf "\n[[ -z \"\$TMUX\"  ]] && { tmux attach-session -t ssh_tmux || tmux new-session -s ssh_tmux; exit; }\n" >> ~/.bashrc && \
