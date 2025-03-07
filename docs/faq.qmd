@@ -75,7 +75,11 @@ description: Frequently asked questions
 
 **Q: The EOS token is incorrectly being masked or not being masked / `EOS token __ not found in chat template`.**
 
-> A: This is because of the mismatch between `tokenizer.eos_token` and EOS token in template. Please make sure to set `eos_token` under `special_tokens` to the same EOS token as in template.
+> A: There can be two reasons:
+
+> 1. This is because of the mismatch between `tokenizer.eos_token` and EOS token in template. Please make sure to set `eos_token: ` under `special_tokens: ` to the same EOS token as in template.
+
+> 2. The EOS token is not in the template. Please check if your template is correct. As an example, `phi_35` template does not use its dedicated EOS token `<|endoftext|>` at the end.
 
 **Q: "`chat_template` choice is `tokenizer_default` but tokenizer's `chat_template` is null. Please add a `chat_template` in tokenizer config"**
 
