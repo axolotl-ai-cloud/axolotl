@@ -3,6 +3,7 @@ title: "RLHF (Beta)"
 description: "Reinforcement Learning from Human Feedback is a method whereby a language model is optimized from data using human feedback."
 back-to-top-navigation: true
 toc: true
+toc-expand: 2
 toc-depth: 4
 ---
 
@@ -528,6 +529,7 @@ trl:
     vllm_gpu_memory_utilization: 0.15
     num_generations: 4
     reward_funcs: ["rewards.rand_reward_func"]    # format: '{file_name}.{fn_name}'
+    reward_weights: [1.0]
 datasets:
   - path: openai/gsm8k
     name: main
@@ -535,6 +537,8 @@ datasets:
 ```
 
 To see other examples of custom reward functions, please see [TRL GRPO Docs](https://github.com/huggingface/trl/blob/main/docs/source/grpo_trainer.md#using-a-custom-reward-function).
+
+To see description of the configs, please see [TRLConfig](https://github.com/axolotl-ai-cloud/axolotl/blob/main/src/axolotl/utils/config/models/input/v0_4_1/trl.py).
 
 ### Using local dataset files
 
