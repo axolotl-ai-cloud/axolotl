@@ -676,8 +676,10 @@ special_tokens:
   # unk_token: "<unk>"
   # pad_token: "[PAD]"
 
-# Add extra tokens.
+# Optional[list[str]]. Add extra tokens to the tokenizer.
 tokens:
+  # - "<|startoftext|>"
+  # - "<|endoftext|>"
 
 # Mapping token_id to new_token_string to override reserved added_tokens in the tokenizer.
 # Only works for tokens that are not part of the base vocab (aka are added_tokens).
