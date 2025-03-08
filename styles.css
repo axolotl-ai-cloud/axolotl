@@ -14,7 +14,7 @@
 h1 {
     font-family: var(--font-title);
     font-weight: 400;
-    font-size: 6rem;
+    font-size: 5rem;
     line-height: 1.1;
     letter-spacing: -0.05em;
     font-feature-settings: "ss01" on;
