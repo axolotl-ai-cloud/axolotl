@@ -28,7 +28,7 @@ val_set_size: 0.1
 eval_steps: 100
 ```
 
-Bradley Terry expects single-turn conversations in the following format:
+Bradley-Terry chat templates expect single-turn conversations in the following format:
 
 ```json
 {
