@@ -52,3 +52,7 @@ description: Frequently asked questions
 **Q: The EOS/EOT token is incorrectly being masked or not being masked.**
 
 > A: This is because of the mismatch between `tokenizer.eos_token` and EOS/EOT token in template. Please make sure to set `eos_token` under `special_tokens` to the same EOS/EOT token as in template.
+
+**Q: `chat_template choice is tokenizer_default but tokenizer's chat_template is null. Please add a chat_template in tokenizer config`**
+
+> A: This is because the tokenizer does not have a chat template. Please add a chat template in the tokenizer config. See [chat_template](dataset-formats/conversation.qmd#chat-template) for more details.
