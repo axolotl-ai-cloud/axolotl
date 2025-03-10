@@ -486,6 +486,10 @@ ul.task-list li input[type="checkbox"] {
 <blockquote class="blockquote">
 <p>A: This is because of the mismatch between <code>tokenizer.eos_token</code> and EOS/EOT token in template. Please make sure to set <code>eos_token</code> under <code>special_tokens</code> to the same EOS/EOT token as in template.</p>
 </blockquote>
+<p><strong>Q: “<code>chat_template</code> choice is <code>tokenizer_default</code> but tokenizer’s <code>chat_template</code> is null. Please add a <code>chat_template</code> in tokenizer config”</strong></p>
+<blockquote class="blockquote">
+<p>A: This is because the tokenizer does not have a chat template. Please add a chat template in the tokenizer config. See <a href="../docs/dataset-formats/conversation.html#chat-template">chat_template</a> for more details.</p>
+</blockquote>
 
 
 </section>

@@ -552,6 +552,19 @@ Important
 <span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> chat_template</span></span>
 <span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">roles_to_train</span><span class="kw">:</span></span>
 <span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">train_on_eos</span><span class="kw">:</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Tip
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>If you receive an error like “<code>chat_template</code> choice is <code>tokenizer_default</code> but tokenizer’s <code>chat_template</code> is null.”, it means the tokenizer does not have a default <code>chat_template</code>. Follow the examples below instead to set a custom <code>chat_template</code>.</p>
+</div>
+</div>
 <ol start="2" type="1">
 <li>Using the <code>gemma</code> chat template to override the tokenizer_config.json’s chat template on OpenAI messages format, training on all assistant messages.</li>
 </ol>
