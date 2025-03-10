@@ -62,5 +62,5 @@ antlr4-python3-runtime==4.13.2
 torchao==0.7.0
 schedulefree==1.3.0
 
-axolotl-contribs-lgpl @ git+https://github.com/axolotl-ai-cloud/axolotl-contribs-lgpl.git@import-issues-v2
+axolotl-contribs-lgpl @ git+https://github.com/axolotl-ai-cloud/axolotl-contribs-lgpl.git@cedbf68a357a693366b275723fc8fd6ab5232714
 axolotl-contribs-mit==0.0.3
