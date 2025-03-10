@@ -75,7 +75,7 @@ datasets:
 ```
 
 ::: {.callout-tip}
-If you receive an error like `chat_template choice is tokenizer_default but tokenizer's chat_template is null.`, it means the tokenizer does not have a default chat_template. Follow the examples below instead to set a custom chat_template.
+If you receive an error like "`chat_template` choice is `tokenizer_default` but tokenizer's `chat_template` is null.", it means the tokenizer does not have a default `chat_template`. Follow the examples below instead to set a custom `chat_template`.
 :::
 
 2. Using the `gemma` chat template to override the tokenizer_config.json's chat template on OpenAI messages format, training on all assistant messages.
