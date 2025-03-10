@@ -270,6 +270,7 @@ def _preprocess(config_yaml: str, volumes=None):
 
 
 def _train(config_yaml: str, accelerate: bool = True, volumes=None, **kwargs):
+    Path("/workspace/mounts").mkdir(parents=True, exist_ok=True)
     with open("/workspace/mounts/config.yaml", "w", encoding="utf-8") as f_out:
         f_out.write(config_yaml)
     run_folder = "/workspace/mounts"
@@ -288,6 +289,7 @@ def _train(config_yaml: str, accelerate: bool = True, volumes=None, **kwargs):
 
 
 def _lm_eval(config_yaml: str, volumes=None):
+    Path("/workspace/mounts").mkdir(parents=True, exist_ok=True)
     with open("/workspace/mounts/config.yaml", "w", encoding="utf-8") as f_out:
         f_out.write(config_yaml)
     run_folder = "/workspace/mounts"
