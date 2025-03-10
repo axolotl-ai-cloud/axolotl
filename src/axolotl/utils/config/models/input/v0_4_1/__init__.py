@@ -463,6 +463,7 @@ class ModelInputConfig(BaseModel):
         default=None, json_schema_extra={"description": "transformers processor class"}
     )
     trust_remote_code: Optional[bool] = None
+    random_init: Optional[bool] = None
 
     @field_validator("trust_remote_code")
     @classmethod

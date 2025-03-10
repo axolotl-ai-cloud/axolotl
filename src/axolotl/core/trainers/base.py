@@ -412,7 +412,20 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, Trainer):
             if self.args.curriculum_sampling:
                 sampler = SequentialSampler(self.train_dataset)
             else:
+                generator = None
+                if self.args.sequence_parallel_size > 1:
+                    generator = torch.Generator()
+                    generator.manual_seed(self.args.getattr("seed", 0))
+
                 sampler = RandomSampler(self.train_dataset)
+
+            # if dist.get_rank() == 0:
+            #     import ipdb; ipdb.set_trace()
+            # dist.barrier()
+
+            # if dist.get_rank() == 1:
+            #     import ipdb; ipdb.set_trace()
+            # dist.barrier()
 
             return MultipackBatchSampler(
                 sampler,
@@ -426,7 +439,14 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, Trainer):
             )
         if self.args.curriculum_sampling:
             return SequentialSampler(self.train_dataset)
-        return super()._get_train_sampler()
+
+        sampler = super()._get_train_sampler()
+        if self.args.sequence_parallel_size > 1:
+            generator = torch.Generator()
+            generator.manual_seed(self.args.getattr("seed", 0))
+            sampler.generator = generator
+
+        return sampler
 
     def _get_eval_sampler(
         self, eval_dataset: Dataset
@@ -477,6 +497,12 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, Trainer):
                 dataloader_params["sampler"] = sampler
                 dataloader_params["drop_last"] = self.args.dataloader_drop_last
             dataloader_params["worker_init_fn"] = seed_worker
+
+            if dist.get_rank() == 0:
+                import ipdb
+
+                ipdb.set_trace()
+            dist.barrier()
 
             self.accelerator.even_batches = False
             return self.accelerator.prepare_data_loader(
@@ -805,59 +831,35 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, Trainer):
         self,
         model: nn.Module,
         inputs: dict[str, torch.Tensor | Any],
-        num_items_in_batch=None,
+        num_items_in_batch: int = None,
     ) -> torch.Tensor:
         """
         Perform a training step on a batch of inputs.
         """
         if self.args.sequence_parallel_size > 1:
-            # At this point, inputs should already be partitioned by the sequence parallel data collator
-            # We'll just log some information about the partitioned data
+            # At this point, inputs should already be partitioned by the sequence
+            # parallel data collator
             batch_size = inputs["input_ids"].shape[0]
             seq_len = inputs["input_ids"].shape[1]
 
             # Get rank and SP information
             sp_group = get_ring_attn_group()
-            rank = dist.get_rank()
-            sp_rank = dist.get_rank(group=sp_group) if sp_group else rank
             world_size = (
                 dist.get_world_size(group=sp_group)
                 if sp_group
                 else dist.get_world_size()
             )
 
-            # Sample tokens from our slice to verify partitioning
-            sample_start = (
-                inputs["input_ids"][0, :5].tolist()
-                if seq_len >= 5
-                else inputs["input_ids"][0, :].tolist()
-            )
-            sample_end = (
-                inputs["input_ids"][0, -5:].tolist()
-                if seq_len >= 5
-                else inputs["input_ids"][0, :].tolist()
-            )
-
-            LOG.info(
-                f"GPU {rank} (SP rank {sp_rank}) | Step {self.state.global_step} | "
-                f"Slice shape: batch_size={batch_size}, seq_len={seq_len} | "
-                f"Sample start: {sample_start}, end: {sample_end}"
-            )
-
             # Calculate the full sequence length across all GPUs in this SP group
-            full_seq_len = seq_len * world_size
+            total_seq_len = seq_len * world_size
 
             # Pass the partitioned sequence information to ring flash attention
-            self._update_ring_flash_attn_params([seq_len] * batch_size, full_seq_len)
+            self._update_ring_flash_attn_params(
+                packed_seq_lens=[seq_len] * batch_size, total_seq_len=total_seq_len
+            )
 
         # Get the loss from the parent implementation
         loss = super().training_step(model, inputs, num_items_in_batch)
-
-        if self.args.sequence_parallel_size > 1:
-            rank = dist.get_rank()
-            LOG.info(
-                f"GPU {rank} | Step {self.state.global_step} | Loss: {loss.item()}"
-            )
 
         return loss
 

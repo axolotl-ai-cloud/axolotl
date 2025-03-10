@@ -873,10 +873,13 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         collator: Type[
             Union[
                 V2BatchSamplerDataCollatorForSeq2Seq,
+                V2SequenceParallelPackedDataCollator,
+                SequenceParallelPackedDataCollator,
                 BatchSamplerDataCollatorForSeq2Seq,
                 DataCollatorForSeq2Seq,
                 DataCollatorWithFlattening,
                 RewardDataCollatorWithPadding,
+                SequenceParallelDataCollator,
             ]
         ]
         collator_args = [self.tokenizer]
