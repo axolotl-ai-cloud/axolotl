@@ -546,9 +546,9 @@ SimPO uses [CPOTrainer](https://huggingface.co/docs/trl/main/en/cpo_trainer) but
 
 ```yaml
 rl: simpo
-rl_beta: 2.5  # default is 0.1 in CPOTrainer
-cpo_alpha: 0.05  # default is 1.0 in CPOTrainer
-simpo_gamma: 0.1  # default is 0.5 in CPOTrainer
+rl_beta: 0.1  # default in CPOTrainer
+cpo_alpha: 1.0  # default in CPOTrainer
+simpo_gamma: 0.5  # default in CPOTrainer
 ```
 
 This method uses the same dataset format as [DPO](#dpo).
