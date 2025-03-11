@@ -32,8 +32,8 @@ website:
           contents:
             - docs/getting-started.qmd
             - docs/installation.qmd
-            - docs/cli.qmd
             - docs/inference.qmd
+            - docs/cli.qmd
 
         - section: "Dataset Formats"
           contents: docs/dataset-formats/*
