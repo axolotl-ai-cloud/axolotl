@@ -82,10 +82,7 @@ from axolotl.utils.collators import (
     BatchSamplerDataCollatorForSeq2Seq,
     DataCollatorForSeq2Seq,
     MambaDataCollator,
-    SequenceParallelDataCollator,
-    SequenceParallelPackedDataCollator,
     V2BatchSamplerDataCollatorForSeq2Seq,
-    V2SequenceParallelPackedDataCollator,
 )
 from axolotl.utils.collators.mm_chat import MultiModalChatDataCollator
 from axolotl.utils.config.models.input.v0_4_1 import CustomSupportedOptimizers
@@ -873,13 +870,10 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         collator: Type[
             Union[
                 V2BatchSamplerDataCollatorForSeq2Seq,
-                V2SequenceParallelPackedDataCollator,
-                SequenceParallelPackedDataCollator,
                 BatchSamplerDataCollatorForSeq2Seq,
                 DataCollatorForSeq2Seq,
                 DataCollatorWithFlattening,
                 RewardDataCollatorWithPadding,
-                SequenceParallelDataCollator,
             ]
         ]
         collator_args = [self.tokenizer]
@@ -892,15 +886,9 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 self.cfg.model_config_type in ["llama"]
                 and self.cfg.flash_attention is not True
             ):
-                if self.cfg.sequence_parallel_size > 1:
-                    collator = V2SequenceParallelPackedDataCollator
-                else:
-                    collator = V2BatchSamplerDataCollatorForSeq2Seq
+                collator = V2BatchSamplerDataCollatorForSeq2Seq
             else:
-                if self.cfg.sequence_parallel_size > 1:
-                    collator = SequenceParallelPackedDataCollator
-                else:
-                    collator = BatchSamplerDataCollatorForSeq2Seq
+                collator = BatchSamplerDataCollatorForSeq2Seq
         else:
             if self.cfg.processor_type and self.processor:
                 collator = MultiModalChatDataCollator
@@ -922,12 +910,10 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 else:
                     collator = DataCollatorForKD
             else:
-                if self.cfg.sequence_parallel_size > 1:
-                    collator = SequenceParallelDataCollator
-                else:
-                    collator = DataCollatorForSeq2Seq
+                collator = DataCollatorForSeq2Seq
 
         kwargs["return_tensors"] = "pt"
+        kwargs["sequence_parallel_size"] = training_args.sequence_parallel_size
 
         return collator(
             *collator_args,
