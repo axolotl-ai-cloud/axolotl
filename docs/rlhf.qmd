@@ -298,7 +298,7 @@ The input format is a simple JSON input with customizable fields based on the ab
 
 ### IPO
 
-As IPO is just DPO with a different loss function, all supported options for DPO works here.
+As IPO is just DPO with a different loss function, all supported dataset formats for [DPO](#dpo) works.
 
 ```yaml
 rl: ipo
@@ -539,6 +539,19 @@ datasets:
 To see other examples of custom reward functions, please see [TRL GRPO Docs](https://github.com/huggingface/trl/blob/main/docs/source/grpo_trainer.md#using-a-custom-reward-function).
 
 To see description of the configs, please see [TRLConfig](https://github.com/axolotl-ai-cloud/axolotl/blob/main/src/axolotl/utils/config/models/input/v0_4_1/trl.py).
+
+### SimPO
+
+SimPO uses [CPOTrainer](https://huggingface.co/docs/trl/main/en/cpo_trainer) but with alternative loss function.
+
+```yaml
+rl: simpo
+rl_beta: 2.5  # default is 0.1 in CPOTrainer
+cpo_alpha: 0.05  # default is 1.0 in CPOTrainer
+simpo_gamma: 0.1  # default is 0.5 in CPOTrainer
+```
+
+This method uses the same dataset format as [DPO](#dpo).
 
 ### Using local dataset files
 
