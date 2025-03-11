@@ -782,12 +782,14 @@ class TestMultiGPULlama:
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
-                "optimizer": "adamw_8bit",
+                "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
                 "sample_packing": True,
                 "bf16": True,
                 "save_safetensors": True,
+                "deepspeed": str(AXOLOTL_ROOT / "deepspeed_configs/zero3_bf16.json"),
+                "use_tensorboard": True,
             }
         )
 
