@@ -30,6 +30,8 @@ tokenizer_legacy:
 # Resize the model embeddings when new tokens are added to multiples of 32
 # This is reported to improve training speed on some models
 resize_token_embeddings_to_32x:
+# Optional[bool] Whether to shrink the embeddings to len(tokenizer). By default, we won't shrink.
+shrink_embeddings:
 
 # (Internal use only)
 # Used to identify which the model is based on
@@ -232,7 +234,7 @@ default_system_message: You are a helpful assistant. Please give a long and deta
 # subsequent training attempts load faster, relative path
 dataset_prepared_path: data/last_run_prepared
 # Push prepared dataset to hub
-push_dataset_to_hub: # repo path
+push_dataset_to_hub: # Optional[str] repo_org/repo_name
 # The maximum number of processes to use while preprocessing your input dataset. This defaults to `os.cpu_count()`
 # if not set.
 dataset_processes: # defaults to os.cpu_count() if not set
