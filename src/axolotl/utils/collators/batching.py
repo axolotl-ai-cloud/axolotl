@@ -218,7 +218,9 @@ class DataCollatorForSeq2Seq:
                         f"Non-padding tokens: {non_pad_tokens_total}"
                     )
                     logger.info(f"GPU {self.rank} token IDs: {batch['input_ids']}")
-                    logger.info(f"GPU {self.rank} start_ids:end_idx: {start_idx}:{end_idx}")
+                    logger.info(
+                        f"GPU {self.rank} start_ids:end_idx: {start_idx}:{end_idx}"
+                    )
 
                 batch[key] = batch[key][:, start_idx:end_idx]
 
