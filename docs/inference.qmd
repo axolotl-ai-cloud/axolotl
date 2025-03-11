@@ -13,6 +13,10 @@ This guide covers how to use your trained models for inference, including model 
 
 ## Quick Start {#sec-quickstart}
 
+::: {.callout-tip}
+Use the same config used for training on inference/merging.
+:::
+
 ### Basic Inference {#sec-basic}
 
 ::: {.panel-tabset}
