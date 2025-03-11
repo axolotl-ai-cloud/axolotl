@@ -9,6 +9,7 @@ from collections import defaultdict
 from functools import wraps
 from typing import Any, Dict, Literal, Optional
 
+import datasets
 import torch
 import torch.distributed as dist
 import torch.nn.functional as F
@@ -20,7 +21,7 @@ from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import BatchSampler, DataLoader, RandomSampler, SequentialSampler
 from transformers import Trainer
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, seed_worker
-from transformers.utils import is_sagemaker_mp_enabled
+from transformers.utils import is_datasets_available, is_sagemaker_mp_enabled
 from trl import CPOTrainer, KTOTrainer, ORPOTrainer, PRMTrainer, RewardTrainer
 from trl.trainer.utils import pad_to_length
 from typing_extensions import override
@@ -415,17 +416,10 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, Trainer):
                 generator = None
                 if self.args.sequence_parallel_size > 1:
                     generator = torch.Generator()
-                    generator.manual_seed(self.args.getattr("seed", 0))
-
-                sampler = RandomSampler(self.train_dataset)
-
-            # if dist.get_rank() == 0:
-            #     import ipdb; ipdb.set_trace()
-            # dist.barrier()
-
-            # if dist.get_rank() == 1:
-            #     import ipdb; ipdb.set_trace()
-            # dist.barrier()
+                    generator.manual_seed(self.args.seed)
+                sampler = RandomSampler(
+                    self.train_dataset, generator=generator
+                )
 
             return MultipackBatchSampler(
                 sampler,
@@ -443,7 +437,7 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, Trainer):
         sampler = super()._get_train_sampler()
         if self.args.sequence_parallel_size > 1:
             generator = torch.Generator()
-            generator.manual_seed(self.args.getattr("seed", 0))
+            generator.manual_seed(self.args.seed)
             sampler.generator = generator
 
         return sampler
@@ -473,17 +467,20 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, Trainer):
         return super()._get_eval_sampler(eval_dataset)
 
     def get_train_dataloader(self) -> DataLoader:
+        train_dataset = self.train_dataset
+        data_collator = self.data_collator
+
+        dataloader_params = {
+            "batch_size": self._train_batch_size,
+            "collate_fn": data_collator,
+            "num_workers": self.args.dataloader_num_workers,
+            "pin_memory": self.args.dataloader_pin_memory,
+            "persistent_workers": self.args.dataloader_persistent_workers,
+        }
+
         if self.args.sample_packing and not self.args.pretraining:
-            train_dataset = self.train_dataset
             if "length" in train_dataset.features.keys():
                 train_dataset = train_dataset.remove_columns(["length"])
-            data_collator = self.data_collator
-            dataloader_params = {
-                "batch_size": self._train_batch_size,
-                "collate_fn": data_collator,
-                "num_workers": self.args.dataloader_num_workers,
-                "pin_memory": self.args.dataloader_pin_memory,
-            }
             if self.args.dataloader_prefetch_factor:
                 dataloader_params["prefetch_factor"] = (
                     self.args.dataloader_prefetch_factor
@@ -498,17 +495,31 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, Trainer):
                 dataloader_params["drop_last"] = self.args.dataloader_drop_last
             dataloader_params["worker_init_fn"] = seed_worker
 
-            if dist.get_rank() == 0:
-                import ipdb
-
-                ipdb.set_trace()
-            dist.barrier()
-
             self.accelerator.even_batches = False
-            return self.accelerator.prepare_data_loader(
-                DataLoader(train_dataset, **dataloader_params)
-            )
-        return super().get_train_dataloader()
+            if self.args.sequence_parallel_size > 1:
+                return DataLoader(train_dataset, **dataloader_params)
+            else:
+                return self.accelerator.prepare_data_loader(
+                    DataLoader(train_dataset, **dataloader_params)
+                )
+        else:        
+            if is_datasets_available() and isinstance(train_dataset, datasets.Dataset):
+                train_dataset = self._remove_unused_columns(train_dataset, description="training")
+            else:
+                data_collator = self._get_collator_with_removed_columns(data_collator, description="training")
+
+            if not isinstance(train_dataset, torch.utils.data.IterableDataset):
+                dataloader_params["sampler"] = self._get_train_sampler()
+                dataloader_params["drop_last"] = self.args.dataloader_drop_last
+                dataloader_params["worker_init_fn"] = seed_worker
+                dataloader_params["prefetch_factor"] = self.args.dataloader_prefetch_factor
+
+            if self.args.sequence_parallel_size > 1:
+                return DataLoader(train_dataset, **dataloader_params)
+            else:
+                return self.accelerator.prepare(
+                    DataLoader(train_dataset, **dataloader_params)
+                )
 
     def get_eval_dataloader(self, eval_dataset: Optional[Dataset] = None) -> DataLoader:
         if self.args.sample_packing and self.args.eval_sample_packing is False:
