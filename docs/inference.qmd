@@ -1,5 +1,5 @@
 ---
-title: "Inference"
+title: "Inference and Merging"
 format:
   html:
     toc: true
@@ -9,7 +9,7 @@ execute:
   enabled: false
 ---
 
-This guide covers how to use your trained models for inference, including model loading, interactive testing, and common troubleshooting steps.
+This guide covers how to use your trained models for inference, including model loading, interactive testing, merging adapters, and common troubleshooting steps.
 
 ## Quick Start {#sec-quickstart}
 
