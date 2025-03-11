@@ -207,10 +207,46 @@ test_datasets:
     data_files:
       - /workspace/data/eval.jsonl
 
-# use RL training: 'dpo', 'ipo', 'kto'
+# use RL training: 'dpo', 'ipo', 'kto', 'simpo', 'orpo', 'grpo'
 rl:
-# whether to perform weighting if doing DPO training. Boolean.
-dpo_use_weighting:
+rl_beta:  # Optional[float]. The beta parameter for the RL training.
+
+# dpo
+dpo_use_weighting:  # Optional[bool]. Whether to perform weighting.
+rpo_alpha: # Optional[float]. Weighting of NLL term in loss from RPO paper.
+
+# orpo
+orpo_alpha: 0.1  # Parameter controlling the relative ratio loss weight in the ORPO loss. Passed to `beta` in `ORPOConfig` due to trl mapping.
+
+# kto
+kto_desirable_weight: # Optional[float]. Factor for desirable loss term in KTO loss.
+kto_undesirable_weight: # Optional[float]. Factor for undesirable loss term in KTO loss.
+
+# simpo
+cpo_alpha: 1.0  # Weight of the BC regularizer
+simpo_gamma: 0.5  # Target reward margin for the SimPO loss
+
+# grpo
+trl:
+  use_vllm: # Optional[bool]. Whether to use VLLM for RL training.
+  vllm_device: # Optional[str]. Device to use for VLLM.
+  vllm_gpu_memory_utilization: # Optional[float]. GPU memory utilization for VLLM.
+  vllm_max_model_len: # Optional[int]. Maximum length of the model for VLLM.
+  vllm_dtype: # Optional[str]. Data type for VLLM.
+
+  beta: # Optional[float]. Beta parameter for the RL training. Same as `rl_beta`. Use
+  max_completion_length: # Optional[int]. Maximum length of the completion for RL training.
+
+  reward_funcs: # Optional[list[str]]. List of reward functions to load. Paths must be importable from current dir.
+  reward_weights: # Optional[list[float]]. List of reward weights for the reward functions.
+
+  num_generations: # Optional[int]. Number of generations to sample.
+  log_completions: # Optional[bool]. Whether to log completions.
+
+  sync_ref_model: # Optional[bool]. Whether to sync the reference model.
+  ref_model_mixup_alpha: # Optional[float]. Mixup alpha for the reference model.
+  ref_model_sync_steps: # Optional[int]. Sync steps for the reference model.
+
 
 # reward modelling: `True` or `False`
 reward_model:

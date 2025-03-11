@@ -344,8 +344,9 @@ ORPO supports the following types with the following dataset format:
 
 ```yaml
 rl: kto
-rl_beta: 0.5
-kto_desirable_weight: 0.2
+rl_beta: 0.1  # default
+kto_desirable_weight: 1.0  # default
+kto_undesirable_weight: 1.0  # default
 
 remove_unused_columns: false
 
