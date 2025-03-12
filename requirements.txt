@@ -13,6 +13,7 @@ liger-kernel==0.5.3
 packaging==23.2
 
 peft==0.15.0
+transformers==4.49.0
 transformers @ git+https://github.com/huggingface/transformers.git@main
 tokenizers>=0.21.1
 accelerate==1.5.2
