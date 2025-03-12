@@ -22,11 +22,11 @@ SUPPORTED_MULTIPACK_MODEL_TYPES = [
     "phi3",
     "gemma",
     "gemma2",
+    "gemma3_text",
     "gemmoe",
     "starcoder2",
     "deepseek_v2",
     "deepseek_v3",
-    "gemma3_text",
 ]
 
 
