@@ -108,7 +108,7 @@ We recommend using WSL2 (Windows Subsystem for Linux) or Docker.
 2. Install PyTorch: https://pytorch.org/get-started/locally/
 3. Install Axolotl:
    ```{.bash}
-   pip3 install packaging
+   pip3 install -U packaging setuptools wheel ninja
    pip3 install --no-build-isolation -e '.[flash-attn,deepspeed]'
    ```
 4. (Optional) Login to Hugging Face:
