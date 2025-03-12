@@ -261,6 +261,12 @@ class DataCollatorForSeq2Seq:
                 #         # Replace invalid labels with -100 (ignore index)
                 #         batch["labels"][invalid_mask] = -100
 
+                if key == "attention_mask":
+                    logger.info(
+                        f"GPU {self.rank}/{self.world_size}, SP Rank {self.local_rank}/{self.local_world_size}: "
+                        f"Attention mask: {batch['attention_mask']}, "
+                    )
+
         # Handle position_ids if present
         if "position_ids" in batch:
             pos_ids = batch["position_ids"]
@@ -280,6 +286,11 @@ class DataCollatorForSeq2Seq:
                 batch["position_ids"] = adjust_position_ids_for_slice(
                     batch["position_ids"], start_idx
                 )
+
+            logger.info(
+                f"GPU {self.rank}/{self.world_size}, SP Rank {self.local_rank}/{self.local_world_size}: "
+                f"Position IDs: {batch['position_ids']}, "
+            )
 
         # if dist.get_rank() == 0:
         #     import ipdb; ipdb.set_trace()
