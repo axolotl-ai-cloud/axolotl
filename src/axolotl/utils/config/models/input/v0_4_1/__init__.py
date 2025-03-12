@@ -962,6 +962,22 @@ class AxolotlInputConfig(
 
     @model_validator(mode="before")
     @classmethod
+    def check_attention_fields(cls, data):
+        fields = (
+            "xformers_attention",
+            "sdp_attention",
+            "s2_attention",
+            "flash_attention",
+            "flex_attention",
+        )
+        non_empty_count = sum(1 for field in fields if data.get(field))
+
+        if non_empty_count != 1:
+            raise ValueError(f"Only one of {', '.join(fields)} must be set")
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def check_batch_size_fields(cls, data):
         fields = ("micro_batch_size", "gradient_accumulation_steps", "batch_size")
         non_empty_count = sum(1 for field in fields if data.get(field))
