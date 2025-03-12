@@ -972,7 +972,7 @@ class AxolotlInputConfig(
         )
         non_empty_count = sum(1 for field in fields if data.get(field))
 
-        if non_empty_count != 1:
+        if non_empty_count > 1:
             raise ValueError(f"Only one of {', '.join(fields)} must be set")
         return data
 
