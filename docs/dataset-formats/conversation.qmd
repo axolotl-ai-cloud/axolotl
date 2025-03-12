@@ -6,7 +6,9 @@ order: 3
 
 ## sharegpt
 
-IMPORTANT: ShareGPT is deprecated!. Please see [chat_template](#chat_template) section below.
+::: {.callout-important}
+ShareGPT is deprecated!. Please see [chat_template](#chat_template) section below.
+:::
 
 ## pygmalion
 
@@ -72,6 +74,10 @@ datasets:
     train_on_eos:
 ```
 
+::: {.callout-tip}
+If you receive an error like "`chat_template` choice is `tokenizer_default` but tokenizer's `chat_template` is null.", it means the tokenizer does not have a default `chat_template`. Follow the examples below instead to set a custom `chat_template`.
+:::
+
 2. Using the `gemma` chat template to override the tokenizer_config.json's chat template on OpenAI messages format, training on all assistant messages.
 
 ```yaml
@@ -101,6 +107,10 @@ datasets:
   - path: ...
     type: chat_template
 ```
+
+::: {.callout-important}
+Please make sure that your `tokenizer.eos_token` is same as EOS/EOT token in template. Otherwise, set `eos_token` under `special_tokens`.
+:::
 
 5. (Advanced) Using fine-grained control over tokens and turns to train in a conversation
 
@@ -149,4 +159,6 @@ datasets:
     message_field_training_detail: train_detail
 ```
 
-Tip: It is not necessary to use both `message_field_training` and `message_field_training_detail` at a time.
+::: {.callout-tip}
+It is not necessary to set both `message_field_training` and `message_field_training_detail` at once.
+:::

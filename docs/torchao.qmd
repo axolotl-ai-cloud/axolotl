@@ -3,6 +3,12 @@ title: "PyTorch ao"
 description: "Custom data types and layouts for training and inference"
 ---
 
+To use experimental optimizers (`AdamWFp8`, `AdamW4bit`, `AdamW8bit`) from Pytorch Ao, please install the package as shown below.
+
+::: {.callout-tip}
+Some experimental optimizers are already present in regular Pytorch, so please re-check if you actually need this package!
+:::
+
 ### Installation
 
 Stable Release from the PyTorch index

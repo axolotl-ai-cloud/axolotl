@@ -13,7 +13,7 @@ As there are a lot of available options in Axolotl, this guide aims to provide a
 
 Axolotl supports 3 kinds of training methods: pre-training, supervised fine-tuning, and preference-based post-training (e.g. DPO, ORPO, PRMs). Each method has their own dataset format which are described below.
 
-## [Pre-training](pretraining.qmd)
+## Pre-training
 
 When aiming to train on large corpora of text datasets, pre-training is your go-to choice. Due to the size of these datasets, downloading the entire-datasets before beginning training would be prohibitively time-consuming. Axolotl supports [streaming](https://huggingface.co/docs/datasets/en/stream) to only load batches into memory at a time.
 
@@ -96,6 +96,10 @@ One step is equal to `sequence_len * micro_batch_size * gradient_accumulation_st
 
 It is recommended to leave this off if downloading from Hugging Face hub as it would download the entire dataset which can be very large.
 
+### Reference
+
+Please see docs [here](pretraining.qmd).
+
 ## Supervised fine-tuning (SFT)
 
 Supervised fine-tuning is the process of training models to respond to an instruction or chat input.
@@ -120,11 +124,12 @@ If you went through the flow chart and did not find one that matches, it is reco
 You can mix and match within each approach or across approaches to train a model on a variety of datasets.
 :::
 
-### [Pre-Tokenized Dataset](tokenized.qmd)
+### Pre-Tokenized Dataset
 
 We suggest this approach when you want to bring your own tokenized dataset.
 
 Axolotl expects the dataset to have three keys:
+
 - `input_ids`: from tokenizing formatted prompt
 - `attention_mask`: for masking padding. If you don't add padding, it would be equal to `len(input_ids) * [1]`
 - `labels`: this is the same as `input_ids`, however, if you want to mask certain tokens, you would set those indices to `-100`.
@@ -145,7 +150,9 @@ datasets:
 `type: ` is empty!
 :::
 
-### [Template Free Dataset](template_free.qmd)
+Reference: [Pre-Tokenized Dataset Documentation](tokenized.qmd).
+
+### Template Free Dataset
 
 We reccomend this approach when you want granular control over the prompt formatting, special tokens, and masking, whilst letting Axolotl handle the tokenization. This is very useful if your dataset has unique prompts that differ across samples and where one single general template wouldn't suffice.
 
@@ -182,7 +189,9 @@ datasets:
     type: input_output
 ```
 
-### [Conversation Dataset](conversation.qmd)
+Reference: [Template Free Documentation](template_free.qmd).
+
+### Conversation Dataset
 
 `conversation` messages are a list of messages which usually contain a `role` and `content` key.
 
@@ -258,7 +267,7 @@ Newer conversation datasets usually follow the OpenAI format.
 
 Axolotl supports both as well as allowing customization of any kind of key.
 
-#### [Chat Template Usage](conversation.qmd#chat_template)
+#### Chat Template Usage
 
 To properly use this method, it is important to identify three things:
 
@@ -340,9 +349,19 @@ datasets:
       narrator: ["narrator"]
 ```
 
-#### Applying `chat_template`
+::: {.callout-tip}
+As chat_templates may use hardcoded EOS/EOT tokens that are different from the tokenizer's EOS, it is highly recommended to set them. For example, `ChatML` uses `<|im_end|>` to end turns.
 
-Once all the above steps are completed, you could combine all these configs together to form a bespoke configuration for your  custom dataset. The final step would be to correctly set the EOS token in your config:
+```yaml
+special_tokens:
+  eos_token: <|im_end|>
+```
+
+:::
+
+##### Applying `chat_template`
+
+Once all the above steps are completed, you could combine all these configs together to form a bespoke configuration for your custom dataset.
 
 ```yaml
 datasets:
@@ -391,7 +410,17 @@ If this config were to be applied to the sample dataset above, the output would 
 
 The first number refers to the label, the second refers to the `token_id`. For example, `-100` labels appear on non-assistant portions, meaning that they are masked during. For assistant portions, the label is the same as the `token_id`.
 
-### [Instruction Dataset](inst_tune.qmd)
+::: {.callout-note}
+
+If during `preprocess`, there are a lot of warnings of `Could not find content __ boundary`, please check the FAQ section for [chat_templates](../faq.qmd#chat-templates).
+
+:::
+
+#### Reference
+
+Please see docs [here](conversation.qmd).
+
+### Instruction Dataset
 
 Instruction datasets are used to train instruction-following models and comprise a prompt, containing an instruction, and a single response. In contrast to chat datasets which may be multi-turn, instruct datasets are typically single-turn.
 
@@ -423,6 +452,9 @@ datasets:
 
 Axolotl supports many kinds of instruction dataset. All of them can be found here (https://axolotl-ai-cloud.github.io/axolotl/docs/dataset-formats/inst_tune.html) with their respective type and sample row format.
 
+
+Reference: [Instruction Dataset Documentation](inst_tune.qmd).
+
 #### Custom Instruct Prompt Format
 
 Due to the myriad possibilities of instruction formats, Axolotl allows customizing your own instruction format without having to dive into the code directly.
@@ -453,6 +485,8 @@ datasets:
 
 The config sets that the `field_instruction` is actually named `input`, and the `field_input` is empty as we don't have an `input` in this sample. Generally, `instruction` can be thought as the question to the model, and `input` as the additional information with `output` being the response. It is not necessary to have an `input` nor `system`. In the end, the most important part is to understand what format you want it to look like and how you can customize this to your use case.
 
+Reference: [Custom Instruct Prompt Format Documentation](inst_tune.qmd#how-to-add-custom-prompt-format).
+
 ## Reinforcement Learning from Human Feedback (RLHF)
 
-As there are multiple RLHF methods with their own dataset requirements. Please see [RLHF datasets](../rlhf.qmd) documentation for more detail.
+As there are multiple RLHF methods with their own dataset requirements. Please see [RLHF documentation](../rlhf.qmd) for more detail.

@@ -17,7 +17,7 @@ Module for handling Spectrum input arguments.
 """
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 
 class SpectrumArgs(BaseModel):
@@ -27,3 +27,20 @@ class SpectrumArgs(BaseModel):
 
     spectrum_top_fraction: Optional[float] = 0.5
     spectrum_model_name: Optional[str] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_fsdp_use_orig_params(cls, data):
+        if (
+            data.get("fsdp")
+            and data.get("fsdp_config")
+            and not data["fsdp_config"].get("use_orig_params")
+            and data.get("plugins")
+            and any("SpectrumPlugin" in plugin for plugin in data["plugins"])
+        ):
+            # would otherwise raise
+            # ValueError: Must flatten tensors with uniform `requires_grad` when `use_orig_params=False`
+            raise ValueError(
+                "FSDP + SpectrumPlugin cannot be used together when `use_orig_params=False` is set"
+            )
+        return data

@@ -28,6 +28,17 @@ val_set_size: 0.1
 eval_steps: 100
 ```
 
+Bradley-Terry chat templates expect single-turn conversations in the following format:
+
+```json
+{
+    "system": "...", // optional
+    "input": "...",
+    "chosen": "...",
+    "rejected": "..."
+}
+```
+
 ### Process Reward Models (PRM)
 
 Process reward models are trained using data which contains preference annotations for each step in a series of interactions. Typically, PRMs are trained to provide reward signals over each step of a reasoning trace and are used for downstream reinforcement learning.
@@ -45,3 +56,5 @@ datasets:
 val_set_size: 0.1
 eval_steps: 100
 ```
+
+Please see [stepwise_supervised](dataset-formats/stepwise_supervised.qmd) for more details on the dataset format.

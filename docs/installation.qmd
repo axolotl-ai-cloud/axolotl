@@ -1,11 +1,10 @@
 ---
-title: "Installation Guide"
+title: "Installation"
 format:
   html:
     toc: true
     toc-depth: 3
     number-sections: true
-    code-tools: true
 execute:
   enabled: false
 ---
@@ -66,6 +65,8 @@ docker run --privileged --gpus '"all"' --shm-size 10g --rm -it \
   axolotlai/axolotl:main-latest
 ```
 :::
+
+Please refer to the [Docker documentation](docker.qmd) for more information on the different Docker images that are available.
 
 ## Cloud Environments {#sec-cloud}
 

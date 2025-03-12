@@ -4,7 +4,7 @@ from axolotl.utils.gradient_checkpointing.unsloth import (
 )
 
 
-def hf_grad_checkpoint_unsloth_wrapper(
+def hf_grad_checkpoint_offload_wrapper(
     decoder_layer, *args, use_reentrant=None
 ):  # pylint: disable=unused-argument
     return Unsloth_Offloaded_Gradient_Checkpointer.apply(

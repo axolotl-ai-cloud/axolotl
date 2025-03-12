@@ -8,6 +8,12 @@ description: "Hyper-optimized QLoRA finetuning for single GPUs"
 Unsloth provides hand-written optimized kernels for LLM finetuning that slightly improve speed and VRAM over
 standard industry baselines.
 
+::: {.callout-important}
+Due to breaking changes in transformers `v4.48.0`, users will need to downgrade to `<=v4.47.1` to use this patch.
+
+This will later be deprecated in favor of [LoRA Optimizations](lora_optims.qmd).
+:::
+
 
 ### Installation
 
@@ -17,7 +23,7 @@ The following will install the correct unsloth and extras from source.
 python scripts/unsloth_install.py | sh
 ```
 
-### Using unsloth w Axolotl
+### Usage
 
 Axolotl exposes a few configuration options to try out unsloth and get most of the performance gains.
 

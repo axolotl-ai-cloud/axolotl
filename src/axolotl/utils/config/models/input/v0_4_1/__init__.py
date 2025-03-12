@@ -64,6 +64,17 @@ class ChatTemplate(str, Enum):
     metharme = "metharme"  # pylint: disable=invalid-name
 
 
+class CustomSupportedOptimizers(str, Enum):
+    """Custom supported optimizers"""
+
+    optimi_adamw = "optimi_adamw"  # pylint: disable=invalid-name
+    ao_adamw_4bit = "ao_adamw_4bit"  # pylint: disable=invalid-name
+    ao_adamw_8bit = "ao_adamw_8bit"  # pylint: disable=invalid-name
+    ao_adamw_fp8 = "ao_adamw_fp8"  # pylint: disable=invalid-name
+    adopt_adamw = "adopt_adamw"  # pylint: disable=invalid-name
+    muon = "muon"  # pylint: disable=invalid-name
+
+
 class DeprecatedParameters(BaseModel):
     """configurations that are deprecated"""
 
@@ -494,17 +505,7 @@ class HyperparametersConfig(BaseModel):
     embedding_lr_scale: Optional[float] = None
     weight_decay: Optional[float] = 0.0
     optimizer: Optional[
-        Union[
-            OptimizerNames,
-            Literal[
-                "lion_pytorch",
-                "optimi_adamw",
-                "ao_adamw_4bit",
-                "ao_adamw_8bit",
-                "ao_adamw_fp8",
-                "adopt_adamw",
-            ],
-        ]
+        Union[OptimizerNames, CustomSupportedOptimizers]
     ] = OptimizerNames.ADAMW_HF
     optim_args: Optional[Union[str, Dict[str, Any]]] = Field(
         default=None,
@@ -518,7 +519,7 @@ class HyperparametersConfig(BaseModel):
     )
     torchdistx_path: Optional[str] = None
     lr_scheduler: Optional[
-        Union[SchedulerType, Literal["one_cycle"]]
+        Union[SchedulerType, Literal["one_cycle"], Literal["rex"]]
     ] = SchedulerType.COSINE
     lr_scheduler_kwargs: Optional[Dict[str, Any]] = None
     lr_quadratic_warmup: Optional[bool] = None
@@ -727,7 +728,7 @@ class AxolotlInputConfig(
         default=None,
         json_schema_extra={"description": "streaming dataset to use for pretraining"},
     )
-    dataset_processes: Optional[int] = Field(default=os.cpu_count())
+    dataset_processes: Optional[int] = Field(default=min(32, os.cpu_count()))  # type: ignore[type-var]
     dataset_exact_deduplication: Optional[bool] = None
     dataset_keep_in_memory: Optional[bool] = None
     dataloader_pin_memory: Optional[bool] = None
@@ -778,9 +779,9 @@ class AxolotlInputConfig(
 
     # torch_dtype: Optional[torch.dtype]
 
-    gradient_checkpointing: Optional[Union[Literal["unsloth"], bool]] = Field(
-        default=False
-    )
+    gradient_checkpointing: Optional[
+        Union[Literal["unsloth", "offload"], bool]
+    ] = Field(default=False)
     gradient_checkpointing_kwargs: Optional[Dict[str, Any]] = None
 
     unfrozen_parameters: Optional[List[str]] = None
@@ -855,6 +856,7 @@ class AxolotlInputConfig(
 
     special_tokens: Optional[SpecialTokensConfig] = None
     tokens: Optional[List[str]] = None
+    added_tokens_overrides: Optional[Dict[int, str]] = None
 
     torch_compile: Optional[Union[Literal["auto"], bool]] = None
     torch_compile_backend: Optional[str] = None
@@ -1154,6 +1156,15 @@ class AxolotlInputConfig(
         return self
 
     @model_validator(mode="after")
+    def check_offload_grad_checkpointing(self):
+        if self.gradient_checkpointing and self.gradient_checkpointing == "unsloth":
+            LOG.warning(
+                "`unsloth` is deprecated for gradient_checkpointing, use `offload`"
+            )
+            self.gradient_checkpointing = "offload"
+        return self
+
+    @model_validator(mode="after")
     def check_better_transformers(self):
         if self.flash_optimum is True:
             if self.adapter:
@@ -1176,6 +1187,13 @@ class AxolotlInputConfig(
         ):
             LOG.warning("adamw hyperparameters found, but no adamw optimizer set")
         return self
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_lr_groups(cls, data):
+        if data.get("lr_groups") and data.get("loraplus_lr_ratio"):
+            raise ValueError("lr_groups and loraplus_lr_ratio cannot be used together.")
+        return data
 
     @model_validator(mode="before")
     @classmethod

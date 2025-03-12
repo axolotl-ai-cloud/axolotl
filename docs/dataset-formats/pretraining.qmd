@@ -27,7 +27,6 @@ pretraining_dataset:
     type: pretrain
     trust_remote_code:
     skip: # number of rows of data to skip over from the beginning
-...
 ```
 
 :::
