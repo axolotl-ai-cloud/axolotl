@@ -1,8 +1,8 @@
-"""Module for customized trainers."""
+"""Module for customized trainers"""
+# pylint: disable=too-many-lines
 
 from __future__ import annotations
 
-# pylint: disable=too-many-lines
 import logging
 import os
 from collections import defaultdict
@@ -361,9 +361,7 @@ class OptimizerMixin(Trainer):
 
 
 class AxolotlTrainer(SchedulerMixin, OptimizerMixin, Trainer):
-    """
-    Extend the base Trainer for axolotl helpers
-    """
+    """Extend the base Trainer for axolotl helpers"""
 
     args = None  # type: "AxolotlTrainingArguments"  # type: ignore[name-defined]
     tag_names = ["axolotl"]
@@ -380,7 +378,9 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, Trainer):
         self.eval_data_collator = eval_data_collator
         self.dataset_tags = dataset_tags
         self._signature_columns = None  # workaround for pylint
+
         super().__init__(*_args, **kwargs)
+
         self.train_data_collator = self.data_collator
         self._stored_metrics = defaultdict(lambda: defaultdict(list))
         if self.args.orpo_alpha:
@@ -425,6 +425,7 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, Trainer):
                 bin_size=self.args.sample_packing_bin_size,
                 drop_last=True,
             )
+
         if self.args.curriculum_sampling:
             return SequentialSampler(self.train_dataset)
 
@@ -455,9 +456,28 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, Trainer):
         return super()._get_eval_sampler(eval_dataset)
 
     def get_train_dataloader(self) -> DataLoader:
+        """Get dataloader for training"""
         train_dataset = self.train_dataset
         data_collator = self.data_collator
 
+        # Handle dataset preprocessing
+        if is_datasets_available() and isinstance(train_dataset, datasets.Dataset):
+            if (
+                self.args.sample_packing
+                and not self.args.pretraining
+                and "length" in train_dataset.features
+            ):
+                train_dataset = train_dataset.remove_columns(["length"])
+            if not (self.args.sample_packing and not self.args.pretraining):
+                train_dataset = self._remove_unused_columns(
+                    train_dataset, description="training"
+                )
+        else:
+            data_collator = self._get_collator_with_removed_columns(
+                data_collator, description="training"
+            )
+
+        # Build common dataloader parameters
         dataloader_params = {
             "batch_size": self._train_batch_size,
             "collate_fn": data_collator,
@@ -466,50 +486,67 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, Trainer):
             "persistent_workers": self.args.dataloader_persistent_workers,
         }
 
-        if self.args.sample_packing and not self.args.pretraining:
-            if "length" in train_dataset.features.keys():
-                train_dataset = train_dataset.remove_columns(["length"])
-            if self.args.dataloader_prefetch_factor:
-                dataloader_params[
-                    "prefetch_factor"
-                ] = self.args.dataloader_prefetch_factor
+        if self.args.dataloader_prefetch_factor:
+            dataloader_params["prefetch_factor"] = self.args.dataloader_prefetch_factor
 
+        # Handle sequence parallelism (takes precedence over other sampling methods)
+        if self.args.sequence_parallel_size > 1:
+            return self._get_sequence_parallel_dataloader(
+                train_dataset, dataloader_params
+            )
+
+        # Handle other sampler cases
+        if not isinstance(train_dataset, torch.utils.data.IterableDataset):
             sampler = self._get_train_sampler()
+
             if isinstance(sampler, BatchSampler):
                 dataloader_params["batch_sampler"] = sampler
-                del dataloader_params["batch_size"]
+                # batch_size and batch_sampler are mutually exclusive
+                if "batch_size" in dataloader_params:
+                    del dataloader_params["batch_size"]
             else:
                 dataloader_params["sampler"] = sampler
                 dataloader_params["drop_last"] = self.args.dataloader_drop_last
+
             dataloader_params["worker_init_fn"] = seed_worker
 
+        # Create and possibly prepare the dataloader
+        dataloader = DataLoader(train_dataset, **dataloader_params)
+
+        # Sample packing with accelerator preparation
+        if self.args.sample_packing and not self.args.pretraining:
             self.accelerator.even_batches = False
-            if self.args.sequence_parallel_size > 1:
-                return DataLoader(train_dataset, **dataloader_params)
+            return self.accelerator.prepare_data_loader(dataloader)
 
-            return self.accelerator.prepare_data_loader(
-                DataLoader(train_dataset, **dataloader_params)
-            )
+        return self.accelerator.prepare(dataloader)
 
-        if is_datasets_available() and isinstance(train_dataset, datasets.Dataset):
-            train_dataset = self._remove_unused_columns(
-                train_dataset, description="training"
-            )
+    def _get_sequence_parallel_dataloader(self, dataset, dataloader_params):
+        """Create a dataloader with sequence-parallel-aware sampling."""
+        # Calculate SP group information
+        num_sp_groups = self.args.world_size // self.args.sequence_parallel_size
+        global_rank = dist.get_rank()
+        sp_group_id = global_rank // self.args.sequence_parallel_size
+
+        # Create SP-group-aware sampler
+        if isinstance(dataset, torch.utils.data.IterableDataset):
+            sampler = None
         else:
-            data_collator = self._get_collator_with_removed_columns(
-                data_collator, description="training"
+            # Use different seeds for different SP groups to ensure they get different samples
+            sampler = torch.utils.data.distributed.DistributedSampler(
+                dataset,
+                num_replicas=num_sp_groups,
+                rank=sp_group_id,
+                seed=self.args.seed,
+                drop_last=self.args.dataloader_drop_last,
             )
 
-        if not isinstance(train_dataset, torch.utils.data.IterableDataset):
-            dataloader_params["sampler"] = self._get_train_sampler()
-            dataloader_params["drop_last"] = self.args.dataloader_drop_last
-            dataloader_params["worker_init_fn"] = seed_worker
-            dataloader_params["prefetch_factor"] = self.args.dataloader_prefetch_factor
-
-        if self.args.sequence_parallel_size > 1:
-            return DataLoader(train_dataset, **dataloader_params)
-
-        return self.accelerator.prepare(DataLoader(train_dataset, **dataloader_params))
+        # Create dataloader without accelerator preparation
+        return DataLoader(
+            dataset,
+            sampler=sampler,
+            worker_init_fn=seed_worker,
+            **dataloader_params,
+        )
 
     def get_eval_dataloader(self, eval_dataset: Optional[Dataset] = None) -> DataLoader:
         if self.args.sample_packing and self.args.eval_sample_packing is False:
@@ -584,6 +621,7 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, Trainer):
         return DataLoader(bench_dataset, **dataloader_params)
         # return self.accelerator.prepare(DataLoader(bench_dataset, **dataloader_params))
 
+    @override
     def compute_loss(
         self, model, inputs, return_outputs=False, num_items_in_batch=None
     ):
@@ -600,6 +638,7 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, Trainer):
                 return_outputs=return_outputs,
                 num_items_in_batch=num_items_in_batch,
             )
+
         return super().compute_loss(
             model,
             inputs,
@@ -843,16 +882,8 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, Trainer):
             batch_size = inputs["input_ids"].shape[0]
             seq_len = inputs["input_ids"].shape[1]
 
-            # Get rank and SP information
-            sp_group = get_ring_attn_group()
-            world_size = (
-                dist.get_world_size(group=sp_group)
-                if sp_group
-                else dist.get_world_size()
-            )
-
             # Calculate the full sequence length across all GPUs in this SP group
-            total_seq_len = seq_len * world_size
+            total_seq_len = seq_len * self.args.sequence_parallel_size
 
             # Pass the partitioned sequence information to ring flash attention
             self._update_ring_flash_attn_params(
