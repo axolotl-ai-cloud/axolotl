@@ -99,9 +99,12 @@ class TestGemma2:
                         "path": "mlabonne/FineTome-100k",
                         "type": "chat_template",
                         "field_messages": "conversations",
-                        "message_field_role": "from",
-                        "message_field_content": "value",
+                        "message_property_mappings": {
+                            "role": "from",
+                            "content": "value",
+                        },
                         "split": "train[:1%]",
+                        "drop_system_message": True,
                     },
                 ],
                 "chat_template": "gemma",  # gemma2's template is same as gemma
