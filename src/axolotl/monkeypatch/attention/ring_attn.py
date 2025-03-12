@@ -60,11 +60,8 @@ def register_ring_attn(sequence_parallel_size: int):
 
         if rank in ring_attn_ranks:
             set_ring_attn_group(group)
-            LOG.info(
-                f"GPU {rank} assigned to sequence parallel group {i} with ranks {ring_attn_ranks}"
-            )
 
-    # Log the full group assignment structure
+    # Log the GPU group assignments
     if rank == 0:
         LOG.info(f"Sequence parallel group assignments: {group_assignments}")
 
