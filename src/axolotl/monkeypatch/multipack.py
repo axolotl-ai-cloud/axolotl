@@ -26,6 +26,7 @@ SUPPORTED_MULTIPACK_MODEL_TYPES = [
     "starcoder2",
     "deepseek_v2",
     "deepseek_v3",
+    "gemma3_text",
 ]
 
 
