@@ -23,6 +23,7 @@ class ChatTemplate(str, Enum):
     mistral_v2v3 = "mistral_v2v3"  # pylint: disable=invalid-name
     mistral_v3_tekken = "mistral_v3_tekken"  # pylint: disable=invalid-name
     gemma = "gemma"  # pylint: disable=invalid-name
+    gemma3_text = "gemma3_text"  # pylint: disable=invalid-name
     cohere = "cohere"  # pylint: disable=invalid-name
     llama3 = "llama3"  # pylint: disable=invalid-name
     llama3_2_vision = "llama3_2_vision"  # pylint: disable=invalid-name
