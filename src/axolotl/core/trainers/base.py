@@ -27,7 +27,6 @@ from trl.trainer.utils import pad_to_length
 from typing_extensions import override
 
 from axolotl.integrations.base import BaseOptimizerFactory
-from axolotl.monkeypatch.attention.ring_attn import get_ring_attn_group
 from axolotl.monkeypatch.relora import ReLoRAScheduler
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 from axolotl.utils.schedulers import (
@@ -385,6 +384,11 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, Trainer):
         self._stored_metrics = defaultdict(lambda: defaultdict(list))
         if self.args.orpo_alpha:
             self.loss_fct = torch.nn.CrossEntropyLoss(reduction="none")
+
+        if self.args.sequence_parallel_degree > 1:
+            from axolotl.monkeypatch.attention.ring_attn import get_ring_attn_group
+
+            self.ring_attn_group = get_ring_attn_group()
 
     def _wrap_model(self, model, training=True, dataloader=None):
         if self.args.torch_compile:
@@ -984,7 +988,7 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, Trainer):
             F.pad(cu_seqlens, (1, 0), value=0), (0, 1), value=total_seq_len
         )
 
-        update_ring_flash_attn_params(cu_seqlens, get_ring_attn_group())
+        update_ring_flash_attn_params(cu_seqlens, self.ring_attn_group)
 
 
 class AxolotlMambaTrainer(AxolotlTrainer):
