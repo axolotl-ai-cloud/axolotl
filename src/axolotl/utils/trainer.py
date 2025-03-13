@@ -346,7 +346,7 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
                     load_from_cache_file=not cfg.is_preprocess,
                     desc="Add position_id column (PoSE)",
                 )
-    elif cfg.sample_packing or cfg.sequence_parallel_size > 1:
+    elif cfg.sample_packing or cfg.sequence_parallel_degree > 1:
         drop_long_kwargs = {}
         if filter_map_kwargs:
             drop_long_kwargs["desc"] = "Add position_id column (Sample Packing)"
@@ -356,7 +356,7 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
             **filter_map_kwargs,
             **drop_long_kwargs,
         )
-        if cfg.eval_sample_packing or cfg.sequence_parallel_size > 1:
+        if cfg.eval_sample_packing or cfg.sequence_parallel_degree > 1:
             if eval_dataset:
                 eval_dataset = eval_dataset.map(
                     add_position_ids,
@@ -443,7 +443,7 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                     - 1
                 )
                 * cfg.num_epochs
-                * cfg.sequence_parallel_size
+                * cfg.sequence_parallel_degree
             )
             LOG.debug(
                 f"total_num_tokens: {cfg.total_num_tokens:_}, total_num_steps: {total_num_steps:_}",
@@ -476,7 +476,7 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
             # on the agreed on value for sample_packing_eff_est
             total_num_steps = int(
                 math.floor(
-                    data_loader_len * cfg.num_epochs * cfg.sequence_parallel_size
+                    data_loader_len * cfg.num_epochs * cfg.sequence_parallel_degree
                 )
             )
 
@@ -502,7 +502,7 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
             math.ceil(
                 len(train_dataset)
                 * cfg.num_epochs
-                * cfg.sequence_parallel_size
+                * cfg.sequence_parallel_degree
                 / cfg.batch_size
             )
         )

@@ -94,7 +94,7 @@ class TestRingAttention:
         mock_new_group.return_value = mock_group
 
         # Call register_ring_attn with size 4
-        register_ring_attn(sequence_parallel_size=4)
+        register_ring_attn(sequence_parallel_degree=4)
 
         # Verify the number of calls without examining the arguments
         assert mock_new_group.call_count == 2
@@ -175,15 +175,15 @@ def test_config_validation_with_valid_inputs(cfg):
     # Import the actual model class with appropriate mocks
     from axolotl.utils.config.models.input.v0_4_1 import AxolotlInputConfig
 
-    # Valid configuration: sequence_parallel_size > 1 and flash_attention is True
+    # Valid configuration: sequence_parallel_degree > 1 and flash_attention is True
     cfg = cfg | {
-        "sequence_parallel_size": 2,
+        "sequence_parallel_degree": 2,
         "flash_attention": True,
     }
 
     # Should validate without errors
     config = AxolotlInputConfig(**cfg)
-    assert config.sequence_parallel_size == 2
+    assert config.sequence_parallel_degree == 2
     assert config.flash_attention is True
 
 
@@ -191,9 +191,9 @@ def test_config_validation_with_invalid_inputs(cfg):
     """Test that invalid sequence parallelism configurations fail validation."""
     from axolotl.utils.config.models.input.v0_4_1 import AxolotlInputConfig
 
-    # Invalid configuration: sequence_parallel_size > 1 but flash_attention is False
+    # Invalid configuration: sequence_parallel_degree > 1 but flash_attention is False
     cfg = cfg | {
-        "sequence_parallel_size": 2,
+        "sequence_parallel_degree": 2,
         "flash_attention": False,
     }
 

@@ -95,7 +95,7 @@ class DataCollatorForSeq2Seq:
             The id to use when padding the labels (-100 will be automatically ignored by PyTorch loss functions).
         return_tensors (`str`):
             The type of Tensor to return. Allowable values are "np", "pt" and "tf".
-        sequence_parallel_size (`int`):
+        sequence_parallel_degree (`int`):
             The degree of sequence parallelism. Default to 1 for no sequence parallelism.
     """
 
@@ -107,10 +107,10 @@ class DataCollatorForSeq2Seq:
     label_pad_token_id: int = -100
     position_pad_token_id: int = 0
     return_tensors: str = "pt"
-    sequence_parallel_size: int = 1
+    sequence_parallel_degree: int = 1
 
     def __post_init__(self):
-        if self.sequence_parallel_size > 1:
+        if self.sequence_parallel_degree > 1:
             # Get information about our position in the SP group
             sp_group = get_ring_attn_group()
             self.rank = dist.get_rank()
@@ -183,7 +183,7 @@ class DataCollatorForSeq2Seq:
             )
             features["decoder_input_ids"] = decoder_input_ids
 
-        if self.sequence_parallel_size > 1:
+        if self.sequence_parallel_degree > 1:
             features = self.apply_sequence_parallelism(features)
 
         return features

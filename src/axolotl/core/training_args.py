@@ -207,7 +207,7 @@ class AxolotlTrainingMixins:
         },
     )
 
-    sequence_parallel_size: Optional[int] = field(
+    sequence_parallel_degree: Optional[int] = field(
         default=1,
         metadata={"help": "The number of workers to use in sequence parallelism"},
     )
