@@ -23,21 +23,21 @@ def set_ring_attn_group(ring_attn_group: Any):
     RING_ATTN_GROUP = ring_attn_group
 
 
-def register_ring_attn(sequence_parallel_size: int):
+def register_ring_attn(sequence_parallel_degree: int):
     """
     Create ring attention group and substitute flash attn with ring flash attn.
 
     Args:
-        sequence_parallel_size: Sequence parallelism factor.
+        sequence_parallel_degree: Sequence parallelism factor.
     """
     LOG.info(
         "Enabling ring attention sequence parallelism: "
-        f"each sequence will be processed across {sequence_parallel_size} GPUs"
+        f"each sequence will be processed across {sequence_parallel_degree} GPUs"
     )
 
     world_size = dist.get_world_size()
-    assert world_size % sequence_parallel_size == 0, (
-        f"sequence_parallel_size ({sequence_parallel_size}) "
+    assert world_size % sequence_parallel_degree == 0, (
+        f"sequence_parallel_degree ({sequence_parallel_degree}) "
         f"must evenly divide world_size ({world_size})"
     )
 
@@ -45,11 +45,11 @@ def register_ring_attn(sequence_parallel_size: int):
     rank = dist.get_rank()
     group_assignments = {}
 
-    for i in range(world_size // sequence_parallel_size):
+    for i in range(world_size // sequence_parallel_degree):
         ring_attn_ranks = list(
             range(
-                i * sequence_parallel_size,
-                (i + 1) * sequence_parallel_size,
+                i * sequence_parallel_degree,
+                (i + 1) * sequence_parallel_degree,
             )
         )
         group = dist.new_group(ranks=ring_attn_ranks, backend="nccl")
@@ -65,4 +65,4 @@ def register_ring_attn(sequence_parallel_size: int):
     if rank == 0:
         LOG.info(f"Sequence parallel group assignments: {group_assignments}")
 
-    substitute_hf_flash_attn(get_ring_attn_group(), sequence_parallel_size)
+    substitute_hf_flash_attn(get_ring_attn_group(), sequence_parallel_degree)

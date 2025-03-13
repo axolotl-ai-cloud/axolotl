@@ -423,9 +423,9 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, Trainer):
 
     def _get_train_sampler(self) -> Optional[torch.utils.data.Sampler]:
         # Handle sequence parallelism
-        if self.args.sequence_parallel_size > 1:
-            num_sp_groups = self.args.world_size // self.args.sequence_parallel_size
-            sp_group_id = dist.get_rank() // self.args.sequence_parallel_size
+        if self.args.sequence_parallel_degree > 1:
+            num_sp_groups = self.args.world_size // self.args.sequence_parallel_degree
+            sp_group_id = dist.get_rank() // self.args.sequence_parallel_degree
 
             # Create base sampler for SP groups
             base_sampler = torch.utils.data.distributed.DistributedSampler(
@@ -472,10 +472,10 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, Trainer):
         eval_dataset = eval_dataset if eval_dataset is not None else self.eval_dataset
 
         # Handle sequence parallelism
-        if self.args.sequence_parallel_size > 1:
+        if self.args.sequence_parallel_degree > 1:
             # Create sampler for SP groups
-            num_sp_groups = self.args.world_size // self.args.sequence_parallel_size
-            sp_group_id = dist.get_rank() // self.args.sequence_parallel_size
+            num_sp_groups = self.args.world_size // self.args.sequence_parallel_degree
+            sp_group_id = dist.get_rank() // self.args.sequence_parallel_degree
 
             # Create distributed sampler for the SP group
             base_sampler = torch.utils.data.distributed.DistributedSampler(
@@ -570,7 +570,7 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, Trainer):
 
         # Don't prepare dataloader for sequence parallelism
         # We use a distributed sampler in this case
-        if self.args.sequence_parallel_size > 1:
+        if self.args.sequence_parallel_degree > 1:
             return dataloader
 
         return self.accelerator.prepare_data_loader(dataloader)
@@ -625,11 +625,11 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, Trainer):
 
             # Don't prepare dataloader for sequence parallelism
             # We use a distributed sampler in this case
-            if self.args.sequence_parallel_size > 1:
+            if self.args.sequence_parallel_degree > 1:
                 return dataloader
 
             return self.accelerator.prepare_data_loader(dataloader)
-        if self.args.sequence_parallel_size > 1:
+        if self.args.sequence_parallel_degree > 1:
             eval_dataset = (
                 eval_dataset if eval_dataset is not None else self.eval_dataset
             )
@@ -949,14 +949,14 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, Trainer):
         """
         Perform a training step on a batch of inputs.
         """
-        if self.args.sequence_parallel_size > 1:
+        if self.args.sequence_parallel_degree > 1:
             # At this point, inputs should already be partitioned by the sequence
             # parallel data collator
             batch_size = inputs["input_ids"].shape[0]
             seq_len = inputs["input_ids"].shape[1]
 
             # Calculate the full sequence length across all GPUs in this SP group
-            total_seq_len = seq_len * self.args.sequence_parallel_size
+            total_seq_len = seq_len * self.args.sequence_parallel_degree
 
             # Pass the partitioned sequence information to ring flash attention
             self._update_ring_flash_attn_params(

@@ -765,8 +765,8 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             ] = self.cfg.kd_top_k_before_softmax
 
         training_arguments_kwargs[
-            "sequence_parallel_size"
-        ] = self.cfg.sequence_parallel_size
+            "sequence_parallel_degree"
+        ] = self.cfg.sequence_parallel_degree
 
         if self.cfg.reward_model:
             training_args_cls = AxolotlRewardConfig
@@ -913,7 +913,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 collator = DataCollatorForSeq2Seq
 
         kwargs["return_tensors"] = "pt"
-        kwargs["sequence_parallel_size"] = training_args.sequence_parallel_size
+        kwargs["sequence_parallel_degree"] = training_args.sequence_parallel_degree
 
         return collator(
             *collator_args,

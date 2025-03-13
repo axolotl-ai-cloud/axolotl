@@ -576,6 +576,11 @@ ddp_timeout:
 ddp_bucket_cap_mb:
 ddp_broadcast_buffers:
 
+# Sequence parallelism
+# Set to a divisor of the number of GPUs available to split sequences into chunks of equal size.
+# Use in long context training to prevent OOM when sequences cannot fit into a single GPU's VRAM.
+sequence_parallel_degree:
+
 # Path to torch distx for optim 'adamw_anyprecision'
 torchdistx_path:
 

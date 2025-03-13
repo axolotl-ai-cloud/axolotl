@@ -553,14 +553,13 @@ class ModelLoader:
 
             patch_self_attn_lora(self.cfg)
 
-        if self.cfg.sequence_parallel_size > 1:
+        if self.cfg.sequence_parallel_degree > 1:
             from axolotl.monkeypatch.attention.ring_attn import register_ring_attn
 
-            # Initialize ring attention for sequence parallelism if enabled.
-            # This must be done after model initialization but before the first forward pass,
-            # as it modifies the flash attention implementation to use ring communication
-            # patterns for efficient sequence-parallel training across multiple GPUs.
-            register_ring_attn(self.cfg.sequence_parallel_size)
+            # Initialize ring attn for sequence parallelism. This must be done after
+            # model init but before the first forward pass, since it modifies flash
+            # attn to use ring comm for SP training across multiple GPUs.
+            register_ring_attn(self.cfg.sequence_parallel_degree)
 
     def patch_attention(self) -> None:
         if hasattr(self.model_config, "model_type"):
