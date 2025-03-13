@@ -114,5 +114,5 @@ class LigerPlugin(BasePlugin):
                 modeling_mod.CrossEntropyLoss = LigerCrossEntropyLoss
             if cfg.liger_fused_linear_cross_entropy:
                 modeling_mod.DeepseekV2ForCausalLM.forward = deepseekv2_lce_forward
-        else:
-            raise ValueError(f"Unsupported model config type: {cfg.model_config_type}")
+        # elif cfg.model_config_type in ["gemma3_text", "deepseek_v3"]:
+        #     raise ValueError(f"Unsupported model config type: {cfg.model_config_type}")
