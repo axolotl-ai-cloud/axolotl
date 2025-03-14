@@ -4,7 +4,6 @@
 bitsandbytes==0.45.3
 triton>=3.0.0
 mamba-ssm==1.2.0.post1
-flash-attn==2.7.4.post1
 xformers>=0.0.23.post1
 autoawq==0.2.7.post3
 liger-kernel==0.5.3
