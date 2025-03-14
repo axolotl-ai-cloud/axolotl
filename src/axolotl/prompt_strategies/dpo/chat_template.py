@@ -91,4 +91,9 @@ def default(
 
         return result
 
-    return transform_fn
+    # Then when you call map, specify the original columns to remove
+    map_kwargs = {
+        "remove_columns": [field_messages, field_chosen, field_rejected] 
+    }
+
+    return transform_fn, map_kwargs
