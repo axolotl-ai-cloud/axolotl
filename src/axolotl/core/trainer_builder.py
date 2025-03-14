@@ -764,6 +764,10 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 "kd_top_k_before_softmax"
             ] = self.cfg.kd_top_k_before_softmax
 
+        training_arguments_kwargs[
+            "sequence_parallel_degree"
+        ] = self.cfg.sequence_parallel_degree
+
         if self.cfg.reward_model:
             training_args_cls = AxolotlRewardConfig
         elif self.cfg.process_reward_model:
@@ -847,9 +851,10 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         self, training_args: AxolotlTrainingArguments, is_eval=False, **kwargs
     ):
         if training_args.pretraining:
-            if self.cfg.pretraining_sample_concatenation is False:
-                return DataCollatorForSeq2Seq(self.tokenizer, **kwargs)
-            if self.cfg.micro_batch_size > 1:
+            if (
+                self.cfg.pretraining_sample_concatenation is False
+                or self.cfg.micro_batch_size > 1
+            ):
                 return DataCollatorForSeq2Seq(self.tokenizer, **kwargs)
             return None
 
@@ -877,9 +882,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             if "max_length" in kwargs:
                 kwargs.pop("max_length")
         elif use_batch_sampler_collator:
-            if self.cfg.model_config_type in SUPPORTED_MULTIPACK_MODEL_TYPES:
-                collator = V2BatchSamplerDataCollatorForSeq2Seq
-            elif (
+            if self.cfg.model_config_type in SUPPORTED_MULTIPACK_MODEL_TYPES or (
                 self.cfg.model_config_type in ["llama"]
                 and self.cfg.flash_attention is not True
             ):
@@ -910,6 +913,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 collator = DataCollatorForSeq2Seq
 
         kwargs["return_tensors"] = "pt"
+        kwargs["sequence_parallel_degree"] = training_args.sequence_parallel_degree
 
         return collator(
             *collator_args,

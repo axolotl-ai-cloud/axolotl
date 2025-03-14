@@ -1,17 +1,18 @@
-"""
-module for customized trainers
-"""
+"""Module for customized trainers"""
+# pylint: disable=too-many-lines
 
 from __future__ import annotations
 
-# pylint: disable=too-many-lines
 import logging
 import os
 from collections import defaultdict
 from functools import wraps
-from typing import Dict, Literal, Optional
+from typing import Any, Dict, Literal, Optional
 
+import datasets
 import torch
+import torch.distributed as dist
+import torch.nn.functional as F
 from datasets import Dataset
 from peft.optimizers import create_loraplus_optimizer
 from torch import nn
@@ -19,9 +20,10 @@ from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import BatchSampler, DataLoader, RandomSampler, SequentialSampler
 from transformers import Trainer
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, seed_worker
-from transformers.utils import is_sagemaker_mp_enabled
+from transformers.utils import is_datasets_available, is_sagemaker_mp_enabled
 from trl import CPOTrainer, KTOTrainer, ORPOTrainer, PRMTrainer, RewardTrainer
 from trl.trainer.utils import pad_to_length
+from typing_extensions import override
 
 from axolotl.integrations.base import BaseOptimizerFactory
 from axolotl.monkeypatch.relora import ReLoRAScheduler
@@ -36,7 +38,18 @@ from axolotl.utils.schedulers import (
 if is_sagemaker_mp_enabled():
     import smdistributed.modelparallel.torch as smp
 
-LOG = logging.getLogger("axolotl.core.trainer_builder")
+try:
+    from ring_flash_attn import update_ring_flash_attn_params
+except ImportError:
+    # pylint: disable=unused-argument
+    def update_ring_flash_attn_params(*args, **kwargs):
+        raise ImportError(
+            "ring_flash_attn is not installed. "
+            "Please install it with `pip install ring-flash-attn>=0.1.4`"
+        )
+
+
+LOG = logging.getLogger(__name__)
 
 
 def _sanitize_kwargs_for_tagging(tag_names, kwargs=None):
@@ -357,9 +370,7 @@ class OptimizerMixin(Trainer):
 
 
 class AxolotlTrainer(SchedulerMixin, OptimizerMixin, Trainer):
-    """
-    Extend the base Trainer for axolotl helpers
-    """
+    """Extend the base Trainer for axolotl helpers"""
 
     args = None  # type: "AxolotlTrainingArguments"  # type: ignore[name-defined]
     tag_names = ["axolotl"]
@@ -376,11 +387,18 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, Trainer):
         self.eval_data_collator = eval_data_collator
         self.dataset_tags = dataset_tags
         self._signature_columns = None  # workaround for pylint
+
         super().__init__(*_args, **kwargs)
+
         self.train_data_collator = self.data_collator
         self._stored_metrics = defaultdict(lambda: defaultdict(list))
         if self.args.orpo_alpha:
             self.loss_fct = torch.nn.CrossEntropyLoss(reduction="none")
+
+        if self.args.sequence_parallel_degree > 1:
+            from axolotl.monkeypatch.attention.ring_attn import get_ring_attn_group
+
+            self.ring_attn_group = get_ring_attn_group()
 
     def _wrap_model(self, model, training=True, dataloader=None):
         if self.args.torch_compile:
@@ -394,113 +412,208 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, Trainer):
             )
         return super()._wrap_model(model, training=training, dataloader=dataloader)
 
+    def _create_multipack_sampler(self, base_sampler, dataset, group_size):
+        """Helper method to create a MultipackBatchSampler"""
+        if self.args.multipack_real_batches:
+            batch_size = self.args.per_device_train_batch_size
+            batch_max_len = self.args.max_seq_length
+        else:
+            batch_size = 1
+            train_batch_size = (
+                self.state.train_batch_size or self.args.per_device_train_batch_size
+            )
+            batch_max_len = train_batch_size * self.args.max_seq_length
+
+        return MultipackBatchSampler(
+            base_sampler,
+            lengths=get_dataset_lengths(dataset),
+            packing_efficiency_estimate=self.args.sample_packing_efficiency,
+            batch_max_len=batch_max_len,
+            batch_size=batch_size,
+            group_size=group_size,
+            bin_size=self.args.sample_packing_bin_size,
+            drop_last=True,
+        )
+
     def _get_train_sampler(self) -> Optional[torch.utils.data.Sampler]:
-        if self.args.sample_packing and not self.args.pretraining:
-            if self.args.multipack_real_batches:
-                batch_size = self.args.per_device_train_batch_size
-                batch_max_len = self.args.max_seq_length
-            else:
-                batch_size = 1
-                train_batch_size = (
-                    self.state.train_batch_size or self.args.per_device_train_batch_size
-                )
-                batch_max_len = train_batch_size * self.args.max_seq_length
+        # Handle sequence parallelism
+        if self.args.sequence_parallel_degree > 1:
+            num_sp_groups = self.args.world_size // self.args.sequence_parallel_degree
+            sp_group_id = dist.get_rank() // self.args.sequence_parallel_degree
 
-            if self.args.curriculum_sampling:
-                sampler = SequentialSampler(self.train_dataset)
-            else:
-                sampler = RandomSampler(self.train_dataset)
-
-            return MultipackBatchSampler(
-                sampler,
-                lengths=get_dataset_lengths(self.train_dataset),
-                packing_efficiency_estimate=self.args.sample_packing_efficiency,
-                batch_max_len=batch_max_len,
-                batch_size=batch_size,
-                group_size=self.args.sample_packing_group_size,
-                bin_size=self.args.sample_packing_bin_size,
+            # Create base sampler for SP groups
+            base_sampler = torch.utils.data.distributed.DistributedSampler(
+                self.train_dataset,
+                num_replicas=num_sp_groups,
+                rank=sp_group_id,
+                seed=self.args.seed if not self.args.curriculum_sampling else None,
+                shuffle=not self.args.curriculum_sampling,
                 drop_last=True,
             )
+
+            # Apply multipack wrapper if needed
+            if self.args.sample_packing and not self.args.pretraining:
+                return self._create_multipack_sampler(
+                    base_sampler=base_sampler,
+                    dataset=self.train_dataset,
+                    group_size=self.args.sample_packing_group_size,
+                )
+
+            return base_sampler
+
+        if self.args.sample_packing and not self.args.pretraining:
+            base_sampler = (
+                SequentialSampler(self.train_dataset)
+                if self.args.curriculum_sampling
+                else RandomSampler(self.train_dataset)
+            )
+
+            return self._create_multipack_sampler(
+                base_sampler=base_sampler,
+                dataset=self.train_dataset,
+                group_size=self.args.sample_packing_group_size,
+            )
+
         if self.args.curriculum_sampling:
             return SequentialSampler(self.train_dataset)
+
         return super()._get_train_sampler()
 
     def _get_eval_sampler(
-        self, eval_dataset: Dataset
+        self, eval_dataset: Optional[Dataset] = None
     ) -> Optional[torch.utils.data.Sampler]:
-        if self.args.sample_packing and self.args.eval_sample_packing is not False:
-            if self.args.multipack_real_batches:
-                batch_size = self.args.per_device_eval_batch_size
-                batch_max_len = self.args.max_seq_length
-            else:
-                batch_size = 1
-                batch_max_len = (
-                    self.args.per_device_eval_batch_size * self.args.max_seq_length
-                )
-            return MultipackBatchSampler(
-                SequentialSampler(eval_dataset),
-                lengths=get_dataset_lengths(self.eval_dataset),
-                packing_efficiency_estimate=self.args.sample_packing_efficiency,
-                batch_max_len=batch_max_len,
-                batch_size=batch_size,
-                group_size=self.args.sample_packing_group_size,
-                bin_size=self.args.sample_packing_bin_size,
-                drop_last=True,
+        """Get evaluation sampler"""
+        eval_dataset = eval_dataset if eval_dataset is not None else self.eval_dataset
+
+        # Handle sequence parallelism
+        if self.args.sequence_parallel_degree > 1:
+            # Create sampler for SP groups
+            num_sp_groups = self.args.world_size // self.args.sequence_parallel_degree
+            sp_group_id = dist.get_rank() // self.args.sequence_parallel_degree
+
+            # Create distributed sampler for the SP group
+            base_sampler = torch.utils.data.distributed.DistributedSampler(
+                eval_dataset,
+                num_replicas=num_sp_groups,
+                rank=sp_group_id,
+                shuffle=False,
+                drop_last=False,
             )
+
+            if self.args.sample_packing and self.args.eval_sample_packing is not False:
+                group_size = (
+                    self.args.eval_packing_group_size
+                    if hasattr(self.args, "eval_packing_group_size")
+                    else self.args.sample_packing_group_size
+                )
+
+                return self._create_multipack_sampler(
+                    base_sampler=base_sampler,
+                    dataset=eval_dataset,
+                    group_size=group_size,
+                )
+
+            return base_sampler
+
+        if self.args.sample_packing and self.args.eval_sample_packing is not False:
+            base_sampler = SequentialSampler(eval_dataset)
+            group_size = (
+                self.args.eval_packing_group_size
+                if hasattr(self.args, "eval_packing_group_size")
+                else self.args.sample_packing_group_size
+            )
+
+            return self._create_multipack_sampler(
+                base_sampler=base_sampler,
+                dataset=eval_dataset,
+                group_size=group_size,
+            )
+
         return super()._get_eval_sampler(eval_dataset)
 
     def get_train_dataloader(self) -> DataLoader:
-        if self.args.sample_packing and not self.args.pretraining:
-            train_dataset = self.train_dataset
-            if "length" in train_dataset.features.keys():
-                train_dataset = train_dataset.remove_columns(["length"])
-            data_collator = self.data_collator
-            dataloader_params = {
-                "batch_size": self._train_batch_size,
-                "collate_fn": data_collator,
-                "num_workers": self.args.dataloader_num_workers,
-                "pin_memory": self.args.dataloader_pin_memory,
-            }
-            if self.args.dataloader_prefetch_factor:
-                dataloader_params[
-                    "prefetch_factor"
-                ] = self.args.dataloader_prefetch_factor
+        """Get dataloader for training"""
+        train_dataset = self.train_dataset
+        data_collator = self.data_collator
 
+        # Handle dataset preprocessing
+        if is_datasets_available() and isinstance(train_dataset, datasets.Dataset):
+            if (
+                self.args.sample_packing
+                and not self.args.pretraining
+                and "length" in train_dataset.features
+            ):
+                train_dataset = train_dataset.remove_columns(["length"])
+            if not (self.args.sample_packing and not self.args.pretraining):
+                train_dataset = self._remove_unused_columns(
+                    train_dataset, description="training"
+                )
+        else:
+            data_collator = self._get_collator_with_removed_columns(
+                data_collator, description="training"
+            )
+
+        # Build common dataloader parameters
+        dataloader_params = {
+            "batch_size": self._train_batch_size,
+            "collate_fn": data_collator,
+            "num_workers": self.args.dataloader_num_workers,
+            "pin_memory": self.args.dataloader_pin_memory,
+            "persistent_workers": self.args.dataloader_persistent_workers,
+        }
+
+        if self.args.dataloader_prefetch_factor:
+            dataloader_params["prefetch_factor"] = self.args.dataloader_prefetch_factor
+
+        if not isinstance(train_dataset, torch.utils.data.IterableDataset):
             sampler = self._get_train_sampler()
+
             if isinstance(sampler, BatchSampler):
+                # batch_size and batch_sampler are mutually exclusive
                 dataloader_params["batch_sampler"] = sampler
                 del dataloader_params["batch_size"]
             else:
                 dataloader_params["sampler"] = sampler
                 dataloader_params["drop_last"] = self.args.dataloader_drop_last
+
             dataloader_params["worker_init_fn"] = seed_worker
 
+        dataloader = DataLoader(train_dataset, **dataloader_params)
+        if self.args.sample_packing and not self.args.pretraining:
             self.accelerator.even_batches = False
-            return self.accelerator.prepare_data_loader(
-                DataLoader(train_dataset, **dataloader_params)
-            )
-        return super().get_train_dataloader()
+
+        # Don't prepare dataloader for sequence parallelism
+        # We use a distributed sampler in this case
+        if self.args.sequence_parallel_degree > 1:
+            return dataloader
+
+        return self.accelerator.prepare_data_loader(dataloader)
 
     def get_eval_dataloader(self, eval_dataset: Optional[Dataset] = None) -> DataLoader:
+        """Get dataloader for evaluation"""
         if self.args.sample_packing and self.args.eval_sample_packing is False:
             self.data_collator = (  # pylint: disable=attribute-defined-outside-init
                 self.eval_data_collator
             )
-            if eval_dataset:
+            if eval_dataset and "length" in eval_dataset.features:
                 eval_dataset = eval_dataset.remove_columns(["length"])
             dataloader = super().get_eval_dataloader(eval_dataset)
             self.data_collator = (  # pylint: disable=attribute-defined-outside-init
                 self.train_data_collator
             )
-            return dataloader
 
+            return dataloader
         if self.args.sample_packing and self.args.eval_sample_packing is not False:
             eval_dataset = (
                 eval_dataset if eval_dataset is not None else self.eval_dataset
             )
 
             eval_sampler = self._get_eval_sampler(eval_dataset)
-            eval_dataset = eval_dataset.remove_columns(["length"])
+
+            # Only remove length column if it exists
+            if "length" in eval_dataset.features:
+                eval_dataset = eval_dataset.remove_columns(["length"])
+
             data_collator = self.data_collator
             dataloader_params = {
                 "batch_size": self.args.eval_batch_size,
@@ -508,6 +621,7 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, Trainer):
                 "num_workers": self.args.dataloader_num_workers,
                 "pin_memory": self.args.dataloader_pin_memory,
             }
+
             if self.args.dataloader_prefetch_factor:
                 dataloader_params[
                     "prefetch_factor"
@@ -521,9 +635,49 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, Trainer):
                 dataloader_params["drop_last"] = self.args.dataloader_drop_last
 
             self.accelerator.even_batches = False
-            return self.accelerator.prepare_data_loader(
-                DataLoader(eval_dataset, **dataloader_params)
+            dataloader = DataLoader(eval_dataset, **dataloader_params)
+
+            # Don't prepare dataloader for sequence parallelism
+            # We use a distributed sampler in this case
+            if self.args.sequence_parallel_degree > 1:
+                return dataloader
+
+            return self.accelerator.prepare_data_loader(dataloader)
+        if self.args.sequence_parallel_degree > 1:
+            eval_dataset = (
+                eval_dataset if eval_dataset is not None else self.eval_dataset
             )
+            data_collator = (
+                self.eval_data_collator
+                if self.eval_data_collator
+                else self.data_collator
+            )
+
+            # Handle dataset preprocessing as in the parent implementation
+            if is_datasets_available() and isinstance(eval_dataset, datasets.Dataset):
+                eval_dataset = self._remove_unused_columns(
+                    eval_dataset, description="evaluation"
+                )
+            else:
+                data_collator = self._get_collator_with_removed_columns(
+                    data_collator, description="evaluation"
+                )
+
+            # Build dataloader parameters
+            dataloader_params = {
+                "batch_size": self.args.per_device_eval_batch_size,
+                "collate_fn": data_collator,
+                "num_workers": self.args.dataloader_num_workers,
+                "pin_memory": self.args.dataloader_pin_memory,
+            }
+
+            if not isinstance(eval_dataset, torch.utils.data.IterableDataset):
+                sampler = self._get_eval_sampler(eval_dataset)
+                dataloader_params["sampler"] = sampler
+
+            # Don't prepare dataloader for sequence parallelism
+            # We use a distributed sampler in this case
+            return DataLoader(eval_dataset, **dataloader_params)
 
         return super().get_eval_dataloader(eval_dataset)
 
@@ -554,6 +708,7 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, Trainer):
         return DataLoader(bench_dataset, **dataloader_params)
         # return self.accelerator.prepare(DataLoader(bench_dataset, **dataloader_params))
 
+    @override
     def compute_loss(
         self, model, inputs, return_outputs=False, num_items_in_batch=None
     ):
@@ -570,6 +725,7 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, Trainer):
                 return_outputs=return_outputs,
                 num_items_in_batch=num_items_in_batch,
             )
+
         return super().compute_loss(
             model,
             inputs,
@@ -796,6 +952,53 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, Trainer):
         output_dir = os.path.join(run_dir, checkpoint_folder)
         os.makedirs(output_dir, exist_ok=True)
         return super()._save_checkpoint(model, trial, **kwargs)
+
+    @override
+    def training_step(
+        self,
+        model: nn.Module,
+        inputs: dict[str, torch.Tensor | Any],
+        num_items_in_batch: int | None = None,
+    ) -> torch.Tensor:
+        """
+        Perform a training step on a batch of inputs.
+        """
+        if self.args.sequence_parallel_degree > 1:
+            # At this point, inputs should already be partitioned by the sequence
+            # parallel data collator
+            batch_size = inputs["input_ids"].shape[0]
+            seq_len = inputs["input_ids"].shape[1]
+
+            # Calculate the full sequence length across all GPUs in this SP group
+            total_seq_len = seq_len * self.args.sequence_parallel_degree
+
+            # Pass the partitioned sequence information to ring flash attention
+            self._update_ring_flash_attn_params(
+                packed_seq_lens=[seq_len] * batch_size, total_seq_len=total_seq_len
+            )
+
+        # Get the loss from the parent implementation
+        loss = super().training_step(model, inputs, num_items_in_batch)
+
+        return loss
+
+    def _update_ring_flash_attn_params(self, packed_seq_lens, total_seq_len):
+        """
+        Calculate the cu_seqlens for the current forward pass and pass the value to
+        the substituted ring_flash_attn.
+        """
+        cu_seqlens = torch.cumsum(
+            torch.tensor(
+                packed_seq_lens, device=torch.cuda.current_device(), dtype=torch.int32
+            ),
+            dim=-1,
+            dtype=torch.int32,
+        )
+        cu_seqlens = F.pad(
+            F.pad(cu_seqlens, (1, 0), value=0), (0, 1), value=total_seq_len
+        )
+
+        update_ring_flash_attn_params(cu_seqlens, self.ring_attn_group)
 
 
 class AxolotlMambaTrainer(AxolotlTrainer):

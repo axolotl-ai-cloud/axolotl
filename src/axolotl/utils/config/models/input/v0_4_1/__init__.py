@@ -463,6 +463,7 @@ class ModelInputConfig(BaseModel):
         default=None, json_schema_extra={"description": "transformers processor class"}
     )
     trust_remote_code: Optional[bool] = None
+    random_init: Optional[bool] = None
 
     @field_validator("trust_remote_code")
     @classmethod
@@ -679,7 +680,7 @@ class AxolotlInputConfig(
     DeprecatedParameters,
     BaseModel,
 ):
-    """wrapper of all config options"""
+    """Wrapper of all config options"""
 
     model_config = {"populate_by_name": True}
 
@@ -851,6 +852,8 @@ class AxolotlInputConfig(
     fsdp_final_state_dict_type: Optional[
         Literal["FULL_STATE_DICT", "LOCAL_STATE_DICT", "SHARDED_STATE_DICT"]
     ] = None
+
+    sequence_parallel_degree: Optional[int] = None
 
     val_set_size: Optional[float] = Field(default=0.0)
 
@@ -1695,6 +1698,17 @@ class AxolotlInputConfig(
             ):
                 raise ValueError(
                     "Set `gradient_checkpointing_kwargs: {use_reentrant: true}` for when kto is enabled"
+                )
+
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_sequence_parallel_config(cls, data):
+        if data.get("sequence_parallel_degree", 1) > 1:
+            if not data.get("flash_attention"):
+                raise ValueError(
+                    "flash_attention: true must be set with sequence_parallel_degree > 1"
                 )
 
         return data

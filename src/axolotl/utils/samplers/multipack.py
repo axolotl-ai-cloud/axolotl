@@ -104,9 +104,7 @@ def allocate(
 
 
 class MultipackBatchSampler(BatchSampler):
-    """
-    Batch Sampler class for multipack
-    """
+    """Batch sampler class for multipack"""
 
     def __init__(
         self,
