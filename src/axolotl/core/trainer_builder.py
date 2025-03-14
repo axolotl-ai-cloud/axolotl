@@ -40,7 +40,6 @@ from trl.trainer.utils import RewardDataCollatorWithPadding
 
 from axolotl.core.trainers.base import (
     AxolotlCPOTrainer,
-    AxolotlKTOTrainer,
     AxolotlMambaTrainer,
     AxolotlORPOTrainer,
     AxolotlPRMTrainer,
@@ -51,6 +50,7 @@ from axolotl.core.trainers.base import (
 from axolotl.core.trainers.dpo import DPOStrategy
 from axolotl.core.trainers.dpo.args import AxolotlDPOConfig
 from axolotl.core.trainers.grpo import GRPOStrategy
+from axolotl.core.trainers.kto import AxolotlKTOTrainer
 from axolotl.core.training_args import (
     AxolotlCPOConfig,
     AxolotlKTOConfig,

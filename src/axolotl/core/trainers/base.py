@@ -20,9 +20,10 @@ from torch.utils.data import BatchSampler, DataLoader, RandomSampler, Sequential
 from transformers import Trainer
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, seed_worker
 from transformers.utils import is_sagemaker_mp_enabled
-from trl import CPOTrainer, KTOTrainer, ORPOTrainer, PRMTrainer, RewardTrainer
+from trl import CPOTrainer, ORPOTrainer, PRMTrainer, RewardTrainer
 from trl.trainer.utils import pad_to_length
 
+from axolotl.core.trainers.kto import AxolotlKTOTrainer
 from axolotl.integrations.base import BaseOptimizerFactory
 from axolotl.monkeypatch.relora import ReLoRAScheduler
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
@@ -872,14 +873,6 @@ class AxolotlORPOTrainer(SchedulerMixin, ORPOTrainer):
     """
 
     tag_names = ["axolotl", "orpo"]
-
-
-class AxolotlKTOTrainer(SchedulerMixin, KTOTrainer):
-    """
-    Extend the base KTOTrainer for axolotl helpers
-    """
-
-    tag_names = ["axolotl", "kto"]
 
 
 class AxolotlCPOTrainer(SchedulerMixin, CPOTrainer):
