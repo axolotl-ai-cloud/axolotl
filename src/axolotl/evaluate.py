@@ -8,6 +8,8 @@ from typing import Dict, Optional
 
 import torch
 from accelerate.logging import get_logger
+from datasets import Dataset
+from transformers.trainer import Trainer
 
 from axolotl.logging_config import configure_logging
 from axolotl.train import TrainDatasetMeta
@@ -25,18 +27,18 @@ LOG = get_logger("axolotl.evaluate")
 
 
 def evaluate_dataset(
-    trainer, dataset, dataset_type: str, flash_optimum: bool = False
+    trainer: Trainer, dataset: Dataset, dataset_type: str, flash_optimum: bool = False
 ) -> Optional[Dict[str, float]]:
-    """Helper function to evaluate a single dataset safely.
+    """Helper function to evaluate a single dataset.
 
     Args:
-        trainer: The trainer instance
-        dataset: Dataset to evaluate
-        dataset_type: Type of dataset ('train' or 'eval')
-        flash_optimum: Whether to use flash optimum
+        trainer: The trainer instance.
+        dataset: Dataset to evaluate.
+        dataset_type: Type of dataset ('train' or 'eval').
+        flash_optimum: Whether to use flash optimum.
 
     Returns:
-        Dictionary of metrics or None if dataset is None
+        Dictionary of metrics or None if dataset is None.
     """
     if dataset is None:
         return None
@@ -63,17 +65,14 @@ def evaluate_dataset(
 
 def evaluate(*, cfg: DictDefault, dataset_meta: TrainDatasetMeta) -> Dict[str, float]:
     """
-    Evaluate a model on training and validation datasets
+    Evaluate a model on training and validation datasets.
 
     Args:
         cfg: Dictionary mapping `axolotl` config keys to values.
         dataset_meta: Dataset metadata containing training and evaluation datasets.
 
     Returns:
-        Tuple containing:
-        - The model (either PeftModel or PreTrainedModel)
-        - The tokenizer
-        - Dictionary of evaluation metrics
+        Dictionary mapping metric names to their values.
     """
     # pylint: disable=duplicate-code
     # Enable expandable segments for cuda allocation to improve VRAM usage
