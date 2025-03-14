@@ -853,7 +853,7 @@ class AxolotlInputConfig(
         Literal["FULL_STATE_DICT", "LOCAL_STATE_DICT", "SHARDED_STATE_DICT"]
     ] = None
 
-    sequence_parallel_degree: Optional[int] = 1
+    sequence_parallel_degree: Optional[int] = None
 
     val_set_size: Optional[float] = Field(default=0.0)
 
@@ -1705,6 +1705,9 @@ class AxolotlInputConfig(
     @model_validator(mode="before")
     @classmethod
     def check_sequence_parallel_config(cls, data):
+        if data.get("sequence_parallel_degree") is None:
+            data["sequence_parallel_degree"] = 1
+
         if data.get("sequence_parallel_degree") > 1:
             if not data.get("flash_attention"):
                 raise ValueError(
