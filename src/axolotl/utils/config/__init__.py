@@ -127,6 +127,9 @@ def normalize_config(cfg):
             with open(ds_config_path, encoding="utf-8") as f:
                 cfg.deepspeed = json.load(f)
 
+    if cfg.sequence_parallel_size is None:
+        cfg.sequence_parallel_size = 1
+
     if cfg.saves_per_epoch:
         save_steps = 1.0 / (cfg.saves_per_epoch * cfg.num_epochs)
         if save_steps < 1.0:  # prevent saves on every step

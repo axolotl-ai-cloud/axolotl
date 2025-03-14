@@ -279,6 +279,7 @@ class TestDeduplicateNonRL(unittest.TestCase):
                 "batch_size": 10,
                 "micro_batch_size": 10,
                 "num_epochs": 1,
+                "sequence_parallel_degree": 1,
             }
         )
 
