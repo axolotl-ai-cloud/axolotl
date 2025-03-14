@@ -1,2 +1,5 @@
 /.quarto/
 _site/
+/api/*.qmd
+/api/*.html
+site_libs/
