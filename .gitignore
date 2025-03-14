@@ -182,7 +182,6 @@ submit.sh
 *.out*
 
 # Quartodoc generated files
-docs/api/*.qmd
 objects.json
 site_libs/
 
