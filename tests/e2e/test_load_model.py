@@ -26,9 +26,8 @@ class TestLoadModelUtils:
         # load config
         self.cfg = DictDefault(
             {
-                "base_model": "JackFram/llama-68m",
-                "tokenizer_type": "LlamaTokenizer",
-                "tokenizer_config": "JackFram/llama-68m",
+                "base_model": "HuggingFaceTB/SmolLM2-135M-Instruct",
+                "tokenizer_config": "HuggingFaceTB/SmolLM2-135M-Instruct",
                 "sequence_len": 1024,
                 "load_in_8bit": False,
                 "adapter": "lora",
