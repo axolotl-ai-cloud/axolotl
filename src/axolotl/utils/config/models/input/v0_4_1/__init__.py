@@ -825,6 +825,7 @@ class AxolotlInputConfig(
     xformers_attention: Optional[bool] = None
     sdp_attention: Optional[bool] = None
     s2_attention: Optional[bool] = None
+    flex_attention: Optional[bool] = None
     flash_attention: Optional[bool] = None
     flash_attn_cross_entropy: Optional[bool] = None
     flash_attn_rms_norm: Optional[bool] = None
@@ -957,6 +958,22 @@ class AxolotlInputConfig(
         if ds_configs:
             return [ds_config.model_dump(exclude_none=True) for ds_config in ds_configs]
         return None
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_attention_fields(cls, data):
+        fields = (
+            "xformers_attention",
+            "sdp_attention",
+            "s2_attention",
+            "flash_attention",
+            "flex_attention",
+        )
+        non_empty_count = sum(1 for field in fields if data.get(field))
+
+        if non_empty_count > 1:
+            raise ValueError(f"Only one of {', '.join(fields)} must be set")
+        return data
 
     @model_validator(mode="before")
     @classmethod
@@ -1805,6 +1822,26 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             if version.parse(torch_version) < version.parse("2.5.1"):
                 raise ValueError(
                     "ADOPT optimizer is incompatible with torch version < 2.5.1"
+                )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_flex_torch_version(cls, data):
+        if (data.get("flex_attention") is not None) and (
+            data.get("flex_attention") is True
+        ):
+            env_capabilities = data.get("env_capabilities", {})
+            torch_version = env_capabilities.get("torch_version")
+
+            if torch_version is None:
+                import torch
+
+                torch_version = str(torch.__version__).split("+", maxsplit=1)[0]
+
+            if version.parse(torch_version) < version.parse("2.5.1"):
+                raise ValueError(
+                    "Flex attention is not supported on torch version < 2.5.1"
                 )
         return data
 
