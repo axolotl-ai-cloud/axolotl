@@ -1,6 +1,34 @@
 project:
   type: website
 
+quartodoc:
+  dir: docs/api
+  package: axolotl
+  title: API Reference
+  sections:
+    - title: Core
+      desc: Core functionality for training
+      contents:
+        - train
+        - evaluate
+        - datasets
+    - title: CLI
+      desc: Command-line interface
+      contents:
+        - cli.main
+        - cli.train
+        - cli.evaluate
+    - title: Prompt Strategies
+      desc: Prompt formatting strategies
+      contents:
+        - prompt_strategies.base
+        - prompt_strategies.chat_template
+    - title: Utils
+      desc: Utility functions
+      contents:
+        - utils.models
+        - utils.tokenization
+
 website:
   title: "Axolotl"
   description: "We make fine-tuning accessible, scalable, and fun"
@@ -75,6 +103,15 @@ website:
             - docs/debugging.qmd
             - docs/nccl.qmd
 
+<<<<<<< HEAD
+=======
+        - section: "Reference"
+          contents:
+            - docs/config.qmd
+            - section: "API Reference"
+              contents: docs/api/**/*.qmd
+
+>>>>>>> 5d96b2a95 (quartodoc integration)
 format:
   html:
     theme: darkly

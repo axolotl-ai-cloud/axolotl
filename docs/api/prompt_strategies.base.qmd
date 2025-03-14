@@ -1,0 +1,5 @@
+# prompt_strategies.base { #axolotl.prompt_strategies.base }
+
+`prompt_strategies.base`
+
+module for base dataset transform strategies

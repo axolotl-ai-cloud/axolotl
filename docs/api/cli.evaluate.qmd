@@ -1,0 +1,38 @@
+# cli.evaluate { #axolotl.cli.evaluate }
+
+`cli.evaluate`
+
+CLI to run evaluation on a model.
+
+## Functions
+
+| Name | Description |
+| --- | --- |
+| [do_cli](#axolotl.cli.evaluate.do_cli) | Parses `axolotl` config, CLI args, and calls `do_evaluate`. |
+| [do_evaluate](#axolotl.cli.evaluate.do_evaluate) | Evaluates a `transformers` model by first loading the dataset(s) specified in the |
+
+### do_cli { #axolotl.cli.evaluate.do_cli }
+
+```python
+cli.evaluate.do_cli(config=Path('examples/'), **kwargs)
+```
+
+Parses `axolotl` config, CLI args, and calls `do_evaluate`.
+
+Args:
+    config: Path to `axolotl` config YAML file.
+    kwargs: Additional keyword arguments to override config file values.
+
+### do_evaluate { #axolotl.cli.evaluate.do_evaluate }
+
+```python
+cli.evaluate.do_evaluate(cfg, cli_args)
+```
+
+Evaluates a `transformers` model by first loading the dataset(s) specified in the
+`axolotl` config, and then calling `axolotl.evaluate.evaluate`, which computes
+evaluation metrics on the given dataset(s) and writes them to disk.
+
+Args:
+    cfg: Dictionary mapping `axolotl` config keys to values.
+    cli_args: CLI arguments.
