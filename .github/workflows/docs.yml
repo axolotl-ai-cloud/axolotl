@@ -22,9 +22,7 @@ jobs:
             python-version: '3.11'
         - name: install dependencies
           run: |
-            python3 -m pip install jupyter quartodoc
-            python3 -m pip install -e .
-            python3 scripts/generate_docs.py
+            python3 -m pip install jupyter
         - name: Publish to GitHub Pages (and render)
           uses: quarto-dev/quarto-actions/publish@v2
           with:
