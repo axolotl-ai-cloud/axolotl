@@ -5,6 +5,8 @@ quartodoc:
   dir: docs/api
   package: axolotl
   title: API Reference
+  parser: google
+
   sections:
     - title: Core
       desc: Core functionality for training
@@ -12,22 +14,123 @@ quartodoc:
         - train
         - evaluate
         - datasets
+        - core.trainer_builder
+        - core.training_args
+        - core.chat.messages
+        - core.datasets.chat
     - title: CLI
       desc: Command-line interface
       contents:
         - cli.main
         - cli.train
         - cli.evaluate
+        - cli.args
+        - cli.checks
+        - cli.config
+        - cli.inference
+        - cli.merge_lora
+        - cli.merge_sharded_fsdp_weights
+        - cli.preprocess
+        - cli.sweeps
+        - cli.utils
+        - cli.cloud.base
+        - cli.cloud.modal_
+    - title: Trainers
+      desc: Training implementations
+      contents:
+        - core.trainers.base
+        - core.trainers.trl
+        - core.trainers.dpo.trainer
+        - core.trainers.grpo.trainer
     - title: Prompt Strategies
       desc: Prompt formatting strategies
       contents:
         - prompt_strategies.base
         - prompt_strategies.chat_template
+        - prompt_strategies.alpaca_chat
+        - prompt_strategies.alpaca_instruct
+        - prompt_strategies.user_defined
+        - prompt_strategies.llama2_chat
+        - prompt_strategies.completion
+        - prompt_strategies.input_output
+        - prompt_strategies.stepwise_supervised
+        - prompt_strategies.messages.chat
+        - prompt_strategies.dpo.chat_template
+        - prompt_strategies.dpo.llama3
+        - prompt_strategies.kto.llama3
+        - prompt_strategies.orpo.chat_template
+    - title: Kernels
+      desc: Low-level performance optimizations
+      contents:
+        - kernels.lora
+        - kernels.geglu
+        - kernels.swiglu
+        - kernels.quantize
+        - kernels.utils
+    - title: MonkeyPatches
+      desc: Runtime patches for model optimizations
+      contents:
+        - monkeypatch.llama_attn_hijack_flash
+        - monkeypatch.llama_attn_hijack_xformers
+        - monkeypatch.mistral_attn_hijack_flash
+        - monkeypatch.multipack
+        - monkeypatch.relora
+        - monkeypatch.llama_expand_mask
+        - monkeypatch.lora_kernels
+        - monkeypatch.utils
+        - monkeypatch.btlm_attn_hijack_flash
+        - monkeypatch.llama_patch_multipack
+        - monkeypatch.stablelm_attn_hijack_flash
+        - monkeypatch.trainer_fsdp_optim
+        - monkeypatch.transformers_fa_utils
+        - monkeypatch.unsloth_
+        - monkeypatch.attention.mllama
+        - monkeypatch.data.batch_dataset_fetcher
     - title: Utils
       desc: Utility functions
       contents:
         - utils.models
         - utils.tokenization
+        - utils.chat_templates
+        - utils.lora
+        - utils.freeze
+        - utils.trainer
+        - utils.schedulers
+        - utils.distributed
+        - utils.dict
+        - utils.optimizers.adopt
+        - utils.data.pretraining
+        - utils.data.sft
+    - title: Integrations
+      desc: Third-party integrations and extensions
+      contents:
+        - integrations.base
+        - integrations.cut_cross_entropy.args
+        - integrations.grokfast.optimizer
+        - integrations.kd.trainer
+        - integrations.liger.args
+        - integrations.lm_eval.args
+        - integrations.spectrum.args
+    - title: Models
+      desc: Custom model implementations
+      contents:
+        - models.mamba.modeling_mamba
+    - title: Data Processing
+      desc: Data processing utilities
+      contents:
+        - utils.collators.core
+        - utils.collators.batching
+        - utils.collators.mamba
+        - utils.collators.mm_chat
+        - utils.samplers.multipack
+    - title: Callbacks
+      desc: Training callbacks
+      contents:
+        - utils.callbacks.perplexity
+        - utils.callbacks.profiler
+        - utils.callbacks.lisa
+        - utils.callbacks.mlflow_
+        - utils.callbacks.comet_
 
 website:
   title: "Axolotl"
@@ -108,8 +211,8 @@ website:
         - section: "Reference"
           contents:
             - docs/config.qmd
-            - section: "API Reference"
-              contents: docs/api/**/*.qmd
+            - text: "API Reference"
+              href: docs/api/index.qmd
 
 >>>>>>> 5d96b2a95 (quartodoc integration)
 format:
@@ -117,3 +220,22 @@ format:
     theme: darkly
     css: styles.css
     toc: true
+    # Enable better handling of line breaks in markdown
+    preserve-tabs: true
+    html-math-method: mathjax
+    # Improved markdown processing options
+    md-extensions:
+      - markdown_it
+      - def_list
+      - attr_list
+      - fenced_divs
+      - tables
+      - html_admonition
+      - lineblocks
+      - fancy_lists
+    # Control whitespace handling
+    whitespace: preserve
+    # Process newlines in paragraphs
+    wrap: preserve
+    # Better line break handling
+    preserve-linebreaks: true
