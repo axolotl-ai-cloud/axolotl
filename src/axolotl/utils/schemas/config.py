@@ -245,7 +245,7 @@ class AxolotlInputConfig(
 
     val_set_size: float | None = Field(default=0.0)
 
-    sequence_parallel_degree: int | None = 1
+    sequence_parallel_degree: int | None = None
 
     special_tokens: SpecialTokensConfig | None = None
     tokens: list[str] | None = None
@@ -1107,6 +1107,9 @@ class AxolotlInputConfig(
     @model_validator(mode="before")
     @classmethod
     def check_sequence_parallel_config(cls, data):
+        if data.get("sequence_parallel_degree") is None:
+            data["sequence_parallel_degree"] = 1
+
         if data.get("sequence_parallel_degree") > 1:
             if not data.get("flash_attention"):
                 raise ValueError(
