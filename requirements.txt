@@ -68,4 +68,3 @@ axolotl-contribs-mit==0.0.3
 
 # for sequence parallelism
 yunchang==0.6.0
-ring-flash-attn>=0.1.4
