@@ -55,6 +55,7 @@ Features:
 ### Installation
 
 ```bash
+pip3 install -U packaging setuptools wheel ninja
 pip3 install --no-build-isolation axolotl[flash-attn,deepspeed]
 
 # Download example axolotl configs, deepspeed configs
