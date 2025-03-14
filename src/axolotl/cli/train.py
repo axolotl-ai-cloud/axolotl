@@ -1,6 +1,7 @@
 """CLI to run training on a model."""
 
 import logging
+import os
 from pathlib import Path
 from typing import Union
 
@@ -34,7 +35,8 @@ def do_train(cfg: DictDefault, cli_args: TrainerCliArgs) -> None:
     """
     print_axolotl_text_art()
     check_accelerate_default_config()
-    check_user_token()
+    if int(os.getenv("LOCAL_RANK", "0")) == 0:
+        check_user_token()
 
     if cfg.rl:
         dataset_meta = load_preference_datasets(cfg=cfg, cli_args=cli_args)
