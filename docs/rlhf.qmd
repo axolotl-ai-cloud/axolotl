@@ -497,6 +497,10 @@ The input format is a simple JSON input with customizable fields based on the ab
 
 ### GRPO
 
+::: {.callout-tip}
+Check out our [GRPO cookbook](https://github.com/axolotl-ai-cloud/axolotl-cookbook/tree/main/grpo#training-an-r1-style-large-language-model-using-grpo).
+:::
+
 GRPO uses custom reward functions and transformations. Please have them ready locally.
 
 For ex, to load OpenAI's GSM8K and use a random reward for completions:
