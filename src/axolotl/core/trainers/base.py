@@ -419,6 +419,7 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, Trainer):
                 batch_size=batch_size,
                 group_size=self.args.sample_packing_group_size,
                 bin_size=self.args.sample_packing_bin_size,
+                sequential=self.args.sample_packing_sequentially,
                 drop_last=True,
             )
         if self.args.curriculum_sampling:

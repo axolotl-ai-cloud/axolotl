@@ -795,6 +795,7 @@ class AxolotlInputConfig(
     sample_packing: Optional[bool] = None
     sample_packing_group_size: Optional[int] = 100_000
     sample_packing_bin_size: Optional[int] = 200
+    sample_packing_sequentially: Optional[bool] = None
     eval_sample_packing: Optional[bool] = None
     pad_to_sequence_len: Optional[bool] = None
     curriculum_sampling: Optional[bool] = None
