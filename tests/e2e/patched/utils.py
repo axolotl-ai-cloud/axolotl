@@ -14,8 +14,6 @@ import torch
 from packaging import version
 from tbparse import SummaryReader
 
-from axolotl.utils.dict import DictDefault
-
 
 def with_temp_dir(test_func):
     @wraps(test_func)
@@ -66,36 +64,6 @@ def require_torch_2_5_1(test_case):
     return unittest.skipUnless(is_min_2_5_1(), "test requires torch>=2.5.1")(test_case)
 
 
-def require_torch_lt_2_6_0(test_case):
-    """
-    Decorator marking a test that requires torch >= 2.5.1
-    """
-
-    def is_max_2_6_0():
-        torch_version = version.parse(torch.__version__)
-        return torch_version < version.parse("2.6.0")
-
-    return unittest.skipUnless(is_max_2_6_0(), "test requires torch<2.6.0")(test_case)
-
-
-def require_vllm(test_case):
-    """
-    Decorator marking a test that requires a vllm to be installed
-    """
-
-    def is_vllm_installed():
-        try:
-            import vllm  # pylint: disable=unused-import  # noqa: F401
-
-            return True
-        except ImportError:
-            return False
-
-    return unittest.skipUnless(
-        is_vllm_installed(), "test requires a vllm to be installed"
-    )(test_case)
-
-
 def is_hopper():
     compute_capability = torch.cuda.get_device_capability()
     return compute_capability == (9, 0)
@@ -116,27 +84,3 @@ def check_tensorboard(
         assert df.value.values[-1] < lt_val, assertion_err % df.value.values[-1]
     else:
         assert df.value.values[-1] < lt_val, assertion_err
-
-
-def check_model_output_exists(temp_dir: str, cfg: DictDefault) -> None:
-    """
-    helper function to check if a model output file exists after training
-
-    checks based on adapter or not and if safetensors saves are enabled or not
-    """
-
-    if cfg.save_safetensors:
-        if not cfg.adapter:
-            assert (Path(temp_dir) / "model.safetensors").exists()
-        else:
-            assert (Path(temp_dir) / "adapter_model.safetensors").exists()
-    else:
-        # check for both, b/c in trl, it often defaults to saving safetensors
-        if not cfg.adapter:
-            assert (Path(temp_dir) / "pytorch_model.bin").exists() or (
-                Path(temp_dir) / "model.safetensors"
-            ).exists()
-        else:
-            assert (Path(temp_dir) / "adapter_model.bin").exists() or (
-                Path(temp_dir) / "adapter_model.safetensors"
-            ).exists()
