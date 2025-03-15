@@ -14,7 +14,7 @@ from axolotl.train import train
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 
-from .utils import check_tensorboard, require_torch_2_5_1, with_temp_dir
+from .utils import check_tensorboard, require_torch_2_5_0, with_temp_dir
 
 LOG = logging.getLogger("axolotl.tests.e2e")
 os.environ["WANDB_DISABLED"] = "true"
@@ -71,7 +71,7 @@ class TestPackedLlama(unittest.TestCase):
             temp_dir + "/runs", "train/train_loss", 2.0, "Train Loss is too high"
         )
 
-    @require_torch_2_5_1
+    @require_torch_2_5_0
     @with_temp_dir
     def test_loss_packed_flex(self, temp_dir):
         # pylint: disable=duplicate-code
