@@ -552,7 +552,7 @@ class ModelLoader:
 
             patch_self_attn_lora(self.cfg)
 
-        if self.cfg.sequence_parallel_degree > 1:
+        if self.cfg.sequence_parallel_degree and self.cfg.sequence_parallel_degree > 1:
             from axolotl.monkeypatch.attention.ring_attn import register_ring_attn
 
             # Initialize ring attn for sequence parallelism. This must be done after

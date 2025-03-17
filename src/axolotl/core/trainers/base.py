@@ -977,7 +977,6 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, Trainer):
                 packed_seq_lens=[seq_len] * batch_size, total_seq_len=total_seq_len
             )
 
-        # Get the loss from the parent implementation
         loss = super().training_step(model, inputs, num_items_in_batch)
 
         return loss
