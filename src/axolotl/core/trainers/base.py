@@ -613,7 +613,8 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, Trainer):
             self.data_collator = (  # pylint: disable=attribute-defined-outside-init
                 self.eval_data_collator
             )
-            eval_dataset = eval_dataset.remove_columns(["length"])
+            if "length" in eval_dataset.column_names:
+                eval_dataset = eval_dataset.remove_columns(["length"])
             dataloader = super().get_eval_dataloader(eval_dataset)
             self.data_collator = (  # pylint: disable=attribute-defined-outside-init
                 self.train_data_collator
@@ -633,7 +634,8 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, Trainer):
                 if hasattr(self, "eval_data_collator") and self.eval_data_collator
                 else self.data_collator
             )
-            eval_dataset = eval_dataset.remove_columns(["length"])
+            if "length" in eval_dataset.column_names:
+                eval_dataset = eval_dataset.remove_columns(["length"])
 
             # Handle dataset preprocessing for SP
             if self.args.sequence_parallel_degree > 1:
