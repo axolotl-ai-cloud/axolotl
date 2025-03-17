@@ -34,6 +34,7 @@ website:
             - docs/installation.qmd
             - docs/inference.qmd
             - docs/cli.qmd
+            - docs/config.qmd
 
         - section: "Dataset Formats"
           contents: docs/dataset-formats/*
@@ -73,10 +74,6 @@ website:
             - docs/faq.qmd
             - docs/debugging.qmd
             - docs/nccl.qmd
-
-        - section: "Reference"
-          contents:
-            - docs/config.qmd
 
 format:
   html:
