@@ -51,8 +51,8 @@ output_dir: ./outputs/lora-out
 ::: {.callout-tip}
 `load_in_8bit: true` and `adapter: lora` enables LoRA adapter finetuning.
 
-- To swap to Full finetuning, remove these two lines.
-- To swap to QLoRA finetuning, replace with `load_in_4bit: true` and `adapter: qlora`.
+- To perform Full finetuning, remove these two lines.
+- To perform QLoRA finetuning, replace with `load_in_4bit: true` and `adapter: qlora`.
 :::
 
 See our [Config options](config.qmd) for more details.
