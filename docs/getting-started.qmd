@@ -36,7 +36,9 @@ The YAML configuration file controls everything about your training. Here's what
 
 ```yaml
 base_model: NousResearch/Llama-3.2-1B
-# hub_model_id: username/custom_model_name
+
+load_in_8bit: true
+adapter: lora
 
 datasets:
   - path: teknium/GPT4-LLM-Cleaned
@@ -44,10 +46,14 @@ datasets:
 dataset_prepared_path: last_run_prepared
 val_set_size: 0.1
 output_dir: ./outputs/lora-out
-
-adapter: lora
-lora_model_dir:
 ```
+
+::: {.callout-tip}
+`load_in_8bit: true` and `adapter: lora` enables LoRA adapter finetuning.
+
+- To swap to Full finetuning, remove these two lines.
+- To swap to QLoRA finetuning, replace with `load_in_4bit: true` and `adapter: qlora`.
+:::
 
 See our [Config options](config.qmd) for more details.
 
@@ -56,7 +62,7 @@ See our [Config options](config.qmd) for more details.
 When you run `axolotl train`, Axolotl:
 
 1. Downloads the base model
-2. (If specified) applies LoRA adapter layers
+2. (If specified) applies q/LoRA adapter layers
 3. Loads and processes the dataset
 4. Runs the training loop
 5. Saves the trained model and / or LoRA weights
@@ -69,6 +75,8 @@ Let's modify the example for your own data:
 
 ```yaml
 base_model: NousResearch/Nous-Hermes-llama-1b-v1
+
+load_in_8bit: true
 adapter: lora
 
 # Training settings
@@ -103,8 +111,6 @@ format):
 {"instruction": "Classify this text", "input": "I love this!", "output": "positive"}
 {"instruction": "Classify this text", "input": "Not good at all", "output": "negative"}
 ```
-
-Please consult the supported [Dataset Formats](dataset-formats/) for more details.
 
 3. Run the training:
 
