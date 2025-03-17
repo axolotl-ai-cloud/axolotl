@@ -137,14 +137,20 @@ ul.task-list li input[type="checkbox"] {
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../docs/inference.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Inference and Merging</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../docs/cli.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">CLI Reference</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/inference.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Inference</span></a>
+  <a href="../docs/config.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Config Reference</span></a>
   </div>
 </li>
       </ul>
@@ -377,23 +383,6 @@ ul.task-list li input[type="checkbox"] {
 </li>
       </ul>
   </li>
-        <li class="sidebar-item sidebar-item-section">
-      <div class="sidebar-item-container"> 
-            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-8" role="navigation" aria-expanded="true">
- <span class="menu-text">Reference</span></a>
-          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-8" role="navigation" aria-expanded="true" aria-label="Toggle section">
-            <i class="bi bi-chevron-right ms-2"></i>
-          </a> 
-      </div>
-      <ul id="quarto-sidebar-section-8" class="collapse list-unstyled sidebar-section depth1 show">  
-          <li class="sidebar-item">
-  <div class="sidebar-item-container"> 
-  <a href="../docs/config.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Config options</span></a>
-  </div>
-</li>
-      </ul>
-  </li>
     </ul>
     </div>
 </nav>
@@ -458,6 +447,17 @@ ul.task-list li input[type="checkbox"] {
 <p><strong>Q: The codes is stuck on saving preprocessed datasets.</strong></p>
 <blockquote class="blockquote">
 <p>A: This is usually an issue with the GPU. This can be resolved through setting the os environment variable <code>CUDA_VISIBLE_DEVICES=0</code>. If you are on runpod, this is usually a pod issue. Starting a new pod should take care of it.</p>
+</blockquote>
+<p><strong>Q: Received mismatch error on merge adapters / loading adapters between torch.Size of checkpoint and model.</strong></p>
+<blockquote class="blockquote">
+<p>A: This is likely due to vocab size mismatch. By default, Axolotl expands the model’s embeddings if the tokenizer has more tokens than the model. Please use the <code>axolotl merge-lora</code> command to merge the adapters instead of using your own scripts.</p>
+</blockquote>
+<blockquote class="blockquote">
+<p>On the other hand, if the model has more tokens than the tokenizer, Axolotl does not shrink the model’s embeddings unless <code>shrink_embeddings: true</code> is set in the config.</p>
+</blockquote>
+<p><strong>Q: How to call Axolotl via custom python scripts?</strong></p>
+<blockquote class="blockquote">
+<p>A: Yes, since Axolotl is just Python, please see <code>src/axolotl/cli/main.py</code> on how each command is called.</p>
 </blockquote>
 </section>
 <section id="chat-templates" class="level3">
