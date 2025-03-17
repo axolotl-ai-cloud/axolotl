@@ -1,4 +1,5 @@
 """Module with Pydantic models for configuration."""
+
 # pylint: disable=too-many-lines
 
 import logging
@@ -1825,6 +1826,14 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                     data["torch_compile"] = False
             else:
                 data["torch_compile"] = False
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_beta_and_trl_beta_match(cls, data):
+        if data.get("beta") and data.get("trl", {}).get("beta"):
+            if data["beta"] != data["trl"]["beta"]:
+                raise ValueError("beta and trl.beta must match or one must be removed")
         return data
 
 
