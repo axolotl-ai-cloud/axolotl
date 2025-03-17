@@ -14,10 +14,17 @@ quartodoc:
         - train
         - evaluate
         - datasets
+        - convert
+        - prompt_tokenizers
+        - logging_config
         - core.trainer_builder
         - core.training_args
         - core.chat.messages
+        - core.chat.format.chatml
+        - core.chat.format.llama3x
+        - core.chat.format.shared
         - core.datasets.chat
+        - core.datasets.transforms.chat_builder
     - title: CLI
       desc: Command-line interface
       contents:
@@ -49,16 +56,27 @@ quartodoc:
         - prompt_strategies.chat_template
         - prompt_strategies.alpaca_chat
         - prompt_strategies.alpaca_instruct
+        - prompt_strategies.alpaca_w_system
         - prompt_strategies.user_defined
         - prompt_strategies.llama2_chat
         - prompt_strategies.completion
         - prompt_strategies.input_output
         - prompt_strategies.stepwise_supervised
+        - prompt_strategies.metharme
+        - prompt_strategies.orcamini
+        - prompt_strategies.pygmalion
         - prompt_strategies.messages.chat
         - prompt_strategies.dpo.chat_template
         - prompt_strategies.dpo.llama3
+        - prompt_strategies.dpo.chatml
+        - prompt_strategies.dpo.zephyr
+        - prompt_strategies.dpo.user_defined
+        - prompt_strategies.dpo.passthrough
         - prompt_strategies.kto.llama3
+        - prompt_strategies.kto.chatml
+        - prompt_strategies.kto.user_defined
         - prompt_strategies.orpo.chat_template
+        - prompt_strategies.bradley_terry.llama3
     - title: Kernels
       desc: Low-level performance optimizations
       contents:
@@ -86,6 +104,7 @@ quartodoc:
         - monkeypatch.unsloth_
         - monkeypatch.attention.mllama
         - monkeypatch.data.batch_dataset_fetcher
+        - monkeypatch.mixtral
     - title: Utils
       desc: Utility functions
       contents:
@@ -93,6 +112,9 @@ quartodoc:
         - utils.tokenization
         - utils.chat_templates
         - utils.lora
+        - utils.lora_embeddings
+        - utils.model_shard_quant
+        - utils.bench
         - utils.freeze
         - utils.trainer
         - utils.schedulers
@@ -101,6 +123,7 @@ quartodoc:
         - utils.optimizers.adopt
         - utils.data.pretraining
         - utils.data.sft
+        - utils.gradient_checkpointing.unsloth
     - title: Integrations
       desc: Third-party integrations and extensions
       contents:
@@ -111,6 +134,12 @@ quartodoc:
         - integrations.liger.args
         - integrations.lm_eval.args
         - integrations.spectrum.args
+    - title: Common
+      desc: Common utilities and shared functionality
+      contents:
+        - common.architectures
+        - common.const
+        - common.datasets
     - title: Models
       desc: Custom model implementations
       contents:
