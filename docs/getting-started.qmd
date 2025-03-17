@@ -62,7 +62,7 @@ See our [Config options](config.qmd) for more details.
 When you run `axolotl train`, Axolotl:
 
 1. Downloads the base model
-2. (If specified) applies q/LoRA adapter layers
+2. (If specified) applies QLoRA/LoRA adapter layers
 3. Loads and processes the dataset
 4. Runs the training loop
 5. Saves the trained model and / or LoRA weights
