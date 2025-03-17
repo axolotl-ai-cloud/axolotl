@@ -912,7 +912,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
 
         kwargs["return_tensors"] = "pt"
         if issubclass(collator, DataCollatorForSeq2Seq):
-            print(type(collator), issubclass(collator, DataCollatorForSeq2Seq))
             kwargs["sequence_parallel_degree"] = training_args.sequence_parallel_degree
 
         return collator(
