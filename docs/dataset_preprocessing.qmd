@@ -6,7 +6,7 @@ description: How datasets are processed
 ## Overview
 
 Dataset pre-processing is the step where Axolotl takes each dataset you've configured alongside
-the [dataset format](docs/dataset-formats) and prompt strategies to:
+the [dataset format](dataset-formats) and prompt strategies to:
 
  - parse the dataset based on the *dataset format*
  - transform the dataset to how you would interact with the model based on the *prompt strategy*
