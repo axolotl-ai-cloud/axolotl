@@ -195,12 +195,7 @@ website:
             - docs/inference.qmd
             - docs/cli.qmd
             - docs/config.qmd
-
-        - section: "Reference"
-          contents:
-            - docs/config.qmd
-            - text: "API Reference"
-              href: docs/api/index.qmd
+            - docs/api/index.qmd
 
         - section: "Dataset Formats"
           contents: docs/dataset-formats/*
