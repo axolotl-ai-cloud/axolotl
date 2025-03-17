@@ -298,7 +298,7 @@ The input format is a simple JSON input with customizable fields based on the ab
 
 ### IPO
 
-As IPO is just DPO with a different loss function, all supported dataset formats for [DPO](#dpo) works.
+As IPO is just DPO with a different loss function, all supported dataset formats for [DPO](#dpo) are also supported for IPO.
 
 ```yaml
 rl: ipo
