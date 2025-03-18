@@ -79,6 +79,9 @@ axolotl train examples/llama-3/lora-1b.yml
 
 That's it! Check out our [Getting Started Guide](https://axolotl-ai-cloud.github.io/axolotl/docs/getting-started.html) for a more detailed walkthrough.
 
+### Run on Novita AI
+Axolotl can now also be run on Novita AI, a newer alternative GPU cloud provider which has a quick launch axolotl template for as well. [Check it out here!](https://novita.ai/gpus-console?templateId=311)
+
 ## ✨ Key Features
 
 - **Multiple Model Support**: Train various models like LLaMA, Mistral, Mixtral, Pythia, and more
