@@ -3,7 +3,7 @@ DPO prompt strategies for using tokenizer chat templates.
 """
 
 from axolotl.utils.chat_templates import extract_chat_template_args, get_chat_template
-from axolotl.utils.config.models.input.v0_4_1 import handle_legacy_message_fields_logic
+from axolotl.utils.schemas.utils import handle_legacy_message_fields_logic
 
 
 def default(

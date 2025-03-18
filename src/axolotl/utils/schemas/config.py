@@ -1,11 +1,9 @@
-"""Module with Pydantic models for configuration."""
-
+"""Main Axolotl input configuration Pydantic models"""
 # pylint: disable=too-many-lines
 
 import logging
 import os
-from enum import Enum
-from typing import Annotated, Any, Dict, List, Literal, Optional, Tuple, Union
+from typing import Annotated, Any, Literal
 
 from annotated_types import MinLen
 from packaging import version
@@ -17,650 +15,39 @@ from pydantic import (
     field_validator,
     model_validator,
 )
-from transformers import SchedulerType
-from transformers.training_args import OptimizerNames
 from transformers.utils.import_utils import is_torch_npu_available
 
-from axolotl.utils.config.models.internals import EnvCapabilities, GPUCapabilities
+from axolotl.utils.schemas.datasets import (
+    DatasetConfig,
+    DPODataset,
+    KTODataset,
+    PretrainingDataset,
+    SFTDataset,
+    StepwiseSupervisedDataset,
+)
+from axolotl.utils.schemas.deprecated import DeprecatedParameters, RemappedParameters
+from axolotl.utils.schemas.enums import ChatTemplate, RLType
+from axolotl.utils.schemas.integrations import (
+    CometConfig,
+    GradioConfig,
+    LISAConfig,
+    MLFlowConfig,
+    RayConfig,
+    WandbConfig,
+)
+from axolotl.utils.schemas.internal import EnvCapabilities, GPUCapabilities
+from axolotl.utils.schemas.model import (
+    ModelInputConfig,
+    ModelOutputConfig,
+    SpecialTokensConfig,
+)
+from axolotl.utils.schemas.peft import LoraConfig, ReLoRAConfig
+from axolotl.utils.schemas.training import HyperparametersConfig
+from axolotl.utils.schemas.trl import TRLConfig
 
-from .trl import TRLConfig
-
-LOG = logging.getLogger("axolotl.utils.config.models.input")
+LOG = logging.getLogger(__name__)
 
 SUPPORTED_METRICS = {"sacrebleu", "comet", "ter", "chrf", "perplexity"}
-
-
-class RLType(str, Enum):
-    """RL trainer type configuration subset"""
-
-    dpo = "dpo"  # pylint: disable=invalid-name
-    grpo = "grpo"  # pylint: disable=invalid-name
-    ipo = "ipo"  # pylint: disable=invalid-name
-    orpo = "orpo"  # pylint: disable=invalid-name
-    kto = "kto"  # pylint: disable=invalid-name
-    simpo = "simpo"  # pylint: disable=invalid-name
-
-
-class ChatTemplate(str, Enum):
-    """Chat templates configuration subset"""
-
-    alpaca = "alpaca"  # pylint: disable=invalid-name
-    chatml = "chatml"  # pylint: disable=invalid-name
-    mistral_v1 = "mistral_v1"  # pylint: disable=invalid-name
-    mistral_v2v3 = "mistral_v2v3"  # pylint: disable=invalid-name
-    mistral_v3_tekken = "mistral_v3_tekken"  # pylint: disable=invalid-name
-    gemma = "gemma"  # pylint: disable=invalid-name
-    cohere = "cohere"  # pylint: disable=invalid-name
-    llama3 = "llama3"  # pylint: disable=invalid-name
-    llama3_2_vision = "llama3_2_vision"  # pylint: disable=invalid-name
-    phi_3 = "phi_3"  # pylint: disable=invalid-name
-    phi_35 = "phi_35"  # pylint: disable=invalid-name
-    deepseek_v2 = "deepseek_v2"  # pylint: disable=invalid-name
-    deepseek_v3 = "deepseek_v3"  # pylint: disable=invalid-name
-    jamba = "jamba"  # pylint: disable=invalid-name
-    jinja = "jinja"  # pylint: disable=invalid-name
-    qwen_25 = "qwen_25"  # pylint: disable=invalid-name
-    tokenizer_default = "tokenizer_default"  # pylint: disable=invalid-name
-    exaone = "exaone"  # pylint: disable=invalid-name
-    metharme = "metharme"  # pylint: disable=invalid-name
-
-
-class CustomSupportedOptimizers(str, Enum):
-    """Custom supported optimizers"""
-
-    optimi_adamw = "optimi_adamw"  # pylint: disable=invalid-name
-    ao_adamw_4bit = "ao_adamw_4bit"  # pylint: disable=invalid-name
-    ao_adamw_8bit = "ao_adamw_8bit"  # pylint: disable=invalid-name
-    ao_adamw_fp8 = "ao_adamw_fp8"  # pylint: disable=invalid-name
-    adopt_adamw = "adopt_adamw"  # pylint: disable=invalid-name
-    muon = "muon"  # pylint: disable=invalid-name
-
-
-class DeprecatedParameters(BaseModel):
-    """configurations that are deprecated"""
-
-    max_packed_sequence_len: Optional[int] = None
-    rope_scaling: Optional[Any] = None
-    noisy_embedding_alpha: Optional[float] = None
-    dpo_beta: Optional[float] = None
-    evaluation_strategy: Optional[str] = None
-
-    @field_validator("max_packed_sequence_len")
-    @classmethod
-    def validate_max_packed_sequence_len(cls, max_packed_sequence_len):
-        if max_packed_sequence_len:
-            raise DeprecationWarning("`max_packed_sequence_len` is no longer supported")
-        return max_packed_sequence_len
-
-    @field_validator("rope_scaling")
-    @classmethod
-    def validate_rope_scaling(cls, rope_scaling):
-        if rope_scaling:
-            raise DeprecationWarning(
-                "`rope_scaling` is no longer supported, it should now be be a key under `model_config`"
-            )
-        return rope_scaling
-
-    @field_validator("noisy_embedding_alpha")
-    @classmethod
-    def validate_noisy_embedding_alpha(cls, noisy_embedding_alpha):
-        if noisy_embedding_alpha:
-            LOG.warning("noisy_embedding_alpha is deprecated, use neftune_noise_alpha")
-        return noisy_embedding_alpha
-
-    @field_validator("dpo_beta")
-    @classmethod
-    def validate_dpo_beta(cls, dpo_beta):
-        if dpo_beta is not None:
-            LOG.warning("dpo_beta is deprecated, use rl_beta instead")
-        return dpo_beta
-
-    @field_validator("evaluation_strategy")
-    @classmethod
-    def validate_evaluation_strategy(cls, evaluation_strategy):
-        if evaluation_strategy is not None:
-            LOG.warning("evaluation_strategy is deprecated, use eval_strategy instead")
-        return evaluation_strategy
-
-
-class RemappedParameters(BaseModel):
-    """parameters that have been remapped to other names"""
-
-    overrides_of_model_config: Optional[Dict[str, Any]] = Field(
-        default=None, alias="model_config"
-    )
-    overrides_of_model_kwargs: Optional[Dict[str, Any]] = Field(
-        default=None, alias="model_kwargs"
-    )
-    type_of_model: Optional[str] = Field(default=None, alias="model_type")
-    revision_of_model: Optional[str] = Field(default=None, alias="model_revision")
-
-
-class PretrainingDataset(BaseModel):
-    """pretraining dataset configuration subset"""
-
-    name: Optional[str] = None
-    path: Optional[str] = None
-    split: Optional[str] = "train"
-    text_column: Optional[str] = "text"
-    type: Optional[str] = "pretrain"
-    trust_remote_code: Optional[bool] = False
-    data_files: Optional[str] = None
-    skip: Optional[int] = None
-
-
-class UserDefinedPrompterType(BaseModel):
-    """structure for user defined prompt types"""
-
-    system_prompt: Optional[str] = None
-    system_format: Optional[str] = None
-    field_system: Optional[str] = None
-    field_instruction: Optional[str] = None
-    field_input: Optional[str] = None
-    field_output: Optional[str] = None
-
-    format: Optional[str] = None
-    no_input_format: Optional[str] = None
-    field: Optional[str] = None
-
-
-class LrGroup(BaseModel):
-    """Custom learning rate group configuration"""
-
-    name: str
-    modules: List[str]
-    lr: float
-
-
-class SFTDataset(BaseModel):
-    """SFT configuration subset"""
-
-    path: Optional[str] = None
-    split: Optional[str] = None
-    type: Optional[Union[str, UserDefinedPrompterType]] = None
-    input_transform: Optional[str] = None
-    shards: Optional[int] = None
-    shards_idx: Optional[int] = None
-    preprocess_shards: Optional[int] = None
-    conversation: Optional[str] = None
-    # Do not make this too strict or it will break the validator to choose different dataset class
-    chat_template: Optional[
-        Union[
-            ChatTemplate,
-            str,
-        ]
-    ] = None
-    chat_template_jinja: Optional[str] = None
-    data_files: Optional[Union[str, List[str]]] = None
-    input_format: Optional[str] = None
-    name: Optional[str] = None
-    ds_type: Optional[str] = None
-    train_on_split: Optional[str] = None
-    field: Optional[str] = None
-    field_human: Optional[str] = None
-    field_model: Optional[str] = None
-    field_messages: Optional[str] = None
-    message_field_role: Optional[str] = (
-        None  # deprecated, use message_property_mappings
-    )
-    message_field_content: Optional[str] = (
-        None  # deprecated, use message_property_mappings
-    )
-    message_property_mappings: Optional[Dict[str, str]] = None
-    message_field_training: Optional[str] = None
-    message_field_training_detail: Optional[str] = None
-    logprobs_field: Optional[str] = None
-    temperature: Optional[float] = None
-    roles_to_train: Optional[List[str]] = None
-    train_on_eos: Optional[str] = None
-    roles: Optional[Dict[str, List[str]]] = None
-    drop_system_message: Optional[bool] = None
-    trust_remote_code: Optional[bool] = False
-    revision: Optional[str] = None
-
-    @model_validator(mode="before")
-    @classmethod
-    def handle_legacy_message_fields(cls, data):
-        """Handle backwards compatibility between legacy message field mapping and new property mapping system."""
-        return handle_legacy_message_fields_logic(data)
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_chat_template_config(cls, data):
-        if isinstance(data, BaseModel):
-            data = data.model_dump()
-
-        # Set chat_template to tokenizer_default if not set
-        if data.get("type") == "chat_template" and not data.get("chat_template"):
-            data["chat_template"] = ChatTemplate.tokenizer_default
-
-        # if chat_template is set to jinja, chat_template_jinja is required
-        if data.get("chat_template") == ChatTemplate.jinja and not data.get(
-            "chat_template_jinja"
-        ):
-            raise ValueError(
-                "chat_template_jinja is required when chat_template is set to jinja"
-            )
-
-        # If chat_template_jinja is set, set chat_template to jinja
-        if data.get("chat_template_jinja") and not data.get("chat_template"):
-            data["chat_template"] = ChatTemplate.jinja
-
-        return data
-
-
-class UserDefinedDPOType(BaseModel):
-    """User defined typing for DPO"""
-
-    field_system: Optional[str] = None
-    field_prompt: Optional[str] = None
-    field_chosen: Optional[str] = None
-    field_rejected: Optional[str] = None
-    prompt_format: Optional[str] = None
-    chosen_format: Optional[str] = None
-    rejected_format: Optional[str] = None
-
-
-class DPODataset(BaseModel):
-    """DPO configuration subset"""
-
-    path: Optional[str] = None
-    split: Optional[str] = None
-    type: Optional[Union[UserDefinedDPOType, str]] = None
-    data_files: Optional[List[str]] = None
-    revision: Optional[str] = None
-    field_messages: Optional[str] = None
-
-
-class StepwiseSupervisedDataset(BaseModel):
-    """Stepwise supervised dataset configuration subset"""
-
-    path: Optional[str] = None
-    split: Optional[str] = None
-    data_files: Optional[List[str]] = None
-    revision: Optional[str] = None
-    step_separator: Optional[str] = None
-    max_completion_length: Optional[int] = None
-    train_on_last_step_only: Optional[bool] = None
-
-
-class UserDefinedKTOType(BaseModel):
-    """User defined typing for KTO"""
-
-    field_system: Optional[str] = None
-    field_prompt: Optional[str] = None
-    field_completion: Optional[str] = None
-    field_label: Optional[bool] = None
-    prompt_format: Optional[str] = None
-    completion_format: Optional[str] = None
-
-
-class KTODataset(BaseModel):
-    """KTO configuration subset"""
-
-    path: Optional[str] = None
-    split: Optional[str] = None
-    type: Optional[Union[UserDefinedKTOType, str]] = None
-    data_files: Optional[List[str]] = None
-    trust_remote_code: Optional[bool] = False
-    revision: Optional[str] = None
-
-
-DatasetConfig = Union[SFTDataset, DPODataset, KTODataset, StepwiseSupervisedDataset]
-
-
-class LoftQConfig(BaseModel):
-    """LoftQ configuration subset"""
-
-    loftq_bits: int = Field(
-        default=4, json_schema_extra={"description": "Quantization bits for LoftQ"}
-    )
-    # loftq_iter: int = Field(default=1, json_schema_extra={"description": "Alternating iterations for LoftQ"})
-
-
-class PeftConfig(BaseModel):
-    """peftq configuration subset"""
-
-    loftq_config: Optional[LoftQConfig] = None
-
-
-class SpecialTokensConfig(BaseModel):
-    """Special tokens configuration subset"""
-
-    bos_token: Optional[str] = None
-    eos_token: Optional[str] = None
-    pad_token: Optional[str] = None
-    unk_token: Optional[str] = None
-    additional_special_tokens: Optional[List[str]] = None
-
-
-class LoraConfig(BaseModel):
-    """Peft / LoRA configuration subset"""
-
-    load_in_8bit: Optional[bool] = Field(default=False)
-    load_in_4bit: Optional[bool] = Field(default=False)
-
-    adapter: Optional[str] = None
-    lora_model_dir: Optional[str] = None
-    lora_r: Optional[int] = None
-    lora_alpha: Optional[int] = None
-    lora_fan_in_fan_out: Optional[bool] = None
-    lora_target_modules: Optional[Union[str, List[str]]] = None
-    lora_target_linear: Optional[bool] = None
-    lora_modules_to_save: Optional[List[str]] = None
-    lora_dropout: Optional[float] = 0.0
-    peft_layers_to_transform: Optional[List[int]] = None
-    peft_layers_pattern: Optional[List[str]] = None
-    peft: Optional[PeftConfig] = None
-    peft_use_dora: Optional[bool] = None
-    peft_use_rslora: Optional[bool] = None
-    peft_layer_replication: Optional[List[Tuple[int, int]]] = None
-    peft_init_lora_weights: Optional[Union[bool, str]] = None
-
-    qlora_sharded_model_loading: Optional[bool] = Field(
-        default=False,
-        json_schema_extra={
-            "description": "load qlora model in sharded format for FSDP using answer.ai technique."
-        },
-    )
-    lora_on_cpu: Optional[bool] = None
-    gptq: Optional[bool] = None
-    bnb_config_kwargs: Optional[Dict[str, Any]] = None
-
-    loraplus_lr_ratio: Optional[float] = Field(
-        default=None,
-        json_schema_extra={
-            "description": "loraplus learning rate ratio lr_B / lr_A. Recommended value is 2^4."
-        },
-    )
-    loraplus_lr_embedding: Optional[float] = Field(
-        default=1e-6,
-        json_schema_extra={
-            "description": "loraplus learning rate for lora embedding layers."
-        },
-    )
-
-    merge_lora: Optional[bool] = None
-
-    @model_validator(mode="before")
-    @classmethod
-    def validate_adapter(cls, data):
-        if (
-            not data.get("adapter")
-            and not data.get("inference")
-            and (data.get("load_in_8bit") or data.get("load_in_4bit"))
-        ):
-            raise ValueError(
-                "load_in_8bit and load_in_4bit are not supported without setting an adapter for training."
-                "If you want to full finetune, please turn off load_in_8bit and load_in_4bit."
-            )
-        return data
-
-    @model_validator(mode="after")
-    def validate_qlora(self):
-        if self.adapter == "qlora":
-            if self.merge_lora:
-                # can't merge qlora if loaded in 8bit or 4bit
-                if self.load_in_8bit:
-                    raise ValueError("Can't merge qlora if loaded in 8bit")
-
-                if self.gptq:
-                    raise ValueError("Can't merge qlora if gptq")
-
-                if self.load_in_4bit:
-                    raise ValueError("Can't merge qlora if loaded in 4bit")
-
-            else:
-                if self.load_in_8bit:
-                    raise ValueError("Can't load qlora in 8bit")
-
-                if self.gptq:
-                    raise ValueError("Can't load qlora if gptq")
-
-                if not self.load_in_4bit:
-                    raise ValueError("Require cfg.load_in_4bit to be True for qlora")
-        return self
-
-    @field_validator("loraplus_lr_embedding")
-    @classmethod
-    def convert_loraplus_lr_embedding(cls, loraplus_lr_embedding):
-        if loraplus_lr_embedding and isinstance(loraplus_lr_embedding, str):
-            loraplus_lr_embedding = float(loraplus_lr_embedding)
-        return loraplus_lr_embedding
-
-    @model_validator(mode="before")
-    @classmethod
-    def validate_lora_dropout(cls, data):
-        if data.get("adapter") is not None and data.get("lora_dropout") is None:
-            data["lora_dropout"] = 0.0
-        return data
-
-
-class ReLoRAConfig(BaseModel):
-    """ReLoRA configuration subset"""
-
-    relora_steps: Optional[int] = None
-    relora_warmup_steps: Optional[int] = None
-    relora_anneal_steps: Optional[int] = None
-    relora_prune_ratio: Optional[float] = None
-    relora_cpu_offload: Optional[bool] = None
-
-
-class ModelInputConfig(BaseModel):
-    """model to train on configuration subset"""
-
-    model_config = {"protected_namespaces": ()}
-
-    base_model: str
-    base_model_config: Optional[str] = None
-    cls_model_config: Optional[str] = None
-    tokenizer_config: Optional[str] = None
-    tokenizer_use_fast: Optional[bool] = None
-    tokenizer_legacy: Optional[bool] = None
-    tokenizer_type: Optional[str] = Field(
-        default=None, json_schema_extra={"description": "transformers tokenizer class"}
-    )
-    processor_type: Optional[str] = Field(
-        default=None, json_schema_extra={"description": "transformers processor class"}
-    )
-    trust_remote_code: Optional[bool] = None
-
-    @field_validator("trust_remote_code")
-    @classmethod
-    def hint_trust_remote_code(cls, trust_remote_code):
-        if trust_remote_code:
-            LOG.warning(
-                "`trust_remote_code` is set to true. Please make sure that you reviewed the remote code/model."
-            )
-        return trust_remote_code
-
-
-class HyperparametersConfig(BaseModel):
-    """training hyperparams configuration subset"""
-
-    gradient_accumulation_steps: Optional[int] = Field(default=1)
-    micro_batch_size: Optional[int] = Field(
-        default=1,
-        json_schema_extra={"description": "per gpu micro batch size for training"},
-    )
-    batch_size: Optional[int] = Field(
-        default=None,
-        json_schema_extra={
-            "description": "Total batch size, we do not recommended setting this manually"
-        },
-    )
-    eval_batch_size: Optional[int] = Field(
-        default=None,
-        json_schema_extra={
-            "description": "per gpu micro batch size for evals, defaults to value of micro_batch_size"
-        },
-    )
-
-    auto_find_batch_size: Optional[bool] = None
-
-    train_on_inputs: Optional[bool] = False
-    group_by_length: Optional[bool] = None
-
-    learning_rate: Union[str, float]
-    embedding_lr: Optional[float] = None
-    embedding_lr_scale: Optional[float] = None
-    weight_decay: Optional[float] = 0.0
-    optimizer: Optional[Union[OptimizerNames, CustomSupportedOptimizers]] = (
-        OptimizerNames.ADAMW_TORCH_FUSED
-    )
-    optim_args: Optional[Union[str, Dict[str, Any]]] = Field(
-        default=None,
-        json_schema_extra={"description": "Optional arguments to supply to optimizer."},
-    )
-    optim_target_modules: Optional[Union[List[str], Literal["all_linear"]]] = Field(
-        default=None,
-        json_schema_extra={
-            "description": "The target modules to optimize, i.e. the module names that you would like to train."
-        },
-    )
-    torchdistx_path: Optional[str] = None
-    lr_scheduler: Optional[
-        Union[SchedulerType, Literal["one_cycle"], Literal["rex"]]
-    ] = SchedulerType.COSINE
-    lr_scheduler_kwargs: Optional[Dict[str, Any]] = None
-    lr_quadratic_warmup: Optional[bool] = None
-    cosine_min_lr_ratio: Optional[float] = None
-    cosine_constant_lr_ratio: Optional[float] = None
-    lr_div_factor: Optional[float] = None
-    lr_groups: Optional[List[LrGroup]] = None
-
-    adam_epsilon: Optional[float] = None
-    adam_beta1: Optional[float] = None
-    adam_beta2: Optional[float] = None
-    max_grad_norm: Optional[float] = None
-    num_epochs: float = Field(default=1.0)
-
-    @field_validator("batch_size")
-    @classmethod
-    def hint_batch_size_set(cls, batch_size):
-        if batch_size:
-            LOG.warning(
-                "%s\n%s",
-                "batch_size is not recommended. Please use gradient_accumulation_steps instead.",
-                "To calculate the equivalent gradient_accumulation_steps, divide batch_size / micro_batch_size / number of gpus.",
-            )
-        return batch_size
-
-    @field_validator("learning_rate")
-    @classmethod
-    def convert_learning_rate(cls, learning_rate):
-        if learning_rate and isinstance(learning_rate, str):
-            learning_rate = float(learning_rate)
-        return learning_rate
-
-
-class ModelOutputConfig(BaseModel):
-    """model save configuration subset"""
-
-    output_dir: str = Field(default="./model-out")
-    hub_model_id: Optional[str] = None
-    hub_strategy: Optional[str] = None
-    save_safetensors: Optional[bool] = True
-
-
-class MLFlowConfig(BaseModel):
-    """mlflow configuration subset"""
-
-    use_mlflow: Optional[bool] = None
-    mlflow_tracking_uri: Optional[str] = None
-    mlflow_experiment_name: Optional[str] = None
-    mlflow_run_name: Optional[str] = None
-    hf_mlflow_log_artifacts: Optional[bool] = None
-
-
-class LISAConfig(BaseModel):
-    """LISA options"""
-
-    lisa_n_layers: Optional[int] = Field(
-        default=None,
-        json_schema_extra={"description": "the number of activate layers in LISA"},
-    )
-    lisa_step_interval: Optional[int] = Field(
-        default=None,
-        json_schema_extra={"description": "how often to switch layers in LISA"},
-    )
-    lisa_layers_attribute: Optional[str] = Field(
-        default="model.layers",
-        json_schema_extra={"description": "path under the model to access the layers"},
-    )
-
-
-class WandbConfig(BaseModel):
-    """wandb configuration subset"""
-
-    use_wandb: Optional[bool] = None
-    wandb_name: Optional[str] = None
-    wandb_run_id: Optional[str] = None
-    wandb_mode: Optional[str] = None
-    wandb_project: Optional[str] = None
-    wandb_entity: Optional[str] = None
-    wandb_watch: Optional[str] = None
-    wandb_log_model: Optional[str] = None
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_wandb_run(cls, data):
-        if data.get("wandb_run_id") and not data.get("wandb_name"):
-            data["wandb_name"] = data.get("wandb_run_id")
-
-            LOG.warning(
-                "wandb_run_id sets the ID of the run. If you would like to set the name, please use wandb_name instead."
-            )
-
-        return data
-
-
-class CometConfig(BaseModel):
-    """Comet configuration subset"""
-
-    use_comet: Optional[bool] = None
-    comet_api_key: Optional[str] = None
-    comet_workspace: Optional[str] = None
-    comet_project_name: Optional[str] = None
-    comet_experiment_key: Optional[str] = None
-    comet_mode: Optional[str] = None
-    comet_online: Optional[bool] = None
-    comet_experiment_config: Optional[Dict[str, Any]] = None
-
-
-class GradioConfig(BaseModel):
-    """Gradio configuration subset"""
-
-    gradio_title: Optional[str] = None
-    gradio_share: Optional[bool] = None
-    gradio_server_name: Optional[str] = None
-    gradio_server_port: Optional[int] = None
-    gradio_max_new_tokens: Optional[int] = None
-    gradio_temperature: Optional[float] = None
-
-
-class RayConfig(BaseModel):
-    """Ray launcher configuration subset"""
-
-    use_ray: bool = Field(default=False)
-    ray_run_name: Optional[str] = Field(
-        default=None,
-        json_schema_extra={
-            "help": "The training results will be saved at `saves/ray_run_name`."
-        },
-    )
-    ray_num_workers: int = Field(
-        default=1,
-        json_schema_extra={
-            "help": "The number of workers for Ray training. Default is 1 worker."
-        },
-    )
-    resources_per_worker: dict = Field(
-        default_factory=lambda: {"GPU": 1},
-        json_schema_extra={
-            "help": "The resources per worker for Ray training. Default is to use 1 GPU per worker."
-        },
-    )
 
 
 # pylint: disable=too-many-public-methods,too-many-ancestors
@@ -680,252 +67,244 @@ class AxolotlInputConfig(
     DeprecatedParameters,
     BaseModel,
 ):
-    """wrapper of all config options"""
+    """Wrapper of all config options"""
 
     model_config = {"populate_by_name": True}
 
-    strict: Optional[bool] = Field(default=False)
-    resume_from_checkpoint: Optional[str] = None
-    auto_resume_from_checkpoints: Optional[bool] = None
-    resize_token_embeddings_to_32x: Optional[bool] = None
-    mean_resizing_embeddings: Optional[bool] = False
+    strict: bool | None = Field(default=False)
+    resume_from_checkpoint: str | None = None
+    auto_resume_from_checkpoints: bool | None = None
+    resize_token_embeddings_to_32x: bool | None = None
+    mean_resizing_embeddings: bool | None = False
     # optionally shrink the embeddings when the tokenizer vocab size is smaller
-    shrink_embeddings: Optional[bool] = None
+    shrink_embeddings: bool | None = None
 
-    rl: Optional[RLType] = None
-    trl: Optional[TRLConfig] = Field(
+    rl: RLType | None = None
+    trl: TRLConfig | None = Field(
         default_factory=lambda: TRLConfig(),  # pylint: disable=unnecessary-lambda
     )
-    reward_model: Optional[bool] = None
-    process_reward_model: Optional[bool] = None
-    num_labels: Optional[int] = None
-    dpo_use_weighting: Optional[bool] = (
-        None  # whether to use weighting in DPO trainer. If none, default is false in the trainer.
-    )
-    dpo_use_logits_to_keep: Optional[bool] = None
+    reward_model: bool | None = None
+    process_reward_model: bool | None = None
+    num_labels: int | None = None
+    # Whether to use weighting in DPO trainer.
+    # If `None`, default is `False` in the trainer.
+    dpo_use_weighting: bool | None = None
+    dpo_use_logits_to_keep: bool | None = None
 
-    datasets: Optional[
-        Annotated[
-            list[Union[SFTDataset, DPODataset, KTODataset, StepwiseSupervisedDataset]],
-            MinLen(1),
-        ]
-    ] = None
+    datasets: Annotated[
+        list[SFTDataset | DPODataset | KTODataset | StepwiseSupervisedDataset],
+        MinLen(1),
+    ] | None = None
 
-    test_datasets: Optional[
-        Annotated[
-            list[Union[SFTDataset, DPODataset, KTODataset, StepwiseSupervisedDataset]],
-            MinLen(1),
-        ]
-    ] = None
-    shuffle_merged_datasets: Optional[bool] = True
-    dataset_prepared_path: Optional[str] = None
-    dataset_shard_num: Optional[int] = None
-    dataset_shard_idx: Optional[int] = None
-    skip_prepare_dataset: Optional[bool] = False
+    test_datasets: Annotated[
+        list[SFTDataset | DPODataset | KTODataset | StepwiseSupervisedDataset],
+        MinLen(1),
+    ] | None = None
+    shuffle_merged_datasets: bool | None = True
+    dataset_prepared_path: str | None = None
+    dataset_shard_num: int | None = None
+    dataset_shard_idx: int | None = None
+    skip_prepare_dataset: bool | None = False
 
-    pretraining_dataset: Optional[
-        Annotated[list[Union[PretrainingDataset, SFTDataset]], MinLen(1)]
-    ] = Field(
+    pretraining_dataset: Annotated[
+        list[PretrainingDataset | SFTDataset], MinLen(1)
+    ] | None = Field(
         default=None,
         json_schema_extra={"description": "streaming dataset to use for pretraining"},
     )
-    dataset_processes: Optional[int] = Field(default=min(32, os.cpu_count()))  # type: ignore[type-var]
-    dataset_exact_deduplication: Optional[bool] = None
-    dataset_keep_in_memory: Optional[bool] = None
-    dataloader_pin_memory: Optional[bool] = None
-    dataloader_num_workers: Optional[int] = None
-    dataloader_prefetch_factor: Optional[int] = None
-    dataloader_drop_last: Optional[bool] = None
+    dataset_processes: int | None = Field(default=min(32, os.cpu_count()))  # type: ignore[type-var]
+    dataset_exact_deduplication: bool | None = None
+    dataset_keep_in_memory: bool | None = None
+    dataloader_pin_memory: bool | None = None
+    dataloader_num_workers: int | None = None
+    dataloader_prefetch_factor: int | None = None
+    dataloader_drop_last: bool | None = None
 
-    accelerator_config: Optional[Dict[str, Any]] = None
+    accelerator_config: dict[str, Any] | None = None
 
-    remove_unused_columns: Optional[bool] = None
+    remove_unused_columns: bool | None = None
 
-    push_dataset_to_hub: Optional[str] = None
-    hf_use_auth_token: Optional[bool] = None
+    push_dataset_to_hub: str | None = None
+    hf_use_auth_token: bool | None = None
 
-    device: Optional[Any] = None
-    device_map: Optional[Any] = None
-    world_size: Optional[int] = None
-    local_rank: Optional[int] = None
-    ddp: Optional[bool] = None
+    device: Any | None = None
+    device_map: Any | None = None
+    world_size: int | None = None
+    local_rank: int | None = None
+    ddp: bool | None = None
 
-    seed: Optional[int] = None
-    ddp_timeout: Optional[int] = None
-    ddp_bucket_cap_mb: Optional[int] = None
-    ddp_broadcast_buffers: Optional[bool] = None
-    ddp_find_unused_parameters: Optional[bool] = None
+    seed: int | None = None
+    ddp_timeout: int | None = None
+    ddp_bucket_cap_mb: int | None = None
+    ddp_broadcast_buffers: bool | None = None
+    ddp_find_unused_parameters: bool | None = None
 
-    eval_table_size: Optional[int] = None
-    eval_max_new_tokens: Optional[int] = None
-    do_causal_lm_eval: Optional[bool] = None
-    eval_causal_lm_metrics: Optional[List[str]] = None
-    do_bench_eval: Optional[bool] = None
-    bench_dataset: Optional[str] = None
-    bench_split: Optional[str] = None
-    metric_for_best_model: Optional[str] = None
-    greater_is_better: Optional[bool] = None
+    eval_table_size: int | None = None
+    eval_max_new_tokens: int | None = None
+    do_causal_lm_eval: bool | None = None
+    eval_causal_lm_metrics: list[str] | None = None
+    do_bench_eval: bool | None = None
+    bench_dataset: str | None = None
+    bench_split: str | None = None
+    metric_for_best_model: str | None = None
+    greater_is_better: bool | None = None
 
-    loss_watchdog_threshold: Optional[float] = None
-    loss_watchdog_patience: Optional[int] = None
+    loss_watchdog_threshold: float | None = None
+    loss_watchdog_patience: int | None = None
 
-    gc_steps: Optional[int] = None
+    gc_steps: int | None = None
 
-    bf16: Optional[Union[Literal["auto"], bool]] = "auto"
-    fp16: Optional[bool] = None
-    bfloat16: Optional[bool] = None  # for non-AMP cases
-    float16: Optional[bool] = None  # for non-AMP cases
-    tf32: Optional[bool] = None
-    float32: Optional[bool] = None
+    bf16: Literal["auto"] | bool | None = "auto"
+    fp16: bool | None = None
+    bfloat16: bool | None = None  # for non-AMP cases
+    float16: bool | None = None  # for non-AMP cases
+    tf32: bool | None = None
+    float32: bool | None = None
 
-    # torch_dtype: Optional[torch.dtype]
+    # torch_dtype: torch.dtype | None
 
-    gradient_checkpointing: Optional[Union[Literal["unsloth", "offload"], bool]] = (
-        Field(default=False)
+    gradient_checkpointing: Literal["unsloth", "offload"] | bool | None = Field(
+        default=False
     )
-    gradient_checkpointing_kwargs: Optional[Dict[str, Any]] = None
+    gradient_checkpointing_kwargs: dict[str, Any] | None = None
 
-    unfrozen_parameters: Optional[List[str]] = None
+    unfrozen_parameters: list[str] | None = None
 
     sequence_len: int = Field(default=512)
-    min_sample_len: Optional[int] = None
+    min_sample_len: int | None = None
     max_prompt_len: int = Field(
         default=512,
         json_schema_extra={"description": "maximum prompt length for RL training"},
     )
-    sample_packing: Optional[bool] = None
-    sample_packing_group_size: Optional[int] = 100_000
-    sample_packing_bin_size: Optional[int] = 200
-    eval_sample_packing: Optional[bool] = None
-    pad_to_sequence_len: Optional[bool] = None
-    curriculum_sampling: Optional[bool] = None
-    multipack_real_batches: Optional[bool] = None
-    pretraining_sample_concatenation: Optional[bool] = Field(
+    sample_packing: bool | None = None
+    sample_packing_group_size: int | None = 100_000
+    sample_packing_bin_size: int | None = 200
+    eval_sample_packing: bool | None = None
+    pad_to_sequence_len: bool | None = None
+    curriculum_sampling: bool | None = None
+    multipack_real_batches: bool | None = None
+    pretraining_sample_concatenation: bool | None = Field(
         default=None,
         json_schema_extra={
             "description": "whether to soft pack/concatenate samples during pretraining",
         },
     )
 
-    batch_flattening: Optional[Union[Literal["auto"], bool]] = None
+    batch_flattening: Literal["auto"] | bool | None = None
 
     # for PoSE context length extension
-    use_pose: Optional[bool] = None
-    pose_split_on_token_ids: Optional[List[int]] = None
-    pose_max_context_len: Optional[int] = None
-    pose_num_chunks: Optional[int] = None
+    use_pose: bool | None = None
+    pose_split_on_token_ids: list[int] | None = None
+    pose_max_context_len: int | None = None
+    pose_num_chunks: int | None = None
 
-    pretrain_multipack_buffer_size: Optional[int] = 10_000
-    pretrain_multipack_attn: Optional[bool] = Field(
+    pretrain_multipack_buffer_size: int | None = 10_000
+    pretrain_multipack_attn: bool | None = Field(
         default=True,
         json_schema_extra={
             "description": "whether to prevent cross attention for packed sequences during pretraining",
         },
     )
 
-    xformers_attention: Optional[bool] = None
-    sdp_attention: Optional[bool] = None
-    s2_attention: Optional[bool] = None
-    flash_attention: Optional[bool] = None
-    flash_attn_cross_entropy: Optional[bool] = None
-    flash_attn_rms_norm: Optional[bool] = None
-    flash_attn_fuse_qkv: Optional[bool] = None
-    flash_attn_fuse_mlp: Optional[bool] = None
-    flash_optimum: Optional[bool] = None
+    xformers_attention: bool | None = None
+    sdp_attention: bool | None = None
+    s2_attention: bool | None = None
+    flash_attention: bool | None = None
+    flash_attn_cross_entropy: bool | None = None
+    flash_attn_rms_norm: bool | None = None
+    flash_attn_fuse_qkv: bool | None = None
+    flash_attn_fuse_mlp: bool | None = None
+    flash_optimum: bool | None = None
 
-    eager_attention: Optional[bool] = None
+    eager_attention: bool | None = None
 
-    unsloth_cross_entropy_loss: Optional[bool] = None
-    unsloth_lora_mlp: Optional[bool] = None
-    unsloth_lora_qkv: Optional[bool] = None
-    unsloth_lora_o: Optional[bool] = None
-    unsloth_rms_norm: Optional[bool] = None
-    unsloth_rope: Optional[bool] = None
+    unsloth_cross_entropy_loss: bool | None = None
+    unsloth_lora_mlp: bool | None = None
+    unsloth_lora_qkv: bool | None = None
+    unsloth_lora_o: bool | None = None
+    unsloth_rms_norm: bool | None = None
+    unsloth_rope: bool | None = None
 
-    lora_mlp_kernel: Optional[bool] = None
-    lora_qkv_kernel: Optional[bool] = None
-    lora_o_kernel: Optional[bool] = None
+    lora_mlp_kernel: bool | None = None
+    lora_qkv_kernel: bool | None = None
+    lora_o_kernel: bool | None = None
 
-    deepspeed: Optional[Union[str, Dict[str, Any]]] = None
-    fsdp: Optional[List[str]] = None
-    fsdp_config: Optional[Dict[str, Any]] = None
-    fsdp_final_state_dict_type: Optional[
-        Literal["FULL_STATE_DICT", "LOCAL_STATE_DICT", "SHARDED_STATE_DICT"]
-    ] = None
+    deepspeed: str | dict[str, Any] | None = None
+    fsdp: list[str] | None = None
+    fsdp_config: dict[str, Any] | None = None
+    fsdp_final_state_dict_type: Literal[
+        "FULL_STATE_dict", "LOCAL_STATE_dict", "SHARDED_STATE_dict"
+    ] | None = None
 
-    val_set_size: Optional[float] = Field(default=0.0)
+    val_set_size: float | None = Field(default=0.0)
 
-    special_tokens: Optional[SpecialTokensConfig] = None
-    tokens: Optional[List[str]] = None
-    added_tokens_overrides: Optional[Dict[int, str]] = None
+    special_tokens: SpecialTokensConfig | None = None
+    tokens: list[str] | None = None
+    added_tokens_overrides: dict[int, str] | None = None
 
-    torch_compile: Optional[Union[Literal["auto"], bool]] = None
-    torch_compile_backend: Optional[str] = None
-    torch_compile_mode: Optional[
-        Literal["default", "reduce-overhead", "max-autotune"]
-    ] = None
+    torch_compile: Literal["auto"] | bool | None = None
+    torch_compile_backend: str | None = None
+    torch_compile_mode: Literal[
+        "default", "reduce-overhead", "max-autotune"
+    ] | None = None
 
-    max_steps: Optional[int] = None
-    warmup_steps: Optional[int] = None
-    warmup_ratio: Optional[float] = None
-    eval_steps: Optional[Union[int, float]] = None
-    evals_per_epoch: Optional[int] = None
-    eval_strategy: Optional[str] = None
-    save_steps: Optional[Union[int, float]] = None
-    saves_per_epoch: Optional[int] = None
-    save_strategy: Optional[str] = None
-    save_total_limit: Optional[int] = None
-    logging_steps: Optional[int] = None
-    early_stopping_patience: Optional[int] = None
-    load_best_model_at_end: Optional[bool] = False
-    save_only_model: Optional[bool] = False
-    use_tensorboard: Optional[bool] = None
-    profiler_steps: Optional[int] = None
-    include_tokens_per_second: Optional[bool] = None
+    max_steps: int | None = None
+    warmup_steps: int | None = None
+    warmup_ratio: float | None = None
+    eval_steps: int | float | None = None
+    evals_per_epoch: int | None = None
+    eval_strategy: str | None = None
+    save_steps: int | float | None = None
+    saves_per_epoch: int | None = None
+    save_strategy: str | None = None
+    save_total_limit: int | None = None
+    logging_steps: int | None = None
+    early_stopping_patience: int | None = None
+    load_best_model_at_end: bool | None = False
+    save_only_model: bool | None = False
+    use_tensorboard: bool | None = None
+    profiler_steps: int | None = None
+    include_tokens_per_second: bool | None = None
 
-    neftune_noise_alpha: Optional[float] = None
+    neftune_noise_alpha: float | None = None
 
-    orpo_alpha: Optional[float] = None
-    rpo_alpha: Optional[float] = None
-    simpo_gamma: Optional[float] = None
-    cpo_alpha: Optional[float] = None
+    orpo_alpha: float | None = None
+    rpo_alpha: float | None = None
+    simpo_gamma: float | None = None
+    cpo_alpha: float | None = None
 
-    kto_desirable_weight: Optional[float] = None
-    kto_undesirable_weight: Optional[float] = None
-    rl_beta: Optional[float] = None
+    kto_desirable_weight: float | None = None
+    kto_undesirable_weight: float | None = None
+    rl_beta: float | None = None
 
-    max_memory: Optional[Dict[Union[int, Literal["cpu", "disk"]], Union[int, str]]] = (
-        None
-    )
-    gpu_memory_limit: Optional[Union[int, str]] = None
-    low_cpu_mem_usage: Optional[bool] = None
+    max_memory: dict[int | Literal["cpu", "disk"], int | str] | None = None
+    gpu_memory_limit: int | str | None = None
+    low_cpu_mem_usage: bool | None = None
 
-    chat_template: Optional[
-        Union[
-            ChatTemplate,
-            Annotated[str, StringConstraints(pattern="^tokenizer_default_fallback_")],
-        ]
-    ] = None
-    chat_template_jinja: Optional[str] = None
-    default_system_message: Optional[str] = None
+    chat_template: (
+        ChatTemplate
+        | Annotated[str, StringConstraints(pattern="^tokenizer_default_fallback_")]
+    ) | None = None
+    chat_template_jinja: str | None = None
+    default_system_message: str | None = None
 
-    fix_untrained_tokens: Optional[Union[int, List[int]]] = None
+    fix_untrained_tokens: int | list[int] | None = None
 
     # INTERNALS - document for now, generally not set externally
-    is_preprocess: Optional[bool] = None
-    preprocess_iterable: Optional[bool] = None
+    is_preprocess: bool | None = None
+    preprocess_iterable: bool | None = None
 
-    total_num_tokens: Optional[int] = None
-    total_supervised_tokens: Optional[int] = None
-    sample_packing_eff_est: Optional[float] = None
-    axolotl_config_path: Optional[str] = None
+    total_num_tokens: int | None = None
+    total_supervised_tokens: int | None = None
+    sample_packing_eff_est: float | None = None
+    axolotl_config_path: str | None = None
 
-    is_falcon_derived_model: Optional[bool] = Field(default=None)
-    is_llama_derived_model: Optional[bool] = Field(default=None)
-    is_mistral_derived_model: Optional[bool] = Field(default=None)
-    is_qwen_derived_model: Optional[bool] = Field(default=None)
+    is_falcon_derived_model: bool | None = Field(default=None)
+    is_llama_derived_model: bool | None = Field(default=None)
+    is_mistral_derived_model: bool | None = Field(default=None)
+    is_qwen_derived_model: bool | None = Field(default=None)
 
-    plugins: Optional[List[str]] = Field(default=None)
+    plugins: list[str] | None = Field(default=None)
 
     @field_validator("datasets", mode="before")
     @classmethod
@@ -953,8 +332,8 @@ class AxolotlInputConfig(
 
     @field_serializer("datasets")
     def datasets_serializer(
-        self, ds_configs: Optional[List[DatasetConfig]]
-    ) -> Optional[List[Dict[str, Any]]]:
+        self, ds_configs: list[DatasetConfig] | None
+    ) -> list[dict[str, Any]] | None:
         if ds_configs:
             return [ds_config.model_dump(exclude_none=True) for ds_config in ds_configs]
         return None
@@ -1028,6 +407,7 @@ class AxolotlInputConfig(
 
     @model_validator(mode="before")
     @classmethod
+    # pylint: disable=duplicate-code
     def check_chat_template_config(cls, data):
         # if chat_template is set to jinja, chat_template_jinja is required
         if data.get("chat_template") == ChatTemplate.jinja and not data.get(
@@ -1549,10 +929,10 @@ class AxolotlInputConfig(
             data.get("fsdp")
             and data.get("save_safetensors")
             and data.get("fsdp_config")
-            and data["fsdp_config"].get("fsdp_state_dict_type") == "SHARDED_STATE_DICT"
+            and data["fsdp_config"].get("fsdp_state_dict_type") == "SHARDED_STATE_dict"
         ):
             raise ValueError(
-                "FSDP SHARDED_STATE_DICT not compatible with save_safetensors"
+                "FSDP SHARDED_STATE_dict not compatible with save_safetensors"
             )
         return data
 
@@ -1850,77 +1230,3 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             if data["beta"] != data["trl"]["beta"]:
                 raise ValueError("beta and trl.beta must match or one must be removed")
         return data
-
-
-def handle_legacy_message_fields_logic(data: dict) -> dict:
-    """
-    Handle backwards compatibility between legacy message field mapping and new property mapping system.
-
-    Previously, the config only supported mapping 'role' and 'content' fields via dedicated config options:
-    - message_field_role: Mapped to the role field
-    - message_field_content: Mapped to the content field
-
-    The new system uses message_property_mappings to support arbitrary field mappings:
-    message_property_mappings:
-        role: source_role_field
-        content: source_content_field
-        additional_field: source_field
-
-    Args:
-        data: Dictionary containing configuration data
-
-    Returns:
-        Updated dictionary with message field mappings consolidated
-
-    Raises:
-        ValueError: If there are conflicts between legacy and new mappings
-    """
-    data = data.copy()  # Create a copy to avoid modifying the original
-
-    if data.get("message_property_mappings") is None:
-        data["message_property_mappings"] = {}
-
-    # Check for conflicts and handle role
-    if "message_field_role" in data:
-        LOG.warning(
-            "message_field_role is deprecated, use message_property_mappings instead. "
-            f"Example: message_property_mappings: {{role: {data['message_field_role']}}}"
-        )
-        if (
-            "role" in data["message_property_mappings"]
-            and data["message_property_mappings"]["role"] != data["message_field_role"]
-        ):
-            raise ValueError(
-                f"Conflicting message role fields: message_field_role='{data['message_field_role']}' "
-                f"conflicts with message_property_mappings.role='{data['message_property_mappings']['role']}'"
-            )
-        data["message_property_mappings"]["role"] = data["message_field_role"] or "role"
-
-        del data["message_field_role"]
-    elif "role" not in data["message_property_mappings"]:
-        data["message_property_mappings"]["role"] = "role"
-
-    # Check for conflicts and handle content
-    if "message_field_content" in data:
-        LOG.warning(
-            "message_field_content is deprecated, use message_property_mappings instead. "
-            f"Example: message_property_mappings: {{content: {data['message_field_content']}}}"
-        )
-        if (
-            "content" in data["message_property_mappings"]
-            and data["message_property_mappings"]["content"]
-            != data["message_field_content"]
-        ):
-            raise ValueError(
-                f"Conflicting message content fields: message_field_content='{data['message_field_content']}' "
-                f"conflicts with message_property_mappings.content='{data['message_property_mappings']['content']}'"
-            )
-        data["message_property_mappings"]["content"] = (
-            data["message_field_content"] or "content"
-        )
-
-        del data["message_field_content"]
-    elif "content" not in data["message_property_mappings"]:
-        data["message_property_mappings"]["content"] = "content"
-
-    return data

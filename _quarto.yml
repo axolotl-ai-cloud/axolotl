@@ -124,6 +124,18 @@ quartodoc:
         - utils.data.pretraining
         - utils.data.sft
         - utils.gradient_checkpointing.unsloth
+    - title: Schemas
+      desc: Pydantic data models for Axolotl config
+      contents:
+        - utils.schemas.config
+        - utils.schemas.model
+        - utils.schemas.training
+        - utils.schemas.datasets
+        - utils.schemas.peft
+        - utils.schemas.trl
+        - utils.schemas.integrations
+        - utils.schemas.enums
+        - utils.schemas.utils
     - title: Integrations
       desc: Third-party integrations and extensions
       contents:
@@ -195,7 +207,8 @@ website:
             - docs/inference.qmd
             - docs/cli.qmd
             - docs/config.qmd
-            - docs/api/index.qmd
+            - text: "API Reference"
+              href: docs/api
 
         - section: "Dataset Formats"
           contents: docs/dataset-formats/*

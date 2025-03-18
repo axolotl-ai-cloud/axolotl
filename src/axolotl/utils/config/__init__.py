@@ -12,19 +12,13 @@ from transformers.utils.import_utils import is_torch_npu_available
 from axolotl.integrations.base import PluginManager
 from axolotl.integrations.config import merge_input_args
 from axolotl.utils.bench import log_gpu_memory_usage
-from axolotl.utils.config.models.input.v0_4_1 import (
-    AxolotlConfigWCapabilities as AxolotlConfigWCapabilitiesBase,
-)
-from axolotl.utils.config.models.input.v0_4_1 import (
-    AxolotlInputConfig as AxolotlInputConfigBase,
-)
-from axolotl.utils.config.models.input.v0_4_1 import (
-    DPODataset,
-    KTODataset,
-    SFTDataset,
-)
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.models import load_model_config
+from axolotl.utils.schemas.config import (
+    AxolotlConfigWCapabilities as AxolotlConfigWCapabilitiesBase,
+)
+from axolotl.utils.schemas.config import AxolotlInputConfig as AxolotlInputConfigBase
+from axolotl.utils.schemas.datasets import DPODataset, KTODataset, SFTDataset
 
 LOG = logging.getLogger("axolotl")
 

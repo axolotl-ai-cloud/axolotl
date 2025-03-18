@@ -6,8 +6,8 @@ from typing import Optional
 import pytest
 
 from axolotl.utils.config import validate_config
-from axolotl.utils.config.models.input.v0_4_1 import ChatTemplate
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.schemas.datasets import ChatTemplate
 
 warnings.filterwarnings("error")
 

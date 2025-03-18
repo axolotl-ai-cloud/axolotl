@@ -33,7 +33,6 @@ from trl.models import unwrap_model_for_generation
 from axolotl.utils import is_comet_available, is_mlflow_available
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.callbacks.perplexity import Perplexity
-from axolotl.utils.config.models.input.v0_4_1 import AxolotlInputConfig
 from axolotl.utils.distributed import (
     barrier,
     broadcast_dict,
@@ -43,6 +42,7 @@ from axolotl.utils.distributed import (
     is_main_process,
     zero_first,
 )
+from axolotl.utils.schemas.config import AxolotlInputConfig
 
 if TYPE_CHECKING:
     from axolotl.core.trainer_builder import AxolotlTrainingArguments

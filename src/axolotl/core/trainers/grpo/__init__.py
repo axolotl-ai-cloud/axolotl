@@ -9,7 +9,7 @@ import logging
 from trl.trainer.grpo_trainer import RewardFunc
 
 from axolotl.core.trainers.grpo.trainer import AxolotlGRPOTrainer
-from axolotl.utils.config.models.input.v0_4_1.trl import TRLConfig
+from axolotl.utils.schemas.trl import TRLConfig
 
 LOG = logging.getLogger("axolotl")
 
