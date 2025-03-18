@@ -17,19 +17,14 @@ logger = logging.getLogger(__name__)
 
 
 def adjust_position_ids_for_slice(
-    position_ids: list | torch.Tensor, start_idx: int
+    position_ids: torch.Tensor, start_idx: int
 ) -> torch.Tensor:
     """
     Adjust position IDs for a sliced sequence to maintain proper relative positions.
-    This handles the case where position IDs might not be contiguous due to sample packing.
+    This handles the case where position IDs might not be contiguous due to sample
+    packing.
     """
     # Convert to tensor if not already
-    if not isinstance(position_ids, torch.Tensor):
-        position_ids = torch.tensor(
-            position_ids,
-            device=position_ids.device if hasattr(position_ids, "device") else None,
-        )
-
     # Find the boundaries between samples (where position_ids reset)
     adjusted_pos_ids = position_ids.clone()
 

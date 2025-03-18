@@ -119,7 +119,8 @@ setup(
         ],
     },
     extras_require={
-        "flash-attn": ["flash-attn==2.7.4.post1", "ring-flash-attn>=0.1.4"],
+        "flash-attn": ["flash-attn==2.7.4.post1"],
+        "ring-flash-attn": ["ring-flash-attn>=0.1.4", "yunchang==0.6.0"],
         "deepspeed": [
             "deepspeed==0.16.4",
             "deepspeed-kernels",

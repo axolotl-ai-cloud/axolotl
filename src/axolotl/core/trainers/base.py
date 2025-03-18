@@ -590,7 +590,7 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, Trainer):
         if is_datasets_available() and isinstance(train_dataset, datasets.Dataset):
             if self.args.sample_packing and not self.args.pretraining:
                 train_dataset = train_dataset.remove_columns(["length"])
-            if not (self.args.sample_packing and not self.args.pretraining):
+            if not self.args.sample_packing or self.args.pretraining:
                 train_dataset = self._remove_unused_columns(
                     train_dataset, description="training"
                 )
