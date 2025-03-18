@@ -47,7 +47,7 @@ class SFTDataset(BaseModel):
     # deprecated, use message_property_mappings
     message_field_role: str | None = None
     # deprecated, use message_property_mappings
-    message_field_content: str | None
+    message_field_content: str | None = None
     message_property_mappings: dict[str, str] | None = None
     message_field_training: str | None = None
     message_field_training_detail: str | None = None
