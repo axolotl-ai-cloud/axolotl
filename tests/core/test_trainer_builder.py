@@ -25,8 +25,8 @@ def fixture_cfg():
             "optimizer": "adamw_torch_fused",
             "sequence_len": 2048,
             "rl": True,
-            "adam_beta1": 0.998,
-            "adam_beta2": 0.9,
+            "adam_beta1": 0.91,
+            "adam_beta2": 0.998,
             "adam_epsilon": 0.00001,
             "dataloader_num_workers": 1,
             "dataloader_pin_memory": True,
@@ -60,8 +60,8 @@ class TestHFRLTrainerBuilder:
     def test_build_training_arguments(self, cfg, model, tokenizer):
         builder = HFRLTrainerBuilder(cfg, model, tokenizer)
         training_arguments = builder.build_training_arguments(100)
-        assert training_arguments.adam_beta1 == 0.998
-        assert training_arguments.adam_beta2 == 0.9
+        assert training_arguments.adam_beta1 == 0.91
+        assert training_arguments.adam_beta2 == 0.998
         assert training_arguments.adam_epsilon == 0.00001
         assert training_arguments.dataloader_num_workers == 1
         assert training_arguments.dataloader_pin_memory is True

@@ -62,10 +62,16 @@ class ChatTemplateStrategyWithKD(ChatTemplateStrategy):
         Transform logprobs to target format for KD training
         """
 
-        logprobs = sample.pop(self.logprobs_field)
+        if "target_logprobs" in sample.keys() and "target_token_ids" in sample.keys():
+            logprobs = sample.pop("target_logprobs")
+            token_ids = sample.pop("target_token_ids")
+        else:
+            logprobs = sample.pop(self.logprobs_field)
+            token_ids = [None] * len(logprobs)
+
         target_seq_len = len(logprobs)
         input_seq_len = len(sample["input_ids"])
-        input_padding_len = input_seq_len - target_seq_len
+        target_padding_len = input_seq_len - target_seq_len
         # get non-zero top-k (prune None logprobs from vllm data step)
         top_k_vals = [
             len(logprobs[i])
@@ -82,11 +88,11 @@ class ChatTemplateStrategyWithKD(ChatTemplateStrategy):
         target_token_ids = []
         target_mask = []
 
-        if input_padding_len < 0:
+        if target_padding_len < 0:
             # logprobs is longer than target_seq_len,
             # so we need to slice from the left/beginning of logprobs
             logprobs = logprobs[:-input_seq_len]
-            input_padding_len = 0
+            target_padding_len = 0
             # target_seq_len = input_seq_len
 
         # truncate the second dimension of the logprobs to top_k
@@ -98,33 +104,37 @@ class ChatTemplateStrategyWithKD(ChatTemplateStrategy):
         # for causal models, if we start the range at 1, then we don't need to shift in the trainer
         # otherwise, we need to shift in the trainer
         shift = 0
-        for _ in range(shift, input_padding_len):
+        for _ in range(shift, target_padding_len):
             target_logprobs.append([-float("inf")] * top_k)
             target_token_ids.append(list(range(top_k)))
             target_mask.append([0] * top_k)
 
-        for position in range(input_padding_len, input_seq_len):
+        for position in range(target_padding_len, input_seq_len):
             if sample["labels"][position] == -100:
                 target_mask.append([0] * top_k)
             else:
                 target_mask.append([1] * top_k)
 
-        for _, token_pos_logprobs in enumerate(logprobs):
+        for token_pos_logprobs, token_pos_token_ids in zip(logprobs, token_ids):
             # Initialize collections for logprobs and token_ids
             position_logprobs = []
             position_token_ids = []
 
             # Process each token probability entry
-            for entry in token_pos_logprobs:
-                # Extract logprob value
-                logprob = entry["logprob"]
+            if token_pos_token_ids is None:
+                for entry in token_pos_logprobs:
+                    # Extract logprob value
+                    logprob = entry["logprob"]
 
-                # Parse token_id from the "token_id:###" format
-                token_id = int(entry["token"].split(":")[1])
+                    # Parse token_id from the "token_id:###" format
+                    token_id = int(entry["token"].split(":")[1])
 
-                # Append to our collections
-                position_logprobs.append(logprob)
-                position_token_ids.append(token_id)
+                    # Append to our collections
+                    position_logprobs.append(logprob)
+                    position_token_ids.append(token_id)
+            else:
+                position_logprobs = token_pos_logprobs
+                position_token_ids = token_pos_token_ids
 
             # Convert to a tensor for easier manipulation
             position_logprobs_tensor = torch.tensor(
@@ -143,6 +153,7 @@ class ChatTemplateStrategyWithKD(ChatTemplateStrategy):
                 teacher_probs_t2 = teacher_probs_t1**exponent
             else:
                 teacher_probs_t2 = teacher_probs_t1
+
             # Re-normalize
             teacher_probs_t2 = teacher_probs_t2 / teacher_probs_t2.sum(
                 dim=0, keepdim=True

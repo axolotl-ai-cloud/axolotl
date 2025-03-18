@@ -16,16 +16,34 @@
 KD trainer
 """
 
+from transformers import TrainerControl
+
 from axolotl.core.trainers.base import AxolotlTrainer
 
 from .topk_logprob.forward_kl import loss as topk_kd_loss
 from .topk_logprob.forward_kl import topk_kd_loss_with_zscore
 
 
+class AxolotlKDTrainerControl(TrainerControl):
+    kd_alpha: float = 1.0
+    kd_ce_alpha: float = 0.0
+
+    def state(self) -> dict:
+        state_val = super().state()
+        state_val["args"]["kd_alpha"] = self.kd_alpha
+        state_val["args"]["kd_ce_alpha"] = self.kd_ce_alpha
+
+
 class AxolotlKDTrainer(AxolotlTrainer):
     """
     Custom trainer subclass for Knowledge Distillation (KD)
     """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.kd_alpha = self.args.kd_alpha
+        self.kd_ce_alpha = self.args.kd_ce_alpha
+        self.control = AxolotlKDTrainerControl()
 
     def _set_signature_columns_if_needed(self):
         super()._set_signature_columns_if_needed()
@@ -95,9 +113,8 @@ class AxolotlKDTrainer(AxolotlTrainer):
                 top_k_before_softmax=1 if self.args.kd_top_k_before_softmax else 0,
             )
 
-        if self.args.kd_ce_alpha > 0:
-            kd_alpha = self.args.kd_alpha
-            loss = self.args.kd_ce_alpha * outputs["loss"] + kd_alpha * loss_kd
+        if self.kd_ce_alpha > 0:
+            loss = self.kd_ce_alpha * outputs["loss"] + self.kd_alpha * loss_kd
         else:
             loss = loss_kd
         # Save past state if it exists

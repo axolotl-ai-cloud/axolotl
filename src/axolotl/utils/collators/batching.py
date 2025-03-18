@@ -173,10 +173,16 @@ class V2BatchSamplerDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):
                     ]
                     out_features[i][feature] = np.concatenate(arrays)
                 else:
-                    arrays = [
-                        np.array(item[feature]) for item in features_ if feature in item
-                    ]
-                    out_features[i][feature] = np.concatenate(arrays)
+                    try:
+                        arrays = [
+                            np.array(item[feature])
+                            for item in features_
+                            if feature in item
+                        ]
+                        if arrays[0].dtype != "object":
+                            out_features[i][feature] = np.concatenate(arrays)
+                    except ValueError:
+                        pass
         return super().__call__(out_features, return_tensors=return_tensors)
 
 

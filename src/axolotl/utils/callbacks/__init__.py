@@ -813,6 +813,15 @@ class SaveAxolotlConfigtoWandBCallback(TrainerCallback):
                 )
             except (FileNotFoundError, ConnectionError) as err:
                 LOG.warning(f"Error while saving Axolotl config to WandB: {err}")
+            # TODO if using deepspeed and it's a file, save deepspeed config too
+            if args.deepspeed and os.path.isfile(args.deepspeed):
+                LOG.info(f"DeepSpeed config has been saved to the WandB run.")
+                artifact = wandb.Artifact(
+                    f"deepspeed-{wandb.run.id}", type="deepspeed-config"
+                )
+                artifact.add_file(args.deepspeed)
+                wandb.log_artifact(artifact)
+                wandb.save(args.deepspeed)
         return control
 
 

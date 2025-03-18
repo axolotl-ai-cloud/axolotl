@@ -34,3 +34,12 @@ class KDPlugin(BasePlugin):
 
             return AxolotlKDTrainer
         return None
+
+    def add_callbacks_post_trainer(self, cfg, trainer):
+        callbacks = []
+        if cfg.kd_trainer:
+            from .callbacks import KDAlphaSchedulerCallback
+
+            callbacks.append(KDAlphaSchedulerCallback())
+
+        return callbacks
