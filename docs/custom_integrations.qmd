@@ -80,3 +80,20 @@ To add a new integration, please follow these steps:
 See [src/axolotl/integrations/cut_cross_entropy](https://github.com/axolotl-ai-cloud/axolotl/tree/main/src/axolotl/integrations/cut_cross_entropy) for an example of a new integration.
 
 :::
+
+::: {.callout-warning}
+
+If you could not load your integration, please ensure you are pip installing in editable mode.
+
+```bash
+pip install -e .
+```
+
+and correctly spelled the integration name in the config file.
+
+```yaml
+plugins:
+  - axolotl.integrations.your_integration_name.YourIntegrationPlugin
+```
+
+:::
