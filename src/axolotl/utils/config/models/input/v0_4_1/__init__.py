@@ -1689,7 +1689,6 @@ class AxolotlInputConfig(
             data.get("rl")
             and data.get("gradient_checkpointing")
             and data.get("gradient_checkpointing_kwargs")
-            and "use_reentrant" in data.get("gradient_checkpointing_kwargs")
             and data.get("gradient_checkpointing_kwargs").get("use_reentrant")
             and data.get("load_in_4bit")
             and data.get("adapter") == "qlora"
