@@ -6,6 +6,80 @@ from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LambdaLR, LRScheduler
 
 
+class RexLR(LRScheduler):
+    """
+    Reflected Exponential (REX) learning rate scheduler.
+
+    - Original implementation: https://github.com/IvanVassi/REX_LR
+    - Original license: Apache 2.0
+    - Based on: https://arxiv.org/abs/2107.04197
+
+    Args:
+        optimizer (torch.optim.Optimizer): The optimizer to schedule the learning rate for.
+        max_lr (float): The maximum learning rate.
+        min_lr (float): The minimum learning rate.
+        total_steps (int): The total number of training steps.
+        num_warmup_steps (int): The number of warmup steps.
+        last_step (int): The index of last step.
+    """
+
+    def __init__(
+        self, optimizer, max_lr, min_lr, total_steps=0, num_warmup_steps=0, last_step=0
+    ):
+        if min_lr > max_lr:
+            raise ValueError(
+                f'Value of "min_lr" should be less than value of "max_lr". Got min_lr={min_lr} and max_lr={max_lr}'
+            )
+        if num_warmup_steps > total_steps:
+            raise ValueError(
+                f"num_warmup_steps ({num_warmup_steps}) must be less than or equal to total_steps ({total_steps})."
+            )
+
+        self.min_lr = min_lr
+        self.max_lr = max_lr
+        self.total_steps = total_steps
+        self.num_warmup_steps = num_warmup_steps
+        self.last_step = last_step - 1
+
+        # Ensure each parameter group has an "initial_lr" key to avoid issues when resuming.
+        for group in optimizer.param_groups:
+            group.setdefault("initial_lr", group["lr"])
+
+        # Pass self.last_step as last_epoch to the parent.
+        super().__init__(optimizer, last_epoch=self.last_step)
+
+    @property
+    def last_step(self):
+        return self.last_epoch
+
+    @last_step.setter
+    def last_step(self, value):
+        self.last_epoch = value
+
+    def get_lr(self):
+        # Warmup phase: if defined, increase lr linearly from 0 to max_lr.
+        if 1 <= self.last_step <= self.num_warmup_steps:
+            return [
+                base_lr * self.last_step / self.num_warmup_steps
+                for base_lr in self.base_lrs
+            ]
+
+        # Post-warmup phase: adjust step relative to the end of warmup.
+        step_after = self.last_step - self.num_warmup_steps
+        remaining_steps = self.total_steps - self.num_warmup_steps
+
+        # Avoid LR spiking
+        if step_after >= remaining_steps or step_after == -1 or remaining_steps <= 0:
+            return [self.min_lr for _ in self.base_lrs]
+
+        mod_iter = step_after % remaining_steps
+        z = (remaining_steps - mod_iter) / remaining_steps
+        rex_factor = self.min_lr / self.max_lr + (1.0 - self.min_lr / self.max_lr) * (
+            z / (0.1 + 0.9 * z)
+        )
+        return [base_lr * rex_factor for base_lr in self.base_lrs]
+
+
 class InterpolatingLogScheduler(LRScheduler):
     """
     A scheduler that interpolates learning rates in a logarithmic fashion

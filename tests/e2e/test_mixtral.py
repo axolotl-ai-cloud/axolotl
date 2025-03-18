@@ -75,7 +75,7 @@ class TestMixtral(unittest.TestCase):
         cli_args = TrainerCliArgs()
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
-        model, _ = train(cfg=cfg, dataset_meta=dataset_meta)
+        model, _, _ = train(cfg=cfg, dataset_meta=dataset_meta)
         assert (
             model.base_model.model.model.layers[0].block_sparse_moe.gate.weight.dtype
             == torch.float32
@@ -131,7 +131,7 @@ class TestMixtral(unittest.TestCase):
         cli_args = TrainerCliArgs()
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
-        model, _ = train(cfg=cfg, dataset_meta=dataset_meta)
+        model, _, _ = train(cfg=cfg, dataset_meta=dataset_meta)
         assert (
             model.base_model.model.model.layers[0].block_sparse_moe.gate.weight.dtype
             == torch.float32
@@ -190,7 +190,7 @@ class TestMixtral(unittest.TestCase):
         cli_args = TrainerCliArgs()
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
-        model, _ = train(cfg=cfg, dataset_meta=dataset_meta)
+        model, _, _ = train(cfg=cfg, dataset_meta=dataset_meta)
         assert (
             model.base_model.model.model.layers[0].block_sparse_moe.gate.weight.dtype
             == torch.float32
@@ -249,7 +249,7 @@ class TestMixtral(unittest.TestCase):
         cli_args = TrainerCliArgs()
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
-        model, _ = train(cfg=cfg, dataset_meta=dataset_meta)
+        model, _, _ = train(cfg=cfg, dataset_meta=dataset_meta)
         assert (
             model.base_model.model.model.layers[0].block_sparse_moe.gate.weight.dtype
             == torch.float32

@@ -22,6 +22,7 @@ This guide covers all the ways you can install and set up Axolotl for your envir
 ### PyPI Installation (Recommended) {#sec-pypi}
 
 ```{.bash}
+pip3 install -U packaging setuptools wheel ninja
 pip3 install --no-build-isolation axolotl[flash-attn,deepspeed]
 ```
 
@@ -37,7 +38,7 @@ For the latest features between releases:
 ```{.bash}
 git clone https://github.com/axolotl-ai-cloud/axolotl.git
 cd axolotl
-pip3 install packaging ninja
+pip3 install -U packaging setuptools wheel ninja
 pip3 install --no-build-isolation -e '.[flash-attn,deepspeed]'
 ```
 
@@ -64,6 +65,8 @@ docker run --privileged --gpus '"all"' --shm-size 10g --rm -it \
   axolotlai/axolotl:main-latest
 ```
 :::
+
+Please refer to the [Docker documentation](docker.qmd) for more information on the different Docker images that are available.
 
 ## Cloud Environments {#sec-cloud}
 
@@ -105,7 +108,7 @@ We recommend using WSL2 (Windows Subsystem for Linux) or Docker.
 2. Install PyTorch: https://pytorch.org/get-started/locally/
 3. Install Axolotl:
    ```{.bash}
-   pip3 install packaging
+   pip3 install -U packaging setuptools wheel ninja
    pip3 install --no-build-isolation -e '.[flash-attn,deepspeed]'
    ```
 4. (Optional) Login to Hugging Face:

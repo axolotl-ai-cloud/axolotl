@@ -19,11 +19,23 @@ description: Frequently asked questions
 
 **Q: AttributeError: 'DummyOptim' object has no attribute 'step'**
 
-> A: You may be using deepspeed with single gpu. Please don't set `deepspeed:` in yaml or cli.
+**Q: ModuleNotFoundError: No module named 'mpi4py' using single GPU with deepspeed**
+
+> A: You may be using deepspeed with single gpu. Please remove the `deepspeed:` section in the yaml file or `--deepspeed` CLI flag.
 
 **Q: The codes is stuck on saving preprocessed datasets.**
 
 > A: This is usually an issue with the GPU. This can be resolved through setting the os environment variable `CUDA_VISIBLE_DEVICES=0`. If you are on runpod, this is usually a pod issue. Starting a new pod should take care of it.
+
+**Q: Received mismatch error on merge adapters / loading adapters between torch.Size of checkpoint and model.**
+
+> A: This is likely due to vocab size mismatch. By default, Axolotl expands the model's embeddings if the tokenizer has more tokens than the model. Please use the `axolotl merge-lora` command to merge the adapters instead of using your own scripts.
+
+> On the other hand, if the model has more tokens than the tokenizer, Axolotl does not shrink the model's embeddings unless `shrink_embeddings: true` is set in the config.
+
+**Q: How to call Axolotl via custom python scripts?**
+
+> A: Yes, since Axolotl is just Python, please see `src/axolotl/cli/main.py` on how each command is called.
 
 ### Chat templates
 
@@ -50,3 +62,7 @@ description: Frequently asked questions
 **Q: The EOS/EOT token is incorrectly being masked or not being masked.**
 
 > A: This is because of the mismatch between `tokenizer.eos_token` and EOS/EOT token in template. Please make sure to set `eos_token` under `special_tokens` to the same EOS/EOT token as in template.
+
+**Q: "`chat_template` choice is `tokenizer_default` but tokenizer's `chat_template` is null. Please add a `chat_template` in tokenizer config"**
+
+> A: This is because the tokenizer does not have a chat template. Please add a chat template in the tokenizer config. See [chat_template](dataset-formats/conversation.qmd#chat-template) for more details.

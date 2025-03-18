@@ -32,14 +32,16 @@ website:
           contents:
             - docs/getting-started.qmd
             - docs/installation.qmd
-            - docs/cli.qmd
             - docs/inference.qmd
+            - docs/cli.qmd
+            - docs/config.qmd
 
         - section: "Dataset Formats"
           contents: docs/dataset-formats/*
 
         - section: "Deployments"
           contents:
+            - docs/docker.qmd
             - docs/multi-gpu.qmd
             - docs/multi-node.qmd
             - docs/ray-integration.qmd
@@ -72,10 +74,6 @@ website:
             - docs/faq.qmd
             - docs/debugging.qmd
             - docs/nccl.qmd
-
-        - section: "Reference"
-          contents:
-            - docs/config.qmd
 
 format:
   html:
