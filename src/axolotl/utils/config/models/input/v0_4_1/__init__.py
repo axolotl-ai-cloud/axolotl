@@ -1685,6 +1685,7 @@ class AxolotlInputConfig(
         # TODO: SalmanMohammadi
         # Distributed RL with QLoRA + gradient checkpointing
         # and use_reentrant = True is broken upstream in TRL
+        # pylint: disable=too-many-boolean-expressions
         if (
             data.get("rl")
             and data.get("gradient_checkpointing")
