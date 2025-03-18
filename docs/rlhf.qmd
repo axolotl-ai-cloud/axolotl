@@ -298,7 +298,7 @@ The input format is a simple JSON input with customizable fields based on the ab
 
 ### IPO
 
-As IPO is just DPO with a different loss function, all supported options for DPO works here.
+As IPO is just DPO with a different loss function, all supported dataset formats for [DPO](#dpo) are also supported for IPO.
 
 ```yaml
 rl: ipo
@@ -344,8 +344,9 @@ ORPO supports the following types with the following dataset format:
 
 ```yaml
 rl: kto
-rl_beta: 0.5
-kto_desirable_weight: 0.2
+rl_beta: 0.1  # default
+kto_desirable_weight: 1.0  # default
+kto_undesirable_weight: 1.0  # default
 
 remove_unused_columns: false
 
@@ -497,6 +498,10 @@ The input format is a simple JSON input with customizable fields based on the ab
 
 ### GRPO
 
+::: {.callout-tip}
+Check out our [GRPO cookbook](https://github.com/axolotl-ai-cloud/axolotl-cookbook/tree/main/grpo#training-an-r1-style-large-language-model-using-grpo).
+:::
+
 GRPO uses custom reward functions and transformations. Please have them ready locally.
 
 For ex, to load OpenAI's GSM8K and use a random reward for completions:
@@ -539,6 +544,19 @@ datasets:
 To see other examples of custom reward functions, please see [TRL GRPO Docs](https://github.com/huggingface/trl/blob/main/docs/source/grpo_trainer.md#using-a-custom-reward-function).
 
 To see description of the configs, please see [TRLConfig](https://github.com/axolotl-ai-cloud/axolotl/blob/main/src/axolotl/utils/config/models/input/v0_4_1/trl.py).
+
+### SimPO
+
+SimPO uses [CPOTrainer](https://huggingface.co/docs/trl/main/en/cpo_trainer) but with alternative loss function.
+
+```yaml
+rl: simpo
+rl_beta: 0.1  # default in CPOTrainer
+cpo_alpha: 1.0  # default in CPOTrainer
+simpo_gamma: 0.5  # default in CPOTrainer
+```
+
+This method uses the same dataset format as [DPO](#dpo).
 
 ### Using local dataset files
 

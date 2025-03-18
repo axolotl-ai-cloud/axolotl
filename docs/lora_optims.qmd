@@ -66,6 +66,10 @@ logic to be compatible with more of them.
 
 </details>
 
+::: {.callout-tip}
+Check out our [LoRA optimizations blog](https://axolotlai.substack.com/p/accelerating-lora-fine-tuning-with).
+:::
+
 ## Usage
 
 These optimizations can be enabled in your Axolotl config YAML file. The

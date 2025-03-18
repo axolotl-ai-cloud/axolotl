@@ -693,7 +693,7 @@ class AxolotlInputConfig(
         default=None,
         json_schema_extra={"description": "streaming dataset to use for pretraining"},
     )
-    dataset_processes: Optional[int] = Field(default=os.cpu_count())
+    dataset_processes: Optional[int] = Field(default=min(32, os.cpu_count()))  # type: ignore[type-var]
     dataset_exact_deduplication: Optional[bool] = None
     dataset_keep_in_memory: Optional[bool] = None
     dataloader_pin_memory: Optional[bool] = None
@@ -1630,6 +1630,14 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                     data["torch_compile"] = False
             else:
                 data["torch_compile"] = False
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_beta_and_trl_beta_match(cls, data):
+        if data.get("beta") and data.get("trl", {}).get("beta"):
+            if data["beta"] != data["trl"]["beta"]:
+                raise ValueError("beta and trl.beta must match or one must be removed")
         return data
 
 
