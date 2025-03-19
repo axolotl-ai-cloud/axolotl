@@ -34,7 +34,7 @@ resize_token_embeddings_to_32x:
 shrink_embeddings:
 # Whether to load the model with randomly initialized weights. Useful for
 # pre-training a model from scratch or debugging purposes.
-random_init:
+random_init_weights:
 
 # (Internal use only)
 # Used to identify which the model is based on

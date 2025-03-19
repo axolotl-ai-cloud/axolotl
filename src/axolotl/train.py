@@ -1,6 +1,5 @@
 """Prepare and train a model on a dataset. Can also infer from a model or merge lora"""
 
-import contextlib
 import importlib
 import inspect
 import os
@@ -166,35 +165,11 @@ def setup_signal_handler(
         )
 
 
-def train_context_manager(
-    flash_optimum: bool = False,
-) -> contextlib.AbstractContextManager:
-    """
-    Instantiate CUDA SDP kernel context manager if `flash_optimum` is `True`.
-
-    Args:
-        flash_optimum: Whether to enable efficient backends for SDP attention.
-
-    Returns:
-        Context manager for temporarily enabling efficient backends for SDP attention
-            if `flash_optimum` is `True`, or `contextlib.nullcontext` otherwise.
-    """
-    if flash_optimum:
-        return torch.backends.cuda.sdp_kernel(
-            # TODO configure these from the YAML w/ sdp_kernel_kwargs: ...
-            enable_flash=True,
-            enable_math=True,
-            enable_mem_efficient=True,
-        )
-
-    return contextlib.nullcontext()
-
-
 def execute_training(
     cfg: DictDefault, trainer: Any, resume_from_checkpoint: str | None
 ):
     """
-    Execute the training process with appropriate backend configurations.
+    Execute the training process with appropriate SDP kernel configurations.
 
     Args:
         cfg: Dictionary mapping `axolotl` config keys to values.
@@ -202,8 +177,15 @@ def execute_training(
         resume_from_checkpoint: Path to checkpoint to resume from, if applicable.
     """
     LOG.info("Starting trainer...")
-    context_manager = train_context_manager(flash_optimum=cfg.flash_optimum)
-    with context_manager:
+    if cfg.flash_optimum:
+        with torch.backends.cuda.sdp_kernel(
+            # TODO configure these from the YAML w/ sdp_kernel_kwargs: ...
+            enable_flash=True,
+            enable_math=True,
+            enable_mem_efficient=True,
+        ):
+            trainer.train(resume_from_checkpoint=resume_from_checkpoint)
+    else:
         trainer.train(resume_from_checkpoint=resume_from_checkpoint)
 
 

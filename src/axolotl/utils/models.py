@@ -922,7 +922,7 @@ class ModelLoader:
                 self.model_config.text_config = self.text_model_config
 
             # Load model with random initialization if specified
-            if self.cfg.random_init:
+            if self.cfg.random_init_weights:
                 # AutoModel classes support the from_config method
                 if self.auto_model_loader in [
                     AutoModelForCausalLM,

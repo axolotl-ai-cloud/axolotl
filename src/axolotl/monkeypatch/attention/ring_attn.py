@@ -1,6 +1,10 @@
-"""Ring attention group registration and flash attention patching."""
+"""
+Ring attention group registration and flash attention patching.
 
-from typing import Any
+Make use of the `ring-flash-attn` (https://github.com/zhuzilin/ring-flash-attention)
+package, specifically the `hf_adapter.substitute_hf_flash_attn` function to patch in
+their sequence parallel version of Flash Attention 2.
+"""
 
 import torch.distributed as dist
 from accelerate.logging import get_logger
@@ -14,11 +18,23 @@ LOG = get_logger(__name__)
 RING_ATTN_GROUP = None
 
 
-def get_ring_attn_group() -> Any:
+def get_ring_attn_group() -> dist.ProcessGroup:
+    """
+    Getter for ring attention group on this rank.
+
+    Returns:
+        The process group for ring attention for this rank.
+    """
     return RING_ATTN_GROUP
 
 
-def set_ring_attn_group(ring_attn_group: Any):
+def set_ring_attn_group(ring_attn_group: dist.ProcessGroup):
+    """
+    Setter for ring attention group on this rank.
+
+    Args:
+        Process group for ring attention.
+    """
     global RING_ATTN_GROUP  # pylint: disable=global-statement
     RING_ATTN_GROUP = ring_attn_group
 
