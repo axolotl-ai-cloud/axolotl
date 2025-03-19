@@ -1,5 +1,5 @@
 """
-E2E tests for packed training
+E2E tests for packed training w/ flex attention
 """
 
 import logging
@@ -14,26 +14,27 @@ from axolotl.train import train
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 
-from .utils import check_tensorboard, with_temp_dir
+from ..utils import check_tensorboard, require_torch_2_5_1, with_temp_dir
 
 LOG = logging.getLogger("axolotl.tests.e2e")
 os.environ["WANDB_DISABLED"] = "true"
 
 
-class TestPackedLlama(unittest.TestCase):
+class TestPackedFlex(unittest.TestCase):
     """
     Test case for Packed training of llama models
     """
 
+    @require_torch_2_5_1
     @with_temp_dir
-    def test_loss_packed(self, temp_dir):
+    def test_loss_llama(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
                 "sequence_len": 1024,
                 "sample_packing": True,
-                "flash_attention": True,
+                "flex_attention": True,
                 "val_set_size": 0.0,
                 "special_tokens": {
                     "pad_token": "<|endoftext|>",
