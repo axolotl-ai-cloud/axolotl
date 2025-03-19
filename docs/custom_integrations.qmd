@@ -77,7 +77,7 @@ To add a new integration, please follow these steps:
 
 ::: {.callout-tip}
 
-See [src/axolotl/integrations/cut_cross_entropy](https://github.com/axolotl-ai-cloud/axolotl/tree/main/src/axolotl/integrations/cut_cross_entropy) for an example of a new integration.
+See [src/axolotl/integrations/cut_cross_entropy](https://github.com/axolotl-ai-cloud/axolotl/tree/main/src/axolotl/integrations/cut_cross_entropy) for an example of a minimal integration.
 
 :::
 
@@ -95,5 +95,13 @@ and correctly spelled the integration name in the config file.
 plugins:
   - axolotl.integrations.your_integration_name.YourIntegrationPlugin
 ```
+
+:::
+
+::: {.callout-note}
+
+It is not necessary to place your integration in the `integrations` folder. It can be in any location, so long as it's installed in a package in your python env.
+
+See this repo for an example: [https://github.com/axolotl-ai-cloud/diff-transformer](https://github.com/axolotl-ai-cloud/diff-transformer)
 
 :::
