@@ -45,7 +45,8 @@ except ImportError:
     def update_ring_flash_attn_params(*args, **kwargs):
         raise ImportError(
             "ring_flash_attn is not installed. "
-            "Please install it with `pip install ring-flash-attn>=0.1.4`"
+            "Please install it with `pip install axolotl[ring-flash-attn] "
+            "or `pip install ring-flash-attn>=0.1.4`."
         )
 
 

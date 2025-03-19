@@ -36,6 +36,10 @@ def register_ring_attn(sequence_parallel_degree: int):
     )
 
     world_size = dist.get_world_size()
+    assert sequence_parallel_degree <= world_size, (
+        f"sequence_parallel_degree ({sequence_parallel_degree}) "
+        f"must be less than or equal to world_size ({world_size})"
+    )
     assert world_size % sequence_parallel_degree == 0, (
         f"sequence_parallel_degree ({sequence_parallel_degree}) "
         f"must evenly divide world_size ({world_size})"
