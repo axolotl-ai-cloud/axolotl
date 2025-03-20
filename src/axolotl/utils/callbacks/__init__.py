@@ -343,9 +343,9 @@ def bench_eval_callback_factory(trainer, tokenizer):
                     bench_refs.extend(combined_bench_names[bench_name]["refs"])
                     bench_preds.extend(combined_bench_names[bench_name]["preds"])
                     if not pd.isna(bench_score):
-                        results[
-                            f"{bench_split}_bench_accuracy_{bench_name}"
-                        ] = bench_score
+                        results[f"{bench_split}_bench_accuracy_{bench_name}"] = (
+                            bench_score
+                        )
                         bench_scores.append(bench_score)
                     else:
                         results[f"{bench_split}_bench_accuracy_{bench_name}"] = 0.0

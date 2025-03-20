@@ -1,6 +1,7 @@
 """
 test cases to make sure the plugin args are loaded from the config file
 """
+
 from pathlib import Path
 
 import yaml

@@ -45,9 +45,9 @@ class GRPOStrategy:
             )
 
             if trl.vllm_gpu_memory_utilization:
-                grpo_args_kwargs[
-                    "vllm_gpu_memory_utilization"
-                ] = trl.vllm_gpu_memory_utilization
+                grpo_args_kwargs["vllm_gpu_memory_utilization"] = (
+                    trl.vllm_gpu_memory_utilization
+                )
 
             if trl.vllm_max_model_len:
                 grpo_args_kwargs["vllm_max_model_len"] = trl.vllm_max_model_len
@@ -86,9 +86,9 @@ class GRPOStrategy:
     def set_trainer_kwargs(cls, cfg):
         trainer_kwargs = {}
         if cfg.trl and cfg.trl.reward_processing_classes:
-            trainer_kwargs[
-                "reward_processing_classes"
-            ] = cfg.trl.reward_processing_classes
+            trainer_kwargs["reward_processing_classes"] = (
+                cfg.trl.reward_processing_classes
+            )
         return trainer_kwargs
 
     @classmethod

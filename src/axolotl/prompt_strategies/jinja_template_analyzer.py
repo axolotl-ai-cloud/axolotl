@@ -1,4 +1,5 @@
 """Module for inspect jinja templates for the variables they use"""
+
 from typing import Dict, Optional, Set, TypedDict, Union
 
 from jinja2 import Environment, meta, nodes

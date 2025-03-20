@@ -1,4 +1,5 @@
 """Module for custom LRScheduler class"""
+
 import math
 from functools import partial
 

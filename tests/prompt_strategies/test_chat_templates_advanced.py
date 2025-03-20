@@ -920,9 +920,11 @@ class TestChatTemplateConfigurations:
         )
 
         variables = prompter.get_chat_template_msg_variables(
-            actual_jinja_template
-            if actual_jinja_template
-            else actual_tokenizer.get_chat_template(),
+            (
+                actual_jinja_template
+                if actual_jinja_template
+                else actual_tokenizer.get_chat_template()
+            ),
             "messages",
         )
 

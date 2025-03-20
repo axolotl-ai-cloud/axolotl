@@ -1,6 +1,7 @@
 """
 internal message representations of chat messages
 """
+
 import json
 from enum import Enum
 from typing import Any, Callable, List, Optional, Union

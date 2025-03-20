@@ -55,9 +55,9 @@ class LigerPlugin(BasePlugin):
             if "cross_entropy" in liger_fn_sig.parameters:
                 kwargs["cross_entropy"] = cfg.liger_cross_entropy
             if "fused_linear_cross_entropy" in liger_fn_sig.parameters:
-                kwargs[
-                    "fused_linear_cross_entropy"
-                ] = cfg.liger_fused_linear_cross_entropy
+                kwargs["fused_linear_cross_entropy"] = (
+                    cfg.liger_fused_linear_cross_entropy
+                )
             if "rms_norm" in liger_fn_sig.parameters:
                 kwargs["rms_norm"] = cfg.liger_rms_norm
             if "layer_norm" in liger_fn_sig.parameters:

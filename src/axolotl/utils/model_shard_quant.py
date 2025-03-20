@@ -1,6 +1,7 @@
 """
 module to handle loading model on cpu/meta device for FSDP
 """
+
 import os
 import time
 from typing import List, Optional, Type, Union
@@ -45,13 +46,13 @@ def _replace_linear(
 
         if isinstance(module, torch.nn.Linear) and name not in skip_modules:
             if issubclass(linear_replacement, Linear4bit):
-                model._modules[  # pylint: disable=protected-access
-                    name
-                ] = linear_replacement(
-                    module.in_features,
-                    module.out_features,
-                    module.bias is not None,
-                    **kwargs,
+                model._modules[name] = (  # pylint: disable=protected-access
+                    linear_replacement(
+                        module.in_features,
+                        module.out_features,
+                        module.bias is not None,
+                        **kwargs,
+                    )
                 )
             else:
                 raise ValueError(

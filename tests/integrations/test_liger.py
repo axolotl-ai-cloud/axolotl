@@ -1,6 +1,7 @@
 """
 config validation tests for swiglu args
 """
+
 # pylint: disable=duplicate-code
 import logging
 from typing import Optional

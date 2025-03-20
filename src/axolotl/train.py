@@ -406,9 +406,7 @@ def handle_untrained_tokens_fix(
         )
 
 
-def setup_model_and_trainer(
-    cfg: DictDefault, dataset_meta: TrainDatasetMeta
-) -> tuple[
+def setup_model_and_trainer(cfg: DictDefault, dataset_meta: TrainDatasetMeta) -> tuple[
     HFRLTrainerBuilder | HFCausalTrainerBuilder,
     PeftModel | PreTrainedModel,
     PreTrainedTokenizer,

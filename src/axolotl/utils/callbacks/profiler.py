@@ -1,6 +1,7 @@
 """
 HF Trainer callback for creating pytorch profiling snapshots
 """
+
 from pathlib import Path
 from pickle import dump  # nosec B403
 

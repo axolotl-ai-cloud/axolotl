@@ -1,6 +1,7 @@
 """
 GRPO test suite
 """
+
 import random
 from pathlib import Path
 

@@ -3,6 +3,7 @@ Test suite for functions in the axolotl.utils.data.utils module, focusing on the
 
 Additionally, this test suite includes tests for functions that indirectly call deduplicate_and_log_datasets during the execution of the preprocess command.
 """
+
 import hashlib
 import unittest
 from unittest.mock import patch
@@ -386,11 +387,11 @@ class TestWrongCollisions(unittest.TestCase):
 
     @patch(
         "axolotl.utils.data.utils.sha256",
-        side_effect=lambda x: hashlib.sha256(
-            "forced_collision_hash".encode("utf-8")
-        ).hexdigest()
-        if "sample 5" in x
-        else hashlib.sha256(x.encode("utf-8")).hexdigest(),
+        side_effect=lambda x: (
+            hashlib.sha256("forced_collision_hash".encode("utf-8")).hexdigest()
+            if "sample 5" in x
+            else hashlib.sha256(x.encode("utf-8")).hexdigest()
+        ),
     )
     def test_deduplication_wrong_collision_train_eval(self, _mock_sha256):
         dedup_train, dedup_eval, _ = deduplicate_and_log_datasets(

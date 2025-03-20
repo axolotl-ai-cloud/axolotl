@@ -1,4 +1,5 @@
 """Tests for SwiGLU activation function Triton kernels."""
+
 # pylint: disable=duplicate-code
 
 import torch

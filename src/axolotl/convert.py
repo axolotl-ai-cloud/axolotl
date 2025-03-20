@@ -1,6 +1,5 @@
 """Module containing File Reader, File Writer, Json Parser, and Jsonl Serializer classes"""
 
-
 import json
 import sys
 

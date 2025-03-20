@@ -1,4 +1,5 @@
 """Integration tests for LoRA activation and attention kernels."""
+
 # pylint: disable=redefined-outer-name
 
 import pytest

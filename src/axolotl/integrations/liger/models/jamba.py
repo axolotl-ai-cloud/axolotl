@@ -1,6 +1,7 @@
 """
 Jamba model with LigerFusedLinearCrossEntropyLoss
 """
+
 # pylint: disable=duplicate-code
 
 from typing import Optional, Tuple, Union

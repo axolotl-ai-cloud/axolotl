@@ -1,4 +1,5 @@
 """Script to output the correct installation command for cut-cross-entropy."""
+
 import importlib.util
 import sys
 
