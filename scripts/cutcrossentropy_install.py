@@ -17,12 +17,12 @@ if v < V("2.4.0"):
 
 cce_spec = importlib.util.find_spec("cut_cross_entropy")
 
-UNINSTALL_PREFIX = ""
+uninstall_prefix = ""
 if cce_spec:
     if not importlib.util.find_spec("cut_cross_entropy.transformers"):
-        UNINSTALL_PREFIX = "pip uninstall -y cut-cross-entropy && "
+        uninstall_prefix = "pip uninstall -y cut-cross-entropy && "
 
 print(
-    UNINSTALL_PREFIX
+    uninstall_prefix
     + 'pip install "cut-cross-entropy[transformers] @ git+https://github.com/apple/ml-cross-entropy.git@24fbe4b5dab9a6c250a014573613c1890190536c"'
 )

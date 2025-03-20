@@ -7,13 +7,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from conftest import snapshot_download_w_retry
 from constants import (
     ALPACA_MESSAGES_CONFIG_OG,
     ALPACA_MESSAGES_CONFIG_REVISION,
     SPECIAL_TOKENS,
 )
 from datasets import Dataset
-from huggingface_hub import snapshot_download
 from transformers import AutoTokenizer
 
 from axolotl.utils.data import load_tokenized_prepared_datasets
@@ -69,7 +69,7 @@ class TestDatasetPreparation(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_ds_path = Path(tmp_dir) / "mhenrichsen/alpaca_2k_test"
             tmp_ds_path.mkdir(parents=True, exist_ok=True)
-            snapshot_download(
+            snapshot_download_w_retry(
                 repo_id="mhenrichsen/alpaca_2k_test",
                 repo_type="dataset",
                 local_dir=tmp_ds_path,
@@ -81,7 +81,7 @@ class TestDatasetPreparation(unittest.TestCase):
             # how to load it.
             cfg = DictDefault(
                 {
-                    "tokenizer_config": "huggyllama/llama-7b",
+                    "tokenizer_config": "HuggingFaceTB/SmolLM2-135M",
                     "sequence_len": 1024,
                     "datasets": [
                         {
@@ -339,7 +339,7 @@ class TestDatasetPreparation(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_ds_path = Path(tmp_dir) / "mhenrichsen/alpaca_2k_test"
             tmp_ds_path.mkdir(parents=True, exist_ok=True)
-            snapshot_download(
+            snapshot_download_w_retry(
                 repo_id="mhenrichsen/alpaca_2k_test",
                 repo_type="dataset",
                 local_dir=tmp_ds_path,
@@ -381,7 +381,7 @@ class TestDatasetPreparation(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_ds_path = Path(tmp_dir) / "mhenrichsen/alpaca_2k_test"
             tmp_ds_path.mkdir(parents=True, exist_ok=True)
-            snapshot_download(
+            snapshot_download_w_retry(
                 repo_id="mhenrichsen/alpaca_2k_test",
                 repo_type="dataset",
                 local_dir=tmp_ds_path,

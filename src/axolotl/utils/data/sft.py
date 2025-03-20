@@ -2,6 +2,7 @@
 
 import functools
 import logging
+import os
 from pathlib import Path
 from typing import List, Optional, Tuple, Union
 
@@ -344,6 +345,7 @@ def load_tokenized_prepared_datasets(
                 )
                 ds_from_iter.save_to_disk(str(prepared_ds_path))
             else:
+                os.makedirs(prepared_ds_path, exist_ok=True)
                 dataset.save_to_disk(str(prepared_ds_path))
             if cfg.push_dataset_to_hub:
                 LOG.info(
