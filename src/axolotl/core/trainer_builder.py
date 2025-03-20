@@ -36,7 +36,7 @@ from transformers import (
 from transformers.training_args import OptimizerNames
 from trl.trainer.utils import RewardDataCollatorWithPadding
 
-from axolotl.core.trainers.base import (
+from axolotl.core.trainers import (
     AxolotlCPOTrainer,
     AxolotlKTOTrainer,
     AxolotlMambaTrainer,

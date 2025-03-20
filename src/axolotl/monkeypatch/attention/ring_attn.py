@@ -8,9 +8,15 @@ their sequence parallel version of Flash Attention 2.
 
 import torch.distributed as dist
 from accelerate.logging import get_logger
-from ring_flash_attn import substitute_hf_flash_attn
 
 from axolotl.logging_config import configure_logging
+
+try:
+    from ring_flash_attn import substitute_hf_flash_attn
+except ImportError:
+    # We pass silently here, but raise an ImportError in our Axolotl config validation
+    # if cfg.sequence_parallel_degree > 1 and `ring-flash-attn` is not installed.
+    pass
 
 configure_logging()
 LOG = get_logger(__name__)

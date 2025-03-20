@@ -1116,6 +1116,15 @@ class AxolotlInputConfig(
                     "flash_attention: true must be set with sequence_parallel_degree > 1"
                 )
 
+            try:
+                import ring_flash_attn  # noqa: F401 # pylint:disable=unused-import
+            except ImportError as exception:
+                raise ImportError(
+                    "ring_flash_attn is not installed. "
+                    "Please install it with `pip install axolotl[ring-flash-attn] "
+                    "or `pip install ring-flash-attn>=0.1.4`."
+                ) from exception
+
         return value
 
 
