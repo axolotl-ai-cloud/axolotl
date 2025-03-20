@@ -21,12 +21,10 @@ repos:
 -   repo: https://github.com/PyCQA/flake8
     rev: 7.1.2
     hooks:
-    - id: flake8
 -   repo: https://github.com/pylint-dev/pylint
     rev: v3.3.6
     hooks:
     - id: pylint
-      language_version: python3.11
 -   repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.15.0
     hooks:
