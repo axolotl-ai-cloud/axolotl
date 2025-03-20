@@ -865,6 +865,9 @@ class ModelLoader:
             return hf_ds_cfg
 
         skip_move_to_device = False
+        if self.cfg.tensor_parallel:
+            del self.model_kwargs["device_map"]
+
         if (  # pylint: disable=condition-evals-to-constant)
             (self.cfg.fsdp and self.cfg.fsdp_config.fsdp_cpu_ram_efficient_loading)
             and not qlora_fsdp
