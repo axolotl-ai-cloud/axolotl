@@ -507,7 +507,7 @@ class HyperparametersConfig(BaseModel):
     weight_decay: Optional[float] = 0.0
     optimizer: Optional[
         Union[OptimizerNames, CustomSupportedOptimizers]
-    ] = OptimizerNames.ADAMW_HF
+    ] = OptimizerNames.ADAMW_TORCH_FUSED
     optim_args: Optional[Union[str, Dict[str, Any]]] = Field(
         default=None,
         json_schema_extra={"description": "Optional arguments to supply to optimizer."},
