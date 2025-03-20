@@ -22,8 +22,8 @@ repos:
     rev: 6.1.0
     hooks:
     - id: flake8
--   repo: https://github.com/PyCQA/pylint
-    rev: v3.3.0
+-   repo: https://github.com/winglian/pylint.git
+    rev: packaing-upgrade
     hooks:
     - id: pylint
 -   repo: https://github.com/pre-commit/mirrors-mypy
