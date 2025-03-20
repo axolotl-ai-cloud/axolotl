@@ -81,7 +81,7 @@ class TestDatasetPreparation(unittest.TestCase):
             # how to load it.
             cfg = DictDefault(
                 {
-                    "tokenizer_config": "huggyllama/llama-7b",
+                    "tokenizer_config": "HuggingFaceTB/SmolLM2-135M",
                     "sequence_len": 1024,
                     "datasets": [
                         {
