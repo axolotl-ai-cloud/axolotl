@@ -31,8 +31,7 @@ class TestLlamaShiftedSparseAttention(unittest.TestCase):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "JackFram/llama-68m",
-                "tokenizer_type": "LlamaTokenizer",
+                "base_model": "HuggingFaceTB/SmolLM2-135M-Instruct",
                 "sequence_len": 16384,
                 "sample_packing": False,
                 "flash_attention": True,
@@ -77,8 +76,7 @@ class TestLlamaShiftedSparseAttention(unittest.TestCase):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "JackFram/llama-68m",
-                "tokenizer_type": "LlamaTokenizer",
+                "base_model": "HuggingFaceTB/SmolLM2-135M-Instruct",
                 "sequence_len": 16384,
                 "sample_packing": False,
                 "flash_attention": True,
