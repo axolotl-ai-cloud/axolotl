@@ -82,7 +82,7 @@ class SequenceParallelMixin:
         """
         return self._create_sequence_parallel_sampler(
             dataset,
-            shuffle=not getattr(self.args, "curriculum_sampling", False),
+            shuffle=not self.args.curriculum_sampling,
         )
 
     def _sp_get_eval_sampler(self, eval_dataset) -> Sampler | None:
@@ -108,9 +108,6 @@ class SequenceParallelMixin:
         Args:
             inputs: Current batch of inputs.
         """
-        if not self.args.sequence_parallel_degree > 1:
-            return
-
         # At this point, inputs should already be partitioned by the sequence
         # parallel data collator
         batch_size = inputs["input_ids"].shape[0]

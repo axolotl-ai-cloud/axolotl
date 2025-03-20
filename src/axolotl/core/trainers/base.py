@@ -608,7 +608,8 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, SequenceParallelMixin, Trai
             inputs: Dictionary mapping.
         """
         # Set up sequence parallelism for this step if enabled
-        self._sp_training_step_setup(inputs)
+        if self.args.sequence_parallel_degree > 1:
+            self._update_ring_flash_attn_params(inputs)
 
         # Proceed with normal training step
         loss = super().training_step(model, inputs, num_items_in_batch)
