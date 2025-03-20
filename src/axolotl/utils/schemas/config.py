@@ -1,5 +1,4 @@
-"""Main Axolotl input configuration Pydantic models"""
-
+"""Module with Pydantic models for configuration."""
 # pylint: disable=too-many-lines
 
 import logging

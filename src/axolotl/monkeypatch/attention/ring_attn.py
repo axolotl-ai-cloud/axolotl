@@ -11,13 +11,6 @@ from accelerate.logging import get_logger
 
 from axolotl.logging_config import configure_logging
 
-try:
-    from ring_flash_attn import substitute_hf_flash_attn
-except ImportError:
-    # We pass silently here, but raise an ImportError in our Axolotl config validation
-    # if cfg.sequence_parallel_degree > 1 and `ring-flash-attn` is not installed.
-    pass
-
 configure_logging()
 LOG = get_logger(__name__)
 
@@ -90,5 +83,7 @@ def register_ring_attn(sequence_parallel_degree: int):
     # Log the GPU group assignments
     if rank == 0:
         LOG.info(f"Sequence parallel group assignments: {group_assignments}")
+
+    from ring_flash_attn import substitute_hf_flash_attn
 
     substitute_hf_flash_attn(get_ring_attn_group(), sequence_parallel_degree)
