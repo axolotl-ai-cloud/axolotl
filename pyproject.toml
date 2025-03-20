@@ -8,6 +8,7 @@ dynamic = ["version", "dependencies", "optional-dependencies"]
 description = "LLM Trainer"
 readme = "README.md"
 requires-python = ">=3.10"
+license-files = ["LICENSE"]
 
 [project.scripts]
 axolotl = "axolotl.cli.main:main"
