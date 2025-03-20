@@ -33,9 +33,9 @@ RUN if [ "$NIGHTLY_BUILD" = "true" ] ; then \
 
 RUN pip3 install -U packaging setuptools wheel
 RUN if [ "$AXOLOTL_EXTRAS" != "" ] ; then \
-        pip install --no-build-isolation -e .[deepspeed,flash-attn,optimizers,ray,$AXOLOTL_EXTRAS] $AXOLOTL_ARGS; \
+        pip install --no-build-isolation -e .[deepspeed,flash-attn,optimizers,ray,$AXOLOTL_EXTRAS] $AXOLOTL_ARGS --no-binary=:all:; \
     else \
-        pip install --no-build-isolation -e .[deepspeed,flash-attn,optimizers,ray] $AXOLOTL_ARGS; \
+        pip install --no-build-isolation -e .[deepspeed,flash-attn,optimizers,ray] $AXOLOTL_ARGS --no-binary=:all:; \
     fi
 
 RUN python scripts/unsloth_install.py | sh
