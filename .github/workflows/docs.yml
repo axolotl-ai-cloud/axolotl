@@ -23,7 +23,7 @@ jobs:
         - name: Install dependencies
           run: |
             python3 -m pip install jupyter quartodoc
-            python3 -m pip install -e .
+            python3 -m pip install -e . --no-deps
         - name: Build autodoc
           run: quartodoc build
         - name: Publish to GitHub Pages (and render)
