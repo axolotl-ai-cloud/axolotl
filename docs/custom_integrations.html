@@ -458,6 +458,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <li><a href="#usage-5" id="toc-usage-5" class="nav-link" data-scroll-target="#usage-5">Usage</a></li>
   <li><a href="#citation-4" id="toc-citation-4" class="nav-link" data-scroll-target="#citation-4">Citation</a></li>
   </ul></li>
+  <li><a href="#adding-a-new-integration" id="toc-adding-a-new-integration" class="nav-link" data-scroll-target="#adding-a-new-integration">Adding a new integration</a></li>
   </ul>
 </nav>
     </div>
@@ -665,9 +666,70 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb12-8"><a href="#cb12-8" aria-hidden="true" tabindex="-1"></a>      <span class="dt">url</span>={https://arxiv.org/abs/2406.06623},</span>
 <span id="cb12-9"><a href="#cb12-9" aria-hidden="true" tabindex="-1"></a>}</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Please see reference <a href="https://github.com/axolotl-ai-cloud/axolotl/tree/main/src/axolotl/integrations/spectrum">here</a></p>
-
-
 </section>
+</section>
+<section id="adding-a-new-integration" class="level2">
+<h2 class="anchored" data-anchor-id="adding-a-new-integration">Adding a new integration</h2>
+<p>Plugins can be used to customize the behavior of the training pipeline through <a href="https://en.wikipedia.org/wiki/Hooking">hooks</a>. See <a href="https://github.com/axolotl-ai-cloud/axolotl/blob/main/src/axolotl/integrations/base.py"><code>axolotl.integrations.BasePlugin</code></a> for the possible hooks.</p>
+<p>To add a new integration, please follow these steps:</p>
+<ol type="1">
+<li>Create a new folder in the <code>src/axolotl/integrations</code> directory.</li>
+<li>Add any relevant files (<code>LICENSE</code>, <code>README.md</code>, <code>ACKNOWLEDGEMENTS.md</code>, etc.) to the new folder.</li>
+<li>Add <code>__init__.py</code> and <code>args.py</code> files to the new folder.</li>
+</ol>
+<ul>
+<li><code>__init__.py</code> should import the integration and hook into the appropriate functions.</li>
+<li><code>args.py</code> should define the arguments for the integration.</li>
+</ul>
+<ol start="4" type="1">
+<li>(If applicable) Add CPU tests under <code>tests/integrations</code> or GPU tests under <code>tests/e2e/integrations</code>.</li>
+</ol>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Tip
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>See <a href="https://github.com/axolotl-ai-cloud/axolotl/tree/main/src/axolotl/integrations/cut_cross_entropy">src/axolotl/integrations/cut_cross_entropy</a> for a minimal integration example.</p>
+</div>
+</div>
+<div class="callout callout-style-default callout-warning callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Warning
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>If you could not load your integration, please ensure you are pip installing in editable mode.</p>
+<div class="sourceCode" id="cb13"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> install <span class="at">-e</span> .</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>and correctly spelled the integration name in the config file.</p>
+<div class="sourceCode" id="cb14"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="fu">plugins</span><span class="kw">:</span></span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> axolotl.integrations.your_integration_name.YourIntegrationPlugin</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+</div>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Note
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>It is not necessary to place your integration in the <code>integrations</code> folder. It can be in any location, so long as it’s installed in a package in your python env.</p>
+<p>See this repo for an example: <a href="https://github.com/axolotl-ai-cloud/diff-transformer">https://github.com/axolotl-ai-cloud/diff-transformer</a></p>
+</div>
+</div>
+
+
 </section>
 
 </main> <!-- /main -->
