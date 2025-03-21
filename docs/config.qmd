@@ -85,6 +85,12 @@ gpu_memory_limit: 20GiB
 # Do the LoRA/PEFT loading on CPU -- this is required if the base model is so large it takes up most or all of the available GPU VRAM, e.g. during a model and LoRA merge
 lora_on_cpu: true
 
+# List[str]. Add plugins to extend the pipeline.
+# See `src/axolotl/integrations` for the available plugins or doc below for more details.
+# https://axolotl-ai-cloud.github.io/axolotl/docs/custom_integrations.html
+plugins:
+  # - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+
 # A list of one or more datasets to finetune the model with
 datasets:
   # HuggingFace dataset repo | s3://,gs:// path | "json" for local dataset, make sure to fill data_files
