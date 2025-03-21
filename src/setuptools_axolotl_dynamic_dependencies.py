@@ -1,6 +1,7 @@
 """
 dynamic requirements for axolotl
 """
+
 import platform
 import re
 from importlib.metadata import PackageNotFoundError, version

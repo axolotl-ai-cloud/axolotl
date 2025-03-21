@@ -1,4 +1,5 @@
 """Tests for quantization utility functions."""
+
 # pylint: disable=invalid-name
 
 import torch

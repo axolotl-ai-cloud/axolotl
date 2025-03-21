@@ -1,4 +1,5 @@
 """Module for plain input/output prompt pairs"""
+
 from typing import Generator, Tuple
 
 from axolotl.prompt_tokenizers import PromptTokenizingStrategy

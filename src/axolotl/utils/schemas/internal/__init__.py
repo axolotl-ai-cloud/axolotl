@@ -1,4 +1,5 @@
 """module for gpu capabilities"""
+
 from typing import Optional
 
 from pydantic import BaseModel, Field

@@ -26,12 +26,12 @@ class KDArgs(BaseModel):
     """
 
     kd_trainer: Optional[bool] = None  # whether to use KD trainer
-    kd_ce_alpha: Optional[
-        float
-    ] = None  # loss coefficient for cross-entropy loss during KD
+    kd_ce_alpha: Optional[float] = (
+        None  # loss coefficient for cross-entropy loss during KD
+    )
     kd_alpha: Optional[float] = None  # loss coefficient for KD loss
     kd_temperature: Optional[float] = None  # temperature for sampling during KD
     kd_zscore_base_temp: Optional[float] = None  # base temperature for zscore scaling
-    kd_top_k_before_softmax: Optional[
-        bool
-    ] = None  # whether to sample top k before softmax during KD
+    kd_top_k_before_softmax: Optional[bool] = (
+        None  # whether to sample top k before softmax during KD
+    )

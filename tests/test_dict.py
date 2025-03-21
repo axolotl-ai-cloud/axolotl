@@ -1,6 +1,5 @@
 """Module for testing DictDefault class"""
 
-
 import unittest
 
 import pytest

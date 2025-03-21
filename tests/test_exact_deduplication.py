@@ -3,6 +3,7 @@ Test suite for functions in the axolotl.utils.data.utils module, focusing on the
 
 Additionally, this test suite includes tests for functions that indirectly call deduplicate_and_log_datasets during the execution of the preprocess command.
 """
+
 import hashlib
 import unittest
 from unittest.mock import patch
@@ -11,6 +12,7 @@ from constants import ALPACA_MESSAGES_CONFIG_REVISION, SPECIAL_TOKENS
 from datasets import Dataset
 from transformers import AutoTokenizer
 
+from axolotl.utils.config import normalize_config
 from axolotl.utils.data import prepare_dataset
 from axolotl.utils.data.rl import load_prepare_preference_datasets
 from axolotl.utils.data.utils import deduplicate_and_log_datasets
@@ -261,6 +263,7 @@ class TestDeduplicateNonRL(unittest.TestCase):
         self.tokenizer.add_special_tokens(SPECIAL_TOKENS)
         self.cfg_1 = DictDefault(
             {
+                "base_model": "huggyllama/llama-7b",
                 "tokenizer_config": "huggyllama/llama-7b",
                 "sequence_len": 1024,
                 "dataset_exact_deduplication": True,
@@ -281,6 +284,7 @@ class TestDeduplicateNonRL(unittest.TestCase):
                 "num_epochs": 1,
             }
         )
+        normalize_config(self.cfg_1)
 
     def test_prepare_dataset_with_deduplication_train(self):
         """Verify that prepare_dataset function processes the dataset correctly with deduplication."""
@@ -386,11 +390,11 @@ class TestWrongCollisions(unittest.TestCase):
 
     @patch(
         "axolotl.utils.data.utils.sha256",
-        side_effect=lambda x: hashlib.sha256(
-            "forced_collision_hash".encode("utf-8")
-        ).hexdigest()
-        if "sample 5" in x
-        else hashlib.sha256(x.encode("utf-8")).hexdigest(),
+        side_effect=lambda x: (
+            hashlib.sha256("forced_collision_hash".encode("utf-8")).hexdigest()
+            if "sample 5" in x
+            else hashlib.sha256(x.encode("utf-8")).hexdigest()
+        ),
     )
     def test_deduplication_wrong_collision_train_eval(self, _mock_sha256):
         dedup_train, dedup_eval, _ = deduplicate_and_log_datasets(

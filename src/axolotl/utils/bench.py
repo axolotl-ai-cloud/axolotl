@@ -1,4 +1,5 @@
 """Benchmarking and measurement utilities"""
+
 import functools
 
 import torch

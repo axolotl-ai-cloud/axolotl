@@ -1,6 +1,7 @@
 """
 Module for handling lm eval harness input arguments.
 """
+
 from typing import List, Optional
 
 from pydantic import BaseModel

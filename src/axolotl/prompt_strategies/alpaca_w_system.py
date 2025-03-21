@@ -1,6 +1,7 @@
 """
 Prompt strategies loader for alpaca instruction datasets with system prompts
 """
+
 from typing import Generator, Tuple, Union
 
 from axolotl.prompt_tokenizers import PromptTokenizingStrategy

@@ -1,4 +1,5 @@
 """Module containing the classes for Context QA Prompt Tokenization Strategies"""
+
 from typing import Tuple
 
 from axolotl.prompt_tokenizers import InstructionPromptTokenizingStrategy

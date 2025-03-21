@@ -1,6 +1,7 @@
 """
 DPO trainer for axolotl
 """
+
 import gc
 from functools import wraps
 from typing import Any, Dict, Union
@@ -12,10 +13,10 @@ from transformers import Trainer
 from transformers.utils import is_sagemaker_mp_enabled
 from trl import DPOTrainer
 
-from axolotl.core.trainers.base import (
-    SchedulerMixin,
-    _sanitize_kwargs_for_ds_tagging,
-    _sanitize_kwargs_for_tagging,
+from axolotl.core.trainers.mixins import SchedulerMixin
+from axolotl.core.trainers.utils import (
+    sanitize_kwargs_for_ds_tagging,
+    sanitize_kwargs_for_tagging,
 )
 
 if is_sagemaker_mp_enabled():
@@ -73,10 +74,10 @@ class AxolotlDPOTrainer(SchedulerMixin, DPOTrainer):
         Overwrite the `push_to_hub` method in order to force-add the tags when pushing the
         model on the Hub. Please refer to `~transformers.Trainer.push_to_hub` for more details.
         """
-        kwargs = _sanitize_kwargs_for_ds_tagging(
+        kwargs = sanitize_kwargs_for_ds_tagging(
             dataset_tags=self.dataset_tags, kwargs=kwargs
         )
-        kwargs = _sanitize_kwargs_for_tagging(tag_names=self.tag_names, kwargs=kwargs)
+        kwargs = sanitize_kwargs_for_tagging(tag_names=self.tag_names, kwargs=kwargs)
 
         return super().push_to_hub(*args, **kwargs)
 

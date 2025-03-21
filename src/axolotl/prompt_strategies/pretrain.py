@@ -1,4 +1,5 @@
 """pretraining prompt strategies"""
+
 from typing import Generator
 
 from transformers import BatchEncoding

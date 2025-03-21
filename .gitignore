@@ -181,6 +181,10 @@ prepared-datasets/
 submit.sh
 *.out*
 
+# Quartodoc generated files
+objects.json
+site_libs/
+
 typings/
 out/
 

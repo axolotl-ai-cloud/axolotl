@@ -1,4 +1,5 @@
 """callback to calculate perplexity as an evaluation metric."""
+
 from typing import Dict, List, Optional
 
 import torch

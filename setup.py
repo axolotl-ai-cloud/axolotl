@@ -17,11 +17,7 @@ def parse_requirements():
         lines = [r.strip() for r in requirements_file.readlines()]
         for line in lines:
             is_extras = (
-                "flash-attn" in line
-                or "flash-attention" in line
-                or "deepspeed" in line
-                or "mamba-ssm" in line
-                or "lion-pytorch" in line
+                "deepspeed" in line or "mamba-ssm" in line or "lion-pytorch" in line
             )
             if line.startswith("--extra-index-url"):
                 # Handle custom index URLs
@@ -39,7 +35,6 @@ def parse_requirements():
                 "bitsandbytes",
                 "triton",
                 "mamba-ssm",
-                "flash-attn",
                 "xformers",
                 "autoawq",
                 "liger-kernel",
@@ -124,9 +119,8 @@ setup(
         ],
     },
     extras_require={
-        "flash-attn": [
-            "flash-attn==2.7.4.post1",
-        ],
+        "flash-attn": ["flash-attn==2.7.4.post1"],
+        "ring-flash-attn": ["ring-flash-attn>=0.1.4", "yunchang==0.6.0"],
         "deepspeed": [
             "deepspeed==0.16.4",
             "deepspeed-kernels",

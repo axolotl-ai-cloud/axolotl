@@ -1,6 +1,7 @@
 """
 Test classes for checking functionality of the cfg normalization
 """
+
 import unittest
 from unittest.mock import patch
 

@@ -1,6 +1,7 @@
 """
 Tests for the chat messages module
 """
+
 import unittest
 
 import pytest

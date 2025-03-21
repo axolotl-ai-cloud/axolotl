@@ -1,15 +1,23 @@
-"""
-module for TRL PPO training
-"""
+"""Module for TRL PPO trainer"""
+
 import torch
 from tqdm import tqdm
-from trl import PPOTrainer
+from trl import (
+    CPOTrainer,
+    KTOTrainer,
+    ORPOTrainer,
+    PPOTrainer,
+    PRMTrainer,
+    RewardTrainer,
+)
+
+from axolotl.core.trainers.mixins.scheduler import SchedulerMixin
 
 
 class TRLPPOTrainer(PPOTrainer):
-    """
-    wrapper for ppo trainer to handle customizations
-    """
+    """Wrapper for TRL PPO trainer to handle customizations"""
+
+    tag_names = ["axolotl", "ppo"]
 
     def train(
         self,
@@ -30,9 +38,7 @@ class TRLPPOTrainer(PPOTrainer):
             "batch_size": 16,
         }
 
-        for epoch, batch in tqdm(  # pylint: disable=unused-variable
-            enumerate(self.dataloader)
-        ):
+        for _, batch in tqdm(enumerate(self.dataloader)):
             query_tensors = batch["input_ids"]
 
             # generate model response
@@ -64,3 +70,43 @@ class TRLPPOTrainer(PPOTrainer):
                 rewards,
                 columns_to_log=["query", "response", "ref_response", "ref_rewards"],
             )
+
+
+class AxolotlORPOTrainer(SchedulerMixin, ORPOTrainer):
+    """
+    Extend the base ORPOTrainer for axolotl helpers
+    """
+
+    tag_names = ["axolotl", "orpo"]
+
+
+class AxolotlKTOTrainer(SchedulerMixin, KTOTrainer):
+    """
+    Extend the base KTOTrainer for axolotl helpers
+    """
+
+    tag_names = ["axolotl", "kto"]
+
+
+class AxolotlCPOTrainer(SchedulerMixin, CPOTrainer):
+    """
+    Extend the base CPOTrainer for axolotl helpers
+    """
+
+    tag_names = ["axolotl", "cpo"]
+
+
+class AxolotlRewardTrainer(SchedulerMixin, RewardTrainer):
+    """
+    Extend the base RewardTrainer for axolotl helpers
+    """
+
+    tag_names = ["axolotl", "reward"]
+
+
+class AxolotlPRMTrainer(SchedulerMixin, PRMTrainer):
+    """
+    Extend the base trl.PRMTrainer for axolotl helpers
+    """
+
+    tag_names = ["axolotl", "prm"]

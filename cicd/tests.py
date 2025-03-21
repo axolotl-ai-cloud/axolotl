@@ -1,4 +1,5 @@
 """Modal app to run axolotl GPU tests"""
+
 # pylint: disable=duplicate-code
 
 import os

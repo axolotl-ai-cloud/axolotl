@@ -12,15 +12,13 @@ from transformers.utils.import_utils import is_torch_npu_available
 from axolotl.integrations.base import PluginManager
 from axolotl.integrations.config import merge_input_args
 from axolotl.utils.bench import log_gpu_memory_usage
-from axolotl.utils.config.models.input.v0_4_1 import (
-    AxolotlConfigWCapabilities as AxolotlConfigWCapabilitiesBase,
-)
-from axolotl.utils.config.models.input.v0_4_1 import (
-    AxolotlInputConfig as AxolotlInputConfigBase,
-)
-from axolotl.utils.config.models.input.v0_4_1 import DPODataset, KTODataset, SFTDataset
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.models import load_model_config
+from axolotl.utils.schemas.config import (
+    AxolotlConfigWCapabilities as AxolotlConfigWCapabilitiesBase,
+)
+from axolotl.utils.schemas.config import AxolotlInputConfig as AxolotlInputConfigBase
+from axolotl.utils.schemas.datasets import DPODataset, KTODataset, SFTDataset
 
 LOG = logging.getLogger("axolotl")
 
@@ -126,6 +124,9 @@ def normalize_config(cfg):
             ds_config_path = cfg.deepspeed
             with open(ds_config_path, encoding="utf-8") as f:
                 cfg.deepspeed = json.load(f)
+
+    if cfg.sequence_parallel_degree is None:
+        cfg.sequence_parallel_degree = 1
 
     if cfg.saves_per_epoch:
         save_steps = 1.0 / (cfg.saves_per_epoch * cfg.num_epochs)

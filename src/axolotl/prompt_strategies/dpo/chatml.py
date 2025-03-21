@@ -33,9 +33,9 @@ def default(
                 f"<|im_start|>user\n{sample[prompt_key]}<|im_end|>\n<|im_start|>assistant\n"
             )
         else:
-            sample[
-                "prompt"
-            ] = f"<|im_start|>user\n{sample[prompt_key]}<|im_end|>\n<|im_start|>assistant\n"
+            sample["prompt"] = (
+                f"<|im_start|>user\n{sample[prompt_key]}<|im_end|>\n<|im_start|>assistant\n"
+            )
         sample["chosen"] = f"{sample[chosen_key]}<|im_end|>"
         sample["rejected"] = f"{sample[rejected_key]}<|im_end|>"
         return sample
@@ -52,9 +52,9 @@ def argilla_chat(
     """
 
     def transform_fn(sample):
-        sample[
-            "prompt"
-        ] = f"<|im_start|>user\n{sample['chosen'][0]['content']}<|im_end|>\n<|im_start|>assistant\n"
+        sample["prompt"] = (
+            f"<|im_start|>user\n{sample['chosen'][0]['content']}<|im_end|>\n<|im_start|>assistant\n"
+        )
         sample["chosen"] = f"{sample['chosen'][1]['content']}<|im_end|>"
         sample["rejected"] = f"{sample['rejected'][1]['content']}<|im_end|>"
         return sample
@@ -78,9 +78,9 @@ def icr(
                 f"<|im_start|>user\n{sample['input']}<|im_end|>\n<|im_start|>assistant\n"
             )
         else:
-            sample[
-                "prompt"
-            ] = f"<|im_start|>user\n{sample['input']}<|im_end|>\n<|im_start|>assistant\n"
+            sample["prompt"] = (
+                f"<|im_start|>user\n{sample['input']}<|im_end|>\n<|im_start|>assistant\n"
+            )
         sample["chosen"] = f"{sample['chosen']}<|im_end|>"
         sample["rejected"] = f"{sample['rejected']}<|im_end|>"
         return sample
@@ -100,9 +100,9 @@ def intel(cfg, **kwargs):  # pylint: disable=possibly-unused-variable,unused-arg
                 f"<|im_start|>user\n{sample['question']}<|im_end|>\n<|im_start|>assistant\n"
             )
         else:
-            sample[
-                "prompt"
-            ] = f"<|im_start|>user\n{sample['question']}<|im_end|>\n<|im_start|>assistant\n"
+            sample["prompt"] = (
+                f"<|im_start|>user\n{sample['question']}<|im_end|>\n<|im_start|>assistant\n"
+            )
         sample["chosen"] = f"{sample['chosen']}<|im_end|>"
         sample["rejected"] = f"{sample['rejected']}<|im_end|>"
         return sample
@@ -120,9 +120,9 @@ def prompt_pairs(
                 f"<|im_start|>user\n{sample['prompt']}<|im_end|>\n<|im_start|>assistant\n"
             )
         else:
-            sample[
-                "prompt"
-            ] = f"<|im_start|>user\n{sample['prompt']}<|im_end|>\n<|im_start|>assistant\n"
+            sample["prompt"] = (
+                f"<|im_start|>user\n{sample['prompt']}<|im_end|>\n<|im_start|>assistant\n"
+            )
         sample["chosen"] = f"{sample['chosen']}<|im_end|>"
         sample["rejected"] = f"{sample['rejected']}<|im_end|>"
         return sample
@@ -142,9 +142,9 @@ def ultra(cfg, **kwargs):  # pylint: disable=possibly-unused-variable,unused-arg
                 f"<|im_start|>user\n{sample['prompt']}<|im_end|>\n<|im_start|>assistant\n"
             )
         else:
-            sample[
-                "prompt"
-            ] = f"<|im_start|>user\n{sample['prompt']}<|im_end|>\n<|im_start|>assistant\n"
+            sample["prompt"] = (
+                f"<|im_start|>user\n{sample['prompt']}<|im_end|>\n<|im_start|>assistant\n"
+            )
         sample["chosen"] = f"{sample['chosen'][1]['content']}<|im_end|>"
         sample["rejected"] = f"{sample['rejected'][1]['content']}<|im_end|>"
         return sample
