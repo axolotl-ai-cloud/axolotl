@@ -5,7 +5,6 @@ import dataclasses
 import hashlib
 import json
 import logging
-import typing
 from functools import wraps
 from pathlib import Path
 from types import NoneType
@@ -24,7 +23,7 @@ configure_logging()
 LOG = logging.getLogger(__name__)
 
 
-def strip_optional_type(field_type: type | typing._SpecialForm | None):
+def strip_optional_type(field_type: type | str | None):
     """
     Extracts the non-`None` type from an `Optional` / `Union` type.
 

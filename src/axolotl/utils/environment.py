@@ -1,10 +1,13 @@
 """
 utils to get GPU info for the current environment
 """
+
 from accelerate.utils.environment import (
     check_cuda_p2p_ib_support as accelerate_check_cuda_p2p_ib_support,
 )
-from accelerate.utils.environment import get_gpu_info
+from accelerate.utils.environment import (
+    get_gpu_info,
+)
 
 
 def check_cuda_p2p_ib_support():

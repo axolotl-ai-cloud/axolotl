@@ -1,6 +1,7 @@
 """
 User-defined KTO strategies
 """
+
 # pylint: disable=duplicate-code
 
 

@@ -9,6 +9,7 @@ this one specifies the system prompt with "### System:".
 
 Not suited/tested for multiple-turn conversations without further adjustments.
 """
+
 from typing import Generator, Union
 
 from axolotl.prompt_strategies.alpaca_w_system import OpenOrcaPromptTokenizingStrategy

@@ -1,6 +1,7 @@
 """
 shared functions for format transforms
 """
+
 from axolotl.core.chat.messages import MessageContents, Messages
 
 

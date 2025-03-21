@@ -462,9 +462,9 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, Trainer):
                 "pin_memory": self.args.dataloader_pin_memory,
             }
             if self.args.dataloader_prefetch_factor:
-                dataloader_params[
-                    "prefetch_factor"
-                ] = self.args.dataloader_prefetch_factor
+                dataloader_params["prefetch_factor"] = (
+                    self.args.dataloader_prefetch_factor
+                )
 
             sampler = self._get_train_sampler()
             if isinstance(sampler, BatchSampler):
@@ -509,9 +509,9 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, Trainer):
                 "pin_memory": self.args.dataloader_pin_memory,
             }
             if self.args.dataloader_prefetch_factor:
-                dataloader_params[
-                    "prefetch_factor"
-                ] = self.args.dataloader_prefetch_factor
+                dataloader_params["prefetch_factor"] = (
+                    self.args.dataloader_prefetch_factor
+                )
 
             if isinstance(eval_sampler, BatchSampler):
                 dataloader_params["batch_sampler"] = eval_sampler

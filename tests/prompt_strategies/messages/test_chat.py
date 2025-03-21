@@ -1,6 +1,7 @@
 """
 tests for chat_template prompt strategy
 """
+
 # pylint: disable=duplicate-code
 import logging
 import unittest

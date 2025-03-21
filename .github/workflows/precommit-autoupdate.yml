@@ -1,0 +1,49 @@
+name: Pre-commit auto-update
+
+on:
+  schedule:
+    - cron: '0 0 * * 0'  # Run weekly
+  workflow_dispatch:  # Manual kickoff
+
+jobs:
+  auto-update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Update pre-commit hooks
+        id: update
+        run: |
+          pip install pre-commit
+          pre-commit autoupdate
+          if [[ -n $(git status --porcelain) ]]; then
+            echo "changes=true" >> $GITHUB_OUTPUT
+            git diff .pre-commit-config.yaml > pre-commit-update.diff
+          fi
+
+      - name: Create Pull Request
+        if: steps.update.outputs.changes == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: update/pre-commit-hooks
+          delete-branch: true
+          title: "chore: update pre-commit hooks"
+          commit-message: "chore: update pre-commit hooks"
+          body: |
+            Automated PR to update pre-commit hooks to their latest versions.
+
+            <details>
+            <summary>Changes:</summary>
+
+            ```diff
+            ${{ steps.update.outputs.diff }}
+            ```
+            </details>

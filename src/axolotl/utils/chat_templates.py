@@ -2,6 +2,7 @@
 This module provides functionality for selecting chat templates based on user choices.
 These templates are used for formatting messages in a conversation.
 """
+
 import logging
 from typing import TYPE_CHECKING, Any, Dict, Optional
 

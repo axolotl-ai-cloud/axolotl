@@ -18,7 +18,11 @@ from axolotl.utils.config.models.input.v0_4_1 import (
 from axolotl.utils.config.models.input.v0_4_1 import (
     AxolotlInputConfig as AxolotlInputConfigBase,
 )
-from axolotl.utils.config.models.input.v0_4_1 import DPODataset, KTODataset, SFTDataset
+from axolotl.utils.config.models.input.v0_4_1 import (
+    DPODataset,
+    KTODataset,
+    SFTDataset,
+)
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.models import load_model_config
 

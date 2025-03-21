@@ -1,6 +1,7 @@
 """
 unit tests for generating sweep configurations
 """
+
 from axolotl.cli.main import generate_sweep_configs
 
 

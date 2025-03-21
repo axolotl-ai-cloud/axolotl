@@ -1,4 +1,5 @@
 """Click CLI definitions for various axolotl commands."""
+
 # pylint: disable=redefined-outer-name
 
 import logging

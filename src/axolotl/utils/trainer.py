@@ -538,9 +538,9 @@ def setup_fsdp_envs(cfg):
     if cfg.fsdp_config.fsdp_auto_wrap_policy:
         os.environ["FSDP_AUTO_WRAP_POLICY"] = cfg.fsdp_config.fsdp_auto_wrap_policy
     if cfg.fsdp_config.fsdp_transformer_layer_cls_to_wrap:
-        os.environ[
-            "FSDP_TRANSFORMER_CLS_TO_WRAP"
-        ] = cfg.fsdp_config.fsdp_transformer_layer_cls_to_wrap
+        os.environ["FSDP_TRANSFORMER_CLS_TO_WRAP"] = (
+            cfg.fsdp_config.fsdp_transformer_layer_cls_to_wrap
+        )
 
 
 def prepare_optim_env(cfg):

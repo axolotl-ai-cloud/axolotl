@@ -1,6 +1,7 @@
 """
 expands the binary attention mask per 3.2.2 of https://arxiv.org/pdf/2107.02027.pdf
 """
+
 from typing import Optional
 
 import torch

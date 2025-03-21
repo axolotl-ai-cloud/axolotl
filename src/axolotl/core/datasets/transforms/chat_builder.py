@@ -1,6 +1,7 @@
 """
 This module contains a function that builds a transform that takes a row from the dataset and converts it to a Chat.
 """
+
 from typing import Any, Mapping, Union
 
 

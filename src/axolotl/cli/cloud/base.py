@@ -1,6 +1,7 @@
 """
 base class for cloud platforms from cli
 """
+
 from abc import ABC, abstractmethod
 
 

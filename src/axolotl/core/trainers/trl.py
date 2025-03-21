@@ -1,6 +1,7 @@
 """
 module for TRL PPO training
 """
+
 import torch
 from tqdm import tqdm
 from trl import PPOTrainer

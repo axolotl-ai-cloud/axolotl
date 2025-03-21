@@ -1,6 +1,7 @@
 """
 Basic completion text
 """
+
 from collections import defaultdict
 from typing import Any, Dict, Generator, Optional, Tuple
 

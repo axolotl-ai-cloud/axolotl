@@ -741,9 +741,9 @@ class ModelLoader:
                 )
             else:
                 if self.cfg.gptq_disable_exllama is not None:
-                    self.model_config.quantization_config[
-                        "disable_exllama"
-                    ] = self.cfg.gptq_disable_exllama
+                    self.model_config.quantization_config["disable_exllama"] = (
+                        self.cfg.gptq_disable_exllama
+                    )
                 self.model_kwargs["quantization_config"] = GPTQConfig(
                     **self.model_config.quantization_config
                 )

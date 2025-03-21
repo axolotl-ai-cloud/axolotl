@@ -1,6 +1,7 @@
 """
 Tests for utils in axolotl.utils.chat_templates
 """
+
 import unittest
 
 import pytest
