@@ -341,12 +341,12 @@ class OptimizerMixin(Trainer):
                                 p.data_ptr(): p.numel() for p in module.parameters()
                             }.values()
                         )
-                        LOG.info(f"skipped {module}: {skipped/2**20}M params")
+                        LOG.info(f"skipped {module}: {skipped / 2**20}M params")
                         manager.register_module_override(
                             module, "weight", {"optim_bits": 32}
                         )
                         LOG.debug(f"bitsandbytes: will optimize {module} in fp32")
-                LOG.info(f"skipped: {skipped/2**20}M params")
+                LOG.info(f"skipped: {skipped / 2**20}M params")
 
         if is_sagemaker_mp_enabled():
             self.optimizer = smp.DistributedOptimizer(  # pylint: disable=attribute-defined-outside-init
@@ -419,6 +419,7 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, Trainer):
                 batch_size=batch_size,
                 group_size=self.args.sample_packing_group_size,
                 bin_size=self.args.sample_packing_bin_size,
+                sequential=self.args.sample_packing_sequentially,
                 drop_last=True,
             )
         if self.args.curriculum_sampling:
@@ -445,6 +446,7 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, Trainer):
                 batch_size=batch_size,
                 group_size=self.args.sample_packing_group_size,
                 bin_size=self.args.sample_packing_bin_size,
+                sequential=self.args.sample_packing_sequentially,
                 drop_last=True,
             )
         return super()._get_eval_sampler(eval_dataset)
