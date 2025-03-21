@@ -32,6 +32,9 @@ tokenizer_legacy:
 resize_token_embeddings_to_32x:
 # Optional[bool] Whether to shrink the embeddings to len(tokenizer). By default, we won't shrink.
 shrink_embeddings:
+# Whether to load the model with randomly initialized weights. Useful for
+# pre-training a model from scratch or debugging purposes.
+random_init_weights:
 
 # (Internal use only)
 # Used to identify which the model is based on
@@ -616,6 +619,14 @@ deepspeed:
 ddp_timeout:
 ddp_bucket_cap_mb:
 ddp_broadcast_buffers:
+
+# Sequence parallelism
+# Set to a divisor of the number of GPUs available to split sequences into chunks of equal size.
+# Use in long context training to prevent OOM when sequences cannot fit into a single GPU's VRAM.
+# E.g., if 4 GPUs are available, set this value to 2 to split each sequence into two equal-sized
+# subsequences, or set to 4 to split into four equal-sized subsequences.
+# See https://axolotl-ai-cloud.github.io/axolotl/docs/sequence_parallelism.html for more details.
+sequence_parallel_degree:
 
 # Path to torch distx for optim 'adamw_anyprecision'
 torchdistx_path:

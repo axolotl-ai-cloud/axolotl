@@ -1,365 +1,47 @@
-"""
-module for customized trainers
-"""
+"""Module for customized trainers"""
+
+# pylint: disable=too-many-lines
 
 from __future__ import annotations
 
-# pylint: disable=too-many-lines
 import logging
 import os
 from collections import defaultdict
 from functools import wraps
-from typing import Dict, Literal, Optional
+from typing import Any, Literal
 
+import datasets
 import torch
 from datasets import Dataset
-from peft.optimizers import create_loraplus_optimizer
 from torch import nn
-from torch.optim.lr_scheduler import OneCycleLR
-from torch.utils.data import BatchSampler, DataLoader, RandomSampler, SequentialSampler
+from torch.utils.data import (
+    BatchSampler,
+    DataLoader,
+    RandomSampler,
+    Sampler,
+    SequentialSampler,
+)
 from transformers import Trainer
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, seed_worker
-from transformers.utils import is_sagemaker_mp_enabled
-from trl import CPOTrainer, KTOTrainer, ORPOTrainer, PRMTrainer, RewardTrainer
 from trl.trainer.utils import pad_to_length
+from typing_extensions import override
 
-from axolotl.integrations.base import BaseOptimizerFactory
-from axolotl.monkeypatch.relora import ReLoRAScheduler
-from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
-from axolotl.utils.schedulers import (
-    RexLR,
-    get_cosine_schedule_with_min_lr,
-    get_cosine_schedule_with_quadratic_warmup,
-    get_cosine_schedule_with_warmup_decay_constant,
+from axolotl.core.trainers.mixins import (
+    OptimizerMixin,
+    SchedulerMixin,
+    SequenceParallelMixin,
 )
+from axolotl.core.trainers.utils import (
+    sanitize_kwargs_for_ds_tagging,
+    sanitize_kwargs_for_tagging,
+)
+from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 
-if is_sagemaker_mp_enabled():
-    import smdistributed.modelparallel.torch as smp
-
-LOG = logging.getLogger("axolotl.core.trainer_builder")
-
-
-def _sanitize_kwargs_for_tagging(tag_names, kwargs=None):
-    if isinstance(tag_names, str):
-        tag_names = [tag_names]
-
-    if kwargs is not None:
-        if "tags" not in kwargs:
-            kwargs["tags"] = tag_names
-        elif "tags" in kwargs and isinstance(kwargs["tags"], list):
-            kwargs["tags"].extend(tag_names)
-        elif "tags" in kwargs and isinstance(kwargs["tags"], str):
-            tag_names.append(kwargs["tags"])
-            kwargs["tags"] = tag_names
-
-    return kwargs
+LOG = logging.getLogger(__name__)
 
 
-def _sanitize_kwargs_for_ds_tagging(dataset_tags, kwargs=None):
-    if isinstance(dataset_tags, str):
-        dataset_tags = [dataset_tags]
-
-    if (dataset_tags is not None) and (kwargs is not None):
-        if "dataset_tags" not in kwargs:
-            kwargs["dataset_tags"] = dataset_tags
-        elif "dataset_tags" in kwargs and isinstance(kwargs["dataset_tags"], list):
-            kwargs["dataset_tags"].extend(dataset_tags)
-        elif "dataset_tags" in kwargs and isinstance(kwargs["dataset_tags"], str):
-            dataset_tags.append(kwargs["dataset_tags"])
-            kwargs["dataset_tags"] = dataset_tags
-
-    return kwargs
-
-
-class SchedulerMixin(Trainer):
-    """
-    Mixin class for scheduler setup in CausalTrainer.
-    """
-
-    args = None  # type: "AxolotlTrainingArguments"  # type: ignore[name-defined]
-
-    def create_scheduler(
-        self, num_training_steps: int, optimizer: torch.optim.Optimizer = None
-    ):
-        """
-        Setup the scheduler. The optimizer of the trainer must have been set up either before this method is called or
-        passed as an argument.
-
-        Args:
-            num_training_steps (int): The number of training steps to do.
-            optimizer (torch.optim.Optimizer): The training optimizer
-        """
-        use_cosine_quadratic = (
-            self.args.lr_scheduler_type == "cosine"
-            and self.args.lr_quadratic_warmup is True
-        )
-
-        use_cosine_min_lr = (
-            self.args.lr_scheduler_type == "cosine"
-            and self.args.cosine_min_lr_ratio is not None
-        )
-
-        # fmt: off
-        if self.lr_scheduler is None:  # type: ignore  # pylint: disable=access-member-before-definition
-            # fmt: on
-            if self.args.alternate_lr_scheduler_type == "one_cycle":
-                num_warmup_steps = self.args.get_warmup_steps(num_training_steps)
-                pct_start = num_warmup_steps / num_training_steps
-                extra_lr_kwargs = {}
-                if "pct_start" not in self.args.lr_scheduler_kwargs:
-                    extra_lr_kwargs["pct_start"] = pct_start
-                if "anneal_strategy" not in self.args.lr_scheduler_kwargs:
-                    extra_lr_kwargs["anneal_strategy"] = "cos"
-
-                self.lr_scheduler = OneCycleLR(
-                    optimizer,
-                    max_lr=self.args.learning_rate,
-                    total_steps=num_training_steps,
-                    **extra_lr_kwargs,
-                    **self.args.lr_scheduler_kwargs,
-                )
-            elif self.args.alternate_lr_scheduler_type == "rex":
-                if use_cosine_min_lr:
-                    assert 0 <= self.args.cosine_min_lr_ratio <= 1.0, "cosine_min_lr_ratio must be between 0.0 and 1.0"
-
-                self.lr_scheduler = RexLR(
-                    optimizer=optimizer,
-                    max_lr=self.args.learning_rate,
-                    min_lr=0 if not use_cosine_min_lr else (self.args.learning_rate * self.args.cosine_min_lr_ratio),
-                    total_steps=num_training_steps,
-                    num_warmup_steps=self.args.get_warmup_steps(num_training_steps),
-                )
-            elif use_cosine_quadratic:
-                if use_cosine_min_lr:
-                    LOG.warning("Both cosine quadratic warmup and min lr detected. Using quadratic warmup.")
-
-                self.lr_scheduler = get_cosine_schedule_with_quadratic_warmup(  # pylint: disable=attribute-defined-outside-init
-                    optimizer,
-                    num_warmup_steps=self.args.get_warmup_steps(num_training_steps),
-                    num_training_steps=num_training_steps,
-                )
-            elif self.args.cosine_min_lr_ratio and self.args.cosine_constant_lr_ratio and use_cosine_min_lr:
-                assert 0 <= self.args.cosine_min_lr_ratio <= 1.0, "cosine_min_lr_ratio must be between 0.0 and 1.0"
-                assert 0 <= self.args.cosine_constant_lr_ratio <= 1.0, "cosine_constant_lr_ratio must be between 0.0 and 1.0"
-                self.lr_scheduler = get_cosine_schedule_with_warmup_decay_constant(  # pylint: disable=attribute-defined-outside-init
-                    optimizer,
-                    num_warmup_steps=self.args.get_warmup_steps(num_training_steps),
-                    num_training_steps=num_training_steps,
-                    min_lr_ratio=self.args.cosine_min_lr_ratio,
-                    constant_lr_ratio=self.args.cosine_constant_lr_ratio,
-                )
-            elif self.args.cosine_min_lr_ratio and use_cosine_min_lr:
-                assert 0 <= self.args.cosine_min_lr_ratio <= 1.0, "cosine_min_lr_ratio must be between 0.0 and 1.0"
-                self.lr_scheduler = get_cosine_schedule_with_min_lr(  # pylint: disable=attribute-defined-outside-init
-                    optimizer,
-                    num_warmup_steps=self.args.get_warmup_steps(num_training_steps),
-                    num_training_steps=num_training_steps,
-                    min_lr_ratio=self.args.cosine_min_lr_ratio,
-                )
-            else:
-                return super().create_scheduler(num_training_steps, optimizer=optimizer)
-        else:
-            if use_cosine_quadratic:
-                LOG.warning("axolotl's cosine scheduler with quadratic warmup not used (e.g., because of deepspeed).")
-
-            if use_cosine_min_lr:
-                LOG.warning("axolotl's cosine scheduler with min lr not used (e.g., because of deepspeed).")
-
-        return self.lr_scheduler
-
-
-class OptimizerMixin(Trainer):
-    """
-    Mixin class for shared handling of building custom optimizers
-    """
-
-    args = None  # type: "AxolotlTrainingArguments"  # type: ignore[name-defined]
-
-    def create_optimizer_grouped_parameters(
-        self, opt_model, optimizer_kwargs
-    ) -> list[dict]:
-        decay_parameters = self.get_decay_parameter_names(opt_model)
-        params: dict = {
-            "to_weight_decay": {},  # LayerNorm and bias
-            "embeddings": {},  # lm_head, embed_tokens,
-            "no_weight_decay": {},
-        }
-        lr_groups_lookup = {}
-        lr_groups_learning_rates = {}
-        if self.args.lr_groups:
-            for lr_group in self.args.lr_groups:
-                group_name = lr_group["name"]
-                group_modules = lr_group["modules"]
-                for module in group_modules:
-                    lr_groups_lookup[module] = group_name
-                lr_groups_learning_rates[group_name] = lr_group["lr"]
-                params[f"to_weight_decay_{group_name}"] = {}
-
-        for name, param in opt_model.named_parameters():
-            if not param.requires_grad:
-                continue
-            if name.endswith("modules_to_save.default.weight") or any(
-                embed_name in name for embed_name in ["embed_tokens", "lm_head"]
-            ):
-                params["embeddings"][name] = param
-            elif name in decay_parameters:
-                lr_group_modules = [
-                    group_modules
-                    for group_modules in lr_groups_lookup
-                    if group_modules in name
-                ]
-                if lr_groups_lookup and any(lr_group_modules):
-                    lr_group_module = lr_group_modules[0]
-                    group_name = lr_groups_lookup[lr_group_module]
-                    params[f"to_weight_decay_{group_name}"][name] = param
-                else:
-                    params["to_weight_decay"][name] = param
-            else:
-                params["no_weight_decay"][name] = param
-        optimizer_grouped_parameters = []
-        if params["to_weight_decay"]:
-            optimizer_grouped_parameters.append(
-                {
-                    "params": list(params["to_weight_decay"].values()),
-                    "weight_decay": self.args.weight_decay,
-                    "lr": optimizer_kwargs["lr"],
-                }
-            )
-        if params["embeddings"]:
-            lr = optimizer_kwargs["lr"]  # pylint: disable=invalid-name
-            if self.args.embedding_lr_scale:
-                lr *= self.args.embedding_lr_scale  # pylint: disable=invalid-name
-            elif self.args.embedding_lr:
-                lr = self.args.embedding_lr  # pylint: disable=invalid-name
-            optimizer_grouped_parameters.append(
-                {
-                    "params": list(params["embeddings"].values()),
-                    "weight_decay": 0.0,
-                    "lr": lr,
-                }
-            )
-        if params["no_weight_decay"]:
-            optimizer_grouped_parameters.append(
-                {
-                    "params": list(params["no_weight_decay"].values()),
-                    "weight_decay": 0.0,
-                    "lr": optimizer_kwargs["lr"],
-                }
-            )
-        for group_name, group_lr in lr_groups_learning_rates.items():
-            if params[f"to_weight_decay_{group_name}"]:
-                optimizer_grouped_parameters.append(
-                    {
-                        "params": list(
-                            params[f"to_weight_decay_{group_name}"].values()
-                        ),
-                        "weight_decay": self.args.weight_decay,
-                        "lr": group_lr,
-                    }
-                )
-
-        return optimizer_grouped_parameters
-
-    def create_optimizer(self):
-        if (
-            self.args.loraplus_lr_ratio is None
-            and self.args.embedding_lr_scale is None
-            and self.args.embedding_lr is None
-            and self.args.lr_groups is None
-            and self.optimizer_cls_and_kwargs is None
-        ):
-            return super().create_optimizer()
-
-        opt_model = self.model_wrapped if is_sagemaker_mp_enabled() else self.model
-
-        if (
-            not self.optimizer
-            and self.optimizer_cls_and_kwargs is not None
-            and issubclass(self.optimizer_cls_and_kwargs[0], BaseOptimizerFactory)
-        ):
-            optimizer_factory_cls, optimizer_kwargs = self.optimizer_cls_and_kwargs
-            self.optimizer = optimizer_factory_cls()(
-                opt_model, self.args, **optimizer_kwargs
-            )
-
-        if not self.optimizer:
-            if self.optimizer_cls_and_kwargs is not None:
-                optimizer_cls, optimizer_kwargs = self.optimizer_cls_and_kwargs
-            else:
-                optimizer_cls, optimizer_kwargs = self.get_optimizer_cls_and_kwargs(
-                    self.args, opt_model
-                )
-
-            optimizer_grouped_parameters = self.create_optimizer_grouped_parameters(
-                opt_model, optimizer_kwargs
-            )
-
-            if self.args.loraplus_lr_ratio is not None:
-                loraplus_lr_ratio = getattr(self.args, "loraplus_lr_ratio", None)
-                loraplus_lr_embedding = getattr(
-                    self.args, "loraplus_lr_embedding", 1e-6
-                )
-                self.optimizer = create_loraplus_optimizer(  # pylint: disable=attribute-defined-outside-init
-                    opt_model,
-                    optimizer_cls,
-                    loraplus_lr_ratio=loraplus_lr_ratio,
-                    loraplus_lr_embedding=loraplus_lr_embedding,
-                    **optimizer_kwargs,
-                )
-            else:
-                # Overwrite `params` in case it's created by `get_optimizer_cls_and_kwargs`
-                # e.g. for GaLore optimizer.
-                if "params" in optimizer_kwargs:
-                    optimizer_grouped_parameters = optimizer_kwargs.pop("params")
-
-                # Overwrite `model` in case it's created by `get_optimizer_cls_and_kwargs`
-                # e.g. for LOMO optimizer.
-                if "model" in optimizer_kwargs:
-                    optimizer_grouped_parameters = optimizer_kwargs.pop("model")
-
-                # For layer-wise dummy optimizers we overwrite optimizer_grouped_parameters with `optimizer_dict`
-                # to avoid arguments conflicts.
-                if "optimizer_dict" in optimizer_kwargs:
-                    optimizer_grouped_parameters = optimizer_kwargs.pop(
-                        "optimizer_dict"
-                    )
-
-                self.optimizer = optimizer_cls(
-                    optimizer_grouped_parameters, **optimizer_kwargs
-                )
-
-            if optimizer_cls.__name__ == "Adam8bit":
-                import bitsandbytes
-
-                manager = bitsandbytes.optim.GlobalOptimManager.get_instance()
-
-                skipped = 0
-                for module in opt_model.modules():
-                    if isinstance(module, nn.Embedding):
-                        skipped += sum(
-                            {
-                                p.data_ptr(): p.numel() for p in module.parameters()
-                            }.values()
-                        )
-                        LOG.info(f"skipped {module}: {skipped/2**20}M params")
-                        manager.register_module_override(
-                            module, "weight", {"optim_bits": 32}
-                        )
-                        LOG.debug(f"bitsandbytes: will optimize {module} in fp32")
-                LOG.info(f"skipped: {skipped/2**20}M params")
-
-        if is_sagemaker_mp_enabled():
-            self.optimizer = smp.DistributedOptimizer(  # pylint: disable=attribute-defined-outside-init
-                self.optimizer
-            )
-
-        return self.optimizer
-
-
-class AxolotlTrainer(SchedulerMixin, OptimizerMixin, Trainer):
-    """
-    Extend the base Trainer for axolotl helpers
-    """
+class AxolotlTrainer(SchedulerMixin, OptimizerMixin, SequenceParallelMixin, Trainer):
+    """Extend the base Trainer for axolotl helpers"""
 
     args = None  # type: "AxolotlTrainingArguments"  # type: ignore[name-defined]
     tag_names = ["axolotl"]
@@ -376,11 +58,17 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, Trainer):
         self.eval_data_collator = eval_data_collator
         self.dataset_tags = dataset_tags
         self._signature_columns = None  # workaround for pylint
+
         super().__init__(*_args, **kwargs)
+
         self.train_data_collator = self.data_collator
         self._stored_metrics = defaultdict(lambda: defaultdict(list))
         if self.args.orpo_alpha:
             self.loss_fct = torch.nn.CrossEntropyLoss(reduction="none")
+
+        # Initialize sequence parallelism if enabled
+        if self.args.sequence_parallel_degree > 1:
+            self._setup_sequence_parallel()
 
     def _wrap_model(self, model, training=True, dataloader=None):
         if self.args.torch_compile:
@@ -394,142 +82,247 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, Trainer):
             )
         return super()._wrap_model(model, training=training, dataloader=dataloader)
 
-    def _get_train_sampler(self) -> Optional[torch.utils.data.Sampler]:
-        if self.args.sample_packing and not self.args.pretraining:
-            if self.args.multipack_real_batches:
-                batch_size = self.args.per_device_train_batch_size
-                batch_max_len = self.args.max_seq_length
-            else:
-                batch_size = 1
-                train_batch_size = (
-                    self.state.train_batch_size or self.args.per_device_train_batch_size
-                )
-                batch_max_len = train_batch_size * self.args.max_seq_length
+    def _create_multipack_sampler(
+        self, base_sampler: Sampler, dataset: Dataset
+    ) -> MultipackBatchSampler:
+        """
+        Helper method to create a `MultipackBatchSampler` for multipacking sequences
+        for training.
 
-            if self.args.curriculum_sampling:
-                sampler = SequentialSampler(self.train_dataset)
-            else:
-                sampler = RandomSampler(self.train_dataset)
+        Args:
+            base_sampler: Sampler to wrap with `MultipackBatchSampler`.
+            dataset: Dataset to sample from.
 
-            return MultipackBatchSampler(
-                sampler,
-                lengths=get_dataset_lengths(self.train_dataset),
-                packing_efficiency_estimate=self.args.sample_packing_efficiency,
-                batch_max_len=batch_max_len,
-                batch_size=batch_size,
-                group_size=self.args.sample_packing_group_size,
-                bin_size=self.args.sample_packing_bin_size,
-                drop_last=True,
+        Returns:
+            Multipack (sample packing) batch sampler.
+        """
+        if self.args.multipack_real_batches:
+            batch_size = self.args.per_device_train_batch_size
+            batch_max_len = self.args.max_seq_length
+        else:
+            batch_size = 1
+            train_batch_size = (
+                self.state.train_batch_size or self.args.per_device_train_batch_size
             )
-        if self.args.curriculum_sampling:
-            return SequentialSampler(self.train_dataset)
-        return super()._get_train_sampler()
+            batch_max_len = train_batch_size * self.args.max_seq_length
 
-    def _get_eval_sampler(
-        self, eval_dataset: Dataset
-    ) -> Optional[torch.utils.data.Sampler]:
-        if self.args.sample_packing and self.args.eval_sample_packing is not False:
-            if self.args.multipack_real_batches:
-                batch_size = self.args.per_device_eval_batch_size
-                batch_max_len = self.args.max_seq_length
-            else:
-                batch_size = 1
-                batch_max_len = (
-                    self.args.per_device_eval_batch_size * self.args.max_seq_length
-                )
-            return MultipackBatchSampler(
-                SequentialSampler(eval_dataset),
-                lengths=get_dataset_lengths(self.eval_dataset),
-                packing_efficiency_estimate=self.args.sample_packing_efficiency,
-                batch_max_len=batch_max_len,
-                batch_size=batch_size,
-                group_size=self.args.sample_packing_group_size,
-                bin_size=self.args.sample_packing_bin_size,
-                drop_last=True,
+        return MultipackBatchSampler(
+            base_sampler,
+            lengths=get_dataset_lengths(dataset),
+            packing_efficiency_estimate=self.args.sample_packing_efficiency,
+            batch_max_len=batch_max_len,
+            batch_size=batch_size,
+            drop_last=True,
+        )
+
+    def _get_train_sampler(self) -> Sampler | None:
+        """
+        Helper method to get the sampler for training. Handles cases for sequence
+        parallelism, sample packing, and curriculum sampling (sequential).
+
+        Returns:
+            If the dataset is non-empty, a sampler is returned, the type of which
+                depends on the passed training args.
+        """
+        use_sample_packing = self.args.sample_packing and not self.args.pretraining
+
+        # Determine the base sampler first
+        if self.args.sequence_parallel_degree > 1:
+            base_sampler = self._sp_get_train_sampler(self.train_dataset)
+        elif self.args.curriculum_sampling:
+            base_sampler = SequentialSampler(self.train_dataset)
+        elif use_sample_packing:
+            base_sampler = RandomSampler(self.train_dataset)
+        else:
+            # Default to parent class implementation for standard random sampling
+            return super()._get_train_sampler()
+
+        # Apply multipack wrapper if needed
+        if use_sample_packing:
+            return self._create_multipack_sampler(
+                base_sampler=base_sampler,
+                dataset=self.train_dataset,
             )
-        return super()._get_eval_sampler(eval_dataset)
 
-    def get_train_dataloader(self) -> DataLoader:
-        if self.args.sample_packing and not self.args.pretraining:
-            train_dataset = self.train_dataset
-            if "length" in train_dataset.features.keys():
-                train_dataset = train_dataset.remove_columns(["length"])
-            data_collator = self.data_collator
-            dataloader_params = {
-                "batch_size": self._train_batch_size,
-                "collate_fn": data_collator,
-                "num_workers": self.args.dataloader_num_workers,
-                "pin_memory": self.args.dataloader_pin_memory,
-            }
-            if self.args.dataloader_prefetch_factor:
-                dataloader_params["prefetch_factor"] = (
-                    self.args.dataloader_prefetch_factor
-                )
+        return base_sampler
 
-            sampler = self._get_train_sampler()
+    def _get_eval_sampler(self, eval_dataset: Dataset | None = None) -> Sampler | None:
+        """
+        Helper method to get the sampler for evaluation. Handles sequence parallelism
+        and sample packing cases.
+
+        Returns:
+            If the dataset is non-empty, a sampler is returned, the type of which
+                depends on the passed training args.
+        """
+        eval_dataset = eval_dataset if eval_dataset is not None else self.eval_dataset
+
+        # Multipacking enabled if training is enabled and eval is not explicitly disabled
+        use_multipack = (
+            self.args.sample_packing and self.args.eval_sample_packing is not False
+        )
+
+        # Determine the base sampler
+        if self.args.sequence_parallel_degree > 1:
+            base_sampler = self._sp_get_eval_sampler(eval_dataset)
+        elif use_multipack:
+            base_sampler = SequentialSampler(eval_dataset)
+        else:
+            return super()._get_eval_sampler(eval_dataset)
+
+        # Apply multipack wrapper if needed
+        if use_multipack:
+            return self._create_multipack_sampler(
+                base_sampler=base_sampler,
+                dataset=eval_dataset,
+            )
+
+        return base_sampler
+
+    def _create_dataloader_params(self, is_eval=False, custom_batch_size=None):
+        """Create common dataloader parameters for train or eval."""
+        batch_size = custom_batch_size or (
+            self.args.eval_batch_size if is_eval else self._train_batch_size
+        )
+
+        params = {
+            "batch_size": batch_size,
+            "collate_fn": self.data_collator,
+            "num_workers": self.args.dataloader_num_workers,
+            "pin_memory": self.args.dataloader_pin_memory,
+        }
+
+        # Add persistent workers only for training
+        if not is_eval and hasattr(self.args, "dataloader_persistent_workers"):
+            params["persistent_workers"] = self.args.dataloader_persistent_workers
+
+        # Add prefetch factor if specified
+        if self.args.dataloader_prefetch_factor:
+            params["prefetch_factor"] = self.args.dataloader_prefetch_factor
+
+        return params
+
+    def _prepare_dataloader(
+        self, dataset, sampler, is_eval=False, custom_batch_size=None
+    ):
+        """Prepare a dataloader with the given dataset and sampler."""
+        # Get base parameters
+        dataloader_params = self._create_dataloader_params(is_eval, custom_batch_size)
+
+        # Add sampler configuration
+        if not isinstance(dataset, torch.utils.data.IterableDataset):
             if isinstance(sampler, BatchSampler):
+                # batch_size and batch_sampler are mutually exclusive
                 dataloader_params["batch_sampler"] = sampler
                 del dataloader_params["batch_size"]
             else:
                 dataloader_params["sampler"] = sampler
                 dataloader_params["drop_last"] = self.args.dataloader_drop_last
-            dataloader_params["worker_init_fn"] = seed_worker
 
+            if not is_eval:
+                dataloader_params["worker_init_fn"] = seed_worker
+
+        # Create the dataloader
+        dataloader = DataLoader(dataset, **dataloader_params)
+
+        if self.args.sample_packing and (
+            (not is_eval and not self.args.pretraining)
+            or (is_eval and self.args.eval_sample_packing is not False)
+        ):
             self.accelerator.even_batches = False
-            return self.accelerator.prepare_data_loader(
-                DataLoader(train_dataset, **dataloader_params)
-            )
-        return super().get_train_dataloader()
 
-    def get_eval_dataloader(self, eval_dataset: Optional[Dataset] = None) -> DataLoader:
+        # Return unprepared dataloader if using sequence parallelism
+        if self.args.sequence_parallel_degree > 1:
+            return dataloader
+
+        # Otherwise prepare with accelerator
+        return self.accelerator.prepare_data_loader(dataloader)
+
+    def get_train_dataloader(self) -> DataLoader:
+        """Get dataloader for training"""
+        train_dataset = self.train_dataset
+        data_collator = self.data_collator  # type: ignore
+
+        # Handle dataset preprocessing
+        if isinstance(train_dataset, datasets.Dataset):
+            if self.args.sample_packing and not self.args.pretraining:
+                train_dataset = train_dataset.remove_columns(["length"])
+            if not self.args.sample_packing or self.args.pretraining:
+                train_dataset = self._remove_unused_columns(
+                    train_dataset, description="training"
+                )
+        else:
+            self.data_collator = self._get_collator_with_removed_columns(  # pylint: disable=attribute-defined-outside-init
+                data_collator,
+                description="training",
+            )
+
+        # Get sampler and create dataloader
+        sampler = self._get_train_sampler()
+        return self._prepare_dataloader(train_dataset, sampler, is_eval=False)
+
+    def get_eval_dataloader(self, eval_dataset: Dataset | None = None) -> DataLoader:
+        """Get dataloader for evaluation"""
+        eval_dataset = eval_dataset if eval_dataset is not None else self.eval_dataset
+
+        # Handle special case: sample packing is enabled but eval_sample_packing is False
         if self.args.sample_packing and self.args.eval_sample_packing is False:
             self.data_collator = (  # pylint: disable=attribute-defined-outside-init
                 self.eval_data_collator
             )
-            if eval_dataset:
+            if "length" in eval_dataset.column_names:
                 eval_dataset = eval_dataset.remove_columns(["length"])
             dataloader = super().get_eval_dataloader(eval_dataset)
             self.data_collator = (  # pylint: disable=attribute-defined-outside-init
                 self.train_data_collator
             )
+
             return dataloader
 
-        if self.args.sample_packing and self.args.eval_sample_packing is not False:
-            eval_dataset = (
-                eval_dataset if eval_dataset is not None else self.eval_dataset
+        # Handle sample packing or sequence parallelism
+        if (
+            self.args.sample_packing
+            and self.args.eval_sample_packing is not False
+            or self.args.sequence_parallel_degree > 1
+        ):
+            # Get appropriate data collator
+            self.data_collator = (  # pylint: disable=attribute-defined-outside-init
+                self.eval_data_collator
+                if hasattr(self, "eval_data_collator") and self.eval_data_collator
+                else self.data_collator
+            )
+            if "length" in eval_dataset.column_names:
+                eval_dataset = eval_dataset.remove_columns(["length"])
+
+            # Handle dataset preprocessing for SP
+            if self.args.sequence_parallel_degree > 1:
+                if isinstance(eval_dataset, datasets.Dataset):
+                    eval_dataset = self._remove_unused_columns(
+                        eval_dataset, description="evaluation"
+                    )
+                else:
+                    self.data_collator = self._get_collator_with_removed_columns(  # pylint: disable=attribute-defined-outside-init
+                        self.data_collator, description="evaluation"
+                    )
+
+            # Use eval_batch_size for sample packing, per_device_eval_batch_size otherwise
+            batch_size = (
+                self.args.eval_batch_size
+                if self.args.sample_packing
+                else self.args.per_device_eval_batch_size
+            )
+            sampler = self._get_eval_sampler(eval_dataset)
+            dataloader = self._prepare_dataloader(
+                eval_dataset, sampler, is_eval=True, custom_batch_size=batch_size
             )
 
-            eval_sampler = self._get_eval_sampler(eval_dataset)
-            eval_dataset = eval_dataset.remove_columns(["length"])
-            data_collator = self.data_collator
-            dataloader_params = {
-                "batch_size": self.args.eval_batch_size,
-                "collate_fn": data_collator,
-                "num_workers": self.args.dataloader_num_workers,
-                "pin_memory": self.args.dataloader_pin_memory,
-            }
-            if self.args.dataloader_prefetch_factor:
-                dataloader_params["prefetch_factor"] = (
-                    self.args.dataloader_prefetch_factor
-                )
-
-            if isinstance(eval_sampler, BatchSampler):
-                dataloader_params["batch_sampler"] = eval_sampler
-                del dataloader_params["batch_size"]
-            else:
-                dataloader_params["sampler"] = eval_sampler
-                dataloader_params["drop_last"] = self.args.dataloader_drop_last
-
-            self.accelerator.even_batches = False
-            return self.accelerator.prepare_data_loader(
-                DataLoader(eval_dataset, **dataloader_params)
-            )
+            return dataloader
 
         return super().get_eval_dataloader(eval_dataset)
 
     def _get_bench_sampler(
         self, bench_dataset: Dataset
-    ) -> Optional[torch.utils.data.Sampler]:
+    ) -> torch.utils.data.Sampler | None:
         if self.args.world_size <= 1:
             return SequentialSampler(bench_dataset)
         return None
@@ -554,6 +347,7 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, Trainer):
         return DataLoader(bench_dataset, **dataloader_params)
         # return self.accelerator.prepare(DataLoader(bench_dataset, **dataloader_params))
 
+    @override
     def compute_loss(
         self, model, inputs, return_outputs=False, num_items_in_batch=None
     ):
@@ -570,6 +364,7 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, Trainer):
                 return_outputs=return_outputs,
                 num_items_in_batch=num_items_in_batch,
             )
+
         return super().compute_loss(
             model,
             inputs,
@@ -744,10 +539,10 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, Trainer):
         Overwrite the `push_to_hub` method in order to force-add the tags when pushing the
         model on the Hub. Please refer to `~transformers.Trainer.push_to_hub` for more details.
         """
-        kwargs = _sanitize_kwargs_for_ds_tagging(
+        kwargs = sanitize_kwargs_for_ds_tagging(
             dataset_tags=self.dataset_tags, kwargs=kwargs
         )
-        kwargs = _sanitize_kwargs_for_tagging(tag_names=self.tag_names, kwargs=kwargs)
+        kwargs = sanitize_kwargs_for_tagging(tag_names=self.tag_names, kwargs=kwargs)
 
         return super().push_to_hub(*args, **kwargs)
 
@@ -764,15 +559,13 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, Trainer):
 
         return res
 
-    def log(self, logs: Dict[str, float], start_time: Optional[float] = None) -> None:
+    def log(self, logs: dict[str, float], start_time: float | None = None) -> None:
         """
         Log `logs` on the various objects watching training, including stored metrics.
 
         Args:
-            logs (`Dict[str, float]`):
-                The values to log.
-            start_time (`Optional[float]`):
-                The start of training.
+            logs: The values to log.
+            start_time: The start of training.
         """
         # logs either has 'loss' or 'eval_loss'
         train_eval = "train" if "loss" in logs else "eval"
@@ -784,7 +577,7 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, Trainer):
         return super().log(logs, start_time)
 
     def store_metrics(
-        self, metrics: Dict[str, float], train_eval: Literal["train", "eval"] = "train"
+        self, metrics: dict[str, float], train_eval: Literal["train", "eval"] = "train"
     ) -> None:
         for key, value in metrics.items():
             self._stored_metrics[train_eval][key].append(value)
@@ -797,110 +590,26 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, Trainer):
         os.makedirs(output_dir, exist_ok=True)
         return super()._save_checkpoint(model, trial, **kwargs)
 
-
-class AxolotlMambaTrainer(AxolotlTrainer):
-    """
-    Mamba specific trainer to handle loss calculation
-    """
-
-    tag_names = ["axolotl", "mamba"]
-
-    def compute_loss(
+    def training_step(
         self,
-        model,
-        inputs,
-        return_outputs=False,  # pylint: disable=unused-argument
-        num_items_in_batch=None,  # pylint: disable=unused-argument
-    ):
-        input_ids = inputs.pop("input_ids")
-        lm_logits = model(input_ids).logits
+        model: nn.Module,
+        inputs: dict[str, torch.Tensor | Any],
+        num_items_in_batch: int | None = None,
+    ) -> torch.Tensor:
+        """
+        Perform a training step on a batch of inputs. Overrides the
+        `transformers.trainer.Trainer` method to handle sequence parallelism if
+        enabled.
 
-        labels = input_ids.to(lm_logits.device)
-        shift_logits = lm_logits[:, :-1, :].contiguous()
-        labels = labels[:, 1:].contiguous()
+        Args:
+            model: Model to perform training step for.
+            inputs: Dictionary mapping.
+        """
+        # Set up sequence parallelism for this step if enabled
+        if self.args.sequence_parallel_degree > 1:
+            self._update_ring_flash_attn_params(inputs)
 
-        loss_fct = torch.nn.CrossEntropyLoss()
-        lm_loss = loss_fct(
-            shift_logits.view(-1, shift_logits.size(-1)), labels.view(-1)
-        )
+        # Proceed with normal training step
+        loss = super().training_step(model, inputs, num_items_in_batch)
 
-        return lm_loss
-
-
-class ReLoRATrainer(AxolotlTrainer):
-    """
-    Trainer subclass that uses the OneCycleLR scheduler
-    """
-
-    tag_names = ["axolotl", "relora"]
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.lr_scheduler = None
-
-    def create_scheduler(
-        self,
-        num_training_steps: int,
-        optimizer: Optional[torch.optim.Optimizer] = None,
-    ):
-        optimizer = self.optimizer if optimizer is None else optimizer
-        lr_scheduler = super().create_scheduler(num_training_steps, optimizer)
-
-        if self.args.relora_steps:
-            warmup_steps = (
-                self.args.relora_warmup_steps if self.args.relora_warmup_steps else 10
-            )
-            anneal_steps = (
-                self.args.relora_anneal_steps if self.args.relora_anneal_steps else 1
-            )
-            self.lr_scheduler = ReLoRAScheduler(
-                optimizer,
-                lr_scheduler,
-                self.args.relora_steps,
-                anneal_steps,
-                warmup_steps,
-            )
-        else:
-            self.lr_scheduler = lr_scheduler
-
-        return self.lr_scheduler
-
-
-class AxolotlORPOTrainer(SchedulerMixin, ORPOTrainer):
-    """
-    Extend the base ORPOTrainer for axolotl helpers
-    """
-
-    tag_names = ["axolotl", "orpo"]
-
-
-class AxolotlKTOTrainer(SchedulerMixin, KTOTrainer):
-    """
-    Extend the base KTOTrainer for axolotl helpers
-    """
-
-    tag_names = ["axolotl", "kto"]
-
-
-class AxolotlCPOTrainer(SchedulerMixin, CPOTrainer):
-    """
-    Extend the base CPOTrainer for axolotl helpers
-    """
-
-    tag_names = ["axolotl", "cpo"]
-
-
-class AxolotlRewardTrainer(SchedulerMixin, RewardTrainer):
-    """
-    Extend the base RewardTrainer for axolotl helpers
-    """
-
-    tag_names = ["axolotl", "reward"]
-
-
-class AxolotlPRMTrainer(SchedulerMixin, PRMTrainer):
-    """
-    Extend the base trl.PRMTrainer for axolotl helpers
-    """
-
-    tag_names = ["axolotl", "prm"]
+        return loss

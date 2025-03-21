@@ -1,4 +1,4 @@
-"""Main Axolotl input configuration Pydantic models"""
+"""Module with Pydantic models for configuration."""
 
 # pylint: disable=too-many-lines
 
@@ -244,6 +244,8 @@ class AxolotlInputConfig(
     ) = None
 
     val_set_size: float | None = Field(default=0.0)
+
+    sequence_parallel_degree: int | None = None
 
     special_tokens: SpecialTokensConfig | None = None
     tokens: list[str] | None = None
@@ -1101,6 +1103,29 @@ class AxolotlInputConfig(
                 raise ValueError("Set `remove_unused_columns: False` when using kto")
 
         return data
+
+    @field_validator("sequence_parallel_degree", mode="before")
+    @classmethod
+    def check_sequence_parallel_config(cls, value, info):
+        if not value:
+            value = 1
+
+        if value > 1:
+            if not info.data.get("flash_attention"):
+                raise ValueError(
+                    "flash_attention: true must be set with sequence_parallel_degree > 1"
+                )
+
+            try:
+                import ring_flash_attn  # noqa: F401 # pylint:disable=unused-import
+            except ImportError as exception:
+                raise ImportError(
+                    "sequence_parallel_degree > 1 but ring_flash_attn is not installed. "
+                    "Please install it with `pip install axolotl[ring-flash-attn] "
+                    "or `pip install ring-flash-attn>=0.1.4`."
+                ) from exception
+
+        return value
 
 
 class AxolotlConfigWCapabilities(AxolotlInputConfig):

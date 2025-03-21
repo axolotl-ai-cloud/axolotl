@@ -12,6 +12,7 @@ from constants import ALPACA_MESSAGES_CONFIG_REVISION, SPECIAL_TOKENS
 from datasets import Dataset
 from transformers import AutoTokenizer
 
+from axolotl.utils.config import normalize_config
 from axolotl.utils.data import prepare_dataset
 from axolotl.utils.data.rl import load_prepare_preference_datasets
 from axolotl.utils.data.utils import deduplicate_and_log_datasets
@@ -262,6 +263,7 @@ class TestDeduplicateNonRL(unittest.TestCase):
         self.tokenizer.add_special_tokens(SPECIAL_TOKENS)
         self.cfg_1 = DictDefault(
             {
+                "base_model": "huggyllama/llama-7b",
                 "tokenizer_config": "huggyllama/llama-7b",
                 "sequence_len": 1024,
                 "dataset_exact_deduplication": True,
@@ -282,6 +284,7 @@ class TestDeduplicateNonRL(unittest.TestCase):
                 "num_epochs": 1,
             }
         )
+        normalize_config(self.cfg_1)
 
     def test_prepare_dataset_with_deduplication_train(self):
         """Verify that prepare_dataset function processes the dataset correctly with deduplication."""
