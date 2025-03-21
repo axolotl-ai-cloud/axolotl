@@ -758,13 +758,13 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 self.cfg.kd_zscore_base_temp
             )
         if self.cfg.kd_top_k_before_softmax is not None:
-            training_arguments_kwargs[
-                "kd_top_k_before_softmax"
-            ] = self.cfg.kd_top_k_before_softmax
+            training_arguments_kwargs["kd_top_k_before_softmax"] = (
+                self.cfg.kd_top_k_before_softmax
+            )
 
-        training_arguments_kwargs[
-            "sequence_parallel_degree"
-        ] = self.cfg.sequence_parallel_degree
+        training_arguments_kwargs["sequence_parallel_degree"] = (
+            self.cfg.sequence_parallel_degree
+        )
 
         if self.cfg.reward_model:
             training_args_cls = AxolotlRewardConfig

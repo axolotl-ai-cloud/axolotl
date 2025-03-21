@@ -1,4 +1,5 @@
 """Tests for sequence parallelism functionality."""
+
 # pylint: disable=redefined-outer-name,unused-argument
 
 from unittest.mock import MagicMock, patch

@@ -1,4 +1,5 @@
 """Module for customized trainers"""
+
 # pylint: disable=too-many-lines
 
 from __future__ import annotations
@@ -114,7 +115,6 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, SequenceParallelMixin, Trai
             drop_last=True,
         )
 
-    @override
     def _get_train_sampler(self) -> Sampler | None:
         """
         Helper method to get the sampler for training. Handles cases for sequence
@@ -146,7 +146,6 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, SequenceParallelMixin, Trai
 
         return base_sampler
 
-    @override
     def _get_eval_sampler(self, eval_dataset: Dataset | None = None) -> Sampler | None:
         """
         Helper method to get the sampler for evaluation. Handles sequence parallelism
@@ -591,7 +590,6 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, SequenceParallelMixin, Trai
         os.makedirs(output_dir, exist_ok=True)
         return super()._save_checkpoint(model, trial, **kwargs)
 
-    @override
     def training_step(
         self,
         model: nn.Module,
