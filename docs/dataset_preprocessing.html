@@ -144,13 +144,19 @@ ul.task-list li input[type="checkbox"] {
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../docs/cli.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">CLI Reference</span></a>
+ <span class="menu-text">Command Line Interface (CLI)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../docs/config.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Config Reference</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/api" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">API Reference</span></a>
   </div>
 </li>
       </ul>
@@ -430,7 +436,8 @@ ul.task-list li input[type="checkbox"] {
 
 <section id="overview" class="level2">
 <h2 class="anchored" data-anchor-id="overview">Overview</h2>
-<p>Dataset pre-processing is the step where Axolotl takes each dataset you’ve configured alongside the <a href="docs/dataset-formats">dataset format</a> and prompt strategies to:</p>
+<p>Dataset pre-processing is the step where Axolotl takes each dataset you’ve configured alongside
+the <a href="dataset-formats">dataset format</a> and prompt strategies to:</p>
 <ul>
 <li>parse the dataset based on the <em>dataset format</em></li>
 <li>transform the dataset to how you would interact with the model based on the <em>prompt strategy</em></li>
@@ -444,14 +451,25 @@ ul.task-list li input[type="checkbox"] {
 </ol>
 <section id="what-are-the-benefits-of-pre-processing" class="level3">
 <h3 class="anchored" data-anchor-id="what-are-the-benefits-of-pre-processing">What are the benefits of pre-processing?</h3>
-<p>When training interactively or for sweeps (e.g.&nbsp;you are restarting the trainer often), processing the datasets can oftentimes be frustratingly slow. Pre-processing will cache the tokenized/formatted datasets according to a hash of dependent training parameters so that it will intelligently pull from its cache when possible.</p>
-<p>The path of the cache is controlled by <code>dataset_prepared_path:</code> and is often left blank in example YAMLs as this leads to a more robust solution that prevents unexpectedly reusing cached data.</p>
-<p>If <code>dataset_prepared_path:</code> is left empty, when training, the processed dataset will be cached in a default path of <code>./last_run_prepared/</code>, but will ignore anything already cached there. By explicitly setting <code>dataset_prepared_path: ./last_run_prepared</code>, the trainer will use whatever pre-processed data is in the cache.</p>
+<p>When training interactively or for sweeps
+(e.g.&nbsp;you are restarting the trainer often), processing the datasets can oftentimes be frustratingly
+slow. Pre-processing will cache the tokenized/formatted datasets according to a hash of dependent
+training parameters so that it will intelligently pull from its cache when possible.</p>
+<p>The path of the cache is controlled by <code>dataset_prepared_path:</code> and is often left blank in example
+YAMLs as this leads to a more robust solution that prevents unexpectedly reusing cached data.</p>
+<p>If <code>dataset_prepared_path:</code> is left empty, when training, the processed dataset will be cached in a
+default path of <code>./last_run_prepared/</code>, but will ignore anything already cached there. By explicitly
+setting <code>dataset_prepared_path: ./last_run_prepared</code>, the trainer will use whatever pre-processed
+data is in the cache.</p>
 </section>
 <section id="what-are-the-edge-cases" class="level3">
 <h3 class="anchored" data-anchor-id="what-are-the-edge-cases">What are the edge cases?</h3>
-<p>Let’s say you are writing a custom prompt strategy or using a user-defined prompt template. Because the trainer cannot readily detect these changes, we cannot change the calculated hash value for the pre-processed dataset.</p>
-<p>If you have <code>dataset_prepared_path: ...</code> set and change your prompt templating logic, it may not pick up the changes you made and you will be training over the old prompt.</p>
+<p>Let’s say you are writing a custom prompt strategy or using a user-defined
+prompt template. Because the trainer cannot readily detect these changes, we cannot change the
+calculated hash value for the pre-processed dataset.</p>
+<p>If you have <code>dataset_prepared_path: ...</code> set
+and change your prompt templating logic, it may not pick up the changes you made and you will be
+training over the old prompt.</p>
 
 
 </section>

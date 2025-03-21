@@ -178,13 +178,19 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../docs/cli.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">CLI Reference</span></a>
+ <span class="menu-text">Command Line Interface (CLI)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../docs/config.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Config Reference</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/api" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">API Reference</span></a>
   </div>
 </li>
       </ul>
@@ -466,7 +472,12 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </header>
 
 
-<p>Inspired by <a href="https://github.com/unslothai/unsloth">Unsloth</a>, we’ve implemented two optimizations for LoRA and QLoRA fine-tuning, supporting both single GPU and multi-GPU (in the DDP and DeepSpeed settings) training. These include (1) SwiGLU and GEGLU activation function Triton kernels, and (2) LoRA MLP and attention custom autograd functions. Our goal was to leverage operator fusion and tensor re-use in order to improve speed and reduce memory usage during the forward and backward passes of these calculations.</p>
+<p>Inspired by <a href="https://github.com/unslothai/unsloth">Unsloth</a>, we’ve implemented two
+optimizations for LoRA and QLoRA fine-tuning, supporting both single GPU and multi-GPU
+(in the DDP and DeepSpeed settings) training. These include (1) SwiGLU and GEGLU activation function
+Triton kernels, and (2) LoRA MLP and attention custom autograd functions. Our goal was
+to leverage operator fusion and tensor re-use in order to improve speed and reduce
+memory usage during the forward and backward passes of these calculations.</p>
 <p>We currently support several common model architectures, including (but not limited to):</p>
 <ul>
 <li><code>llama</code></li>
@@ -476,7 +487,9 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <li><code>gemma2</code></li>
 </ul>
 <details>
-<p>The set of models we support is currently limited by our attention patching strategy, which assumes (and replaces) specific code blocks for query / key / value and output projections:</p>
+<p>The set of models we support is currently limited by our attention patching strategy,
+which assumes (and replaces) specific code blocks for query / key / value and output
+projections:</p>
 <div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>ORIGINAL_QKV_CODE <span class="op">=</span> <span class="st">"""</span></span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="st">    query_states = self.q_proj(hidden_states).view(hidden_shape).transpose(1, 2)</span></span>
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="st">    key_states = self.k_proj(hidden_states).view(hidden_shape).transpose(1, 2)</span></span>
@@ -506,7 +519,8 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>    <span class="st">"</span><span class="ch">\n</span><span class="st">"</span></span>
 <span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Where <code>apply_qkv</code> and <code>apply_o</code> are defined in the <code>axolotl.kernels.lora</code> module.</p>
-<p>We welcome testing of other model architectures and / or PRs to expand our patching logic to be compatible with more of them.</p>
+<p>We welcome testing of other model architectures and / or PRs to expand our patching
+logic to be compatible with more of them.</p>
 </details>
 <div class="callout callout-style-default callout-tip callout-titled">
 <div class="callout-header d-flex align-content-center">
@@ -523,7 +537,10 @@ Tip
 </div>
 <section id="usage" class="level2">
 <h2 class="anchored" data-anchor-id="usage">Usage</h2>
-<p>These optimizations can be enabled in your Axolotl config YAML file. The <code>lora_mlp_kernel</code> option enables the optimized MLP path, while <code>lora_qkv_kernel</code> and <code>lora_o_kernel</code> enable the fused query-key-value projection and optimized output projection, respectively.</p>
+<p>These optimizations can be enabled in your Axolotl config YAML file. The
+<code>lora_mlp_kernel</code> option enables the optimized MLP path, while <code>lora_qkv_kernel</code> and
+<code>lora_o_kernel</code> enable the fused query-key-value projection and optimized output
+projection, respectively.</p>
 <div class="sourceCode" id="cb3"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_mlp_kernel</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
 <span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_qkv_kernel</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
 <span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_o_kernel</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
@@ -544,22 +561,35 @@ Tip
 <li>This may limit model expressivity</li>
 </ul></li>
 </ul>
-<p>Models with pre-existing LoRA adapters that use Dropout or have bias terms may need to be re-finetuned without these features in order to be useful.</p>
+<p>Models with pre-existing LoRA adapters that use Dropout or have bias terms may need to
+be re-finetuned without these features in order to be useful.</p>
 </section>
 <section id="implementation-details" class="level2">
 <h2 class="anchored" data-anchor-id="implementation-details">Implementation details</h2>
 <section id="custom-autograd-functions" class="level3">
 <h3 class="anchored" data-anchor-id="custom-autograd-functions">Custom autograd functions</h3>
-<p>The LoRA MLP autograd function optimizes the entire MLP computation path. It fuses the LoRA and base weight computations together and provides a single, efficient backward pass for the entire MLP block.</p>
-<p>For attention components, similar optimizations are provided through a function that handles the query, key, and value projections, and a function that handles the output projection. They are designed to work with the existing <code>transformers</code> attention implementation via some monkey-patching logic.</p>
+<p>The LoRA MLP autograd function optimizes the entire MLP computation path. It fuses the
+LoRA and base weight computations together and provides a single, efficient backward
+pass for the entire MLP block.</p>
+<p>For attention components, similar optimizations are provided through a function that
+handles the query, key, and value projections, and a function that handles the output
+projection. They are designed to work with the existing <code>transformers</code> attention
+implementation via some monkey-patching logic.</p>
 </section>
 <section id="triton-kernels" class="level3">
 <h3 class="anchored" data-anchor-id="triton-kernels">Triton kernels</h3>
-<p>Two activation functions (SwiGLU and GeGLU) are implemented with Triton kernels for improved speed and memory performance. These kernels handle both the forward and backward passes.</p>
+<p>Two activation functions (SwiGLU and GeGLU) are implemented with Triton kernels for
+improved speed and memory performance. These kernels handle both the forward and
+backward passes.</p>
 </section>
 <section id="integration" class="level3">
 <h3 class="anchored" data-anchor-id="integration">Integration</h3>
-<p>The custom autograd functions and Triton kernels are designed to work together. The autograd function manages the high-level computation flow and gradient tracking, while calling the Triton kernels for the activation function computation. During the backward pass, the kernel computes both the activation output and the required gradients, which the autograd function then uses to compute the final gradients for the entire computation path.</p>
+<p>The custom autograd functions and Triton kernels are designed to work together. The
+autograd function manages the high-level computation flow and gradient tracking, while
+calling the Triton kernels for the activation function computation. During the backward
+pass, the kernel computes both the activation output and the required gradients, which
+the autograd function then uses to compute the final gradients for the entire
+computation path.</p>
 </section>
 </section>
 <section id="future-work" class="level2">

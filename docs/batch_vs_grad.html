@@ -144,13 +144,19 @@ ul.task-list li input[type="checkbox"] {
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../docs/cli.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">CLI Reference</span></a>
+ <span class="menu-text">Command Line Interface (CLI)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../docs/config.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Config Reference</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/api" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">API Reference</span></a>
   </div>
 </li>
       </ul>
@@ -424,7 +430,11 @@ ul.task-list li input[type="checkbox"] {
 <li><p><strong>Memory Consumption with Batch Size</strong>: The primary reason increasing the batch size impacts memory is due to the storage requirements for intermediate activations. When you forward propagate a batch through a network, you have to store the activations at each layer for each sample in the batch, because these activations are used during backpropagation to compute gradients. Therefore, larger batches mean more activations, leading to greater GPU memory consumption.</p></li>
 <li><p><strong>Gradient Accumulation</strong>: With gradient accumulation, you’re effectively simulating a larger batch size by accumulating gradients over several smaller batches (or micro-batches). However, at any given time, you’re only forward and backward propagating a micro-batch. This means you only store activations for the micro-batch, not the full accumulated batch. As a result, you can simulate the effect of a larger batch size without the memory cost of storing activations for a large batch.</p></li>
 </ol>
-<p><strong>Example 1:</strong> Micro batch size: 3 Gradient accumulation steps: 2 Number of GPUs: 3 Total batch size = 3 * 2 * 3 = 18</p>
+<p><strong>Example 1:</strong>
+Micro batch size: 3
+Gradient accumulation steps: 2
+Number of GPUs: 3
+Total batch size = 3 * 2 * 3 = 18</p>
 <pre><code>| GPU 1          | GPU 2          | GPU 3          |
 |----------------|----------------|----------------|
 | S1, S2, S3     | S4, S5, S6     | S7, S8, S9     |
@@ -442,7 +452,11 @@ Total gradient for w1 = e1 + e2 + e3 + e4 + e5 + e6 + e7 + e8 + e9 + e10 + e11 +
 
 Weight update for w1:
 w1_new = w1_old - learning rate x (Total gradient for w1 / 18)</code></pre>
-<p><strong>Example 2:</strong> Micro batch size: 2 Gradient accumulation steps: 1 Number of GPUs: 3 Total batch size = 2 * 1 * 3 = 6</p>
+<p><strong>Example 2:</strong>
+Micro batch size: 2
+Gradient accumulation steps: 1
+Number of GPUs: 3
+Total batch size = 2 * 1 * 3 = 6</p>
 <pre><code>| GPU 1     | GPU 2     | GPU 3     |
 |-----------|-----------|-----------|
 | S1, S2    | S3, S4    | S5, S6    |

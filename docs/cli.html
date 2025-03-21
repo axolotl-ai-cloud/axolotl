@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 
-<title>CLI Reference – Axolotl</title>
+<title>Command Line Interface (CLI) – Axolotl</title>
 <style>
 code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
@@ -129,7 +129,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
       <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
         <i class="bi bi-layout-text-sidebar-reverse"></i>
       </button>
-        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/getting-started.html">Getting Started</a></li><li class="breadcrumb-item"><a href="../docs/cli.html">CLI Reference</a></li></ol></nav>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/getting-started.html">Getting Started</a></li><li class="breadcrumb-item"><a href="../docs/cli.html">Command Line Interface (CLI)</a></li></ol></nav>
         <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
         </a>
     </div>
@@ -177,13 +177,19 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../docs/cli.html" class="sidebar-item-text sidebar-link active">
- <span class="menu-text">CLI Reference</span></a>
+ <span class="menu-text">Command Line Interface (CLI)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../docs/config.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Config Reference</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/api" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">API Reference</span></a>
   </div>
 </li>
       </ul>
@@ -451,9 +457,9 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <!-- main -->
 <main class="content" id="quarto-document-content">
 
-<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/getting-started.html">Getting Started</a></li><li class="breadcrumb-item"><a href="../docs/cli.html">CLI Reference</a></li></ol></nav>
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/getting-started.html">Getting Started</a></li><li class="breadcrumb-item"><a href="../docs/cli.html">Command Line Interface (CLI)</a></li></ol></nav>
 <div class="quarto-title">
-<h1 class="title">CLI Reference</h1>
+<h1 class="title">Command Line Interface (CLI)</h1>
 </div>
 
 
@@ -470,7 +476,8 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </header>
 
 
-<p>The Axolotl CLI provides a streamlined interface for training and fine-tuning large language models. This guide covers the CLI commands, their usage, and common examples.</p>
+<p>The Axolotl CLI provides a streamlined interface for training and fine-tuning large language models. This guide covers
+the CLI commands, their usage, and common examples.</p>
 <section id="basic-commands" class="level2">
 <h2 class="anchored" data-anchor-id="basic-commands">Basic Commands</h2>
 <p>All Axolotl commands follow this general structure:</p>
@@ -640,7 +647,8 @@ Important
 </section>
 <section id="remote-compute-with-modal-cloud" class="level2">
 <h2 class="anchored" data-anchor-id="remote-compute-with-modal-cloud">Remote Compute with Modal Cloud</h2>
-<p>Axolotl supports running training and inference workloads on Modal cloud infrastructure. This is configured using a cloud YAML file alongside your regular Axolotl config.</p>
+<p>Axolotl supports running training and inference workloads on Modal cloud infrastructure. This is configured using a
+cloud YAML file alongside your regular Axolotl config.</p>
 <section id="cloud-configuration" class="level3">
 <h3 class="anchored" data-anchor-id="cloud-configuration">Cloud Configuration</h3>
 <p>Create a cloud config YAML with your Modal settings:</p>

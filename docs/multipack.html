@@ -144,13 +144,19 @@ ul.task-list li input[type="checkbox"] {
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../docs/cli.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">CLI Reference</span></a>
+ <span class="menu-text">Command Line Interface (CLI)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../docs/config.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Config Reference</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/api" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">API Reference</span></a>
   </div>
 </li>
       </ul>
@@ -427,8 +433,12 @@ ul.task-list li input[type="checkbox"] {
 
 <section id="visualization-of-multipack-with-flash-attention" class="level2">
 <h2 class="anchored" data-anchor-id="visualization-of-multipack-with-flash-attention">Visualization of Multipack with Flash Attention</h2>
-<p>Because Flash Attention simply drops the attention mask, we do not need to construct a 4d attention mask. We only need to concatenate the sequences into a single batch and let flash attention know where each new sequence begins.</p>
-<p>4k context, bsz =4, each character represents 256 tokens X represents a padding token</p>
+<p>Because Flash Attention simply drops the attention mask, we do not need to
+construct a 4d attention mask. We only need to concatenate the sequences into
+a single batch and let flash attention know where each new sequence begins.</p>
+<p>4k context, bsz =4,
+each character represents 256 tokens
+X represents a padding token</p>
 <pre><code>   0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5
 [[ A A A A A A A A A A A ]
    B B B B B B ]
@@ -466,11 +476,17 @@ ul.task-list li input[type="checkbox"] {
    B C C C C C C C D D D D E E E E
    E E E E F F F F F G G G H H H H
    I I I J J J J K K K K K L L L X ]]</code></pre>
-<p>cu_seqlens: [[ 0, 11, 17, 24, 28, 36, 41 44, 48, 51, 55, 60, 64]]</p>
+<p>cu_seqlens:
+[[ 0, 11, 17, 24, 28, 36, 41 44, 48, 51, 55, 60, 64]]</p>
 </section>
 <section id="multipack-without-flash-attention" class="level2">
 <h2 class="anchored" data-anchor-id="multipack-without-flash-attention">Multipack without Flash Attention</h2>
-<p>Multipack can still be achieved without Flash attention, but with lower packing efficiency as we are not able to join multiple batches into a single batch due to context length limits without flash attention. We can use either Pytorch’s Scaled Dot Product Attention implementation or native Pytorch attention implementation along with <a href="https://github.com/huggingface/transformers/pull/27539">4d attention masks</a> to pack sequences together and avoid cross attention.</p>
+<p>Multipack can still be achieved without Flash attention, but with lower packing
+efficiency as we are not able to join multiple batches into a single batch due to
+context length limits without flash attention. We can use either Pytorch’s Scaled
+Dot Product Attention implementation or native Pytorch attention implementation
+along with <a href="https://github.com/huggingface/transformers/pull/27539">4d attention masks</a>
+to pack sequences together and avoid cross attention.</p>
 <p><img src="./images/4d-mask.png" alt="axolotl" width="800"></p>
 
 

@@ -144,13 +144,19 @@ ul.task-list li input[type="checkbox"] {
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../docs/cli.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">CLI Reference</span></a>
+ <span class="menu-text">Command Line Interface (CLI)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../docs/config.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Config Reference</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/api" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">API Reference</span></a>
   </div>
 </li>
       </ul>
@@ -458,6 +464,10 @@ ul.task-list li input[type="checkbox"] {
 <p><strong>Q: How to call Axolotl via custom python scripts?</strong></p>
 <blockquote class="blockquote">
 <p>A: Yes, since Axolotl is just Python, please see <code>src/axolotl/cli/main.py</code> on how each command is called.</p>
+</blockquote>
+<p><strong>Q: How to know the value to use for <code>fsdp_transformer_layer_cls_to_wrap</code>?</strong></p>
+<blockquote class="blockquote">
+<p>A: This is the class name of the transformer layer to wrap with FSDP. For example, for <code>LlamaForCausalLM</code>, the value is <code>LlamaDecoderLayer</code>. To find this for a specific model, check the model’s <code>PreTrainedModel</code> definition and look for <code>_no_split_modules</code> variable in the <code>modeling_&lt;model_name&gt;.py</code> file within <code>transformers</code> library.</p>
 </blockquote>
 </section>
 <section id="chat-templates" class="level3">

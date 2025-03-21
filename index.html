@@ -177,13 +177,19 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="./docs/cli.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">CLI Reference</span></a>
+ <span class="menu-text">Command Line Interface (CLI)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="./docs/config.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Config Reference</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./docs/api" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">API Reference</span></a>
   </div>
 </li>
       </ul>
@@ -448,13 +454,35 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 
 
 <p align="center">
-<picture> <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/887513285d98132142bf5db2a74eb5e0928787f1/image/axolotl_logo_digital_white.svg"> <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/887513285d98132142bf5db2a74eb5e0928787f1/image/axolotl_logo_digital_black.svg"> <img alt="Axolotl" src="https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/887513285d98132142bf5db2a74eb5e0928787f1/image/axolotl_logo_digital_black.svg" width="400" height="104" style="max-width: 100%;"> </picture>
+<picture>
+<source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/887513285d98132142bf5db2a74eb5e0928787f1/image/axolotl_logo_digital_white.svg">
+<source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/887513285d98132142bf5db2a74eb5e0928787f1/image/axolotl_logo_digital_black.svg">
+<img alt="Axolotl" src="https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/887513285d98132142bf5db2a74eb5e0928787f1/image/axolotl_logo_digital_black.svg" width="400" height="104" style="max-width: 100%;">
+</picture>
 </p>
 <p align="center">
-<img src="https://img.shields.io/github/license/axolotl-ai-cloud/axolotl.svg?color=blue" alt="GitHub License"> <img src="https://github.com/axolotl-ai-cloud/axolotl/actions/workflows/tests.yml/badge.svg" alt="tests"> <a href="https://github.com/axolotl-ai-cloud/axolotl/releases"><img src="https://img.shields.io/github/release/axolotl-ai-cloud/axolotl.svg" alt="Releases"></a> <br> <a href="https://github.com/axolotl-ai-cloud/axolotl/graphs/contributors"><img src="https://img.shields.io/github/contributors-anon/axolotl-ai-cloud/axolotl?color=yellow&amp;style=flat-square" alt="contributors" style="height: 20px;"></a> <img src="https://img.shields.io/github/stars/axolotl-ai-cloud/axolotl" alt="GitHub Repo stars"> <br> <a href="https://discord.com/invite/HhrNrHJPRb"><img src="https://img.shields.io/badge/discord-7289da.svg?style=flat-square&amp;logo=discord" alt="discord" style="height: 20px;"></a> <a href="https://twitter.com/axolotl_ai"><img src="https://img.shields.io/twitter/follow/axolotl_ai?style=social" alt="twitter" style="height: 20px;"></a> <br> <img src="https://github.com/axolotl-ai-cloud/axolotl/actions/workflows/tests-nightly.yml/badge.svg" alt="tests-nightly"> <img src="https://github.com/axolotl-ai-cloud/axolotl/actions/workflows/multi-gpu-e2e.yml/badge.svg" alt="multigpu-semi-weekly tests">
+<img src="https://img.shields.io/github/license/axolotl-ai-cloud/axolotl.svg?color=blue" alt="GitHub License">
+<img src="https://github.com/axolotl-ai-cloud/axolotl/actions/workflows/tests.yml/badge.svg" alt="tests">
+<a href="https://github.com/axolotl-ai-cloud/axolotl/releases"><img src="https://img.shields.io/github/release/axolotl-ai-cloud/axolotl.svg" alt="Releases"></a>
+<br>
+<a href="https://github.com/axolotl-ai-cloud/axolotl/graphs/contributors"><img src="https://img.shields.io/github/contributors-anon/axolotl-ai-cloud/axolotl?color=yellow&amp;style=flat-square" alt="contributors" style="height: 20px;"></a>
+<img src="https://img.shields.io/github/stars/axolotl-ai-cloud/axolotl" alt="GitHub Repo stars">
+<br>
+<a href="https://discord.com/invite/HhrNrHJPRb"><img src="https://img.shields.io/badge/discord-7289da.svg?style=flat-square&amp;logo=discord" alt="discord" style="height: 20px;"></a>
+<a href="https://twitter.com/axolotl_ai"><img src="https://img.shields.io/twitter/follow/axolotl_ai?style=social" alt="twitter" style="height: 20px;"></a>
+<br>
+<img src="https://github.com/axolotl-ai-cloud/axolotl/actions/workflows/tests-nightly.yml/badge.svg" alt="tests-nightly">
+<img src="https://github.com/axolotl-ai-cloud/axolotl/actions/workflows/multi-gpu-e2e.yml/badge.svg" alt="multigpu-semi-weekly tests">
 </p>
-<p>Axolotl is a tool designed to streamline post-training for various AI models. Post-training refers to any modifications or additional training performed on pre-trained models - including full model fine-tuning, parameter-efficient tuning (like LoRA and QLoRA), supervised fine-tuning (SFT), instruction tuning, and alignment techniques. With support for multiple model architectures and training configurations, Axolotl makes it easy to get started with these techniques.</p>
-<p>Axolotl is designed to work with YAML config files that contain everything you need to preprocess a dataset, train or fine-tune a model, run model inference or evaluation, and much more.</p>
+<p>Axolotl is a tool designed to streamline post-training for various AI models.
+Post-training refers to any modifications or additional training performed on
+pre-trained models - including full model fine-tuning, parameter-efficient tuning (like
+LoRA and QLoRA), supervised fine-tuning (SFT), instruction tuning, and alignment
+techniques. With support for multiple model architectures and training configurations,
+Axolotl makes it easy to get started with these techniques.</p>
+<p>Axolotl is designed to work with YAML config files that contain everything you need to
+preprocess a dataset, train or fine-tune a model, run model inference or evaluation,
+and much more.</p>
 <p>Features:</p>
 <ul>
 <li>Train various Huggingface models such as llama, pythia, falcon, mpt</li>
@@ -518,6 +546,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <li><a href="https://axolotl-ai-cloud.github.io/axolotl/docs/multi-gpu.html">Multi-GPU Training</a></li>
 <li><a href="https://axolotl-ai-cloud.github.io/axolotl/docs/multi-node.html">Multi-Node Training</a></li>
 <li><a href="https://axolotl-ai-cloud.github.io/axolotl/docs/multipack.html">Multipacking</a></li>
+<li><a href="https://axolotl-ai-cloud.github.io/axolotl/docs/api/">API Reference</a> - Auto-generated code documentation</li>
 <li><a href="https://axolotl-ai-cloud.github.io/axolotl/docs/faq.html">FAQ</a> - Frequently asked questions</li>
 </ul>
 </section>
@@ -722,13 +751,17 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </tr>
 </tbody>
 </table>
-<p>✅: supported ❌: not supported ❓: untested</p>
+<p>✅: supported
+❌: not supported
+❓: untested</p>
 </section>
 <section id="sponsors" class="level2">
 <h2 class="anchored" data-anchor-id="sponsors">❤️ Sponsors</h2>
 <p>Thank you to our sponsors who help make Axolotl possible:</p>
 <ul>
-<li><a href="https://www.modal.com?utm_source=github&amp;utm_medium=github&amp;utm_campaign=axolotl">Modal</a> - Modal lets you run jobs in the cloud, by just writing a few lines of Python. Customers use Modal to deploy Gen AI models at large scale, fine-tune large language models, run protein folding simulations, and much more.</li>
+<li><a href="https://www.modal.com?utm_source=github&amp;utm_medium=github&amp;utm_campaign=axolotl">Modal</a> - Modal lets you run
+jobs in the cloud, by just writing a few lines of Python. Customers use Modal to deploy Gen AI models at large scale,
+fine-tune large language models, run protein folding simulations, and much more.</li>
 </ul>
 <p>Interested in sponsoring? Contact us at <a href="mailto:wing@axolotl.ai">wing@axolotl.ai</a></p>
 </section>

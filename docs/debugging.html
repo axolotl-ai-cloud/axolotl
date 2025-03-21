@@ -178,13 +178,19 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../docs/cli.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">CLI Reference</span></a>
+ <span class="menu-text">Command Line Interface (CLI)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../docs/config.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Config Reference</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/api" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">API Reference</span></a>
   </div>
 </li>
       </ul>
@@ -497,7 +503,8 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <h2 class="anchored" data-anchor-id="general-tips">General Tips</h2>
 <p>While debugging it’s helpful to simplify your test scenario as much as possible. Here are some tips for doing so:</p>
 <blockquote class="blockquote">
-<p>[!Important] All of these tips are incorporated into the <a href="#configuration">example configuration</a> for debugging with VSCode below.</p>
+<p>[!Important]
+All of these tips are incorporated into the <a href="#configuration">example configuration</a> for debugging with VSCode below.</p>
 </blockquote>
 <ol type="1">
 <li><p><strong>Make sure you are using the latest version of axolotl</strong>: This project changes often and bugs get fixed fast. Check your git branch and make sure you have pulled the latest changes from <code>main</code>.</p></li>
@@ -534,10 +541,12 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> &lt;path to your chat_template formatted dataset&gt;</span><span class="co"> # example on HF Hub: fozziethebeat/alpaca_messages_2k_test</span></span>
 <span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> chat_template</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <blockquote class="blockquote">
-<p>[!Important] If you are already familiar with advanced VSCode debugging, you can skip the below explanation and look at the files <a href="../.vscode/launch.json">.vscode/launch.json</a> and <a href="../.vscode/tasks.json">.vscode/tasks.json</a> for an example configuration.</p>
+<p>[!Important]
+If you are already familiar with advanced VSCode debugging, you can skip the below explanation and look at the files <a href="../.vscode/launch.json">.vscode/launch.json</a> and <a href="../.vscode/tasks.json">.vscode/tasks.json</a> for an example configuration.</p>
 </blockquote>
 <blockquote class="blockquote">
-<p>[!Tip] If you prefer to watch a video, rather than read, you can skip to the <a href="#video-tutorial">video tutorial</a> below (but doing both is recommended).</p>
+<p>[!Tip]
+If you prefer to watch a video, rather than read, you can skip to the <a href="#video-tutorial">video tutorial</a> below (but doing both is recommended).</p>
 </blockquote>
 </section>
 <section id="setup" class="level3">
@@ -596,7 +605,8 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </ul></li>
 </ul>
 <blockquote class="blockquote">
-<p>[!Tip] You may not want to delete these folders. For example, if you are debugging model training instead of data pre-processing, you may NOT want to delete the cache or output folders. You may also need to add additional tasks to the <code>tasks.json</code> file depending on your use case.</p>
+<p>[!Tip]
+You may not want to delete these folders. For example, if you are debugging model training instead of data pre-processing, you may NOT want to delete the cache or output folders. You may also need to add additional tasks to the <code>tasks.json</code> file depending on your use case.</p>
 </blockquote>
 <p>Below is the <a href="../.vscode/tasks.json">./vscode/tasks.json</a> file that defines the <code>cleanup-for-dataprep</code> task. This task is run before each debugging session when you use the above configuration. Note how there are two tasks that delete the two folders mentioned above. The third task <code>cleanup-for-dataprep</code> is a composite task that combines the two tasks. A composite task is necessary because VSCode does not allow you to specify multiple tasks in the <code>preLaunchTask</code> argument of the <code>launch.json</code> file.</p>
 <div class="sourceCode" id="cb5"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="er">//</span> <span class="er">.vscode/tasks.json</span></span>
@@ -653,12 +663,14 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <div class="sourceCode" id="cb6"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">git</span> clone https://github.com/axolotl-ai-cloud/axolotl</span>
 <span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> axolotl</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <blockquote class="blockquote">
-<p>[!Tip] If you already have axolotl cloned on your host, make sure you have the latest changes and change into the root of the project.</p>
+<p>[!Tip]
+If you already have axolotl cloned on your host, make sure you have the latest changes and change into the root of the project.</p>
 </blockquote>
 <p>Next, run the desired docker image and mount the current directory. Below is a docker command you can run to do this:<a href="#fn2" class="footnote-ref" id="fnref2" role="doc-noteref"><sup>2</sup></a></p>
 <div class="sourceCode" id="cb7"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> run <span class="at">--privileged</span> <span class="at">--gpus</span> <span class="st">'"all"'</span> <span class="at">--shm-size</span> 10g <span class="at">--rm</span> <span class="at">-it</span> <span class="at">--name</span> axolotl <span class="at">--ipc</span><span class="op">=</span>host <span class="at">--ulimit</span> memlock=-1 <span class="at">--ulimit</span> stack=67108864 <span class="at">--mount</span> type=bind,src=<span class="st">"</span><span class="va">${PWD}</span><span class="st">"</span>,target=/workspace/axolotl <span class="at">-v</span> <span class="va">${HOME}</span>/.cache/huggingface:/root/.cache/huggingface axolotlai/axolotl:main-py3.10-cu118-2.0.1</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <blockquote class="blockquote">
-<p>[!Tip] To understand which containers are available, see the <a href="../README.md#docker">Docker section of the README</a> and the <a href="https://hub.docker.com/r/axolotlai/axolotl/tags">DockerHub repo</a>. For details of how the Docker containers are built, see axolotl’s <a href="../.github/workflows/main.yml">Docker CI builds</a>.</p>
+<p>[!Tip]
+To understand which containers are available, see the <a href="../README.md#docker">Docker section of the README</a> and the <a href="https://hub.docker.com/r/axolotlai/axolotl/tags">DockerHub repo</a>. For details of how the Docker containers are built, see axolotl’s <a href="../.github/workflows/main.yml">Docker CI builds</a>.</p>
 </blockquote>
 <p>You will now be in the container. Next, perform an editable install of Axolotl:</p>
 <div class="sourceCode" id="cb8"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip3</span> install packaging</span>
@@ -676,7 +688,8 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <div style="text-align: center; line-height: 0;">
 <p><a href="https://youtu.be/0AuoR7QnHR0" target="_blank" title="Debugging Axolotl Part 2: Attaching to Docker on a Remote Host"><img src="https://i.ytimg.com/vi/0AuoR7QnHR0/hqdefault.jpg" style="border-radius: 10px; display: block; margin: auto;" width="560" height="315"></a></p>
 <figcaption style="font-size: smaller;">
-<a href="https://hamel.dev">Hamel Husain’s</a> tutorial: <a href="https://youtu.be/0AuoR7QnHR0">Debugging Axolotl Part 2: Attaching to Docker on a Remote Host </a>
+<a href="https://hamel.dev">Hamel Husain’s</a> tutorial: <a href="https://youtu.be/0AuoR7QnHR0">Debugging Axolotl Part 2: Attaching to Docker on a Remote Host
+</a>
 </figcaption>
 </div>
 <p><br></p>

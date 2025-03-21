@@ -143,13 +143,19 @@ ul.task-list li input[type="checkbox"] {
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="./docs/cli.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">CLI Reference</span></a>
+ <span class="menu-text">Command Line Interface (CLI)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="./docs/config.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Config Reference</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./docs/api" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">API Reference</span></a>
   </div>
 </li>
       </ul>
@@ -407,7 +413,9 @@ ul.task-list li input[type="checkbox"] {
 <ul>
 <li>Can you train StableLM with this? Yes, but only with a single GPU atm. Multi GPU support is coming soon! Just waiting on this <a href="https://github.com/huggingface/transformers/pull/22874">PR</a></li>
 <li>Will this work with Deepspeed? That’s still a WIP, but setting <code>export ACCELERATE_USE_DEEPSPEED=true</code> should work in some cases</li>
-<li><code>Error invalid argument at line 359 in file /workspace/bitsandbytes/csrc/pythonInterface.c</code> <code>/arrow/cpp/src/arrow/filesystem/s3fs.cc:2598:  arrow::fs::FinalizeS3 was not called even though S3 was initialized.</code> This could lead to a segmentation fault at exit. Try reinstalling bitsandbytes and transformers from source.</li>
+<li><code>Error invalid argument at line 359 in file /workspace/bitsandbytes/csrc/pythonInterface.c</code>
+<code>/arrow/cpp/src/arrow/filesystem/s3fs.cc:2598:  arrow::fs::FinalizeS3 was not called even though S3 was initialized.</code>
+This could lead to a segmentation fault at exit. Try reinstalling bitsandbytes and transformers from source.</li>
 </ul>
 
 

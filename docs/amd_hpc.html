@@ -178,13 +178,19 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../docs/cli.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">CLI Reference</span></a>
+ <span class="menu-text">Command Line Interface (CLI)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../docs/config.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Config Reference</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/api" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">API Reference</span></a>
   </div>
 </li>
       </ul>
@@ -518,7 +524,9 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </section>
 <section id="apply-xformers-workaround" class="level3">
 <h3 class="anchored" data-anchor-id="apply-xformers-workaround">7. Apply xformers Workaround</h3>
-<p>xformers appears to be incompatible with ROCm. Apply the following workarounds: - Edit $HOME/packages/axolotl/src/axolotl/monkeypatch/llama_attn_hijack_flash.py modifying the code to always return <code>False</code> for SwiGLU availability from xformers. - Edit $HOME/miniforge3/lib/python3.10/site-packages/xformers/ops/swiglu_op.py replacing the “SwiGLU” function with a pass statement.</p>
+<p>xformers appears to be incompatible with ROCm. Apply the following workarounds:
+- Edit $HOME/packages/axolotl/src/axolotl/monkeypatch/llama_attn_hijack_flash.py modifying the code to always return <code>False</code> for SwiGLU availability from xformers.
+- Edit $HOME/miniforge3/lib/python3.10/site-packages/xformers/ops/swiglu_op.py replacing the “SwiGLU” function with a pass statement.</p>
 </section>
 <section id="prepare-job-submission-script" class="level3">
 <h3 class="anchored" data-anchor-id="prepare-job-submission-script">8. Prepare Job Submission Script</h3>

@@ -206,13 +206,19 @@ window.Quarto = {
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../../docs/cli.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">CLI Reference</span></a>
+ <span class="menu-text">Command Line Interface (CLI)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../../docs/config.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Config Reference</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/api" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">API Reference</span></a>
   </div>
 </li>
       </ul>
@@ -660,7 +666,8 @@ window.Quarto = {
 </section>
 <section id="configuration-normalization" class="level2">
 <h2 class="anchored" data-anchor-id="configuration-normalization">Configuration Normalization</h2>
-<p>Axolotl uses a custom Dict class, called <code>DictDefault</code> to store configurations specified in the yaml configuration file (into a Python variable named <code>cfg</code>). The definition for this custom Dict can be found in the <a href="https://github.com/axolotl-ai-cloud/axolotl/blob/main/src/axolotl/utils/dict.py">utils/dict.py</a></p>
+<p>Axolotl uses a custom Dict class, called <code>DictDefault</code>
+to store configurations specified in the yaml configuration file (into a Python variable named <code>cfg</code>). The definition for this custom Dict can be found in the <a href="https://github.com/axolotl-ai-cloud/axolotl/blob/main/src/axolotl/utils/dict.py">utils/dict.py</a></p>
 <p><code>DictDefault</code> is amended such that calling a missing key from it will result in a <code>None</code> return type. This is important because if some configuration options aren’t specified by the user, the <code>None</code> type allows Axolotl to perform boolean operations to determine the default settings for missing configurations. For more examples on how this is done, check out <a href="https://github.com/axolotl-ai-cloud/axolotl/blob/main/src/axolotl/utils/config/__init__.py">utils/config/<strong>init</strong>.py</a></p>
 </section>
 <section id="loading-models-tokenizers-and-trainer" class="level2">
@@ -669,7 +676,8 @@ window.Quarto = {
 <p><code>train()</code> takes care of loading the appropriate tokenizer and pre-trained model through <code>load_model()</code> and <code>load_tokenizer()</code> from <a href="https://github.com/axolotl-ai-cloud/axolotl/blob/main/src/axolotl/utils/models.py">src/axolotl/utils/models.py</a> respectively.</p>
 <p><code>load_tokenizer()</code> loads in the appropriate tokenizer given the desired model, as well as chat templates.</p>
 <p><code>ModelLoader</code> class follows after tokenizer has been selected. It will automatically discern the base model type, load in the desired model, as well as applying model-appropriate attention mechanism modifications (e.g.&nbsp;flash attention). Depending on which base model the user chooses in the configuration, <code>ModelLoader</code> will utilize the corresponding “attention hijacking” script. For example, if the user specified the base model to be <code>NousResearch/Meta-Llama-3.1-8B</code>, which is of llama type, and set <code>flash_attn</code> to <code>True</code>, <code>ModelLoader</code> will load in <a href="https://github.com/axolotl-ai-cloud/axolotl/blob/main/src/axolotl/monkeypatch/llama_attn_hijack_flash.py">llama_attn_hijack_flash.py</a>. For a list of supported attention hijacking, please refer to the directory <a href="https://github.com/axolotl-ai-cloud/axolotl/tree/main/src/axolotl/monkeypatch">/src/axolotl/monkeypatch/</a></p>
-<p>Another important operation encompassed in <code>train()</code> is setting up the training that takes into account of user-specified traning configurations (e.g.&nbsp;num_epochs, optimizer) through the use of <code>setup_trainer()</code> from <a href="https://github.com/axolotl-ai-cloud/axolotl/blob/main/src/axolotl/utils/trainer.py">/src/axolotl/utils/trainer.py</a>, which in turn relies on modules from <a href="https://github.com/axolotl-ai-cloud/axolotl/blob/main/src/axolotl/core/trainer_builder.py">/src/axolotl/core/trainer_builder.py</a>. <code>trainer_builder.py</code> provides a list of trainer object options bespoke for the task type (Causal or Reinforcement learning (‘dpo’, ‘ipo’, ‘kto’) )</p>
+<p>Another important operation encompassed in <code>train()</code> is setting up the training that takes into account of user-specified traning configurations (e.g.&nbsp;num_epochs, optimizer) through the use of <code>setup_trainer()</code> from <a href="https://github.com/axolotl-ai-cloud/axolotl/blob/main/src/axolotl/utils/trainer.py">/src/axolotl/utils/trainer.py</a>, which in turn relies on modules from <a href="https://github.com/axolotl-ai-cloud/axolotl/blob/main/src/axolotl/core/trainer_builder.py">/src/axolotl/core/trainer_builder.py</a>.
+<code>trainer_builder.py</code> provides a list of trainer object options bespoke for the task type (Causal or Reinforcement learning (‘dpo’, ‘ipo’, ‘kto’) )</p>
 </section>
 <section id="monkey-patch" class="level2">
 <h2 class="anchored" data-anchor-id="monkey-patch">Monkey patch</h2>

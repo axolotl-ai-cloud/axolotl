@@ -178,13 +178,19 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../docs/cli.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">CLI Reference</span></a>
+ <span class="menu-text">Command Line Interface (CLI)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../docs/config.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Config Reference</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/api" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">API Reference</span></a>
   </div>
 </li>
       </ul>
@@ -461,7 +467,8 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 
 <section id="background" class="level2">
 <h2 class="anchored" data-anchor-id="background">Background</h2>
-<p>Inspired by LoRA+, Axolotl allows practitioners to specify separate learning rates for each module or groups of modules in a model.</p>
+<p>Inspired by LoRA+, Axolotl allows practitioners to specify separate learning rates for each module or groups of
+modules in a model.</p>
 </section>
 <section id="example" class="level2">
 <h2 class="anchored" data-anchor-id="example">Example</h2>
@@ -476,7 +483,9 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">lr</span><span class="kw">:</span><span class="at"> </span><span class="fl">1e-5</span></span>
 <span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a><span class="fu">learning_rate</span><span class="kw">:</span><span class="at"> </span><span class="fl">2e-5</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>In this example, we have a default learning rate of 2e-5 across the entire model, but we have a separate learning rate of 1e-6 for all the self attention <code>o_proj</code> modules across all layers, and a learning are of 1e-5 to the 3rd layer’s self attention <code>q_proj</code> module.</p>
+<p>In this example, we have a default learning rate of 2e-5 across the entire model, but we have a separate learning rate
+of 1e-6 for all the self attention <code>o_proj</code> modules across all layers, and a learning are of 1e-5 to the 3rd layer’s
+self attention <code>q_proj</code> module.</p>
 
 
 </section>

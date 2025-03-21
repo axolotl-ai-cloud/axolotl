@@ -177,13 +177,19 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../docs/cli.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">CLI Reference</span></a>
+ <span class="menu-text">Command Line Interface (CLI)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../docs/config.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Config Reference</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/api" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">API Reference</span></a>
   </div>
 </li>
       </ul>
@@ -468,7 +474,8 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <p>This guide will walk you through your first model fine-tuning project with Axolotl.</p>
 <section id="sec-quick-example" class="level2" data-number="1">
 <h2 data-number="1" class="anchored" data-anchor-id="sec-quick-example"><span class="header-section-number">1</span> Quick Example</h2>
-<p>Let’s start by fine-tuning a small language model using LoRA. This example uses a 1B parameter model to ensure it runs on most GPUs. Assuming <code>axolotl</code> is installed (if not, see our <a href="../docs/installation.html">Installation Guide</a>)</p>
+<p>Let’s start by fine-tuning a small language model using LoRA. This example uses a 1B parameter model to ensure it runs on most GPUs.
+Assuming <code>axolotl</code> is installed (if not, see our <a href="../docs/installation.html">Installation Guide</a>)</p>
 <ol type="1">
 <li>Download example configs:</li>
 </ol>
@@ -546,15 +553,18 @@ Tip
 <span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
 <span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> my_data.jsonl</span><span class="co">        # Your local data file</span></span>
 <span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> alpaca</span><span class="co">               # Or other format</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>This specific config is for LoRA fine-tuning a model with instruction tuning data using the <code>alpaca</code> dataset format, which has the following format:</p>
+<p>This specific config is for LoRA fine-tuning a model with instruction tuning data using
+the <code>alpaca</code> dataset format, which has the following format:</p>
 <div class="sourceCode" id="cb5"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
 <span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    <span class="dt">"instruction"</span><span class="fu">:</span> <span class="st">"Write a description of alpacas."</span><span class="fu">,</span></span>
 <span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">"input"</span><span class="fu">:</span> <span class="st">""</span><span class="fu">,</span></span>
 <span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>    <span class="dt">"output"</span><span class="fu">:</span> <span class="st">"Alpacas are domesticated South American camelids..."</span></span>
 <span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Please see our <a href="dataset-formats">Dataset Formats</a> for more dataset formats and how to format them.</p>
+<p>Please see our <a href="dataset-formats">Dataset Formats</a> for more dataset formats and how to
+format them.</p>
 <ol start="2" type="1">
-<li>Prepare your JSONL data in the specified format (in this case, the expected `alpaca format):</li>
+<li>Prepare your JSONL data in the specified format (in this case, the expected `alpaca
+format):</li>
 </ol>
 <div class="sourceCode" id="cb6"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"instruction"</span><span class="fu">:</span> <span class="st">"Classify this text"</span><span class="fu">,</span> <span class="dt">"input"</span><span class="fu">:</span> <span class="st">"I love this!"</span><span class="fu">,</span> <span class="dt">"output"</span><span class="fu">:</span> <span class="st">"positive"</span><span class="fu">}</span></span>
 <span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"instruction"</span><span class="fu">:</span> <span class="st">"Classify this text"</span><span class="fu">,</span> <span class="dt">"input"</span><span class="fu">:</span> <span class="st">"Not good at all"</span><span class="fu">,</span> <span class="dt">"output"</span><span class="fu">:</span> <span class="st">"negative"</span><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>

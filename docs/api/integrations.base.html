@@ -1,0 +1,1357 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.6.42">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>integrations.base – Axolotl</title>
+<style>
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { display: inline-block; text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="../../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../../">
+<link href="../../favicon.jpg" rel="icon" type="image/jpeg">
+<script src="../../site_libs/quarto-html/quarto.js"></script>
+<script src="../../site_libs/quarto-html/popper.min.js"></script>
+<script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-b53751a350365c71b6c909e95f209ed1.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../../site_libs/bootstrap/bootstrap-71f806479865a0e7fd52beea5cc266f1.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+
+
+<link rel="stylesheet" href="../../styles.css">
+</head>
+
+<body class="nav-sidebar docked nav-fixed">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a href="../../index.html" class="navbar-brand navbar-brand-logo">
+    <img src="../../image/axolotl_logo_digital_white.svg" alt="" class="navbar-logo">
+    </a>
+  </div>
+        <div class="quarto-navbar-tools tools-wide tools-end">
+    <a href="https://twitter.com/axolotl_ai" title="" class="quarto-navigation-tool px-1" aria-label=""><i class="bi bi-twitter"></i></a>
+    <a href="https://github.com/axolotl-ai-cloud/axolotl/" title="" class="quarto-navigation-tool px-1" aria-label=""><i class="bi bi-github"></i></a>
+    <a href="https://discord.gg/7m9sfhzaf3" title="" class="quarto-navigation-tool px-1" aria-label=""><i class="bi bi-discord"></i></a>
+</div>
+          <div id="quarto-search" class="" title="Search"></div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation docked overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Home</span></a>
+  </div>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true">
+ <span class="menu-text">Getting Started</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/getting-started.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Quickstart</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/installation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Installation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/inference.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Inference and Merging</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/cli.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Command Line Interface (CLI)</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/config.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Config Reference</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/api" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">API Reference</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a href="../../docs/dataset-formats/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Dataset Formats</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/dataset-formats/pretraining.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Pre-training</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/dataset-formats/inst_tune.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Instruction Tuning</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/dataset-formats/conversation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Conversation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/dataset-formats/stepwise_supervised.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Stepwise Supervised Format</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/dataset-formats/template_free.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Template-Free</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/dataset-formats/tokenized.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Custom Pre-Tokenized Dataset</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="true">
+ <span class="menu-text">Deployments</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-3" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/docker.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Docker</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/multi-gpu.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Multi-GPU</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/multi-node.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Multi Node</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/ray-integration.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Ray Train</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/amd_hpc.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">AMD GPUs on HPC Systems</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/mac.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Mac M-series</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="true">
+ <span class="menu-text">How To Guides</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-4" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/multimodal.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">MultiModal / Vision Language Models (BETA)</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/rlhf.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">RLHF (Beta)</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/reward_modelling.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Reward Modelling</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/lr_groups.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Learning Rate Groups</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/lora_optims.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">LoRA Optimizations</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="true">
+ <span class="menu-text">Core Concepts</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-5" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/batch_vs_grad.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Batch size vs Gradient accumulation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/dataset_preprocessing.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Dataset Preprocessing</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/multipack.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Multipack (Sample Packing)</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-6" role="navigation" aria-expanded="true">
+ <span class="menu-text">Advanced Features</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-6" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-6" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/fsdp_qlora.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">FDSP + QLoRA</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/unsloth.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Unsloth</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/torchao.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">PyTorch ao</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/custom_integrations.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Custom Integrations</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-7" role="navigation" aria-expanded="true">
+ <span class="menu-text">Troubleshooting</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-7" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-7" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/faq.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">FAQ</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/debugging.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Debugging</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/nccl.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">NCCL</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#axolotl.integrations.base" id="toc-axolotl.integrations.base" class="nav-link active" data-scroll-target="#axolotl.integrations.base">integrations.base</a>
+  <ul class="collapse">
+  <li><a href="#classes" id="toc-classes" class="nav-link" data-scroll-target="#classes">Classes</a>
+  <ul class="collapse">
+  <li><a href="#axolotl.integrations.base.BaseOptimizerFactory" id="toc-axolotl.integrations.base.BaseOptimizerFactory" class="nav-link" data-scroll-target="#axolotl.integrations.base.BaseOptimizerFactory">BaseOptimizerFactory</a></li>
+  <li><a href="#axolotl.integrations.base.BasePlugin" id="toc-axolotl.integrations.base.BasePlugin" class="nav-link" data-scroll-target="#axolotl.integrations.base.BasePlugin">BasePlugin</a></li>
+  <li><a href="#axolotl.integrations.base.PluginManager" id="toc-axolotl.integrations.base.PluginManager" class="nav-link" data-scroll-target="#axolotl.integrations.base.PluginManager">PluginManager</a></li>
+  </ul></li>
+  <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
+  <ul class="collapse">
+  <li><a href="#axolotl.integrations.base.load_plugin" id="toc-axolotl.integrations.base.load_plugin" class="nav-link" data-scroll-target="#axolotl.integrations.base.load_plugin">load_plugin</a></li>
+  </ul></li>
+  </ul></li>
+  </ul>
+</nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content"><header id="title-block-header" class="quarto-title-block"></header>
+
+
+
+
+<section id="axolotl.integrations.base" class="level1">
+<h1>integrations.base</h1>
+<p><code>integrations.base</code></p>
+<p>Base class for all plugins.</p>
+<p>A plugin is a reusable, modular, and self-contained piece of code that extends the functionality of Axolotl.
+Plugins can be used to integrate third-party models, modify the training process, or add new features.</p>
+<p>To create a new plugin, you need to inherit from the BasePlugin class and implement the required methods.</p>
+<section id="classes" class="level2">
+<h2 class="anchored" data-anchor-id="classes">Classes</h2>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><a href="#axolotl.integrations.base.BaseOptimizerFactory">BaseOptimizerFactory</a></td>
+<td>Base class for factories to create custom optimizers</td>
+</tr>
+<tr class="even">
+<td><a href="#axolotl.integrations.base.BasePlugin">BasePlugin</a></td>
+<td>Base class for all plugins. Defines the interface for plugin methods.</td>
+</tr>
+<tr class="odd">
+<td><a href="#axolotl.integrations.base.PluginManager">PluginManager</a></td>
+<td>The PluginManager class is responsible for loading and managing plugins.</td>
+</tr>
+</tbody>
+</table>
+<section id="axolotl.integrations.base.BaseOptimizerFactory" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.integrations.base.BaseOptimizerFactory">BaseOptimizerFactory</h3>
+<div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>integrations.base.BaseOptimizerFactory()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Base class for factories to create custom optimizers</p>
+</section>
+<section id="axolotl.integrations.base.BasePlugin" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.integrations.base.BasePlugin">BasePlugin</h3>
+<div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>integrations.base.BasePlugin(<span class="va">self</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Base class for all plugins. Defines the interface for plugin methods.</p>
+<p>Attributes:
+None</p>
+<p>Methods:
+register(cfg): Registers the plugin with the given configuration.
+pre_model_load(cfg): Performs actions before the model is loaded.
+post_model_load(cfg, model): Performs actions after the model is loaded.
+pre_lora_load(cfg, model): Performs actions before LoRA weights are loaded.
+post_lora_load(cfg, model): Performs actions after LoRA weights are loaded.
+create_optimizer(cfg, trainer): Creates and returns an optimizer for training.
+create_lr_scheduler(cfg, trainer, optimizer): Creates and returns a learning rate scheduler.
+add_callbacks_pre_trainer(cfg, model): Adds callbacks to the trainer before training.
+add_callbacks_post_trainer(cfg, trainer): Adds callbacks to the trainer after training.</p>
+<section id="methods" class="level4">
+<h4 class="anchored" data-anchor-id="methods">Methods</h4>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><a href="#axolotl.integrations.base.BasePlugin.add_callbacks_post_trainer">add_callbacks_post_trainer</a></td>
+<td>Adds callbacks to the trainer after creating the trainer.</td>
+</tr>
+<tr class="even">
+<td><a href="#axolotl.integrations.base.BasePlugin.add_callbacks_pre_trainer">add_callbacks_pre_trainer</a></td>
+<td>setup callbacks before creating the trainer.</td>
+</tr>
+<tr class="odd">
+<td><a href="#axolotl.integrations.base.BasePlugin.create_lr_scheduler">create_lr_scheduler</a></td>
+<td>Creates and returns a learning rate scheduler.</td>
+</tr>
+<tr class="even">
+<td><a href="#axolotl.integrations.base.BasePlugin.create_optimizer">create_optimizer</a></td>
+<td>Creates and returns an optimizer for training.</td>
+</tr>
+<tr class="odd">
+<td><a href="#axolotl.integrations.base.BasePlugin.get_input_args">get_input_args</a></td>
+<td>Returns a pydantic model for the plugin’s input arguments.</td>
+</tr>
+<tr class="even">
+<td><a href="#axolotl.integrations.base.BasePlugin.get_trainer_cls">get_trainer_cls</a></td>
+<td>Returns a custom class for the trainer.</td>
+</tr>
+<tr class="odd">
+<td><a href="#axolotl.integrations.base.BasePlugin.post_lora_load">post_lora_load</a></td>
+<td>Performs actions after LoRA weights are loaded.</td>
+</tr>
+<tr class="even">
+<td><a href="#axolotl.integrations.base.BasePlugin.post_model_load">post_model_load</a></td>
+<td>Performs actions after the model is loaded.</td>
+</tr>
+<tr class="odd">
+<td><a href="#axolotl.integrations.base.BasePlugin.post_train">post_train</a></td>
+<td>Performs actions after training is complete.</td>
+</tr>
+<tr class="even">
+<td><a href="#axolotl.integrations.base.BasePlugin.post_train_unload">post_train_unload</a></td>
+<td>Performs actions after training is complete and the model is unloaded.</td>
+</tr>
+<tr class="odd">
+<td><a href="#axolotl.integrations.base.BasePlugin.pre_lora_load">pre_lora_load</a></td>
+<td>Performs actions before LoRA weights are loaded.</td>
+</tr>
+<tr class="even">
+<td><a href="#axolotl.integrations.base.BasePlugin.pre_model_load">pre_model_load</a></td>
+<td>Performs actions before the model is loaded.</td>
+</tr>
+<tr class="odd">
+<td><a href="#axolotl.integrations.base.BasePlugin.register">register</a></td>
+<td>Registers the plugin with the given configuration.</td>
+</tr>
+</tbody>
+</table>
+<section id="axolotl.integrations.base.BasePlugin.add_callbacks_post_trainer" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.integrations.base.BasePlugin.add_callbacks_post_trainer">add_callbacks_post_trainer</h5>
+<div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>integrations.base.BasePlugin.add_callbacks_post_trainer(cfg, trainer)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Adds callbacks to the trainer after creating the trainer.
+This is useful for callbacks that require access to the model or trainer.</p>
+<p>Parameters:
+cfg (dict): The configuration for the plugin.
+trainer (object): The trainer object for training.</p>
+<p>Returns:
+List[callable]: A list of callback functions to be added</p>
+</section>
+<section id="axolotl.integrations.base.BasePlugin.add_callbacks_pre_trainer" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.integrations.base.BasePlugin.add_callbacks_pre_trainer">add_callbacks_pre_trainer</h5>
+<div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>integrations.base.BasePlugin.add_callbacks_pre_trainer(cfg, model)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>setup callbacks before creating the trainer.</p>
+<p>Parameters:
+cfg (dict): The configuration for the plugin.
+model (object): The loaded model.</p>
+<p>Returns:
+List[callable]: A list of callback functions to be added to the TrainingArgs</p>
+</section>
+<section id="axolotl.integrations.base.BasePlugin.create_lr_scheduler" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.integrations.base.BasePlugin.create_lr_scheduler">create_lr_scheduler</h5>
+<div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>integrations.base.BasePlugin.create_lr_scheduler(cfg, trainer, optimizer)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Creates and returns a learning rate scheduler.</p>
+<p>Parameters:
+cfg (dict): The configuration for the plugin.
+trainer (object): The trainer object for training.
+optimizer (object): The optimizer for training.</p>
+<p>Returns:
+object: The created learning rate scheduler.</p>
+</section>
+<section id="axolotl.integrations.base.BasePlugin.create_optimizer" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.integrations.base.BasePlugin.create_optimizer">create_optimizer</h5>
+<div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>integrations.base.BasePlugin.create_optimizer(cfg, trainer)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Creates and returns an optimizer for training.</p>
+<p>Parameters:
+cfg (dict): The configuration for the plugin.
+trainer (object): The trainer object for training.</p>
+<p>Returns:
+object: The created optimizer.</p>
+</section>
+<section id="axolotl.integrations.base.BasePlugin.get_input_args" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.integrations.base.BasePlugin.get_input_args">get_input_args</h5>
+<div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>integrations.base.BasePlugin.get_input_args()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Returns a pydantic model for the plugin’s input arguments.</p>
+</section>
+<section id="axolotl.integrations.base.BasePlugin.get_trainer_cls" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.integrations.base.BasePlugin.get_trainer_cls">get_trainer_cls</h5>
+<div class="sourceCode" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>integrations.base.BasePlugin.get_trainer_cls(cfg)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Returns a custom class for the trainer.</p>
+<p>Parameters:
+cfg (dict): The global axolotl configuration.</p>
+<p>Returns:
+class: The class for the trainer.</p>
+</section>
+<section id="axolotl.integrations.base.BasePlugin.post_lora_load" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.integrations.base.BasePlugin.post_lora_load">post_lora_load</h5>
+<div class="sourceCode" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>integrations.base.BasePlugin.post_lora_load(cfg, model)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Performs actions after LoRA weights are loaded.</p>
+<p>Parameters:
+cfg (dict): The configuration for the plugin.
+model (object): The loaded model.</p>
+<p>Returns:
+None</p>
+</section>
+<section id="axolotl.integrations.base.BasePlugin.post_model_load" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.integrations.base.BasePlugin.post_model_load">post_model_load</h5>
+<div class="sourceCode" id="cb10"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>integrations.base.BasePlugin.post_model_load(cfg, model)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Performs actions after the model is loaded.</p>
+<p>Parameters:
+cfg (dict): The configuration for the plugin.
+model (object): The loaded model.</p>
+<p>Returns:
+None</p>
+</section>
+<section id="axolotl.integrations.base.BasePlugin.post_train" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.integrations.base.BasePlugin.post_train">post_train</h5>
+<div class="sourceCode" id="cb11"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a>integrations.base.BasePlugin.post_train(cfg, model)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Performs actions after training is complete.</p>
+<p>Parameters:
+cfg (dict): The axolotl configuration
+model (object): The loaded model.</p>
+<p>Returns:
+None</p>
+</section>
+<section id="axolotl.integrations.base.BasePlugin.post_train_unload" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.integrations.base.BasePlugin.post_train_unload">post_train_unload</h5>
+<div class="sourceCode" id="cb12"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a>integrations.base.BasePlugin.post_train_unload(cfg)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Performs actions after training is complete and the model is unloaded.</p>
+<p>Parameters:
+cfg (dict): The configuration for the plugin.</p>
+<p>Returns:
+None</p>
+</section>
+<section id="axolotl.integrations.base.BasePlugin.pre_lora_load" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.integrations.base.BasePlugin.pre_lora_load">pre_lora_load</h5>
+<div class="sourceCode" id="cb13"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a>integrations.base.BasePlugin.pre_lora_load(cfg, model)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Performs actions before LoRA weights are loaded.</p>
+<p>Parameters:
+cfg (dict): The configuration for the plugin.
+model (object): The loaded model.</p>
+<p>Returns:
+None</p>
+</section>
+<section id="axolotl.integrations.base.BasePlugin.pre_model_load" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.integrations.base.BasePlugin.pre_model_load">pre_model_load</h5>
+<div class="sourceCode" id="cb14"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a>integrations.base.BasePlugin.pre_model_load(cfg)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Performs actions before the model is loaded.</p>
+<p>Parameters:
+cfg (dict): The configuration for the plugin.</p>
+<p>Returns:
+None</p>
+</section>
+<section id="axolotl.integrations.base.BasePlugin.register" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.integrations.base.BasePlugin.register">register</h5>
+<div class="sourceCode" id="cb15"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a>integrations.base.BasePlugin.register(cfg)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Registers the plugin with the given configuration.</p>
+<p>Parameters:
+cfg (dict): The configuration for the plugin.</p>
+<p>Returns:
+None</p>
+</section>
+</section>
+</section>
+<section id="axolotl.integrations.base.PluginManager" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.integrations.base.PluginManager">PluginManager</h3>
+<div class="sourceCode" id="cb16"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a>integrations.base.PluginManager()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>The PluginManager class is responsible for loading and managing plugins.
+It should be a singleton so it can be accessed from anywhere in the codebase.</p>
+<p>Attributes:
+plugins (List<a href="#axolotl.integrations.base.BasePlugin">BasePlugin</a>): A list of loaded plugins.</p>
+<p>Methods:
+get_instance(): Static method to get the singleton instance of PluginManager.
+register(plugin_name: str): Registers a new plugin by its name.
+pre_model_load(cfg): Calls the pre_model_load method of all registered plugins.</p>
+<section id="methods-1" class="level4">
+<h4 class="anchored" data-anchor-id="methods-1">Methods</h4>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><a href="#axolotl.integrations.base.PluginManager.add_callbacks_post_trainer">add_callbacks_post_trainer</a></td>
+<td>Calls the add_callbacks_post_trainer method of all registered plugins.</td>
+</tr>
+<tr class="even">
+<td><a href="#axolotl.integrations.base.PluginManager.add_callbacks_pre_trainer">add_callbacks_pre_trainer</a></td>
+<td>Calls the add_callbacks_pre_trainer method of all registered plugins.</td>
+</tr>
+<tr class="odd">
+<td><a href="#axolotl.integrations.base.PluginManager.create_lr_scheduler">create_lr_scheduler</a></td>
+<td>Calls the create_lr_scheduler method of all registered plugins and returns the first non-None scheduler.</td>
+</tr>
+<tr class="even">
+<td><a href="#axolotl.integrations.base.PluginManager.create_optimizer">create_optimizer</a></td>
+<td>Calls the create_optimizer method of all registered plugins and returns the first non-None optimizer.</td>
+</tr>
+<tr class="odd">
+<td><a href="#axolotl.integrations.base.PluginManager.get_input_args">get_input_args</a></td>
+<td>Returns a list of Pydantic classes for all registered plugins’ input arguments.’</td>
+</tr>
+<tr class="even">
+<td><a href="#axolotl.integrations.base.PluginManager.get_instance">get_instance</a></td>
+<td>Returns the singleton instance of PluginManager.</td>
+</tr>
+<tr class="odd">
+<td><a href="#axolotl.integrations.base.PluginManager.get_trainer_cls">get_trainer_cls</a></td>
+<td>Calls the get_trainer_cls method of all registered plugins and returns the first non-None trainer class.</td>
+</tr>
+<tr class="even">
+<td><a href="#axolotl.integrations.base.PluginManager.post_lora_load">post_lora_load</a></td>
+<td>Calls the post_lora_load method of all registered plugins.</td>
+</tr>
+<tr class="odd">
+<td><a href="#axolotl.integrations.base.PluginManager.post_model_load">post_model_load</a></td>
+<td>Calls the post_model_load method of all registered plugins.</td>
+</tr>
+<tr class="even">
+<td><a href="#axolotl.integrations.base.PluginManager.post_train_unload">post_train_unload</a></td>
+<td>Calls the post_train_unload method of all registered plugins.</td>
+</tr>
+<tr class="odd">
+<td><a href="#axolotl.integrations.base.PluginManager.pre_lora_load">pre_lora_load</a></td>
+<td>Calls the pre_lora_load method of all registered plugins.</td>
+</tr>
+<tr class="even">
+<td><a href="#axolotl.integrations.base.PluginManager.pre_model_load">pre_model_load</a></td>
+<td>Calls the pre_model_load method of all registered plugins.</td>
+</tr>
+<tr class="odd">
+<td><a href="#axolotl.integrations.base.PluginManager.register">register</a></td>
+<td>Registers a new plugin by its name.</td>
+</tr>
+</tbody>
+</table>
+<section id="axolotl.integrations.base.PluginManager.add_callbacks_post_trainer" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.integrations.base.PluginManager.add_callbacks_post_trainer">add_callbacks_post_trainer</h5>
+<div class="sourceCode" id="cb17"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a>integrations.base.PluginManager.add_callbacks_post_trainer(cfg, trainer)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Calls the add_callbacks_post_trainer method of all registered plugins.</p>
+<p>Parameters:
+cfg (dict): The configuration for the plugins.
+trainer (object): The trainer object for training.</p>
+<p>Returns:
+List[callable]: A list of callback functions to be added to the TrainingArgs.</p>
+</section>
+<section id="axolotl.integrations.base.PluginManager.add_callbacks_pre_trainer" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.integrations.base.PluginManager.add_callbacks_pre_trainer">add_callbacks_pre_trainer</h5>
+<div class="sourceCode" id="cb18"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a>integrations.base.PluginManager.add_callbacks_pre_trainer(cfg, model)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Calls the add_callbacks_pre_trainer method of all registered plugins.</p>
+<p>Parameters:
+cfg (dict): The configuration for the plugins.
+model (object): The loaded model.</p>
+<p>Returns:
+List[callable]: A list of callback functions to be added to the TrainingArgs.</p>
+</section>
+<section id="axolotl.integrations.base.PluginManager.create_lr_scheduler" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.integrations.base.PluginManager.create_lr_scheduler">create_lr_scheduler</h5>
+<div class="sourceCode" id="cb19"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a>integrations.base.PluginManager.create_lr_scheduler(cfg, trainer, optimizer)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Calls the create_lr_scheduler method of all registered plugins and returns the first non-None scheduler.</p>
+<p>Parameters:
+cfg (dict): The configuration for the plugins.
+trainer (object): The trainer object for training.
+optimizer (object): The optimizer for training.</p>
+<p>Returns:
+object: The created learning rate scheduler, or None if none was found.</p>
+</section>
+<section id="axolotl.integrations.base.PluginManager.create_optimizer" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.integrations.base.PluginManager.create_optimizer">create_optimizer</h5>
+<div class="sourceCode" id="cb20"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a>integrations.base.PluginManager.create_optimizer(cfg, trainer)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Calls the create_optimizer method of all registered plugins and returns the first non-None optimizer.</p>
+<p>Parameters:
+cfg (dict): The configuration for the plugins.
+trainer (object): The trainer object for training.</p>
+<p>Returns:
+object: The created optimizer, or None if none was found.</p>
+</section>
+<section id="axolotl.integrations.base.PluginManager.get_input_args" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.integrations.base.PluginManager.get_input_args">get_input_args</h5>
+<div class="sourceCode" id="cb21"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a>integrations.base.PluginManager.get_input_args()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Returns a list of Pydantic classes for all registered plugins’ input arguments.’</p>
+<p>Returns:
+list[str]: A list of Pydantic classes for all registered plugins’ input arguments.’</p>
+</section>
+<section id="axolotl.integrations.base.PluginManager.get_instance" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.integrations.base.PluginManager.get_instance">get_instance</h5>
+<div class="sourceCode" id="cb22"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a>integrations.base.PluginManager.get_instance()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Returns the singleton instance of PluginManager.
+If the instance doesn’t exist, it creates a new one.</p>
+</section>
+<section id="axolotl.integrations.base.PluginManager.get_trainer_cls" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.integrations.base.PluginManager.get_trainer_cls">get_trainer_cls</h5>
+<div class="sourceCode" id="cb23"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a>integrations.base.PluginManager.get_trainer_cls(cfg)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Calls the get_trainer_cls method of all registered plugins and returns the first non-None trainer class.</p>
+<p>Parameters:
+cfg (dict): The configuration for the plugins.</p>
+<p>Returns:
+object: The trainer class, or None if none was found.</p>
+</section>
+<section id="axolotl.integrations.base.PluginManager.post_lora_load" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.integrations.base.PluginManager.post_lora_load">post_lora_load</h5>
+<div class="sourceCode" id="cb24"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a>integrations.base.PluginManager.post_lora_load(cfg, model)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Calls the post_lora_load method of all registered plugins.</p>
+<p>Parameters:
+cfg (dict): The configuration for the plugins.
+model (object): The loaded model.</p>
+<p>Returns:
+None</p>
+</section>
+<section id="axolotl.integrations.base.PluginManager.post_model_load" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.integrations.base.PluginManager.post_model_load">post_model_load</h5>
+<div class="sourceCode" id="cb25"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb25-1"><a href="#cb25-1" aria-hidden="true" tabindex="-1"></a>integrations.base.PluginManager.post_model_load(cfg, model)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Calls the post_model_load method of all registered plugins.</p>
+<p>Parameters:
+cfg (dict): The configuration for the plugins.
+model (object): The loaded model.</p>
+<p>Returns:
+None</p>
+</section>
+<section id="axolotl.integrations.base.PluginManager.post_train_unload" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.integrations.base.PluginManager.post_train_unload">post_train_unload</h5>
+<div class="sourceCode" id="cb26"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a>integrations.base.PluginManager.post_train_unload(cfg)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Calls the post_train_unload method of all registered plugins.</p>
+<p>Parameters:
+cfg (dict): The configuration for the plugins.
+model (object): The loaded model.</p>
+<p>Returns:
+None</p>
+</section>
+<section id="axolotl.integrations.base.PluginManager.pre_lora_load" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.integrations.base.PluginManager.pre_lora_load">pre_lora_load</h5>
+<div class="sourceCode" id="cb27"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb27-1"><a href="#cb27-1" aria-hidden="true" tabindex="-1"></a>integrations.base.PluginManager.pre_lora_load(cfg, model)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Calls the pre_lora_load method of all registered plugins.</p>
+<p>Parameters:
+cfg (dict): The configuration for the plugins.
+model (object): The loaded model.</p>
+<p>Returns:
+None</p>
+</section>
+<section id="axolotl.integrations.base.PluginManager.pre_model_load" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.integrations.base.PluginManager.pre_model_load">pre_model_load</h5>
+<div class="sourceCode" id="cb28"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb28-1"><a href="#cb28-1" aria-hidden="true" tabindex="-1"></a>integrations.base.PluginManager.pre_model_load(cfg)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Calls the pre_model_load method of all registered plugins.</p>
+<p>Parameters:
+cfg (dict): The configuration for the plugins.</p>
+<p>Returns:
+None</p>
+</section>
+<section id="axolotl.integrations.base.PluginManager.register" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.integrations.base.PluginManager.register">register</h5>
+<div class="sourceCode" id="cb29"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb29-1"><a href="#cb29-1" aria-hidden="true" tabindex="-1"></a>integrations.base.PluginManager.register(plugin_name)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Registers a new plugin by its name.</p>
+<p>Parameters:
+plugin_name (str): The name of the plugin to be registered.</p>
+<p>Returns:
+None</p>
+<p>Raises:
+ImportError: If the plugin module cannot be imported.</p>
+</section>
+</section>
+</section>
+</section>
+<section id="functions" class="level2">
+<h2 class="anchored" data-anchor-id="functions">Functions</h2>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><a href="#axolotl.integrations.base.load_plugin">load_plugin</a></td>
+<td>Loads a plugin based on the given plugin name.</td>
+</tr>
+</tbody>
+</table>
+<section id="axolotl.integrations.base.load_plugin" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.integrations.base.load_plugin">load_plugin</h3>
+<div class="sourceCode" id="cb30"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb30-1"><a href="#cb30-1" aria-hidden="true" tabindex="-1"></a>integrations.base.load_plugin(plugin_name)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Loads a plugin based on the given plugin name.</p>
+<p>The plugin name should be in the format “module_name.class_name”.
+This function splits the plugin name into module and class, imports the module,
+retrieves the class from the module, and creates an instance of the class.</p>
+<p>Parameters:
+plugin_name (str): The name of the plugin to be loaded. The name should be in the format “module_name.class_name”.</p>
+<p>Returns:
+BasePlugin: An instance of the loaded plugin.</p>
+<p>Raises:
+ImportError: If the plugin module cannot be imported.</p>
+
+
+</section>
+</section>
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+window.document.addEventListener("DOMContentLoaded", function (event) {
+  const toggleBodyColorMode = (bsSheetEl) => {
+    const mode = bsSheetEl.getAttribute("data-mode");
+    const bodyEl = window.document.querySelector("body");
+    if (mode === "dark") {
+      bodyEl.classList.add("quarto-dark");
+      bodyEl.classList.remove("quarto-light");
+    } else {
+      bodyEl.classList.add("quarto-light");
+      bodyEl.classList.remove("quarto-dark");
+    }
+  }
+  const toggleBodyColorPrimary = () => {
+    const bsSheetEl = window.document.querySelector("link#quarto-bootstrap");
+    if (bsSheetEl) {
+      toggleBodyColorMode(bsSheetEl);
+    }
+  }
+  toggleBodyColorPrimary();  
+  const icon = "";
+  const anchorJS = new window.AnchorJS();
+  anchorJS.options = {
+    placement: 'right',
+    icon: icon
+  };
+  anchorJS.add('.anchored');
+  const isCodeAnnotation = (el) => {
+    for (const clz of el.classList) {
+      if (clz.startsWith('code-annotation-')) {                     
+        return true;
+      }
+    }
+    return false;
+  }
+  const onCopySuccess = function(e) {
+    // button target
+    const button = e.trigger;
+    // don't keep focus
+    button.blur();
+    // flash "checked"
+    button.classList.add('code-copy-button-checked');
+    var currentTitle = button.getAttribute("title");
+    button.setAttribute("title", "Copied!");
+    let tooltip;
+    if (window.bootstrap) {
+      button.setAttribute("data-bs-toggle", "tooltip");
+      button.setAttribute("data-bs-placement", "left");
+      button.setAttribute("data-bs-title", "Copied!");
+      tooltip = new bootstrap.Tooltip(button, 
+        { trigger: "manual", 
+          customClass: "code-copy-button-tooltip",
+          offset: [0, -8]});
+      tooltip.show();    
+    }
+    setTimeout(function() {
+      if (tooltip) {
+        tooltip.hide();
+        button.removeAttribute("data-bs-title");
+        button.removeAttribute("data-bs-toggle");
+        button.removeAttribute("data-bs-placement");
+      }
+      button.setAttribute("title", currentTitle);
+      button.classList.remove('code-copy-button-checked');
+    }, 1000);
+    // clear code selection
+    e.clearSelection();
+  }
+  const getTextToCopy = function(trigger) {
+      const codeEl = trigger.previousElementSibling.cloneNode(true);
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+  }
+  const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+    text: getTextToCopy
+  });
+  clipboard.on('success', onCopySuccess);
+  if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+    const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+      text: getTextToCopy,
+      container: window.document.getElementById('quarto-embedded-source-code-modal')
+    });
+    clipboardModal.on('success', onCopySuccess);
+  }
+    var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+    var mailtoRegex = new RegExp(/^mailto:/);
+      var filterRegex = new RegExp("https:\/\/axolotl-ai-cloud\.github\.io\/axolotl\/");
+    var isInternal = (href) => {
+        return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+    }
+    // Inspect non-navigation links and adorn them if external
+ 	var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+    for (var i=0; i<links.length; i++) {
+      const link = links[i];
+      if (!isInternal(link.href)) {
+        // undo the damage that might have been done by quarto-nav.js in the case of
+        // links that we want to consider external
+        if (link.dataset.originalHref !== undefined) {
+          link.href = link.dataset.originalHref;
+        }
+      }
+    }
+  function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+    const config = {
+      allowHTML: true,
+      maxWidth: 500,
+      delay: 100,
+      arrow: false,
+      appendTo: function(el) {
+          return el.parentElement;
+      },
+      interactive: true,
+      interactiveBorder: 10,
+      theme: 'quarto',
+      placement: 'bottom-start',
+    };
+    if (contentFn) {
+      config.content = contentFn;
+    }
+    if (onTriggerFn) {
+      config.onTrigger = onTriggerFn;
+    }
+    if (onUntriggerFn) {
+      config.onUntrigger = onUntriggerFn;
+    }
+    window.tippy(el, config); 
+  }
+  const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+  for (var i=0; i<noterefs.length; i++) {
+    const ref = noterefs[i];
+    tippyHover(ref, function() {
+      // use id or data attribute instead here
+      let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+      try { href = new URL(href).hash; } catch {}
+      const id = href.replace(/^#\/?/, "");
+      const note = window.document.getElementById(id);
+      if (note) {
+        return note.innerHTML;
+      } else {
+        return "";
+      }
+    });
+  }
+  const xrefs = window.document.querySelectorAll('a.quarto-xref');
+  const processXRef = (id, note) => {
+    // Strip column container classes
+    const stripColumnClz = (el) => {
+      el.classList.remove("page-full", "page-columns");
+      if (el.children) {
+        for (const child of el.children) {
+          stripColumnClz(child);
+        }
+      }
+    }
+    stripColumnClz(note)
+    if (id === null || id.startsWith('sec-')) {
+      // Special case sections, only their first couple elements
+      const container = document.createElement("div");
+      if (note.children && note.children.length > 2) {
+        container.appendChild(note.children[0].cloneNode(true));
+        for (let i = 1; i < note.children.length; i++) {
+          const child = note.children[i];
+          if (child.tagName === "P" && child.innerText === "") {
+            continue;
+          } else {
+            container.appendChild(child.cloneNode(true));
+            break;
+          }
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(container);
+        }
+        return container.innerHTML
+      } else {
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        return note.innerHTML;
+      }
+    } else {
+      // Remove any anchor links if they are present
+      const anchorLink = note.querySelector('a.anchorjs-link');
+      if (anchorLink) {
+        anchorLink.remove();
+      }
+      if (window.Quarto?.typesetMath) {
+        window.Quarto.typesetMath(note);
+      }
+      if (note.classList.contains("callout")) {
+        return note.outerHTML;
+      } else {
+        return note.innerHTML;
+      }
+    }
+  }
+  for (var i=0; i<xrefs.length; i++) {
+    const xref = xrefs[i];
+    tippyHover(xref, undefined, function(instance) {
+      instance.disable();
+      let url = xref.getAttribute('href');
+      let hash = undefined; 
+      if (url.startsWith('#')) {
+        hash = url;
+      } else {
+        try { hash = new URL(url).hash; } catch {}
+      }
+      if (hash) {
+        const id = hash.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note !== null) {
+          try {
+            const html = processXRef(id, note.cloneNode(true));
+            instance.setContent(html);
+          } finally {
+            instance.enable();
+            instance.show();
+          }
+        } else {
+          // See if we can fetch this
+          fetch(url.split('#')[0])
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.getElementById(id);
+            if (note !== null) {
+              const html = processXRef(id, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      } else {
+        // See if we can fetch a full url (with no hash to target)
+        // This is a special case and we should probably do some content thinning / targeting
+        fetch(url)
+        .then(res => res.text())
+        .then(html => {
+          const parser = new DOMParser();
+          const htmlDoc = parser.parseFromString(html, "text/html");
+          const note = htmlDoc.querySelector('main.content');
+          if (note !== null) {
+            // This should only happen for chapter cross references
+            // (since there is no id in the URL)
+            // remove the first header
+            if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+              note.children[0].remove();
+            }
+            const html = processXRef(null, note);
+            instance.setContent(html);
+          } 
+        }).finally(() => {
+          instance.enable();
+          instance.show();
+        });
+      }
+    }, function(instance) {
+    });
+  }
+      let selectedAnnoteEl;
+      const selectorForAnnotation = ( cell, annotation) => {
+        let cellAttr = 'data-code-cell="' + cell + '"';
+        let lineAttr = 'data-code-annotation="' +  annotation + '"';
+        const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+        return selector;
+      }
+      const selectCodeLines = (annoteEl) => {
+        const doc = window.document;
+        const targetCell = annoteEl.getAttribute("data-target-cell");
+        const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+        const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+        const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+        const lineIds = lines.map((line) => {
+          return targetCell + "-" + line;
+        })
+        let top = null;
+        let height = null;
+        let parent = null;
+        if (lineIds.length > 0) {
+            //compute the position of the single el (top and bottom and make a div)
+            const el = window.document.getElementById(lineIds[0]);
+            top = el.offsetTop;
+            height = el.offsetHeight;
+            parent = el.parentElement.parentElement;
+          if (lineIds.length > 1) {
+            const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+            const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+            height = bottom - top;
+          }
+          if (top !== null && height !== null && parent !== null) {
+            // cook up a div (if necessary) and position it 
+            let div = window.document.getElementById("code-annotation-line-highlight");
+            if (div === null) {
+              div = window.document.createElement("div");
+              div.setAttribute("id", "code-annotation-line-highlight");
+              div.style.position = 'absolute';
+              parent.appendChild(div);
+            }
+            div.style.top = top - 2 + "px";
+            div.style.height = height + 4 + "px";
+            div.style.left = 0;
+            let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+            if (gutterDiv === null) {
+              gutterDiv = window.document.createElement("div");
+              gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+              gutterDiv.style.position = 'absolute';
+              const codeCell = window.document.getElementById(targetCell);
+              const gutter = codeCell.querySelector('.code-annotation-gutter');
+              gutter.appendChild(gutterDiv);
+            }
+            gutterDiv.style.top = top - 2 + "px";
+            gutterDiv.style.height = height + 4 + "px";
+          }
+          selectedAnnoteEl = annoteEl;
+        }
+      };
+      const unselectCodeLines = () => {
+        const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+        elementsIds.forEach((elId) => {
+          const div = window.document.getElementById(elId);
+          if (div) {
+            div.remove();
+          }
+        });
+        selectedAnnoteEl = undefined;
+      };
+        // Handle positioning of the toggle
+    window.addEventListener(
+      "resize",
+      throttle(() => {
+        elRect = undefined;
+        if (selectedAnnoteEl) {
+          selectCodeLines(selectedAnnoteEl);
+        }
+      }, 10)
+    );
+    function throttle(fn, ms) {
+    let throttle = false;
+    let timer;
+      return (...args) => {
+        if(!throttle) { // first call gets through
+            fn.apply(this, args);
+            throttle = true;
+        } else { // all the others get throttled
+            if(timer) clearTimeout(timer); // cancel #2
+            timer = setTimeout(() => {
+              fn.apply(this, args);
+              timer = throttle = false;
+            }, ms);
+        }
+      };
+    }
+      // Attach click handler to the DT
+      const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+      for (const annoteDlNode of annoteDls) {
+        annoteDlNode.addEventListener('click', (event) => {
+          const clickedEl = event.target;
+          if (clickedEl !== selectedAnnoteEl) {
+            unselectCodeLines();
+            const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+            if (activeEl) {
+              activeEl.classList.remove('code-annotation-active');
+            }
+            selectCodeLines(clickedEl);
+            clickedEl.classList.add('code-annotation-active');
+          } else {
+            // Unselect the line
+            unselectCodeLines();
+            clickedEl.classList.remove('code-annotation-active');
+          }
+        });
+      }
+  const findCites = (el) => {
+    const parentEl = el.parentElement;
+    if (parentEl) {
+      const cites = parentEl.dataset.cites;
+      if (cites) {
+        return {
+          el,
+          cites: cites.split(' ')
+        };
+      } else {
+        return findCites(el.parentElement)
+      }
+    } else {
+      return undefined;
+    }
+  };
+  var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+  for (var i=0; i<bibliorefs.length; i++) {
+    const ref = bibliorefs[i];
+    const citeInfo = findCites(ref);
+    if (citeInfo) {
+      tippyHover(citeInfo.el, function() {
+        var popup = window.document.createElement('div');
+        citeInfo.cites.forEach(function(cite) {
+          var citeDiv = window.document.createElement('div');
+          citeDiv.classList.add('hanging-indent');
+          citeDiv.classList.add('csl-entry');
+          var biblioDiv = window.document.getElementById('ref-' + cite);
+          if (biblioDiv) {
+            citeDiv.innerHTML = biblioDiv.innerHTML;
+          }
+          popup.appendChild(citeDiv);
+        });
+        return popup.innerHTML;
+      });
+    }
+  }
+});
+</script>
+</div> <!-- /content -->
+
+
+
+
+</body></html>
