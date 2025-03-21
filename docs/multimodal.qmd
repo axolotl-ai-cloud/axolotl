@@ -1,28 +1,171 @@
-# MultiModal / Vision Language Models (BETA)
+---
+title: MultiModal / Vision Language Models (BETA)
+format:
+  html:
+    toc: true
+    toc-depth: 3
+---
 
-### Supported Models
+## Supported Models
 
-- Mllama, i.e. llama with vision models
+- [Mllama](#sec-mllama)
+- [Pixtral](#sec-pixtral)
+- [Llava-1.5](#sec-llava-15)
+- [Mistral-Small-3.1](#sec-mistral-small-31)
+- [Gemma-3](#sec-gemma-3)
+- [Qwen2-VL](#sec-qwen2-vl)
+- [Qwen2.5-VL](#sec-qwen25-vl)
 
-### Usage
+## Usage
 
-Currently multimodal support is limited and doesn't have full feature parity. To finetune a multimodal Llama w/ LoRA,
-you'll need to use the following in YAML in combination with the rest of the required hyperparams.
+Multimodal support is limited and doesn't have full feature parity.
+
+Here are the hyperparams you'll need to use to finetune a multimodal model.
 
 ```yaml
-base_model: alpindale/Llama-3.2-11B-Vision-Instruct
 processor_type: AutoProcessor
-skip_prepare_dataset: true
 
-chat_template: llama3_2_vision
+skip_prepare_dataset: true
+remove_unused_columns: false
+sample_packing: false
+
+chat_template:  # see in next section
+
+# example dataset
 datasets:
   - path: HuggingFaceH4/llava-instruct-mix-vsft
     type: chat_template
     split: train[:1%]
     field_messages: messages
-remove_unused_columns: false
-sample_packing: false
 
-# only finetune the Language model, leave the vision model and vision tower frozen
+# (optional) if doing lora, only finetune the Language model,
+# leave the vision model and vision tower frozen
+# load_in_8bit: true
+adapter: lora
 lora_target_modules: 'language_model.model.layers.[\d]+.(mlp|cross_attn|self_attn).(up|down|gate|q|k|v|o)_proj'
+```
+
+Please see [examples](https://github.com/axolotl-ai/axolotl/tree/main/examples) folder for full configs.
+
+::: {.callout-warning}
+Some of our chat_templates have been extended to support broader dataset types. This should not break any existing configs.
+:::
+
+### Mllama {#sec-mllama}
+
+```yaml
+base_model: meta-llama/Llama-3.2-11B-Vision-Instruct
+
+chat_template: llama3_2_vision
+```
+
+### Pixtral {#sec-pixtral}
+
+```yaml
+base_model: mistralai/Pixtral-12B-2409
+
+chat_template: pixtral
+```
+
+### Llava-1.5 {#sec-llava-15}
+
+```yaml
+base_model: llava-hf/llava-1.5-7b-hf
+
+chat_template: llava
+```
+
+### Mistral-Small-3.1 {#sec-mistral-small-31}
+
+```yaml
+base_model: mistralai/Mistral-Small-3.1-24B-Instruct-2503
+
+chat_template: mistral_v7_tekken
+```
+
+### Gemma-3 {#sec-gemma-3}
+
+For 1B model, it is text-only, so please use as regular text model.
+
+```yaml
+base_model: google/gemma-3-1b-it
+
+chat_template: gemma3_text
+```
+
+For multi-modal 4B/12B/27B models, use the following config:
+
+```yaml
+base_model: google/gemma-3-4b-it
+
+chat_template: gemma3
+```
+
+### Qwen2-VL {#sec-qwen2-vl}
+
+```yaml
+base_model: Qwen/Qwen2-VL-7B-Instruct
+
+chat_template: qwen2_vl
+```
+
+### Qwen2.5-VL {#sec-qwen25-vl}
+
+```yaml
+base_model: Qwen/Qwen2.5-VL-7B-Instruct
+
+chat_template: qwen2_vl  # same as qwen2-vl
+```
+
+## Dataset Format
+
+For multi-modal datasets, we adopt an extended `chat_template` format similar to OpenAI's Message format.
+
+- A message is a list of `role` and `content`.
+- `role` can be `system`, `user`, `assistant`, etc.
+- `content` is a list of `type` and (`text` or `image` or `path` or `url` or `base64`).
+
+::: {.callout-note}
+For backwards compatibility:
+
+- If the dataset has a `images` or `image` column of `list[Image]`, it will be appended to the first `content` list as `{"type": "image", "image": ...}`. However, if the content already has a `{"type": "image"}` but no `image` key, it will be set the `image` key.
+- If `content` is a string, it will be converted to a list with `type` as `text`.
+:::
+
+::: {.callout-tip}
+For image loading, you can use the following keys within `content` alongside `"type": "image"`:
+
+- `"path": "/path/to/image.jpg"`
+- `"url": "https://example.com/image.jpg"`
+- `"base64": "..."`
+- `"image": PIL.Image`
+:::
+
+Here is an example of a multi-modal dataset:
+```json
+[
+  {
+    "messages": [
+        {
+            "role": "system",
+            "content": [
+              {"type": "text", "text": "You are a helpful assistant."}
+              ]
+        },
+        {
+            "role": "user",
+            "content": [
+                {"type": "image", "image": "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/bee.jpg"},
+                {"type": "text", "text": "Describe this image in detail."}
+            ]
+        },
+        {
+            "role": "assistant",
+            "content": [
+              {"type": "text", "text": "The image is a bee."}
+            ]
+        }
+    ]
+  }
+]
 ```

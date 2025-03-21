@@ -1,4 +1,4 @@
-base_model: mistral-community/pixtral-12b
+base_model: google/gemma-3-4b-it
 processor_type: AutoProcessor
 strict: false
 
@@ -7,20 +7,20 @@ skip_prepare_dataset: true
 remove_unused_columns: false
 sample_packing: false
 
-chat_template: pixtral
+chat_template: gemma3
 datasets:
   - path: HuggingFaceH4/llava-instruct-mix-vsft
     type: chat_template
     split: train[:1%]
     field_messages: messages
 dataset_prepared_path: last_run_prepared
-val_set_size: 0.0
+val_set_size: 0.01
 output_dir: ./outputs/out
 
 adapter: lora
 lora_model_dir:
 
-sequence_len: 8192
+sequence_len: 2048
 pad_to_sequence_len: false
 
 lora_r: 32
@@ -35,7 +35,7 @@ wandb_name:
 wandb_log_model:
 
 gradient_accumulation_steps: 4
-micro_batch_size: 1
+micro_batch_size: 2
 num_epochs: 1
 optimizer: adamw_bnb_8bit
 lr_scheduler: cosine
@@ -50,7 +50,7 @@ tf32: true
 gradient_checkpointing: true
 local_rank:
 logging_steps: 1
-flash_attention: false # PixtralVisionModel does not support Flash Attention 2.0 yet
+flash_attention: true
 eager_attention:
 
 warmup_ratio: 0.1
@@ -61,5 +61,3 @@ deepspeed:
 weight_decay: 0.0
 fsdp:
 fsdp_config:
-special_tokens:
-  pad_token: <pad>

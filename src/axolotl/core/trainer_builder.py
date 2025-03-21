@@ -750,6 +750,12 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 "accelerator_config"
             ] = self.cfg.accelerator_config
 
+        if self.cfg.image_size:
+            training_arguments_kwargs["image_size"] = self.cfg.image_size
+        if self.cfg.image_resize_algorithm:
+            training_arguments_kwargs[
+                "image_resize_algorithm"
+            ] = self.cfg.image_resize_algorithm
         if self.cfg.kd_ce_alpha is not None:
             training_arguments_kwargs["kd_ce_alpha"] = self.cfg.kd_ce_alpha
         if self.cfg.kd_alpha is not None:
@@ -891,7 +897,11 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             if self.cfg.processor_type and self.processor:
                 collator = MultiModalChatDataCollator
                 kwargs["processing_strategy"] = get_processing_strategy(
-                    self.processor, training_args.chat_template, self.cfg.chat_template
+                    self.processor,
+                    training_args.chat_template,
+                    self.cfg.chat_template,
+                    image_size=training_args.image_size,
+                    image_resize_algorithm=training_args.image_resize_algorithm,
                 )
             elif self.cfg.batch_flattening:
                 collator = DataCollatorWithFlattening

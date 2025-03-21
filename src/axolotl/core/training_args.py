@@ -1,9 +1,11 @@
 """
 extra axolotl specific training args
 """
+
 from dataclasses import dataclass, field
 from typing import Optional
 
+from PIL.Image import Resampling
 from transformers import TrainingArguments
 from trl import CPOConfig, KTOConfig, ORPOConfig, PRMConfig, RewardConfig
 
@@ -206,13 +208,25 @@ class AxolotlTrainingMixins:
         },
     )
 
+    # multi-modal section
+
+    image_size: int | tuple[int, int] | None = field(
+        default=None,
+        metadata={"help": "The size of the image to resize to"},
+    )
+
+    image_resize_algorithm: Resampling | None = field(
+        default=None,
+        metadata={"help": "The algorithm to use for image resizing"},
+    )
+
 
 @dataclass
 class AxolotlTrainingArguments(AxolotlTrainingMixins, TrainingArguments):
     """
     Training arguments for Causal trainer
 
-    This code is duplicated due to HF TrainingArguments not setting output_dir with a defaujlt value
+    This code is duplicated due to HF TrainingArguments not setting output_dir with a default value
     so it can't be used as a mixin.
     """
 

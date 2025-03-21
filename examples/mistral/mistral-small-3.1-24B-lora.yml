@@ -1,26 +1,28 @@
-base_model: mistral-community/pixtral-12b
+base_model: mistralai/Mistral-Small-3.1-24B-Instruct-2503
 processor_type: AutoProcessor
 strict: false
+
+load_in_8bit: true
 
 # these 3 lines are needed for now to handle vision chat templates w images
 skip_prepare_dataset: true
 remove_unused_columns: false
 sample_packing: false
 
-chat_template: pixtral
+chat_template: mistral_v7_tekken
 datasets:
   - path: HuggingFaceH4/llava-instruct-mix-vsft
     type: chat_template
     split: train[:1%]
     field_messages: messages
 dataset_prepared_path: last_run_prepared
-val_set_size: 0.0
+val_set_size: 0.01
 output_dir: ./outputs/out
 
 adapter: lora
 lora_model_dir:
 
-sequence_len: 8192
+sequence_len: 2048
 pad_to_sequence_len: false
 
 lora_r: 32
@@ -34,7 +36,7 @@ wandb_watch:
 wandb_name:
 wandb_log_model:
 
-gradient_accumulation_steps: 4
+gradient_accumulation_steps: 1
 micro_batch_size: 1
 num_epochs: 1
 optimizer: adamw_bnb_8bit
@@ -50,7 +52,7 @@ tf32: true
 gradient_checkpointing: true
 local_rank:
 logging_steps: 1
-flash_attention: false # PixtralVisionModel does not support Flash Attention 2.0 yet
+flash_attention: false # PixtralVisionModel does not support Flash Attention 2.0 yet.
 eager_attention:
 
 warmup_ratio: 0.1
@@ -62,4 +64,3 @@ weight_decay: 0.0
 fsdp:
 fsdp_config:
 special_tokens:
-  pad_token: <pad>

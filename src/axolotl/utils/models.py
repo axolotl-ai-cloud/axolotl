@@ -34,12 +34,15 @@ from transformers import (  # noqa: F401
     AutoTokenizer,
     AwqConfig,
     BitsAndBytesConfig,
+    Gemma3ForConditionalGeneration,
     GPTQConfig,
     LlavaForConditionalGeneration,
+    Mistral3ForConditionalGeneration,
     MllamaForConditionalGeneration,
     PreTrainedModel,
     PreTrainedTokenizerBase,
     ProcessorMixin,
+    Qwen2_5_VLForConditionalGeneration,
     Qwen2VLForConditionalGeneration,
 )
 from transformers.integrations.deepspeed import (
@@ -99,8 +102,19 @@ def check_model_config(cfg: DictDefault, model_config: Union[AutoConfig, DictDef
     if cfg.is_multimodal:
         if hasattr(model_config, "text_config"):
             model_config = model_config.text_config
+            model_config.use_cache = False
         elif hasattr(model_config, "get_text_config"):
             model_config = model_config.get_text_config()
+            model_config.use_cache = False
+
+        # check if image_size is not set and load image size from model config if available
+        if (
+            cfg.image_size is None
+            and hasattr(model_config, "vision_config")
+            and hasattr(model_config.vision_config, "image_size")
+        ):
+            cfg.image_size = model_config.vision_config.image_size
+            LOG.debug(f"Loaded image size: {cfg.image_size} from model config")
 
     quant_config_exists = (
         hasattr(model_config, "quantization_config")
@@ -439,6 +453,31 @@ def load_processor(cfg: DictDefault, tokenizer: PreTrainedTokenizerBase):
         **processor_kwargs,
     )
 
+    # Attempt to load image size from processor if available
+    if (
+        cfg.image_size is None
+        and hasattr(processor, "size")
+        and any(dim in processor.size for dim in ["width", "height"])
+    ):
+        im_width = None
+        im_height = None
+        if "width" in processor.size:
+            im_width = processor.size["width"]
+        if "height" in processor.size:
+            im_height = processor.size["height"]
+
+        # If both width and height are set, use a tuple
+        if im_width is not None and im_height is not None:
+            cfg.image_size = (im_width, im_height)
+        # If only width is set, use as integer
+        elif im_width is not None:
+            cfg.image_size = im_width
+        # If only height is set, use as integer
+        elif im_height is not None:
+            cfg.image_size = im_height
+
+        LOG.debug(f"Loaded image size: {cfg.image_size} from processor")
+
     return processor
 
 
@@ -679,6 +718,18 @@ class ModelLoader:
             elif self.model_config.model_type == "qwen2_vl":
                 self.AutoModelLoader = (  # pylint: disable=invalid-name
                     Qwen2VLForConditionalGeneration
+                )
+            elif self.model_config.model_type == "qwen2_5_vl":
+                self.AutoModelLoader = (  # pylint: disable=invalid-name
+                    Qwen2_5_VLForConditionalGeneration
+                )
+            elif self.model_config.model_type == "mistral3":
+                self.AutoModelLoader = (  # pylint: disable=invalid-name
+                    Mistral3ForConditionalGeneration
+                )
+            elif self.model_config.model_type == "gemma3":
+                self.AutoModelLoader = (  # pylint: disable=invalid-name
+                    Gemma3ForConditionalGeneration
                 )
             else:
                 self.AutoModelLoader = (

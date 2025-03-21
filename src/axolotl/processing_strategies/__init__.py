@@ -1,19 +1,34 @@
 """Module containing ProcessingStrategy classes and its derivative for different MultiModal Model types"""
+
 from copy import deepcopy
 from typing import Optional
 
-from PIL import Image
+from PIL import Image, ImageOps
+from PIL.Image import Resampling
+from torch import Tensor
 from transformers import ProcessorMixin
+from transformers.image_utils import load_image
 
 
 class ProcessingStrategy:
     """Base Processing Strategy class"""
 
-    def __init__(self, processor: ProcessorMixin, chat_template: Optional[str] = None):
+    def __init__(
+        self,
+        processor: ProcessorMixin,
+        chat_template: Optional[str] = None,
+        image_size: int | tuple[int, int] | None = None,
+        image_resize_algorithm: Resampling | None = None,
+    ):
         self.processor = processor
         self.chat_template = chat_template
         self.image_token = None
         self.image_token_id = None
+
+        self.image_size = image_size
+        self.image_resize_algorithm = (
+            image_resize_algorithm or Image.Resampling.BILINEAR
+        )
 
         if hasattr(processor, "image_token"):
             self.image_token = processor.image_token
@@ -21,8 +36,7 @@ class ProcessingStrategy:
                 self.image_token
             )
 
-    @staticmethod
-    def preprocess(examples: list[dict]) -> list[dict]:
+    def preprocess(self, examples: list[dict]) -> list[dict]:
         """
         Preprocess conversation examples to ensure consistent format.
         Converts different conversation formats to OpenAI format with 'messages'.
@@ -51,10 +65,7 @@ class ProcessingStrategy:
         def convert_legacy_format(example: dict) -> dict:
             """Convert legacy 'conversations' format to OpenAI 'messages' format."""
             messages = [
-                {
-                    "role": normalize_role(convo["from"]),
-                    "content": convo["value"],
-                }
+                {"role": normalize_role(convo["from"]), "content": convo["value"]}
                 for convo in example["conversations"]
             ]
 
@@ -64,147 +75,198 @@ class ProcessingStrategy:
             result["messages"] = messages
             return result
 
+        def convert_messages_to_multimedia_messages(messages: list[dict]) -> list[dict]:
+            """Convert regular messages format to Messages format with content type"""
+
+            new_messages = []
+            for convo in messages:
+                if isinstance(convo["content"], str):
+                    new_messages.append(
+                        {
+                            "role": convo["role"],
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": convo["content"],
+                                }
+                            ],
+                        }
+                    )
+                elif isinstance(convo["content"], list):
+                    content = convo["content"]
+
+                    new_messages.append(
+                        {
+                            "role": convo["role"],
+                            "content": content,
+                        }
+                    )
+
+            return new_messages
+
         processed_examples = []
         for example in examples:
-            if "messages" in example:  # OpenAI format
-                processed_examples.append(example)
-            elif "conversations" in example:  # Legacy format
-                processed_examples.append(convert_legacy_format(example))
-            else:
+            if not ("messages" in example or "conversations" in example):
                 raise ValueError(
                     "Only `messages` and `conversations` message keys are currently supported."
                 )
 
+            processed_example = None
+            if "messages" in example:  # OpenAI format
+                processed_example = example
+            else:  # Legacy format
+                processed_example = convert_legacy_format(example)
+
+            # convert regular messages format to Messages format with content type
+            # for compatibility with apply_chat_template
+            processed_example["messages"] = convert_messages_to_multimedia_messages(
+                processed_example["messages"]
+            )
+
+            # find the image key if it exists
+            possible_image_keys = ["images", "image"]
+            image_key = None
+            for key in possible_image_keys:
+                if key in processed_example:
+                    image_key = key
+                    break
+
+            # if the image key exists, add the image to the first message
+            if image_key is not None:
+                # TODO: check if it's normal to be single image only for common datasets
+                # From observation, it's usually a list of single image but some datasets may have several columns for images
+                # Temporary solution: take the first image and suggest people convert their datasets to use multi-content Messages
+                image_value = processed_example[image_key][0]
+
+                # Handle image loading (Image, url, path, base64)
+                image_value = load_image(image_value)
+
+                if self.image_size is not None:
+                    assert hasattr(
+                        image_value, "resize"
+                    ), "Image does not have a resize method"
+
+                    if isinstance(self.image_size, tuple):
+                        image_value = image_value.resize(
+                            self.image_size, self.image_resize_algorithm
+                        )
+                    else:
+                        # Set the padding value; here we use black (0, 0, 0) for RGB images
+                        padding_color = (0, 0, 0)
+
+                        # When image_size is an int (square target), preserve aspect ratio then pad
+                        # This is to prevent aspect ratio distortion when resizing to square
+                        image_value = ImageOps.pad(
+                            image_value,
+                            (self.image_size, self.image_size),
+                            method=self.image_resize_algorithm,
+                            color=padding_color,
+                        )
+
+                # Look for any image type in the first message
+                # some dataset have an {type: "image"} in the first message
+                ind_to_add = None
+
+                for i, content in enumerate(
+                    processed_example["messages"][0]["content"]
+                ):
+                    # TODO: should we check that it doesn't already have an image?
+                    # Usually datasets created with image columns, don't have it in the messages itself
+                    if content["type"] == "image":
+                        ind_to_add = i
+                        break
+
+                # If an image type is found, add the image to that index
+                if ind_to_add is not None:
+                    processed_example["messages"][0]["content"][ind_to_add][
+                        "image"
+                    ] = image_value
+                else:
+                    # if no image type is found, add it to end of the first message
+                    processed_example["messages"][0]["content"].append(
+                        {
+                            "type": "image",
+                            "image": image_value,
+                        }
+                    )
+
+            processed_examples.append(processed_example)
+
         return processed_examples
 
-    @staticmethod
-    def process_images(examples, max_images):
-        """
-        Process images from examples, ensuring consistency in image presence and applying max_images limit.
+    def process_labels(self, input_ids: Tensor) -> Tensor:
+        labels = input_ids.clone()
 
-        Args:
-            examples: List of dictionaries that may contain 'images' key
-            max_images: Maximum number of images to keep per example (0 means no limit)
+        # The labels are the input_ids, and we mask the padding tokens in the loss computation
+        labels[labels == self.processor.tokenizer.pad_token_id] = -100
 
-        Returns:
-            Either None (if no images) or List[Image objects] (if all examples have images)
+        # Ignore the image token index in the loss computation (model specific)
+        labels[labels == self.image_token_id] = -100
 
-        Raises:
-            ValueError: If there's a mix of None and non-None images
-        """
-
-        def get_image(example):
-            if "images" not in example:
-                return None
-            images = example["images"]
-            if isinstance(images, str):
-                return Image.open(images)
-            return images
-
-        images = [get_image(example) for example in examples]
-
-        # Count None and non-None images
-        none_count = sum(1 for img in images if img is None)
-
-        # All images are None
-        if none_count == len(images):
-            return None
-
-        # Mix of None and non-None images
-        if none_count > 0:
-            raise ValueError(
-                "All images should be either None or not None. "
-                "Please provide images for all examples or None."
-            )
-
-        # Apply max_images limit if specified
-        if max_images > 0:
-            images = [
-                (
-                    img_batch[:max_images]
-                    if isinstance(img_batch, (list, tuple))
-                    else img_batch
-                )
-                for img_batch in images
-            ]
-
-        return images
-
-    def process_texts(self, examples):
-        texts = [
-            self.processor.apply_chat_template(
-                example["messages"], chat_template=self.chat_template, tokenize=False
-            )
-            for example in examples
-        ]
-        return texts
-
-
-class PixtralProcessingStrategy(ProcessingStrategy):
-    """Processing Strategy class for Pixtral"""
-
-    @staticmethod
-    def pixtral_chat_conversion(messages):
-        is_single_message = not isinstance(messages, list)
-        if is_single_message:
-            messages = [messages]
-
-        for i, message in enumerate(messages):
-            if message["role"] == "user":
-                for j, content in enumerate(message["content"]):
-                    if "type" in content and content["type"] == "text":
-                        messages[i]["content"][j] = {
-                            "type": "text",
-                            "content": content["text"],
-                        }
-
-            if message["role"] == "assistant":
-                messages[i]["content"] = message["content"][0]["text"]
-
-        if is_single_message:
-            return messages[0]
-        return messages
-
-    def process_texts(self, examples):
-        texts = [
-            self.processor.apply_chat_template(
-                __class__.pixtral_chat_conversion(example["messages"]),
-                chat_template=self.chat_template,
-                tokenize=False,
-            )
-            for example in examples
-        ]
-        return texts
+        return labels
 
 
 class Qwen2VLProcessingStrategy(ProcessingStrategy):
     """Processing Strategy class for Qwen2-VL"""
 
-    def __init__(self, processor: ProcessorMixin, chat_template: Optional[str] = None):
-        super().__init__(processor, chat_template)
+    def __init__(
+        self,
+        processor: ProcessorMixin,
+        chat_template: Optional[str] = None,
+        image_size: int | tuple[int, int] | None = None,
+        image_resize_algorithm: Resampling | None = None,
+    ):
+        super().__init__(processor, chat_template, image_size, image_resize_algorithm)
         self.image_token = "<|image_pad|>"  # nosec
         self.image_token_id = processor.tokenizer.convert_tokens_to_ids(
             self.image_token
         )
 
 
-class LlavaProcessingStrategy(ProcessingStrategy):
-    """Processing Strategy class for Llava"""
+class Gemma3ProcessingStrategy(ProcessingStrategy):
+    """Processing Strategy class for Gemma3"""
 
-    @staticmethod
-    def process_images(examples, max_images):
-        images = ProcessingStrategy.process_images(examples, max_images)
-        images = [image[0] for image in images]
-        return images
+    def __init__(
+        self,
+        processor: ProcessorMixin,
+        chat_template: Optional[str] = None,
+        image_size: int | tuple[int, int] | None = None,
+        image_resize_algorithm: Resampling | None = None,
+    ):
+        super().__init__(processor, chat_template, image_size, image_resize_algorithm)
+        self.image_token = processor.tokenizer.special_tokens_map["boi_token"]
+        self.image_token_id = processor.tokenizer.convert_tokens_to_ids(
+            self.image_token
+        )
+
+    def process_labels(self, input_ids):
+        labels = input_ids.clone()
+
+        # Follows https://ai.google.dev/gemma/docs/core/huggingface_vision_finetune_qlora
+        labels[labels == self.processor.tokenizer.pad_token_id] = -100
+        labels[labels == self.image_token_id] = -100
+        labels[labels == 262144] = -100  # corresponds to <image_soft_token>
+
+        return labels
 
 
 def get_processing_strategy(
-    processor: ProcessorMixin, chat_template, chat_template_type
+    processor: ProcessorMixin,
+    chat_template,
+    chat_template_type,
+    image_size: int | tuple[int, int] | None = None,
+    image_resize_algorithm: Resampling | None = None,
 ):
-    if chat_template_type == "pixtral":
-        return PixtralProcessingStrategy(processor, chat_template)
-    if chat_template_type == "llava":
-        return LlavaProcessingStrategy(processor, chat_template)
     if chat_template_type == "qwen2_vl":
-        return Qwen2VLProcessingStrategy(processor, chat_template)
-    return ProcessingStrategy(processor, chat_template)
+        return Qwen2VLProcessingStrategy(
+            processor, chat_template, image_size, image_resize_algorithm
+        )
+    if chat_template_type == "gemma3":
+        return Gemma3ProcessingStrategy(
+            processor, chat_template, image_size, image_resize_algorithm
+        )
+    if chat_template_type in ["llava", "mistral_v7_tekken", "pixtral"]:
+        return ProcessingStrategy(
+            processor, chat_template, image_size, image_resize_algorithm
+        )
+    raise ValueError(f"Unsupported chat template type: {chat_template_type}")
