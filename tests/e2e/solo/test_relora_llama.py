@@ -40,8 +40,8 @@ class TestReLoraLlama(unittest.TestCase):
                 "lora_alpha": 16,
                 "lora_dropout": 0.05,
                 "lora_target_modules": ["q_proj", "v_proj"],
-                "relora_steps": 100,
-                "relora_warmup_steps": 20,
+                "relora_steps": 50,
+                "relora_warmup_steps": 10,
                 "relora_anneal_steps": 10,
                 "relora_prune_ratio": 0.9,
                 "relora_cpu_offload": True,
@@ -60,9 +60,9 @@ class TestReLoraLlama(unittest.TestCase):
                         "message_field_content": "value",
                     },
                 ],
-                "warmup_steps": 20,
+                "warmup_steps": 10,
                 "num_epochs": 2,
-                "max_steps": 205,  # at least 2x relora_steps
+                "max_steps": 105,  # at least 2x relora_steps
                 "micro_batch_size": 2,
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,

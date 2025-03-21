@@ -42,7 +42,7 @@ jobs:
       - name: upgrade pip
         run: |
           pip3 install --upgrade pip
-          pip3 install --upgrade packaging setuptools wheel
+          pip3 install --upgrade packaging==23.2 setuptools==75.8.0 wheel
 
       - name: Install PyTorch
         run: |
@@ -59,7 +59,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip3 install --upgrade pip
-          pip3 install --upgrade packaging
+          pip3 install --upgrade packaging==23.2
           pip3 install --no-build-isolation -U -e .
           python scripts/unsloth_install.py | sh
           python scripts/cutcrossentropy_install.py | sh

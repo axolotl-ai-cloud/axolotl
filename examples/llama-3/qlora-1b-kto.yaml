@@ -55,7 +55,7 @@ tf32: true
 
 gradient_checkpointing: true
 gradient_checkpointing_kwargs:
-  use_reentrant: true
+  use_reentrant: false
 early_stopping_patience:
 resume_from_checkpoint:
 local_rank:

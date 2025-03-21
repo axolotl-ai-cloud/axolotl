@@ -79,6 +79,7 @@ For providers supporting Docker:
   - [Latitude.sh](https://latitude.sh/blueprint/989e0e79-3bf6-41ea-a46b-1f246e309d5c)
   - [JarvisLabs.ai](https://jarvislabs.ai/templates/axolotl)
   - [RunPod](https://runpod.io/gsc?template=v2ickqhz9s&ref=6i7fkpdz)
+  - [Novita](https://novita.ai/gpus-console?templateId=311)
 
 ### Google Colab {#sec-colab}
 

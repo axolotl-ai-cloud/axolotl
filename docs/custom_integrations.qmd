@@ -55,3 +55,47 @@ sections = [
 for section_name, folder_name in sections:
     print(print_section(section_name, folder_name))
 ```
+
+## Adding a new integration
+
+Plugins can be used to customize the behavior of the training pipeline through [hooks](https://en.wikipedia.org/wiki/Hooking). See [`axolotl.integrations.BasePlugin`](https://github.com/axolotl-ai-cloud/axolotl/blob/main/src/axolotl/integrations/base.py) for the possible hooks.
+
+To add a new integration, please follow these steps:
+
+1. Create a new folder in the `src/axolotl/integrations` directory.
+2. Add any relevant files (`LICENSE`, `README.md`, `ACKNOWLEDGEMENTS.md`, etc.) to the new folder.
+3. Add `__init__.py` and `args.py` files to the new folder.
+  - `__init__.py` should import the integration and hook into the appropriate functions.
+  - `args.py` should define the arguments for the integration.
+4. (If applicable) Add CPU tests under `tests/integrations` or GPU tests under `tests/e2e/integrations`.
+
+::: {.callout-tip}
+
+See [src/axolotl/integrations/cut_cross_entropy](https://github.com/axolotl-ai-cloud/axolotl/tree/main/src/axolotl/integrations/cut_cross_entropy) for a minimal integration example.
+
+:::
+
+::: {.callout-warning}
+
+If you could not load your integration, please ensure you are pip installing in editable mode.
+
+```bash
+pip install -e .
+```
+
+and correctly spelled the integration name in the config file.
+
+```yaml
+plugins:
+  - axolotl.integrations.your_integration_name.YourIntegrationPlugin
+```
+
+:::
+
+::: {.callout-note}
+
+It is not necessary to place your integration in the `integrations` folder. It can be in any location, so long as it's installed in a package in your python env.
+
+See this repo for an example: [https://github.com/axolotl-ai-cloud/diff-transformer](https://github.com/axolotl-ai-cloud/diff-transformer)
+
+:::
