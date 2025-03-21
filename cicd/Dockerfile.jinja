@@ -31,9 +31,9 @@ RUN if [ "$NIGHTLY_BUILD" = "true" ] ; then \
         sed -i 's#^datasets.*#datasets @ git+https://github.com/huggingface/datasets.git@main#' requirements.txt; \
     fi
 
-RUN pip3 install -U packaging setuptools wheel
+RUN pip3 install -U packaging setuptools wheel ninja
 RUN if [ "$AXOLOTL_EXTRAS" != "" ] ; then \
-        pip install deepspeed; \
+        pip install --no-build-isolation deepspeed; \
         pip install --no-build-isolation -e .[flash-attn,optimizers,ray,$AXOLOTL_EXTRAS] $AXOLOTL_ARGS; \
     else \
         pip install deepspeed; \
