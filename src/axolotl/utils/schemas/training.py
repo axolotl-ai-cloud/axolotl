@@ -50,9 +50,9 @@ class HyperparametersConfig(BaseModel):
     embedding_lr: float | None = None
     embedding_lr_scale: float | None = None
     weight_decay: float | None = 0.0
-    optimizer: (
-        OptimizerNames | CustomSupportedOptimizers
-    ) | None = OptimizerNames.ADAMW_TORCH_FUSED
+    optimizer: (OptimizerNames | CustomSupportedOptimizers) | None = (
+        OptimizerNames.ADAMW_TORCH_FUSED
+    )
     optim_args: (str | dict[str, Any]) | None = Field(
         default=None,
         json_schema_extra={"description": "Optional arguments to supply to optimizer."},
@@ -64,9 +64,9 @@ class HyperparametersConfig(BaseModel):
         },
     )
     torchdistx_path: str | None = None
-    lr_scheduler: (
-        SchedulerType | Literal["one_cycle"] | Literal["rex"]
-    ) | None = SchedulerType.COSINE
+    lr_scheduler: (SchedulerType | Literal["one_cycle"] | Literal["rex"]) | None = (
+        SchedulerType.COSINE
+    )
     lr_scheduler_kwargs: dict[str, Any] | None = None
     lr_quadratic_warmup: bool | None = None
     cosine_min_lr_ratio: float | None = None

@@ -1,4 +1,5 @@
 """Main Axolotl input configuration Pydantic models"""
+
 # pylint: disable=too-many-lines
 
 import logging
@@ -91,24 +92,30 @@ class AxolotlInputConfig(
     dpo_use_weighting: bool | None = None
     dpo_use_logits_to_keep: bool | None = None
 
-    datasets: Annotated[
-        list[SFTDataset | DPODataset | KTODataset | StepwiseSupervisedDataset],
-        MinLen(1),
-    ] | None = None
+    datasets: (
+        Annotated[
+            list[SFTDataset | DPODataset | KTODataset | StepwiseSupervisedDataset],
+            MinLen(1),
+        ]
+        | None
+    ) = None
 
-    test_datasets: Annotated[
-        list[SFTDataset | DPODataset | KTODataset | StepwiseSupervisedDataset],
-        MinLen(1),
-    ] | None = None
+    test_datasets: (
+        Annotated[
+            list[SFTDataset | DPODataset | KTODataset | StepwiseSupervisedDataset],
+            MinLen(1),
+        ]
+        | None
+    ) = None
     shuffle_merged_datasets: bool | None = True
     dataset_prepared_path: str | None = None
     dataset_shard_num: int | None = None
     dataset_shard_idx: int | None = None
     skip_prepare_dataset: bool | None = False
 
-    pretraining_dataset: Annotated[
-        list[PretrainingDataset | SFTDataset], MinLen(1)
-    ] | None = Field(
+    pretraining_dataset: (
+        Annotated[list[PretrainingDataset | SFTDataset], MinLen(1)] | None
+    ) = Field(
         default=None,
         json_schema_extra={"description": "streaming dataset to use for pretraining"},
     )
@@ -232,9 +239,9 @@ class AxolotlInputConfig(
     deepspeed: str | dict[str, Any] | None = None
     fsdp: list[str] | None = None
     fsdp_config: dict[str, Any] | None = None
-    fsdp_final_state_dict_type: Literal[
-        "FULL_STATE_DICT", "LOCAL_STATE_DICT", "SHARDED_STATE_DICT"
-    ] | None = None
+    fsdp_final_state_dict_type: (
+        Literal["FULL_STATE_DICT", "LOCAL_STATE_DICT", "SHARDED_STATE_DICT"] | None
+    ) = None
 
     val_set_size: float | None = Field(default=0.0)
 
@@ -244,9 +251,9 @@ class AxolotlInputConfig(
 
     torch_compile: Literal["auto"] | bool | None = None
     torch_compile_backend: str | None = None
-    torch_compile_mode: Literal[
-        "default", "reduce-overhead", "max-autotune"
-    ] | None = None
+    torch_compile_mode: Literal["default", "reduce-overhead", "max-autotune"] | None = (
+        None
+    )
 
     max_steps: int | None = None
     warmup_steps: int | None = None
