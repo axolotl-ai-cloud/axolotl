@@ -542,11 +542,6 @@ class ModelLoader:
 
             patch_mistral_cross_entropy()
 
-        if self.cfg.unsloth_lora_qkv or self.cfg.unsloth_lora_o:
-            from axolotl.monkeypatch.lora_kernels import patch_self_attn_lora
-
-            patch_self_attn_lora(self.cfg)
-
     def patch_attention(self) -> None:
         if hasattr(self.model_config, "model_type"):
             if self.model_config.model_type == "mllama" and self.cfg.flash_attention:
@@ -1131,6 +1126,12 @@ class ModelLoader:
             integrate_rope_embeddings()
 
     def apply_lora_patch(self) -> None:
+        """Applies patching relevant to LoRA Triton kernels if enabled."""
+        if self.cfg.lora_qkv_kernel or self.cfg.lora_o_kernel:
+            from axolotl.monkeypatch.lora_kernels import patch_self_attn_lora
+
+            patch_self_attn_lora(self.model)
+
         if (
             self.cfg.lora_mlp_kernel
             or self.cfg.lora_qkv_kernel
@@ -1284,6 +1285,7 @@ class ModelLoader:
         if self.cfg.adapter is not None:
             log_gpu_memory_usage(LOG, "after adapters", self.model.device)
 
+        # TODO: Deprecate this.
         self.apply_unsloth_lora_patch()
         self.apply_lora_patch()
 
@@ -1304,9 +1306,7 @@ def load_model(
     reference_model: bool = False,
     **kwargs,  # pylint: disable=unused-argument
 ) -> Tuple[PreTrainedModel, Optional[PeftConfig]]:
-    """
-    Load a model for a given configuration and tokenizer.
-    """
+    """Load a model for a given configuration and tokenizer."""
     loader = ModelLoader(
         cfg,
         tokenizer,
