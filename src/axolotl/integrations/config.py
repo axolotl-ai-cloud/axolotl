@@ -11,19 +11,17 @@
 # the License.
 
 """
-module to handle merging the plugins' input arguments with the base configurations.
+Module to handle merging the plugins' input arguments with the base configurations.
 
-this was moved here to prevent circular imports
+This was moved here to prevent circular imports.
 """
 
 from typing import Any, Dict, List
 
-from axolotl.utils.config.models.input.v0_4_1 import (
+from axolotl.utils.schemas.config import (
     AxolotlConfigWCapabilities as AxolotlConfigWCapabilitiesBase,
 )
-from axolotl.utils.config.models.input.v0_4_1 import (
-    AxolotlInputConfig as AxolotlInputConfigBase,
-)
+from axolotl.utils.schemas.config import AxolotlInputConfig as AxolotlInputConfigBase
 
 
 def merge_input_args():

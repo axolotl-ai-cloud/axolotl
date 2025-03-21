@@ -119,7 +119,7 @@ class TestModelsUtils:
 
     def test_message_property_mapping(self):
         """Test message property mapping configuration validation"""
-        from axolotl.utils.config.models.input.v0_4_1 import SFTDataset
+        from axolotl.utils.schemas.datasets import SFTDataset
 
         # Test legacy fields are mapped orrectly
         dataset = SFTDataset(

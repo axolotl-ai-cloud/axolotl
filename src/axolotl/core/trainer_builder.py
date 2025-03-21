@@ -13,9 +13,7 @@
 # limitations under the License.
 
 # pylint: disable=too-many-lines
-"""
-Builder for the training args and trainer
-"""
+"""Builder for the training args and trainer"""
 
 import abc
 import importlib
@@ -85,8 +83,8 @@ from axolotl.utils.collators import (
     V2BatchSamplerDataCollatorForSeq2Seq,
 )
 from axolotl.utils.collators.mm_chat import MultiModalChatDataCollator
-from axolotl.utils.config.models.input.v0_4_1 import CustomSupportedOptimizers
 from axolotl.utils.models import ensure_dtype
+from axolotl.utils.schemas.enums import CustomSupportedOptimizers
 
 try:
     import torch._dynamo  # pylint: disable=ungrouped-imports

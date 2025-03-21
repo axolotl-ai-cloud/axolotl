@@ -20,9 +20,11 @@ jobs:
           uses: actions/setup-python@v5
           with:
             python-version: '3.11'
-        - name: install dependencies
+        - name: Install dependencies
           run: |
-            python3 -m pip install jupyter
+            python3 -m pip install jupyter quartodoc
+        - name: Build autodoc
+          run: quartodoc build
         - name: Publish to GitHub Pages (and render)
           uses: quarto-dev/quarto-actions/publish@v2
           with:
