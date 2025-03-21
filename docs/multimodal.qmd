@@ -43,6 +43,10 @@ datasets:
 # load_in_8bit: true
 adapter: lora
 lora_target_modules: 'language_model.model.layers.[\d]+.(mlp|cross_attn|self_attn).(up|down|gate|q|k|v|o)_proj'
+
+# (optional) if you want to resize images to a set size
+image_size: 512
+image_resize_algorithm: bilinear
 ```
 
 Please see [examples](https://github.com/axolotl-ai/axolotl/tree/main/examples) folder for full configs.
