@@ -74,7 +74,7 @@ jobs:
       - name: upgrade pip
         run: |
           pip3 install --upgrade pip
-          pip3 install --upgrade packaging setuptools wheel
+          pip3 install --upgrade packaging==23.2 setuptools==75.8.0 wheel
 
       - name: Install PyTorch
         run: |
@@ -147,7 +147,7 @@ jobs:
       - name: upgrade pip
         run: |
           pip3 install --upgrade pip
-          pip3 install --upgrade packaging setuptools setuptools_scm build wheel
+          pip3 install --upgrade packaging==23.2 setuptools==75.8.0 setuptools_scm build wheel
 
       - name: Install PyTorch
         run: |
