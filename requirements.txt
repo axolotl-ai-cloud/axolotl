@@ -10,7 +10,7 @@ autoawq==0.2.7.post3
 liger-kernel==0.5.3
 # END section
 
-packaging==24.2
+packaging==23.2
 
 peft==0.15.0
 transformers==4.49.0
