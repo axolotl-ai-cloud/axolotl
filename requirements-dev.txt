@@ -2,3 +2,5 @@ pre-commit
 black
 mypy
 types-requests
+jupyter
+quartodoc

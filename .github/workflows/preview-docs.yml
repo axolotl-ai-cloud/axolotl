@@ -1,0 +1,49 @@
+name: Preview
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  checks: write
+  contents: write
+  deployments: write
+  issues: write
+  discussions: write
+  pages: write
+  pull-requests: write
+  statuses: write
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Quarto
+        uses: quarto-dev/quarto-actions/setup@v2
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+      - run: pip install jupyter quartodoc
+
+      - name: Generate API docs
+        run: quartodoc build
+
+      - name: Render docs
+        run: quarto render
+
+      - name: Netlify Publish
+        uses: nwtgck/actions-netlify@v3.0
+        with:
+          publish-dir: './_site'
+          enable-pull-request-comment: true
+          enable-github-deployment: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          deploy-message: "Deployed On Netlify"
+          github-deployment-environment: 'preview'
+          github-deployment-description: 'Preview Deployment'
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: <YOURSITEID>
