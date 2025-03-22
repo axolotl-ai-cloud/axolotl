@@ -21,7 +21,7 @@ class TRLConfig(BaseModel):
 
     # GRPO specific args
     # Ref: https://github.com/huggingface/trl/blob/e3244d2d096ff1e2e248c931d06d39e165e20623/trl/trainer/grpo_config.py#L22
-    use_vllm: bool | None = Field(
+    use_vllm: bool = Field(
         default=False,
         json_schema_extra={"description": "Whether to use VLLM for RL training"},
     )
@@ -41,6 +41,24 @@ class TRLConfig(BaseModel):
         default=None,
         json_schema_extra={
             "description": "Maximum length of the model context for VLLM"
+        },
+    )
+    vllm_server_host: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Host of the vLLM server to connect to for GRPO"
+        },
+    )
+    vllm_server_port: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Port of the vLLM server to connect to for GRPO"
+        },
+    )
+    vllm_server_timeout: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Total timeout duration in seconds to wait for the vLLM server to be up for GRPO"
         },
     )
 
