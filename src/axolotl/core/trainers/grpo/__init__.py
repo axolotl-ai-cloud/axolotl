@@ -70,6 +70,9 @@ class GRPOStrategy:
         if trl.reward_weights:
             grpo_args_kwargs["reward_weights"] = trl.reward_weights
 
+        if trl.scale_rewards is not None:
+            grpo_args_kwargs["scale_rewards"] = trl.scale_rewards
+
         return grpo_args_kwargs
 
     @classmethod

@@ -85,3 +85,9 @@ class TRLConfig(BaseModel):
             "description": "Sync steps for the reference model. Requires `sync_ref_model=True`."
         },
     )
+    scale_rewards: bool = Field(
+        default=True,
+        json_schema_extra={
+            "description": "Whether to scale the rewards for GRPO by dividing them by their standard deviation."
+        },
+    )
