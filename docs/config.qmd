@@ -513,7 +513,6 @@ lr_div_factor: # Learning rate div factor
 # in the examples/ for your model and fine-tuning use case.
 #
 # Valid values for 'optimizer' include:
-# - adamw_hf
 # - adamw_torch
 # - adamw_torch_fused
 # - adamw_torch_xla
