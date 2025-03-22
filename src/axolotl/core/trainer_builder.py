@@ -60,6 +60,7 @@ from axolotl.core.training_args import (
 from axolotl.integrations.base import PluginManager
 from axolotl.monkeypatch.multipack import SUPPORTED_MULTIPACK_MODEL_TYPES
 from axolotl.monkeypatch.relora import ReLoRACallback
+from axolotl.processing_strategies import get_processing_strategy
 from axolotl.utils import is_comet_available, is_mlflow_available
 from axolotl.utils.callbacks import (
     EvalFirstStepCallback,
@@ -747,6 +748,12 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 self.cfg.accelerator_config
             )
 
+        if self.cfg.image_size:
+            training_arguments_kwargs["image_size"] = self.cfg.image_size
+        if self.cfg.image_resize_algorithm:
+            training_arguments_kwargs["image_resize_algorithm"] = (
+                self.cfg.image_resize_algorithm
+            )
         if self.cfg.kd_ce_alpha is not None:
             training_arguments_kwargs["kd_ce_alpha"] = self.cfg.kd_ce_alpha
         if self.cfg.kd_alpha is not None:
@@ -890,8 +897,13 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         else:
             if self.cfg.processor_type and self.processor:
                 collator = MultiModalChatDataCollator
-                kwargs["processor"] = self.processor
-                kwargs["chat_template"] = training_args.chat_template
+                kwargs["processing_strategy"] = get_processing_strategy(
+                    self.processor,
+                    training_args.chat_template,
+                    self.cfg.chat_template,
+                    image_size=training_args.image_size,
+                    image_resize_algorithm=training_args.image_resize_algorithm,
+                )
             elif self.cfg.batch_flattening:
                 collator = DataCollatorWithFlattening
                 collator_args.pop(0)

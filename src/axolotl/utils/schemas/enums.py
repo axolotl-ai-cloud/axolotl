@@ -22,6 +22,7 @@ class ChatTemplate(str, Enum):
     mistral_v1 = "mistral_v1"  # pylint: disable=invalid-name
     mistral_v2v3 = "mistral_v2v3"  # pylint: disable=invalid-name
     mistral_v3_tekken = "mistral_v3_tekken"  # pylint: disable=invalid-name
+    mistral_v7_tekken = "mistral_v7_tekken"  # pylint: disable=invalid-name
     gemma = "gemma"  # pylint: disable=invalid-name
     cohere = "cohere"  # pylint: disable=invalid-name
     llama3 = "llama3"  # pylint: disable=invalid-name
@@ -36,6 +37,10 @@ class ChatTemplate(str, Enum):
     tokenizer_default = "tokenizer_default"  # pylint: disable=invalid-name
     exaone = "exaone"  # pylint: disable=invalid-name
     metharme = "metharme"  # pylint: disable=invalid-name
+    pixtral = "pixtral"  # pylint: disable=invalid-name
+    llava = "llava"  # pylint: disable=invalid-name
+    qwen2_vl = "qwen2_vl"  # pylint: disable=invalid-name
+    gemma3 = "gemma3"  # pylint: disable=invalid-name
 
 
 class CustomSupportedOptimizers(str, Enum):

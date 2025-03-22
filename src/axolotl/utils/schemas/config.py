@@ -42,6 +42,7 @@ from axolotl.utils.schemas.model import (
     ModelOutputConfig,
     SpecialTokensConfig,
 )
+from axolotl.utils.schemas.multimodal import MultiModalConfig
 from axolotl.utils.schemas.peft import LoraConfig, ReLoRAConfig
 from axolotl.utils.schemas.training import HyperparametersConfig
 from axolotl.utils.schemas.trl import TRLConfig
@@ -64,6 +65,7 @@ class AxolotlInputConfig(
     LISAConfig,
     GradioConfig,
     RayConfig,
+    MultiModalConfig,
     RemappedParameters,
     DeprecatedParameters,
     BaseModel,

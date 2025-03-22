@@ -133,6 +133,7 @@ quartodoc:
         - utils.schemas.datasets
         - utils.schemas.peft
         - utils.schemas.trl
+        - utils.schemas.multimodal
         - utils.schemas.integrations
         - utils.schemas.enums
         - utils.schemas.utils
