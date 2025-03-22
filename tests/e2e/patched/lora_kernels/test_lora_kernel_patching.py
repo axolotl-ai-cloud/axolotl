@@ -144,7 +144,7 @@ def test_swiglu_mlp_integration(small_llama_model):
 def test_geglu_model_integration():
     """Test GeGLU activation with Gemma model."""
     model = AutoModelForCausalLM.from_pretrained(
-        "mhenrichsen/gemma-2b", torch_dtype=torch.float16, device="cuda"
+        "mhenrichsen/gemma-2b", torch_dtype=torch.float16, device_map="auto"
     )
     peft_config = get_peft_config(
         {
