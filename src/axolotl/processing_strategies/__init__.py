@@ -170,9 +170,10 @@ class ProcessingStrategy:
                 for i, content in enumerate(
                     processed_example["messages"][0]["content"]
                 ):
-                    # TODO: should we check that it doesn't already have an image?
                     # Usually datasets created with image columns, don't have it in the messages itself
-                    if content["type"] == "image":
+                    if content["type"] == "image" and all(
+                        k not in content for k in ["image", "url", "path", "base64"]
+                    ):
                         ind_to_add = i
                         break
 
