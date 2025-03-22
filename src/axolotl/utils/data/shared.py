@@ -2,6 +2,8 @@
 dataset loading shared utils
 """
 
+import re
+
 from pathlib import Path
 from typing import Optional, Union
 
@@ -10,6 +12,90 @@ from huggingface_hub import hf_hub_download
 from huggingface_hub.errors import HFValidationError
 
 from axolotl.utils.dict import DictDefault
+
+
+def apply_subsplit(ds, subsplit_str):
+    """
+    Given a Dataset or DatasetDict already loaded via load_from_disk(...),
+    parse a bracket-notation slice (e.g. 'train[:10%]') and return
+    the sliced dataset.
+
+    Examples of valid subsplit_str:
+      - "train[:10%]"
+      - "train[100:200]"
+      - "train[:]"
+      - "train[5:]"
+      - "train[:500]"
+      - "train[10%:50%]"
+    """
+
+    # Regex: capture the split name (e.g. "train") and the slice_expr (stuff inside [ ... ])
+    pattern = re.compile(r'^(?P<split_name>\w+)\[(?P<slice_expr>[^\]]*)\]$')
+    match = pattern.match(subsplit_str)
+    if not match:
+        # If it doesn't match "train[...]"
+        raise ValueError(f"Invalid subsplit format: {subsplit_str}")
+
+    split_name = match.group("split_name")  # e.g. "train"
+    slice_expr = match.group("slice_expr")  # e.g. ":10%", "100:200", ...
+
+    # If ds is a DatasetDict, extract ds[split_name]
+    # If ds is already a single-split Dataset, just treat ds as "train"
+    if isinstance(ds, DatasetDict):
+        if split_name not in ds:
+            raise KeyError(f"Split {split_name!r} not found in dataset dict: {list(ds.keys())}")
+        subset = ds[split_name]
+    else:
+        # ds is already a Dataset with "train" data only
+        subset = ds
+
+    total_rows = subset.num_rows
+
+    # If there's no colon, it might be something like "train[100]" => single row?
+    # But for typical HF bracket slices, we expect "start:end".
+    if ':' not in slice_expr:
+        raise ValueError(f"Slice expression must have ':' (got {slice_expr!r}).")
+
+    start_str, end_str = slice_expr.split(':', 1)  # split once
+
+    start_idx = parse_boundary(start_str, total_rows, default=0)
+    end_idx   = parse_boundary(end_str, total_rows, default=total_rows)
+
+    # clamp the slice to [0, total_rows]
+    start_idx = max(start_idx, 0)
+    end_idx   = min(end_idx, total_rows)
+
+    if start_idx > end_idx:
+        # results in an empty dataset
+        return subset.select([])
+
+    # Use .select(...) with a range of indices
+    sliced_dataset = subset.select(range(start_idx, end_idx))
+
+    # If original was a DatasetDict, put it back
+    if isinstance(ds, DatasetDict):
+        new_ds = DatasetDict(ds)
+        new_ds[split_name] = sliced_dataset
+        return new_ds
+    else:
+        return sliced_dataset
+
+
+def parse_boundary(bound_str, total, default=0):
+    """
+    Convert a boundary like '100', '10%', '', etc. into a row index.
+    - If empty, returns `default`.
+    - If ends with '%', interpret as a percentage of total.
+    - Otherwise, parse as an integer row index.
+    """
+    bound_str = bound_str.strip()
+    if not bound_str:
+        return default
+    if bound_str.endswith('%'):
+        pct = float(bound_str[:-1]) / 100.0
+        return int(round(pct * total))
+    else:
+        return int(bound_str)
 
 
 def get_ds_type(config_dataset: DictDefault):
@@ -169,6 +255,12 @@ def load_dataset_w_config(
                     ds = load_from_disk(
                         config_dataset.path
                     )  # pylint: disable=invalid-name
+
+                    # If split includes bracket syntax (e.g. "train[:10%]"), skip load_from_disk
+                    wants_subsplit = config_dataset.split and "[" in config_dataset.split
+                    if wants_subsplit:
+                        ds = apply_subsplit(ds, config_dataset.split)
+
                 except FileNotFoundError:
                     ds = load_dataset(
                         config_dataset.path,
