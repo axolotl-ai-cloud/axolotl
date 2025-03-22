@@ -52,6 +52,13 @@ class GRPOStrategy:
             if trl.vllm_max_model_len:
                 grpo_args_kwargs["vllm_max_model_len"] = trl.vllm_max_model_len
 
+            if trl.vllm_server_host:
+                grpo_args_kwargs["vllm_server_host"] = trl.vllm_server_host
+            if trl.vllm_server_port:
+                grpo_args_kwargs["vllm_server_port"] = trl.vllm_server_port
+            if trl.vllm_server_timeout:
+                grpo_args_kwargs["vllm_server_timeout"] = trl.vllm_server_timeout
+
         if trl.num_generations:
             grpo_args_kwargs["num_generations"] = trl.num_generations
 
