@@ -61,6 +61,10 @@ class TRLConfig(BaseModel):
             "description": "Total timeout duration in seconds to wait for the vLLM server to be up for GRPO"
         },
     )
+    vllm_enable_prefix_caching: bool | None = Field(
+        default=True,
+        json_schema_extra={"description": "Whether to enable prefix caching for VLLM"},
+    )
 
     reward_funcs: list[str] | None = Field(
         default=None,
