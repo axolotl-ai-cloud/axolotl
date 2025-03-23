@@ -36,7 +36,7 @@ class ProcessingStrategy:
                 self.image_token
             )
 
-    def preprocess(self, examples: list[dict]) -> list[dict]:
+    def __call__(self, examples: list[dict]) -> list[dict]:
         """
         Preprocess conversation examples to ensure consistent format.
         Converts different conversation formats to OpenAI format with 'messages'.

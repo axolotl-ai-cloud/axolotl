@@ -39,7 +39,7 @@ class MultiModalChatDataCollator(DataCollatorMixin):
         examples: list[dict],
     ) -> dict[str, Tensor]:
         # Preprocess the examples
-        examples = self.processing_strategy.preprocess(examples)
+        examples = self.processing_strategy(examples)
 
         # Initialize batch
         batch: dict[str, Any] = {}
