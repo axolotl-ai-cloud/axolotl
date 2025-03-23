@@ -109,7 +109,30 @@ class TRLConfig(BaseModel):
             "description": "Whether to scale the rewards for GRPO by dividing them by their standard deviation."
         },
     )
+
     temperature: float | None = Field(
         default=None,
         json_schema_extra={"description": "Sampling temperature for the GRPO policy."},
+    )
+    top_p: float | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Top-p sampling probability for the generation policy."
+        },
+    )
+    top_k: int | None = Field(
+        default=None,
+        json_schema_extra={"description": "Top-k sampling for the generation policy."},
+    )
+    min_p: float | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Minimum probability for the generation policy."
+        },
+    )
+    repetition_penalty: float | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Float that penalizes new tokens based on whether they appear in the prompt and the generated text so far."
+        },
     )
