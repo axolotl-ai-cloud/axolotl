@@ -48,7 +48,7 @@ class ProcessingStrategy:
             examples: list of conversation dictionaries
 
         Returns:
-            dict in OpenAI format with 'messages' key
+            list of dicts in OpenAI format with 'messages' key
 
         Raises:
             ValueError: If the conversation format is not supported
@@ -79,25 +79,25 @@ class ProcessingStrategy:
             """Convert regular messages format to Messages format with content type"""
 
             new_messages = []
-            for convo in messages:
-                if isinstance(convo["content"], str):
+            for message in messages:
+                if isinstance(message["content"], str):
                     new_messages.append(
                         {
-                            "role": convo["role"],
+                            "role": message["role"],
                             "content": [
                                 {
                                     "type": "text",
-                                    "text": convo["content"],
+                                    "text": message["content"],
                                 }
                             ],
                         }
                     )
-                elif isinstance(convo["content"], list):
-                    content = convo["content"]
+                elif isinstance(message["content"], list):
+                    content = message["content"]
 
                     new_messages.append(
                         {
-                            "role": convo["role"],
+                            "role": message["role"],
                             "content": content,
                         }
                     )

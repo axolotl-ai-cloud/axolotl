@@ -26,8 +26,8 @@ Here are the hyperparams you'll need to use to finetune a multimodal model.
 processor_type: AutoProcessor
 
 skip_prepare_dataset: true
-remove_unused_columns: false
-sample_packing: false
+remove_unused_columns: false  # leave columns in place as they are needed to handle image embeddings during training
+sample_packing: false  # not yet supported with multimodal
 
 chat_template:  # see in next section
 

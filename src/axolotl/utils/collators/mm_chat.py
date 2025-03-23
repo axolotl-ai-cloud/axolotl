@@ -6,11 +6,12 @@ from dataclasses import dataclass
 from typing import Any, Optional, Union
 
 import torch
+from torch import Tensor
 from transformers import PreTrainedTokenizerBase
 from transformers.data.data_collator import DataCollatorMixin
 from transformers.utils import PaddingStrategy
 
-from ...processing_strategies import ProcessingStrategy
+from axolotl.processing_strategies import ProcessingStrategy
 
 
 @dataclass
@@ -36,7 +37,7 @@ class MultiModalChatDataCollator(DataCollatorMixin):
     def process_rows(
         self,
         examples: list[dict],
-    ):
+    ) -> dict[str, Tensor]:
         # Preprocess the examples
         examples = self.processing_strategy.preprocess(examples)
 
