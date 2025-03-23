@@ -14,7 +14,7 @@ packaging==23.2
 peft==0.15.0
 transformers==4.50.3
 tokenizers>=0.21.1
-accelerate==1.5.2
+accelerate @ git+https://github.com/S1ro1/accelerate.git@dev/fsdp2
 datasets==3.5.0
 deepspeed==0.15.4
 trl==0.16.0
