@@ -17,7 +17,7 @@ tokenizers>=0.21.1
 accelerate==1.5.2
 datasets==3.5.0
 deepspeed==0.16.4
-trl==0.15.1
+trl==0.16.0
 
 optimum==1.16.2
 hf_transfer
