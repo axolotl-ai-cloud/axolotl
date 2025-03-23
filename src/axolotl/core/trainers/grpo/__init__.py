@@ -96,6 +96,11 @@ class GRPOStrategy:
         if trl.repetition_penalty is not None:
             grpo_args_kwargs["repetition_penalty"] = trl.repetition_penalty
 
+        if trl.num_iterations is not None:
+            grpo_args_kwargs["num_iterations"] = trl.num_iterations
+        if trl.epsilon is not None:
+            grpo_args_kwargs["epsilon"] = trl.epsilon
+
         return grpo_args_kwargs
 
     @classmethod
