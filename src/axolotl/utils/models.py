@@ -34,12 +34,16 @@ from transformers import (  # noqa: F401
     AutoTokenizer,
     AwqConfig,
     BitsAndBytesConfig,
+    Gemma3ForConditionalGeneration,
     GPTQConfig,
     LlavaForConditionalGeneration,
+    Mistral3ForConditionalGeneration,
     MllamaForConditionalGeneration,
     PreTrainedModel,
     PreTrainedTokenizerBase,
     ProcessorMixin,
+    Qwen2_5_VLForConditionalGeneration,
+    Qwen2VLForConditionalGeneration,
 )
 from transformers.integrations.deepspeed import (
     HfTrainerDeepSpeedConfig,
@@ -69,9 +73,13 @@ from axolotl.utils.model_shard_quant import load_sharded_model, load_sharded_mod
 
 LOG = logging.getLogger(__name__)
 
-MULTIMODEL_AUTO_MODEL_MAPPING = {
-    "llava": LlavaForConditionalGeneration,
+MULTIMODAL_AUTO_MODEL_MAPPING = {
     "mllama": MllamaForConditionalGeneration,
+    "llava": LlavaForConditionalGeneration,
+    "qwen2_vl": Qwen2VLForConditionalGeneration,
+    "qwen2_5_vl": Qwen2_5_VLForConditionalGeneration,
+    "mistral3": Mistral3ForConditionalGeneration,
+    "gemma3": Gemma3ForConditionalGeneration,
 }
 
 
@@ -101,7 +109,21 @@ def get_module_class_from_name(module, name):
 
 def check_model_config(cfg: DictDefault, model_config: Union[AutoConfig, DictDefault]):
     if cfg.is_multimodal:
-        model_config = model_config.text_config
+        if hasattr(model_config, "text_config"):
+            model_config = model_config.text_config
+            model_config.use_cache = False
+        elif hasattr(model_config, "get_text_config"):
+            model_config = model_config.get_text_config()
+            model_config.use_cache = False
+
+        # check if image_size is not set and load image size from model config if available
+        if (
+            cfg.image_size is None
+            and hasattr(model_config, "vision_config")
+            and hasattr(model_config.vision_config, "image_size")
+        ):
+            cfg.image_size = model_config.vision_config.image_size
+            LOG.debug(f"Loaded image size: {cfg.image_size} from model config")
 
     quant_config_exists = (
         hasattr(model_config, "quantization_config")
@@ -440,6 +462,31 @@ def load_processor(cfg: DictDefault, tokenizer: PreTrainedTokenizerBase):
         **processor_kwargs,
     )
 
+    # Attempt to load image size from processor if available
+    if (
+        cfg.image_size is None
+        and hasattr(processor, "size")
+        and any(dim in processor.size for dim in ["width", "height"])
+    ):
+        im_width = None
+        im_height = None
+        if "width" in processor.size:
+            im_width = processor.size["width"]
+        if "height" in processor.size:
+            im_height = processor.size["height"]
+
+        # If both width and height are set, use a tuple
+        if im_width is not None and im_height is not None:
+            cfg.image_size = (im_width, im_height)
+        # If only width is set, use as integer
+        elif im_width is not None:
+            cfg.image_size = im_width
+        # If only height is set, use as integer
+        elif im_height is not None:
+            cfg.image_size = im_height
+
+        LOG.debug(f"Loaded image size: {cfg.image_size} from processor")
+
     return processor
 
 
@@ -477,7 +524,11 @@ class ModelLoader:
         # init model config
         self.model_config = load_model_config(cfg)
         if cfg.is_multimodal:
-            self.text_model_config = self.model_config.text_config
+            if hasattr(self.model_config, "text_config"):
+                self.text_model_config = self.model_config.text_config
+            else:
+                # for qwen2_vl
+                self.text_model_config = self.model_config.get_text_config()
         else:
             self.text_model_config = self.model_config
 
@@ -673,7 +724,7 @@ class ModelLoader:
         should be set according to the type of the model.
         """
         if self.cfg.is_multimodal:
-            self.auto_model_loader = MULTIMODEL_AUTO_MODEL_MAPPING.get(
+            self.auto_model_loader = MULTIMODAL_AUTO_MODEL_MAPPING.get(
                 self.model_config.model_type, AutoModelForVision2Seq
             )
 
@@ -1194,7 +1245,9 @@ class ModelLoader:
             )
         ):
             resize_kwargs = {}
-            if self.cfg.mean_resizing_embeddings is not None:
+            if self.cfg.mean_resizing_embeddings is not None and not (
+                self.model_config.model_type == "llava"
+            ):
                 resize_kwargs["mean_resizing"] = self.cfg.mean_resizing_embeddings
             self.model.resize_token_embeddings(embeddings_len, **resize_kwargs)
         else:

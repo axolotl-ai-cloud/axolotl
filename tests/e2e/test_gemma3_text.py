@@ -58,7 +58,7 @@ class TestGemma3Text:
                     "bos_token": "<bos>",
                     "eos_token": "<eos>",
                 },
-                "chat_template": "gemma3_text",
+                "chat_template": "gemma3",
                 "num_epochs": 1,
                 "micro_batch_size": 1,
                 "gradient_accumulation_steps": 4,
@@ -105,7 +105,7 @@ class TestGemma3Text:
                         "split": "train[:1%]",
                     },
                 ],
-                "chat_template": "gemma3_text",
+                "chat_template": "gemma3",
                 "special_tokens": {
                     "bos_token": "<bos>",
                     "eos_token": "<eos>",

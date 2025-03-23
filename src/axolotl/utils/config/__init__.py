@@ -13,7 +13,7 @@ from axolotl.integrations.base import PluginManager
 from axolotl.integrations.config import merge_input_args
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.dict import DictDefault
-from axolotl.utils.models import load_model_config
+from axolotl.utils.models import MULTIMODAL_AUTO_MODEL_MAPPING, load_model_config
 from axolotl.utils.schemas.config import (
     AxolotlConfigWCapabilities as AxolotlConfigWCapabilitiesBase,
 )
@@ -158,7 +158,7 @@ def normalize_config(cfg):
 
     cfg.is_multimodal = (
         hasattr(model_config, "model_type")
-        and model_config.model_type in ["llava", "mllama"]
+        and model_config.model_type in MULTIMODAL_AUTO_MODEL_MAPPING
         or any(
             multimodal_name in cfg.base_model.lower()
             for multimodal_name in [
@@ -171,7 +171,6 @@ def normalize_config(cfg):
         cfg.processor_config = (
             cfg.processor_config or cfg.base_model_config or cfg.base_model
         )
-        model_config = model_config.text_config
 
     cfg.model_config_type = model_config.model_type
 

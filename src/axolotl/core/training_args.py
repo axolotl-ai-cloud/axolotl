@@ -5,6 +5,7 @@ extra axolotl specific training args
 from dataclasses import dataclass, field
 from typing import Optional
 
+from PIL.Image import Resampling
 from transformers import TrainingArguments
 from trl import CPOConfig, KTOConfig, ORPOConfig, PRMConfig, RewardConfig
 
@@ -211,6 +212,20 @@ class AxolotlTrainingMixins:
         default=1,
         metadata={"help": "The number of workers to use in sequence parallelism"},
     )
+
+    # multi-modal section
+
+    image_size: int | tuple[int, int] | None = field(
+        default=None,
+        metadata={"help": "The size of the image to resize to"},
+    )
+
+    image_resize_algorithm: Resampling | None = field(
+        default=None,
+        metadata={"help": "The algorithm to use for image resizing"},
+    )
+
+    # end of multi-modal section
 
 
 @dataclass

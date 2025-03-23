@@ -586,6 +586,14 @@ resume_from_checkpoint:
 # Be careful with this being turned on between different models.
 auto_resume_from_checkpoints: false
 
+## Multimodal section
+# int | tuple[int, int] | None . Size to resize images to, width x height.
+# Will read from model/processor config if not set.
+image_size:
+# str. Algorithm to use for image resizing. "bilinear", "bicubic", "lanczos". Default is "bilinear".
+image_resize_algorithm: 'bilinear'
+## End of multimodal section
+
 # Don't mess with this, it's here for accelerate and torchrun
 local_rank:
 
