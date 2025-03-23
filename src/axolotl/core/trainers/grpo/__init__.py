@@ -82,6 +82,14 @@ class GRPOStrategy:
 
         if trl.temperature is not None:
             grpo_args_kwargs["temperature"] = trl.temperature
+        if trl.top_p is not None:
+            grpo_args_kwargs["top_p"] = trl.top_p
+        if trl.top_k is not None:
+            grpo_args_kwargs["top_k"] = trl.top_k
+        if trl.min_p is not None:
+            grpo_args_kwargs["min_p"] = trl.min_p
+        if trl.repetition_penalty is not None:
+            grpo_args_kwargs["repetition_penalty"] = trl.repetition_penalty
 
         return grpo_args_kwargs
 
