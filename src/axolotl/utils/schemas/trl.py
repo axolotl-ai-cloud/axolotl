@@ -140,3 +140,15 @@ class TRLConfig(BaseModel):
             "description": "Float that penalizes new tokens based on whether they appear in the prompt and the generated text so far."
         },
     )
+    num_iterations: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Number of iterations per batch (denoted as μ in the algorithm) for GRPO."
+        },
+    )
+    epsilon: float | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Epsilon value for clipping in the GRPO algorithm."
+        },
+    )
