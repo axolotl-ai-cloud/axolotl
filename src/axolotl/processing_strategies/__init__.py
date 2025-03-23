@@ -266,7 +266,12 @@ def get_processing_strategy(
         return Gemma3ProcessingStrategy(
             processor, chat_template, image_size, image_resize_algorithm
         )
-    if chat_template_type in ["llava", "mistral_v7_tekken", "pixtral"]:
+    if chat_template_type in [
+        "llama3_2_vision",
+        "llava",
+        "mistral_v7_tekken",
+        "pixtral",
+    ]:
         return ProcessingStrategy(
             processor, chat_template, image_size, image_resize_algorithm
         )
