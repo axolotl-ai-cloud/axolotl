@@ -59,6 +59,11 @@ class GRPOStrategy:
             if trl.vllm_server_timeout:
                 grpo_args_kwargs["vllm_server_timeout"] = trl.vllm_server_timeout
 
+            if trl.vllm_enable_prefix_caching:
+                grpo_args_kwargs["vllm_enable_prefix_caching"] = (
+                    trl.vllm_enable_prefix_caching
+                )
+
         if trl.num_generations:
             grpo_args_kwargs["num_generations"] = trl.num_generations
 
