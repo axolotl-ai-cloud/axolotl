@@ -89,13 +89,9 @@ chat_template: mistral_v7_tekken
 
 ### Gemma-3 {#sec-gemma-3}
 
-For 1B model, it is text-only, so please use as regular text model.
-
-```yaml
-base_model: google/gemma-3-1b-it
-
-chat_template: gemma3_text
-```
+::: {.callout-tip}
+The Gemma3-1B model is a text-only model, so please train as regular text model.
+:::
 
 For multi-modal 4B/12B/27B models, use the following config:
 

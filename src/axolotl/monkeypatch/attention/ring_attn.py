@@ -27,7 +27,7 @@ def get_ring_attn_group() -> dist.ProcessGroup:
     return RING_ATTN_GROUP
 
 
-def set_ring_attn_group(ring_attn_group: dist.ProcessGroup):
+def set_ring_attn_group(ring_attn_group: dist.ProcessGroup | None):
     """
     Setter for ring attention group on this rank.
 
