@@ -80,6 +80,9 @@ class GRPOStrategy:
         if trl.scale_rewards is not None:
             grpo_args_kwargs["scale_rewards"] = trl.scale_rewards
 
+        if trl.temperature is not None:
+            grpo_args_kwargs["temperature"] = trl.temperature
+
         return grpo_args_kwargs
 
     @classmethod

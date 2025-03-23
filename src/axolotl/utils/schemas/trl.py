@@ -109,3 +109,7 @@ class TRLConfig(BaseModel):
             "description": "Whether to scale the rewards for GRPO by dividing them by their standard deviation."
         },
     )
+    temperature: float | None = Field(
+        default=None,
+        json_schema_extra={"description": "Sampling temperature for the GRPO policy."},
+    )
