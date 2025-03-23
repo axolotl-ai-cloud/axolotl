@@ -73,7 +73,7 @@ from axolotl.utils.model_shard_quant import load_sharded_model, load_sharded_mod
 
 LOG = logging.getLogger(__name__)
 
-MULTIMODEL_AUTO_MODEL_MAPPING = {
+MULTIMODAL_AUTO_MODEL_MAPPING = {
     "mllama": MllamaForConditionalGeneration,
     "llava": LlavaForConditionalGeneration,
     "qwen2_vl": Qwen2VLForConditionalGeneration,
@@ -724,7 +724,7 @@ class ModelLoader:
         should be set according to the type of the model.
         """
         if self.cfg.is_multimodal:
-            self.auto_model_loader = MULTIMODEL_AUTO_MODEL_MAPPING.get(
+            self.auto_model_loader = MULTIMODAL_AUTO_MODEL_MAPPING.get(
                 self.model_config.model_type, AutoModelForVision2Seq
             )
 
