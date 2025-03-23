@@ -40,12 +40,8 @@ class MultiModalChatDataCollator(DataCollatorMixin):
         # Preprocess the examples
         examples = self.processing_strategy.preprocess(examples)
 
-        # Initialize batch with empty lists
-        batch: dict[str, Any] = {  # type: ignore
-            "input_ids": [],
-            "attention_mask": [],
-            "pixel_values": [],
-        }
+        # Initialize batch
+        batch: dict[str, Any] = {}
 
         # Process each example
         for example in examples:
