@@ -29,6 +29,18 @@ plugins:
 cut_cross_entropy: true
 ```
 
+## Supported Models
+
+- llama
+- phi3
+- gemma2
+- gemma3
+- gemma3_text
+- mistral
+- qwen2
+- cohere
+- cohere2
+
 ## Citation
 
 ```bib
