@@ -54,7 +54,7 @@ def do_vllm_serve(
 
 
 def start_vllm(model, env=None, **kwargs) -> int:
-    cmd = ["trl", "vllm-serve", "--model", model]
+    cmd = ["python", "-m", "trl.scripts.vllm_serve", "--model", model]
 
     if tensor_parallel_size := kwargs.get("tensor_parallel_size"):
         cmd.extend(["--tensor-parallel-size", str(tensor_parallel_size)])
