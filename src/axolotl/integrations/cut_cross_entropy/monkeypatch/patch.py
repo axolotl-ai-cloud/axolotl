@@ -20,6 +20,7 @@ CUT_CROSS_ENTROPY_MODEL_MAPPING = {
     "phi3": patch_phi3,
     "gemma2": patch_gemma2,
     "gemma3": patch_gemma3,
+    "gemma3_text": patch_gemma3,
     "mistral": patch_mistral,
     "qwen2": patch_qwen2,
     "cohere": patch_cohere,
