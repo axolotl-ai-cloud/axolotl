@@ -42,8 +42,7 @@ jobs:
             cuda_version: 12.4.1
             python_version: "3.11"
             pytorch: 2.6.0
-            # awaiting vllm#12721
-            axolotl_extras:
+            axolotl_extras: vllm
             num_gpus: 2
             nightly_build: "true"
     runs-on: [self-hosted, modal]
