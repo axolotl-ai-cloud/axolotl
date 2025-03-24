@@ -16,9 +16,7 @@ def parse_requirements():
     with open("./requirements.txt", encoding="utf-8") as requirements_file:
         lines = [r.strip() for r in requirements_file.readlines()]
         for line in lines:
-            is_extras = (
-                "deepspeed" in line or "mamba-ssm" in line or "lion-pytorch" in line
-            )
+            is_extras = "deepspeed" in line or "mamba-ssm" in line
             if line.startswith("--extra-index-url"):
                 # Handle custom index URLs
                 _, url = line.split()
@@ -135,9 +133,6 @@ setup(
         "mlflow": [
             "mlflow",
         ],
-        "lion-pytorch": [
-            "lion-pytorch==0.1.2",
-        ],
         "galore": [
             "galore_torch",
         ],
@@ -147,7 +142,6 @@ setup(
         "optimizers": [
             "galore_torch",
             "apollo-torch",
-            "lion-pytorch==0.1.2",
             "lomo-optim==0.1.1",
             "torch-optimi==0.2.1",
         ],
