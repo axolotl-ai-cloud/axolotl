@@ -1,6 +1,9 @@
 """Gemma2 and Gemma3 (text and multimodal) CCE patch."""
 
-# Implementation adapted from https://github.com/apple/ml-cross-entropy/pull/29
+# Implementation originally adapted from https://github.com/apple/ml-cross-entropy/pull/29
+# and updated for transformers 4.50.0.
+# This is a modified version of the patch that allows for deferred logits calculation for gemma3 and works
+# with both gemma3 (text and multimodal) models.
 
 # pylint: disable=duplicate-code
 
