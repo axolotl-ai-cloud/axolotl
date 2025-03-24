@@ -18,6 +18,7 @@ from axolotl.integrations.cut_cross_entropy.monkeypatch.cohere import (
 from axolotl.integrations.cut_cross_entropy.monkeypatch.gemma3 import (
     patch_gemma2,
     patch_gemma3,
+    patch_gemma3_text,
 )
 
 CUT_CROSS_ENTROPY_MODEL_MAPPING = {
@@ -25,7 +26,7 @@ CUT_CROSS_ENTROPY_MODEL_MAPPING = {
     "phi3": patch_phi3,
     "gemma2": patch_gemma2,
     "gemma3": patch_gemma3,
-    "gemma3_text": patch_gemma3,
+    "gemma3_text": patch_gemma3_text,
     "mistral": patch_mistral,
     "qwen2": patch_qwen2,
     "cohere": patch_cohere,
