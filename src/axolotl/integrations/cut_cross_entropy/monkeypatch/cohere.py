@@ -122,7 +122,7 @@ def cce_forward(
 
     if _PATCH_OPTS is not None and _PATCH_OPTS.use_lce(labels, self.training):
         assert labels is not None
-        # scale weight by logit_scale in advance
+        # scale weight by logit_scale in-place of logits
         loss = apply_lce(
             hidden_states,
             self.lm_head.weight * self.logit_scale,
