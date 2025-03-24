@@ -133,7 +133,6 @@ def cce_forward(
         logits = self.lm_head(hidden_states[:, slice_indices, :])
         logits = logits * self.logit_scale  # main diff from Llama
 
-        loss = None
         if labels is not None:
             loss = self.loss_function(
                 logits=logits,
