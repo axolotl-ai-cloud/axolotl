@@ -68,6 +68,10 @@ def cce_forward(
             If a `torch.Tensor`, must be 1D corresponding to the indices to keep in the sequence length dimension.
             This is useful when using packed tensor format (single dimension for batch and sequence length).
 
+        defer_logits_calculation (`bool`, *optional*):
+            If `True`, defer logits calculation to the ConditionalGeneration forward. This is used to avoid the
+            memory overhead of calculating logits using regular lm_head forward pass and to use CCE.
+
     Returns:
 
     Example:
@@ -452,10 +456,14 @@ def patch_gemma3(
             maybe_model, modeling_gemma3.Gemma3ForConditionalGeneration
         ), f"Expected a Gemma3ForConditionalGeneration model. Got {type(maybe_model)}."
         maybe_model.forward = MethodType(cce_forward_multimodal, maybe_model)
+
+        # patch the causal model to enable deferred logits calculation
+        maybe_model.language_model.forward = MethodType(
+            cce_forward, maybe_model.language_model
+        )
         return maybe_model
 
     modeling_gemma3.Gemma3ForConditionalGeneration.forward = cce_forward_multimodal
-
     # patch the causal model to enable deferred logits calculation
-    patch_gemma3_text(maybe_model, patch_options)
+    modeling_gemma3.Gemma3ForCausalLM.forward = cce_forward
     return None
