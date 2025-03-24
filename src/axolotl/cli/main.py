@@ -14,7 +14,12 @@ import yaml
 from dotenv import load_dotenv
 
 import axolotl
-from axolotl.cli.args import EvaluateCliArgs, PreprocessCliArgs, TrainerCliArgs
+from axolotl.cli.args import (
+    EvaluateCliArgs,
+    PreprocessCliArgs,
+    TrainerCliArgs,
+    VllmServeCliArgs,
+)
 from axolotl.cli.sweeps import generate_sweep_configs
 from axolotl.cli.utils import (
     add_options_from_config,
@@ -23,6 +28,7 @@ from axolotl.cli.utils import (
     fetch_from_github,
     filter_none_kwargs,
 )
+from axolotl.cli.vllm_serve import do_vllm_serve
 from axolotl.integrations.lm_eval.cli import lm_eval
 from axolotl.utils import set_pytorch_cuda_alloc_conf
 from axolotl.utils.schemas.config import AxolotlInputConfig
@@ -314,6 +320,14 @@ def fetch(directory: str, dest: Optional[str]) -> None:
         dest: Optional destination directory.
     """
     fetch_from_github(f"{directory}/", dest)
+
+
+@cli.command()
+@click.argument("config", type=click.Path(exists=True, path_type=str))
+@add_options_from_dataclass(VllmServeCliArgs)
+@filter_none_kwargs
+def vllm_serve(config: str, **kwargs):
+    do_vllm_serve(config, **kwargs)
 
 
 cli.add_command(lm_eval)

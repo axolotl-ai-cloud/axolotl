@@ -2,6 +2,7 @@
 GRPO test suite
 """
 
+import os
 import random
 from pathlib import Path
 
@@ -11,6 +12,7 @@ from accelerate.test_utils import execute_subprocess_async
 from e2e.utils import require_vllm
 from transformers.testing_utils import get_torch_dist_unique_port
 
+from axolotl.cli.vllm_serve import start_vllm
 from axolotl.utils.dict import DictDefault
 
 
@@ -57,8 +59,6 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
                     "beta": 0.001,
                     "max_completion_length": 256,
                     "use_vllm": True,
-                    "vllm_device": "auto" if num_gpus == 1 else "cuda:1",
-                    "vllm_gpu_memory_utilization": 0.15,
                     "num_generations": 4,
                     "reward_funcs": [f"rewards_{rnd_reward_suffix}.rand_reward_func"],
                 },
@@ -98,6 +98,15 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
 
         self._utils_write_yaml_and_rewards(cfg, temp_dir, suffix=rnd_reward_suffix)
 
+        env = {}
+        if num_gpus == 1:
+            env["CUDA_VISIBLE_DEVICES"] = "0"
+        else:
+            env["CUDA_VISIBLE_DEVICES"] = "1"
+        vllm_process_id = start_vllm(
+            cfg.base_model, env=env, gpu_memory_utilization=0.15
+        )
+
         execute_subprocess_async(
             [
                 "axolotl",
@@ -109,6 +118,7 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
                 f"{get_torch_dist_unique_port()}",
             ]
         )
+        os.kill(vllm_process_id, 9)
 
     @pytest.mark.parametrize(
         "num_gpus",
@@ -126,8 +136,6 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
                     "beta": 0.001,
                     "max_completion_length": 256,
                     "use_vllm": True,
-                    "vllm_device": "auto" if num_gpus == 1 else "cuda:1",
-                    "vllm_gpu_memory_utilization": 0.15,
                     "num_generations": 4,
                     "reward_funcs": [f"rewards_{rnd_reward_suffix}.rand_reward_func"],
                 },
@@ -161,6 +169,15 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
 
         self._utils_write_yaml_and_rewards(cfg, temp_dir, suffix=rnd_reward_suffix)
 
+        env = {}
+        if num_gpus == 1:
+            env["CUDA_VISIBLE_DEVICES"] = "0"
+        else:
+            env["CUDA_VISIBLE_DEVICES"] = "1"
+        vllm_process_id = start_vllm(
+            cfg.base_model, env=env, gpu_memory_utilization=0.15
+        )
+
         execute_subprocess_async(
             [
                 "axolotl",
@@ -172,3 +189,4 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
                 f"{get_torch_dist_unique_port()}",
             ]
         )
+        os.kill(vllm_process_id, 9)
