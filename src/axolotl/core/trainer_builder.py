@@ -663,6 +663,11 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
 
                 optimizer_cls = MuonOptimizerFactory
                 optimizer_kwargs.update(adam_kwargs)
+            elif self.cfg.optimizer == "soap":
+                from axolotl.utils.optimizers.soap import SOAP
+
+                optimizer_cls = SOAP
+                optimizer_kwargs.update(adam_kwargs)
             elif self.cfg.optimizer == "optimi_adamw":
                 from optimi import AdamW
 
