@@ -19,7 +19,6 @@ val_set_size: 0.0
 output_dir: ./outputs/lora-out
 
 dataset_exact_deduplication: true
-test_value: true
 
 sequence_len: 4096
 sample_packing: true
