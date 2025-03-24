@@ -108,16 +108,16 @@ def cce_forward(
         **kwargs,
     )
 
+    hidden_states = outputs[0]
+    loss = None
+    logits = None
+
     # Only compute necessary logits, and do not upcast them to float if we are not computing the loss
     slice_indices = (
         slice(-logits_to_keep, None)
         if isinstance(logits_to_keep, int)
         else logits_to_keep
     )
-
-    hidden_states = outputs[0]
-    loss = None
-    logits = None
 
     if _PATCH_OPTS is not None and _PATCH_OPTS.use_lce(labels, self.training):
         assert labels is not None
