@@ -46,29 +46,30 @@ def cce_forward(
     output_hidden_states: Optional[bool] = None,
     return_dict: Optional[bool] = None,
     cache_position: Optional[torch.LongTensor] = None,
-    num_logits_to_keep: int = 0,
+    logits_to_keep: Union[int, torch.Tensor] = 0,
     **loss_kwargs,
 ) -> Union[Tuple, CausalLMOutputWithPast]:
     r"""
-    Args:
         labels (`torch.LongTensor` of shape `(batch_size, sequence_length)`, *optional*):
             Labels for computing the masked language modeling loss. Indices should either be in `[0, ...,
             config.vocab_size]` or -100 (see `input_ids` docstring). Tokens with indices set to `-100` are ignored
             (masked), the loss is only computed for the tokens with labels in `[0, ..., config.vocab_size]`.
 
-        num_logits_to_keep (`int`, *optional*):
-            Calculate logits for the last `num_logits_to_keep` tokens. If `0`, calculate logits for all
+        logits_to_keep (`int` or `torch.Tensor`, *optional*):
+            If an `int`, compute logits for the last `logits_to_keep` tokens. If `0`, calculate logits for all
             `input_ids` (special case). Only last token logits are needed for generation, and calculating them only for that
             token can save memory, which becomes pretty significant for long sequences or large vocabulary size.
+            If a `torch.Tensor`, must be 1D corresponding to the indices to keep in the sequence length dimension.
+            This is useful when using packed tensor format (single dimension for batch and sequence length).
 
     Returns:
 
     Example:
 
     ```python
-    >>> from transformers import AutoTokenizer, GemmaForCausalLM
+    >>> from transformers import AutoTokenizer, Gemma3ForCausalLM
 
-    >>> model = GemmaForCausalLM.from_pretrained("google/gemma-2-9b")
+    >>> model = Gemma3ForCausalLM.from_pretrained("google/gemma-2-9b")
     >>> tokenizer = AutoTokenizer.from_pretrained("google/gemma-2-9b")
 
     >>> prompt = "What is your favorite condiment?"
@@ -118,15 +119,28 @@ def cce_forward(
     loss = None
     logits = None
 
+    # Only compute necessary logits, and do not upcast them to float if we are not computing the loss
+    slice_indices = (
+        slice(-logits_to_keep, None)
+        if isinstance(logits_to_keep, int)
+        else logits_to_keep
+    )
+
     if _PATCH_OPTS is not None and _PATCH_OPTS.use_lce(labels, self.training):
         assert labels is not None
+        if self.config.final_logit_softcapping is not None:
+            raise NotImplementedError(
+                "final_logit_softcapping is not supported for Gemma3 with CCE"
+            )
         loss = apply_lce(
-            hidden_states, self.lm_head.weight, labels, _PATCH_OPTS, **loss_kwargs
+            hidden_states[:, slice_indices, :],
+            self.lm_head.weight,
+            labels,
+            _PATCH_OPTS,
+            **loss_kwargs,
         )
     else:
-        # Only compute necessary logits, and do not upcast them to float if we are not computing the loss
-        logits = self.lm_head(hidden_states[:, -num_logits_to_keep:, :])
-        # In Gemma3 the `final_logit_softcapping` defaults to None, this will not activate (however, I am leaving it in as a softcapping value can be optionally applied in theory)
+        logits = self.lm_head(hidden_states[:, slice_indices, :])
         if self.config.final_logit_softcapping is not None:
             logits = logits / self.config.final_logit_softcapping
             logits = torch.tanh(logits)
@@ -146,6 +160,26 @@ def cce_forward(
         hidden_states=outputs.hidden_states,
         attentions=outputs.attentions,
     )
+
+
+def patch_gemma2(
+    maybe_model: TransformersModelT | str | transformers.PretrainedConfig,
+    patch_options: PatchOptions,
+) -> TransformersModelT | None:
+    global _PATCH_OPTS  # pylint: disable=global-statement
+    from transformers.models.gemma2 import modeling_gemma2
+
+    _PATCH_OPTS = patch_options
+
+    if isinstance(maybe_model, transformers.PreTrainedModel):
+        assert isinstance(
+            maybe_model, modeling_gemma2.Gemma2ForCausalLM
+        ), f"Expected a Gemma2ForCausalLM model. Got {type(maybe_model)}."
+        maybe_model.forward = MethodType(cce_forward, maybe_model)
+        return maybe_model
+
+    modeling_gemma2.Gemma2ForCausalLM.forward = cce_forward
+    return None
 
 
 def patch_gemma3(
