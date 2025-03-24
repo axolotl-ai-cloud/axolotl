@@ -40,6 +40,7 @@ quartodoc:
         - cli.preprocess
         - cli.sweeps
         - cli.utils
+        - cli.vllm_serve
         - cli.cloud.base
         - cli.cloud.modal_
     - title: Trainers
