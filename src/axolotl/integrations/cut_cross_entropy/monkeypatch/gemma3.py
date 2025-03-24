@@ -1,4 +1,4 @@
-"""Gemma3 CCE patch."""
+"""Gemma2 and Gemma3 (text and multimodal) CCE patch."""
 
 # Implementation adapted from https://github.com/apple/ml-cross-entropy/pull/29
 
@@ -52,6 +52,7 @@ def cce_forward(
     return_dict: Optional[bool] = None,
     cache_position: Optional[torch.LongTensor] = None,
     logits_to_keep: Union[int, torch.Tensor] = 0,
+    defer_logits_calculation: bool = False,
     **loss_kwargs,
 ) -> Union[Tuple, CausalLMOutputWithPast]:
     r"""
@@ -135,7 +136,7 @@ def cce_forward(
         assert labels is not None
         if self.config.final_logit_softcapping is not None:
             raise NotImplementedError(
-                "final_logit_softcapping is not supported for Gemma3 with CCE"
+                "final_logit_softcapping is not supported for gemma3_text with CCE"
             )
         loss = apply_lce(
             hidden_states[:, slice_indices, :],
@@ -144,6 +145,14 @@ def cce_forward(
             _PATCH_OPTS,
             **loss_kwargs,
         )
+    elif _PATCH_OPTS is not None and defer_logits_calculation:
+        # defer logits calculation to the ConditionalGeneration forward
+        logits = hidden_states[:, slice_indices, :]
+
+        if self.config.final_logit_softcapping is not None:
+            raise NotImplementedError(
+                "final_logit_softcapping is not supported for gemma3 with CCE"
+            )
     else:
         logits = self.lm_head(hidden_states[:, slice_indices, :])
         if self.config.final_logit_softcapping is not None:
@@ -329,6 +338,7 @@ def cce_forward_multimodal(
         return_dict=return_dict,
         cache_position=cache_position,
         logits_to_keep=logits_to_keep,
+        defer_logits_calculation=True,  # enable deferred logits calculation
         **lm_kwargs,
     )
 
@@ -336,18 +346,11 @@ def cce_forward_multimodal(
     loss = None
     logits = None
 
-    # Only compute necessary logits, and do not upcast them to float if we are not computing the loss
-    slice_indices = (
-        slice(-logits_to_keep, None)
-        if isinstance(logits_to_keep, int)
-        else logits_to_keep
-    )
-
     if _PATCH_OPTS is not None and _PATCH_OPTS.use_lce(labels, self.training):
         assert labels is not None
         loss = apply_lce(
-            hidden_states[:, slice_indices, :],
-            self.lm_head.weight,
+            hidden_states,
+            self.language_model.lm_head.weight,
             labels,
             _PATCH_OPTS,
             **lm_kwargs,
@@ -356,7 +359,7 @@ def cce_forward_multimodal(
         logits = hidden_states
         if labels is not None:
             # Upcast to float if we need to compute the loss to avoid potential precision issues
-            logits = logits[:, slice_indices, :].float()
+            logits = logits.float()
             shift_logits = logits[..., :-1, :]
             shift_labels = labels[..., 1:]
             if attention_mask is not None:
@@ -452,4 +455,7 @@ def patch_gemma3(
         return maybe_model
 
     modeling_gemma3.Gemma3ForConditionalGeneration.forward = cce_forward_multimodal
+
+    # patch the causal model to enable deferred logits calculation
+    patch_gemma3_text(maybe_model, patch_options)
     return None
