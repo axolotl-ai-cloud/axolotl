@@ -3,6 +3,7 @@ CLI to start the vllm server for online RL
 """
 
 import subprocess  # nosec B404
+import sys
 from pathlib import Path
 from typing import Union
 
@@ -54,7 +55,7 @@ def do_vllm_serve(
 
 
 def start_vllm(model, env=None, **kwargs) -> int:
-    cmd = ["python3", "-m", "trl.scripts.vllm_serve", "--model", model]
+    cmd = [sys.executable, "-m", "trl.scripts.vllm_serve", "--model", model]
 
     if tensor_parallel_size := kwargs.get("tensor_parallel_size"):
         cmd.extend(["--tensor-parallel-size", str(tensor_parallel_size)])
