@@ -4,6 +4,7 @@ CLI to start the vllm server for online RL
 
 import subprocess  # nosec B404
 import sys
+import time
 from pathlib import Path
 from typing import Union
 
@@ -54,7 +55,9 @@ def do_vllm_serve(
     return process_id
 
 
-def start_vllm(model, env=None, **kwargs) -> int:
+def start_vllm(
+    model: str, env: dict | None = None, wait: float = 20.0, **kwargs
+) -> int:
     cmd = [sys.executable, "-m", "trl.scripts.vllm_serve", "--model", model]
 
     if tensor_parallel_size := kwargs.get("tensor_parallel_size"):
@@ -76,11 +79,12 @@ def start_vllm(model, env=None, **kwargs) -> int:
     print(" ".join(cmd))
 
     # start `trl vllm-serve` command in the background and capture the process id
-    with subprocess.Popen(
+    process = subprocess.Popen(  # pylint: disable=consider-using-with
         cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-    ) as process:  # nosec B603
+    )  # nosec B603
 
-        # print out the process id so the user can easily kill it later
-        print(f"VLLM server process started (PID: {process.pid})")
+    # print out the process id so the user can easily kill it later
+    print(f"VLLM server process started (PID: {process.pid})")
+    time.sleep(wait)
 
-        return process.pid
+    return process.pid
