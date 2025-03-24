@@ -173,3 +173,23 @@ def patch_cohere(
 
     modeling_cohere.CohereForCausalLM.forward = cce_forward
     return None
+
+
+def patch_cohere2(
+    maybe_model: TransformersModelT | str | transformers.PretrainedConfig,
+    patch_options: PatchOptions,
+) -> TransformersModelT | None:
+    global _PATCH_OPTS  # pylint: disable=global-statement
+    from transformers.models.cohere2 import modeling_cohere2
+
+    _PATCH_OPTS = patch_options
+
+    if isinstance(maybe_model, transformers.PreTrainedModel):
+        assert isinstance(
+            maybe_model, modeling_cohere2.Cohere2ForCausalLM
+        ), f"Expected a Cohere2ForCausalLM model. Got {type(maybe_model)}."
+        maybe_model.forward = MethodType(cce_forward, maybe_model)
+        return maybe_model
+
+    modeling_cohere2.Cohere2ForCausalLM.forward = cce_forward
+    return None

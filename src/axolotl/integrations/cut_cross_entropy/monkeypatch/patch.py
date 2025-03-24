@@ -12,7 +12,10 @@ from cut_cross_entropy.transformers.phi3 import patch_phi3
 from cut_cross_entropy.transformers.qwen2 import patch_qwen2
 from cut_cross_entropy.transformers.utils import PatchOptions, TransformersModelT
 
-from axolotl.integrations.cut_cross_entropy.monkeypatch.cohere import patch_cohere
+from axolotl.integrations.cut_cross_entropy.monkeypatch.cohere import (
+    patch_cohere,
+    patch_cohere2,
+)
 from axolotl.integrations.cut_cross_entropy.monkeypatch.gemma3 import patch_gemma3
 
 CUT_CROSS_ENTROPY_MODEL_MAPPING = {
@@ -24,7 +27,7 @@ CUT_CROSS_ENTROPY_MODEL_MAPPING = {
     "mistral": patch_mistral,
     "qwen2": patch_qwen2,
     "cohere": patch_cohere,
-    "cohere2": patch_cohere,
+    "cohere2": patch_cohere2,
 }
 
 
