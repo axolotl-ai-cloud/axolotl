@@ -108,7 +108,6 @@ def cce_forward(
         **kwargs,
     )
 
-    hidden_states = outputs[0]
     # Only compute necessary logits, and do not upcast them to float if we are not computing the loss
     slice_indices = (
         slice(-logits_to_keep, None)
@@ -124,7 +123,7 @@ def cce_forward(
         assert labels is not None
         # scale weight by logit_scale in-place of logits
         loss = apply_lce(
-            hidden_states,
+            hidden_states[:, slice_indices, :],
             self.lm_head.weight * self.logit_scale,
             labels,
             _PATCH_OPTS,
