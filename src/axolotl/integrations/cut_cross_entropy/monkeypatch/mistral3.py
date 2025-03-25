@@ -1,5 +1,7 @@
 """Mistral and Mistral3 CCE patch."""
 
+# pylint: disable=duplicate-code
+
 from types import MethodType
 from typing import Optional, Tuple, Union
 
@@ -143,8 +145,6 @@ def cce_forward(
         logits = hidden_states[:, slice_indices, :]
     else:
         logits = self.lm_head(hidden_states[:, slice_indices, :])
-
-        loss = None
         if labels is not None:
             loss = self.loss_function(
                 logits=logits,
