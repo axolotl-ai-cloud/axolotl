@@ -24,9 +24,11 @@ from axolotl.integrations.cut_cross_entropy.monkeypatch.mistral3 import (
     patch_mistral,
     patch_mistral3,
 )
+from axolotl.integrations.cut_cross_entropy.monkeypatch.mllama import patch_mllama
 
 CUT_CROSS_ENTROPY_MODEL_MAPPING = {
     "llama": patch_llama,
+    "mllama": patch_mllama,
     "phi3": patch_phi3,
     "gemma": patch_gemma,
     "gemma2": patch_gemma2,
