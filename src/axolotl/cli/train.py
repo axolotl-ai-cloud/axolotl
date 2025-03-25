@@ -1,7 +1,10 @@
 """CLI to run training on a model."""
 
+import os  # noqa
+# Reduce memory fragmentation in PyTorch for less VRAM usage and more stable training.
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+
 import logging
-import os
 from pathlib import Path
 from typing import Union
 
