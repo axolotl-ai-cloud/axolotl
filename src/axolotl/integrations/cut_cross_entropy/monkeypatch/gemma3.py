@@ -142,8 +142,8 @@ def cce_forward(
     if _PATCH_OPTS is not None and _PATCH_OPTS.use_lce(labels, self.training):
         assert labels is not None
         if self.config.final_logit_softcapping is not None:
-            raise NotImplementedError(
-                "final_logit_softcapping is not supported for gemma3_text with CCE"
+            logger.warning_once(
+                "final_logit_softcapping is not supported for gemma3_text with CCE. Disabling."
             )
         loss = apply_lce(
             hidden_states[:, slice_indices, :],
@@ -157,8 +157,8 @@ def cce_forward(
         logits = hidden_states[:, slice_indices, :]
 
         if self.config.final_logit_softcapping is not None:
-            raise NotImplementedError(
-                "final_logit_softcapping is not supported for gemma3 with CCE"
+            logger.warning_once(
+                "final_logit_softcapping is not supported for gemma3 with CCE. Disabling."
             )
     else:
         logits = self.lm_head(hidden_states[:, slice_indices, :])
