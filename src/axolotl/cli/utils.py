@@ -13,11 +13,16 @@ from typing import Any, Callable, Type, Union, get_args, get_origin
 import click
 import requests
 from pydantic import BaseModel
-from transformers import PreTrainedModel, PreTrainedTokenizer, PreTrainedTokenizerFast
+from transformers import (
+    PreTrainedModel,
+    PreTrainedTokenizer,
+    PreTrainedTokenizerFast,
+    ProcessorMixin,
+)
 
 from axolotl.logging_config import configure_logging
 from axolotl.utils.dict import DictDefault
-from axolotl.utils.models import load_model, load_tokenizer
+from axolotl.utils.models import load_model, load_processor, load_tokenizer
 
 configure_logging()
 LOG = logging.getLogger(__name__)
@@ -295,9 +300,13 @@ def load_model_and_tokenizer(
     *,
     cfg: DictDefault,
     inference: bool = False,
-) -> tuple[PreTrainedModel, PreTrainedTokenizer | PreTrainedTokenizerFast | Any]:
+) -> tuple[
+    PreTrainedModel,
+    PreTrainedTokenizer | PreTrainedTokenizerFast | Any,
+    ProcessorMixin | None,
+]:
     """
-    Helper function for loading a model and tokenizer specified in the given `axolotl`
+    Helper function for loading a model, tokenizer, and processor specified in the given `axolotl`
     config.
 
     Args:
@@ -305,7 +314,7 @@ def load_model_and_tokenizer(
         inference: Boolean denoting inference mode.
 
     Returns:
-        `transformers` model and tokenizer.
+        Tuple of (PreTrainedModel, PreTrainedTokenizer, ProcessorMixin).
     """
     LOG.info(f"loading tokenizer... {cfg.tokenizer_config or cfg.base_model_config}")
     tokenizer = load_tokenizer(cfg)
@@ -313,4 +322,9 @@ def load_model_and_tokenizer(
     LOG.info("loading model...")
     model, _ = load_model(cfg, tokenizer, inference=inference)
 
-    return model, tokenizer
+    processor = None
+    if cfg.is_multimodal:
+        LOG.info("loading processor...")
+        processor = load_processor(cfg, tokenizer)
+
+    return model, tokenizer, processor

@@ -408,7 +408,7 @@ def test_kernel_training_integration():
     )
 
     # Load model
-    model, _ = load_model_and_tokenizer(cfg=cfg)
+    model, _, _ = load_model_and_tokenizer(cfg=cfg)
 
     # Verify correct activation function
     layer = model.model.model.layers[0]

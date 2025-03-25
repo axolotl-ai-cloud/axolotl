@@ -27,7 +27,7 @@ def do_merge_lora(*, cfg: DictDefault) -> None:
     """
     print_axolotl_text_art()
 
-    model, tokenizer = load_model_and_tokenizer(cfg=cfg)
+    model, tokenizer, processor = load_model_and_tokenizer(cfg=cfg)
     safe_serialization = cfg.save_safetensors is True
 
     LOG.info("Running merge of LoRA with base model...")
@@ -43,6 +43,9 @@ def do_merge_lora(*, cfg: DictDefault) -> None:
             progressbar=True,
         )
         tokenizer.save_pretrained(str(Path(cfg.output_dir) / "merged"))
+
+        if processor:
+            processor.save_pretrained(str(Path(cfg.output_dir) / "merged"))
 
 
 def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs) -> None:
