@@ -33,10 +33,12 @@ cut_cross_entropy: true
 
 - llama
 - phi3
+- gemma
 - gemma2
 - gemma3
 - gemma3_text
 - mistral
+- mistral3
 - qwen2
 - cohere
 - cohere2
