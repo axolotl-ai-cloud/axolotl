@@ -8,6 +8,8 @@ import time
 from pathlib import Path
 from typing import Union
 
+import requests
+
 from axolotl.cli.args import VllmServeCliArgs
 from axolotl.cli.config import load_cfg
 
@@ -87,4 +89,24 @@ def start_vllm(
     print(f"VLLM server process started (PID: {process.pid})")
     time.sleep(wait)
 
+    # wait until the http server is ready, even if it 404s, but timeout after 60 seconds
+    started = False
+    for _ in range(60):
+        try:
+            response = requests.get(f"http://{host}:{port}", timeout=5)
+            if int(response.status_code) in [200, 404]:
+                started = True
+                break
+        except requests.exceptions.RequestException:
+            pass
+        time.sleep(1)
+
+    if not started:
+        print(
+            "VLLM server process did not start within 60 seconds. Please check your server logs."
+        )
+        process.kill()
+        raise RuntimeError("VLLM server process did not start within 60 seconds.")
+
+    # return the process id
     return process.pid
