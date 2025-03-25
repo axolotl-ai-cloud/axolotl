@@ -14,6 +14,7 @@ from axolotl.integrations.cut_cross_entropy.monkeypatch.cohere import (
     patch_cohere,
     patch_cohere2,
 )
+from axolotl.integrations.cut_cross_entropy.monkeypatch.gemma import patch_gemma
 from axolotl.integrations.cut_cross_entropy.monkeypatch.gemma3 import (
     patch_gemma2,
     patch_gemma3,
@@ -27,7 +28,7 @@ from axolotl.integrations.cut_cross_entropy.monkeypatch.mistral3 import (
 CUT_CROSS_ENTROPY_MODEL_MAPPING = {
     "llama": patch_llama,
     "phi3": patch_phi3,
-    "gemma": patch_llama,  # uses same forward as llama
+    "gemma": patch_gemma,
     "gemma2": patch_gemma2,
     "gemma3": patch_gemma3,
     "gemma3_text": patch_gemma3_text,
