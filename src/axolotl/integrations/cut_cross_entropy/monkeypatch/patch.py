@@ -27,6 +27,7 @@ from axolotl.integrations.cut_cross_entropy.monkeypatch.mistral3 import (
 CUT_CROSS_ENTROPY_MODEL_MAPPING = {
     "llama": patch_llama,
     "phi3": patch_phi3,
+    "gemma": patch_llama,  # uses same forward as llama
     "gemma2": patch_gemma2,
     "gemma3": patch_gemma3,
     "gemma3_text": patch_gemma3_text,
