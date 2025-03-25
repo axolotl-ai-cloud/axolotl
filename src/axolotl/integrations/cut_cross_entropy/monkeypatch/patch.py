@@ -6,7 +6,6 @@ import transformers
 from cut_cross_entropy.cce_utils import LinearCrossEntropyImpl
 from cut_cross_entropy.linear_cross_entropy import LCE_IMPL_DEFAULT
 from cut_cross_entropy.transformers.llama import patch_llama
-from cut_cross_entropy.transformers.mistral import patch_mistral
 from cut_cross_entropy.transformers.phi3 import patch_phi3
 from cut_cross_entropy.transformers.qwen2 import patch_qwen2
 from cut_cross_entropy.transformers.utils import PatchOptions, TransformersModelT
@@ -20,6 +19,10 @@ from axolotl.integrations.cut_cross_entropy.monkeypatch.gemma3 import (
     patch_gemma3,
     patch_gemma3_text,
 )
+from axolotl.integrations.cut_cross_entropy.monkeypatch.mistral3 import (
+    patch_mistral,
+    patch_mistral3,
+)
 
 CUT_CROSS_ENTROPY_MODEL_MAPPING = {
     "llama": patch_llama,
@@ -28,6 +31,7 @@ CUT_CROSS_ENTROPY_MODEL_MAPPING = {
     "gemma3": patch_gemma3,
     "gemma3_text": patch_gemma3_text,
     "mistral": patch_mistral,
+    "mistral3": patch_mistral3,
     "qwen2": patch_qwen2,
     "cohere": patch_cohere,
     "cohere2": patch_cohere2,
