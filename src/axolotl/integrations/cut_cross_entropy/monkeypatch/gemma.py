@@ -6,7 +6,7 @@ from types import MethodType
 
 import transformers
 from cut_cross_entropy.transformers.llama import cce_forward
-from cut_cross_entropy.utils import PatchOptions, TransformersModelT
+from cut_cross_entropy.transformers.utils import PatchOptions, TransformersModelT
 
 _PATCH_OPTS: PatchOptions | None = None
 
