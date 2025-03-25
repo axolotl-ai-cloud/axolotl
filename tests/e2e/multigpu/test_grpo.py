@@ -98,7 +98,8 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
 
         self._utils_write_yaml_and_rewards(cfg, temp_dir, suffix=rnd_reward_suffix)
 
-        env = {}
+        current_env = os.environ.copy()
+        env = {"NCCL_P2P_LEVEL": "NVL", **current_env}
         if num_gpus == 1:
             env["CUDA_VISIBLE_DEVICES"] = "0"
         else:
@@ -107,18 +108,21 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
             cfg.base_model, env=env, gpu_memory_utilization=0.15
         )
 
-        execute_subprocess_async(
-            [
-                "axolotl",
-                "train",
-                str(Path(temp_dir) / "config.yaml"),
-                "--num-processes",
-                str(num_gpus),
-                "--main-process-port",
-                f"{get_torch_dist_unique_port()}",
-            ]
-        )
-        os.kill(vllm_process_id, 9)
+        try:
+            execute_subprocess_async(
+                [
+                    "axolotl",
+                    "train",
+                    str(Path(temp_dir) / "config.yaml"),
+                    "--num-processes",
+                    str(num_gpus),
+                    "--main-process-port",
+                    f"{get_torch_dist_unique_port()}",
+                ],
+                env={"NCCL_P2P_LEVEL": "NVL", **current_env},
+            )
+        finally:
+            os.kill(vllm_process_id, 9)
 
     @pytest.mark.parametrize(
         "num_gpus",
@@ -169,7 +173,8 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
 
         self._utils_write_yaml_and_rewards(cfg, temp_dir, suffix=rnd_reward_suffix)
 
-        env = {}
+        current_env = os.environ.copy()
+        env = {"NCCL_P2P_LEVEL": "NVL", **current_env}
         if num_gpus == 1:
             env["CUDA_VISIBLE_DEVICES"] = "0"
         else:
@@ -178,15 +183,18 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
             cfg.base_model, env=env, gpu_memory_utilization=0.15
         )
 
-        execute_subprocess_async(
-            [
-                "axolotl",
-                "train",
-                str(Path(temp_dir) / "config.yaml"),
-                "--num-processes",
-                str(num_gpus),
-                "--main-process-port",
-                f"{get_torch_dist_unique_port()}",
-            ]
-        )
-        os.kill(vllm_process_id, 9)
+        try:
+            execute_subprocess_async(
+                [
+                    "axolotl",
+                    "train",
+                    str(Path(temp_dir) / "config.yaml"),
+                    "--num-processes",
+                    str(num_gpus),
+                    "--main-process-port",
+                    f"{get_torch_dist_unique_port()}",
+                ],
+                env={"NCCL_P2P_LEVEL": "NVL", **current_env},
+            )
+        finally:
+            os.kill(vllm_process_id, 9)
