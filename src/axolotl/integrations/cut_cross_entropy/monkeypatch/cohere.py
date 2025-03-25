@@ -1,4 +1,9 @@
-"""Cohere CCE patch."""
+"""Cohere and Cohere2 CCE patch."""
+
+# This patch is based off transformers 4.50.0.
+# It patches the forward function for CohereForCausalLM and Cohere2ForCausalLM.
+# It scales the hidden states by the logit scale in advance instead of the logits as the
+# operation is done internally and should be mathematically equivalent.
 
 # pylint: disable=duplicate-code
 
