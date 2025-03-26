@@ -45,8 +45,7 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
 
     @pytest.mark.parametrize(
         "num_gpus",
-        # [1, 2],
-        [1],
+        [1, 2],
     )
     @require_vllm
     def test_llama_dora(self, temp_dir, num_gpus):
@@ -133,8 +132,7 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
 
     @pytest.mark.parametrize(
         "num_gpus",
-        # [1, 2],
-        [1],
+        [1, 2],
     )
     @require_vllm
     def test_llama_fft(self, temp_dir, num_gpus):
