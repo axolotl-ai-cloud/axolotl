@@ -506,7 +506,7 @@ lr_div_factor: # Learning rate div factor
 
 # Specify optimizer
 # Valid values are driven by the Transformers OptimizerNames class, see:
-# https://github.com/huggingface/transformers/blob/95b374952dc27d8511541d6f5a4e22c9ec11fb24/src/transformers/training_args.py#L134
+# https://github.com/huggingface/transformers/blob/cbf924b76c03828101a34069a96d209314114fd5/src/transformers/training_args.py#L144-L189
 #
 # Note that not all optimizers may be available in your environment, ex: 'adamw_anyprecision' is part of
 # torchdistx, 'adamw_bnb_8bit' is part of bnb.optim.Adam8bit, etc. When in doubt, it is recommended to start with the optimizer used
@@ -516,25 +516,48 @@ lr_div_factor: # Learning rate div factor
 # - adamw_torch
 # - adamw_torch_fused
 # - adamw_torch_xla
+# - adamw_torch_npu_fused
 # - adamw_apex_fused
-# - adopt_adamw (an EXPERIMENTAL optimizer, only for torch version >= 2.5.1)
+# - adopt_adamw  (an EXPERIMENTAL optimizer, only for torch version >= 2.5.1)
 # - adafactor
 # - adamw_anyprecision
+# - adamw_torch_4bit
+# - ademamix
 # - sgd
 # - adagrad
 # - adamw_bnb_8bit
+# - adamw_8bit   # alias for adamw_bnb_8bit
+# - ademamix_8bit
 # - lion_8bit
 # - lion_32bit
 # - paged_adamw_32bit
 # - paged_adamw_8bit
+# - paged_ademamix_32bit
+# - paged_ademamix_8bit
 # - paged_lion_32bit
 # - paged_lion_8bit
+# - rmsprop
+# - rmsprop_bnb
+# - rmsprop_bnb_8bit
+# - rmsprop_bnb_32bit
 # - galore_adamw
 # - galore_adamw_8bit
 # - galore_adafactor
 # - galore_adamw_layerwise
 # - galore_adamw_8bit_layerwise
 # - galore_adafactor_layerwise
+# - lomo
+# - adalomo
+# - grokadamw
+# - schedule_free_adamw
+# - schedule_free_sgd
+# - apollo_adamw
+# - apollo_adamw_layerwise
+#
+# Additional custom optimizers include:
+# - optimi_adamw
+# - ao_adamw_8bit
+# - ao_adamw_fp8
 optimizer:
 # Dictionary of arguments to pass to the optimizer
 optim_args:
