@@ -109,6 +109,7 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
             cfg.base_model,
             env=env,
             quiet=True,
+            wait=60,
             gpu_memory_utilization=0.15,
             host="0.0.0.0",
             port=8000,
@@ -125,7 +126,7 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
                     "--main-process-port",
                     f"{get_torch_dist_unique_port()}",
                 ],
-                env={"NCCL_P2P_LEVEL": "LOC", **current_env},
+                env={"NCCL_P2P_LEVEL": "LOC", "NCCL_DEBUG": "INFO", **current_env},
             )
         finally:
             os.kill(vllm_process_id, 9)
@@ -189,6 +190,7 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
             cfg.base_model,
             env=env,
             quiet=True,
+            wait=60,
             gpu_memory_utilization=0.15,
             host="0.0.0.0",
             port=8000,
@@ -205,7 +207,7 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
                     "--main-process-port",
                     f"{get_torch_dist_unique_port()}",
                 ],
-                env={"NCCL_P2P_LEVEL": "LOC", **current_env},
+                env={"NCCL_P2P_LEVEL": "LOC", "NCCL_DEBUG": "INFO", **current_env},
             )
         finally:
             os.kill(vllm_process_id, 9)
