@@ -108,6 +108,7 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
         vllm_process_id = start_vllm(
             cfg.base_model,
             env=env,
+            quiet=True,
             gpu_memory_utilization=0.15,
             host="0.0.0.0",
             port=8000,
@@ -187,6 +188,7 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
         vllm_process_id = start_vllm(
             cfg.base_model,
             env=env,
+            quiet=True,
             gpu_memory_utilization=0.15,
             host="0.0.0.0",
             port=8000,
