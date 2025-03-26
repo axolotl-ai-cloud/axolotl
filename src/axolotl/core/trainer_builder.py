@@ -253,9 +253,11 @@ class TrainerBuilderBase(abc.ABC):
         logging_steps = (
             self.cfg.logging_steps
             if self.cfg.logging_steps is not None
-            else 500  # transformers defaults to 500
-            if not total_num_steps
-            else max(min(int(0.005 * total_num_steps), 10), 1)
+            else (
+                500  # transformers defaults to 500
+                if not total_num_steps
+                else max(min(int(0.005 * total_num_steps), 10), 1)
+            )
         )
 
         training_args_kwargs["warmup_ratio"] = warmup_ratio
@@ -301,13 +303,13 @@ class TrainerBuilderBase(abc.ABC):
             training_args_kwargs["eval_strategy"] = self.cfg.eval_strategy
 
         if self.cfg.gradient_checkpointing:
-            training_args_kwargs[
-                "gradient_checkpointing"
-            ] = self.cfg.gradient_checkpointing
+            training_args_kwargs["gradient_checkpointing"] = (
+                self.cfg.gradient_checkpointing
+            )
             if self.cfg.gradient_checkpointing_kwargs is not None:
-                training_args_kwargs[
-                    "gradient_checkpointing_kwargs"
-                ] = self.cfg.gradient_checkpointing_kwargs
+                training_args_kwargs["gradient_checkpointing_kwargs"] = (
+                    self.cfg.gradient_checkpointing_kwargs
+                )
             else:
                 training_args_kwargs["gradient_checkpointing_kwargs"] = {
                     "use_reentrant": False
@@ -336,9 +338,9 @@ class TrainerBuilderBase(abc.ABC):
         training_args_kwargs["per_device_train_batch_size"] = self.cfg.micro_batch_size
 
         if self.cfg.eval_batch_size:
-            training_args_kwargs[
-                "per_device_eval_batch_size"
-            ] = self.cfg.eval_batch_size
+            training_args_kwargs["per_device_eval_batch_size"] = (
+                self.cfg.eval_batch_size
+            )
 
         training_args_kwargs["save_total_limit"] = (
             self.cfg.save_total_limit if self.cfg.save_total_limit else 4
@@ -383,9 +385,9 @@ class TrainerBuilderBase(abc.ABC):
             self.cfg.lr_scheduler_kwargs if self.cfg.lr_scheduler_kwargs else {}
         )
         training_args_kwargs["cosine_min_lr_ratio"] = self.cfg.cosine_min_lr_ratio
-        training_args_kwargs[
-            "cosine_constant_lr_ratio"
-        ] = self.cfg.cosine_constant_lr_ratio
+        training_args_kwargs["cosine_constant_lr_ratio"] = (
+            self.cfg.cosine_constant_lr_ratio
+        )
 
         return training_args_kwargs
 
@@ -559,13 +561,13 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         training_arguments_kwargs["max_seq_length"] = self.cfg.sequence_len
 
         if self.cfg.auto_find_batch_size is not None:
-            training_arguments_kwargs[
-                "auto_find_batch_size"
-            ] = self.cfg.auto_find_batch_size
+            training_arguments_kwargs["auto_find_batch_size"] = (
+                self.cfg.auto_find_batch_size
+            )
 
-        training_arguments_kwargs[
-            "eval_accumulation_steps"
-        ] = self.cfg.gradient_accumulation_steps
+        training_arguments_kwargs["eval_accumulation_steps"] = (
+            self.cfg.gradient_accumulation_steps
+        )
         training_arguments_kwargs["num_train_epochs"] = self.cfg.num_epochs
 
         training_arguments_kwargs["load_best_model_at_end"] = (
@@ -605,9 +607,9 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 optim_args = self.cfg.optim_args
             training_arguments_kwargs["optim_args"] = optim_args
         if self.cfg.optim_target_modules:
-            training_arguments_kwargs[
-                "optim_target_modules"
-            ] = self.cfg.optim_target_modules
+            training_arguments_kwargs["optim_target_modules"] = (
+                self.cfg.optim_target_modules
+            )
         training_arguments_kwargs["embedding_lr"] = self.cfg.embedding_lr
         training_arguments_kwargs["embedding_lr_scale"] = self.cfg.embedding_lr_scale
         training_arguments_kwargs["lr_groups"] = self.cfg.lr_groups
