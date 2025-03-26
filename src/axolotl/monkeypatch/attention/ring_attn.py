@@ -45,6 +45,10 @@ def register_ring_attn(sequence_parallel_degree: int):
     Args:
         sequence_parallel_degree: Sequence parallelism factor.
     """
+    if get_ring_attn_group() is not None:
+        LOG.info("Ring attention already registered, exiting early...")
+        return
+
     LOG.info(
         "Enabling ring attention sequence parallelism: "
         f"each sequence will be processed across {sequence_parallel_degree} GPUs"
