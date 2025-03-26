@@ -6,7 +6,7 @@ import subprocess  # nosec B404
 import sys
 import time
 from pathlib import Path
-from typing import Union
+from typing import Any, Union
 
 import requests
 
@@ -42,6 +42,11 @@ def do_vllm_serve(
     enable_prefix_caching = (
         cfg.trl.enable_prefix_caching or cli_args.enable_prefix_caching
     )
+    wait = cli_args.wait
+
+    start_vllm_kwargs: dict[str, Any] = {}
+    if wait is not None:
+        start_vllm_kwargs["wait"] = wait
 
     process_id: int = start_vllm(
         model,
@@ -52,13 +57,14 @@ def do_vllm_serve(
         dtype=dtype,
         max_model_len=max_model_len,
         enable_prefix_caching=enable_prefix_caching,
+        **start_vllm_kwargs,
     )
 
     return process_id
 
 
 def start_vllm(
-    model: str, env: dict | None = None, wait: float = 60.0, quiet=False, **kwargs
+    model: str, env: dict | None = None, wait: int | None = None, quiet=False, **kwargs
 ) -> int:
     cmd = [sys.executable, "-m", "trl.scripts.vllm_serve", "--model", model]
 
@@ -93,7 +99,7 @@ def start_vllm(
 
     # wait until the http server is ready, even if it 404s, but timeout after 60 seconds
     started = False
-    if host and port:
+    if wait and host and port:
         for _ in range(int(wait)):
             try:
                 response = requests.get(f"http://{host}:{port}", timeout=1)
@@ -105,12 +111,12 @@ def start_vllm(
 
             time.sleep(1)
 
-    if not started:
+    if wait and not started:
         print(
-            "VLLM server process did not start within 60 seconds. Please check your server logs."
+            f"VLLM server process did not start within {wait} seconds. Please check your server logs."
         )
         process.kill()
-        raise RuntimeError("VLLM server process did not start within 60 seconds.")
+        raise RuntimeError(f"VLLM server process did not start within {wait} seconds.")
 
     # return the process id
     return process.pid
