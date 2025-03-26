@@ -466,6 +466,7 @@ auto_find_batch_size: # Optional[bool]
 
 eval_table_size: # Approximate number of predictions sent to wandb depending on batch size. Enabled above 0. Default is 0
 eval_max_new_tokens: # Total number of tokens generated for predictions sent to wandb. Default is 128
+do_causal_lm_eval: # Whether to run causal language model evaluation for metrics in `eval_causal_lm_metrics`.
 eval_causal_lm_metrics: # HF evaluate metrics used during evaluation. Default is ["sacrebleu", "comet", "ter", "chrf", "perplexity"]
 
 profiler_steps: # enable the pytorch profiler to capture the first N steps of training to the output_dir.
