@@ -437,6 +437,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <li><a href="#requirements" id="toc-requirements" class="nav-link" data-scroll-target="#requirements">Requirements</a></li>
   <li><a href="#installation" id="toc-installation" class="nav-link" data-scroll-target="#installation">Installation</a></li>
   <li><a href="#usage" id="toc-usage" class="nav-link" data-scroll-target="#usage">Usage</a></li>
+  <li><a href="#supported-models" id="toc-supported-models" class="nav-link" data-scroll-target="#supported-models">Supported Models</a></li>
   <li><a href="#citation" id="toc-citation" class="nav-link" data-scroll-target="#citation">Citation</a></li>
   </ul></li>
   <li><a href="#grokfast" id="toc-grokfast" class="nav-link" data-scroll-target="#grokfast">Grokfast</a>
@@ -494,7 +495,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <p>To enable them, please check the respective documentations.</p>
 <section id="cut-cross-entropy" class="level2">
 <h2 class="anchored" data-anchor-id="cut-cross-entropy">Cut Cross Entropy</h2>
-<p>Cut Cross Entropy reduces VRAM usage through optimization on the cross-entropy operation during loss calculation.</p>
+<p>Cut Cross Entropy (CCE) reduces VRAM usage through optimization on the cross-entropy operation during loss calculation.</p>
 <p>See https://github.com/apple/ml-cross-entropy</p>
 <section id="requirements" class="level3">
 <h3 class="anchored" data-anchor-id="requirements">Requirements</h3>
@@ -515,6 +516,22 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin</span></span>
 <span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="fu">cut_cross_entropy</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</section>
+<section id="supported-models" class="level3">
+<h3 class="anchored" data-anchor-id="supported-models">Supported Models</h3>
+<ul>
+<li>llama</li>
+<li>phi3</li>
+<li>gemma</li>
+<li>gemma2</li>
+<li>gemma3</li>
+<li>gemma3_text</li>
+<li>mistral</li>
+<li>mistral3</li>
+<li>qwen2</li>
+<li>cohere</li>
+<li>cohere2</li>
+</ul>
 </section>
 <section id="citation" class="level3">
 <h3 class="anchored" data-anchor-id="citation">Citation</h3>

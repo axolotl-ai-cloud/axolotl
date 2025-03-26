@@ -725,7 +725,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </section>
 <section id="axolotl.train.save_initial_configs" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.train.save_initial_configs">save_initial_configs</h3>
-<div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>train.save_initial_configs(cfg, tokenizer, model, peft_config)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>train.save_initial_configs(cfg, tokenizer, model, peft_config, processor)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Save initial configurations before training.</p>
 <section id="parameters-4" class="level4 doc-section doc-section-parameters">
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-4">Parameters</h4>
@@ -935,8 +935,8 @@ trainer setup.</p>
 <tbody>
 <tr class="odd">
 <td></td>
-<td>tuple[HFRLTrainerBuilder | HFCausalTrainerBuilder, PeftModel | PreTrainedModel, PreTrainedTokenizer, PeftConfig | None]</td>
-<td>Tuple of: - Trainer (Causal or RLHF) - Model - Tokenizer - PEFT config</td>
+<td>tuple[HFRLTrainerBuilder | HFCausalTrainerBuilder, PeftModel | PreTrainedModel, PreTrainedTokenizer, PeftConfig | None, ProcessorMixin | None]</td>
+<td>Tuple of: - Trainer (Causal or RLHF) - Model - Tokenizer - PEFT config - Processor</td>
 </tr>
 </tbody>
 </table>

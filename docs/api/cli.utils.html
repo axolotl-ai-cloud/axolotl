@@ -495,7 +495,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </tr>
 <tr class="odd">
 <td><a href="#axolotl.cli.utils.load_model_and_tokenizer">load_model_and_tokenizer</a></td>
-<td>Helper function for loading a model and tokenizer specified in the given <code>axolotl</code></td>
+<td>Helper function for loading a model, tokenizer, and processor specified in the given <code>axolotl</code></td>
 </tr>
 <tr class="even">
 <td><a href="#axolotl.cli.utils.strip_optional_type">strip_optional_type</a></td>
@@ -829,7 +829,7 @@ Only downloads files that don’t exist locally or have changed.</p>
 <section id="axolotl.cli.utils.load_model_and_tokenizer" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.cli.utils.load_model_and_tokenizer">load_model_and_tokenizer</h3>
 <div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>cli.utils.load_model_and_tokenizer(cfg, inference<span class="op">=</span><span class="va">False</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Helper function for loading a model and tokenizer specified in the given <code>axolotl</code>
+<p>Helper function for loading a model, tokenizer, and processor specified in the given <code>axolotl</code>
 config.</p>
 <section id="parameters-6" class="level4 doc-section doc-section-parameters">
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-6">Parameters</h4>
@@ -868,9 +868,9 @@ config.</p>
 <h4 class="doc-section doc-section-returns anchored" data-anchor-id="returns-5">Returns</h4>
 <table class="caption-top table">
 <colgroup>
-<col style="width: 6%">
-<col style="width: 64%">
-<col style="width: 29%">
+<col style="width: 4%">
+<col style="width: 58%">
+<col style="width: 36%">
 </colgroup>
 <thead>
 <tr class="header">
@@ -882,8 +882,8 @@ config.</p>
 <tbody>
 <tr class="odd">
 <td></td>
-<td>tuple[PreTrainedModel, PreTrainedTokenizer | PreTrainedTokenizerFast | Any]</td>
-<td><code>transformers</code> model and tokenizer.</td>
+<td>tuple[PreTrainedModel, PreTrainedTokenizer | PreTrainedTokenizerFast | Any, ProcessorMixin | None]</td>
+<td>Tuple of (PreTrainedModel, PreTrainedTokenizer, ProcessorMixin).</td>
 </tr>
 </tbody>
 </table>
