@@ -58,7 +58,7 @@ def do_vllm_serve(
 
 
 def start_vllm(
-    model: str, env: dict | None = None, wait: float = 30.0, quiet=False, **kwargs
+    model: str, env: dict | None = None, wait: float = 60.0, quiet=False, **kwargs
 ) -> int:
     cmd = [sys.executable, "-m", "trl.scripts.vllm_serve", "--model", model]
 
@@ -90,18 +90,20 @@ def start_vllm(
 
     # print out the process id so the user can easily kill it later
     print(f"VLLM server process started (PID: {process.pid})")
-    time.sleep(wait)
 
     # wait until the http server is ready, even if it 404s, but timeout after 60 seconds
     started = False
-    for _ in range(int(wait)):
-        try:
-            response = requests.get(f"http://{host}:{port}", timeout=1)
-            if int(response.status_code) in [200, 404]:
-                started = True
-                break
-        except requests.exceptions.RequestException:
-            pass
+    if host and port:
+        for _ in range(int(wait)):
+            try:
+                response = requests.get(f"http://{host}:{port}", timeout=1)
+                if int(response.status_code) in [200, 404]:
+                    started = True
+                    break
+            except requests.exceptions.RequestException:
+                pass
+
+            time.sleep(1)
 
     if not started:
         print(
