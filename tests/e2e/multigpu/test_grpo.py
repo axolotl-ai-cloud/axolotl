@@ -100,11 +100,11 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
         self._utils_write_yaml_and_rewards(cfg, temp_dir, suffix=rnd_reward_suffix)
 
         current_env = os.environ.copy()
-        env = {"NCCL_P2P_LEVEL": "NVL", **current_env}
-        if num_gpus == 1:
-            env["CUDA_VISIBLE_DEVICES"] = "0"
-        else:
-            env["CUDA_VISIBLE_DEVICES"] = "1"
+        env = {
+            "NCCL_P2P_LEVEL": "LOC",
+            "CUDA_VISIBLE_DEVICES": "1",
+            **current_env,
+        }
         vllm_process_id = start_vllm(
             cfg.base_model, env=env, gpu_memory_utilization=0.15
         )
@@ -120,7 +120,7 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
                     "--main-process-port",
                     f"{get_torch_dist_unique_port()}",
                 ],
-                env={"NCCL_P2P_LEVEL": "NVL", **current_env},
+                env={"NCCL_P2P_LEVEL": "LOC", **current_env},
             )
         finally:
             os.kill(vllm_process_id, 9)
@@ -175,11 +175,11 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
         self._utils_write_yaml_and_rewards(cfg, temp_dir, suffix=rnd_reward_suffix)
 
         current_env = os.environ.copy()
-        env = {"NCCL_P2P_LEVEL": "NVL", **current_env}
-        if num_gpus == 1:
-            env["CUDA_VISIBLE_DEVICES"] = "0"
-        else:
-            env["CUDA_VISIBLE_DEVICES"] = "1"
+        env = {
+            "NCCL_P2P_LEVEL": "LOC",
+            "CUDA_VISIBLE_DEVICES": "1",
+            **current_env,
+        }
         vllm_process_id = start_vllm(
             cfg.base_model, env=env, gpu_memory_utilization=0.15
         )
@@ -195,7 +195,7 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
                     "--main-process-port",
                     f"{get_torch_dist_unique_port()}",
                 ],
-                env={"NCCL_P2P_LEVEL": "NVL", **current_env},
+                env={"NCCL_P2P_LEVEL": "LOC", **current_env},
             )
         finally:
             os.kill(vllm_process_id, 9)
