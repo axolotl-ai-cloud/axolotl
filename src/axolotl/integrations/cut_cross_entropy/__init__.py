@@ -72,7 +72,9 @@ class CutCrossEntropyPlugin(BasePlugin):
         if cfg.cut_cross_entropy:
             self._check_requirements()
 
-            from cut_cross_entropy.transformers import cce_patch
+            from axolotl.integrations.cut_cross_entropy.monkeypatch.patch import (
+                cce_patch,
+            )
 
             with zero_only():
                 LOG.info(

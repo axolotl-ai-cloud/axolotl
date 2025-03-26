@@ -103,8 +103,7 @@ This uses the same tags as the [`main` image](#sec-main-tags).
 
 - `JUPYTER_DISABLE`: Disable Jupyter lab.
 - `JUPYTER_PASSWORD`: Set a password for the Jupyter lab.
-- `PUBLIC_KEY`: Add a public key for the SSH service.
-- `SSH_KEY`: Add a private key for the SSH service.
+- `PUBLIC_KEY` / `SSH_KEY`: Add a public key for the SSH service.
 
 #### Volume mounts
 

@@ -23,6 +23,8 @@ SUPPORTED_MULTIPACK_MODEL_TYPES = [
     "gemma",
     "gemma2",
     "gemma3_text",
+    "cohere",
+    "cohere2",
     "gemmoe",
     "starcoder2",
     "deepseek_v2",

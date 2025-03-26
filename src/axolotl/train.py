@@ -314,6 +314,7 @@ def save_initial_configs(
     tokenizer: PreTrainedTokenizer,
     model: PreTrainedModel,
     peft_config: PeftConfig | None,
+    processor: ProcessorMixin | None,
 ):
     """
     Save initial configurations before training.
@@ -340,6 +341,10 @@ def save_initial_configs(
     if hasattr(model, "config"):
         LOG.info(f"Pre-saving model config to {cfg.output_dir}...")
         model.config.save_pretrained(str(output_dir))
+
+    if processor:
+        LOG.info(f"Pre-saving processor to {cfg.output_dir}...")
+        processor.save_pretrained(str(output_dir))
 
 
 def setup_model_card(cfg: DictDefault):
@@ -408,6 +413,7 @@ def setup_model_and_trainer(cfg: DictDefault, dataset_meta: TrainDatasetMeta) ->
     PeftModel | PreTrainedModel,
     PreTrainedTokenizer,
     PeftConfig | None,
+    ProcessorMixin | None,
 ]:
     """
     Load model, tokenizer, trainer, etc. Helper function to encapsulate the full
@@ -423,6 +429,7 @@ def setup_model_and_trainer(cfg: DictDefault, dataset_meta: TrainDatasetMeta) ->
             - Model
             - Tokenizer
             - PEFT config
+            - Processor
     """
     # Load tokenizer, processor and model
     model, tokenizer, peft_config, processor = setup_model_and_tokenizer(cfg)
@@ -453,6 +460,7 @@ def setup_model_and_trainer(cfg: DictDefault, dataset_meta: TrainDatasetMeta) ->
         model,
         tokenizer,
         peft_config,
+        processor,
     )
 
 
@@ -475,6 +483,7 @@ def train(
         model,
         tokenizer,
         peft_config,
+        processor,
     ) = setup_model_and_trainer(cfg, dataset_meta)
 
     # Determine if we need to resume from a checkpoint
@@ -490,7 +499,7 @@ def train(
     )
 
     # Save initial configs
-    save_initial_configs(cfg, tokenizer, model, peft_config)
+    save_initial_configs(cfg, tokenizer, model, peft_config, processor)
 
     # Set up signal handler for graceful termination
     setup_signal_handler(cfg, model, safe_serialization)
