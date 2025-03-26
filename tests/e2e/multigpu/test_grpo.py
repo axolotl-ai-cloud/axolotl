@@ -106,7 +106,11 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
             **current_env,
         }
         vllm_process_id = start_vllm(
-            cfg.base_model, env=env, gpu_memory_utilization=0.15
+            cfg.base_model,
+            env=env,
+            gpu_memory_utilization=0.15,
+            host="0.0.0.0",
+            port=8000,
         )
 
         try:
@@ -176,12 +180,16 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
 
         current_env = os.environ.copy()
         env = {
-            "NCCL_P2P_LEVEL": "LOC",
+            "NCCL_P2P_LEVEL": "LOC",  # nccl can be brittle, assume P2P isn't reliable
             "CUDA_VISIBLE_DEVICES": "1",
             **current_env,
         }
         vllm_process_id = start_vllm(
-            cfg.base_model, env=env, gpu_memory_utilization=0.15
+            cfg.base_model,
+            env=env,
+            gpu_memory_utilization=0.15,
+            host="0.0.0.0",
+            port=8000,
         )
 
         try:
