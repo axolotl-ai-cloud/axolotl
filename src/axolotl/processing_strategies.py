@@ -189,7 +189,7 @@ class ProcessingStrategy:
                 if example[im_key] is None:
                     continue
                 if isinstance(example[im_key], list):
-                    if len(example[im_key] == 0):
+                    if len(example[im_key]) == 0:
                         continue
                     image_value = example[im_key][0]
                 else:
