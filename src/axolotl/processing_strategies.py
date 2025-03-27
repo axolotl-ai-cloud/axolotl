@@ -150,9 +150,13 @@ class ProcessingStrategy:
 
         processed_examples = []
         for example in examples:
-            if not ("messages" in example or "conversations" in example):
+            if not (
+                "messages" in example
+                or "conversations" in example
+                or "question" in example
+            ):
                 raise ValueError(
-                    "Only `messages` and `conversations` message keys are currently supported."
+                    "Only `messages`, `conversations`, and `question` message keys are currently supported."
                 )
 
             processed_example = None
