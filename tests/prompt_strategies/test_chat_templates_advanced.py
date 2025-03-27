@@ -94,7 +94,11 @@ class TestChatTemplateConfigurations:
         if (
             turn_idx == 0
             and turn.get("from") in ["system", "context"]
-            and "mistral" in tokenizer.name_or_path.lower()
+            and (
+                "mistral" in tokenizer.name_or_path.lower()
+                or "gemma"
+                in tokenizer.name_or_path.lower()  # temporarily skip gemma due to gemma3 template
+            )
         ):
             assert (
                 start_idx == -1 and end_idx == -1
