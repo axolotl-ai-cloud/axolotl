@@ -18,6 +18,7 @@ Axolotl supports several methods for multi-GPU training:
 
 - DeepSpeed (recommended)
 - FSDP (Fully Sharded Data Parallel)
+- Sequence parallelism
 - FSDP + QLoRA
 
 ## DeepSpeed {#sec-deepspeed}
@@ -65,6 +66,25 @@ fsdp_config:
   fsdp_state_dict_type: FULL_STATE_DICT
   fsdp_transformer_layer_cls_to_wrap: LlamaDecoderLayer
 ```
+
+## Sequence parallelism {#sec-sequence-parallelism}
+
+We support sequence parallelism (SP) via the
+[ring-flash-attention](https://github.com/zhuzilin/ring-flash-attention) project. This
+allows one to split up sequences across GPUs, which is useful in the event that a
+single sequence causes OOM errors during model training.
+
+First, install `ring-flash-attn`, recommended via `pip install axolotl[ring-flash-attn]`,
+or from source with `pip install .[ring-flash-attn]`.
+
+Your Axolotl YAML config should contain the following lines:
+
+```{.yaml}
+sequence_parallel_degree: 4  # Split each sequence into 4 parts, one per GPU
+flash_attention: true  # Required with sequence parallelism
+```
+
+See our [dedicated guide](sequence_parallelism.qmd) for more details.
 
 ### FSDP + QLoRA {#sec-fsdp-qlora}
 

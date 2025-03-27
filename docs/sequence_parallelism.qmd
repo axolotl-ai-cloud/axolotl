@@ -61,7 +61,7 @@ To use sequence parallelism, you need:
 # Example config with sequence parallelism
 base_model: meta-llama/Llama-3-8B-Instruct
 sequence_len: 8192
-sequence_parallel_degree: 2  # Split each sequence into 4 parts
+sequence_parallel_degree: 4  # Split each sequence into 4 parts, one per GPU
 flash_attention: true  # Required with sequence parallelism
 ...
 ```
