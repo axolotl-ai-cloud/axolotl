@@ -9,46 +9,47 @@ from pathlib import Path
 from typing import Any, Union
 
 import requests
+from trl.scripts.vllm_serve import ScriptArguments
+from trl.scripts.vllm_serve import main as vllm_serve_main
 
-from axolotl.cli.args import VllmServeCliArgs
 from axolotl.cli.config import load_cfg
 
 
 def do_vllm_serve(
     config: Union[Path, str],
-    cli_args: VllmServeCliArgs,
+    cli_args: dict,
 ):
     """
     Starts the VLLM server for serving LLM models used for online RL
 
     Args
         :param cfg: Parsed doct of the YAML config
-        :param cli_args: additional command-line arguments
+        :param cli_args: dict of additional command-line arguments of type VllmServeCliArgs
 
     Returns:
         process_id: the process id of the started VLLM server
     """
     cfg = load_cfg(config)
     model = cfg.base_model
-    tensor_parallel_size = cli_args.tensor_parallel_size
-    host = cli_args.host
-    port = cli_args.port
+    tensor_parallel_size = cli_args.get("tensor_parallel_size")
+    host = cli_args.get("host")
+    port = cli_args.get("port")
 
-    gpu_memory_utilization = (
-        cfg.trl.vllm_gpu_memory_utilization or cli_args.gpu_memory_utilization
+    gpu_memory_utilization = cfg.trl.vllm_gpu_memory_utilization or cli_args.get(
+        "gpu_memory_utilization"
     )
-    dtype = cfg.trl.vllm_dtype or cli_args.dtype
-    max_model_len = cfg.trl.vllm_max_model_len or cli_args.max_model_len
-    enable_prefix_caching = (
-        cfg.trl.enable_prefix_caching or cli_args.enable_prefix_caching
+    dtype = cfg.trl.vllm_dtype or cli_args.get("dtype")
+    max_model_len = cfg.trl.vllm_max_model_len or cli_args.get("max_model_len")
+    enable_prefix_caching = cfg.trl.enable_prefix_caching or cli_args.get(
+        "enable_prefix_caching"
     )
-    wait = cli_args.wait
+    wait = cli_args.get("wait")
 
     start_vllm_kwargs: dict[str, Any] = {}
     if wait is not None:
         start_vllm_kwargs["wait"] = wait
 
-    process_id: int = start_vllm(
+    vllm_script_args = ScriptArguments(
         model,
         tensor_parallel_size=tensor_parallel_size,
         host=host,
@@ -57,15 +58,16 @@ def do_vllm_serve(
         dtype=dtype,
         max_model_len=max_model_len,
         enable_prefix_caching=enable_prefix_caching,
-        **start_vllm_kwargs,
     )
-
-    return process_id
+    vllm_serve_main(vllm_script_args)
 
 
 def start_vllm(
     model: str, env: dict | None = None, wait: int | None = None, quiet=False, **kwargs
 ) -> int:
+    """
+    helper function to start the VLLM server in the background, mostly for testing purposes
+    """
     cmd = [sys.executable, "-m", "trl.scripts.vllm_serve", "--model", model]
 
     if tensor_parallel_size := kwargs.get("tensor_parallel_size"):

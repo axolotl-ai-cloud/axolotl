@@ -326,8 +326,8 @@ def fetch(directory: str, dest: Optional[str]) -> None:
 @click.argument("config", type=click.Path(exists=True, path_type=str))
 @add_options_from_dataclass(VllmServeCliArgs)
 @filter_none_kwargs
-def vllm_serve(config: str, **kwargs):
-    do_vllm_serve(config, **kwargs)
+def vllm_serve(config: str, **cli_args: VllmServeCliArgs):
+    do_vllm_serve(config, cli_args)
 
 
 cli.add_command(lm_eval)
