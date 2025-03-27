@@ -82,12 +82,6 @@ class VllmServeCliArgs:
             "hardware support this feature."
         },
     )
-    wait: Optional[int] = field(
-        default=None,
-        metadata={
-            "help": "If set, the server will wait for the specified number of seconds for vllm server to start"
-        },
-    )
 
 
 @dataclass

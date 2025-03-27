@@ -6,7 +6,7 @@ import subprocess  # nosec B404
 import sys
 import time
 from pathlib import Path
-from typing import Any, Union
+from typing import Union
 
 import requests
 from trl.scripts.vllm_serve import ScriptArguments
@@ -43,11 +43,6 @@ def do_vllm_serve(
     enable_prefix_caching = cfg.trl.enable_prefix_caching or cli_args.get(
         "enable_prefix_caching"
     )
-    wait = cli_args.get("wait")
-
-    start_vllm_kwargs: dict[str, Any] = {}
-    if wait is not None:
-        start_vllm_kwargs["wait"] = wait
 
     vllm_script_args = ScriptArguments(
         model,

@@ -101,6 +101,14 @@ def download_argilla_distilabel_capybara_dpo_7k_binarized_dataset():
 
 
 @pytest.fixture(scope="session", autouse=True)
+def download_argilla_distilabel_intel_orca_dpo_dataset():
+    # download the dataset
+    snapshot_download_w_retry(
+        "argilla/distilabel-intel-orca-dpo-pairs", repo_type="dataset"
+    )
+
+
+@pytest.fixture(scope="session", autouse=True)
 def download_argilla_ultrafeedback_binarized_preferences_cleaned_dataset():
     # download the dataset
     snapshot_download_w_retry(
