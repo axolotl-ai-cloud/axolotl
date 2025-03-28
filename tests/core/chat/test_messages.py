@@ -15,7 +15,7 @@ from axolotl.core.chat.messages import ChatFormattedChats, Chats
 @pytest.fixture(scope="session", name="llama_tokenizer")
 @with_hf_offline
 def llama_tokenizer_fixture():
-    return AutoTokenizer.from_pretrained("NousResearch/Meta-Llama-3.1-8B")
+    return AutoTokenizer.from_pretrained("NousResearch/Meta-Llama-3-8B")
 
 
 @pytest.fixture(scope="session", name="chatml_tokenizer")
