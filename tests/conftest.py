@@ -122,6 +122,7 @@ def download_deepseek_model_fixture():
 
 @pytest.fixture(scope="session", autouse=True)
 def download_huggyllama_model_fixture():
+    # download the tokenizer only
     snapshot_download_w_retry(
         "huggyllama/llama-7b", repo_type="model", allow_patterns=["*token*"]
     )
@@ -129,8 +130,17 @@ def download_huggyllama_model_fixture():
 
 @pytest.fixture(scope="session", autouse=True)
 def download_llama_1b_model_fixture():
+    # download the tokenizer only
     snapshot_download_w_retry(
         "NousResearch/Llama-3.2-1B", repo_type="model", allow_patterns=["*token*"]
+    )
+
+
+@pytest.fixture(scope="session", autouse=True)
+def download_phi_mini_model_fixture():
+    # download the tokenizer only
+    snapshot_download_w_retry(
+        "microsoft/Phi-3.5-mini-instruct", repo_type="model", allow_patterns=["*token*"]
     )
 
 
