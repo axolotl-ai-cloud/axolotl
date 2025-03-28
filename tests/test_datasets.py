@@ -69,7 +69,7 @@ class TestDatasetPreparation(unittest.TestCase):
             assert "labels" in dataset.features
 
     @enable_hf_offline
-    @pytest.mark.skip("brittle CI with HF api rate limiting")
+    @pytest.mark.skip("datasets bug with local datasets when offline")
     def test_load_local_hub(self):
         """Niche use case.  Verify that a local copy of a hub dataset can be loaded"""
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -352,6 +352,7 @@ class TestDatasetPreparation(unittest.TestCase):
         assert "conversation" in train_dataset.features
 
     @enable_hf_offline
+    @pytest.mark.skip("datasets bug with local datasets when offline")
     def test_load_local_hub_with_revision(self):
         """Verify that a local copy of a hub dataset can be loaded with a specific revision"""
         with tempfile.TemporaryDirectory() as tmp_dir:
