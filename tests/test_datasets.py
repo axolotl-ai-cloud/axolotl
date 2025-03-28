@@ -281,7 +281,7 @@ class TestDatasetPreparation(unittest.TestCase):
             assert "attention_mask" in dataset.features
             assert "labels" in dataset.features
 
-    @pytest.mark.skip(reaseon="TODO: fix hf offline mode for CI rate limits")
+    @pytest.mark.skip(reason="TODO: fix hf offline mode for CI rate limits")
     @enable_hf_offline
     def test_load_hub_with_dpo(self):
         """Verify that processing dpo data from the hub works"""
