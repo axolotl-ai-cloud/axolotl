@@ -88,6 +88,7 @@ def fixture_phi3_tokenizer():
 
 
 @pytest.fixture(name="gemma_tokenizer")
+@with_hf_offline
 def fixture_gemma_tokenizer():
     tokenizer = AutoTokenizer.from_pretrained("unsloth/gemma-2b-it", revision="703fb4a")
 

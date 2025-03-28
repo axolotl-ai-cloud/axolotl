@@ -172,6 +172,17 @@ def download_phi_3_medium_model_fixture():
     )
 
 
+@pytest.fixture(scope="session", autouse=True)
+def download_gemma_2b_model_fixture():
+    # download the tokenizer only
+    snapshot_download_w_retry(
+        "unsloth/gemma-2b-it",
+        revision="703fb4a",
+        repo_type="model",
+        allow_patterns=["*token*"],
+    )
+
+
 @pytest.fixture
 def temp_dir():
     # Create a temporary directory
