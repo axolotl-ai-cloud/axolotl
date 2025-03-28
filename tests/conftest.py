@@ -40,6 +40,7 @@ def retry_on_request_exceptions(max_retries=3, delay=1):
 
 
 @retry_on_request_exceptions(max_retries=3, delay=5)
+@disable_hf_offline
 def snapshot_download_w_retry(*args, **kwargs):
     return snapshot_download(*args, **kwargs)
 
@@ -325,3 +326,34 @@ def cleanup_monkeypatches():
             module_globals = module_name_tuple[1]
             for module_global in module_globals:
                 globals().pop(module_global, None)
+
+
+# pylint: disable=redefined-outer-name,unused-argument
+def test_load_fixtures(
+    download_smollm2_135m_model,
+    download_llama_68m_random_model,
+    download_qwen_2_5_half_billion_model,
+    download_tatsu_lab_alpaca_dataset,
+    download_mhenrichsen_alpaca_2k_dataset,
+    download_mhenrichsen_alpaca_2k_w_revision_dataset,
+    download_mlabonne_finetome_100k_dataset,
+    download_argilla_distilabel_capybara_dpo_7k_binarized_dataset,
+    download_argilla_ultrafeedback_binarized_preferences_cleaned_dataset,
+    download_fozzie_alpaca_dpo_dataset,
+    download_arcee_ai_distilabel_intel_orca_dpo_pairs_dataset,
+    download_argilla_dpo_pairs_dataset,
+    download_tiny_shakespeare_dataset,
+    download_deepseek_model_fixture,
+    download_huggyllama_model_fixture,
+    download_llama_1b_model_fixture,
+    download_llama3_8b_model_fixture,
+    download_llama3_8b_instruct_model_fixture,
+    download_phi_35_mini_model_fixture,
+    download_phi_3_medium_model_fixture,
+    download_mistral_7b_model_fixture,
+    download_gemma_2b_model_fixture,
+    download_gemma2_9b_model_fixture,
+    download_mlx_mistral_7b_model_fixture,
+    download_llama2_model_fixture,
+):
+    pass

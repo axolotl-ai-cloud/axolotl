@@ -235,6 +235,7 @@ class TestDeduplicateRLDataset(unittest.TestCase):
             }
         )
 
+    @enable_hf_offline
     def test_load_with_deduplication(self):
         """Verify that loading with deduplication removes duplicates."""
 

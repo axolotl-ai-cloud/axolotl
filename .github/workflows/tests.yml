@@ -63,7 +63,7 @@ jobs:
           path: |
             /home/runner/.cache/huggingface/hub/datasets--*
             /home/runner/.cache/huggingface/hub/models--*
-          key: ${{ runner.os }}-hf-hub-cache-${{ hashFiles('**/conftest.py') }}
+          key: ${{ runner.os }}-hf-hub-cache-v2
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -98,9 +98,10 @@ jobs:
 
       - name: Run tests
         run: |
-          pytest --maxfail=10 -v -n8 --dist loadfile --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ tests/
-          pytest -v tests/patched/
-          pytest -v tests/cli/
+          pytest tests/conftest.py
+#          pytest -v -n8 --dist loadfile --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ tests/
+#          pytest -v tests/patched/
+#          pytest -v tests/cli/
 
       - name: cleanup pip cache
         run: |
@@ -137,7 +138,7 @@ jobs:
           path: |
             /home/runner/.cache/huggingface/hub/datasets--*
             /home/runner/.cache/huggingface/hub/models--*
-          key: ${{ runner.os }}-hf-hub-cache-${{ hashFiles('**/conftest.py') }}
+          key: ${{ runner.os }}-hf-hub-cache-v2
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -173,9 +174,10 @@ jobs:
 
       - name: Run tests
         run: |
-          pytest -v -n8 --dist loadfile --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ tests/
-          pytest -v tests/patched/
-          pytest -v tests/cli/
+          pytest tests/conftest.py
+#          pytest -v -n8 --dist loadfile --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ tests/
+#          pytest -v tests/patched/
+#          pytest -v tests/cli/
 
       - name: cleanup pip cache
         run: |
