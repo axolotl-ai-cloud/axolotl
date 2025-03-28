@@ -12,7 +12,9 @@ import transformers
 from einops import rearrange
 from flash_attn.bert_padding import pad_input, unpad_input
 from transformers.modeling_outputs import BaseModelOutputWithPast
-from transformers.models.llama.modeling_llama import LlamaAttention
+from transformers.models.llama.modeling_llama import (
+    LlamaAttention,
+)
 from transformers.models.llama.modeling_llama import (
     LlamaDecoderLayer as OriginalLlamaDecoderLayer,
 )
@@ -490,9 +492,11 @@ def flashattn_forward(
             # We have disabled _prepare_decoder_attention_mask in LlamaModel
             # the attention_mask should be the same as the key_padding_mask
             key_padding_mask=attention_mask,
-            query_padding_mask=attention_mask[:, -query_states.size(1) :]
-            if attention_mask is not None
-            else None,
+            query_padding_mask=(
+                attention_mask[:, -query_states.size(1) :]
+                if attention_mask is not None
+                else None
+            ),
         )
         output_unpad = flash_attn_varlen_qkvpacked_func(
             qkv_unpad,
@@ -531,9 +535,11 @@ def flashattn_forward(
                 value_states,
                 kvpacked=True,
                 key_padding_mask=attention_mask,
-                query_padding_mask=attention_mask[:, -query_states.size(1) :]
-                if attention_mask is not None
-                else None,
+                query_padding_mask=(
+                    attention_mask[:, -query_states.size(1) :]
+                    if attention_mask is not None
+                    else None
+                ),
             )
             if q_unpad.dtype != kv_unpad.dtype:
                 kv_unpad = kv_unpad.to(q_unpad.dtype)

@@ -56,7 +56,7 @@ def do_inference(
         cfg: Dictionary mapping `axolotl` config keys to values.
         cli_args: Inference-specific CLI arguments.
     """
-    model, tokenizer = load_model_and_tokenizer(cfg=cfg, inference=True)
+    model, tokenizer, _ = load_model_and_tokenizer(cfg=cfg, inference=True)
     prompter = cli_args.prompter
 
     prompter_module = None
@@ -151,7 +151,7 @@ def do_inference_gradio(
     """
     import gradio as gr
 
-    model, tokenizer = load_model_and_tokenizer(cfg=cfg, inference=True)
+    model, tokenizer, _ = load_model_and_tokenizer(cfg=cfg, inference=True)
     prompter = cli_args.prompter
 
     prompter_module = None

@@ -4,6 +4,7 @@ Copied from https://github.com/iShohei220/adopt
 ADOPT: Modified Adam Can Converge with Any β2 with the Optimal Rate (2024)
 Taniguchi, Shohei and Harada, Keno and Minegishi, Gouki and Oshima, Yuta and Jeong, Seong Cheol and Nagahara, Go and Iiyama, Tomoshi and Suzuki, Masahiro and Iwasawa, Yusuke and Matsuo, Yutaka
 """
+
 # mypy: ignore-errors
 # pylint: skip-file
 # flake8: noqa

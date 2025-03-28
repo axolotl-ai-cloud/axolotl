@@ -17,13 +17,14 @@ from axolotl.cli.config import load_cfg
 from axolotl.common.datasets import load_datasets, load_preference_datasets
 from axolotl.integrations.base import PluginManager
 from axolotl.train import train
+from axolotl.utils import set_pytorch_cuda_alloc_conf
 from axolotl.utils.config import normalize_config, resolve_dtype
 from axolotl.utils.dict import DictDefault
 
 LOG = logging.getLogger(__name__)
 
 
-def do_train(cfg: DictDefault, cli_args: TrainerCliArgs) -> None:
+def do_train(cfg: DictDefault, cli_args: TrainerCliArgs):
     """
     Trains a `transformers` model by first loading the dataset(s) specified in the
     `axolotl` config, and then calling `axolotl.train.train`. Also runs the plugin
@@ -33,6 +34,9 @@ def do_train(cfg: DictDefault, cli_args: TrainerCliArgs) -> None:
         cfg: Dictionary mapping `axolotl` config keys to values.
         cli_args: Training-specific CLI arguments.
     """
+    # Enable expandable segments for cuda allocation to improve VRAM usage
+    set_pytorch_cuda_alloc_conf()
+
     print_axolotl_text_art()
     check_accelerate_default_config()
     if int(os.getenv("LOCAL_RANK", "0")) == 0:
@@ -44,16 +48,13 @@ def do_train(cfg: DictDefault, cli_args: TrainerCliArgs) -> None:
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
     model, tokenizer, trainer = train(cfg=cfg, dataset_meta=dataset_meta)
+    del model, tokenizer, trainer
+
     plugin_manager = PluginManager.get_instance()
-
-    del model
-    del tokenizer
-    del trainer
-
     plugin_manager.post_train_unload(cfg)
 
 
-def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs) -> None:
+def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
     """
     Parses `axolotl` config, CLI args, and calls `do_train`.
 

@@ -1,6 +1,7 @@
 """
 tests for jinja_template_analyzer
 """
+
 import logging
 
 import pytest

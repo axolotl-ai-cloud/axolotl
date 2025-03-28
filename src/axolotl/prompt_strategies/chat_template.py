@@ -13,7 +13,7 @@ from axolotl.prompt_strategies.jinja_template_analyzer import JinjaTemplateAnaly
 from axolotl.prompt_tokenizers import PromptTokenizingStrategy
 from axolotl.prompters import IGNORE_TOKEN_ID, Prompter
 from axolotl.utils.chat_templates import get_chat_template_from_config
-from axolotl.utils.config.models.input.v0_4_1 import DatasetConfig
+from axolotl.utils.schemas.datasets import DatasetConfig
 
 # Configure the logger
 LOG = logging.getLogger("axolotl")

@@ -1,6 +1,7 @@
 """
 shared pytest fixtures
 """
+
 import functools
 import importlib
 import shutil

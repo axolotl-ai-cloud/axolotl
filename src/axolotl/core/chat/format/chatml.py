@@ -1,6 +1,7 @@
 """
 ChatML transformation functions for MessageContents
 """
+
 from typing import Optional
 
 from ..messages import MessageContents, Messages

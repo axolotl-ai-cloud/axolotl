@@ -13,9 +13,7 @@
 # limitations under the License.
 
 # pylint: disable=too-many-lines
-"""
-Builder for the training args and trainer
-"""
+"""Builder for the training args and trainer"""
 
 import abc
 import importlib
@@ -38,7 +36,7 @@ from transformers import (
 from transformers.training_args import OptimizerNames
 from trl.trainer.utils import RewardDataCollatorWithPadding
 
-from axolotl.core.trainers.base import (
+from axolotl.core.trainers import (
     AxolotlCPOTrainer,
     AxolotlKTOTrainer,
     AxolotlMambaTrainer,
@@ -62,6 +60,7 @@ from axolotl.core.training_args import (
 from axolotl.integrations.base import PluginManager
 from axolotl.monkeypatch.multipack import SUPPORTED_MULTIPACK_MODEL_TYPES
 from axolotl.monkeypatch.relora import ReLoRACallback
+from axolotl.processing_strategies import get_processing_strategy
 from axolotl.utils import is_comet_available, is_mlflow_available
 from axolotl.utils.callbacks import (
     EvalFirstStepCallback,
@@ -85,8 +84,8 @@ from axolotl.utils.collators import (
     V2BatchSamplerDataCollatorForSeq2Seq,
 )
 from axolotl.utils.collators.mm_chat import MultiModalChatDataCollator
-from axolotl.utils.config.models.input.v0_4_1 import CustomSupportedOptimizers
 from axolotl.utils.models import ensure_dtype
+from axolotl.utils.schemas.enums import CustomSupportedOptimizers
 
 try:
     import torch._dynamo  # pylint: disable=ungrouped-imports
@@ -332,9 +331,9 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         training_arguments_kwargs = {}
 
         if self.cfg.include_tokens_per_second is not None:
-            training_arguments_kwargs[
-                "include_tokens_per_second"
-            ] = self.cfg.include_tokens_per_second
+            training_arguments_kwargs["include_tokens_per_second"] = (
+                self.cfg.include_tokens_per_second
+            )
 
         if self.cfg.bf16 == "full":
             training_arguments_kwargs["bf16_full_eval"] = True
@@ -351,13 +350,13 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             training_arguments_kwargs["seed"] = self.cfg.seed
 
         if self.cfg.gradient_checkpointing:
-            training_arguments_kwargs[
-                "gradient_checkpointing"
-            ] = self.cfg.gradient_checkpointing
+            training_arguments_kwargs["gradient_checkpointing"] = (
+                self.cfg.gradient_checkpointing
+            )
             if self.cfg.gradient_checkpointing_kwargs is not None:
-                training_arguments_kwargs[
-                    "gradient_checkpointing_kwargs"
-                ] = self.cfg.gradient_checkpointing_kwargs
+                training_arguments_kwargs["gradient_checkpointing_kwargs"] = (
+                    self.cfg.gradient_checkpointing_kwargs
+                )
         if self.cfg.fsdp:
             training_arguments_kwargs["fsdp"] = self.cfg.fsdp
             if self.cfg.fsdp_config:
@@ -373,9 +372,9 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             training_arguments_kwargs["deepspeed"] = self.cfg.deepspeed
 
         if self.cfg.lr_quadratic_warmup is not None:
-            training_arguments_kwargs[
-                "lr_quadratic_warmup"
-            ] = self.cfg.lr_quadratic_warmup
+            training_arguments_kwargs["lr_quadratic_warmup"] = (
+                self.cfg.lr_quadratic_warmup
+            )
 
         if self.cfg.adam_beta1:
             training_arguments_kwargs["adam_beta1"] = self.cfg.adam_beta1
@@ -399,28 +398,28 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             training_arguments_kwargs["save_safetensors"] = self.cfg.save_safetensors
 
         if self.cfg.dataloader_pin_memory is not None:
-            training_arguments_kwargs[
-                "dataloader_pin_memory"
-            ] = self.cfg.dataloader_pin_memory
+            training_arguments_kwargs["dataloader_pin_memory"] = (
+                self.cfg.dataloader_pin_memory
+            )
         if self.cfg.dataloader_num_workers is not None:
-            training_arguments_kwargs[
-                "dataloader_num_workers"
-            ] = self.cfg.dataloader_num_workers
+            training_arguments_kwargs["dataloader_num_workers"] = (
+                self.cfg.dataloader_num_workers
+            )
         if self.cfg.dataloader_prefetch_factor is not None:
-            training_arguments_kwargs[
-                "dataloader_prefetch_factor"
-            ] = self.cfg.dataloader_prefetch_factor
+            training_arguments_kwargs["dataloader_prefetch_factor"] = (
+                self.cfg.dataloader_prefetch_factor
+            )
         if self.cfg.dataloader_drop_last is not None:
-            training_arguments_kwargs[
-                "dataloader_drop_last"
-            ] = self.cfg.dataloader_drop_last
+            training_arguments_kwargs["dataloader_drop_last"] = (
+                self.cfg.dataloader_drop_last
+            )
         elif self.cfg.sample_packing and self.cfg.eval_sample_packing is False:
             training_arguments_kwargs["dataloader_drop_last"] = True
 
         if self.cfg.remove_unused_columns is not None:
-            training_arguments_kwargs[
-                "remove_unused_columns"
-            ] = self.cfg.remove_unused_columns
+            training_arguments_kwargs["remove_unused_columns"] = (
+                self.cfg.remove_unused_columns
+            )
 
         if not self.cfg.test_datasets and self.cfg.val_set_size == 0:
             # no eval set, so don't eval
@@ -452,9 +451,9 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         if self.cfg.do_causal_lm_eval:
             training_arguments_kwargs["do_causal_lm_eval"] = self.cfg.do_causal_lm_eval
         if self.cfg.metric_for_best_model:
-            training_arguments_kwargs[
-                "metric_for_best_model"
-            ] = self.cfg.metric_for_best_model
+            training_arguments_kwargs["metric_for_best_model"] = (
+                self.cfg.metric_for_best_model
+            )
         if self.cfg.greater_is_better:
             training_arguments_kwargs["greater_is_better"] = self.cfg.greater_is_better
 
@@ -467,13 +466,13 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 )
                 training_arguments_kwargs["torch_compile"] = self.cfg.torch_compile
                 if self.cfg.torch_compile_backend:
-                    training_arguments_kwargs[
-                        "torch_compile_backend"
-                    ] = self.cfg.torch_compile_backend
+                    training_arguments_kwargs["torch_compile_backend"] = (
+                        self.cfg.torch_compile_backend
+                    )
                 if self.cfg.torch_compile_mode:
-                    training_arguments_kwargs[
-                        "torch_compile_mode"
-                    ] = self.cfg.torch_compile_mode
+                    training_arguments_kwargs["torch_compile_mode"] = (
+                        self.cfg.torch_compile_mode
+                    )
 
         # DDP Config
         if self.cfg.ddp_timeout:
@@ -482,32 +481,32 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         if self.cfg.ddp_bucket_cap_mb:
             training_arguments_kwargs["ddp_bucket_cap_mb"] = self.cfg.ddp_bucket_cap_mb
         if self.cfg.ddp_broadcast_buffers is not None:
-            training_arguments_kwargs[
-                "ddp_broadcast_buffers"
-            ] = self.cfg.ddp_broadcast_buffers
+            training_arguments_kwargs["ddp_broadcast_buffers"] = (
+                self.cfg.ddp_broadcast_buffers
+            )
 
         # these are all the "standard" kwargs that are def used
         training_arguments_kwargs["max_steps"] = (
             total_num_steps if self.cfg.max_steps else -1
         )
         training_arguments_kwargs["max_seq_length"] = self.cfg.sequence_len
-        training_arguments_kwargs[
-            "per_device_train_batch_size"
-        ] = self.cfg.micro_batch_size
+        training_arguments_kwargs["per_device_train_batch_size"] = (
+            self.cfg.micro_batch_size
+        )
         if self.cfg.eval_batch_size:
-            training_arguments_kwargs[
-                "per_device_eval_batch_size"
-            ] = self.cfg.eval_batch_size
+            training_arguments_kwargs["per_device_eval_batch_size"] = (
+                self.cfg.eval_batch_size
+            )
         if self.cfg.auto_find_batch_size is not None:
-            training_arguments_kwargs[
-                "auto_find_batch_size"
-            ] = self.cfg.auto_find_batch_size
-        training_arguments_kwargs[
-            "gradient_accumulation_steps"
-        ] = self.cfg.gradient_accumulation_steps
-        training_arguments_kwargs[
-            "eval_accumulation_steps"
-        ] = self.cfg.gradient_accumulation_steps
+            training_arguments_kwargs["auto_find_batch_size"] = (
+                self.cfg.auto_find_batch_size
+            )
+        training_arguments_kwargs["gradient_accumulation_steps"] = (
+            self.cfg.gradient_accumulation_steps
+        )
+        training_arguments_kwargs["eval_accumulation_steps"] = (
+            self.cfg.gradient_accumulation_steps
+        )
         training_arguments_kwargs["num_train_epochs"] = self.cfg.num_epochs
         training_arguments_kwargs["learning_rate"] = self.cfg.learning_rate
         training_arguments_kwargs["output_dir"] = self.cfg.output_dir
@@ -554,9 +553,9 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
 
         if self.cfg.lr_scheduler in ["one_cycle", "rex", "log_sweep"]:
             training_arguments_kwargs["lr_scheduler_type"] = "cosine"
-            training_arguments_kwargs[
-                "alternate_lr_scheduler_type"
-            ] = self.cfg.lr_scheduler
+            training_arguments_kwargs["alternate_lr_scheduler_type"] = (
+                self.cfg.lr_scheduler
+            )
         else:
             training_arguments_kwargs["lr_scheduler_type"] = (
                 self.cfg.lr_scheduler if self.cfg.lr_scheduler else "cosine"
@@ -565,9 +564,9 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             self.cfg.lr_scheduler_kwargs if self.cfg.lr_scheduler_kwargs else {}
         )
         training_arguments_kwargs["cosine_min_lr_ratio"] = self.cfg.cosine_min_lr_ratio
-        training_arguments_kwargs[
-            "cosine_constant_lr_ratio"
-        ] = self.cfg.cosine_constant_lr_ratio
+        training_arguments_kwargs["cosine_constant_lr_ratio"] = (
+            self.cfg.cosine_constant_lr_ratio
+        )
         training_arguments_kwargs["weight_decay"] = (
             self.cfg.weight_decay if self.cfg.weight_decay is not None else 0.0
         )
@@ -580,40 +579,40 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             self.cfg.eval_sample_packing
         )
         if self.cfg.sample_packing_bin_size is not None:
-            training_arguments_kwargs[
-                "sample_packing_bin_size"
-            ] = self.cfg.sample_packing_bin_size
+            training_arguments_kwargs["sample_packing_bin_size"] = (
+                self.cfg.sample_packing_bin_size
+            )
         if self.cfg.sample_packing_group_size is not None:
-            training_arguments_kwargs[
-                "sample_packing_group_size"
-            ] = self.cfg.sample_packing_group_size
+            training_arguments_kwargs["sample_packing_group_size"] = (
+                self.cfg.sample_packing_group_size
+            )
         if self.cfg.sample_packing_eff_est:
-            training_arguments_kwargs[
-                "sample_packing_efficiency"
-            ] = self.cfg.sample_packing_eff_est
+            training_arguments_kwargs["sample_packing_efficiency"] = (
+                self.cfg.sample_packing_eff_est
+            )
 
         if self.cfg.relora_steps:
             training_arguments_kwargs["relora_steps"] = self.cfg.relora_steps
-            training_arguments_kwargs[
-                "relora_warmup_steps"
-            ] = self.cfg.relora_warmup_steps
+            training_arguments_kwargs["relora_warmup_steps"] = (
+                self.cfg.relora_warmup_steps
+            )
             if self.cfg.relora_anneal_steps:
-                training_arguments_kwargs[
-                    "relora_anneal_steps"
-                ] = self.cfg.relora_anneal_steps
+                training_arguments_kwargs["relora_anneal_steps"] = (
+                    self.cfg.relora_anneal_steps
+                )
             if self.cfg.relora_prune_ratio:
-                training_arguments_kwargs[
-                    "relora_prune_ratio"
-                ] = self.cfg.relora_prune_ratio
+                training_arguments_kwargs["relora_prune_ratio"] = (
+                    self.cfg.relora_prune_ratio
+                )
 
         if self.cfg.lisa_step_interval and self.cfg.lisa_n_layers:
             training_arguments_kwargs["lisa_n_layers"] = self.cfg.lisa_n_layers
-            training_arguments_kwargs[
-                "lisa_step_interval"
-            ] = self.cfg.lisa_step_interval
-            training_arguments_kwargs[
-                "lisa_layers_attribute"
-            ] = self.cfg.lisa_layers_attribute
+            training_arguments_kwargs["lisa_step_interval"] = (
+                self.cfg.lisa_step_interval
+            )
+            training_arguments_kwargs["lisa_layers_attribute"] = (
+                self.cfg.lisa_layers_attribute
+            )
 
         training_arguments_kwargs = self.hook_pre_create_training_args(
             training_arguments_kwargs
@@ -627,9 +626,9 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             )
 
         if self.cfg.neftune_noise_alpha is not None:
-            training_arguments_kwargs[
-                "neftune_noise_alpha"
-            ] = self.cfg.neftune_noise_alpha
+            training_arguments_kwargs["neftune_noise_alpha"] = (
+                self.cfg.neftune_noise_alpha
+            )
 
         trainer_kwargs = {}
 
@@ -731,24 +730,30 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 importlib.import_module("torchdistx")
 
         if self.cfg.optim_target_modules:
-            training_arguments_kwargs[
-                "optim_target_modules"
-            ] = self.cfg.optim_target_modules
+            training_arguments_kwargs["optim_target_modules"] = (
+                self.cfg.optim_target_modules
+            )
 
         training_arguments_kwargs["embedding_lr"] = self.cfg.embedding_lr
         training_arguments_kwargs["embedding_lr_scale"] = self.cfg.embedding_lr_scale
 
         training_arguments_kwargs["loraplus_lr_ratio"] = self.cfg.loraplus_lr_ratio
-        training_arguments_kwargs[
-            "loraplus_lr_embedding"
-        ] = self.cfg.loraplus_lr_embedding
+        training_arguments_kwargs["loraplus_lr_embedding"] = (
+            self.cfg.loraplus_lr_embedding
+        )
         training_arguments_kwargs["lr_groups"] = self.cfg.lr_groups
 
         if self.cfg.accelerator_config:
-            training_arguments_kwargs[
-                "accelerator_config"
-            ] = self.cfg.accelerator_config
+            training_arguments_kwargs["accelerator_config"] = (
+                self.cfg.accelerator_config
+            )
 
+        if self.cfg.image_size:
+            training_arguments_kwargs["image_size"] = self.cfg.image_size
+        if self.cfg.image_resize_algorithm:
+            training_arguments_kwargs["image_resize_algorithm"] = (
+                self.cfg.image_resize_algorithm
+            )
         if self.cfg.kd_ce_alpha is not None:
             training_arguments_kwargs["kd_ce_alpha"] = self.cfg.kd_ce_alpha
         if self.cfg.kd_alpha is not None:
@@ -756,13 +761,17 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         if self.cfg.kd_temperature is not None:
             training_arguments_kwargs["kd_temperature"] = self.cfg.kd_temperature
         if self.cfg.kd_zscore_base_temp is not None:
-            training_arguments_kwargs[
-                "kd_zscore_base_temp"
-            ] = self.cfg.kd_zscore_base_temp
+            training_arguments_kwargs["kd_zscore_base_temp"] = (
+                self.cfg.kd_zscore_base_temp
+            )
         if self.cfg.kd_top_k_before_softmax is not None:
-            training_arguments_kwargs[
-                "kd_top_k_before_softmax"
-            ] = self.cfg.kd_top_k_before_softmax
+            training_arguments_kwargs["kd_top_k_before_softmax"] = (
+                self.cfg.kd_top_k_before_softmax
+            )
+
+        training_arguments_kwargs["sequence_parallel_degree"] = (
+            self.cfg.sequence_parallel_degree
+        )
 
         if self.cfg.reward_model:
             training_args_cls = AxolotlRewardConfig
@@ -847,9 +856,10 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         self, training_args: AxolotlTrainingArguments, is_eval=False, **kwargs
     ):
         if training_args.pretraining:
-            if self.cfg.pretraining_sample_concatenation is False:
-                return DataCollatorForSeq2Seq(self.tokenizer, **kwargs)
-            if self.cfg.micro_batch_size > 1:
+            if (
+                self.cfg.pretraining_sample_concatenation is False
+                or self.cfg.micro_batch_size > 1
+            ):
                 return DataCollatorForSeq2Seq(self.tokenizer, **kwargs)
             return None
 
@@ -891,8 +901,13 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         else:
             if self.cfg.processor_type and self.processor:
                 collator = MultiModalChatDataCollator
-                kwargs["processor"] = self.processor
-                kwargs["chat_template"] = training_args.chat_template
+                kwargs["processing_strategy"] = get_processing_strategy(
+                    self.processor,
+                    training_args.chat_template,
+                    self.cfg.chat_template,
+                    image_size=training_args.image_size,
+                    image_resize_algorithm=training_args.image_resize_algorithm,
+                )
             elif self.cfg.batch_flattening:
                 collator = DataCollatorWithFlattening
                 collator_args.pop(0)
@@ -912,6 +927,8 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 collator = DataCollatorForSeq2Seq
 
         kwargs["return_tensors"] = "pt"
+        if issubclass(collator, DataCollatorForSeq2Seq):
+            kwargs["sequence_parallel_degree"] = training_args.sequence_parallel_degree
 
         return collator(
             *collator_args,
@@ -974,32 +991,32 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             self.cfg.lr_scheduler_kwargs if self.cfg.lr_scheduler_kwargs else {}
         )
         if self.cfg.remove_unused_columns is not None:
-            training_args_kwargs[
-                "remove_unused_columns"
-            ] = self.cfg.remove_unused_columns
+            training_args_kwargs["remove_unused_columns"] = (
+                self.cfg.remove_unused_columns
+            )
         else:
             training_args_kwargs["remove_unused_columns"] = False
 
         if self.cfg.dataloader_pin_memory is not None:
-            training_args_kwargs[
-                "dataloader_pin_memory"
-            ] = self.cfg.dataloader_pin_memory
+            training_args_kwargs["dataloader_pin_memory"] = (
+                self.cfg.dataloader_pin_memory
+            )
         if self.cfg.dataloader_num_workers is not None:
-            training_args_kwargs[
-                "dataloader_num_workers"
-            ] = self.cfg.dataloader_num_workers
+            training_args_kwargs["dataloader_num_workers"] = (
+                self.cfg.dataloader_num_workers
+            )
         if self.cfg.dataloader_prefetch_factor is not None:
-            training_args_kwargs[
-                "dataloader_prefetch_factor"
-            ] = self.cfg.dataloader_prefetch_factor
+            training_args_kwargs["dataloader_prefetch_factor"] = (
+                self.cfg.dataloader_prefetch_factor
+            )
         if self.cfg.gradient_checkpointing:
-            training_args_kwargs[
-                "gradient_checkpointing"
-            ] = self.cfg.gradient_checkpointing
+            training_args_kwargs["gradient_checkpointing"] = (
+                self.cfg.gradient_checkpointing
+            )
             if self.cfg.gradient_checkpointing_kwargs is not None:
-                training_args_kwargs[
-                    "gradient_checkpointing_kwargs"
-                ] = self.cfg.gradient_checkpointing_kwargs
+                training_args_kwargs["gradient_checkpointing_kwargs"] = (
+                    self.cfg.gradient_checkpointing_kwargs
+                )
             else:
                 training_args_kwargs["gradient_checkpointing_kwargs"] = {
                     "use_reentrant": False
@@ -1073,9 +1090,9 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             if self.cfg.dpo_use_weighting is not None:
                 training_args_kwargs["use_weighting"] = self.cfg.dpo_use_weighting
             if self.cfg.dpo_use_logits_to_keep is not None:
-                training_args_kwargs[
-                    "use_logits_to_keep"
-                ] = self.cfg.dpo_use_logits_to_keep
+                training_args_kwargs["use_logits_to_keep"] = (
+                    self.cfg.dpo_use_logits_to_keep
+                )
 
         for blocklist_key in blocklist_args_kwargs:
             if blocklist_key in training_args_kwargs:
@@ -1110,9 +1127,9 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         if self.cfg.adapter and self.peft_config:
             dpo_trainer_kwargs["peft_config"] = self.peft_config
         if self.cfg.precompute_ref_log_probs is not None:
-            dpo_trainer_kwargs[
-                "precompute_ref_log_probs"
-            ] = self.cfg.precompute_ref_log_probs
+            dpo_trainer_kwargs["precompute_ref_log_probs"] = (
+                self.cfg.precompute_ref_log_probs
+            )
         if self.cfg.rl == "grpo":
             trainer_cls = GRPOStrategy.get_trainer_class()
             trainer_cls_args = [self.model]

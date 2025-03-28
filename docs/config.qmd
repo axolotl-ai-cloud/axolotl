@@ -32,6 +32,9 @@ tokenizer_legacy:
 resize_token_embeddings_to_32x:
 # Optional[bool] Whether to shrink the embeddings to len(tokenizer). By default, we won't shrink.
 shrink_embeddings:
+# Whether to load the model with randomly initialized weights. Useful for
+# pre-training a model from scratch or debugging purposes.
+random_init_weights:
 
 # (Internal use only)
 # Used to identify which the model is based on
@@ -463,6 +466,7 @@ auto_find_batch_size: # Optional[bool]
 
 eval_table_size: # Approximate number of predictions sent to wandb depending on batch size. Enabled above 0. Default is 0
 eval_max_new_tokens: # Total number of tokens generated for predictions sent to wandb. Default is 128
+do_causal_lm_eval: # Whether to run causal language model evaluation for metrics in `eval_causal_lm_metrics`.
 eval_causal_lm_metrics: # HF evaluate metrics used during evaluation. Default is ["sacrebleu", "comet", "ter", "chrf", "perplexity"]
 
 profiler_steps: # enable the pytorch profiler to capture the first N steps of training to the output_dir.
@@ -503,36 +507,58 @@ lr_div_factor: # Learning rate div factor
 
 # Specify optimizer
 # Valid values are driven by the Transformers OptimizerNames class, see:
-# https://github.com/huggingface/transformers/blob/95b374952dc27d8511541d6f5a4e22c9ec11fb24/src/transformers/training_args.py#L134
+# https://github.com/huggingface/transformers/blob/cbf924b76c03828101a34069a96d209314114fd5/src/transformers/training_args.py#L144-L189
 #
 # Note that not all optimizers may be available in your environment, ex: 'adamw_anyprecision' is part of
 # torchdistx, 'adamw_bnb_8bit' is part of bnb.optim.Adam8bit, etc. When in doubt, it is recommended to start with the optimizer used
 # in the examples/ for your model and fine-tuning use case.
 #
 # Valid values for 'optimizer' include:
-# - adamw_hf
 # - adamw_torch
 # - adamw_torch_fused
 # - adamw_torch_xla
+# - adamw_torch_npu_fused
 # - adamw_apex_fused
-# - adopt_adamw (an EXPERIMENTAL optimizer, only for torch version >= 2.5.1)
+# - adopt_adamw  (an EXPERIMENTAL optimizer, only for torch version >= 2.5.1)
 # - adafactor
 # - adamw_anyprecision
+# - adamw_torch_4bit
+# - ademamix
 # - sgd
 # - adagrad
 # - adamw_bnb_8bit
+# - adamw_8bit   # alias for adamw_bnb_8bit
+# - ademamix_8bit
 # - lion_8bit
 # - lion_32bit
 # - paged_adamw_32bit
 # - paged_adamw_8bit
+# - paged_ademamix_32bit
+# - paged_ademamix_8bit
 # - paged_lion_32bit
 # - paged_lion_8bit
+# - rmsprop
+# - rmsprop_bnb
+# - rmsprop_bnb_8bit
+# - rmsprop_bnb_32bit
 # - galore_adamw
 # - galore_adamw_8bit
 # - galore_adafactor
 # - galore_adamw_layerwise
 # - galore_adamw_8bit_layerwise
 # - galore_adafactor_layerwise
+# - lomo
+# - adalomo
+# - grokadamw
+# - schedule_free_adamw
+# - schedule_free_sgd
+# - apollo_adamw
+# - apollo_adamw_layerwise
+#
+# Additional custom optimizers include:
+# - optimi_adamw
+# - ao_adamw_8bit
+# - ao_adamw_fp8
 optimizer:
 # Dictionary of arguments to pass to the optimizer
 optim_args:
@@ -584,6 +610,14 @@ resume_from_checkpoint:
 # Be careful with this being turned on between different models.
 auto_resume_from_checkpoints: false
 
+## Multimodal section
+# int | tuple[int, int] | None . Size to resize images to, width x height.
+# Will read from model/processor config if not set.
+image_size:
+# str. Algorithm to use for image resizing. "bilinear", "bicubic", "lanczos". Default is "bilinear".
+image_resize_algorithm: 'bilinear'
+## End of multimodal section
+
 # Don't mess with this, it's here for accelerate and torchrun
 local_rank:
 
@@ -616,6 +650,14 @@ deepspeed:
 ddp_timeout:
 ddp_bucket_cap_mb:
 ddp_broadcast_buffers:
+
+# Sequence parallelism
+# Set to a divisor of the number of GPUs available to split sequences into chunks of equal size.
+# Use in long context training to prevent OOM when sequences cannot fit into a single GPU's VRAM.
+# E.g., if 4 GPUs are available, set this value to 2 to split each sequence into two equal-sized
+# subsequences, or set to 4 to split into four equal-sized subsequences.
+# See https://axolotl-ai-cloud.github.io/axolotl/docs/sequence_parallelism.html for more details.
+sequence_parallel_degree:
 
 # Path to torch distx for optim 'adamw_anyprecision'
 torchdistx_path:

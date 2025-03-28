@@ -1,6 +1,7 @@
 """
 Monkeypatch for Vision Llama for FA2 support
 """
+
 # pylint: disable=duplicate-code
 
 from typing import Optional, Tuple
@@ -220,10 +221,10 @@ def patch_mllama():
         True
     )
     MLLAMA_TEXT_ATTENTION_CLASSES["flash_attention_2"] = MllamaTextSelfFlashAttention2
-    MLLAMA_TEXT_CROSS_ATTENTION_CLASSES[
-        "flash_attention_2"
-    ] = MllamaTextCrossFlashAttention2
+    MLLAMA_TEXT_CROSS_ATTENTION_CLASSES["flash_attention_2"] = (
+        MllamaTextCrossFlashAttention2
+    )
     # fallback to SDPA
-    MLLAMA_VISION_ATTENTION_CLASSES[
-        "flash_attention_2"
-    ] = MLLAMA_VISION_ATTENTION_CLASSES["sdpa"]
+    MLLAMA_VISION_ATTENTION_CLASSES["flash_attention_2"] = (
+        MLLAMA_VISION_ATTENTION_CLASSES["sdpa"]
+    )

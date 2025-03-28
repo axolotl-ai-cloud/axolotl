@@ -1,4 +1,5 @@
 """Implements the ReLoRA training procedure from https://arxiv.org/abs/2307.05695, minus the initial full fine-tune."""
+
 import glob
 import json
 import logging
@@ -411,7 +412,10 @@ def merge_and_save(
         if shard_path.endswith(".safetensors"):
             in_tensors = st.load_file(str(Path(model_src) / shard_path))
         else:
-            in_tensors = torch.load(Path(model_src) / shard_path)
+            in_tensors = torch.load(
+                Path(model_src) / shard_path,
+                weights_only=True,  # to prevent arbitrary code execution
+            )
             if "state_dict" in in_tensors:
                 in_tensors = in_tensors["state_dict"]
 

@@ -12,15 +12,13 @@ from transformers.utils.import_utils import is_torch_npu_available
 from axolotl.integrations.base import PluginManager
 from axolotl.integrations.config import merge_input_args
 from axolotl.utils.bench import log_gpu_memory_usage
-from axolotl.utils.config.models.input.v0_4_1 import (
+from axolotl.utils.dict import DictDefault
+from axolotl.utils.models import MULTIMODAL_AUTO_MODEL_MAPPING, load_model_config
+from axolotl.utils.schemas.config import (
     AxolotlConfigWCapabilities as AxolotlConfigWCapabilitiesBase,
 )
-from axolotl.utils.config.models.input.v0_4_1 import (
-    AxolotlInputConfig as AxolotlInputConfigBase,
-)
-from axolotl.utils.config.models.input.v0_4_1 import DPODataset, KTODataset, SFTDataset
-from axolotl.utils.dict import DictDefault
-from axolotl.utils.models import load_model_config
+from axolotl.utils.schemas.config import AxolotlInputConfig as AxolotlInputConfigBase
+from axolotl.utils.schemas.datasets import DPODataset, KTODataset, SFTDataset
 
 LOG = logging.getLogger("axolotl")
 
@@ -127,6 +125,9 @@ def normalize_config(cfg):
             with open(ds_config_path, encoding="utf-8") as f:
                 cfg.deepspeed = json.load(f)
 
+    if cfg.sequence_parallel_degree is None:
+        cfg.sequence_parallel_degree = 1
+
     if cfg.saves_per_epoch:
         save_steps = 1.0 / (cfg.saves_per_epoch * cfg.num_epochs)
         if save_steps < 1.0:  # prevent saves on every step
@@ -157,7 +158,7 @@ def normalize_config(cfg):
 
     cfg.is_multimodal = (
         hasattr(model_config, "model_type")
-        and model_config.model_type in ["llava", "mllama"]
+        and model_config.model_type in MULTIMODAL_AUTO_MODEL_MAPPING
         or any(
             multimodal_name in cfg.base_model.lower()
             for multimodal_name in [
@@ -170,7 +171,6 @@ def normalize_config(cfg):
         cfg.processor_config = (
             cfg.processor_config or cfg.base_model_config or cfg.base_model
         )
-        model_config = model_config.text_config
 
     cfg.model_config_type = model_config.model_type
 

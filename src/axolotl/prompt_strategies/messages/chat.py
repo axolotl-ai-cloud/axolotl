@@ -1,6 +1,7 @@
 """
 Chat dataset wrapping strategy for new internal messages representations
 """
+
 from typing import Any, Callable, Dict, Optional
 
 from axolotl.core.datasets.chat import TokenizedChatDataset

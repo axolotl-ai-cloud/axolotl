@@ -1,4 +1,5 @@
 """Flash attention monkey patch for mistral model"""
+
 # pylint: disable=duplicate-code
 
 import logging
@@ -21,7 +22,10 @@ from transformers.models.mistral.modeling_mistral import (
 from transformers.models.mistral.modeling_mistral import (
     MistralDecoderLayer as OriginalMistralDecoderLayer,
 )
-from transformers.models.mistral.modeling_mistral import apply_rotary_pos_emb, repeat_kv
+from transformers.models.mistral.modeling_mistral import (
+    apply_rotary_pos_emb,
+    repeat_kv,
+)
 
 from axolotl.monkeypatch.utils import get_cu_seqlens_from_pos_ids
 
@@ -243,9 +247,11 @@ def flashattn_forward(
             # We have disabled _prepare_decoder_attention_mask in LlamaModel
             # the attention_mask should be the same as the key_padding_mask
             key_padding_mask=attention_mask,
-            query_padding_mask=attention_mask[:, -query_states.size(1) :]
-            if attention_mask is not None
-            else None,
+            query_padding_mask=(
+                attention_mask[:, -query_states.size(1) :]
+                if attention_mask is not None
+                else None
+            ),
         )
         output_unpad = flash_attn_varlen_qkvpacked_func(
             qkv_unpad,
@@ -286,9 +292,11 @@ def flashattn_forward(
                 value_states,
                 kvpacked=True,
                 key_padding_mask=attention_mask,
-                query_padding_mask=attention_mask[:, -query_states.size(1) :]
-                if attention_mask is not None
-                else None,
+                query_padding_mask=(
+                    attention_mask[:, -query_states.size(1) :]
+                    if attention_mask is not None
+                    else None
+                ),
             )
             if q_unpad.dtype != kv_unpad.dtype:
                 kv_unpad = kv_unpad.to(q_unpad.dtype)

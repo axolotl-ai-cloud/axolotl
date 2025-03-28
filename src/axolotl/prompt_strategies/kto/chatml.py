@@ -1,6 +1,7 @@
 """
 KTO strategies for chatml
 """
+
 # pylint: disable=duplicate-code
 
 
@@ -15,9 +16,9 @@ def argilla(
                 f"<|im_start|>user\n{sample['instruction']}<|im_end|>\n<|im_start|>assistant\n"
             )
         else:
-            sample[
-                "prompt"
-            ] = f"<|im_start|>user\n{sample['instruction']}<|im_end|>\n<|im_start|>assistant\n"
+            sample["prompt"] = (
+                f"<|im_start|>user\n{sample['instruction']}<|im_end|>\n<|im_start|>assistant\n"
+            )
         sample["completion"] = f"{sample['completion']}<|im_end|>"
         return sample
 
@@ -33,9 +34,9 @@ def argilla_chat(
     """
 
     def transform_fn(sample):
-        sample[
-            "prompt"
-        ] = f"<|im_start|>user\n{sample['chosen'][0]['content']}<|im_end|>\n<|im_start|>assistant\n"
+        sample["prompt"] = (
+            f"<|im_start|>user\n{sample['chosen'][0]['content']}<|im_end|>\n<|im_start|>assistant\n"
+        )
         sample["completion"] = f"{sample['completion'][1]['content']}<|im_end|>"
         return sample
 
@@ -55,9 +56,9 @@ def intel(cfg, **kwargs):  # pylint: disable=possibly-unused-variable,unused-arg
                 f"<|im_start|>user\n{sample['question']}<|im_end|>\n<|im_start|>assistant\n"
             )
         else:
-            sample[
-                "prompt"
-            ] = f"<|im_start|>user\n{sample['question']}<|im_end|>\n<|im_start|>assistant\n"
+            sample["prompt"] = (
+                f"<|im_start|>user\n{sample['question']}<|im_end|>\n<|im_start|>assistant\n"
+            )
         sample["completion"] = f"{sample['completion']}<|im_end|>"
         return sample
 
@@ -74,9 +75,9 @@ def prompt_pairs(
                 f"<|im_start|>user\n{sample['prompt']}<|im_end|>\n<|im_start|>assistant\n"
             )
         else:
-            sample[
-                "prompt"
-            ] = f"<|im_start|>user\n{sample['prompt']}<|im_end|>\n<|im_start|>assistant\n"
+            sample["prompt"] = (
+                f"<|im_start|>user\n{sample['prompt']}<|im_end|>\n<|im_start|>assistant\n"
+            )
         sample["completion"] = f"{sample['completion']}<|im_end|>"
         return sample
 
@@ -96,9 +97,9 @@ def ultra(cfg, **kwargs):  # pylint: disable=possibly-unused-variable,unused-arg
                 f"<|im_start|>user\n{sample['prompt']}<|im_end|>\n<|im_start|>assistant\n"
             )
         else:
-            sample[
-                "prompt"
-            ] = f"<|im_start|>user\n{sample['prompt']}<|im_end|>\n<|im_start|>assistant\n"
+            sample["prompt"] = (
+                f"<|im_start|>user\n{sample['prompt']}<|im_end|>\n<|im_start|>assistant\n"
+            )
         sample["completion"] = f"{sample['completion']}<|im_end|>"
         return sample
 

@@ -1,6 +1,6 @@
 # Cut Cross Entropy
 
-Cut Cross Entropy reduces VRAM usage through optimization on the cross-entropy operation during loss calculation.
+Cut Cross Entropy (CCE) reduces VRAM usage through optimization on the cross-entropy operation during loss calculation.
 
 See https://github.com/apple/ml-cross-entropy
 
@@ -28,6 +28,20 @@ plugins:
 
 cut_cross_entropy: true
 ```
+
+## Supported Models
+
+- llama
+- phi3
+- gemma
+- gemma2
+- gemma3
+- gemma3_text
+- mistral
+- mistral3
+- qwen2
+- cohere
+- cohere2
 
 ## Citation
 

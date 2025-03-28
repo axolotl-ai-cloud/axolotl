@@ -1,5 +1,5 @@
 """
-E2E tests for lora llama
+E2E tests for deepseekv3
 """
 
 import logging

@@ -34,12 +34,16 @@ from transformers import (  # noqa: F401
     AutoTokenizer,
     AwqConfig,
     BitsAndBytesConfig,
+    Gemma3ForConditionalGeneration,
     GPTQConfig,
     LlavaForConditionalGeneration,
+    Mistral3ForConditionalGeneration,
     MllamaForConditionalGeneration,
     PreTrainedModel,
     PreTrainedTokenizerBase,
     ProcessorMixin,
+    Qwen2_5_VLForConditionalGeneration,
+    Qwen2VLForConditionalGeneration,
 )
 from transformers.integrations.deepspeed import (
     HfTrainerDeepSpeedConfig,
@@ -67,7 +71,16 @@ from axolotl.utils.gradient_checkpointing import hf_grad_checkpoint_offload_wrap
 from axolotl.utils.lora_embeddings import get_linear_embedding_layers
 from axolotl.utils.model_shard_quant import load_sharded_model, load_sharded_model_quant
 
-LOG = logging.getLogger("axolotl")
+LOG = logging.getLogger(__name__)
+
+MULTIMODAL_AUTO_MODEL_MAPPING = {
+    "mllama": MllamaForConditionalGeneration,
+    "llava": LlavaForConditionalGeneration,
+    "qwen2_vl": Qwen2VLForConditionalGeneration,
+    "qwen2_5_vl": Qwen2_5_VLForConditionalGeneration,
+    "mistral3": Mistral3ForConditionalGeneration,
+    "gemma3": Gemma3ForConditionalGeneration,
+}
 
 
 # copied from accelerator.FullyShardedDataParallelPlugin
@@ -96,7 +109,21 @@ def get_module_class_from_name(module, name):
 
 def check_model_config(cfg: DictDefault, model_config: Union[AutoConfig, DictDefault]):
     if cfg.is_multimodal:
-        model_config = model_config.text_config
+        if hasattr(model_config, "text_config"):
+            model_config = model_config.text_config
+            model_config.use_cache = False
+        elif hasattr(model_config, "get_text_config"):
+            model_config = model_config.get_text_config()
+            model_config.use_cache = False
+
+        # check if image_size is not set and load image size from model config if available
+        if (
+            cfg.image_size is None
+            and hasattr(model_config, "vision_config")
+            and hasattr(model_config.vision_config, "image_size")
+        ):
+            cfg.image_size = model_config.vision_config.image_size
+            LOG.debug(f"Loaded image size: {cfg.image_size} from model config")
 
     quant_config_exists = (
         hasattr(model_config, "quantization_config")
@@ -435,6 +462,31 @@ def load_processor(cfg: DictDefault, tokenizer: PreTrainedTokenizerBase):
         **processor_kwargs,
     )
 
+    # Attempt to load image size from processor if available
+    if (
+        cfg.image_size is None
+        and hasattr(processor, "size")
+        and any(dim in processor.size for dim in ["width", "height"])
+    ):
+        im_width = None
+        im_height = None
+        if "width" in processor.size:
+            im_width = processor.size["width"]
+        if "height" in processor.size:
+            im_height = processor.size["height"]
+
+        # If both width and height are set, use a tuple
+        if im_width is not None and im_height is not None:
+            cfg.image_size = (im_width, im_height)
+        # If only width is set, use as integer
+        elif im_width is not None:
+            cfg.image_size = im_width
+        # If only height is set, use as integer
+        elif im_height is not None:
+            cfg.image_size = im_height
+
+        LOG.debug(f"Loaded image size: {cfg.image_size} from processor")
+
     return processor
 
 
@@ -472,11 +524,15 @@ class ModelLoader:
         # init model config
         self.model_config = load_model_config(cfg)
         if cfg.is_multimodal:
-            self.text_model_config = self.model_config.text_config
+            if hasattr(self.model_config, "text_config"):
+                self.text_model_config = self.model_config.text_config
+            else:
+                # for qwen2_vl
+                self.text_model_config = self.model_config.get_text_config()
         else:
             self.text_model_config = self.model_config
 
-        self.AutoModelLoader = AutoModelForCausalLM  # pylint: disable=invalid-name
+        self.auto_model_loader = AutoModelForCausalLM  # pylint: disable=invalid-name
 
     def apply_patches(self) -> None:
         # load any patches from plugins
@@ -547,6 +603,14 @@ class ModelLoader:
 
             patch_self_attn_lora(self.cfg)
 
+        if self.cfg.sequence_parallel_degree and self.cfg.sequence_parallel_degree > 1:
+            from axolotl.monkeypatch.attention.ring_attn import register_ring_attn
+
+            # Initialize ring attn for sequence parallelism. This must be done after
+            # model init but before the first forward pass, since it modifies flash
+            # attn to use ring comm for SP training across multiple GPUs.
+            register_ring_attn(self.cfg.sequence_parallel_degree)
+
     def patch_attention(self) -> None:
         if hasattr(self.model_config, "model_type"):
             if self.model_config.model_type == "mllama" and self.cfg.flash_attention:
@@ -603,7 +667,7 @@ class ModelLoader:
 
             patch_self_attn_lora()
 
-    def patch_llama_derived_model(self) -> None:
+    def patch_llama_derived_model(self):
         """Modify all llama derived models in one block"""
         self.patch_loss_llama()
 
@@ -653,25 +717,16 @@ class ModelLoader:
                 "Shifted-sparse attention not currently implemented without flash attention."
             )
 
-    def set_auto_model_loader(self) -> None:
-        """set self.AutoModelLoader
-        - default value: AutoModelForCausalLM (set at __init__)
-        - when using a multi modality model, self.AutoModelLoader should
-          be set according to model type of the model
+    def set_auto_model_loader(self):
+        """
+        Set self.auto_model_loader. Defaults to `transformers.AutoModelForCausalLM`
+        (set at `__init__`). When using a multimodal model, `self.auto_model_loader`
+        should be set according to the type of the model.
         """
         if self.cfg.is_multimodal:
-            if self.model_config.model_type == "llava":
-                self.AutoModelLoader = (  # pylint: disable=invalid-name
-                    LlavaForConditionalGeneration
-                )
-            elif self.model_config.model_type == "mllama":
-                self.AutoModelLoader = (  # pylint: disable=invalid-name
-                    MllamaForConditionalGeneration
-                )
-            else:
-                self.AutoModelLoader = (
-                    AutoModelForVision2Seq  # pylint: disable=invalid-name
-                )
+            self.auto_model_loader = MULTIMODAL_AUTO_MODEL_MAPPING.get(
+                self.model_config.model_type, AutoModelForVision2Seq
+            )
 
     def set_device_map_config(self) -> None:
         device_map = self.cfg.device_map
@@ -695,7 +750,7 @@ class ModelLoader:
             from accelerate import infer_auto_device_map
 
             with init_empty_weights():
-                model_canvas = self.AutoModelLoader.from_config(
+                model_canvas = self.auto_model_loader.from_config(
                     self.model_config,
                     trust_remote_code=self.cfg.trust_remote_code or False,
                 )
@@ -741,9 +796,9 @@ class ModelLoader:
                 )
             else:
                 if self.cfg.gptq_disable_exllama is not None:
-                    self.model_config.quantization_config[
-                        "disable_exllama"
-                    ] = self.cfg.gptq_disable_exllama
+                    self.model_config.quantization_config["disable_exllama"] = (
+                        self.cfg.gptq_disable_exllama
+                    )
                 self.model_kwargs["quantization_config"] = GPTQConfig(
                     **self.model_config.quantization_config
                 )
@@ -921,11 +976,27 @@ class ModelLoader:
 
             if self.cfg.is_multimodal:
                 self.model_config.text_config = self.text_model_config
-            self.model = self.AutoModelLoader.from_pretrained(
-                self.base_model,
-                config=self.model_config,
-                **self.model_kwargs,
-            )
+
+            # Load model with random initialization if specified
+            if self.cfg.random_init_weights:
+                # AutoModel classes support the from_config method
+                if self.auto_model_loader in [
+                    AutoModelForCausalLM,
+                    AutoModelForVision2Seq,
+                ]:
+                    self.model = self.auto_model_loader.from_config(
+                        config=self.model_config,
+                    )
+                else:
+                    self.model = self.auto_model_loader(
+                        config=self.model_config,
+                    )
+            else:
+                self.model = self.auto_model_loader.from_pretrained(
+                    self.base_model,
+                    config=self.model_config,
+                    **self.model_kwargs,
+                )
 
             #  TODO (MengqingCao) split these patches seperately
             if self.cfg.flash_attention and not self.inference:
@@ -963,7 +1034,7 @@ class ModelLoader:
             if self.cfg.is_multimodal:
                 self.model_config.text_config = self.text_model_config
             if self.cfg.gptq:
-                self.model = self.AutoModelLoader.from_pretrained(
+                self.model = self.auto_model_loader.from_pretrained(
                     self.base_model,
                     config=self.model_config,
                     trust_remote_code=self.cfg.trust_remote_code or False,
@@ -996,7 +1067,7 @@ class ModelLoader:
             if self.cfg.gptq:
                 if self.cfg.is_multimodal:
                     self.model_config.text_config = self.text_model_config
-                self.model = self.AutoModelLoader.from_pretrained(
+                self.model = self.auto_model_loader.from_pretrained(
                     self.base_model,
                     config=self.model_config,
                     trust_remote_code=self.cfg.trust_remote_code or False,
@@ -1016,7 +1087,7 @@ class ModelLoader:
 
                 if self.cfg.is_multimodal:
                     self.model_config.text_config = self.text_model_config
-                self.model = self.AutoModelLoader.from_pretrained(
+                self.model = self.auto_model_loader.from_pretrained(
                     self.base_model,
                     config=self.model_config,
                     trust_remote_code=self.cfg.trust_remote_code or False,
@@ -1179,7 +1250,9 @@ class ModelLoader:
             )
         ):
             resize_kwargs = {}
-            if self.cfg.mean_resizing_embeddings is not None:
+            if self.cfg.mean_resizing_embeddings is not None and not (
+                self.model_config.model_type == "llava"
+            ):
                 resize_kwargs["mean_resizing"] = self.cfg.mean_resizing_embeddings
             self.model.resize_token_embeddings(embeddings_len, **resize_kwargs)
         else:
@@ -1315,7 +1388,7 @@ def load_model(
     """
     Load a model for a given configuration and tokenizer.
     """
-    loader = ModelLoader(
+    model_loader = ModelLoader(
         cfg,
         tokenizer,
         processor=processor,
@@ -1323,7 +1396,7 @@ def load_model(
         reference_model=reference_model,
         **kwargs,
     )
-    return loader.load_model()
+    return model_loader.load_model()
 
 
 def load_adapter(model, cfg, adapter, inference=False):

@@ -5,6 +5,7 @@ See "GLU Variants Improve Transformer" (https://arxiv.org/abs/2002.05202).
 
 Credit to `unsloth` (https://unsloth.ai/) for inspiration for this implementation.
 """
+
 # pylint: disable=invalid-name,unnecessary-lambda-assignment,duplicate-code
 
 import torch

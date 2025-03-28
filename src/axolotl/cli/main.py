@@ -1,4 +1,5 @@
 """Click CLI definitions for various axolotl commands."""
+
 # pylint: disable=redefined-outer-name
 
 import logging
@@ -24,7 +25,7 @@ from axolotl.cli.utils import (
 )
 from axolotl.integrations.lm_eval.cli import lm_eval
 from axolotl.utils import set_pytorch_cuda_alloc_conf
-from axolotl.utils.config.models.input.v0_4_1 import AxolotlInputConfig
+from axolotl.utils.schemas.config import AxolotlInputConfig
 
 
 @click.group()

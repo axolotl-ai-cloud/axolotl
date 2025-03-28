@@ -1,4 +1,5 @@
 """Module for testing streaming dataset sequence packing"""
+
 import pytest
 from datasets import concatenate_datasets, load_dataset
 from torch.utils.data import DataLoader, RandomSampler

@@ -1,4 +1,5 @@
 """MLFlow module for trainer callbacks"""
+
 import logging
 from shutil import copyfile
 from tempfile import NamedTemporaryFile

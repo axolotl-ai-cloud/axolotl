@@ -34,9 +34,9 @@ def default(
                 f"<|start_header_id|>user<|end_header_id|>\n\n{sample[prompt_key]}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
             )
         else:
-            sample[
-                "prompt"
-            ] = f"<|start_header_id|>user<|end_header_id|>\n\n{sample[prompt_key]}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+            sample["prompt"] = (
+                f"<|start_header_id|>user<|end_header_id|>\n\n{sample[prompt_key]}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+            )
         sample["chosen"] = f"{sample[chosen_key]}<|eot_id|>"
         sample["rejected"] = f"{sample[rejected_key]}<|eot_id|>"
         return sample
@@ -53,9 +53,9 @@ def argilla_chat(
     """
 
     def transform_fn(sample):
-        sample[
-            "prompt"
-        ] = f"<|start_header_id|>user<|end_header_id|>\n\n{sample['chosen'][0]['content']}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+        sample["prompt"] = (
+            f"<|start_header_id|>user<|end_header_id|>\n\n{sample['chosen'][0]['content']}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+        )
         sample["chosen"] = f"{sample['chosen'][1]['content']}<|eot_id|>"
         sample["rejected"] = f"{sample['rejected'][1]['content']}<|eot_id|>"
         return sample
@@ -79,9 +79,9 @@ def icr(
                 f"<|start_header_id|>user<|end_header_id|>\n\n{sample['input']}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
             )
         else:
-            sample[
-                "prompt"
-            ] = f"<|start_header_id|>user<|end_header_id|>\n\n{sample['input']}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+            sample["prompt"] = (
+                f"<|start_header_id|>user<|end_header_id|>\n\n{sample['input']}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+            )
         sample["chosen"] = f"{sample['chosen']}<|eot_id|>"
         sample["rejected"] = f"{sample['rejected']}<|eot_id|>"
         return sample
@@ -101,9 +101,9 @@ def intel(cfg, **kwargs):  # pylint: disable=possibly-unused-variable,unused-arg
                 f"<|start_header_id|>user<|end_header_id|>\n\n{sample['question']}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
             )
         else:
-            sample[
-                "prompt"
-            ] = f"<|start_header_id|>user<|end_header_id|>\n\n{sample['question']}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+            sample["prompt"] = (
+                f"<|start_header_id|>user<|end_header_id|>\n\n{sample['question']}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+            )
         sample["chosen"] = f"{sample['chosen']}<|eot_id|>"
         sample["rejected"] = f"{sample['rejected']}<|eot_id|>"
         return sample
@@ -121,9 +121,9 @@ def prompt_pairs(
                 f"<|start_header_id|>user<|end_header_id|>\n\n{sample['prompt']}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
             )
         else:
-            sample[
-                "prompt"
-            ] = f"<|start_header_id|>user<|end_header_id|>\n\n{sample['prompt']}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+            sample["prompt"] = (
+                f"<|start_header_id|>user<|end_header_id|>\n\n{sample['prompt']}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+            )
         sample["chosen"] = f"{sample['chosen']}<|eot_id|>"
         sample["rejected"] = f"{sample['rejected']}<|eot_id|>"
         return sample
@@ -143,9 +143,9 @@ def ultra(cfg, **kwargs):  # pylint: disable=possibly-unused-variable,unused-arg
                 f"<|start_header_id|>user<|end_header_id|>\n\n{sample['prompt']}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
             )
         else:
-            sample[
-                "prompt"
-            ] = f"<|start_header_id|>user<|end_header_id|>\n\n{sample['prompt']}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+            sample["prompt"] = (
+                f"<|start_header_id|>user<|end_header_id|>\n\n{sample['prompt']}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+            )
         sample["chosen"] = f"{sample['chosen'][1]['content']}<|eot_id|>"
         sample["rejected"] = f"{sample['rejected'][1]['content']}<|eot_id|>"
         return sample
