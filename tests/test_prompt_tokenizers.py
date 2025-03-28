@@ -242,6 +242,7 @@ If a question does not make any sense, or is not factually coherent, explain why
 class OrpoTokenizationTest(unittest.TestCase):
     """test case for the ORPO tokenization"""
 
+    @enable_hf_offline
     def setUp(self) -> None:
         # pylint: disable=duplicate-code
         tokenizer = LlamaTokenizer.from_pretrained(

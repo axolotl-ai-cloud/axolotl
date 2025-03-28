@@ -26,7 +26,6 @@ class TestBatchedSamplerPacking:
     Test class for packing streaming dataset sequences
     """
 
-    @enable_hf_offline
     @pytest.mark.parametrize(
         "batch_size, num_workers",
         [
@@ -37,6 +36,7 @@ class TestBatchedSamplerPacking:
         ],
     )
     @pytest.mark.parametrize("max_seq_length", [4096, 512])
+    @enable_hf_offline
     def test_packing(self, batch_size, num_workers, tokenizer, max_seq_length):
         import axolotl.monkeypatch.data.batch_dataset_fetcher  # pylint: disable=unused-import  # noqa: F401
 

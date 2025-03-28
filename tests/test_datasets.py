@@ -281,6 +281,7 @@ class TestDatasetPreparation(unittest.TestCase):
             assert "attention_mask" in dataset.features
             assert "labels" in dataset.features
 
+    @enable_hf_offline
     def test_load_hub_with_dpo(self):
         """Verify that processing dpo data from the hub works"""
 

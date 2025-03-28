@@ -111,6 +111,14 @@ def download_argilla_ultrafeedback_binarized_preferences_cleaned_dataset():
 
 
 @pytest.fixture(scope="session", autouse=True)
+def download_fozzie_alpaca_dpo_dataset():
+    # download the dataset
+    snapshot_download_w_retry(
+        "fozziethebeat/alpaca_messages_2k_dpo_test", repo_type="dataset"
+    )
+
+
+@pytest.fixture(scope="session", autouse=True)
 def download_arcee_ai_distilabel_intel_orca_dpo_pairs_dataset():
     # download the dataset
     snapshot_download_w_retry(
@@ -197,7 +205,7 @@ def download_mistral_7b_model_fixture():
     snapshot_download_w_retry(
         "casperhansen/mistral-7b-instruct-v0.1-awq",
         repo_type="model",
-        allow_patterns=["*token*"],
+        allow_patterns=["*token*", "config.json"],
     )
 
 
@@ -208,7 +216,7 @@ def download_gemma_2b_model_fixture():
         "unsloth/gemma-2b-it",
         revision="703fb4a",
         repo_type="model",
-        allow_patterns=["*token*"],
+        allow_patterns=["*token*", "config.json"],
     )
 
 
@@ -218,7 +226,7 @@ def download_llama2_model_fixture():
     snapshot_download_w_retry(
         "NousResearch/Llama-2-7b-hf",
         repo_type="model",
-        allow_patterns=["*token*"],
+        allow_patterns=["*token*", "config.json"],
     )
 
 
