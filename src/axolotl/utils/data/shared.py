@@ -6,8 +6,12 @@ from pathlib import Path
 from typing import Optional, Union
 
 from datasets import Dataset, DatasetDict, load_dataset, load_from_disk
-from huggingface_hub import hf_hub_download
-from huggingface_hub.errors import HFValidationError
+from huggingface_hub import hf_hub_download, snapshot_download
+from huggingface_hub.errors import (
+    HFValidationError,
+    RepositoryNotFoundError,
+    RevisionNotFoundError,
+)
 
 from axolotl.utils.dict import DictDefault
 
@@ -70,20 +74,25 @@ def load_dataset_w_config(
     # pylint: disable=invalid-name
     ds: Optional[Union[Dataset, DatasetDict]] = None  # pylint: disable=invalid-name
     ds_from_hub = False
-    ds_trust_remote_code = config_dataset.trust_remote_code
     try:
         # this is just a basic check to see if the path is a
         # valid HF dataset that's loadable
-        load_dataset(
-            config_dataset.path,
-            name=config_dataset.name,
-            streaming=True,
+        snapshot_download(
+            repo_id=config_dataset.path,
+            repo_type="dataset",
             token=use_auth_token,
             revision=config_dataset.revision,
-            trust_remote_code=ds_trust_remote_code,
+            ignore_patterns=["*"],
         )
         ds_from_hub = True
-    except (FileNotFoundError, ConnectionError, HFValidationError, ValueError):
+    except (
+        RepositoryNotFoundError,
+        RevisionNotFoundError,
+        FileNotFoundError,
+        ConnectionError,
+        HFValidationError,
+        ValueError,
+    ):
         pass
 
     ds_from_cloud = False
