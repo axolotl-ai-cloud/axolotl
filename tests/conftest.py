@@ -44,19 +44,19 @@ def snapshot_download_w_retry(*args, **kwargs):
 @pytest.fixture(scope="session", autouse=True)
 def download_smollm2_135m_model():
     # download the model
-    snapshot_download_w_retry("HuggingFaceTB/SmolLM2-135M")
+    snapshot_download_w_retry("HuggingFaceTB/SmolLM2-135M", repo_type="model")
 
 
 @pytest.fixture(scope="session", autouse=True)
 def download_llama_68m_random_model():
     # download the model
-    snapshot_download_w_retry("JackFram/llama-68m")
+    snapshot_download_w_retry("JackFram/llama-68m", repo_type="model")
 
 
 @pytest.fixture(scope="session", autouse=True)
 def download_qwen_2_5_half_billion_model():
     # download the model
-    snapshot_download_w_retry("Qwen/Qwen2.5-0.5B")
+    snapshot_download_w_retry("Qwen/Qwen2.5-0.5B", repo_type="model")
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -122,12 +122,16 @@ def download_deepseek_model_fixture():
 
 @pytest.fixture(scope="session", autouse=True)
 def download_huggyllama_model_fixture():
-    snapshot_download_w_retry("huggyllama/llama-7b", repo_type="model")
+    snapshot_download_w_retry(
+        "huggyllama/llama-7b", repo_type="model", allow_patterns=["*token*"]
+    )
 
 
 @pytest.fixture(scope="session", autouse=True)
 def download_llama_1b_model_fixture():
-    snapshot_download_w_retry("NousResearch/Llama-3.2-1B", repo_type="model")
+    snapshot_download_w_retry(
+        "NousResearch/Llama-3.2-1B", repo_type="model", allow_patterns=["*token*"]
+    )
 
 
 @pytest.fixture
