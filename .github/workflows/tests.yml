@@ -98,7 +98,7 @@ jobs:
 
       - name: Run tests
         run: |
-          pytest -v -n8 --dist loadfile --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ tests/
+          pytest --maxfail=10 -v -n8 --dist loadfile --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ tests/
           pytest -v tests/patched/
           pytest -v tests/cli/
 
