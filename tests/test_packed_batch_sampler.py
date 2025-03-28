@@ -4,6 +4,7 @@ import pytest
 from datasets import concatenate_datasets, load_dataset
 from torch.utils.data import DataLoader, RandomSampler
 from transformers import AutoTokenizer
+from utils import enable_hf_offline
 
 from axolotl.datasets import TokenizedPromptDataset
 from axolotl.prompt_strategies.completion import load
@@ -25,6 +26,7 @@ class TestBatchedSamplerPacking:
     Test class for packing streaming dataset sequences
     """
 
+    @pytest.mark.skip(reason="TODO: fix hf offline mode for CI rate limits")
     @pytest.mark.parametrize(
         "batch_size, num_workers",
         [
@@ -35,11 +37,12 @@ class TestBatchedSamplerPacking:
         ],
     )
     @pytest.mark.parametrize("max_seq_length", [4096, 512])
+    @enable_hf_offline
     def test_packing(self, batch_size, num_workers, tokenizer, max_seq_length):
         import axolotl.monkeypatch.data.batch_dataset_fetcher  # pylint: disable=unused-import  # noqa: F401
 
         dataset = load_dataset(
-            "Trelis/tiny-shakespeare",
+            "winglian/tiny-shakespeare",
             split="train",
         )
 

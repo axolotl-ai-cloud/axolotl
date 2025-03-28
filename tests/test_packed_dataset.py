@@ -5,6 +5,7 @@ from pathlib import Path
 
 from datasets import Dataset, load_dataset
 from transformers import AutoTokenizer
+from utils import enable_hf_offline
 
 from axolotl.datasets import ConstantLengthDataset, TokenizedPromptDataset
 from axolotl.prompt_tokenizers import AlpacaPromptTokenizingStrategy
@@ -16,6 +17,7 @@ class TestPacking(unittest.TestCase):
     Test class for packing dataset sequences
     """
 
+    @enable_hf_offline
     def setUp(self) -> None:
         # pylint: disable=duplicate-code
         self.tokenizer = AutoTokenizer.from_pretrained("huggyllama/llama-7b")
