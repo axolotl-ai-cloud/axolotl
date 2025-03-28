@@ -7,6 +7,7 @@ from pathlib import Path
 
 from datasets import load_dataset
 from transformers import AddedToken, AutoTokenizer, LlamaTokenizer
+from utils import with_hf_offline
 
 from axolotl.prompt_strategies.alpaca_chat import NoSystemPrompter
 from axolotl.prompt_strategies.alpaca_w_system import (
@@ -63,6 +64,7 @@ class TestPromptTokenizationStrategies(unittest.TestCase):
     Test class for prompt tokenization strategies.
     """
 
+    @with_hf_offline
     def setUp(self) -> None:
         # pylint: disable=duplicate-code
         self.tokenizer = AutoTokenizer.from_pretrained("huggyllama/llama-7b")
@@ -119,6 +121,7 @@ class InstructionWSystemPromptTokenizingStrategyTest(unittest.TestCase):
     Test class for prompt tokenization strategies with sys prompt from the dataset
     """
 
+    @with_hf_offline
     def setUp(self) -> None:
         # pylint: disable=duplicate-code
         self.tokenizer = AutoTokenizer.from_pretrained("huggyllama/llama-7b")
@@ -160,6 +163,7 @@ class Llama2ChatTokenizationTest(unittest.TestCase):
     Test class for prompt tokenization strategies with sys prompt from the dataset
     """
 
+    @with_hf_offline
     def setUp(self) -> None:
         # pylint: disable=duplicate-code
         self.tokenizer = LlamaTokenizer.from_pretrained("NousResearch/Llama-2-7b-hf")

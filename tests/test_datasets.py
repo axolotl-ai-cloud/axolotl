@@ -15,6 +15,7 @@ from constants import (
 )
 from datasets import Dataset
 from transformers import AutoTokenizer
+from utils import with_hf_offline
 
 from axolotl.utils.data import load_tokenized_prepared_datasets
 from axolotl.utils.data.rl import load_prepare_preference_datasets
@@ -38,6 +39,7 @@ class TestDatasetPreparation(unittest.TestCase):
             ]
         )
 
+    @with_hf_offline
     def test_load_hub(self):
         """Core use case.  Verify that processing data from the hub works"""
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -106,6 +108,7 @@ class TestDatasetPreparation(unittest.TestCase):
             assert "labels" in dataset.features
             shutil.rmtree(tmp_ds_path)
 
+    @with_hf_offline
     def test_load_from_save_to_disk(self):
         """Usual use case.  Verify datasets saved via `save_to_disk` can be loaded."""
         with tempfile.TemporaryDirectory() as tmp_dir:

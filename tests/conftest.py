@@ -115,6 +115,21 @@ def download_tiny_shakespeare_dataset():
     snapshot_download_w_retry("Trelis/tiny-shakespeare", repo_type="dataset")
 
 
+@pytest.fixture(scope="session", autouse=True)
+def download_deepseek_model_fixture():
+    snapshot_download_w_retry("axolotl-ai-co/DeepSeek-V3-11M", repo_type="model")
+
+
+@pytest.fixture(scope="session", autouse=True)
+def download_huggyllama_model_fixture():
+    snapshot_download_w_retry("huggyllama/llama-7b", repo_type="model")
+
+
+@pytest.fixture(scope="session", autouse=True)
+def download_llama_1b_model_fixture():
+    snapshot_download_w_retry("NousResearch/Llama-3.2-1B", repo_type="model")
+
+
 @pytest.fixture
 def temp_dir():
     # Create a temporary directory

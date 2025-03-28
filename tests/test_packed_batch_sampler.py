@@ -4,6 +4,7 @@ import pytest
 from datasets import concatenate_datasets, load_dataset
 from torch.utils.data import DataLoader, RandomSampler
 from transformers import AutoTokenizer
+from utils import with_hf_offline
 
 from axolotl.datasets import TokenizedPromptDataset
 from axolotl.prompt_strategies.completion import load
@@ -25,6 +26,7 @@ class TestBatchedSamplerPacking:
     Test class for packing streaming dataset sequences
     """
 
+    @with_hf_offline
     @pytest.mark.parametrize(
         "batch_size, num_workers",
         [
