@@ -5,6 +5,8 @@ test utils for helpers and decorators
 import os
 from functools import wraps
 
+from huggingface_hub.utils import reset_sessions
+
 
 def with_hf_offline(test_func):
     """
@@ -17,14 +19,11 @@ def with_hf_offline(test_func):
         # Force reload of the modules that check this variable
         import importlib
 
-        import datasets
         import huggingface_hub.constants
-        import transformers
 
         # Reload the constants module first, as others depend on it
         importlib.reload(huggingface_hub.constants)
-        importlib.reload(transformers)
-        importlib.reload(datasets)
+        reset_sessions()
 
     @wraps(test_func)
     def wrapper(*args, **kwargs):
