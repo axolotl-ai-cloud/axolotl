@@ -26,9 +26,11 @@ def retry_on_request_exceptions(max_retries=3, delay=1):
                 except (
                     requests.exceptions.ReadTimeout,
                     requests.exceptions.ConnectionError,
+                    requests.exceptions.HTTPError,
                 ) as exc:
                     if attempt < max_retries - 1:
-                        time.sleep(delay)
+                        wait = 2**attempt * delay  # in seconds
+                        time.sleep(wait)
                     else:
                         raise exc
 
