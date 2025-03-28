@@ -5,7 +5,7 @@ shared fixtures for prompt strategies tests
 import pytest
 from datasets import Dataset
 from transformers import AutoTokenizer
-from utils import with_hf_offline
+from utils import enable_hf_offline
 
 from axolotl.prompt_strategies.jinja_template_analyzer import JinjaTemplateAnalyzer
 from axolotl.utils.chat_templates import _CHAT_TEMPLATES
@@ -108,7 +108,7 @@ def fixture_toolcalling_dataset():
 
 
 @pytest.fixture(name="llama3_tokenizer", scope="session", autouse=True)
-@with_hf_offline
+@enable_hf_offline
 def fixture_llama3_tokenizer():
     tokenizer = AutoTokenizer.from_pretrained("NousResearch/Meta-Llama-3-8B-Instruct")
 
@@ -116,7 +116,7 @@ def fixture_llama3_tokenizer():
 
 
 @pytest.fixture(name="smollm2_tokenizer", scope="session", autouse=True)
-@with_hf_offline
+@enable_hf_offline
 def fixture_smollm2_tokenizer():
     tokenizer = AutoTokenizer.from_pretrained("HuggingFaceTB/SmolLM2-135M")
     return tokenizer
@@ -131,7 +131,7 @@ def fixture_mistralv03_tokenizer():
 
 
 @pytest.fixture(name="phi35_tokenizer", scope="session", autouse=True)
-@with_hf_offline
+@enable_hf_offline
 def fixture_phi35_tokenizer():
     tokenizer = AutoTokenizer.from_pretrained("microsoft/Phi-3.5-mini-instruct")
     return tokenizer

@@ -8,7 +8,7 @@ import torch
 from datasets import load_dataset
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer
-from utils import with_hf_offline
+from utils import enable_hf_offline
 
 from axolotl.utils.data import get_dataset_wrapper, wrap_pretraining_dataset
 from axolotl.utils.dict import DictDefault
@@ -19,7 +19,7 @@ class TestPretrainingPacking(unittest.TestCase):
     Test class for packing streaming dataset sequences
     """
 
-    @with_hf_offline
+    @enable_hf_offline
     def setUp(self) -> None:
         # pylint: disable=duplicate-code
         self.tokenizer = AutoTokenizer.from_pretrained("huggyllama/llama-7b")

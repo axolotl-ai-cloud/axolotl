@@ -6,7 +6,7 @@ import unittest
 
 import pytest
 from transformers import AutoTokenizer
-from utils import with_hf_offline
+from utils import enable_hf_offline
 
 from axolotl.utils.chat_templates import (
     _CHAT_TEMPLATES,
@@ -16,7 +16,7 @@ from axolotl.utils.chat_templates import (
 
 
 @pytest.fixture(name="llama3_tokenizer")
-@with_hf_offline
+@enable_hf_offline
 def fixture_llama3_tokenizer():
     tokenizer = AutoTokenizer.from_pretrained("NousResearch/Meta-Llama-3-8B")
 

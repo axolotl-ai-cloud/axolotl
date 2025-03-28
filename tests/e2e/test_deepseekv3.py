@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 
 import pytest
-from utils import with_hf_offline
+from utils import enable_hf_offline
 
 from axolotl.cli.args import TrainerCliArgs
 from axolotl.common.datasets import load_datasets
@@ -24,7 +24,7 @@ class TestDeepseekV3:
     Test case for DeepseekV3 models
     """
 
-    @with_hf_offline
+    @enable_hf_offline
     @pytest.mark.parametrize(
         "sample_packing",
         [True, False],
@@ -82,7 +82,7 @@ class TestDeepseekV3:
         train(cfg=cfg, dataset_meta=dataset_meta)
         assert (Path(temp_dir) / "adapter_model.safetensors").exists()
 
-    @with_hf_offline
+    @enable_hf_offline
     @pytest.mark.parametrize(
         "sample_packing",
         [True, False],

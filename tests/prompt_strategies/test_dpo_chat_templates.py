@@ -7,7 +7,7 @@ import unittest
 import pytest
 from datasets import Dataset
 from transformers import AutoTokenizer
-from utils import with_hf_offline
+from utils import enable_hf_offline
 
 from axolotl.prompt_strategies.dpo.chat_template import default
 from axolotl.utils.dict import DictDefault
@@ -80,7 +80,7 @@ def fixture_custom_assistant_dataset():
 
 
 @pytest.fixture(name="phi3_tokenizer")
-@with_hf_offline
+@enable_hf_offline
 def fixture_phi3_tokenizer():
     tokenizer = AutoTokenizer.from_pretrained("microsoft/Phi-3-medium-128k-instruct")
 
@@ -88,7 +88,7 @@ def fixture_phi3_tokenizer():
 
 
 @pytest.fixture(name="gemma_tokenizer")
-@with_hf_offline
+@enable_hf_offline
 def fixture_gemma_tokenizer():
     tokenizer = AutoTokenizer.from_pretrained("unsloth/gemma-2b-it", revision="703fb4a")
 

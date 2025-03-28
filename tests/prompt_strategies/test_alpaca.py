@@ -6,7 +6,7 @@ import pytest
 from datasets import Dataset
 from tokenizers import AddedToken
 from transformers import AutoTokenizer
-from utils import with_hf_offline
+from utils import enable_hf_offline
 
 from axolotl.datasets import TokenizedPromptDataset
 from axolotl.prompt_tokenizers import AlpacaPromptTokenizingStrategy
@@ -27,7 +27,7 @@ def fixture_alpaca_dataset():
 
 
 @pytest.fixture(name="tokenizer")
-@with_hf_offline
+@enable_hf_offline
 def fixture_tokenizer():
     # pylint: disable=all
     tokenizer = AutoTokenizer.from_pretrained(

@@ -12,7 +12,7 @@ import time
 import pytest
 import requests
 from huggingface_hub import snapshot_download
-from utils import with_disable_hf_offline
+from utils import disable_hf_offline
 
 
 def retry_on_request_exceptions(max_retries=3, delay=1):
@@ -43,7 +43,7 @@ def snapshot_download_w_retry(*args, **kwargs):
 
 
 @pytest.fixture(scope="session", autouse=True)
-@with_disable_hf_offline
+@disable_hf_offline
 def download_smollm2_135m_model():
     # download the model
     snapshot_download_w_retry("HuggingFaceTB/SmolLM2-135M", repo_type="model")
@@ -56,28 +56,28 @@ def download_llama_68m_random_model():
 
 
 @pytest.fixture(scope="session", autouse=True)
-@with_disable_hf_offline
+@disable_hf_offline
 def download_qwen_2_5_half_billion_model():
     # download the model
     snapshot_download_w_retry("Qwen/Qwen2.5-0.5B", repo_type="model")
 
 
 @pytest.fixture(scope="session", autouse=True)
-@with_disable_hf_offline
+@disable_hf_offline
 def download_tatsu_lab_alpaca_dataset():
     # download the dataset
     snapshot_download_w_retry("tatsu-lab/alpaca", repo_type="dataset")
 
 
 @pytest.fixture(scope="session", autouse=True)
-@with_disable_hf_offline
+@disable_hf_offline
 def download_mhenrichsen_alpaca_2k_dataset():
     # download the dataset
     snapshot_download_w_retry("mhenrichsen/alpaca_2k_test", repo_type="dataset")
 
 
 @pytest.fixture(scope="session", autouse=True)
-@with_disable_hf_offline
+@disable_hf_offline
 def download_mhenrichsen_alpaca_2k_w_revision_dataset():
     # download the dataset
     snapshot_download_w_retry(
@@ -86,7 +86,7 @@ def download_mhenrichsen_alpaca_2k_w_revision_dataset():
 
 
 @pytest.fixture(scope="session", autouse=True)
-@with_disable_hf_offline
+@disable_hf_offline
 def download_mlabonne_finetome_100k_dataset():
     # download the dataset
     snapshot_download_w_retry("mlabonne/FineTome-100k", repo_type="dataset")
@@ -117,7 +117,7 @@ def download_arcee_ai_distilabel_intel_orca_dpo_pairs_dataset():
 
 
 @pytest.fixture(scope="session", autouse=True)
-@with_disable_hf_offline
+@disable_hf_offline
 def download_tiny_shakespeare_dataset():
     # download the dataset
     snapshot_download_w_retry("Trelis/tiny-shakespeare", repo_type="dataset")
@@ -129,7 +129,7 @@ def download_deepseek_model_fixture():
 
 
 @pytest.fixture(scope="session", autouse=True)
-@with_disable_hf_offline
+@disable_hf_offline
 def download_huggyllama_model_fixture():
     # download the tokenizer only
     snapshot_download_w_retry(
@@ -138,7 +138,7 @@ def download_huggyllama_model_fixture():
 
 
 @pytest.fixture(scope="session", autouse=True)
-@with_disable_hf_offline
+@disable_hf_offline
 def download_llama_1b_model_fixture():
     # download the tokenizer only
     snapshot_download_w_retry(
@@ -149,7 +149,7 @@ def download_llama_1b_model_fixture():
 
 
 @pytest.fixture(scope="session", autouse=True)
-@with_disable_hf_offline
+@disable_hf_offline
 def download_llama3_8b_model_fixture():
     # download the tokenizer only
     snapshot_download_w_retry(
@@ -158,7 +158,7 @@ def download_llama3_8b_model_fixture():
 
 
 @pytest.fixture(scope="session", autouse=True)
-@with_disable_hf_offline
+@disable_hf_offline
 def download_llama3_8b_instruct_model_fixture():
     # download the tokenizer only
     snapshot_download_w_retry(
@@ -169,7 +169,7 @@ def download_llama3_8b_instruct_model_fixture():
 
 
 @pytest.fixture(scope="session", autouse=True)
-@with_disable_hf_offline
+@disable_hf_offline
 def download_phi_35_mini_model_fixture():
     # download the tokenizer only
     snapshot_download_w_retry(

@@ -11,7 +11,7 @@ from unittest.mock import patch
 from constants import ALPACA_MESSAGES_CONFIG_REVISION, SPECIAL_TOKENS
 from datasets import Dataset
 from transformers import AutoTokenizer
-from utils import with_hf_offline
+from utils import enable_hf_offline
 
 from axolotl.utils.config import normalize_config
 from axolotl.utils.data import prepare_dataset
@@ -259,7 +259,7 @@ class TestDeduplicateRLDataset(unittest.TestCase):
 class TestDeduplicateNonRL(unittest.TestCase):
     """Test prepare_dataset function with different configurations."""
 
-    @with_hf_offline
+    @enable_hf_offline
     def setUp(self) -> None:
         self.tokenizer = AutoTokenizer.from_pretrained("huggyllama/llama-7b")
         self.tokenizer.add_special_tokens(SPECIAL_TOKENS)
@@ -288,7 +288,7 @@ class TestDeduplicateNonRL(unittest.TestCase):
         )
         normalize_config(self.cfg_1)
 
-    @with_hf_offline
+    @enable_hf_offline
     def test_prepare_dataset_with_deduplication_train(self):
         """Verify that prepare_dataset function processes the dataset correctly with deduplication."""
         self.cfg_1.dataset_exact_deduplication = True
@@ -314,7 +314,7 @@ class TestDeduplicateNonRL(unittest.TestCase):
             "Train dataset should have 2000 samples after deduplication.",
         )
 
-    @with_hf_offline
+    @enable_hf_offline
     def test_prepare_dataset_with_deduplication_eval(self):
         """Verify that prepare_dataset function processes the dataset correctly with deduplication."""
         self.cfg_1.dataset_exact_deduplication = True
@@ -340,7 +340,7 @@ class TestDeduplicateNonRL(unittest.TestCase):
             "Eval dataset should have 2000 samples after deduplication.",
         )
 
-    @with_hf_offline
+    @enable_hf_offline
     def test_prepare_dataset_without_deduplication(self):
         """Verify that prepare_dataset function processes the dataset correctly without deduplication."""
         self.cfg_1.dataset_exact_deduplication = False

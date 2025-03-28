@@ -5,7 +5,7 @@ Test cases for the tokenizer loading
 import unittest
 
 import pytest
-from utils import with_hf_offline
+from utils import enable_hf_offline
 
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.models import load_tokenizer
@@ -16,7 +16,7 @@ class TestTokenizers:
     test class for the load_tokenizer fn
     """
 
-    @with_hf_offline
+    @enable_hf_offline
     def test_default_use_fast(self):
         cfg = DictDefault(
             {
@@ -26,7 +26,7 @@ class TestTokenizers:
         tokenizer = load_tokenizer(cfg)
         assert "Fast" in tokenizer.__class__.__name__
 
-    @with_hf_offline
+    @enable_hf_offline
     def test_dont_use_fast(self):
         cfg = DictDefault(
             {
@@ -37,7 +37,7 @@ class TestTokenizers:
         tokenizer = load_tokenizer(cfg)
         assert "Fast" not in tokenizer.__class__.__name__
 
-    @with_hf_offline
+    @enable_hf_offline
     def test_special_tokens_modules_to_save(self):
         # setting special_tokens to new token
         cfg = DictDefault(
@@ -72,7 +72,7 @@ class TestTokenizers:
         )
         load_tokenizer(cfg)
 
-    @with_hf_offline
+    @enable_hf_offline
     def test_add_additional_special_tokens(self):
         cfg = DictDefault(
             {
@@ -88,7 +88,7 @@ class TestTokenizers:
         tokenizer = load_tokenizer(cfg)
         assert len(tokenizer) == 32001
 
-    @with_hf_offline
+    @enable_hf_offline
     def test_added_tokens_overrides(self, temp_dir):
         cfg = DictDefault(
             {
@@ -110,7 +110,7 @@ class TestTokenizers:
             128042
         ]
 
-    @with_hf_offline
+    @enable_hf_offline
     def test_added_tokens_overrides_with_toolargeid(self, temp_dir):
         cfg = DictDefault(
             {

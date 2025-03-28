@@ -16,7 +16,7 @@ from constants import (
 from datasets import Dataset
 from huggingface_hub import snapshot_download
 from transformers import AutoTokenizer
-from utils import with_hf_offline
+from utils import enable_hf_offline
 
 from axolotl.utils.data import load_tokenized_prepared_datasets
 from axolotl.utils.data.rl import load_prepare_preference_datasets
@@ -26,7 +26,7 @@ from axolotl.utils.dict import DictDefault
 class TestDatasetPreparation(unittest.TestCase):
     """Test a configured dataloader."""
 
-    @with_hf_offline
+    @enable_hf_offline
     def setUp(self) -> None:
         self.tokenizer = AutoTokenizer.from_pretrained("huggyllama/llama-7b")
         self.tokenizer.add_special_tokens(SPECIAL_TOKENS)
@@ -41,7 +41,7 @@ class TestDatasetPreparation(unittest.TestCase):
             ]
         )
 
-    @with_hf_offline
+    @enable_hf_offline
     def test_load_hub(self):
         """Core use case.  Verify that processing data from the hub works"""
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -69,7 +69,7 @@ class TestDatasetPreparation(unittest.TestCase):
             assert "labels" in dataset.features
 
     @pytest.skip("brittle CI with HF api rate limiting")
-    @with_hf_offline
+    @enable_hf_offline
     def test_load_local_hub(self):
         """Niche use case.  Verify that a local copy of a hub dataset can be loaded"""
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -115,7 +115,7 @@ class TestDatasetPreparation(unittest.TestCase):
             assert "labels" in dataset.features
             shutil.rmtree(tmp_ds_path)
 
-    @with_hf_offline
+    @enable_hf_offline
     def test_load_from_save_to_disk(self):
         """Usual use case.  Verify datasets saved via `save_to_disk` can be loaded."""
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -145,7 +145,7 @@ class TestDatasetPreparation(unittest.TestCase):
             assert "attention_mask" in dataset.features
             assert "labels" in dataset.features
 
-    @with_hf_offline
+    @enable_hf_offline
     def test_load_from_dir_of_parquet(self):
         """Usual use case.  Verify a directory of parquet files can be loaded."""
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -182,7 +182,7 @@ class TestDatasetPreparation(unittest.TestCase):
             assert "attention_mask" in dataset.features
             assert "labels" in dataset.features
 
-    @with_hf_offline
+    @enable_hf_offline
     def test_load_from_dir_of_json(self):
         """Standard use case.  Verify a directory of json files can be loaded."""
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -219,7 +219,7 @@ class TestDatasetPreparation(unittest.TestCase):
             assert "attention_mask" in dataset.features
             assert "labels" in dataset.features
 
-    @with_hf_offline
+    @enable_hf_offline
     def test_load_from_single_parquet(self):
         """Standard use case.  Verify a single parquet file can be loaded."""
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -250,7 +250,7 @@ class TestDatasetPreparation(unittest.TestCase):
             assert "attention_mask" in dataset.features
             assert "labels" in dataset.features
 
-    @with_hf_offline
+    @enable_hf_offline
     def test_load_from_single_json(self):
         """Standard use case.  Verify a single json file can be loaded."""
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -299,7 +299,7 @@ class TestDatasetPreparation(unittest.TestCase):
         assert len(train_dataset) == 1800
         assert "conversation" in train_dataset.features
 
-    @with_hf_offline
+    @enable_hf_offline
     def test_load_hub_with_revision(self):
         """Verify that processing data from the hub works with a specific revision"""
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -331,7 +331,7 @@ class TestDatasetPreparation(unittest.TestCase):
             assert "attention_mask" in dataset.features
             assert "labels" in dataset.features
 
-    @with_hf_offline
+    @enable_hf_offline
     def test_load_hub_with_revision_with_dpo(self):
         """Verify that processing dpo data from the hub works with a specific revision"""
 
@@ -350,7 +350,7 @@ class TestDatasetPreparation(unittest.TestCase):
         assert len(train_dataset) == 1800
         assert "conversation" in train_dataset.features
 
-    @with_hf_offline
+    @enable_hf_offline
     def test_load_local_hub_with_revision(self):
         """Verify that a local copy of a hub dataset can be loaded with a specific revision"""
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -393,7 +393,7 @@ class TestDatasetPreparation(unittest.TestCase):
             assert "labels" in dataset.features
             shutil.rmtree(tmp_ds_path)
 
-    @with_hf_offline
+    @enable_hf_offline
     def test_loading_local_dataset_folder(self):
         """Verify that a dataset downloaded to a local folder can be loaded"""
 

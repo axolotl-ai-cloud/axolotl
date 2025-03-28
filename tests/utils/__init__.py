@@ -8,7 +8,7 @@ from functools import wraps
 from huggingface_hub.utils import reset_sessions
 
 
-def with_hf_offline(test_func):
+def enable_hf_offline(test_func):
     """
     test decorator that sets HF_HUB_OFFLINE environment variable to True and restores it after the test even if the test fails.
     :param test_func:
@@ -48,7 +48,7 @@ def with_hf_offline(test_func):
     return wrapper
 
 
-def with_disable_hf_offline(test_func):
+def disable_hf_offline(test_func):
     """
     test decorator that sets HF_HUB_OFFLINE environment variable to False and restores it after the wrapped func
     :param test_func:
