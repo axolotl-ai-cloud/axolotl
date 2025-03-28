@@ -137,6 +137,14 @@ def download_llama_1b_model_fixture():
 
 
 @pytest.fixture(scope="session", autouse=True)
+def download_llama3_8b_model_fixture():
+    # download the tokenizer only
+    snapshot_download_w_retry(
+        "NousResearch/Meta-Llama-3-8B", repo_type="model", allow_patterns=["*token*"]
+    )
+
+
+@pytest.fixture(scope="session", autouse=True)
 def download_phi_mini_model_fixture():
     # download the tokenizer only
     snapshot_download_w_retry(
