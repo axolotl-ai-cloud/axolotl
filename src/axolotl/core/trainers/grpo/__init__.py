@@ -40,28 +40,13 @@ class GRPOStrategy:
 
         if trl.use_vllm:
             grpo_args_kwargs["use_vllm"] = trl.use_vllm
-            grpo_args_kwargs["vllm_device"] = (
-                trl.vllm_device if trl.vllm_device else "auto"
-            )
-
-            if trl.vllm_gpu_memory_utilization:
-                grpo_args_kwargs["vllm_gpu_memory_utilization"] = (
-                    trl.vllm_gpu_memory_utilization
-                )
-
-            if trl.vllm_max_model_len:
-                grpo_args_kwargs["vllm_max_model_len"] = trl.vllm_max_model_len
-
-            if trl.vllm_server_host:
-                grpo_args_kwargs["vllm_server_host"] = trl.vllm_server_host
-            if trl.vllm_server_port:
-                grpo_args_kwargs["vllm_server_port"] = trl.vllm_server_port
-            if trl.vllm_server_timeout:
-                grpo_args_kwargs["vllm_server_timeout"] = trl.vllm_server_timeout
-
-            if trl.vllm_enable_prefix_caching:
-                grpo_args_kwargs["vllm_enable_prefix_caching"] = (
-                    trl.vllm_enable_prefix_caching
+            grpo_args_kwargs["vllm_server_host"] = trl.vllm.server_host
+            grpo_args_kwargs["vllm_server_port"] = trl.vllm.server_port
+            if trl.vllm.server_timeout:
+                grpo_args_kwargs["vllm_server_timeout"] = trl.vllm.server_timeout
+            if trl.vllm.guided_decoding_regex:
+                grpo_args_kwargs["vllm_guided_decoding_regex"] = (
+                    trl.vllm.guided_decoding_regex
                 )
 
         if trl.num_generations:

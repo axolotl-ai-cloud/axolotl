@@ -530,8 +530,6 @@ trl:
     beta: 0.001
     max_completion_length: 256
     use_vllm: True
-    vllm_device: auto
-    vllm_gpu_memory_utilization: 0.15
     num_generations: 4
     reward_funcs: ["rewards.rand_reward_func"]    # format: '{file_name}.{fn_name}'
     reward_weights: [1.0]
