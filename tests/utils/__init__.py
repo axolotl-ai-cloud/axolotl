@@ -23,7 +23,7 @@ def with_hf_offline(test_func):
 
         try:
             # Run the test function
-            test_func(*args, **kwargs)
+            return test_func(*args, **kwargs)
         finally:
             # Restore the original value of HF_OFFLINE environment variable
             if original_hf_offline is not None:
