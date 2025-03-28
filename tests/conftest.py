@@ -120,9 +120,9 @@ def download_arcee_ai_distilabel_intel_orca_dpo_pairs_dataset():
 
 @pytest.fixture(scope="session", autouse=True)
 @disable_hf_offline
-def download_tiny_shakespeare_dataset():
+def download_tiny_imdb_dataset():
     # download the dataset
-    snapshot_download_w_retry("Trelis/tiny-shakespeare", repo_type="dataset")
+    snapshot_download_w_retry("iamholmes/tiny-imdb", repo_type="dataset")
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -135,7 +135,9 @@ def download_deepseek_model_fixture():
 def download_huggyllama_model_fixture():
     # download the tokenizer only
     snapshot_download_w_retry(
-        "huggyllama/llama-7b", repo_type="model", allow_patterns=["*token*"]
+        "huggyllama/llama-7b",
+        repo_type="model",
+        allow_patterns=["*token*", "config.json"],
     )
 
 
