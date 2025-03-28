@@ -68,8 +68,8 @@ class TestDatasetPreparation(unittest.TestCase):
             assert "attention_mask" in dataset.features
             assert "labels" in dataset.features
 
-    @pytest.skip("brittle CI with HF api rate limiting")
     @enable_hf_offline
+    @pytest.mark.skip("brittle CI with HF api rate limiting")
     def test_load_local_hub(self):
         """Niche use case.  Verify that a local copy of a hub dataset can be loaded"""
         with tempfile.TemporaryDirectory() as tmp_dir:

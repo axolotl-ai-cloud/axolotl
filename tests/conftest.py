@@ -127,7 +127,6 @@ def download_arcee_ai_distilabel_intel_orca_dpo_pairs_dataset():
 
 
 @pytest.fixture(scope="session", autouse=True)
-@disable_hf_offline
 def download_tiny_imdb_dataset():
     # download the dataset
     snapshot_download_w_retry("iamholmes/tiny-imdb", repo_type="dataset")
@@ -215,6 +214,16 @@ def download_gemma_2b_model_fixture():
     snapshot_download_w_retry(
         "unsloth/gemma-2b-it",
         revision="703fb4a",
+        repo_type="model",
+        allow_patterns=["*token*", "config.json"],
+    )
+
+
+@pytest.fixture(scope="session", autouse=True)
+def download_mlx_mistral_7b_model_fixture():
+    # download the tokenizer only
+    snapshot_download_w_retry(
+        "mlx-community/Mistral-7B-Instruct-v0.3-4bit",
         repo_type="model",
         allow_patterns=["*token*", "config.json"],
     )
