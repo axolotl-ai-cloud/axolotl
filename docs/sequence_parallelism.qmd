@@ -25,6 +25,8 @@ To enable sequence parallelism, add the following to your configuration file:
 ```yaml
 # Set to a divisor (> 1) of the number of GPUs available
 sequence_parallel_degree: 4  # Split sequences across 4 GPUs
+# Optional; strides across the key dimension. Larger values use more memory but should make training faster.
+heads_k_stride: 1
 ```
 
 The `sequence_parallel_degree` should be a divisor of the total number of GPUs. For example:
@@ -58,11 +60,16 @@ To use sequence parallelism, you need:
 ## Example
 
 ```yaml
-# Example config with sequence parallelism
 base_model: meta-llama/Llama-3-8B-Instruct
 sequence_len: 8192
+
+...
+
 sequence_parallel_degree: 4  # Split each sequence into 4 parts, one per GPU
 flash_attention: true  # Required with sequence parallelism
+# Optional; strides across the key dimension. Larger values use more memory but should make training faster.
+heads_k_stride: 1
+
 ...
 ```
 
