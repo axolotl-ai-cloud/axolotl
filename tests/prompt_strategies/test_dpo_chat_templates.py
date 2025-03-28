@@ -7,6 +7,7 @@ import unittest
 import pytest
 from datasets import Dataset
 from transformers import AutoTokenizer
+from utils import with_hf_offline
 
 from axolotl.prompt_strategies.dpo.chat_template import default
 from axolotl.utils.dict import DictDefault
@@ -78,15 +79,8 @@ def fixture_custom_assistant_dataset():
     )
 
 
-@pytest.fixture(name="llama3_tokenizer")
-def fixture_llama3_tokenizer():
-    tokenizer = AutoTokenizer.from_pretrained("NousResearch/Meta-Llama-3-8B")
-    tokenizer.eos_token = "<|eot_id|>"
-
-    return tokenizer
-
-
 @pytest.fixture(name="phi3_tokenizer")
+@with_hf_offline
 def fixture_phi3_tokenizer():
     tokenizer = AutoTokenizer.from_pretrained("microsoft/Phi-3-medium-128k-instruct")
 

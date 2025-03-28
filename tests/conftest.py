@@ -145,10 +145,30 @@ def download_llama3_8b_model_fixture():
 
 
 @pytest.fixture(scope="session", autouse=True)
-def download_phi_mini_model_fixture():
+def download_llama3_8b_instruct_model_fixture():
+    # download the tokenizer only
+    snapshot_download_w_retry(
+        "NousResearch/Meta-Llama-3-8B-Instruct",
+        repo_type="model",
+        allow_patterns=["*token*"],
+    )
+
+
+@pytest.fixture(scope="session", autouse=True)
+def download_phi_35_mini_model_fixture():
     # download the tokenizer only
     snapshot_download_w_retry(
         "microsoft/Phi-3.5-mini-instruct", repo_type="model", allow_patterns=["*token*"]
+    )
+
+
+@pytest.fixture(scope="session", autouse=True)
+def download_phi_3_medium_model_fixture():
+    # download the tokenizer only
+    snapshot_download_w_retry(
+        "microsoft/Phi-3-medium-128k-instruct",
+        repo_type="model",
+        allow_patterns=["*token*"],
     )
 
 
