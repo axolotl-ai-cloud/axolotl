@@ -127,9 +127,9 @@ def download_arcee_ai_distilabel_intel_orca_dpo_pairs_dataset():
 
 
 @pytest.fixture(scope="session", autouse=True)
-def download_tiny_imdb_dataset():
+def download_tiny_shakespeare_dataset():
     # download the dataset
-    snapshot_download_w_retry("iamholmes/tiny-imdb", repo_type="dataset")
+    snapshot_download_w_retry("winglian/tiny-shakespeare", repo_type="dataset")
 
 
 @pytest.fixture(scope="session", autouse=True)

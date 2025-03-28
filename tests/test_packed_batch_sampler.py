@@ -41,7 +41,7 @@ class TestBatchedSamplerPacking:
         import axolotl.monkeypatch.data.batch_dataset_fetcher  # pylint: disable=unused-import  # noqa: F401
 
         dataset = load_dataset(
-            "iamholmes/tiny-imdb",
+            "winglian/tiny-shakespeare",
             split="train",
         )
 
