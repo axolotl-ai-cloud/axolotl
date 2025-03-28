@@ -109,13 +109,6 @@ def get_module_class_from_name(module, name):
 
 def check_model_config(cfg: DictDefault, model_config: Union[AutoConfig, DictDefault]):
     if cfg.is_multimodal:
-        if hasattr(model_config, "text_config"):
-            model_config = model_config.text_config
-            model_config.use_cache = False
-        elif hasattr(model_config, "get_text_config"):
-            model_config = model_config.get_text_config()
-            model_config.use_cache = False
-
         # check if image_size is not set and load image size from model config if available
         if (
             cfg.image_size is None
@@ -523,14 +516,6 @@ class ModelLoader:
 
         # init model config
         self.model_config = load_model_config(cfg)
-        if cfg.is_multimodal:
-            if hasattr(self.model_config, "text_config"):
-                self.text_model_config = self.model_config.text_config
-            else:
-                # for qwen2_vl
-                self.text_model_config = self.model_config.get_text_config()
-        else:
-            self.text_model_config = self.model_config
 
         self.auto_model_loader = AutoModelForCausalLM  # pylint: disable=invalid-name
 
@@ -947,8 +932,6 @@ class ModelLoader:
             quantization_config = (
                 quantization_config or self.model_kwargs["quantization_config"]
             )
-            if self.cfg.is_multimodal:
-                self.model_config.text_config = self.text_model_config
             self.model = load_sharded_model_quant(
                 self.base_model,
                 self.model_config,
@@ -968,9 +951,6 @@ class ModelLoader:
                     del self.model_kwargs["device_map"]
 
             _ = _configure_zero3_memory_efficient_loading()
-
-            if self.cfg.is_multimodal:
-                self.model_config.text_config = self.text_model_config
 
             # Load model with random initialization if specified
             if self.cfg.random_init_weights:
@@ -1026,8 +1006,6 @@ class ModelLoader:
             and self.model_type != "AutoModelForCausalLM"
             and not self.cfg.trust_remote_code
         ):
-            if self.cfg.is_multimodal:
-                self.model_config.text_config = self.text_model_config
             if self.cfg.gptq:
                 self.model = self.auto_model_loader.from_pretrained(
                     self.base_model,
@@ -1043,25 +1021,7 @@ class ModelLoader:
                     **self.model_kwargs,
                 )
         else:
-            # Shouldn't be a problem most of the time. will obviously error if the model doesn't support this
-            # when training starts
-            if (
-                hasattr(self.text_model_config, "max_seq_len")
-                and self.text_model_config.max_seq_len
-                and self.cfg.sequence_len > self.text_model_config.max_seq_len
-            ):
-                self.text_model_config.max_seq_len = self.cfg.sequence_len
-                LOG.warning(f"increasing context length to {self.cfg.sequence_len}")
-            elif (
-                hasattr(self.text_model_config, "max_sequence_length")
-                and self.text_model_config.max_sequence_length
-                and self.cfg.sequence_len > self.text_model_config.max_sequence_length
-            ):
-                self.text_model_config.max_sequence_length = self.cfg.sequence_len
-                LOG.warning(f"increasing context length to {self.cfg.sequence_len}")
             if self.cfg.gptq:
-                if self.cfg.is_multimodal:
-                    self.model_config.text_config = self.text_model_config
                 self.model = self.auto_model_loader.from_pretrained(
                     self.base_model,
                     config=self.model_config,
@@ -1080,8 +1040,6 @@ class ModelLoader:
 
                 _ = _configure_zero3_memory_efficient_loading()
 
-                if self.cfg.is_multimodal:
-                    self.model_config.text_config = self.text_model_config
                 self.model = self.auto_model_loader.from_pretrained(
                     self.base_model,
                     config=self.model_config,
