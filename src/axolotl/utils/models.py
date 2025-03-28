@@ -1305,6 +1305,8 @@ class ModelLoader:
         if len(requires_grad) == 0:
             LOG.warning("there are no parameters that require gradient updates")
         if hasattr(self.model, "config"):
+            self.model.config.use_cache = False
+
             # for multimodal models, get_text_config could return subkey such as text_config
             # for text models, it would return self
             self.model.config.get_text_config().use_cache = False
