@@ -108,7 +108,13 @@ def get_module_class_from_name(module, name):
 
 
 def check_model_config(cfg: DictDefault, model_config: Union[AutoConfig, DictDefault]):
+    # Set use_cache to False
+    if hasattr(model_config, "use_cache"):
+        model_config.use_cache = False
+
     if cfg.is_multimodal:
+        model_config.get_text_config().use_cache = False
+
         # check if image_size is not set and load image size from model config if available
         if (
             cfg.image_size is None
@@ -1304,12 +1310,12 @@ class ModelLoader:
                 requires_grad.append(f"{name}: {param.requires_grad}")
         if len(requires_grad) == 0:
             LOG.warning("there are no parameters that require gradient updates")
-        if hasattr(self.model, "config"):
-            self.model.config.use_cache = False
+        # if hasattr(self.model, "config"):
+        #     self.model.config.use_cache = False
 
-            # for multimodal models, get_text_config could return subkey such as text_config
-            # for text models, it would return self
-            self.model.config.get_text_config().use_cache = False
+        #     # for multimodal models, get_text_config could return subkey such as text_config
+        #     # for text models, it would return self
+        #     self.model.config.get_text_config().use_cache = False
 
         if self.cfg.flash_optimum:
             from optimum.bettertransformer import BetterTransformer
