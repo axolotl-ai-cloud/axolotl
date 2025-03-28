@@ -7,13 +7,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from conftest import snapshot_download_w_retry
+import pytest
 from constants import (
     ALPACA_MESSAGES_CONFIG_OG,
     ALPACA_MESSAGES_CONFIG_REVISION,
     SPECIAL_TOKENS,
 )
 from datasets import Dataset
+from huggingface_hub import snapshot_download
 from transformers import AutoTokenizer
 from utils import with_hf_offline
 
@@ -67,17 +68,21 @@ class TestDatasetPreparation(unittest.TestCase):
             assert "attention_mask" in dataset.features
             assert "labels" in dataset.features
 
+    @pytest.skip("brittle CI with HF api rate limiting")
     @with_hf_offline
     def test_load_local_hub(self):
         """Niche use case.  Verify that a local copy of a hub dataset can be loaded"""
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_ds_path = Path(tmp_dir) / "mhenrichsen/alpaca_2k_test"
             tmp_ds_path.mkdir(parents=True, exist_ok=True)
-            snapshot_download_w_retry(
+            snapshot_path = snapshot_download(
                 repo_id="mhenrichsen/alpaca_2k_test",
                 repo_type="dataset",
                 local_dir=tmp_ds_path,
             )
+            # offline mode doesn't actually copy it to local_dir, so we
+            # have to copy all the contents in the dir manually from the returned snapshot_path
+            shutil.copytree(snapshot_path, tmp_ds_path, dirs_exist_ok=True)
 
             prepared_path = Path(tmp_dir) / "prepared"
             # Right now a local copy that doesn't fully conform to a dataset
@@ -351,12 +356,13 @@ class TestDatasetPreparation(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_ds_path = Path(tmp_dir) / "mhenrichsen/alpaca_2k_test"
             tmp_ds_path.mkdir(parents=True, exist_ok=True)
-            snapshot_download_w_retry(
+            snapshot_path = snapshot_download(
                 repo_id="mhenrichsen/alpaca_2k_test",
                 repo_type="dataset",
                 local_dir=tmp_ds_path,
                 revision="d05c1cb",
             )
+            shutil.copytree(snapshot_path, tmp_ds_path, dirs_exist_ok=True)
 
             prepared_path = Path(tmp_dir) / "prepared"
             cfg = DictDefault(
@@ -394,11 +400,12 @@ class TestDatasetPreparation(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_ds_path = Path(tmp_dir) / "mhenrichsen/alpaca_2k_test"
             tmp_ds_path.mkdir(parents=True, exist_ok=True)
-            snapshot_download_w_retry(
+            snapshot_path = snapshot_download(
                 repo_id="mhenrichsen/alpaca_2k_test",
                 repo_type="dataset",
                 local_dir=tmp_ds_path,
             )
+            shutil.copytree(snapshot_path, tmp_ds_path, dirs_exist_ok=True)
 
             prepared_path = Path(tmp_dir) / "prepared"
             cfg = DictDefault(

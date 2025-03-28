@@ -115,7 +115,7 @@ class TestTokenizers:
         cfg = DictDefault(
             {
                 # use with tokenizer that has reserved_tokens in added_tokens
-                "tokenizer_config": "NousResearch/Llama-3.2-1B",
+                "tokenizer_config": "HuggingFaceTB/SmolLM2-135M",
                 "added_tokens_overrides": {1000000: "BROKEN_RANDOM_OVERRIDE_1"},
                 "output_dir": temp_dir,
             }
