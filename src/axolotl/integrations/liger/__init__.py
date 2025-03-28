@@ -42,6 +42,7 @@ class LigerPlugin(BasePlugin):
     def pre_model_load(self, cfg):
         from liger_kernel.transformers.cross_entropy import LigerCrossEntropyLoss
         from liger_kernel.transformers.functional import liger_cross_entropy
+        from liger_kernel.transformers.geglu import LigerGEGLUMLP
         from liger_kernel.transformers.layer_norm import LigerLayerNorm
         from liger_kernel.transformers.monkey_patch import MODEL_TYPE_TO_APPLY_LIGER_FN
         from liger_kernel.transformers.rms_norm import LigerRMSNorm
@@ -113,6 +114,8 @@ class LigerPlugin(BasePlugin):
                 # The DeepseekV2 version of RoPE is different than upstream LLaMA.
                 # See https://github.com/linkedin/Liger-Kernel/issues/129#issuecomment-2313763528
                 logging.warning("Fused liger_rope is not supported for DeepseekV2.")
+            if cfg.liger_glu_activation:
+                logging.warning("liger_glu_activation is not supported for DeepseekV2.")
             if cfg.liger_rms_norm:
                 modeling_mod.DeepseekV2RMSNorm = LigerRMSNorm
             if cfg.liger_glu_activation:
@@ -144,7 +147,7 @@ class LigerPlugin(BasePlugin):
                     in_place=False,
                 )
             if cfg.liger_glu_activation:
-                modeling_gemma3.Gemma3MLP = LigerSwiGLUMLP
+                modeling_gemma3.Gemma3MLP = LigerGEGLUMLP
             if cfg.liger_layer_norm:
                 modeling_gemma3.nn.LayerNorm = LigerLayerNorm
 
