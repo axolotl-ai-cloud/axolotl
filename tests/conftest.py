@@ -233,6 +233,16 @@ def download_gemma_2b_model_fixture():
 
 
 @pytest.fixture(scope="session", autouse=True)
+def download_gemma2_9b_model_fixture():
+    # download the tokenizer only
+    snapshot_download_w_retry(
+        "mlx-community/gemma-2-9b-it-4bit",
+        repo_type="model",
+        allow_patterns=["*token*", "config.json"],
+    )
+
+
+@pytest.fixture(scope="session", autouse=True)
 def download_mlx_mistral_7b_model_fixture():
     # download the tokenizer only
     snapshot_download_w_retry(
