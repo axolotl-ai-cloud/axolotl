@@ -114,5 +114,24 @@ class LigerPlugin(BasePlugin):
                 modeling_mod.CrossEntropyLoss = LigerCrossEntropyLoss
             if cfg.liger_fused_linear_cross_entropy:
                 modeling_mod.DeepseekV2ForCausalLM.forward = deepseekv2_lce_forward
+        elif cfg.model_config_type == "gemma3":
+            from transformers.models.gemma3 import modeling_gemma3
+
+            if cfg.liger_rope:
+                modeling_gemma3.apply_rotary_pos_emb = liger_rotary_pos_emb
+            if cfg.liger_rms_norm:
+                modeling_gemma3.Gemma3RMSNorm = LigerRMSNorm
+            if cfg.liger_glu_activation:
+                modeling_gemma3.Gemma3MLP = LigerSwiGLUMLP
+
+            if cfg.liger_cross_entropy:
+                from transformers.loss.loss_utils import nn
+
+                nn.functional.cross_entropy = liger_cross_entropy
+
+            if cfg.liger_fused_linear_cross_entropy:
+                raise NotImplementedError(
+                    "Fused linear cross entropy is not yet supported for Gemma3. Please use cut-cross-entropy instead."
+                )
         elif cfg.model_config_type in ["gemma3_text", "deepseek_v3"]:
             raise ValueError(f"Unsupported model config type: {cfg.model_config_type}")
