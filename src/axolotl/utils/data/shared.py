@@ -82,6 +82,7 @@ def load_dataset_w_config(
             repo_type="dataset",
             token=use_auth_token,
             revision=config_dataset.revision,
+            local_files_only=True,
             ignore_patterns=["*"],
         )
         ds_from_hub = True
