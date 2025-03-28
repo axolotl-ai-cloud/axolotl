@@ -5,6 +5,7 @@ import logging
 import unittest
 from pathlib import Path
 
+import pytest
 from datasets import load_dataset
 from transformers import AddedToken, AutoTokenizer, LlamaTokenizer
 from utils import enable_hf_offline
@@ -267,6 +268,7 @@ class OrpoTokenizationTest(unittest.TestCase):
             "argilla/ultrafeedback-binarized-preferences-cleaned", split="train"
         ).select([0])
 
+    @pytest.mark.skip(reason="TODO: fix hf hub offline to work with HF rate limits")
     def test_orpo_integration(self):
         strat = load(
             self.tokenizer,
