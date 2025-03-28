@@ -132,7 +132,7 @@ class LigerPlugin(BasePlugin):
                 modeling_gemma3.apply_rotary_pos_emb = liger_rotary_pos_emb
             if cfg.liger_rms_norm:
 
-                def _liger_rms_norm_wrapper(*, dim, **kwargs):
+                def _liger_rms_norm_wrapper(dim, **kwargs):
                     "Convert 'dim' keyword to 'hidden_size' to pass to LigerRMSNorm"
                     return LigerRMSNorm(hidden_size=dim, **kwargs)
 
