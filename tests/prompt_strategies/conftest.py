@@ -6,6 +6,7 @@ import pytest
 from datasets import Dataset
 from huggingface_hub import hf_hub_download
 from transformers import AutoTokenizer
+from utils import with_hf_offline
 
 from axolotl.prompt_strategies.jinja_template_analyzer import JinjaTemplateAnalyzer
 from axolotl.utils.chat_templates import _CHAT_TEMPLATES
@@ -140,6 +141,7 @@ def fixture_mistralv03_tokenizer():
 
 
 @pytest.fixture(name="phi35_tokenizer", scope="session", autouse=True)
+@with_hf_offline
 def fixture_phi35_tokenizer():
     tokenizer = AutoTokenizer.from_pretrained("microsoft/Phi-3.5-mini-instruct")
     return tokenizer
