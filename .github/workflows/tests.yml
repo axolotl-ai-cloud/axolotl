@@ -63,7 +63,7 @@ jobs:
           path: |
             /home/runner/.cache/huggingface/hub/datasets--*
             /home/runner/.cache/huggingface/hub/models--*
-          key: ${{ runner.os }}-hf-hub-cache-${{ hashFiles('**/conftest.py') }}
+          key: ${{ runner.os }}-hf-hub-cache-v2-${{ hashFiles('**/conftest.py') }}
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -137,7 +137,7 @@ jobs:
           path: |
             /home/runner/.cache/huggingface/hub/datasets--*
             /home/runner/.cache/huggingface/hub/models--*
-          key: ${{ runner.os }}-hf-hub-cache-${{ hashFiles('**/conftest.py') }}
+          key: ${{ runner.os }}-hf-hub-cache-v2-${{ hashFiles('**/conftest.py') }}
 
       - name: Setup Python
         uses: actions/setup-python@v5
