@@ -173,6 +173,16 @@ def download_phi_3_medium_model_fixture():
 
 
 @pytest.fixture(scope="session", autouse=True)
+def download_mistral_7b_model_fixture():
+    # download the tokenizer only
+    snapshot_download_w_retry(
+        "casperhansen/mistral-7b-instruct-v0.1-awq",
+        repo_type="model",
+        allow_patterns=["*token*"],
+    )
+
+
+@pytest.fixture(scope="session", autouse=True)
 def download_gemma_2b_model_fixture():
     # download the tokenizer only
     snapshot_download_w_retry(
