@@ -116,6 +116,11 @@ def download_fozzie_alpaca_dpo_dataset():
     snapshot_download_w_retry(
         "fozziethebeat/alpaca_messages_2k_dpo_test", repo_type="dataset"
     )
+    snapshot_download_w_retry(
+        "fozziethebeat/alpaca_messages_2k_dpo_test",
+        repo_type="dataset",
+        revision="ea82cff",
+    )
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -123,6 +128,14 @@ def download_arcee_ai_distilabel_intel_orca_dpo_pairs_dataset():
     # download the dataset
     snapshot_download_w_retry(
         "arcee-ai/distilabel-intel-orca-dpo-pairs-binarized", repo_type="dataset"
+    )
+
+
+@pytest.fixture(scope="session", autouse=True)
+def download_argilla_dpo_pairs_dataset():
+    # download the dataset
+    snapshot_download_w_retry(
+        "argilla/distilabel-intel-orca-dpo-pairs", repo_type="dataset"
     )
 
 
