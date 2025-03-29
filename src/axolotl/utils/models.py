@@ -8,7 +8,7 @@ import math
 import os
 import types
 from functools import cached_property
-from typing import Any, Dict, Optional, Tuple, Union  # noqa: F401
+from typing import Any, Dict, Optional, Tuple
 
 import addict
 import bitsandbytes as bnb
@@ -25,7 +25,7 @@ from peft import (
     prepare_model_for_kbit_training,
 )
 from torch import nn
-from transformers import (  # noqa: F401
+from transformers import (
     AddedToken,
     AutoConfig,
     AutoModelForCausalLM,
@@ -39,6 +39,7 @@ from transformers import (  # noqa: F401
     LlavaForConditionalGeneration,
     Mistral3ForConditionalGeneration,
     MllamaForConditionalGeneration,
+    PretrainedConfig,
     PreTrainedModel,
     PreTrainedTokenizerBase,
     ProcessorMixin,
@@ -107,13 +108,21 @@ def get_module_class_from_name(module, name):
     return None
 
 
-def check_model_config(cfg: DictDefault, model_config: Union[AutoConfig, DictDefault]):
+def check_model_config(cfg: DictDefault, model_config: PretrainedConfig):
     # Set use_cache to False
     if hasattr(model_config, "use_cache"):
         model_config.use_cache = False
 
     if cfg.is_multimodal:
-        model_config.get_text_config().use_cache = False
+        # For multimodal configs, use_cache is set in the text_config
+        if hasattr(model_config, "get_text_config"):
+            text_config = model_config.get_text_config()
+            if hasattr(text_config, "use_cache"):
+                text_config.use_cache = False
+        else:
+            raise ValueError(
+                "No text config found for multimodal model. Please raise an Issue with model details."
+            )
 
         # check if image_size is not set and load image size from model config if available
         if (
@@ -1310,12 +1319,6 @@ class ModelLoader:
                 requires_grad.append(f"{name}: {param.requires_grad}")
         if len(requires_grad) == 0:
             LOG.warning("there are no parameters that require gradient updates")
-        # if hasattr(self.model, "config"):
-        #     self.model.config.use_cache = False
-
-        #     # for multimodal models, get_text_config could return subkey such as text_config
-        #     # for text models, it would return self
-        #     self.model.config.get_text_config().use_cache = False
 
         if self.cfg.flash_optimum:
             from optimum.bettertransformer import BetterTransformer
