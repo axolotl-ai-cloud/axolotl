@@ -1,9 +1,12 @@
 """Module for testing streaming dataset sequence packing"""
 
 import functools
+import random
+import string
 
 import pytest
 import torch
+from datasets import IterableDataset
 from torch.utils.data import DataLoader
 
 from axolotl.utils.data import get_dataset_wrapper, wrap_pretraining_dataset
@@ -15,11 +18,33 @@ class TestPretrainingPacking:
     Test class for packing streaming dataset sequences
     """
 
+    @pytest.fixture
+    def random_text(self):
+        # seed with random.seed(0) for reproducibility
+        random.seed(0)
+
+        # generate 20 rows of random text with "words" of between 2 and 10 characters and
+        # between 400 to 1200 characters per line
+        data = [
+            "".join(random.choices(string.ascii_lowercase, k=random.randint(2, 10)))
+            for _ in range(20)
+        ] + [
+            " ".join(
+                random.choices(string.ascii_lowercase, k=random.randint(400, 1200))
+            )
+            for _ in range(20)
+        ]
+
+        # Create an IterableDataset
+        def generator():
+            for text in data:
+                yield {"text": text}
+
+        return IterableDataset.from_generator(generator)
+
     @pytest.mark.flaky(retries=1, delay=5)
-    def test_packing_stream_dataset(
-        self, tokenizer_huggyllama, dataset_tiny_shakespeare_streaming
-    ):
-        dataset = dataset_tiny_shakespeare_streaming
+    def test_packing_stream_dataset(self, tokenizer_huggyllama, random_text):
+        dataset = random_text
 
         cfg = DictDefault(
             {
