@@ -219,7 +219,7 @@ class TestDeduplicateRLDataset:
     """Test a configured dataloader with deduplication."""
 
     @pytest.fixture
-    def cfg(self) -> DictDefault:
+    def cfg(self):
         fixture = DictDefault(
             {
                 "tokenizer_config": "huggyllama/llama-7b",

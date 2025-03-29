@@ -109,7 +109,9 @@ def fixture_toolcalling_dataset():
 
 @pytest.fixture(name="llama3_tokenizer", scope="session", autouse=True)
 @enable_hf_offline
-def fixture_llama3_tokenizer():
+def fixture_llama3_tokenizer(
+    download_llama3_8b_instruct_model_fixture,
+):  # pylint: disable=unused-argument,redefined-outer-name
     tokenizer = AutoTokenizer.from_pretrained("NousResearch/Meta-Llama-3-8B-Instruct")
 
     return tokenizer
@@ -123,7 +125,10 @@ def fixture_smollm2_tokenizer():
 
 
 @pytest.fixture(name="mistralv03_tokenizer", scope="session", autouse=True)
-def fixture_mistralv03_tokenizer():
+@enable_hf_offline
+def fixture_mistralv03_tokenizer(
+    download_mlx_mistral_7b_model_fixture,
+):  # pylint: disable=unused-argument,redefined-outer-name
     tokenizer = AutoTokenizer.from_pretrained(
         "mlx-community/Mistral-7B-Instruct-v0.3-4bit"
     )

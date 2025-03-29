@@ -71,7 +71,7 @@ class TestDatasetPreparation:
 
     @enable_hf_offline
     @pytest.mark.skip("datasets bug with local datasets when offline")
-    def test_load_local_hub(self):
+    def test_load_local_hub(self, tokenizer):
         """Niche use case.  Verify that a local copy of a hub dataset can be loaded"""
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_ds_path = Path(tmp_dir) / "mhenrichsen/alpaca_2k_test"
@@ -106,9 +106,7 @@ class TestDatasetPreparation:
                 }
             )
 
-            dataset, _ = load_tokenized_prepared_datasets(
-                self.tokenizer, cfg, prepared_path
-            )
+            dataset, _ = load_tokenized_prepared_datasets(tokenizer, cfg, prepared_path)
 
             assert len(dataset) == 2000
             assert "input_ids" in dataset.features
@@ -294,7 +292,7 @@ class TestDatasetPreparation:
 
     @pytest.mark.skip(reason="TODO: fix hf hub offline to work with HF rate limits")
     @enable_hf_offline
-    def test_load_hub_with_revision(self):
+    def test_load_hub_with_revision(self, tokenizer):
         """Verify that processing data from the hub works with a specific revision"""
         with tempfile.TemporaryDirectory() as tmp_dir:
             prepared_path = Path(tmp_dir) / "prepared"
@@ -316,9 +314,7 @@ class TestDatasetPreparation:
                 }
             )
 
-            dataset, _ = load_tokenized_prepared_datasets(
-                self.tokenizer, cfg, prepared_path
-            )
+            dataset, _ = load_tokenized_prepared_datasets(tokenizer, cfg, prepared_path)
 
             assert len(dataset) == 2000
             assert "input_ids" in dataset.features
@@ -357,7 +353,7 @@ class TestDatasetPreparation:
 
     @enable_hf_offline
     @pytest.mark.skip("datasets bug with local datasets when offline")
-    def test_load_local_hub_with_revision(self):
+    def test_load_local_hub_with_revision(self, tokenizer):
         """Verify that a local copy of a hub dataset can be loaded with a specific revision"""
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_ds_path = Path(tmp_dir) / "mhenrichsen/alpaca_2k_test"
@@ -389,9 +385,7 @@ class TestDatasetPreparation:
                 }
             )
 
-            dataset, _ = load_tokenized_prepared_datasets(
-                self.tokenizer, cfg, prepared_path
-            )
+            dataset, _ = load_tokenized_prepared_datasets(tokenizer, cfg, prepared_path)
 
             assert len(dataset) == 2000
             assert "input_ids" in dataset.features
