@@ -6,6 +6,7 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from constants import (
@@ -349,10 +350,21 @@ class TestDatasetPreparation(unittest.TestCase):
             }
         )
 
-        train_dataset, _ = load_prepare_preference_datasets(cfg)
+        # pylint: disable=duplicate-code
+        with patch(
+            "axolotl.utils.data.shared.load_dataset_w_config"
+        ) as mock_load_dataset:
+            from conftest import dataset_fozzie_alpaca_dpo_dataset_rev_ea82cff
 
-        assert len(train_dataset) == 1800
-        assert "conversation" in train_dataset.features
+            # Set up the mock to return different values on successive calls
+            mock_load_dataset.side_effect = [
+                dataset_fozzie_alpaca_dpo_dataset_rev_ea82cff,
+            ]
+
+            train_dataset, _ = load_prepare_preference_datasets(cfg)
+
+            assert len(train_dataset) == 1800
+            assert "conversation" in train_dataset.features
 
     @enable_hf_offline
     @pytest.mark.skip("datasets bug with local datasets when offline")

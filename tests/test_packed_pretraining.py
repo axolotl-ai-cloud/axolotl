@@ -32,7 +32,8 @@ class TestPretrainingPacking(unittest.TestCase):
         dataset = load_dataset(
             "winglian/tiny-shakespeare",
             streaming=True,
-        )["train"]
+            split="train",
+        )
 
         cfg = DictDefault(
             {

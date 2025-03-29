@@ -241,7 +241,6 @@ class TestDeduplicateRLDataset(unittest.TestCase):
     def test_load_with_deduplication(self):
         """Verify that loading with deduplication removes duplicates."""
 
-        # Load the dataset using the deduplication setting
         train_dataset, _ = load_prepare_preference_datasets(self.cfg)
 
         # Verify that the dataset has been deduplicated
@@ -249,15 +248,26 @@ class TestDeduplicateRLDataset(unittest.TestCase):
 
     @enable_hf_offline
     def test_load_without_deduplication(self):
-        """Verify that loading without deduplication retains duplicates."""
-        self.cfg.dataset_exact_deduplication = False
-        # Load the dataset without deduplication
-        train_dataset, _ = load_prepare_preference_datasets(self.cfg)
+        # pylint: disable=duplicate-code
+        with patch(
+            "axolotl.utils.data.shared.load_dataset_w_config"
+        ) as mock_load_dataset:
+            from conftest import dataset_fozzie_alpaca_dpo_dataset_rev_ea82cff
 
-        # Verify that the dataset retains duplicates
-        assert (
-            len(train_dataset) == 1800 * 2
-        ), "Dataset deduplication occurred when it should not have"
+            # Set up the mock to return different values on successive calls
+            mock_load_dataset.side_effect = [
+                dataset_fozzie_alpaca_dpo_dataset_rev_ea82cff,
+                dataset_fozzie_alpaca_dpo_dataset_rev_ea82cff,
+            ]
+
+            self.cfg.dataset_exact_deduplication = False
+            # Load the dataset without deduplication
+            train_dataset, _ = load_prepare_preference_datasets(self.cfg)
+
+            # Verify that the dataset retains duplicates
+            assert (
+                len(train_dataset) == 1800 * 2
+            ), "Dataset deduplication occurred when it should not have"
 
 
 class TestDeduplicateNonRL(unittest.TestCase):

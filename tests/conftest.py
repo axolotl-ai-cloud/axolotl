@@ -11,6 +11,7 @@ import time
 
 import pytest
 import requests
+from datasets import load_dataset
 from huggingface_hub import snapshot_download
 from utils import disable_hf_offline
 
@@ -121,6 +122,22 @@ def download_fozzie_alpaca_dpo_dataset():
         "fozziethebeat/alpaca_messages_2k_dpo_test",
         repo_type="dataset",
         revision="ea82cff",
+    )
+
+
+@pytest.fixture(scope="session")
+def dataset_fozzie_alpaca_dpo_dataset(
+    download_fozzie_alpaca_dpo_dataset,
+):  # pylint: disable=unused-argument,redefined-outer-name
+    return load_dataset("fozziethebeat/alpaca_messages_2k_dpo_test", split="train")
+
+
+@pytest.fixture(scope="session")
+def dataset_fozzie_alpaca_dpo_dataset_rev_ea82cff(
+    download_fozzie_alpaca_dpo_dataset,
+):  # pylint: disable=unused-argument,redefined-outer-name
+    return load_dataset(
+        "fozziethebeat/alpaca_messages_2k_dpo_test", split="train", revision="ea82cff"
     )
 
 
