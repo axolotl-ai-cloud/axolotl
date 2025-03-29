@@ -4,8 +4,8 @@ shared fixtures for prompt strategies tests
 
 import pytest
 from datasets import Dataset
-from huggingface_hub import hf_hub_download
 from transformers import AutoTokenizer
+from utils import enable_hf_offline
 
 from axolotl.prompt_strategies.jinja_template_analyzer import JinjaTemplateAnalyzer
 from axolotl.utils.chat_templates import _CHAT_TEMPLATES
@@ -108,31 +108,27 @@ def fixture_toolcalling_dataset():
 
 
 @pytest.fixture(name="llama3_tokenizer", scope="session", autouse=True)
-def fixture_llama3_tokenizer():
-    hf_hub_download(
-        repo_id="NousResearch/Meta-Llama-3-8B-Instruct",
-        filename="special_tokens_map.json",
-    )
-    hf_hub_download(
-        repo_id="NousResearch/Meta-Llama-3-8B-Instruct",
-        filename="tokenizer_config.json",
-    )
-    hf_hub_download(
-        repo_id="NousResearch/Meta-Llama-3-8B-Instruct", filename="tokenizer.json"
-    )
+@enable_hf_offline
+def fixture_llama3_tokenizer(
+    download_llama3_8b_instruct_model_fixture,
+):  # pylint: disable=unused-argument,redefined-outer-name
     tokenizer = AutoTokenizer.from_pretrained("NousResearch/Meta-Llama-3-8B-Instruct")
 
     return tokenizer
 
 
 @pytest.fixture(name="smollm2_tokenizer", scope="session", autouse=True)
+@enable_hf_offline
 def fixture_smollm2_tokenizer():
     tokenizer = AutoTokenizer.from_pretrained("HuggingFaceTB/SmolLM2-135M")
     return tokenizer
 
 
 @pytest.fixture(name="mistralv03_tokenizer", scope="session", autouse=True)
-def fixture_mistralv03_tokenizer():
+@enable_hf_offline
+def fixture_mistralv03_tokenizer(
+    download_mlx_mistral_7b_model_fixture,
+):  # pylint: disable=unused-argument,redefined-outer-name
     tokenizer = AutoTokenizer.from_pretrained(
         "mlx-community/Mistral-7B-Instruct-v0.3-4bit"
     )
@@ -140,6 +136,7 @@ def fixture_mistralv03_tokenizer():
 
 
 @pytest.fixture(name="phi35_tokenizer", scope="session", autouse=True)
+@enable_hf_offline
 def fixture_phi35_tokenizer():
     tokenizer = AutoTokenizer.from_pretrained("microsoft/Phi-3.5-mini-instruct")
     return tokenizer

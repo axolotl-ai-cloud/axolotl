@@ -14,6 +14,7 @@ import transformers.modelcard
 from accelerate.logging import get_logger
 from accelerate.utils import save_fsdp_model
 from datasets import Dataset
+from huggingface_hub.errors import OfflineModeIsEnabled
 from peft import PeftConfig, PeftModel
 from transformers import PreTrainedModel, PreTrainedTokenizer, ProcessorMixin
 from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
@@ -302,7 +303,7 @@ def create_model_card(cfg: DictDefault, trainer: Trainer):
                     model_card_kwarg["dataset_tags"] = dataset_tags
 
             trainer.create_model_card(**model_card_kwarg)
-        except (AttributeError, UnicodeDecodeError):
+        except (AttributeError, UnicodeDecodeError, OfflineModeIsEnabled):
             pass
     elif cfg.hub_model_id:
         # Defensively push to the hub to ensure the model card is updated

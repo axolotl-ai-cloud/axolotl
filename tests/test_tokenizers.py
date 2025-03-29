@@ -5,6 +5,7 @@ Test cases for the tokenizer loading
 import unittest
 
 import pytest
+from utils import enable_hf_offline
 
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.models import load_tokenizer
@@ -15,6 +16,7 @@ class TestTokenizers:
     test class for the load_tokenizer fn
     """
 
+    @enable_hf_offline
     def test_default_use_fast(self):
         cfg = DictDefault(
             {
@@ -24,6 +26,7 @@ class TestTokenizers:
         tokenizer = load_tokenizer(cfg)
         assert "Fast" in tokenizer.__class__.__name__
 
+    @enable_hf_offline
     def test_dont_use_fast(self):
         cfg = DictDefault(
             {
@@ -34,6 +37,7 @@ class TestTokenizers:
         tokenizer = load_tokenizer(cfg)
         assert "Fast" not in tokenizer.__class__.__name__
 
+    @enable_hf_offline
     def test_special_tokens_modules_to_save(self):
         # setting special_tokens to new token
         cfg = DictDefault(
@@ -68,6 +72,7 @@ class TestTokenizers:
         )
         load_tokenizer(cfg)
 
+    @enable_hf_offline
     def test_add_additional_special_tokens(self):
         cfg = DictDefault(
             {
@@ -83,6 +88,7 @@ class TestTokenizers:
         tokenizer = load_tokenizer(cfg)
         assert len(tokenizer) == 32001
 
+    @enable_hf_offline
     def test_added_tokens_overrides(self, temp_dir):
         cfg = DictDefault(
             {
@@ -104,11 +110,12 @@ class TestTokenizers:
             128042
         ]
 
+    @enable_hf_offline
     def test_added_tokens_overrides_with_toolargeid(self, temp_dir):
         cfg = DictDefault(
             {
                 # use with tokenizer that has reserved_tokens in added_tokens
-                "tokenizer_config": "NousResearch/Llama-3.2-1B",
+                "tokenizer_config": "HuggingFaceTB/SmolLM2-135M",
                 "added_tokens_overrides": {1000000: "BROKEN_RANDOM_OVERRIDE_1"},
                 "output_dir": temp_dir,
             }

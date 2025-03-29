@@ -5,8 +5,10 @@ import logging
 import unittest
 from pathlib import Path
 
+import pytest
 from datasets import load_dataset
 from transformers import AddedToken, AutoTokenizer, LlamaTokenizer
+from utils import enable_hf_offline
 
 from axolotl.prompt_strategies.alpaca_chat import NoSystemPrompter
 from axolotl.prompt_strategies.alpaca_w_system import (
@@ -63,6 +65,7 @@ class TestPromptTokenizationStrategies(unittest.TestCase):
     Test class for prompt tokenization strategies.
     """
 
+    @enable_hf_offline
     def setUp(self) -> None:
         # pylint: disable=duplicate-code
         self.tokenizer = AutoTokenizer.from_pretrained("huggyllama/llama-7b")
@@ -119,6 +122,7 @@ class InstructionWSystemPromptTokenizingStrategyTest(unittest.TestCase):
     Test class for prompt tokenization strategies with sys prompt from the dataset
     """
 
+    @enable_hf_offline
     def setUp(self) -> None:
         # pylint: disable=duplicate-code
         self.tokenizer = AutoTokenizer.from_pretrained("huggyllama/llama-7b")
@@ -160,6 +164,7 @@ class Llama2ChatTokenizationTest(unittest.TestCase):
     Test class for prompt tokenization strategies with sys prompt from the dataset
     """
 
+    @enable_hf_offline
     def setUp(self) -> None:
         # pylint: disable=duplicate-code
         self.tokenizer = LlamaTokenizer.from_pretrained("NousResearch/Llama-2-7b-hf")
@@ -238,6 +243,7 @@ If a question does not make any sense, or is not factually coherent, explain why
 class OrpoTokenizationTest(unittest.TestCase):
     """test case for the ORPO tokenization"""
 
+    @enable_hf_offline
     def setUp(self) -> None:
         # pylint: disable=duplicate-code
         tokenizer = LlamaTokenizer.from_pretrained(
@@ -262,6 +268,7 @@ class OrpoTokenizationTest(unittest.TestCase):
             "argilla/ultrafeedback-binarized-preferences-cleaned", split="train"
         ).select([0])
 
+    @pytest.mark.skip(reason="TODO: fix hf hub offline to work with HF rate limits")
     def test_orpo_integration(self):
         strat = load(
             self.tokenizer,

@@ -11,7 +11,10 @@ import time
 
 import pytest
 import requests
+from datasets import load_dataset
 from huggingface_hub import snapshot_download
+from transformers import AutoTokenizer
+from utils import disable_hf_offline, enable_hf_offline
 
 
 def retry_on_request_exceptions(max_retries=3, delay=1):
@@ -25,9 +28,11 @@ def retry_on_request_exceptions(max_retries=3, delay=1):
                 except (
                     requests.exceptions.ReadTimeout,
                     requests.exceptions.ConnectionError,
+                    requests.exceptions.HTTPError,
                 ) as exc:
                     if attempt < max_retries - 1:
-                        time.sleep(delay)
+                        wait = 2**attempt * delay  # in seconds
+                        time.sleep(wait)
                     else:
                         raise exc
 
@@ -37,6 +42,7 @@ def retry_on_request_exceptions(max_retries=3, delay=1):
 
 
 @retry_on_request_exceptions(max_retries=3, delay=5)
+@disable_hf_offline
 def snapshot_download_w_retry(*args, **kwargs):
     return snapshot_download(*args, **kwargs)
 
@@ -44,19 +50,19 @@ def snapshot_download_w_retry(*args, **kwargs):
 @pytest.fixture(scope="session", autouse=True)
 def download_smollm2_135m_model():
     # download the model
-    snapshot_download_w_retry("HuggingFaceTB/SmolLM2-135M")
+    snapshot_download_w_retry("HuggingFaceTB/SmolLM2-135M", repo_type="model")
 
 
 @pytest.fixture(scope="session", autouse=True)
 def download_llama_68m_random_model():
     # download the model
-    snapshot_download_w_retry("JackFram/llama-68m")
+    snapshot_download_w_retry("JackFram/llama-68m", repo_type="model")
 
 
 @pytest.fixture(scope="session", autouse=True)
 def download_qwen_2_5_half_billion_model():
     # download the model
-    snapshot_download_w_retry("Qwen/Qwen2.5-0.5B")
+    snapshot_download_w_retry("Qwen/Qwen2.5-0.5B", repo_type="model")
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -102,6 +108,37 @@ def download_argilla_ultrafeedback_binarized_preferences_cleaned_dataset():
 
 
 @pytest.fixture(scope="session", autouse=True)
+def download_fozzie_alpaca_dpo_dataset():
+    # download the dataset
+    snapshot_download_w_retry(
+        "fozziethebeat/alpaca_messages_2k_dpo_test", repo_type="dataset"
+    )
+    snapshot_download_w_retry(
+        "fozziethebeat/alpaca_messages_2k_dpo_test",
+        repo_type="dataset",
+        revision="ea82cff",
+    )
+
+
+@pytest.fixture(scope="session")
+@disable_hf_offline
+def dataset_fozzie_alpaca_dpo_dataset(
+    download_fozzie_alpaca_dpo_dataset,
+):  # pylint: disable=unused-argument,redefined-outer-name
+    return load_dataset("fozziethebeat/alpaca_messages_2k_dpo_test", split="train")
+
+
+@pytest.fixture(scope="session")
+@disable_hf_offline
+def dataset_fozzie_alpaca_dpo_dataset_rev_ea82cff(
+    download_fozzie_alpaca_dpo_dataset,
+):  # pylint: disable=unused-argument,redefined-outer-name
+    return load_dataset(
+        "fozziethebeat/alpaca_messages_2k_dpo_test", split="train", revision="ea82cff"
+    )
+
+
+@pytest.fixture(scope="session", autouse=True)
 def download_arcee_ai_distilabel_intel_orca_dpo_pairs_dataset():
     # download the dataset
     snapshot_download_w_retry(
@@ -110,9 +147,140 @@ def download_arcee_ai_distilabel_intel_orca_dpo_pairs_dataset():
 
 
 @pytest.fixture(scope="session", autouse=True)
+def download_argilla_dpo_pairs_dataset():
+    # download the dataset
+    snapshot_download_w_retry(
+        "argilla/distilabel-intel-orca-dpo-pairs", repo_type="dataset"
+    )
+
+
+@pytest.fixture(scope="session", autouse=True)
 def download_tiny_shakespeare_dataset():
     # download the dataset
-    snapshot_download_w_retry("Trelis/tiny-shakespeare", repo_type="dataset")
+    snapshot_download_w_retry("winglian/tiny-shakespeare", repo_type="dataset")
+
+
+@pytest.fixture(scope="session", autouse=True)
+def download_deepseek_model_fixture():
+    snapshot_download_w_retry("axolotl-ai-co/DeepSeek-V3-11M", repo_type="model")
+
+
+@pytest.fixture(scope="session", autouse=True)
+def download_huggyllama_model_fixture():
+    # download the tokenizer only
+    snapshot_download_w_retry(
+        "huggyllama/llama-7b",
+        repo_type="model",
+        allow_patterns=["*token*", "config.json"],
+    )
+
+
+@pytest.fixture(scope="session", autouse=True)
+def download_llama_1b_model_fixture():
+    # download the tokenizer only
+    snapshot_download_w_retry(
+        "NousResearch/Llama-3.2-1B",
+        repo_type="model",
+        allow_patterns=["*token*", "config.json"],
+    )
+
+
+@pytest.fixture(scope="session", autouse=True)
+def download_llama3_8b_model_fixture():
+    # download the tokenizer only
+    snapshot_download_w_retry(
+        "NousResearch/Meta-Llama-3-8B", repo_type="model", allow_patterns=["*token*"]
+    )
+
+
+@pytest.fixture(scope="session", autouse=True)
+def download_llama3_8b_instruct_model_fixture():
+    # download the tokenizer only
+    snapshot_download_w_retry(
+        "NousResearch/Meta-Llama-3-8B-Instruct",
+        repo_type="model",
+        allow_patterns=["*token*"],
+    )
+
+
+@pytest.fixture(scope="session", autouse=True)
+def download_phi_35_mini_model_fixture():
+    # download the tokenizer only
+    snapshot_download_w_retry(
+        "microsoft/Phi-3.5-mini-instruct", repo_type="model", allow_patterns=["*token*"]
+    )
+
+
+@pytest.fixture(scope="session", autouse=True)
+def download_phi_3_medium_model_fixture():
+    # download the tokenizer only
+    snapshot_download_w_retry(
+        "microsoft/Phi-3-medium-128k-instruct",
+        repo_type="model",
+        allow_patterns=["*token*"],
+    )
+
+
+@pytest.fixture(scope="session", autouse=True)
+def download_mistral_7b_model_fixture():
+    # download the tokenizer only
+    snapshot_download_w_retry(
+        "casperhansen/mistral-7b-instruct-v0.1-awq",
+        repo_type="model",
+        allow_patterns=["*token*", "config.json"],
+    )
+
+
+@pytest.fixture(scope="session", autouse=True)
+def download_gemma_2b_model_fixture():
+    # download the tokenizer only
+    snapshot_download_w_retry(
+        "unsloth/gemma-2b-it",
+        revision="703fb4a",
+        repo_type="model",
+        allow_patterns=["*token*", "config.json"],
+    )
+
+
+@pytest.fixture(scope="session", autouse=True)
+def download_gemma2_9b_model_fixture():
+    # download the tokenizer only
+    snapshot_download_w_retry(
+        "mlx-community/gemma-2-9b-it-4bit",
+        repo_type="model",
+        allow_patterns=["*token*", "config.json"],
+    )
+
+
+@pytest.fixture(scope="session", autouse=True)
+def download_mlx_mistral_7b_model_fixture():
+    # download the tokenizer only
+    snapshot_download_w_retry(
+        "mlx-community/Mistral-7B-Instruct-v0.3-4bit",
+        repo_type="model",
+        allow_patterns=["*token*", "config.json"],
+    )
+
+
+@pytest.fixture(scope="session", autouse=True)
+def download_llama2_model_fixture():
+    # download the tokenizer only
+    snapshot_download_w_retry(
+        "NousResearch/Llama-2-7b-hf",
+        repo_type="model",
+        allow_patterns=["*token*", "config.json"],
+    )
+
+
+@pytest.fixture(scope="session", autouse=True)
+@enable_hf_offline
+def tokenizer_huggyllama(
+    download_huggyllama_model_fixture,
+):  # pylint: disable=unused-argument,redefined-outer-name
+    tokenizer = AutoTokenizer.from_pretrained("huggyllama/llama-7b")
+    tokenizer.pad_token = "</s>"
+
+    return tokenizer
 
 
 @pytest.fixture
@@ -178,3 +346,34 @@ def cleanup_monkeypatches():
             module_globals = module_name_tuple[1]
             for module_global in module_globals:
                 globals().pop(module_global, None)
+
+
+# # pylint: disable=redefined-outer-name,unused-argument
+# def test_load_fixtures(
+#     download_smollm2_135m_model,
+#     download_llama_68m_random_model,
+#     download_qwen_2_5_half_billion_model,
+#     download_tatsu_lab_alpaca_dataset,
+#     download_mhenrichsen_alpaca_2k_dataset,
+#     download_mhenrichsen_alpaca_2k_w_revision_dataset,
+#     download_mlabonne_finetome_100k_dataset,
+#     download_argilla_distilabel_capybara_dpo_7k_binarized_dataset,
+#     download_argilla_ultrafeedback_binarized_preferences_cleaned_dataset,
+#     download_fozzie_alpaca_dpo_dataset,
+#     download_arcee_ai_distilabel_intel_orca_dpo_pairs_dataset,
+#     download_argilla_dpo_pairs_dataset,
+#     download_tiny_shakespeare_dataset,
+#     download_deepseek_model_fixture,
+#     download_huggyllama_model_fixture,
+#     download_llama_1b_model_fixture,
+#     download_llama3_8b_model_fixture,
+#     download_llama3_8b_instruct_model_fixture,
+#     download_phi_35_mini_model_fixture,
+#     download_phi_3_medium_model_fixture,
+#     download_mistral_7b_model_fixture,
+#     download_gemma_2b_model_fixture,
+#     download_gemma2_9b_model_fixture,
+#     download_mlx_mistral_7b_model_fixture,
+#     download_llama2_model_fixture,
+# ):
+#     pass
