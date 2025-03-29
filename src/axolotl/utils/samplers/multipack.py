@@ -8,7 +8,7 @@ from typing import Any, Iterable, List, Union
 
 import numba
 import numpy as np
-from torch.utils.data import BatchSampler, Sampler
+from torch.utils.data import BatchSampler, Sampler, SequentialSampler
 
 from axolotl.utils.distributed import reduce_and_broadcast
 
@@ -103,6 +103,55 @@ def allocate(
     return result, s, len(result) * c * n
 
 
+@numba.njit
+def allocate_sequentially(lengths: np.ndarray, rank: int, c: int, n: int):
+    """
+    Sequential allocator that preserves example order
+
+    Parameters:
+    - lengths: The lengths of all examples
+    - rank: The current rank (for distributed training)
+    - c: The capacity of each bin (maximum sequence length)
+    - n: Number of ranks
+
+    Returns:
+    - result: List of batches for the current rank
+    - total_used: Number of actual example tokens
+    - total_slots: Maximum theoretical number of example tokens (number of bins * bin capacity)
+    """
+    result = []
+    total_used = 0
+
+    # First, do sequential packing into bins
+    all_bins = []
+    current_bin = [0 for i in range(0)] # numba hint
+    remaining_capacity = c
+
+    for idx, size in enumerate(lengths):
+        if size <= remaining_capacity:
+            # Example fits in current bin
+            current_bin.append(idx)
+            remaining_capacity -= size
+            total_used += size
+        else:
+            # Example doesn't fit, start a new bin
+            if current_bin:  # Add non-empty bin to all_bins
+                all_bins.append(current_bin)
+            current_bin = [idx]
+            remaining_capacity = c - size
+            total_used += size
+
+    # Add the last bin if not empty
+    if current_bin:
+        all_bins.append(current_bin)
+
+    # Assign bins to ranks - each rank gets every n-th bin
+    for bin_idx in range(rank, len(all_bins), n):
+        result.append(all_bins[bin_idx])
+
+    return result, total_used, len(all_bins) * c
+
+
 class MultipackBatchSampler(BatchSampler):
     """Batch sampler class for multipack"""
 
@@ -115,6 +164,7 @@ class MultipackBatchSampler(BatchSampler):
         packing_efficiency_estimate: float = 1.0,
         drop_last: bool = False,
         num_count_samples: int = 16,
+        sequential: bool = False,
         **kwargs,
     ):
         super().__init__(sampler, batch_size, drop_last)
@@ -122,6 +172,7 @@ class MultipackBatchSampler(BatchSampler):
         self.batch_max_len = batch_max_len
         self.lengths: np.ndarray = lengths
         self.packing_efficiency_estimate = packing_efficiency_estimate or 1.0
+        self.sequential = sequential
 
         assert isinstance(self.lengths, np.ndarray)
 
@@ -136,6 +187,10 @@ class MultipackBatchSampler(BatchSampler):
         # the minimum packed dataset length across all ranks determined by a gather/broadcast
         self.len_across_ranks = None
 
+        if self.sequential and not isinstance(sampler, SequentialSampler):
+            LOG.warn("using sequential sample packing with non-sequential sampler, did you want to also enable curriculum_sampling?")
+
+
     def set_epoch(self, epoch: int):
         self.epoch = epoch
 
@@ -145,13 +200,23 @@ class MultipackBatchSampler(BatchSampler):
         lengths = self.lengths[indices]
         lengths_cumsum = np.cumsum(lengths)
 
-        batches, total_used, total_slots = allocate(
-            lengths=lengths,
-            lengths_cumsum=lengths_cumsum,
-            rank=0,
-            c=self.batch_max_len,
-            n=1,
-        )
+        if self.sequential:
+            LOG.debug("using sequential sample packing algorithm")
+            batches, total_used, total_slots = allocate_sequentially(
+                lengths=lengths,
+                rank=0,
+                c=self.batch_max_len,
+                n=1,
+            )
+        else:
+            LOG.debug("using non-sequential sample packing algorithm")
+            batches, total_used, total_slots = allocate(
+                lengths=lengths,
+                lengths_cumsum=lengths_cumsum,
+                rank=0,
+                c=self.batch_max_len,
+                n=1,
+            )
 
         batches = [
             [
