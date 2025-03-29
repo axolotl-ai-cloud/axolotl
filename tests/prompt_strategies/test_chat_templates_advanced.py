@@ -9,6 +9,7 @@ import pytest
 from datasets import Dataset
 from tokenizers import AddedToken
 from transformers import PreTrainedTokenizer
+from utils import enable_hf_offline
 
 from axolotl.prompt_strategies.chat_template import (
     ChatTemplatePrompter,
@@ -101,6 +102,7 @@ class TestChatTemplateConfigurations:
             return True
         return False
 
+    @enable_hf_offline
     def test_train_on_inputs_true(
         self,
         tokenizer,

@@ -11,8 +11,10 @@ import time
 
 import pytest
 import requests
+from datasets import load_dataset
 from huggingface_hub import snapshot_download
-from utils import disable_hf_offline
+from transformers import AutoTokenizer
+from utils import disable_hf_offline, enable_hf_offline
 
 
 def retry_on_request_exceptions(max_retries=3, delay=1):
@@ -46,7 +48,6 @@ def snapshot_download_w_retry(*args, **kwargs):
 
 
 @pytest.fixture(scope="session", autouse=True)
-@disable_hf_offline
 def download_smollm2_135m_model():
     # download the model
     snapshot_download_w_retry("HuggingFaceTB/SmolLM2-135M", repo_type="model")
@@ -59,28 +60,24 @@ def download_llama_68m_random_model():
 
 
 @pytest.fixture(scope="session", autouse=True)
-@disable_hf_offline
 def download_qwen_2_5_half_billion_model():
     # download the model
     snapshot_download_w_retry("Qwen/Qwen2.5-0.5B", repo_type="model")
 
 
 @pytest.fixture(scope="session", autouse=True)
-@disable_hf_offline
 def download_tatsu_lab_alpaca_dataset():
     # download the dataset
     snapshot_download_w_retry("tatsu-lab/alpaca", repo_type="dataset")
 
 
 @pytest.fixture(scope="session", autouse=True)
-@disable_hf_offline
 def download_mhenrichsen_alpaca_2k_dataset():
     # download the dataset
     snapshot_download_w_retry("mhenrichsen/alpaca_2k_test", repo_type="dataset")
 
 
 @pytest.fixture(scope="session", autouse=True)
-@disable_hf_offline
 def download_mhenrichsen_alpaca_2k_w_revision_dataset():
     # download the dataset
     snapshot_download_w_retry(
@@ -89,7 +86,6 @@ def download_mhenrichsen_alpaca_2k_w_revision_dataset():
 
 
 @pytest.fixture(scope="session", autouse=True)
-@disable_hf_offline
 def download_mlabonne_finetome_100k_dataset():
     # download the dataset
     snapshot_download_w_retry("mlabonne/FineTome-100k", repo_type="dataset")
@@ -124,6 +120,24 @@ def download_fozzie_alpaca_dpo_dataset():
     )
 
 
+@pytest.fixture(scope="session")
+@disable_hf_offline
+def dataset_fozzie_alpaca_dpo_dataset(
+    download_fozzie_alpaca_dpo_dataset,
+):  # pylint: disable=unused-argument,redefined-outer-name
+    return load_dataset("fozziethebeat/alpaca_messages_2k_dpo_test", split="train")
+
+
+@pytest.fixture(scope="session")
+@disable_hf_offline
+def dataset_fozzie_alpaca_dpo_dataset_rev_ea82cff(
+    download_fozzie_alpaca_dpo_dataset,
+):  # pylint: disable=unused-argument,redefined-outer-name
+    return load_dataset(
+        "fozziethebeat/alpaca_messages_2k_dpo_test", split="train", revision="ea82cff"
+    )
+
+
 @pytest.fixture(scope="session", autouse=True)
 def download_arcee_ai_distilabel_intel_orca_dpo_pairs_dataset():
     # download the dataset
@@ -152,7 +166,6 @@ def download_deepseek_model_fixture():
 
 
 @pytest.fixture(scope="session", autouse=True)
-@disable_hf_offline
 def download_huggyllama_model_fixture():
     # download the tokenizer only
     snapshot_download_w_retry(
@@ -163,7 +176,6 @@ def download_huggyllama_model_fixture():
 
 
 @pytest.fixture(scope="session", autouse=True)
-@disable_hf_offline
 def download_llama_1b_model_fixture():
     # download the tokenizer only
     snapshot_download_w_retry(
@@ -174,7 +186,6 @@ def download_llama_1b_model_fixture():
 
 
 @pytest.fixture(scope="session", autouse=True)
-@disable_hf_offline
 def download_llama3_8b_model_fixture():
     # download the tokenizer only
     snapshot_download_w_retry(
@@ -183,7 +194,6 @@ def download_llama3_8b_model_fixture():
 
 
 @pytest.fixture(scope="session", autouse=True)
-@disable_hf_offline
 def download_llama3_8b_instruct_model_fixture():
     # download the tokenizer only
     snapshot_download_w_retry(
@@ -194,7 +204,6 @@ def download_llama3_8b_instruct_model_fixture():
 
 
 @pytest.fixture(scope="session", autouse=True)
-@disable_hf_offline
 def download_phi_35_mini_model_fixture():
     # download the tokenizer only
     snapshot_download_w_retry(
@@ -261,6 +270,17 @@ def download_llama2_model_fixture():
         repo_type="model",
         allow_patterns=["*token*", "config.json"],
     )
+
+
+@pytest.fixture(scope="session", autouse=True)
+@enable_hf_offline
+def tokenizer_huggyllama(
+    download_huggyllama_model_fixture,
+):  # pylint: disable=unused-argument,redefined-outer-name
+    tokenizer = AutoTokenizer.from_pretrained("huggyllama/llama-7b")
+    tokenizer.pad_token = "</s>"
+
+    return tokenizer
 
 
 @pytest.fixture

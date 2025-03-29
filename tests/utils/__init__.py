@@ -19,7 +19,7 @@ def reload_modules(hf_hub_offline):
     importlib.reload(huggingface_hub.constants)
     huggingface_hub.constants.HF_HUB_OFFLINE = hf_hub_offline
     importlib.reload(datasets.config)
-    datasets.config.HF_HUB_OFFLINE = hf_hub_offline
+    setattr(datasets.config, "HF_HUB_OFFLINE", hf_hub_offline)
     reset_sessions()
 
 

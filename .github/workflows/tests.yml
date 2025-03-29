@@ -171,6 +171,9 @@ jobs:
         run: |
           axolotl --help
 
+      - name: Show HF cache
+        run: huggingface-cli scan-cache
+
       - name: Run tests
         run: |
           pytest -v -n8 --dist loadfile --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ tests/
