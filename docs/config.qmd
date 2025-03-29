@@ -658,6 +658,9 @@ ddp_broadcast_buffers:
 # subsequences, or set to 4 to split into four equal-sized subsequences.
 # See https://axolotl-ai-cloud.github.io/axolotl/docs/sequence_parallelism.html for more details.
 sequence_parallel_degree:
+# Optional; strides across the key dimension. Larger values use more memory but should make training faster.
+# Must evenly divide the number of KV heads in your model.
+heads_k_stride: 1
 
 # Path to torch distx for optim 'adamw_anyprecision'
 torchdistx_path:

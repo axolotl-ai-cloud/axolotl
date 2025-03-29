@@ -816,27 +816,6 @@ class SaveAxolotlConfigtoWandBCallback(TrainerCallback):
         return control
 
 
-class SaveModelCallback(TrainerCallback):
-    """Callback to save model on train end"""
-
-    def on_step_end(  # pylint: disable=unused-argument
-        self,
-        args: TrainingArguments,
-        state: TrainerState,
-        control: TrainerControl,
-        **kwargs,
-    ):
-        # Save
-        if state.global_step >= state.max_steps:
-            control.should_save = True
-
-    def on_train_end(  # pylint: disable=unused-argument
-        self, args, state, control, **kwargs
-    ):
-        control.should_save = True
-        return control
-
-
 class GCCallback(TrainerCallback):
     """Callback to garbage collect torch cache"""
 
