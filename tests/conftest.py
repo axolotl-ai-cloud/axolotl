@@ -160,18 +160,6 @@ def download_tiny_shakespeare_dataset():
     snapshot_download_w_retry("winglian/tiny-shakespeare", repo_type="dataset")
 
 
-@pytest.fixture(scope="session")
-@disable_hf_offline
-def dataset_tiny_shakespeare_streaming(
-    download_tiny_shakespeare_dataset,
-):  # pylint: disable=unused-argument,redefined-outer-name
-    return load_dataset(
-        "winglian/tiny-shakespeare",
-        split="train",
-        streaming=True,
-    )
-
-
 @pytest.fixture(scope="session", autouse=True)
 def download_deepseek_model_fixture():
     snapshot_download_w_retry("axolotl-ai-co/DeepSeek-V3-11M", repo_type="model")
