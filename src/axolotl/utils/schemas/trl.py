@@ -26,7 +26,7 @@ class TRLConfig(BaseModel):
         json_schema_extra={"description": "Whether to use VLLM for RL training"},
     )
     vllm_server_host: str | None = Field(
-        default="0.0.0.0",
+        default="0.0.0.0",  # nosec B104
         json_schema_extra={"description": "Host of the vLLM server to connect to"},
     )
     vllm_server_port: int | None = Field(
