@@ -247,6 +247,7 @@ class TestDeduplicateRLDataset(unittest.TestCase):
         # Verify that the dataset has been deduplicated
         assert len(train_dataset) == 1800, "Dataset was not properly deduplicated"
 
+    @enable_hf_offline
     def test_load_without_deduplication(self):
         """Verify that loading without deduplication retains duplicates."""
         self.cfg.dataset_exact_deduplication = False
