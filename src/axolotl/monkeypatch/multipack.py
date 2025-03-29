@@ -22,6 +22,7 @@ SUPPORTED_MULTIPACK_MODEL_TYPES = [
     "phi3",
     "gemma",
     "gemma2",
+    "gemma3",
     "gemma3_text",
     "cohere",
     "cohere2",
