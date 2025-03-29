@@ -1,39 +1,25 @@
 """Module for testing streaming dataset sequence packing"""
 
 import functools
-import unittest
 
 import pytest
 import torch
-from datasets import load_dataset
 from torch.utils.data import DataLoader
-from transformers import AutoTokenizer
-from utils import enable_hf_offline
 
 from axolotl.utils.data import get_dataset_wrapper, wrap_pretraining_dataset
 from axolotl.utils.dict import DictDefault
 
 
-class TestPretrainingPacking(unittest.TestCase):
+class TestPretrainingPacking:
     """
     Test class for packing streaming dataset sequences
     """
 
-    @enable_hf_offline
-    def setUp(self) -> None:
-        # pylint: disable=duplicate-code
-        self.tokenizer = AutoTokenizer.from_pretrained("huggyllama/llama-7b")
-        self.tokenizer.pad_token = "</s>"
-
     @pytest.mark.flaky(retries=1, delay=5)
-    @enable_hf_offline
-    def test_packing_stream_dataset(self):
-        # pylint: disable=duplicate-code
-        dataset = load_dataset(
-            "winglian/tiny-shakespeare",
-            streaming=True,
-            split="train",
-        )
+    def test_packing_stream_dataset(
+        self, tokenizer_huggyllama, dataset_tiny_shakespeare_streaming
+    ):
+        dataset = dataset_tiny_shakespeare_streaming
 
         cfg = DictDefault(
             {
@@ -56,7 +42,7 @@ class TestPretrainingPacking(unittest.TestCase):
         ds_wrapper_partial = functools.partial(
             get_dataset_wrapper,
             cfg.pretraining_dataset[0],
-            self.tokenizer,
+            tokenizer_huggyllama,
             cfg,
             cfg.pretraining_dataset[0]["type"] or "pretrain",
         )
@@ -64,7 +50,7 @@ class TestPretrainingPacking(unittest.TestCase):
         original_bsz = cfg.micro_batch_size
         train_dataset = wrap_pretraining_dataset(
             dataset,
-            self.tokenizer,
+            tokenizer_huggyllama,
             cfg,
             ds_wrapper_partial,
             max_tokens=cfg.sequence_len,
@@ -97,7 +83,3 @@ class TestPretrainingPacking(unittest.TestCase):
             #     [1, original_bsz * cfg.sequence_len]
             # )
             idx += 1
-
-
-if __name__ == "__main__":
-    unittest.main()

@@ -9,9 +9,8 @@ import unittest
 from unittest.mock import patch
 
 import pytest
-from constants import ALPACA_MESSAGES_CONFIG_REVISION, SPECIAL_TOKENS
+from constants import ALPACA_MESSAGES_CONFIG_REVISION
 from datasets import Dataset
-from transformers import AutoTokenizer
 from utils import enable_hf_offline
 
 from axolotl.utils.config import normalize_config
@@ -216,13 +215,12 @@ class TestDeduplicateIndividualFunctions(unittest.TestCase):
         verify_deduplication(eval_dataset, expected_dataset_eval, "eval_dataset")
 
 
-class TestDeduplicateRLDataset(unittest.TestCase):
+class TestDeduplicateRLDataset:
     """Test a configured dataloader with deduplication."""
 
-    def setUp(self) -> None:
-        self.tokenizer = AutoTokenizer.from_pretrained("huggyllama/llama-7b")
-        self.tokenizer.add_special_tokens(SPECIAL_TOKENS)
-        self.cfg = DictDefault(
+    @pytest.fixture
+    def cfg(self) -> DictDefault:
+        fixture = DictDefault(
             {
                 "tokenizer_config": "huggyllama/llama-7b",
                 "sequence_len": 1024,
@@ -235,34 +233,54 @@ class TestDeduplicateRLDataset(unittest.TestCase):
                 ],
             }
         )
+        yield fixture
 
-    @pytest.mark.skip(reason="TODO: fix hf hub offline to work with HF rate limits")
     @enable_hf_offline
-    def test_load_with_deduplication(self):
+    def test_load_with_deduplication(
+        self, cfg, dataset_fozzie_alpaca_dpo_dataset_rev_ea82cff, tokenizer_huggyllama
+    ):
         """Verify that loading with deduplication removes duplicates."""
 
-        train_dataset, _ = load_prepare_preference_datasets(self.cfg)
-
-        # Verify that the dataset has been deduplicated
-        assert len(train_dataset) == 1800, "Dataset was not properly deduplicated"
-
-    @enable_hf_offline
-    def test_load_without_deduplication(self):
         # pylint: disable=duplicate-code
-        with patch(
-            "axolotl.utils.data.shared.load_dataset_w_config"
-        ) as mock_load_dataset:
-            from conftest import dataset_fozzie_alpaca_dpo_dataset_rev_ea82cff
-
+        with (
+            patch(
+                "axolotl.utils.data.shared.load_dataset_w_config"
+            ) as mock_load_dataset,
+            patch("axolotl.utils.models.load_tokenizer") as mock_load_tokenizer,
+        ):
             # Set up the mock to return different values on successive calls
             mock_load_dataset.side_effect = [
                 dataset_fozzie_alpaca_dpo_dataset_rev_ea82cff,
                 dataset_fozzie_alpaca_dpo_dataset_rev_ea82cff,
             ]
+            mock_load_tokenizer.return_value = tokenizer_huggyllama
 
-            self.cfg.dataset_exact_deduplication = False
+            train_dataset, _ = load_prepare_preference_datasets(cfg)
+
+            # Verify that the dataset has been deduplicated
+            assert len(train_dataset) == 1800, "Dataset was not properly deduplicated"
+
+    @enable_hf_offline
+    def test_load_without_deduplication(
+        self, cfg, dataset_fozzie_alpaca_dpo_dataset_rev_ea82cff, tokenizer_huggyllama
+    ):
+        # pylint: disable=duplicate-code
+        with (
+            patch(
+                "axolotl.utils.data.shared.load_dataset_w_config"
+            ) as mock_load_dataset,
+            patch("axolotl.utils.models.load_tokenizer") as mock_load_tokenizer,
+        ):
+            # Set up the mock to return different values on successive calls
+            mock_load_dataset.side_effect = [
+                dataset_fozzie_alpaca_dpo_dataset_rev_ea82cff,
+                dataset_fozzie_alpaca_dpo_dataset_rev_ea82cff,
+            ]
+            mock_load_tokenizer.return_value = tokenizer_huggyllama
+
+            cfg.dataset_exact_deduplication = False
             # Load the dataset without deduplication
-            train_dataset, _ = load_prepare_preference_datasets(self.cfg)
+            train_dataset, _ = load_prepare_preference_datasets(cfg)
 
             # Verify that the dataset retains duplicates
             assert (
@@ -275,8 +293,6 @@ class TestDeduplicateNonRL(unittest.TestCase):
 
     @enable_hf_offline
     def setUp(self) -> None:
-        self.tokenizer = AutoTokenizer.from_pretrained("huggyllama/llama-7b")
-        self.tokenizer.add_special_tokens(SPECIAL_TOKENS)
         self.cfg_1 = DictDefault(
             {
                 "base_model": "huggyllama/llama-7b",
