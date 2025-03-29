@@ -23,16 +23,22 @@ class TestPretrainingPacking:
         # seed with random.seed(0) for reproducibility
         random.seed(0)
 
-        # generate 20 rows of random text with "words" of between 2 and 10 characters and
+        # generate 50 rows of random text with "words" of between 2 and 10 characters and
         # between 400 to 1200 characters per line
         data = [
-            "".join(random.choices(string.ascii_lowercase, k=random.randint(2, 10)))
-            for _ in range(20)
-        ] + [
-            " ".join(
-                random.choices(string.ascii_lowercase, k=random.randint(400, 1200))
-            )
-            for _ in range(20)
+            [
+                " ".join(
+                    [
+                        "".join(
+                            random.choices(
+                                string.ascii_lowercase, k=random.randint(2, 10)
+                            )
+                        )
+                        for _ in range(random.randint(50, 200))
+                    ]
+                )
+            ]
+            for _ in range(50)
         ]
 
         # Create an IterableDataset
