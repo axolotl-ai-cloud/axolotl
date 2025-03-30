@@ -5,9 +5,10 @@ test module for the axolotl.utils.data module
 import unittest
 
 from transformers import LlamaTokenizer
-from utils import enable_hf_offline
 
 from axolotl.utils.data import encode_pretraining, md5
+
+from tests.hf_offline_utils import enable_hf_offline
 
 
 class TestEncodePretraining(unittest.TestCase):

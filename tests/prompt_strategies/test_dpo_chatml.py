@@ -5,11 +5,12 @@ Tests for loading DPO preference datasets with chatml formatting
 import unittest
 
 import pytest
-from utils import enable_hf_offline
 
 from axolotl.prompt_strategies.dpo import load as load_dpo
 from axolotl.utils.data.rl import load_prepare_preference_datasets
 from axolotl.utils.dict import DictDefault
+
+from tests.hf_offline_utils import enable_hf_offline
 
 
 @pytest.fixture(name="minimal_dpo_cfg")

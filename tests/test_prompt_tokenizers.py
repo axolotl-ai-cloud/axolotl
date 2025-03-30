@@ -8,7 +8,6 @@ from pathlib import Path
 import pytest
 from datasets import load_dataset
 from transformers import AddedToken, AutoTokenizer, LlamaTokenizer
-from utils import enable_hf_offline
 
 from axolotl.prompt_strategies.alpaca_chat import NoSystemPrompter
 from axolotl.prompt_strategies.alpaca_w_system import (
@@ -23,6 +22,8 @@ from axolotl.prompt_strategies.orpo.chat_template import load
 from axolotl.prompt_tokenizers import AlpacaPromptTokenizingStrategy
 from axolotl.prompters import AlpacaPrompter, PromptStyle
 from axolotl.utils.dict import DictDefault
+
+from tests.hf_offline_utils import enable_hf_offline
 
 LOG = logging.getLogger("axolotl")
 

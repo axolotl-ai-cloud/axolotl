@@ -6,13 +6,14 @@ import unittest
 
 import pytest
 from transformers import AutoTokenizer
-from utils import enable_hf_offline
 
 from axolotl.utils.chat_templates import (
     _CHAT_TEMPLATES,
     extract_chat_template_args,
     get_chat_template,
 )
+
+from tests.hf_offline_utils import enable_hf_offline
 
 
 @pytest.fixture(name="llama3_tokenizer")

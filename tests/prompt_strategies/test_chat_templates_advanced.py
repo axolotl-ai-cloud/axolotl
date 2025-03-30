@@ -9,7 +9,6 @@ import pytest
 from datasets import Dataset
 from tokenizers import AddedToken
 from transformers import PreTrainedTokenizer
-from utils import enable_hf_offline
 
 from axolotl.prompt_strategies.chat_template import (
     ChatTemplatePrompter,
@@ -17,6 +16,8 @@ from axolotl.prompt_strategies.chat_template import (
 )
 from axolotl.prompters import IGNORE_TOKEN_ID
 from axolotl.utils.chat_templates import get_chat_template
+
+from tests.hf_offline_utils import enable_hf_offline
 
 logging.basicConfig(level=logging.DEBUG)
 LOG = logging.getLogger("axolotl")

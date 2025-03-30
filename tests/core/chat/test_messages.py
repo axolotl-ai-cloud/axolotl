@@ -6,10 +6,11 @@ import unittest
 
 import pytest
 from transformers import AddedToken, AutoTokenizer
-from utils import enable_hf_offline
 
 from axolotl.core.chat.format.chatml import format_message
 from axolotl.core.chat.messages import ChatFormattedChats, Chats
+
+from tests.hf_offline_utils import enable_hf_offline  # noqa
 
 
 @pytest.fixture(scope="session", name="llama_tokenizer")
