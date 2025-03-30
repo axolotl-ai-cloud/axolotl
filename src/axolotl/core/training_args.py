@@ -36,7 +36,9 @@ class AxolotlTrainingMixins:
     )
     sample_packing_sequentially: bool = field(
         default=False,
-        metadata={"help": "Use next-fit sample packing that preserves the order of samples coming from the sampler. Use in combination with curriculum_sampling for fully sequential packing."},
+        metadata={
+            "help": "Use next-fit sample packing that preserves the order of samples coming from the sampler. Use in combination with curriculum_sampling for fully sequential packing."
+        },
     )
     multipack_real_batches: bool = field(
         default=False,

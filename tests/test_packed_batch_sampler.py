@@ -39,7 +39,9 @@ class TestBatchedSamplerPacking:
     @pytest.mark.parametrize("max_seq_length", [4096, 512])
     @pytest.mark.parametrize("sequential", [True, False])
     @enable_hf_offline
-    def test_packing(self, batch_size, num_workers, tokenizer, max_seq_length, sequential):
+    def test_packing(
+        self, batch_size, num_workers, tokenizer, max_seq_length, sequential
+    ):
         import axolotl.monkeypatch.data.batch_dataset_fetcher  # pylint: disable=unused-import  # noqa: F401
 
         dataset = load_dataset(
@@ -75,7 +77,7 @@ class TestBatchedSamplerPacking:
             batch_max_len=max_seq_length,
             group_size=100000,
             bin_size=200,
-            sequential=sequential
+            sequential=sequential,
         )
 
         loader = DataLoader(

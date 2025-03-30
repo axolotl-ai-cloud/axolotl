@@ -124,7 +124,7 @@ def allocate_sequentially(lengths: np.ndarray, rank: int, c: int, n: int):
 
     # First, do sequential packing into bins
     all_bins = []
-    current_bin = [0 for i in range(0)] # numba hint
+    current_bin = [0 for i in range(0)]  # numba hint
     remaining_capacity = c
 
     for idx, size in enumerate(lengths):
@@ -188,8 +188,9 @@ class MultipackBatchSampler(BatchSampler):
         self.len_across_ranks = None
 
         if self.sequential and not isinstance(sampler, SequentialSampler):
-            LOG.warn("using sequential sample packing with non-sequential sampler, did you want to also enable curriculum_sampling?")
-
+            LOG.warn(
+                "using sequential sample packing with non-sequential sampler, did you want to also enable curriculum_sampling?"
+            )
 
     def set_epoch(self, epoch: int):
         self.epoch = epoch
