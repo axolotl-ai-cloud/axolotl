@@ -24,7 +24,7 @@ AXOLOTL_ROOT = Path(__file__).parent.parent.parent.parent
 @pytest.fixture(scope="session", autouse=True)
 def download_model():
     # download the model
-    snapshot_download("google/gemma-3-4b-pt", repo_type="model")
+    snapshot_download("axolotl-mirrors/gemma-3-4b-pt", repo_type="model")
 
 
 class TestMultiGPUGemma3:
@@ -36,7 +36,7 @@ class TestMultiGPUGemma3:
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "google/gemma-3-4b-pt",
+                "base_model": "axolotl-mirrors/gemma-3-4b-pt",
                 "sequence_len": 2048,
                 "sample_packing": True,
                 "eval_sample_packing": False,
