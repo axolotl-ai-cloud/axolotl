@@ -61,6 +61,7 @@ class TestMultiGPUGemma3:
                 "num_epochs": 1,
                 "max_steps": 2,
                 "micro_batch_size": 4,
+                "gradient_checkpointing": True,
                 "gradient_accumulation_steps": 2,
                 "output_dir": temp_dir,
                 "learning_rate": 0.0001,
