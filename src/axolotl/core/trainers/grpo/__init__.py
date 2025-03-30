@@ -40,13 +40,13 @@ class GRPOStrategy:
 
         if trl.use_vllm:
             grpo_args_kwargs["use_vllm"] = trl.use_vllm
-            grpo_args_kwargs["vllm_server_host"] = trl.vllm.server_host
-            grpo_args_kwargs["vllm_server_port"] = trl.vllm.server_port
+            grpo_args_kwargs["vllm_server_host"] = trl.vllm_server_host
+            grpo_args_kwargs["vllm_server_port"] = trl.vllm_server_port
             if trl.vllm.server_timeout:
-                grpo_args_kwargs["vllm_server_timeout"] = trl.vllm.server_timeout
+                grpo_args_kwargs["vllm_server_timeout"] = trl.vllm_server_timeout
             if trl.vllm.guided_decoding_regex:
                 grpo_args_kwargs["vllm_guided_decoding_regex"] = (
-                    trl.vllm.guided_decoding_regex
+                    trl.vllm_guided_decoding_regex
                 )
 
         if trl.num_generations:
