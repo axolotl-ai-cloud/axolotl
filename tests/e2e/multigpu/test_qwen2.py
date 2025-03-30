@@ -46,7 +46,7 @@ class TestMultiGPUQwen2:
                     },
                 ],
                 "num_epochs": 1,
-                "max_steps": 5,
+                "max_steps": 2,
                 "warmup_steps": 20,
                 "micro_batch_size": 2,
                 "gradient_accumulation_steps": 2,

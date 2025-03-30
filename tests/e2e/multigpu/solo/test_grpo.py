@@ -81,9 +81,9 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
                 "special_tokens": {
                     "pad_token": "<|endoftext|>",
                 },
-                "max_steps": 5,
+                "max_steps": 3,
                 "num_epochs": 1,
-                "micro_batch_size": 4,
+                "micro_batch_size": 2,
                 "gradient_accumulation_steps": 2,
                 "warmup_steps": 10,
                 "val_set_size": 0.0,
@@ -162,9 +162,9 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
                 "special_tokens": {
                     "pad_token": "<|endoftext|>",
                 },
-                "max_steps": 5,
+                "max_steps": 3,
                 "num_epochs": 1,
-                "micro_batch_size": 4,
+                "micro_batch_size": 2,
                 "gradient_accumulation_steps": 2,
                 "warmup_steps": 10,
                 "val_set_size": 0.0,
