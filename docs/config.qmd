@@ -238,10 +238,10 @@ simpo_gamma: 0.5  # Target reward margin for the SimPO loss
 # grpo
 trl:
   use_vllm: # Optional[bool]. Whether to use VLLM for RL training.
-  vllm_device: # Optional[str]. Device to use for VLLM.
-  vllm_gpu_memory_utilization: # Optional[float]. GPU memory utilization for VLLM.
-  vllm_max_model_len: # Optional[int]. Maximum length of the model for VLLM.
-  vllm_dtype: # Optional[str]. Data type for VLLM.
+  vllm_server_host: # Optional[str]. Host of the vLLM server to connect to.
+  vllm_server_port: # Optional[int]. Port of the vLLM server to connect to.
+  vllm_server_timeout: # Optional[int]. Total timeout (in seconds) to wait for the vLLM server to respond.
+  vllm_guided_decoding_regex: # Optional[str]. Regex for vLLM guided decoding.
 
   beta: # Optional[float]. Beta parameter for the RL training. Same as `rl_beta`. Use
   max_completion_length: # Optional[int]. Maximum length of the completion for RL training.

@@ -46,6 +46,7 @@ from axolotl.utils.schemas.multimodal import MultiModalConfig
 from axolotl.utils.schemas.peft import LoraConfig, ReLoRAConfig
 from axolotl.utils.schemas.training import HyperparametersConfig
 from axolotl.utils.schemas.trl import TRLConfig
+from axolotl.utils.schemas.vllm import VllmConfig
 
 LOG = logging.getLogger(__name__)
 
@@ -85,6 +86,9 @@ class AxolotlInputConfig(
     rl: RLType | None = None
     trl: TRLConfig | None = Field(
         default_factory=lambda: TRLConfig(),  # pylint: disable=unnecessary-lambda
+    )
+    vllm: VllmConfig | None = Field(
+        default_factory=lambda: VllmConfig(),  # pylint: disable=unnecessary-lambda
     )
     reward_model: bool | None = None
     process_reward_model: bool | None = None
