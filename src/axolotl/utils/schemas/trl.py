@@ -20,7 +20,7 @@ class TRLConfig(BaseModel):
     )
 
     # GRPO specific args
-    # Ref: https://github.com/huggingface/trl/blob/26d86757a7c7e24e397ea44f57ecce6031dfac01/trl/trainer/grpo_config.py#L23    use_vllm: bool = Field(
+    # Ref: https://github.com/huggingface/trl/blob/26d86757a7c7e24e397ea44f57ecce6031dfac01/trl/trainer/grpo_config.py#L23
     use_vllm: bool = Field(
         default=False,
         json_schema_extra={"description": "Whether to use VLLM for RL training"},

@@ -28,3 +28,7 @@ class VllmConfig(BaseModel):
             "description": "Maximum length of the model context for VLLM"
         },
     )
+    enable_prefix_caching: bool | None = Field(
+        default=None,
+        json_schema_extra={"description": "Enable prefix caching for VLLM"},
+    )
