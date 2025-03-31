@@ -14,7 +14,8 @@ import requests
 from datasets import load_dataset
 from huggingface_hub import snapshot_download
 from transformers import AutoTokenizer
-from utils import disable_hf_offline, enable_hf_offline
+
+from tests.hf_offline_utils import disable_hf_offline, enable_hf_offline
 
 
 def retry_on_request_exceptions(max_retries=3, delay=1):

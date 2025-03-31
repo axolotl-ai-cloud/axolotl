@@ -4,7 +4,6 @@ import pytest
 from datasets import concatenate_datasets, load_dataset
 from torch.utils.data import DataLoader, RandomSampler
 from transformers import AutoTokenizer
-from utils import enable_hf_offline
 
 from axolotl.datasets import TokenizedPromptDataset
 from axolotl.prompt_strategies.completion import load
@@ -12,6 +11,8 @@ from axolotl.utils.collators import V2BatchSamplerDataCollatorForSeq2Seq
 from axolotl.utils.data.utils import drop_long_seq_in_dataset
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
+
+from tests.hf_offline_utils import enable_hf_offline
 
 
 @pytest.fixture(name="tokenizer")

@@ -15,7 +15,6 @@ import transformers
 from cut_cross_entropy.transformers.utils import (
     PatchOptions,
     TransformersModelT,
-    apply_lce,
 )
 from torch import nn
 from transformers.cache_utils import Cache, HybridCache
@@ -32,6 +31,8 @@ from transformers.utils import (
     replace_return_docstrings,
 )
 from transformers.utils.deprecation import deprecate_kwarg
+
+from axolotl.integrations.cut_cross_entropy.monkeypatch.utils import apply_lce
 
 _PATCH_OPTS: PatchOptions | None = None
 
@@ -134,25 +135,17 @@ def cce_forward(
 
     if _PATCH_OPTS is not None and _PATCH_OPTS.use_lce(labels, self.training):
         assert labels is not None
-        if self.config.final_logit_softcapping is not None:
-            logger.warning_once(
-                "final_logit_softcapping is not supported for gemma3_text with CCE. Disabling."
-            )
         loss = apply_lce(
             hidden_states[:, slice_indices, :],
             self.lm_head.weight,
             labels,
             _PATCH_OPTS,
+            softcap=getattr(self.config, "final_logit_softcapping", None),
             **loss_kwargs,
         )
     elif _PATCH_OPTS is not None and defer_logits_calculation:
         # defer logits calculation to the ConditionalGeneration forward
         logits = hidden_states[:, slice_indices, :]
-
-        if self.config.final_logit_softcapping is not None:
-            logger.warning_once(
-                "final_logit_softcapping is not supported for gemma3 with CCE. Disabling."
-            )
     else:
         logits = self.lm_head(hidden_states[:, slice_indices, :])
         if self.config.final_logit_softcapping is not None:
@@ -353,6 +346,7 @@ def cce_forward_multimodal(
             self.language_model.lm_head.weight,
             labels,
             _PATCH_OPTS,
+            softcap=getattr(self.config, "final_logit_softcapping", None),
             **lm_kwargs,
         )
     else:

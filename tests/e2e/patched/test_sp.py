@@ -110,7 +110,7 @@ class TestRingAttention:
         mock_new_group.return_value = mock_group
 
         # Call register_ring_attn with size 4
-        register_ring_attn(sequence_parallel_degree=4)
+        register_ring_attn(sequence_parallel_degree=4, heads_k_stride=1)
 
         # Verify the number of calls without examining the arguments
         assert mock_new_group.call_count == 2

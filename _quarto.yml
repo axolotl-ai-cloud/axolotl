@@ -243,6 +243,7 @@ website:
             - docs/unsloth.qmd
             - docs/torchao.qmd
             - docs/custom_integrations.qmd
+            - docs/sequence_parallelism.qmd
 
         - section: "Troubleshooting"
           contents:

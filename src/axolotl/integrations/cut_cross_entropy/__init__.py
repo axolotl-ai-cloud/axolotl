@@ -25,8 +25,8 @@ import torch
 
 from axolotl.integrations.base import BasePlugin
 from axolotl.utils import get_pytorch_version
+from axolotl.utils.distributed import zero_only
 
-from ...utils.distributed import zero_only
 from .args import CutCrossEntropyArgs  # pylint: disable=unused-import. # noqa: F401
 
 LOG = logging.getLogger("axolotl.integrations.cut_cross_entropy")

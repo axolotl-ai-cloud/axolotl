@@ -8,7 +8,7 @@ import math
 import os
 import types
 from functools import cached_property
-from typing import Any, Dict, Optional, Tuple, Union  # noqa: F401
+from typing import Any, Dict, Optional, Tuple
 
 import addict
 import bitsandbytes as bnb
@@ -25,7 +25,7 @@ from peft import (
     prepare_model_for_kbit_training,
 )
 from torch import nn
-from transformers import (  # noqa: F401
+from transformers import (
     AddedToken,
     AutoConfig,
     AutoModelForCausalLM,
@@ -39,6 +39,7 @@ from transformers import (  # noqa: F401
     LlavaForConditionalGeneration,
     Mistral3ForConditionalGeneration,
     MllamaForConditionalGeneration,
+    PretrainedConfig,
     PreTrainedModel,
     PreTrainedTokenizerBase,
     ProcessorMixin,
@@ -107,14 +108,21 @@ def get_module_class_from_name(module, name):
     return None
 
 
-def check_model_config(cfg: DictDefault, model_config: Union[AutoConfig, DictDefault]):
+def check_model_config(cfg: DictDefault, model_config: PretrainedConfig):
+    # Set use_cache to False
+    if hasattr(model_config, "use_cache"):
+        model_config.use_cache = False
+
     if cfg.is_multimodal:
-        if hasattr(model_config, "text_config"):
-            model_config = model_config.text_config
-            model_config.use_cache = False
-        elif hasattr(model_config, "get_text_config"):
-            model_config = model_config.get_text_config()
-            model_config.use_cache = False
+        # For multimodal configs, use_cache is set in the text_config
+        if hasattr(model_config, "get_text_config"):
+            text_config = model_config.get_text_config()
+            if hasattr(text_config, "use_cache"):
+                text_config.use_cache = False
+        else:
+            raise ValueError(
+                "No text config found for multimodal model. Please raise an Issue with model details."
+            )
 
         # check if image_size is not set and load image size from model config if available
         if (
@@ -523,14 +531,6 @@ class ModelLoader:
 
         # init model config
         self.model_config = load_model_config(cfg)
-        if cfg.is_multimodal:
-            if hasattr(self.model_config, "text_config"):
-                self.text_model_config = self.model_config.text_config
-            else:
-                # for qwen2_vl
-                self.text_model_config = self.model_config.get_text_config()
-        else:
-            self.text_model_config = self.model_config
 
         self.auto_model_loader = AutoModelForCausalLM  # pylint: disable=invalid-name
 
@@ -609,7 +609,10 @@ class ModelLoader:
             # Initialize ring attn for sequence parallelism. This must be done after
             # model init but before the first forward pass, since it modifies flash
             # attn to use ring comm for SP training across multiple GPUs.
-            register_ring_attn(self.cfg.sequence_parallel_degree)
+            register_ring_attn(
+                sequence_parallel_degree=self.cfg.sequence_parallel_degree,
+                heads_k_stride=self.cfg.heads_k_stride,
+            )
 
     def patch_attention(self) -> None:
         if hasattr(self.model_config, "model_type"):
@@ -952,8 +955,6 @@ class ModelLoader:
             quantization_config = (
                 quantization_config or self.model_kwargs["quantization_config"]
             )
-            if self.cfg.is_multimodal:
-                self.model_config.text_config = self.text_model_config
             self.model = load_sharded_model_quant(
                 self.base_model,
                 self.model_config,
@@ -973,9 +974,6 @@ class ModelLoader:
                     del self.model_kwargs["device_map"]
 
             _ = _configure_zero3_memory_efficient_loading()
-
-            if self.cfg.is_multimodal:
-                self.model_config.text_config = self.text_model_config
 
             # Load model with random initialization if specified
             if self.cfg.random_init_weights:
@@ -1031,8 +1029,6 @@ class ModelLoader:
             and self.model_type != "AutoModelForCausalLM"
             and not self.cfg.trust_remote_code
         ):
-            if self.cfg.is_multimodal:
-                self.model_config.text_config = self.text_model_config
             if self.cfg.gptq:
                 self.model = self.auto_model_loader.from_pretrained(
                     self.base_model,
@@ -1048,25 +1044,7 @@ class ModelLoader:
                     **self.model_kwargs,
                 )
         else:
-            # Shouldn't be a problem most of the time. will obviously error if the model doesn't support this
-            # when training starts
-            if (
-                hasattr(self.text_model_config, "max_seq_len")
-                and self.text_model_config.max_seq_len
-                and self.cfg.sequence_len > self.text_model_config.max_seq_len
-            ):
-                self.text_model_config.max_seq_len = self.cfg.sequence_len
-                LOG.warning(f"increasing context length to {self.cfg.sequence_len}")
-            elif (
-                hasattr(self.text_model_config, "max_sequence_length")
-                and self.text_model_config.max_sequence_length
-                and self.cfg.sequence_len > self.text_model_config.max_sequence_length
-            ):
-                self.text_model_config.max_sequence_length = self.cfg.sequence_len
-                LOG.warning(f"increasing context length to {self.cfg.sequence_len}")
             if self.cfg.gptq:
-                if self.cfg.is_multimodal:
-                    self.model_config.text_config = self.text_model_config
                 self.model = self.auto_model_loader.from_pretrained(
                     self.base_model,
                     config=self.model_config,
@@ -1085,8 +1063,6 @@ class ModelLoader:
 
                 _ = _configure_zero3_memory_efficient_loading()
 
-                if self.cfg.is_multimodal:
-                    self.model_config.text_config = self.text_model_config
                 self.model = self.auto_model_loader.from_pretrained(
                     self.base_model,
                     config=self.model_config,
@@ -1354,8 +1330,6 @@ class ModelLoader:
                 requires_grad.append(f"{name}: {param.requires_grad}")
         if len(requires_grad) == 0:
             LOG.warning("there are no parameters that require gradient updates")
-        if hasattr(self.model, "config"):
-            self.model.config.use_cache = False
 
         if self.cfg.flash_optimum:
             from optimum.bettertransformer import BetterTransformer

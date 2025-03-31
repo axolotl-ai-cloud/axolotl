@@ -5,11 +5,12 @@ from pathlib import Path
 
 from datasets import Dataset, load_dataset
 from transformers import AutoTokenizer
-from utils import enable_hf_offline
 
 from axolotl.datasets import ConstantLengthDataset, TokenizedPromptDataset
 from axolotl.prompt_tokenizers import AlpacaPromptTokenizingStrategy
 from axolotl.prompters import AlpacaPrompter
+
+from tests.hf_offline_utils import enable_hf_offline
 
 
 class TestPacking(unittest.TestCase):

@@ -21,6 +21,7 @@ It is designed to be performant, correct, and light-weight.
 import inspect
 import logging
 import sys
+from functools import partial
 
 from axolotl.integrations.base import BasePlugin
 
@@ -41,10 +42,17 @@ class LigerPlugin(BasePlugin):
     def pre_model_load(self, cfg):
         from liger_kernel.transformers.cross_entropy import LigerCrossEntropyLoss
         from liger_kernel.transformers.functional import liger_cross_entropy
+        from liger_kernel.transformers.geglu import LigerGEGLUMLP
+        from liger_kernel.transformers.layer_norm import LigerLayerNorm
         from liger_kernel.transformers.monkey_patch import MODEL_TYPE_TO_APPLY_LIGER_FN
         from liger_kernel.transformers.rms_norm import LigerRMSNorm
         from liger_kernel.transformers.rope import liger_rotary_pos_emb
         from liger_kernel.transformers.swiglu import LigerSwiGLUMLP
+
+        if cfg.liger_cross_entropy and cfg.liger_fused_linear_cross_entropy:
+            raise ValueError(
+                "Cannot have both `liger_cross_entropy` and `liger_fused_linear_cross_entropy` set."
+            )
 
         if cfg.model_config_type in MODEL_TYPE_TO_APPLY_LIGER_FN:
             apply_liger_fn = MODEL_TYPE_TO_APPLY_LIGER_FN[cfg.model_config_type]
@@ -82,6 +90,8 @@ class LigerPlugin(BasePlugin):
                 modeling_jamba.JambaRMSNorm = LigerRMSNorm
             if cfg.liger_glu_activation:
                 modeling_jamba.JambaMLP = LigerSwiGLUMLP
+            if cfg.liger_layer_norm:
+                modeling_jamba.nn.LayerNorm = LigerLayerNorm
             if cfg.liger_cross_entropy:
                 from transformers.loss.loss_utils import nn
 
@@ -104,15 +114,51 @@ class LigerPlugin(BasePlugin):
                 # The DeepseekV2 version of RoPE is different than upstream LLaMA.
                 # See https://github.com/linkedin/Liger-Kernel/issues/129#issuecomment-2313763528
                 logging.warning("Fused liger_rope is not supported for DeepseekV2.")
+            if cfg.liger_glu_activation:
+                logging.warning("liger_glu_activation is not supported for DeepseekV2.")
             if cfg.liger_rms_norm:
                 modeling_mod.DeepseekV2RMSNorm = LigerRMSNorm
             if cfg.liger_glu_activation:
                 modeling_mod.DeepseekV2MLP.forward = LigerSwiGLUMLP.forward
+            if cfg.liger_layer_norm:
+                modeling_mod.DeepseekV2MLP.forward = LigerLayerNorm.forward
             if cfg.liger_cross_entropy:
                 # We do not patch `nn.functional.cross_entropy` for DeepseekV2 as it still uses
                 # nn.CrossEntropyLoss in the forward method.
                 modeling_mod.CrossEntropyLoss = LigerCrossEntropyLoss
             if cfg.liger_fused_linear_cross_entropy:
                 modeling_mod.DeepseekV2ForCausalLM.forward = deepseekv2_lce_forward
-        elif cfg.model_config_type in ["gemma3_text", "deepseek_v3"]:
+        elif cfg.model_config_type in ["gemma3", "gemma3_text"]:
+            from transformers.models.gemma3 import modeling_gemma3
+
+            if cfg.liger_rope:
+                modeling_gemma3.apply_rotary_pos_emb = liger_rotary_pos_emb
+            if cfg.liger_rms_norm:
+
+                def _liger_rms_norm_wrapper(dim, **kwargs):
+                    "Convert 'dim' keyword to 'hidden_size' to pass to LigerRMSNorm"
+                    return LigerRMSNorm(hidden_size=dim, **kwargs)
+
+                modeling_gemma3.Gemma3RMSNorm = partial(
+                    _liger_rms_norm_wrapper,
+                    offset=1.0,
+                    casting_mode="gemma",
+                    init_fn="zeros",
+                    in_place=False,
+                )
+            if cfg.liger_glu_activation:
+                modeling_gemma3.Gemma3MLP = LigerGEGLUMLP
+            if cfg.liger_layer_norm:
+                modeling_gemma3.nn.LayerNorm = LigerLayerNorm
+
+            if cfg.liger_cross_entropy:
+                from transformers.loss.loss_utils import nn
+
+                nn.functional.cross_entropy = liger_cross_entropy
+
+            if cfg.liger_fused_linear_cross_entropy:
+                raise NotImplementedError(
+                    "Fused linear cross entropy is not yet supported for Gemma3."
+                )
+        elif cfg.model_config_type in ["deepseek_v3"]:
             raise ValueError(f"Unsupported model config type: {cfg.model_config_type}")

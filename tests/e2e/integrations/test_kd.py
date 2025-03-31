@@ -5,13 +5,14 @@ e2e tests for kd trainer support in Axolotl
 from pathlib import Path
 
 import pytest
-from e2e.utils import check_tensorboard, require_torch_2_5_1
 
 from axolotl.cli.args import TrainerCliArgs
 from axolotl.common.datasets import load_datasets
 from axolotl.train import train
 from axolotl.utils.config import normalize_config, prepare_plugins, validate_config
 from axolotl.utils.dict import DictDefault
+
+from tests.e2e.utils import check_tensorboard, require_torch_2_5_1
 
 
 @pytest.fixture(name="kd_min_cfg")

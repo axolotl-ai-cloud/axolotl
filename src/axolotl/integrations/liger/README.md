@@ -20,6 +20,26 @@ liger_layer_norm: true
 liger_fused_linear_cross_entropy: true
 ```
 
+## Supported Models
+
+- deepseek_v2
+- gemma
+- gemma2
+- gemma3 (partial support, no support for FLCE yet)
+- granite
+- jamba
+- llama
+- mistral
+- mixtral
+- mllama
+- mllama_text_model
+- olmo2
+- paligemma
+- phi3
+- qwen2
+- qwen2_5_vl
+- qwen2_vl
+
 ## Citation
 
 ```bib
