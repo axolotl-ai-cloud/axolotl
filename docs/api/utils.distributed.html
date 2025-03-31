@@ -443,6 +443,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
   <ul class="collapse">
   <li><a href="#axolotl.utils.distributed.barrier" id="toc-axolotl.utils.distributed.barrier" class="nav-link" data-scroll-target="#axolotl.utils.distributed.barrier">barrier</a></li>
+  <li><a href="#axolotl.utils.distributed.cleanup_distributed" id="toc-axolotl.utils.distributed.cleanup_distributed" class="nav-link" data-scroll-target="#axolotl.utils.distributed.cleanup_distributed">cleanup_distributed</a></li>
   <li><a href="#axolotl.utils.distributed.compute_and_broadcast" id="toc-axolotl.utils.distributed.compute_and_broadcast" class="nav-link" data-scroll-target="#axolotl.utils.distributed.compute_and_broadcast">compute_and_broadcast</a></li>
   <li><a href="#axolotl.utils.distributed.gather_from_all_ranks" id="toc-axolotl.utils.distributed.gather_from_all_ranks" class="nav-link" data-scroll-target="#axolotl.utils.distributed.gather_from_all_ranks">gather_from_all_ranks</a></li>
   <li><a href="#axolotl.utils.distributed.gather_scalar_from_all_ranks" id="toc-axolotl.utils.distributed.gather_scalar_from_all_ranks" class="nav-link" data-scroll-target="#axolotl.utils.distributed.gather_scalar_from_all_ranks">gather_scalar_from_all_ranks</a></li>
@@ -481,34 +482,38 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <td>Acts as a barrier to wait for all processes. This ensures that all processes</td>
 </tr>
 <tr class="even">
+<td><a href="#axolotl.utils.distributed.cleanup_distributed">cleanup_distributed</a></td>
+<td>Destroy process group if torch distributed is initialized. Called in training early</td>
+</tr>
+<tr class="odd">
 <td><a href="#axolotl.utils.distributed.compute_and_broadcast">compute_and_broadcast</a></td>
 <td>Compute a value using the function ‘fn’ only on the specified rank (default is 0).</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="#axolotl.utils.distributed.gather_from_all_ranks">gather_from_all_ranks</a></td>
 <td>Run a callable ‘fn’ on all ranks and gather the results on the specified rank.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="#axolotl.utils.distributed.gather_scalar_from_all_ranks">gather_scalar_from_all_ranks</a></td>
 <td>Run a callable ‘fn’ on all ranks and gather the results on the specified rank.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="#axolotl.utils.distributed.is_distributed">is_distributed</a></td>
 <td>Check if distributed training is initialized.</td>
 </tr>
-<tr class="even">
-<td><a href="#axolotl.utils.distributed.is_main_process">is_main_process</a></td>
-<td>Check if the current process is the main process.</td>
-</tr>
 <tr class="odd">
+<td><a href="#axolotl.utils.distributed.is_main_process">is_main_process</a></td>
+<td>Check if the current process is the main process. If not in distributed mode,</td>
+</tr>
+<tr class="even">
 <td><a href="#axolotl.utils.distributed.reduce_and_broadcast">reduce_and_broadcast</a></td>
 <td>Run a callable ‘fn1’ on all ranks, gather the results, reduce them using ‘fn2’,</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="#axolotl.utils.distributed.zero_first">zero_first</a></td>
 <td>runs the wrapped context so that rank 0 runs first before other ranks</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="#axolotl.utils.distributed.zero_only">zero_only</a></td>
 <td>Context manager that only runs the enclosed block on the main rank.</td>
 </tr>
@@ -520,9 +525,15 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <p>Acts as a barrier to wait for all processes. This ensures that all processes
 reach the barrier before proceeding further.</p>
 </section>
+<section id="axolotl.utils.distributed.cleanup_distributed" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.utils.distributed.cleanup_distributed">cleanup_distributed</h3>
+<div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>utils.distributed.cleanup_distributed()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Destroy process group if torch distributed is initialized. Called in training early
+termination or when training successfully completes.</p>
+</section>
 <section id="axolotl.utils.distributed.compute_and_broadcast" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.distributed.compute_and_broadcast">compute_and_broadcast</h3>
-<div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>utils.distributed.compute_and_broadcast(fn)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>utils.distributed.compute_and_broadcast(fn)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Compute a value using the function ‘fn’ only on the specified rank (default is 0).
 The value is then broadcasted to all other ranks.</p>
 <p>Args:
@@ -533,7 +544,7 @@ The value is then broadcasted to all other ranks.</p>
 </section>
 <section id="axolotl.utils.distributed.gather_from_all_ranks" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.distributed.gather_from_all_ranks">gather_from_all_ranks</h3>
-<div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>utils.distributed.gather_from_all_ranks(fn, world_size<span class="op">=</span><span class="dv">1</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>utils.distributed.gather_from_all_ranks(fn, world_size<span class="op">=</span><span class="dv">1</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Run a callable ‘fn’ on all ranks and gather the results on the specified rank.</p>
 <p>Args:
 - fn (callable): A function that computes the value. This should not have any side effects.
@@ -544,7 +555,7 @@ The value is then broadcasted to all other ranks.</p>
 </section>
 <section id="axolotl.utils.distributed.gather_scalar_from_all_ranks" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.distributed.gather_scalar_from_all_ranks">gather_scalar_from_all_ranks</h3>
-<div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>utils.distributed.gather_scalar_from_all_ranks(fn, world_size<span class="op">=</span><span class="dv">1</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>utils.distributed.gather_scalar_from_all_ranks(fn, world_size<span class="op">=</span><span class="dv">1</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Run a callable ‘fn’ on all ranks and gather the results on the specified rank.</p>
 <p>Args:
 - fn (callable): A function that computes the value. This should not have any side effects.
@@ -555,18 +566,18 @@ The value is then broadcasted to all other ranks.</p>
 </section>
 <section id="axolotl.utils.distributed.is_distributed" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.distributed.is_distributed">is_distributed</h3>
-<div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>utils.distributed.is_distributed()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>utils.distributed.is_distributed()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Check if distributed training is initialized.</p>
 </section>
 <section id="axolotl.utils.distributed.is_main_process" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.distributed.is_main_process">is_main_process</h3>
-<div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>utils.distributed.is_main_process()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Check if the current process is the main process.
-If not in distributed mode, always return True.</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>utils.distributed.is_main_process()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Check if the current process is the main process. If not in distributed mode,
+always return <code>True</code>.</p>
 </section>
 <section id="axolotl.utils.distributed.reduce_and_broadcast" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.distributed.reduce_and_broadcast">reduce_and_broadcast</h3>
-<div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>utils.distributed.reduce_and_broadcast(fn1, fn2)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>utils.distributed.reduce_and_broadcast(fn1, fn2)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Run a callable ‘fn1’ on all ranks, gather the results, reduce them using ‘fn2’,
 and then broadcast the reduced result to all ranks.</p>
 <p>Args:
@@ -578,12 +589,12 @@ and then broadcast the reduced result to all ranks.</p>
 </section>
 <section id="axolotl.utils.distributed.zero_first" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.distributed.zero_first">zero_first</h3>
-<div class="sourceCode" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>utils.distributed.zero_first(is_main)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>utils.distributed.zero_first(is_main)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>runs the wrapped context so that rank 0 runs first before other ranks</p>
 </section>
 <section id="axolotl.utils.distributed.zero_only" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.distributed.zero_only">zero_only</h3>
-<div class="sourceCode" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>utils.distributed.zero_only()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb10"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>utils.distributed.zero_only()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Context manager that only runs the enclosed block on the main rank.</p>
 
 
