@@ -411,11 +411,15 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         if turn_idx >= len(turns):
             raise ValueError(f"Turn index {turn_idx} out of range")
 
-        # mistral does not output message if it contains only system message
+        # mistral/gemma3 does not output message if it contains only system message
         if (
             turn_idx == 0
             and turns[0].get("role") == "system"
-            and "mistral" in self.tokenizer.name_or_path.lower()
+            and (
+                "mistral" in self.tokenizer.name_or_path.lower()
+                # gemma3 uses gemma tokenizer
+                or "gemma" in self.tokenizer.name_or_path.lower()
+            )
         ):
             return -1, -1
 

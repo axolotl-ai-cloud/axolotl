@@ -8,10 +8,11 @@ from pathlib import Path
 import pytest
 import yaml
 from accelerate.test_utils import execute_subprocess_async
-from e2e.utils import require_vllm
 from transformers.testing_utils import get_torch_dist_unique_port
 
 from axolotl.utils.dict import DictDefault
+
+from tests.e2e.utils import require_vllm
 
 
 class TestGRPO:

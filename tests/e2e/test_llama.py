@@ -5,13 +5,13 @@ E2E tests for llama
 import logging
 import os
 
-from e2e.utils import check_model_output_exists
-
 from axolotl.cli.args import TrainerCliArgs
 from axolotl.common.datasets import load_datasets
 from axolotl.train import train
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
+
+from tests.e2e.utils import check_model_output_exists
 
 LOG = logging.getLogger("axolotl.tests.e2e")
 os.environ["WANDB_DISABLED"] = "true"

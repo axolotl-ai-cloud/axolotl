@@ -8,19 +8,20 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from constants import (
-    ALPACA_MESSAGES_CONFIG_OG,
-    ALPACA_MESSAGES_CONFIG_REVISION,
-    SPECIAL_TOKENS,
-)
 from datasets import Dataset
 from huggingface_hub import snapshot_download
 from transformers import PreTrainedTokenizer
-from utils import enable_hf_offline
 
 from axolotl.utils.data import load_tokenized_prepared_datasets
 from axolotl.utils.data.rl import load_prepare_preference_datasets
 from axolotl.utils.dict import DictDefault
+
+from tests.constants import (
+    ALPACA_MESSAGES_CONFIG_OG,
+    ALPACA_MESSAGES_CONFIG_REVISION,
+    SPECIAL_TOKENS,
+)
+from tests.hf_offline_utils import enable_hf_offline
 
 
 class TestDatasetPreparation:

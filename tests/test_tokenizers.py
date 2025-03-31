@@ -5,10 +5,11 @@ Test cases for the tokenizer loading
 import unittest
 
 import pytest
-from utils import enable_hf_offline
 
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.models import load_tokenizer
+
+from tests.hf_offline_utils import enable_hf_offline
 
 
 class TestTokenizers:

@@ -9,9 +9,7 @@ import unittest
 from unittest.mock import patch
 
 import pytest
-from constants import ALPACA_MESSAGES_CONFIG_REVISION
 from datasets import Dataset
-from utils import enable_hf_offline
 
 from axolotl.utils.config import normalize_config
 from axolotl.utils.data import prepare_dataset
@@ -19,6 +17,9 @@ from axolotl.utils.data.rl import load_prepare_preference_datasets
 from axolotl.utils.data.utils import deduplicate_and_log_datasets
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.models import load_processor, load_tokenizer
+
+from tests.constants import ALPACA_MESSAGES_CONFIG_REVISION
+from tests.hf_offline_utils import enable_hf_offline
 
 
 def verify_deduplication(actual_dataset, expected_dataset, dataset_name):

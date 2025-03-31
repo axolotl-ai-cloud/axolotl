@@ -2,15 +2,13 @@
 Simple end-to-end test for Liger integration
 """
 
-from e2e.utils import require_torch_2_4_1
-
 from axolotl.cli.args import TrainerCliArgs
 from axolotl.common.datasets import load_datasets
 from axolotl.train import train
 from axolotl.utils.config import normalize_config, prepare_plugins
 from axolotl.utils.dict import DictDefault
 
-from ..utils import check_model_output_exists
+from tests.e2e.utils import check_model_output_exists, require_torch_2_4_1
 
 
 class LigerIntegrationTestCase:

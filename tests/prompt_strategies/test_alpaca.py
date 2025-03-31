@@ -6,11 +6,12 @@ import pytest
 from datasets import Dataset
 from tokenizers import AddedToken
 from transformers import AutoTokenizer
-from utils import enable_hf_offline
 
 from axolotl.datasets import TokenizedPromptDataset
 from axolotl.prompt_tokenizers import AlpacaPromptTokenizingStrategy
 from axolotl.prompters import AlpacaPrompter, PromptStyle
+
+from tests.hf_offline_utils import enable_hf_offline
 
 
 @pytest.fixture(name="alpaca_dataset")
