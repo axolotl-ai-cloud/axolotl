@@ -71,8 +71,8 @@ def barrier():
 
 def is_main_process():
     """
-    Check if the current process is the main process.
-    If not in distributed mode, always return True.
+    Check if the current process is the main process. If not in distributed mode,
+    always return `True`.
     """
     if not is_distributed():
         return True
@@ -85,6 +85,18 @@ def is_local_main_process():
 
 def get_world_size():
     return int(os.getenv("WORLD_SIZE", "1"))
+
+
+def cleanup_distributed():
+    """
+    Destroy process group if torch distributed is initialized. Called in training early
+    termination or when training successfully completes.
+    """
+    # Ensure that all operations are completed before destroying the process group
+    torch.cuda.synchronize()
+    # Destroy the process group
+    if torch.distributed.is_initialized():
+        torch.distributed.destroy_process_group()
 
 
 @contextmanager
