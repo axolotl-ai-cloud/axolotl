@@ -589,6 +589,10 @@ neftune_noise_alpha:
 
 # Optional[bool]. Whether to bettertransformers
 flash_optimum:
+
+# Note: Only one of the following attention patches can be used at a time.
+# For example, if you set `xformers_attention` to `true`, do not set `flash_attention` to `true`.
+
 # Optional[bool]. Whether to use xformers attention patch https://github.com/facebookresearch/xformers:
 xformers_attention:
 # Optional[bool]. Whether to use flash attention patch https://github.com/Dao-AILab/flash-attention:
@@ -602,6 +606,7 @@ flash_attn_fuse_mlp: # Optional[bool]. Whether to fuse part of the MLP into a si
 sdp_attention:
 # Optional[bool]. Shifted-sparse attention (only llama) - https://arxiv.org/pdf/2309.12307.pdf
 s2_attention:
+
 # Optional[bool]. Whether to use low_cpu_mem_usage
 low_cpu_mem_usage:
 # Optional[str]. Resume from a specific checkpoint dir
