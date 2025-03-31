@@ -446,6 +446,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <li><a href="#axolotl.cli.args.InferenceCliArgs" id="toc-axolotl.cli.args.InferenceCliArgs" class="nav-link" data-scroll-target="#axolotl.cli.args.InferenceCliArgs">InferenceCliArgs</a></li>
   <li><a href="#axolotl.cli.args.PreprocessCliArgs" id="toc-axolotl.cli.args.PreprocessCliArgs" class="nav-link" data-scroll-target="#axolotl.cli.args.PreprocessCliArgs">PreprocessCliArgs</a></li>
   <li><a href="#axolotl.cli.args.TrainerCliArgs" id="toc-axolotl.cli.args.TrainerCliArgs" class="nav-link" data-scroll-target="#axolotl.cli.args.TrainerCliArgs">TrainerCliArgs</a></li>
+  <li><a href="#axolotl.cli.args.VllmServeCliArgs" id="toc-axolotl.cli.args.VllmServeCliArgs" class="nav-link" data-scroll-target="#axolotl.cli.args.VllmServeCliArgs">VllmServeCliArgs</a></li>
   </ul></li>
   </ul></li>
   </ul>
@@ -486,6 +487,10 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <tr class="even">
 <td><a href="#axolotl.cli.args.TrainerCliArgs">TrainerCliArgs</a></td>
 <td>Dataclass with CLI arguments for <code>axolotl train</code> command.</td>
+</tr>
+<tr class="odd">
+<td><a href="#axolotl.cli.args.VllmServeCliArgs">VllmServeCliArgs</a></td>
+<td>Dataclass with CLI arguments for <code>axolotl vllm-serve</code> command.</td>
 </tr>
 </tbody>
 </table>
@@ -531,6 +536,20 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>    num_processes<span class="op">=</span><span class="va">None</span>,</span>
 <span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Dataclass with CLI arguments for <code>axolotl train</code> command.</p>
+</section>
+<section id="axolotl.cli.args.VllmServeCliArgs" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.cli.args.VllmServeCliArgs">VllmServeCliArgs</h3>
+<div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>cli.args.VllmServeCliArgs(</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    <span class="va">self</span>,</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    tensor_parallel_size<span class="op">=</span><span class="dv">1</span>,</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>    host<span class="op">=</span><span class="st">'0.0.0.0'</span>,</span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>    port<span class="op">=</span><span class="dv">8000</span>,</span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>    gpu_memory_utilization<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>    dtype<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a>    max_model_len<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a>    enable_prefix_caching<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Dataclass with CLI arguments for <code>axolotl vllm-serve</code> command.</p>
 
 
 </section>

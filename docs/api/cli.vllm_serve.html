@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 
-<title>utils.samplers.multipack – Axolotl</title>
+<title>cli.vllm_serve – Axolotl</title>
 <style>
 code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
@@ -438,15 +438,11 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#axolotl.utils.samplers.multipack" id="toc-axolotl.utils.samplers.multipack" class="nav-link active" data-scroll-target="#axolotl.utils.samplers.multipack">utils.samplers.multipack</a>
+  <li><a href="#axolotl.cli.vllm_serve" id="toc-axolotl.cli.vllm_serve" class="nav-link active" data-scroll-target="#axolotl.cli.vllm_serve">cli.vllm_serve</a>
   <ul class="collapse">
-  <li><a href="#classes" id="toc-classes" class="nav-link" data-scroll-target="#classes">Classes</a>
-  <ul class="collapse">
-  <li><a href="#axolotl.utils.samplers.multipack.MultipackBatchSampler" id="toc-axolotl.utils.samplers.multipack.MultipackBatchSampler" class="nav-link" data-scroll-target="#axolotl.utils.samplers.multipack.MultipackBatchSampler">MultipackBatchSampler</a></li>
-  </ul></li>
   <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
   <ul class="collapse">
-  <li><a href="#axolotl.utils.samplers.multipack.allocate_sequentially" id="toc-axolotl.utils.samplers.multipack.allocate_sequentially" class="nav-link" data-scroll-target="#axolotl.utils.samplers.multipack.allocate_sequentially">allocate_sequentially</a></li>
+  <li><a href="#axolotl.cli.vllm_serve.do_vllm_serve" id="toc-axolotl.cli.vllm_serve.do_vllm_serve" class="nav-link" data-scroll-target="#axolotl.cli.vllm_serve.do_vllm_serve">do_vllm_serve</a></li>
   </ul></li>
   </ul></li>
   </ul>
@@ -458,43 +454,10 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 
 
 
-<section id="axolotl.utils.samplers.multipack" class="level1">
-<h1>utils.samplers.multipack</h1>
-<p><code>utils.samplers.multipack</code></p>
-<p>Multipack Batch Sampler</p>
-<section id="classes" class="level2">
-<h2 class="anchored" data-anchor-id="classes">Classes</h2>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td><a href="#axolotl.utils.samplers.multipack.MultipackBatchSampler">MultipackBatchSampler</a></td>
-<td>Batch sampler class for multipack</td>
-</tr>
-</tbody>
-</table>
-<section id="axolotl.utils.samplers.multipack.MultipackBatchSampler" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.utils.samplers.multipack.MultipackBatchSampler">MultipackBatchSampler</h3>
-<div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>utils.samplers.multipack.MultipackBatchSampler(</span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    <span class="va">self</span>,</span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    sampler,</span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    batch_size,</span>
-<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    batch_max_len,</span>
-<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    lengths,</span>
-<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>    packing_efficiency_estimate<span class="op">=</span><span class="fl">1.0</span>,</span>
-<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>    drop_last<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    num_count_samples<span class="op">=</span><span class="dv">16</span>,</span>
-<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>    sequential<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>    <span class="op">**</span>kwargs,</span>
-<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Batch sampler class for multipack</p>
-</section>
-</section>
+<section id="axolotl.cli.vllm_serve" class="level1">
+<h1>cli.vllm_serve</h1>
+<p><code>cli.vllm_serve</code></p>
+<p>CLI to start the vllm server for online RL</p>
 <section id="functions" class="level2">
 <h2 class="anchored" data-anchor-id="functions">Functions</h2>
 <table class="caption-top table">
@@ -506,26 +469,39 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </thead>
 <tbody>
 <tr class="odd">
-<td><a href="#axolotl.utils.samplers.multipack.allocate_sequentially">allocate_sequentially</a></td>
-<td>Sequential allocator that preserves example order</td>
+<td><a href="#axolotl.cli.vllm_serve.do_vllm_serve">do_vllm_serve</a></td>
+<td>Starts the VLLM server for serving LLM models used for online RL</td>
 </tr>
 </tbody>
 </table>
-<section id="axolotl.utils.samplers.multipack.allocate_sequentially" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.utils.samplers.multipack.allocate_sequentially">allocate_sequentially</h3>
-<div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>utils.samplers.multipack.allocate_sequentially(lengths, rank, c, n)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Sequential allocator that preserves example order</p>
-<p>Parameters:
-- lengths: The lengths of all examples
-- rank: The current rank (for distributed training)
-- c: The capacity of each bin (maximum sequence length)
-- n: Number of ranks</p>
-<p>Returns:
-- result: List of batches for the current rank
-- total_used: Number of actual example tokens
-- total_slots: Maximum theoretical number of example tokens (number of bins * bin capacity)</p>
+<section id="axolotl.cli.vllm_serve.do_vllm_serve" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.cli.vllm_serve.do_vllm_serve">do_vllm_serve</h3>
+<div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>cli.vllm_serve.do_vllm_serve(config, cli_args)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Starts the VLLM server for serving LLM models used for online RL</p>
+<p>Args
+:param cfg: Parsed doct of the YAML config
+:param cli_args: dict of additional command-line arguments of type VllmServeCliArgs</p>
+<section id="returns" class="level4 doc-section doc-section-returns">
+<h4 class="doc-section doc-section-returns anchored" data-anchor-id="returns">Returns</h4>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>process_id</td>
+<td></td>
+<td>the process id of the started VLLM server</td>
+</tr>
+</tbody>
+</table>
 
 
+</section>
 </section>
 </section>
 </section>

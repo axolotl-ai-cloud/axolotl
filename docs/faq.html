@@ -21,6 +21,40 @@ ul.task-list li input[type="checkbox"] {
   margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
   vertical-align: middle;
 }
+/* CSS for syntax highlighting */
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { display: inline-block; text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
 </style>
 
 
@@ -469,11 +503,20 @@ ul.task-list li input[type="checkbox"] {
 </blockquote>
 <p><strong>Q: How to call Axolotl via custom python scripts?</strong></p>
 <blockquote class="blockquote">
-<p>A: Yes, since Axolotl is just Python, please see <code>src/axolotl/cli/main.py</code> on how each command is called.</p>
+<p>A: Since Axolotl is just Python, please see <code>src/axolotl/cli/main.py</code> on how each command is called.</p>
 </blockquote>
 <p><strong>Q: How to know the value to use for <code>fsdp_transformer_layer_cls_to_wrap</code>?</strong></p>
 <blockquote class="blockquote">
 <p>A: This is the class name of the transformer layer to wrap with FSDP. For example, for <code>LlamaForCausalLM</code>, the value is <code>LlamaDecoderLayer</code>. To find this for a specific model, check the model’s <code>PreTrainedModel</code> definition and look for <code>_no_split_modules</code> variable in the <code>modeling_&lt;model_name&gt;.py</code> file within <code>transformers</code> library.</p>
+</blockquote>
+<p><strong>Q: ValueError: Asking to pad but the tokenizer does not have a padding token. Please select a token to use as pad_token</strong></p>
+<blockquote class="blockquote">
+<p>A: This is because the tokenizer does not have a padding token. Please add a padding token to the tokenizer via:</p>
+</blockquote>
+<blockquote class="blockquote">
+<div class="sourceCode" id="cb1"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">special_tokens</span><span class="kw">:</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="co">  # str. If you're not sure, set to same as `eos_token`.</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">pad_token</span><span class="kw">:</span><span class="at"> </span><span class="st">"..."</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </blockquote>
 </section>
 <section id="chat-templates" class="level3">
