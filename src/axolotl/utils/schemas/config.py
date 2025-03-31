@@ -1273,7 +1273,7 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
 
     @model_validator(mode="after")
     def check_min_torch_version(self):
-        if self.env_capabilities and self.env_capabilities.get("torch_version"):
+        if self.env_capabilities and self.env_capabilities.torch_version:
             torch_version = self.env_capabilities.torch_version
             if version.parse(torch_version) < version.parse("2.5.1"):
                 LOG.warning(
