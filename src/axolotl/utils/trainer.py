@@ -13,7 +13,7 @@ import torch
 import torch.cuda
 from accelerate.logging import get_logger
 from datasets import IterableDataset, disable_caching, enable_caching
-from torch.utils.data import DataLoader, RandomSampler
+from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from transformers.utils import is_torch_bf16_gpu_available
 
 from axolotl.core.trainer_builder import HFCausalTrainerBuilder, HFRLTrainerBuilder
@@ -456,13 +456,18 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
             else:
                 sampler_batch_size = cfg.micro_batch_size
                 batch_max_len = cfg.sequence_len
+            if cfg.curriculum_sampling:
+                sampler = SequentialSampler(train_dataset)
+            else:
+                sampler = RandomSampler(train_dataset)
             sampler = MultipackBatchSampler(
-                sampler=RandomSampler(train_dataset),
+                sampler=sampler,
                 lengths=get_dataset_lengths(train_dataset),
                 batch_size=sampler_batch_size,
                 batch_max_len=batch_max_len,
                 group_size=cfg.sample_packing_group_size,
                 bin_size=cfg.sample_packing_bin_size,
+                sequential=cfg.sample_packing_sequentially,
                 drop_last=True,
             )
 
