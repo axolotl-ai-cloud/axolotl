@@ -14,6 +14,10 @@ class VllmConfig(BaseModel):
         default="auto",
         json_schema_extra={"description": "Device to use for VLLM"},
     )
+    tensor_parallel_size: int | None = Field(
+        default=None,
+        json_schema_extra={"description": "Tensor parallel size for VLLM"},
+    )
     gpu_memory_utilization: float | None = Field(
         default=0.9,
         json_schema_extra={"description": "GPU memory utilization for VLLM"},
