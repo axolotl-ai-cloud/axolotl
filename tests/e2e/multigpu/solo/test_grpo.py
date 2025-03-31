@@ -4,17 +4,82 @@ GRPO test suite
 
 import os
 import random
+import subprocess  # nosec B404
+import sys
+import time
 from pathlib import Path
 
 import pytest
+import requests
 import yaml
 from accelerate.test_utils import execute_subprocess_async
 from transformers.testing_utils import get_torch_dist_unique_port
 
-from axolotl.cli.vllm_serve import start_vllm
 from axolotl.utils.dict import DictDefault
 
 from tests.e2e.utils import require_vllm
+
+
+def start_vllm(
+    model: str, env: dict | None = None, wait: int | None = None, quiet=False, **kwargs
+) -> int:
+    """
+    helper function to start the VLLM server in the background, mostly for testing purposes
+    """
+    cmd = [sys.executable, "-m", "trl.scripts.vllm_serve", "--model", model]
+
+    if tensor_parallel_size := kwargs.get("tensor_parallel_size"):
+        cmd.extend(["--tensor-parallel-size", str(tensor_parallel_size)])
+    if host := kwargs.get("host"):
+        cmd.extend(["--host", host])
+    if port := kwargs.get("port"):
+        cmd.extend(["--port", str(port)])
+    if gpu_memory_utilization := kwargs.get("gpu_memory_utilization"):
+        cmd.extend(["--gpu-memory-utilization", str(gpu_memory_utilization)])
+    if dtype := kwargs.get("dtype"):
+        cmd.extend(["--dtype", dtype])
+    if max_model_len := kwargs.get("max_model_len"):
+        cmd.extend(["--max-model-len", str(max_model_len)])
+    if kwargs.get("enable_prefix_caching"):
+        cmd.extend(["--enable-prefix-caching"])
+
+    # print out the command to be executed
+    print(" ".join(cmd))
+
+    # start `trl vllm-serve` command in the background and capture the process id
+    process = subprocess.Popen(  # pylint: disable=consider-using-with
+        cmd,
+        env=env,
+        stdout=subprocess.DEVNULL if quiet else subprocess.PIPE,
+        stderr=subprocess.DEVNULL if quiet else subprocess.PIPE,
+    )  # nosec B603
+
+    # print out the process id so the user can easily kill it later
+    print(f"VLLM server process started (PID: {process.pid})")
+
+    # wait until the http server is ready, even if it 404s, but timeout after 60 seconds
+    started = False
+    if wait and host and port:
+        for _ in range(int(wait)):
+            try:
+                response = requests.get(f"http://{host}:{port}", timeout=1)
+                if int(response.status_code) in [200, 404]:
+                    started = True
+                    break
+            except requests.exceptions.RequestException:
+                pass
+
+            time.sleep(1)
+
+    if wait and not started:
+        print(
+            f"VLLM server process did not start within {wait} seconds. Please check your server logs."
+        )
+        process.kill()
+        raise RuntimeError(f"VLLM server process did not start within {wait} seconds.")
+
+    # return the process id
+    return process.pid
 
 
 class TestGRPO:
