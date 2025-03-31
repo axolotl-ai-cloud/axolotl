@@ -19,7 +19,7 @@ from axolotl.train import train
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 
-from tests.e2e.utils import check_tensorboard, require_torch_lt_2_6_0, with_temp_dir
+from tests.e2e.utils import check_tensorboard, require_torch_2_6_0, with_temp_dir
 
 LOG = logging.getLogger("axolotl.tests.e2e.multigpu")
 os.environ["WANDB_DISABLED"] = "true"
@@ -820,7 +820,7 @@ class TestMultiGPULlama:
             temp_dir + "/runs", "train/train_loss", 4.0, "Train Loss is too high"
         )
 
-    @require_torch_lt_2_6_0
+    @require_torch_2_6_0
     @with_temp_dir
     def test_flex_packed_loss(self, temp_dir):
         # pylint: disable=duplicate-code
