@@ -248,6 +248,7 @@ class AxolotlInputConfig(
     val_set_size: float | None = Field(default=0.0)
 
     sequence_parallel_degree: int | None = None
+    heads_k_stride: int | None = None
 
     special_tokens: SpecialTokensConfig | None = None
     tokens: list[str] | None = None
@@ -1108,7 +1109,7 @@ class AxolotlInputConfig(
 
     @field_validator("sequence_parallel_degree", mode="before")
     @classmethod
-    def check_sequence_parallel_config(cls, value, info):
+    def check_sequence_parallel_degree(cls, value, info):
         if not value:
             value = 1
 

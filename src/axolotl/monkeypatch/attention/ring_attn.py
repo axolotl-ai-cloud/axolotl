@@ -38,13 +38,19 @@ def set_ring_attn_group(ring_attn_group: dist.ProcessGroup | None):
     RING_ATTN_GROUP = ring_attn_group
 
 
-def register_ring_attn(sequence_parallel_degree: int):
+def register_ring_attn(sequence_parallel_degree: int, heads_k_stride: int | None):
     """
     Create ring attention group and substitute flash attn with ring flash attn.
 
     Args:
         sequence_parallel_degree: Sequence parallelism factor.
+        heads_k_stride: Sequence parallelism K head stride size. Passed
+            through to `ring_flash_attn.substitute_hf_flash_attn`.
     """
+    if get_ring_attn_group() is not None:
+        LOG.info("Ring attention already registered, exiting early...")
+        return
+
     LOG.info(
         "Enabling ring attention sequence parallelism: "
         f"each sequence will be processed across {sequence_parallel_degree} GPUs"
@@ -84,6 +90,11 @@ def register_ring_attn(sequence_parallel_degree: int):
     if rank == 0:
         LOG.info(f"Sequence parallel group assignments: {group_assignments}")
 
+    if heads_k_stride is None:
+        heads_k_stride = 1
+
     from ring_flash_attn import substitute_hf_flash_attn
 
-    substitute_hf_flash_attn(get_ring_attn_group(), sequence_parallel_degree)
+    substitute_hf_flash_attn(
+        process_group=get_ring_attn_group(), heads_k_stride=heads_k_stride
+    )
