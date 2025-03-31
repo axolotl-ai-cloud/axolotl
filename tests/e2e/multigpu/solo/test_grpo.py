@@ -41,7 +41,7 @@ def start_vllm(
     if max_model_len := kwargs.get("max_model_len"):
         cmd.extend(["--max-model-len", str(max_model_len)])
     if kwargs.get("enable_prefix_caching"):
-        cmd.extend(["--enable-prefix-caching"])
+        cmd.extend(["--enable-prefix-caching", "True"])
 
     # print out the command to be executed
     print(" ".join(cmd))
