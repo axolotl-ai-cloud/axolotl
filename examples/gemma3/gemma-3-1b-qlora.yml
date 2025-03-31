@@ -5,6 +5,9 @@ tokenizer_type: AutoTokenizer
 # Automatically upload checkpoint and final model to HF
 # hub_model_id: username/custom_model_name
 
+# gemma3 doesn't seem to play nice with ddp
+ddp_find_unused_parameters: true
+
 load_in_8bit: false
 load_in_4bit: true
 strict: false
@@ -54,6 +57,8 @@ fp16:
 tf32: true
 
 gradient_checkpointing: true
+gradient_checkpointing_kwargs:
+  use_reentrant: false
 early_stopping_patience:
 resume_from_checkpoint:
 local_rank:
