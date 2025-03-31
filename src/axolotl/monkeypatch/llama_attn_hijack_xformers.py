@@ -4,7 +4,6 @@ Hijack the LlamaAttention forward method to use xformers if available.
 Updated for transformers v4.50.0.
 """
 
-import logging
 from typing import Optional
 
 import torch
@@ -112,5 +111,3 @@ def hijack_llama_attention():
 
     # Apply the patch
     llama_modeling.LlamaAttention.forward = patched_forward
-
-    logging.info("Successfully patched LlamaAttention with xformers")
