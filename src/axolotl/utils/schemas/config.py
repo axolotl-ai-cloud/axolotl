@@ -1270,3 +1270,13 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             if data["beta"] != data["trl"]["beta"]:
                 raise ValueError("beta and trl.beta must match or one must be removed")
         return data
+
+    @model_validator(mode="after")
+    def check_min_torch_version(self):
+        if self.env_capabilities and self.env_capabilities.get("torch_version"):
+            torch_version = self.env_capabilities.torch_version
+            if version.parse(torch_version) < version.parse("2.5.1"):
+                LOG.warning(
+                    "torch=={torch_version} may not be supported in future versions. Please consider "
+                    "upgrading to torch>=2.5.1."
+                )
