@@ -392,6 +392,12 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
  <span class="menu-text">Custom Integrations</span></a>
   </div>
 </li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/sequence_parallelism.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Sequence Parallelism</span></a>
+  </div>
+</li>
       </ul>
   </li>
         <li class="sidebar-item sidebar-item-section">
@@ -1112,21 +1118,24 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb1-652"><a href="#cb1-652" aria-hidden="true" tabindex="-1"></a><span class="co"># subsequences, or set to 4 to split into four equal-sized subsequences.</span></span>
 <span id="cb1-653"><a href="#cb1-653" aria-hidden="true" tabindex="-1"></a><span class="co"># See https://axolotl-ai-cloud.github.io/axolotl/docs/sequence_parallelism.html for more details.</span></span>
 <span id="cb1-654"><a href="#cb1-654" aria-hidden="true" tabindex="-1"></a><span class="fu">sequence_parallel_degree</span><span class="kw">:</span></span>
-<span id="cb1-655"><a href="#cb1-655" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-656"><a href="#cb1-656" aria-hidden="true" tabindex="-1"></a><span class="co"># Path to torch distx for optim 'adamw_anyprecision'</span></span>
-<span id="cb1-657"><a href="#cb1-657" aria-hidden="true" tabindex="-1"></a><span class="fu">torchdistx_path</span><span class="kw">:</span></span>
+<span id="cb1-655"><a href="#cb1-655" aria-hidden="true" tabindex="-1"></a><span class="co"># Optional; strides across the key dimension. Larger values use more memory but should make training faster.</span></span>
+<span id="cb1-656"><a href="#cb1-656" aria-hidden="true" tabindex="-1"></a><span class="co"># Must evenly divide the number of KV heads in your model.</span></span>
+<span id="cb1-657"><a href="#cb1-657" aria-hidden="true" tabindex="-1"></a><span class="fu">heads_k_stride</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span></span>
 <span id="cb1-658"><a href="#cb1-658" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-659"><a href="#cb1-659" aria-hidden="true" tabindex="-1"></a><span class="co"># Set to HF dataset for type: 'completion' for streaming instead of pre-tokenize</span></span>
-<span id="cb1-660"><a href="#cb1-660" aria-hidden="true" tabindex="-1"></a><span class="fu">pretraining_dataset</span><span class="kw">:</span></span>
+<span id="cb1-659"><a href="#cb1-659" aria-hidden="true" tabindex="-1"></a><span class="co"># Path to torch distx for optim 'adamw_anyprecision'</span></span>
+<span id="cb1-660"><a href="#cb1-660" aria-hidden="true" tabindex="-1"></a><span class="fu">torchdistx_path</span><span class="kw">:</span></span>
 <span id="cb1-661"><a href="#cb1-661" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-662"><a href="#cb1-662" aria-hidden="true" tabindex="-1"></a><span class="co"># Debug mode</span></span>
-<span id="cb1-663"><a href="#cb1-663" aria-hidden="true" tabindex="-1"></a><span class="fu">debug</span><span class="kw">:</span></span>
+<span id="cb1-662"><a href="#cb1-662" aria-hidden="true" tabindex="-1"></a><span class="co"># Set to HF dataset for type: 'completion' for streaming instead of pre-tokenize</span></span>
+<span id="cb1-663"><a href="#cb1-663" aria-hidden="true" tabindex="-1"></a><span class="fu">pretraining_dataset</span><span class="kw">:</span></span>
 <span id="cb1-664"><a href="#cb1-664" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-665"><a href="#cb1-665" aria-hidden="true" tabindex="-1"></a><span class="co"># Seed</span></span>
-<span id="cb1-666"><a href="#cb1-666" aria-hidden="true" tabindex="-1"></a><span class="fu">seed</span><span class="kw">:</span></span>
+<span id="cb1-665"><a href="#cb1-665" aria-hidden="true" tabindex="-1"></a><span class="co"># Debug mode</span></span>
+<span id="cb1-666"><a href="#cb1-666" aria-hidden="true" tabindex="-1"></a><span class="fu">debug</span><span class="kw">:</span></span>
 <span id="cb1-667"><a href="#cb1-667" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-668"><a href="#cb1-668" aria-hidden="true" tabindex="-1"></a><span class="co"># Allow overwrite yml config using from cli</span></span>
-<span id="cb1-669"><a href="#cb1-669" aria-hidden="true" tabindex="-1"></a><span class="fu">strict</span><span class="kw">:</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb1-668"><a href="#cb1-668" aria-hidden="true" tabindex="-1"></a><span class="co"># Seed</span></span>
+<span id="cb1-669"><a href="#cb1-669" aria-hidden="true" tabindex="-1"></a><span class="fu">seed</span><span class="kw">:</span></span>
+<span id="cb1-670"><a href="#cb1-670" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-671"><a href="#cb1-671" aria-hidden="true" tabindex="-1"></a><span class="co"># Allow overwrite yml config using from cli</span></span>
+<span id="cb1-672"><a href="#cb1-672" aria-hidden="true" tabindex="-1"></a><span class="fu">strict</span><span class="kw">:</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 
 
 
