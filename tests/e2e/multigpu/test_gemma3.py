@@ -38,6 +38,7 @@ class TestMultiGPUGemma3:
             {
                 "base_model": "axolotl-mirrors/gemma-3-4b-pt",
                 "sequence_len": 2048,
+                "ddp_find_unused_parameters": True,
                 "sample_packing": True,
                 "eval_sample_packing": False,
                 "pad_to_sequence_len": True,
@@ -62,6 +63,9 @@ class TestMultiGPUGemma3:
                 "max_steps": 2,
                 "micro_batch_size": 4,
                 "gradient_checkpointing": True,
+                "gradient_checkpointing_kwargs": {
+                    "use_reentrant": False,
+                },
                 "gradient_accumulation_steps": 2,
                 "output_dir": temp_dir,
                 "learning_rate": 0.0001,
