@@ -502,9 +502,50 @@ The input format is a simple JSON input with customizable fields based on the ab
 Check out our [GRPO cookbook](https://github.com/axolotl-ai-cloud/axolotl-cookbook/tree/main/grpo#training-an-r1-style-large-language-model-using-grpo).
 :::
 
+If you have multiple GPUs available, we reccomend using `vLLM` with the `GRPOTrainer` to significantly speedup trajectory generation during training.
+First, launch a `vLLM` server using `trl vllm_serve`. You may use a config file or CLI overrides to configure your vLLM server. In this example, we're
+using 4 GPUs - 2 for training, and 2 for vLLM:
+
+```yaml
+base_model: Qwen/Qwen2.5-1.5B-Instruct
+
+vllm:
+    host: 0.0.0.0
+    port: 8000
+    tensor_parallel_size: 2
+    gpu_memory_utilization: 0.85
+    dtype: auto
+    max_model_len: 512
+```
+
+```bash
+CUDA_VISIBLE_DEVICES=2,3 axolotl vllm_serve vllm_config.yaml
+```
+
+Your `vLLM` instance will now attempt to spin up, and it's time to kick off training. To configure the `GRPOTrainer` to use the vLLM server:
+
+```yaml
+base_model: Qwen/Qwen2.5-1.5B-Instruct
+rl: grpo
+trl:
+    use_vllm: true
+    vllm_server_host: 0.0.0.0
+    vllm_server_port: 8000
+    vllm_server_timeout: 300
+    ...
+```
+
+Finally, let's kick off training utilizing our remaining two GPUs:
+
+```bash
+CUDA_VISIBLE_DEVICES=0,1 axolotl train grpo.yaml --num-processes 2
+```
+
+#### Reward functions
+
 GRPO uses custom reward functions and transformations. Please have them ready locally.
 
-For ex, to load OpenAI's GSM8K and use a random reward for completions:
+For example, to load OpenAI's GSM8K and use a random reward for completions:
 
 ```python
 # rewards.py

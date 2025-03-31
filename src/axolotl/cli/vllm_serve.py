@@ -32,8 +32,8 @@ def do_vllm_serve(
     cfg = load_cfg(config)
     model = cfg.base_model
 
-    tensor_parallel_size = cfg.vllm.tensor_parallel_size or cli_args.get(
-        "tensor_parallel_size"
+    tensor_parallel_size = (
+        cli_args.get("tensor_parallel_size") or cfg.vllm.tensor_parallel_size
     )
     host = cli_args.get("host") or cfg.vllm.host
     port = cli_args.get("port") or cfg.vllm.port
