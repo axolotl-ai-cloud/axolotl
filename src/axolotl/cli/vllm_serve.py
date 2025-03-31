@@ -35,15 +35,15 @@ def do_vllm_serve(
     tensor_parallel_size = cfg.vllm.tensor_parallel_size or cli_args.get(
         "tensor_parallel_size"
     )
-    host = cfg.vllm.host or cli_args.get("host")
-    port = cfg.vllm.port or cli_args.get("port")
-    gpu_memory_utilization = cfg.vllm.gpu_memory_utilization or cli_args.get(
-        "gpu_memory_utilization"
+    host = cli_args.get("host") or cfg.vllm.host
+    port = cli_args.get("port") or cfg.vllm.port
+    gpu_memory_utilization = (
+        cli_args.get("gpu_memory_utilization") or cfg.vllm.gpu_memory_utilization
     )
-    dtype = cfg.vllm.dtype or cli_args.get("dtype")
-    max_model_len = cfg.vllm.max_model_len or cli_args.get("max_model_len")
-    enable_prefix_caching = cfg.vllm.enable_prefix_caching or cli_args.get(
-        "enable_prefix_caching"
+    dtype = cli_args.get("dtype") or cfg.vllm.dtype
+    max_model_len = cli_args.get("max_model_len") or cfg.vllm.max_model_len
+    enable_prefix_caching = (
+        cli_args.get("enable_prefix_caching") or cfg.vllm.enable_prefix_caching
     )
 
     vllm_script_args = ScriptArguments(
