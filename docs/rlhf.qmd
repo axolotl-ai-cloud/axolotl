@@ -503,7 +503,7 @@ Check out our [GRPO cookbook](https://github.com/axolotl-ai-cloud/axolotl-cookbo
 :::
 
 If you have multiple GPUs available, we reccomend using `vLLM` with the `GRPOTrainer` to significantly speedup trajectory generation during training.
-First, launch a `vLLM` server using `trl vllm_serve`. You may use a config file or CLI overrides to configure your vLLM server. In this example, we're
+First, launch a `vLLM` server using `trl vllm_serve` - you may use a config file or CLI overrides to configure your vLLM server. In this example, we're
 using 4 GPUs - 2 for training, and 2 for vLLM:
 
 ```yaml
@@ -515,14 +515,15 @@ vllm:
     tensor_parallel_size: 2
     gpu_memory_utilization: 0.85
     dtype: auto
-    max_model_len: 512
+    # max_model_len: # you may find it useful to set the vLLM model context length if you know this beforehand
 ```
 
 ```bash
 CUDA_VISIBLE_DEVICES=2,3 axolotl vllm_serve vllm_config.yaml
 ```
 
-Your `vLLM` instance will now attempt to spin up, and it's time to kick off training. To configure the `GRPOTrainer` to use the vLLM server:
+Your `vLLM` instance will now attempt to spin up, and it's time to kick off training. To configure the `GRPOTrainer` to use the vLLM server,
+update your config as follows:
 
 ```yaml
 base_model: Qwen/Qwen2.5-1.5B-Instruct
