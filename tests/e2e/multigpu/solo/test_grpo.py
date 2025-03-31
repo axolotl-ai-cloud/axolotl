@@ -128,6 +128,10 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
                     "num_generations": 4,
                     "reward_funcs": [f"rewards_{rnd_reward_suffix}.rand_reward_func"],
                 },
+                "vllm": {
+                    "max_model_len": 800,
+                    "enable_prefix_caching": True,
+                },
                 "datasets": [
                     {
                         "path": "openai/gsm8k",
@@ -176,6 +180,8 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
             quiet=True,
             wait=120,
             gpu_memory_utilization=0.15,
+            max_model_len=cfg.vllm.max_model_len,
+            enable_prefix_caching=cfg.vllm.enable_prefix_caching,
             host="0.0.0.0",
             port=8000,
         )
@@ -214,6 +220,10 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
                     "use_vllm": True,
                     "num_generations": 4,
                     "reward_funcs": [f"rewards_{rnd_reward_suffix}.rand_reward_func"],
+                },
+                "vllm": {
+                    "max_model_len": 800,
+                    "enable_prefix_caching": True,
                 },
                 "datasets": [
                     {
@@ -257,6 +267,8 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
             quiet=True,
             wait=120,
             gpu_memory_utilization=0.15,
+            max_model_len=cfg.vllm.max_model_len,
+            enable_prefix_caching=cfg.vllm.enable_prefix_caching,
             host="0.0.0.0",
             port=8000,
         )
