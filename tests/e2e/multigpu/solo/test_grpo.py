@@ -69,6 +69,10 @@ def start_vllm(
             except requests.exceptions.RequestException:
                 pass
 
+            # also check if the process.pid is still running
+            if not process.poll() is None:
+                break
+
             time.sleep(1)
 
     if wait and not started:
@@ -171,8 +175,8 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
         current_env = os.environ.copy()
         env = {
             "NCCL_P2P_LEVEL": "LOC",
-            "CUDA_VISIBLE_DEVICES": "1",
             **current_env,
+            "CUDA_VISIBLE_DEVICES": "1",
         }
         vllm_process_id = start_vllm(
             cfg.base_model,
@@ -258,8 +262,8 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
         current_env = os.environ.copy()
         env = {
             "NCCL_P2P_LEVEL": "LOC",  # nccl can be brittle, assume P2P isn't reliable
-            "CUDA_VISIBLE_DEVICES": "1",
             **current_env,
+            "CUDA_VISIBLE_DEVICES": "1",
         }
         vllm_process_id = start_vllm(
             cfg.base_model,
