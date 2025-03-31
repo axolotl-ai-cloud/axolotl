@@ -238,7 +238,8 @@ def load_dataset_w_config(
             trust_remote_code=config_dataset.trust_remote_code,
             **load_ds_kwargs,
         )
-    else:
+    elif config_dataset.data_files:
+        fp: str | list[str] | None = None
         if isinstance(config_dataset.data_files, str):
             fp = hf_hub_download(
                 repo_id=config_dataset.path,
