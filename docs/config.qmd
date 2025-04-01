@@ -354,7 +354,27 @@ lora_target_modules:
 #  - down_proj
 #  - up_proj
 lora_target_linear: # If true, will target all linear modules
-peft_layers_to_transform: # The layer indices to transform, otherwise, apply to all layers
+
+# List[int] | int. # The layer indices to transform, otherwise, apply to all layers
+# https://huggingface.co/docs/peft/v0.15.0/en/package_reference/lora#peft.LoraConfig.layers_to_transform
+peft_layers_to_transform:
+
+# Optional[bool]. Whether to use DoRA.
+# https://huggingface.co/docs/peft/v0.15.0/en/developer_guides/lora#weight-decomposed-low-rank-adaptation-dora
+peft_use_dora:
+
+# Optional[bool]. Whether to use RSLoRA.
+# https://huggingface.co/docs/peft/v0.15.0/en/developer_guides/lora#rank-stabilized-lora
+peft_use_rslora:
+
+# Optional[list[tuple[int, int]]]. List of layer indices to replicate.
+# https://huggingface.co/docs/peft/v0.15.0/en/developer_guides/lora#memory-efficient-layer-replication-with-lora
+peft_layer_replication:
+
+# bool | Literal["gaussian", "eva", "olora", "pissa", "pissa_niter_[number of iters]", "corda", "loftq"]
+# How to initialize LoRA weights. Default to True which is MS original implementation.
+# https://huggingface.co/docs/peft/v0.15.0/en/developer_guides/lora#initialization
+peft_init_lora_weights:
 
 # If you added new tokens to the tokenizer, you may need to save some LoRA modules because they need to know the new tokens.
 # For LLaMA and Mistral, you need to save `embed_tokens` and `lm_head`. It may vary for other models.
