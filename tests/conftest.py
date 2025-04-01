@@ -8,10 +8,11 @@ import shutil
 import sys
 import tempfile
 import time
+from pathlib import Path
 
 import pytest
 import requests
-from datasets import load_dataset
+from datasets import Dataset, load_dataset
 from huggingface_hub import snapshot_download
 from transformers import AutoTokenizer
 
@@ -46,6 +47,14 @@ def retry_on_request_exceptions(max_retries=3, delay=1):
 @disable_hf_offline
 def snapshot_download_w_retry(*args, **kwargs):
     return snapshot_download(*args, **kwargs)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def download_ds_fixture_bundle():
+    ds_dir = snapshot_download_w_retry(
+        "axolotl-ai-internal/axolotl-oss-dataset-fixtures", repo_type="dataset"
+    )
+    return Path(ds_dir)
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -355,6 +364,41 @@ def cleanup_monkeypatches():
             module_globals = module_name_tuple[1]
             for module_global in module_globals:
                 globals().pop(module_global, None)
+
+
+@pytest.fixture
+def dataset_tatsu_lab_alpaca(
+    download_ds_fixture_bundle: Path,
+):  # pylint: disable=redefined-outer-name
+    ds_path = download_ds_fixture_bundle / "tatsu-lab__alpaca"
+    return Dataset.load_from_disk(ds_path)["train"]
+
+
+@pytest.fixture
+def dataset_mhenrichsen_alpaca_2k_test(
+    download_ds_fixture_bundle: Path,
+):  # pylint: disable=redefined-outer-name
+    ds_path = download_ds_fixture_bundle / "mhenrichsen__alpaca_2k_test"
+    return Dataset.load_from_disk(ds_path)["train"]
+
+
+@pytest.fixture
+def dataset_fozziethebeat_alpaca_messages_2k_dpo_test(
+    download_ds_fixture_bundle: Path,
+):  # pylint: disable=redefined-outer-name
+    ds_path = download_ds_fixture_bundle / "fozziethebeat__alpaca_messages_2k_dpo_test"
+    return Dataset.load_from_disk(ds_path)["train"]
+
+
+@pytest.fixture
+def dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff(
+    download_ds_fixture_bundle: Path,
+):  # pylint: disable=redefined-outer-name
+    ds_path = (
+        download_ds_fixture_bundle
+        / "fozziethebeat__alpaca_messages_2k_dpo_test__rev_ea82cff"
+    )
+    return Dataset.load_from_disk(ds_path)["train"]
 
 
 # # pylint: disable=redefined-outer-name,unused-argument

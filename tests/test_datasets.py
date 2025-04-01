@@ -324,7 +324,7 @@ class TestDatasetPreparation:
 
     @enable_hf_offline
     def test_load_hub_with_revision_with_dpo(
-        self, dataset_fozzie_alpaca_dpo_dataset_rev_ea82cff
+        self, dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff
     ):
         """Verify that processing dpo data from the hub works with a specific revision"""
 
@@ -344,7 +344,7 @@ class TestDatasetPreparation:
         ) as mock_load_dataset:
             # Set up the mock to return different values on successive calls
             mock_load_dataset.return_value = (
-                dataset_fozzie_alpaca_dpo_dataset_rev_ea82cff
+                dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff
             )
 
             train_dataset, _ = load_prepare_preference_datasets(cfg)
@@ -354,7 +354,9 @@ class TestDatasetPreparation:
 
     @enable_hf_offline
     @pytest.mark.skip("datasets bug with local datasets when offline")
-    def test_load_local_hub_with_revision(self, tokenizer):
+    def test_load_local_hub_with_revision(
+        self, dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff, tokenizer
+    ):
         """Verify that a local copy of a hub dataset can be loaded with a specific revision"""
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_ds_path = Path(tmp_dir) / "mhenrichsen/alpaca_2k_test"
@@ -386,13 +388,23 @@ class TestDatasetPreparation:
                 }
             )
 
-            dataset, _ = load_tokenized_prepared_datasets(tokenizer, cfg, prepared_path)
+            with patch(
+                "axolotl.utils.data.shared.load_dataset_w_config"
+            ) as mock_load_dataset:
+                # Set up the mock to return different values on successive calls
+                mock_load_dataset.return_value = (
+                    dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff
+                )
 
-            assert len(dataset) == 2000
-            assert "input_ids" in dataset.features
-            assert "attention_mask" in dataset.features
-            assert "labels" in dataset.features
-            shutil.rmtree(tmp_ds_path)
+                dataset, _ = load_tokenized_prepared_datasets(
+                    tokenizer, cfg, prepared_path
+                )
+
+                assert len(dataset) == 2000
+                assert "input_ids" in dataset.features
+                assert "attention_mask" in dataset.features
+                assert "labels" in dataset.features
+                shutil.rmtree(tmp_ds_path)
 
     @enable_hf_offline
     def test_loading_local_dataset_folder(self, tokenizer):

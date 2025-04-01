@@ -238,7 +238,10 @@ class TestDeduplicateRLDataset:
 
     @enable_hf_offline
     def test_load_with_deduplication(
-        self, cfg, dataset_fozzie_alpaca_dpo_dataset_rev_ea82cff, tokenizer_huggyllama
+        self,
+        cfg,
+        dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff,
+        tokenizer_huggyllama,
     ):
         """Verify that loading with deduplication removes duplicates."""
 
@@ -251,8 +254,8 @@ class TestDeduplicateRLDataset:
         ):
             # Set up the mock to return different values on successive calls
             mock_load_dataset.side_effect = [
-                dataset_fozzie_alpaca_dpo_dataset_rev_ea82cff,
-                dataset_fozzie_alpaca_dpo_dataset_rev_ea82cff,
+                dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff,
+                dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff,
             ]
             mock_load_tokenizer.return_value = tokenizer_huggyllama
 
@@ -263,7 +266,10 @@ class TestDeduplicateRLDataset:
 
     @enable_hf_offline
     def test_load_without_deduplication(
-        self, cfg, dataset_fozzie_alpaca_dpo_dataset_rev_ea82cff, tokenizer_huggyllama
+        self,
+        cfg,
+        dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff,
+        tokenizer_huggyllama,
     ):
         # pylint: disable=duplicate-code
         with (
@@ -274,8 +280,8 @@ class TestDeduplicateRLDataset:
         ):
             # Set up the mock to return different values on successive calls
             mock_load_dataset.side_effect = [
-                dataset_fozzie_alpaca_dpo_dataset_rev_ea82cff,
-                dataset_fozzie_alpaca_dpo_dataset_rev_ea82cff,
+                dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff,
+                dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff,
             ]
             mock_load_tokenizer.return_value = tokenizer_huggyllama
 
