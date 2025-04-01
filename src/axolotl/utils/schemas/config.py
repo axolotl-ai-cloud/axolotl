@@ -1277,6 +1277,5 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             torch_version = self.env_capabilities.torch_version
             if version.parse(torch_version) < version.parse("2.5.1"):
                 LOG.warning(
-                    "torch=={torch_version} may not be supported in future versions. Please consider "
-                    "upgrading to torch>=2.5.1."
+                    f"torch=={torch_version} may not be supported in future versions. Please consider upgrading to torch>=2.5.1."
                 )

@@ -2,6 +2,8 @@
 Temporary fix/override for bug in resume from checkpoint
 
 See https://github.com/huggingface/transformers/pull/37162
+
+TODO: Remove when upstream added PR to release
 """
 
 import logging
@@ -46,6 +48,8 @@ class RngLoaderMixin(Trainer):
                 )
                 return
 
+        # Use safe_globals to ensure numpy RNG states can be deserialized safely under PyTorch 2.6+,
+        # which requires allowlisted classes when loading with weights_only=True.
         with safe_globals():
             checkpoint_rng_state = torch.load(rng_file)  # nosec B614
         random.setstate(checkpoint_rng_state["python"])
