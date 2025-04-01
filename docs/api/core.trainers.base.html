@@ -511,10 +511,6 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <td><a href="#axolotl.core.trainers.base.AxolotlTrainer.push_to_hub">push_to_hub</a></td>
 <td>Overwrite the <code>push_to_hub</code> method in order to force-add the tags when pushing the</td>
 </tr>
-<tr class="odd">
-<td><a href="#axolotl.core.trainers.base.AxolotlTrainer.training_step">training_step</a></td>
-<td>Perform a training step on a batch of inputs. Overrides the</td>
-</tr>
 </tbody>
 </table>
 <section id="axolotl.core.trainers.base.AxolotlTrainer.get_eval_dataloader" class="level5">
@@ -570,52 +566,8 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>core.trainers.base.AxolotlTrainer.push_to_hub(<span class="op">*</span>args, <span class="op">**</span>kwargs)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Overwrite the <code>push_to_hub</code> method in order to force-add the tags when pushing the
 model on the Hub. Please refer to <code>~transformers.Trainer.push_to_hub</code> for more details.</p>
-</section>
-<section id="axolotl.core.trainers.base.AxolotlTrainer.training_step" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.core.trainers.base.AxolotlTrainer.training_step">training_step</h5>
-<div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>core.trainers.base.AxolotlTrainer.training_step(</span>
-<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>    model,</span>
-<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>    inputs,</span>
-<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>    num_items_in_batch<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Perform a training step on a batch of inputs. Overrides the
-<code>transformers.trainer.Trainer</code> method to handle sequence parallelism if
-enabled.</p>
-<section id="parameters-1" class="level6 doc-section doc-section-parameters">
-<h6 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-1">Parameters</h6>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 8%">
-<col style="width: 37%">
-<col style="width: 40%">
-<col style="width: 13%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-<th>Default</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>model</td>
-<td>nn.Module</td>
-<td>Model to perform training step for.</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>inputs</td>
-<td>dict[str, torch.Tensor | Any]</td>
-<td>Dictionary mapping.</td>
-<td><em>required</em></td>
-</tr>
-</tbody>
-</table>
 
 
-</section>
 </section>
 </section>
 </section>
